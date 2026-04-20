@@ -760,6 +760,7 @@ impl Catalog for PostgresCatalog {
     // --- schema-listing stubs (real impls land in Task 4.2) ---
 
     async fn list_databases(&self) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
+        tracing::warn!("PostgresCatalog::list_databases called on stub impl (Task 4.2 not yet landed)");
         Ok(vec![])
     }
 
@@ -767,6 +768,7 @@ impl Catalog for PostgresCatalog {
         &self,
         _database: &str,
     ) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
+        tracing::warn!("PostgresCatalog::list_tables called on stub impl (Task 4.2 not yet landed)");
         Ok(vec![])
     }
 
@@ -775,6 +777,7 @@ impl Catalog for PostgresCatalog {
         _database: &str,
         _table: &str,
     ) -> std::result::Result<Vec<ColumnInfo>, kyma_core::errors::CatalogError> {
+        tracing::warn!("PostgresCatalog::get_table_columns called on stub impl (Task 4.2 not yet landed)");
         Ok(vec![])
     }
 }
