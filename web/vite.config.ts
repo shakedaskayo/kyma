@@ -23,4 +23,7 @@ export default defineConfig({
     sourcemap: true,
     target: "es2022",
   },
+  test: {
+    environment: "jsdom",
+  },
 });
