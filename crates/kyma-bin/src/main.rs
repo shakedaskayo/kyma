@@ -165,6 +165,7 @@ async fn main() -> Result<()> {
     let query_router = kyma_server::router(QueryState {
         catalog: catalog.clone(),
         format: format.clone(),
+        schema_cache: std::sync::Arc::new(kyma_server::catalog_handler::SchemaCache::new()),
     })
     .layer(axum::middleware::from_fn_with_state(
         (auth.clone(), Role::Read),
