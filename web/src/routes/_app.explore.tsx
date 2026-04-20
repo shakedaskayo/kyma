@@ -8,8 +8,10 @@ import { TimeRangePicker } from "@/features/time-range/TimeRangePicker";
 import { ResultsGrid, exportCsv } from "@/features/results-grid/ResultsGrid";
 import { ChartPanel } from "@/features/chart/ChartPanel";
 import { SchemaBrowser } from "@/features/schema-browser/SchemaBrowser";
+import { TabBar } from "@/features/tabs/TabBar";
 import { downloadBlob } from "@/lib/download";
 import { useWorkspace } from "@/features/tabs/workspace-store";
+import { useWorkspaceShortcuts } from "@/lib/shortcuts";
 import { useSession } from "@/sdk/session";
 import { fetchSchema } from "@/sdk/catalog";
 import { useRunQuery, type TabResult } from "@/features/run/useRunQuery";
@@ -44,6 +46,8 @@ function ExplorePage() {
     await run(active, setLiveResult);
   };
 
+  useWorkspaceShortcuts(runActive);
+
 const tabBtn = (on: boolean) =>
   `rounded-md px-2 py-0.5 transition ${on ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50"}`;
 
@@ -53,6 +57,7 @@ const tabBtn = (on: boolean) =>
         <SchemaBrowser schema={schema} onInsert={(t) => active && workspace.setQuery(active.id, `${active.query}${active.query.endsWith("\n") || !active.query ? "" : " "}${t}`)} />
       </aside>
       <section className="flex flex-1 flex-col">
+        <TabBar />
         <div className="flex items-center gap-2 border-b px-4 py-2 text-xs">
           <TimeRangePicker
             value={active?.timeRange ?? { preset: "1h" }}
