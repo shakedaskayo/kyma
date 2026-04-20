@@ -3,3 +3,5 @@ dist
 .vite
 *.log
 src/sdk/gen
+test-results
+playwright-report

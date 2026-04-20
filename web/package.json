@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "generate": "buf generate",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@bufbuild/protobuf": "1.10.0",
@@ -43,6 +45,7 @@
     "@bufbuild/buf": "1.40.1",
     "@bufbuild/protoc-gen-es": "1.10.0",
     "@connectrpc/protoc-gen-connect-es": "1.7.0",
+    "@playwright/test": "1.48.0",
     "@tanstack/react-query-devtools": "^5.99.2",
     "@tanstack/router-devtools": "^1.166.13",
     "@tanstack/router-plugin": "^1.167.22",
