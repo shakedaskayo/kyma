@@ -791,7 +791,7 @@ impl Catalog for PostgresCatalog {
         database: &str,
         table: &str,
     ) -> std::result::Result<Vec<ColumnInfo>, kyma_core::errors::CatalogError> {
-        let row: (serde_json::Value,) = sqlx::query_as(
+        let row: Option<(serde_json::Value,)> = sqlx::query_as(
             "SELECT ss.arrow_schema
              FROM tables t
              JOIN databases d ON d.id = t.database_id
@@ -800,11 +800,15 @@ impl Catalog for PostgresCatalog {
         )
         .bind(database)
         .bind(table)
-        .fetch_one(&self.pool)
+        .fetch_optional(&self.pool)
         .await
         .map_err(|e| CatalogError::Sql(e.to_string()))?;
 
-        let schema_json = row.0;
+        let (schema_json,) = row.ok_or_else(|| CatalogError::TableNotFound {
+            database: database.to_owned(),
+            name: table.to_owned(),
+        })?;
+
         let fields = schema_json
             .get("fields")
             .and_then(|v| v.as_array())

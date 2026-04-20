@@ -100,3 +100,15 @@ async fn list_databases_ordered_alphabetically() {
     let dbs = catalog.list_databases().await.unwrap();
     assert_eq!(dbs, vec!["alpha", "metrics", "zoo"]);
 }
+
+#[tokio::test]
+async fn get_table_columns_returns_table_not_found_for_missing_table() {
+    let (catalog, _container) = setup().await;
+    catalog.create_database("obs").await.unwrap();
+
+    let err = catalog.get_table_columns("obs", "ghost").await.unwrap_err();
+    match err {
+        kyma_core::errors::CatalogError::TableNotFound { .. } => {},
+        other => panic!("expected TableNotFound, got {other:?}"),
+    }
+}
