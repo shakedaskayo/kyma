@@ -1,133 +1,238 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 760" role="img" aria-label="kyma agent query lifecycle with three-level pruning">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 820" role="img" aria-label="one agent question, end-to-end through the kyma pruning cascade">
   <defs>
-    <marker id="qArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/>
+    <linearGradient id="cascadeBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="var(--cas-a)"/>
+      <stop offset="1"   stop-color="var(--cas-b)"/>
+    </linearGradient>
+    <linearGradient id="codeBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="var(--code-a)"/>
+      <stop offset="1" stop-color="var(--code-b)"/>
+    </linearGradient>
+    <linearGradient id="askBg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="var(--ask-a)"/>
+      <stop offset="1" stop-color="var(--ask-b)"/>
+    </linearGradient>
+    <linearGradient id="answerBg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="var(--ans-a)"/>
+      <stop offset="1" stop-color="var(--ans-b)"/>
+    </linearGradient>
+    <marker id="vArr" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L12,6 L0,12 Z" fill="var(--qry)"/>
     </marker>
-    <marker id="qArrGhost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
-    </marker>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+    <filter id="stepShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <filter id="answerShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="10" flood-color="#047857" flood-opacity="0.25"/>
+    </filter>
   </defs>
   <style>
-    .title    { font: 700 15px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #0f172a; }
-    .subtitle { font: 400 12px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #475569; }
-    .agentQ   { font: 500 13px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #0f172a; font-style: italic; }
-    .code     { font: 500 12.5px ui-monospace, SFMono-Regular, monospace; fill: #1e293b; }
-    .stepNum  { font: 800 14px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #2563eb; }
-    .stepName { font: 700 13px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #0f172a; }
-    .stepSub  { font: 400 11px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #64748b; }
-    .metric   { font: 700 13px ui-monospace, SFMono-Regular, monospace; fill: #0891b2; letter-spacing: 0.3px; }
-    .reduction{ font: 700 11px ui-monospace, SFMono-Regular, monospace; fill: #059669; }
-    .answerH  { font: 700 13px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #0f172a; }
-    .answerB  { font: 400 12px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #334155; }
-    .timing   { font: 800 14px ui-monospace, SFMono-Regular, monospace; fill: #059669; }
-    .box      { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.5; }
-    .askBox   { fill: #ffffff; stroke: #2563eb; stroke-width: 1.8; }
-    .codeBox  { fill: #f1f5f9; stroke: #cbd5e1; stroke-width: 1.2; }
-    .stepBox  { fill: #ffffff; stroke: #2563eb; stroke-width: 1.6; }
-    .stepBand { fill: #eff6ff; stroke: none; }
-    .answerBox{ fill: #ffffff; stroke: #059669; stroke-width: 1.8; }
-    .flow     { stroke: #2563eb; stroke-width: 1.6; fill: none; }
-    .ghost    { stroke: #94a3b8; stroke-width: 1; fill: none; stroke-dasharray: 3 3; }
-    @media (prefers-color-scheme: dark) {
-      .title     { fill: #f1f5f9; }
-      .subtitle  { fill: #94a3b8; }
-      .agentQ    { fill: #f1f5f9; }
-      .code      { fill: #e2e8f0; }
-      .stepNum   { fill: #60a5fa; }
-      .stepName  { fill: #f1f5f9; }
-      .stepSub   { fill: #94a3b8; }
-      .metric    { fill: #22d3ee; }
-      .reduction { fill: #34d399; }
-      .answerH   { fill: #f1f5f9; }
-      .answerB   { fill: #cbd5e1; }
-      .timing    { fill: #34d399; }
-      .box       { fill: #0b1220; stroke: #64748b; }
-      .askBox    { fill: #0b1220; stroke: #60a5fa; }
-      .codeBox   { fill: #0f172a; stroke: #334155; }
-      .stepBox   { fill: #0b1220; stroke: #60a5fa; }
-      .stepBand  { fill: #0f172a; }
-      .answerBox { fill: #0b1220; stroke: #34d399; }
-      .ghost     { stroke: #475569; }
+    :root {
+      --fg:        #0f172a;
+      --fg-2:      #475569;
+      --muted:     #94a3b8;
+      --card:      #ffffff;
+      --border:    #e2e8f0;
+      --ask-a:     #eff6ff;
+      --ask-b:     #e0e7ff;
+      --ask-stroke:#4338ca;
+      --ask-fg:    #1e1b4b;
+      --code-a:    #f8fafc;
+      --code-b:    #f1f5f9;
+      --code-fg:   #0f172a;
+      --code-kw:   #2563eb;
+      --code-str:  #047857;
+      --code-com:  #64748b;
+      --cas-a:     #faf5ff;
+      --cas-b:     #eef2ff;
+      --cas-border:#c7d2fe;
+      --step-n:    #6d28d9;
+      --qry:       #6d28d9;
+      --metric:    #0e7490;
+      --save:      #047857;
+      --chip-bg:   #dcfce7;
+      --chip-fg:   #047857;
+      --ans-a:     #ecfdf5;
+      --ans-b:     #d1fae5;
+      --ans-stroke:#047857;
+      --ans-fg:    #064e3b;
+      --ans-body:  #0f172a;
+      --funnel-a:  #c7d2fe;
+      --funnel-b:  #a78bfa;
     }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg:        #f1f5f9;
+        --fg-2:      #cbd5e1;
+        --muted:     #64748b;
+        --card:      #0b1220;
+        --border:    #1e293b;
+        --ask-a:     #0b1220;
+        --ask-b:     #0f172a;
+        --ask-stroke:#818cf8;
+        --ask-fg:    #e0e7ff;
+        --code-a:    #0f172a;
+        --code-b:    #0b1220;
+        --code-fg:   #e2e8f0;
+        --code-kw:   #93c5fd;
+        --code-str:  #6ee7b7;
+        --code-com:  #64748b;
+        --cas-a:     #0b1220;
+        --cas-b:     #0f172a;
+        --cas-border:#4c1d95;
+        --step-n:    #a78bfa;
+        --qry:       #a78bfa;
+        --metric:    #22d3ee;
+        --save:      #34d399;
+        --chip-bg:   #064e3b;
+        --chip-fg:   #6ee7b7;
+        --ans-a:     #0b1220;
+        --ans-b:     #0f172a;
+        --ans-stroke:#34d399;
+        --ans-fg:    #6ee7b7;
+        --ans-body:  #e2e8f0;
+        --funnel-a:  #4c1d95;
+        --funnel-b:  #7c3aed;
+      }
+    }
+
+    .eyebrow    { font: 700 10.5px ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--muted); letter-spacing: 2.2px; }
+    .h1         { font: 800 22px  ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg); letter-spacing: -0.2px; }
+    .sub        { font: 400 12px  ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg-2); }
+    .rule       { stroke: var(--border); stroke-width: 1; }
+
+    .askTag     { font: 700 10px  ui-monospace,SFMono-Regular,monospace; fill: var(--ask-stroke); letter-spacing: 1.8px; }
+    .askText    { font: 600 14.5px ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--ask-fg); font-style: italic; }
+
+    .codeTag    { font: 700 10px  ui-monospace,SFMono-Regular,monospace; fill: var(--muted); letter-spacing: 1.8px; }
+    .code       { font: 500 12.5px ui-monospace,SFMono-Regular,monospace; fill: var(--code-fg); }
+    .codeKw     { font: 700 12.5px ui-monospace,SFMono-Regular,monospace; fill: var(--code-kw); }
+    .codeStr    { font: 500 12.5px ui-monospace,SFMono-Regular,monospace; fill: var(--code-str); }
+
+    .casTitle   { font: 700 11px  ui-monospace,SFMono-Regular,monospace; fill: var(--muted); letter-spacing: 2px; }
+    .stepNum    { font: 800 15px  ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--step-n); }
+    .stepName   { font: 700 14px  ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg); }
+    .stepSub    { font: 400 11.5px ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg-2); }
+    .metric     { font: 700 13.5px ui-monospace,SFMono-Regular,monospace; fill: var(--metric); letter-spacing: 0.3px; }
+    .chipTxt    { font: 800 10.5px ui-monospace,SFMono-Regular,monospace; fill: var(--chip-fg); letter-spacing: 0.5px; }
+
+    .ansTag     { font: 700 10px  ui-monospace,SFMono-Regular,monospace; fill: var(--ans-stroke); letter-spacing: 1.8px; }
+    .ansHead    { font: 700 14px  ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--ans-fg); }
+    .ansLine    { font: 500 12px  ui-monospace,SFMono-Regular,monospace; fill: var(--ans-body); }
+    .ansNote    { font: 400 11px  ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg-2); }
+    .timing     { font: 800 20px  ui-monospace,SFMono-Regular,monospace; fill: var(--save); letter-spacing: 0.3px; }
+
+    .askBox     { fill: url(#askBg); stroke: var(--ask-stroke); stroke-width: 1.8; }
+    .codeBox    { fill: url(#codeBg); stroke: var(--border); stroke-width: 1; }
+    .casBox     { fill: url(#cascadeBg); stroke: var(--cas-border); stroke-width: 1.2; }
+    .stepBox    { fill: var(--card); stroke: var(--cas-border); stroke-width: 1.4; }
+    .answerBox  { fill: url(#answerBg); stroke: var(--ans-stroke); stroke-width: 1.8; }
+    .chip       { fill: var(--chip-bg); }
+    .flow       { stroke: var(--qry); stroke-width: 2; fill: none; stroke-linecap: round; stroke-dasharray: 6 4; }
   </style>
 
-  <text x="410" y="26" class="title"    text-anchor="middle">one agent question, end-to-end</text>
-  <text x="410" y="46" class="subtitle" text-anchor="middle">15,200 extents · 2.3 M candidate rows · 412 ms to answer</text>
+  <!-- Hero -->
+  <text x="30" y="34" class="eyebrow">AGENT QUERY LIFECYCLE</text>
+  <line  x1="30" y1="46" x2="870" y2="46" class="rule"/>
+  <text x="30" y="78" class="h1">One question. Twenty pruning-layer decisions. 412 ms.</text>
+  <text x="30" y="100" class="sub">15,200 extents · 2.3 M candidate rows · one answer streamed back over Arrow Flight.</text>
 
-  <!-- Agent question -->
-  <rect x="60" y="70" width="700" height="56" rx="8" class="askBox"/>
-  <text x="80" y="94"  class="stepSub">AGENT · SRE oncall</text>
-  <text x="80" y="115" class="agentQ">"What slowed down payments-svc right after the 14:17 deploy? Top-3 span causes."</text>
-
-  <path d="M410,126 L 410,142" class="flow" marker-end="url(#qArr)"/>
-
-  <!-- KQL code block -->
-  <rect x="60" y="148" width="700" height="130" rx="8" class="codeBox"/>
-  <text x="80" y="170" class="stepSub">KQL emitted by the agent</text>
-  <g class="code">
-    <text x="80" y="192">otel_traces</text>
-    <text x="80" y="210">| where service.name == "payments-svc"</text>
-    <text x="80" y="228">| where timestamp between (datetime(2026-04-20 14:15) .. datetime(2026-04-20 14:25))</text>
-    <text x="80" y="246">| where span_name startswith "http" or span_name startswith "db"</text>
-    <text x="80" y="264">| summarize avg_ms = avg(duration_ms), max_ms = max(duration_ms), n = count() by span_name</text>
+  <!-- ASK -->
+  <g filter="url(#softShadow)">
+    <rect x="40" y="124" width="820" height="72" rx="12" class="askBox"/>
+    <text x="60" y="148" class="askTag">SRE AGENT  ·  ONCALL</text>
+    <text x="60" y="178" class="askText">"What slowed down payments-svc right after the 14:17 deploy? Top-3 span causes."</text>
   </g>
 
-  <path d="M410,278 L 410,296" class="flow" marker-end="url(#qArr)"/>
+  <path d="M450,196 L 450,218" class="flow" marker-end="url(#vArr)"/>
 
-  <!-- Pruning cascade -->
-  <rect x="60" y="302" width="700" height="280" rx="10" class="stepBand"/>
-  <text x="410" y="324" class="stepSub" text-anchor="middle">3-LEVEL PRUNING CASCADE</text>
+  <!-- KQL -->
+  <g filter="url(#softShadow)">
+    <rect x="40" y="224" width="820" height="156" rx="12" class="codeBox"/>
+    <text x="60" y="248" class="codeTag">KQL  ·  EMITTED BY AGENT  ·  Content-Type: application/x-kql</text>
+    <g>
+      <text x="60" y="276" class="code">otel_traces</text>
+      <text x="60" y="298"><tspan class="codeKw">| where</tspan><tspan class="code"> service.name == </tspan><tspan class="codeStr">"payments-svc"</tspan></text>
+      <text x="60" y="320"><tspan class="codeKw">| where</tspan><tspan class="code"> timestamp between (</tspan><tspan class="codeStr">datetime(2026-04-20 14:15)</tspan><tspan class="code"> .. </tspan><tspan class="codeStr">datetime(2026-04-20 14:25)</tspan><tspan class="code">)</tspan></text>
+      <text x="60" y="342"><tspan class="codeKw">| where</tspan><tspan class="code"> span_name startswith </tspan><tspan class="codeStr">"http"</tspan><tspan class="code"> or span_name startswith </tspan><tspan class="codeStr">"db"</tspan></text>
+      <text x="60" y="364"><tspan class="codeKw">| summarize</tspan><tspan class="code"> avg_ms = avg(duration_ms), max_ms = max(duration_ms), n = count() </tspan><tspan class="codeKw">by</tspan><tspan class="code"> span_name</tspan></text>
+    </g>
+  </g>
+
+  <path d="M450,380 L 450,402" class="flow" marker-end="url(#vArr)"/>
+
+  <!-- CASCADE -->
+  <g filter="url(#stepShadow)">
+    <rect x="40" y="408" width="820" height="298" rx="14" class="casBox"/>
+  </g>
+  <text x="60" y="432" class="casTitle">3-LEVEL PRUNING CASCADE</text>
+
+  <!-- Funnel visual on the right -->
+  <g opacity="0.7">
+    <polygon points="740,452 840,452 820,500 760,500" fill="var(--funnel-a)"/>
+    <polygon points="760,508 820,508 808,552 772,552" fill="var(--funnel-a)" opacity="0.8"/>
+    <polygon points="772,560 808,560 800,604 780,604" fill="var(--funnel-b)" opacity="0.7"/>
+    <polygon points="780,612 800,612 796,656 784,656" fill="var(--funnel-b)"/>
+  </g>
 
   <!-- Step 1 -->
-  <g>
-    <rect x="80" y="338" width="660" height="52" rx="6" class="stepBox"/>
-    <text x="98"  y="360" class="stepNum">1</text>
-    <text x="120" y="360" class="stepName">Catalog prune</text>
-    <text x="120" y="378" class="stepSub">time-range + service.name equality against manifest stats (Postgres)</text>
-    <text x="550" y="360" class="metric" text-anchor="start">15,200  →  24 extents</text>
-    <text x="740" y="378" class="reduction" text-anchor="end">−99.84 %</text>
+  <g filter="url(#softShadow)">
+    <rect x="60" y="444" width="660" height="56" rx="9" class="stepBox"/>
+    <circle cx="82" cy="472" r="14" fill="none" stroke="var(--step-n)" stroke-width="1.4"/>
+    <text x="82" y="477" class="stepNum" text-anchor="middle">1</text>
+    <text x="110" y="468" class="stepName">Catalog prune</text>
+    <text x="110" y="488" class="stepSub">time-range + service.name equality against manifest stats in Postgres</text>
+    <text x="560" y="468" class="metric" text-anchor="end">15,200 → 24 extents</text>
+    <rect x="574" y="477" width="136" height="18" rx="9" class="chip"/>
+    <text x="642" y="490" class="chipTxt" text-anchor="middle">−99.84 %</text>
   </g>
 
   <!-- Step 2 -->
-  <g>
-    <rect x="80" y="398" width="660" height="52" rx="6" class="stepBox"/>
-    <text x="98"  y="420" class="stepNum">2</text>
-    <text x="120" y="420" class="stepName">Extent footer prune</text>
-    <text x="120" y="438" class="stepSub">per-column min/max, equality set, token index, path bitmap (range-GET)</text>
-    <text x="550" y="420" class="metric" text-anchor="start">24  →  8 extents</text>
-    <text x="740" y="438" class="reduction" text-anchor="end">−66.7 %</text>
+  <g filter="url(#softShadow)">
+    <rect x="60" y="506" width="660" height="56" rx="9" class="stepBox"/>
+    <circle cx="82" cy="534" r="14" fill="none" stroke="var(--step-n)" stroke-width="1.4"/>
+    <text x="82" y="539" class="stepNum" text-anchor="middle">2</text>
+    <text x="110" y="530" class="stepName">Extent footer prune</text>
+    <text x="110" y="550" class="stepSub">min/max · equality set · token index · path bitmap (range-GET footers, cached)</text>
+    <text x="560" y="530" class="metric" text-anchor="end">24 → 8 extents</text>
+    <rect x="574" y="539" width="136" height="18" rx="9" class="chip"/>
+    <text x="642" y="552" class="chipTxt" text-anchor="middle">−66.7 %</text>
   </g>
 
   <!-- Step 3 -->
-  <g>
-    <rect x="80" y="458" width="660" height="52" rx="6" class="stepBox"/>
-    <text x="98"  y="480" class="stepNum">3</text>
-    <text x="120" y="480" class="stepName">Block &amp; index prune</text>
-    <text x="120" y="498" class="stepSub">per-block footer + posting list for text predicates</text>
-    <text x="550" y="480" class="metric" text-anchor="start">120  →  14 blocks</text>
-    <text x="740" y="498" class="reduction" text-anchor="end">−88.3 %</text>
+  <g filter="url(#softShadow)">
+    <rect x="60" y="568" width="660" height="56" rx="9" class="stepBox"/>
+    <circle cx="82" cy="596" r="14" fill="none" stroke="var(--step-n)" stroke-width="1.4"/>
+    <text x="82" y="601" class="stepNum" text-anchor="middle">3</text>
+    <text x="110" y="592" class="stepName">Block &amp; index prune</text>
+    <text x="110" y="612" class="stepSub">per-block footer + posting-list intersection for text predicates</text>
+    <text x="560" y="592" class="metric" text-anchor="end">120 → 14 blocks</text>
+    <rect x="574" y="601" width="136" height="18" rx="9" class="chip"/>
+    <text x="642" y="614" class="chipTxt" text-anchor="middle">−88.3 %</text>
   </g>
 
   <!-- Step 4 -->
-  <g>
-    <rect x="80" y="518" width="660" height="52" rx="6" class="stepBox"/>
-    <text x="98"  y="540" class="stepNum">4</text>
-    <text x="120" y="540" class="stepName">DataFusion exec</text>
-    <text x="120" y="558" class="stepSub">vectorized decode + aggregate on Arrow RecordBatches</text>
-    <text x="550" y="540" class="metric" text-anchor="start">2.3 M  →  38 rows</text>
-    <text x="740" y="558" class="reduction" text-anchor="end">aggregated</text>
+  <g filter="url(#softShadow)">
+    <rect x="60" y="630" width="660" height="56" rx="9" class="stepBox"/>
+    <circle cx="82" cy="658" r="14" fill="none" stroke="var(--step-n)" stroke-width="1.4"/>
+    <text x="82" y="663" class="stepNum" text-anchor="middle">4</text>
+    <text x="110" y="654" class="stepName">DataFusion exec</text>
+    <text x="110" y="674" class="stepSub">vectorized decode + aggregate on Arrow RecordBatches</text>
+    <text x="560" y="654" class="metric" text-anchor="end">2.3 M → 38 rows</text>
+    <rect x="574" y="663" width="136" height="18" rx="9" class="chip"/>
+    <text x="642" y="676" class="chipTxt" text-anchor="middle">aggregated</text>
   </g>
 
-  <path d="M410,582 L 410,600" class="flow" marker-end="url(#qArr)"/>
+  <path d="M450,706 L 450,726" class="flow" marker-end="url(#vArr)"/>
 
-  <!-- Answer card -->
-  <rect x="60" y="606" width="700" height="130" rx="8" class="answerBox"/>
-  <text x="80"  y="630" class="answerH">Streamed back over Arrow Flight</text>
-  <text x="720" y="630" class="timing" text-anchor="end">412 ms</text>
-  <g class="answerB">
-    <text x="80" y="654">1.  db.query.users.lookup         avg 184 ms · max 2.1 s · n=412     ← regressed</text>
-    <text x="80" y="674">2.  http.client.auth-svc.verify    avg  92 ms · max 1.4 s · n=2,107  ← regressed</text>
-    <text x="80" y="694">3.  db.query.invoices.insert       avg  61 ms · max   820 ms · n=380    ← stable</text>
+  <!-- ANSWER -->
+  <g filter="url(#answerShadow)">
+    <rect x="40" y="732" width="820" height="72" rx="12" class="answerBox"/>
+    <text x="60" y="756" class="ansTag">ARROW FLIGHT STREAM  ·  ZERO-COPY</text>
+    <text x="60" y="782" class="ansHead">Top-3 regressions returned in</text>
+    <text x="840" y="782" class="timing" text-anchor="end">412 ms</text>
   </g>
-  <text x="80"  y="724" class="stepSub">38 rows · 2 columns · zero-copy Arrow → agent picks next exploratory query.</text>
 </svg>
