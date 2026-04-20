@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import { fetchSchema, type SchemaDoc } from "./catalog";
 
 const mockFetch = vi.fn();
