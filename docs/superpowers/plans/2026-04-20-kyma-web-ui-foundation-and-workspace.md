@@ -1677,7 +1677,7 @@ pnpm -C web test src/sdk/query.test.ts
 
 ```ts
 import { createGrpcWebTransport } from "@connectrpc/connect-web";
-import { createClient } from "@connectrpc/connect";
+import { createPromiseClient } from "@connectrpc/connect";
 import { FlightService } from "./gen/Flight_connect";
 import { Ticket, FlightData } from "./gen/Flight_pb";
 import { tableFromIPC, RecordBatch } from "apache-arrow";
@@ -1699,7 +1699,7 @@ export function encodeTicket(t: { database: string; query: string; language: str
 
 export async function* runQuery(args: QueryArgs): AsyncGenerator<RecordBatch, void, void> {
   const transport = createGrpcWebTransport({ baseUrl: args.endpoint.replace(/\/$/, "") });
-  const client = createClient(FlightService, transport);
+  const client = createPromiseClient(FlightService, transport);
 
   const ticket = new Ticket({ ticket: encodeTicket({
     database: args.database, query: args.query, language: args.language,
@@ -1711,19 +1711,45 @@ export async function* runQuery(args: QueryArgs): AsyncGenerator<RecordBatch, vo
 
   const stream = client.doGet(ticket, { headers, signal: args.signal });
 
-  // Each FlightData message carries a chunk of the Arrow IPC stream in .dataBody.
-  // Concatenate and decode progressively — but because Arrow's StreamReader needs
-  // the cumulative buffer, we reassemble then decode once completion signal or
-  // a RecordBatch boundary is likely. For the MVP we buffer all messages and
-  // decode the full stream in one shot; incremental decode is a perf follow-up.
+  // Re-frame each FlightData (raw flatbuffer + body) back into Arrow IPC stream
+  // format so apache-arrow's tableFromIPC can decode it. tonic's
+  // FlightDataEncoder strips the stream's continuation/length/padding; we put
+  // it back here on the wire side.
   const chunks: Uint8Array[] = [];
   for await (const msg of stream as AsyncIterable<FlightData>) {
-    if (msg.dataHeader.length) chunks.push(msg.dataHeader);
-    if (msg.dataBody.length)   chunks.push(msg.dataBody);
+    for (const part of reframe(msg)) chunks.push(part);
   }
+  // IPC stream end-of-stream marker: 4-byte continuation + 4-byte zero length.
+  chunks.push(endOfStream());
+
   const full = concat(chunks);
   const table = tableFromIPC(full);
   for (const batch of table.batches) yield batch;
+}
+
+export function reframe(msg: FlightData): Uint8Array[] {
+  const out: Uint8Array[] = [];
+  if (msg.dataHeader.length) {
+    const headerLen = msg.dataHeader.length;
+    const padded = (headerLen + 7) & ~7; // 8-byte align
+    const prefix = new Uint8Array(8);
+    const view = new DataView(prefix.buffer);
+    view.setInt32(0, -1, true);          // continuation: 0xFFFFFFFF
+    view.setInt32(4, padded, true);      // metadata length (includes padding)
+    out.push(prefix);
+    out.push(msg.dataHeader);
+    if (padded > headerLen) out.push(new Uint8Array(padded - headerLen));
+  }
+  if (msg.dataBody.length) out.push(msg.dataBody);
+  return out;
+}
+
+export function endOfStream(): Uint8Array {
+  const buf = new Uint8Array(8);
+  const view = new DataView(buf.buffer);
+  view.setInt32(0, -1, true); // continuation
+  view.setInt32(4, 0, true);  // zero length → EOS
+  return buf;
 }
 
 function concat(xs: Uint8Array[]): Uint8Array {
@@ -1735,7 +1761,7 @@ function concat(xs: Uint8Array[]): Uint8Array {
 }
 ```
 
-Note: Flight's `DoGet` response is a *stream* of `FlightData` — the first message carries the schema (`data_header`), subsequent ones carry `RecordBatch`es. The MVP buffers then decodes; incremental streaming is a Phase-F perf follow-up noted in the spec's Open Questions.
+Note: Flight's `DoGet` response is a *stream* of `FlightData` — each message has a raw flatbuffer `data_header` (no IPC framing) and a `data_body`. `reframe()` reconstructs the Arrow IPC stream framing (continuation marker `0xFFFFFFFF`, 4-byte padded-length, flatbuffer, 8-byte alignment padding, body) that `tableFromIPC` requires. An EOS marker (8 zero bytes) is appended after the loop. The MVP buffers all messages then decodes; incremental streaming is a Phase-F perf follow-up noted in the spec's Open Questions.
 
 - [ ] **Step 5: Verify unit test passes**
 
