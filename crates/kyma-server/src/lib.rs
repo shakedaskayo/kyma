@@ -31,8 +31,8 @@ use axum::{
     Json, Router,
 };
 use bytes::Bytes;
-use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
 use datafusion::execution::memory_pool::GreedyMemoryPool;
+use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
 use datafusion::prelude::{SessionConfig, SessionContext};
 use kyma_core::catalog::Catalog;
 use kyma_core::segment_format::SegmentFormat;
@@ -43,6 +43,13 @@ use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetReques
 use tracing::{debug, error, info};
 
 const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
+
+pub use kyma_connectors::admin::AdminState as ConnectorAdminState;
+
+/// Build the connector admin router (auth-eligible — caller wraps with middleware).
+pub fn connector_admin_router(state: kyma_connectors::admin::AdminState) -> Router {
+    kyma_connectors::admin::router(state)
+}
 
 /// Shared HTTP-handler state for the query surface.
 #[derive(Clone)]
@@ -56,7 +63,10 @@ pub fn router(state: QueryState) -> Router {
     Router::new()
         .route("/v1/query", post(query_handler))
         .with_state(state)
-        .layer(SetRequestIdLayer::new(REQUEST_ID_HEADER.clone(), MakeRequestUuid))
+        .layer(SetRequestIdLayer::new(
+            REQUEST_ID_HEADER.clone(),
+            MakeRequestUuid,
+        ))
         .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER.clone()))
 }
 
@@ -94,12 +104,18 @@ fn error_response(status: StatusCode, code: &str, message: &str, request_id: &st
 
 fn resolve_query_budget(headers: &HeaderMap) -> kyma_core::query_frontend::QueryBudget {
     let mut b = kyma_core::query_frontend::QueryBudget::default();
-    if let Some(v) = headers.get("x-kyma-max-wall-clock-ms").and_then(|v| v.to_str().ok()) {
+    if let Some(v) = headers
+        .get("x-kyma-max-wall-clock-ms")
+        .and_then(|v| v.to_str().ok())
+    {
         if let Ok(ms) = v.parse::<u64>() {
             b.max_wall_clock = std::time::Duration::from_millis(ms.max(10));
         }
     }
-    if let Some(v) = headers.get("x-kyma-max-memory-bytes").and_then(|v| v.to_str().ok()) {
+    if let Some(v) = headers
+        .get("x-kyma-max-memory-bytes")
+        .and_then(|v| v.to_str().ok())
+    {
         if let Ok(n) = v.parse::<u64>() {
             b.max_memory_bytes = n.max(1024 * 1024);
         }
@@ -139,10 +155,7 @@ fn extract_request_id(headers: &HeaderMap) -> String {
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
 }
 
-async fn query_handler(
-    State(state): State<QueryState>,
-    req: Request,
-) -> Response {
+async fn query_handler(State(state): State<QueryState>, req: Request) -> Response {
     let start = std::time::Instant::now();
     let (parts, body) = req.into_parts();
     let headers: &HeaderMap = &parts.headers;
@@ -256,8 +269,11 @@ async fn query_handler(
     let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
     for t in tables {
         let table_name = t.name.clone();
-        let kyma_tbl =
-            Arc::new(KymaTable::new(t, state.catalog.clone(), state.format.clone()));
+        let kyma_tbl = Arc::new(KymaTable::new(
+            t,
+            state.catalog.clone(),
+            state.format.clone(),
+        ));
         if let Err(e) = ctx.register_table(&table_name, kyma_tbl) {
             error!(request_id = %request_id, table = %table_name, error = %e, "failed to register table");
             return error_response(
@@ -325,7 +341,8 @@ async fn query_handler(
     info!(request_id = %request_id, database = %database, rows = total_rows, "query completed");
 
     ::metrics::counter!("kyma_query_requests_total",
-        "database" => database.clone(), "result" => "ok").increment(1);
+        "database" => database.clone(), "result" => "ok")
+    .increment(1);
     ::metrics::histogram!("kyma_query_duration_seconds", "database" => database.clone())
         .record(start.elapsed().as_secs_f64());
     ::metrics::histogram!("kyma_query_rows_returned", "database" => database.clone())
@@ -388,8 +405,8 @@ async fn query_handler(
 /// from the input — each JSON array we emitted becomes one `Value::Array`.
 fn collate_ndjson(concatenated_arrays: &[u8]) -> Result<String, String> {
     let mut out = String::with_capacity(concatenated_arrays.len());
-    let stream = serde_json::Deserializer::from_slice(concatenated_arrays)
-        .into_iter::<serde_json::Value>();
+    let stream =
+        serde_json::Deserializer::from_slice(concatenated_arrays).into_iter::<serde_json::Value>();
     for arr in stream {
         let arr = arr.map_err(|e| format!("json parse: {e}"))?;
         match arr {

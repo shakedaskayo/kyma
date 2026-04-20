@@ -8,6 +8,7 @@ use kyma_connectors::runner::ConnectorRunner;
 use kyma_connectors::scheduler::ConnectorScheduler;
 use kyma_connectors::secrets::EnvSecretStore;
 use kyma_connectors::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
+use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -73,6 +74,16 @@ async fn runner_claims_and_updates_cursor() {
     let sched = ConnectorScheduler::new(catalog.clone());
     sched.tick_once().await.unwrap();
 
+    // Register a node so we have a NodeId to hand to the runner.
+    let lease = catalog
+        .register_node(NodeInfo {
+            role: NodeRole::Ingest,
+            endpoint: "connector-runner:test".into(),
+            capabilities: serde_json::json!({"connector_runner": true}),
+        })
+        .await
+        .unwrap();
+
     // Runner uses a stubbed RowSink — closes over a counter. Avoids
     // depending on a live WritePath here. Real WritePath wiring is
     // covered by the E2E test script.
@@ -83,7 +94,7 @@ async fn runner_claims_and_updates_cursor() {
         Arc::new(reg),
         sink,
         EnvSecretStore,
-        "node-a".into(),
+        lease.node_id,
     );
     runner.claim_and_run_one().await.expect("tick ran");
 
