@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Editor } from "@/features/editor/Editor";
 import { TimeRangePicker } from "@/features/time-range/TimeRangePicker";
+import { ResultsGrid, exportCsv } from "@/features/results-grid/ResultsGrid";
+import { downloadBlob } from "@/lib/download";
 import { useWorkspace } from "@/features/tabs/workspace-store";
 import { useSession } from "@/sdk/session";
 import { fetchSchema } from "@/sdk/catalog";
@@ -55,6 +57,14 @@ function ExplorePage() {
             <Play className="mr-1 h-3.5 w-3.5" /> Run <kbd className="ml-2 text-muted-foreground">⌘↵</kbd>
           </Button>
         )}
+        <Button size="sm" variant="ghost" disabled={!liveResult?.rows.length} onClick={() => {
+          if (!liveResult) return;
+          downloadBlob(exportCsv(liveResult.columns, liveResult.rows), `kyma-${Date.now()}.csv`);
+        }}>Export CSV</Button>
+        <Button size="sm" variant="ghost" disabled={!liveResult?.rows.length} onClick={() => {
+          if (!liveResult) return;
+          downloadBlob(new Blob([JSON.stringify(liveResult.rows, null, 2)], { type: "application/json" }), `kyma-${Date.now()}.json`);
+        }}>Export JSON</Button>
         <span className="ml-auto text-muted-foreground">
           {active?.results.kind === "ok"
             ? `${active.results.rowCount.toLocaleString()} rows · ${active.results.durationMs.toFixed(0)} ms`
@@ -74,31 +84,11 @@ function ExplorePage() {
             />
           )}
         </div>
-        <div className="h-1/2 overflow-auto p-4 text-xs">
-          {!liveResult && <p className="text-muted-foreground">Run a query to see results.</p>}
-          {liveResult && <PreviewTable r={liveResult} />}
+        <div className="h-1/2 overflow-hidden">
+          {!liveResult && <div className="flex h-full items-center justify-center"><p className="text-muted-foreground">Run a query to see results.</p></div>}
+          {liveResult && <ResultsGrid columns={liveResult.columns} rows={liveResult.rows} />}
         </div>
       </div>
     </div>
-  );
-}
-
-function PreviewTable({ r }: { r: TabResult }) {
-  const cols = useMemo(() => r.columns.slice(0, 20), [r.columns]);
-  return (
-    <table className="min-w-full font-mono">
-      <thead>
-        <tr className="border-b">
-          {cols.map((c) => (<th key={c.name} className="px-2 py-1 text-left">{c.name}</th>))}
-        </tr>
-      </thead>
-      <tbody>
-        {r.rows.slice(0, 200).map((row, i) => (
-          <tr key={i} className="border-b">
-            {cols.map((c) => (<td key={c.name} className="px-2 py-1">{String(row[c.name] ?? "")}</td>))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
