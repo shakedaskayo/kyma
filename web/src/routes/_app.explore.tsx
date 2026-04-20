@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Editor } from "@/features/editor/Editor";
 import { TimeRangePicker } from "@/features/time-range/TimeRangePicker";
 import { ResultsGrid, exportCsv } from "@/features/results-grid/ResultsGrid";
+import { ChartPanel } from "@/features/chart/ChartPanel";
 import { downloadBlob } from "@/lib/download";
 import { useWorkspace } from "@/features/tabs/workspace-store";
 import { useSession } from "@/sdk/session";
@@ -19,6 +20,7 @@ function ExplorePage() {
   const workspace = useWorkspace();
   const { run, cancel } = useRunQuery();
   const [liveResult, setLiveResult] = useState<TabResult | null>(null);
+  const [view, setView] = useState<"grid" | "chart">("grid");
 
   const { data: schema } = useQuery({
     queryKey: ["schema", endpoint],
@@ -40,6 +42,9 @@ function ExplorePage() {
     setLiveResult(null);
     await run(active, setLiveResult);
   };
+
+const tabBtn = (on: boolean) =>
+  `rounded-md px-2 py-0.5 transition ${on ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50"}`;
 
   return (
     <div className="flex h-full flex-col">
@@ -84,9 +89,16 @@ function ExplorePage() {
             />
           )}
         </div>
-        <div className="h-1/2 overflow-hidden">
-          {!liveResult && <div className="flex h-full items-center justify-center"><p className="text-muted-foreground">Run a query to see results.</p></div>}
-          {liveResult && <ResultsGrid columns={liveResult.columns} rows={liveResult.rows} />}
+        <div className="h-1/2 flex flex-col">
+          <div className="flex items-center gap-1 border-b px-3 py-1 text-xs">
+            <button className={tabBtn(view === "grid")}  onClick={() => setView("grid")}>Results</button>
+            <button className={tabBtn(view === "chart")} onClick={() => setView("chart")}>Chart</button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            {liveResult && view === "grid"  && <ResultsGrid columns={liveResult.columns} rows={liveResult.rows} />}
+            {liveResult && view === "chart" && <ChartPanel  columns={liveResult.columns} rows={liveResult.rows} />}
+            {!liveResult && <p className="p-6 text-xs text-muted-foreground">Run a query to see results.</p>}
+          </div>
         </div>
       </div>
     </div>
