@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
+import { encodeQueryState, decodeQueryState } from "@/lib/url-state";
 import { useQuery } from "@tanstack/react-query";
 import { Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,10 @@ import { useSession } from "@/sdk/session";
 import { fetchSchema } from "@/sdk/catalog";
 import { useRunQuery, type TabResult } from "@/features/run/useRunQuery";
 
-export const Route = createFileRoute("/_app/explore")({ component: ExplorePage });
+export const Route = createFileRoute("/_app/explore")({
+  validateSearch: (s: Record<string, unknown>) => ({ q: typeof s.q === "string" ? s.q : undefined }),
+  component: ExplorePage,
+});
 
 function ExplorePage() {
   const { endpoint, token, database } = useSession();
@@ -24,6 +28,8 @@ function ExplorePage() {
   const { run, cancel } = useRunQuery();
   const [liveResult, setLiveResult] = useState<TabResult | null>(null);
   const [view, setView] = useState<"grid" | "chart">("grid");
+  const { q } = useSearch({ from: "/_app/explore" });
+  const navigate = useNavigate();
 
   const { data: schema } = useQuery({
     queryKey: ["schema", endpoint],
@@ -32,12 +38,37 @@ function ExplorePage() {
     enabled: Boolean(endpoint && token),
   });
 
-  // Ensure at least one tab exists.
+  // Load from URL on first mount only. Ref guard prevents re-running on re-render.
+  const bootstrapped = useRef(false);
   useEffect(() => {
-    if (workspace.tabs.length === 0) workspace.newTab({ query: "otel_logs | take 50" });
-  }, [workspace]);
+    if (bootstrapped.current) return;
+    bootstrapped.current = true;
+    if (q) {
+      const decoded = decodeQueryState(q);
+      if (decoded) {
+        workspace.newTab({ query: decoded.query, timeRange: { preset: decoded.preset, from: decoded.from, to: decoded.to } });
+      } else if (workspace.tabs.length === 0) {
+        workspace.newTab({ query: "otel_logs | take 50" });
+      }
+    } else if (workspace.tabs.length === 0) {
+      workspace.newTab({ query: "otel_logs | take 50" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const active = workspace.tabs.find((t) => t.id === workspace.activeId) ?? workspace.tabs[0];
+
+  // Sync URL whenever the active tab's query or time range changes.
+  useEffect(() => {
+    if (!active) return;
+    const encoded = encodeQueryState({
+      query: active.query,
+      preset: active.timeRange.preset,
+      from: active.timeRange.from,
+      to: active.timeRange.to,
+    });
+    navigate({ to: "/explore", search: { q: encoded }, replace: true });
+  }, [active?.query, active?.timeRange.preset, active?.timeRange.from, active?.timeRange.to, navigate]);
   const status = active?.results.kind ?? "idle";
 
   const runActive = async () => {

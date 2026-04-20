@@ -13,7 +13,7 @@ export function Shell() {
           <Database className="h-3.5 w-3.5" /> {database || "—"}
         </div>
         <nav className="ml-auto flex items-center gap-1">
-          <Link to="/explore" className={btn(active.startsWith("/explore"))}>
+          <Link to="/explore" search={{ q: undefined }} className={btn(active.startsWith("/explore"))}>
             <Compass className="h-4 w-4" /> Explore
           </Link>
           <Link to="/settings" search={{ next: active }} className={btn(active === "/settings")}>
