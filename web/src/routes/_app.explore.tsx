@@ -137,14 +137,34 @@ const tabBtn = (on: boolean) =>
               <button className={tabBtn(view === "chart")} onClick={() => setView("chart")}>Chart</button>
             </div>
             <div className="flex-1 overflow-hidden">
-              {liveResult && view === "grid"  && <ResultsGrid columns={liveResult.columns} rows={liveResult.rows} />}
-              {liveResult && view === "chart" && <ChartPanel  columns={liveResult.columns} rows={liveResult.rows} />}
-              {!liveResult && <p className="p-6 text-xs text-muted-foreground">Run a query to see results.</p>}
+              {active?.results.kind === "idle"    && <EmptyState text="Run a query to see results." />}
+              {active?.results.kind === "running" && <EmptyState text="Streaming results…" />}
+              {active?.results.kind === "error"   && <ErrorCard msg={active.results.message} rid={active.results.requestId} />}
+              {liveResult && active?.results.kind === "ok" && liveResult.rows.length === 0 &&
+                <EmptyState text={`0 rows in ${active.results.durationMs.toFixed(0)} ms — try widening the time range.`} />}
+              {liveResult && active?.results.kind === "ok" && liveResult.rows.length > 0 && view === "grid" &&
+                <ResultsGrid columns={liveResult.columns} rows={liveResult.rows} />}
+              {liveResult && active?.results.kind === "ok" && liveResult.rows.length > 0 && view === "chart" &&
+                <ChartPanel columns={liveResult.columns} rows={liveResult.rows} />}
             </div>
           </div>
         </div>
       </section>
       <CommandPalette onRun={runActive} />
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return <div className="flex h-full items-center justify-center p-6 text-xs text-muted-foreground">{text}</div>;
+}
+
+function ErrorCard({ msg, rid }: { msg: string; rid?: string }) {
+  return (
+    <div className="mx-auto mt-6 max-w-2xl rounded border border-destructive/40 bg-destructive/5 p-4 text-xs">
+      <div className="font-semibold text-destructive">Query failed</div>
+      <pre className="mt-1 whitespace-pre-wrap font-mono text-destructive/90">{msg}</pre>
+      {rid && <div className="mt-2 text-muted-foreground">request id: <code>{rid}</code></div>}
     </div>
   );
 }
