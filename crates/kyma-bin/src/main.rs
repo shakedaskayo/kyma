@@ -11,11 +11,16 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
-use kyma_core::segment_format::SegmentFormat;
 use kyma_compaction::{
     CompactionScheduler, CompactionWorker, PhysicalDeleteWorker, RetentionSweeper,
 };
+use kyma_connectors::prometheus::PromConnector;
+use kyma_connectors::registry::ConnectorRegistry;
+use kyma_connectors::runner::ConnectorRunner;
+use kyma_connectors::scheduler::ConnectorScheduler;
+use kyma_connectors::secrets::EnvSecretStore;
+use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
+use kyma_core::segment_format::SegmentFormat;
 use kyma_format_tlm::TelemetryFormat;
 use kyma_ingest_core::{
     CommitCoordinator, CoordinatorConfig, StagingBuffer, StagingConfig, WritePath,
@@ -23,22 +28,28 @@ use kyma_ingest_core::{
 use kyma_ingest_filedrop::{FiledropConfig, FiledropWatcher};
 use kyma_ingest_kafka::{KafkaConsumerConfig, KafkaConsumerWorker};
 use kyma_ingest_otlp::OtlpLogsService;
-use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer as OtlpLogsServer;
 use kyma_ingest_rest::IngestState;
 use kyma_server::auth::{require_role_middleware, AuthConfig, Role};
-use kyma_server::QueryState;
+use kyma_server::{ConnectorAdminState, QueryState};
 use kyma_storage::{build_object_store, config_from_env};
+use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer as OtlpLogsServer;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::signal;
 use tracing::{error, info};
 
 #[derive(Debug, Parser)]
-#[command(name = "kyma", about = "kyma engine — unified data platform (pre-alpha)")]
+#[command(
+    name = "kyma",
+    about = "kyma engine — unified data platform (pre-alpha)"
+)]
 struct Cli {
     /// Postgres catalog URL. Falls back to KYMA_CATALOG_URL env var.
-    #[arg(long, env = "KYMA_CATALOG_URL",
-          default_value = "postgres://kyma:kyma_dev@localhost:5433/kyma")]
+    #[arg(
+        long,
+        env = "KYMA_CATALOG_URL",
+        default_value = "postgres://kyma:kyma_dev@localhost:5433/kyma"
+    )]
     catalog_url: String,
 
     /// HTTP listen address.
@@ -81,11 +92,12 @@ async fn main() -> Result<()> {
     info!(catalog_url = %cli.catalog_url, http_addr = %cli.http_addr, "kyma starting");
 
     // 1. Catalog.
-    let catalog: Arc<dyn Catalog> = Arc::new(
+    let pg_catalog = Arc::new(
         PostgresCatalog::connect(&cli.catalog_url)
             .await
             .with_context(|| format!("connecting to catalog at {}", cli.catalog_url))?,
     );
+    let catalog: Arc<dyn Catalog> = pg_catalog.clone();
     info!("catalog connected; migrations applied");
 
     // 2. Object store + format.
@@ -131,16 +143,10 @@ async fn main() -> Result<()> {
         .unwrap_or(true);
     let write_path: WritePath = if use_staging {
         // Start the commit coordinator so flushes get group-commit squared.
-        let coordinator = CommitCoordinator::spawn(
-            catalog.clone(),
-            CoordinatorConfig::from_env(),
-        );
-        let staging = StagingBuffer::new(
-            catalog.clone(),
-            format.clone(),
-            StagingConfig::from_env(),
-        )
-        .with_coordinator(coordinator);
+        let coordinator = CommitCoordinator::spawn(catalog.clone(), CoordinatorConfig::from_env());
+        let staging =
+            StagingBuffer::new(catalog.clone(), format.clone(), StagingConfig::from_env())
+                .with_coordinator(coordinator);
         // Background timer flushes age-expired buffers.
         let staging_rx = shutdown_tx.subscribe();
         let staging_for_timer = staging.clone();
@@ -170,25 +176,71 @@ async fn main() -> Result<()> {
         (auth.clone(), Role::Read),
         require_role_middleware,
     ));
+    // Connector registry + row-sink.
+    let mut conn_reg = ConnectorRegistry::new();
+    conn_reg.register(Arc::new(PromConnector));
+    let conn_registry = Arc::new(conn_reg);
+
+    // RowSink: bridges connector JSON rows → arrow coercion → WritePath.
+    let conn_sink: kyma_connectors::runner::RowSink = {
+        let catalog_for_sink = catalog.clone();
+        let write_path_for_sink = write_path.clone();
+        Arc::new(
+            move |db: String, tbl: String, rows: Vec<serde_json::Value>, idem: Option<String>| {
+                let catalog = catalog_for_sink.clone();
+                let write_path = write_path_for_sink.clone();
+                Box::pin(async move {
+                    let table = catalog
+                        .lookup_table(&db, &tbl)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("lookup_table: {e}"))?;
+                    let batches =
+                        kyma_connectors::arrow_coerce::rows_to_batches(&table.schema, rows)
+                            .map_err(|e| anyhow::anyhow!("arrow coerce: {e}"))?;
+                    write_path
+                        .ingest_with_idempotency(&table, batches, idem.as_deref())
+                        .await
+                        .map_err(|e| anyhow::anyhow!("ingest: {e}"))?;
+                    Ok(())
+                })
+            },
+        )
+    };
+
     let health_router = kyma_server::health_router();
     let metrics_router = kyma_server::metrics::router();
+    let connector_admin_router = kyma_server::connector_admin_router(ConnectorAdminState {
+        catalog: pg_catalog.clone(),
+        registry: conn_registry.clone(),
+    })
+    .layer(axum::middleware::from_fn_with_state(
+        (auth.clone(), Role::Write),
+        require_role_middleware,
+    ));
     let app = ingest_router
         .merge(query_router)
         .merge(health_router)
-        .merge(metrics_router);
+        .merge(metrics_router)
+        .merge(connector_admin_router);
 
     // 5. Spawn background workers. Each has an independent shutdown watch so
     //    a panic in one worker doesn't starve the others or the HTTP server.
     let mut worker = CompactionWorker::new(catalog.clone(), format.clone(), lease.node_id);
     let mut scheduler = CompactionScheduler::new(catalog.clone());
     // Allow env overrides for aggressive testing.
-    if let Ok(ms) = std::env::var("KYMA_COMPACTION_IDLE_SLEEP_MS").and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent)) {
+    if let Ok(ms) = std::env::var("KYMA_COMPACTION_IDLE_SLEEP_MS")
+        .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+    {
         worker.idle_sleep = std::time::Duration::from_millis(ms);
     }
-    if let Ok(s) = std::env::var("KYMA_COMPACTION_POLL_SECS").and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent)) {
+    if let Ok(s) = std::env::var("KYMA_COMPACTION_POLL_SECS")
+        .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+    {
         scheduler.poll_interval = std::time::Duration::from_secs(s);
     }
-    if let Ok(n) = std::env::var("KYMA_COMPACTION_MIN_EXTENTS").and_then(|v| v.parse::<i64>().map_err(|_| std::env::VarError::NotPresent)) {
+    if let Ok(n) = std::env::var("KYMA_COMPACTION_MIN_EXTENTS")
+        .and_then(|v| v.parse::<i64>().map_err(|_| std::env::VarError::NotPresent))
+    {
         scheduler.min_extents_to_compact = n;
     }
     let worker_rx = shutdown_tx.subscribe();
@@ -258,11 +310,7 @@ async fn main() -> Result<()> {
     // Kafka consumer — on when KYMA_KAFKA_ENABLED=1 and KYMA_KAFKA_TOPICS is non-empty.
     let kafka_handle = match KafkaConsumerConfig::from_env() {
         Some(config) => {
-            let worker = KafkaConsumerWorker::new(
-                catalog.clone(),
-                write_path.clone(),
-                config,
-            );
+            let worker = KafkaConsumerWorker::new(catalog.clone(), write_path.clone(), config);
             let kafka_rx = shutdown_tx.subscribe();
             info!("kafka consumer enabled");
             Some(tokio::spawn(worker.run(async move {
@@ -272,6 +320,38 @@ async fn main() -> Result<()> {
         }
         None => None,
     };
+
+    // Connector scheduler.
+    let conn_sched = ConnectorScheduler::new(pg_catalog.clone());
+    let conn_sched_rx = shutdown_tx.subscribe();
+    tokio::spawn(conn_sched.run(async move {
+        let mut rx = conn_sched_rx;
+        let _ = rx.recv().await;
+    }));
+
+    // Connector runners (N workers, default 4).
+    let n_conn_workers = std::env::var("KYMA_CONNECTOR_WORKERS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(4);
+    for _ in 0..n_conn_workers {
+        let runner = ConnectorRunner::new(
+            pg_catalog.clone(),
+            conn_registry.clone(),
+            conn_sink.clone(),
+            EnvSecretStore,
+            lease.node_id,
+        );
+        let runner_rx = shutdown_tx.subscribe();
+        tokio::spawn(runner.run(async move {
+            let mut rx = runner_rx;
+            let _ = rx.recv().await;
+        }));
+    }
+    info!(
+        workers = n_conn_workers,
+        "connector scheduler + runners started"
+    );
 
     info!("background workers started (compaction, retention, physical-gc)");
 

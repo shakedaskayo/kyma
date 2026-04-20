@@ -8,12 +8,11 @@ use crate::types::{ConnectorCtx, ConnectorError, ConnectorRun};
 use chrono::Utc;
 use futures::future::BoxFuture;
 use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
+use kyma_core::catalog::Catalog;
 use kyma_core::types::NodeId;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::OnceCell;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -37,9 +36,8 @@ pub struct ConnectorRunner {
     registry: Arc<ConnectorRegistry>,
     sink: RowSink,
     secrets: Arc<dyn SecretStore>,
-    node_id: String,
-    /// Resolved NodeId after the first registration; lazily initialised.
-    registered_node: Arc<OnceCell<NodeId>>,
+    /// NodeId of the already-registered node (supplied by the caller).
+    node_id: NodeId,
     pub idle_sleep: Duration,
     pub claim_lease: chrono::Duration,
 }
@@ -50,7 +48,7 @@ impl ConnectorRunner {
         registry: Arc<ConnectorRegistry>,
         sink: RowSink,
         secrets: S,
-        node_id: String,
+        node_id: NodeId,
     ) -> Self {
         Self {
             catalog,
@@ -58,33 +56,13 @@ impl ConnectorRunner {
             sink,
             secrets: Arc::new(secrets),
             node_id,
-            registered_node: Arc::new(OnceCell::new()),
             idle_sleep: Duration::from_millis(200),
             claim_lease: chrono::Duration::seconds(60),
         }
     }
 
-    /// Ensure this runner has a row in `nodes` and return its `NodeId`.
-    /// Registers once; subsequent calls return the cached value cheaply.
-    async fn node_id(&self) -> Result<NodeId, anyhow::Error> {
-        self.registered_node
-            .get_or_try_init(|| async {
-                let lease = self
-                    .catalog
-                    .register_node(NodeInfo {
-                        role: NodeRole::Ingest,
-                        endpoint: format!("connector-runner:{}", self.node_id),
-                        capabilities: serde_json::json!({"connector_runner": true}),
-                    })
-                    .await?;
-                Ok::<NodeId, anyhow::Error>(lease.node_id)
-            })
-            .await
-            .copied()
-    }
-
     pub async fn claim_and_run_one(&self) -> Result<bool, anyhow::Error> {
-        let node_id = self.node_id().await?;
+        let node_id = self.node_id;
 
         let Some(task) = self
             .catalog

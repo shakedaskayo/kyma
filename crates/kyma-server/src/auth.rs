@@ -90,7 +90,9 @@ impl AuthConfig {
                 continue;
             };
             let tok = tok.trim();
-            let Some(role) = Role::parse(role) else { continue };
+            let Some(role) = Role::parse(role) else {
+                continue;
+            };
             if !tok.is_empty() {
                 tokens.insert(tok.to_owned(), role);
             }
