@@ -249,6 +249,66 @@ pub fn flight_server(
     FlightServiceServer::new(FlightQueryService::new(state))
 }
 
+/// Build an axum-compatible service that serves the Flight gRPC-web API.
+///
+/// Wraps `FlightQueryService` with `tonic_web::GrpcWebLayer` so browsers can
+/// issue gRPC-web requests over HTTP/1.1.  Auth enforcement is the caller's
+/// responsibility — typically by wrapping the returned service (or the enclosing
+/// axum `Router`) with `axum::middleware::from_fn_with_state`.
+///
+/// The body type is adapted from tonic's `BoxBody` to `axum::body::Body`
+/// so the service is compatible with `axum::Router::nest_service`.
+#[cfg(feature = "web-ui")]
+pub fn flight_grpc_web_service(
+    state: FlightState,
+) -> FlightGrpcWebService {
+    use tower::ServiceBuilder;
+    let svc = FlightServiceServer::new(FlightQueryService::new(state));
+    let inner = ServiceBuilder::new()
+        .layer(tonic_web::GrpcWebLayer::new())
+        .service(svc);
+    FlightGrpcWebService { inner }
+}
+
+/// Type-erased axum-compatible service wrapping the Flight gRPC-web stack.
+#[cfg(feature = "web-ui")]
+#[derive(Clone)]
+pub struct FlightGrpcWebService {
+    inner: tonic_web::GrpcWebService<FlightServiceServer<FlightQueryService>>,
+}
+
+#[cfg(feature = "web-ui")]
+impl tower::Service<axum::http::Request<axum::body::Body>> for FlightGrpcWebService {
+    type Response = axum::http::Response<axum::body::Body>;
+    type Error = std::convert::Infallible;
+    type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+        tower::Service::poll_ready(&mut self.inner, cx).map_err(|e| match e {})
+    }
+
+    fn call(&mut self, req: axum::http::Request<axum::body::Body>) -> Self::Future {
+        use http_body_util::BodyExt as _;
+        // Convert axum body → tonic BoxBody.
+        let (parts, body) = req.into_parts();
+        let tonic_body: tonic::body::BoxBody =
+            body.map_err(|e| tonic::Status::internal(e.to_string()))
+                .boxed_unsync();
+        let tonic_req = axum::http::Request::from_parts(parts, tonic_body);
+
+        let fut = tower::Service::call(&mut self.inner, tonic_req);
+        Box::pin(async move {
+            // GrpcWebService<FlightServiceServer<_>> has Error = Infallible.
+            #[allow(clippy::expect_used)]
+            let resp = fut.await.expect("infallible");
+            // Convert tonic BoxBody response → axum body response.
+            let (parts, body) = resp.into_parts();
+            let axum_body = axum::body::Body::new(body.map_err(axum::Error::new));
+            Ok(axum::http::Response::from_parts(parts, axum_body))
+        })
+    }
+}
+
 // --- workaround: fully-qualify the associated types so the trait's
 // default associated-type bounds compile without pulling in extras ---
 #[allow(dead_code)]

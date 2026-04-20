@@ -25,6 +25,20 @@ pub mod metrics;
 #[cfg(feature = "web-ui")]
 pub mod web_ui;
 
+/// Build an axum `Router` that serves Arrow Flight over gRPC-web at `/flight/*`.
+///
+/// The router is **not** auth-wrapped — the caller must add auth middleware,
+/// typically via `.layer(axum::middleware::from_fn_with_state(...))`.
+#[cfg(feature = "web-ui")]
+pub fn flight_web_router(state: QueryState) -> Router {
+    use flight::{FlightState, flight_grpc_web_service};
+    let flight_state = FlightState {
+        catalog: state.catalog.clone(),
+        format: state.format.clone(),
+    };
+    Router::new().nest_service("/flight", flight_grpc_web_service(flight_state))
+}
+
 #[cfg(feature = "test-support")]
 pub mod test_support;
 
