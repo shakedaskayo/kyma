@@ -757,28 +757,75 @@ impl Catalog for PostgresCatalog {
         }))
     }
 
-    // --- schema-listing stubs (real impls land in Task 4.2) ---
+    // --- schema-listing ---
 
     async fn list_databases(&self) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
-        tracing::warn!("PostgresCatalog::list_databases called on stub impl (Task 4.2 not yet landed)");
-        Ok(vec![])
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM databases ORDER BY name ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(rows.into_iter().map(|r| r.0).collect())
     }
 
     async fn list_tables(
         &self,
-        _database: &str,
+        database: &str,
     ) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
-        tracing::warn!("PostgresCatalog::list_tables called on stub impl (Task 4.2 not yet landed)");
-        Ok(vec![])
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT t.name FROM tables t
+             JOIN databases d ON d.id = t.database_id
+             WHERE d.name = $1
+             ORDER BY t.name ASC",
+        )
+        .bind(database)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(rows.into_iter().map(|r| r.0).collect())
     }
 
     async fn get_table_columns(
         &self,
-        _database: &str,
-        _table: &str,
+        database: &str,
+        table: &str,
     ) -> std::result::Result<Vec<ColumnInfo>, kyma_core::errors::CatalogError> {
-        tracing::warn!("PostgresCatalog::get_table_columns called on stub impl (Task 4.2 not yet landed)");
-        Ok(vec![])
+        let row: (serde_json::Value,) = sqlx::query_as(
+            "SELECT ss.arrow_schema
+             FROM tables t
+             JOIN databases d ON d.id = t.database_id
+             JOIN schema_snapshots ss ON ss.id = t.schema_snapshot_id
+             WHERE d.name = $1 AND t.name = $2",
+        )
+        .bind(database)
+        .bind(table)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        let schema_json = row.0;
+        let fields = schema_json
+            .get("fields")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| CatalogError::Sql("malformed arrow_schema: missing fields array".into()))?;
+
+        let mut columns = Vec::with_capacity(fields.len());
+        for f in fields {
+            let name = f
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| CatalogError::Sql("field missing name".into()))?
+                .to_owned();
+            let col_type = f
+                .get("type")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| CatalogError::Sql("field missing type".into()))?
+                .to_owned();
+            let nullable = f.get("nullable").and_then(|v| v.as_bool()).unwrap_or(true);
+            columns.push(ColumnInfo { name, r#type: col_type, nullable });
+        }
+        Ok(columns)
     }
 }
 
