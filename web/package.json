@@ -13,6 +13,9 @@
     "generate": "buf generate"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "1.10.0",
+    "@connectrpc/connect": "1.7.0",
+    "@connectrpc/connect-web": "1.7.0",
     "@radix-ui/react-slot": "^1.2.4",
     "@tanstack/react-query": "^5.99.2",
     "@tanstack/react-router": "^1.168.23",
@@ -25,6 +28,9 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@bufbuild/buf": "1.40.1",
+    "@bufbuild/protoc-gen-es": "1.10.0",
+    "@connectrpc/protoc-gen-connect-es": "1.7.0",
     "@tanstack/react-query-devtools": "^5.99.2",
     "@tanstack/router-devtools": "^1.166.13",
     "@tanstack/router-plugin": "^1.167.22",
