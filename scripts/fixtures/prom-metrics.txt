@@ -1,0 +1,15 @@
+# HELP http_requests_total Total HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{method="GET",status="200"} 42
+http_requests_total{method="GET",status="500"} 3
+http_requests_total{method="POST",status="200"} 7
+# HELP queue_depth Current queue depth.
+# TYPE queue_depth gauge
+queue_depth 17
+# HELP test_latency_seconds Handler latency histogram.
+# TYPE test_latency_seconds histogram
+test_latency_seconds_bucket{le="0.1"} 10
+test_latency_seconds_bucket{le="0.5"} 20
+test_latency_seconds_bucket{le="+Inf"} 25
+test_latency_seconds_sum 3.14
+test_latency_seconds_count 25
