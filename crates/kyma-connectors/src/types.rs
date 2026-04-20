@@ -17,6 +17,7 @@ pub enum DriveModel {
 }
 
 /// Produced by a single `run_once` invocation.
+#[derive(Debug)]
 pub struct ConnectorRun {
     /// JSON rows — run through JSON→Arrow coercion before ingest.
     pub rows: Vec<serde_json::Value>,
