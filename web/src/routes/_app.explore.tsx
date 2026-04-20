@@ -10,6 +10,7 @@ import { ResultsGrid, exportCsv } from "@/features/results-grid/ResultsGrid";
 import { ChartPanel } from "@/features/chart/ChartPanel";
 import { SchemaBrowser } from "@/features/schema-browser/SchemaBrowser";
 import { TabBar } from "@/features/tabs/TabBar";
+import { CommandPalette } from "@/features/palette/CommandPalette";
 import { downloadBlob } from "@/lib/download";
 import { useWorkspace } from "@/features/tabs/workspace-store";
 import { useWorkspaceShortcuts } from "@/lib/shortcuts";
@@ -143,6 +144,7 @@ const tabBtn = (on: boolean) =>
           </div>
         </div>
       </section>
+      <CommandPalette onRun={runActive} />
     </div>
   );
 }
