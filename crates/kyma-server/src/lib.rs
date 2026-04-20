@@ -17,12 +17,16 @@
 #![forbid(unsafe_code)]
 
 pub mod auth;
+pub mod catalog_handler;
 pub mod flight;
 mod health;
 pub mod metrics;
 
 #[cfg(feature = "web-ui")]
 pub mod web_ui;
+
+#[cfg(feature = "test-support")]
+pub mod test_support;
 
 use arrow::json::ArrayWriter;
 use axum::{
@@ -52,12 +56,17 @@ const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 pub struct QueryState {
     pub catalog: Arc<dyn Catalog>,
     pub format: Arc<dyn SegmentFormat>,
+    pub schema_cache: Arc<catalog_handler::SchemaCache>,
 }
 
 /// Build the query router (auth-eligible — caller wraps with middleware).
 pub fn router(state: QueryState) -> Router {
     Router::new()
         .route("/v1/query", post(query_handler))
+        .route(
+            "/v1/catalog/schema",
+            get(catalog_handler::schema_handler),
+        )
         .with_state(state)
         .layer(SetRequestIdLayer::new(REQUEST_ID_HEADER.clone(), MakeRequestUuid))
         .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER.clone()))
