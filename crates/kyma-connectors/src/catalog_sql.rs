@@ -18,6 +18,11 @@ pub struct ConnectorRow {
     pub schedule_ms: i64,
     pub drive_model: String,
     pub enabled: bool,
+    pub last_run_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_success_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_error: Option<String>,
+    pub last_rows_ingested: Option<i64>,
+    pub disabled_reason: Option<String>,
 }
 
 /// Create a connector row (used from admin API + test setup).
@@ -55,7 +60,9 @@ pub async fn create_connector_direct(
 pub async fn list_due_periodic(pool: &PgPool) -> Result<Vec<ConnectorRow>, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT id, name, type, target_database, target_table, config_jsonb,
-                schedule_ms, drive_model, enabled, last_run_at
+                schedule_ms, drive_model, enabled,
+                last_run_at, last_success_at, last_error,
+                last_rows_ingested, disabled_reason
          FROM connectors
          WHERE enabled = TRUE AND drive_model = 'periodic'
            AND (last_run_at IS NULL
@@ -76,6 +83,11 @@ pub async fn list_due_periodic(pool: &PgPool) -> Result<Vec<ConnectorRow>, sqlx:
                 schedule_ms: r.try_get("schedule_ms")?,
                 drive_model: r.try_get("drive_model")?,
                 enabled: r.try_get("enabled")?,
+                last_run_at: r.try_get("last_run_at")?,
+                last_success_at: r.try_get("last_success_at")?,
+                last_error: r.try_get("last_error")?,
+                last_rows_ingested: r.try_get("last_rows_ingested")?,
+                disabled_reason: r.try_get("disabled_reason")?,
             })
         })
         .collect()
@@ -84,7 +96,9 @@ pub async fn list_due_periodic(pool: &PgPool) -> Result<Vec<ConnectorRow>, sqlx:
 pub async fn load_connector(pool: &PgPool, id: Uuid) -> Result<Option<ConnectorRow>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT id, name, type, target_database, target_table, config_jsonb,
-                schedule_ms, drive_model, enabled
+                schedule_ms, drive_model, enabled,
+                last_run_at, last_success_at, last_error,
+                last_rows_ingested, disabled_reason
          FROM connectors WHERE id = $1",
     )
     .bind(id)
@@ -103,6 +117,11 @@ pub async fn load_connector(pool: &PgPool, id: Uuid) -> Result<Option<ConnectorR
         schedule_ms: r.try_get("schedule_ms")?,
         drive_model: r.try_get("drive_model")?,
         enabled: r.try_get("enabled")?,
+        last_run_at: r.try_get("last_run_at")?,
+        last_success_at: r.try_get("last_success_at")?,
+        last_error: r.try_get("last_error")?,
+        last_rows_ingested: r.try_get("last_rows_ingested")?,
+        disabled_reason: r.try_get("disabled_reason")?,
     }))
 }
 

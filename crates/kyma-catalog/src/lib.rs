@@ -75,12 +75,11 @@ impl Catalog for PostgresCatalog {
     }
 
     async fn create_database(&self, name: &str) -> Result<DatabaseId> {
-        let row: (Uuid,) =
-            sqlx::query_as("INSERT INTO databases (name) VALUES ($1) RETURNING id")
-                .bind(name)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        let row: (Uuid,) = sqlx::query_as("INSERT INTO databases (name) VALUES ($1) RETURNING id")
+            .bind(name)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
         Ok(DatabaseId::from_uuid(row.0))
     }
 
@@ -92,8 +91,8 @@ impl Catalog for PostgresCatalog {
         config: TableConfig,
     ) -> Result<TableId> {
         let schema_json = schema_to_json(&schema)?;
-        let config_json = serde_json::to_value(&config)
-            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        let config_json =
+            serde_json::to_value(&config).map_err(|e| CatalogError::Sql(e.to_string()))?;
 
         let mut tx = self
             .pool
@@ -287,10 +286,9 @@ impl Catalog for PostgresCatalog {
                 .iter()
                 .any(|f| f.get("name").and_then(|n| n.as_str()) == Some(column_name))
             {
-                return Err(CatalogError::Sql(format!(
-                    "column {column_name} already exists"
-                ))
-                .into());
+                return Err(
+                    CatalogError::Sql(format!("column {column_name} already exists")).into(),
+                );
             }
         }
 
@@ -302,9 +300,7 @@ impl Catalog for PostgresCatalog {
                 "nullable": true,
             }));
         } else {
-            return Err(
-                CatalogError::Sql("existing schema has no `fields` array".into()).into()
-            );
+            return Err(CatalogError::Sql("existing schema has no `fields` array".into()).into());
         }
 
         // Insert the new schema_snapshot.
@@ -342,16 +338,15 @@ impl Catalog for PostgresCatalog {
     }
 
     async fn begin_snapshot(&self, table_id: TableId) -> Result<Box<dyn SnapshotTxn>> {
-        let row = sqlx::query(
-            "SELECT current_snapshot_id, schema_snapshot_id FROM tables WHERE id = $1",
-        )
-        .bind(table_id.as_uuid())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(sql_err)?
-        .ok_or_else(|| {
-            CatalogError::Sql(format!("table {table_id} not found for begin_snapshot"))
-        })?;
+        let row =
+            sqlx::query("SELECT current_snapshot_id, schema_snapshot_id FROM tables WHERE id = $1")
+                .bind(table_id.as_uuid())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(sql_err)?
+                .ok_or_else(|| {
+                    CatalogError::Sql(format!("table {table_id} not found for begin_snapshot"))
+                })?;
 
         let parent: Uuid = row
             .try_get::<Option<Uuid>, _>("current_snapshot_id")
@@ -523,7 +518,10 @@ impl Catalog for PostgresCatalog {
         .fetch_all(&self.pool)
         .await
         .map_err(sql_err)?;
-        Ok(rows.into_iter().map(|(u,)| ExtentId::from_uuid(u)).collect())
+        Ok(rows
+            .into_iter()
+            .map(|(u,)| ExtentId::from_uuid(u))
+            .collect())
     }
 
     async fn delete_extent_rows(&self, extents: &[ExtentId]) -> Result<()> {
@@ -630,7 +628,9 @@ impl Catalog for PostgresCatalog {
             "WITH next AS (
                 SELECT id
                 FROM background_tasks
-                WHERE kind = $1 AND status = 'pending'
+                WHERE kind = $1
+                  AND (status = 'pending'
+                       OR (status = 'claimed' AND claim_expires_at < now()))
                 ORDER BY priority DESC, created_at
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
@@ -853,4 +853,3 @@ fn string_to_arrow_type(s: &str) -> Result<arrow_schema::DataType> {
         }
     })
 }
-

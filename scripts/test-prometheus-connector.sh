@@ -190,7 +190,7 @@ section "Trigger: immediate tick"
 # ---------------------------------------------------------------------------
 TRIG_STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
     -X POST "$HTTP/v1/connectors/$CONN_ID/trigger")
-if [[ "$TRIG_STATUS" == "200" || "$TRIG_STATUS" == "204" ]]; then
+if [[ "$TRIG_STATUS" == "202" || "$TRIG_STATUS" == "200" || "$TRIG_STATUS" == "204" ]]; then
     ok "trigger accepted (HTTP $TRIG_STATUS)"
 else
     nope "trigger" "HTTP $TRIG_STATUS"
