@@ -30,7 +30,7 @@ function Settings() {
     }
     session.set({ endpoint: endpoint.replace(/\/$/, ""), token, database });
     toast.success("Saved. Connected to kyma.");
-    navigate({ to: next as any });
+    navigate({ to: next as string });
   };
 
   return (
