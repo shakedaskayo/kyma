@@ -1,0 +1,95 @@
+name: kyma-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kyma-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kyma
+      POSTGRES_PASSWORD: kyma_dev
+      POSTGRES_DB: kyma
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    ports:
+      - "5433:5432"
+    volumes:
+      - kyma_pg_data:/var/lib/postgresql/data
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "log_statement=none"
+      - "-c"
+      - "log_min_duration_statement=500"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kyma -d kyma"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: kyma-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: kyma_admin
+      MINIO_ROOT_PASSWORD: kyma_admin_dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - kyma_minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redpanda:
+    # Kafka-compatible broker in a single binary — no Zookeeper needed.
+    image: redpandadata/redpanda:latest
+    container_name: kyma-redpanda
+    restart: unless-stopped
+    ports:
+      - "9092:9092"     # Kafka wire protocol
+      - "9644:9644"     # Admin API
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://localhost:9092
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --schema-registry-addr=0.0.0.0:8081
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster info --brokers=localhost:9092 >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: kyma-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 kyma_admin kyma_admin_dev &&
+      mc mb --ignore-existing local/kyma &&
+      mc mb --ignore-existing local/kyma-ingest &&
+      mc mb --ignore-existing local/kyma-archive &&
+      echo 'kyma buckets ready' &&
+      exit 0
+      "
+
+volumes:
+  kyma_pg_data:
+  kyma_minio_data:

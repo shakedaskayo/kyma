@@ -1,0 +1,15 @@
+target/
+**/target/
+Cargo.lock.backup
+*.rs.bk
+*.swp
+*.swo
+.DS_Store
+.idea/
+.vscode/settings.json
+.env
+.env.local
+tmp/
+dist/
+coverage/
+*.profraw

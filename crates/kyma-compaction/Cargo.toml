@@ -1,0 +1,30 @@
+[package]
+name = "kyma-compaction"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Background compaction worker + scheduler. Merges small extents into larger ones via the catalog work-queue."
+
+[lints]
+workspace = true
+
+[dependencies]
+kyma-core.workspace = true
+kyma-catalog.workspace = true
+kyma-ingest-core.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+arrow.workspace = true
+arrow-array.workspace = true
+arrow-schema.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+futures.workspace = true
+metrics.workspace = true
+sqlx.workspace = true
+object_store.workspace = true

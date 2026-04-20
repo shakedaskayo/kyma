@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" role="img" aria-label="kyma internal architecture: ingest lane, shared storage, query lane">
+  <defs>
+    <marker id="aIn"   viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0891b2"/>
+    </marker>
+    <marker id="aOut"  viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/>
+    </marker>
+    <marker id="aRead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+  <style>
+    .title   { font: 700 15px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #0f172a; }
+    .subtitle{ font: 400 12px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #475569; }
+    .lane    { font: 700 11px ui-monospace, SFMono-Regular, monospace; fill: #64748b; letter-spacing: 1.5px; }
+    .boxTitle{ font: 600 12.5px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #0f172a; }
+    .boxSub  { font: 400 10.5px ui-monospace, SFMono-Regular, monospace; fill: #64748b; }
+    .storeTitle { font: 700 13px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #0f172a; }
+    .storeSub   { font: 400 10.5px ui-monospace, SFMono-Regular, monospace; fill: #475569; }
+    .edgeLbl { font: 600 10px ui-monospace, SFMono-Regular, monospace; fill: #64748b; letter-spacing: 0.5px; }
+    .flowIn  { stroke: #0891b2; stroke-width: 1.6; fill: none; }
+    .flowOut { stroke: #2563eb; stroke-width: 1.6; fill: none; }
+    .flowRW  { stroke: #64748b; stroke-width: 1.3; fill: none; stroke-dasharray: 4 3; }
+    .resultFlow { stroke: #2563eb; stroke-width: 1.4; fill: none; stroke-dasharray: 6 3; }
+    .box     { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.5; }
+    .boxIn   { fill: #ffffff; stroke: #0891b2; stroke-width: 1.6; }
+    .boxOut  { fill: #ffffff; stroke: #2563eb; stroke-width: 1.6; }
+    .store   { fill: #ffffff; stroke: #1e293b; stroke-width: 2; }
+    .laneBand{ fill: #f8fafc; stroke: none; }
+    @media (prefers-color-scheme: dark) {
+      .title     { fill: #f1f5f9; }
+      .subtitle  { fill: #94a3b8; }
+      .lane      { fill: #94a3b8; }
+      .boxTitle  { fill: #f1f5f9; }
+      .boxSub    { fill: #94a3b8; }
+      .storeTitle{ fill: #f1f5f9; }
+      .storeSub  { fill: #cbd5e1; }
+      .edgeLbl   { fill: #94a3b8; }
+      .box       { fill: #0b1220; stroke: #64748b; }
+      .boxIn     { fill: #0b1220; stroke: #22d3ee; }
+      .boxOut    { fill: #0b1220; stroke: #60a5fa; }
+      .store     { fill: #0b1220; stroke: #cbd5e1; }
+      .laneBand  { fill: #0f172a; }
+    }
+  </style>
+
+  <text x="480" y="26" class="title"    text-anchor="middle">kyma · internal architecture</text>
+  <text x="480" y="46" class="subtitle" text-anchor="middle">distributed-ready from byte one: stateless compute, object-store of record, externalized catalog</text>
+
+  <!-- Ingest lane background -->
+  <rect x="10" y="72" width="940" height="128" rx="8" class="laneBand"/>
+  <text x="26" y="92" class="lane">INGEST PATH</text>
+
+  <!-- Ingest boxes -->
+  <g>
+    <rect x="20"  y="108" width="160" height="78" rx="6" class="boxIn"/>
+    <text x="100" y="134" class="boxTitle" text-anchor="middle">Emitters</text>
+    <text x="100" y="154" class="boxSub"   text-anchor="middle">services · infra</text>
+    <text x="100" y="170" class="boxSub"   text-anchor="middle">CI · agents · RUM</text>
+
+    <rect x="210" y="108" width="180" height="78" rx="6" class="boxIn"/>
+    <text x="300" y="134" class="boxTitle" text-anchor="middle">Ingest frontends</text>
+    <text x="300" y="154" class="boxSub"   text-anchor="middle">OTLP · REST · Kafka</text>
+    <text x="300" y="170" class="boxSub"   text-anchor="middle">file-drop</text>
+
+    <rect x="420" y="108" width="180" height="78" rx="6" class="boxIn"/>
+    <text x="510" y="134" class="boxTitle" text-anchor="middle">Staging buffer</text>
+    <text x="510" y="154" class="boxSub"   text-anchor="middle">per-table, group-commit</text>
+    <text x="510" y="170" class="boxSub"   text-anchor="middle">rows · bytes · age flush</text>
+
+    <rect x="630" y="108" width="180" height="78" rx="6" class="boxIn"/>
+    <text x="720" y="134" class="boxTitle" text-anchor="middle">Commit coordinator</text>
+    <text x="720" y="154" class="boxSub"   text-anchor="middle">N extents / snapshot</text>
+    <text x="720" y="170" class="boxSub"   text-anchor="middle">catalog CAS + retry</text>
+  </g>
+
+  <!-- Ingest arrows -->
+  <path d="M180,147 L 210,147" class="flowIn" marker-end="url(#aIn)"/>
+  <path d="M390,147 L 420,147" class="flowIn" marker-end="url(#aIn)"/>
+  <path d="M600,147 L 630,147" class="flowIn" marker-end="url(#aIn)"/>
+
+  <!-- Column writer + format (sits between ingest and storage) -->
+  <rect x="830" y="108" width="120" height="78" rx="6" class="boxIn"/>
+  <text x="890" y="134" class="boxTitle" text-anchor="middle">Column writer</text>
+  <text x="890" y="154" class="boxSub"   text-anchor="middle">Arrow IPC</text>
+  <text x="890" y="170" class="boxSub"   text-anchor="middle">stats · tokens</text>
+  <path d="M810,147 L 830,147" class="flowIn" marker-end="url(#aIn)"/>
+
+  <!-- Shared storage band -->
+  <text x="480" y="230" class="lane" text-anchor="middle">SHARED, STATELESS STATE</text>
+
+  <rect x="170" y="246" width="260" height="90" rx="8" class="store"/>
+  <text x="300" y="272" class="storeTitle" text-anchor="middle">Object Storage</text>
+  <text x="300" y="294" class="storeSub"   text-anchor="middle">S3 · MinIO · any object_store</text>
+  <text x="300" y="313" class="storeSub"   text-anchor="middle">extents · footers · posting lists</text>
+  <text x="300" y="328" class="storeSub"   text-anchor="middle">source of truth</text>
+
+  <rect x="540" y="246" width="260" height="90" rx="8" class="store"/>
+  <text x="670" y="272" class="storeTitle" text-anchor="middle">Catalog (Postgres)</text>
+  <text x="670" y="294" class="storeSub"   text-anchor="middle">Iceberg-style manifests</text>
+  <text x="670" y="313" class="storeSub"   text-anchor="middle">tables · snapshots · CAS</text>
+  <text x="670" y="328" class="storeSub"   text-anchor="middle">column stats · token sets</text>
+
+  <!-- Writes: column writer → object storage; commit coord → catalog -->
+  <path d="M890,186 L 890,200 L 360,200 L 360,246" class="flowRW" marker-end="url(#aRead)"/>
+  <text x="830" y="215" class="edgeLbl" text-anchor="end">put extent</text>
+
+  <path d="M720,186 L 720,215 L 660,215 L 660,246" class="flowRW" marker-end="url(#aRead)"/>
+  <text x="740" y="230" class="edgeLbl">snapshot CAS</text>
+
+  <!-- Reads: catalog → planner; object storage → exec -->
+  <path d="M670,336 L 670,360 L 640,360 L 640,396" class="flowRW" marker-end="url(#aRead)"/>
+  <text x="688" y="378" class="edgeLbl">manifest + stats</text>
+
+  <path d="M300,336 L 300,360 L 340,360 L 340,396" class="flowRW" marker-end="url(#aRead)"/>
+  <text x="264" y="378" class="edgeLbl" text-anchor="end">range-get blocks</text>
+
+  <!-- Query lane background -->
+  <rect x="10" y="388" width="940" height="128" rx="8" class="laneBand"/>
+  <text x="26" y="408" class="lane">QUERY PATH</text>
+
+  <g>
+    <rect x="20"  y="424" width="160" height="78" rx="6" class="boxOut"/>
+    <text x="100" y="450" class="boxTitle" text-anchor="middle">Agent / client</text>
+    <text x="100" y="470" class="boxSub"   text-anchor="middle">Flight gRPC</text>
+    <text x="100" y="486" class="boxSub"   text-anchor="middle">HTTP · JSON · NDJSON</text>
+
+    <rect x="210" y="424" width="180" height="78" rx="6" class="boxOut"/>
+    <text x="300" y="450" class="boxTitle" text-anchor="middle">Parser</text>
+    <text x="300" y="470" class="boxSub"   text-anchor="middle">KQL · SQL · PromQL</text>
+    <text x="300" y="486" class="boxSub"   text-anchor="middle">pluggable frontend trait</text>
+
+    <rect x="420" y="424" width="260" height="78" rx="6" class="boxOut"/>
+    <text x="550" y="448" class="boxTitle" text-anchor="middle">Planner · 3-level pruning cascade</text>
+    <text x="550" y="470" class="boxSub"   text-anchor="middle">catalog prune → extent footer prune</text>
+    <text x="550" y="486" class="boxSub"   text-anchor="middle">→ block &amp; index prune</text>
+
+    <rect x="710" y="424" width="240" height="78" rx="6" class="boxOut"/>
+    <text x="830" y="450" class="boxTitle" text-anchor="middle">DataFusion exec</text>
+    <text x="830" y="470" class="boxSub"   text-anchor="middle">columnar, vectorized</text>
+    <text x="830" y="486" class="boxSub"   text-anchor="middle">Arrow RecordBatch stream</text>
+  </g>
+
+  <!-- Query arrows -->
+  <path d="M180,463 L 210,463" class="flowOut" marker-end="url(#aOut)"/>
+  <path d="M390,463 L 420,463" class="flowOut" marker-end="url(#aOut)"/>
+  <path d="M680,463 L 710,463" class="flowOut" marker-end="url(#aOut)"/>
+
+  <!-- Result stream back: exec → agent (dashed, under lane) -->
+  <path d="M830,502 L 830,536 L 100,536 L 100,502" class="resultFlow" marker-end="url(#aOut)"/>
+  <text x="465" y="553" class="edgeLbl" text-anchor="middle">Arrow Flight RecordBatch stream → agent</text>
+</svg>

@@ -1,0 +1,31 @@
+[package]
+name = "kyma-exec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "DataFusion integration: custom TableProvider, KymaScanExec, three-level pruning cascade. Isolates DataFusion API churn behind df_adapter."
+
+[lints]
+workspace = true
+
+[dependencies]
+kyma-core.workspace = true
+kyma-plan.workspace = true
+kyma-storage.workspace = true
+kyma-catalog.workspace = true
+kyma-format-tlm.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+arrow.workspace = true
+arrow-array.workspace = true
+arrow-schema.workspace = true
+arrow-flight.workspace = true
+datafusion.workspace = true
+futures.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+metrics.workspace = true
+serde_json.workspace = true

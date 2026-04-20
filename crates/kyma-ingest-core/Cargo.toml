@@ -1,0 +1,32 @@
+[package]
+name = "kyma-ingest-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "WAL, staging buffer, shared write path, schema coercion, dead-letter routing. All ingest frontends converge here."
+
+[lints]
+workspace = true
+
+[dependencies]
+kyma-core.workspace = true
+kyma-storage.workspace = true
+kyma-catalog.workspace = true
+kyma-format-tlm.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+arrow.workspace = true
+arrow-array.workspace = true
+arrow-schema.workspace = true
+bytes.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+futures.workspace = true
+fastrand.workspace = true
+metrics.workspace = true
+sqlx.workspace = true

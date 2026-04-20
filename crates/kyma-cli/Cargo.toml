@@ -1,0 +1,32 @@
+[package]
+name = "kyma-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Admin CLI: create-table, show-extents, compact, explain."
+
+[[bin]]
+name = "kyma-cli"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+kyma-core.workspace = true
+kyma-catalog.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+arrow-schema.workspace = true
+sqlx.workspace = true
+# clap will be needed for subcommands — adding directly here since only kyma-cli uses it
+clap = { version = "4", features = ["derive", "env"] }

@@ -1,0 +1,148 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/kyma-core",
+    "crates/kyma-format-tlm",
+    "crates/kyma-format-stub-vec",
+    "crates/kyma-catalog",
+    "crates/kyma-storage",
+    "crates/kyma-ingest-core",
+    "crates/kyma-ingest-rest",
+    "crates/kyma-ingest-filedrop",
+    "crates/kyma-ingest-otlp",
+    "crates/kyma-ingest-kafka",
+    "crates/kyma-compaction",
+    "crates/kyma-kql",
+    "crates/kyma-plan",
+    "crates/kyma-exec",
+    "crates/kyma-server",
+    "crates/kyma-cli",
+    "crates/kyma-bin",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.95"
+license = "Apache-2.0"
+repository = "https://github.com/shaked/engine"
+authors = ["kyma contributors"]
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+# missing_docs tightens back to "warn" in M6 hardening (see plan §9).
+# During scaffolding + M1-M5, crate/module-level docs are required but
+# per-field docs are noise.
+missing_docs = "allow"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+must_use_candidate = "allow"
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+uninlined_format_args = "allow"
+
+[workspace.dependencies]
+# Core async + error plumbing
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+anyhow = "1"
+thiserror = "2"
+
+# Tracing / observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.28"
+opentelemetry = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+
+# Arrow + DataFusion stack — keep these in lockstep; DF 44 depends on arrow 53.x
+arrow = "53"
+arrow-array = "53"
+arrow-schema = "53"
+arrow-flight = "53"
+datafusion = "44"
+
+# Storage
+object_store = { version = "0.11", features = ["aws"] }
+
+# Catalog
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "macros"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ciborium = "0.2"           # CBOR for `dynamic` column
+prost = "0.13"
+tonic = "0.12"
+
+# Networking
+axum = { version = "0.7", features = ["macros", "http2"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip", "request-id", "util"] }
+hyper = "1"
+simd-json = "0.14"
+
+# Parser
+chumsky = "0.10"
+
+# Indices + compression
+fst = "0.4"
+zstd = "0.13"
+lz4_flex = "0.11"
+bytes = "1"
+
+# Ingest sources
+rdkafka = { version = "0.37", features = ["cmake-build", "tokio", "tracing"] }
+opentelemetry-proto = { version = "0.27", features = ["with-serde", "gen-tonic-messages"] }
+
+# IDs, time, misc
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+
+# Test infra
+proptest = "1"
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["postgres", "minio"] }
+criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
+
+# Metrics (Prometheus via the `metrics` facade crate)
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.17", default-features = false }
+fastrand = "2"
+
+# Inter-crate dependencies (always use workspace = true)
+kyma-core              = { path = "crates/kyma-core" }
+kyma-format-tlm        = { path = "crates/kyma-format-tlm" }
+kyma-format-stub-vec   = { path = "crates/kyma-format-stub-vec" }
+kyma-catalog           = { path = "crates/kyma-catalog" }
+kyma-storage           = { path = "crates/kyma-storage" }
+kyma-ingest-core       = { path = "crates/kyma-ingest-core" }
+kyma-ingest-rest       = { path = "crates/kyma-ingest-rest" }
+kyma-ingest-filedrop   = { path = "crates/kyma-ingest-filedrop" }
+kyma-ingest-otlp       = { path = "crates/kyma-ingest-otlp" }
+kyma-ingest-kafka      = { path = "crates/kyma-ingest-kafka" }
+kyma-kql               = { path = "crates/kyma-kql" }
+kyma-compaction        = { path = "crates/kyma-compaction" }
+kyma-plan              = { path = "crates/kyma-plan" }
+kyma-exec              = { path = "crates/kyma-exec" }
+kyma-server            = { path = "crates/kyma-server" }
+kyma-cli               = { path = "crates/kyma-cli" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+debug = "line-tables-only"
+strip = "debuginfo"
+
+[profile.bench]
+lto = "thin"
+codegen-units = 1
+debug = "line-tables-only"
+
+[profile.dev]
+opt-level = 1
+debug = true
