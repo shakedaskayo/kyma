@@ -4,9 +4,11 @@
 //! See `docs/superpowers/specs/2026-04-20-connectors-design.md`.
 
 pub mod arrow_coerce;
+pub mod catalog_sql;
 pub mod metrics;
 pub mod prometheus;
 pub mod registry;
+pub mod scheduler;
 pub mod secrets;
 pub mod types;
 
