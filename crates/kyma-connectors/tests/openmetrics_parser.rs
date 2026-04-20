@@ -1,4 +1,4 @@
-use kyma_connectors::prometheus::parser::{parse_openmetrics, Sample};
+use kyma_connectors::prometheus::parser::parse_openmetrics;
 
 #[test]
 fn parses_counter_and_gauge() {
@@ -77,4 +77,23 @@ fn escaped_label_values() {
     let samples = parse_openmetrics(text).expect("parse");
     assert_eq!(samples[0].labels.get("a"), Some(&"b\"c".to_string()));
     assert_eq!(samples[0].labels.get("d"), Some(&"e\\f".to_string()));
+}
+
+#[test]
+fn ignores_trailing_timestamp() {
+    let t = "m{l=\"v\"} 1.5 1609459200000\nn 2.5 1609459200000\n";
+    let s = parse_openmetrics(t).expect("parse");
+    assert_eq!(s.len(), 2);
+    assert_eq!(s[0].value, Some(1.5));
+    assert_eq!(s[0].labels.get("l"), Some(&"v".to_string()));
+    assert_eq!(s[1].name, "n");
+    assert_eq!(s[1].value, Some(2.5));
+}
+
+#[test]
+fn preserves_utf8_label_values() {
+    let t = "m{region=\"München\",city=\"東京\"} 1\n";
+    let s = parse_openmetrics(t).expect("parse");
+    assert_eq!(s[0].labels.get("region"), Some(&"München".to_string()));
+    assert_eq!(s[0].labels.get("city"), Some(&"東京".to_string()));
 }
