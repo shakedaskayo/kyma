@@ -10,7 +10,8 @@
     "lint": "eslint . --ext .ts,.tsx",
     "test": "vitest run",
     "test:watch": "vitest",
-    "generate": "buf generate"
+    "generate": "buf generate",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@bufbuild/protobuf": "1.10.0",
@@ -26,6 +27,7 @@
     "@tanstack/react-router": "^1.168.23",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.24",
+    "@tauri-apps/plugin-store": "2.1.0",
     "apache-arrow": "17.0.0",
     "cmdk": "^1.1.1",
     "echarts": "5.5.0",
@@ -44,6 +46,7 @@
     "@tanstack/react-query-devtools": "^5.99.2",
     "@tanstack/router-devtools": "^1.166.13",
     "@tanstack/router-plugin": "^1.167.22",
+    "@tauri-apps/cli": "2.1.0",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
     "@typescript-eslint/eslint-plugin": "7.18.0",
