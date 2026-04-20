@@ -16,7 +16,7 @@ export function Shell() {
           <Link to="/explore" className={btn(active.startsWith("/explore"))}>
             <Compass className="h-4 w-4" /> Explore
           </Link>
-          <Link to="/settings" className={btn(active === "/settings")}>
+          <Link to="/settings" search={{ next: active }} className={btn(active === "/settings")}>
             <SettingsIcon className="h-4 w-4" /> Settings
           </Link>
         </nav>
