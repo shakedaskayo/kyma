@@ -1,0 +1,30 @@
+[package]
+name = "kyma-ingest-kafka"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Kafka consumer ingest frontend. Exactly-once via catalog-stored offsets committed in the same Postgres tx as the extent commit."
+
+[lints]
+workspace = true
+
+[dependencies]
+kyma-core.workspace = true
+kyma-ingest-core.workspace = true
+kyma-catalog.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+rdkafka.workspace = true
+arrow.workspace = true
+arrow-array.workspace = true
+arrow-schema.workspace = true
+chrono.workspace = true
+metrics.workspace = true
+sqlx.workspace = true
+bytes.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true

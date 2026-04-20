@@ -1,0 +1,35 @@
+[package]
+name = "kyma-ingest-otlp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "OpenTelemetry Protocol (OTLP) ingest frontend — gRPC + HTTP for logs / traces / metrics."
+
+[lints]
+workspace = true
+
+[dependencies]
+kyma-core.workspace = true
+kyma-catalog.workspace = true
+kyma-ingest-core.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+prost.workspace = true
+opentelemetry-proto.workspace = true
+bytes.workspace = true
+futures.workspace = true
+arrow.workspace = true
+arrow-array.workspace = true
+arrow-schema.workspace = true
+metrics.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }

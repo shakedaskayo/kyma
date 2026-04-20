@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 470" role="img" aria-label="kyma fan-in: tech stack to engine to agents">
+  <defs>
+    <marker id="arrIn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0891b2"/>
+    </marker>
+    <marker id="arrOut" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+  <style>
+    .title   { font: 700 15px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #0f172a; }
+    .subtitle{ font: 400 12px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #475569; }
+    .colHead { font: 700 11px ui-monospace, SFMono-Regular, monospace; fill: #64748b; letter-spacing: 1.5px; }
+    .label   { font: 500 12.5px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #0f172a; }
+    .sub     { font: 400 10.5px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #64748b; }
+    .brand   { font: 800 28px ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #2563eb; letter-spacing: 2px; }
+    .kymaLine{ font: 500 10.5px ui-monospace, SFMono-Regular, monospace; fill: #475569; }
+    .arrIn   { font: 700 11px ui-monospace, SFMono-Regular, monospace; fill: #0891b2; letter-spacing: 1px; }
+    .arrOut  { font: 700 11px ui-monospace, SFMono-Regular, monospace; fill: #2563eb; letter-spacing: 1px; }
+    .box     { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.5; }
+    .engine  { fill: #ffffff; stroke: #2563eb; stroke-width: 2.2; }
+    .flowIn  { stroke: #0891b2; stroke-width: 1.5; fill: none; }
+    .flowOut { stroke: #2563eb; stroke-width: 1.5; fill: none; stroke-dasharray: 5 3; }
+    @media (prefers-color-scheme: dark) {
+      .title    { fill: #f1f5f9; }
+      .subtitle { fill: #94a3b8; }
+      .colHead  { fill: #94a3b8; }
+      .label    { fill: #f1f5f9; }
+      .sub      { fill: #94a3b8; }
+      .brand    { fill: #60a5fa; }
+      .kymaLine { fill: #cbd5e1; }
+      .arrIn    { fill: #22d3ee; }
+      .arrOut   { fill: #60a5fa; }
+      .box      { fill: #0b1220; stroke: #64748b; }
+      .engine   { fill: #0b1220; stroke: #60a5fa; }
+    }
+  </style>
+
+  <text x="450" y="28" class="title"    text-anchor="middle">one OTLP pipe in · one query language out</text>
+  <text x="450" y="48" class="subtitle" text-anchor="middle">every layer of your stack, queryable by your agents</text>
+
+  <text x="115" y="78" class="colHead" text-anchor="middle">SOURCES</text>
+  <text x="450" y="78" class="colHead" text-anchor="middle">ENGINE</text>
+  <text x="785" y="78" class="colHead" text-anchor="middle">CONSUMERS</text>
+
+  <!-- Sources -->
+  <g>
+    <rect x="30" y="95"  width="170" height="38" rx="5" class="box"/>
+    <text x="115" y="119" class="label" text-anchor="middle">Microservices</text>
+
+    <rect x="30" y="145" width="170" height="38" rx="5" class="box"/>
+    <text x="115" y="169" class="label" text-anchor="middle">Kubernetes · nodes</text>
+
+    <rect x="30" y="195" width="170" height="38" rx="5" class="box"/>
+    <text x="115" y="219" class="label" text-anchor="middle">CI / CD pipelines</text>
+
+    <rect x="30" y="245" width="170" height="38" rx="5" class="box"/>
+    <text x="115" y="269" class="label" text-anchor="middle">Databases · queues</text>
+
+    <rect x="30" y="295" width="170" height="38" rx="5" class="box"/>
+    <text x="115" y="319" class="label" text-anchor="middle">Frontend · mobile RUM</text>
+
+    <rect x="30" y="345" width="170" height="38" rx="5" class="box"/>
+    <text x="115" y="369" class="label" text-anchor="middle">LLM agents · tool calls</text>
+  </g>
+
+  <!-- Engine -->
+  <rect x="355" y="110" width="190" height="280" rx="12" class="engine"/>
+  <text x="450" y="158" class="brand" text-anchor="middle">kyma</text>
+  <line x1="385" y1="178" x2="515" y2="178" stroke="#2563eb" stroke-width="0.5" opacity="0.35"/>
+  <g class="kymaLine" text-anchor="middle">
+    <text x="450" y="206">OTLP · REST · Kafka</text>
+    <text x="450" y="228">staging + commit coord</text>
+    <text x="450" y="250">Arrow columnar store</text>
+    <text x="450" y="272">3-level pruning</text>
+    <text x="450" y="294">KQL · SQL · PromQL</text>
+    <text x="450" y="316">catalog-CAS (Postgres)</text>
+    <text x="450" y="338">object-store of record</text>
+    <text x="450" y="360">Arrow Flight gRPC</text>
+  </g>
+
+  <!-- Consumers -->
+  <g>
+    <rect x="700" y="110" width="170" height="52" rx="5" class="box"/>
+    <text x="785" y="135" class="label" text-anchor="middle">SRE agent</text>
+    <text x="785" y="152" class="sub"   text-anchor="middle">incidents · oncall · RCA</text>
+
+    <rect x="700" y="180" width="170" height="52" rx="5" class="box"/>
+    <text x="785" y="205" class="label" text-anchor="middle">Platform agent</text>
+    <text x="785" y="222" class="sub"   text-anchor="middle">capacity · cost · drift</text>
+
+    <rect x="700" y="250" width="170" height="52" rx="5" class="box"/>
+    <text x="785" y="275" class="label" text-anchor="middle">Security agent</text>
+    <text x="785" y="292" class="sub"   text-anchor="middle">audit · anomaly · forensics</text>
+
+    <rect x="700" y="320" width="170" height="52" rx="5" class="box"/>
+    <text x="785" y="345" class="label" text-anchor="middle">Dev assistant</text>
+    <text x="785" y="362" class="sub"   text-anchor="middle">debug · perf · session replay</text>
+  </g>
+
+  <!-- Source → kyma arrows (fan-in) -->
+  <path d="M200,114 L 355,210" class="flowIn" marker-end="url(#arrIn)"/>
+  <path d="M200,164 L 355,226" class="flowIn" marker-end="url(#arrIn)"/>
+  <path d="M200,214 L 355,242" class="flowIn" marker-end="url(#arrIn)"/>
+  <path d="M200,264 L 355,258" class="flowIn" marker-end="url(#arrIn)"/>
+  <path d="M200,314 L 355,274" class="flowIn" marker-end="url(#arrIn)"/>
+  <path d="M200,364 L 355,290" class="flowIn" marker-end="url(#arrIn)"/>
+
+  <!-- kyma → consumer arrows (fan-out) -->
+  <path d="M545,210 L 700,136" class="flowOut" marker-end="url(#arrOut)"/>
+  <path d="M545,238 L 700,206" class="flowOut" marker-end="url(#arrOut)"/>
+  <path d="M545,266 L 700,276" class="flowOut" marker-end="url(#arrOut)"/>
+  <path d="M545,294 L 700,346" class="flowOut" marker-end="url(#arrOut)"/>
+
+  <!-- Flow labels -->
+  <text x="275" y="435" class="arrIn"  text-anchor="middle">→  OTLP  →</text>
+  <text x="275" y="454" class="sub"    text-anchor="middle">gRPC · HTTP · file-drop · Kafka</text>
+
+  <text x="625" y="435" class="arrOut" text-anchor="middle">←  KQL · SQL · ARROW FLIGHT  ←</text>
+  <text x="625" y="454" class="sub"    text-anchor="middle">exact rows, not screenshots</text>
+</svg>

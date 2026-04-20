@@ -1,0 +1,21 @@
+[package]
+name = "kyma-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Object-storage abstraction + block-granular local cache."
+
+[lints]
+workspace = true
+
+[dependencies]
+kyma-core.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+object_store.workspace = true
+bytes.workspace = true
+futures.workspace = true
+uuid.workspace = true

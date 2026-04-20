@@ -1,0 +1,856 @@
+//! Postgres-backed catalog implementation.
+//!
+//! Implements [`kyma_core::catalog::Catalog`]. The metadata model mirrors
+//! Apache Iceberg's hierarchy (table → snapshot → manifest → data_file).
+//!
+//! # Commit flow
+//!
+//! 1. [`PostgresCatalog::begin_snapshot`] returns a `PgSnapshotTxn` holding
+//!    the parent snapshot id in memory. No pg tx is held open.
+//! 2. Caller appends extents via `add_extent` / `remove_extents`. Again, no
+//!    pg tx yet — accumulation is pure in-memory.
+//! 3. [`PgSnapshotTxn::commit`] runs **one short pg tx** that:
+//!    a. Inserts the new snapshot row and manifests + extents.
+//!    b. CASes `tables.current_snapshot_id` against the parent id.
+//!    c. On CAS mismatch, returns `CatalogError::Conflict` — caller retries.
+
+#![forbid(unsafe_code)]
+
+mod error;
+mod snapshot;
+
+pub use snapshot::PgSnapshotTxn;
+
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use kyma_core::catalog::{
+    BackgroundTask, Catalog, ColumnPrune, ExtentManifest, IngestLedgerEntry, NodeInfo, NodeLease,
+    NodeRole, PrunePredicate, SnapshotTxn, TableConfig, TableRef,
+};
+use kyma_core::errors::{CatalogError, Result};
+use kyma_core::types::{DatabaseId, ExtentId, NodeId, SchemaSnapshotId, SnapshotId, TableId};
+use serde_json::Value as Json;
+use sqlx::postgres::PgPoolOptions;
+use sqlx::{PgPool, Row};
+use std::sync::Arc;
+use std::time::Duration;
+use uuid::Uuid;
+
+/// The Postgres-backed catalog.
+///
+/// Holds a connection pool; cloneable and thread-safe.
+#[derive(Debug, Clone)]
+pub struct PostgresCatalog {
+    pool: PgPool,
+}
+
+impl PostgresCatalog {
+    /// Connect to Postgres and run migrations.
+    pub async fn connect(database_url: &str) -> Result<Self> {
+        let pool = PgPoolOptions::new()
+            .max_connections(16)
+            .acquire_timeout(Duration::from_secs(10))
+            .connect(database_url)
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .map_err(|e| CatalogError::Sql(format!("migration failed: {e}")))?;
+
+        Ok(Self { pool })
+    }
+
+    /// Borrow the underlying pool (useful for tests and the kafka_offsets tx).
+    pub fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+}
+
+#[async_trait]
+impl Catalog for PostgresCatalog {
+    fn as_ref_any(&self) -> &(dyn std::any::Any + Send + Sync) {
+        self
+    }
+
+    async fn create_database(&self, name: &str) -> Result<DatabaseId> {
+        let row: (Uuid,) =
+            sqlx::query_as("INSERT INTO databases (name) VALUES ($1) RETURNING id")
+                .bind(name)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(DatabaseId::from_uuid(row.0))
+    }
+
+    async fn create_table(
+        &self,
+        database_id: DatabaseId,
+        name: &str,
+        schema: Arc<arrow_schema::Schema>,
+        config: TableConfig,
+    ) -> Result<TableId> {
+        let schema_json = schema_to_json(&schema)?;
+        let config_json = serde_json::to_value(&config)
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        // 1. Insert the table with NULL snapshot pointers (bootstrap).
+        let (table_id,): (Uuid,) = sqlx::query_as(
+            "INSERT INTO tables (database_id, name, config) VALUES ($1, $2, $3) RETURNING id",
+        )
+        .bind(database_id.as_uuid())
+        .bind(name)
+        .bind(&config_json)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        // 2. Insert the initial schema snapshot.
+        let (schema_snap_id,): (Uuid,) = sqlx::query_as(
+            "INSERT INTO schema_snapshots (table_id, arrow_schema) VALUES ($1, $2) RETURNING id",
+        )
+        .bind(table_id)
+        .bind(&schema_json)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        // 3. Insert snapshot #0 (empty).
+        let (snap_id,): (Uuid,) = sqlx::query_as(
+            "INSERT INTO snapshots (table_id, parent_id, sequence_number, schema_snapshot_id, summary)
+             VALUES ($1, NULL, 0, $2, $3) RETURNING id",
+        )
+        .bind(table_id)
+        .bind(schema_snap_id)
+        .bind(serde_json::json!({ "operation": "bootstrap" }))
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        // 4. Point the table at the initial snapshot + schema.
+        sqlx::query(
+            "UPDATE tables SET current_snapshot_id = $1, schema_snapshot_id = $2 WHERE id = $3",
+        )
+        .bind(snap_id)
+        .bind(schema_snap_id)
+        .bind(table_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        Ok(TableId::from_uuid(table_id))
+    }
+
+    async fn lookup_table(&self, database: &str, name: &str) -> Result<TableRef> {
+        let row = sqlx::query(
+            "SELECT t.id, t.database_id, t.current_snapshot_id, t.schema_snapshot_id,
+                    ss.arrow_schema, t.config
+             FROM tables t
+             JOIN databases d ON d.id = t.database_id
+             LEFT JOIN schema_snapshots ss ON ss.id = t.schema_snapshot_id
+             WHERE d.name = $1 AND t.name = $2",
+        )
+        .bind(database)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?
+        .ok_or_else(|| CatalogError::TableNotFound {
+            database: database.to_owned(),
+            name: name.to_owned(),
+        })?;
+
+        let id: Uuid = row.try_get("id").map_err(sql_err)?;
+        let database_id: Uuid = row.try_get("database_id").map_err(sql_err)?;
+        let current_snapshot_id: Option<Uuid> =
+            row.try_get("current_snapshot_id").map_err(sql_err)?;
+        let schema_snapshot_id: Option<Uuid> =
+            row.try_get("schema_snapshot_id").map_err(sql_err)?;
+        let schema_json: Json = row.try_get("arrow_schema").map_err(sql_err)?;
+        let config_json: Json = row.try_get("config").map_err(sql_err)?;
+
+        let schema = json_to_schema(&schema_json)?;
+        let config: TableConfig = serde_json::from_value(config_json).unwrap_or_default();
+        let current_snapshot_id = current_snapshot_id.ok_or_else(|| {
+            CatalogError::Sql("table has no current snapshot (bootstrap row)".into())
+        })?;
+        let schema_snapshot_id = schema_snapshot_id
+            .ok_or_else(|| CatalogError::Sql("table has no schema snapshot".into()))?;
+
+        Ok(TableRef {
+            id: TableId::from_uuid(id),
+            database_id: DatabaseId::from_uuid(database_id),
+            name: name.to_owned(),
+            current_snapshot_id: SnapshotId::from_uuid(current_snapshot_id),
+            schema_snapshot_id: SchemaSnapshotId::from_uuid(schema_snapshot_id),
+            schema,
+            config,
+        })
+    }
+
+    async fn list_tables_in_database(&self, database: &str) -> Result<Vec<TableRef>> {
+        let rows = sqlx::query(
+            "SELECT t.id, t.database_id, t.name, t.current_snapshot_id, t.schema_snapshot_id,
+                    ss.arrow_schema, t.config
+             FROM tables t
+             JOIN databases d ON d.id = t.database_id
+             LEFT JOIN schema_snapshots ss ON ss.id = t.schema_snapshot_id
+             WHERE d.name = $1
+             ORDER BY t.name",
+        )
+        .bind(database)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(sql_err)?;
+
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            let id: Uuid = row.try_get("id").map_err(sql_err)?;
+            let database_id: Uuid = row.try_get("database_id").map_err(sql_err)?;
+            let name: String = row.try_get("name").map_err(sql_err)?;
+            let current_snapshot_id: Option<Uuid> =
+                row.try_get("current_snapshot_id").map_err(sql_err)?;
+            let schema_snapshot_id: Option<Uuid> =
+                row.try_get("schema_snapshot_id").map_err(sql_err)?;
+            let schema_json: Option<Json> = row.try_get("arrow_schema").ok();
+            let config_json: Json = row.try_get("config").map_err(sql_err)?;
+
+            // Skip rows where schema not yet committed (bootstrap glitch window).
+            let (Some(schema_json), Some(current_snapshot_id), Some(schema_snapshot_id)) =
+                (schema_json, current_snapshot_id, schema_snapshot_id)
+            else {
+                continue;
+            };
+            let schema = json_to_schema(&schema_json)?;
+            let config: TableConfig = serde_json::from_value(config_json).unwrap_or_default();
+            out.push(TableRef {
+                id: TableId::from_uuid(id),
+                database_id: DatabaseId::from_uuid(database_id),
+                name,
+                current_snapshot_id: SnapshotId::from_uuid(current_snapshot_id),
+                schema_snapshot_id: SchemaSnapshotId::from_uuid(schema_snapshot_id),
+                schema,
+                config,
+            });
+        }
+        Ok(out)
+    }
+
+    async fn alter_table_add_column(
+        &self,
+        table_id: TableId,
+        column_name: &str,
+        column_type: &str,
+    ) -> Result<SchemaSnapshotId> {
+        // Basic validation of column type — reject garbage early.
+        let _ = string_to_arrow_type(column_type)?;
+
+        // Fetch the current schema snapshot jsonb, append the new column,
+        // insert a new schema_snapshot row, CAS on schema_snapshot_id.
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        let row = sqlx::query(
+            "SELECT t.schema_snapshot_id, ss.arrow_schema
+             FROM tables t
+             JOIN schema_snapshots ss ON ss.id = t.schema_snapshot_id
+             WHERE t.id = $1
+             FOR UPDATE",
+        )
+        .bind(table_id.as_uuid())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(sql_err)?
+        .ok_or_else(|| CatalogError::Sql(format!("table {table_id} not found")))?;
+
+        let current_schema_snapshot_id: Uuid =
+            row.try_get("schema_snapshot_id").map_err(sql_err)?;
+        let mut schema_json: Json = row.try_get("arrow_schema").map_err(sql_err)?;
+
+        // Reject duplicate column names.
+        if let Some(fields) = schema_json.get("fields").and_then(|v| v.as_array()) {
+            if fields
+                .iter()
+                .any(|f| f.get("name").and_then(|n| n.as_str()) == Some(column_name))
+            {
+                return Err(CatalogError::Sql(format!(
+                    "column {column_name} already exists"
+                ))
+                .into());
+            }
+        }
+
+        // Append the new (nullable) column.
+        if let Some(arr) = schema_json.get_mut("fields").and_then(|v| v.as_array_mut()) {
+            arr.push(serde_json::json!({
+                "name":     column_name,
+                "type":     column_type,
+                "nullable": true,
+            }));
+        } else {
+            return Err(
+                CatalogError::Sql("existing schema has no `fields` array".into()).into()
+            );
+        }
+
+        // Insert the new schema_snapshot.
+        let (new_schema_snap_id,): (Uuid,) = sqlx::query_as(
+            "INSERT INTO schema_snapshots (table_id, arrow_schema)
+             VALUES ($1, $2) RETURNING id",
+        )
+        .bind(table_id.as_uuid())
+        .bind(&schema_json)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(sql_err)?;
+
+        // CAS on the tables row: only advance if the current schema
+        // snapshot is still the one we read.
+        let swapped = sqlx::query(
+            "UPDATE tables SET schema_snapshot_id = $1
+             WHERE id = $2 AND schema_snapshot_id = $3",
+        )
+        .bind(new_schema_snap_id)
+        .bind(table_id.as_uuid())
+        .bind(current_schema_snapshot_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(sql_err)?;
+        if swapped.rows_affected() != 1 {
+            return Err(CatalogError::Conflict.into());
+        }
+
+        tx.commit()
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        Ok(SchemaSnapshotId::from_uuid(new_schema_snap_id))
+    }
+
+    async fn begin_snapshot(&self, table_id: TableId) -> Result<Box<dyn SnapshotTxn>> {
+        let row = sqlx::query(
+            "SELECT current_snapshot_id, schema_snapshot_id FROM tables WHERE id = $1",
+        )
+        .bind(table_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(sql_err)?
+        .ok_or_else(|| {
+            CatalogError::Sql(format!("table {table_id} not found for begin_snapshot"))
+        })?;
+
+        let parent: Uuid = row
+            .try_get::<Option<Uuid>, _>("current_snapshot_id")
+            .map_err(sql_err)?
+            .ok_or_else(|| CatalogError::Sql("table has no current_snapshot_id".into()))?;
+        let schema_snap: Uuid = row
+            .try_get::<Option<Uuid>, _>("schema_snapshot_id")
+            .map_err(sql_err)?
+            .ok_or_else(|| CatalogError::Sql("table has no schema_snapshot_id".into()))?;
+
+        Ok(Box::new(PgSnapshotTxn::new(
+            self.pool.clone(),
+            table_id,
+            SnapshotId::from_uuid(parent),
+            SchemaSnapshotId::from_uuid(schema_snap),
+        )))
+    }
+
+    async fn list_extents(
+        &self,
+        table_id: TableId,
+        _snapshot: SnapshotId,
+        prune: &PrunePredicate,
+    ) -> Result<Vec<ExtentManifest>> {
+        // Honors `time_range`, `required_paths`, and `column_predicates`.
+        // Column predicates use the equality-index stored in each extent's
+        // `column_stats->{col}->>'distinct'`:
+        //   - `distinct` is NULL → column not indexable or cardinality
+        //     exceeded threshold; extent *must* be read (can't prune).
+        //   - `distinct` is an array → extent only holds those values.
+        //     Skip the extent unless one of the target values is in the array.
+
+        let mut sql = String::from(
+            "SELECT id, table_id, schema_snapshot_id, object_path, byte_size, row_count,
+                    min_timestamp, max_timestamp, column_stats, present_paths,
+                    compaction_gen, created_at
+             FROM extents
+             WHERE table_id = $1 AND deleted_at IS NULL",
+        );
+        let mut arg_index = 2;
+        if prune.time_range.is_some() {
+            sql.push_str(&format!(
+                " AND tstzrange(min_timestamp, max_timestamp) && tstzrange(${arg_index}, ${})",
+                arg_index + 1
+            ));
+            arg_index += 2;
+        }
+        if !prune.required_paths.is_empty() {
+            sql.push_str(&format!(" AND present_paths @> ${arg_index}"));
+            arg_index += 1;
+        }
+
+        // Column predicates: one JSONB check per column. Postgres can't
+        // parametrize a JSON key path, so the column name must be inlined —
+        // we SQL-escape it here. The values are parametrized normally.
+        let mut predicate_binds: Vec<serde_json::Value> = Vec::new();
+        for (col_name, pred) in &prune.column_predicates {
+            let safe_col = col_name.replace('\'', "''"); // reject SQL-injection via column names
+            let col_ref = format!("column_stats->'{safe_col}'->'distinct'");
+            match pred {
+                ColumnPrune::Equals(v) => {
+                    // Include the extent if its distinct set is unknown
+                    // (null) OR contains the target value.
+                    sql.push_str(&format!(
+                        " AND ({col_ref} IS NULL OR {col_ref} = 'null'::jsonb
+                                         OR {col_ref} @> ${arg_index})"
+                    ));
+                    predicate_binds.push(serde_json::json!([v]));
+                    arg_index += 1;
+                }
+                ColumnPrune::InSet(vs) => {
+                    // Any overlap between the target set and the distinct set
+                    // means the extent *might* contain a matching row.
+                    // `?|` is "any of these keys exists" but we need a value-
+                    // overlap op; use jsonb path existence via subquery.
+                    // Equivalent: the intersection is non-empty.
+                    sql.push_str(&format!(
+                        " AND ({col_ref} IS NULL OR {col_ref} = 'null'::jsonb
+                                         OR EXISTS (
+                                             SELECT 1
+                                             FROM jsonb_array_elements({col_ref}) d(x)
+                                             WHERE x IN (SELECT jsonb_array_elements(${arg_index}))
+                                         ))"
+                    ));
+                    predicate_binds.push(serde_json::json!(vs));
+                    arg_index += 1;
+                }
+                ColumnPrune::Between { low, high } => {
+                    // For numeric ranges we'd want per-extent min/max; the
+                    // distinct set still lets us handle this correctly (if
+                    // known), by checking whether any element is in range.
+                    sql.push_str(&format!(
+                        " AND ({col_ref} IS NULL OR {col_ref} = 'null'::jsonb
+                                         OR EXISTS (
+                                             SELECT 1
+                                             FROM jsonb_array_elements({col_ref}) d(x)
+                                             WHERE x >= ${arg_index} AND x <= ${}
+                                         ))",
+                        arg_index + 1
+                    ));
+                    predicate_binds.push(low.clone());
+                    predicate_binds.push(high.clone());
+                    arg_index += 2;
+                }
+                ColumnPrune::ContainsTokens(tokens) => {
+                    // Text-search pruning: check the column's token set
+                    // contains *all* of the query's tokens. `@>` on JSONB
+                    // arrays does "left contains right as a subset," which
+                    // is exactly what we want.
+                    let tok_ref = format!("column_stats->'{safe_col}'->'tokens'");
+                    sql.push_str(&format!(
+                        " AND ({tok_ref} IS NULL OR {tok_ref} = 'null'::jsonb
+                                         OR {tok_ref} @> ${arg_index})"
+                    ));
+                    predicate_binds.push(serde_json::json!(tokens));
+                    arg_index += 1;
+                }
+            }
+        }
+        #[allow(unused_assignments)]
+        {
+            arg_index = arg_index; // silence last-increment warning
+        }
+        sql.push_str(" ORDER BY min_timestamp DESC NULLS LAST");
+
+        let mut q = sqlx::query(&sql).bind(table_id.as_uuid());
+        if let Some(tr) = &prune.time_range {
+            q = q.bind(tr.start_inclusive).bind(tr.end_exclusive);
+        }
+        if !prune.required_paths.is_empty() {
+            q = q.bind(&prune.required_paths);
+        }
+        for v in &predicate_binds {
+            q = q.bind(v);
+        }
+
+        let rows = q
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            out.push(ExtentManifest {
+                id: ExtentId::from_uuid(row.try_get("id").map_err(sql_err)?),
+                table_id: TableId::from_uuid(row.try_get("table_id").map_err(sql_err)?),
+                schema_snapshot_id: SchemaSnapshotId::from_uuid(
+                    row.try_get("schema_snapshot_id").map_err(sql_err)?,
+                ),
+                object_path: row.try_get("object_path").map_err(sql_err)?,
+                byte_size: row.try_get::<i64, _>("byte_size").map_err(sql_err)? as u64,
+                row_count: row.try_get::<i64, _>("row_count").map_err(sql_err)? as u64,
+                min_timestamp: row.try_get("min_timestamp").map_err(sql_err)?,
+                max_timestamp: row.try_get("max_timestamp").map_err(sql_err)?,
+                column_stats: row.try_get("column_stats").map_err(sql_err)?,
+                present_paths: row.try_get("present_paths").map_err(sql_err)?,
+                compaction_gen: row.try_get::<i32, _>("compaction_gen").map_err(sql_err)? as u32,
+                created_at: row.try_get("created_at").map_err(sql_err)?,
+            });
+        }
+        Ok(out)
+    }
+
+    async fn gc_candidates(&self, before: DateTime<Utc>) -> Result<Vec<ExtentId>> {
+        let rows: Vec<(Uuid,)> = sqlx::query_as(
+            "SELECT id FROM extents WHERE deleted_at IS NOT NULL AND deleted_at < $1",
+        )
+        .bind(before)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(rows.into_iter().map(|(u,)| ExtentId::from_uuid(u)).collect())
+    }
+
+    async fn delete_extent_rows(&self, extents: &[ExtentId]) -> Result<()> {
+        if extents.is_empty() {
+            return Ok(());
+        }
+        let ids: Vec<Uuid> = extents.iter().map(|e| *e.as_uuid()).collect();
+        sqlx::query("DELETE FROM extents WHERE id = ANY($1)")
+            .bind(&ids)
+            .execute(&self.pool)
+            .await
+            .map_err(sql_err)?;
+        Ok(())
+    }
+
+    async fn register_node(&self, info: NodeInfo) -> Result<NodeLease> {
+        let lease_id = Uuid::new_v4();
+        let role_str = role_to_str(info.role);
+        let (node_id, last_heartbeat): (Uuid, DateTime<Utc>) = sqlx::query_as(
+            "INSERT INTO nodes (role, endpoint, capabilities, lease_id)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id, last_heartbeat",
+        )
+        .bind(role_str)
+        .bind(&info.endpoint)
+        .bind(&info.capabilities)
+        .bind(lease_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(sql_err)?;
+
+        // Lease expiration is a derived concept for now: 3× heartbeat interval
+        // beyond the last heartbeat. The actual TTL policy lives in the
+        // heartbeat-aware code paths.
+        Ok(NodeLease {
+            node_id: NodeId::from_uuid(node_id),
+            lease_id,
+            expires_at: last_heartbeat + chrono::Duration::seconds(60),
+        })
+    }
+
+    async fn heartbeat(&self, lease: &NodeLease) -> Result<()> {
+        let updated = sqlx::query(
+            "UPDATE nodes SET last_heartbeat = now()
+             WHERE id = $1 AND lease_id = $2",
+        )
+        .bind(lease.node_id.as_uuid())
+        .bind(lease.lease_id)
+        .execute(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        if updated.rows_affected() == 0 {
+            return Err(CatalogError::Sql(format!(
+                "heartbeat rejected — node {} / lease {} unknown (lease stolen or deregistered)",
+                lease.node_id, lease.lease_id
+            ))
+            .into());
+        }
+        Ok(())
+    }
+
+    async fn deregister_node(&self, lease: NodeLease) -> Result<()> {
+        sqlx::query("DELETE FROM nodes WHERE id = $1 AND lease_id = $2")
+            .bind(lease.node_id.as_uuid())
+            .bind(lease.lease_id)
+            .execute(&self.pool)
+            .await
+            .map_err(sql_err)?;
+        Ok(())
+    }
+
+    async fn submit_task(
+        &self,
+        kind: &str,
+        table_id: Option<kyma_core::types::TableId>,
+        payload: serde_json::Value,
+        priority: i32,
+    ) -> Result<Uuid> {
+        let (id,): (Uuid,) = sqlx::query_as(
+            "INSERT INTO background_tasks (kind, table_id, payload, priority)
+             VALUES ($1, $2, $3, $4) RETURNING id",
+        )
+        .bind(kind)
+        .bind(table_id.map(|t| *t.as_uuid()))
+        .bind(&payload)
+        .bind(priority)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(id)
+    }
+
+    async fn claim_task(
+        &self,
+        kind: &str,
+        node_id: NodeId,
+        lease: chrono::Duration,
+    ) -> Result<Option<BackgroundTask>> {
+        // Single-statement atomic claim: CTE picks the next pending task,
+        // main UPDATE flips it to `claimed` with our node + lease expiry.
+        // FOR UPDATE SKIP LOCKED lets many workers run concurrently without
+        // stepping on each other.
+        let row = sqlx::query(
+            "WITH next AS (
+                SELECT id
+                FROM background_tasks
+                WHERE kind = $1 AND status = 'pending'
+                ORDER BY priority DESC, created_at
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+             )
+             UPDATE background_tasks t
+             SET status = 'claimed',
+                 claimed_by = $2,
+                 claim_expires_at = now() + ($3 || ' seconds')::interval,
+                 attempt = t.attempt + 1,
+                 updated_at = now()
+             FROM next
+             WHERE t.id = next.id
+             RETURNING t.id, t.kind, t.table_id, t.payload, t.priority, t.attempt,
+                       t.max_attempts, t.claim_expires_at",
+        )
+        .bind(kind)
+        .bind(node_id.as_uuid())
+        .bind(lease.num_seconds().to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        let Some(row) = row else { return Ok(None) };
+
+        let table_id: Option<Uuid> = row.try_get("table_id").map_err(sql_err)?;
+        Ok(Some(BackgroundTask {
+            id: row.try_get("id").map_err(sql_err)?,
+            kind: row.try_get("kind").map_err(sql_err)?,
+            table_id: table_id.map(kyma_core::types::TableId::from_uuid),
+            payload: row.try_get("payload").map_err(sql_err)?,
+            priority: row.try_get("priority").map_err(sql_err)?,
+            attempt: row.try_get("attempt").map_err(sql_err)?,
+            max_attempts: row.try_get("max_attempts").map_err(sql_err)?,
+            claim_expires_at: row.try_get("claim_expires_at").map_err(sql_err)?,
+        }))
+    }
+
+    async fn complete_task(&self, task_id: Uuid) -> Result<()> {
+        sqlx::query(
+            "UPDATE background_tasks
+             SET status = 'done', updated_at = now(), claim_expires_at = NULL
+             WHERE id = $1 AND status = 'claimed'",
+        )
+        .bind(task_id)
+        .execute(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(())
+    }
+
+    async fn fail_task(&self, task_id: Uuid, error: &str) -> Result<()> {
+        // Reset to pending if attempts remain; else mark failed.
+        sqlx::query(
+            "UPDATE background_tasks
+             SET status = CASE
+                            WHEN attempt >= max_attempts THEN 'failed'
+                            ELSE 'pending'
+                          END,
+                 claim_expires_at = NULL,
+                 claimed_by = NULL,
+                 last_error = $2,
+                 updated_at = now()
+             WHERE id = $1",
+        )
+        .bind(task_id)
+        .bind(error)
+        .execute(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(())
+    }
+
+    async fn lookup_idempotency(&self, key: &str) -> Result<Option<IngestLedgerEntry>> {
+        let row = sqlx::query(
+            "SELECT table_id, snapshot_id, rows_ingested, bytes_written, applied_at
+             FROM ingest_ledger
+             WHERE idempotency_key = $1 AND ttl_expires_at > now()",
+        )
+        .bind(key)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        let Some(row) = row else { return Ok(None) };
+        Ok(Some(IngestLedgerEntry {
+            table_id: TableId::from_uuid(row.try_get("table_id").map_err(sql_err)?),
+            snapshot_id: SnapshotId::from_uuid(row.try_get("snapshot_id").map_err(sql_err)?),
+            rows_ingested: row.try_get::<i64, _>("rows_ingested").map_err(sql_err)? as u64,
+            bytes_written: row.try_get::<i64, _>("bytes_written").map_err(sql_err)? as u64,
+            applied_at: row.try_get("applied_at").map_err(sql_err)?,
+        }))
+    }
+
+    async fn record_idempotency(
+        &self,
+        key: &str,
+        entry: IngestLedgerEntry,
+        ttl: chrono::Duration,
+    ) -> Result<Option<IngestLedgerEntry>> {
+        let expires_at = entry.applied_at + ttl;
+        let row = sqlx::query(
+            "INSERT INTO ingest_ledger
+                (idempotency_key, table_id, snapshot_id, rows_ingested, bytes_written,
+                 applied_at, ttl_expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (idempotency_key) DO NOTHING
+             RETURNING table_id, snapshot_id, rows_ingested, bytes_written, applied_at",
+        )
+        .bind(key)
+        .bind(entry.table_id.as_uuid())
+        .bind(entry.snapshot_id.as_uuid())
+        .bind(entry.rows_ingested as i64)
+        .bind(entry.bytes_written as i64)
+        .bind(entry.applied_at)
+        .bind(expires_at)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        let Some(row) = row else { return Ok(None) };
+        Ok(Some(IngestLedgerEntry {
+            table_id: TableId::from_uuid(row.try_get("table_id").map_err(sql_err)?),
+            snapshot_id: SnapshotId::from_uuid(row.try_get("snapshot_id").map_err(sql_err)?),
+            rows_ingested: row.try_get::<i64, _>("rows_ingested").map_err(sql_err)? as u64,
+            bytes_written: row.try_get::<i64, _>("bytes_written").map_err(sql_err)? as u64,
+            applied_at: row.try_get("applied_at").map_err(sql_err)?,
+        }))
+    }
+}
+
+// --------------------------------------------------------------------------
+// Helpers
+// --------------------------------------------------------------------------
+
+fn sql_err(e: sqlx::Error) -> CatalogError {
+    CatalogError::Sql(e.to_string())
+}
+
+fn role_to_str(role: NodeRole) -> &'static str {
+    match role {
+        NodeRole::AllInOne => "all_in_one",
+        NodeRole::Ingest => "ingest",
+        NodeRole::Query => "query",
+        NodeRole::Compaction => "compaction",
+    }
+}
+
+#[inline]
+fn column_predicates_todo<T>(_: &T) {}
+
+/// Serialise an Arrow `Schema` into a JSON representation durable in Postgres.
+///
+/// We use a self-describing shape rather than arrow's own schema-to-ipc
+/// bytes so the catalog row is human-readable and tool-queryable.
+fn schema_to_json(schema: &arrow_schema::Schema) -> Result<Json> {
+    let fields: Vec<Json> = schema
+        .fields()
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "name":     f.name(),
+                "type":     arrow_type_to_string(f.data_type()),
+                "nullable": f.is_nullable(),
+            })
+        })
+        .collect();
+    Ok(serde_json::json!({ "fields": fields }))
+}
+
+fn json_to_schema(json: &Json) -> Result<Arc<arrow_schema::Schema>> {
+    let fields = json
+        .get("fields")
+        .and_then(Json::as_array)
+        .ok_or_else(|| CatalogError::Sql("malformed schema json: missing fields".into()))?;
+    let mut out = Vec::with_capacity(fields.len());
+    for f in fields {
+        let name = f
+            .get("name")
+            .and_then(Json::as_str)
+            .ok_or_else(|| CatalogError::Sql("field missing name".into()))?;
+        let ty = f
+            .get("type")
+            .and_then(Json::as_str)
+            .ok_or_else(|| CatalogError::Sql("field missing type".into()))?;
+        let nullable = f.get("nullable").and_then(Json::as_bool).unwrap_or(true);
+        out.push(arrow_schema::Field::new(
+            name,
+            string_to_arrow_type(ty)?,
+            nullable,
+        ));
+    }
+    Ok(Arc::new(arrow_schema::Schema::new(out)))
+}
+
+fn arrow_type_to_string(ty: &arrow_schema::DataType) -> String {
+    use arrow_schema::{DataType, TimeUnit};
+    match ty {
+        DataType::Boolean => "bool".into(),
+        DataType::Int32 => "int".into(),
+        DataType::Int64 => "long".into(),
+        DataType::Float64 => "real".into(),
+        DataType::Utf8 | DataType::LargeUtf8 => "string".into(),
+        DataType::Timestamp(TimeUnit::Nanosecond, _) => "timestamp".into(),
+        DataType::Binary | DataType::LargeBinary => "dynamic".into(),
+        other => format!("arrow:{other:?}"),
+    }
+}
+
+fn string_to_arrow_type(s: &str) -> Result<arrow_schema::DataType> {
+    use arrow_schema::{DataType, TimeUnit};
+    Ok(match s {
+        "bool" => DataType::Boolean,
+        "int" => DataType::Int32,
+        "long" => DataType::Int64,
+        "real" => DataType::Float64,
+        "string" => DataType::Utf8,
+        "timestamp" => DataType::Timestamp(TimeUnit::Nanosecond, None),
+        "dynamic" => DataType::Binary,
+        other => {
+            return Err(
+                CatalogError::Sql(format!("unsupported column type in schema: {other}")).into(),
+            )
+        }
+    })
+}
+
