@@ -19,6 +19,7 @@ members = [
     "crates/kyma-cli",
     "crates/kyma-bin",
     "crates/kyma-web-assets",
+    "web/src-tauri",
 ]
 
 [workspace.package]
