@@ -21,6 +21,9 @@ pub mod flight;
 mod health;
 pub mod metrics;
 
+#[cfg(feature = "web-ui")]
+pub mod web_ui;
+
 use arrow::json::ArrayWriter;
 use axum::{
     body::Body,
