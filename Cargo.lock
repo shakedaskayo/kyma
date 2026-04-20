@@ -2771,6 +2771,7 @@ dependencies = [
  "kyma-exec",
  "kyma-kql",
  "kyma-plan",
+ "kyma-web-assets",
  "metrics",
  "metrics-exporter-prometheus",
  "opentelemetry",
