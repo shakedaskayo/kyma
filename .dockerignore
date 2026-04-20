@@ -1,0 +1,8 @@
+.git
+.worktrees
+target
+web/node_modules
+web/dist
+node_modules
+.claude
+docs/superpowers
