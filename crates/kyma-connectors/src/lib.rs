@@ -8,6 +8,7 @@ pub mod catalog_sql;
 pub mod metrics;
 pub mod prometheus;
 pub mod registry;
+pub mod runner;
 pub mod scheduler;
 pub mod secrets;
 pub mod types;
