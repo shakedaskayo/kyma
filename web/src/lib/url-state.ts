@@ -9,8 +9,13 @@ export type QueryState = { query: string; preset: TimeRangePreset; from?: string
 export function encodeQueryState(s: QueryState): string {
   const json = JSON.stringify(s);
   const utf8 = new TextEncoder().encode(json);
-  // base64url, no padding
-  return btoa(String.fromCharCode(...utf8))
+  // Chunk the fromCharCode to avoid Safari's ~65k argument limit on large inputs.
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < utf8.length; i += CHUNK) {
+    bin += String.fromCharCode(...utf8.subarray(i, i + CHUNK));
+  }
+  return btoa(bin)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
@@ -18,11 +23,13 @@ export function encodeQueryState(s: QueryState): string {
 
 export function decodeQueryState(encoded: string): QueryState | null {
   try {
-    const b64 =
-      encoded.replace(/-/g, "+").replace(/_/g, "/") +
-      "===".slice(0, (4 - (encoded.length % 4)) % 4);
+    const b64 = encoded.replace(/-/g, "+").replace(/_/g, "/") + "===".slice(0, (4 - (encoded.length % 4)) % 4);
     const json = atob(b64);
-    return JSON.parse(json) as QueryState;
+    const v = JSON.parse(json);
+    if (!v || typeof v.query !== "string" || typeof v.preset !== "string") return null;
+    if (v.from !== undefined && typeof v.from !== "string") return null;
+    if (v.to   !== undefined && typeof v.to   !== "string") return null;
+    return v as QueryState;
   } catch {
     return null;
   }
