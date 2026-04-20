@@ -60,6 +60,9 @@ pub struct QueryState {
 }
 
 /// Build the query router (auth-eligible — caller wraps with middleware).
+///
+/// Every route mounted here assumes at least `Role::Read`; the caller wraps
+/// the entire router with `require_role_middleware(Role::Read)`.
 pub fn router(state: QueryState) -> Router {
     Router::new()
         .route("/v1/query", post(query_handler))
