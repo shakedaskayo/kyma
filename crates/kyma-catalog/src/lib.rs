@@ -24,8 +24,8 @@ pub use snapshot::PgSnapshotTxn;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use kyma_core::catalog::{
-    BackgroundTask, Catalog, ColumnPrune, ExtentManifest, IngestLedgerEntry, NodeInfo, NodeLease,
-    NodeRole, PrunePredicate, SnapshotTxn, TableConfig, TableRef,
+    BackgroundTask, Catalog, ColumnInfo, ColumnPrune, ExtentManifest, IngestLedgerEntry, NodeInfo,
+    NodeLease, NodeRole, PrunePredicate, SnapshotTxn, TableConfig, TableRef,
 };
 use kyma_core::errors::{CatalogError, Result};
 use kyma_core::types::{DatabaseId, ExtentId, NodeId, SchemaSnapshotId, SnapshotId, TableId};
@@ -755,6 +755,27 @@ impl Catalog for PostgresCatalog {
             bytes_written: row.try_get::<i64, _>("bytes_written").map_err(sql_err)? as u64,
             applied_at: row.try_get("applied_at").map_err(sql_err)?,
         }))
+    }
+
+    // --- schema-listing stubs (real impls land in Task 4.2) ---
+
+    async fn list_databases(&self) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
+        Ok(vec![])
+    }
+
+    async fn list_tables(
+        &self,
+        _database: &str,
+    ) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
+        Ok(vec![])
+    }
+
+    async fn get_table_columns(
+        &self,
+        _database: &str,
+        _table: &str,
+    ) -> std::result::Result<Vec<ColumnInfo>, kyma_core::errors::CatalogError> {
+        Ok(vec![])
     }
 }
 
