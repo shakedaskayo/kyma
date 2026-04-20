@@ -69,7 +69,7 @@ function ExplorePage() {
       to: active.timeRange.to,
     });
     navigate({ to: "/explore", search: { q: encoded }, replace: true });
-  }, [active?.query, active?.timeRange.preset, active?.timeRange.from, active?.timeRange.to, navigate]);
+  }, [active, navigate]);
   const status = active?.results.kind ?? "idle";
 
   const runActive = async () => {

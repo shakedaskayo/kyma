@@ -13,6 +13,7 @@ test("reframe emits IPC-stream framing for a FlightData message", () => {
   const msg = {
     dataHeader: new Uint8Array([1, 2, 3]),  // 3 bytes → padded to 8
     dataBody:   new Uint8Array([10, 20, 30, 40]),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any; // structural typing, not the real FlightData class
   const parts = reframe(msg);
   const flat = parts.reduce((acc, p) => { const o = new Uint8Array(acc.length + p.length); o.set(acc); o.set(p, acc.length); return o; }, new Uint8Array());
