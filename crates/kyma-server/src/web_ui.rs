@@ -24,6 +24,7 @@ async fn serve_index() -> Response {
     }
 }
 
+/// Safe: DIST is compile-time, not filesystem — no traversal possible.
 async fn serve_asset(uri: Uri) -> Response {
     // path strips the leading "/"
     let raw = uri.path().trim_start_matches('/');
@@ -52,18 +53,10 @@ fn html_response(body: &'static [u8]) -> Response {
 }
 
 fn asset_response(path: &str, body: &'static [u8]) -> Response {
-    let ct = mime_for(path);
-    // Vite-style hashed filenames (contain a dash or dot followed by 8+ hex chars)
-    // get immutable cache. `index.html` and bare names get no-cache.
-    let is_hashed = path.contains('-')
-        && path.rsplit(['-', '.']).next().map_or(false, |tail| {
-            tail.len() >= 8 && tail.chars().all(|c| c.is_ascii_hexdigit() || c == 'j' || c == 's' || c == 'c' || c == '.')
-        });
-    let cache = if is_hashed { "public, max-age=31536000, immutable" } else { "no-cache" };
     Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE,  HeaderValue::from_static(ct))
-        .header(header::CACHE_CONTROL, HeaderValue::from_str(cache).unwrap())
+        .header(header::CONTENT_TYPE,  HeaderValue::from_static(mime_for(path)))
+        .header(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"))
         .body(Body::from(body))
         .unwrap()
 }
