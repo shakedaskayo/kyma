@@ -1,10 +1,18 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Database, Settings as SettingsIcon, Compass } from "lucide-react";
+import { useEffect } from "react";
 import { useSession } from "@/sdk/session";
+import { useHealth } from "@/sdk/reconnect";
+import { ReconnectBanner } from "@/features/reconnect/ReconnectBanner";
 
 export function Shell() {
   const { endpoint, database } = useSession();
   const active = useRouterState().location.pathname;
+  const startHealth = useHealth((s) => s.start);
+  useEffect(() => {
+    if (!endpoint) return;
+    return startHealth(endpoint);
+  }, [endpoint, startHealth]);
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       <header className="flex h-12 items-center gap-4 border-b px-4 text-sm">
@@ -22,6 +30,7 @@ export function Shell() {
         </nav>
         <div className="ml-2 max-w-[22ch] truncate text-xs text-muted-foreground">{endpoint || "no server"}</div>
       </header>
+      <ReconnectBanner />
       <main className="flex-1 overflow-hidden">
         <Outlet />
       </main>
