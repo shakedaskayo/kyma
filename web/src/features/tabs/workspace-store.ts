@@ -7,7 +7,7 @@ export type TimeRange = { preset: TimeRangePreset; from?: string; to?: string };
 export type ResultsState =
   | { kind: "idle" }
   | { kind: "running"; startedAt: number }
-  | { kind: "ok"; rowCount: number; bytes: number; durationMs: number; finishedAt: number }
+  | { kind: "ok"; rowCount: number; durationMs: number; finishedAt: number }
   | { kind: "error"; message: string; requestId?: string; code?: string };
 
 export type ChartConfig = {
@@ -21,8 +21,12 @@ export type Tab = {
   timeRange: TimeRange;
   results: ResultsState;
   chart: ChartConfig;
-  dirty: boolean;
+  submittedQuery: string | null;
 };
+
+export function isTabDirty(tab: Tab): boolean {
+  return tab.submittedQuery !== null && tab.submittedQuery !== tab.query;
+}
 
 type Store = {
   tabs: Tab[];
@@ -34,6 +38,7 @@ type Store = {
   setTimeRange: (id: string, r: TimeRange) => void;
   setResults: (id: string, r: ResultsState) => void;
   setChart: (id: string, c: ChartConfig) => void;
+  markSubmitted: (id: string, query: string) => void;
   resetAll: () => void;
 };
 
@@ -48,7 +53,7 @@ export const useWorkspace = create<Store>()(
         const id = crypto.randomUUID();
         const tab: Tab = {
           id, title: `query ${get().tabs.length + 1}`, query: "", timeRange: DEFAULT_RANGE,
-          results: { kind: "idle" }, chart: {}, dirty: false, ...seed,
+          results: { kind: "idle" }, chart: {}, submittedQuery: null, ...seed,
         };
         set({ tabs: [...get().tabs, tab], activeId: id });
         return id;
@@ -60,16 +65,19 @@ export const useWorkspace = create<Store>()(
       },
       setActive: (id) => set({ activeId: id }),
       setQuery: (id, query) => set({
-        tabs: get().tabs.map((t) => (t.id === id ? { ...t, query, dirty: true } : t)),
+        tabs: get().tabs.map((t) => (t.id === id ? { ...t, query } : t)),
       }),
       setTimeRange: (id, timeRange) => set({
-        tabs: get().tabs.map((t) => (t.id === id ? { ...t, timeRange, dirty: true } : t)),
+        tabs: get().tabs.map((t) => (t.id === id ? { ...t, timeRange } : t)),
       }),
       setResults: (id, results) => set({
-        tabs: get().tabs.map((t) => (t.id === id ? { ...t, results, dirty: false } : t)),
+        tabs: get().tabs.map((t) => (t.id === id ? { ...t, results } : t)),
       }),
       setChart: (id, chart) => set({
         tabs: get().tabs.map((t) => (t.id === id ? { ...t, chart } : t)),
+      }),
+      markSubmitted: (id, query) => set({
+        tabs: get().tabs.map((t) => (t.id === id ? { ...t, submittedQuery: query } : t)),
       }),
       resetAll: () => set({ tabs: [], activeId: null }),
     }),

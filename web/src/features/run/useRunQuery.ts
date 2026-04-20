@@ -11,7 +11,6 @@ export type TabResult = {
   columns: Column[];
   rows: Record<string, unknown>[];
   chartPoints: Record<string, unknown>[];
-  totalBytes: number;
 };
 
 export function useRunQuery() {
@@ -29,9 +28,10 @@ export function useRunQuery() {
 
     const finalQuery = prependTimeFilter(tab.query, tab.timeRange);
     const startedAt = performance.now();
+    workspace.markSubmitted(tab.id, tab.query);
     workspace.setResults(tab.id, { kind: "running", startedAt: Date.now() });
 
-    const acc: TabResult = { columns: [], rows: [], chartPoints: [], totalBytes: 0 };
+    const acc: TabResult = { columns: [], rows: [], chartPoints: [] };
     try {
       for await (const batch of runQuery({
         endpoint, token, database, query: finalQuery, language: "kql", signal: ctl.signal,
@@ -40,11 +40,15 @@ export function useRunQuery() {
         if (acc.columns.length === 0) acc.columns = columns;
         acc.rows.push(...rows);
         acc.chartPoints.push(...rows);
-        onBatch(acc);
+        onBatch({
+          columns: acc.columns,
+          rows: acc.rows.slice(),
+          chartPoints: acc.chartPoints.slice(),
+        });
       }
       const durationMs = performance.now() - startedAt;
       workspace.setResults(tab.id, {
-        kind: "ok", rowCount: acc.rows.length, bytes: acc.totalBytes,
+        kind: "ok", rowCount: acc.rows.length,
         durationMs, finishedAt: Date.now(),
       });
     } catch (e) {
