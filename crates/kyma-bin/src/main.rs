@@ -176,6 +176,8 @@ async fn main() -> Result<()> {
         .merge(query_router)
         .merge(health_router)
         .merge(metrics_router);
+    #[cfg(feature = "web-ui")]
+    let app = app.merge(kyma_server::web_ui::router());
 
     // 5. Spawn background workers. Each has an independent shutdown watch so
     //    a panic in one worker doesn't starve the others or the HTTP server.
