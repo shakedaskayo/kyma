@@ -64,6 +64,15 @@ async fn create(State(s): State<AdminState>, Json(req): Json<CreateReq>) -> impl
         )
             .into_response();
     }
+    if !(100..=86_400_000).contains(&req.schedule_ms) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "schedule_ms must be in [100, 86400000]",
+            })),
+        )
+            .into_response();
+    }
     let res = catalog_sql::create_connector_direct(
         s.catalog.pool(),
         &req.name,
@@ -129,6 +138,11 @@ async fn get_one(State(s): State<AdminState>, Path(id): Path<Uuid>) -> impl Into
                     "schedule_ms": c.schedule_ms,
                     "drive_model": c.drive_model,
                     "enabled": c.enabled,
+                    "disabled_reason": c.disabled_reason,
+                    "last_run_at": c.last_run_at,
+                    "last_success_at": c.last_success_at,
+                    "last_error": c.last_error,
+                    "last_rows_ingested": c.last_rows_ingested,
                     "config": scrubbed,
                 })),
             )
@@ -188,6 +202,17 @@ async fn patch_one(
     Path(id): Path<Uuid>,
     Json(req): Json<PatchReq>,
 ) -> impl IntoResponse {
+    if let Some(sched_ms) = req.schedule_ms {
+        if !(100..=86_400_000).contains(&sched_ms) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": "schedule_ms must be in [100, 86400000]",
+                })),
+            )
+                .into_response();
+        }
+    }
     if let Some(cfg) = &req.config {
         let Some(c) = catalog_sql::load_connector(s.catalog.pool(), id)
             .await

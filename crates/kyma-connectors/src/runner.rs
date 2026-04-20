@@ -132,18 +132,49 @@ impl ConnectorRunner {
                     connector_id,
                     scheduled_for_ms * 1_000_000
                 );
-                (self.sink)(
+                // Sink → WritePath. A failure here (table missing, schema
+                // mismatch, object-store down, CAS exhaustion) is treated as
+                // Transient so background_tasks retries within the attempt
+                // budget instead of orphaning the claimed task.
+                if let Err(e) = (self.sink)(
                     conn.target_database.clone(),
                     conn.target_table.clone(),
                     rows,
                     Some(idem),
                 )
-                .await?;
-                if let Some(c) = new_cursor {
-                    catalog_sql::upsert_cursor(self.catalog.pool(), connector_id, &c).await?;
+                .await
+                {
+                    let msg = format!("sink: {e}");
+                    warn!(connector_id = %connector_id, error = %msg, "sink failed");
+                    catalog_sql::mark_run_failure(self.catalog.pool(), connector_id, &msg).await?;
+                    self.catalog.fail_task(task.id, &msg).await?;
+                    metrics.record_error("sink");
+                    metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
+                    return Ok(true);
                 }
-                catalog_sql::mark_run_success(self.catalog.pool(), connector_id, n_rows as i64)
-                    .await?;
+                if let Some(c) = new_cursor {
+                    if let Err(e) =
+                        catalog_sql::upsert_cursor(self.catalog.pool(), connector_id, &c).await
+                    {
+                        let msg = format!("cursor upsert: {e}");
+                        warn!(connector_id = %connector_id, error = %msg, "cursor upsert failed");
+                        catalog_sql::mark_run_failure(self.catalog.pool(), connector_id, &msg)
+                            .await?;
+                        self.catalog.fail_task(task.id, &msg).await?;
+                        metrics.record_error("cursor");
+                        metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
+                        return Ok(true);
+                    }
+                }
+                if let Err(e) =
+                    catalog_sql::mark_run_success(self.catalog.pool(), connector_id, n_rows as i64)
+                        .await
+                {
+                    error!(connector_id = %connector_id, error = %e, "mark_run_success failed");
+                    // Fall through — still attempt to complete the task so it
+                    // doesn't orphan. The run itself succeeded; only the status
+                    // update failed.
+                }
                 self.catalog.complete_task(task.id).await?;
                 metrics.record_rows(n_rows);
                 metrics.record_tick(TickResult::Ok, t0.elapsed().as_secs_f64());

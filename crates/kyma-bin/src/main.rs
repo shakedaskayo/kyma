@@ -324,7 +324,7 @@ async fn main() -> Result<()> {
     // Connector scheduler.
     let conn_sched = ConnectorScheduler::new(pg_catalog.clone());
     let conn_sched_rx = shutdown_tx.subscribe();
-    tokio::spawn(conn_sched.run(async move {
+    let conn_sched_handle = tokio::spawn(conn_sched.run(async move {
         let mut rx = conn_sched_rx;
         let _ = rx.recv().await;
     }));
@@ -334,6 +334,7 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(4);
+    let mut conn_runner_handles = Vec::with_capacity(n_conn_workers);
     for _ in 0..n_conn_workers {
         let runner = ConnectorRunner::new(
             pg_catalog.clone(),
@@ -343,9 +344,13 @@ async fn main() -> Result<()> {
             lease.node_id,
         );
         let runner_rx = shutdown_tx.subscribe();
-        tokio::spawn(runner.run(async move {
+        conn_runner_handles.push(tokio::spawn(async move {
             let mut rx = runner_rx;
-            let _ = rx.recv().await;
+            runner
+                .run(async move {
+                    let _ = rx.recv().await;
+                })
+                .await;
         }));
     }
     info!(
@@ -442,6 +447,10 @@ async fn main() -> Result<()> {
     let _ = scheduler_handle.await;
     let _ = retention_handle.await;
     let _ = gc_handle.await;
+    let _ = conn_sched_handle.await;
+    for h in conn_runner_handles {
+        let _ = h.await;
+    }
 
     // 6. Best-effort cleanup — deregister the node.
     if let Err(e) = catalog.deregister_node(lease).await {
