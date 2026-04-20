@@ -18,6 +18,7 @@ members = [
     "crates/kyma-server",
     "crates/kyma-cli",
     "crates/kyma-bin",
+    "crates/kyma-web-assets",
 ]
 
 [workspace.package]
@@ -131,6 +132,7 @@ kyma-plan              = { path = "crates/kyma-plan" }
 kyma-exec              = { path = "crates/kyma-exec" }
 kyma-server            = { path = "crates/kyma-server" }
 kyma-cli               = { path = "crates/kyma-cli" }
+kyma-web-assets        = { path = "crates/kyma-web-assets" }
 
 [profile.release]
 lto = "thin"
