@@ -20,8 +20,8 @@ use crate::catalog_handler::SchemaCache;
 /// "otel_logs" table, and return a [`QueryState`] ready for use in handler
 /// tests.
 ///
-/// The container is intentionally leaked (via `Box::leak`) so it stays alive
-/// for the lifetime of the test process.
+/// The container's Drop is suppressed (`mem::forget`) so it outlives the
+/// test's tokio runtime; a fresh container is spun up for each call.
 ///
 /// To test auth behaviour, callers should wrap the router from
 /// [`crate::router`] with the auth middleware using
@@ -74,8 +74,8 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
     let store = Arc::new(InMemory::new());
     let format = Arc::new(TelemetryFormat::new(store, "kyma-test"));
 
-    // Leak the container so it stays alive for the lifetime of the test process.
-    Box::leak(Box::new(container));
+    // Suppress Drop so the container outlives the test's tokio runtime.
+    std::mem::forget(container);
 
     QueryState {
         catalog,

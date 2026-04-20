@@ -2,6 +2,9 @@
 //!
 //! Returns the full schema tree (databases → tables → columns) as JSON,
 //! with a 5-second server-side cache backed by a `tokio::sync::Mutex`.
+//! Thundering-herd tolerant on cold-start misses: multiple concurrent cold
+//! requests will each rebuild. The cache is never held across IO, so warm
+//! readers never block on a builder.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -59,24 +62,39 @@ impl SchemaCache {
 /// callers with at least `read` role.
 pub async fn schema_handler(State(state): State<QueryState>) -> impl IntoResponse {
     let cache = state.schema_cache.clone();
-    let mut guard = cache.inner.lock().await;
-    if let Some((t, doc)) = guard.as_ref() {
+
+    // Freshness check under a short guard, then release.
+    let cached = {
+        let guard = cache.inner.lock().await;
+        guard.as_ref().cloned()
+    };
+    if let Some((t, doc)) = &cached {
         if t.elapsed() < TTL {
             return (StatusCode::OK, Json((**doc).clone())).into_response();
         }
     }
 
+    // Rebuild without holding the lock. Multiple builders under a
+    // thundering-herd cold start will each do the walk; the cost of
+    // that once is accepted in exchange for never serializing warm-path
+    // readers behind a miss.
     let doc = match build(&*state.catalog).await {
         Ok(d) => Arc::new(d),
         Err(e) => {
+            // Leave cache as-is on error: if a previous doc existed it's
+            // already stale (otherwise we wouldn't be here), so the next
+            // request retries build() cleanly.
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error":{"code":"catalog","message": e.to_string()}})),
-            )
-                .into_response();
+            ).into_response();
         }
     };
-    *guard = Some((Instant::now(), doc.clone()));
+
+    {
+        let mut guard = cache.inner.lock().await;
+        *guard = Some((Instant::now(), doc.clone()));
+    }
     (StatusCode::OK, Json((*doc).clone())).into_response()
 }
 
