@@ -83,24 +83,26 @@ fn parse_sample_line(s: &str, line: usize) -> Result<Sample, ParseError> {
 }
 
 fn split_last_whitespace(s: &str) -> Option<(&str, &str)> {
-    // If the line has a `}`, the value is after the `}`.
-    if let Some(close) = s.rfind('}') {
-        let tail = s.get(close + 1..)?.trim_start();
-        if tail.is_empty() {
-            return None;
+    // Find where the head ends (either the `}` or the first whitespace gap).
+    let head_end = if let Some(close) = s.rfind('}') {
+        close + 1
+    } else {
+        // first whitespace position separates name from value tokens
+        let bytes = s.as_bytes();
+        let mut first = None;
+        for (i, &b) in bytes.iter().enumerate() {
+            if b == b' ' || b == b'\t' {
+                first = Some(i);
+                break;
+            }
         }
-        return Some((&s[..=close], tail));
-    }
-    // Otherwise, split on the last whitespace.
-    let bytes = s.as_bytes();
-    let mut last = None;
-    for (i, &b) in bytes.iter().enumerate() {
-        if b == b' ' || b == b'\t' {
-            last = Some(i);
-        }
-    }
-    let i = last?;
-    Some((&s[..i], s[i..].trim_start()))
+        first?
+    };
+    let head = &s[..head_end];
+    // The value token is the FIRST whitespace-delimited token after the head.
+    // Per OpenMetrics spec we ignore any trailing per-sample timestamp.
+    let value = s[head_end..].split_ascii_whitespace().next()?;
+    Some((head, value))
 }
 
 fn is_valid_name(s: &str) -> bool {
@@ -145,6 +147,21 @@ fn parse_labels(body: &str, line: usize) -> Result<BTreeMap<String, String>, Par
         bytes = &bytes[1..];
         let mut val = String::new();
         loop {
+            // Find next special byte.
+            let mut i = 0;
+            while i < bytes.len() && bytes[i] != b'"' && bytes[i] != b'\\' {
+                i += 1;
+            }
+            if i > 0 {
+                // Safe: we only broke on single-byte ASCII boundaries; bytes[..i] is
+                // valid UTF-8 because the input was &str.
+                let chunk = std::str::from_utf8(&bytes[..i]).map_err(|_| ParseError {
+                    line,
+                    msg: "non-utf8 label value".into(),
+                })?;
+                val.push_str(chunk);
+                bytes = &bytes[i..];
+            }
             match bytes.first().copied() {
                 None => {
                     return Err(ParseError {
@@ -169,9 +186,15 @@ fn parse_labels(body: &str, line: usize) -> Result<BTreeMap<String, String>, Par
                         val.push('\n');
                         bytes = &bytes[2..];
                     }
-                    Some(c) => {
+                    Some(c) if c < 0x80 => {
                         val.push(c as char);
                         bytes = &bytes[2..];
+                    }
+                    Some(_) => {
+                        return Err(ParseError {
+                            line,
+                            msg: "invalid escape".into(),
+                        })
                     }
                     None => {
                         return Err(ParseError {
@@ -180,10 +203,7 @@ fn parse_labels(body: &str, line: usize) -> Result<BTreeMap<String, String>, Par
                         })
                     }
                 },
-                Some(c) => {
-                    val.push(c as char);
-                    bytes = &bytes[1..];
-                }
+                Some(_) => unreachable!("scanner only stops on \" or \\ or end"),
             }
         }
         out.insert(label_name.to_string(), val);
