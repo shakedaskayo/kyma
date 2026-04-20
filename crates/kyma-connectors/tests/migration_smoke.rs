@@ -37,4 +37,25 @@ async fn migration_005_creates_connector_tables() {
     .await
     .expect("pg_indexes");
     assert_eq!(count, 1, "dedup index should be present");
+
+    let (indexdef,): (String,) = sqlx::query_as(
+        "SELECT indexdef FROM pg_indexes
+         WHERE tablename = 'background_tasks'
+         AND indexname = 'background_tasks_connector_tick_uniq'",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("pg_indexes indexdef");
+    assert!(
+        indexdef.contains("UNIQUE INDEX"),
+        "dedup index must be UNIQUE, got: {indexdef}"
+    );
+    assert!(
+        indexdef.contains("connector_tick"),
+        "dedup index must be partial on kind='connector_tick', got: {indexdef}"
+    );
+    assert!(
+        indexdef.contains("pending") && indexdef.contains("claimed"),
+        "dedup index predicate must include pending/claimed, got: {indexdef}"
+    );
 }
