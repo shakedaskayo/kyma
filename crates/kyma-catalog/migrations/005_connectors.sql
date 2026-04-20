@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS connectors (
     target_database     text NOT NULL,
     target_table        text NOT NULL,
     config_jsonb        jsonb NOT NULL,
-    schedule_ms         bigint NOT NULL CHECK (schedule_ms >= 100),
+    schedule_ms         bigint NOT NULL
+                            CHECK (schedule_ms >= 100 AND schedule_ms <= 86400000),
     drive_model         text NOT NULL
                             CHECK (drive_model IN ('periodic','continuous')),
     enabled             boolean NOT NULL DEFAULT TRUE,
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS connectors (
     last_success_at     timestamptz,
     last_error          text,
     last_rows_ingested  bigint,
+    -- updated_at is maintained by writers (no trigger); catalog_sql.rs.
     created_at          timestamptz NOT NULL DEFAULT now(),
     updated_at          timestamptz NOT NULL DEFAULT now()
 );
