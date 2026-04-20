@@ -29,6 +29,12 @@ pub mod web_ui;
 ///
 /// The router is **not** auth-wrapped — the caller must add auth middleware,
 /// typically via `.layer(axum::middleware::from_fn_with_state(...))`.
+///
+/// # TODO(task 6.4): verify auth-denied behavior when the real gRPC-web client
+/// lands. `require_role_middleware` returns a plain HTTP 401 on rejection, which
+/// gRPC-web clients may surface as an opaque transport error rather than
+/// UNAUTHENTICATED. If the client can't map it cleanly, the middleware may need
+/// to emit gRPC trailers (grpc-status: 16 for UNAUTHENTICATED) for /flight/*.
 #[cfg(feature = "web-ui")]
 pub fn flight_web_router(state: QueryState) -> Router {
     use flight::{FlightState, flight_grpc_web_service};

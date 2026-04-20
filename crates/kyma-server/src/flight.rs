@@ -26,7 +26,6 @@
 //! - `do_put` — ingest-via-Flight is a future capability.
 //! - `do_exchange`, `do_action`, `list_actions`, `list_flights`.
 
-use arrow_array::RecordBatch;
 use arrow_flight::encode::FlightDataEncoderBuilder;
 use arrow_flight::flight_service_server::{FlightService, FlightServiceServer};
 use arrow_flight::{
@@ -42,9 +41,8 @@ use kyma_core::segment_format::SegmentFormat;
 use kyma_exec::KymaTable;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 use tonic::{Request, Response, Status, Streaming};
-use tracing::{debug, error, info};
+use tracing::debug;
 
 /// State shared between the HTTP and gRPC query surfaces.
 #[derive(Clone)]
@@ -309,11 +307,3 @@ impl tower::Service<axum::http::Request<axum::body::Body>> for FlightGrpcWebServ
     }
 }
 
-// --- workaround: fully-qualify the associated types so the trait's
-// default associated-type bounds compile without pulling in extras ---
-#[allow(dead_code)]
-fn _assert_stream_bound<T: futures::Stream>(_: T) {}
-
-// A Pin alias to avoid mouthful types in user code if this is ever split out.
-#[allow(dead_code)]
-type PinnedStream<T> = Pin<Box<dyn futures::Stream<Item = Result<T, Status>> + Send + 'static>>;

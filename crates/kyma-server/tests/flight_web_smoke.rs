@@ -41,5 +41,28 @@ async fn grpc_web_do_get_returns_arrow_stream() {
     );
     let body = resp.bytes().await.unwrap();
     assert!(body.len() > 5, "expected at least one gRPC-web frame; got {} bytes", body.len());
+
+    // Tighten: confirm we got an Arrow Flight gRPC-web stream with a proper
+    // data frame (0x00 marker) and a trailers frame (0x80 marker).
+    let first_byte = body[0];
+    assert!(
+        first_byte == 0x00 || first_byte == 0x80,
+        "expected gRPC-web frame marker (0x00 or 0x80) at start, got 0x{:02x}",
+        first_byte
+    );
+
+    // If first frame is data (0x00), validate its length.
+    if first_byte == 0x00 {
+        let data_len = u32::from_be_bytes([body[1], body[2], body[3], body[4]]) as usize;
+        assert!(data_len > 0, "data frame should have non-zero length");
+        assert!(body.len() >= 5 + data_len, "body shorter than declared data length");
+    }
+
+    // A valid gRPC-web response must contain a trailers frame (0x80 marker).
+    assert!(
+        body.iter().any(|b| *b == 0x80),
+        "expected trailers-frame marker (0x80) somewhere in response"
+    );
+
     server.shutdown().await;
 }
