@@ -1,8 +1,10 @@
+/// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import path from "node:path";
 export default defineConfig({
+    test: { environment: "jsdom" },
     plugins: [
         TanStackRouterVite({ routesDirectory: "src/routes", generatedRouteTree: "src/app/routeTree.gen.ts" }),
         react(),
