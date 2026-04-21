@@ -5,7 +5,7 @@ import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import path from "node:path";
 
 export default defineConfig({
-  test: { environment: "jsdom" },
+  test: { environment: "jsdom", exclude: ["e2e/**", "node_modules/**", "dist/**"] },
   plugins: [
     TanStackRouterVite({ routesDirectory: "src/routes", generatedRouteTree: "src/app/routeTree.gen.ts" }),
     react(),
