@@ -46,3 +46,6 @@ pub trait EmbeddingBackend: Send + Sync + std::fmt::Debug {
     /// Compute embeddings for a batch. Order of outputs matches inputs.
     async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedError>;
 }
+
+#[cfg(feature = "fastembed-backend")]
+pub use fastembed::FastembedBackend;
