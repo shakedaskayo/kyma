@@ -19,6 +19,14 @@ datafusion.workspace = true
 arrow.workspace = true
 arrow-array.workspace = true
 bytes.workspace = true
+kyma-web-assets = { path = "../kyma-web-assets", optional = true }
+kyma-format-tlm = { workspace = true, optional = true }
+object_store = { workspace = true, optional = true }
+testcontainers = { workspace = true, optional = true }
+testcontainers-modules = { workspace = true, optional = true }
+tonic-web = { workspace = true, optional = true }
+http-body-util = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 uuid.workspace = true
@@ -47,3 +55,24 @@ tokio = { workspace = true, features = ["full"] }
 futures.workspace = true
 serde_json.workspace = true
 arrow-array.workspace = true
+arrow-schema.workspace = true
+tower = { workspace = true, features = ["util"] }
+
+[features]
+default = []
+web-ui  = ["dep:kyma-web-assets", "dep:tonic-web", "dep:http-body-util"]
+test-support = [
+    "dep:kyma-format-tlm",
+    "dep:object_store",
+    "dep:testcontainers",
+    "dep:testcontainers-modules",
+    "dep:reqwest",
+]
+
+[[test]]
+name = "catalog_http"
+required-features = ["test-support"]
+
+[[test]]
+name = "flight_web_smoke"
+required-features = ["web-ui", "test-support"]

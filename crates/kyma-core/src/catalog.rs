@@ -20,7 +20,7 @@
 //! `tables.current_snapshot_id` — concurrent writers race; loser retries.
 //! No distributed locks.
 
-use crate::errors::Result;
+use crate::errors::{CatalogError, Result};
 use crate::types::{DatabaseId, ExtentId, NodeId, SchemaRef, SchemaSnapshotId, SnapshotId, TableId};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -172,6 +172,17 @@ pub struct NodeLease {
     pub expires_at: DateTime<Utc>,
 }
 
+// -------------------- Schema-listing types --------------------
+
+/// Lightweight column descriptor for the UI schema tree.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ColumnInfo {
+    pub name: String,
+    /// `string`, `int`, `long`, `real`, `datetime`, `bool`, `dynamic`.
+    pub r#type: String,
+    pub nullable: bool,
+}
+
 // -------------------- The Catalog trait --------------------
 
 /// The catalog. All durable metadata flows through this trait.
@@ -200,6 +211,21 @@ pub trait Catalog: Send + Sync {
     /// List every table in a database. Returns (name, TableRef) pairs so
     /// callers can populate a DataFusion `SchemaProvider` in one round-trip.
     async fn list_tables_in_database(&self, database: &str) -> Result<Vec<TableRef>>;
+
+    // --- schema-listing (UI) ---
+
+    /// Lightweight schema tree for the UI: list all database names.
+    async fn list_databases(&self) -> Result<Vec<String>, CatalogError>;
+
+    /// Lightweight schema tree for the UI: list all table names in a database.
+    async fn list_tables(&self, database: &str) -> Result<Vec<String>, CatalogError>;
+
+    /// Lightweight schema tree for the UI: get column descriptors for a table.
+    async fn get_table_columns(
+        &self,
+        database: &str,
+        table: &str,
+    ) -> Result<Vec<ColumnInfo>, CatalogError>;
 
     /// Add a column to a table's schema (ALTER TABLE ADD COLUMN).
     ///

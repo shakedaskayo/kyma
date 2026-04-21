@@ -1,0 +1,10 @@
+[package]
+name    = "kyma-web-assets"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+include_dir = "0.7"
+
+[build-dependencies]
+# empty — build.rs runs unconditionally, no deps

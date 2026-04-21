@@ -1,0 +1,28 @@
+/// <reference types="vitest" />
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
+import path from "node:path";
+
+export default defineConfig({
+  test: { environment: "jsdom" },
+  plugins: [
+    TanStackRouterVite({ routesDirectory: "src/routes", generatedRouteTree: "src/app/routeTree.gen.ts" }),
+    react(),
+  ],
+  resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+  server: {
+    port: 5173,
+    strictPort: true,
+    proxy: {
+      "/v1":     { target: "http://localhost:8080", changeOrigin: true },
+      "/flight": { target: "http://localhost:8080", changeOrigin: true },
+      "/health": { target: "http://localhost:8080", changeOrigin: true },
+    },
+  },
+  build: {
+    outDir: "dist",
+    sourcemap: true,
+    target: "es2022",
+  },
+});
