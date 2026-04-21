@@ -2,8 +2,10 @@ import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router"
 import { useEffect, useMemo, useRef, useState } from "react";
 import { encodeQueryState, decodeQueryState } from "@/lib/url-state";
 import { useQuery } from "@tanstack/react-query";
-import { Play, Square, Download, FileJson } from "lucide-react";
+import { toast } from "sonner";
+import { Play, Square, Download, FileJson, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AskAIDialog } from "@/features/agent/AskAIDialog";
 import { Editor } from "@/features/editor/Editor";
 import { TimeRangePicker } from "@/features/time-range/TimeRangePicker";
 import { ResultsGrid, exportCsv } from "@/features/results-grid/ResultsGrid";
@@ -169,6 +171,22 @@ function ExplorePage() {
 
   const hasResults = Boolean(liveResult && active?.results.kind === "ok" && liveResult.rows.length > 0);
 
+  const [askOpen, setAskOpen] = useState(false);
+  const onAskedSql = (sql: string) => {
+    if (!active) {
+      toast.info("No active tab; copied SQL to clipboard instead.");
+      void navigator.clipboard.writeText(sql);
+      return;
+    }
+    workspace.setQuery(active.id, sql);
+    toast.success("Agent-generated SQL injected into the editor.");
+  };
+  const onAskedNoSql = (answer: string) => {
+    // Agent didn't run any SQL — show the answer as a toast so the user
+    // sees what it said.
+    toast.info(answer.length > 200 ? answer.slice(0, 200) + "…" : answer);
+  };
+
   return (
     <div className="flex h-full bg-muted/20">
       {/* ── Left rail ── */}
@@ -229,6 +247,9 @@ function ExplorePage() {
               <kbd className="ml-2 rounded bg-primary-foreground/20 px-1 py-0.5 text-[10px] text-primary-foreground/80">⌘↵</kbd>
             </Button>
           )}
+          <Button size="sm" variant="outline" onClick={() => setAskOpen(true)}>
+            <Sparkles className="mr-1 h-3.5 w-3.5" /> Ask AI
+          </Button>
           <Button
             size="sm"
             variant="ghost"
@@ -335,6 +356,12 @@ function ExplorePage() {
         </div>
       </section>
       <CommandPalette onRun={runActive} />
+      <AskAIDialog
+        open={askOpen}
+        onOpenChange={setAskOpen}
+        onSql={onAskedSql}
+        onNoSql={onAskedNoSql}
+      />
     </div>
   );
 }

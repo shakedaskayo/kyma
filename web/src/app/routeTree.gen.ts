@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './../routes/index'
 import { Route as AppExploreRouteImport } from './../routes/_app.explore'
 import { Route as AppDashboardsRouteImport } from './../routes/_app.dashboards'
 import { Route as AppDashboardsIdRouteImport } from './../routes/_app.dashboards.$id'
+import { Route as AppAgentRouteImport } from './../routes/_app.agent'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -45,11 +46,17 @@ const AppDashboardsIdRoute = AppDashboardsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AppDashboardsRoute,
 } as any)
+const AppAgentRoute = AppAgentRouteImport.update({
+  id: '/agent',
+  path: '/agent',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
   '/dashboards': typeof AppDashboardsRouteWithChildren
+  '/agent': typeof AppAgentRoute
   '/explore': typeof AppExploreRoute
   '/dashboards/$id': typeof AppDashboardsIdRoute
 }
@@ -57,6 +64,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
   '/dashboards': typeof AppDashboardsRouteWithChildren
+  '/agent': typeof AppAgentRoute
   '/explore': typeof AppExploreRoute
   '/dashboards/$id': typeof AppDashboardsIdRoute
 }
@@ -66,20 +74,22 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/settings': typeof SettingsRoute
   '/_app/dashboards': typeof AppDashboardsRouteWithChildren
+  '/_app/agent': typeof AppAgentRoute
   '/_app/explore': typeof AppExploreRoute
   '/_app/dashboards/$id': typeof AppDashboardsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/settings' | '/dashboards' | '/explore' | '/dashboards/$id'
+  fullPaths: '/' | '/settings' | '/dashboards' | '/agent' | '/explore' | '/dashboards/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/settings' | '/dashboards' | '/explore' | '/dashboards/$id'
+  to: '/' | '/settings' | '/dashboards' | '/agent' | '/explore' | '/dashboards/$id'
   id:
     | '__root__'
     | '/'
     | '/_app'
     | '/settings'
     | '/_app/dashboards'
+    | '/_app/agent'
     | '/_app/explore'
     | '/_app/dashboards/$id'
   fileRoutesById: FileRoutesById
@@ -134,6 +144,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardsIdRouteImport
       parentRoute: typeof AppDashboardsRoute
     }
+    '/_app/agent': {
+      id: '/_app/agent'
+      path: '/agent'
+      fullPath: '/agent'
+      preLoaderRoute: typeof AppAgentRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -151,11 +168,13 @@ const AppDashboardsRouteWithChildren = AppDashboardsRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppDashboardsRoute: typeof AppDashboardsRouteWithChildren
+  AppAgentRoute: typeof AppAgentRoute
   AppExploreRoute: typeof AppExploreRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppDashboardsRoute: AppDashboardsRouteWithChildren,
+  AppAgentRoute: AppAgentRoute,
   AppExploreRoute: AppExploreRoute,
 }
 
