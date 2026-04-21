@@ -4,8 +4,14 @@ use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-/// ONNX-backed embedding via fastembed-rs. Loads the model at construction;
+/// ONNX-backed embedding via `fastembed-rs`. Loads the model at construction;
 /// inference runs on a tokio blocking thread per batch.
+///
+/// The inner `TextEmbedding` is held behind a mutex, which serializes
+/// `.embed()` calls across concurrent users of the same `FastembedBackend`.
+/// For schema-RAG (low QPS, small batches) this is fine. For bulk user-data
+/// embedding (Phase C+) we may want a pool of `TextEmbedding` instances or
+/// a lock-free inference path — revisit when that workload materializes.
 pub struct FastembedBackend {
     id: String,
     dimension: u16,
@@ -89,6 +95,7 @@ fn em_dimension(em: &EmbeddingModel) -> u16 {
         EmbeddingModel::BGESmallENV15 => 384,
         EmbeddingModel::BGEBaseENV15  => 768,
         EmbeddingModel::AllMiniLML6V2 => 384,
-        _ => 384,
+        other => unreachable!(
+            "em_dimension: pick_model accepted model {other:?} but em_dimension has no arm. Add the dimension here."),
     }
 }

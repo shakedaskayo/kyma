@@ -24,8 +24,14 @@ async fn bge_small_en_v1_5_matches_golden() {
     // after first passing run; bump alongside any intentional model
     // bump. This catches: model download drift, fastembed upgrade,
     // or accidental tokenizer change.
-    let prefix: Vec<f32> = out[0][..3].to_vec();
-    insta::assert_debug_snapshot!("bge_small_en_v1_5_hello_world_prefix", prefix);
+    // ONNX Runtime output is not bit-exact across CPU architectures (SIMD
+    // reduction order + FMA fusion differ between ARM64 and x86-64), so we
+    // snapshot rounded to 4 decimals. That's still enough precision to
+    // catch a real model / tokenizer change, without flaking on CPU drift.
+    let prefix_rounded: Vec<String> = out[0][..3].iter()
+        .map(|f| format!("{:.4}", f))
+        .collect();
+    insta::assert_debug_snapshot!("bge_small_en_v1_5_hello_world_prefix", prefix_rounded);
 
     let norm = out[0].iter().map(|x| x * x).sum::<f32>().sqrt();
     assert!((norm - 1.0).abs() < 1e-4, "expected L2-normalized, got {norm}");
