@@ -24,8 +24,9 @@ pub use snapshot::PgSnapshotTxn;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use kyma_core::catalog::{
-    BackgroundTask, Catalog, ColumnInfo, ColumnPrune, ExtentManifest, IngestLedgerEntry, NodeInfo,
-    NodeLease, NodeRole, PrunePredicate, SnapshotTxn, TableConfig, TableRef,
+    BackgroundTask, Catalog, ColumnInfo, ColumnPrune, Dashboard, DashboardPanel,
+    DashboardPanelInput, DashboardUpdate, DashboardWithPanels, ExtentManifest, IngestLedgerEntry,
+    NodeInfo, NodeLease, NodeRole, PrunePredicate, SnapshotTxn, TableConfig, TableRef,
 };
 use kyma_core::errors::{CatalogError, Result};
 use kyma_core::types::{DatabaseId, ExtentId, NodeId, SchemaSnapshotId, SnapshotId, TableId};
@@ -757,6 +758,165 @@ impl Catalog for PostgresCatalog {
         }))
     }
 
+    // --- dashboards ---
+
+    async fn create_dashboard(
+        &self,
+        name: &str,
+        description: Option<&str>,
+    ) -> std::result::Result<Dashboard, CatalogError> {
+        let row = sqlx::query(
+            "INSERT INTO dashboards (name, description)
+             VALUES ($1, $2)
+             RETURNING id, name, description, time_range_preset,
+                       refresh_interval_seconds, created_at, updated_at",
+        )
+        .bind(name)
+        .bind(description)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        row_to_dashboard(&row)
+    }
+
+    async fn list_dashboards(&self) -> std::result::Result<Vec<Dashboard>, CatalogError> {
+        let rows = sqlx::query(
+            "SELECT id, name, description, time_range_preset,
+                    refresh_interval_seconds, created_at, updated_at
+             FROM dashboards
+             ORDER BY updated_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        rows.iter().map(row_to_dashboard).collect()
+    }
+
+    async fn get_dashboard(
+        &self,
+        id: Uuid,
+    ) -> std::result::Result<Option<DashboardWithPanels>, CatalogError> {
+        let maybe_row = sqlx::query(
+            "SELECT id, name, description, time_range_preset,
+                    refresh_interval_seconds, created_at, updated_at
+             FROM dashboards
+             WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        let Some(row) = maybe_row else {
+            return Ok(None);
+        };
+        let dashboard = row_to_dashboard(&row)?;
+
+        let panel_rows = sqlx::query(
+            "SELECT id, dashboard_id, title, panel_type, query, database_name,
+                    config, grid_x, grid_y, grid_w, grid_h, display_order
+             FROM dashboard_panels
+             WHERE dashboard_id = $1
+             ORDER BY display_order ASC",
+        )
+        .bind(id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        let panels = panel_rows
+            .iter()
+            .map(row_to_panel)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(Some(DashboardWithPanels { dashboard, panels }))
+    }
+
+    async fn update_dashboard(
+        &self,
+        id: Uuid,
+        patch: DashboardUpdate,
+    ) -> std::result::Result<Dashboard, CatalogError> {
+        // Fetch current row.
+        let maybe_row = sqlx::query(
+            "SELECT id, name, description, time_range_preset,
+                    refresh_interval_seconds, created_at, updated_at
+             FROM dashboards
+             WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        let Some(row) = maybe_row else {
+            return Err(CatalogError::DashboardNotFound { id });
+        };
+        let current = row_to_dashboard(&row)?;
+
+        // Apply scalar patches in memory.
+        let new_name = patch.name.unwrap_or(current.name);
+        let new_description = patch.description.unwrap_or(current.description);
+        let new_time_range = patch.time_range_preset.unwrap_or(current.time_range_preset);
+        let new_refresh = patch
+            .refresh_interval_seconds
+            .unwrap_or(current.refresh_interval_seconds);
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        // Update the dashboard row.
+        let updated_row = sqlx::query(
+            "UPDATE dashboards
+             SET name = $2,
+                 description = $3,
+                 time_range_preset = $4,
+                 refresh_interval_seconds = $5,
+                 updated_at = now()
+             WHERE id = $1
+             RETURNING id, name, description, time_range_preset,
+                       refresh_interval_seconds, created_at, updated_at",
+        )
+        .bind(id)
+        .bind(&new_name)
+        .bind(new_description.as_deref())
+        .bind(&new_time_range)
+        .bind(new_refresh)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        // Atomically replace panels if provided.
+        if let Some(new_panels) = patch.panels {
+            sqlx::query("DELETE FROM dashboard_panels WHERE dashboard_id = $1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+            insert_panels(&mut *tx, id, &new_panels).await?;
+        }
+
+        tx.commit()
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        row_to_dashboard(&updated_row)
+    }
+
+    async fn delete_dashboard(&self, id: Uuid) -> std::result::Result<bool, CatalogError> {
+        let result = sqlx::query("DELETE FROM dashboards WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(result.rows_affected() > 0)
+    }
+
     // --- schema-listing ---
 
     async fn list_databases(&self) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
@@ -839,6 +999,71 @@ impl Catalog for PostgresCatalog {
 
 fn sql_err(e: sqlx::Error) -> CatalogError {
     CatalogError::Sql(e.to_string())
+}
+
+fn row_to_dashboard(row: &sqlx::postgres::PgRow) -> std::result::Result<Dashboard, CatalogError> {
+    use sqlx::Row as _;
+    Ok(Dashboard {
+        id: row.try_get("id").map_err(sql_err)?,
+        name: row.try_get("name").map_err(sql_err)?,
+        description: row.try_get("description").map_err(sql_err)?,
+        time_range_preset: row.try_get("time_range_preset").map_err(sql_err)?,
+        refresh_interval_seconds: row.try_get("refresh_interval_seconds").map_err(sql_err)?,
+        created_at: row.try_get("created_at").map_err(sql_err)?,
+        updated_at: row.try_get("updated_at").map_err(sql_err)?,
+    })
+}
+
+fn row_to_panel(
+    row: &sqlx::postgres::PgRow,
+) -> std::result::Result<DashboardPanel, CatalogError> {
+    use sqlx::Row as _;
+    Ok(DashboardPanel {
+        id: row.try_get("id").map_err(sql_err)?,
+        dashboard_id: row.try_get("dashboard_id").map_err(sql_err)?,
+        title: row.try_get("title").map_err(sql_err)?,
+        panel_type: row.try_get("panel_type").map_err(sql_err)?,
+        query: row.try_get("query").map_err(sql_err)?,
+        database_name: row.try_get("database_name").map_err(sql_err)?,
+        config: row.try_get("config").map_err(sql_err)?,
+        grid_x: row.try_get("grid_x").map_err(sql_err)?,
+        grid_y: row.try_get("grid_y").map_err(sql_err)?,
+        grid_w: row.try_get("grid_w").map_err(sql_err)?,
+        grid_h: row.try_get("grid_h").map_err(sql_err)?,
+        display_order: row.try_get("display_order").map_err(sql_err)?,
+    })
+}
+
+async fn insert_panels(
+    tx: &mut sqlx::PgConnection,
+    dashboard_id: Uuid,
+    panels: &[DashboardPanelInput],
+) -> std::result::Result<(), CatalogError> {
+    for panel in panels {
+        let panel_id = panel.id.unwrap_or_else(Uuid::new_v4);
+        sqlx::query(
+            "INSERT INTO dashboard_panels
+             (id, dashboard_id, title, panel_type, query, database_name,
+              config, grid_x, grid_y, grid_w, grid_h, display_order)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+        )
+        .bind(panel_id)
+        .bind(dashboard_id)
+        .bind(&panel.title)
+        .bind(&panel.panel_type)
+        .bind(panel.query.as_deref())
+        .bind(panel.database_name.as_deref())
+        .bind(&panel.config)
+        .bind(panel.grid_x)
+        .bind(panel.grid_y)
+        .bind(panel.grid_w)
+        .bind(panel.grid_h)
+        .bind(panel.display_order)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+    }
+    Ok(())
 }
 
 fn role_to_str(role: NodeRole) -> &'static str {
