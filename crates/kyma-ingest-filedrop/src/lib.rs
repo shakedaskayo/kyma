@@ -27,7 +27,6 @@ use object_store::path::Path;
 use object_store::ObjectStore;
 use sha2::{Digest, Sha256};
 use std::future::Future;
-use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, info, instrument, warn};
@@ -263,19 +262,12 @@ fn split_path(prefix: &str, path: &Path) -> Option<(String, String, String)> {
 }
 
 /// Parse an NDJSON body into `RecordBatch`es according to the table's schema.
-/// Uses `arrow::json::ReaderBuilder`, the same path REST ingest uses.
+/// Delegates to the shared `kyma_ingest_core::parse_ndjson`, which handles
+/// primitive columns via arrow-json and adds `FixedSizeList<Float32>`
+/// (vector-column) support — the same path REST and Kafka ingest use.
 fn parse_ndjson(bytes: &[u8], schema: &Arc<Schema>) -> Result<Vec<RecordBatch>> {
-    use arrow::json::ReaderBuilder;
-    let cursor = Cursor::new(bytes.to_vec());
-    let reader = ReaderBuilder::new(schema.clone())
-        .build(cursor)
-        .map_err(|e| Error::Internal(format!("ndjson reader: {e}")))?;
-    let mut batches = Vec::new();
-    for r in reader {
-        let b = r.map_err(|e| Error::Internal(format!("ndjson decode: {e}")))?;
-        batches.push(b);
-    }
-    Ok(batches)
+    kyma_ingest_core::parse_ndjson(bytes, schema.clone())
+        .map_err(|e| Error::Internal(format!("filedrop ndjson: {e}")))
 }
 
 fn hex_encode(bytes: &[u8]) -> String {

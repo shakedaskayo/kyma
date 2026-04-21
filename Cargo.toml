@@ -66,6 +66,7 @@ opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
 arrow = "53"
 arrow-array = "53"
 arrow-schema = "53"
+arrow-json = "53"
 arrow-flight = "53"
 datafusion = "44"
 
