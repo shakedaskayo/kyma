@@ -18,6 +18,7 @@
 
 pub mod auth;
 pub mod catalog_handler;
+pub mod dashboards_handler;
 pub mod flight;
 mod health;
 pub mod metrics;
@@ -91,11 +92,45 @@ pub struct QueryState {
 /// Every route mounted here assumes at least `Role::Read`; the caller wraps
 /// the entire router with `require_role_middleware(Role::Read)`.
 pub fn router(state: QueryState) -> Router {
+    use dashboards_handler::{DashboardState, get_dashboard, list_dashboards};
+    let dash_read_state = DashboardState {
+        catalog: state.catalog.clone(),
+    };
+    // Dashboard read routes are on their own sub-router with DashboardState.
+    let dash_read_router = Router::new()
+        .route("/v1/dashboards", get(list_dashboards))
+        .route("/v1/dashboards/:id", get(get_dashboard))
+        .with_state(dash_read_state);
+
     Router::new()
         .route("/v1/query", post(query_handler))
         .route(
             "/v1/catalog/schema",
             get(catalog_handler::schema_handler),
+        )
+        .with_state(state)
+        .merge(dash_read_router)
+        .layer(SetRequestIdLayer::new(
+            REQUEST_ID_HEADER.clone(),
+            MakeRequestUuid,
+        ))
+        .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER.clone()))
+}
+
+/// Build the dashboards write router — POST, PATCH, DELETE require `Role::Write`.
+///
+/// Mount alongside the query router in `main.rs`, wrapped with
+/// `require_role_middleware(Role::Write)`.
+pub fn dashboards_write_router(catalog: Arc<dyn kyma_core::catalog::Catalog>) -> Router {
+    use dashboards_handler::{
+        DashboardState, create_dashboard, delete_dashboard, update_dashboard,
+    };
+    let state = DashboardState { catalog };
+    Router::new()
+        .route("/v1/dashboards", post(create_dashboard))
+        .route(
+            "/v1/dashboards/:id",
+            axum::routing::patch(update_dashboard).delete(delete_dashboard),
         )
         .with_state(state)
         .layer(SetRequestIdLayer::new(

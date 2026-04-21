@@ -38,6 +38,46 @@ impl TestServer {
     }
 }
 
+/// Spin up a fresh Postgres via testcontainers with no databases/tables,
+/// returning a bare [`QueryState`]. Useful for dashboard and other tests
+/// that don't need any table data.
+///
+/// # Panics
+///
+/// Panics on any fixture-setup failure.
+pub async fn seeded_state_empty() -> QueryState {
+    let container = Postgres::default()
+        .with_user("kyma")
+        .with_password("kyma_dev")
+        .with_db_name("kyma")
+        .start()
+        .await
+        .expect("testcontainers: failed to start Postgres");
+    let port = container
+        .get_host_port_ipv4(5432)
+        .await
+        .expect("testcontainers: failed to get mapped port");
+    let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
+
+    let catalog: Arc<dyn Catalog> = Arc::new(
+        PostgresCatalog::connect(&url)
+            .await
+            .expect("catalog connect + migrate"),
+    );
+
+    let store = Arc::new(InMemory::new());
+    let format = Arc::new(TelemetryFormat::new(store, "kyma-test"));
+
+    // Suppress Drop so the container outlives the test's tokio runtime.
+    std::mem::forget(container);
+
+    QueryState {
+        catalog,
+        format,
+        schema_cache: Arc::new(SchemaCache::new()),
+    }
+}
+
 /// Spin up a fresh Postgres via testcontainers, seed it with the "obs" /
 /// "otel_logs" table, and return a [`QueryState`] ready for use in handler
 /// tests.
