@@ -49,3 +49,6 @@ pub trait EmbeddingBackend: Send + Sync + std::fmt::Debug {
 
 #[cfg(feature = "fastembed-backend")]
 pub use fastembed::FastembedBackend;
+
+#[cfg(feature = "ollama")]
+pub use ollama::OllamaBackend;
