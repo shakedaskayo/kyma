@@ -47,7 +47,7 @@ assert_eq() {
     fi
 }
 cleanup() {
-    [[ -n "${SERVER_PID:-}" ]] && kill "$SERVER_PID" 2>/dev/null && wait "$SERVER_PID" 2>/dev/null || true
+    [[ -n "${SERVER_PID:-}" ]] && kill -9 "$SERVER_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 

@@ -36,7 +36,7 @@ pass=0; fail=0
 section() { printf "\n${BLU}==> %s${NC}\n" "$*"; }
 ok()      { printf "  ${GRN}PASS${NC} %s\n" "$*"; pass=$((pass+1)); }
 f()       { printf "  ${RED}FAIL${NC} %s\n" "$*"; fail=$((fail+1)); }
-cleanup() { [[ -n "${SERVER_PID:-}" ]] && kill "$SERVER_PID" 2>/dev/null && wait "$SERVER_PID" 2>/dev/null || true; }
+cleanup() { [[ -n "${SERVER_PID:-}" ]] && kill -9 "$SERVER_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
 if ! docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1; then

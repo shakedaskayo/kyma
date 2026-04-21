@@ -23,6 +23,14 @@ pub struct QueryState {
     pub order_by: Vec<(String, bool)>,
     pub limit: Option<u64>,
     pub distinct: bool,
+    /// CTEs to emit in a `WITH [RECURSIVE] …` prelude. Tuple:
+    /// `(name, body, needs_recursive)`. When any cte has
+    /// `needs_recursive = true`, the whole WITH clause becomes
+    /// `WITH RECURSIVE`.
+    ///
+    /// Graph operators (`graph-traverse`, `graph-shortest-path`) populate
+    /// these; regular operators leave them empty and the SQL stays flat.
+    pub ctes: Vec<(String, String, bool)>,
 }
 
 impl QueryState {
@@ -34,6 +42,7 @@ impl QueryState {
     }
 
     pub fn to_sql(&self) -> String {
+        let prelude = self.render_cte_prelude();
         // SELECT list.
         let select_clause = if !self.aggregates.is_empty() {
             // summarize => GROUP BY + aggregate expressions.
@@ -88,7 +97,7 @@ impl QueryState {
             ""
         };
 
-        let mut sql = format!("SELECT {distinct}{select_clause} FROM {}", self.table);
+        let mut sql = format!("{prelude}SELECT {distinct}{select_clause} FROM {}", self.table);
 
         if !self.where_clauses.is_empty() {
             sql.push_str(" WHERE ");
@@ -121,5 +130,19 @@ impl QueryState {
         }
 
         sql
+    }
+
+    fn render_cte_prelude(&self) -> String {
+        if self.ctes.is_empty() {
+            return String::new();
+        }
+        let any_recursive = self.ctes.iter().any(|(_, _, r)| *r);
+        let keyword = if any_recursive { "WITH RECURSIVE " } else { "WITH " };
+        let parts: Vec<String> = self
+            .ctes
+            .iter()
+            .map(|(name, body, _)| format!("{name} AS ({body})"))
+            .collect();
+        format!("{keyword}{} ", parts.join(", "))
     }
 }
