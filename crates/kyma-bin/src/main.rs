@@ -218,8 +218,16 @@ async fn main() -> Result<()> {
         (auth.clone(), Role::Write),
         require_role_middleware,
     ));
+    let dashboards_write_router =
+        kyma_server::dashboards_write_router(catalog.clone()).layer(
+            axum::middleware::from_fn_with_state(
+                (auth.clone(), Role::Write),
+                require_role_middleware,
+            ),
+        );
     let app = ingest_router
         .merge(query_router)
+        .merge(dashboards_write_router)
         .merge(health_router)
         .merge(metrics_router)
         .merge(connector_admin_router);

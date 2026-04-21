@@ -183,6 +183,78 @@ pub struct ColumnInfo {
     pub nullable: bool,
 }
 
+// -------------------- Dashboards --------------------
+
+/// A saved dashboard definition.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Dashboard {
+    pub id: uuid::Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub time_range_preset: String,
+    pub refresh_interval_seconds: Option<i32>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// A single panel within a dashboard.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DashboardPanel {
+    pub id: uuid::Uuid,
+    pub dashboard_id: uuid::Uuid,
+    pub title: String,
+    /// `"chart"` | `"table"` | `"markdown"` | `"stat"`
+    pub panel_type: String,
+    pub query: Option<String>,
+    pub database_name: Option<String>,
+    pub config: serde_json::Value,
+    pub grid_x: i32,
+    pub grid_y: i32,
+    pub grid_w: i32,
+    pub grid_h: i32,
+    pub display_order: i32,
+}
+
+/// A dashboard with its panels fully loaded.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DashboardWithPanels {
+    #[serde(flatten)]
+    pub dashboard: Dashboard,
+    pub panels: Vec<DashboardPanel>,
+}
+
+/// Patch payload for `update_dashboard`. Every field is optional; absent
+/// fields are left unchanged. `panels: Some(vec)` atomically replaces all
+/// panels; `panels: None` leaves panels untouched.
+#[derive(Debug, Clone, serde::Deserialize, Default)]
+pub struct DashboardUpdate {
+    pub name: Option<String>,
+    pub description: Option<Option<String>>,
+    pub time_range_preset: Option<String>,
+    pub refresh_interval_seconds: Option<Option<i32>>,
+    /// When present, REPLACES all panels for this dashboard atomically.
+    /// `None` means leave panels alone.
+    pub panels: Option<Vec<DashboardPanelInput>>,
+}
+
+/// Input shape for creating or replacing a panel.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct DashboardPanelInput {
+    /// Optional — if absent a new UUID is generated; if present it must
+    /// belong to this dashboard (or will be treated as a new panel id).
+    pub id: Option<uuid::Uuid>,
+    pub title: String,
+    pub panel_type: String,
+    pub query: Option<String>,
+    pub database_name: Option<String>,
+    pub config: serde_json::Value,
+    pub grid_x: i32,
+    pub grid_y: i32,
+    pub grid_w: i32,
+    pub grid_h: i32,
+    pub display_order: i32,
+}
+
 // -------------------- The Catalog trait --------------------
 
 /// The catalog. All durable metadata flows through this trait.
@@ -298,6 +370,29 @@ pub trait Catalog: Send + Sync {
 
     /// Mark a claimed task failed. Requeues for retry if attempt < max_attempts.
     async fn fail_task(&self, task_id: uuid::Uuid, error: &str) -> Result<()>;
+
+    // --- dashboards ---
+
+    async fn create_dashboard(
+        &self,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<Dashboard, CatalogError>;
+
+    async fn list_dashboards(&self) -> Result<Vec<Dashboard>, CatalogError>;
+
+    async fn get_dashboard(
+        &self,
+        id: uuid::Uuid,
+    ) -> Result<Option<DashboardWithPanels>, CatalogError>;
+
+    async fn update_dashboard(
+        &self,
+        id: uuid::Uuid,
+        patch: DashboardUpdate,
+    ) -> Result<Dashboard, CatalogError>;
+
+    async fn delete_dashboard(&self, id: uuid::Uuid) -> Result<bool, CatalogError>;
 
     // --- ingest idempotency ledger ---
 
