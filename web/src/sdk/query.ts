@@ -1,8 +1,17 @@
-import { createGrpcWebTransport } from "@connectrpc/connect-web";
-import { createClient } from "@connectrpc/connect";
-import { create } from "@bufbuild/protobuf";
-import { FlightService, TicketSchema, type FlightData } from "./gen/Flight_pb";
-import { tableFromIPC, RecordBatch } from "apache-arrow";
+// HTTP NDJSON query client. Posts KQL/SQL to `/v1/query` and streams back
+// NDJSON rows. Each iteration of the generator yields a snapshot of
+// accumulated columns + rows so the caller can render incrementally.
+//
+// A Flight gRPC-web path existed here earlier but was removed: tonic-web's
+// chunked-transfer termination and @connectrpc/connect-web's envelope reader
+// disagreed on the end-of-stream condition, producing "incomplete envelope"
+// on every query. HTTP NDJSON over the existing `/v1/query` surface ships
+// the same data with one less protocol in the mix. Flight remains the
+// server-to-server and agent-SDK path on :9090.
+
+import type { Column, ColKind } from "./arrow";
+export type { Column, ColKind };
+export type ResultChunk = { columns: Column[]; rows: Record<string, unknown>[] };
 
 export type QueryArgs = {
   endpoint: string;
@@ -19,67 +28,107 @@ export function encodeTicket(t: { database: string; query: string; language: str
   return new TextEncoder().encode(JSON.stringify(t));
 }
 
-export async function* runQuery(args: QueryArgs): AsyncGenerator<RecordBatch, void, void> {
-  const transport = createGrpcWebTransport({ baseUrl: args.endpoint.replace(/\/$/, "") });
-  const client = createClient(FlightService, transport);
+const CHUNK_ROWS = 500;
 
-  const ticket = create(TicketSchema, {
-    ticket: encodeTicket({
-      database: args.database, query: args.query, language: args.language,
-    }),
-  });
+export async function* runQuery(args: QueryArgs): AsyncGenerator<ResultChunk, void, void> {
+  const base = args.endpoint.replace(/\/$/, "");
+  const url = `${base}/v1/query`;
 
-  const headers: Record<string, string> = { authorization: `Bearer ${args.token}` };
+  const headers: Record<string, string> = {
+    "content-type": args.language === "sql" ? "application/sql" : "application/x-kql",
+    "authorization": `Bearer ${args.token}`,
+    "x-database": args.database,
+  };
   if (args.walMs)    headers["x-kyma-max-wall-clock-ms"] = String(args.walMs);
   if (args.memBytes) headers["x-kyma-max-memory-bytes"]  = String(args.memBytes);
 
-  const stream = client.doGet(ticket, { headers, signal: args.signal });
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: args.query,
+    signal: args.signal,
+  });
 
-  // Re-frame each FlightData (raw flatbuffer + body) back into Arrow IPC stream
-  // format so apache-arrow's tableFromIPC can decode it. tonic's
-  // FlightDataEncoder strips the stream's continuation/length/padding; we put
-  // it back here on the wire side.
-  const chunks: Uint8Array[] = [];
-  for await (const msg of stream as AsyncIterable<FlightData>) {
-    for (const part of reframe(msg)) chunks.push(part);
+  if (!res.ok) {
+    let detail = "";
+    try { detail = await res.text(); } catch { /* ignore */ }
+    throw new Error(`query failed (${res.status}): ${detail.slice(0, 500)}`);
   }
-  // IPC stream end-of-stream marker: 4-byte continuation + 4-byte zero length.
-  chunks.push(endOfStream());
 
-  const full = concat(chunks);
-  const table = tableFromIPC(full);
-  for (const batch of table.batches) yield batch;
+  const reader = res.body?.getReader();
+  if (!reader) {
+    // Non-streaming fallback: decode whole body as NDJSON.
+    const text = await res.text();
+    const rows = parseNdjson(text);
+    const columns = inferColumns(rows);
+    if (rows.length > 0) yield { columns, rows };
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let leftover = "";
+  let columns: Column[] | null = null;
+  let pending: Record<string, unknown>[] = [];
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    leftover += decoder.decode(value, { stream: true });
+    let nl;
+    while ((nl = leftover.indexOf("\n")) >= 0) {
+      const line = leftover.slice(0, nl).trim();
+      leftover = leftover.slice(nl + 1);
+      if (!line) continue;
+      try {
+        const row = JSON.parse(line) as Record<string, unknown>;
+        pending.push(row);
+        if (!columns) columns = inferColumnsFromRow(row);
+      } catch { /* skip malformed line */ }
+    }
+    if (columns && pending.length >= CHUNK_ROWS) {
+      yield { columns, rows: pending };
+      pending = [];
+    }
+  }
+
+  // Flush trailing incomplete line if it's a complete JSON object (no newline at EOF).
+  const tail = leftover.trim();
+  if (tail) {
+    try {
+      const row = JSON.parse(tail) as Record<string, unknown>;
+      pending.push(row);
+      if (!columns) columns = inferColumnsFromRow(row);
+    } catch { /* ignore */ }
+  }
+  if (pending.length > 0) yield { columns: columns ?? [], rows: pending };
 }
 
-export function reframe(msg: FlightData): Uint8Array[] {
-  const out: Uint8Array[] = [];
-  if (msg.dataHeader.length) {
-    const headerLen = msg.dataHeader.length;
-    const padded = (headerLen + 7) & ~7; // 8-byte align
-    const prefix = new Uint8Array(8);
-    const view = new DataView(prefix.buffer);
-    view.setInt32(0, -1, true);          // continuation: 0xFFFFFFFF
-    view.setInt32(4, padded, true);      // metadata length (includes padding)
-    out.push(prefix);
-    out.push(msg.dataHeader);
-    if (padded > headerLen) out.push(new Uint8Array(padded - headerLen));
+function parseNdjson(text: string): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    try { out.push(JSON.parse(t) as Record<string, unknown>); } catch { /* skip */ }
   }
-  if (msg.dataBody.length) out.push(msg.dataBody);
   return out;
 }
 
-export function endOfStream(): Uint8Array {
-  const buf = new Uint8Array(8);
-  const view = new DataView(buf.buffer);
-  view.setInt32(0, -1, true); // continuation
-  view.setInt32(4, 0, true);  // zero length → EOS
-  return buf;
+function inferColumns(rows: Record<string, unknown>[]): Column[] {
+  return rows.length > 0 ? inferColumnsFromRow(rows[0]) : [];
 }
 
-function concat(xs: Uint8Array[]): Uint8Array {
-  const total = xs.reduce((n, x) => n + x.length, 0);
-  const out = new Uint8Array(total);
-  let o = 0;
-  for (const x of xs) { out.set(x, o); o += x.length; }
-  return out;
+function inferColumnsFromRow(row: Record<string, unknown>): Column[] {
+  return Object.keys(row).map((name) => ({ name, kind: columnKindOf(row[name]) }));
+}
+
+function columnKindOf(v: unknown): ColKind {
+  if (v == null) return "other";
+  if (typeof v === "number" || typeof v === "bigint") return "numeric";
+  if (typeof v === "boolean") return "bool";
+  if (typeof v === "string") {
+    // ISO-8601 timestamp heuristic: 2026-04-21T... or 2026-04-21 ...
+    if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?/.test(v)) return "time";
+    return "string";
+  }
+  return "other";
 }

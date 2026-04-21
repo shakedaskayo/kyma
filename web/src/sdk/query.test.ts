@@ -1,6 +1,7 @@
-// web/src/sdk/query.test.ts — smoke-level; integration test covered in E2E.
-import { expect, test } from "vitest";
-import { encodeTicket, reframe } from "./query";
+import { beforeEach, expect, test, vi } from "vitest";
+import { encodeTicket, runQuery } from "./query";
+
+beforeEach(() => { vi.unstubAllGlobals(); });
 
 test("encodeTicket serializes database+query+language as JSON", () => {
   const bytes = encodeTicket({ database: "obs", query: "otel_logs | take 1", language: "kql" });
@@ -9,22 +10,55 @@ test("encodeTicket serializes database+query+language as JSON", () => {
   expect(json).toEqual({ database: "obs", query: "otel_logs | take 1", language: "kql" });
 });
 
-test("reframe emits IPC-stream framing for a FlightData message", () => {
-  const msg = {
-    dataHeader: new Uint8Array([1, 2, 3]),  // 3 bytes → padded to 8
-    dataBody:   new Uint8Array([10, 20, 30, 40]),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any; // structural typing, not the real FlightData class
-  const parts = reframe(msg);
-  const flat = parts.reduce((acc, p) => { const o = new Uint8Array(acc.length + p.length); o.set(acc); o.set(p, acc.length); return o; }, new Uint8Array());
-  // 8-byte prefix
-  expect(flat[0]).toBe(0xff);
-  expect(flat[1]).toBe(0xff);
-  expect(flat[2]).toBe(0xff);
-  expect(flat[3]).toBe(0xff);
-  // padded length = 8
-  const len = new DataView(flat.buffer, 4, 4).getInt32(0, true);
-  expect(len).toBe(8);
-  // Total = 8 (prefix) + 8 (padded header) + 4 (body) = 20
-  expect(flat.length).toBe(20);
+test("runQuery parses NDJSON and infers column kinds", async () => {
+  const ndjson = [
+    JSON.stringify({ timestamp: "2026-04-21T10:00:00", n: 1, label: "a" }),
+    JSON.stringify({ timestamp: "2026-04-21T10:01:00", n: 2, label: "b" }),
+  ].join("\n");
+  const mockFetch = vi.fn().mockResolvedValue(new Response(ndjson, {
+    status: 200, headers: { "content-type": "application/x-ndjson" },
+  }));
+  vi.stubGlobal("fetch", mockFetch);
+
+  const chunks: { columns: unknown; rows: unknown[] }[] = [];
+  for await (const c of runQuery({
+    endpoint: "http://localhost:7070", token: "t", database: "default",
+    query: "ev | take 2", language: "kql",
+  })) chunks.push(c);
+
+  expect(chunks.length).toBeGreaterThanOrEqual(1);
+  const last = chunks.at(-1)!;
+  expect(last.rows).toEqual([
+    { timestamp: "2026-04-21T10:00:00", n: 1, label: "a" },
+    { timestamp: "2026-04-21T10:01:00", n: 2, label: "b" },
+  ]);
+  expect(last.columns).toEqual([
+    { name: "timestamp", kind: "time" },
+    { name: "n", kind: "numeric" },
+    { name: "label", kind: "string" },
+  ]);
+  expect(mockFetch).toHaveBeenCalledWith(
+    "http://localhost:7070/v1/query",
+    expect.objectContaining({
+      method: "POST",
+      headers: expect.objectContaining({
+        "content-type": "application/x-kql",
+        "x-database": "default",
+        "authorization": "Bearer t",
+      }),
+      body: "ev | take 2",
+    }),
+  );
+});
+
+test("runQuery throws with the body on non-OK status", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("parse error near 'wat'", {
+    status: 400,
+  })));
+  await expect((async () => {
+    for await (const _ of runQuery({
+      endpoint: "http://x", token: "t", database: "default",
+      query: "wat", language: "kql",
+    })) { void _; }
+  })()).rejects.toThrow(/query failed \(400\): parse error/);
 });
