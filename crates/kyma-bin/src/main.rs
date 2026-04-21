@@ -458,6 +458,10 @@ async fn main() -> Result<()> {
     };
 
     // 7. HTTP server.
+    //    Apply dev CORS to the outermost router so browsers on a separate
+    //    origin (e.g. `localhost:5173`) can reach the API. Production
+    //    deploys should replace this with a config-driven allow-list.
+    let app = kyma_server::with_permissive_cors(app);
     let listener = tokio::net::TcpListener::bind(cli.http_addr)
         .await
         .with_context(|| format!("binding {}", cli.http_addr))?;

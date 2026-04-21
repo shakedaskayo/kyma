@@ -150,6 +150,23 @@ pub fn router_with_agent(state: QueryState, agent_state: agent::AgentState) -> R
     router(state).nest("/v1/agent", agent::router(agent_state))
 }
 
+/// Wrap any router with a permissive dev CORS layer so a browser dev-server
+/// running on a separate origin (e.g. `http://localhost:5173`) can reach the
+/// API. Mirrors the request origin, accepts any method / header, and exposes
+/// all response headers so SSE streams + Authorization headers flow through.
+///
+/// Apply this to the outermost `Router` in `kyma-bin::main`. Production
+/// deployments should replace it with a config-driven origin allow-list.
+pub fn with_permissive_cors(r: Router) -> Router {
+    use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::mirror_request())
+        .allow_methods(Any)
+        .allow_headers(Any)
+        .expose_headers(Any);
+    r.layer(cors)
+}
+
 #[derive(Debug, Serialize)]
 struct ErrorBody<'a> {
     error: ErrorDetail<'a>,
