@@ -61,8 +61,7 @@ pub fn parse_ndjson(bytes: &[u8], schema: SchemaRef) -> Result<Vec<RecordBatch>,
 
     if vector_cols.is_empty() {
         // Fast path: pure arrow-json, preserves existing behavior.
-        let reader =
-            arrow_json::ReaderBuilder::new(schema).build(BufReader::new(bytes))?;
+        let reader = arrow_json::ReaderBuilder::new(schema).build(BufReader::new(bytes))?;
         return reader
             .collect::<Result<Vec<_>, _>>()
             .map_err(NdjsonError::from);

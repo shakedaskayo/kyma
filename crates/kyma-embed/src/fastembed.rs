@@ -31,9 +31,7 @@ impl FastembedBackend {
     /// `model_id` is the short name (e.g., `"bge-small-en-v1.5"`).
     /// `model_path` optionally points at a pre-downloaded ONNX dir for
     /// air-gapped deployments (env `KYMA_EMBED_MODEL_PATH`).
-    pub async fn new(model_id: &str, model_path: Option<&str>)
-        -> Result<Self, EmbedError>
-    {
+    pub async fn new(model_id: &str, model_path: Option<&str>) -> Result<Self, EmbedError> {
         let em = pick_model(model_id)?;
         let dimension = em_dimension(&em);
         let mut opts = InitOptions::new(em);
@@ -54,10 +52,16 @@ impl FastembedBackend {
 
 #[async_trait]
 impl EmbeddingBackend for FastembedBackend {
-    fn id(&self) -> &str { &self.id }
-    fn dimension(&self) -> u16 { self.dimension }
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn dimension(&self) -> u16 {
+        self.dimension
+    }
     async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedError> {
-        if texts.is_empty() { return Ok(vec![]); }
+        if texts.is_empty() {
+            return Ok(vec![]);
+        }
         let inner = self.inner.clone();
         let owned: Vec<String> = texts.to_vec();
         let dim = self.dimension;
@@ -69,7 +73,8 @@ impl EmbeddingBackend for FastembedBackend {
             for v in &vecs {
                 if v.len() != dim as usize {
                     return Err(EmbedError::DimensionMismatch {
-                        got: v.len() as u16, expected: dim,
+                        got: v.len() as u16,
+                        expected: dim,
                     });
                 }
             }
@@ -83,10 +88,11 @@ impl EmbeddingBackend for FastembedBackend {
 fn pick_model(id: &str) -> Result<EmbeddingModel, EmbedError> {
     match id {
         "bge-small-en-v1.5" => Ok(EmbeddingModel::BGESmallENV15),
-        "bge-base-en-v1.5"  => Ok(EmbeddingModel::BGEBaseENV15),
-        "all-MiniLM-L6-v2"  => Ok(EmbeddingModel::AllMiniLML6V2),
+        "bge-base-en-v1.5" => Ok(EmbeddingModel::BGEBaseENV15),
+        "all-MiniLM-L6-v2" => Ok(EmbeddingModel::AllMiniLML6V2),
         other => Err(EmbedError::NotConfigured(format!(
-            "unknown fastembed model: {other}"))),
+            "unknown fastembed model: {other}"
+        ))),
     }
 }
 

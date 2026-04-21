@@ -8,10 +8,7 @@ fn schema_with_vector(dim: i32) -> Arc<Schema> {
         Field::new("id", DataType::Utf8, false),
         Field::new(
             "embedding",
-            DataType::FixedSizeList(
-                Arc::new(Field::new("item", DataType::Float32, false)),
-                dim,
-            ),
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, false)), dim),
             false,
         ),
     ]))
@@ -33,7 +30,8 @@ fn primitive_only_schema_delegates_to_arrow_json_unchanged() {
 #[test]
 fn coerces_json_float_array_to_fixed_size_list_vector() {
     let schema = schema_with_vector(3);
-    let ndjson = b"{\"id\":\"a\",\"embedding\":[0.1,0.2,0.3]}\n{\"id\":\"b\",\"embedding\":[0.4,0.5,0.6]}\n";
+    let ndjson =
+        b"{\"id\":\"a\",\"embedding\":[0.1,0.2,0.3]}\n{\"id\":\"b\",\"embedding\":[0.4,0.5,0.6]}\n";
     let batches = parse_ndjson(ndjson, schema).unwrap();
     assert_eq!(batches.len(), 1);
     assert_eq!(batches[0].num_rows(), 2);

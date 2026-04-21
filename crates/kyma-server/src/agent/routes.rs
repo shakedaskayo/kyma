@@ -10,23 +10,23 @@ use std::time::{Duration, Instant};
 use adk_rust::futures::StreamExt;
 use adk_rust::identity::{SessionId, UserId};
 use adk_rust::{Content, Part};
-use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use axum::Json;
 use chrono::Utc;
 use futures::stream::{self, Stream};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::types::Json as SqlxJson;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
 
-use super::runner::{ANON_USER, make_runner, model_id};
+use super::runner::{make_runner, model_id, ANON_USER};
 use super::state::AgentState;
 
 /// Hard cap on tool-call count per run. Above this, the turn is aborted
@@ -70,7 +70,10 @@ fn emit(
     event: &'static str,
     data: Value,
 ) {
-    trace.push(TraceFrame { event, data: data.clone() });
+    trace.push(TraceFrame {
+        event,
+        data: data.clone(),
+    });
     let body = serde_json::to_string(&data).unwrap_or_else(|_| "{}".to_string());
     // Best-effort: if the client has hung up we just keep walking the
     // stream until the budget fires — the cancellation is cooperative.
@@ -78,10 +81,7 @@ fn emit(
 }
 
 /// POST /v1/agent/ask — run one agent turn and stream SSE frames.
-async fn ask_handler(
-    State(state): State<AgentState>,
-    Json(body): Json<AskRequest>,
-) -> Response {
+async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskRequest>) -> Response {
     let question = body.question.trim().to_string();
     if question.is_empty() {
         return (
@@ -173,20 +173,17 @@ async fn ask_handler(
         let user_id = match UserId::new(ANON_USER) {
             Ok(u) => u,
             Err(e) => {
-                emit(&tx, &mut trace, "run_error", json!({
-                    "code": "internal",
-                    "message": format!("user_id: {e}"),
-                }));
-                finish_and_persist(
-                    &pool,
+                emit(
                     &tx,
-                    run_id,
-                    &question,
-                    &model,
-                    started_at,
-                    start,
-                    tool_calls,
-                    "error",
+                    &mut trace,
+                    "run_error",
+                    json!({
+                        "code": "internal",
+                        "message": format!("user_id: {e}"),
+                    }),
+                );
+                finish_and_persist(
+                    &pool, &tx, run_id, &question, &model, started_at, start, tool_calls, "error",
                     &trace,
                 )
                 .await;
@@ -196,20 +193,17 @@ async fn ask_handler(
         let session_id = match SessionId::new(&session_id_str) {
             Ok(s) => s,
             Err(e) => {
-                emit(&tx, &mut trace, "run_error", json!({
-                    "code": "internal",
-                    "message": format!("session_id: {e}"),
-                }));
-                finish_and_persist(
-                    &pool,
+                emit(
                     &tx,
-                    run_id,
-                    &question,
-                    &model,
-                    started_at,
-                    start,
-                    tool_calls,
-                    "error",
+                    &mut trace,
+                    "run_error",
+                    json!({
+                        "code": "internal",
+                        "message": format!("session_id: {e}"),
+                    }),
+                );
+                finish_and_persist(
+                    &pool, &tx, run_id, &question, &model, started_at, start, tool_calls, "error",
                     &trace,
                 )
                 .await;
@@ -254,12 +248,7 @@ async fn ask_handler(
                         }
                         Part::Thinking { thinking, .. } => {
                             if include_thinking {
-                                emit(
-                                    &tx,
-                                    &mut trace,
-                                    "thinking_delta",
-                                    json!({"text": thinking}),
-                                );
+                                emit(&tx, &mut trace, "thinking_delta", json!({"text": thinking}));
                             }
                         }
                         Part::FunctionCall { name, args, .. } => {
@@ -283,7 +272,9 @@ async fn ask_handler(
                                 return Err(format!("tool_loop:{}", tool_calls));
                             }
                         }
-                        Part::FunctionResponse { function_response, .. } => {
+                        Part::FunctionResponse {
+                            function_response, ..
+                        } => {
                             emit(
                                 &tx,
                                 &mut trace,
@@ -368,15 +359,7 @@ async fn ask_handler(
         }
 
         finish_and_persist(
-            &pool,
-            &tx,
-            run_id,
-            &question,
-            &model,
-            started_at,
-            start,
-            tool_calls,
-            status_str,
+            &pool, &tx, run_id, &question, &model, started_at, start, tool_calls, status_str,
             &trace,
         )
         .await;

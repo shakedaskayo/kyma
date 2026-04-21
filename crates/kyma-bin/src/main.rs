@@ -176,18 +176,21 @@ async fn main() -> Result<()> {
         format: format.clone(),
         pool: pg_pool.clone(),
     };
-    let query_router = kyma_server::router_with_agent(
-        QueryState {
-            catalog: catalog.clone(),
-            format: format.clone(),
-            schema_cache: std::sync::Arc::new(kyma_server::catalog_handler::SchemaCache::from_env()),
-        },
-        agent_state,
-    )
-    .layer(axum::middleware::from_fn_with_state(
-        (auth.clone(), Role::Read),
-        require_role_middleware,
-    ));
+    let query_router =
+        kyma_server::router_with_agent(
+            QueryState {
+                catalog: catalog.clone(),
+                format: format.clone(),
+                schema_cache: std::sync::Arc::new(
+                    kyma_server::catalog_handler::SchemaCache::from_env(),
+                ),
+            },
+            agent_state,
+        )
+        .layer(axum::middleware::from_fn_with_state(
+            (auth.clone(), Role::Read),
+            require_role_middleware,
+        ));
     // Connector registry + row-sink.
     let mut conn_reg = ConnectorRegistry::new();
     conn_reg.register(Arc::new(PromConnector));
