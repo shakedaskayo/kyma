@@ -171,6 +171,7 @@ async fn main() -> Result<()> {
     let query_router = kyma_server::router(QueryState {
         catalog: catalog.clone(),
         format: format.clone(),
+        schema_cache: std::sync::Arc::new(kyma_server::catalog_handler::SchemaCache::new()),
     })
     .layer(axum::middleware::from_fn_with_state(
         (auth.clone(), Role::Read),
@@ -222,6 +223,24 @@ async fn main() -> Result<()> {
         .merge(health_router)
         .merge(metrics_router)
         .merge(connector_admin_router);
+    #[cfg(feature = "web-ui")]
+    let app = app.merge(kyma_server::web_ui::router());
+
+    // Expose Flight over gRPC-web at /flight/* so browsers can query via Arrow Flight.
+    // Auth is enforced the same way as /v1/* (Bearer token, Role::Read required).
+    #[cfg(feature = "web-ui")]
+    let app = {
+        let flight_router = kyma_server::flight_web_router(kyma_server::QueryState {
+            catalog: catalog.clone(),
+            format: format.clone(),
+            schema_cache: std::sync::Arc::new(kyma_server::catalog_handler::SchemaCache::new()),
+        })
+        .layer(axum::middleware::from_fn_with_state(
+            (auth.clone(), kyma_server::auth::Role::Read),
+            kyma_server::auth::require_role_middleware,
+        ));
+        app.merge(flight_router)
+    };
 
     // 5. Spawn background workers. Each has an independent shutdown watch so
     //    a panic in one worker doesn't starve the others or the HTTP server.

@@ -24,8 +24,8 @@ pub use snapshot::PgSnapshotTxn;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use kyma_core::catalog::{
-    BackgroundTask, Catalog, ColumnPrune, ExtentManifest, IngestLedgerEntry, NodeInfo, NodeLease,
-    NodeRole, PrunePredicate, SnapshotTxn, TableConfig, TableRef,
+    BackgroundTask, Catalog, ColumnInfo, ColumnPrune, ExtentManifest, IngestLedgerEntry, NodeInfo,
+    NodeLease, NodeRole, PrunePredicate, SnapshotTxn, TableConfig, TableRef,
 };
 use kyma_core::errors::{CatalogError, Result};
 use kyma_core::types::{DatabaseId, ExtentId, NodeId, SchemaSnapshotId, SnapshotId, TableId};
@@ -755,6 +755,81 @@ impl Catalog for PostgresCatalog {
             bytes_written: row.try_get::<i64, _>("bytes_written").map_err(sql_err)? as u64,
             applied_at: row.try_get("applied_at").map_err(sql_err)?,
         }))
+    }
+
+    // --- schema-listing ---
+
+    async fn list_databases(&self) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM databases ORDER BY name ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(rows.into_iter().map(|r| r.0).collect())
+    }
+
+    async fn list_tables(
+        &self,
+        database: &str,
+    ) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT t.name FROM tables t
+             JOIN databases d ON d.id = t.database_id
+             WHERE d.name = $1
+             ORDER BY t.name ASC",
+        )
+        .bind(database)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(rows.into_iter().map(|r| r.0).collect())
+    }
+
+    async fn get_table_columns(
+        &self,
+        database: &str,
+        table: &str,
+    ) -> std::result::Result<Vec<ColumnInfo>, kyma_core::errors::CatalogError> {
+        let row: Option<(serde_json::Value,)> = sqlx::query_as(
+            "SELECT ss.arrow_schema
+             FROM tables t
+             JOIN databases d ON d.id = t.database_id
+             JOIN schema_snapshots ss ON ss.id = t.schema_snapshot_id
+             WHERE d.name = $1 AND t.name = $2",
+        )
+        .bind(database)
+        .bind(table)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        let (schema_json,) = row.ok_or_else(|| CatalogError::TableNotFound {
+            database: database.to_owned(),
+            name: table.to_owned(),
+        })?;
+
+        let fields = schema_json
+            .get("fields")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| CatalogError::Sql("malformed arrow_schema: missing fields array".into()))?;
+
+        let mut columns = Vec::with_capacity(fields.len());
+        for f in fields {
+            let name = f
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| CatalogError::Sql("field missing name".into()))?
+                .to_owned();
+            let col_type = f
+                .get("type")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| CatalogError::Sql("field missing type".into()))?
+                .to_owned();
+            let nullable = f.get("nullable").and_then(|v| v.as_bool()).unwrap_or(true);
+            columns.push(ColumnInfo { name, r#type: col_type, nullable });
+        }
+        Ok(columns)
     }
 }
 

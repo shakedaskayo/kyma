@@ -1,0 +1,29 @@
+name: release-desktop
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: "pnpm" }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C web build
+      - run: pnpm -C web tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kyma-${{ matrix.os }}
+          path: |
+            web/src-tauri/target/release/bundle/**

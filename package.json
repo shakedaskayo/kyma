@@ -1,0 +1,12 @@
+{
+  "name": "kyma-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm -C web dev",
+    "build": "pnpm -C web build",
+    "test": "pnpm -C web test",
+    "typecheck": "pnpm -C web typecheck",
+    "lint": "pnpm -C web lint"
+  },
+  "engines": { "node": ">=20", "pnpm": ">=9" }
+}

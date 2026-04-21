@@ -38,8 +38,13 @@ tokio.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 tonic.workspace = true
+tonic-web.workspace = true
 opentelemetry-proto.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap = { version = "4", features = ["derive", "env"] }
 chrono.workspace = true
+
+[features]
+default = []
+web-ui  = ["kyma-server/web-ui"]
