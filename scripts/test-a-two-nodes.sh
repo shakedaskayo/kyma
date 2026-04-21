@@ -71,8 +71,8 @@ assert_eq() {
 }
 
 cleanup() {
-    [[ -n "${PID_A:-}" ]] && kill "$PID_A" 2>/dev/null && wait "$PID_A" 2>/dev/null || true
-    [[ -n "${PID_B:-}" ]] && kill "$PID_B" 2>/dev/null && wait "$PID_B" 2>/dev/null || true
+    [[ -n "${PID_A:-}" ]] && kill -9 "$PID_A" 2>/dev/null || true
+    [[ -n "${PID_B:-}" ]] && kill -9 "$PID_B" 2>/dev/null || true
 }
 trap cleanup EXIT
 
