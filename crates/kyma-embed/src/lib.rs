@@ -52,3 +52,9 @@ pub use fastembed::FastembedBackend;
 
 #[cfg(feature = "ollama")]
 pub use ollama::OllamaBackend;
+
+#[cfg(feature = "openai-compat")]
+pub use openai_compat::OpenAICompatBackend;
+
+#[cfg(feature = "gemini")]
+pub use gemini::GeminiBackend;
