@@ -1,0 +1,30 @@
+[package]
+name = "kyma-embed"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["fastembed-backend"]
+fastembed-backend = ["dep:fastembed", "dep:ndarray"]
+ollama = ["dep:reqwest"]
+openai-compat = ["dep:reqwest"]
+gemini = ["dep:reqwest"]
+
+[dependencies]
+kyma-core.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+async-trait.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+fastembed = { version = "4", optional = true }
+ndarray = { version = "0.16", optional = true }
+reqwest = { workspace = true, optional = true }
+
+[dev-dependencies]
+insta = "1"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

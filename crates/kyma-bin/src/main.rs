@@ -97,6 +97,9 @@ async fn main() -> Result<()> {
             .await
             .with_context(|| format!("connecting to catalog at {}", cli.catalog_url))?,
     );
+    // Hang on to the raw pg pool — the agent surface persists `agent_runs`
+    // rows via it — before we erase the concrete type behind `dyn Catalog`.
+    let pg_pool = pg_catalog.pool().clone();
     let catalog: Arc<dyn Catalog> = pg_catalog.clone();
     info!("catalog connected; migrations applied");
 
@@ -168,15 +171,26 @@ async fn main() -> Result<()> {
         (auth.clone(), Role::Write),
         require_role_middleware,
     ));
-    let query_router = kyma_server::router(QueryState {
+    let agent_state = kyma_server::agent::AgentState {
         catalog: catalog.clone(),
         format: format.clone(),
-        schema_cache: std::sync::Arc::new(kyma_server::catalog_handler::SchemaCache::from_env()),
-    })
-    .layer(axum::middleware::from_fn_with_state(
-        (auth.clone(), Role::Read),
-        require_role_middleware,
-    ));
+        pool: pg_pool.clone(),
+    };
+    let query_router =
+        kyma_server::router_with_agent(
+            QueryState {
+                catalog: catalog.clone(),
+                format: format.clone(),
+                schema_cache: std::sync::Arc::new(
+                    kyma_server::catalog_handler::SchemaCache::from_env(),
+                ),
+            },
+            agent_state,
+        )
+        .layer(axum::middleware::from_fn_with_state(
+            (auth.clone(), Role::Read),
+            require_role_middleware,
+        ));
     // Connector registry + row-sink.
     let mut conn_reg = ConnectorRegistry::new();
     conn_reg.register(Arc::new(PromConnector));

@@ -23,8 +23,10 @@
 #![forbid(unsafe_code)]
 
 pub mod commit_coordinator;
+pub mod ndjson;
 pub mod staging;
 pub use commit_coordinator::{CommitCoordinator, CoordinatorConfig};
+pub use ndjson::{parse_ndjson, NdjsonError};
 pub use staging::{FlushOutcome, StagingBuffer, StagingConfig};
 
 use chrono::{DateTime, Utc};
