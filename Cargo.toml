@@ -19,6 +19,8 @@ members = [
     "crates/kyma-server",
     "crates/kyma-cli",
     "crates/kyma-bin",
+    "crates/kyma-web-assets",
+    "web/src-tauri",
 ]
 
 [workspace.package]
@@ -78,12 +80,15 @@ serde_json = "1"
 ciborium = "0.2"           # CBOR for `dynamic` column
 prost = "0.13"
 tonic = "0.12"
+tonic-web = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "stream"] }
 
 # Networking
 axum = { version = "0.7", features = ["macros", "http2"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip", "request-id", "util"] }
 hyper = "1"
+http-body-util = "0.1"
 simd-json = "0.14"
 
 # Parser
@@ -133,6 +138,7 @@ kyma-plan              = { path = "crates/kyma-plan" }
 kyma-exec              = { path = "crates/kyma-exec" }
 kyma-server            = { path = "crates/kyma-server" }
 kyma-cli               = { path = "crates/kyma-cli" }
+kyma-web-assets        = { path = "crates/kyma-web-assets" }
 
 [profile.release]
 lto = "thin"

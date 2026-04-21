@@ -17,9 +17,36 @@
 #![forbid(unsafe_code)]
 
 pub mod auth;
+pub mod catalog_handler;
 pub mod flight;
 mod health;
 pub mod metrics;
+
+#[cfg(feature = "web-ui")]
+pub mod web_ui;
+
+/// Build an axum `Router` that serves Arrow Flight over gRPC-web at `/flight/*`.
+///
+/// The router is **not** auth-wrapped — the caller must add auth middleware,
+/// typically via `.layer(axum::middleware::from_fn_with_state(...))`.
+///
+/// # TODO(task 6.4): verify auth-denied behavior when the real gRPC-web client
+/// lands. `require_role_middleware` returns a plain HTTP 401 on rejection, which
+/// gRPC-web clients may surface as an opaque transport error rather than
+/// UNAUTHENTICATED. If the client can't map it cleanly, the middleware may need
+/// to emit gRPC trailers (grpc-status: 16 for UNAUTHENTICATED) for /flight/*.
+#[cfg(feature = "web-ui")]
+pub fn flight_web_router(state: QueryState) -> Router {
+    use flight::{FlightState, flight_grpc_web_service};
+    let flight_state = FlightState {
+        catalog: state.catalog.clone(),
+        format: state.format.clone(),
+    };
+    Router::new().nest_service("/flight", flight_grpc_web_service(flight_state))
+}
+
+#[cfg(feature = "test-support")]
+pub mod test_support;
 
 use arrow::json::ArrayWriter;
 use axum::{
@@ -56,12 +83,20 @@ pub fn connector_admin_router(state: kyma_connectors::admin::AdminState) -> Rout
 pub struct QueryState {
     pub catalog: Arc<dyn Catalog>,
     pub format: Arc<dyn SegmentFormat>,
+    pub schema_cache: Arc<catalog_handler::SchemaCache>,
 }
 
 /// Build the query router (auth-eligible — caller wraps with middleware).
+///
+/// Every route mounted here assumes at least `Role::Read`; the caller wraps
+/// the entire router with `require_role_middleware(Role::Read)`.
 pub fn router(state: QueryState) -> Router {
     Router::new()
         .route("/v1/query", post(query_handler))
+        .route(
+            "/v1/catalog/schema",
+            get(catalog_handler::schema_handler),
+        )
         .with_state(state)
         .layer(SetRequestIdLayer::new(
             REQUEST_ID_HEADER.clone(),
