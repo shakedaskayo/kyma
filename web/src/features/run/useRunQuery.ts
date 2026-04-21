@@ -1,11 +1,9 @@
 import { useCallback, useRef } from "react";
 import { toast } from "sonner";
-import { runQuery } from "@/sdk/query";
+import { runQuery, type Column } from "@/sdk/query";
 import { useSession } from "@/sdk/session";
 import { useWorkspace, type Tab } from "@/features/tabs/workspace-store";
 import { prependTimeFilter } from "@/features/time-range/time-range";
-import { batchToRows, type Column } from "@/sdk/arrow";
-import type { RecordBatch } from "apache-arrow";
 
 export type TabResult = {
   columns: Column[];
@@ -33,13 +31,12 @@ export function useRunQuery() {
 
     const acc: TabResult = { columns: [], rows: [], chartPoints: [] };
     try {
-      for await (const batch of runQuery({
+      for await (const chunk of runQuery({
         endpoint, token, database, query: finalQuery, language: "kql", signal: ctl.signal,
       })) {
-        const { columns, rows } = batchToRows(batch as RecordBatch);
-        if (acc.columns.length === 0) acc.columns = columns;
-        acc.rows.push(...rows);
-        acc.chartPoints.push(...rows);
+        if (acc.columns.length === 0) acc.columns = chunk.columns;
+        acc.rows.push(...chunk.rows);
+        acc.chartPoints.push(...chunk.rows);
         onBatch({
           columns: acc.columns,
           rows: acc.rows.slice(),

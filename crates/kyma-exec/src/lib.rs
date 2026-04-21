@@ -30,7 +30,8 @@ use datafusion::physical_plan::ExecutionPlan;
 use datafusion::scalar::ScalarValue;
 use kyma_core::catalog::{Catalog, ColumnPrune, PrunePredicate, TableRef, TimeRange};
 use kyma_core::segment_format::{
-    BlockPredicate, ColumnId, ExtentReader, OpenExtentInput, SegmentFormat,
+    BlockPredicate, ColumnId, ExtentReader, OpenExtentInput, ScalarValue as BlockScalar,
+    SegmentFormat,
 };
 use std::any::Any;
 use std::sync::Arc;
@@ -191,10 +192,17 @@ impl TableProvider for KymaTable {
                 .await
                 .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
+            let total_blocks = reader.metadata().block_count;
+            let block_pred = build_block_predicate(&self.table, &prune);
             let block_ids = reader
-                .pruned_blocks(&BlockPredicate::All)
+                .pruned_blocks(&block_pred)
                 .await
                 .map_err(|e| DataFusionError::External(Box::new(e)))?;
+
+            let scanned = block_ids.len() as u64;
+            let pruned = (total_blocks as u64).saturating_sub(scanned);
+            ::metrics::counter!("kyma_scan_blocks_scanned_total").increment(scanned);
+            ::metrics::counter!("kyma_scan_blocks_pruned_total").increment(pruned);
 
             for bid in block_ids {
                 // Read full columns of the extent (no extent-level projection),
@@ -486,6 +494,87 @@ fn build_prune_predicate(table: &TableRef, filters: &[Expr]) -> PrunePredicate {
         time_range,
         column_predicates,
         ..Default::default()
+    }
+}
+
+/// Lower the catalog-level [`PrunePredicate`] into a block-level
+/// [`BlockPredicate`]. Reuses the same conjunction: any bound the catalog
+/// already evaluated, block-level stats can filter further.
+///
+/// Mappings:
+/// - `time_range`                      → `BlockPredicate::TimeRange`
+/// - `ColumnPrune::Equals(v)`          → `BlockPredicate::Equals`
+/// - `ColumnPrune::InSet([...])`       → `BlockPredicate::InSet`
+/// - `ColumnPrune::Between / ContainsTokens` → skipped (conservatively `All`)
+fn build_block_predicate(table: &TableRef, prune: &PrunePredicate) -> BlockPredicate {
+    let mut parts: Vec<BlockPredicate> = Vec::new();
+
+    let name_to_id = |name: &str| -> Option<ColumnId> {
+        table
+            .schema
+            .fields()
+            .iter()
+            .position(|f| f.name() == name)
+            .map(|i| ColumnId(i as u32))
+    };
+
+    if let Some(tr) = &prune.time_range {
+        let ts_col = table.schema.fields().iter().enumerate().find(|(_, f)| {
+            matches!(f.data_type(), DataType::Timestamp(TimeUnit::Nanosecond, _))
+        });
+        if let Some((i, _)) = ts_col {
+            let start = tr.start_inclusive.timestamp_nanos_opt().unwrap_or(i64::MIN);
+            let end = tr.end_exclusive.timestamp_nanos_opt().unwrap_or(i64::MAX);
+            parts.push(BlockPredicate::TimeRange {
+                col: ColumnId(i as u32),
+                start_inclusive: start,
+                end_exclusive: end,
+            });
+        }
+    }
+
+    for (col_name, pred) in &prune.column_predicates {
+        let Some(col_id) = name_to_id(col_name) else {
+            continue;
+        };
+        match pred {
+            ColumnPrune::Equals(v) => {
+                if let Some(sv) = json_to_block_scalar(v) {
+                    parts.push(BlockPredicate::Equals { col: col_id, value: sv });
+                }
+            }
+            ColumnPrune::InSet(vals) => {
+                let values: Vec<BlockScalar> = vals
+                    .iter()
+                    .filter_map(json_to_block_scalar)
+                    .collect();
+                if !values.is_empty() {
+                    parts.push(BlockPredicate::InSet {
+                        col: col_id,
+                        values,
+                    });
+                }
+            }
+            ColumnPrune::Between { .. } | ColumnPrune::ContainsTokens(_) => {}
+        }
+    }
+
+    if parts.is_empty() {
+        BlockPredicate::All
+    } else if parts.len() == 1 {
+        parts.into_iter().next().unwrap()
+    } else {
+        BlockPredicate::And(parts)
+    }
+}
+
+fn json_to_block_scalar(v: &serde_json::Value) -> Option<BlockScalar> {
+    match v {
+        serde_json::Value::String(s) => Some(BlockScalar::String(s.clone())),
+        serde_json::Value::Number(n) => n.as_i64().map(BlockScalar::Int64),
+        serde_json::Value::Bool(b) => Some(BlockScalar::Bool(*b)),
+        serde_json::Value::Null => Some(BlockScalar::Null),
+        _ => None,
     }
 }
 
