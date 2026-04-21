@@ -1,0 +1,9 @@
+---
+source: crates/kyma-embed/tests/golden_vectors.rs
+expression: prefix_rounded
+---
+[
+    "0.0152",
+    "-0.0226",
+    "0.0085",
+]

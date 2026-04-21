@@ -28,7 +28,6 @@
 
 #![forbid(unsafe_code)]
 
-use arrow::json::ReaderBuilder;
 use arrow_array::RecordBatch;
 use futures::StreamExt;
 use kyma_core::catalog::{Catalog, TableRef};
@@ -39,7 +38,6 @@ use rdkafka::message::Message;
 use rdkafka::{ClientConfig, TopicPartitionList};
 use std::collections::HashMap;
 use std::future::Future;
-use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
@@ -356,14 +354,8 @@ impl KafkaConsumerWorker {
 }
 
 fn parse_ndjson(bytes: &[u8], schema: &Arc<arrow_schema::Schema>) -> Result<Vec<RecordBatch>> {
-    let cursor = Cursor::new(bytes.to_vec());
-    let reader = ReaderBuilder::new(schema.clone())
-        .build(cursor)
-        .map_err(|e| Error::Internal(format!("kafka ndjson builder: {e}")))?;
-    let mut batches = Vec::new();
-    for r in reader {
-        let b = r.map_err(|e| Error::Internal(format!("kafka ndjson decode: {e}")))?;
-        batches.push(b);
-    }
-    Ok(batches)
+    // Delegate to the shared helper; it handles primitive columns via
+    // arrow-json and adds FixedSizeList<Float32> (vector-column) support.
+    kyma_ingest_core::parse_ndjson(bytes, schema.clone())
+        .map_err(|e| Error::Internal(format!("kafka ndjson: {e}")))
 }
