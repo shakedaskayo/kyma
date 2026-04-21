@@ -42,11 +42,16 @@ impl EmbeddingConfig {
                 id: id.unwrap_or_else(|| "text-embedding-3-small".into()),
                 base_url: std::env::var("KYMA_EMBED_BASE_URL")
                     .unwrap_or_else(|_| "https://api.openai.com/v1".into()),
-                api_key_env: Some("OPENAI_API_KEY".into()),
+                api_key_env: Some(std::env::var("KYMA_EMBED_API_KEY_ENV")
+                    .unwrap_or_else(|_| "OPENAI_API_KEY".into())),
             }},
             Some("gemini") => Self { provider: EmbeddingProvider::Gemini {
                 id: id.unwrap_or_else(|| "text-embedding-004".into()),
                 api_key_env: "GOOGLE_API_KEY".into(),
+            }},
+            Some("fastembed") => Self { provider: EmbeddingProvider::Fastembed {
+                id: id.unwrap_or_else(|| "bge-small-en-v1.5".into()),
+                model_path: std::env::var("KYMA_EMBED_MODEL_PATH").ok(),
             }},
             _ => Self::default_fastembed(),
         }

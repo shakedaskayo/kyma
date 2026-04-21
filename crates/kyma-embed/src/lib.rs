@@ -8,7 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod config;
-mod errors;
+pub mod errors;
 
 #[cfg(feature = "fastembed-backend")]
 pub mod fastembed;
@@ -33,7 +33,7 @@ use async_trait::async_trait;
 /// `backend.id()` stays the same — this is a load-bearing property
 /// of the kyma replay cache.
 #[async_trait]
-pub trait EmbeddingBackend: Send + Sync {
+pub trait EmbeddingBackend: Send + Sync + std::fmt::Debug {
     /// Stable identifier, e.g. `"fastembed/bge-small-en-v1.5"` or
     /// `"openai/text-embedding-3-small"`. Mixing IDs across writes
     /// is a correctness bug (distance-space mismatch) — the engine
