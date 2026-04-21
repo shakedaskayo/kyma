@@ -12,6 +12,7 @@ members = [
     "crates/kyma-ingest-otlp",
     "crates/kyma-ingest-kafka",
     "crates/kyma-compaction",
+    "crates/kyma-connectors",
     "crates/kyma-kql",
     "crates/kyma-plan",
     "crates/kyma-exec",
@@ -132,6 +133,7 @@ kyma-ingest-otlp       = { path = "crates/kyma-ingest-otlp" }
 kyma-ingest-kafka      = { path = "crates/kyma-ingest-kafka" }
 kyma-kql               = { path = "crates/kyma-kql" }
 kyma-compaction        = { path = "crates/kyma-compaction" }
+kyma-connectors        = { path = "crates/kyma-connectors" }
 kyma-plan              = { path = "crates/kyma-plan" }
 kyma-exec              = { path = "crates/kyma-exec" }
 kyma-server            = { path = "crates/kyma-server" }

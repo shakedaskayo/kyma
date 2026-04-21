@@ -159,9 +159,10 @@ impl FlightService for FlightQueryService {
             )));
         }
         let runtime = Arc::new(
-            RuntimeEnv::new(RuntimeConfig::new().with_memory_pool(Arc::new(
-                GreedyMemoryPool::new(4 * 1024 * 1024 * 1024),
-            )))
+            RuntimeEnv::new(
+                RuntimeConfig::new()
+                    .with_memory_pool(Arc::new(GreedyMemoryPool::new(4 * 1024 * 1024 * 1024))),
+            )
             .map_err(|e| Status::internal(format!("runtime: {e}")))?,
         );
         let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
@@ -187,9 +188,8 @@ impl FlightService for FlightQueryService {
 
         // Convert the DataFusion RecordBatch stream into what
         // `FlightDataEncoderBuilder` wants: `Stream<Item=Result<RecordBatch, FlightError>>`.
-        let mapped = stream.map(|r| {
-            r.map_err(|e| arrow_flight::error::FlightError::ExternalError(Box::new(e)))
-        });
+        let mapped = stream
+            .map(|r| r.map_err(|e| arrow_flight::error::FlightError::ExternalError(Box::new(e))));
 
         // The Arrow Flight encoder emits the schema header automatically,
         // then chunks each RecordBatch into one or more FlightData frames.
@@ -241,9 +241,7 @@ impl FlightService for FlightQueryService {
 }
 
 /// Convenience: wrap the service in a `tonic` `Server` ready to serve.
-pub fn flight_server(
-    state: FlightState,
-) -> FlightServiceServer<FlightQueryService> {
+pub fn flight_server(state: FlightState) -> FlightServiceServer<FlightQueryService> {
     FlightServiceServer::new(FlightQueryService::new(state))
 }
 

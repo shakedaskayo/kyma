@@ -15,6 +15,7 @@ kyma-plan.workspace = true
 kyma-exec.workspace = true
 kyma-kql.workspace = true
 kyma-catalog.workspace = true
+kyma-connectors.workspace = true
 datafusion.workspace = true
 arrow.workspace = true
 arrow-array.workspace = true
