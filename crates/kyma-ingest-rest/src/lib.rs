@@ -16,7 +16,6 @@
 
 #![forbid(unsafe_code)]
 
-use arrow::json::ReaderBuilder;
 use axum::{
     extract::{Request, State},
     http::{HeaderMap, HeaderName, StatusCode},
@@ -26,9 +25,8 @@ use axum::{
 };
 use bytes::Bytes;
 use kyma_core::catalog::Catalog;
-use kyma_ingest_core::{IngestAck, WritePath};
+use kyma_ingest_core::{parse_ndjson, IngestAck, WritePath};
 use serde::Serialize;
-use std::io::Cursor;
 use std::sync::Arc;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tracing::{error, info};
@@ -132,23 +130,12 @@ async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Respo
     };
 
     // Parse the NDJSON body into `RecordBatch`es using the table's schema.
-    let cursor = Cursor::new(body.to_vec());
-    let reader = match ReaderBuilder::new(table_ref.schema.clone()).build(cursor) {
-        Ok(r) => r,
-        Err(e) => {
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                "bad_request_body",
-                &format!("failed to build NDJSON reader: {e}"),
-                &request_id,
-            );
-        }
-    };
-
-    let mut batches: Vec<arrow_array::RecordBatch> = Vec::new();
-    for b in reader {
-        match b {
-            Ok(batch) => batches.push(batch),
+    // The shared helper adds FixedSizeList<Float32> (vector-column) support
+    // on top of arrow-json's reader; primitive-only schemas hit the fast path
+    // and behave identically to the previous direct ReaderBuilder call.
+    let batches: Vec<arrow_array::RecordBatch> =
+        match parse_ndjson(body.as_ref(), table_ref.schema.clone()) {
+            Ok(b) => b,
             Err(e) => {
                 return error_response(
                     StatusCode::BAD_REQUEST,
@@ -157,8 +144,7 @@ async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Respo
                     &request_id,
                 );
             }
-        }
-    }
+        };
 
     match state
         .write_path

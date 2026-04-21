@@ -4211,6 +4211,7 @@ version = "0.0.1"
 dependencies = [
  "arrow",
  "arrow-array",
+ "arrow-json",
  "arrow-schema",
  "async-trait",
  "bytes",
