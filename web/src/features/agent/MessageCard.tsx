@@ -1,8 +1,59 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, ChevronRight, Copy, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ChatTurn, TraceEntry } from "./types";
+
+/**
+ * Progressively reveal `text` at ~140 chars/sec while the run is still in
+ * flight. When `done` flips true, snap to the full text immediately. This
+ * smooths out Ollama's coarse chunking (the backend receives ~sentence-
+ * sized deltas; without this hook the UI jumps in big visible steps).
+ *
+ * The `text` argument is the authoritative accumulated answer; the hook
+ * never lets visible length exceed it, so if the model produces text
+ * faster than 140 c/s the typewriter "catches up" mid-stream.
+ */
+const TYPEWRITER_CPS = 140;
+function useTypewriter(text: string, done: boolean): string {
+  const [visible, setVisible] = useState("");
+  const textRef = useRef(text);
+  textRef.current = text;
+
+  useEffect(() => {
+    if (done) {
+      setVisible(textRef.current);
+      return;
+    }
+    // Start the reveal loop. We run on requestAnimationFrame so it yields
+    // cleanly to React; each tick advances `visible` by `step` characters
+    // toward the current `textRef.current`, capped so we never outrun.
+    let raf = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = now - last;
+      last = now;
+      const step = Math.ceil((TYPEWRITER_CPS * dt) / 1000);
+      setVisible((v) => {
+        const target = textRef.current;
+        if (v.length >= target.length) return v;
+        return target.slice(0, v.length + step);
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [done]);
+
+  // When the incoming `text` shrinks (shouldn't happen, but defensive),
+  // clamp the visible prefix.
+  useEffect(() => {
+    if (done) return;
+    setVisible((v) => (v.length > text.length ? text : v));
+  }, [text, done]);
+
+  return done ? text : visible;
+}
 
 /**
  * A single turn in the transcript: user question at top, then the agent card
@@ -54,7 +105,7 @@ function AgentBubble({ turn }: { turn: ChatTurn }) {
           {turn.error}
         </div>
       ) : turn.answer ? (
-        <Markdown text={turn.answer} />
+        <StreamedMarkdown text={turn.answer} done={turn.done} />
       ) : (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -149,12 +200,12 @@ function truncate(s: string, n: number): string {
 }
 
 /**
- * Minimal markdown rendering — just enough for paragraphs, fenced code blocks,
- * and inline `code`. We skip lists / headers on purpose to keep this tiny; the
- * agent backend mostly returns plain prose + fenced SQL.
+ * Markdown rendering with typewriter reveal while streaming. When `done`
+ * flips true the full text appears immediately.
  */
-function Markdown({ text }: { text: string }) {
-  const blocks = splitByFencedCode(text);
+function StreamedMarkdown({ text, done }: { text: string; done: boolean }) {
+  const visible = useTypewriter(text, done);
+  const blocks = splitByFencedCode(visible);
   return (
     <div className="space-y-2 text-sm leading-relaxed">
       {blocks.map((b, i) =>
@@ -167,6 +218,9 @@ function Markdown({ text }: { text: string }) {
         ) : (
           <Paragraphs key={i} text={b.text} />
         ),
+      )}
+      {!done && visible.length < text.length && (
+        <span className="inline-block h-3 w-[2px] animate-pulse bg-primary align-middle" />
       )}
     </div>
   );

@@ -49,6 +49,9 @@ use tracing::debug;
 pub struct FlightState {
     pub catalog: Arc<dyn Catalog>,
     pub format: Arc<dyn SegmentFormat>,
+    /// Current node's id. When set, queries arriving via Flight fan out
+    /// to peers via the read-router (same logic as HTTP).
+    pub node_id: Option<kyma_core::types::NodeId>,
 }
 
 /// The Flight service implementation.
@@ -60,17 +63,91 @@ impl FlightQueryService {
     pub fn new(state: FlightState) -> Self {
         Self { state }
     }
+
+    /// Handle an internal `kind:"extent"` ticket: open the named extent
+    /// via the local segment format, decode every block, and stream the
+    /// record batches. The caller (peer node's read-router) applies its
+    /// own DataFusion filters above the scan, so we don't need to know
+    /// the query predicate — we just deliver the raw bytes.
+    async fn serve_extent(
+        &self,
+        ticket: &FlightTicket,
+    ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        let table = self
+            .state
+            .catalog
+            .lookup_table(&ticket.database, &ticket.table)
+            .await
+            .map_err(|e| Status::not_found(format!("lookup_table: {e}")))?;
+
+        let reader = self
+            .state
+            .format
+            .open_extent(kyma_core::segment_format::OpenExtentInput {
+                extent_id: kyma_core::types::ExtentId::new(),
+                table_id: table.id,
+                schema: table.schema.clone(),
+                object_path: ticket.object_path.clone(),
+                byte_size: ticket.byte_size,
+            })
+            .await
+            .map_err(|e| Status::internal(format!("open_extent: {e}")))?;
+
+        let block_ids = reader
+            .pruned_blocks(&kyma_core::segment_format::BlockPredicate::All)
+            .await
+            .map_err(|e| Status::internal(format!("pruned_blocks: {e}")))?;
+
+        let mut batches = Vec::with_capacity(block_ids.len());
+        for bid in block_ids {
+            let b = reader
+                .read_block(bid, &[])
+                .await
+                .map_err(|e| Status::internal(format!("read_block: {e}")))?;
+            batches.push(b);
+        }
+
+        ::metrics::counter!("kyma_flight_serve_extent_total").increment(1);
+
+        let s = stream::iter(
+            batches
+                .into_iter()
+                .map(|b| Ok::<_, arrow_flight::error::FlightError>(b)),
+        );
+        let encoder = FlightDataEncoderBuilder::new()
+            .build(s)
+            .map(|r| r.map_err(|e| Status::internal(format!("encode: {e}"))))
+            .boxed();
+        Ok(Response::new(encoder))
+    }
 }
 
+/// Client-facing ticket — `{database, query, language}` for user queries,
+/// or `{kind:"extent", database, table, object_path, byte_size}` for
+/// internal node-to-node extent fetches (read-fan-out router).
 #[derive(Debug, serde::Deserialize)]
 struct FlightTicket {
+    /// "query" (default) or "extent".
+    #[serde(default = "default_kind")]
+    kind: String,
     #[serde(default = "default_database")]
     database: String,
+    #[serde(default)]
     query: String,
     #[serde(default = "default_language")]
     language: String,
+    // Only used when kind == "extent":
+    #[serde(default)]
+    table: String,
+    #[serde(default)]
+    object_path: String,
+    #[serde(default)]
+    byte_size: u64,
 }
 
+fn default_kind() -> String {
+    "query".to_string()
+}
 fn default_database() -> String {
     "default".to_string()
 }
@@ -131,6 +208,11 @@ impl FlightService for FlightQueryService {
         let ticket: FlightTicket = serde_json::from_slice(&ticket.ticket)
             .map_err(|e| Status::invalid_argument(format!("bad ticket JSON: {e}")))?;
 
+        // Internal node-to-node extent fetch from the read-router.
+        if ticket.kind == "extent" {
+            return self.serve_extent(&ticket).await;
+        }
+
         debug!(db = %ticket.database, lang = %ticket.language, sql_len = ticket.query.len(), "flight do_get");
 
         // Translate to SQL if needed.
@@ -169,11 +251,20 @@ impl FlightService for FlightQueryService {
         kyma_exec::register_vector_udfs(&ctx);
         for t in tables {
             let name = t.name.clone();
-            let tbl = Arc::new(KymaTable::new(
-                t,
-                self.state.catalog.clone(),
-                self.state.format.clone(),
-            ));
+            let tbl: Arc<KymaTable> = match self.state.node_id {
+                Some(nid) => Arc::new(KymaTable::with_node_id(
+                    t,
+                    self.state.catalog.clone(),
+                    self.state.format.clone(),
+                    nid,
+                    ticket.database.clone(),
+                )),
+                None => Arc::new(KymaTable::new(
+                    t,
+                    self.state.catalog.clone(),
+                    self.state.format.clone(),
+                )),
+            };
             ctx.register_table(&name, tbl)
                 .map_err(|e| Status::internal(format!("register_table {name}: {e}")))?;
         }
