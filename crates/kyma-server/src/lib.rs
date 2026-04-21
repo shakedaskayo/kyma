@@ -334,6 +334,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         }
     };
     let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
+    kyma_exec::register_vector_udfs(&ctx);
     for t in tables {
         let table_name = t.name.clone();
         let kyma_tbl = Arc::new(KymaTable::new(
