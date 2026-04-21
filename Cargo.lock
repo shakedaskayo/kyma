@@ -4424,6 +4424,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tonic 0.12.3",
  "tracing",
  "uuid",
 ]

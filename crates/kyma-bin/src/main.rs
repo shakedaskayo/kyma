@@ -184,6 +184,7 @@ async fn main() -> Result<()> {
                 schema_cache: std::sync::Arc::new(
                     kyma_server::catalog_handler::SchemaCache::from_env(),
                 ),
+                node_id: Some(lease.node_id),
             },
             agent_state,
         )
@@ -255,6 +256,7 @@ async fn main() -> Result<()> {
                 schema_cache: std::sync::Arc::new(
                     kyma_server::catalog_handler::SchemaCache::from_env(),
                 ),
+                node_id: Some(lease.node_id),
             })
             .layer(axum::middleware::from_fn_with_state(
                 (auth.clone(), kyma_server::auth::Role::Read),
@@ -412,6 +414,7 @@ async fn main() -> Result<()> {
         let flight_svc = kyma_server::flight::flight_server(kyma_server::flight::FlightState {
             catalog: catalog.clone(),
             format: format.clone(),
+            node_id: Some(lease.node_id),
         });
         let mut grpc_rx = shutdown_tx.subscribe();
         info!(addr = %grpc_addr, "grpc/flight server listening");

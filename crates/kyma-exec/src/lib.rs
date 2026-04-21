@@ -31,14 +31,17 @@ use datafusion::logical_expr::{BinaryExpr, Expr, Like, Operator, TableProviderFi
 use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::scalar::ScalarValue;
-use kyma_core::catalog::{Catalog, ColumnPrune, PrunePredicate, TableRef, TimeRange};
+use kyma_core::catalog::{Catalog, ColumnPrune, ExtentManifest, PrunePredicate, TableRef, TimeRange};
 use kyma_core::segment_format::{
     BlockPredicate, ColumnId, ExtentReader, OpenExtentInput, ScalarValue as BlockScalar,
     SegmentFormat,
 };
+use kyma_core::types::{ExtentId, NodeId};
 use std::any::Any;
 use std::sync::Arc;
 use tracing::instrument;
+
+pub mod router;
 
 /// A kyma table exposed to DataFusion.
 ///
@@ -47,6 +50,12 @@ pub struct KymaTable {
     table: TableRef,
     catalog: Arc<dyn Catalog>,
     format: Arc<dyn SegmentFormat>,
+    /// Current node's id + owning database name. When set, the scan
+    /// consults `list_live_nodes` and fans out extents to peers via
+    /// rendezvous hash; extents mapped to the current node are read
+    /// locally. When absent, scale-out is disabled.
+    node_id: Option<NodeId>,
+    database_name: Option<String>,
 }
 
 impl std::fmt::Debug for KymaTable {
@@ -54,16 +63,39 @@ impl std::fmt::Debug for KymaTable {
         f.debug_struct("KymaTable")
             .field("name", &self.table.name)
             .field("table_id", &self.table.id)
+            .field("node_id", &self.node_id)
             .finish_non_exhaustive()
     }
 }
 
 impl KymaTable {
+    /// Construct a local-only KymaTable (scale-out disabled). Used by
+    /// tests that don't want peer fan-out.
     pub fn new(table: TableRef, catalog: Arc<dyn Catalog>, format: Arc<dyn SegmentFormat>) -> Self {
         Self {
             table,
             catalog,
             format,
+            node_id: None,
+            database_name: None,
+        }
+    }
+
+    /// Construct a KymaTable aware of the current node — enables peer
+    /// fan-out via the read-router.
+    pub fn with_node_id(
+        table: TableRef,
+        catalog: Arc<dyn Catalog>,
+        format: Arc<dyn SegmentFormat>,
+        node_id: NodeId,
+        database_name: String,
+    ) -> Self {
+        Self {
+            table,
+            catalog,
+            format,
+            node_id: Some(node_id),
+            database_name: Some(database_name),
         }
     }
 }
@@ -174,12 +206,49 @@ impl TableProvider for KymaTable {
 
         ::metrics::counter!("kyma_scan_extents_listed_total").increment(manifests.len() as u64);
 
-        // 2. For every surviving extent, open it, read all blocks, and
-        //    promote each batch from its extent-native schema to the
-        //    *current* table schema (null-fill new columns from ADD COLUMN).
-        //    Projection is applied on the promoted batch.
+        // 2a. Read-router: if this node knows its own id and database,
+        //     consult `list_live_nodes` and split extents between
+        //     local-read and peer-fetch via rendezvous hash. Remote reads
+        //     happen in parallel via Arrow Flight (`kind:"extent"`).
+        let (local_manifests, remote_fetches) =
+            match (&self.node_id, &self.database_name) {
+                (Some(self_id), Some(db)) => {
+                    let live = self
+                        .catalog
+                        .list_live_nodes(30)
+                        .await
+                        .unwrap_or_default();
+                    let router = router::ReadRouter::new(*self_id, &live);
+                    let (local, remote_by_node) = router::partition(&router, manifests);
+                    let fetches: Vec<_> = remote_by_node
+                        .into_iter()
+                        .map(|(node_id, (endpoint, ms))| {
+                            ::metrics::counter!("kyma_scan_extents_remote_assigned_total")
+                                .increment(ms.len() as u64);
+                            let db = db.clone();
+                            let name = self.table.name.clone();
+                            let endpoint2 = endpoint.clone();
+                            tokio::spawn(async move {
+                                let res = router::fetch_remote_extents(
+                                    endpoint2.clone(),
+                                    db,
+                                    name,
+                                    ms.clone(),
+                                )
+                                .await;
+                                (node_id, endpoint, ms, res)
+                            })
+                        })
+                        .collect();
+                    (local, fetches)
+                }
+                _ => (manifests, Vec::new()),
+            };
+
+        // 2b. Read local extents. Every extent goes through the same
+        //     scan-promote-project pipeline as before.
         let mut batches: Vec<RecordBatch> = Vec::new();
-        for m in manifests {
+        for m in local_manifests {
             let reader = self
                 .format
                 .open_extent(OpenExtentInput {
@@ -224,6 +293,54 @@ impl TableProvider for KymaTable {
                         break;
                     }
                 }
+            }
+        }
+
+        // 2c. Join the peer-fetch tasks; fall back to local read if any
+        //     transport error so correctness never depends on peer liveness.
+        for handle in remote_fetches {
+            let (_node_id, endpoint, ms, res) = handle
+                .await
+                .map_err(|e| DataFusionError::External(Box::new(e)))?;
+            let raw_batches: Vec<RecordBatch> = match res {
+                Ok(bs) => bs,
+                Err(e) => {
+                    tracing::warn!(peer = %endpoint, error = %e, "peer fetch failed; falling back to local read");
+                    ::metrics::counter!("kyma_scan_extents_remote_fallback_total")
+                        .increment(ms.len() as u64);
+                    let mut fallback: Vec<RecordBatch> = Vec::new();
+                    for m in ms {
+                        let reader = self
+                            .format
+                            .open_extent(OpenExtentInput {
+                                extent_id: m.id,
+                                table_id: m.table_id,
+                                schema: self.table.schema.clone(),
+                                object_path: m.object_path.clone(),
+                                byte_size: m.byte_size,
+                            })
+                            .await
+                            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+                        let block_ids = reader
+                            .pruned_blocks(&BlockPredicate::All)
+                            .await
+                            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+                        for bid in block_ids {
+                            fallback.push(read_one_block(&*reader, bid, &[]).await?);
+                        }
+                    }
+                    fallback
+                }
+            };
+            for raw in raw_batches {
+                let promoted = promote_batch(&raw, &self.table.schema)?;
+                let projected = match projection {
+                    Some(cols) => promoted
+                        .project(cols)
+                        .map_err(|e| DataFusionError::ArrowError(e, None))?,
+                    None => promoted,
+                };
+                batches.push(projected);
             }
         }
 
