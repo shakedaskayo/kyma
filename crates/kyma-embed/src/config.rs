@@ -3,11 +3,24 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "provider")]
 pub enum EmbeddingProvider {
-    Fastembed { id: String, model_path: Option<String> },
-    Ollama    { id: String, base_url: String },
+    Fastembed {
+        id: String,
+        model_path: Option<String>,
+    },
+    Ollama {
+        id: String,
+        base_url: String,
+    },
     #[serde(rename = "openai-compat")]
-    OpenAICompat { id: String, base_url: String, api_key_env: Option<String> },
-    Gemini    { id: String, api_key_env: String },
+    OpenAICompat {
+        id: String,
+        base_url: String,
+        api_key_env: Option<String>,
+    },
+    Gemini {
+        id: String,
+        api_key_env: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,26 +46,36 @@ impl EmbeddingConfig {
         let provider = std::env::var("KYMA_EMBED_PROVIDER").ok();
         let id = std::env::var("KYMA_EMBED_MODEL_ID").ok();
         match provider.as_deref() {
-            Some("ollama") => Self { provider: EmbeddingProvider::Ollama {
-                id: id.unwrap_or_else(|| "nomic-embed-text".into()),
-                base_url: std::env::var("KYMA_EMBED_BASE_URL")
-                    .unwrap_or_else(|_| "http://localhost:11434".into()),
-            }},
-            Some("openai-compat") => Self { provider: EmbeddingProvider::OpenAICompat {
-                id: id.unwrap_or_else(|| "text-embedding-3-small".into()),
-                base_url: std::env::var("KYMA_EMBED_BASE_URL")
-                    .unwrap_or_else(|_| "https://api.openai.com/v1".into()),
-                api_key_env: Some(std::env::var("KYMA_EMBED_API_KEY_ENV")
-                    .unwrap_or_else(|_| "OPENAI_API_KEY".into())),
-            }},
-            Some("gemini") => Self { provider: EmbeddingProvider::Gemini {
-                id: id.unwrap_or_else(|| "text-embedding-004".into()),
-                api_key_env: "GOOGLE_API_KEY".into(),
-            }},
-            Some("fastembed") => Self { provider: EmbeddingProvider::Fastembed {
-                id: id.unwrap_or_else(|| "bge-small-en-v1.5".into()),
-                model_path: std::env::var("KYMA_EMBED_MODEL_PATH").ok(),
-            }},
+            Some("ollama") => Self {
+                provider: EmbeddingProvider::Ollama {
+                    id: id.unwrap_or_else(|| "nomic-embed-text".into()),
+                    base_url: std::env::var("KYMA_EMBED_BASE_URL")
+                        .unwrap_or_else(|_| "http://localhost:11434".into()),
+                },
+            },
+            Some("openai-compat") => Self {
+                provider: EmbeddingProvider::OpenAICompat {
+                    id: id.unwrap_or_else(|| "text-embedding-3-small".into()),
+                    base_url: std::env::var("KYMA_EMBED_BASE_URL")
+                        .unwrap_or_else(|_| "https://api.openai.com/v1".into()),
+                    api_key_env: Some(
+                        std::env::var("KYMA_EMBED_API_KEY_ENV")
+                            .unwrap_or_else(|_| "OPENAI_API_KEY".into()),
+                    ),
+                },
+            },
+            Some("gemini") => Self {
+                provider: EmbeddingProvider::Gemini {
+                    id: id.unwrap_or_else(|| "text-embedding-004".into()),
+                    api_key_env: "GOOGLE_API_KEY".into(),
+                },
+            },
+            Some("fastembed") => Self {
+                provider: EmbeddingProvider::Fastembed {
+                    id: id.unwrap_or_else(|| "bge-small-en-v1.5".into()),
+                    model_path: std::env::var("KYMA_EMBED_MODEL_PATH").ok(),
+                },
+            },
             _ => Self::default_fastembed(),
         }
     }

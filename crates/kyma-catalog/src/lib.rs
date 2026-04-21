@@ -1154,9 +1154,7 @@ fn arrow_type_to_string(ty: &arrow_schema::DataType) -> String {
         DataType::Utf8 | DataType::LargeUtf8 => "string".into(),
         DataType::Timestamp(TimeUnit::Nanosecond, _) => "timestamp".into(),
         DataType::Binary | DataType::LargeBinary => "dynamic".into(),
-        DataType::FixedSizeList(inner, dim)
-            if matches!(inner.data_type(), DataType::Float32) =>
-        {
+        DataType::FixedSizeList(inner, dim) if matches!(inner.data_type(), DataType::Float32) => {
             format!("vector({dim})")
         }
         other => format!("arrow:{other:?}"),
@@ -1177,18 +1175,16 @@ fn string_to_arrow_type(s: &str) -> Result<arrow_schema::DataType> {
         other if other.starts_with("vector(") && other.ends_with(')') => {
             let inner = &other[7..other.len() - 1];
             let dim: i32 = inner.trim().parse().map_err(|_| {
-                CatalogError::Sql(format!("vector(N): N must be a positive integer, got '{inner}'"))
+                CatalogError::Sql(format!(
+                    "vector(N): N must be a positive integer, got '{inner}'"
+                ))
             })?;
             if dim <= 0 {
-                return Err(CatalogError::Sql(format!(
-                    "vector(N): N must be > 0, got {dim}"
-                ))
-                .into());
+                return Err(
+                    CatalogError::Sql(format!("vector(N): N must be > 0, got {dim}")).into(),
+                );
             }
-            DataType::FixedSizeList(
-                Arc::new(Field::new("item", DataType::Float32, false)),
-                dim,
-            )
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, false)), dim)
         }
         other => {
             return Err(

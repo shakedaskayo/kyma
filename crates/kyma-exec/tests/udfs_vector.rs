@@ -16,10 +16,7 @@ async fn setup() -> SessionContext {
         Field::new("id", DataType::Utf8, false),
         Field::new(
             "v",
-            DataType::FixedSizeList(
-                Arc::new(Field::new("item", DataType::Float32, false)),
-                3,
-            ),
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, false)), 3),
             false,
         ),
     ]));
@@ -35,8 +32,7 @@ async fn setup() -> SessionContext {
         Arc::new(values),
         None,
     );
-    let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(ids), Arc::new(list)])
-        .unwrap();
+    let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(ids), Arc::new(list)]).unwrap();
     let mem = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
     ctx.register_table("vecs", Arc::new(mem)).unwrap();
     ctx

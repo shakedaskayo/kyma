@@ -18,8 +18,12 @@ pub struct OpenAICompatBackend {
 }
 
 impl OpenAICompatBackend {
-    pub fn new(model: &str, base_url: &str, dimension: u16,
-               api_key: Option<String>) -> Result<Self, EmbedError> {
+    pub fn new(
+        model: &str,
+        base_url: &str,
+        dimension: u16,
+        api_key: Option<String>,
+    ) -> Result<Self, EmbedError> {
         Ok(Self {
             id: format!("openai-compat/{model}"),
             dimension,
@@ -35,20 +39,33 @@ impl OpenAICompatBackend {
 }
 
 #[derive(Serialize)]
-struct Req<'a> { model: &'a str, input: &'a [String] }
+struct Req<'a> {
+    model: &'a str,
+    input: &'a [String],
+}
 
 #[derive(Deserialize)]
-struct Item { embedding: Vec<f32> }
+struct Item {
+    embedding: Vec<f32>,
+}
 
 #[derive(Deserialize)]
-struct Resp { data: Vec<Item> }
+struct Resp {
+    data: Vec<Item>,
+}
 
 #[async_trait]
 impl EmbeddingBackend for OpenAICompatBackend {
-    fn id(&self) -> &str { &self.id }
-    fn dimension(&self) -> u16 { self.dimension }
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn dimension(&self) -> u16 {
+        self.dimension
+    }
     async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedError> {
-        if texts.is_empty() { return Ok(vec![]); }
+        if texts.is_empty() {
+            return Ok(vec![]);
+        }
         let url = format!("{}/embeddings", self.base_url);
         let mut req = self.client.post(&url).json(&Req {
             model: &self.model,
@@ -57,22 +74,28 @@ impl EmbeddingBackend for OpenAICompatBackend {
         if let Some(k) = &self.api_key {
             req = req.bearer_auth(k);
         }
-        let resp: Resp = req.send().await
+        let resp: Resp = req
+            .send()
+            .await
             .map_err(|e| EmbedError::Request(e.to_string()))?
             .error_for_status()
             .map_err(|e| EmbedError::Request(e.to_string()))?
-            .json().await
+            .json()
+            .await
             .map_err(|e| EmbedError::Request(e.to_string()))?;
         let out: Vec<_> = resp.data.into_iter().map(|i| i.embedding).collect();
         if out.len() != texts.len() {
             return Err(EmbedError::Internal(format!(
                 "openai-compat: expected {} embeddings, got {}",
-                texts.len(), out.len())));
+                texts.len(),
+                out.len()
+            )));
         }
         if let Some(v) = out.first() {
             if v.len() != self.dimension as usize {
                 return Err(EmbedError::DimensionMismatch {
-                    got: v.len() as u16, expected: self.dimension,
+                    got: v.len() as u16,
+                    expected: self.dimension,
                 });
             }
         }

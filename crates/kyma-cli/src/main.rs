@@ -218,10 +218,7 @@ fn parse_schema_spec(spec: &str) -> Result<Schema> {
                 if dim <= 0 {
                     return Err(anyhow!("vector(N): N must be > 0, got {dim}"));
                 }
-                DataType::FixedSizeList(
-                    Arc::new(Field::new("item", DataType::Float32, false)),
-                    dim,
-                )
+                DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, false)), dim)
             }
             other => return Err(anyhow!("unsupported column type: {other}")),
         };

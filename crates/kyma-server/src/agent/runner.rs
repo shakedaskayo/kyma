@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use super::state::AgentState;
 use super::tools::{
-    SharedToolCtx, tool_describe_table, tool_list_databases, tool_run_sql, tool_sample_rows,
+    tool_describe_table, tool_list_databases, tool_run_sql, tool_sample_rows, SharedToolCtx,
 };
 
 /// Application name advertised to the session service. Stable so that
@@ -63,7 +63,9 @@ pub fn build_agent(state: &AgentState) -> adk_rust::Result<Arc<dyn Agent>> {
     };
 
     let agent = LlmAgentBuilder::new("kyma-assistant")
-        .description("Kyma inline data assistant — answers English questions about the user's data.")
+        .description(
+            "Kyma inline data assistant — answers English questions about the user's data.",
+        )
         .instruction(SYSTEM_PROMPT)
         .model(llm)
         .tool(tool_list_databases(shared.clone()))
@@ -78,10 +80,7 @@ pub fn build_agent(state: &AgentState) -> adk_rust::Result<Arc<dyn Agent>> {
 /// Construct a `Runner` and create a fresh in-memory session bound to
 /// `session_id`. Returns the runner + the session id (unchanged) so the
 /// caller can drive `runner.run(...)` next.
-pub async fn make_runner(
-    state: &AgentState,
-    session_id: &str,
-) -> adk_rust::Result<Runner> {
+pub async fn make_runner(state: &AgentState, session_id: &str) -> adk_rust::Result<Runner> {
     let agent = build_agent(state)?;
 
     let sessions: Arc<dyn SessionService> = Arc::new(InMemorySessionService::new());

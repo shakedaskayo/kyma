@@ -14,9 +14,7 @@ use arrow_array::{Array, FixedSizeListArray, Float64Array, ListArray};
 use arrow_schema::DataType;
 use datafusion::common::cast::as_float32_array;
 use datafusion::error::{DataFusionError, Result as DfResult};
-use datafusion::logical_expr::{
-    ColumnarValue, ScalarUDF, Signature, SimpleScalarUDF, Volatility,
-};
+use datafusion::logical_expr::{ColumnarValue, ScalarUDF, Signature, SimpleScalarUDF, Volatility};
 use datafusion::prelude::SessionContext;
 use datafusion::scalar::ScalarValue;
 use std::sync::Arc;
@@ -40,8 +38,16 @@ fn build(name: &str, f: fn(&[f32], &[f32]) -> Option<f64>) -> ScalarUDF {
         let n = a_rows.len().max(b_rows.len());
         let mut out: Vec<Option<f64>> = Vec::with_capacity(n);
         for i in 0..n {
-            let a = if a_rows.len() == 1 { &a_rows[0] } else { &a_rows[i] };
-            let b = if b_rows.len() == 1 { &b_rows[0] } else { &b_rows[i] };
+            let a = if a_rows.len() == 1 {
+                &a_rows[0]
+            } else {
+                &a_rows[i]
+            };
+            let b = if b_rows.len() == 1 {
+                &b_rows[0]
+            } else {
+                &b_rows[i]
+            };
             out.push(f(a, b));
         }
         Ok(ColumnarValue::Array(Arc::new(Float64Array::from(out))))

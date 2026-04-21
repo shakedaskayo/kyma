@@ -25,7 +25,7 @@ use kyma_core::segment_format::SegmentFormat;
 use kyma_exec::KymaTable;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::Arc;
 
 /// Hard cap on per-tool memory to prevent a single agent turn from dragging
@@ -102,7 +102,11 @@ pub fn tool_describe_table(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
-                    match shared.catalog.lookup_table(&parsed.database, &parsed.table).await {
+                    match shared
+                        .catalog
+                        .lookup_table(&parsed.database, &parsed.table)
+                        .await
+                    {
                         Ok(t) => {
                             let cols: Vec<Value> = t
                                 .schema
@@ -176,13 +180,7 @@ pub fn tool_run_sql(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                             "error": "only SELECT / SHOW / EXPLAIN supported",
                         }));
                     }
-                    Ok(execute_sql(
-                        &shared,
-                        &parsed.database,
-                        &parsed.sql,
-                        parsed.max_rows,
-                    )
-                    .await)
+                    Ok(execute_sql(&shared, &parsed.database, &parsed.sql, parsed.max_rows).await)
                 }
             },
         )
@@ -259,19 +257,16 @@ fn is_read_only_sql(sql: &str) -> bool {
 }
 
 fn is_safe_ident(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
 }
 
 /// Build a fresh [`SessionContext`], register every table in `database`,
 /// execute `sql`, and return a JSON envelope `{columns, rows, truncated}`
 /// (or `{error}` on failure — never an `Err`, because tool failures should
 /// be surfaced to the model as data rather than abort the run).
-async fn execute_sql(
-    shared: &SharedToolCtx,
-    database: &str,
-    sql: &str,
-    max_rows: usize,
-) -> Value {
+async fn execute_sql(shared: &SharedToolCtx, database: &str, sql: &str, max_rows: usize) -> Value {
     let tables = match shared.catalog.list_tables_in_database(database).await {
         Ok(t) => t,
         Err(e) => {
@@ -292,7 +287,11 @@ async fn execute_sql(
     kyma_exec::register_vector_udfs(&ctx);
     for t in tables {
         let name = t.name.clone();
-        let table = Arc::new(KymaTable::new(t, shared.catalog.clone(), shared.format.clone()));
+        let table = Arc::new(KymaTable::new(
+            t,
+            shared.catalog.clone(),
+            shared.format.clone(),
+        ));
         if let Err(e) = ctx.register_table(&name, table) {
             return json!({"error": format!("register_table({name}): {e}")});
         }
