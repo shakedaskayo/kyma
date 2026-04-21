@@ -100,7 +100,11 @@ async fn create_database_and_table() {
 async fn lookup_missing_table_returns_not_found() {
     let fx = fixture().await;
     fx.catalog.create_database("default").await.unwrap();
-    let err = fx.catalog.lookup_table("default", "ghost").await.unwrap_err();
+    let err = fx
+        .catalog
+        .lookup_table("default", "ghost")
+        .await
+        .unwrap_err();
     match err {
         Error::Catalog(CatalogError::TableNotFound { database, name }) => {
             assert_eq!(database, "default");
@@ -351,7 +355,9 @@ async fn list_extents_honors_time_range() {
         byte_size: 100,
         row_count: 10,
         min_timestamp: Some(base + chrono::Duration::hours(hour_offset)),
-        max_timestamp: Some(base + chrono::Duration::hours(hour_offset) + chrono::Duration::minutes(30)),
+        max_timestamp: Some(
+            base + chrono::Duration::hours(hour_offset) + chrono::Duration::minutes(30),
+        ),
         column_stats: serde_json::json!({}),
         present_paths: vec![],
         compaction_gen: 0,

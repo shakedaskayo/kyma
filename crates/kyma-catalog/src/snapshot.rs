@@ -93,16 +93,15 @@ impl SnapshotTxn for PgSnapshotTxn {
 
         // Compute the new sequence number from the parent's sequence + 1.
         // We read via the tx to avoid torn reads under high concurrency.
-        let parent_seq: i64 = sqlx::query_scalar(
-            "SELECT sequence_number FROM snapshots WHERE id = $1 FOR UPDATE",
-        )
-        .bind(parent_snapshot_id.as_uuid())
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(sql_err)?
-        .ok_or_else(|| {
-            CatalogError::Sql(format!("parent snapshot {parent_snapshot_id} not found"))
-        })?;
+        let parent_seq: i64 =
+            sqlx::query_scalar("SELECT sequence_number FROM snapshots WHERE id = $1 FOR UPDATE")
+                .bind(parent_snapshot_id.as_uuid())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(sql_err)?
+                .ok_or_else(|| {
+                    CatalogError::Sql(format!("parent snapshot {parent_snapshot_id} not found"))
+                })?;
         let new_seq = parent_seq + 1;
 
         // 1. Insert the new snapshot row.
@@ -133,12 +132,7 @@ impl SnapshotTxn for PgSnapshotTxn {
         )
         .bind(new_snap_id)
         .bind(added.len() as i32)
-        .bind(
-            added
-                .iter()
-                .map(|e| e.byte_size as i64)
-                .sum::<i64>(),
-        )
+        .bind(added.iter().map(|e| e.byte_size as i64).sum::<i64>())
         .fetch_one(&mut *tx)
         .await
         .map_err(sql_err)?;

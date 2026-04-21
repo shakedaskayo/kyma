@@ -37,9 +37,9 @@ async fn query(
         })
         .await
         .map_err(|e| format!("do_get rpc: {e}"))?;
-    let stream = resp.into_inner().map(|r| {
-        r.map_err(arrow_flight::error::FlightError::Tonic)
-    });
+    let stream = resp
+        .into_inner()
+        .map(|r| r.map_err(arrow_flight::error::FlightError::Tonic));
     let mut batches = Vec::new();
     let mut reader = FlightRecordBatchStream::new_from_flight_data(stream);
     while let Some(res) = reader.next().await {
