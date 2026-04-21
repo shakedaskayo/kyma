@@ -14,6 +14,7 @@ pub enum Token {
     LBracket,
     RBracket,
     Dot,
+    DotDot,           // ..
     Eq,               // ==
     Ne,               // !=
     Lt,
@@ -78,7 +79,12 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
             }
             '.' => {
                 chars.next();
-                out.push(Token::Dot);
+                if chars.peek() == Some(&'.') {
+                    chars.next();
+                    out.push(Token::DotDot);
+                } else {
+                    out.push(Token::Dot);
+                }
             }
             '+' => {
                 chars.next();

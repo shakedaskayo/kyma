@@ -489,6 +489,18 @@ impl Parser {
 
     fn parse_comparison(&mut self) -> Result<String, ParseError> {
         let lhs = self.parse_additive()?;
+
+        // `between (low .. high)` — inclusive on both ends, lowers to AND of two comparisons.
+        if matches!(self.peek(), Some(Token::Ident(s)) if s == "between") {
+            self.pos += 1;
+            self.expect(&Token::LParen, "`(`")?;
+            let low = self.parse_additive()?;
+            self.expect(&Token::DotDot, "`..`")?;
+            let high = self.parse_additive()?;
+            self.expect(&Token::RParen, "`)`")?;
+            return Ok(format!("(({lhs} >= {low}) AND ({lhs} <= {high}))"));
+        }
+
         let op = match self.peek() {
             Some(Token::Eq) => Some("="),
             Some(Token::Ne) => Some("<>"),
@@ -847,6 +859,46 @@ mod tests {
         let sql = must("t | top 5 by latency desc");
         assert!(sql.contains("ORDER BY latency DESC"));
         assert!(sql.contains("LIMIT 5"));
+    }
+
+    #[test]
+    fn between_with_ago_and_now() {
+        let sql = must("t | where timestamp between (ago(1h) .. now())");
+        // Should lower to two comparisons joined by AND.
+        assert!(sql.contains(">= (now() - INTERVAL '1 hour')"));
+        assert!(sql.contains("<= now()"));
+        assert!(sql.contains("AND"));
+    }
+
+    #[test]
+    fn between_with_datetime_literals() {
+        let sql = must(
+            "t | where timestamp between (datetime(2026-01-01) .. datetime(2026-02-01))",
+        );
+        assert!(sql.contains("CAST("));
+        assert!(sql.contains("AND"));
+    }
+
+    #[test]
+    fn between_combined_with_and() {
+        let sql = must(r#"t | where n between (1 .. 10) and label == "x""#);
+        // between part
+        assert!(sql.contains("(n >= 1)"));
+        assert!(sql.contains("(n <= 10)"));
+        // label filter
+        assert!(sql.contains("(label = 'x')"));
+        // outer AND joining between and label
+        assert!(sql.contains("AND"));
+    }
+
+    #[test]
+    fn between_lowering_shape() {
+        // Verify exact lowered form: ((expr >= low) AND (expr <= high))
+        let sql = must("t | where n between (1 .. 10)");
+        assert!(
+            sql.contains("((n >= 1) AND (n <= 10))"),
+            "unexpected shape: {sql}"
+        );
     }
 }
 
