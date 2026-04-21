@@ -75,10 +75,31 @@ function CellValue({ value, kind, isFirst }: { value: unknown; kind: ColKind; is
 
 const EXPAND_COL_WIDTH = 22;
 
-export function ResultsGrid({ columns, rows }: { columns: Column[]; rows: Record<string, unknown>[] }) {
+export function ResultsGrid({
+  columns,
+  rows,
+  filter,
+}: {
+  columns: Column[];
+  rows: Record<string, unknown>[];
+  filter?: string;
+}) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [scrolled, setScrolled] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  // Client-side filter: substring across all string cells
+  const filteredRows = useMemo(() => {
+    if (!filter?.trim()) return rows;
+    const needle = filter.trim().toLowerCase();
+    return rows.filter((row) =>
+      columns.some((col) => {
+        const v = row[col.name];
+        if (v === null || v === undefined) return false;
+        return String(v).toLowerCase().includes(needle);
+      }),
+    );
+  }, [rows, columns, filter]);
 
   const toggleRow = useCallback((idx: number) => {
     setExpanded((prev) => {
@@ -107,7 +128,7 @@ export function ResultsGrid({ columns, rows }: { columns: Column[]; rows: Record
   );
 
   const table = useReactTable({
-    data: rows,
+    data: filteredRows,
     columns: defs,
     state: { sorting },
     onSortingChange: setSorting,
@@ -196,7 +217,7 @@ export function ResultsGrid({ columns, rows }: { columns: Column[]; rows: Record
                 >
                   <td colSpan={colCount} className="px-0 py-0">
                     <pre className="bg-muted/40 p-3 text-xs font-mono whitespace-pre overflow-x-auto border-b border-muted/50 leading-relaxed text-slate-700 dark:text-slate-300">
-                      {JSON.stringify(rows[dataIndex], null, 2)}
+                      {JSON.stringify(filteredRows[dataIndex], null, 2)}
                     </pre>
                   </td>
                 </tr>
