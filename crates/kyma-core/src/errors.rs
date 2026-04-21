@@ -56,6 +56,9 @@ pub enum CatalogError {
     #[error("schema snapshot not found: {0}")]
     SchemaSnapshotNotFound(uuid::Uuid),
 
+    #[error("dashboard not found: {id}")]
+    DashboardNotFound { id: uuid::Uuid },
+
     #[error("sql error: {0}")]
     Sql(String),
 
