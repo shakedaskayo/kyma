@@ -61,9 +61,5 @@ pub trait QueryFrontend: Send + Sync {
     /// The payload is typed `Arc<dyn Any + Send + Sync>` so `kyma-core`
     /// avoids depending on `kyma-plan`. Callers downcast via the plan-crate
     /// registry.
-    async fn parse(
-        &self,
-        source: &str,
-        ctx: &QueryContext,
-    ) -> Result<Arc<dyn Any + Send + Sync>>;
+    async fn parse(&self, source: &str, ctx: &QueryContext) -> Result<Arc<dyn Any + Send + Sync>>;
 }

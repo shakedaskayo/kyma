@@ -21,7 +21,9 @@
 //! No distributed locks.
 
 use crate::errors::{CatalogError, Result};
-use crate::types::{DatabaseId, ExtentId, NodeId, SchemaRef, SchemaSnapshotId, SnapshotId, TableId};
+use crate::types::{
+    DatabaseId, ExtentId, NodeId, SchemaRef, SchemaSnapshotId, SnapshotId, TableId,
+};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::Value as Json;
@@ -65,7 +67,7 @@ pub struct ExtentManifest {
     pub row_count: u64,
     pub min_timestamp: Option<DateTime<Utc>>,
     pub max_timestamp: Option<DateTime<Utc>>,
-    pub column_stats: Json,      // keyed by column name; per-column min/max/null_count/distinct_est
+    pub column_stats: Json, // keyed by column name; per-column min/max/null_count/distinct_est
     pub present_paths: Vec<String>,
     pub compaction_gen: u32,
     pub created_at: DateTime<Utc>,
@@ -96,7 +98,10 @@ pub struct TimeRange {
 #[derive(Debug, Clone)]
 pub enum ColumnPrune {
     Equals(Json),
-    Between { low: Json, high: Json },
+    Between {
+        low: Json,
+        high: Json,
+    },
     InSet(Vec<Json>),
     /// Text-search pruning: the extent must contain *all* of these
     /// tokens in its word-level index (`column_stats.{col}.tokens`).

@@ -129,9 +129,8 @@ impl FiledropWatcher {
         let mut seen = 0usize;
         let mut processed = 0usize;
         while let Some(obj) = stream.next().await {
-            let obj = obj.map_err(|e| {
-                Error::Internal(format!("list {}: {e}", self.config.prefix))
-            })?;
+            let obj =
+                obj.map_err(|e| Error::Internal(format!("list {}: {e}", self.config.prefix)))?;
             seen += 1;
             match self.process_one(&obj.location).await {
                 Ok(true) => processed += 1,
@@ -161,12 +160,15 @@ impl FiledropWatcher {
         };
 
         // 2. Download bytes + SHA256.
-        let get = self.store.get(path).await.map_err(|e| {
-            Error::Internal(format!("get {path}: {e}"))
-        })?;
-        let bytes = get.bytes().await.map_err(|e| {
-            Error::Internal(format!("read {path}: {e}"))
-        })?;
+        let get = self
+            .store
+            .get(path)
+            .await
+            .map_err(|e| Error::Internal(format!("get {path}: {e}")))?;
+        let bytes = get
+            .bytes()
+            .await
+            .map_err(|e| Error::Internal(format!("read {path}: {e}")))?;
         let mut hasher = Sha256::new();
         hasher.update(&bytes);
         let digest = hasher.finalize();
@@ -219,7 +221,8 @@ impl FiledropWatcher {
             .await?;
 
         ::metrics::counter!("kyma_filedrop_objects_processed_total",
-            "replayed" => ack.replayed.to_string()).increment(1);
+            "replayed" => ack.replayed.to_string())
+        .increment(1);
         ::metrics::counter!("kyma_filedrop_rows_total", "table" => table.clone())
             .increment(ack.rows_ingested);
 

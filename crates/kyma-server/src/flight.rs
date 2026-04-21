@@ -255,9 +255,7 @@ pub fn flight_server(state: FlightState) -> FlightServiceServer<FlightQueryServi
 /// The body type is adapted from tonic's `BoxBody` to `axum::body::Body`
 /// so the service is compatible with `axum::Router::nest_service`.
 #[cfg(feature = "web-ui")]
-pub fn flight_grpc_web_service(
-    state: FlightState,
-) -> FlightGrpcWebService {
+pub fn flight_grpc_web_service(state: FlightState) -> FlightGrpcWebService {
     use tower::ServiceBuilder;
     let svc = FlightServiceServer::new(FlightQueryService::new(state));
     let inner = ServiceBuilder::new()
@@ -277,9 +275,14 @@ pub struct FlightGrpcWebService {
 impl tower::Service<axum::http::Request<axum::body::Body>> for FlightGrpcWebService {
     type Response = axum::http::Response<axum::body::Body>;
     type Error = std::convert::Infallible;
-    type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+    type Future = std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>,
+    >;
 
-    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
         tower::Service::poll_ready(&mut self.inner, cx).map_err(|e| match e {})
     }
 
@@ -287,9 +290,9 @@ impl tower::Service<axum::http::Request<axum::body::Body>> for FlightGrpcWebServ
         use http_body_util::BodyExt as _;
         // Convert axum body → tonic BoxBody.
         let (parts, body) = req.into_parts();
-        let tonic_body: tonic::body::BoxBody =
-            body.map_err(|e| tonic::Status::internal(e.to_string()))
-                .boxed_unsync();
+        let tonic_body: tonic::body::BoxBody = body
+            .map_err(|e| tonic::Status::internal(e.to_string()))
+            .boxed_unsync();
         let tonic_req = axum::http::Request::from_parts(parts, tonic_body);
 
         let fut = tower::Service::call(&mut self.inner, tonic_req);
@@ -304,4 +307,3 @@ impl tower::Service<axum::http::Request<axum::body::Body>> for FlightGrpcWebServ
         })
     }
 }
-

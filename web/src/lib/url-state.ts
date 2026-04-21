@@ -2,6 +2,12 @@ import type { TimeRangePreset } from "@/features/tabs/workspace-store";
 
 export type QueryState = { query: string; preset: TimeRangePreset; from?: string; to?: string };
 
+// Single source of truth for valid presets.  Adding a new value to the
+// TimeRangePreset union without updating this set produces a TypeScript error.
+const VALID_PRESETS = new Set(
+  (["5m", "15m", "1h", "6h", "24h", "7d", "30d", "custom"] as const) satisfies readonly TimeRangePreset[],
+);
+
 // NOTE: base64url-encoded JSON for a typical query is ~50–200 bytes, well under
 // the ~2000-char safe URL limit. Very large KQL queries (multi-KB) could exceed
 // browser URL length limits — that case is out of scope for this implementation.
@@ -27,6 +33,7 @@ export function decodeQueryState(encoded: string): QueryState | null {
     const json = atob(b64);
     const v = JSON.parse(json);
     if (!v || typeof v.query !== "string" || typeof v.preset !== "string") return null;
+    if (!VALID_PRESETS.has(v.preset as TimeRangePreset)) return null;
     if (v.from !== undefined && typeof v.from !== "string") return null;
     if (v.to   !== undefined && typeof v.to   !== "string") return null;
     return v as QueryState;

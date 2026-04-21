@@ -919,13 +919,13 @@ impl Catalog for PostgresCatalog {
 
     // --- schema-listing ---
 
-    async fn list_databases(&self) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
-        let rows: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM databases ORDER BY name ASC",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+    async fn list_databases(
+        &self,
+    ) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
+        let rows: Vec<(String,)> = sqlx::query_as("SELECT name FROM databases ORDER BY name ASC")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
         Ok(rows.into_iter().map(|r| r.0).collect())
     }
 
@@ -933,6 +933,15 @@ impl Catalog for PostgresCatalog {
         &self,
         database: &str,
     ) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
+        let exists: (bool,) =
+            sqlx::query_as("SELECT EXISTS(SELECT 1 FROM databases WHERE name = $1)")
+                .bind(database)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        if !exists.0 {
+            return Err(CatalogError::DatabaseNotFound(database.to_string()));
+        }
         let rows: Vec<(String,)> = sqlx::query_as(
             "SELECT t.name FROM tables t
              JOIN databases d ON d.id = t.database_id
@@ -951,6 +960,15 @@ impl Catalog for PostgresCatalog {
         database: &str,
         table: &str,
     ) -> std::result::Result<Vec<ColumnInfo>, kyma_core::errors::CatalogError> {
+        let db_exists: (bool,) =
+            sqlx::query_as("SELECT EXISTS(SELECT 1 FROM databases WHERE name = $1)")
+                .bind(database)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        if !db_exists.0 {
+            return Err(CatalogError::DatabaseNotFound(database.to_string()));
+        }
         let row: Option<(serde_json::Value,)> = sqlx::query_as(
             "SELECT ss.arrow_schema
              FROM tables t
@@ -972,7 +990,9 @@ impl Catalog for PostgresCatalog {
         let fields = schema_json
             .get("fields")
             .and_then(|v| v.as_array())
-            .ok_or_else(|| CatalogError::Sql("malformed arrow_schema: missing fields array".into()))?;
+            .ok_or_else(|| {
+                CatalogError::Sql("malformed arrow_schema: missing fields array".into())
+            })?;
 
         let mut columns = Vec::with_capacity(fields.len());
         for f in fields {
@@ -987,7 +1007,11 @@ impl Catalog for PostgresCatalog {
                 .ok_or_else(|| CatalogError::Sql("field missing type".into()))?
                 .to_owned();
             let nullable = f.get("nullable").and_then(|v| v.as_bool()).unwrap_or(true);
-            columns.push(ColumnInfo { name, r#type: col_type, nullable });
+            columns.push(ColumnInfo {
+                name,
+                r#type: col_type,
+                nullable,
+            });
         }
         Ok(columns)
     }
@@ -1014,9 +1038,7 @@ fn row_to_dashboard(row: &sqlx::postgres::PgRow) -> std::result::Result<Dashboar
     })
 }
 
-fn row_to_panel(
-    row: &sqlx::postgres::PgRow,
-) -> std::result::Result<DashboardPanel, CatalogError> {
+fn row_to_panel(row: &sqlx::postgres::PgRow) -> std::result::Result<DashboardPanel, CatalogError> {
     use sqlx::Row as _;
     Ok(DashboardPanel {
         id: row.try_get("id").map_err(sql_err)?,

@@ -75,11 +75,7 @@ pub trait ExtentReader: Send + Sync {
     async fn pruned_blocks(&self, predicate: &BlockPredicate) -> Result<Vec<BlockId>>;
 
     /// Read one block, projecting to the requested columns only.
-    async fn read_block(
-        &self,
-        block: BlockId,
-        projection: &[ColumnId],
-    ) -> Result<RecordBatch>;
+    async fn read_block(&self, block: BlockId, projection: &[ColumnId]) -> Result<RecordBatch>;
 }
 
 /// Extent-level metadata surfaced to planners.

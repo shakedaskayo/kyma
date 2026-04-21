@@ -33,9 +33,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Create a new database (namespace).
-    CreateDatabase {
-        name: String,
-    },
+    CreateDatabase { name: String },
     /// Create a new table.
     CreateTable {
         #[arg(long)]
@@ -121,7 +119,9 @@ async fn main() -> Result<()> {
             let new_schema = catalog
                 .alter_table_add_column(t.id, name.trim(), ty.trim())
                 .await?;
-            println!("altered {db}.{table}: added column {name}:{ty} (schema_snapshot={new_schema})");
+            println!(
+                "altered {db}.{table}: added column {name}:{ty} (schema_snapshot={new_schema})"
+            );
         }
         Command::ListTables { db } => {
             let catalog = connect(&cli.catalog_url).await?;
@@ -177,11 +177,10 @@ async fn find_database_id(
             .unwrap_or("postgres://kyma:kyma_dev@localhost:5433/kyma"),
     )
     .await?;
-    let row: Option<(uuid::Uuid,)> =
-        sqlx::query_as("SELECT id FROM databases WHERE name = $1")
-            .bind(name)
-            .fetch_optional(&pool)
-            .await?;
+    let row: Option<(uuid::Uuid,)> = sqlx::query_as("SELECT id FROM databases WHERE name = $1")
+        .bind(name)
+        .fetch_optional(&pool)
+        .await?;
     let id = row
         .ok_or_else(|| anyhow!("database '{}' not found — create it first", name))?
         .0;
