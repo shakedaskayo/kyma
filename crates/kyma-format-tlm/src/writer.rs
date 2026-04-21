@@ -4,7 +4,8 @@
 //! on `finish()`, prepends the magic, and uploads a single object. Tracks
 //! min/max timestamps for catalog pruning.
 
-use crate::{TelemetryFormat, MAGIC};
+use crate::block_stats::{stats_for_batch, BlockStats};
+use crate::{TelemetryFormat, MAGIC_V2};
 use arrow::ipc::writer::FileWriter;
 use arrow_array::{
     cast::AsArray, Array, Int32Array, Int64Array, RecordBatch, StringArray,
@@ -74,6 +75,9 @@ pub struct TelemetryExtentWriter {
     tokens: Vec<Option<HashSet<String>>>,
     /// Which schema columns get indexed (only stringish and integer types).
     indexable_columns: Vec<(usize, IndexableKind)>,
+    /// Per-block min/max stats, one entry per appended batch. Emitted as a
+    /// JSON footer after the Arrow IPC body (v2 format).
+    block_stats: Vec<BlockStats>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -138,6 +142,7 @@ impl TelemetryExtentWriter {
             distinct_int,
             tokens,
             indexable_columns,
+            block_stats: Vec::new(),
         }
     }
 
@@ -306,6 +311,7 @@ impl ExtentWriter for TelemetryExtentWriter {
         self.block_count += 1;
         self.update_ts_bounds(&batch);
         self.update_distinct_sets(&batch);
+        self.block_stats.push(stats_for_batch(&batch));
         self.ipc
             .write(&batch)
             .map_err(|e| FormatError::Corrupt {
@@ -327,6 +333,7 @@ impl ExtentWriter for TelemetryExtentWriter {
             min_ts_nanos,
             max_ts_nanos,
             mut ipc,
+            block_stats,
             ..
         } = *self;
 
@@ -340,10 +347,22 @@ impl ExtentWriter for TelemetryExtentWriter {
             detail: format!("FileWriter::into_inner: {e}"),
         })?;
 
-        // Frame: MAGIC || ipc_bytes
-        let mut payload: Vec<u8> = Vec::with_capacity(MAGIC.len() + ipc_bytes.len());
-        payload.extend_from_slice(MAGIC);
+        // v2 frame:
+        //   MAGIC_V2 || ipc_bytes || block_stats_json || stats_len u32 LE || MAGIC_V2
+        let stats_json = serde_json::to_vec(&block_stats).map_err(|e| FormatError::Corrupt {
+            path: "<in-memory ipc>".to_string(),
+            detail: format!("block-stats serialize: {e}"),
+        })?;
+        let stats_len = stats_json.len() as u32;
+
+        let mut payload: Vec<u8> = Vec::with_capacity(
+            MAGIC_V2.len() + ipc_bytes.len() + stats_json.len() + 4 + MAGIC_V2.len(),
+        );
+        payload.extend_from_slice(MAGIC_V2);
         payload.extend_from_slice(&ipc_bytes);
+        payload.extend_from_slice(&stats_json);
+        payload.extend_from_slice(&stats_len.to_le_bytes());
+        payload.extend_from_slice(MAGIC_V2);
         let byte_size = payload.len() as u64;
 
         let object_path = format_extent_path(format.path_prefix(), &extent_id);
