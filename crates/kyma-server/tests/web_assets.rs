@@ -18,7 +18,10 @@ async fn serves_index_at_root() {
 #[tokio::test]
 async fn spa_fallback_to_index_for_unknown_path() {
     let app = kyma_server::web_ui::router();
-    let req = Request::builder().uri("/some/client-route").body(Body::empty()).unwrap();
+    let req = Request::builder()
+        .uri("/some/client-route")
+        .body(Body::empty())
+        .unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let ct = resp.headers().get("content-type").unwrap();

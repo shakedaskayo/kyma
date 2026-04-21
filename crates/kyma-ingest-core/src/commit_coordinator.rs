@@ -82,9 +82,10 @@ impl CoordinatorConfig {
         {
             d.batch_window = Duration::from_millis(v);
         }
-        if let Ok(v) = std::env::var("KYMA_COMMIT_MAX_EXTENTS")
-            .and_then(|v| v.parse::<usize>().map_err(|_| std::env::VarError::NotPresent))
-        {
+        if let Ok(v) = std::env::var("KYMA_COMMIT_MAX_EXTENTS").and_then(|v| {
+            v.parse::<usize>()
+                .map_err(|_| std::env::VarError::NotPresent)
+        }) {
             d.max_extents_per_snapshot = v;
         }
         d
@@ -108,7 +109,10 @@ impl CommitCoordinator {
 
     /// Submit an extent for commit. Resolves with the committed snapshot_id
     /// (shared with every other job that landed in the same batch/table).
-    pub async fn submit(&self, job_fn: impl FnOnce(oneshot::Sender<Result<SnapshotId>>) -> CommitJob) -> Result<SnapshotId> {
+    pub async fn submit(
+        &self,
+        job_fn: impl FnOnce(oneshot::Sender<Result<SnapshotId>>) -> CommitJob,
+    ) -> Result<SnapshotId> {
         let (tx, rx) = oneshot::channel();
         let job = job_fn(tx);
         self.tx
@@ -116,7 +120,9 @@ impl CommitCoordinator {
             .map_err(|_| Error::Internal("commit coordinator channel closed".into()))?;
         match rx.await {
             Ok(res) => res,
-            Err(_) => Err(Error::Internal("commit coordinator dropped responder".into())),
+            Err(_) => Err(Error::Internal(
+                "commit coordinator dropped responder".into(),
+            )),
         }
     }
 }
@@ -179,11 +185,7 @@ async fn process_batch(catalog: &dyn Catalog, batch: Vec<CommitJob>) {
     }
 }
 
-async fn commit_one_table_group(
-    catalog: &dyn Catalog,
-    table_id: TableId,
-    jobs: Vec<CommitJob>,
-) {
+async fn commit_one_table_group(catalog: &dyn Catalog, table_id: TableId, jobs: Vec<CommitJob>) {
     let extent_count = jobs.len();
     let total_rows: i64 = jobs.iter().map(|j| j.rows as i64).sum();
     let total_bytes: i64 = jobs.iter().map(|j| j.bytes as i64).sum();
@@ -285,8 +287,6 @@ fn fail_all(jobs: Vec<CommitJob>, err: Error) {
         let _ = first.responder.send(Err(err));
     }
     for rest in iter {
-        let _ = rest
-            .responder
-            .send(Err(Error::Internal(msg.clone())));
+        let _ = rest.responder.send(Err(Error::Internal(msg.clone())));
     }
 }

@@ -31,9 +31,7 @@
 
 use arrow_array::RecordBatch;
 use chrono::Utc;
-use kyma_core::catalog::{
-    Catalog, ExtentManifest, IngestLedgerEntry, SnapshotSummary, TableRef,
-};
+use kyma_core::catalog::{Catalog, ExtentManifest, IngestLedgerEntry, SnapshotSummary, TableRef};
 use kyma_core::errors::{CatalogError, Error, Result};
 use kyma_core::segment_format::{ExtentWriteResult, SegmentFormat};
 use kyma_core::types::{SnapshotId, TableId};
@@ -107,13 +105,19 @@ impl Default for StagingConfig {
 impl StagingConfig {
     pub fn from_env() -> Self {
         let mut d = Self::default();
-        if let Ok(v) = std::env::var("KYMA_FLUSH_MAX_ROWS").and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent)) {
+        if let Ok(v) = std::env::var("KYMA_FLUSH_MAX_ROWS")
+            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        {
             d.flush_max_rows = v;
         }
-        if let Ok(v) = std::env::var("KYMA_FLUSH_MAX_BYTES").and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent)) {
+        if let Ok(v) = std::env::var("KYMA_FLUSH_MAX_BYTES")
+            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        {
             d.flush_max_bytes = v;
         }
-        if let Ok(v) = std::env::var("KYMA_FLUSH_MAX_AGE_MS").and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent)) {
+        if let Ok(v) = std::env::var("KYMA_FLUSH_MAX_AGE_MS")
+            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        {
             d.flush_max_age = Duration::from_millis(v);
         }
         d
@@ -182,9 +186,7 @@ impl StagingBuffer {
         let timeout = self.config.request_timeout;
         match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(outcome)) => Ok(outcome),
-            Ok(Err(_canceled)) => {
-                Err(Error::Internal("staging buffer dropped waiter".into()))
-            }
+            Ok(Err(_canceled)) => Err(Error::Internal("staging buffer dropped waiter".into())),
             Err(_elapsed) => Err(Error::Internal(format!(
                 "staging buffer flush did not complete within {timeout:?}"
             ))),
@@ -208,7 +210,10 @@ impl StagingBuffer {
         // mismatch at the first V2 append.
         let needs_schema_flush = {
             let guard = self.inner.lock().await;
-            guard.get(&table.id).map(|e| e.schema.as_ref() != schema.as_ref()).unwrap_or(false)
+            guard
+                .get(&table.id)
+                .map(|e| e.schema.as_ref() != schema.as_ref())
+                .unwrap_or(false)
         };
         if needs_schema_flush {
             let buf = self.clone();
@@ -222,17 +227,15 @@ impl StagingBuffer {
 
         {
             let mut guard = self.inner.lock().await;
-            let entry = guard
-                .entry(table.id)
-                .or_insert_with(|| TableStaging {
-                    schema: schema.clone(),
-                    table_name: table.name.clone(),
-                    batches: Vec::new(),
-                    total_rows: 0,
-                    total_bytes: 0,
-                    first_queued_at: Instant::now(),
-                    waiters: Vec::new(),
-                });
+            let entry = guard.entry(table.id).or_insert_with(|| TableStaging {
+                schema: schema.clone(),
+                table_name: table.name.clone(),
+                batches: Vec::new(),
+                total_rows: 0,
+                total_bytes: 0,
+                first_queued_at: Instant::now(),
+                waiters: Vec::new(),
+            });
             // Keep schema ref fresh (post-schema-change path leaves entry empty).
             entry.schema = schema.clone();
             entry.batches.extend(batches);
@@ -264,7 +267,10 @@ impl StagingBuffer {
     ///
     /// Runs every ~10 ms, cheap lock + iter.
     pub async fn run_timer(self, shutdown: impl std::future::Future<Output = ()>) {
-        info!(max_age_ms = self.config.flush_max_age.as_millis() as u64, "staging buffer timer starting");
+        info!(
+            max_age_ms = self.config.flush_max_age.as_millis() as u64,
+            "staging buffer timer starting"
+        );
         tokio::pin!(shutdown);
         let mut tick = tokio::time::interval(Duration::from_millis(10));
         loop {
@@ -525,10 +531,7 @@ async fn lookup_by_id(catalog: &dyn Catalog, table_id: TableId) -> Result<Option
     ))
 }
 
-fn extent_write_result_to_manifest(
-    table: &TableRef,
-    r: &ExtentWriteResult,
-) -> ExtentManifest {
+fn extent_write_result_to_manifest(table: &TableRef, r: &ExtentWriteResult) -> ExtentManifest {
     ExtentManifest {
         id: r.extent_id,
         table_id: table.id,

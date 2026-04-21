@@ -81,6 +81,10 @@ async fn otlp_export_logs() {
     };
     let resp = client.export(req).await.expect("export");
     let resp = resp.into_inner();
-    assert!(resp.partial_success.is_none() || resp.partial_success.as_ref().unwrap().rejected_log_records == 0,
-        "OTLP reported partial_success: {:?}", resp.partial_success);
+    assert!(
+        resp.partial_success.is_none()
+            || resp.partial_success.as_ref().unwrap().rejected_log_records == 0,
+        "OTLP reported partial_success: {:?}",
+        resp.partial_success
+    );
 }
