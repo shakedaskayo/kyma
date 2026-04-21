@@ -18,6 +18,7 @@ use datafusion::logical_expr::{
     ColumnarValue, ScalarUDF, Signature, SimpleScalarUDF, Volatility,
 };
 use datafusion::prelude::SessionContext;
+use datafusion::scalar::ScalarValue;
 use std::sync::Arc;
 
 /// Register `cosine_distance`, `l2_distance`, `inner_product` on `ctx`.
@@ -85,19 +86,56 @@ fn to_f32_rows(col: &ColumnarValue) -> DfResult<Vec<Vec<f32>>> {
                 arr.data_type()
             )))
         }
-        ColumnarValue::Scalar(s) => Err(DataFusionError::Execution(format!(
-            "vector UDF does not accept scalar literal argument: {s:?}"
-        ))),
+        ColumnarValue::Scalar(s) => {
+            // Scalar literals materialize through `make_array(...)` in user
+            // queries (`SELECT cosine_distance(col, make_array(1.0, ...))`).
+            // DataFusion wraps that as `ScalarValue::List(ArrayRef)` or
+            // `ScalarValue::FixedSizeList(ArrayRef)` where the inner ArrayRef
+            // is a 1-element list of floats. Unwrap to a single-row Vec<f32>
+            // so the per-row loop treats it as a broadcastable singleton.
+            let inner: Arc<dyn Array> = match s {
+                ScalarValue::List(arr) => arr.clone() as Arc<dyn Array>,
+                ScalarValue::LargeList(arr) => arr.clone() as Arc<dyn Array>,
+                ScalarValue::FixedSizeList(arr) => arr.clone() as Arc<dyn Array>,
+                other => {
+                    return Err(DataFusionError::Execution(format!(
+                        "vector UDF expected list-typed scalar literal; got {other:?}"
+                    )));
+                }
+            };
+            // inner is a 1-element ListArray/FixedSizeListArray; extract its
+            // single row.
+            let floats = if let Some(fsl) = inner.as_any().downcast_ref::<FixedSizeListArray>() {
+                let row = fsl.value(0);
+                extract_f32s(row.as_ref())?
+            } else if let Some(l) = inner.as_any().downcast_ref::<ListArray>() {
+                let row = l.value(0);
+                extract_f32s(row.as_ref())?
+            } else {
+                return Err(DataFusionError::Execution(format!(
+                    "vector UDF: scalar literal inner type not recognised: {:?}",
+                    inner.data_type()
+                )));
+            };
+            Ok(vec![floats])
+        }
     }
 }
 
 fn extract_f32s(a: &dyn Array) -> DfResult<Vec<f32>> {
-    let f = as_float32_array(a).map_err(|_| {
-        DataFusionError::Execution(
-            "vector UDF inner element type must be Float32".to_string(),
-        )
-    })?;
-    Ok(f.values().to_vec())
+    // Accept Float32 directly.
+    if let Ok(f) = as_float32_array(a) {
+        return Ok(f.values().to_vec());
+    }
+    // Cast Float64 literals down to Float32 (make_array with f64 literals
+    // produces Float64 inner; users shouldn't need an explicit CAST).
+    if let Some(f) = a.as_any().downcast_ref::<arrow_array::Float64Array>() {
+        return Ok(f.values().iter().map(|v| *v as f32).collect());
+    }
+    Err(DataFusionError::Execution(format!(
+        "vector UDF inner element type must be Float32 or Float64; got {:?}",
+        a.data_type()
+    )))
 }
 
 fn cosine(a: &[f32], b: &[f32]) -> Option<f64> {
