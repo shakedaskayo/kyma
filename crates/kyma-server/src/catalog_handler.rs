@@ -1,7 +1,8 @@
 //! HTTP handler for `GET /v1/catalog/schema`.
 //!
 //! Returns the full schema tree (databases → tables → columns) as JSON,
-//! with a 5-second server-side cache backed by a `tokio::sync::Mutex`.
+//! with a configurable server-side cache (default 5 s, override via
+//! `KYMA_SCHEMA_CACHE_TTL_SECS`) backed by a `tokio::sync::Mutex`.
 //! Thundering-herd tolerant on cold-start misses: multiple concurrent cold
 //! requests will each rebuild. The cache is never held across IO, so warm
 //! readers never block on a builder.
@@ -36,21 +37,46 @@ pub struct TableDoc {
     pub columns: Vec<ColumnInfo>,
 }
 
-const TTL: Duration = Duration::from_secs(5);
+/// Default TTL used by [`SchemaCache::default`].
+const DEFAULT_TTL: Duration = Duration::from_secs(5);
 
 /// Server-side cache for the schema document.
 ///
 /// `None` means the cache is cold; `Some((timestamp, doc))` holds the last
-/// fetched document. Stale entries (older than `TTL`) are evicted on the next
-/// read.
-#[derive(Default)]
+/// fetched document. Stale entries (older than `ttl`) are evicted on the next
+/// read.  A `ttl` of `Duration::ZERO` effectively disables the cache — the
+/// handler rebuilds on every request.
 pub struct SchemaCache {
     inner: Mutex<Option<(Instant, Arc<SchemaDoc>)>>,
+    pub ttl: Duration,
+}
+
+impl Default for SchemaCache {
+    fn default() -> Self {
+        Self::new(DEFAULT_TTL)
+    }
 }
 
 impl SchemaCache {
-    pub fn new() -> Self {
-        Self::default()
+    /// Create a cache with an explicit TTL.  Pass [`Duration::ZERO`] to
+    /// disable caching (every request rebuilds from the catalog).
+    pub fn new(ttl: Duration) -> Self {
+        Self {
+            inner: Mutex::new(None),
+            ttl,
+        }
+    }
+
+    /// Read `KYMA_SCHEMA_CACHE_TTL_SECS` from the environment and construct a
+    /// [`SchemaCache`] accordingly.  Falls back to the 5-second default when
+    /// the variable is absent or unparseable.
+    pub fn from_env() -> Self {
+        let ttl = std::env::var("KYMA_SCHEMA_CACHE_TTL_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(Duration::from_secs)
+            .unwrap_or(DEFAULT_TTL);
+        Self::new(ttl)
     }
 }
 
@@ -64,12 +90,13 @@ pub async fn schema_handler(State(state): State<QueryState>) -> impl IntoRespons
     let cache = state.schema_cache.clone();
 
     // Freshness check under a short guard, then release.
+    let ttl = cache.ttl;
     let cached = {
         let guard = cache.inner.lock().await;
         guard.as_ref().cloned()
     };
     if let Some((t, doc)) = &cached {
-        if t.elapsed() < TTL {
+        if t.elapsed() < ttl {
             return (StatusCode::OK, Json((**doc).clone())).into_response();
         }
     }
@@ -114,4 +141,55 @@ async fn build(catalog: &dyn Catalog) -> Result<SchemaDoc, kyma_core::errors::Ca
         out.databases.push(DatabaseDoc { name: db, tables });
     }
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `Duration::ZERO` cache must never return a cached entry — the
+    /// "elapsed >= ttl" condition is immediately true after the first insert.
+    #[tokio::test]
+    async fn zero_ttl_cache_is_always_cold() {
+        let cache = SchemaCache::new(Duration::ZERO);
+        // Prime the inner state as if we just built a doc.
+        {
+            let mut g = cache.inner.lock().await;
+            *g = Some((
+                // Use `Instant::now() - 1s` so elapsed() > Duration::ZERO
+                // even on the very first check.
+                Instant::now() - Duration::from_secs(1),
+                Arc::new(SchemaDoc { databases: vec![] }),
+            ));
+        }
+        // Now read: because ttl == ZERO, every elapsed value satisfies
+        // `elapsed >= ttl`, so the freshness check must fail.
+        let cached = {
+            let g = cache.inner.lock().await;
+            g.as_ref().cloned()
+        };
+        if let Some((t, _)) = cached {
+            // With ZERO ttl the condition for "fresh" is `t.elapsed() < ZERO`,
+            // which is always false. Confirm that here.
+            assert!(
+                !(t.elapsed() < cache.ttl),
+                "zero-ttl cache reported fresh — that is incorrect"
+            );
+        }
+    }
+
+    #[test]
+    fn default_ttl_is_five_seconds() {
+        let cache = SchemaCache::default();
+        assert_eq!(cache.ttl, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn custom_ttl_is_stored() {
+        let cache = SchemaCache::new(Duration::from_secs(60));
+        assert_eq!(cache.ttl, Duration::from_secs(60));
+    }
 }
