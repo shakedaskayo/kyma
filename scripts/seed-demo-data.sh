@@ -579,3 +579,29 @@ cat <<'QUERIES'
 
 ══════════════════════════════════════════════════════════════════════════
 QUERIES
+
+# ── Demo dashboard "Production Pulse" ────────────────────────────────────────
+echo ""
+echo "Seeding demo dashboard…"
+
+DASH=$(curl -sS -X POST "$SERVER/v1/dashboards" \
+  -H 'content-type: application/json' \
+  -d '{"name":"Production Pulse","description":"Errors, latency, and deploys across the stack","time_range_preset":"24h","refresh_interval_seconds":60}' \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+
+curl -sS -X PATCH "$SERVER/v1/dashboards/$DASH" \
+  -H 'content-type: application/json' \
+  -d @- <<JSON
+{
+  "panels": [
+    { "title": "Errors by service", "panel_type": "chart", "query": "otel_logs | where severity_text == \"ERROR\" | where timestamp > ago(24h) | summarize n=count() by service_name | order by n desc", "database_name": "obs", "config": {}, "grid_x": 0, "grid_y": 0, "grid_w": 6, "grid_h": 4, "display_order": 0 },
+    { "title": "p99 latency (ms)", "panel_type": "chart", "query": "otel_metrics | where metric_name == \"p99_latency_ms\" | where timestamp > ago(24h) | take 500", "database_name": "obs", "config": {"chartType":"line"}, "grid_x": 6, "grid_y": 0, "grid_w": 6, "grid_h": 4, "display_order": 1 },
+    { "title": "Recent deploys", "panel_type": "table", "query": "deploys | where timestamp > ago(24h) | project timestamp, service_name, version, author, env", "database_name": "obs", "config": {"maxRows":20}, "grid_x": 0, "grid_y": 4, "grid_w": 6, "grid_h": 4, "display_order": 2 },
+    { "title": "Total LLM spend (24h)", "panel_type": "stat", "query": "llm_calls | where timestamp > ago(24h) | summarize total=sum(cost_usd)", "database_name": "obs", "config": {"label":"USD, last 24h", "format":"number"}, "grid_x": 6, "grid_y": 4, "grid_w": 3, "grid_h": 2, "display_order": 3 },
+    { "title": "Error count (24h)", "panel_type": "stat", "query": "otel_logs | where severity_text == \"ERROR\" | where timestamp > ago(24h) | summarize n=count()", "database_name": "obs", "config": {"label":"error events", "format":"number"}, "grid_x": 9, "grid_y": 4, "grid_w": 3, "grid_h": 2, "display_order": 4 },
+    { "title": "About this dashboard", "panel_type": "markdown", "query": null, "database_name": null, "config": {"markdown":"# Production Pulse\n\nQuick-look dashboard for on-call. All panels are last-24h unless noted.\n\n- **Errors by service** — per-service error counts\n- **p99 latency** — request-latency trend\n- **Recent deploys** — what shipped lately\n- **LLM spend** — agent cost burn\n- **Error count** — overall error volume\n\nUse the time range picker above to scope all panels."}, "grid_x": 0, "grid_y": 8, "grid_w": 12, "grid_h": 3, "display_order": 5 }
+  ]
+}
+JSON
+
+echo "Seeded dashboard: $DASH"
