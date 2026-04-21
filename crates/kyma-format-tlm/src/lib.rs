@@ -27,6 +27,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod block_stats;
 mod reader;
 mod writer;
 
@@ -42,11 +43,21 @@ use std::sync::Arc;
 pub use reader::TelemetryExtentReader;
 pub use writer::TelemetryExtentWriter;
 
-/// Magic bytes written at the start of every telemetry-format extent.
+/// Magic bytes written at the start of every v1 telemetry-format extent.
+/// Kept for backward-compat: v1 extents can still be read.
 pub const MAGIC: &[u8] = b"KYMA\x01";
 
+/// Magic bytes for v2 extents. Layout:
+/// ```text
+/// MAGIC_V2 || arrow_ipc_bytes || block_stats_json || stats_len u32 LE || MAGIC_V2
+/// ```
+/// The trailing MAGIC_V2 + u32 lets readers walk backward from the end
+/// without mutating the Arrow IPC body.
+pub const MAGIC_V2: &[u8] = b"KYMA\x02";
+
 /// Current format version this implementation writes.
-pub const CURRENT_VERSION: u32 = 1;
+/// v1 — Arrow IPC only. v2 — adds per-block stats footer.
+pub const CURRENT_VERSION: u32 = 2;
 
 /// The telemetry segment format (phase A).
 #[derive(Clone)]

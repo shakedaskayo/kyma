@@ -10,7 +10,7 @@ test("presetToKqlAgo maps presets", () => {
 
 test("prependTimeFilter injects preamble only when user hasn't already filtered by timestamp", () => {
   const out = prependTimeFilter("otel_logs", { preset: "1h" });
-  expect(out).toContain("| where timestamp between (ago(1h) .. now())");
+  expect(out).toContain("| where timestamp > ago(1h)");
 });
 
 test("prependTimeFilter leaves user-supplied timestamp filter alone", () => {

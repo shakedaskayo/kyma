@@ -3,8 +3,5 @@ plugins:
   - local: ["pnpm", "exec", "protoc-gen-es"]
     out: src/sdk/gen
     opt: ["target=ts"]
-  - local: ["pnpm", "exec", "protoc-gen-connect-es"]
-    out: src/sdk/gen
-    opt: ["target=ts"]
 inputs:
   - directory: proto
