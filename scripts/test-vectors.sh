@@ -49,7 +49,7 @@ section "Build release binary"
 cargo build --release -p kyma-bin -q
 
 section "Start kyma server"
-./target/release/kyma-bin > "$LOG_FILE" 2>&1 &
+./target/release/kyma > "$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 1 40); do
     if curl -sf "$HTTP_BASE/health" > /dev/null 2>&1; then

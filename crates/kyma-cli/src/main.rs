@@ -210,9 +210,22 @@ fn parse_schema_spec(spec: &str) -> Result<Schema> {
             "string" => DataType::Utf8,
             "timestamp" => DataType::Timestamp(TimeUnit::Nanosecond, None),
             "dynamic" => DataType::Binary,
+            other if other.starts_with("vector(") && other.ends_with(')') => {
+                let inner = &other[7..other.len() - 1];
+                let dim: i32 = inner.trim().parse().map_err(|_| {
+                    anyhow!("vector(N): N must be a positive integer, got '{inner}'")
+                })?;
+                if dim <= 0 {
+                    return Err(anyhow!("vector(N): N must be > 0, got {dim}"));
+                }
+                DataType::FixedSizeList(
+                    Arc::new(Field::new("item", DataType::Float32, false)),
+                    dim,
+                )
+            }
             other => return Err(anyhow!("unsupported column type: {other}")),
         };
-        fields.push(Field::new(name, data_type, true));
+        fields.push(Field::new(name, data_type, false));
     }
     if fields.is_empty() {
         return Err(anyhow!("schema spec produced no fields"));
