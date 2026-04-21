@@ -1,0 +1,59 @@
+import { createVitePlugin } from 'unplugin'
+
+import { configSchema } from './core/config'
+import { unpluginRouterCodeSplitterFactory } from './core/router-code-splitter-plugin'
+import { unpluginRouterGeneratorFactory } from './core/router-generator-plugin'
+import { unpluginRouterComposedFactory } from './core/router-composed-plugin'
+import type { CodeSplittingOptions, Config, getConfig } from './core/config'
+
+/**
+ * @example
+ * ```ts
+ * export default defineConfig({
+ *   plugins: [tanstackRouterGenerator()],
+ *   // ...
+ * })
+ * ```
+ */
+const tanstackRouterGenerator = createVitePlugin(unpluginRouterGeneratorFactory)
+
+/**
+ * @example
+ * ```ts
+ * export default defineConfig({
+ *   plugins: [tanStackRouterCodeSplitter()],
+ *   // ...
+ * })
+ * ```
+ */
+const tanStackRouterCodeSplitter = createVitePlugin(
+  unpluginRouterCodeSplitterFactory,
+)
+
+/**
+ * @example
+ * ```ts
+ * export default defineConfig({
+ *   plugins: [tanstackRouter()],
+ *   // ...
+ * })
+ * ```
+ */
+const tanstackRouter = createVitePlugin(unpluginRouterComposedFactory)
+
+/**
+ * @deprecated Use `tanstackRouter` instead.
+ */
+const TanStackRouterVite = tanstackRouter
+
+export default tanstackRouter
+export {
+  configSchema,
+  getConfig,
+  tanStackRouterCodeSplitter,
+  tanstackRouterGenerator,
+  TanStackRouterVite,
+  tanstackRouter,
+}
+
+export type { Config, CodeSplittingOptions }

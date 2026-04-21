@@ -1,5 +1,6 @@
 target/
 **/target/
+.worktrees/
 Cargo.lock.backup
 *.rs.bk
 *.swp
