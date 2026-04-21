@@ -74,7 +74,7 @@ pub async fn seeded_state_empty() -> QueryState {
     QueryState {
         catalog,
         format,
-        schema_cache: Arc::new(SchemaCache::new()),
+        schema_cache: Arc::new(SchemaCache::default()),
     }
 }
 
@@ -142,7 +142,7 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
     QueryState {
         catalog,
         format,
-        schema_cache: Arc::new(SchemaCache::new()),
+        schema_cache: Arc::new(SchemaCache::default()),
     }
 }
 
