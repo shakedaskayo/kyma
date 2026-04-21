@@ -16,6 +16,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod agent;
 pub mod auth;
 pub mod catalog_handler;
 pub mod dashboards_handler;
@@ -140,6 +141,13 @@ pub fn dashboards_write_router(catalog: Arc<dyn kyma_core::catalog::Catalog>) ->
 /// Separate health router — always unauthenticated.
 pub fn health_router() -> Router {
     Router::new().route("/health", get(health::health))
+}
+
+/// Variant of [`router`] that additionally nests the inline agent surface
+/// under `/v1/agent`. Called by `kyma-bin` once the `PgPool` (needed for
+/// `agent_runs` persistence) is available.
+pub fn router_with_agent(state: QueryState, agent_state: agent::AgentState) -> Router {
+    router(state).nest("/v1/agent", agent::router(agent_state))
 }
 
 #[derive(Debug, Serialize)]
