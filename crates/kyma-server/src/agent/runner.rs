@@ -14,7 +14,8 @@ use std::sync::Arc;
 
 use super::state::AgentState;
 use super::tools::{
-    tool_describe_table, tool_list_databases, tool_run_sql, tool_sample_rows, SharedToolCtx,
+    tool_describe_table, tool_list_databases, tool_run_kql, tool_run_sql, tool_sample_rows,
+    SharedToolCtx,
 };
 
 /// Application name advertised to the session service. Stable so that
@@ -30,17 +31,30 @@ pub const DEFAULT_MODEL: &str = "gemma4:latest";
 /// Default Ollama server URL (matches the host's running daemon).
 pub const DEFAULT_OLLAMA_HOST: &str = "http://localhost:11434";
 
-const SYSTEM_PROMPT: &str = r#"You are kyma's data assistant. The user will ask questions in English about their data. Use the tools to answer.
+const SYSTEM_PROMPT: &str = r#"You are kyma's data assistant. Users ask questions in English; you answer them by using the tools.
 
-Recipe:
-1. If the user hasn't named a specific database or table, first call list_databases and describe_table on candidates.
-2. Once you know the schema, write a SQL query and call run_sql. Kyma's SQL dialect is DataFusion SQL; for vector similarity use cosine_distance(col, make_array(...)).
-3. If a column's shape is unclear from describe_table, call sample_rows for one or two example records.
-4. Produce a concise final answer in plain English. Cite the SQL you ran.
+KQL IS THE PRIMARY QUERY LANGUAGE — prefer `run_kql` over `run_sql`.
+
+KQL uses pipe syntax. Examples:
+- Counting:        `requests | where status >= 500 | summarize n=count() by url | top 10 by n`
+- Time-bucket:     `requests | where ts > ago(1h) | summarize n=count() by bin(ts, 1m) | sort by ts asc`
+- Text search:     `requests | where url contains "/api/" | take 20`
+- Distinct values: `requests | distinct service`
+- Graph:           `edges | graph-traverse source "a" from src to dst max-hops 3`
+- Projection:      `requests | project ts, url, status | take 100`
+
+Use `run_sql` only for: vector similarity search (cosine_distance(col, make_array(..)) UDF is SQL-only today), recursive CTEs (`WITH RECURSIVE`), window functions, or joins across many tables. `run_sql` is the escape hatch, not the default.
+
+Efficient workflow:
+1. If the user did not name a specific database or table, batch independent lookups in the same turn — emit BOTH `list_databases` AND `describe_table` calls in one response when feasible (the engine dispatches them in parallel).
+2. Once you know the schema, write a KQL pipeline and call `run_kql`. For vector similarity, fall back to `run_sql` with `cosine_distance`.
+3. If a column's shape is unclear from `describe_table`, call `sample_rows` for one or two example records.
+4. Produce a concise final answer in plain English. Cite the KQL (or SQL) you ran.
 
 Rules:
-- Do NOT fabricate schema. Always verify via describe_table before writing SQL.
+- Do NOT fabricate schema. Always verify via `describe_table` before writing a query.
 - Do NOT claim data you didn't fetch via a tool call.
+- Prefer ONE multi-tool turn over several sequential single-tool turns when the calls are independent.
 - You have at most 12 tool calls per question.
 "#;
 
@@ -70,6 +84,7 @@ pub fn build_agent(state: &AgentState) -> adk_rust::Result<Arc<dyn Agent>> {
         .model(llm)
         .tool(tool_list_databases(shared.clone()))
         .tool(tool_describe_table(shared.clone()))
+        .tool(tool_run_kql(shared.clone()))
         .tool(tool_run_sql(shared.clone()))
         .tool(tool_sample_rows(shared))
         .build()?;

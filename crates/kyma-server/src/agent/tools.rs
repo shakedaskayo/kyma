@@ -191,7 +191,75 @@ pub fn tool_run_sql(ctx: SharedToolCtx) -> Arc<dyn Tool> {
 }
 
 // ---------------------------------------------------------------------------
-// Tool 4: sample_rows
+// Tool 4: run_kql — kyma's native query surface
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct RunKqlArgs {
+    /// Database whose tables should be registered into the DataFusion
+    /// session for this query.
+    database: String,
+    /// KQL query text. Starts with a table reference, pipe-separated operators:
+    /// `tbl | where cond | summarize agg by col | take N`.
+    kql: String,
+    /// Row cap applied to the JSON response. Default 200.
+    #[serde(default = "default_max_rows")]
+    max_rows: usize,
+}
+
+const RUN_KQL_DESC: &str = "Execute a KQL query against kyma — the PRIMARY \
+query tool. KQL is pipe-syntax: \
+`requests | where status >= 500 | summarize n=count() by url | top 10 by n`. \
+Supports: where, project, project-away, extend, summarize…by…, take, limit, \
+sort, top, count, distinct, graph-traverse, graph-shortest-path. Functions: \
+now, ago, bin, startofhour/day, strcat, tolower, iff, count, sum, avg, min, \
+max, dcount. String ops: contains, startswith, endswith, has. \
+For vector similarity the operator is not yet wired — drop to run_sql with \
+cosine_distance(col, make_array(...)).";
+
+pub fn tool_run_kql(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "run_kql",
+            RUN_KQL_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: RunKqlArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    // Compile KQL → SQL; surface parse errors to the model so
+                    // it can self-correct the syntax.
+                    let sql = match kyma_kql::kql_to_sql(&parsed.kql) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            return Ok(json!({
+                                "error": format!("kql_parse: {e}"),
+                                "hint": "Check pipe syntax; operators are '|'-separated, \
+                                    strings are double-quoted, comparisons use '=='.",
+                            }));
+                        }
+                    };
+                    let mut out =
+                        execute_sql(&shared, &parsed.database, &sql, parsed.max_rows).await;
+                    // Attach the compiled SQL for debugging / tracing.
+                    if let Value::Object(ref mut m) = out {
+                        m.insert("compiled_sql".into(), Value::String(sql));
+                    }
+                    Ok(out)
+                }
+            },
+        )
+        .with_parameters_schema::<RunKqlArgs>()
+        .with_read_only(true)
+        .with_concurrency_safe(true),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Tool 5: sample_rows
 // ---------------------------------------------------------------------------
 
 fn default_n() -> usize {
