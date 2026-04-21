@@ -933,6 +933,16 @@ impl Catalog for PostgresCatalog {
         &self,
         database: &str,
     ) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
+        let exists: (bool,) = sqlx::query_as(
+            "SELECT EXISTS(SELECT 1 FROM databases WHERE name = $1)",
+        )
+        .bind(database)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        if !exists.0 {
+            return Err(CatalogError::DatabaseNotFound(database.to_string()));
+        }
         let rows: Vec<(String,)> = sqlx::query_as(
             "SELECT t.name FROM tables t
              JOIN databases d ON d.id = t.database_id
@@ -951,6 +961,16 @@ impl Catalog for PostgresCatalog {
         database: &str,
         table: &str,
     ) -> std::result::Result<Vec<ColumnInfo>, kyma_core::errors::CatalogError> {
+        let db_exists: (bool,) = sqlx::query_as(
+            "SELECT EXISTS(SELECT 1 FROM databases WHERE name = $1)",
+        )
+        .bind(database)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        if !db_exists.0 {
+            return Err(CatalogError::DatabaseNotFound(database.to_string()));
+        }
         let row: Option<(serde_json::Value,)> = sqlx::query_as(
             "SELECT ss.arrow_schema
              FROM tables t

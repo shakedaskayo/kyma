@@ -112,3 +112,30 @@ async fn get_table_columns_returns_table_not_found_for_missing_table() {
         other => panic!("expected TableNotFound, got {other:?}"),
     }
 }
+
+#[tokio::test]
+async fn list_tables_not_found_for_unknown_database() {
+    let (catalog, _container) = setup().await;
+    let err = catalog.list_tables("does_not_exist").await.unwrap_err();
+    match err {
+        kyma_core::errors::CatalogError::DatabaseNotFound(name) => {
+            assert_eq!(name, "does_not_exist");
+        }
+        other => panic!("expected DatabaseNotFound, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn get_table_columns_not_found_for_unknown_database() {
+    let (catalog, _container) = setup().await;
+    let err = catalog
+        .get_table_columns("does_not_exist", "some_table")
+        .await
+        .unwrap_err();
+    match err {
+        kyma_core::errors::CatalogError::DatabaseNotFound(name) => {
+            assert_eq!(name, "does_not_exist");
+        }
+        other => panic!("expected DatabaseNotFound, got {other:?}"),
+    }
+}
