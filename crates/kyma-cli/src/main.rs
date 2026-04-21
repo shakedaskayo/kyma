@@ -202,14 +202,18 @@ fn parse_schema_spec(spec: &str) -> Result<Schema> {
         if name.is_empty() {
             return Err(anyhow!("empty column name in '{col}'"));
         }
-        let data_type = match ty {
-            "bool" => DataType::Boolean,
-            "int" => DataType::Int32,
-            "long" => DataType::Int64,
-            "real" => DataType::Float64,
-            "string" => DataType::Utf8,
-            "timestamp" => DataType::Timestamp(TimeUnit::Nanosecond, None),
-            "dynamic" => DataType::Binary,
+        // Vector columns are non-nullable because null-vector ingest isn't
+        // supported yet (the coercion path rejects serde_json::Value::Null).
+        // All other columns default to nullable=true to match existing seed
+        // scripts and the catalog's historical behaviour.
+        let (data_type, nullable) = match ty {
+            "bool" => (DataType::Boolean, true),
+            "int" => (DataType::Int32, true),
+            "long" => (DataType::Int64, true),
+            "real" => (DataType::Float64, true),
+            "string" => (DataType::Utf8, true),
+            "timestamp" => (DataType::Timestamp(TimeUnit::Nanosecond, None), true),
+            "dynamic" => (DataType::Binary, true),
             other if other.starts_with("vector(") && other.ends_with(')') => {
                 let inner = &other[7..other.len() - 1];
                 let dim: i32 = inner.trim().parse().map_err(|_| {
@@ -218,11 +222,17 @@ fn parse_schema_spec(spec: &str) -> Result<Schema> {
                 if dim <= 0 {
                     return Err(anyhow!("vector(N): N must be > 0, got {dim}"));
                 }
-                DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, false)), dim)
+                (
+                    DataType::FixedSizeList(
+                        Arc::new(Field::new("item", DataType::Float32, false)),
+                        dim,
+                    ),
+                    false,
+                )
             }
             other => return Err(anyhow!("unsupported column type: {other}")),
         };
-        fields.push(Field::new(name, data_type, false));
+        fields.push(Field::new(name, data_type, nullable));
     }
     if fields.is_empty() {
         return Err(anyhow!("schema spec produced no fields"));

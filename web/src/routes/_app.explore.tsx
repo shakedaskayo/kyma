@@ -197,6 +197,15 @@ function ExplorePage() {
             onInsert={(t) =>
               active && workspace.setQuery(active.id, `${active.query}${active.query.endsWith("\n") || !active.query ? "" : " "}${t}`)
             }
+            onReplaceAndRun={(kql, _db) => {
+              // Open the quick-action query in a new tab and execute it so
+              // the user's current editor content isn't trampled.
+              const id = workspace.newTab({ query: kql });
+              setTimeout(() => {
+                const t = useWorkspace.getState().tabs.find((x) => x.id === id);
+                if (t) void run(t, setLiveResult);
+              }, 0);
+            }}
           />
           {liveResult && (
             <>
@@ -413,15 +422,91 @@ function EmptyState({ text }: { text: string }) {
 }
 
 function ErrorCard({ msg, rid }: { msg: string; rid?: string }) {
+  // Extract the error code if the message follows the common
+  // "<code>: <details>" shape. Split on the first colon so that SQL
+  // messages with colons (e.g. "SchemaError: Column not found") still
+  // get the code callout.
+  const { code, body, hint } = dissectErrorMessage(msg);
   return (
     <div className="mx-auto mt-6 max-w-2xl rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-xs shadow-sm">
-      <div className="font-semibold text-destructive">Query failed</div>
-      <pre className="mt-1 whitespace-pre-wrap font-mono text-destructive/90">{msg}</pre>
+      <div className="flex items-center gap-2">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-4 w-4 text-destructive">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <div className="font-semibold text-destructive">
+          {code ? "Query failed" : "Query failed"}
+        </div>
+        {code && (
+          <code className="rounded bg-destructive/15 px-1.5 py-0.5 font-mono text-[10px] text-destructive">
+            {code}
+          </code>
+        )}
+      </div>
+      <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-destructive/90">
+        {body}
+      </pre>
+      {hint && (
+        <div className="mt-2 rounded border border-destructive/30 bg-background/40 p-2 text-destructive/80">
+          <span className="font-semibold">Hint: </span>
+          {hint}
+        </div>
+      )}
       {rid && (
-        <div className="mt-2 text-muted-foreground">
-          request id: <code>{rid}</code>
+        <div className="mt-2 flex items-center gap-1 text-muted-foreground">
+          request id: <code className="select-all">{rid}</code>
         </div>
       )}
     </div>
   );
+}
+
+/** Parse a kyma error message to expose the code + a helpful hint.
+ * Handles patterns seen from /v1/query:
+ *   - "bad_request_body: failed to decode NDJSON: ..."
+ *   - "SchemaError: Column not found: <col>"
+ *   - "parse_error: expected '|' at line 1"
+ *   - plain unstructured strings
+ */
+function dissectErrorMessage(msg: string): {
+  code?: string;
+  body: string;
+  hint?: string;
+} {
+  // Common kyma error-code prefix: lower_snake_case up to the first colon.
+  const m = msg.match(/^([a-z][a-z0-9_]+):\s+(.*)$/s);
+  let code: string | undefined;
+  let body = msg;
+  if (m) {
+    code = m[1];
+    body = m[2];
+  }
+  // Heuristic hints for the most frequent failures.
+  let hint: string | undefined;
+  const lower = msg.toLowerCase();
+  if (lower.includes("table not found") || lower.includes("relation does not exist")) {
+    hint =
+      "The referenced table doesn't exist in the selected database. Double-click a table in the left panel to paste its name.";
+  } else if (lower.includes("column not found") || lower.includes("no field named")) {
+    hint =
+      "That column isn't in the table's schema. Expand the table on the left to see its actual columns.";
+  } else if (lower.includes("syntax") || lower.includes("expected")) {
+    hint =
+      "Likely a KQL syntax issue — pipe syntax uses '|', strings are double-quoted, comparisons use '=='.";
+  } else if (lower.includes("bad_request_body") || lower.includes("ndjson")) {
+    hint =
+      "Request body failed to decode. If you're ingesting, check that each line is a valid JSON object and all required columns are present.";
+  } else if (lower.includes("budget") || lower.includes("too many requests")) {
+    hint =
+      "Query budget exceeded. Narrow the time range or add a `| take N` to limit rows.";
+  }
+  return { code, body, hint };
 }

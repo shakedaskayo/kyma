@@ -1,5 +1,17 @@
 import { useState } from "react";
-import { ChevronRight, Database, Table2, Columns3, Calendar, Hash, Type, ToggleLeft } from "lucide-react";
+import {
+  ChevronRight,
+  Database,
+  Table2,
+  Columns3,
+  Calendar,
+  Hash,
+  Type,
+  ToggleLeft,
+  Eye,
+  Sigma,
+  FileText,
+} from "lucide-react";
 import type { SchemaDoc, ColumnInfo } from "@/sdk/catalog";
 
 // ── type icon helper ──────────────────────────────────────────────────────────
@@ -42,9 +54,16 @@ function dbVisible(db: SchemaDoc["databases"][number], filter: string): boolean 
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
-type Props = { schema?: SchemaDoc; onInsert: (text: string) => void };
+type Props = {
+  schema?: SchemaDoc;
+  /** Append a token (table or column name) to the current editor tab. */
+  onInsert: (text: string) => void;
+  /** Replace the active tab's query (or open a new tab) with a full KQL
+   *  pipeline and run it. Enables one-click "Sample" / "Count" actions. */
+  onReplaceAndRun?: (kql: string, database: string) => void;
+};
 
-export function SchemaBrowser({ schema, onInsert }: Props) {
+export function SchemaBrowser({ schema, onInsert, onReplaceAndRun }: Props) {
   const [filter, setFilter] = useState("");
 
   if (!schema) return <div className="p-3 text-xs text-muted-foreground">Loading schema…</div>;
@@ -66,7 +85,12 @@ export function SchemaBrowser({ schema, onInsert }: Props) {
         {visibleDbs.length === 0
           ? <div className="p-2 text-muted-foreground">No matches.</div>
           : visibleDbs.map((db) => (
-            <DatabaseNode key={db.name} db={db} onInsert={onInsert} filter={filter} />
+            <DatabaseNode
+              key={db.name}
+              db={db}
+              onInsert={onInsert}
+              onReplaceAndRun={onReplaceAndRun}
+              filter={filter} />
           ))
         }
       </div>
@@ -75,10 +99,11 @@ export function SchemaBrowser({ schema, onInsert }: Props) {
 }
 
 function DatabaseNode({
-  db, onInsert, filter,
+  db, onInsert, onReplaceAndRun, filter,
 }: {
   db: SchemaDoc["databases"][number];
   onInsert: (t: string) => void;
+  onReplaceAndRun?: (kql: string, database: string) => void;
   filter: string;
 }) {
   const [open, setOpen] = useState(true);
@@ -90,11 +115,20 @@ function DatabaseNode({
         <ChevronRight className={`h-3 w-3 transition ${open ? "rotate-90" : ""}`} />
         <Database className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="font-medium">{db.name}</span>
+        <span className="ml-auto text-[10px] text-muted-foreground">
+          {db.tables.length} tables
+        </span>
       </button>
       {open && (
         <div className="ml-3 border-l pl-1">
           {visibleTables.map((t) => (
-            <TableNode key={t.name} table={t} onInsert={onInsert} filter={filter} />
+            <TableNode
+              key={t.name}
+              table={t}
+              database={db.name}
+              onInsert={onInsert}
+              onReplaceAndRun={onReplaceAndRun}
+              filter={filter} />
           ))}
         </div>
       )}
@@ -103,10 +137,12 @@ function DatabaseNode({
 }
 
 function TableNode({
-  table, onInsert, filter,
+  table, database, onInsert, onReplaceAndRun, filter,
 }: {
   table: SchemaDoc["databases"][number]["tables"][number];
+  database: string;
   onInsert: (t: string) => void;
+  onReplaceAndRun?: (kql: string, database: string) => void;
   filter: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -114,16 +150,51 @@ function TableNode({
   // Auto-expand when a filter is active and there are matches within
   const shouldOpen = open || (Boolean(filter) && visibleCols.length > 0 && !matchesFilter(table.name, filter));
 
+  const quickAction = (
+    e: React.MouseEvent,
+    kql: string,
+  ) => {
+    e.stopPropagation();
+    onReplaceAndRun?.(kql, database);
+  };
+
   return (
-    <div>
-      <button
-        className="flex w-full items-center gap-1 rounded px-1 py-0.5 hover:bg-accent/50"
-        onClick={() => setOpen(!open)}
-        onDoubleClick={() => onInsert(table.name)}>
-        <ChevronRight className={`h-3 w-3 transition ${shouldOpen ? "rotate-90" : ""}`} />
-        <Table2 className="h-3.5 w-3.5 text-muted-foreground" />
-        <span>{table.name}</span>
-      </button>
+    <div className="group/table">
+      <div className="flex items-center gap-1">
+        <button
+          className="flex flex-1 items-center gap-1 rounded px-1 py-0.5 hover:bg-accent/50"
+          onClick={() => setOpen(!open)}
+          onDoubleClick={() => onInsert(table.name)}
+          title="Click to expand; double-click to paste name">
+          <ChevronRight className={`h-3 w-3 transition ${shouldOpen ? "rotate-90" : ""}`} />
+          <Table2 className="h-3.5 w-3.5 text-muted-foreground" />
+          <span>{table.name}</span>
+          <span className="ml-auto text-[10px] text-muted-foreground">
+            {table.columns.length}c
+          </span>
+        </button>
+        {onReplaceAndRun && (
+          <div className="flex opacity-0 transition group-hover/table:opacity-100">
+            <IconBtn
+              title={`Preview 50 rows of ${table.name}`}
+              onClick={(e) => quickAction(e, `${table.name} | take 50`)}>
+              <Eye className="h-3 w-3" />
+            </IconBtn>
+            <IconBtn
+              title={`Count rows in ${table.name}`}
+              onClick={(e) => quickAction(e, `${table.name} | count`)}>
+              <Sigma className="h-3 w-3" />
+            </IconBtn>
+            <IconBtn
+              title={`Describe ${table.name} schema + sample values`}
+              onClick={(e) =>
+                quickAction(e, `${table.name} | take 5 | project *`)
+              }>
+              <FileText className="h-3 w-3" />
+            </IconBtn>
+          </div>
+        )}
+      </div>
       {shouldOpen && (
         <div className="ml-3 border-l pl-1 text-[11px]">
           {visibleCols.map((c) => (
@@ -138,5 +209,25 @@ function TableNode({
         </div>
       )}
     </div>
+  );
+}
+
+function IconBtn({
+  children,
+  title,
+  onClick,
+}: {
+  children: React.ReactNode;
+  title: string;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+      {children}
+    </button>
   );
 }
