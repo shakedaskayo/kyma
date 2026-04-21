@@ -5,7 +5,7 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tower::ServiceExt;
 
 // -------------------------------------------------------------------------
@@ -26,14 +26,14 @@ fn authed_app(
         Output = Result<axum::http::Response<axum::body::Body>, std::convert::Infallible>,
     >,
 > {
-    let auth = kyma_server::auth::AuthConfig::from_str("test-read-token:read,test-write-token:write");
+    let auth =
+        kyma_server::auth::AuthConfig::from_str("test-read-token:read,test-write-token:write");
 
-    let read_router = kyma_server::router(state.clone()).layer(
-        axum::middleware::from_fn_with_state(
+    let read_router =
+        kyma_server::router(state.clone()).layer(axum::middleware::from_fn_with_state(
             (auth.clone(), kyma_server::auth::Role::Read),
             kyma_server::auth::require_role_middleware,
-        ),
-    );
+        ));
 
     let write_router = kyma_server::dashboards_write_router(state.catalog.clone()).layer(
         axum::middleware::from_fn_with_state(
@@ -48,7 +48,11 @@ fn authed_app(
 /// Helper: POST /v1/dashboards with write token.
 async fn post_dashboard<S>(app: &mut S, body: Value) -> axum::http::Response<Body>
 where
-    S: tower::Service<Request<Body>, Response = axum::http::Response<Body>, Error = std::convert::Infallible>,
+    S: tower::Service<
+        Request<Body>,
+        Response = axum::http::Response<Body>,
+        Error = std::convert::Infallible,
+    >,
 {
     let req = Request::builder()
         .method("POST")
@@ -63,7 +67,11 @@ where
 /// Helper: GET /v1/dashboards/:id with read token.
 async fn get_dashboard<S>(app: &mut S, id: &str) -> axum::http::Response<Body>
 where
-    S: tower::Service<Request<Body>, Response = axum::http::Response<Body>, Error = std::convert::Infallible>,
+    S: tower::Service<
+        Request<Body>,
+        Response = axum::http::Response<Body>,
+        Error = std::convert::Infallible,
+    >,
 {
     let req = Request::builder()
         .uri(format!("/v1/dashboards/{id}"))
@@ -76,7 +84,11 @@ where
 /// Helper: GET /v1/dashboards with read token.
 async fn list_dashboards<S>(app: &mut S) -> axum::http::Response<Body>
 where
-    S: tower::Service<Request<Body>, Response = axum::http::Response<Body>, Error = std::convert::Infallible>,
+    S: tower::Service<
+        Request<Body>,
+        Response = axum::http::Response<Body>,
+        Error = std::convert::Infallible,
+    >,
 {
     let req = Request::builder()
         .uri("/v1/dashboards")
@@ -89,7 +101,11 @@ where
 /// Helper: PATCH /v1/dashboards/:id with write token.
 async fn patch_dashboard<S>(app: &mut S, id: &str, body: Value) -> axum::http::Response<Body>
 where
-    S: tower::Service<Request<Body>, Response = axum::http::Response<Body>, Error = std::convert::Infallible>,
+    S: tower::Service<
+        Request<Body>,
+        Response = axum::http::Response<Body>,
+        Error = std::convert::Infallible,
+    >,
 {
     let req = Request::builder()
         .method("PATCH")
@@ -104,7 +120,11 @@ where
 /// Helper: DELETE /v1/dashboards/:id with write token.
 async fn delete_dashboard<S>(app: &mut S, id: &str) -> axum::http::Response<Body>
 where
-    S: tower::Service<Request<Body>, Response = axum::http::Response<Body>, Error = std::convert::Infallible>,
+    S: tower::Service<
+        Request<Body>,
+        Response = axum::http::Response<Body>,
+        Error = std::convert::Infallible,
+    >,
 {
     let req = Request::builder()
         .method("DELETE")

@@ -17,11 +17,9 @@ export function prependTimeFilter(query: string, range: TimeRange): string {
   // If the user already filtered by timestamp, respect it.
   if (/\btimestamp\s*(>|<|between)/i.test(query)) return query;
 
-  // kyma-kql doesn't yet parse `between (A .. B)`; emit two comparisons
-  // instead, which the parser handles fine and means the same thing.
   let filter: string;
   if (range.preset === "custom" && range.from && range.to) {
-    filter = `| where timestamp >= datetime(${range.from}) | where timestamp <= datetime(${range.to})`;
+    filter = `| where timestamp between (datetime(${range.from}) .. datetime(${range.to}))`;
   } else {
     const ago = presetToKqlAgo(range.preset);
     if (!ago) return query;

@@ -92,8 +92,8 @@ impl TelemetryExtentWriter {
         // Reserve some capacity up front — ~16 MiB is a reasonable guess for
         // phase-A extents we generate from tests.
         let buffer: Vec<u8> = Vec::with_capacity(16 * 1024 * 1024);
-        let ipc = FileWriter::try_new(buffer, &schema)
-            .expect("Arrow IPC FileWriter construction failed");
+        let ipc =
+            FileWriter::try_new(buffer, &schema).expect("Arrow IPC FileWriter construction failed");
         let ts_col_index = schema
             .fields()
             .iter()
@@ -121,7 +121,9 @@ impl TelemetryExtentWriter {
             .collect();
         let distinct_int = indexable_columns
             .iter()
-            .map(|(_, k)| matches!(k, IndexableKind::Int32 | IndexableKind::Int64).then(HashSet::new))
+            .map(|(_, k)| {
+                matches!(k, IndexableKind::Int32 | IndexableKind::Int64).then(HashSet::new)
+            })
             .collect();
         let tokens = indexable_columns
             .iter()
@@ -254,9 +256,7 @@ impl TelemetryExtentWriter {
                     Some(set) => {
                         let mut vals: Vec<&String> = set.iter().collect();
                         vals.sort();
-                        serde_json::Value::Array(
-                            vals.into_iter().map(|s| json!(s)).collect(),
-                        )
+                        serde_json::Value::Array(vals.into_iter().map(|s| json!(s)).collect())
                     }
                     None => serde_json::Value::Null,
                 },
@@ -264,9 +264,7 @@ impl TelemetryExtentWriter {
                     Some(set) => {
                         let mut vals: Vec<i64> = set.iter().copied().collect();
                         vals.sort();
-                        serde_json::Value::Array(
-                            vals.into_iter().map(|v| json!(v)).collect(),
-                        )
+                        serde_json::Value::Array(vals.into_iter().map(|v| json!(v)).collect())
                     }
                     None => serde_json::Value::Null,
                 },
@@ -277,9 +275,7 @@ impl TelemetryExtentWriter {
                     Some(set) => {
                         let mut toks: Vec<&String> = set.iter().collect();
                         toks.sort();
-                        serde_json::Value::Array(
-                            toks.into_iter().map(|t| json!(t)).collect(),
-                        )
+                        serde_json::Value::Array(toks.into_iter().map(|t| json!(t)).collect())
                     }
                     None => serde_json::Value::Null,
                 },
@@ -312,12 +308,10 @@ impl ExtentWriter for TelemetryExtentWriter {
         self.update_ts_bounds(&batch);
         self.update_distinct_sets(&batch);
         self.block_stats.push(stats_for_batch(&batch));
-        self.ipc
-            .write(&batch)
-            .map_err(|e| FormatError::Corrupt {
-                path: "<in-memory ipc>".to_string(),
-                detail: format!("FileWriter::write: {e}"),
-            })?;
+        self.ipc.write(&batch).map_err(|e| FormatError::Corrupt {
+            path: "<in-memory ipc>".to_string(),
+            detail: format!("FileWriter::write: {e}"),
+        })?;
         Ok(())
     }
 

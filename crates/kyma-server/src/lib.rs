@@ -38,7 +38,7 @@ pub mod web_ui;
 /// to emit gRPC trailers (grpc-status: 16 for UNAUTHENTICATED) for /flight/*.
 #[cfg(feature = "web-ui")]
 pub fn flight_web_router(state: QueryState) -> Router {
-    use flight::{FlightState, flight_grpc_web_service};
+    use flight::{flight_grpc_web_service, FlightState};
     let flight_state = FlightState {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
@@ -92,7 +92,7 @@ pub struct QueryState {
 /// Every route mounted here assumes at least `Role::Read`; the caller wraps
 /// the entire router with `require_role_middleware(Role::Read)`.
 pub fn router(state: QueryState) -> Router {
-    use dashboards_handler::{DashboardState, get_dashboard, list_dashboards};
+    use dashboards_handler::{get_dashboard, list_dashboards, DashboardState};
     let dash_read_state = DashboardState {
         catalog: state.catalog.clone(),
     };
@@ -104,10 +104,7 @@ pub fn router(state: QueryState) -> Router {
 
     Router::new()
         .route("/v1/query", post(query_handler))
-        .route(
-            "/v1/catalog/schema",
-            get(catalog_handler::schema_handler),
-        )
+        .route("/v1/catalog/schema", get(catalog_handler::schema_handler))
         .with_state(state)
         .merge(dash_read_router)
         .layer(SetRequestIdLayer::new(
@@ -123,7 +120,7 @@ pub fn router(state: QueryState) -> Router {
 /// `require_role_middleware(Role::Write)`.
 pub fn dashboards_write_router(catalog: Arc<dyn kyma_core::catalog::Catalog>) -> Router {
     use dashboards_handler::{
-        DashboardState, create_dashboard, delete_dashboard, update_dashboard,
+        create_dashboard, delete_dashboard, update_dashboard, DashboardState,
     };
     let state = DashboardState { catalog };
     Router::new()

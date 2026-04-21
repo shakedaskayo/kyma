@@ -18,10 +18,14 @@ test("prependTimeFilter leaves user-supplied timestamp filter alone", () => {
   expect(prependTimeFilter(q, { preset: "1h" })).toBe(q);
 });
 
-test("prependTimeFilter supports custom from/to", () => {
+test("prependTimeFilter supports custom from/to using between syntax", () => {
   const out = prependTimeFilter("otel_logs", {
     preset: "custom", from: "2026-04-20T14:00:00Z", to: "2026-04-20T15:00:00Z",
   });
-  expect(out).toContain("datetime(2026-04-20T14:00:00Z)");
-  expect(out).toContain("datetime(2026-04-20T15:00:00Z)");
+  expect(out).toContain(
+    "| where timestamp between (datetime(2026-04-20T14:00:00Z) .. datetime(2026-04-20T15:00:00Z))"
+  );
+  // Ensure we emit a single filter, not two separate where clauses.
+  const whereCount = (out.match(/\| where/g) ?? []).length;
+  expect(whereCount).toBe(1);
 });

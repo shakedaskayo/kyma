@@ -12,7 +12,8 @@ async fn grpc_web_do_get_returns_arrow_stream() {
         "database": "obs",
         "query": "otel_logs | take 1",
         "language": "kql"
-    }).to_string();
+    })
+    .to_string();
 
     // Flight.Ticket protobuf: { bytes ticket = 1 }. Field 1, wire type 2 (length-delimited).
     let mut proto = BytesMut::new();
@@ -27,12 +28,17 @@ async fn grpc_web_do_get_returns_arrow_stream() {
     frame.extend_from_slice(&proto);
 
     let client = reqwest::Client::builder().http1_only().build().unwrap();
-    let resp = client.post(format!("{base}/flight/arrow.flight.protocol.FlightService/DoGet"))
+    let resp = client
+        .post(format!(
+            "{base}/flight/arrow.flight.protocol.FlightService/DoGet"
+        ))
         .header("authorization", "Bearer test-read-token")
         .header("content-type", "application/grpc-web+proto")
         .header("x-grpc-web", "1")
         .body(frame.freeze())
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert!(resp.status().is_success(), "status: {}", resp.status());
     assert_eq!(
@@ -40,7 +46,11 @@ async fn grpc_web_do_get_returns_arrow_stream() {
         "application/grpc-web+proto",
     );
     let body = resp.bytes().await.unwrap();
-    assert!(body.len() > 5, "expected at least one gRPC-web frame; got {} bytes", body.len());
+    assert!(
+        body.len() > 5,
+        "expected at least one gRPC-web frame; got {} bytes",
+        body.len()
+    );
 
     // Tighten: confirm we got an Arrow Flight gRPC-web stream with a proper
     // data frame (0x00 marker) and a trailers frame (0x80 marker).
@@ -55,7 +65,10 @@ async fn grpc_web_do_get_returns_arrow_stream() {
     if first_byte == 0x00 {
         let data_len = u32::from_be_bytes([body[1], body[2], body[3], body[4]]) as usize;
         assert!(data_len > 0, "data frame should have non-zero length");
-        assert!(body.len() >= 5 + data_len, "body shorter than declared data length");
+        assert!(
+            body.len() >= 5 + data_len,
+            "body shorter than declared data length"
+        );
     }
 
     // A valid gRPC-web response must contain a trailers frame (0x80 marker).

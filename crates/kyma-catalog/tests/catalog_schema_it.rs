@@ -38,7 +38,11 @@ async fn lists_databases_tables_columns() {
 
     // Create table "otel_logs" with three columns.
     let schema = Arc::new(Schema::new(vec![
-        Field::new("timestamp", DataType::Timestamp(TimeUnit::Nanosecond, None), false),
+        Field::new(
+            "timestamp",
+            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            false,
+        ),
         Field::new("service.name", DataType::Utf8, false),
         Field::new("severity_text", DataType::Utf8, true),
     ]));
@@ -51,16 +55,10 @@ async fn lists_databases_tables_columns() {
     assert_eq!(catalog.list_databases().await.unwrap(), vec!["obs"]);
 
     // list_tables("obs") should return ["otel_logs"].
-    assert_eq!(
-        catalog.list_tables("obs").await.unwrap(),
-        vec!["otel_logs"]
-    );
+    assert_eq!(catalog.list_tables("obs").await.unwrap(), vec!["otel_logs"]);
 
     // get_table_columns should return 3 columns with correct metadata.
-    let cols = catalog
-        .get_table_columns("obs", "otel_logs")
-        .await
-        .unwrap();
+    let cols = catalog.get_table_columns("obs", "otel_logs").await.unwrap();
     assert_eq!(cols.len(), 3);
 
     assert_eq!(cols[0].name, "timestamp");
@@ -108,7 +106,34 @@ async fn get_table_columns_returns_table_not_found_for_missing_table() {
 
     let err = catalog.get_table_columns("obs", "ghost").await.unwrap_err();
     match err {
-        kyma_core::errors::CatalogError::TableNotFound { .. } => {},
+        kyma_core::errors::CatalogError::TableNotFound { .. } => {}
         other => panic!("expected TableNotFound, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn list_tables_not_found_for_unknown_database() {
+    let (catalog, _container) = setup().await;
+    let err = catalog.list_tables("does_not_exist").await.unwrap_err();
+    match err {
+        kyma_core::errors::CatalogError::DatabaseNotFound(name) => {
+            assert_eq!(name, "does_not_exist");
+        }
+        other => panic!("expected DatabaseNotFound, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn get_table_columns_not_found_for_unknown_database() {
+    let (catalog, _container) = setup().await;
+    let err = catalog
+        .get_table_columns("does_not_exist", "some_table")
+        .await
+        .unwrap_err();
+    match err {
+        kyma_core::errors::CatalogError::DatabaseNotFound(name) => {
+            assert_eq!(name, "does_not_exist");
+        }
+        other => panic!("expected DatabaseNotFound, got {other:?}"),
     }
 }

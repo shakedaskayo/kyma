@@ -28,9 +28,7 @@ pub use commit_coordinator::{CommitCoordinator, CoordinatorConfig};
 pub use staging::{FlushOutcome, StagingBuffer, StagingConfig};
 
 use chrono::{DateTime, Utc};
-use kyma_core::catalog::{
-    Catalog, ExtentManifest, IngestLedgerEntry, SnapshotSummary, TableRef,
-};
+use kyma_core::catalog::{Catalog, ExtentManifest, IngestLedgerEntry, SnapshotSummary, TableRef};
 use kyma_core::errors::{CatalogError, Error, Result};
 use kyma_core::segment_format::{ExtentWriteResult, SegmentFormat};
 use kyma_core::types::{SnapshotId, TableId};
@@ -167,7 +165,9 @@ impl WritePath {
             let ack = IngestAck {
                 snapshot_id: outcome.snapshot_id,
                 extent_count: 1,
-                rows_ingested: outcome.row_count.min(batches.iter().map(|b| b.num_rows() as u64).sum()),
+                rows_ingested: outcome
+                    .row_count
+                    .min(batches.iter().map(|b| b.num_rows() as u64).sum()),
                 bytes_written: outcome.byte_size,
                 replayed: false,
             };
@@ -301,8 +301,7 @@ impl WritePath {
                         backoff_ms = base_ms + jitter_ms,
                         "snapshot CAS conflict on ingest; retrying with latest parent"
                     );
-                    tokio::time::sleep(std::time::Duration::from_millis(base_ms + jitter_ms))
-                        .await;
+                    tokio::time::sleep(std::time::Duration::from_millis(base_ms + jitter_ms)).await;
                     continue;
                 }
                 Err(e) => return Err(e),
@@ -312,10 +311,7 @@ impl WritePath {
     }
 }
 
-fn table_result_to_manifest(
-    table: &TableRef,
-    result: &ExtentWriteResult,
-) -> ExtentManifest {
+fn table_result_to_manifest(table: &TableRef, result: &ExtentWriteResult) -> ExtentManifest {
     ExtentManifest {
         id: result.extent_id,
         table_id: table.id,

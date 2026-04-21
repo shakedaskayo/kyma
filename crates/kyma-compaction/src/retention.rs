@@ -132,10 +132,8 @@ impl RetentionSweeper {
                 {
                     Ok(_) => {
                         debug!(table_id = %table_id, count = ids.len(), "retention commit ok");
-                        ::metrics::counter!(
-                            "kyma_retention_extents_soft_deleted_total"
-                        )
-                        .increment(ids.len() as u64);
+                        ::metrics::counter!("kyma_retention_extents_soft_deleted_total")
+                            .increment(ids.len() as u64);
                         break;
                     }
                     Err(Error::Catalog(CatalogError::Conflict)) if attempts < 5 => {
@@ -173,7 +171,10 @@ impl PhysicalDeleteWorker {
     }
 
     pub async fn run(self, shutdown: impl Future<Output = ()>) {
-        info!(grace_hours = self.grace_period.num_hours(), "physical-gc worker starting");
+        info!(
+            grace_hours = self.grace_period.num_hours(),
+            "physical-gc worker starting"
+        );
         tokio::pin!(shutdown);
         loop {
             tokio::select! {
@@ -203,13 +204,12 @@ impl PhysicalDeleteWorker {
         // MinIO objects before dropping the catalog rows.
         let pool = catalog_pool(&self.catalog)?;
         let uuids: Vec<uuid::Uuid> = ids.iter().map(|e| *e.as_uuid()).collect();
-        let paths: Vec<(uuid::Uuid, String)> = sqlx::query_as(
-            "SELECT id, object_path FROM extents WHERE id = ANY($1)",
-        )
-        .bind(&uuids)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| Error::Catalog(CatalogError::Sql(e.to_string())))?;
+        let paths: Vec<(uuid::Uuid, String)> =
+            sqlx::query_as("SELECT id, object_path FROM extents WHERE id = ANY($1)")
+                .bind(&uuids)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| Error::Catalog(CatalogError::Sql(e.to_string())))?;
 
         let mut deleted_objects: u64 = 0;
         let mut failed_objects: u64 = 0;
@@ -245,4 +245,3 @@ impl PhysicalDeleteWorker {
         Ok(())
     }
 }
-
