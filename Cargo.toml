@@ -149,6 +149,28 @@ pgvector = { version = "0.4", features = ["sqlx", "serde"] }
 ndarray = "0.16"
 schemars = "0.8"
 
+# Agent stack (ADK-Rust) — feature set trimmed to only what the inline
+# `/v1/agent/ask` endpoint needs. See crates/kyma-server/src/agent/.
+adk-rust = { version = "0.6", default-features = false, features = [
+    "agents",
+    "models",
+    "ollama",
+    "tools",
+    "sessions",
+    "runner",
+] }
+
+# Vendored arrow-arith patch: upstream 53.4.1 calls `d.quarter()` via the
+# `ChronoDateExt` extension trait, which collides with the `Datelike::quarter`
+# default method chrono added in 0.4.44. adk-core requires chrono >= 0.4.44,
+# and DataFusion 44 is locked to the arrow 53.x line, so neither end can move.
+# The patch is a one-line disambiguation (explicit `Datelike::quarter`) plus a
+# loosened chrono upper bound in arrow-arith's own manifest. Revisit when
+# DataFusion ships a release that tracks an arrow-arith line compatible with
+# chrono >= 0.4.44 natively.
+[patch.crates-io]
+arrow-arith = { path = "third_party/arrow-arith-53-patch" }
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
