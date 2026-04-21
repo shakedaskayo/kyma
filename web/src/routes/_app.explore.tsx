@@ -112,10 +112,19 @@ const tabBtn = (on: boolean) =>
             if (!liveResult) return;
             downloadBlob(new Blob([JSON.stringify(liveResult.rows, null, 2)], { type: "application/json" }), `kyma-${Date.now()}.json`);
           }}>Export JSON</Button>
-          <span className="ml-auto text-muted-foreground">
-            {active?.results.kind === "ok"
-              ? `${active.results.rowCount.toLocaleString()} rows · ${active.results.durationMs.toFixed(0)} ms`
-              : active?.results.kind === "error" ? `error: ${active.results.message}` : ""}
+          <span className="ml-auto tabular-nums">
+            {active?.results.kind === "ok" && (
+              <span className="font-medium text-foreground">
+                {active.results.rowCount.toLocaleString()} rows · {active.results.durationMs.toFixed(0)} ms
+              </span>
+            )}
+            {active?.results.kind === "error" && (() => {
+              const msg = `error: ${active.results.message}`;
+              const truncated = msg.length > 80 ? msg.slice(0, 80) + "…" : msg;
+              return (
+                <span className="text-destructive" title={msg}>{truncated}</span>
+              );
+            })()}
           </span>
         </div>
 
