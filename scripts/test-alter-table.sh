@@ -46,7 +46,7 @@ assert_eq() {
         printf "    ${RED}expected:${NC} %s\n    ${RED}actual:  ${NC} %s\n" "$2" "$3"
     fi
 }
-cleanup() { [[ -n "${SERVER_PID:-}" ]] && kill "$SERVER_PID" 2>/dev/null && wait "$SERVER_PID" 2>/dev/null || true; }
+cleanup() { [[ -n "${SERVER_PID:-}" ]] && kill -9 "$SERVER_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
 if ! docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1; then
