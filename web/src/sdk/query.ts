@@ -1,7 +1,7 @@
 import { createGrpcWebTransport } from "@connectrpc/connect-web";
-import { createPromiseClient } from "@connectrpc/connect";
-import { FlightService } from "./gen/Flight_connect";
-import { Ticket, FlightData } from "./gen/Flight_pb";
+import { createClient } from "@connectrpc/connect";
+import { create } from "@bufbuild/protobuf";
+import { FlightService, TicketSchema, type FlightData } from "./gen/Flight_pb";
 import { tableFromIPC, RecordBatch } from "apache-arrow";
 
 export type QueryArgs = {
@@ -21,11 +21,13 @@ export function encodeTicket(t: { database: string; query: string; language: str
 
 export async function* runQuery(args: QueryArgs): AsyncGenerator<RecordBatch, void, void> {
   const transport = createGrpcWebTransport({ baseUrl: args.endpoint.replace(/\/$/, "") });
-  const client = createPromiseClient(FlightService, transport);
+  const client = createClient(FlightService, transport);
 
-  const ticket = new Ticket({ ticket: encodeTicket({
-    database: args.database, query: args.query, language: args.language,
-  }) });
+  const ticket = create(TicketSchema, {
+    ticket: encodeTicket({
+      database: args.database, query: args.query, language: args.language,
+    }),
+  });
 
   const headers: Record<string, string> = { authorization: `Bearer ${args.token}` };
   if (args.walMs)    headers["x-kyma-max-wall-clock-ms"] = String(args.walMs);
