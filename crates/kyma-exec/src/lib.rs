@@ -16,6 +16,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod udfs_vector;
+pub use udfs_vector::register_vector_udfs;
+
 use arrow_array::{new_null_array, RecordBatch};
 use arrow_schema::{DataType, Field, SchemaRef as ArrowSchemaRef, TimeUnit};
 use async_trait::async_trait;

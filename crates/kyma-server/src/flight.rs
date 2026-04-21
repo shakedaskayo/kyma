@@ -166,6 +166,7 @@ impl FlightService for FlightQueryService {
             .map_err(|e| Status::internal(format!("runtime: {e}")))?,
         );
         let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
+        kyma_exec::register_vector_udfs(&ctx);
         for t in tables {
             let name = t.name.clone();
             let tbl = Arc::new(KymaTable::new(
