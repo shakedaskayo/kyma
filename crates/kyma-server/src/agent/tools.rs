@@ -26,6 +26,7 @@ use kyma_exec::KymaTable;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sqlx::PgPool;
 use std::sync::Arc;
 
 /// Hard cap on per-tool memory to prevent a single agent turn from dragging
@@ -38,6 +39,9 @@ const TOOL_MEMORY_POOL_BYTES: usize = 256 * 1024 * 1024;
 pub struct SharedToolCtx {
     pub catalog: Arc<dyn Catalog>,
     pub format: Arc<dyn SegmentFormat>,
+    /// Postgres pool — used by graph-style tools (`find_references_to`)
+    /// to query the catalog's extent-level column_stats index directly.
+    pub pool: PgPool,
 }
 
 // ---------------------------------------------------------------------------
@@ -191,7 +195,75 @@ pub fn tool_run_sql(ctx: SharedToolCtx) -> Arc<dyn Tool> {
 }
 
 // ---------------------------------------------------------------------------
-// Tool 4: sample_rows
+// Tool 4: run_kql — kyma's native query surface
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct RunKqlArgs {
+    /// Database whose tables should be registered into the DataFusion
+    /// session for this query.
+    database: String,
+    /// KQL query text. Starts with a table reference, pipe-separated operators:
+    /// `tbl | where cond | summarize agg by col | take N`.
+    kql: String,
+    /// Row cap applied to the JSON response. Default 200.
+    #[serde(default = "default_max_rows")]
+    max_rows: usize,
+}
+
+const RUN_KQL_DESC: &str = "Execute a KQL query against kyma — the PRIMARY \
+query tool. KQL is pipe-syntax: \
+`requests | where status >= 500 | summarize n=count() by url | top 10 by n`. \
+Supports: where, project, project-away, extend, summarize…by…, take, limit, \
+sort, top, count, distinct, graph-traverse, graph-shortest-path. Functions: \
+now, ago, bin, startofhour/day, strcat, tolower, iff, count, sum, avg, min, \
+max, dcount. String ops: contains, startswith, endswith, has. \
+For vector similarity the operator is not yet wired — drop to run_sql with \
+cosine_distance(col, make_array(...)).";
+
+pub fn tool_run_kql(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "run_kql",
+            RUN_KQL_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: RunKqlArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    // Compile KQL → SQL; surface parse errors to the model so
+                    // it can self-correct the syntax.
+                    let sql = match kyma_kql::kql_to_sql(&parsed.kql) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            return Ok(json!({
+                                "error": format!("kql_parse: {e}"),
+                                "hint": "Check pipe syntax; operators are '|'-separated, \
+                                    strings are double-quoted, comparisons use '=='.",
+                            }));
+                        }
+                    };
+                    let mut out =
+                        execute_sql(&shared, &parsed.database, &sql, parsed.max_rows).await;
+                    // Attach the compiled SQL for debugging / tracing.
+                    if let Value::Object(ref mut m) = out {
+                        m.insert("compiled_sql".into(), Value::String(sql));
+                    }
+                    Ok(out)
+                }
+            },
+        )
+        .with_parameters_schema::<RunKqlArgs>()
+        .with_read_only(true)
+        .with_concurrency_safe(true),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Tool 5: sample_rows
 // ---------------------------------------------------------------------------
 
 fn default_n() -> usize {
@@ -357,4 +429,329 @@ async fn execute_sql(shared: &SharedToolCtx, database: &str, sql: &str, max_rows
         "row_count": rows.len(),
         "truncated": truncated,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Tool 6: explore_schema — one-shot "context graph" view of a database
+// ---------------------------------------------------------------------------
+//
+// Returns every table in `database` with columns + types + a handful of
+// sample values per column. Lets the agent reason about cross-table
+// relationships in a SINGLE tool call instead of N round-trips to
+// describe_table. The agent prompt recommends this as the first step
+// for any question that touches multiple entities.
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct ExploreSchemaArgs {
+    /// Database whose schema graph to surface.
+    database: String,
+    /// Number of sample values per column (cap 10; default 3).
+    #[serde(default = "default_samples_per_column")]
+    samples_per_column: usize,
+}
+
+fn default_samples_per_column() -> usize {
+    3
+}
+
+const EXPLORE_SCHEMA_DESC: &str = "Return the full schema of a database in \
+one call: every table, every column, types, and a few sample values per \
+column. Use this FIRST for any question that spans multiple tables or \
+when you don't yet know how entities relate. Much cheaper than calling \
+list_databases + describe_table per table.";
+
+pub fn tool_explore_schema(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "explore_schema",
+            EXPLORE_SCHEMA_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: ExploreSchemaArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    let n_samples = parsed.samples_per_column.min(10).max(0);
+                    let tables = match shared
+                        .catalog
+                        .list_tables_in_database(&parsed.database)
+                        .await
+                    {
+                        Ok(t) => t,
+                        Err(e) => {
+                            return Ok(json!({
+                                "error": format!("list_tables_in_database: {e}"),
+                            }));
+                        }
+                    };
+                    let mut out_tables: Vec<Value> = Vec::with_capacity(tables.len());
+                    for t in &tables {
+                        let cols: Vec<Value> = t
+                            .schema
+                            .fields()
+                            .iter()
+                            .map(|f| {
+                                json!({
+                                    "name": f.name(),
+                                    "type": format!("{:?}", f.data_type()),
+                                    "nullable": f.is_nullable(),
+                                })
+                            })
+                            .collect();
+                        // Sample values — single SELECT * LIMIT n per table.
+                        let mut samples_by_col: serde_json::Map<String, Value> =
+                            serde_json::Map::new();
+                        if n_samples > 0 && !is_safe_ident(&t.name) {
+                            // Defensive — should never happen for catalog-origin names,
+                            // but cheap to check.
+                            samples_by_col.insert(
+                                "__error".into(),
+                                json!(format!("unsafe table name: {}", t.name)),
+                            );
+                        } else if n_samples > 0 {
+                            let sql = format!(
+                                "SELECT * FROM {}.{} LIMIT {}",
+                                parsed.database, t.name, n_samples
+                            );
+                            let sampled = execute_sql(&shared, &parsed.database, &sql, n_samples)
+                                .await;
+                            if let Some(rows) = sampled.get("rows").and_then(|v| v.as_array()) {
+                                for f in t.schema.fields() {
+                                    let col = f.name();
+                                    let vals: Vec<Value> = rows
+                                        .iter()
+                                        .filter_map(|r| r.get(col).cloned())
+                                        .collect();
+                                    samples_by_col.insert(col.clone(), Value::Array(vals));
+                                }
+                            }
+                        }
+                        out_tables.push(json!({
+                            "name": t.name,
+                            "columns": cols,
+                            "sample_values": samples_by_col,
+                        }));
+                    }
+                    Ok(json!({
+                        "database": parsed.database,
+                        "tables": out_tables,
+                        "table_count": tables.len(),
+                        "hint": "Columns whose sample values look like ids ('abc-123', uuid-shapes, etc.) \
+                                are likely foreign-key candidates — try find_references_to or \
+                                cross-table joins.",
+                    }))
+                }
+            },
+        )
+        .with_parameters_schema::<ExploreSchemaArgs>()
+        .with_read_only(true)
+        .with_concurrency_safe(true),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Tool 7: find_references_to — live relationship traversal across the catalog
+// ---------------------------------------------------------------------------
+//
+// Given a value (e.g. a user id, a request id, a URL), scan the catalog's
+// extent-level column_stats JSONB index and return every (database, table,
+// column) where that value appears in at least one extent's distinct set.
+//
+// This is the "what else knows about X" primitive. It uses indexes already
+// in place (the equality-index work), so it's fast — a single SQL query
+// against `extents.column_stats`. No full-scan.
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct FindReferencesArgs {
+    /// Database to search within. Pass an empty string or omit for cluster-wide.
+    #[serde(default)]
+    database: Option<String>,
+    /// Value to locate across all columns.
+    value: String,
+}
+
+const FIND_REFERENCES_DESC: &str = "Find every (database, table, column) \
+where a given value appears in the catalog's distinct-value index. The \
+relationship-traversal primitive — use when the user asks 'what else \
+references X?' or 'where does X show up?'. Returns a compact list of \
+matches suitable for follow-up queries.";
+
+pub fn tool_find_references_to(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "find_references_to",
+            FIND_REFERENCES_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: FindReferencesArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    // `column_stats` is shaped per-column as
+                    //     { "<col>": { "distinct": [values...], "tokens": [...] } }
+                    // so the containment test targets `kv.value -> 'distinct'`.
+                    // For numeric-looking values we also try a JSON-number cast
+                    // so ids ingested as integers still match.
+                    let target_str = serde_json::to_string(&vec![&parsed.value]).unwrap();
+                    let target_num = parsed
+                        .value
+                        .parse::<f64>()
+                        .ok()
+                        .map(|n| format!("[{n}]"));
+                    let sql = r#"
+                        SELECT DISTINCT
+                            db.name  AS database_name,
+                            t.name   AS table_name,
+                            kv.key   AS column_name
+                        FROM extents e
+                        JOIN tables t      ON e.table_id    = t.id
+                        JOIN databases db  ON t.database_id = db.id
+                        CROSS JOIN LATERAL jsonb_each(e.column_stats) kv
+                        WHERE ($1::text IS NULL OR db.name = $1)
+                          AND (
+                                (kv.value -> 'distinct') @> $2::jsonb
+                                OR ($3::text IS NOT NULL
+                                    AND (kv.value -> 'distinct') @> $3::jsonb)
+                              )
+                        ORDER BY db.name, t.name, kv.key
+                        LIMIT 200
+                    "#;
+                    let rows: Vec<(String, String, String)> = match sqlx::query_as(sql)
+                        .bind(parsed.database.as_deref())
+                        .bind(&target_str)
+                        .bind(target_num.as_deref())
+                        .fetch_all(&shared.pool)
+                        .await
+                    {
+                        Ok(r) => r,
+                        Err(e) => return Ok(json!({"error": format!("pg_query: {e}")})),
+                    };
+                    let matches: Vec<Value> = rows
+                        .into_iter()
+                        .map(|(db, tbl, col)| json!({
+                            "database": db, "table": tbl, "column": col,
+                        }))
+                        .collect();
+                    Ok(json!({
+                        "value": parsed.value,
+                        "matches": matches,
+                        "match_count": matches.len(),
+                        "hint": "For each match, you can call run_kql to fetch the rows: \
+                                `<table> | where <column> == \"<value>\"`",
+                    }))
+                }
+            },
+        )
+        .with_parameters_schema::<FindReferencesArgs>()
+        .with_read_only(true)
+        .with_concurrency_safe(true),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Tool 8: graph_traverse — wrap the existing KQL graph-traverse operator
+// ---------------------------------------------------------------------------
+//
+// Thin wrapper over the KQL `graph-traverse` operator for tables that store
+// graph edges as rows. Lets the agent explore connectivity without knowing
+// KQL syntax for the operator.
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct GraphTraverseArgs {
+    database: String,
+    /// Table whose rows represent edges (each row has a source and target).
+    edges_table: String,
+    /// Starting node value.
+    source: String,
+    /// Column in `edges_table` that holds the source node id.
+    from_column: String,
+    /// Column in `edges_table` that holds the target node id.
+    to_column: String,
+    /// Maximum hops. Default 5, cap 20.
+    #[serde(default = "default_max_hops")]
+    max_hops: usize,
+    /// "forward" (default), "backward", or "both".
+    #[serde(default = "default_direction")]
+    direction: String,
+}
+
+fn default_max_hops() -> usize {
+    5
+}
+fn default_direction() -> String {
+    "forward".to_string()
+}
+
+const GRAPH_TRAVERSE_DESC: &str = "Traverse a graph stored as edges in a \
+kyma table. Wraps the KQL `graph-traverse` operator. Returns reachable \
+nodes as (node, depth) pairs. Use for connectivity questions: 'what \
+services depend on X?', 'which users trigger Y?'.";
+
+pub fn tool_graph_traverse(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "graph_traverse",
+            GRAPH_TRAVERSE_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: GraphTraverseArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    if !is_safe_ident(&parsed.edges_table)
+                        || !is_safe_ident(&parsed.from_column)
+                        || !is_safe_ident(&parsed.to_column)
+                    {
+                        return Ok(json!({
+                            "error": "edges_table / from_column / to_column must be \
+                                ascii-alphanumeric / underscore only",
+                        }));
+                    }
+                    let hops = parsed.max_hops.clamp(1, 20);
+                    let dir = match parsed.direction.as_str() {
+                        "forward" | "backward" | "both" => parsed.direction.as_str(),
+                        _ => {
+                            return Ok(json!({
+                                "error": "direction must be forward | backward | both",
+                            }));
+                        }
+                    };
+                    let kql = format!(
+                        "{} | graph-traverse source \"{}\" from {} to {} \
+                         max-hops {} direction {}",
+                        parsed.edges_table,
+                        parsed.source.replace('"', "\\\""),
+                        parsed.from_column,
+                        parsed.to_column,
+                        hops,
+                        dir,
+                    );
+                    let sql = match kyma_kql::kql_to_sql(&kql) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            return Ok(json!({
+                                "error": format!("kql_compile: {e}"),
+                                "kql": kql,
+                            }));
+                        }
+                    };
+                    let mut out = execute_sql(&shared, &parsed.database, &sql, 1000).await;
+                    if let Value::Object(ref mut m) = out {
+                        m.insert("compiled_sql".into(), Value::String(sql));
+                        m.insert("compiled_kql".into(), Value::String(kql));
+                    }
+                    Ok(out)
+                }
+            },
+        )
+        .with_parameters_schema::<GraphTraverseArgs>()
+        .with_read_only(true)
+        .with_concurrency_safe(true),
+    )
 }

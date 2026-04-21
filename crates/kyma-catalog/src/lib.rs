@@ -594,6 +594,30 @@ impl Catalog for PostgresCatalog {
         Ok(())
     }
 
+    async fn list_live_nodes(
+        &self,
+        max_stale_secs: u32,
+    ) -> Result<Vec<kyma_core::catalog::LiveNode>> {
+        let rows: Vec<(Uuid, String, String, DateTime<Utc>)> = sqlx::query_as(
+            "SELECT id, role, endpoint, last_heartbeat FROM nodes
+             WHERE last_heartbeat > now() - make_interval(secs => $1)
+             ORDER BY id",
+        )
+        .bind(max_stale_secs as f64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, role, endpoint, hb)| kyma_core::catalog::LiveNode {
+                node_id: NodeId::from_uuid(id),
+                role: str_to_role(&role),
+                endpoint,
+                last_heartbeat: hb,
+            })
+            .collect())
+    }
+
     async fn submit_task(
         &self,
         kind: &str,
@@ -1094,6 +1118,15 @@ fn role_to_str(role: NodeRole) -> &'static str {
         NodeRole::Ingest => "ingest",
         NodeRole::Query => "query",
         NodeRole::Compaction => "compaction",
+    }
+}
+
+fn str_to_role(s: &str) -> NodeRole {
+    match s {
+        "ingest" => NodeRole::Ingest,
+        "query" => NodeRole::Query,
+        "compaction" => NodeRole::Compaction,
+        _ => NodeRole::AllInOne,
     }
 }
 

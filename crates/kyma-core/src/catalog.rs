@@ -177,6 +177,18 @@ pub struct NodeLease {
     pub expires_at: DateTime<Utc>,
 }
 
+/// A live node returned by [`Catalog::list_live_nodes`]. Minimal view
+/// sufficient for the read-router.
+#[derive(Debug, Clone)]
+pub struct LiveNode {
+    pub node_id: NodeId,
+    pub role: NodeRole,
+    /// Advertised Arrow Flight endpoint (host:port). The read-router
+    /// calls back into it with a `kind:"extent"` ticket.
+    pub endpoint: String,
+    pub last_heartbeat: DateTime<Utc>,
+}
+
 // -------------------- Schema-listing types --------------------
 
 /// Lightweight column descriptor for the UI schema tree.
@@ -347,6 +359,10 @@ pub trait Catalog: Send + Sync {
     async fn register_node(&self, info: NodeInfo) -> Result<NodeLease>;
     async fn heartbeat(&self, lease: &NodeLease) -> Result<()>;
     async fn deregister_node(&self, lease: NodeLease) -> Result<()>;
+
+    /// List nodes with a heartbeat within `max_stale_secs`. Used by the
+    /// read-router to pick peers for fan-out.
+    async fn list_live_nodes(&self, max_stale_secs: u32) -> Result<Vec<LiveNode>>;
 
     // --- background task queue (compaction, retention, gc, …) ---
 

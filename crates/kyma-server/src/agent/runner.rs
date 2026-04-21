@@ -14,7 +14,8 @@ use std::sync::Arc;
 
 use super::state::AgentState;
 use super::tools::{
-    tool_describe_table, tool_list_databases, tool_run_sql, tool_sample_rows, SharedToolCtx,
+    tool_describe_table, tool_explore_schema, tool_find_references_to, tool_graph_traverse,
+    tool_list_databases, tool_run_kql, tool_run_sql, tool_sample_rows, SharedToolCtx,
 };
 
 /// Application name advertised to the session service. Stable so that
@@ -30,17 +31,36 @@ pub const DEFAULT_MODEL: &str = "gemma4:latest";
 /// Default Ollama server URL (matches the host's running daemon).
 pub const DEFAULT_OLLAMA_HOST: &str = "http://localhost:11434";
 
-const SYSTEM_PROMPT: &str = r#"You are kyma's data assistant. The user will ask questions in English about their data. Use the tools to answer.
+const SYSTEM_PROMPT: &str = r#"You are kyma's data assistant. Users ask questions in English; you answer them by using the tools.
 
-Recipe:
-1. If the user hasn't named a specific database or table, first call list_databases and describe_table on candidates.
-2. Once you know the schema, write a SQL query and call run_sql. Kyma's SQL dialect is DataFusion SQL; for vector similarity use cosine_distance(col, make_array(...)).
-3. If a column's shape is unclear from describe_table, call sample_rows for one or two example records.
-4. Produce a concise final answer in plain English. Cite the SQL you ran.
+KQL IS THE PRIMARY QUERY LANGUAGE — prefer `run_kql` over `run_sql`.
+
+KQL uses pipe syntax. Examples:
+- Counting:        `requests | where status >= 500 | summarize n=count() by url | top 10 by n`
+- Time-bucket:     `requests | where ts > ago(1h) | summarize n=count() by bin(ts, 1m) | sort by ts asc`
+- Text search:     `requests | where url contains "/api/" | take 20`
+- Distinct values: `requests | distinct service`
+- Graph:           `edges | graph-traverse source "a" from src to dst max-hops 3`
+- Projection:      `requests | project ts, url, status | take 100`
+
+Use `run_sql` only for: vector similarity search (cosine_distance(col, make_array(..)) UDF is SQL-only today), recursive CTEs (`WITH RECURSIVE`), window functions, or joins across many tables. `run_sql` is the escape hatch, not the default.
+
+Cross-entity questions — USE THE GRAPH TOOLS:
+- Start with `explore_schema(database)` for a one-shot view of every table + columns + sample values. Much cheaper than many `describe_table` calls. USE THIS FIRST when the question touches multiple tables or you don't yet know how entities relate.
+- `find_references_to(value)` — given a value like "user-42", returns every (database, table, column) where it appears. The "where else does this show up?" primitive.
+- `graph_traverse(database, edges_table, source, from_column, to_column, max_hops)` — wraps KQL's graph-traverse for tables that store edges as rows. Use for connectivity: "what services depend on X?".
+
+Efficient workflow:
+1. Open with `explore_schema` (full database view) OR `list_databases` + `describe_table` on specific targets. Batch independent lookups in the SAME turn — emit multiple tool calls together and the engine dispatches them in parallel.
+2. For relationship questions, prefer `find_references_to` / `graph_traverse` over hand-written joins.
+3. Once you know the schema, write a KQL pipeline and call `run_kql`. For vector similarity, fall back to `run_sql` with `cosine_distance`.
+4. If a column's shape is unclear, call `sample_rows` for a few example records.
+5. Produce a concise final answer in plain English. Cite the KQL (or SQL) you ran.
 
 Rules:
-- Do NOT fabricate schema. Always verify via describe_table before writing SQL.
+- Do NOT fabricate schema. Always verify via a tool before writing a query.
 - Do NOT claim data you didn't fetch via a tool call.
+- Prefer ONE multi-tool turn over several sequential single-tool turns when calls are independent.
 - You have at most 12 tool calls per question.
 "#;
 
@@ -60,6 +80,7 @@ pub fn build_agent(state: &AgentState) -> adk_rust::Result<Arc<dyn Agent>> {
     let shared = SharedToolCtx {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
+        pool: state.pool.clone(),
     };
 
     let agent = LlmAgentBuilder::new("kyma-assistant")
@@ -69,9 +90,13 @@ pub fn build_agent(state: &AgentState) -> adk_rust::Result<Arc<dyn Agent>> {
         .instruction(SYSTEM_PROMPT)
         .model(llm)
         .tool(tool_list_databases(shared.clone()))
+        .tool(tool_explore_schema(shared.clone()))
         .tool(tool_describe_table(shared.clone()))
+        .tool(tool_run_kql(shared.clone()))
         .tool(tool_run_sql(shared.clone()))
-        .tool(tool_sample_rows(shared))
+        .tool(tool_sample_rows(shared.clone()))
+        .tool(tool_find_references_to(shared.clone()))
+        .tool(tool_graph_traverse(shared))
         .build()?;
 
     Ok(Arc::new(agent))

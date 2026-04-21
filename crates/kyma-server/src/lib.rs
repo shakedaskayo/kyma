@@ -86,6 +86,9 @@ pub struct QueryState {
     pub catalog: Arc<dyn Catalog>,
     pub format: Arc<dyn SegmentFormat>,
     pub schema_cache: Arc<catalog_handler::SchemaCache>,
+    /// Current node's id. Passed into `KymaTable` so the scan path can
+    /// fan extents out to peer nodes via the read-router.
+    pub node_id: Option<kyma_core::types::NodeId>,
 }
 
 /// Build the query router (auth-eligible — caller wraps with middleware).
@@ -148,6 +151,23 @@ pub fn health_router() -> Router {
 /// `agent_runs` persistence) is available.
 pub fn router_with_agent(state: QueryState, agent_state: agent::AgentState) -> Router {
     router(state).nest("/v1/agent", agent::router(agent_state))
+}
+
+/// Wrap any router with a permissive dev CORS layer so a browser dev-server
+/// running on a separate origin (e.g. `http://localhost:5173`) can reach the
+/// API. Mirrors the request origin, accepts any method / header, and exposes
+/// all response headers so SSE streams + Authorization headers flow through.
+///
+/// Apply this to the outermost `Router` in `kyma-bin::main`. Production
+/// deployments should replace it with a config-driven origin allow-list.
+pub fn with_permissive_cors(r: Router) -> Router {
+    use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::mirror_request())
+        .allow_methods(Any)
+        .allow_headers(Any)
+        .expose_headers(Any);
+    r.layer(cors)
 }
 
 #[derive(Debug, Serialize)]
@@ -345,11 +365,20 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
     kyma_exec::register_vector_udfs(&ctx);
     for t in tables {
         let table_name = t.name.clone();
-        let kyma_tbl = Arc::new(KymaTable::new(
-            t,
-            state.catalog.clone(),
-            state.format.clone(),
-        ));
+        let kyma_tbl: Arc<KymaTable> = match state.node_id {
+            Some(nid) => Arc::new(KymaTable::with_node_id(
+                t,
+                state.catalog.clone(),
+                state.format.clone(),
+                nid,
+                database.clone(),
+            )),
+            None => Arc::new(KymaTable::new(
+                t,
+                state.catalog.clone(),
+                state.format.clone(),
+            )),
+        };
         if let Err(e) = ctx.register_table(&table_name, kyma_tbl) {
             error!(request_id = %request_id, table = %table_name, error = %e, "failed to register table");
             return error_response(
