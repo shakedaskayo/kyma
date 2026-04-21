@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Database, Settings as SettingsIcon, Compass } from "lucide-react";
+import { Database, Settings as SettingsIcon, Compass, LayoutDashboard } from "lucide-react";
 import { useEffect } from "react";
 import { useSession } from "@/sdk/session";
 import { useHealth } from "@/sdk/reconnect";
@@ -84,6 +84,9 @@ export function Shell() {
         <nav className="ml-auto flex items-center gap-1">
           <Link to="/explore" search={{ q: undefined }} className={btn(active.startsWith("/explore"))}>
             <Compass className="h-4 w-4" /> Explore
+          </Link>
+          <Link to="/dashboards" className={btn(active.startsWith("/dashboards"))}>
+            <LayoutDashboard className="h-4 w-4" /> Dashboards
           </Link>
           <Link to="/settings" search={{ next: active }} className={btn(active === "/settings")}>
             <SettingsIcon className="h-4 w-4" /> Settings
