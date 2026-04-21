@@ -72,10 +72,10 @@ impl KafkaConsumerConfig {
         if !enabled {
             return None;
         }
-        let brokers = std::env::var("KYMA_KAFKA_BROKERS")
-            .unwrap_or_else(|_| "localhost:9092".to_string());
-        let group_id = std::env::var("KYMA_KAFKA_GROUP")
-            .unwrap_or_else(|_| "kyma-ingest".to_string());
+        let brokers =
+            std::env::var("KYMA_KAFKA_BROKERS").unwrap_or_else(|_| "localhost:9092".to_string());
+        let group_id =
+            std::env::var("KYMA_KAFKA_GROUP").unwrap_or_else(|_| "kyma-ingest".to_string());
         let topics = std::env::var("KYMA_KAFKA_TOPICS").unwrap_or_default();
         let mut mappings = Vec::new();
         for spec in topics.split(',') {
@@ -167,7 +167,12 @@ impl KafkaConsumerWorker {
             }
         };
 
-        let topic_names: Vec<&str> = self.config.topics.iter().map(|t| t.topic.as_str()).collect();
+        let topic_names: Vec<&str> = self
+            .config
+            .topics
+            .iter()
+            .map(|t| t.topic.as_str())
+            .collect();
         if let Err(e) = consumer.subscribe(&topic_names) {
             error!(error = %e, "kafka subscribe failed");
             return;
@@ -229,7 +234,8 @@ impl KafkaConsumerWorker {
         for topic in topics {
             if let Some(bucket) = pending.get_mut(&topic) {
                 if !bucket.is_empty() {
-                    self.flush_topic(&topic, bucket, table_cache, consumer).await;
+                    self.flush_topic(&topic, bucket, table_cache, consumer)
+                        .await;
                 }
             }
         }
@@ -315,7 +321,9 @@ impl KafkaConsumerWorker {
                             if let Some(pos) = positions
                                 .elements()
                                 .iter()
-                                .find(|p| p.topic() == el.topic() && p.partition() == el.partition())
+                                .find(|p| {
+                                    p.topic() == el.topic() && p.partition() == el.partition()
+                                })
                                 .and_then(|p| match p.offset() {
                                     rdkafka::Offset::Offset(o) => Some(o),
                                     _ => None,

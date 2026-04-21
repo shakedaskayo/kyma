@@ -39,7 +39,11 @@ pub enum ColStat {
     Int64 { min: i64, max: i64, nulls: u32 },
     /// UTF-8 string, min/max bounded by `STRING_MINMAX_CAP`.
     #[serde(rename = "str")]
-    Str { min: String, max: String, nulls: u32 },
+    Str {
+        min: String,
+        max: String,
+        nulls: u32,
+    },
 }
 
 /// Compute stats for one block (RecordBatch). Columns whose type we don't

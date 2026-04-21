@@ -2,7 +2,7 @@
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
-    Ident(String),   // identifiers AND keywords; parser decides
+    Ident(String), // identifiers AND keywords; parser decides
     Int(i64),
     Float(f64),
     Str(String),
@@ -14,9 +14,9 @@ pub enum Token {
     LBracket,
     RBracket,
     Dot,
-    DotDot,           // ..
-    Eq,               // ==
-    Ne,               // !=
+    DotDot, // ..
+    Eq,     // ==
+    Ne,     // !=
     Lt,
     Le,
     Gt,
@@ -26,7 +26,7 @@ pub enum Token {
     Star,
     Slash,
     Percent,
-    Assign,           // = (extend binding)
+    Assign, // = (extend binding)
 }
 
 #[derive(Debug)]
@@ -144,9 +144,9 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
                 chars.next();
                 let mut s = String::new();
                 loop {
-                    let ch = chars.next().ok_or_else(|| {
-                        LexError("unterminated double-quoted string".into())
-                    })?;
+                    let ch = chars
+                        .next()
+                        .ok_or_else(|| LexError("unterminated double-quoted string".into()))?;
                     if ch == '"' {
                         break;
                     }
@@ -223,13 +223,13 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
                     }
                 }
                 if is_float {
-                    out.push(Token::Float(lit.parse().map_err(|e: std::num::ParseFloatError| {
-                        LexError(format!("bad float: {e}"))
-                    })?));
+                    out.push(Token::Float(lit.parse().map_err(
+                        |e: std::num::ParseFloatError| LexError(format!("bad float: {e}")),
+                    )?));
                 } else {
-                    out.push(Token::Int(lit.parse().map_err(|e: std::num::ParseIntError| {
-                        LexError(format!("bad int: {e}"))
-                    })?));
+                    out.push(Token::Int(lit.parse().map_err(
+                        |e: std::num::ParseIntError| LexError(format!("bad int: {e}")),
+                    )?));
                 }
             }
             c if c.is_ascii_alphabetic() || c == '_' => {
@@ -245,7 +245,11 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
                             // ident (so `status - 200` isn't mis-lexed).
                             let mut tmp = chars.clone();
                             tmp.next();
-                            if tmp.peek().map(|nc| nc.is_ascii_alphabetic()).unwrap_or(false) {
+                            if tmp
+                                .peek()
+                                .map(|nc| nc.is_ascii_alphabetic())
+                                .unwrap_or(false)
+                            {
                                 ident.push('-');
                                 chars.next();
                                 continue;

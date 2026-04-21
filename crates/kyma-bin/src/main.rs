@@ -218,13 +218,9 @@ async fn main() -> Result<()> {
         (auth.clone(), Role::Write),
         require_role_middleware,
     ));
-    let dashboards_write_router =
-        kyma_server::dashboards_write_router(catalog.clone()).layer(
-            axum::middleware::from_fn_with_state(
-                (auth.clone(), Role::Write),
-                require_role_middleware,
-            ),
-        );
+    let dashboards_write_router = kyma_server::dashboards_write_router(catalog.clone()).layer(
+        axum::middleware::from_fn_with_state((auth.clone(), Role::Write), require_role_middleware),
+    );
     let app = ingest_router
         .merge(query_router)
         .merge(dashboards_write_router)
@@ -238,15 +234,18 @@ async fn main() -> Result<()> {
     // Auth is enforced the same way as /v1/* (Bearer token, Role::Read required).
     #[cfg(feature = "web-ui")]
     let app = {
-        let flight_router = kyma_server::flight_web_router(kyma_server::QueryState {
-            catalog: catalog.clone(),
-            format: format.clone(),
-            schema_cache: std::sync::Arc::new(kyma_server::catalog_handler::SchemaCache::from_env()),
-        })
-        .layer(axum::middleware::from_fn_with_state(
-            (auth.clone(), kyma_server::auth::Role::Read),
-            kyma_server::auth::require_role_middleware,
-        ));
+        let flight_router =
+            kyma_server::flight_web_router(kyma_server::QueryState {
+                catalog: catalog.clone(),
+                format: format.clone(),
+                schema_cache: std::sync::Arc::new(
+                    kyma_server::catalog_handler::SchemaCache::from_env(),
+                ),
+            })
+            .layer(axum::middleware::from_fn_with_state(
+                (auth.clone(), kyma_server::auth::Role::Read),
+                kyma_server::auth::require_role_middleware,
+            ));
         app.merge(flight_router)
     };
 

@@ -33,9 +33,7 @@ mod writer;
 
 use async_trait::async_trait;
 use kyma_core::errors::Result;
-use kyma_core::segment_format::{
-    ExtentReader, ExtentWriter, OpenExtentInput, SegmentFormat,
-};
+use kyma_core::segment_format::{ExtentReader, ExtentWriter, OpenExtentInput, SegmentFormat};
 use kyma_core::types::SchemaRef;
 use object_store::ObjectStore;
 use std::sync::Arc;

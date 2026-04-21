@@ -93,9 +93,7 @@ impl Parser {
                 self.pos += 1;
                 Ok(())
             }
-            other => Err(ParseError(format!(
-                "expected `{lit}`, got {other:?}"
-            ))),
+            other => Err(ParseError(format!("expected `{lit}`, got {other:?}"))),
         }
     }
 
@@ -158,9 +156,11 @@ impl Parser {
         loop {
             match self.bump()? {
                 Token::Ident(s) => cols.push(quote_ident(&s)),
-                other => return Err(ParseError(format!(
-                    "expected column name after project, got {other:?}"
-                ))),
+                other => {
+                    return Err(ParseError(format!(
+                        "expected column name after project, got {other:?}"
+                    )))
+                }
             }
             if !self.eat(&Token::Comma) {
                 break;
@@ -178,9 +178,11 @@ impl Parser {
         loop {
             let name = match self.bump()? {
                 Token::Ident(s) => s,
-                other => return Err(ParseError(format!(
-                    "expected name in extend, got {other:?}"
-                ))),
+                other => {
+                    return Err(ParseError(format!(
+                        "expected name in extend, got {other:?}"
+                    )))
+                }
             };
             self.expect(&Token::Assign, "`=`")?;
             let expr = self.parse_expr()?;
@@ -291,7 +293,9 @@ impl Parser {
     fn op_count(&mut self) -> Result<(), ParseError> {
         // Quote to preserve the ADX-style `Count` capitalization in the
         // response — DataFusion lowercases unquoted aliases otherwise.
-        self.state.aggregates.push(r#"count(*) AS "Count""#.to_string());
+        self.state
+            .aggregates
+            .push(r#"count(*) AS "Count""#.to_string());
         Ok(())
     }
 
@@ -325,17 +329,29 @@ impl Parser {
         self.expect_ident_eq("from")?;
         let src_col = match self.bump()? {
             Token::Ident(s) => quote_ident(&s),
-            other => return Err(ParseError(format!("expected `from` column name, got {other:?}"))),
+            other => {
+                return Err(ParseError(format!(
+                    "expected `from` column name, got {other:?}"
+                )))
+            }
         };
         self.expect_ident_eq("to")?;
         let dst_col = match self.bump()? {
             Token::Ident(s) => quote_ident(&s),
-            other => return Err(ParseError(format!("expected `to` column name, got {other:?}"))),
+            other => {
+                return Err(ParseError(format!(
+                    "expected `to` column name, got {other:?}"
+                )))
+            }
         };
         self.expect_ident_eq("max-hops")?;
         let max_hops = match self.bump()? {
             Token::Int(n) if n >= 0 => n as u64,
-            other => return Err(ParseError(format!("expected positive integer after `max-hops`, got {other:?}"))),
+            other => {
+                return Err(ParseError(format!(
+                    "expected positive integer after `max-hops`, got {other:?}"
+                )))
+            }
         };
         let direction = if matches!(self.peek(), Some(Token::Ident(s)) if s == "direction") {
             self.pos += 1;
@@ -346,7 +362,11 @@ impl Parser {
                     "both" => GraphDirection::Both,
                     other => return Err(ParseError(format!("unknown direction: {other}"))),
                 },
-                other => return Err(ParseError(format!("expected direction keyword, got {other:?}"))),
+                other => {
+                    return Err(ParseError(format!(
+                        "expected direction keyword, got {other:?}"
+                    )))
+                }
             }
         } else {
             GraphDirection::Forward
@@ -377,20 +397,21 @@ impl Parser {
             join_cond = match direction {
                 GraphDirection::Forward => format!("e.{src_col} = t.node"),
                 GraphDirection::Backward => format!("e.{dst_col} = t.node"),
-                GraphDirection::Both => format!(
-                    "(e.{src_col} = t.node OR e.{dst_col} = t.node)"
-                ),
+                GraphDirection::Both => format!("(e.{src_col} = t.node OR e.{dst_col} = t.node)"),
             },
         );
-        self.state.ctes.push(("_gt(node, depth)".to_string(), body, true));
+        self.state
+            .ctes
+            .push(("_gt(node, depth)".to_string(), body, true));
 
         // Result CTE: min depth per node. Alias back to the dst column name
         // so downstream operators can reference it as if it were the scanned
         // table.
-        let result_body = format!(
-            "SELECT node AS {dst_col}, MIN(depth) AS depth FROM _gt GROUP BY node"
-        );
-        self.state.ctes.push(("_gt_result".to_string(), result_body, false));
+        let result_body =
+            format!("SELECT node AS {dst_col}, MIN(depth) AS depth FROM _gt GROUP BY node");
+        self.state
+            .ctes
+            .push(("_gt_result".to_string(), result_body, false));
         self.state.table = "_gt_result".to_string();
         Ok(())
     }
@@ -418,24 +439,26 @@ impl Parser {
             join_cond = match direction {
                 GraphDirection::Forward => format!("e.{src_col} = t.node"),
                 GraphDirection::Backward => format!("e.{dst_col} = t.node"),
-                GraphDirection::Both => format!(
-                    "(e.{src_col} = t.node OR e.{dst_col} = t.node)"
-                ),
+                GraphDirection::Both => format!("(e.{src_col} = t.node OR e.{dst_col} = t.node)"),
             },
         );
-        self.state.ctes.push(("_sp(node, depth)".to_string(), body, true));
+        self.state
+            .ctes
+            .push(("_sp(node, depth)".to_string(), body, true));
 
         // DataFusion rejects scalar-subquery references to a recursive CTE,
         // so split the result into two non-recursive CTEs: `_sp_hits` filters,
         // `_sp_result` aggregates. MIN over an empty set yields NULL depth
         // (correct) and COUNT(*)>0 yields false for `found`.
-        let hits_body = format!(
-            "SELECT depth FROM _sp WHERE node = CAST({target_sql} AS VARCHAR)"
-        );
-        self.state.ctes.push(("_sp_hits".to_string(), hits_body, false));
-        let result_body = "SELECT MIN(depth) AS depth, COUNT(*) > 0 AS found FROM _sp_hits"
-            .to_string();
-        self.state.ctes.push(("_sp_result".to_string(), result_body, false));
+        let hits_body = format!("SELECT depth FROM _sp WHERE node = CAST({target_sql} AS VARCHAR)");
+        self.state
+            .ctes
+            .push(("_sp_hits".to_string(), hits_body, false));
+        let result_body =
+            "SELECT MIN(depth) AS depth, COUNT(*) > 0 AS found FROM _sp_hits".to_string();
+        self.state
+            .ctes
+            .push(("_sp_result".to_string(), result_body, false));
         self.state.table = "_sp_result".to_string();
         Ok(())
     }
@@ -611,7 +634,9 @@ impl Parser {
                     }
                 }
             }
-            other => Err(ParseError(format!("unexpected token in expression: {other:?}"))),
+            other => Err(ParseError(format!(
+                "unexpected token in expression: {other:?}"
+            ))),
         }
     }
 
@@ -690,12 +715,7 @@ enum GraphDirection {
 /// The recursive-step SELECT list: which edge-column to pick up as the
 /// next-hop node, plus depth+1. Forward traversal follows src→dst, backward
 /// follows dst→src, both produces the endpoint that isn't the current node.
-fn build_recursive_step(
-    _table: &str,
-    src_col: &str,
-    dst_col: &str,
-    dir: GraphDirection,
-) -> String {
+fn build_recursive_step(_table: &str, src_col: &str, dst_col: &str, dir: GraphDirection) -> String {
     match dir {
         GraphDirection::Forward => format!("e.{dst_col}, t.depth + 1"),
         GraphDirection::Backward => format!("e.{src_col}, t.depth + 1"),
@@ -709,7 +729,11 @@ fn build_recursive_step(
 fn quote_ident(name: &str) -> String {
     // Pass through simple bare identifiers.
     if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-        && name.chars().next().map(|c| !c.is_ascii_digit()).unwrap_or(false)
+        && name
+            .chars()
+            .next()
+            .map(|c| !c.is_ascii_digit())
+            .unwrap_or(false)
     {
         name.to_string()
     } else {
@@ -872,9 +896,8 @@ mod tests {
 
     #[test]
     fn between_with_datetime_literals() {
-        let sql = must(
-            "t | where timestamp between (datetime(2026-01-01) .. datetime(2026-02-01))",
-        );
+        let sql =
+            must("t | where timestamp between (datetime(2026-01-01) .. datetime(2026-02-01))");
         assert!(sql.contains("CAST("));
         assert!(sql.contains("AND"));
     }
@@ -901,4 +924,3 @@ mod tests {
         );
     }
 }
-

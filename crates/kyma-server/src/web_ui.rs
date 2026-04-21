@@ -12,7 +12,7 @@ use kyma_web_assets::{mime_for, DIST};
 /// Router exposing: `GET /`, `GET /assets/*`, and a SPA fallback.
 pub fn router() -> Router {
     Router::new()
-        .route("/",             get(serve_index))
+        .route("/", get(serve_index))
         .route("/assets/*path", get(serve_asset))
         .fallback(serve_spa_fallback)
 }
@@ -20,7 +20,11 @@ pub fn router() -> Router {
 async fn serve_index() -> Response {
     match DIST.get_file("index.html") {
         Some(f) => html_response(f.contents()),
-        None    => (StatusCode::NOT_FOUND, "index.html missing from embedded assets").into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            "index.html missing from embedded assets",
+        )
+            .into_response(),
     }
 }
 
@@ -30,7 +34,7 @@ async fn serve_asset(uri: Uri) -> Response {
     let raw = uri.path().trim_start_matches('/');
     match DIST.get_file(raw) {
         Some(f) => asset_response(raw, f.contents()),
-        None    => (StatusCode::NOT_FOUND, "asset not found").into_response(),
+        None => (StatusCode::NOT_FOUND, "asset not found").into_response(),
     }
 }
 
@@ -39,14 +43,17 @@ async fn serve_asset(uri: Uri) -> Response {
 async fn serve_spa_fallback() -> Response {
     match DIST.get_file("index.html") {
         Some(f) => html_response(f.contents()),
-        None    => (StatusCode::NOT_FOUND, "index.html missing").into_response(),
+        None => (StatusCode::NOT_FOUND, "index.html missing").into_response(),
     }
 }
 
 fn html_response(body: &'static [u8]) -> Response {
     Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE,  HeaderValue::from_static("text/html; charset=utf-8"))
+        .header(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        )
         .header(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"))
         .body(Body::from(body))
         .unwrap()
@@ -55,8 +62,14 @@ fn html_response(body: &'static [u8]) -> Response {
 fn asset_response(path: &str, body: &'static [u8]) -> Response {
     Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE,  HeaderValue::from_static(mime_for(path)))
-        .header(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"))
+        .header(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static(mime_for(path)),
+        )
+        .header(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=31536000, immutable"),
+        )
         .body(Body::from(body))
         .unwrap()
 }

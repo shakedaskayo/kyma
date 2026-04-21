@@ -56,12 +56,12 @@ impl std::fmt::Debug for KymaTable {
 }
 
 impl KymaTable {
-    pub fn new(
-        table: TableRef,
-        catalog: Arc<dyn Catalog>,
-        format: Arc<dyn SegmentFormat>,
-    ) -> Self {
-        Self { table, catalog, format }
+    pub fn new(table: TableRef, catalog: Arc<dyn Catalog>, format: Arc<dyn SegmentFormat>) -> Self {
+        Self {
+            table,
+            catalog,
+            format,
+        }
     }
 }
 
@@ -108,10 +108,7 @@ impl TableProvider for KymaTable {
             .filter(|f| {
                 matches!(
                     f.data_type(),
-                    DataType::Utf8
-                        | DataType::LargeUtf8
-                        | DataType::Int32
-                        | DataType::Int64
+                    DataType::Utf8 | DataType::LargeUtf8 | DataType::Int32 | DataType::Int64
                 )
             })
             .map(|f| f.name().clone())
@@ -295,8 +292,7 @@ fn promote_batch(batch: &RecordBatch, target: &ArrowSchemaRef) -> DfResult<Recor
             }
         }
     }
-    RecordBatch::try_new(target.clone(), arrays)
-        .map_err(|e| DataFusionError::ArrowError(e, None))
+    RecordBatch::try_new(target.clone(), arrays).map_err(|e| DataFusionError::ArrowError(e, None))
 }
 
 #[allow(dead_code)]
@@ -374,15 +370,17 @@ fn ts_from_expr(e: &Expr) -> Option<DateTime<Utc>> {
             let nanos = n.rem_euclid(1_000_000_000) as u32;
             Utc.timestamp_opt(secs, nanos).single()
         }
-        ScalarValue::TimestampMicrosecond(Some(n), _) => {
-            Utc.timestamp_opt(n / 1_000_000, ((n % 1_000_000) * 1_000) as u32).single()
-        }
-        ScalarValue::TimestampMillisecond(Some(n), _) => {
-            Utc.timestamp_opt(n / 1000, ((n % 1000) * 1_000_000) as u32).single()
-        }
+        ScalarValue::TimestampMicrosecond(Some(n), _) => Utc
+            .timestamp_opt(n / 1_000_000, ((n % 1_000_000) * 1_000) as u32)
+            .single(),
+        ScalarValue::TimestampMillisecond(Some(n), _) => Utc
+            .timestamp_opt(n / 1000, ((n % 1000) * 1_000_000) as u32)
+            .single(),
         ScalarValue::TimestampSecond(Some(n), _) => Utc.timestamp_opt(*n, 0).single(),
         ScalarValue::Utf8(Some(s)) | ScalarValue::LargeUtf8(Some(s)) => {
-            DateTime::parse_from_rfc3339(s).ok().map(|d| d.with_timezone(&Utc))
+            DateTime::parse_from_rfc3339(s)
+                .ok()
+                .map(|d| d.with_timezone(&Utc))
         }
         _ => None,
     }
@@ -459,10 +457,7 @@ fn build_prune_predicate(table: &TableRef, filters: &[Expr]) -> PrunePredicate {
         .filter(|f| {
             matches!(
                 f.data_type(),
-                DataType::Utf8
-                    | DataType::LargeUtf8
-                    | DataType::Int32
-                    | DataType::Int64
+                DataType::Utf8 | DataType::LargeUtf8 | DataType::Int32 | DataType::Int64
             )
         })
         .map(|f| f.name().clone())
@@ -519,9 +514,10 @@ fn build_block_predicate(table: &TableRef, prune: &PrunePredicate) -> BlockPredi
     };
 
     if let Some(tr) = &prune.time_range {
-        let ts_col = table.schema.fields().iter().enumerate().find(|(_, f)| {
-            matches!(f.data_type(), DataType::Timestamp(TimeUnit::Nanosecond, _))
-        });
+        let ts_col =
+            table.schema.fields().iter().enumerate().find(|(_, f)| {
+                matches!(f.data_type(), DataType::Timestamp(TimeUnit::Nanosecond, _))
+            });
         if let Some((i, _)) = ts_col {
             let start = tr.start_inclusive.timestamp_nanos_opt().unwrap_or(i64::MIN);
             let end = tr.end_exclusive.timestamp_nanos_opt().unwrap_or(i64::MAX);
@@ -540,14 +536,15 @@ fn build_block_predicate(table: &TableRef, prune: &PrunePredicate) -> BlockPredi
         match pred {
             ColumnPrune::Equals(v) => {
                 if let Some(sv) = json_to_block_scalar(v) {
-                    parts.push(BlockPredicate::Equals { col: col_id, value: sv });
+                    parts.push(BlockPredicate::Equals {
+                        col: col_id,
+                        value: sv,
+                    });
                 }
             }
             ColumnPrune::InSet(vals) => {
-                let values: Vec<BlockScalar> = vals
-                    .iter()
-                    .filter_map(json_to_block_scalar)
-                    .collect();
+                let values: Vec<BlockScalar> =
+                    vals.iter().filter_map(json_to_block_scalar).collect();
                 if !values.is_empty() {
                     parts.push(BlockPredicate::InSet {
                         col: col_id,

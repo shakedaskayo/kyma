@@ -28,10 +28,7 @@ pub struct TelemetryExtentReader {
 }
 
 impl TelemetryExtentReader {
-    pub(crate) async fn open(
-        store: Arc<dyn ObjectStore>,
-        input: OpenExtentInput,
-    ) -> Result<Self> {
+    pub(crate) async fn open(store: Arc<dyn ObjectStore>, input: OpenExtentInput) -> Result<Self> {
         let path = Path::from(input.object_path.clone());
         let get = store
             .get(&path)
@@ -65,23 +62,23 @@ impl TelemetryExtentReader {
                 .into());
             }
             let stats_len_off = end - MAGIC_V2.len() - 4;
-            let stats_len = u32::from_le_bytes(
-                bytes[stats_len_off..stats_len_off + 4]
-                    .try_into()
-                    .map_err(|_| FormatError::Corrupt {
+            let stats_len =
+                u32::from_le_bytes(bytes[stats_len_off..stats_len_off + 4].try_into().map_err(
+                    |_| FormatError::Corrupt {
                         path: input.object_path.clone(),
                         detail: "bad stats len".into(),
-                    })?,
-            ) as usize;
-            let stats_off = stats_len_off
-                .checked_sub(stats_len)
-                .ok_or_else(|| FormatError::Corrupt {
-                    path: input.object_path.clone(),
-                    detail: "stats_len underflow".into(),
-                })?;
+                    },
+                )?) as usize;
+            let stats_off =
+                stats_len_off
+                    .checked_sub(stats_len)
+                    .ok_or_else(|| FormatError::Corrupt {
+                        path: input.object_path.clone(),
+                        detail: "stats_len underflow".into(),
+                    })?;
             let stats_bytes = &bytes[stats_off..stats_off + stats_len];
-            let stats: Vec<BlockStats> = serde_json::from_slice(stats_bytes)
-                .map_err(|e| FormatError::Corrupt {
+            let stats: Vec<BlockStats> =
+                serde_json::from_slice(stats_bytes).map_err(|e| FormatError::Corrupt {
                     path: input.object_path.clone(),
                     detail: format!("block-stats decode: {e}"),
                 })?;
@@ -154,11 +151,7 @@ impl ExtentReader for TelemetryExtentReader {
         Ok(kept)
     }
 
-    async fn read_block(
-        &self,
-        block: BlockId,
-        projection: &[ColumnId],
-    ) -> Result<RecordBatch> {
+    async fn read_block(&self, block: BlockId, projection: &[ColumnId]) -> Result<RecordBatch> {
         let idx = block.0 as usize;
         let batch = self.batches.get(idx).ok_or_else(|| FormatError::Corrupt {
             path: self.object_path.clone(),
@@ -171,10 +164,12 @@ impl ExtentReader for TelemetryExtentReader {
             return Ok(batch.clone());
         }
         let col_indices: Vec<usize> = projection.iter().map(|c| c.0 as usize).collect();
-        let projected = batch.project(&col_indices).map_err(|e| FormatError::Corrupt {
-            path: self.object_path.clone(),
-            detail: format!("projection failed: {e}"),
-        })?;
+        let projected = batch
+            .project(&col_indices)
+            .map_err(|e| FormatError::Corrupt {
+                path: self.object_path.clone(),
+                detail: format!("projection failed: {e}"),
+            })?;
         Ok(projected)
     }
 }

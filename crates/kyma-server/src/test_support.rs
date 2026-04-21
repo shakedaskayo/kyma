@@ -13,8 +13,8 @@ use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 
-use crate::QueryState;
 use crate::catalog_handler::SchemaCache;
+use crate::QueryState;
 
 /// A running test HTTP server bound to an ephemeral port on `127.0.0.1`.
 ///
@@ -164,15 +164,14 @@ pub async fn start_test_server_with_seeded_data() -> TestServer {
     let auth = crate::auth::AuthConfig::from_str("test-read-token:read");
 
     // Build the query router with auth.
-    let query_router = crate::router(state.clone())
-        .layer(axum::middleware::from_fn_with_state(
-            (auth.clone(), crate::auth::Role::Read),
-            crate::auth::require_role_middleware,
-        ));
+    let query_router = crate::router(state.clone()).layer(axum::middleware::from_fn_with_state(
+        (auth.clone(), crate::auth::Role::Read),
+        crate::auth::require_role_middleware,
+    ));
 
     // Build the flight-web router with auth.
-    let flight_router = crate::flight_web_router(state)
-        .layer(axum::middleware::from_fn_with_state(
+    let flight_router =
+        crate::flight_web_router(state).layer(axum::middleware::from_fn_with_state(
             (auth, crate::auth::Role::Read),
             crate::auth::require_role_middleware,
         ));

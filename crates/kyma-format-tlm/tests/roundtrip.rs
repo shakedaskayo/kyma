@@ -135,10 +135,7 @@ async fn roundtrip(batches: Vec<RecordBatch>) -> Result<(), String> {
     let expected: Vec<RecordBatch> = batches.clone();
     let expected_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
     for b in batches {
-        writer
-            .append(b)
-            .await
-            .map_err(|e| format!("append: {e}"))?;
+        writer.append(b).await.map_err(|e| format!("append: {e}"))?;
     }
     let result = writer.finish().await.map_err(|e| format!("finish: {e}"))?;
 
@@ -251,26 +248,30 @@ async fn all_nulls_roundtrip() {
 
 #[tokio::test]
 async fn multi_block_roundtrip() {
-    let a = build_batch(&(0..32)
-        .map(|i| Row {
-            timestamp: Some(1_700_000_000_000_000_000 + (i as i64) * 1_000_000_000),
-            int_col: Some(i),
-            long_col: Some(i as i64 * 10),
-            real_col: Some(i as f64 * 0.5),
-            bool_col: Some(i % 2 == 0),
-            string_col: Some(format!("a-{i}")),
-        })
-        .collect::<Vec<_>>());
-    let b = build_batch(&(0..17)
-        .map(|i| Row {
-            timestamp: Some(1_800_000_000_000_000_000 + (i as i64) * 1_000_000_000),
-            int_col: Some(i + 1000),
-            long_col: None,
-            real_col: Some(-(i as f64)),
-            bool_col: Some(false),
-            string_col: Some(format!("b-{i}")),
-        })
-        .collect::<Vec<_>>());
+    let a = build_batch(
+        &(0..32)
+            .map(|i| Row {
+                timestamp: Some(1_700_000_000_000_000_000 + (i as i64) * 1_000_000_000),
+                int_col: Some(i),
+                long_col: Some(i as i64 * 10),
+                real_col: Some(i as f64 * 0.5),
+                bool_col: Some(i % 2 == 0),
+                string_col: Some(format!("a-{i}")),
+            })
+            .collect::<Vec<_>>(),
+    );
+    let b = build_batch(
+        &(0..17)
+            .map(|i| Row {
+                timestamp: Some(1_800_000_000_000_000_000 + (i as i64) * 1_000_000_000),
+                int_col: Some(i + 1000),
+                long_col: None,
+                real_col: Some(-(i as f64)),
+                bool_col: Some(false),
+                string_col: Some(format!("b-{i}")),
+            })
+            .collect::<Vec<_>>(),
+    );
     roundtrip(vec![a, b]).await.unwrap();
 }
 

@@ -42,7 +42,9 @@ use opentelemetry_proto::tonic::collector::logs::v1::{
     logs_service_server::{LogsService, LogsServiceServer},
     ExportLogsPartialSuccess, ExportLogsServiceRequest, ExportLogsServiceResponse,
 };
-use opentelemetry_proto::tonic::common::v1::{any_value::Value as AnyValueValue, AnyValue, KeyValue};
+use opentelemetry_proto::tonic::common::v1::{
+    any_value::Value as AnyValueValue, AnyValue, KeyValue,
+};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, warn};
@@ -94,7 +96,11 @@ impl OtlpLogsService {
     /// Ensure the `otel_logs` table exists in the target database.
     /// Idempotent — returns the existing `TableRef` if already present.
     async fn ensure_table(&self) -> Result<kyma_core::catalog::TableRef, Status> {
-        match self.catalog.lookup_table(&self.database, OTEL_LOGS_TABLE).await {
+        match self
+            .catalog
+            .lookup_table(&self.database, OTEL_LOGS_TABLE)
+            .await
+        {
             Ok(t) => Ok(t),
             Err(_) => {
                 // Table not found — create it. Also create the database if
@@ -109,7 +115,12 @@ impl OtlpLogsService {
                         .map_err(|e| Status::internal(format!("create_database: {e}")))?,
                 };
                 self.catalog
-                    .create_table(db_id, OTEL_LOGS_TABLE, otel_logs_schema(), TableConfig::default())
+                    .create_table(
+                        db_id,
+                        OTEL_LOGS_TABLE,
+                        otel_logs_schema(),
+                        TableConfig::default(),
+                    )
                     .await
                     .map_err(|e| Status::internal(format!("create_table: {e}")))?;
                 self.catalog
@@ -135,7 +146,10 @@ impl LogsService for OtlpLogsService {
             .flat_map(|rl| rl.scope_logs.iter())
             .map(|sl| sl.log_records.len())
             .sum();
-        debug!(resource_logs = req.resource_logs.len(), total_records, "otlp export");
+        debug!(
+            resource_logs = req.resource_logs.len(),
+            total_records, "otlp export"
+        );
 
         if total_records == 0 {
             return Ok(Response::new(ExportLogsServiceResponse::default()));
@@ -264,13 +278,12 @@ async fn find_database_id(catalog: &dyn Catalog, name: &str) -> Option<DatabaseI
     let Some(pg) = any_ref.downcast_ref::<kyma_catalog::PostgresCatalog>() else {
         return None;
     };
-    let row: Option<(uuid::Uuid,)> =
-        sqlx::query_as("SELECT id FROM databases WHERE name = $1")
-            .bind(name)
-            .fetch_optional(pg.pool())
-            .await
-            .ok()
-            .flatten();
+    let row: Option<(uuid::Uuid,)> = sqlx::query_as("SELECT id FROM databases WHERE name = $1")
+        .bind(name)
+        .fetch_optional(pg.pool())
+        .await
+        .ok()
+        .flatten();
     row.map(|(id,)| DatabaseId::from_uuid(id))
 }
 
@@ -281,7 +294,9 @@ fn any_value_to_string(v: &AnyValue) -> Option<String> {
         AnyValueValue::BoolValue(b) => b.to_string(),
         AnyValueValue::IntValue(i) => i.to_string(),
         AnyValueValue::DoubleValue(d) => d.to_string(),
-        AnyValueValue::ArrayValue(_) | AnyValueValue::KvlistValue(_) | AnyValueValue::BytesValue(_) => {
+        AnyValueValue::ArrayValue(_)
+        | AnyValueValue::KvlistValue(_)
+        | AnyValueValue::BytesValue(_) => {
             // Serialize as JSON via serde for fidelity on complex bodies.
             serde_json::to_string(&keyvalue_to_json(&[KeyValue {
                 key: "_".to_string(),
@@ -312,9 +327,12 @@ fn any_value_to_json(v: Option<&AnyValue>) -> serde_json::Value {
             .map(J::Number)
             .unwrap_or(J::Null),
         Some(AnyValueValue::BytesValue(b)) => J::String(hex_encode(b)),
-        Some(AnyValueValue::ArrayValue(a)) => {
-            J::Array(a.values.iter().map(|v| any_value_to_json(Some(v))).collect())
-        }
+        Some(AnyValueValue::ArrayValue(a)) => J::Array(
+            a.values
+                .iter()
+                .map(|v| any_value_to_json(Some(v)))
+                .collect(),
+        ),
         Some(AnyValueValue::KvlistValue(kv)) => keyvalue_to_json(&kv.values),
     }
 }

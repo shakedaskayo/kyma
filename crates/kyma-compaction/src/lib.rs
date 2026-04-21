@@ -58,11 +58,7 @@ pub struct CompactionWorker {
 }
 
 impl CompactionWorker {
-    pub fn new(
-        catalog: Arc<dyn Catalog>,
-        format: Arc<dyn SegmentFormat>,
-        node_id: NodeId,
-    ) -> Self {
+    pub fn new(catalog: Arc<dyn Catalog>, format: Arc<dyn SegmentFormat>, node_id: NodeId) -> Self {
         Self {
             catalog,
             format,
@@ -135,17 +131,13 @@ impl CompactionWorker {
             .map_err(|e| Error::Internal(format!("bad compaction payload: {e}")))?;
 
         let Some(table_id) = task.table_id else {
-            return Err(Error::Internal(
-                "compaction task missing table_id".into(),
-            ));
+            return Err(Error::Internal("compaction task missing table_id".into()));
         };
 
         // 1. Look up the table's current schema.
         let all_tables = self.list_tables_for(table_id).await?;
         let table_ref: TableRef = all_tables.into_iter().next().ok_or_else(|| {
-            Error::Internal(format!(
-                "compaction: table {table_id} no longer exists"
-            ))
+            Error::Internal(format!("compaction: table {table_id} no longer exists"))
         })?;
 
         // 2. Resolve manifests for the source extents (they must still be live).
@@ -182,8 +174,9 @@ impl CompactionWorker {
             .format
             .start_extent(table_ref.schema.clone(), 0)
             .await?;
-        let projection: Vec<ColumnId> =
-            (0..table_ref.schema.fields().len() as u32).map(ColumnId).collect();
+        let projection: Vec<ColumnId> = (0..table_ref.schema.fields().len() as u32)
+            .map(ColumnId)
+            .collect();
         let mut merged_rows: u64 = 0;
         let mut input_bytes: u64 = 0;
         for m in &source_manifests {
@@ -211,8 +204,14 @@ impl CompactionWorker {
         let new_manifest = new_manifest_from_write(&table_ref, &result, task.attempt);
         let source_ids: Vec<kyma_core::types::ExtentId> =
             source_manifests.iter().map(|m| m.id).collect();
-        self.commit_with_retry(table_ref.id, new_manifest, source_ids, merged_rows, input_bytes)
-            .await?;
+        self.commit_with_retry(
+            table_ref.id,
+            new_manifest,
+            source_ids,
+            merged_rows,
+            input_bytes,
+        )
+        .await?;
 
         let elapsed = start.elapsed().as_secs_f64();
         let bytes_out = result.byte_size;
@@ -277,7 +276,8 @@ impl CompactionWorker {
                 Ok(_) => return Ok(()),
                 Err(Error::Catalog(CatalogError::Conflict)) => {
                     ::metrics::counter!("kyma_catalog_cas_conflicts_total",
-                        "table" => "_compaction").increment(1);
+                        "table" => "_compaction")
+                    .increment(1);
                     tokio::time::sleep(Duration::from_millis(50 * attempt as u64)).await;
                     continue;
                 }
@@ -445,12 +445,12 @@ async fn find_compaction_candidates(
     let mut by_table: std::collections::BTreeMap<uuid::Uuid, Vec<uuid::Uuid>> =
         std::collections::BTreeMap::new();
     for row in rows {
-        let tid: uuid::Uuid = row.try_get("table_id").map_err(|e| {
-            Error::Catalog(CatalogError::Sql(e.to_string()))
-        })?;
-        let eid: uuid::Uuid = row.try_get("id").map_err(|e| {
-            Error::Catalog(CatalogError::Sql(e.to_string()))
-        })?;
+        let tid: uuid::Uuid = row
+            .try_get("table_id")
+            .map_err(|e| Error::Catalog(CatalogError::Sql(e.to_string())))?;
+        let eid: uuid::Uuid = row
+            .try_get("id")
+            .map_err(|e| Error::Catalog(CatalogError::Sql(e.to_string())))?;
         by_table.entry(tid).or_default().push(eid);
     }
     Ok(by_table

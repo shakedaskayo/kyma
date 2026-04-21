@@ -30,9 +30,7 @@ use kyma_ingest_core::{IngestAck, WritePath};
 use serde::Serialize;
 use std::io::Cursor;
 use std::sync::Arc;
-use tower_http::request_id::{
-    MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer,
-};
+use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tracing::{error, info};
 
 const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
@@ -51,7 +49,10 @@ pub fn router(state: IngestState) -> Router {
         .with_state(state)
         // Set an X-Request-ID if the client didn't send one, then propagate
         // it back on the response so clients and logs share the same id.
-        .layer(SetRequestIdLayer::new(REQUEST_ID_HEADER.clone(), MakeRequestUuid))
+        .layer(SetRequestIdLayer::new(
+            REQUEST_ID_HEADER.clone(),
+            MakeRequestUuid,
+        ))
         .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER.clone()))
 }
 
@@ -78,10 +79,7 @@ impl From<IngestAck> for IngestResponse {
     }
 }
 
-async fn ingest_handler(
-    State(state): State<IngestState>,
-    req: Request,
-) -> Response {
+async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Response {
     let (parts, body) = req.into_parts();
     let headers: &HeaderMap = &parts.headers;
     let request_id = extract_request_id(headers);
@@ -206,12 +204,7 @@ struct ErrorDetail<'a> {
     request_id: &'a str,
 }
 
-fn error_response(
-    status: StatusCode,
-    code: &str,
-    message: &str,
-    request_id: &str,
-) -> Response {
+fn error_response(status: StatusCode, code: &str, message: &str, request_id: &str) -> Response {
     (
         status,
         Json(ErrorBody {

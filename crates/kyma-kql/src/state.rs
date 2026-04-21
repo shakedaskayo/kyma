@@ -46,8 +46,7 @@ impl QueryState {
         // SELECT list.
         let select_clause = if !self.aggregates.is_empty() {
             // summarize => GROUP BY + aggregate expressions.
-            let mut items: Vec<String> =
-                self.group_by.iter().cloned().collect();
+            let mut items: Vec<String> = self.group_by.iter().cloned().collect();
             items.extend(self.aggregates.iter().cloned());
             items.join(", ")
         } else if self.distinct {
@@ -97,7 +96,10 @@ impl QueryState {
             ""
         };
 
-        let mut sql = format!("{prelude}SELECT {distinct}{select_clause} FROM {}", self.table);
+        let mut sql = format!(
+            "{prelude}SELECT {distinct}{select_clause} FROM {}",
+            self.table
+        );
 
         if !self.where_clauses.is_empty() {
             sql.push_str(" WHERE ");
@@ -137,7 +139,11 @@ impl QueryState {
             return String::new();
         }
         let any_recursive = self.ctes.iter().any(|(_, _, r)| *r);
-        let keyword = if any_recursive { "WITH RECURSIVE " } else { "WITH " };
+        let keyword = if any_recursive {
+            "WITH RECURSIVE "
+        } else {
+            "WITH "
+        };
         let parts: Vec<String> = self
             .ctes
             .iter()

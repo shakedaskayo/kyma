@@ -114,7 +114,8 @@ pub async fn schema_handler(State(state): State<QueryState>) -> impl IntoRespons
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error":{"code":"catalog","message": e.to_string()}})),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
