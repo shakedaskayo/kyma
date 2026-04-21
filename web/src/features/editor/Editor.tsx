@@ -1,6 +1,6 @@
 import MonacoEditor, { type OnMount } from "@monaco-editor/react";
 import { useCallback, useEffect, useRef } from "react";
-import { registerKql, registerKqlCompletions, KQL_LANG_ID } from "./kql-language";
+import { registerKql, registerKqlCompletions, KQL_LANG_ID, type KqlSchema } from "./kql-language";
 import type { SchemaDoc } from "@/sdk/catalog";
 
 type Props = {
@@ -9,23 +9,37 @@ type Props = {
   onRun: () => void;
   schema?: SchemaDoc;
   database: string;
+  /** Optional: map of column name → top-N observed values (for completion hints) */
+  knownValues?: Record<string, string[]>;
 };
 
-export function Editor({ value, onChange, onRun, schema, database }: Props) {
+export function Editor({ value, onChange, onRun, schema, database, knownValues }: Props) {
   const onRunRef = useRef(onRun);
   useEffect(() => { onRunRef.current = onRun; }, [onRun]);
 
+  // Keep a stable ref to the latest schema/knownValues so the completion provider
+  // always reads the freshest data without needing re-registration.
+  const schemaRef = useRef<{ schema?: SchemaDoc; database: string; knownValues?: Record<string, string[]> }>({ schema, database, knownValues });
+  useEffect(() => { schemaRef.current = { schema, database, knownValues }; }, [schema, database, knownValues]);
+
   const handleMount: OnMount = useCallback((editor, monaco) => {
     registerKql(monaco);
-    registerKqlCompletions(monaco, () => {
-      const db = schema?.databases.find((d) => d.name === database);
-      const tables = db?.tables.map((t) => t.name) ?? [];
+    registerKqlCompletions(monaco, (): KqlSchema => {
+      const { schema: s, database: db, knownValues: kv } = schemaRef.current;
+      const dbDoc = s?.databases.find((d) => d.name === db);
+      const tables = dbDoc?.tables.map((t) => t.name) ?? [];
       const columnsByTable: Record<string, string[]> = {};
-      db?.tables.forEach((t) => { columnsByTable[t.name] = t.columns.map((c) => c.name); });
-      return { tables, columnsByTable };
+      const columnTypes: Record<string, Record<string, string>> = {};
+      dbDoc?.tables.forEach((t) => {
+        columnsByTable[t.name] = t.columns.map((c) => c.name);
+        columnTypes[t.name] = {};
+        t.columns.forEach((c) => { columnTypes[t.name][c.name] = c.type; });
+      });
+      return { tables, columnsByTable, columnTypes, knownValues: kv };
     });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => onRunRef.current());
-  }, [database, schema]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <MonacoEditor

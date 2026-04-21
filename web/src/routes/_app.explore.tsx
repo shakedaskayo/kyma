@@ -1,5 +1,5 @@
 import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { encodeQueryState, decodeQueryState } from "@/lib/url-state";
 import { useQuery } from "@tanstack/react-query";
 import { Play, Square, Download, FileJson } from "lucide-react";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Editor } from "@/features/editor/Editor";
 import { TimeRangePicker } from "@/features/time-range/TimeRangePicker";
 import { ResultsGrid, exportCsv } from "@/features/results-grid/ResultsGrid";
+import { RowFilter } from "@/features/results-grid/RowFilter";
 import { ChartPanel } from "@/features/chart/ChartPanel";
 import { SchemaBrowser } from "@/features/schema-browser/SchemaBrowser";
 import { TabBar } from "@/features/tabs/TabBar";
@@ -14,6 +15,9 @@ import { CommandPalette } from "@/features/palette/CommandPalette";
 import { HistogramTimeline } from "@/features/histogram/HistogramTimeline";
 import { FieldStats } from "@/features/field-stats/FieldStats";
 import { SavedQueryChips } from "@/features/saved-queries/SavedQueryChips";
+import { SmartSearchBar } from "@/features/search/SmartSearchBar";
+import { extractLeadingTable } from "@/features/search/parseSearch";
+import type { SearchSchema } from "@/features/search/parseSearch";
 import { downloadBlob } from "@/lib/download";
 import { useWorkspace } from "@/features/tabs/workspace-store";
 import { useWorkspaceShortcuts } from "@/lib/shortcuts";
@@ -32,6 +36,7 @@ function ExplorePage() {
   const { run, cancel } = useRunQuery();
   const [liveResult, setLiveResult] = useState<TabResult | null>(null);
   const [view, setView] = useState<"grid" | "chart">("grid");
+  const [rowFilter, setRowFilter] = useState("");
   const { q } = useSearch({ from: "/_app/explore" });
   const navigate = useNavigate();
 
@@ -41,6 +46,30 @@ function ExplorePage() {
     staleTime: 5 * 60_000,
     enabled: Boolean(endpoint && token),
   });
+
+  // Build knownValues from FieldStats data (top-20 observed values per column)
+  const knownValues = useMemo<Record<string, string[]>>(() => {
+    if (!liveResult) return {};
+    const result: Record<string, string[]> = {};
+    const MAX_DISTINCT = 20;
+    for (const col of liveResult.columns) {
+      if (col.kind === "time") continue;
+      const counts = new Map<string, number>();
+      for (const row of liveResult.rows) {
+        const v = row[col.name];
+        if (v === null || v === undefined) continue;
+        const s = String(v);
+        counts.set(s, (counts.get(s) ?? 0) + 1);
+      }
+      if (counts.size <= MAX_DISTINCT * 3) {
+        result[col.name] = Array.from(counts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, MAX_DISTINCT)
+          .map(([v]) => v);
+      }
+    }
+    return result;
+  }, [liveResult]);
 
   // Load from URL on first mount only.
   const bootstrapped = useRef(false);
@@ -61,6 +90,28 @@ function ExplorePage() {
   }, []);
 
   const active = workspace.tabs.find((t) => t.id === workspace.activeId) ?? workspace.tabs[0];
+
+  // Build search schema for SmartSearchBar
+  const searchSchema = useMemo<SearchSchema | null>(() => {
+    if (!schema) return null;
+    const db = schema.databases.find((d) => d.name === database);
+    if (!db) return null;
+    const tables = db.tables.map((t) => t.name);
+    const columnsByTable: Record<string, string[]> = {};
+    const columnTypes: Record<string, Record<string, string>> = {};
+    db.tables.forEach((t) => {
+      columnsByTable[t.name] = t.columns.map((c) => c.name);
+      columnTypes[t.name] = {};
+      t.columns.forEach((c) => { columnTypes[t.name][c.name] = c.type; });
+    });
+    return { tables, columnsByTable, columnTypes };
+  }, [schema, database]);
+
+  // Leading table from active query (for SmartSearchBar)
+  const leadingTable = useMemo(
+    () => (active ? extractLeadingTable(active.query) : null),
+    [active],
+  );
 
   // Sync URL whenever the active tab's query or time range changes.
   useEffect(() => {
@@ -105,6 +156,14 @@ function ExplorePage() {
     workspace.setQuery(active.id, query);
   };
 
+  const handleSearch = (kql: string) => {
+    if (!active) return;
+    workspace.setQuery(active.id, kql);
+    // Run the query with the updated query text directly
+    setLiveResult(null);
+    void run({ ...active, query: kql }, setLiveResult);
+  };
+
   const tabBtn = (on: boolean) =>
     `rounded-md px-2.5 py-1 text-xs transition font-medium ${on ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"}`;
 
@@ -143,6 +202,16 @@ function ExplorePage() {
 
         {/* Saved query chips */}
         <SavedQueryChips onPick={handlePickSavedQuery} />
+
+        {/* Smart search bar */}
+        <SmartSearchBar
+          leadingTable={leadingTable}
+          schema={searchSchema}
+          onSearch={handleSearch}
+          onClear={() => {
+            // no-op: user can clear via X; editor retains current query
+          }}
+        />
 
         {/* Toolbar */}
         <div className="flex items-center gap-2 border-b bg-background px-4 py-1.5 text-xs shadow-sm">
@@ -213,6 +282,7 @@ function ExplorePage() {
               onRun={runActive}
               schema={schema}
               database={database}
+              knownValues={knownValues}
             />
           )}
         </div>
@@ -237,7 +307,7 @@ function ExplorePage() {
               Chart
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-hidden bg-background rounded-b-lg border-x border-b border-muted/30 shadow-sm">
+          <div className="min-h-0 flex-1 overflow-hidden bg-background rounded-b-lg border-x border-b border-muted/30 shadow-sm flex flex-col">
             {active?.results.kind === "idle" && <EmptyState text="Run a query to see results." />}
             {active?.results.kind === "running" && <EmptyState text="Streaming results…" />}
             {active?.results.kind === "error" && (
@@ -249,7 +319,14 @@ function ExplorePage() {
               />
             )}
             {liveResult && active?.results.kind === "ok" && liveResult.rows.length > 0 && view === "grid" && (
-              <ResultsGrid columns={liveResult.columns} rows={liveResult.rows} />
+              <>
+                <RowFilterWrapper
+                  rows={liveResult.rows}
+                  columns={liveResult.columns}
+                  filter={rowFilter}
+                  onFilterChange={setRowFilter}
+                />
+              </>
             )}
             {liveResult && active?.results.kind === "ok" && liveResult.rows.length > 0 && view === "chart" && (
               <ChartPanel columns={liveResult.columns} rows={liveResult.rows} />
@@ -258,6 +335,44 @@ function ExplorePage() {
         </div>
       </section>
       <CommandPalette onRun={runActive} />
+    </div>
+  );
+}
+
+import type { Column } from "@/sdk/arrow";
+
+function RowFilterWrapper({
+  rows,
+  columns,
+  filter,
+  onFilterChange,
+}: {
+  rows: Record<string, unknown>[];
+  columns: Column[];
+  filter: string;
+  onFilterChange: (v: string) => void;
+}) {
+  const filteredCount = filter.trim()
+    ? rows.filter((row) =>
+        columns.some((col) => {
+          const v = row[col.name];
+          if (v === null || v === undefined) return false;
+          return String(v).toLowerCase().includes(filter.trim().toLowerCase());
+        }),
+      ).length
+    : rows.length;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <RowFilter
+        value={filter}
+        onChange={onFilterChange}
+        totalRows={rows.length}
+        filteredRows={filteredCount}
+      />
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <ResultsGrid columns={columns} rows={rows} filter={filter} />
+      </div>
     </div>
   );
 }

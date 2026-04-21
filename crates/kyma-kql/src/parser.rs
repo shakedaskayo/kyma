@@ -138,6 +138,8 @@ impl Parser {
             "top" => self.op_top(),
             "count" => self.op_count(),
             "distinct" => self.op_distinct(),
+            "graph-traverse" => self.op_graph_traverse(),
+            "graph-shortest-path" => self.op_graph_shortest_path(),
             other => Err(ParseError(format!("unsupported operator: `{other}`"))),
         }
     }
@@ -312,6 +314,141 @@ impl Parser {
             self.state.select = cols;
         }
         Ok(())
+    }
+
+    /// Parse the shared graph-op preamble:
+    ///   from <src-col> to <dst-col> max-hops <N> [direction forward|backward|both]
+    /// Returns (src_col, dst_col, max_hops, direction).
+    fn parse_graph_preamble(
+        &mut self,
+    ) -> Result<(String, String, u64, GraphDirection), ParseError> {
+        self.expect_ident_eq("from")?;
+        let src_col = match self.bump()? {
+            Token::Ident(s) => quote_ident(&s),
+            other => return Err(ParseError(format!("expected `from` column name, got {other:?}"))),
+        };
+        self.expect_ident_eq("to")?;
+        let dst_col = match self.bump()? {
+            Token::Ident(s) => quote_ident(&s),
+            other => return Err(ParseError(format!("expected `to` column name, got {other:?}"))),
+        };
+        self.expect_ident_eq("max-hops")?;
+        let max_hops = match self.bump()? {
+            Token::Int(n) if n >= 0 => n as u64,
+            other => return Err(ParseError(format!("expected positive integer after `max-hops`, got {other:?}"))),
+        };
+        let direction = if matches!(self.peek(), Some(Token::Ident(s)) if s == "direction") {
+            self.pos += 1;
+            match self.bump()? {
+                Token::Ident(s) => match s.as_str() {
+                    "forward" => GraphDirection::Forward,
+                    "backward" => GraphDirection::Backward,
+                    "both" => GraphDirection::Both,
+                    other => return Err(ParseError(format!("unknown direction: {other}"))),
+                },
+                other => return Err(ParseError(format!("expected direction keyword, got {other:?}"))),
+            }
+        } else {
+            GraphDirection::Forward
+        };
+        Ok((src_col, dst_col, max_hops, direction))
+    }
+
+    /// `graph-traverse source <value> from <src> to <dst> max-hops N [direction ...]`
+    ///
+    /// Emits two CTEs: `_gt` (recursive frontier) and `_gt_result`
+    /// (min-depth-per-node). Subsequent pipeline ops read from `_gt_result`.
+    fn op_graph_traverse(&mut self) -> Result<(), ParseError> {
+        self.expect_ident_eq("source")?;
+        let source_sql = self.parse_scalar_literal()?;
+        let (src_col, dst_col, max_hops, direction) = self.parse_graph_preamble()?;
+
+        let edge_table = self.state.table.clone();
+        let step_sql = build_recursive_step(&edge_table, &src_col, &dst_col, direction);
+
+        // Anchor: start-node with depth=0.
+        let body = format!(
+            "SELECT CAST({source_sql} AS VARCHAR) AS node, 0 AS depth \
+             UNION ALL \
+             SELECT {step_sql} \
+             FROM _gt t \
+             JOIN {edge_table} e ON {join_cond} \
+             WHERE t.depth < {max_hops}",
+            join_cond = match direction {
+                GraphDirection::Forward => format!("e.{src_col} = t.node"),
+                GraphDirection::Backward => format!("e.{dst_col} = t.node"),
+                GraphDirection::Both => format!(
+                    "(e.{src_col} = t.node OR e.{dst_col} = t.node)"
+                ),
+            },
+        );
+        self.state.ctes.push(("_gt(node, depth)".to_string(), body, true));
+
+        // Result CTE: min depth per node. Alias back to the dst column name
+        // so downstream operators can reference it as if it were the scanned
+        // table.
+        let result_body = format!(
+            "SELECT node AS {dst_col}, MIN(depth) AS depth FROM _gt GROUP BY node"
+        );
+        self.state.ctes.push(("_gt_result".to_string(), result_body, false));
+        self.state.table = "_gt_result".to_string();
+        Ok(())
+    }
+
+    /// `graph-shortest-path source <start> target <end> from <src> to <dst> max-hops N`
+    ///
+    /// Returns a single-row result with `depth` (min hops) and `found`.
+    fn op_graph_shortest_path(&mut self) -> Result<(), ParseError> {
+        self.expect_ident_eq("source")?;
+        let source_sql = self.parse_scalar_literal()?;
+        self.expect_ident_eq("target")?;
+        let target_sql = self.parse_scalar_literal()?;
+        let (src_col, dst_col, max_hops, direction) = self.parse_graph_preamble()?;
+
+        let edge_table = self.state.table.clone();
+
+        let body = format!(
+            "SELECT CAST({source_sql} AS VARCHAR) AS node, 0 AS depth \
+             UNION ALL \
+             SELECT {step_sql} \
+             FROM _sp t \
+             JOIN {edge_table} e ON {join_cond} \
+             WHERE t.depth < {max_hops}",
+            step_sql = build_recursive_step(&edge_table, &src_col, &dst_col, direction),
+            join_cond = match direction {
+                GraphDirection::Forward => format!("e.{src_col} = t.node"),
+                GraphDirection::Backward => format!("e.{dst_col} = t.node"),
+                GraphDirection::Both => format!(
+                    "(e.{src_col} = t.node OR e.{dst_col} = t.node)"
+                ),
+            },
+        );
+        self.state.ctes.push(("_sp(node, depth)".to_string(), body, true));
+
+        // DataFusion rejects scalar-subquery references to a recursive CTE,
+        // so split the result into two non-recursive CTEs: `_sp_hits` filters,
+        // `_sp_result` aggregates. MIN over an empty set yields NULL depth
+        // (correct) and COUNT(*)>0 yields false for `found`.
+        let hits_body = format!(
+            "SELECT depth FROM _sp WHERE node = CAST({target_sql} AS VARCHAR)"
+        );
+        self.state.ctes.push(("_sp_hits".to_string(), hits_body, false));
+        let result_body = "SELECT MIN(depth) AS depth, COUNT(*) > 0 AS found FROM _sp_hits"
+            .to_string();
+        self.state.ctes.push(("_sp_result".to_string(), result_body, false));
+        self.state.table = "_sp_result".to_string();
+        Ok(())
+    }
+
+    /// Parse a single scalar literal (string, int, or bare identifier wrapped
+    /// as a SQL literal). Used for graph operator arguments.
+    fn parse_scalar_literal(&mut self) -> Result<String, ParseError> {
+        match self.bump()? {
+            Token::Str(s) => Ok(format!("'{}'", s.replace('\'', "''"))),
+            Token::Int(n) => Ok(n.to_string()),
+            Token::Float(f) => Ok(f.to_string()),
+            other => Err(ParseError(format!("expected literal, got {other:?}"))),
+        }
     }
 
     // -----------------------------------------------------------------
@@ -531,6 +668,31 @@ impl Parser {
 // Helpers
 // ---------------------------------------------------------------------
 
+#[derive(Debug, Clone, Copy)]
+enum GraphDirection {
+    Forward,
+    Backward,
+    Both,
+}
+
+/// The recursive-step SELECT list: which edge-column to pick up as the
+/// next-hop node, plus depth+1. Forward traversal follows src→dst, backward
+/// follows dst→src, both produces the endpoint that isn't the current node.
+fn build_recursive_step(
+    _table: &str,
+    src_col: &str,
+    dst_col: &str,
+    dir: GraphDirection,
+) -> String {
+    match dir {
+        GraphDirection::Forward => format!("e.{dst_col}, t.depth + 1"),
+        GraphDirection::Backward => format!("e.{src_col}, t.depth + 1"),
+        GraphDirection::Both => format!(
+            "CASE WHEN e.{src_col} = t.node THEN e.{dst_col} ELSE e.{src_col} END, t.depth + 1"
+        ),
+    }
+}
+
 /// Quote an identifier for SQL safely. We use double quotes (ANSI SQL).
 fn quote_ident(name: &str) -> String {
     // Pass through simple bare identifiers.
@@ -687,3 +849,4 @@ mod tests {
         assert!(sql.contains("LIMIT 5"));
     }
 }
+
