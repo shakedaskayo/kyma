@@ -2,7 +2,7 @@ import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router"
 import { useEffect, useRef, useState } from "react";
 import { encodeQueryState, decodeQueryState } from "@/lib/url-state";
 import { useQuery } from "@tanstack/react-query";
-import { Play, Square } from "lucide-react";
+import { Play, Square, Download, FileJson } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Editor } from "@/features/editor/Editor";
 import { TimeRangePicker } from "@/features/time-range/TimeRangePicker";
@@ -11,6 +11,9 @@ import { ChartPanel } from "@/features/chart/ChartPanel";
 import { SchemaBrowser } from "@/features/schema-browser/SchemaBrowser";
 import { TabBar } from "@/features/tabs/TabBar";
 import { CommandPalette } from "@/features/palette/CommandPalette";
+import { HistogramTimeline } from "@/features/histogram/HistogramTimeline";
+import { FieldStats } from "@/features/field-stats/FieldStats";
+import { SavedQueryChips } from "@/features/saved-queries/SavedQueryChips";
 import { downloadBlob } from "@/lib/download";
 import { useWorkspace } from "@/features/tabs/workspace-store";
 import { useWorkspaceShortcuts } from "@/lib/shortcuts";
@@ -39,7 +42,7 @@ function ExplorePage() {
     enabled: Boolean(endpoint && token),
   });
 
-  // Load from URL on first mount only. Ref guard prevents re-running on re-render.
+  // Load from URL on first mount only.
   const bootstrapped = useRef(false);
   useEffect(() => {
     if (bootstrapped.current) return;
@@ -70,6 +73,7 @@ function ExplorePage() {
     });
     navigate({ to: "/explore", search: { q: encoded }, replace: true });
   }, [active, navigate]);
+
   const status = active?.results.kind ?? "idle";
 
   const runActive = async () => {
@@ -80,17 +84,68 @@ function ExplorePage() {
 
   useWorkspaceShortcuts(runActive);
 
-const tabBtn = (on: boolean) =>
-  `rounded-md px-2 py-0.5 transition ${on ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50"}`;
+  // Find the timestamp column in current results
+  const timeCol = liveResult?.columns.find((c) => c.kind === "time")?.name;
+
+  const handleAddFilter = (col: string, value: string) => {
+    if (!active) return;
+    const addition = ` | where ${col} == "${value}"`;
+    workspace.setQuery(active.id, active.query + addition);
+  };
+
+  const handleBucketClick = (from: Date, to: Date) => {
+    if (!active) return;
+    const fmt = (d: Date) => d.toISOString();
+    const addition = ` | where timestamp >= datetime(${fmt(from)}) and timestamp < datetime(${fmt(to)})`;
+    workspace.setQuery(active.id, active.query + addition);
+  };
+
+  const handlePickSavedQuery = (query: string) => {
+    if (!active) return;
+    workspace.setQuery(active.id, query);
+  };
+
+  const tabBtn = (on: boolean) =>
+    `rounded-md px-2.5 py-1 text-xs transition font-medium ${on ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"}`;
+
+  const hasResults = Boolean(liveResult && active?.results.kind === "ok" && liveResult.rows.length > 0);
 
   return (
-    <div className="flex h-full">
-      <aside className="w-64 shrink-0 border-r">
-        <SchemaBrowser schema={schema} onInsert={(t) => active && workspace.setQuery(active.id, `${active.query}${active.query.endsWith("\n") || !active.query ? "" : " "}${t}`)} />
+    <div className="flex h-full bg-muted/20">
+      {/* ── Left rail ── */}
+      <aside className="flex w-64 shrink-0 flex-col border-r bg-background">
+        <div className="min-h-0 flex-1 overflow-hidden flex flex-col">
+          <SchemaBrowser
+            schema={schema}
+            onInsert={(t) =>
+              active && workspace.setQuery(active.id, `${active.query}${active.query.endsWith("\n") || !active.query ? "" : " "}${t}`)
+            }
+          />
+          {liveResult && (
+            <>
+              <div className="border-t border-muted/40" />
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <FieldStats
+                  rows={liveResult.rows}
+                  columns={liveResult.columns}
+                  onAddFilter={handleAddFilter}
+                />
+              </div>
+            </>
+          )}
+        </div>
       </aside>
-      <section className="flex flex-1 flex-col">
+
+      {/* ── Main panel ── */}
+      <section className="flex min-w-0 flex-1 flex-col">
+        {/* Tab bar */}
         <TabBar />
-        <div className="flex items-center gap-2 border-b px-4 py-2 text-xs">
+
+        {/* Saved query chips */}
+        <SavedQueryChips onPick={handlePickSavedQuery} />
+
+        {/* Toolbar */}
+        <div className="flex items-center gap-2 border-b bg-background px-4 py-1.5 text-xs shadow-sm">
           <TimeRangePicker
             value={active?.timeRange ?? { preset: "1h" }}
             onChange={(r) => active && workspace.setTimeRange(active.id, r)}
@@ -101,61 +156,104 @@ const tabBtn = (on: boolean) =>
             </Button>
           ) : (
             <Button size="sm" onClick={runActive} disabled={!schema}>
-              <Play className="mr-1 h-3.5 w-3.5" /> Run <kbd className="ml-2 text-muted-foreground">⌘↵</kbd>
+              <Play className="mr-1 h-3.5 w-3.5" /> Run
+              <kbd className="ml-2 rounded bg-primary-foreground/20 px-1 py-0.5 text-[10px] text-primary-foreground/80">⌘↵</kbd>
             </Button>
           )}
-          <Button size="sm" variant="ghost" disabled={!liveResult?.rows.length} onClick={() => {
-            if (!liveResult) return;
-            downloadBlob(exportCsv(liveResult.columns, liveResult.rows), `kyma-${Date.now()}.csv`);
-          }}>Export CSV</Button>
-          <Button size="sm" variant="ghost" disabled={!liveResult?.rows.length} onClick={() => {
-            if (!liveResult) return;
-            downloadBlob(new Blob([JSON.stringify(liveResult.rows, null, 2)], { type: "application/json" }), `kyma-${Date.now()}.json`);
-          }}>Export JSON</Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!hasResults}
+            onClick={() => {
+              if (!liveResult) return;
+              downloadBlob(exportCsv(liveResult.columns, liveResult.rows), `kyma-${Date.now()}.csv`);
+            }}
+          >
+            <Download className="mr-1 h-3 w-3" /> CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!hasResults}
+            onClick={() => {
+              if (!liveResult) return;
+              downloadBlob(
+                new Blob([JSON.stringify(liveResult.rows, null, 2)], { type: "application/json" }),
+                `kyma-${Date.now()}.json`,
+              );
+            }}
+          >
+            <FileJson className="mr-1 h-3 w-3" /> JSON
+          </Button>
           <span className="ml-auto tabular-nums">
             {active?.results.kind === "ok" && (
               <span className="font-medium text-foreground">
                 {active.results.rowCount.toLocaleString()} rows · {active.results.durationMs.toFixed(0)} ms
               </span>
             )}
-            {active?.results.kind === "error" && (() => {
-              const msg = `error: ${active.results.message}`;
-              const truncated = msg.length > 80 ? msg.slice(0, 80) + "…" : msg;
-              return (
-                <span className="text-destructive" title={msg}>{truncated}</span>
-              );
-            })()}
+            {active?.results.kind === "error" &&
+              (() => {
+                const msg = `error: ${active.results.message}`;
+                const truncated = msg.length > 80 ? msg.slice(0, 80) + "…" : msg;
+                return (
+                  <span className="text-destructive" title={msg}>
+                    {truncated}
+                  </span>
+                );
+              })()}
           </span>
         </div>
 
-        <div className="flex-1 overflow-hidden">
-          <div className="h-1/2 border-b">
-            {active && schema && (
-              <Editor
-                value={active.query}
-                onChange={(v) => workspace.setQuery(active.id, v)}
-                onRun={runActive}
-                schema={schema}
-                database={database}
+        {/* Editor */}
+        <div className="bg-background border-b" style={{ height: "38%" }}>
+          {active && schema && (
+            <Editor
+              value={active.query}
+              onChange={(v) => workspace.setQuery(active.id, v)}
+              onRun={runActive}
+              schema={schema}
+              database={database}
+            />
+          )}
+        </div>
+
+        {/* Histogram timeline — only when timestamp col present */}
+        {hasResults && timeCol && liveResult && (
+          <HistogramTimeline
+            rows={liveResult.rows}
+            timeCol={timeCol}
+            onBucketClick={handleBucketClick}
+          />
+        )}
+
+        {/* Results / Chart area */}
+        <div className="flex min-h-0 flex-1 flex-col rounded-b-lg">
+          {/* View switcher */}
+          <div className="flex items-center gap-1 border-b bg-background px-3 py-1.5">
+            <button className={tabBtn(view === "grid")} onClick={() => setView("grid")}>
+              Results
+            </button>
+            <button className={tabBtn(view === "chart")} onClick={() => setView("chart")}>
+              Chart
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden bg-background rounded-b-lg border-x border-b border-muted/30 shadow-sm">
+            {active?.results.kind === "idle" && <EmptyState text="Run a query to see results." />}
+            {active?.results.kind === "running" && <EmptyState text="Streaming results…" />}
+            {active?.results.kind === "error" && (
+              <ErrorCard msg={active.results.message} rid={active.results.requestId} />
+            )}
+            {liveResult && active?.results.kind === "ok" && liveResult.rows.length === 0 && (
+              <EmptyState
+                text={`0 rows in ${active.results.durationMs.toFixed(0)} ms — try widening the time range.`}
               />
             )}
-          </div>
-          <div className="h-1/2 flex flex-col">
-            <div className="flex items-center gap-1 border-b px-3 py-1 text-xs">
-              <button className={tabBtn(view === "grid")}  onClick={() => setView("grid")}>Results</button>
-              <button className={tabBtn(view === "chart")} onClick={() => setView("chart")}>Chart</button>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              {active?.results.kind === "idle"    && <EmptyState text="Run a query to see results." />}
-              {active?.results.kind === "running" && <EmptyState text="Streaming results…" />}
-              {active?.results.kind === "error"   && <ErrorCard msg={active.results.message} rid={active.results.requestId} />}
-              {liveResult && active?.results.kind === "ok" && liveResult.rows.length === 0 &&
-                <EmptyState text={`0 rows in ${active.results.durationMs.toFixed(0)} ms — try widening the time range.`} />}
-              {liveResult && active?.results.kind === "ok" && liveResult.rows.length > 0 && view === "grid" &&
-                <ResultsGrid columns={liveResult.columns} rows={liveResult.rows} />}
-              {liveResult && active?.results.kind === "ok" && liveResult.rows.length > 0 && view === "chart" &&
-                <ChartPanel columns={liveResult.columns} rows={liveResult.rows} />}
-            </div>
+            {liveResult && active?.results.kind === "ok" && liveResult.rows.length > 0 && view === "grid" && (
+              <ResultsGrid columns={liveResult.columns} rows={liveResult.rows} />
+            )}
+            {liveResult && active?.results.kind === "ok" && liveResult.rows.length > 0 && view === "chart" && (
+              <ChartPanel columns={liveResult.columns} rows={liveResult.rows} />
+            )}
           </div>
         </div>
       </section>
@@ -165,15 +263,23 @@ const tabBtn = (on: boolean) =>
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <div className="flex h-full items-center justify-center p-6 text-xs text-muted-foreground">{text}</div>;
+  return (
+    <div className="flex h-full items-center justify-center p-6 text-xs text-muted-foreground">
+      {text}
+    </div>
+  );
 }
 
 function ErrorCard({ msg, rid }: { msg: string; rid?: string }) {
   return (
-    <div className="mx-auto mt-6 max-w-2xl rounded border border-destructive/40 bg-destructive/5 p-4 text-xs">
+    <div className="mx-auto mt-6 max-w-2xl rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-xs shadow-sm">
       <div className="font-semibold text-destructive">Query failed</div>
       <pre className="mt-1 whitespace-pre-wrap font-mono text-destructive/90">{msg}</pre>
-      {rid && <div className="mt-2 text-muted-foreground">request id: <code>{rid}</code></div>}
+      {rid && (
+        <div className="mt-2 text-muted-foreground">
+          request id: <code>{rid}</code>
+        </div>
+      )}
     </div>
   );
 }
