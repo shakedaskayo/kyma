@@ -13,15 +13,23 @@ RUN pnpm -C web build
 # ---------- stage 2: server ----------
 FROM rust:1.84-bookworm AS server
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    protobuf-compiler pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+    protobuf-compiler pkg-config libssl-dev cmake && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
 COPY --from=web /src/web/dist ./web/dist
-RUN cargo build -p kyma-bin --release --features web-ui
+# Override LTO and codegen-units via env so the linker doesn't OOM inside
+# Docker Desktop (which caps memory at ~8 GB on macOS).
+ENV CARGO_PROFILE_RELEASE_LTO=off \
+    CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4
+RUN cargo build -p kyma-bin -p kyma-cli --release --features web-ui
 
 # ---------- stage 3: runtime ----------
-FROM gcr.io/distroless/cc-debian12
-COPY --from=server /src/target/release/kyma-bin /usr/local/bin/kyma
+# Use debian:12-slim instead of distroless because kyma dynamically links
+# libssl and libz which distroless/cc-debian12 does not include.
+FROM debian:12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates libssl3 zlib1g && rm -rf /var/lib/apt/lists/*
+COPY --from=server /src/target/release/kyma /usr/local/bin/kyma
+COPY --from=server /src/target/release/kyma-cli /usr/local/bin/kyma-cli
 EXPOSE 8080 9090
-USER nonroot
 ENTRYPOINT ["/usr/local/bin/kyma"]
