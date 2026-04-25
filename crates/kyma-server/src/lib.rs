@@ -43,6 +43,7 @@ pub fn flight_web_router(state: QueryState) -> Router {
     let flight_state = FlightState {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
+        node_id: state.node_id,
     };
     Router::new().nest_service("/flight", flight_grpc_web_service(flight_state))
 }
