@@ -23,7 +23,8 @@ use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use kyma_core::segment_format::SegmentFormat;
 use kyma_format_tlm::TelemetryFormat;
 use kyma_ingest_core::{
-    CommitCoordinator, CoordinatorConfig, StagingBuffer, StagingConfig, WritePath,
+    spawn_idempotency_cleanup, CommitCoordinator, CoordinatorConfig, StagingBuffer, StagingConfig,
+    WritePath,
 };
 use kyma_ingest_filedrop::{FiledropConfig, FiledropWatcher};
 use kyma_ingest_kafka::{KafkaConsumerConfig, KafkaConsumerWorker};
@@ -400,7 +401,15 @@ async fn main() -> Result<()> {
         "connector scheduler + runners started"
     );
 
-    info!("background workers started (compaction, retention, physical-gc)");
+    // Idempotency ledger cleanup — runs every hour, deletes entries older
+    // than 25 hours (1-hour grace beyond the 24-hour TTL).
+    let idem_rx = shutdown_tx.subscribe();
+    let idem_cleanup_handle = spawn_idempotency_cleanup(catalog.clone(), async move {
+        let mut rx = idem_rx;
+        let _ = rx.recv().await;
+    });
+
+    info!("background workers started (compaction, retention, physical-gc, idempotency-cleanup)");
 
     // 6. Arrow Flight gRPC server (optional — set KYMA_GRPC_ADDR=off).
     let grpc_handle = if cli.grpc_addr.eq_ignore_ascii_case("off") {
@@ -495,6 +504,7 @@ async fn main() -> Result<()> {
     let _ = retention_handle.await;
     let _ = gc_handle.await;
     let _ = conn_sched_handle.await;
+    let _ = idem_cleanup_handle.await;
     for h in conn_runner_handles {
         let _ = h.await;
     }
