@@ -10,7 +10,7 @@ use kyma_core::catalog::{Catalog, TableConfig};
 use kyma_format_tlm::TelemetryFormat;
 use object_store::memory::InMemory;
 use std::sync::Arc;
-use testcontainers::runners::AsyncRunner;
+use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 
 use crate::catalog_handler::SchemaCache;
@@ -50,6 +50,8 @@ pub async fn seeded_state_empty() -> QueryState {
         .with_user("kyma")
         .with_password("kyma_dev")
         .with_db_name("kyma")
+        .with_name("pgvector/pgvector")
+        .with_tag("pg16")
         .start()
         .await
         .expect("testcontainers: failed to start Postgres");
@@ -75,6 +77,7 @@ pub async fn seeded_state_empty() -> QueryState {
         catalog,
         format,
         schema_cache: Arc::new(SchemaCache::default()),
+        node_id: None,
     }
 }
 
@@ -98,6 +101,8 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
         .with_user("kyma")
         .with_password("kyma_dev")
         .with_db_name("kyma")
+        .with_name("pgvector/pgvector")
+        .with_tag("pg16")
         .start()
         .await
         .expect("testcontainers: failed to start Postgres");
@@ -143,6 +148,7 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
         catalog,
         format,
         schema_cache: Arc::new(SchemaCache::default()),
+        node_id: None,
     }
 }
 

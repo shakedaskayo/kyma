@@ -26,6 +26,7 @@ use crate::types::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashMap;
 
@@ -272,6 +273,17 @@ pub struct DashboardPanelInput {
     pub display_order: i32,
 }
 
+/// Result returned by [`Catalog::cleanup_soft_deleted_extents`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanupResult {
+    /// Number of extent rows hard-deleted from the catalog.
+    pub extents_deleted: u64,
+    /// Total row count across deleted extents.
+    pub rows_freed: u64,
+    /// Total byte size across deleted extents.
+    pub bytes_freed: u64,
+}
+
 // -------------------- The Catalog trait --------------------
 
 /// The catalog. All durable metadata flows through this trait.
@@ -353,6 +365,17 @@ pub trait Catalog: Send + Sync {
 
     async fn gc_candidates(&self, before: DateTime<Utc>) -> Result<Vec<ExtentId>>;
     async fn delete_extent_rows(&self, extents: &[ExtentId]) -> Result<()>;
+
+    /// Hard-delete soft-deleted extents for a given `(database, table)` that
+    /// were soft-deleted before `before`.
+    ///
+    /// Returns aggregate counts for the caller (HTTP response / audit log).
+    async fn cleanup_soft_deleted_extents(
+        &self,
+        database: &str,
+        table: &str,
+        before: DateTime<Utc>,
+    ) -> Result<CleanupResult>;
 
     // --- node identity & heartbeat ---
 
