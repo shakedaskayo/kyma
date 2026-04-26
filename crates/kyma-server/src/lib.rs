@@ -19,6 +19,7 @@
 pub mod agent;
 pub mod auth;
 pub mod catalog_handler;
+pub mod cleanup_handler;
 pub mod dashboards_handler;
 pub mod flight;
 mod health;
@@ -133,6 +134,27 @@ pub fn dashboards_write_router(catalog: Arc<dyn kyma_core::catalog::Catalog>) ->
         .route(
             "/v1/dashboards/:id",
             axum::routing::patch(update_dashboard).delete(delete_dashboard),
+        )
+        .with_state(state)
+        .layer(SetRequestIdLayer::new(
+            REQUEST_ID_HEADER.clone(),
+            MakeRequestUuid,
+        ))
+        .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER.clone()))
+}
+
+/// Build the cleanup write router — POST requires `Role::Write`.
+///
+/// Mounts `POST /v1/database/:db/table/:table/cleanup`.
+/// Mount alongside the query router in `main.rs`, wrapped with
+/// `require_role_middleware(Role::Write)`.
+pub fn cleanup_write_router(catalog: Arc<dyn kyma_core::catalog::Catalog>) -> Router {
+    use cleanup_handler::{cleanup_table, CleanupState};
+    let state = CleanupState { catalog };
+    Router::new()
+        .route(
+            "/v1/database/:db/table/:table/cleanup",
+            post(cleanup_table),
         )
         .with_state(state)
         .layer(SetRequestIdLayer::new(

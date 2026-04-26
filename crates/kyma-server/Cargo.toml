@@ -62,6 +62,10 @@ serde_json.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true
 tower = { workspace = true, features = ["util"] }
+sqlx.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+kyma-catalog.workspace = true
 
 [features]
 default = []
@@ -84,4 +88,8 @@ required-features = ["web-ui", "test-support"]
 
 [[test]]
 name = "dashboards_http"
+required-features = ["test-support"]
+
+[[test]]
+name = "cleanup_http"
 required-features = ["test-support"]

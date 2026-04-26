@@ -24,7 +24,7 @@ pub use snapshot::PgSnapshotTxn;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use kyma_core::catalog::{
-    BackgroundTask, Catalog, ColumnInfo, ColumnPrune, Dashboard, DashboardPanel,
+    BackgroundTask, Catalog, CleanupResult, ColumnInfo, ColumnPrune, Dashboard, DashboardPanel,
     DashboardPanelInput, DashboardUpdate, DashboardWithPanels, ExtentManifest, IngestLedgerEntry,
     NodeInfo, NodeLease, NodeRole, PrunePredicate, SnapshotTxn, TableConfig, TableRef,
 };
@@ -536,6 +536,62 @@ impl Catalog for PostgresCatalog {
             .await
             .map_err(sql_err)?;
         Ok(())
+    }
+
+    async fn cleanup_soft_deleted_extents(
+        &self,
+        database: &str,
+        table: &str,
+        before: DateTime<Utc>,
+    ) -> Result<CleanupResult> {
+        // 1. Resolve (database, table) → table_id, reusing the same JOIN the
+        //    public `lookup_table` method uses. This validates the table exists
+        //    and returns a clear `TableNotFound` error if not.
+        let table_ref = self.lookup_table(database, table).await?;
+        let table_uuid = *table_ref.id.as_uuid();
+
+        // 2. Collect aggregate stats before deletion so we can return them.
+        //    CAST to bigint: SUM over a bigint column returns NUMERIC in
+        //    Postgres, which doesn't decode directly to i64 via sqlx.
+        let agg_row = sqlx::query(
+            "SELECT COUNT(*) AS cnt,
+                    CAST(COALESCE(SUM(row_count), 0) AS bigint) AS rows_freed,
+                    CAST(COALESCE(SUM(byte_size), 0) AS bigint) AS bytes_freed
+             FROM extents
+             WHERE table_id = $1
+               AND deleted_at IS NOT NULL
+               AND deleted_at < $2",
+        )
+        .bind(table_uuid)
+        .bind(before)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(sql_err)?;
+
+        let extents_deleted: i64 = agg_row.try_get("cnt").map_err(sql_err)?;
+        let rows_freed: i64 = agg_row.try_get("rows_freed").map_err(sql_err)?;
+        let bytes_freed: i64 = agg_row.try_get("bytes_freed").map_err(sql_err)?;
+
+        // 3. Hard-delete the qualifying extent rows.
+        if extents_deleted > 0 {
+            sqlx::query(
+                "DELETE FROM extents
+                 WHERE table_id = $1
+                   AND deleted_at IS NOT NULL
+                   AND deleted_at < $2",
+            )
+            .bind(table_uuid)
+            .bind(before)
+            .execute(&self.pool)
+            .await
+            .map_err(sql_err)?;
+        }
+
+        Ok(CleanupResult {
+            extents_deleted: extents_deleted as u64,
+            rows_freed: rows_freed as u64,
+            bytes_freed: bytes_freed as u64,
+        })
     }
 
     async fn register_node(&self, info: NodeInfo) -> Result<NodeLease> {
