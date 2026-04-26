@@ -376,19 +376,30 @@ impl Parser {
 
     /// `graph-traverse source <value> from <src> to <dst> max-hops N [direction ...]`
     ///
-    /// Emits two CTEs: `_gt` (recursive frontier) and `_gt_result`
-    /// (min-depth-per-node). Subsequent pipeline ops read from `_gt_result`.
+    /// Emits three CTEs:
+    ///  - `_gt(node, depth, path_src)` — recursive frontier with the
+    ///    immediate predecessor node (`path_src`) for the join-back.
+    ///  - `_gt_min` — per-node minimum depth (deduplication).
+    ///  - `_gt_result` — joins `_gt_min` back to the edge table to project
+    ///    the full originating edge row alongside `dst` and `depth`.
+    ///    Strictly additive: callers reading only `dst`/`depth` still work.
     fn op_graph_traverse(&mut self) -> Result<(), ParseError> {
         self.expect_ident_eq("source")?;
         let source_sql = self.parse_scalar_literal()?;
         let (src_col, dst_col, max_hops, direction) = self.parse_graph_preamble()?;
 
         let edge_table = self.state.table.clone();
-        let step_sql = build_recursive_step(&edge_table, &src_col, &dst_col, direction);
 
-        // Anchor: start-node with depth=0.
+        // Recursive step: next-hop node + depth+1 + the edge's src (path_src)
+        // so we can join back to the edge table in the result CTE.
+        let step_sql = build_recursive_step_with_src(&edge_table, &src_col, &dst_col, direction);
+
+        // Anchor: the seed node has depth=0 and no incoming edge, so path_src
+        // is the node itself (a self-reference; won't match any real edge in
+        // the result join, which is correct — the seed has no inbound edge).
         let body = format!(
-            "SELECT CAST({source_sql} AS VARCHAR) AS node, 0 AS depth \
+            "SELECT CAST({source_sql} AS VARCHAR) AS node, 0 AS depth, \
+                    CAST({source_sql} AS VARCHAR) AS path_src \
              UNION ALL \
              SELECT {step_sql} \
              FROM _gt t \
@@ -402,13 +413,26 @@ impl Parser {
         );
         self.state
             .ctes
-            .push(("_gt(node, depth)".to_string(), body, true));
+            .push(("_gt(node, depth, path_src)".to_string(), body, true));
 
-        // Result CTE: min depth per node. Alias back to the dst column name
-        // so downstream operators can reference it as if it were the scanned
-        // table.
-        let result_body =
-            format!("SELECT node AS {dst_col}, MIN(depth) AS depth FROM _gt GROUP BY node");
+        // Deduplication CTE: keep only the min-depth row per node.
+        // DataFusion requires grouping before joining back to a non-recursive CTE.
+        let min_body =
+            "SELECT node, path_src, MIN(depth) AS depth FROM _gt GROUP BY node, path_src";
+        self.state
+            .ctes
+            .push(("_gt_min".to_string(), min_body.to_string(), false));
+
+        // Result CTE: join back to the edges table to project full edge columns
+        // alongside the dst and depth. Seed row (depth=0, path_src=node) is
+        // excluded from the join because the seed has no inbound edge.
+        // Strictly additive: the columns {dst_col, depth} that callers relied
+        // on before are still present — edge columns are additional.
+        let result_body = format!(
+            "SELECT e.*, m.depth \
+             FROM _gt_min m \
+             JOIN {edge_table} e ON e.{src_col} = m.path_src AND e.{dst_col} = m.node"
+        );
         self.state
             .ctes
             .push(("_gt_result".to_string(), result_body, false));
@@ -740,6 +764,24 @@ fn build_recursive_step(_table: &str, src_col: &str, dst_col: &str, dir: GraphDi
     }
 }
 
+/// Like [`build_recursive_step`] but also projects `path_src` (the node we
+/// hopped from) so the result CTE can join back to the edge table to retrieve
+/// the full edge row for each reached node.
+fn build_recursive_step_with_src(
+    _table: &str,
+    src_col: &str,
+    dst_col: &str,
+    dir: GraphDirection,
+) -> String {
+    match dir {
+        GraphDirection::Forward => format!("e.{dst_col}, t.depth + 1, t.node"),
+        GraphDirection::Backward => format!("e.{src_col}, t.depth + 1, t.node"),
+        GraphDirection::Both => format!(
+            "CASE WHEN e.{src_col} = t.node THEN e.{dst_col} ELSE e.{src_col} END, t.depth + 1, t.node"
+        ),
+    }
+}
+
 /// Quote an identifier for SQL safely. We use double quotes (ANSI SQL).
 fn quote_ident(name: &str) -> String {
     // Pass through simple bare identifiers.
@@ -955,5 +997,24 @@ mod tests {
         assert!(sql.contains("IN"), "expected SQL IN, got: {sql}");
         assert!(sql.contains("200"), "got: {sql}");
         assert!(sql.contains("204"), "got: {sql}");
+    }
+
+    #[test]
+    fn graph_traverse_projects_full_edge_columns() {
+        let kql = r#"context_edges | graph-traverse source "a" from src to dst max-hops 2"#;
+        let sql = kql_to_sql(kql).expect("parse");
+        // Result query should select original edge columns alongside depth
+        assert!(
+            sql.contains("e.*"),
+            "expected edge-row projection (e.*), got: {sql}"
+        );
+        assert!(sql.contains("depth"), "expected depth column, got: {sql}");
+        // dst column should still be present via edge join
+        assert!(sql.contains("dst"), "expected dst column, got: {sql}");
+        // Recursive CTE should now have path_src for the join-back
+        assert!(
+            sql.contains("path_src"),
+            "expected path_src in CTE, got: {sql}"
+        );
     }
 }
