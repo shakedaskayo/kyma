@@ -92,6 +92,17 @@ impl WritePath {
         }
     }
 
+    /// Drain any partially-full staging buffer. Call on shutdown, after the
+    /// HTTP server has stopped accepting new requests, to flush in-flight
+    /// ingest commits before the process exits.
+    ///
+    /// No-op when called on a [`WritePath::new`] path (no staging buffer).
+    pub async fn drain_staging(&self) {
+        if let Some(staging) = &self.staging {
+            staging.drain_all().await;
+        }
+    }
+
     /// Ingest a batch of `RecordBatch`es into `table`.
     ///
     /// Retries on snapshot CAS conflicts up to a small bound — other writers

@@ -484,6 +484,14 @@ async fn main() -> Result<()> {
         error!(error = %e, "http server terminated with error");
     }
 
+    // Explicitly drain the staging buffer now that HTTP is no longer accepting
+    // new ingest requests. This ensures partially-flushed batches are committed
+    // before we wind down background workers. The staging timer also drains on
+    // shutdown_tx, but that fires later — this is the earlier, safer hook.
+    info!("draining ingest staging buffer");
+    write_path.drain_staging().await;
+    info!("staging buffer drained");
+
     if let Some(h) = grpc_handle {
         let _ = h.await;
     }
