@@ -28,8 +28,12 @@ RUN cargo build -p kyma-bin -p kyma-cli --release --features web-ui
 # libssl and libz which distroless/cc-debian12 does not include.
 FROM debian:12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libssl3 zlib1g && rm -rf /var/lib/apt/lists/*
+    ca-certificates libssl3 zlib1g && rm -rf /var/lib/apt/lists/* && \
+    groupadd --system --gid 1000 kyma && \
+    useradd --system --uid 1000 --gid kyma --create-home --home-dir /home/kyma kyma
 COPY --from=server /src/target/release/kyma /usr/local/bin/kyma
 COPY --from=server /src/target/release/kyma-cli /usr/local/bin/kyma-cli
 EXPOSE 8080 9090
+USER kyma
+WORKDIR /home/kyma
 ENTRYPOINT ["/usr/local/bin/kyma"]
