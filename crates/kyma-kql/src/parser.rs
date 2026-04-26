@@ -524,6 +524,21 @@ impl Parser {
             return Ok(format!("(({lhs} >= {low}) AND ({lhs} <= {high}))"));
         }
 
+        // `in (v1, v2, ...)` — lower to SQL IN (...).
+        if matches!(self.peek(), Some(Token::Ident(s)) if s.eq_ignore_ascii_case("in")) {
+            self.pos += 1;
+            self.expect(&Token::LParen, "`(` after `in`")?;
+            let mut values: Vec<String> = Vec::new();
+            loop {
+                values.push(self.parse_additive()?);
+                if !self.eat(&Token::Comma) {
+                    break;
+                }
+            }
+            self.expect(&Token::RParen, "`)`")?;
+            return Ok(format!("({lhs} IN ({}))", values.join(", ")));
+        }
+
         let op = match self.peek() {
             Some(Token::Eq) => Some("="),
             Some(Token::Ne) => Some("<>"),
@@ -922,5 +937,23 @@ mod tests {
             sql.contains("((n >= 1) AND (n <= 10))"),
             "unexpected shape: {sql}"
         );
+    }
+
+    #[test]
+    fn parses_in_with_string_list() {
+        let kql = r#"context_nodes | where label in ("a", "b", "c") | take 10"#;
+        let sql = kql_to_sql(kql).expect("parse");
+        assert!(sql.contains("IN"), "expected SQL to contain 'IN', got: {sql}");
+        assert!(sql.contains("'a'"), "expected 'a' in SQL, got: {sql}");
+        assert!(sql.contains("'c'"), "expected 'c' in SQL, got: {sql}");
+    }
+
+    #[test]
+    fn parses_in_with_int_list() {
+        let kql = "logs | where status in (200, 201, 204)";
+        let sql = kql_to_sql(kql).expect("parse");
+        assert!(sql.contains("IN"), "expected SQL IN, got: {sql}");
+        assert!(sql.contains("200"), "got: {sql}");
+        assert!(sql.contains("204"), "got: {sql}");
     }
 }
