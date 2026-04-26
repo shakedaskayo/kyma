@@ -332,6 +332,55 @@ fn table_result_to_manifest(table: &TableRef, result: &ExtentWriteResult) -> Ext
     }
 }
 
+/// Spawn a background task that runs every hour and deletes `ingest_ledger`
+/// rows whose TTL has expired (with a 1-hour grace period beyond the 24-hour
+/// TTL, so entries older than 25 hours are removed).
+///
+/// The task shuts down when `shutdown` resolves.
+pub fn spawn_idempotency_cleanup(
+    catalog: Arc<dyn kyma_core::catalog::Catalog>,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> tokio::task::JoinHandle<()> {
+    use std::any::Any;
+    tokio::spawn(async move {
+        tokio::pin!(shutdown);
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        // Tick once immediately so the interval clock starts, then wait for the
+        // first real hour before cleaning (avoids a DELETE on every restart).
+        interval.tick().await;
+        loop {
+            tokio::select! {
+                biased;
+                () = &mut shutdown => {
+                    tracing::debug!("idempotency cleanup task shutting down");
+                    return;
+                }
+                _ = interval.tick() => {}
+            }
+            // Downcast to PostgresCatalog to access the pool.
+            let any_ref: &dyn Any = catalog.as_ref_any();
+            if let Some(pg) = any_ref.downcast_ref::<kyma_catalog::PostgresCatalog>() {
+                match sqlx::query(
+                    "DELETE FROM ingest_ledger WHERE ttl_expires_at < now() - INTERVAL '1 hour'",
+                )
+                .execute(pg.pool())
+                .await
+                {
+                    Ok(r) => tracing::info!(
+                        rows = r.rows_affected(),
+                        "idempotency ledger cleanup complete"
+                    ),
+                    Err(e) => tracing::warn!("idempotency cleanup failed: {e}"),
+                }
+            } else {
+                tracing::warn!(
+                    "idempotency cleanup: catalog is not PostgresCatalog; skipping"
+                );
+            }
+        }
+    })
+}
+
 fn nanos_to_utc(n: i64) -> DateTime<Utc> {
     let secs = n.div_euclid(1_000_000_000);
     let nsec = n.rem_euclid(1_000_000_000) as u32;
