@@ -33,6 +33,36 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     useradd --system --uid 1000 --gid kyma --create-home --home-dir /home/kyma kyma
 COPY --from=server /src/target/release/kyma /usr/local/bin/kyma
 COPY --from=server /src/target/release/kyma-cli /usr/local/bin/kyma-cli
+
+# Bootstrap script: creates the kyma catalog database and all context tables.
+# Invoked as a one-shot Railway service during customer instance provisioning.
+# Uses KYMA_CATALOG_URL env var (set by provisioner via Railway variable reference).
+# Written as a RUN heredoc (requires BuildKit, enabled via syntax=docker/dockerfile:1.7
+# declared at the top of this file).
+RUN <<'BOOTSTRAP'
+cat > /usr/local/bin/kyma-bootstrap.sh << 'SCRIPT'
+#!/bin/sh
+set -e
+CLI=/usr/local/bin/kyma-cli
+$CLI create-database kyma 2>&1 | grep -v 'duplicate key' | grep -v 'already exists' || true
+$CLI create-table --db kyma --name context_nodes \
+  --schema "id:string,label:string,realm:string,source_type:string,source_id:string,run_id:string,created_at:timestamp,updated_at:timestamp,properties:dynamic" \
+  2>&1 | grep -v 'duplicate key' || true
+$CLI create-table --db kyma --name context_edges \
+  --schema "id:string,src:string,dst:string,type:string,realm:string,source_type:string,source_id:string,run_id:string,created_at:timestamp,properties:dynamic" \
+  2>&1 | grep -v 'duplicate key' || true
+$CLI create-table --db kyma --name context_pipeline_runs \
+  --schema "id:string,pipeline_id:string,source_type:string,status:string,started_at:timestamp,finished_at:timestamp,error:string,rows_in:long,rows_out:long" \
+  2>&1 | grep -v 'duplicate key' || true
+$CLI create-table --db kyma --name context_events \
+  --schema "ts:timestamp,kind:string,actor:string,subject:string,attributes:dynamic" \
+  2>&1 | grep -v 'duplicate key' || true
+echo "kyma context tables ready"
+$CLI list-tables --db kyma
+SCRIPT
+chmod +x /usr/local/bin/kyma-bootstrap.sh
+BOOTSTRAP
+
 EXPOSE 8080 9090
 USER kyma
 WORKDIR /home/kyma
