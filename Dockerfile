@@ -27,8 +27,11 @@ RUN cargo build -p kyma-bin -p kyma-cli --release --features web-ui
 # Use debian:12-slim instead of distroless because kyma dynamically links
 # libssl and libz which distroless/cc-debian12 does not include.
 FROM debian:12-slim
+# postgresql-client provides psql, used by kyma-bootstrap.sh to CREATE DATABASE kyma.
+# Only needed by the bootstrap one-shot (not the main kyma server), but we keep
+# a single image for simplicity.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libssl3 zlib1g && rm -rf /var/lib/apt/lists/* && \
+    ca-certificates libssl3 zlib1g postgresql-client && rm -rf /var/lib/apt/lists/* && \
     groupadd --system --gid 1000 kyma && \
     useradd --system --uid 1000 --gid kyma --create-home --home-dir /home/kyma kyma
 COPY --from=server /src/target/release/kyma /usr/local/bin/kyma
@@ -43,6 +46,13 @@ RUN <<'BOOTSTRAP'
 cat > /usr/local/bin/kyma-bootstrap.sh << 'SCRIPT'
 #!/bin/sh
 set -e
+# KYMA_CATALOG_URL points to the kyma database (e.g. postgres://user:pw@host/kyma).
+# Derive the root-database URL by stripping the /kyma suffix so we can run
+# CREATE DATABASE kyma against the postgres root.
+ROOT_URL=$(echo "$KYMA_CATALOG_URL" | sed 's|/kyma$||')
+echo "[bootstrap] Creating kyma Postgres database (idempotent)..."
+psql "$ROOT_URL" -c "CREATE DATABASE kyma" 2>&1 | grep -v "already exists" || true
+echo "[bootstrap] Kyma database ready. Creating context tables via kyma-cli..."
 CLI=/usr/local/bin/kyma-cli
 $CLI create-database kyma 2>&1 | grep -v 'duplicate key' | grep -v 'already exists' || true
 $CLI create-table --db kyma --name context_nodes \
@@ -57,7 +67,7 @@ $CLI create-table --db kyma --name context_pipeline_runs \
 $CLI create-table --db kyma --name context_events \
   --schema "ts:timestamp,kind:string,actor:string,subject:string,attributes:dynamic" \
   2>&1 | grep -v 'duplicate key' || true
-echo "kyma context tables ready"
+echo "[bootstrap] Kyma context tables ready."
 $CLI list-tables --db kyma
 SCRIPT
 chmod +x /usr/local/bin/kyma-bootstrap.sh
