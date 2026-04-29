@@ -22,7 +22,7 @@ use arrow_schema::Schema;
 use futures::StreamExt;
 use kyma_core::catalog::Catalog;
 use kyma_core::errors::{Error, Result};
-use kyma_ingest_core::WritePath;
+use kyma_ingest_core::{ensure_table, evolve_schema_for_records, WritePath};
 use object_store::path::Path;
 use object_store::ObjectStore;
 use sha2::{Digest, Sha256};
@@ -33,23 +33,37 @@ use tracing::{debug, info, instrument, warn};
 
 #[derive(Debug, Clone)]
 pub struct FiledropConfig {
-    /// Object-store prefix under which user files land (before the
-    /// database/table path segments). Default `"ingest"`, so the full
-    /// convention is `ingest/{database}/{table}/<anything>.ndjson`.
-    pub prefix: String,
-    /// How often to scan for new files.
+    /// One or more object-store prefixes to watch. Each is scanned per tick
+    /// in the order given. Files under any of these prefixes still must
+    /// match the `{prefix}/{database}/{table}/...` path convention.
+    ///
+    /// Default: `["ingest"]`, preserving the original single-prefix
+    /// behavior. Multiple prefixes let one kyma instance host watchers for
+    /// many independent pipelines without spawning N separate watcher tasks.
+    pub prefixes: Vec<String>,
+    /// How often to scan each prefix. The same interval applies to all.
     pub poll_interval: Duration,
     /// If true, delete object after successful ingest. If false (default),
     /// leave in place — the idempotency ledger handles re-scans.
     pub delete_after_ingest: bool,
+    /// If true, missing target tables are auto-created on first file with
+    /// the engine's default schema (`at, label, body, props`). New
+    /// properties in subsequent files extend the schema. Defaults to true.
+    pub auto_create: bool,
+    /// If true, scan each NDJSON file for new top-level keys and `ALTER
+    /// TABLE ADD COLUMN` for any that aren't already part of the schema.
+    /// Bounded by `MAX_NEW_COLUMNS_PER_REQUEST`. Defaults to true.
+    pub schema_evolve: bool,
 }
 
 impl Default for FiledropConfig {
     fn default() -> Self {
         Self {
-            prefix: "ingest".to_string(),
+            prefixes: vec!["ingest".to_string()],
             poll_interval: Duration::from_secs(5),
             delete_after_ingest: false,
+            auto_create: true,
+            schema_evolve: true,
         }
     }
 }
@@ -57,9 +71,20 @@ impl Default for FiledropConfig {
 impl FiledropConfig {
     pub fn from_env() -> Self {
         let mut d = Self::default();
-        if let Ok(v) = std::env::var("KYMA_FILEDROP_PREFIX") {
+        // KYMA_FILEDROP_PREFIXES wins if set (comma-separated). Otherwise
+        // KYMA_FILEDROP_PREFIX (legacy single-prefix) wins.
+        if let Ok(v) = std::env::var("KYMA_FILEDROP_PREFIXES") {
+            let prefixes: Vec<String> = v
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !prefixes.is_empty() {
+                d.prefixes = prefixes;
+            }
+        } else if let Ok(v) = std::env::var("KYMA_FILEDROP_PREFIX") {
             if !v.is_empty() {
-                d.prefix = v;
+                d.prefixes = vec![v];
             }
         }
         if let Ok(v) = std::env::var("KYMA_FILEDROP_POLL_SECS")
@@ -69,6 +94,12 @@ impl FiledropConfig {
         }
         if let Ok(v) = std::env::var("KYMA_FILEDROP_DELETE_AFTER_INGEST") {
             d.delete_after_ingest = v == "1" || v.eq_ignore_ascii_case("true");
+        }
+        if let Ok(v) = std::env::var("KYMA_FILEDROP_AUTO_CREATE") {
+            d.auto_create = !(v == "0" || v.eq_ignore_ascii_case("false"));
+        }
+        if let Ok(v) = std::env::var("KYMA_FILEDROP_SCHEMA_EVOLVE") {
+            d.schema_evolve = !(v == "0" || v.eq_ignore_ascii_case("false"));
         }
         d
     }
@@ -100,8 +131,10 @@ impl FiledropWatcher {
 
     pub async fn run(self, shutdown: impl Future<Output = ()>) {
         info!(
-            prefix = %self.config.prefix,
+            prefixes = ?self.config.prefixes,
             poll_secs = self.config.poll_interval.as_secs(),
+            auto_create = self.config.auto_create,
+            schema_evolve = self.config.schema_evolve,
             "filedrop watcher starting"
         );
         tokio::pin!(shutdown);
@@ -123,37 +156,48 @@ impl FiledropWatcher {
 
     #[instrument(skip(self))]
     async fn tick(&self) -> Result<()> {
-        let prefix_path = Path::from(self.config.prefix.clone());
-        let mut stream = self.store.list(Some(&prefix_path));
-        let mut seen = 0usize;
-        let mut processed = 0usize;
-        while let Some(obj) = stream.next().await {
-            let obj =
-                obj.map_err(|e| Error::Internal(format!("list {}: {e}", self.config.prefix)))?;
-            seen += 1;
-            match self.process_one(&obj.location).await {
-                Ok(true) => processed += 1,
-                Ok(false) => {} // replayed from ledger; not counted as new work
-                Err(e) => {
-                    warn!(path = %obj.location, error = %e, "filedrop: failed to process file");
+        // Walk each configured prefix in turn. We don't parallelize here on
+        // purpose: a single watcher should be I/O-bound on the object store
+        // anyway, and serial scanning gives deterministic per-prefix logs.
+        let mut total_seen = 0usize;
+        let mut total_processed = 0usize;
+        for prefix in &self.config.prefixes {
+            let prefix_path = Path::from(prefix.clone());
+            let mut stream = self.store.list(Some(&prefix_path));
+            let mut seen = 0usize;
+            let mut processed = 0usize;
+            while let Some(obj) = stream.next().await {
+                let obj = obj.map_err(|e| Error::Internal(format!("list {prefix}: {e}")))?;
+                seen += 1;
+                match self.process_one(prefix, &obj.location).await {
+                    Ok(true) => processed += 1,
+                    Ok(false) => {} // replayed from ledger; not counted as new work
+                    Err(e) => {
+                        warn!(path = %obj.location, prefix = %prefix, error = %e, "filedrop: failed to process file");
+                    }
                 }
             }
+            total_seen += seen;
+            total_processed += processed;
+            if seen > 0 {
+                debug!(prefix = %prefix, seen, processed, "filedrop scan (per-prefix)");
+            }
         }
-        if seen > 0 {
-            debug!(seen, processed, "filedrop scan complete");
+        if total_seen > 0 {
+            debug!(seen = total_seen, processed = total_processed, "filedrop scan complete");
         }
         Ok(())
     }
 
     /// Returns `Ok(true)` if the file was newly ingested, `Ok(false)` if it
     /// was an idempotency-ledger replay.
-    async fn process_one(&self, path: &Path) -> Result<bool> {
+    async fn process_one(&self, prefix: &str, path: &Path) -> Result<bool> {
         // 1. Parse database + table from the path. Convention:
         //    `{prefix}/{database}/{table}/{filename}`
-        let (database, table, filename) = match split_path(&self.config.prefix, path) {
+        let (database, table, filename) = match split_path(prefix, path) {
             Some(x) => x,
             None => {
-                debug!(path = %path, "filedrop: skipping (does not match prefix/database/table/file)");
+                debug!(path = %path, prefix = %prefix, "filedrop: skipping (does not match prefix/database/table/file)");
                 return Ok(false);
             }
         };
@@ -174,8 +218,13 @@ impl FiledropWatcher {
         let sha_hex = hex_encode(&digest);
         let idem_key = format!("filedrop:{sha_hex}");
 
-        // 3. Lookup the target table.
-        let table_ref = self.catalog.lookup_table(&database, &table).await?;
+        // 3. Resolve the target table — auto-create on first file if
+        //    enabled, else strict lookup.
+        let table_ref = if self.config.auto_create {
+            ensure_table(&*self.catalog, &database, &table).await?
+        } else {
+            self.catalog.lookup_table(&database, &table).await?
+        };
 
         // 4. Parse by extension.
         let ext = filename
@@ -183,6 +232,25 @@ impl FiledropWatcher {
             .next()
             .unwrap_or("")
             .to_ascii_lowercase();
+        let table_ref = if matches!(ext.as_str(), "ndjson" | "jsonl" | "json") && self.config.schema_evolve {
+            // Pre-scan for new top-level keys so the schema is up-to-date
+            // before parse_ndjson runs (which would otherwise drop them).
+            match parse_records_for_inspection(&bytes) {
+                Ok(records) => {
+                    match evolve_schema_for_records(&*self.catalog, &database, table_ref, &records).await {
+                        Ok(t) => t,
+                        Err(e) => {
+                            warn!(error = %e, "schema_evolve failed; continuing with current schema");
+                            // Re-look up to be safe.
+                            self.catalog.lookup_table(&database, &table).await?
+                        }
+                    }
+                }
+                Err(_) => table_ref,
+            }
+        } else {
+            table_ref
+        };
         let batches: Vec<RecordBatch> = match ext.as_str() {
             "ndjson" | "jsonl" | "json" => parse_ndjson(&bytes, &table_ref.schema)?,
             other => {
@@ -268,6 +336,24 @@ fn split_path(prefix: &str, path: &Path) -> Option<(String, String, String)> {
 fn parse_ndjson(bytes: &[u8], schema: &Arc<Schema>) -> Result<Vec<RecordBatch>> {
     kyma_ingest_core::parse_ndjson(bytes, schema.clone())
         .map_err(|e| Error::Internal(format!("filedrop ndjson: {e}")))
+}
+
+/// Cheap NDJSON pre-scan that yields the same `serde_json::Value`s the
+/// schema-evolve helper expects. Mirrors the helper in kyma-ingest-rest;
+/// kept duplicated for now to avoid a new shared utility crate over a
+/// 12-line function. If a third frontend grows this, hoist it.
+fn parse_records_for_inspection(
+    bytes: &[u8],
+) -> std::result::Result<Vec<serde_json::Value>, serde_json::Error> {
+    let mut out = Vec::new();
+    for line in bytes.split(|&b| b == b'\n') {
+        if line.iter().all(|b| b.is_ascii_whitespace()) {
+            continue;
+        }
+        let v: serde_json::Value = serde_json::from_slice(line)?;
+        out.push(v);
+    }
+    Ok(out)
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
