@@ -1,4 +1,14 @@
 name: build-image
+#
+# One-time setup: the `kyma` GHCR package is user-owned (shakedaskayo/kyma).
+# For this workflow's GITHUB_TOKEN to write to it, link the package to this
+# repo at https://github.com/users/shakedaskayo/packages/container/kyma/settings
+# → "Manage Actions access" → add `shakedaskayo/kyma` with Write permission.
+# Without that link, every run fails with `permission_denied: write_package`.
+#
+# Alternative: set a GHCR_TOKEN secret (PAT with write:packages) and replace
+# `${{ secrets.GITHUB_TOKEN }}` below.
+#
 on:
   push:
     branches: [main]
