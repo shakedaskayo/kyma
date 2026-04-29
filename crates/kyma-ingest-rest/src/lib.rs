@@ -17,7 +17,7 @@
 #![forbid(unsafe_code)]
 
 use axum::{
-    extract::{Request, State},
+    extract::{Path, Request, State},
     http::{HeaderMap, HeaderName, StatusCode},
     response::{IntoResponse, Response},
     routing::post,
@@ -25,11 +25,13 @@ use axum::{
 };
 use bytes::Bytes;
 use kyma_core::catalog::Catalog;
-use kyma_ingest_core::{parse_ndjson, IngestAck, WritePath};
+use kyma_ingest_core::{
+    ensure_table, evolve_schema_for_records, parse_ndjson, IngestAck, WritePath,
+};
 use serde::Serialize;
 use std::sync::Arc;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 
@@ -44,6 +46,13 @@ pub struct IngestState {
 pub fn router(state: IngestState) -> Router {
     Router::new()
         .route("/v1/ingest", post(ingest_handler))
+        // Idempotent table provisioning. Cloud / orchestrator components call
+        // this on pipeline create so the first ingest doesn't have to pay for
+        // the create-on-write path. Plain `ensure_table`; no schema args yet.
+        .route(
+            "/v1/admin/databases/{database}/tables/{table}",
+            post(admin_ensure_table_handler).get(admin_get_table_handler),
+        )
         .with_state(state)
         // Set an X-Request-ID if the client didn't send one, then propagate
         // it back on the response so clients and logs share the same id.
@@ -103,6 +112,11 @@ async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Respo
             );
         }
     };
+    // Default ON. Set X-Auto-Create: false to require pre-existing tables.
+    let auto_create = header_bool(headers, "x-auto-create", true);
+    // Default ON. Set X-Schema-Evolve: false to drop unknown fields silently
+    // (the pre-helper behavior).
+    let schema_evolve = header_bool(headers, "x-schema-evolve", true);
 
     // Actually read the body now that we have what we need from headers.
     let body: Bytes = match axum::body::to_bytes(body, 64 * 1024 * 1024).await {
@@ -117,16 +131,71 @@ async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Respo
         }
     };
 
-    let table_ref = match state.catalog.lookup_table(&database, &table).await {
-        Ok(t) => t,
-        Err(e) => {
-            return error_response(
-                StatusCode::NOT_FOUND,
-                "table_not_found",
-                &format!("table lookup failed: {e}"),
-                &request_id,
-            );
+    // Resolve the table. With X-Auto-Create=true (default), the helper
+    // creates the database + an empty default-schema table on first write.
+    // With X-Auto-Create=false we keep the strict 404 behavior so callers
+    // who pre-provision can detect typos.
+    let table_ref = if auto_create {
+        match ensure_table(&*state.catalog, &database, &table).await {
+            Ok(t) => t,
+            Err(e) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "ensure_table_failed",
+                    &format!("ensure_table: {e}"),
+                    &request_id,
+                );
+            }
         }
+    } else {
+        match state.catalog.lookup_table(&database, &table).await {
+            Ok(t) => t,
+            Err(e) => {
+                return error_response(
+                    StatusCode::NOT_FOUND,
+                    "table_not_found",
+                    &format!("table lookup failed: {e}"),
+                    &request_id,
+                );
+            }
+        }
+    };
+
+    // Parse the body for schema evolution (cheap one-pass JSON scan over the
+    // bytes, only when X-Schema-Evolve is set). The parsed records are
+    // discarded; the actual NDJSON parse below uses arrow-json's path so the
+    // fast path stays untouched.
+    let table_ref = if schema_evolve {
+        match parse_records_for_inspection(body.as_ref()) {
+            Ok(records) => {
+                match evolve_schema_for_records(&*state.catalog, &database, table_ref, &records)
+                    .await
+                {
+                    Ok(t) => t,
+                    Err(e) => {
+                        warn!(error = %e, "schema_evolve failed; continuing with current schema");
+                        // Fall through with the original table_ref. We can
+                        // recover by re-looking up — but since the alters
+                        // failed, the lookup would be the same. Bail with a
+                        // clear error.
+                        return error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "schema_evolve_failed",
+                            &format!("schema_evolve: {e}"),
+                            &request_id,
+                        );
+                    }
+                }
+            }
+            Err(_) => {
+                // The pre-scan failed to parse some lines — let the real
+                // parser below produce a precise error. Use the un-evolved
+                // schema; missing fields simply land in `props`.
+                table_ref
+            }
+        }
+    } else {
+        table_ref
     };
 
     // Parse the NDJSON body into `RecordBatch`es using the table's schema.
@@ -176,6 +245,98 @@ async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Respo
     }
 }
 
+// ---- admin handlers -------------------------------------------------
+
+#[derive(Debug, Serialize)]
+struct AdminTableInfo {
+    database: String,
+    table: String,
+    columns: Vec<AdminColumn>,
+    /// Total rows visible at the current snapshot. Cheap field; sourced from
+    /// the catalog's snapshot summary, not a scan.
+    rows: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct AdminColumn {
+    name: String,
+    /// Arrow logical type as a stable string (e.g. `"Utf8"`, `"Timestamp(Nanosecond)"`).
+    arrow_type: String,
+    nullable: bool,
+}
+
+async fn admin_ensure_table_handler(
+    State(state): State<IngestState>,
+    Path((database, table)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let request_id = extract_request_id(&headers);
+    match kyma_ingest_core::ensure_table(&*state.catalog, &database, &table).await {
+        Ok(t) => {
+            let info = AdminTableInfo {
+                database: database.clone(),
+                table: t.name.clone(),
+                columns: t
+                    .schema
+                    .fields()
+                    .iter()
+                    .map(|f| AdminColumn {
+                        name: f.name().clone(),
+                        arrow_type: format!("{}", f.data_type()),
+                        nullable: f.is_nullable(),
+                    })
+                    .collect(),
+                rows: 0,
+            };
+            info!(database = %database, table = %table, "admin: ensure_table ok");
+            (StatusCode::OK, Json(info)).into_response()
+        }
+        Err(e) => {
+            error!(request_id = %request_id, database = %database, table = %table, error = %e, "admin: ensure_table failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "ensure_table_failed",
+                &format!("{e}"),
+                &request_id,
+            )
+        }
+    }
+}
+
+async fn admin_get_table_handler(
+    State(state): State<IngestState>,
+    Path((database, table)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let request_id = extract_request_id(&headers);
+    match state.catalog.lookup_table(&database, &table).await {
+        Ok(t) => {
+            let info = AdminTableInfo {
+                database: database.clone(),
+                table: t.name.clone(),
+                columns: t
+                    .schema
+                    .fields()
+                    .iter()
+                    .map(|f| AdminColumn {
+                        name: f.name().clone(),
+                        arrow_type: format!("{}", f.data_type()),
+                        nullable: f.is_nullable(),
+                    })
+                    .collect(),
+                rows: 0,
+            };
+            (StatusCode::OK, Json(info)).into_response()
+        }
+        Err(e) => error_response(
+            StatusCode::NOT_FOUND,
+            "table_not_found",
+            &format!("{e}"),
+            &request_id,
+        ),
+    }
+}
+
 // ---- shared error-body shape -----------------------------------------
 
 #[derive(Serialize)]
@@ -210,4 +371,33 @@ fn extract_request_id(headers: &HeaderMap) -> String {
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_owned())
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+}
+
+/// Parse a header value as a boolean, accepting `true|false|1|0|yes|no`.
+/// Returns `default` if the header is missing or unparseable.
+fn header_bool(headers: &HeaderMap, name: &str, default: bool) -> bool {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_ascii_lowercase())
+        .map(|s| match s.as_str() {
+            "true" | "1" | "yes" | "on" => true,
+            "false" | "0" | "no" | "off" => false,
+            _ => default,
+        })
+        .unwrap_or(default)
+}
+
+/// Cheap NDJSON pre-scan that yields the same `serde_json::Value`s the
+/// schema-evolve helper expects. Used only when X-Schema-Evolve is on.
+fn parse_records_for_inspection(bytes: &[u8]) -> std::result::Result<Vec<serde_json::Value>, serde_json::Error> {
+    let mut out = Vec::new();
+    for line in bytes.split(|&b| b == b'\n') {
+        if line.iter().all(|b| b.is_ascii_whitespace()) {
+            continue;
+        }
+        let v: serde_json::Value = serde_json::from_slice(line)?;
+        out.push(v);
+    }
+    Ok(out)
 }

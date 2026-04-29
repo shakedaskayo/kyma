@@ -23,9 +23,13 @@
 #![forbid(unsafe_code)]
 
 pub mod commit_coordinator;
+pub mod ensure;
 pub mod ndjson;
 pub mod staging;
 pub use commit_coordinator::{CommitCoordinator, CoordinatorConfig};
+pub use ensure::{
+    default_table_schema, ensure_table, evolve_schema_for_records, MAX_NEW_COLUMNS_PER_REQUEST,
+};
 pub use ndjson::{parse_ndjson, NdjsonError};
 pub use staging::{FlushOutcome, StagingBuffer, StagingConfig};
 

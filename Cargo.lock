@@ -4512,6 +4512,7 @@ dependencies = [
  "kyma-storage",
  "metrics",
  "object_store",
+ "serde_json",
  "sha2",
  "thiserror 2.0.18",
  "tokio",
