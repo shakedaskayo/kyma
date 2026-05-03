@@ -12,17 +12,8 @@ export default withMermaid(defineConfig({
   // so VitePress already won't scan it. Kept in case the layout ever changes.
   srcExclude: ['**/superpowers/**'],
 
-  // Localhost code samples + cross-references to in-progress D1 pages.
-  // Specific paths (not section globs) so genuinely-broken links still fail.
-  ignoreDeadLinks: [
-    /^https?:\/\/localhost(:\d+)?/,
-    '/concepts/schema-model',
-    '/concepts/dynamic-and-vectors',
-    '/concepts/the-agent-loop',
-    '/concepts/multi-source-data',
-    '/concepts/retention-and-compaction',
-    '/concepts/observability',
-  ],
+  // Localhost code samples shouldn't fail the build.
+  ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?/],
 
   head: [
     ['link', { rel: 'icon', href: '/favicon.svg' }],
@@ -47,7 +38,21 @@ export default withMermaid(defineConfig({
         { text: 'First real run',      link: '/quickstart/first-real-run' },
         { text: 'Concepts cheatsheet', link: '/quickstart/concepts-cheatsheet' },
       ]}],
-      '/concepts/':      [{ text: 'Concepts',      items: [] }],
+      '/concepts/': [{
+        text: 'Concepts',
+        items: [
+          { text: 'What kyma is',          link: '/concepts/what-is-kyma' },
+          { text: 'The five invariants',   link: '/concepts/the-five-invariants' },
+          { text: 'The pruning cascade',   link: '/concepts/the-pruning-cascade' },
+          { text: 'Extents and snapshots', link: '/concepts/extents-and-snapshots' },
+          { text: 'Schema model',          link: '/concepts/schema-model' },
+          { text: 'Dynamic and vectors',   link: '/concepts/dynamic-and-vectors' },
+          { text: 'The agent loop',        link: '/concepts/the-agent-loop' },
+          { text: 'Multi-source data',     link: '/concepts/multi-source-data' },
+          { text: 'Retention and compaction', link: '/concepts/retention-and-compaction' },
+          { text: 'Observability',         link: '/concepts/observability' },
+        ],
+      }],
       '/ingest/':        [{ text: 'Ingest',        items: [] }],
       '/query/':         [{ text: 'Query',         items: [] }],
       '/connectors/':    [{ text: 'Connectors',    items: [], collapsed: false }],
