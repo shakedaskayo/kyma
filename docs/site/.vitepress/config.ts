@@ -76,11 +76,24 @@ export default withMermaid(defineConfig({
       }],
       '/connectors/':    [{ text: 'Connectors',    items: [], collapsed: false }],
       '/reference/':     [{ text: 'Reference',     items: [] }],
-      '/architecture/':  [{ text: 'Architecture',  items: [
-        { text: 'Architecture overview', link: '/architecture/architecture' },
-        { text: 'Benchmarks', link: '/architecture/benchmarks' },
-      ]}],
-      '/recipes/':       [{ text: 'Recipes',       items: [] }],
+      '/architecture/': [{
+        text: 'Architecture',
+        items: [
+          { text: 'Architecture overview', link: '/architecture/architecture' },
+          { text: 'Slice roadmap',         link: '/architecture/slice-roadmap' },
+          { text: 'Storage format',        link: '/architecture/storage-format' },
+          { text: 'Benchmarks',            link: '/architecture/benchmarks' },
+        ],
+      }],
+      '/recipes/': [{
+        text: 'Recipes',
+        items: [
+          { text: 'Debug a prod incident',     link: '/recipes/debug-prod-incident' },
+          { text: 'Triage an alert spike',     link: '/recipes/triage-alert-spike' },
+          { text: 'Agent watching a table',    link: '/recipes/agent-watching-a-table' },
+          { text: 'Ingest something custom',   link: '/recipes/ingest-something-custom' },
+        ],
+      }],
     },
     socialLinks: [
       { icon: 'github', link: 'https://github.com/shaked/engine' },
