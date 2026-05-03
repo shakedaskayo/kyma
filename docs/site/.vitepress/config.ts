@@ -19,12 +19,15 @@ export default withMermaid(defineConfig({
   ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?/],
 
   head: [
-    ['link', { rel: 'icon', href: '/favicon.svg' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/icons/kyma-mark.svg' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:title', content: 'kyma docs' }],
+    ['meta', { property: 'og:image', content: '/icons/kyma-mark.svg' }],
   ],
 
   themeConfig: {
+    logo: '/icons/kyma-mark.svg',
+    siteTitle: 'kyma',
     nav: [
       { text: 'Quickstart', link: '/quickstart/' },
       { text: 'Concepts', link: '/concepts/' },
@@ -123,6 +126,10 @@ export default withMermaid(defineConfig({
     ],
     search: {
       provider: 'local',
+    },
+    footer: {
+      message: 'An open project by <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link"><img src="/icons/brand/agentcy.svg" alt="" width="12" height="12" class="kyma-footer-mark"/> AgentcyLabs</a> · Apache-2.0 licensed.',
+      copyright: 'Copyright © 2026 AgentcyLabs · <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link">agentcylabs.com</a> · <a href="https://github.com/shaked/engine" target="_blank" rel="noopener" class="kyma-footer-link">GitHub</a>',
     },
   },
 

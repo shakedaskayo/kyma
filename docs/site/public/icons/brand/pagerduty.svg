@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="PagerDuty">
+  <title>PagerDuty</title>
+  <rect width="48" height="48" rx="10" fill="#06AC38"/>
+  <path fill="#FFFFFF" d="M16 10h11c4.4 0 7 3 7 7s-2.6 7-7 7h-5v8h-6V10zm6 5v9h4c2.2 0 3.5-1.7 3.5-4.5S28.2 15 26 15h-4z"/>
+</svg>
