@@ -18,11 +18,22 @@ export default withMermaid(defineConfig({
   // Localhost code samples shouldn't fail the build.
   ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?/],
 
+  sitemap: {
+    hostname: 'https://getkyma.dev',
+  },
+
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/icons/kyma-mark.svg' }],
+    ['link', { rel: 'canonical', href: 'https://getkyma.dev/' }],
     ['meta', { property: 'og:type', content: 'website' }],
-    ['meta', { property: 'og:title', content: 'kyma docs' }],
-    ['meta', { property: 'og:image', content: '/icons/kyma-mark.svg' }],
+    ['meta', { property: 'og:title', content: 'kyma — production knowledge, as a query' }],
+    ['meta', { property: 'og:description', content: 'A unified columnar query engine for every signal your stack emits. Logs, traces, metrics, plus first-class federation to Postgres, MySQL, MongoDB. Sub-second latency over a decade of history.' }],
+    ['meta', { property: 'og:url', content: 'https://getkyma.dev/' }],
+    ['meta', { property: 'og:image', content: 'https://getkyma.dev/icons/kyma-mark.svg' }],
+    ['meta', { name: 'twitter:card', content: 'summary' }],
+    ['meta', { name: 'twitter:title', content: 'kyma — production knowledge, as a query' }],
+    ['meta', { name: 'twitter:description', content: 'One columnar query engine for every signal your stack emits. By AgentcyLabs.' }],
+    ['meta', { name: 'twitter:image', content: 'https://getkyma.dev/icons/kyma-mark.svg' }],
   ],
 
   themeConfig: {

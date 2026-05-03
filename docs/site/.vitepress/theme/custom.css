@@ -500,11 +500,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kyma-orbit-mark img,
-  .kyma-orbit-mark-pulse,
-  .kyma-orbit-ring-svg,
-  .kyma-orbit-flow,
-  .kyma-orbit-node {
+  /* Strip all decorative motion across the landing — orbit, readout,
+     graph edges, ring pulses, sweeps. Static positions kept; transitions
+     stay (so hover still feels alive). */
+  .kyma-landing *,
+  .kyma-landing *::before,
+  .kyma-landing *::after {
     animation: none !important;
   }
 }

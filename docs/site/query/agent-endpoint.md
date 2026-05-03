@@ -56,10 +56,15 @@ carrying a JSON object.
 Every run ends with `run_finished` — even on error. Treat that as the
 stream terminator.
 
+`answer_final.sql_used` carries the *last* `run_sql` invocation's query
+string (if any). `answer_final.kql_used` is reserved but currently
+always `null`; don't depend on it being populated.
+
 `tool_call.args` is the full JSON arguments object the model passed to
-the tool. The four built-in tools (`list_databases`, `describe_table`,
-`run_sql`, `sample_rows`) are documented in [The agent
-loop](/concepts/the-agent-loop).
+the tool. The eight built-in tools (`list_databases`, `describe_table`,
+`run_sql`, `run_kql`, `sample_rows`, `explore_schema`,
+`find_references_to`, `graph_traverse`) are documented in
+[The agent loop](/concepts/the-agent-loop).
 
 `run_error.code` is one of:
 
@@ -136,7 +141,7 @@ Returns a JSON document:
 {
   "run_id":      "01HZ...",
   "question":    "top 5 errors in the last hour",
-  "model_id":    "claude-sonnet-4-5",
+  "model_id":    "gemma4:latest",
   "status":      "success",
   "started_at":  "2026-05-02T10:14:22Z",
   "finished_at": "2026-05-02T10:14:24Z",
