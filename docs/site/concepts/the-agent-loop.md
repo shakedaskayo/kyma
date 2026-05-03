@@ -38,7 +38,7 @@ event: thinking_delta
 data: {"text": "Looking at the schema. otel_logs has severity_text and..."}
 
 event: tool_call
-data: {"tool": "run_sql", "arguments": {"query": "SELECT service_name, COUNT(*) ..."}}
+data: {"tool": "run_sql", "args": {"query": "SELECT service_name, COUNT(*) ..."}, "call_index": 0}
 
 event: tool_result
 data: {"rows": [{"service_name": "payments-svc", "n": 412}, ...]}
@@ -53,7 +53,7 @@ event: answer_final
 data: {"text": "Over the last hour, payments-svc had the most errors..."}
 
 event: run_finished
-data: {"run_id": "01HZ...", "elapsed_ms": 1840, "tokens_used": 1260}
+data: {"run_id": "01HZ...", "elapsed_ms": 1840, "usage": {"input_tokens": 940, "output_tokens": 320}, "tool_calls": 2}
 ```
 
 The `answer_delta` events let you render answers token-by-token while
@@ -94,7 +94,7 @@ Every run is persisted to the `agent_runs` catalog table:
 
 ```sql
 SELECT run_id, question, model_id, status, started_at, finished_at,
-       usage_jsonb, event_log_jsonb
+       usage_json, trace_json
   FROM agent_runs
  ORDER BY started_at DESC
  LIMIT 10
