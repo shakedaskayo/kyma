@@ -7,8 +7,13 @@ export default withMermaid(defineConfig({
   description: 'Production knowledge, as a query.',
   cleanUrls: true,
 
-  // Per spec §3.1: `docs/superpowers/` stays out of the build.
+  // Defensive (per spec §3.1): keep any `superpowers/` content out of the build.
+  // Currently a no-op — `docs/superpowers/` is a sibling of this site's srcDir,
+  // so VitePress already won't scan it. Kept in case the layout ever changes.
   srcExclude: ['**/superpowers/**'],
+
+  // Localhost references in code samples shouldn't fail the build.
+  ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?/],
 
   head: [
     ['link', { rel: 'icon', href: '/favicon.svg' }],
@@ -43,12 +48,16 @@ export default withMermaid(defineConfig({
     socialLinks: [
       { icon: 'github', link: 'https://github.com/shaked/engine' },
     ],
+    search: {
+      provider: 'local',
+    },
   },
 
   markdown: {
     config(md) {
-      // The agentcy docs use markdown-it-attrs for { .class .id } inline attrs.
-      md.use(attrs)
+      // markdown-it-attrs lets authors set { .class #id data-* } on elements.
+      // Restrict to id, class, and data-* — never style/onclick/etc. (XSS).
+      md.use(attrs, { allowedAttributes: ['id', 'class', /^data-/] })
     },
   },
 
