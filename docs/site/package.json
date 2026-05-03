@@ -7,7 +7,7 @@
     "predev": "node scripts/sync-included.mjs",
     "dev": "vitepress dev",
     "prebuild": "node scripts/sync-included.mjs",
-    "build": "npm run check:diagrams && vitepress build",
+    "build": "node scripts/check-diagrams.mjs && vitepress build",
     "preview": "vitepress preview",
     "check:diagrams": "node scripts/check-diagrams.mjs"
   },
