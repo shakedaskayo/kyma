@@ -33,7 +33,11 @@ export default withMermaid(defineConfig({
       { text: 'Recipes', link: '/recipes/' },
     ],
     sidebar: {
-      '/quickstart/':    [{ text: 'Quickstart',    items: [] }],
+      '/quickstart/':    [{ text: 'Quickstart',    items: [
+        { text: 'Five-minute start',   link: '/quickstart/five-minute-start' },
+        { text: 'First real run',      link: '/quickstart/first-real-run' },
+        { text: 'Concepts cheatsheet', link: '/quickstart/concepts-cheatsheet' },
+      ]}],
       '/concepts/':      [{ text: 'Concepts',      items: [] }],
       '/ingest/':        [{ text: 'Ingest',        items: [] }],
       '/query/':         [{ text: 'Query',         items: [] }],
