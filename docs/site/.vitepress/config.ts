@@ -12,8 +12,17 @@ export default withMermaid(defineConfig({
   // so VitePress already won't scan it. Kept in case the layout ever changes.
   srcExclude: ['**/superpowers/**'],
 
-  // Localhost references in code samples shouldn't fail the build.
-  ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?/],
+  // Localhost code samples + cross-references to in-progress D1 pages.
+  // Specific paths (not section globs) so genuinely-broken links still fail.
+  ignoreDeadLinks: [
+    /^https?:\/\/localhost(:\d+)?/,
+    '/concepts/schema-model',
+    '/concepts/dynamic-and-vectors',
+    '/concepts/the-agent-loop',
+    '/concepts/multi-source-data',
+    '/concepts/retention-and-compaction',
+    '/concepts/observability',
+  ],
 
   head: [
     ['link', { rel: 'icon', href: '/favicon.svg' }],
