@@ -12,14 +12,8 @@ export default withMermaid(defineConfig({
   // so VitePress already won't scan it. Kept in case the layout ever changes.
   srcExclude: ['**/superpowers/**'],
 
-  // Localhost code samples; plus pages a concurrent subagent is still writing.
-  ignoreDeadLinks: [
-    /^https?:\/\/localhost(:\d+)?/,
-    '/query/sql',
-    '/query/promql',
-    '/query/arrow-flight',
-    '/query/agent-endpoint',
-  ],
+  // Localhost code samples shouldn't fail the build.
+  ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?/],
 
   head: [
     ['link', { rel: 'icon', href: '/favicon.svg' }],
@@ -69,7 +63,17 @@ export default withMermaid(defineConfig({
           { text: 'Idempotency and coercion', link: '/ingest/idempotency-and-coercion' },
         ],
       }],
-      '/query/':         [{ text: 'Query',         items: [] }],
+      '/query/': [{
+        text: 'Query',
+        items: [
+          { text: 'KQL',                       link: '/query/kql' },
+          { text: 'SQL',                       link: '/query/sql' },
+          { text: 'PromQL',                    link: '/query/promql' },
+          { text: 'Arrow Flight',              link: '/query/arrow-flight' },
+          { text: 'Agent endpoint',            link: '/query/agent-endpoint' },
+          { text: 'Pruning and performance',   link: '/query/pruning-and-performance' },
+        ],
+      }],
       '/connectors/':    [{ text: 'Connectors',    items: [], collapsed: false }],
       '/reference/':     [{ text: 'Reference',     items: [] }],
       '/architecture/':  [{ text: 'Architecture',  items: [
