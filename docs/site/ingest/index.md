@@ -1,8 +1,83 @@
 ---
 title: Ingest
-description: Get data into kyma — REST/NDJSON, OTLP, Kafka, file-drop.
+description: Get data into kyma — REST/NDJSON, OTLP, Kafka, file-drop. One write path, four frontends, one cross-cutting page on idempotency and coercion.
 ---
 
 # Ingest
 
-> 🚧 This section is being written. See the [docs site spec](https://github.com/shaked/engine/blob/main/docs/superpowers/specs/2026-05-02-kyma-docs-site-design.md) for what's coming, and the [milestone D1 plan](https://github.com/shaked/engine/blob/main/docs/superpowers/plans/2026-05-02-docs-d1-core-content.md) for current progress.
+Four ways to get bytes into kyma. All of them coerce JSON-shaped input
+into Arrow batches, hand off to the same staging buffer, and commit
+through the same snapshot CAS — so what differs between them is the
+wire format and the failure model, not the storage shape they produce.
+
+Pick the path closest to where your data already lives.
+
+<div class="feature-grid">
+
+<div class="feature-card">
+
+### [REST / NDJSON](/ingest/rest-ndjson)
+
+`POST /v1/ingest` with NDJSON body. Auto-creates the table, evolves
+the schema mid-batch, returns the snapshot the rows are visible at.
+The default for application code, web hooks, and the entire
+quickstart path.
+
+</div>
+
+<div class="feature-card">
+
+### [OTLP gRPC](/ingest/otlp-grpc)
+
+OpenTelemetry Protocol over gRPC on port 4317. Logs land in a fixed
+`otel_logs` table in the configured database. Phase A is
+logs-only — traces and metrics are tracked follow-ups.
+
+</div>
+
+<div class="feature-card">
+
+### [Kafka](/ingest/kafka)
+
+Built-in consumer that maps one topic to one table. Subscribes,
+parses NDJSON message bodies, and commits Kafka offsets after each
+batch. Use it where Kafka is already the durability layer.
+
+</div>
+
+<div class="feature-card">
+
+### [File-drop](/ingest/file-drop)
+
+Watcher polls an object-store prefix; each file's SHA256 is its
+idempotency key. Path convention `{prefix}/{database}/{table}/...`
+routes the file to a target table. Re-scans of the same file are
+no-ops.
+
+</div>
+
+<div class="feature-card">
+
+### [Idempotency and coercion](/ingest/idempotency-and-coercion)
+
+Cross-cutting reference — JSON-to-Arrow type rules, schema-evolves
+mid-batch, the three idempotency-key shapes (REST header, file-drop
+SHA256, Kafka offsets). Read this once and the four pages above are
+mostly examples.
+
+</div>
+
+</div>
+
+## What's the same across all four
+
+- **One write path.** Frontend bytes become Arrow batches; the staging
+  buffer group-commits them; the commit coordinator publishes a new
+  snapshot via Postgres CAS. See
+  [Extents and snapshots](/concepts/extents-and-snapshots).
+- **Schema only widens.** New columns get added; old ones never get
+  narrowed or deleted. Old extents stay readable through schema
+  changes. See [Schema model](/concepts/schema-model).
+- **Idempotent by design.** REST sends a key, file-drop hashes the
+  bytes, Kafka tracks offsets. A replayed input never produces a
+  duplicate extent at the catalog boundary.
