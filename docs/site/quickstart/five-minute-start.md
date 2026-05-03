@@ -48,7 +48,8 @@ curl -sS http://localhost:8080/metrics | head -5
 
 `POST /v1/ingest` takes NDJSON. Headers tell the engine which database and
 table to land it in. The table is auto-created on first write — no separate
-DDL step.
+DDL step. Schema evolution is on by default, so any new field in the body
+becomes a new column.
 
 ```bash
 curl -sS -X POST http://localhost:8080/v1/ingest \
