@@ -1,3 +1,6 @@
 node_modules
 .vitepress/dist
 .vitepress/cache
+# Sync targets — source-of-truth lives in ../architecture.md and ../benchmarks.md.
+architecture/architecture.md
+architecture/benchmarks.md
