@@ -53,7 +53,16 @@ export default withMermaid(defineConfig({
           { text: 'Observability',         link: '/concepts/observability' },
         ],
       }],
-      '/ingest/':        [{ text: 'Ingest',        items: [] }],
+      '/ingest/': [{
+        text: 'Ingest',
+        items: [
+          { text: 'REST / NDJSON',           link: '/ingest/rest-ndjson' },
+          { text: 'OTLP gRPC',               link: '/ingest/otlp-grpc' },
+          { text: 'Kafka',                   link: '/ingest/kafka' },
+          { text: 'File-drop',               link: '/ingest/file-drop' },
+          { text: 'Idempotency and coercion', link: '/ingest/idempotency-and-coercion' },
+        ],
+      }],
       '/query/':         [{ text: 'Query',         items: [] }],
       '/connectors/':    [{ text: 'Connectors',    items: [], collapsed: false }],
       '/reference/':     [{ text: 'Reference',     items: [] }],
