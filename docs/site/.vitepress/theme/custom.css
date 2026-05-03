@@ -1,25 +1,651 @@
+/* ============================================================================
+   kyma docs — visual identity
+   "Engineering datasheet, dark by default."
+   ============================================================================ */
+
+/* ---------- Typography ---------------------------------------------------- */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap');
+
 :root {
-  /* Placeholder palette — finalized in D4. Structure mirrors agentcy. */
-  --vp-c-brand-1: #4a6cf7;
-  --vp-c-brand-2: #3a5cd7;
-  --vp-c-brand-3: #2a4cb7;
-  --vp-c-brand-soft: rgba(74, 108, 247, 0.14);
-  --vp-home-hero-name-background: linear-gradient(135deg, #4a6cf7 0%, #3a5cd7 50%, #2a4cb7 100%);
-}
-.dark {
-  --vp-c-brand-1: #5a7cf7;
-  --vp-c-brand-2: #4a6cf7;
-  --vp-c-brand-3: #3a5cd7;
-  --vp-c-brand-soft: rgba(90, 124, 247, 0.18);
+  --kyma-font-mono:    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --kyma-font-body:    'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --kyma-font-serif:   'IBM Plex Serif', Georgia, serif;
 }
 
-/* Reusable utilities (structure copied from agentcy; values neutral) */
-.arch-diagram {
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
-  padding: 12px;
-  overflow-x: auto;
+/* ---------- Brand palette ------------------------------------------------- */
+
+:root {
+  /* Light theme — mostly used as a fallback; the site is dark-native.
+     The values still need to look intentional, not janky. */
+  --kyma-bg:        #f5f3ee;            /* warm paper */
+  --kyma-bg-soft:   #ece8df;
+  --kyma-fg:        #0a0d12;            /* near-black */
+  --kyma-fg-soft:   #4a4d54;
+  --kyma-muted:     #6b6e75;
+  --kyma-rule:      #1a1d22;
+  --kyma-rule-soft: rgba(10, 13, 18, 0.12);
+  --kyma-accent:    #2d6f1f;            /* darker oscilloscope green for legibility on paper */
+  --kyma-link:      #2a5085;            /* citation blue */
+  --kyma-warn:      #b85c00;
+
+  /* VitePress overrides — minimal, just point its tokens at ours. */
+  --vp-c-brand-1: var(--kyma-accent);
+  --vp-c-brand-2: var(--kyma-accent);
+  --vp-c-brand-3: var(--kyma-accent);
+  --vp-c-brand-soft: rgba(45, 111, 31, 0.12);
+  --vp-c-bg: var(--kyma-bg);
+  --vp-c-bg-soft: var(--kyma-bg-soft);
+  --vp-c-text-1: var(--kyma-fg);
+  --vp-c-text-2: var(--kyma-fg-soft);
+  --vp-c-divider: var(--kyma-rule-soft);
+  --vp-font-family-base: var(--kyma-font-body);
+  --vp-font-family-mono: var(--kyma-font-mono);
+  --vp-home-hero-name-background: none;
+  --vp-home-hero-name-color: var(--kyma-fg);
+}
+
+.dark {
+  --kyma-bg:        #0a0d12;            /* near-black */
+  --kyma-bg-soft:   #11151b;
+  --kyma-fg:        #f5f3ee;            /* paper-white */
+  --kyma-fg-soft:   #c5c0b6;
+  --kyma-muted:     #8c8e94;
+  --kyma-rule:      #2a2e36;
+  --kyma-rule-soft: rgba(245, 243, 238, 0.12);
+  --kyma-accent:    #7ed957;            /* phosphor green */
+  --kyma-link:      #7eaae6;            /* citation blue, lighter */
+  --kyma-warn:      #f0a060;
+
+  --vp-c-brand-1: var(--kyma-accent);
+  --vp-c-brand-2: var(--kyma-accent);
+  --vp-c-brand-3: var(--kyma-accent);
+  --vp-c-brand-soft: rgba(126, 217, 87, 0.12);
+  --vp-c-bg: var(--kyma-bg);
+  --vp-c-bg-soft: var(--kyma-bg-soft);
+  --vp-c-text-1: var(--kyma-fg);
+  --vp-c-text-2: var(--kyma-fg-soft);
+  --vp-c-divider: var(--kyma-rule-soft);
+  --vp-home-hero-name-color: var(--kyma-fg);
+}
+
+/* ---------- Page chrome --------------------------------------------------- */
+
+html, body {
+  font-family: var(--kyma-font-body);
+  font-feature-settings: 'kern' 1, 'liga' 1, 'calt' 1, 'ss01' 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Headings: serif display when content is "editorial," monospace when
+   content is "datasheet". Default to monospace for credibility. */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--kyma-font-mono);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Body links — citation blue, no underline by default, single hairline on hover. */
+.vp-doc a, .kyma-link {
+  color: var(--kyma-link);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s ease;
+}
+.vp-doc a:hover, .kyma-link:hover {
+  border-bottom-color: var(--kyma-link);
+}
+
+/* Code: uniform style across inline + block. */
+.vp-doc :not(pre) > code {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.92em;
   background: var(--vp-c-bg-soft);
+  border: 1px solid var(--kyma-rule-soft);
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--kyma-fg);
+}
+
+/* ============================================================================
+   Landing — "engineering datasheet"
+   ============================================================================ */
+
+.kyma-landing {
+  font-family: var(--kyma-font-body);
+  color: var(--kyma-fg);
+  background: var(--kyma-bg);
+  min-height: 100dvh;
+  /* Subtle paper / scanline texture without overdoing it. */
+  background-image:
+    radial-gradient(1200px 800px at 10% -10%, rgba(126, 217, 87, 0.04), transparent 60%),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 3px,
+      rgba(245, 243, 238, 0.012) 3px,
+      rgba(245, 243, 238, 0.012) 4px
+    );
+}
+:root:not(.dark) .kyma-landing {
+  background-image:
+    radial-gradient(1200px 800px at 10% -10%, rgba(45, 111, 31, 0.06), transparent 60%);
+}
+
+/* ---- Top metadata strip -------------------------------------------------- */
+.kyma-meta-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 2rem;
+  padding: 1.25rem 2rem;
+  border-bottom: 1px solid var(--kyma-rule-soft);
+  font-family: var(--kyma-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kyma-muted);
+}
+.kyma-meta-bar > .left  { text-align: left; }
+.kyma-meta-bar > .center{ text-align: center; }
+.kyma-meta-bar > .right { text-align: right; }
+.kyma-meta-bar .dot {
+  display: inline-block;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--kyma-accent);
+  margin-right: 0.5em;
+  vertical-align: 0.05em;
+  box-shadow: 0 0 6px var(--kyma-accent);
+  animation: kyma-pulse 2.4s ease-in-out infinite;
+}
+@keyframes kyma-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+
+/* ---- Hero --------------------------------------------------------------- */
+.kyma-hero {
+  display: grid;
+  grid-template-columns: 14ch 1fr;
+  gap: 3rem;
+  padding: 5rem 2rem 6rem;
+  max-width: 1280px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.kyma-rail {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kyma-muted);
+  border-right: 1px solid var(--kyma-rule-soft);
+  padding-right: 1.5rem;
+  text-align: right;
+}
+.kyma-rail dl { margin: 0; }
+.kyma-rail dt {
+  margin-top: 1.25rem;
+  color: var(--kyma-muted);
+  opacity: 0.7;
+}
+.kyma-rail dt:first-child { margin-top: 0; }
+.kyma-rail dd {
+  margin: 0.25rem 0 0;
+  color: var(--kyma-fg-soft);
+}
+
+.kyma-hero-content { min-width: 0; }
+
+.kyma-hero-eyebrow {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--kyma-accent);
+  margin-bottom: 1.5rem;
+}
+
+.kyma-hero-title {
+  font-family: var(--kyma-font-mono);
+  font-weight: 700;
+  font-size: clamp(2.5rem, 5.2vw, 4.4rem);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  margin: 0 0 1.5rem;
+  color: var(--kyma-fg);
+}
+.kyma-hero-title em {
+  font-style: italic;
+  font-family: var(--kyma-font-serif);
+  font-weight: 400;
+  color: var(--kyma-fg-soft);
+  letter-spacing: -0.005em;
+}
+
+.kyma-hero-lede {
+  font-family: var(--kyma-font-body);
+  font-size: 1.18rem;
+  line-height: 1.55;
+  color: var(--kyma-fg-soft);
+  max-width: 60ch;
+  margin: 0 0 2rem;
+}
+
+.kyma-hero-cta {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 2.5rem;
+}
+.kyma-cta {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.85rem 1.4rem;
+  border: 1px solid var(--kyma-rule);
+  background: transparent;
+  color: var(--kyma-fg);
+  text-decoration: none;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.kyma-cta:hover {
+  background: var(--kyma-fg);
+  color: var(--kyma-bg);
+  border-color: var(--kyma-fg);
+}
+.kyma-cta--primary {
+  background: var(--kyma-accent);
+  color: #0a0d12;
+  border-color: var(--kyma-accent);
+}
+.kyma-cta--primary:hover {
+  background: var(--kyma-fg);
+  color: var(--kyma-bg);
+  border-color: var(--kyma-fg);
+}
+.kyma-cta-arrow { font-family: var(--kyma-font-mono); }
+
+/* ---- Live readout ticker ------------------------------------------------- */
+.kyma-readout {
+  margin-top: 2.5rem;
+  border: 1px solid var(--kyma-rule-soft);
+  background: var(--kyma-bg-soft);
+  padding: 1rem 1.25rem;
+  font-family: var(--kyma-font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+.kyma-readout::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(126, 217, 87, 0.06) 45%,
+    rgba(126, 217, 87, 0.10) 50%,
+    rgba(126, 217, 87, 0.06) 55%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: kyma-sweep 6s linear infinite;
+  pointer-events: none;
+}
+.kyma-readout-label {
+  color: var(--kyma-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.68rem;
+}
+.kyma-readout-value {
+  color: var(--kyma-fg);
+  font-weight: 500;
+}
+.kyma-readout-value .kyma-num { color: var(--kyma-accent); }
+.kyma-readout-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.75rem 1.5rem;
+  width: 100%;
+}
+.kyma-readout-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+@keyframes kyma-sweep {
+  0%   { background-position:  100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ---- Pruning cascade demo ------------------------------------------------ */
+.kyma-cascade {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 4rem 2rem 5rem;
+  border-top: 1px solid var(--kyma-rule-soft);
+  position: relative;
+}
+.kyma-cascade-eyebrow {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--kyma-muted);
+  margin-bottom: 0.5rem;
+}
+.kyma-cascade-title {
+  font-family: var(--kyma-font-mono);
+  font-size: clamp(1.5rem, 2.8vw, 2.2rem);
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.015em;
+}
+.kyma-cascade-lede {
+  font-size: 1.05rem;
+  color: var(--kyma-fg-soft);
+  max-width: 65ch;
+  margin: 0 0 3rem;
+  line-height: 1.55;
+}
+.kyma-cascade-stages {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  border-top: 1px solid var(--kyma-rule-soft);
+}
+.kyma-stage {
+  display: grid;
+  grid-template-columns: 6ch 1fr 22ch;
+  gap: 2rem;
+  padding: 1.75rem 0;
+  border-bottom: 1px solid var(--kyma-rule-soft);
+  align-items: center;
+}
+.kyma-stage-num {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  color: var(--kyma-muted);
+  text-align: right;
+}
+.kyma-stage-body h3 {
+  font-family: var(--kyma-font-mono);
+  font-size: 1.05rem;
+  margin: 0 0 0.35rem;
+  letter-spacing: -0.005em;
+}
+.kyma-stage-body p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--kyma-fg-soft);
+  line-height: 1.5;
+  max-width: 60ch;
+}
+.kyma-stage-stat {
+  font-family: var(--kyma-font-mono);
+  text-align: right;
+}
+.kyma-stage-stat .kyma-pct {
+  display: block;
+  font-size: 1.85rem;
+  font-weight: 600;
+  color: var(--kyma-accent);
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.kyma-stage-stat .kyma-pct-label {
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--kyma-muted);
+  margin-top: 0.45rem;
+}
+
+/* ---- Three-column "what kyma is/does/isn't" ------------------------------ */
+.kyma-tri {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 4rem 2rem 5rem;
+  border-top: 1px solid var(--kyma-rule-soft);
+  display: grid;
+  grid-template-columns: 14ch 1fr;
+  gap: 3rem;
+}
+.kyma-tri-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+}
+.kyma-tri-card {
+  border: 1px solid var(--kyma-rule-soft);
+  padding: 1.5rem;
+  background: var(--kyma-bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+.kyma-tri-card:hover {
+  border-color: var(--kyma-accent);
+  transform: translate(-1px, -1px);
+}
+.kyma-tri-card .label {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--kyma-accent);
+}
+.kyma-tri-card h3 {
+  font-family: var(--kyma-font-mono);
+  font-size: 1.05rem;
+  margin: 0;
+  letter-spacing: -0.005em;
+}
+.kyma-tri-card p {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--kyma-fg-soft);
+  line-height: 1.55;
+}
+.kyma-tri-card a {
+  margin-top: auto;
+  font-family: var(--kyma-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kyma-fg);
+  text-decoration: none;
+  border-bottom: 1px solid var(--kyma-rule);
+  align-self: flex-start;
+  padding-bottom: 2px;
+  transition: color 0.18s ease, border-color 0.18s ease;
+}
+.kyma-tri-card a:hover {
+  color: var(--kyma-accent);
+  border-bottom-color: var(--kyma-accent);
+}
+
+/* ---- Code sample block (real KQL/SQL pair) ------------------------------- */
+.kyma-codeshowcase {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 4rem 2rem 5rem;
+  border-top: 1px solid var(--kyma-rule-soft);
+  display: grid;
+  grid-template-columns: 14ch 1fr;
+  gap: 3rem;
+}
+.kyma-codeshowcase-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border: 1px solid var(--kyma-rule-soft);
+  background: var(--kyma-bg-soft);
+}
+.kyma-code-pane {
+  padding: 1.5rem 1.75rem;
+  font-family: var(--kyma-font-mono);
+  font-size: 0.85rem;
+  line-height: 1.65;
+  color: var(--kyma-fg);
+  border-right: 1px solid var(--kyma-rule-soft);
+  white-space: pre;
+  overflow-x: auto;
+}
+.kyma-code-pane:last-child { border-right: none; }
+.kyma-code-pane .kyma-code-label {
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--kyma-muted);
+  margin-bottom: 1rem;
+  font-family: var(--kyma-font-mono);
+}
+.kyma-code-pane .kw  { color: var(--kyma-accent); font-weight: 600; }
+.kyma-code-pane .str { color: var(--kyma-link); }
+.kyma-code-pane .num { color: var(--kyma-warn); }
+.kyma-code-pane .cm  { color: var(--kyma-muted); font-style: italic; }
+
+/* ---- Footer strip -------------------------------------------------------- */
+.kyma-footstrip {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 3rem 2rem 4rem;
+  border-top: 1px solid var(--kyma-rule-soft);
+  font-family: var(--kyma-font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: var(--kyma-muted);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 2rem;
+}
+.kyma-footstrip-prompt {
+  font-size: 1.15rem;
+  font-family: var(--kyma-font-mono);
+  color: var(--kyma-fg);
+  letter-spacing: -0.005em;
+  font-weight: 500;
+}
+.kyma-footstrip-prompt em {
+  font-family: var(--kyma-font-serif);
+  font-style: italic;
+  color: var(--kyma-fg-soft);
+  font-weight: 400;
+}
+
+/* ---- Page-load reveal ---------------------------------------------------- */
+@keyframes kyma-fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes kyma-rule-draw {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.kyma-landing .kyma-hero,
+.kyma-landing .kyma-cascade,
+.kyma-landing .kyma-tri,
+.kyma-landing .kyma-codeshowcase,
+.kyma-landing .kyma-footstrip {
+  animation: kyma-fade-up 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.kyma-landing .kyma-hero       { animation-delay: 0.05s; }
+.kyma-landing .kyma-cascade    { animation-delay: 0.20s; }
+.kyma-landing .kyma-tri        { animation-delay: 0.35s; }
+.kyma-landing .kyma-codeshowcase { animation-delay: 0.50s; }
+.kyma-landing .kyma-footstrip  { animation-delay: 0.65s; }
+
+/* Hairline-rule reveal on stage rows. */
+.kyma-stage {
+  position: relative;
+}
+.kyma-stage::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 1px;
+  background: var(--kyma-accent);
+  transform-origin: left center;
+  transform: scaleX(0);
+  animation: kyma-rule-draw 1s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  opacity: 0.3;
+}
+.kyma-stage:nth-child(1)::after { animation-delay: 0.40s; }
+.kyma-stage:nth-child(2)::after { animation-delay: 0.55s; }
+.kyma-stage:nth-child(3)::after { animation-delay: 0.70s; }
+.kyma-stage:nth-child(4)::after { animation-delay: 0.85s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .kyma-landing * {
+    animation: none !important;
+    transition: none !important;
+  }
+  .kyma-meta-bar .dot { animation: none; opacity: 1; }
+  .kyma-stage::after { transform: scaleX(1); }
+}
+
+/* ---- Responsive ---------------------------------------------------------- */
+@media (max-width: 900px) {
+  .kyma-hero,
+  .kyma-tri,
+  .kyma-codeshowcase {
+    grid-template-columns: 1fr;
+  }
+  .kyma-rail {
+    border-right: none;
+    border-bottom: 1px solid var(--kyma-rule-soft);
+    padding-right: 0;
+    padding-bottom: 1rem;
+    text-align: left;
+  }
+  .kyma-tri-grid {
+    grid-template-columns: 1fr;
+  }
+  .kyma-codeshowcase-grid {
+    grid-template-columns: 1fr;
+  }
+  .kyma-code-pane {
+    border-right: none;
+    border-bottom: 1px solid var(--kyma-rule-soft);
+  }
+  .kyma-code-pane:last-child { border-bottom: none; }
+  .kyma-stage {
+    grid-template-columns: 4ch 1fr;
+    gap: 1rem;
+  }
+  .kyma-stage-stat {
+    grid-column: 2;
+    text-align: left;
+  }
+}
+
+/* ============================================================================
+   Reusable utilities (still used by some doc pages)
+   ============================================================================ */
+.arch-diagram {
+  border: 1px solid var(--kyma-rule-soft);
+  padding: 16px;
+  overflow-x: auto;
+  background: var(--kyma-bg-soft);
 }
 .feature-grid {
   display: grid;
@@ -28,13 +654,24 @@
   margin: 1rem 0;
 }
 .feature-card {
-  background: var(--vp-c-bg-soft);
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
-  padding: 1rem;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  background: var(--kyma-bg-soft);
+  border: 1px solid var(--kyma-rule-soft);
+  padding: 1.1rem 1.25rem;
+  transition: border-color 0.15s, transform 0.15s;
 }
 .feature-card:hover {
-  border-color: var(--vp-c-brand-1);
-  box-shadow: 0 2px 12px var(--vp-c-brand-soft);
+  border-color: var(--kyma-accent);
+  transform: translate(-1px, -1px);
+}
+.feature-card h3 {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.95rem;
+  letter-spacing: -0.005em;
+  margin: 0 0 0.4rem;
+}
+.feature-card p {
+  margin: 0;
+  color: var(--kyma-fg-soft);
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
