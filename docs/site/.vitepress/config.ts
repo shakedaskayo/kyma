@@ -74,7 +74,18 @@ export default withMermaid(defineConfig({
           { text: 'Pruning and performance',   link: '/query/pruning-and-performance' },
         ],
       }],
-      '/connectors/':    [{ text: 'Connectors',    items: [], collapsed: false }],
+      '/connectors/': [{
+        text: 'Connectors',
+        collapsed: false,
+        items: [
+          { text: 'Framework',           link: '/connectors/framework' },
+          { text: 'Prometheus',          link: '/connectors/prometheus' },
+          { text: 'Postgres',            link: '/connectors/postgres' },
+          { text: 'MySQL',               link: '/connectors/mysql' },
+          { text: 'MongoDB',             link: '/connectors/mongo' },
+          { text: 'Multi-source data',   link: '/connectors/multi-source-data' },
+        ],
+      }],
       '/reference/':     [{ text: 'Reference',     items: [] }],
       '/architecture/': [{
         text: 'Architecture',
