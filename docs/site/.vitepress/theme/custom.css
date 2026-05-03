@@ -1,0 +1,40 @@
+:root {
+  /* Placeholder palette — finalized in D4. Structure mirrors agentcy. */
+  --vp-c-brand-1: #4a6cf7;
+  --vp-c-brand-2: #3a5cd7;
+  --vp-c-brand-3: #2a4cb7;
+  --vp-c-brand-soft: rgba(74, 108, 247, 0.14);
+  --vp-home-hero-name-background: linear-gradient(135deg, #4a6cf7 0%, #3a5cd7 50%, #2a4cb7 100%);
+}
+.dark {
+  --vp-c-brand-1: #5a7cf7;
+  --vp-c-brand-2: #4a6cf7;
+  --vp-c-brand-3: #3a5cd7;
+  --vp-c-brand-soft: rgba(90, 124, 247, 0.18);
+}
+
+/* Reusable utilities (structure copied from agentcy; values neutral) */
+.arch-diagram {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  background: var(--vp-c-bg-soft);
+}
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.feature-card {
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  padding: 1rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.feature-card:hover {
+  border-color: var(--vp-c-brand-1);
+  box-shadow: 0 2px 12px var(--vp-c-brand-soft);
+}
