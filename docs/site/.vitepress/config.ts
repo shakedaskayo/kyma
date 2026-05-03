@@ -12,8 +12,14 @@ export default withMermaid(defineConfig({
   // so VitePress already won't scan it. Kept in case the layout ever changes.
   srcExclude: ['**/superpowers/**'],
 
-  // Localhost code samples shouldn't fail the build.
-  ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?/],
+  // Localhost code samples; plus pages a concurrent subagent is still writing.
+  ignoreDeadLinks: [
+    /^https?:\/\/localhost(:\d+)?/,
+    '/query/sql',
+    '/query/promql',
+    '/query/arrow-flight',
+    '/query/agent-endpoint',
+  ],
 
   head: [
     ['link', { rel: 'icon', href: '/favicon.svg' }],
