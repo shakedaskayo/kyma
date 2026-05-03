@@ -1,3 +1,4 @@
 packages:
   - "web"
   - "web/src-tauri"
+  - "docs/site"

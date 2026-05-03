@@ -1,0 +1,214 @@
+/* ============================================================================
+   kyma docs — quiet docs-site styling
+   The job is to make a *VitePress* docs site look like a kyma docs site,
+   not to redesign VitePress.
+   ============================================================================ */
+
+/* ---------- Typography ---------------------------------------------------- */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+:root {
+  --kyma-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --kyma-font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+}
+
+/* ---------- Brand palette ------------------------------------------------- */
+
+/* Light theme — kept understated; many readers stay in light mode. */
+:root {
+  --kyma-bg:        #ffffff;
+  --kyma-bg-soft:   #f7f7f6;
+  --kyma-fg:        #14171c;
+  --kyma-fg-soft:   #51555c;
+  --kyma-muted:     #767880;
+  --kyma-rule:      #2a2e36;
+  --kyma-rule-soft: rgba(20, 23, 28, 0.10);
+  --kyma-accent:    #2d6f1f;          /* darker green — legible on white */
+  --kyma-link:      #2a5085;          /* citation blue */
+
+  /* VitePress overrides — point its tokens at ours. */
+  --vp-c-brand-1: var(--kyma-accent);
+  --vp-c-brand-2: var(--kyma-accent);
+  --vp-c-brand-3: var(--kyma-accent);
+  --vp-c-brand-soft: rgba(45, 111, 31, 0.10);
+  --vp-font-family-base: var(--kyma-font-body);
+  --vp-font-family-mono: var(--kyma-font-mono);
+  --vp-home-hero-name-color: var(--kyma-fg);
+}
+
+.dark {
+  --kyma-bg:        #0d1015;
+  --kyma-bg-soft:   #14181f;
+  --kyma-fg:        #e8e6e0;
+  --kyma-fg-soft:   #b3b0a8;
+  --kyma-muted:     #818488;
+  --kyma-rule:      #2a2e36;
+  --kyma-rule-soft: rgba(232, 230, 224, 0.10);
+  --kyma-accent:    #7ed957;          /* phosphor green */
+  --kyma-link:      #7eaae6;
+
+  --vp-c-brand-1: var(--kyma-accent);
+  --vp-c-brand-2: var(--kyma-accent);
+  --vp-c-brand-3: var(--kyma-accent);
+  --vp-c-brand-soft: rgba(126, 217, 87, 0.12);
+}
+
+/* ---------- Headings ------------------------------------------------------ */
+/* Mono headings are kyma's identity, but only on doc pages — not so heavy
+   it overrides VitePress nav typography. */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3,
+.vp-doc h4,
+.vp-doc h5,
+.vp-doc h6 {
+  font-family: var(--kyma-font-mono);
+  letter-spacing: -0.005em;
+  font-weight: 600;
+}
+
+.vp-doc h1 { font-size: 2rem; }
+
+/* ============================================================================
+   Landing — quiet docs-site shape
+   ============================================================================ */
+
+.kyma-landing {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 4rem 2rem 5rem;
+  font-family: var(--kyma-font-body);
+}
+
+.kyma-hero {
+  margin-bottom: 4rem;
+}
+
+.kyma-hero h1 {
+  font-family: var(--kyma-font-mono);
+  font-size: clamp(3rem, 6vw, 4.5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.5rem;
+  color: var(--kyma-fg);
+  line-height: 1;
+}
+
+.kyma-tagline {
+  font-family: var(--kyma-font-body);
+  font-size: 1.4rem;
+  color: var(--kyma-fg-soft);
+  margin: 0 0 1.5rem;
+  font-weight: 400;
+}
+
+.kyma-lede {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--kyma-fg-soft);
+  max-width: 60ch;
+  margin: 0 0 2rem;
+}
+
+.kyma-cta-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.kyma-cta {
+  display: inline-block;
+  padding: 0.6rem 1.1rem;
+  font-family: var(--kyma-font-body);
+  font-size: 0.95rem;
+  font-weight: 500;
+  border: 1px solid var(--kyma-rule-soft);
+  background: var(--kyma-bg-soft);
+  color: var(--kyma-fg);
+  text-decoration: none;
+  border-radius: 6px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.kyma-cta:hover {
+  border-color: var(--kyma-accent);
+}
+.kyma-cta--primary {
+  background: var(--kyma-accent);
+  border-color: var(--kyma-accent);
+  color: var(--kyma-bg);
+}
+.kyma-cta--primary:hover {
+  background: var(--kyma-accent);
+  filter: brightness(1.08);
+}
+
+.kyma-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.kyma-section-card {
+  display: block;
+  padding: 1.25rem 1.4rem;
+  border: 1px solid var(--kyma-rule-soft);
+  border-radius: 6px;
+  background: var(--kyma-bg);
+  text-decoration: none;
+  color: var(--kyma-fg);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.kyma-section-card:hover {
+  border-color: var(--kyma-accent);
+  background: var(--kyma-bg-soft);
+}
+.kyma-section-card h3 {
+  font-family: var(--kyma-font-mono);
+  font-size: 1rem;
+  margin: 0 0 0.4rem;
+  color: var(--kyma-fg);
+}
+.kyma-section-card p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--kyma-fg-soft);
+  line-height: 1.5;
+}
+.kyma-section-card code {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.85em;
+  background: var(--kyma-bg-soft);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* ============================================================================
+   Doc-page utilities (used by .md content for diagrams, callouts, grids)
+   ============================================================================ */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.feature-card {
+  background: var(--kyma-bg-soft);
+  border: 1px solid var(--kyma-rule-soft);
+  border-radius: 6px;
+  padding: 1rem 1.2rem;
+  transition: border-color 0.15s;
+}
+.feature-card:hover {
+  border-color: var(--kyma-accent);
+}
+.feature-card h3 {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.95rem;
+  margin: 0 0 0.4rem;
+}
+.feature-card p {
+  margin: 0;
+  color: var(--kyma-fg-soft);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
