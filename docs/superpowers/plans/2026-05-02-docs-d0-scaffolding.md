@@ -135,6 +135,7 @@ Write `docs/site/.vitepress/config.ts`:
 ```ts
 import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
+import attrs from 'markdown-it-attrs'
 
 export default withMermaid(defineConfig({
   title: 'kyma',
@@ -181,9 +182,9 @@ export default withMermaid(defineConfig({
 
   markdown: {
     config(md) {
-      // The agentcy docs use markdown-it-attrs for { .class .id } inline attrs.
-      const attrs = require('markdown-it-attrs')
-      md.use(attrs)
+      // markdown-it-attrs lets authors set { .class #id data-* } on elements.
+      // Restrict to id, class, and data-* — never style/onclick/etc. (XSS).
+      md.use(attrs, { allowedAttributes: ['id', 'class', /^data-/] })
     },
   },
 

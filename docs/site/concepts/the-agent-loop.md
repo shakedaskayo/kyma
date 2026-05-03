@@ -32,7 +32,7 @@ Server-Sent Events. Each event is a JSON envelope:
 
 ```
 event: run_started
-data: {"run_id": "01HZ...", "model": "claude-sonnet-4-5"}
+data: {"run_id": "01HZ...", "model": "gemma4:latest"}
 
 event: thinking_delta
 data: {"text": "Looking at the schema. otel_logs has severity_text and..."}
@@ -62,14 +62,25 @@ into which queries were run — useful for debugging a wrong answer.
 
 ## What the agent has access to
 
-Four built-in tools, plus a schema RAG layer:
+Eight built-in tools, plus a schema RAG layer:
 
 - **`list_databases`** returns every database the catalog knows about
   (kyma-native plus any registered external sources).
 - **`describe_table`** returns the schema of a specific table —
   columns, types, recent sample rows, present `dynamic` paths.
 - **`run_sql`** executes a SQL query and returns the result rows.
+- **`run_kql`** executes a KQL pipeline against the same engine — same
+  Arrow result, just a different surface.
 - **`sample_rows`** pulls a small random sample for exploratory work.
+- **`explore_schema`** returns a one-shot "context graph" view of a
+  database: all tables, their columns, and the foreign-key-shaped edges
+  between them. Lets the agent reason about an unfamiliar schema in
+  one tool call.
+- **`find_references_to`** traverses the catalog for tables that
+  reference a given entity — e.g., "every table that has a `user_id`
+  column."
+- **`graph_traverse`** walks the kyma graph layer. Wraps the KQL
+  `graph-traverse` operator for multi-hop entity-relationship queries.
 
 Schema RAG: every table in the catalog is embedded into the
 `schema_embeddings` pgvector table at create time. When the agent
@@ -108,17 +119,23 @@ curl http://localhost:8080/v1/agent/runs/01HZABCDE...
 
 ## Models
 
-The agent dispatches against the embedding backend you configure at
-startup. Out of the box:
+The agent's LLM is **Ollama**, configured at startup via two env vars:
 
-- `fastembed` (default) — local CPU inference, no external deps.
-- `ollama` (feature-gated) — local GPU inference via Ollama.
-- `openai-compat` — any OpenAI-API-compatible endpoint (OpenAI, Azure,
-  vLLM, etc.).
-- `gemini` — Google Gemini directly.
+- `KYMA_AGENT_OLLAMA_HOST` — Ollama daemon URL. Defaults to the host's
+  local Ollama installation.
+- `KYMA_AGENT_MODEL` — model name. Defaults to `gemma4:latest`.
 
-Embedding backends configure independently of LLM backends; kyma's
-agent loop talks to LLMs via Anthropic-style tool use.
+The choice of Ollama is deliberate: the agent runs against your
+infrastructure, with no telemetry leaving the cluster, and you control
+which weights it sees. Other LLM backends (Anthropic Claude, OpenAI,
+Gemini) are tracked as a follow-up; the underlying ADK abstraction
+already supports them.
+
+Separately, the **embedding backend** for schema RAG configures
+independently — see [Dynamic and vectors](/concepts/dynamic-and-vectors).
+Out of the box: `fastembed` (default, CPU), `ollama`, OpenAI-compatible,
+or Gemini. Embeddings power the schema search; the LLM consumes the
+result.
 
 ## Limits
 

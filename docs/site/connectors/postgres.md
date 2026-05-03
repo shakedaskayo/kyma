@@ -89,7 +89,7 @@ limit, sort)`; the shared `PushdownPlanner` reads the Postgres
 
 Every federated response carries a `pushdown_summary` array — one entry
 per `FederatedScan` — listing what got pushed, what stayed residual, and
-why. See [Multi-source data](/connectors/multi-source-data#observability).
+why. See [Multi-source data](/connectors/multi-source-data#status-health-and-observability).
 
 ## CDC sync
 
