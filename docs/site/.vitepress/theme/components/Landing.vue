@@ -7,6 +7,10 @@
 <template>
   <div class="kyma-landing">
     <section class="kyma-hero">
+      <a class="kyma-byline" href="https://agentcylabs.com" target="_blank" rel="noopener">
+        <img src="/icons/brand/agentcy.svg" alt="" width="14" height="14" aria-hidden="true" />
+        <span>An open project by <strong>AgentcyLabs</strong></span>
+      </a>
       <h1>kyma</h1>
       <p class="kyma-tagline">Production knowledge, as a query.</p>
       <p class="kyma-lede">
@@ -50,5 +54,16 @@
         <p>The five invariants and how they hold the engine together.</p>
       </a>
     </section>
+
+    <footer class="kyma-landing-footer">
+      <a class="kyma-byline kyma-byline--footer" href="https://agentcylabs.com" target="_blank" rel="noopener">
+        <img src="/icons/brand/agentcy.svg" alt="" width="16" height="16" aria-hidden="true" />
+        <span>kyma is an open project by <strong>AgentcyLabs</strong> — a context platform for production-aware agents. <span class="kyma-byline-cta">Visit agentcylabs.com →</span></span>
+      </a>
+      <p class="kyma-landing-footer-meta">
+        Apache-2.0 licensed · Source on
+        <a href="https://github.com/shaked/engine" target="_blank" rel="noopener">GitHub</a>
+      </p>
+    </footer>
   </div>
 </template>
