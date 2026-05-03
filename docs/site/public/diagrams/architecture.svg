@@ -1,0 +1,217 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 620" role="img" aria-label="kyma internal architecture — ingest path, shared storage, query path">
+  <defs>
+    <linearGradient id="ingLane" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"   stop-color="var(--ing-bg-a)"/>
+      <stop offset="1"   stop-color="var(--ing-bg-b)"/>
+    </linearGradient>
+    <linearGradient id="qryLane" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"   stop-color="var(--qry-bg-a)"/>
+      <stop offset="1"   stop-color="var(--qry-bg-b)"/>
+    </linearGradient>
+    <linearGradient id="storeGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="var(--store-from)"/>
+      <stop offset="1" stop-color="var(--store-to)"/>
+    </linearGradient>
+    <marker id="aIn"  viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L12,6 L0,12 Z" fill="var(--ing)"/>
+    </marker>
+    <marker id="aOut" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L12,6 L0,12 Z" fill="var(--qry)"/>
+    </marker>
+    <marker id="aRW"  viewBox="0 0 12 12" refX="10" refY="6" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L12,6 L0,12 Z" fill="var(--fg-2)"/>
+    </marker>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+    <filter id="storeShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <style>
+    :root {
+      --fg:       #0f172a;
+      --fg-2:     #475569;
+      --muted:    #94a3b8;
+      --card:     #ffffff;
+      --border:   #e2e8f0;
+      --ing:      #0e7490;
+      --ing-bg-a: #ecfeff;
+      --ing-bg-b: #f0f9ff;
+      --qry:      #6d28d9;
+      --qry-bg-a: #faf5ff;
+      --qry-bg-b: #f5f3ff;
+      --store-from: #0f172a;
+      --store-to:   #1e293b;
+      --store-fg:   #f1f5f9;
+      --store-fg-2: #cbd5e1;
+      --ok:       #047857;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg:       #f1f5f9;
+        --fg-2:     #cbd5e1;
+        --muted:    #64748b;
+        --card:     #0b1220;
+        --border:   #1e293b;
+        --ing:      #22d3ee;
+        --ing-bg-a: #0b1220;
+        --ing-bg-b: #0f172a;
+        --qry:      #a78bfa;
+        --qry-bg-a: #0b1220;
+        --qry-bg-b: #0f172a;
+        --store-from: #1e293b;
+        --store-to:   #0f172a;
+        --store-fg:   #f1f5f9;
+        --store-fg-2: #94a3b8;
+        --ok:       #34d399;
+      }
+    }
+
+    .eyebrow   { font: 700 10.5px ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--muted); letter-spacing: 2.2px; }
+    .h1        { font: 800 22px ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg); letter-spacing: -0.2px; }
+    .sub       { font: 400 12px ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg-2); }
+    .laneLbl   { font: 700 10.5px ui-monospace,SFMono-Regular,monospace; fill: var(--muted); letter-spacing: 2px; }
+    .laneAccent{ font: 800 10.5px ui-monospace,SFMono-Regular,monospace; letter-spacing: 2px; }
+    .boxTitle  { font: 700 13.5px ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg); }
+    .boxSub    { font: 500 11px ui-monospace,SFMono-Regular,monospace; fill: var(--fg-2); }
+    .storeTitle{ font: 800 15px ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--store-fg); letter-spacing: 0.2px; }
+    .storeSub  { font: 500 11px ui-monospace,SFMono-Regular,monospace; fill: var(--store-fg-2); }
+    .storeTag  { font: 700 9.5px ui-monospace,SFMono-Regular,monospace; fill: var(--ok); letter-spacing: 1.6px; }
+    .edgeLbl   { font: 700 10px ui-monospace,SFMono-Regular,monospace; fill: var(--fg-2); letter-spacing: 0.5px; }
+    .flowIn    { stroke: var(--ing); stroke-width: 2; fill: none; stroke-linecap: round; }
+    .flowOut   { stroke: var(--qry); stroke-width: 2; fill: none; stroke-linecap: round; }
+    .flowRW    { stroke: var(--fg-2); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; stroke-linecap: round; }
+    .cardIn    { fill: var(--card); stroke: var(--ing); stroke-width: 1.4; }
+    .cardOut   { fill: var(--card); stroke: var(--qry); stroke-width: 1.4; }
+    .rule      { stroke: var(--border); stroke-width: 1; }
+  </style>
+
+  <!-- Hero -->
+  <text x="40" y="34" class="eyebrow">INTERNAL ARCHITECTURE</text>
+  <line  x1="40" y1="46" x2="1000" y2="46" class="rule"/>
+  <text x="40" y="78" class="h1">Two lanes. Shared stateless spine.</text>
+  <text x="40" y="100" class="sub">Object storage is the only source of truth · compute nodes hold no durable state · catalog is externalized from byte one.</text>
+
+  <!-- INGEST LANE -->
+  <rect x="20" y="126" width="1000" height="144" rx="12" fill="url(#ingLane)" stroke="var(--border)" stroke-width="1"/>
+  <text x="40" y="150" class="laneLbl">INGEST LANE</text>
+  <text x="120" y="150" class="laneAccent" fill="var(--ing)">◉  writes</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="40"  y="166" width="172" height="88" rx="10" class="cardIn"/>
+    <circle cx="56" cy="186" r="4" fill="var(--ing)"/>
+    <text x="66" y="190" class="boxTitle">Emitters</text>
+    <text x="56" y="214" class="boxSub">services · infra</text>
+    <text x="56" y="232" class="boxSub">CI · agents · RUM</text>
+    <text x="56" y="248" class="boxSub">OpenTelemetry SDKs</text>
+
+    <rect x="232" y="166" width="188" height="88" rx="10" class="cardIn"/>
+    <circle cx="248" cy="186" r="4" fill="var(--ing)"/>
+    <text x="258" y="190" class="boxTitle">Ingest frontends</text>
+    <text x="248" y="214" class="boxSub">OTLP · REST · Kafka</text>
+    <text x="248" y="232" class="boxSub">file-drop watcher</text>
+    <text x="248" y="248" class="boxSub">auth · idempotency</text>
+
+    <rect x="440" y="166" width="188" height="88" rx="10" class="cardIn"/>
+    <circle cx="456" cy="186" r="4" fill="var(--ing)"/>
+    <text x="466" y="190" class="boxTitle">Staging buffer</text>
+    <text x="456" y="214" class="boxSub">per-table group-commit</text>
+    <text x="456" y="232" class="boxSub">rows · bytes · age flush</text>
+    <text x="456" y="248" class="boxSub">schema-change aware</text>
+
+    <rect x="648" y="166" width="188" height="88" rx="10" class="cardIn"/>
+    <circle cx="664" cy="186" r="4" fill="var(--ing)"/>
+    <text x="674" y="190" class="boxTitle">Commit coordinator</text>
+    <text x="664" y="214" class="boxSub">N extents / snapshot</text>
+    <text x="664" y="232" class="boxSub">catalog CAS + retry</text>
+    <text x="664" y="248" class="boxSub">exp backoff + jitter</text>
+
+    <rect x="856" y="166" width="148" height="88" rx="10" class="cardIn"/>
+    <circle cx="872" cy="186" r="4" fill="var(--ing)"/>
+    <text x="882" y="190" class="boxTitle">Column writer</text>
+    <text x="872" y="214" class="boxSub">Arrow IPC</text>
+    <text x="872" y="232" class="boxSub">per-col stats</text>
+    <text x="872" y="248" class="boxSub">token index</text>
+  </g>
+
+  <!-- Ingest arrows -->
+  <path d="M212,210 L 232,210" class="flowIn" marker-end="url(#aIn)"/>
+  <path d="M420,210 L 440,210" class="flowIn" marker-end="url(#aIn)"/>
+  <path d="M628,210 L 648,210" class="flowIn" marker-end="url(#aIn)"/>
+  <path d="M836,210 L 856,210" class="flowIn" marker-end="url(#aIn)"/>
+
+  <!-- SHARED STORAGE -->
+  <text x="520" y="302" class="laneLbl" text-anchor="middle">SOURCE OF TRUTH · SHARED · STATELESS</text>
+
+  <g filter="url(#storeShadow)">
+    <!-- Object storage "stack" effect -->
+    <rect x="180" y="326" width="300" height="102" rx="12" fill="url(#storeGrad)" opacity="0.35"/>
+    <rect x="184" y="322" width="300" height="102" rx="12" fill="url(#storeGrad)" opacity="0.6"/>
+    <rect x="188" y="318" width="300" height="102" rx="12" fill="url(#storeGrad)"/>
+    <circle cx="204" cy="336" r="4" fill="var(--ok)"/>
+    <text x="216" y="340" class="storeTag">OBJECT STORE</text>
+    <text x="338" y="360" class="storeTitle" text-anchor="middle">S3 · MinIO</text>
+    <text x="338" y="384" class="storeSub" text-anchor="middle">extents · footers · posting lists</text>
+    <text x="338" y="402" class="storeSub" text-anchor="middle">bytes you own · zero lock-in</text>
+
+    <rect x="560" y="326" width="300" height="102" rx="12" fill="url(#storeGrad)" opacity="0.35"/>
+    <rect x="564" y="322" width="300" height="102" rx="12" fill="url(#storeGrad)" opacity="0.6"/>
+    <rect x="568" y="318" width="300" height="102" rx="12" fill="url(#storeGrad)"/>
+    <circle cx="584" cy="336" r="4" fill="var(--ok)"/>
+    <text x="596" y="340" class="storeTag">CATALOG</text>
+    <text x="718" y="360" class="storeTitle" text-anchor="middle">Postgres</text>
+    <text x="718" y="384" class="storeSub" text-anchor="middle">Iceberg-style manifests · CAS</text>
+    <text x="718" y="402" class="storeSub" text-anchor="middle">tables · snapshots · col stats</text>
+  </g>
+
+  <!-- Writes: column writer → object storage; commit coord → catalog -->
+  <path d="M930,254 L 930,278 L 400,278 L 400,318" class="flowRW" marker-end="url(#aRW)"/>
+  <text x="924" y="272" class="edgeLbl" text-anchor="end">put extent</text>
+
+  <path d="M742,254 L 742,288 L 700,288 L 700,318" class="flowRW" marker-end="url(#aRW)"/>
+  <text x="756" y="282" class="edgeLbl">snapshot CAS</text>
+
+  <!-- Reads: catalog → planner; object storage → exec -->
+  <path d="M718,428 L 718,452 L 640,452 L 640,488" class="flowRW" marker-end="url(#aRW)"/>
+  <text x="728" y="472" class="edgeLbl">manifest + stats</text>
+
+  <path d="M338,428 L 338,452 L 400,452 L 400,488" class="flowRW" marker-end="url(#aRW)"/>
+  <text x="296" y="472" class="edgeLbl" text-anchor="end">range-GET blocks</text>
+
+  <!-- QUERY LANE -->
+  <rect x="20" y="478" width="1000" height="120" rx="12" fill="url(#qryLane)" stroke="var(--border)" stroke-width="1"/>
+  <text x="40" y="500" class="laneLbl">QUERY LANE</text>
+  <text x="120" y="500" class="laneAccent" fill="var(--qry)">◉  reads</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="40"  y="514" width="172" height="68" rx="10" class="cardOut"/>
+    <circle cx="56" cy="534" r="4" fill="var(--qry)"/>
+    <text x="66" y="538" class="boxTitle">Agent / client</text>
+    <text x="56" y="558" class="boxSub">Flight gRPC · HTTP</text>
+    <text x="56" y="574" class="boxSub">NDJSON · Arrow</text>
+
+    <rect x="232" y="514" width="188" height="68" rx="10" class="cardOut"/>
+    <circle cx="248" cy="534" r="4" fill="var(--qry)"/>
+    <text x="258" y="538" class="boxTitle">Parser</text>
+    <text x="248" y="558" class="boxSub">KQL · SQL · PromQL</text>
+    <text x="248" y="574" class="boxSub">pluggable frontend trait</text>
+
+    <rect x="440" y="514" width="276" height="68" rx="10" class="cardOut"/>
+    <circle cx="456" cy="534" r="4" fill="var(--qry)"/>
+    <text x="466" y="538" class="boxTitle">Planner · 3-level pruning cascade</text>
+    <text x="456" y="558" class="boxSub">catalog → extent footer → block &amp; index</text>
+    <text x="456" y="574" class="boxSub">time-range · equality · token-contains</text>
+
+    <rect x="736" y="514" width="268" height="68" rx="10" class="cardOut"/>
+    <circle cx="752" cy="534" r="4" fill="var(--qry)"/>
+    <text x="762" y="538" class="boxTitle">DataFusion exec</text>
+    <text x="752" y="558" class="boxSub">vectorized · columnar</text>
+    <text x="752" y="574" class="boxSub">Arrow RecordBatch stream</text>
+  </g>
+
+  <!-- Query arrows -->
+  <path d="M212,548 L 232,548" class="flowOut" marker-end="url(#aOut)"/>
+  <path d="M420,548 L 440,548" class="flowOut" marker-end="url(#aOut)"/>
+  <path d="M716,548 L 736,548" class="flowOut" marker-end="url(#aOut)"/>
+</svg>

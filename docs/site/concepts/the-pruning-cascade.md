@@ -13,6 +13,8 @@ filtered to one tenant, one error class, and the last four hours touches
 maybe 0.01 % of the bytes in the bucket. The cascade is what makes that the
 default, not the exception.
 
+<KymaPruningCascade caption="A representative query through the four stages — same shape as the live readout on the landing page." />
+
 ## Three levels, in order
 
 ```
