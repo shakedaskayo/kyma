@@ -19,12 +19,15 @@ export default withMermaid(defineConfig({
   ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?/],
 
   head: [
-    ['link', { rel: 'icon', href: '/favicon.svg' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/icons/kyma-mark.svg' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:title', content: 'kyma docs' }],
+    ['meta', { property: 'og:image', content: '/icons/kyma-mark.svg' }],
   ],
 
   themeConfig: {
+    logo: '/icons/kyma-mark.svg',
+    siteTitle: 'kyma',
     nav: [
       { text: 'Quickstart', link: '/quickstart/' },
       { text: 'Concepts', link: '/concepts/' },

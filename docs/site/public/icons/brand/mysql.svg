@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="MySQL">
+  <title>MySQL</title>
+  <!-- Cylindrical database silhouette in MySQL teal -->
+  <ellipse cx="24" cy="11" rx="14" ry="4" fill="#00758F"/>
+  <path fill="#00758F" d="M10 11v9c0 2.2 6.3 4 14 4s14-1.8 14-4v-9c0 2.2-6.3 4-14 4s-14-1.8-14-4z"/>
+  <path fill="#00758F" d="M10 22v9c0 2.2 6.3 4 14 4s14-1.8 14-4v-9c0 2.2-6.3 4-14 4s-14-1.8-14-4z"/>
+  <path fill="#F29111" d="M10 33v4c0 2.2 6.3 4 14 4s14-1.8 14-4v-4c0 2.2-6.3 4-14 4s-14-1.8-14-4z"/>
+  <text x="24" y="44" text-anchor="middle" font-family="ui-sans-serif,system-ui" font-size="6" font-weight="700" fill="#00758F">MySQL</text>
+</svg>
