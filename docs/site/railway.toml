@@ -1,10 +1,50 @@
+# Railway service config for kyma-docs.
+#
+# Operator setup:
+#   1. Create a *separate* Railway project (not the kyma-engine project).
+#   2. Connect it to the kyma git repo, branch `main`.
+#   3. Service settings → Root directory: `/` (the build context is the repo root,
+#      not docs/site/, because the Dockerfile pulls docs/architecture.md and
+#      docs/benchmarks.md from one level up).
+#   4. Service settings → Config-as-code path: `docs/site/railway.toml`.
+#   5. Custom domain: `docs.kyma.<your-domain>`.
+#   6. After first deploy, sanity check `/health` returns 200 and `/llms.txt`
+#      (when D4 ships) returns the structured page index.
+#
+# See docs/site/README.md for the full operator notes.
+
 [build]
-builder = "DOCKERFILE"
+builder        = "DOCKERFILE"
 dockerfilePath = "docs/site/Dockerfile"
-watchPatterns = ["docs/site/**", "docs/architecture.md", "docs/benchmarks.md", "docs/images/**"]
+
+# Trigger a rebuild on changes that affect the rendered site.
+# - docs/site/**            — every page, theme, component, build script.
+# - docs/architecture.md
+# - docs/benchmarks.md      — synced into the site at prebuild time.
+# - docs/images/**          — fallback SVGs the synced markdown references.
+# - package.json            — workspace root manifest (engines, packageManager).
+# - pnpm-lock.yaml          — dependency lock; rebuild when deps change.
+# - pnpm-workspace.yaml     — workspace shape.
+# - .dockerignore           — build context.
+# - .npmrc                  — install behavior.
+watchPatterns = [
+  "docs/site/**",
+  "docs/architecture.md",
+  "docs/benchmarks.md",
+  "docs/images/**",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  ".dockerignore",
+  ".npmrc",
+]
 
 [deploy]
-healthcheckPath = "/"
-healthcheckTimeout = 120
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
+# Static-site health check; returns 200 once `serve` is listening.
+healthcheckPath         = "/"
+healthcheckTimeout      = 60
+restartPolicyType       = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+# Single replica is plenty for docs traffic; bump if Cloudflare can't absorb.
+numReplicas = 1

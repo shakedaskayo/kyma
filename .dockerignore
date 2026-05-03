@@ -1,8 +1,29 @@
 .git
 .worktrees
+
+# Rust
 target
-web/node_modules
-web/dist
+**/target
+
+# Node — root and per-workspace
 node_modules
-.claude
+**/node_modules
+
+# Web app build outputs
+web/dist
+
+# Docs site build outputs (kyma-docs)
+docs/site/.vitepress/cache
+docs/site/.vitepress/dist
+docs/site/architecture/architecture.md
+docs/site/architecture/benchmarks.md
+
+# Internal specs / plans — never ship in either Docker context
 docs/superpowers
+
+# Misc
+.claude
+.DS_Store
+.env
+.env.local
+*.log
