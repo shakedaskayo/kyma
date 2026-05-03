@@ -86,7 +86,16 @@ export default withMermaid(defineConfig({
           { text: 'Multi-source data',   link: '/connectors/multi-source-data' },
         ],
       }],
-      '/reference/':     [{ text: 'Reference',     items: [] }],
+      '/reference/': [{
+        text: 'Reference',
+        items: [
+          { text: 'HTTP API',         link: '/reference/api' },
+          { text: 'CLI',              link: '/reference/cli' },
+          { text: 'Environment vars', link: '/reference/env' },
+          { text: 'KQL functions',    link: '/reference/kql-functions' },
+          { text: 'Schema mappings',  link: '/reference/schema-mappings' },
+        ],
+      }],
       '/architecture/': [{
         text: 'Architecture',
         items: [
