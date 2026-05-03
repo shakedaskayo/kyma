@@ -7,10 +7,13 @@ export default withMermaid(defineConfig({
   description: 'Production knowledge, as a query.',
   cleanUrls: true,
 
-  // Defensive (per spec §3.1): keep any `superpowers/` content out of the build.
-  // Currently a no-op — `docs/superpowers/` is a sibling of this site's srcDir,
-  // so VitePress already won't scan it. Kept in case the layout ever changes.
-  srcExclude: ['**/superpowers/**'],
+  // Excluded from the build:
+  // - `superpowers/**` is a sibling of srcDir today, but kept in case layout
+  //   ever changes (defensive, per spec §3.1).
+  // - `README.md` is operator-facing notes on the docs site itself; not
+  //   part of the published surface. It's a sibling of `index.md` so it
+  //   would otherwise be picked up as a routable page.
+  srcExclude: ['**/superpowers/**', 'README.md'],
 
   // Localhost code samples shouldn't fail the build.
   ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?/],
