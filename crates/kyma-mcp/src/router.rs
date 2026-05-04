@@ -25,7 +25,7 @@ use tracing::debug;
 
 use crate::initialize::{handle_initialize, ServerInfo};
 use crate::jsonrpc::{
-    parse_envelope, ErrorCode, ErrorObject, Id, Request as RpcRequest, RequestEnvelope,
+    parse_envelope, ErrorCode, ErrorObject, Request as RpcRequest, RequestEnvelope,
     Response as RpcResponse,
 };
 use crate::tools::ToolDispatch;
@@ -108,11 +108,13 @@ async fn dispatch_one_inner(state: &McpState, req: RpcRequest) -> Option<RpcResp
             ))
         }
     };
-    let id = id.unwrap_or(Id::Number(0));
-    Some(match result {
-        Ok(value) => RpcResponse::success(id, value),
-        Err(err) => RpcResponse::error(id, err),
-    })
+    match id {
+        Some(id) => Some(match result {
+            Ok(value) => RpcResponse::success(id, value),
+            Err(err) => RpcResponse::error(id, err),
+        }),
+        None => None, // id-less request is a notification per JSON-RPC 2.0 — no response.
+    }
 }
 
 async fn handle_get_sse(
