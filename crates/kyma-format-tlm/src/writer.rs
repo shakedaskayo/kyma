@@ -359,7 +359,7 @@ impl ExtentWriter for TelemetryExtentWriter {
         payload.extend_from_slice(MAGIC_V2);
         let byte_size = payload.len() as u64;
 
-        let object_path = format_extent_path(format.path_prefix(), &extent_id);
+        let object_path = format_extent_path(format.path_prefix(), format.tenant_segment(), &extent_id);
         let store: Arc<dyn object_store::ObjectStore> = format.store().clone();
 
         store
@@ -382,12 +382,41 @@ impl ExtentWriter for TelemetryExtentWriter {
     }
 }
 
-fn format_extent_path(prefix: &str, extent_id: &ExtentId) -> String {
-    // Flat prefix for phase A. Table-level sharding lands with partitioning.
-    if prefix.is_empty() {
+fn format_extent_path(prefix: &str, tenant_segment: &str, extent_id: &ExtentId) -> String {
+    let core = if tenant_segment.is_empty() {
         format!("extents/{extent_id}.kyma")
     } else {
-        format!("{prefix}/extents/{extent_id}.kyma")
+        format!("{tenant_segment}/extents/{extent_id}.kyma")
+    };
+    if prefix.is_empty() {
+        core
+    } else {
+        format!("{prefix}/{core}")
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::format_extent_path;
+    use kyma_core::types::ExtentId;
+    use uuid::Uuid;
+
+    #[test]
+    fn legacy_path_when_tenant_empty() {
+        let id = ExtentId::from_uuid(Uuid::nil());
+        let path = format_extent_path("kyma", "", &id);
+        assert_eq!(path, "kyma/extents/00000000-0000-0000-0000-000000000000.kyma");
+    }
+
+    #[test]
+    fn tenant_segmented_path() {
+        let id = ExtentId::from_uuid(Uuid::nil());
+        let tenant = "11111111-1111-1111-1111-111111111111";
+        let path = format_extent_path("kyma", tenant, &id);
+        assert_eq!(
+            path,
+            "kyma/11111111-1111-1111-1111-111111111111/extents/00000000-0000-0000-0000-000000000000.kyma"
+        );
     }
 }
 
