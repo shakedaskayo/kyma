@@ -11,6 +11,11 @@ pub mod jsonrpc;
 #[cfg(test)]
 mod jsonrpc_unit_tests;
 
+pub mod initialize;
+
+#[cfg(test)]
+mod initialize_unit_tests;
+
 pub mod tools;
 
 #[cfg(test)]
