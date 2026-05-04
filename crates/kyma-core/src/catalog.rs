@@ -297,7 +297,17 @@ pub trait Catalog: Send + Sync {
 
     // --- databases & tables ---
 
-    async fn create_database(&self, name: &str) -> Result<DatabaseId>;
+    async fn create_database(&self, name: &str) -> Result<DatabaseId> {
+        self.create_database_in_tenant(crate::tenant::DEFAULT_TENANT, name)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`create_database`].
+    async fn create_database_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        name: &str,
+    ) -> Result<DatabaseId>;
 
     async fn create_table(
         &self,
@@ -305,25 +315,96 @@ pub trait Catalog: Send + Sync {
         name: &str,
         schema: SchemaRef,
         config: TableConfig,
+    ) -> Result<TableId> {
+        self.create_table_in_tenant(
+            crate::tenant::DEFAULT_TENANT,
+            database_id,
+            name,
+            schema,
+            config,
+        )
+        .await
+    }
+
+    /// Tenant-scoped variant of [`create_table`]. The catalog verifies that
+    /// `database_id` belongs to `tenant` before creating the table.
+    async fn create_table_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        database_id: DatabaseId,
+        name: &str,
+        schema: SchemaRef,
+        config: TableConfig,
     ) -> Result<TableId>;
 
-    async fn lookup_table(&self, database: &str, name: &str) -> Result<TableRef>;
+    async fn lookup_table(&self, database: &str, name: &str) -> Result<TableRef> {
+        self.lookup_table_in_tenant(crate::tenant::DEFAULT_TENANT, database, name)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`lookup_table`].
+    async fn lookup_table_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        database: &str,
+        name: &str,
+    ) -> Result<TableRef>;
 
     /// List every table in a database. Returns (name, TableRef) pairs so
     /// callers can populate a DataFusion `SchemaProvider` in one round-trip.
-    async fn list_tables_in_database(&self, database: &str) -> Result<Vec<TableRef>>;
+    async fn list_tables_in_database(&self, database: &str) -> Result<Vec<TableRef>> {
+        self.list_tables_in_database_in_tenant(crate::tenant::DEFAULT_TENANT, database)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`list_tables_in_database`].
+    async fn list_tables_in_database_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        database: &str,
+    ) -> Result<Vec<TableRef>>;
 
     // --- schema-listing (UI) ---
 
     /// Lightweight schema tree for the UI: list all database names.
-    async fn list_databases(&self) -> Result<Vec<String>, CatalogError>;
+    async fn list_databases(&self) -> Result<Vec<String>, CatalogError> {
+        self.list_databases_in_tenant(crate::tenant::DEFAULT_TENANT)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`list_databases`].
+    async fn list_databases_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+    ) -> Result<Vec<String>, CatalogError>;
 
     /// Lightweight schema tree for the UI: list all table names in a database.
-    async fn list_tables(&self, database: &str) -> Result<Vec<String>, CatalogError>;
+    async fn list_tables(&self, database: &str) -> Result<Vec<String>, CatalogError> {
+        self.list_tables_in_tenant(crate::tenant::DEFAULT_TENANT, database)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`list_tables`].
+    async fn list_tables_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        database: &str,
+    ) -> Result<Vec<String>, CatalogError>;
 
     /// Lightweight schema tree for the UI: get column descriptors for a table.
     async fn get_table_columns(
         &self,
+        database: &str,
+        table: &str,
+    ) -> Result<Vec<ColumnInfo>, CatalogError> {
+        self.get_table_columns_in_tenant(crate::tenant::DEFAULT_TENANT, database, table)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`get_table_columns`].
+    async fn get_table_columns_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
         database: &str,
         table: &str,
     ) -> Result<Vec<ColumnInfo>, CatalogError>;
@@ -346,7 +427,17 @@ pub trait Catalog: Send + Sync {
 
     // --- snapshot transactions ---
 
-    async fn begin_snapshot(&self, table_id: TableId) -> Result<Box<dyn SnapshotTxn>>;
+    async fn begin_snapshot(&self, table_id: TableId) -> Result<Box<dyn SnapshotTxn>> {
+        self.begin_snapshot_in_tenant(crate::tenant::DEFAULT_TENANT, table_id)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`begin_snapshot`].
+    async fn begin_snapshot_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        table_id: TableId,
+    ) -> Result<Box<dyn SnapshotTxn>>;
 
     // --- planner support ---
 
@@ -356,6 +447,18 @@ pub trait Catalog: Send + Sync {
     /// should eliminate 99%+ of extents before any object-store I/O.
     async fn list_extents(
         &self,
+        table_id: TableId,
+        snapshot: SnapshotId,
+        prune: &PrunePredicate,
+    ) -> Result<Vec<ExtentManifest>> {
+        self.list_extents_in_tenant(crate::tenant::DEFAULT_TENANT, table_id, snapshot, prune)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`list_extents`].
+    async fn list_extents_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
         table_id: TableId,
         snapshot: SnapshotId,
         prune: &PrunePredicate,
@@ -372,6 +475,23 @@ pub trait Catalog: Send + Sync {
     /// Returns aggregate counts for the caller (HTTP response / audit log).
     async fn cleanup_soft_deleted_extents(
         &self,
+        database: &str,
+        table: &str,
+        before: DateTime<Utc>,
+    ) -> Result<CleanupResult> {
+        self.cleanup_soft_deleted_extents_in_tenant(
+            crate::tenant::DEFAULT_TENANT,
+            database,
+            table,
+            before,
+        )
+        .await
+    }
+
+    /// Tenant-scoped variant of [`cleanup_soft_deleted_extents`].
+    async fn cleanup_soft_deleted_extents_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
         database: &str,
         table: &str,
         before: DateTime<Utc>,
@@ -421,12 +541,42 @@ pub trait Catalog: Send + Sync {
         &self,
         name: &str,
         description: Option<&str>,
+    ) -> Result<Dashboard, CatalogError> {
+        self.create_dashboard_in_tenant(crate::tenant::DEFAULT_TENANT, name, description)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`create_dashboard`].
+    async fn create_dashboard_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        name: &str,
+        description: Option<&str>,
     ) -> Result<Dashboard, CatalogError>;
 
-    async fn list_dashboards(&self) -> Result<Vec<Dashboard>, CatalogError>;
+    async fn list_dashboards(&self) -> Result<Vec<Dashboard>, CatalogError> {
+        self.list_dashboards_in_tenant(crate::tenant::DEFAULT_TENANT)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`list_dashboards`].
+    async fn list_dashboards_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+    ) -> Result<Vec<Dashboard>, CatalogError>;
 
     async fn get_dashboard(
         &self,
+        id: uuid::Uuid,
+    ) -> Result<Option<DashboardWithPanels>, CatalogError> {
+        self.get_dashboard_in_tenant(crate::tenant::DEFAULT_TENANT, id)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`get_dashboard`].
+    async fn get_dashboard_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
         id: uuid::Uuid,
     ) -> Result<Option<DashboardWithPanels>, CatalogError>;
 
@@ -434,21 +584,64 @@ pub trait Catalog: Send + Sync {
         &self,
         id: uuid::Uuid,
         patch: DashboardUpdate,
+    ) -> Result<Dashboard, CatalogError> {
+        self.update_dashboard_in_tenant(crate::tenant::DEFAULT_TENANT, id, patch)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`update_dashboard`].
+    async fn update_dashboard_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        id: uuid::Uuid,
+        patch: DashboardUpdate,
     ) -> Result<Dashboard, CatalogError>;
 
-    async fn delete_dashboard(&self, id: uuid::Uuid) -> Result<bool, CatalogError>;
+    async fn delete_dashboard(&self, id: uuid::Uuid) -> Result<bool, CatalogError> {
+        self.delete_dashboard_in_tenant(crate::tenant::DEFAULT_TENANT, id)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`delete_dashboard`].
+    async fn delete_dashboard_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        id: uuid::Uuid,
+    ) -> Result<bool, CatalogError>;
 
     // --- ingest idempotency ledger ---
 
     /// Look up a previously-applied idempotency key. Returns `None` if never
     /// seen (or if its TTL has expired).
-    async fn lookup_idempotency(&self, key: &str) -> Result<Option<IngestLedgerEntry>>;
+    async fn lookup_idempotency(&self, key: &str) -> Result<Option<IngestLedgerEntry>> {
+        self.lookup_idempotency_in_tenant(crate::tenant::DEFAULT_TENANT, key)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`lookup_idempotency`].
+    async fn lookup_idempotency_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        key: &str,
+    ) -> Result<Option<IngestLedgerEntry>>;
 
     /// Record an idempotency key after a successful ingest. Uses
     /// `INSERT ... ON CONFLICT DO NOTHING` — if a concurrent writer raced
     /// and won, returns `Ok(None)`; otherwise the newly-stored entry.
     async fn record_idempotency(
         &self,
+        key: &str,
+        entry: IngestLedgerEntry,
+        ttl: chrono::Duration,
+    ) -> Result<Option<IngestLedgerEntry>> {
+        self.record_idempotency_in_tenant(crate::tenant::DEFAULT_TENANT, key, entry, ttl)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`record_idempotency`].
+    async fn record_idempotency_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
         key: &str,
         entry: IngestLedgerEntry,
         ttl: chrono::Duration,

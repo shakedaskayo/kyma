@@ -8,6 +8,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use kyma_catalog::PostgresCatalog;
 use kyma_core::catalog::{Catalog, TableConfig};
+use kyma_core::tenant::DEFAULT_TENANT;
 use serde_json::Value;
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ImageExt};
@@ -27,10 +28,14 @@ fn cleanup_write_app(
         Output = Result<axum::http::Response<axum::body::Body>, std::convert::Infallible>,
     >,
 > {
-    let auth =
-        kyma_server::auth::AuthConfig::from_str("test-write-token:write");
+    let backend: std::sync::Arc<dyn kyma_server::auth::AuthBackend> = std::sync::Arc::new(
+        kyma_server::auth::EnvAuthBackend::from_str("test-write-token:write"),
+    );
     kyma_server::cleanup_write_router(catalog).layer(axum::middleware::from_fn_with_state(
-        (auth, kyma_server::auth::Role::Write),
+        kyma_server::auth::AuthLayerState {
+            backend,
+            required: kyma_server::auth::Role::Write,
+        },
         kyma_server::auth::require_role_middleware,
     ))
 }
@@ -142,9 +147,10 @@ async fn cleanup_removes_soft_deleted_extents_and_returns_counts() {
 
     // Insert a soft-deleted extent with known byte_size + row_count.
     sqlx::query(
-        "INSERT INTO extents (table_id, schema_snapshot_id, object_path, byte_size, row_count, deleted_at)
-         VALUES ($1, $2, 'test/path/old.kyma', 4096, 200, now() - interval '2 days')",
+        "INSERT INTO extents (tenant_id, table_id, schema_snapshot_id, object_path, byte_size, row_count, deleted_at)
+         VALUES ($1, $2, $3, 'test/path/old.kyma', 4096, 200, now() - interval '2 days')",
     )
+    .bind(DEFAULT_TENANT.as_uuid())
     .bind(table_uuid)
     .bind(schema_snap_uuid)
     .execute(pool)
@@ -153,9 +159,10 @@ async fn cleanup_removes_soft_deleted_extents_and_returns_counts() {
 
     // 3. Seed a second, live (not soft-deleted) extent — should NOT be cleaned.
     sqlx::query(
-        "INSERT INTO extents (table_id, schema_snapshot_id, object_path, byte_size, row_count)
-         VALUES ($1, $2, 'test/path/live.kyma', 2048, 50)",
+        "INSERT INTO extents (tenant_id, table_id, schema_snapshot_id, object_path, byte_size, row_count)
+         VALUES ($1, $2, $3, 'test/path/live.kyma', 2048, 50)",
     )
+    .bind(DEFAULT_TENANT.as_uuid())
     .bind(table_uuid)
     .bind(schema_snap_uuid)
     .execute(pool)
@@ -220,9 +227,10 @@ async fn cleanup_respects_before_cutoff() {
 
     // Insert an extent soft-deleted 1 hour ago.
     sqlx::query(
-        "INSERT INTO extents (table_id, schema_snapshot_id, object_path, byte_size, row_count, deleted_at)
-         VALUES ($1, $2, 'test/path/recent.kyma', 512, 10, now() - interval '1 hour')",
+        "INSERT INTO extents (tenant_id, table_id, schema_snapshot_id, object_path, byte_size, row_count, deleted_at)
+         VALUES ($1, $2, $3, 'test/path/recent.kyma', 512, 10, now() - interval '1 hour')",
     )
+    .bind(DEFAULT_TENANT.as_uuid())
     .bind(table_uuid)
     .bind(schema_snap_uuid)
     .execute(pool)
@@ -261,10 +269,15 @@ async fn cleanup_unknown_table_returns_404() {
 #[tokio::test]
 async fn cleanup_missing_auth_returns_401() {
     let state = kyma_server::test_support::seeded_state_empty().await;
-    let auth = kyma_server::auth::AuthConfig::from_str("test-write-token:write");
+    let backend: std::sync::Arc<dyn kyma_server::auth::AuthBackend> = std::sync::Arc::new(
+        kyma_server::auth::EnvAuthBackend::from_str("test-write-token:write"),
+    );
     let app = kyma_server::cleanup_write_router(state.catalog.clone()).layer(
         axum::middleware::from_fn_with_state(
-            (auth, kyma_server::auth::Role::Write),
+            kyma_server::auth::AuthLayerState {
+                backend,
+                required: kyma_server::auth::Role::Write,
+            },
             kyma_server::auth::require_role_middleware,
         ),
     );

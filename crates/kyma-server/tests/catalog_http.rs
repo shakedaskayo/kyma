@@ -23,9 +23,14 @@ fn authed_app(
         Output = Result<axum::http::Response<axum::body::Body>, std::convert::Infallible>,
     >,
 > {
-    let auth = kyma_server::auth::AuthConfig::from_str("test-read-token:read");
+    let backend: std::sync::Arc<dyn kyma_server::auth::AuthBackend> = std::sync::Arc::new(
+        kyma_server::auth::EnvAuthBackend::from_str("test-read-token:read"),
+    );
     kyma_server::router(state).layer(axum::middleware::from_fn_with_state(
-        (auth, kyma_server::auth::Role::Read),
+        kyma_server::auth::AuthLayerState {
+            backend,
+            required: kyma_server::auth::Role::Read,
+        },
         kyma_server::auth::require_role_middleware,
     ))
 }

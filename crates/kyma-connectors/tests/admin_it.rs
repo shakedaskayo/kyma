@@ -1,10 +1,11 @@
 use async_trait::async_trait;
 use axum::http::StatusCode;
-use axum::Router;
+use axum::{Extension, Router};
 use kyma_catalog::PostgresCatalog;
 use kyma_connectors::admin::{router, AdminState};
 use kyma_connectors::registry::ConnectorRegistry;
 use kyma_connectors::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
+use kyma_core::tenant::DEFAULT_TENANT;
 use serde_json::json;
 use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
@@ -53,7 +54,10 @@ async fn state() -> (testcontainers::ContainerAsync<Postgres>, AdminState) {
 }
 
 fn app(s: AdminState) -> Router {
-    router(s)
+    // The handlers expect a `TenantId` request extension (normally injected
+    // by the auth middleware). Tests skip auth, so attach an Extension layer
+    // that pins the default tenant.
+    router(s).layer(Extension(DEFAULT_TENANT))
 }
 
 #[tokio::test]

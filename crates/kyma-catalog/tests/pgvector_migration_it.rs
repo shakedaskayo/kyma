@@ -3,6 +3,7 @@
 
 #![cfg(test)]
 
+use kyma_core::tenant::DEFAULT_TENANT;
 use sqlx::{Pool, Postgres};
 use testcontainers::{runners::AsyncRunner, ContainerAsync, ImageExt};
 use testcontainers_modules::postgres::Postgres as PgContainer;
@@ -52,10 +53,11 @@ async fn schema_embeddings_partial_uniques_enforce_one_row_per_kind() {
     // First 'table' row succeeds.
     sqlx::query(
         "INSERT INTO schema_embeddings
-        (database, table_name, kind, text_source, text_source_sha256,
+        (tenant_id, database, table_name, kind, text_source, text_source_sha256,
          model_id, embedding)
-        VALUES ($1, $2, 'table', 'a', '\\x00', 'm', $3)",
+        VALUES ($1, $2, $3, 'table', 'a', '\\x00', 'm', $4)",
     )
+    .bind(DEFAULT_TENANT.as_uuid())
     .bind("db")
     .bind("t")
     .bind(&v)
@@ -67,10 +69,11 @@ async fn schema_embeddings_partial_uniques_enforce_one_row_per_kind() {
     // must be rejected by the partial-unique index.
     let dup = sqlx::query(
         "INSERT INTO schema_embeddings
-        (database, table_name, kind, text_source, text_source_sha256,
+        (tenant_id, database, table_name, kind, text_source, text_source_sha256,
          model_id, embedding)
-        VALUES ($1, $2, 'table', 'a', '\\x00', 'm', $3)",
+        VALUES ($1, $2, $3, 'table', 'a', '\\x00', 'm', $4)",
     )
+    .bind(DEFAULT_TENANT.as_uuid())
     .bind("db")
     .bind("t")
     .bind(&v)
@@ -82,10 +85,11 @@ async fn schema_embeddings_partial_uniques_enforce_one_row_per_kind() {
     // it uses the other partial-unique index (column_name IS NOT NULL).
     sqlx::query(
         "INSERT INTO schema_embeddings
-        (database, table_name, column_name, kind, text_source, text_source_sha256,
+        (tenant_id, database, table_name, column_name, kind, text_source, text_source_sha256,
          model_id, embedding)
-        VALUES ($1, $2, $3, 'column', 'b', '\\x01', 'm', $4)",
+        VALUES ($1, $2, $3, $4, 'column', 'b', '\\x01', 'm', $5)",
     )
+    .bind(DEFAULT_TENANT.as_uuid())
     .bind("db")
     .bind("t")
     .bind("col_a")
@@ -97,10 +101,11 @@ async fn schema_embeddings_partial_uniques_enforce_one_row_per_kind() {
     // Duplicate column row rejected.
     let dup_col = sqlx::query(
         "INSERT INTO schema_embeddings
-        (database, table_name, column_name, kind, text_source, text_source_sha256,
+        (tenant_id, database, table_name, column_name, kind, text_source, text_source_sha256,
          model_id, embedding)
-        VALUES ($1, $2, $3, 'column', 'b', '\\x01', 'm', $4)",
+        VALUES ($1, $2, $3, $4, 'column', 'b', '\\x01', 'm', $5)",
     )
+    .bind(DEFAULT_TENANT.as_uuid())
     .bind("db")
     .bind("t")
     .bind("col_a")
