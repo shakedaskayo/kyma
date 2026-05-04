@@ -1,13 +1,10 @@
 name: build-image
 #
-# One-time setup: the `kyma` GHCR package is user-owned (shakedaskayo/kyma).
-# For this workflow's GITHUB_TOKEN to write to it, link the package to this
-# repo at https://github.com/users/shakedaskayo/packages/container/kyma/settings
-# → "Manage Actions access" → add `shakedaskayo/kyma` with Write permission.
-# Without that link, every run fails with `permission_denied: write_package`.
-#
-# Alternative: set a GHCR_TOKEN secret (PAT with write:packages) and replace
-# `${{ secrets.GITHUB_TOKEN }}` below.
+# Auth: pushes use a `GHCR_TOKEN` repo secret (PAT with write:packages scope).
+# This avoids the user-package-link gotcha — `secrets.GITHUB_TOKEN` only has
+# write access to packages owned by or linked to the repo, and linking is a
+# manual UI step at github.com/users/<owner>/packages/container/<pkg>/settings
+# that we'd rather not depend on.
 #
 on:
   push:
@@ -39,7 +36,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Compute image tags
         id: tags
