@@ -242,7 +242,7 @@ async fn main() -> Result<()> {
     };
     let mcp_router = kyma_mcp::router(mcp_state).layer(
         axum::middleware::from_fn_with_state(
-            (auth.clone(), Role::Read),
+            AuthLayerState { backend: backend.clone(), required: Role::Read },
             require_role_middleware,
         ),
     );
