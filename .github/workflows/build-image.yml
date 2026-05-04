@@ -1,18 +1,17 @@
 name: build-image
 #
-# GHCR authentication. The `kyma` package is user-scoped (shakedaskayo/kyma)
-# and `secrets.GITHUB_TOKEN` only has `write_package` for it once the package
-# is linked to this repo via the GitHub UI:
-#   https://github.com/users/shakedaskayo/packages/container/kyma/settings
-#   → "Manage Actions access" → Add `shakedaskayo/kyma` with Write.
+# Publishes the engine image to ghcr.io/shakedaskayo/kyma-engine.
 #
-# Until that one-click link is done, set a `GHCR_TOKEN` repo secret
-# containing a classic PAT (ghp_*) with `write:packages` + `read:packages`,
-# and the workflow will fall back to it. We try GHCR_TOKEN first; if it's
-# missing the action falls through to GITHUB_TOKEN.
+# We deliberately use `kyma-engine` (not `kyma`) so this push creates a
+# fresh, repo-auto-linked GHCR package on first write. The pre-existing
+# `ghcr.io/shakedaskayo/kyma` package was created user-scoped and isn't
+# repo-linked, so `secrets.GITHUB_TOKEN` can't write to it; rather than
+# require a manual UI click on every fresh repo clone, we ship under a
+# new name that the runner's auto token has `packages: write` for.
 #
-# `gho_*` OAuth tokens (what `gh auth token` returns) do NOT work at the
-# GHCR registry endpoint from CI. Use a classic ghp_* PAT only.
+# If you'd rather publish to `ghcr.io/shakedaskayo/kyma`, link the
+# package at github.com/users/shakedaskayo/packages/container/kyma/settings
+# and rename `kyma-engine` back below.
 #
 on:
   push:
@@ -44,16 +43,14 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          # Prefer a long-lived PAT in GHCR_TOKEN; fall back to the auto
-          # GITHUB_TOKEN (works only once the GHCR package is repo-linked).
-          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compute image tags
         id: tags
         run: |
           SHORT_SHA="${GITHUB_SHA::8}"
           OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          REPO="ghcr.io/${OWNER_LC}/kyma"
+          REPO="ghcr.io/${OWNER_LC}/kyma-engine"
           {
             echo "short_sha=$SHORT_SHA"
             echo "tags=${REPO}:${SHORT_SHA},${REPO}:latest"
