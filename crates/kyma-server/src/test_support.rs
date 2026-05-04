@@ -60,6 +60,7 @@ pub async fn seeded_state_empty() -> QueryState {
         .await
         .expect("testcontainers: failed to get mapped port");
     let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
+    std::env::set_var("KYMA_TEST_DATABASE_URL", &url);
 
     let catalog: Arc<dyn Catalog> = Arc::new(
         PostgresCatalog::connect(&url)
@@ -111,6 +112,7 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
         .await
         .expect("testcontainers: failed to get mapped port");
     let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
+    std::env::set_var("KYMA_TEST_DATABASE_URL", &url);
 
     let catalog: Arc<dyn Catalog> = Arc::new(
         PostgresCatalog::connect(&url)
