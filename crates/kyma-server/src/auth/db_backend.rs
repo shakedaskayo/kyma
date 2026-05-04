@@ -13,6 +13,13 @@
 //!     created_at    timestamptz NOT NULL DEFAULT now()
 //! );
 //! ```
+//!
+//! ## Hashing
+//!
+//! Tokens are stored as raw SHA-256 of the presented bearer string (no salt,
+//! no pepper). This is appropriate ONLY because tokens are server-issued
+//! and MUST be at least 128 bits of CSPRNG entropy. Do not adapt this
+//! pattern for password storage — that needs argon2 or bcrypt.
 
 use super::backend::{AuthBackend, AuthError, Principal, Role};
 use async_trait::async_trait;
@@ -45,6 +52,11 @@ impl AuthBackend for DbAuthBackend {
 
     async fn authenticate(&self, token: &str) -> Result<Principal, AuthError> {
         let hash = Self::hash_token(token);
+        // TOCTOU note: a token may transition revoked_at = now() between this
+        // SELECT and the response being delivered. That's an inherent
+        // limitation of bearer-token revocation — bounded only by request
+        // duration. Operators relying on hard revocation should rotate the
+        // token (which changes the hash) rather than soft-revoking.
         let row = sqlx::query(
             "SELECT tenant_id, scopes, subject FROM api_tokens
              WHERE token_hash = $1 AND revoked_at IS NULL",

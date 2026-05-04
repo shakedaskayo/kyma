@@ -14,5 +14,7 @@ pub use middleware::{require_role_middleware, AuthLayerState};
 #[cfg(feature = "cloud-auth")]
 pub use db_backend::DbAuthBackend;
 
-// Backwards-compat re-export for legacy `kyma-bin` callers.
+// Backwards-compat re-export. New code should use `EnvAuthBackend` or
+// `Arc<dyn AuthBackend>` directly.
+#[deprecated(note = "use EnvAuthBackend or Arc<dyn AuthBackend> directly")]
 pub use env_backend::EnvAuthBackend as AuthConfig;

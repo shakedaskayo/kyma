@@ -39,7 +39,7 @@ use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsSe
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::signal;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -143,6 +143,20 @@ async fn main() -> Result<()> {
             use kyma_server::auth::DbAuthBackend;
             info!("auth: using db backend (api_tokens table)");
             Arc::new(DbAuthBackend::new(pg_pool.clone()))
+        }
+        #[cfg(not(feature = "cloud-auth"))]
+        Some("db") => {
+            warn!(
+                "KYMA_AUTH_BACKEND=db requested but the binary was compiled without \
+                 the `cloud-auth` feature; falling back to EnvAuthBackend."
+            );
+            Arc::new(EnvAuthBackend::from_env())
+        }
+        Some(other) if !other.is_empty() => {
+            warn!(
+                "KYMA_AUTH_BACKEND={other:?} unrecognized; using EnvAuthBackend."
+            );
+            Arc::new(EnvAuthBackend::from_env())
         }
         _ => Arc::new(EnvAuthBackend::from_env()),
     };
