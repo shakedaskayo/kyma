@@ -9,6 +9,7 @@ use kyma_connectors::scheduler::ConnectorScheduler;
 use kyma_connectors::secrets::EnvSecretStore;
 use kyma_connectors::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
+use kyma_core::tenant::DEFAULT_TENANT;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -60,6 +61,7 @@ async fn runner_claims_and_updates_cursor() {
 
     let id = catalog_sql::create_connector_direct(
         catalog.pool(),
+        DEFAULT_TENANT,
         "c1",
         "counter",
         "db",
@@ -99,6 +101,8 @@ async fn runner_claims_and_updates_cursor() {
     runner.claim_and_run_one().await.expect("tick ran");
 
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    let cur = catalog_sql::load_cursor(catalog.pool(), id).await.unwrap();
+    let cur = catalog_sql::load_cursor(catalog.pool(), DEFAULT_TENANT, id)
+        .await
+        .unwrap();
     assert_eq!(cur, Some(serde_json::json!(1)));
 }
