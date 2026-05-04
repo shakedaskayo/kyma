@@ -226,6 +226,26 @@ async fn main() -> Result<()> {
             },
             require_role_middleware,
         ));
+
+    // Build MCP state from the same SharedToolCtx the inline /v1/agent endpoint uses.
+    let mcp_shared = kyma_server::agent::SharedToolCtx {
+        catalog: catalog.clone(),
+        format: format.clone(),
+        pool: pg_pool.clone(),
+    };
+    let mcp_state = kyma_mcp::McpState {
+        dispatch: kyma_mcp::ToolDispatch::new(mcp_shared),
+        server_info: kyma_mcp::ServerInfo {
+            name: "kyma".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+        },
+    };
+    let mcp_router = kyma_mcp::router(mcp_state).layer(
+        axum::middleware::from_fn_with_state(
+            (auth.clone(), Role::Read),
+            require_role_middleware,
+        ),
+    );
     // Connector registry + row-sink.
     let mut conn_reg = ConnectorRegistry::new();
     conn_reg.register(Arc::new(PromConnector));
@@ -291,6 +311,7 @@ async fn main() -> Result<()> {
     );
     let app = ingest_router
         .merge(query_router)
+        .merge(mcp_router)
         .merge(dashboards_write_router)
         .merge(cleanup_write_router)
         .merge(health_router)
