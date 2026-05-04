@@ -27,10 +27,14 @@ fn cleanup_write_app(
         Output = Result<axum::http::Response<axum::body::Body>, std::convert::Infallible>,
     >,
 > {
-    let auth =
-        kyma_server::auth::AuthConfig::from_str("test-write-token:write");
+    let backend: std::sync::Arc<dyn kyma_server::auth::AuthBackend> = std::sync::Arc::new(
+        kyma_server::auth::EnvAuthBackend::from_str("test-write-token:write"),
+    );
     kyma_server::cleanup_write_router(catalog).layer(axum::middleware::from_fn_with_state(
-        (auth, kyma_server::auth::Role::Write),
+        kyma_server::auth::AuthLayerState {
+            backend,
+            required: kyma_server::auth::Role::Write,
+        },
         kyma_server::auth::require_role_middleware,
     ))
 }
@@ -261,10 +265,15 @@ async fn cleanup_unknown_table_returns_404() {
 #[tokio::test]
 async fn cleanup_missing_auth_returns_401() {
     let state = kyma_server::test_support::seeded_state_empty().await;
-    let auth = kyma_server::auth::AuthConfig::from_str("test-write-token:write");
+    let backend: std::sync::Arc<dyn kyma_server::auth::AuthBackend> = std::sync::Arc::new(
+        kyma_server::auth::EnvAuthBackend::from_str("test-write-token:write"),
+    );
     let app = kyma_server::cleanup_write_router(state.catalog.clone()).layer(
         axum::middleware::from_fn_with_state(
-            (auth, kyma_server::auth::Role::Write),
+            kyma_server::auth::AuthLayerState {
+                backend,
+                required: kyma_server::auth::Role::Write,
+            },
             kyma_server::auth::require_role_middleware,
         ),
     );

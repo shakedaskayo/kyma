@@ -26,18 +26,27 @@ fn authed_app(
         Output = Result<axum::http::Response<axum::body::Body>, std::convert::Infallible>,
     >,
 > {
-    let auth =
-        kyma_server::auth::AuthConfig::from_str("test-read-token:read,test-write-token:write");
+    let backend: std::sync::Arc<dyn kyma_server::auth::AuthBackend> = std::sync::Arc::new(
+        kyma_server::auth::EnvAuthBackend::from_str(
+            "test-read-token:read,test-write-token:write",
+        ),
+    );
 
     let read_router =
         kyma_server::router(state.clone()).layer(axum::middleware::from_fn_with_state(
-            (auth.clone(), kyma_server::auth::Role::Read),
+            kyma_server::auth::AuthLayerState {
+                backend: backend.clone(),
+                required: kyma_server::auth::Role::Read,
+            },
             kyma_server::auth::require_role_middleware,
         ));
 
     let write_router = kyma_server::dashboards_write_router(state.catalog.clone()).layer(
         axum::middleware::from_fn_with_state(
-            (auth, kyma_server::auth::Role::Write),
+            kyma_server::auth::AuthLayerState {
+                backend,
+                required: kyma_server::auth::Role::Write,
+            },
             kyma_server::auth::require_role_middleware,
         ),
     );
@@ -304,12 +313,17 @@ async fn delete_returns_204_then_get_404() {
 #[tokio::test]
 async fn missing_auth_returns_401_on_write() {
     let state = kyma_server::test_support::seeded_state_empty().await;
-    let auth = kyma_server::auth::AuthConfig::from_str("test-write-token:write");
+    let backend: std::sync::Arc<dyn kyma_server::auth::AuthBackend> = std::sync::Arc::new(
+        kyma_server::auth::EnvAuthBackend::from_str("test-write-token:write"),
+    );
 
     // Only wrap write router with auth — GET would be read-gated normally.
     let write_router = kyma_server::dashboards_write_router(state.catalog.clone()).layer(
         axum::middleware::from_fn_with_state(
-            (auth, kyma_server::auth::Role::Write),
+            kyma_server::auth::AuthLayerState {
+                backend,
+                required: kyma_server::auth::Role::Write,
+            },
             kyma_server::auth::require_role_middleware,
         ),
     );
