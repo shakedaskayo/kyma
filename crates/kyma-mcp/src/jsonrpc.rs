@@ -3,14 +3,21 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub struct ErrorCode;
+/// Standard JSON-RPC 2.0 error codes plus our internal-error sentinel.
+/// `non_exhaustive` reserves space for future codes without breaking callers.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[non_exhaustive]
+#[repr(i64)]
+pub enum ErrorCode {
+    ParseError = -32700,
+    InvalidRequest = -32600,
+    MethodNotFound = -32601,
+    InvalidParams = -32602,
+    InternalError = -32603,
+}
 
-impl ErrorCode {
-    pub const PARSE_ERROR: i64 = -32700;
-    pub const INVALID_REQUEST: i64 = -32600;
-    pub const METHOD_NOT_FOUND: i64 = -32601;
-    pub const INVALID_PARAMS: i64 = -32602;
-    pub const INTERNAL_ERROR: i64 = -32603;
+impl From<ErrorCode> for i64 {
+    fn from(c: ErrorCode) -> i64 { c as i64 }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,19 +78,19 @@ pub enum RequestEnvelope {
 
 pub fn parse_envelope(body: &[u8]) -> Result<RequestEnvelope, ErrorObject> {
     let raw: Value = serde_json::from_slice(body)
-        .map_err(|e| ErrorObject::new(ErrorCode::PARSE_ERROR, format!("parse: {e}")))?;
+        .map_err(|e| ErrorObject::new(ErrorCode::ParseError as i64, format!("parse: {e}")))?;
     match raw {
         Value::Array(arr) => {
             if arr.is_empty() {
-                return Err(ErrorObject::new(ErrorCode::INVALID_REQUEST, "batch must be non-empty"));
+                return Err(ErrorObject::new(ErrorCode::InvalidRequest as i64, "batch must be non-empty"));
             }
             let mut out = Vec::with_capacity(arr.len());
             for v in arr {
                 let req: Request = serde_json::from_value(v).map_err(|e| {
-                    ErrorObject::new(ErrorCode::INVALID_REQUEST, format!("batch item: {e}"))
+                    ErrorObject::new(ErrorCode::InvalidRequest as i64, format!("batch item: {e}"))
                 })?;
                 if req.jsonrpc != "2.0" {
-                    return Err(ErrorObject::new(ErrorCode::INVALID_REQUEST, "jsonrpc must be \"2.0\""));
+                    return Err(ErrorObject::new(ErrorCode::InvalidRequest as i64, "jsonrpc must be \"2.0\""));
                 }
                 out.push(req);
             }
@@ -91,12 +98,12 @@ pub fn parse_envelope(body: &[u8]) -> Result<RequestEnvelope, ErrorObject> {
         }
         Value::Object(_) => {
             let req: Request = serde_json::from_value(raw)
-                .map_err(|e| ErrorObject::new(ErrorCode::INVALID_REQUEST, format!("request: {e}")))?;
+                .map_err(|e| ErrorObject::new(ErrorCode::InvalidRequest as i64, format!("request: {e}")))?;
             if req.jsonrpc != "2.0" {
-                return Err(ErrorObject::new(ErrorCode::INVALID_REQUEST, "jsonrpc must be \"2.0\""));
+                return Err(ErrorObject::new(ErrorCode::InvalidRequest as i64, "jsonrpc must be \"2.0\""));
             }
             Ok(RequestEnvelope::Single(req))
         }
-        _ => Err(ErrorObject::new(ErrorCode::INVALID_REQUEST, "request must be object or array")),
+        _ => Err(ErrorObject::new(ErrorCode::InvalidRequest as i64, "request must be object or array")),
     }
 }
