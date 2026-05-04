@@ -1,10 +1,18 @@
 name: build-image
 #
-# Auth: pushes use a `GHCR_TOKEN` repo secret (PAT with write:packages scope).
-# This avoids the user-package-link gotcha — `secrets.GITHUB_TOKEN` only has
-# write access to packages owned by or linked to the repo, and linking is a
-# manual UI step at github.com/users/<owner>/packages/container/<pkg>/settings
-# that we'd rather not depend on.
+# GHCR authentication. The `kyma` package is user-scoped (shakedaskayo/kyma)
+# and `secrets.GITHUB_TOKEN` only has `write_package` for it once the package
+# is linked to this repo via the GitHub UI:
+#   https://github.com/users/shakedaskayo/packages/container/kyma/settings
+#   → "Manage Actions access" → Add `shakedaskayo/kyma` with Write.
+#
+# Until that one-click link is done, set a `GHCR_TOKEN` repo secret
+# containing a classic PAT (ghp_*) with `write:packages` + `read:packages`,
+# and the workflow will fall back to it. We try GHCR_TOKEN first; if it's
+# missing the action falls through to GITHUB_TOKEN.
+#
+# `gho_*` OAuth tokens (what `gh auth token` returns) do NOT work at the
+# GHCR registry endpoint from CI. Use a classic ghp_* PAT only.
 #
 on:
   push:
@@ -36,7 +44,9 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          # Prefer a long-lived PAT in GHCR_TOKEN; fall back to the auto
+          # GITHUB_TOKEN (works only once the GHCR package is repo-linked).
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Compute image tags
         id: tags
