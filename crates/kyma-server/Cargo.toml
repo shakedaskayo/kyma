@@ -95,3 +95,7 @@ required-features = ["test-support"]
 [[test]]
 name = "cleanup_http"
 required-features = ["test-support"]
+
+[[test]]
+name = "auth_backends_it"
+required-features = ["test-support", "cloud-auth"]
