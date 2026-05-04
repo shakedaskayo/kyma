@@ -2,7 +2,8 @@
 
 use kyma_mcp::{router, McpState, ServerInfo, ToolDispatch};
 use kyma_server::agent::SharedToolCtx;
-use kyma_server::auth::{require_role_middleware, AuthConfig, Role};
+use kyma_server::auth::{require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role};
+use std::sync::Arc;
 use kyma_server::test_support::seeded_state_with_obs_otel_logs;
 use serde_json::{json, Value};
 
@@ -20,9 +21,9 @@ async fn full_mcp_handshake_against_seeded_server() {
         dispatch: ToolDispatch::new(shared),
         server_info: ServerInfo { name: "kyma".into(), version: "test".into() },
     };
-    let auth = AuthConfig::from_str("mcp-token:read");
+    let backend: Arc<dyn AuthBackend> = Arc::new(EnvAuthBackend::from_str("mcp-token:read"));
     let app = router(mcp_state).layer(axum::middleware::from_fn_with_state(
-        (auth, Role::Read),
+        AuthLayerState { backend, required: Role::Read },
         require_role_middleware,
     ));
 
@@ -82,9 +83,9 @@ async fn rejects_request_without_bearer_token() {
         dispatch: ToolDispatch::new(shared),
         server_info: ServerInfo { name: "kyma".into(), version: "test".into() },
     };
-    let auth = AuthConfig::from_str("mcp-token:read");
+    let backend: Arc<dyn AuthBackend> = Arc::new(EnvAuthBackend::from_str("mcp-token:read"));
     let app = router(mcp_state).layer(axum::middleware::from_fn_with_state(
-        (auth, Role::Read),
+        AuthLayerState { backend, required: Role::Read },
         require_role_middleware,
     ));
 
