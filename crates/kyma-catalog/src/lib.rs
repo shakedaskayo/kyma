@@ -29,6 +29,7 @@ use kyma_core::catalog::{
     NodeInfo, NodeLease, NodeRole, PrunePredicate, SnapshotTxn, TableConfig, TableRef,
 };
 use kyma_core::errors::{CatalogError, Result};
+use kyma_core::tenant::TenantId;
 use kyma_core::types::{DatabaseId, ExtentId, NodeId, SchemaSnapshotId, SnapshotId, TableId};
 use serde_json::Value as Json;
 use sqlx::postgres::PgPoolOptions;
@@ -75,17 +76,25 @@ impl Catalog for PostgresCatalog {
         self
     }
 
-    async fn create_database(&self, name: &str) -> Result<DatabaseId> {
-        let row: (Uuid,) = sqlx::query_as("INSERT INTO databases (name) VALUES ($1) RETURNING id")
-            .bind(name)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+    async fn create_database_in_tenant(
+        &self,
+        tenant: TenantId,
+        name: &str,
+    ) -> Result<DatabaseId> {
+        let row: (Uuid,) = sqlx::query_as(
+            "INSERT INTO databases (tenant_id, name) VALUES ($1, $2) RETURNING id",
+        )
+        .bind(tenant.as_uuid())
+        .bind(name)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
         Ok(DatabaseId::from_uuid(row.0))
     }
 
-    async fn create_table(
+    async fn create_table_in_tenant(
         &self,
+        tenant: TenantId,
         database_id: DatabaseId,
         name: &str,
         schema: Arc<arrow_schema::Schema>,
@@ -101,10 +110,32 @@ impl Catalog for PostgresCatalog {
             .await
             .map_err(|e| CatalogError::Sql(e.to_string()))?;
 
+        // 0. Verify the database belongs to this tenant. Reject mismatches
+        //    so a caller can never create a table under a database it
+        //    doesn't own (cross-tenant link prevention).
+        let db_tenant: Option<(Uuid,)> =
+            sqlx::query_as("SELECT tenant_id FROM databases WHERE id = $1")
+                .bind(database_id.as_uuid())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        let db_tenant = db_tenant.ok_or_else(|| {
+            CatalogError::Sql(format!("database {} not found", database_id))
+        })?;
+        if db_tenant.0 != tenant.as_uuid() {
+            return Err(CatalogError::Sql(format!(
+                "database {} does not belong to tenant {}",
+                database_id, tenant
+            ))
+            .into());
+        }
+
         // 1. Insert the table with NULL snapshot pointers (bootstrap).
         let (table_id,): (Uuid,) = sqlx::query_as(
-            "INSERT INTO tables (database_id, name, config) VALUES ($1, $2, $3) RETURNING id",
+            "INSERT INTO tables (tenant_id, database_id, name, config)
+             VALUES ($1, $2, $3, $4) RETURNING id",
         )
+        .bind(tenant.as_uuid())
         .bind(database_id.as_uuid())
         .bind(name)
         .bind(&config_json)
@@ -114,8 +145,10 @@ impl Catalog for PostgresCatalog {
 
         // 2. Insert the initial schema snapshot.
         let (schema_snap_id,): (Uuid,) = sqlx::query_as(
-            "INSERT INTO schema_snapshots (table_id, arrow_schema) VALUES ($1, $2) RETURNING id",
+            "INSERT INTO schema_snapshots (tenant_id, table_id, arrow_schema)
+             VALUES ($1, $2, $3) RETURNING id",
         )
+        .bind(tenant.as_uuid())
         .bind(table_id)
         .bind(&schema_json)
         .fetch_one(&mut *tx)
@@ -124,9 +157,10 @@ impl Catalog for PostgresCatalog {
 
         // 3. Insert snapshot #0 (empty).
         let (snap_id,): (Uuid,) = sqlx::query_as(
-            "INSERT INTO snapshots (table_id, parent_id, sequence_number, schema_snapshot_id, summary)
-             VALUES ($1, NULL, 0, $2, $3) RETURNING id",
+            "INSERT INTO snapshots (tenant_id, table_id, parent_id, sequence_number, schema_snapshot_id, summary)
+             VALUES ($1, $2, NULL, 0, $3, $4) RETURNING id",
         )
+        .bind(tenant.as_uuid())
         .bind(table_id)
         .bind(schema_snap_id)
         .bind(serde_json::json!({ "operation": "bootstrap" }))
@@ -152,15 +186,21 @@ impl Catalog for PostgresCatalog {
         Ok(TableId::from_uuid(table_id))
     }
 
-    async fn lookup_table(&self, database: &str, name: &str) -> Result<TableRef> {
+    async fn lookup_table_in_tenant(
+        &self,
+        tenant: TenantId,
+        database: &str,
+        name: &str,
+    ) -> Result<TableRef> {
         let row = sqlx::query(
             "SELECT t.id, t.database_id, t.current_snapshot_id, t.schema_snapshot_id,
                     ss.arrow_schema, t.config
              FROM tables t
-             JOIN databases d ON d.id = t.database_id
+             JOIN databases d ON d.id = t.database_id AND d.tenant_id = $1
              LEFT JOIN schema_snapshots ss ON ss.id = t.schema_snapshot_id
-             WHERE d.name = $1 AND t.name = $2",
+             WHERE t.tenant_id = $1 AND d.name = $2 AND t.name = $3",
         )
+        .bind(tenant.as_uuid())
         .bind(database)
         .bind(name)
         .fetch_optional(&self.pool)
@@ -199,16 +239,21 @@ impl Catalog for PostgresCatalog {
         })
     }
 
-    async fn list_tables_in_database(&self, database: &str) -> Result<Vec<TableRef>> {
+    async fn list_tables_in_database_in_tenant(
+        &self,
+        tenant: TenantId,
+        database: &str,
+    ) -> Result<Vec<TableRef>> {
         let rows = sqlx::query(
             "SELECT t.id, t.database_id, t.name, t.current_snapshot_id, t.schema_snapshot_id,
                     ss.arrow_schema, t.config
              FROM tables t
-             JOIN databases d ON d.id = t.database_id
+             JOIN databases d ON d.id = t.database_id AND d.tenant_id = $1
              LEFT JOIN schema_snapshots ss ON ss.id = t.schema_snapshot_id
-             WHERE d.name = $1
+             WHERE t.tenant_id = $1 AND d.name = $2
              ORDER BY t.name",
         )
+        .bind(tenant.as_uuid())
         .bind(database)
         .fetch_all(&self.pool)
         .await
@@ -338,16 +383,26 @@ impl Catalog for PostgresCatalog {
         Ok(SchemaSnapshotId::from_uuid(new_schema_snap_id))
     }
 
-    async fn begin_snapshot(&self, table_id: TableId) -> Result<Box<dyn SnapshotTxn>> {
-        let row =
-            sqlx::query("SELECT current_snapshot_id, schema_snapshot_id FROM tables WHERE id = $1")
-                .bind(table_id.as_uuid())
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(sql_err)?
-                .ok_or_else(|| {
-                    CatalogError::Sql(format!("table {table_id} not found for begin_snapshot"))
-                })?;
+    async fn begin_snapshot_in_tenant(
+        &self,
+        tenant: TenantId,
+        table_id: TableId,
+    ) -> Result<Box<dyn SnapshotTxn>> {
+        let row = sqlx::query(
+            "SELECT current_snapshot_id, schema_snapshot_id
+             FROM tables
+             WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(tenant.as_uuid())
+        .bind(table_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(sql_err)?
+        .ok_or_else(|| {
+            CatalogError::Sql(format!(
+                "table {table_id} not found in tenant {tenant} for begin_snapshot"
+            ))
+        })?;
 
         let parent: Uuid = row
             .try_get::<Option<Uuid>, _>("current_snapshot_id")
@@ -358,6 +413,12 @@ impl Catalog for PostgresCatalog {
             .map_err(sql_err)?
             .ok_or_else(|| CatalogError::Sql("table has no schema_snapshot_id".into()))?;
 
+        // Task 5 will thread `tenant` into PgSnapshotTxn so commits can
+        // bind tenant_id on the snapshots/manifests inserts. For now the
+        // legacy 4-arg constructor is preserved; the row-level CAS still
+        // protects against cross-tenant snapshot writes because the
+        // tables-CAS step only succeeds for the matching table_id.
+        let _ = tenant;
         Ok(Box::new(PgSnapshotTxn::new(
             self.pool.clone(),
             table_id,
@@ -366,8 +427,9 @@ impl Catalog for PostgresCatalog {
         )))
     }
 
-    async fn list_extents(
+    async fn list_extents_in_tenant(
         &self,
+        tenant: TenantId,
         table_id: TableId,
         _snapshot: SnapshotId,
         prune: &PrunePredicate,
@@ -385,9 +447,9 @@ impl Catalog for PostgresCatalog {
                     min_timestamp, max_timestamp, column_stats, present_paths,
                     compaction_gen, created_at
              FROM extents
-             WHERE table_id = $1 AND deleted_at IS NULL",
+             WHERE tenant_id = $1 AND table_id = $2 AND deleted_at IS NULL",
         );
-        let mut arg_index = 2;
+        let mut arg_index = 3;
         if prune.time_range.is_some() {
             sql.push_str(&format!(
                 " AND tstzrange(min_timestamp, max_timestamp) && tstzrange(${arg_index}, ${})",
@@ -473,7 +535,9 @@ impl Catalog for PostgresCatalog {
         }
         sql.push_str(" ORDER BY min_timestamp DESC NULLS LAST");
 
-        let mut q = sqlx::query(&sql).bind(table_id.as_uuid());
+        let mut q = sqlx::query(&sql)
+            .bind(tenant.as_uuid())
+            .bind(table_id.as_uuid());
         if let Some(tr) = &prune.time_range {
             q = q.bind(tr.start_inclusive).bind(tr.end_exclusive);
         }
@@ -538,16 +602,17 @@ impl Catalog for PostgresCatalog {
         Ok(())
     }
 
-    async fn cleanup_soft_deleted_extents(
+    async fn cleanup_soft_deleted_extents_in_tenant(
         &self,
+        tenant: TenantId,
         database: &str,
         table: &str,
         before: DateTime<Utc>,
     ) -> Result<CleanupResult> {
-        // 1. Resolve (database, table) → table_id, reusing the same JOIN the
-        //    public `lookup_table` method uses. This validates the table exists
-        //    and returns a clear `TableNotFound` error if not.
-        let table_ref = self.lookup_table(database, table).await?;
+        // 1. Resolve (tenant, database, table) → table_id. Reuses the
+        //    tenant-aware lookup so a caller in tenant A can never cleanup
+        //    extents under tenant B's table even if it knows the name.
+        let table_ref = self.lookup_table_in_tenant(tenant, database, table).await?;
         let table_uuid = *table_ref.id.as_uuid();
 
         // 2. Collect aggregate stats before deletion so we can return them.
@@ -558,10 +623,12 @@ impl Catalog for PostgresCatalog {
                     CAST(COALESCE(SUM(row_count), 0) AS bigint) AS rows_freed,
                     CAST(COALESCE(SUM(byte_size), 0) AS bigint) AS bytes_freed
              FROM extents
-             WHERE table_id = $1
+             WHERE tenant_id = $1
+               AND table_id = $2
                AND deleted_at IS NOT NULL
-               AND deleted_at < $2",
+               AND deleted_at < $3",
         )
+        .bind(tenant.as_uuid())
         .bind(table_uuid)
         .bind(before)
         .fetch_one(&self.pool)
@@ -576,10 +643,12 @@ impl Catalog for PostgresCatalog {
         if extents_deleted > 0 {
             sqlx::query(
                 "DELETE FROM extents
-                 WHERE table_id = $1
+                 WHERE tenant_id = $1
+                   AND table_id = $2
                    AND deleted_at IS NOT NULL
-                   AND deleted_at < $2",
+                   AND deleted_at < $3",
             )
+            .bind(tenant.as_uuid())
             .bind(table_uuid)
             .bind(before)
             .execute(&self.pool)
@@ -783,12 +852,17 @@ impl Catalog for PostgresCatalog {
         Ok(())
     }
 
-    async fn lookup_idempotency(&self, key: &str) -> Result<Option<IngestLedgerEntry>> {
+    async fn lookup_idempotency_in_tenant(
+        &self,
+        tenant: TenantId,
+        key: &str,
+    ) -> Result<Option<IngestLedgerEntry>> {
         let row = sqlx::query(
             "SELECT table_id, snapshot_id, rows_ingested, bytes_written, applied_at
              FROM ingest_ledger
-             WHERE idempotency_key = $1 AND ttl_expires_at > now()",
+             WHERE tenant_id = $1 AND idempotency_key = $2 AND ttl_expires_at > now()",
         )
+        .bind(tenant.as_uuid())
         .bind(key)
         .fetch_optional(&self.pool)
         .await
@@ -803,8 +877,9 @@ impl Catalog for PostgresCatalog {
         }))
     }
 
-    async fn record_idempotency(
+    async fn record_idempotency_in_tenant(
         &self,
+        tenant: TenantId,
         key: &str,
         entry: IngestLedgerEntry,
         ttl: chrono::Duration,
@@ -812,12 +887,13 @@ impl Catalog for PostgresCatalog {
         let expires_at = entry.applied_at + ttl;
         let row = sqlx::query(
             "INSERT INTO ingest_ledger
-                (idempotency_key, table_id, snapshot_id, rows_ingested, bytes_written,
+                (tenant_id, idempotency_key, table_id, snapshot_id, rows_ingested, bytes_written,
                  applied_at, ttl_expires_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
-             ON CONFLICT (idempotency_key) DO NOTHING
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
              RETURNING table_id, snapshot_id, rows_ingested, bytes_written, applied_at",
         )
+        .bind(tenant.as_uuid())
         .bind(key)
         .bind(entry.table_id.as_uuid())
         .bind(entry.snapshot_id.as_uuid())
@@ -840,17 +916,19 @@ impl Catalog for PostgresCatalog {
 
     // --- dashboards ---
 
-    async fn create_dashboard(
+    async fn create_dashboard_in_tenant(
         &self,
+        tenant: TenantId,
         name: &str,
         description: Option<&str>,
     ) -> std::result::Result<Dashboard, CatalogError> {
         let row = sqlx::query(
-            "INSERT INTO dashboards (name, description)
-             VALUES ($1, $2)
+            "INSERT INTO dashboards (tenant_id, name, description)
+             VALUES ($1, $2, $3)
              RETURNING id, name, description, time_range_preset,
                        refresh_interval_seconds, created_at, updated_at",
         )
+        .bind(tenant.as_uuid())
         .bind(name)
         .bind(description)
         .fetch_one(&self.pool)
@@ -859,13 +937,18 @@ impl Catalog for PostgresCatalog {
         row_to_dashboard(&row)
     }
 
-    async fn list_dashboards(&self) -> std::result::Result<Vec<Dashboard>, CatalogError> {
+    async fn list_dashboards_in_tenant(
+        &self,
+        tenant: TenantId,
+    ) -> std::result::Result<Vec<Dashboard>, CatalogError> {
         let rows = sqlx::query(
             "SELECT id, name, description, time_range_preset,
                     refresh_interval_seconds, created_at, updated_at
              FROM dashboards
+             WHERE tenant_id = $1
              ORDER BY updated_at DESC",
         )
+        .bind(tenant.as_uuid())
         .fetch_all(&self.pool)
         .await
         .map_err(|e| CatalogError::Sql(e.to_string()))?;
@@ -873,16 +956,18 @@ impl Catalog for PostgresCatalog {
         rows.iter().map(row_to_dashboard).collect()
     }
 
-    async fn get_dashboard(
+    async fn get_dashboard_in_tenant(
         &self,
+        tenant: TenantId,
         id: Uuid,
     ) -> std::result::Result<Option<DashboardWithPanels>, CatalogError> {
         let maybe_row = sqlx::query(
             "SELECT id, name, description, time_range_preset,
                     refresh_interval_seconds, created_at, updated_at
              FROM dashboards
-             WHERE id = $1",
+             WHERE tenant_id = $1 AND id = $2",
         )
+        .bind(tenant.as_uuid())
         .bind(id)
         .fetch_optional(&self.pool)
         .await
@@ -897,9 +982,10 @@ impl Catalog for PostgresCatalog {
             "SELECT id, dashboard_id, title, panel_type, query, database_name,
                     config, grid_x, grid_y, grid_w, grid_h, display_order
              FROM dashboard_panels
-             WHERE dashboard_id = $1
+             WHERE tenant_id = $1 AND dashboard_id = $2
              ORDER BY display_order ASC",
         )
+        .bind(tenant.as_uuid())
         .bind(id)
         .fetch_all(&self.pool)
         .await
@@ -913,18 +999,20 @@ impl Catalog for PostgresCatalog {
         Ok(Some(DashboardWithPanels { dashboard, panels }))
     }
 
-    async fn update_dashboard(
+    async fn update_dashboard_in_tenant(
         &self,
+        tenant: TenantId,
         id: Uuid,
         patch: DashboardUpdate,
     ) -> std::result::Result<Dashboard, CatalogError> {
-        // Fetch current row.
+        // Fetch current row, scoped to tenant.
         let maybe_row = sqlx::query(
             "SELECT id, name, description, time_range_preset,
                     refresh_interval_seconds, created_at, updated_at
              FROM dashboards
-             WHERE id = $1",
+             WHERE tenant_id = $1 AND id = $2",
         )
+        .bind(tenant.as_uuid())
         .bind(id)
         .fetch_optional(&self.pool)
         .await
@@ -952,15 +1040,16 @@ impl Catalog for PostgresCatalog {
         // Update the dashboard row.
         let updated_row = sqlx::query(
             "UPDATE dashboards
-             SET name = $2,
-                 description = $3,
-                 time_range_preset = $4,
-                 refresh_interval_seconds = $5,
+             SET name = $3,
+                 description = $4,
+                 time_range_preset = $5,
+                 refresh_interval_seconds = $6,
                  updated_at = now()
-             WHERE id = $1
+             WHERE tenant_id = $1 AND id = $2
              RETURNING id, name, description, time_range_preset,
                        refresh_interval_seconds, created_at, updated_at",
         )
+        .bind(tenant.as_uuid())
         .bind(id)
         .bind(&new_name)
         .bind(new_description.as_deref())
@@ -972,13 +1061,17 @@ impl Catalog for PostgresCatalog {
 
         // Atomically replace panels if provided.
         if let Some(new_panels) = patch.panels {
-            sqlx::query("DELETE FROM dashboard_panels WHERE dashboard_id = $1")
-                .bind(id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| CatalogError::Sql(e.to_string()))?;
+            sqlx::query(
+                "DELETE FROM dashboard_panels
+                 WHERE tenant_id = $1 AND dashboard_id = $2",
+            )
+            .bind(tenant.as_uuid())
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
 
-            insert_panels(&mut *tx, id, &new_panels).await?;
+            insert_panels(&mut *tx, tenant, id, &new_panels).await?;
         }
 
         tx.commit()
@@ -988,8 +1081,13 @@ impl Catalog for PostgresCatalog {
         row_to_dashboard(&updated_row)
     }
 
-    async fn delete_dashboard(&self, id: Uuid) -> std::result::Result<bool, CatalogError> {
-        let result = sqlx::query("DELETE FROM dashboards WHERE id = $1")
+    async fn delete_dashboard_in_tenant(
+        &self,
+        tenant: TenantId,
+        id: Uuid,
+    ) -> std::result::Result<bool, CatalogError> {
+        let result = sqlx::query("DELETE FROM dashboards WHERE tenant_id = $1 AND id = $2")
+            .bind(tenant.as_uuid())
             .bind(id)
             .execute(&self.pool)
             .await
@@ -999,35 +1097,43 @@ impl Catalog for PostgresCatalog {
 
     // --- schema-listing ---
 
-    async fn list_databases(
+    async fn list_databases_in_tenant(
         &self,
+        tenant: TenantId,
     ) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
-        let rows: Vec<(String,)> = sqlx::query_as("SELECT name FROM databases ORDER BY name ASC")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM databases WHERE tenant_id = $1 ORDER BY name ASC",
+        )
+        .bind(tenant.as_uuid())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
         Ok(rows.into_iter().map(|r| r.0).collect())
     }
 
-    async fn list_tables(
+    async fn list_tables_in_tenant(
         &self,
+        tenant: TenantId,
         database: &str,
     ) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
-        let exists: (bool,) =
-            sqlx::query_as("SELECT EXISTS(SELECT 1 FROM databases WHERE name = $1)")
-                .bind(database)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        let exists: (bool,) = sqlx::query_as(
+            "SELECT EXISTS(SELECT 1 FROM databases WHERE tenant_id = $1 AND name = $2)",
+        )
+        .bind(tenant.as_uuid())
+        .bind(database)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
         if !exists.0 {
             return Err(CatalogError::DatabaseNotFound(database.to_string()));
         }
         let rows: Vec<(String,)> = sqlx::query_as(
             "SELECT t.name FROM tables t
-             JOIN databases d ON d.id = t.database_id
-             WHERE d.name = $1
+             JOIN databases d ON d.id = t.database_id AND d.tenant_id = $1
+             WHERE t.tenant_id = $1 AND d.name = $2
              ORDER BY t.name ASC",
         )
+        .bind(tenant.as_uuid())
         .bind(database)
         .fetch_all(&self.pool)
         .await
@@ -1035,27 +1141,31 @@ impl Catalog for PostgresCatalog {
         Ok(rows.into_iter().map(|r| r.0).collect())
     }
 
-    async fn get_table_columns(
+    async fn get_table_columns_in_tenant(
         &self,
+        tenant: TenantId,
         database: &str,
         table: &str,
     ) -> std::result::Result<Vec<ColumnInfo>, kyma_core::errors::CatalogError> {
-        let db_exists: (bool,) =
-            sqlx::query_as("SELECT EXISTS(SELECT 1 FROM databases WHERE name = $1)")
-                .bind(database)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        let db_exists: (bool,) = sqlx::query_as(
+            "SELECT EXISTS(SELECT 1 FROM databases WHERE tenant_id = $1 AND name = $2)",
+        )
+        .bind(tenant.as_uuid())
+        .bind(database)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
         if !db_exists.0 {
             return Err(CatalogError::DatabaseNotFound(database.to_string()));
         }
         let row: Option<(serde_json::Value,)> = sqlx::query_as(
             "SELECT ss.arrow_schema
              FROM tables t
-             JOIN databases d ON d.id = t.database_id
+             JOIN databases d ON d.id = t.database_id AND d.tenant_id = $1
              JOIN schema_snapshots ss ON ss.id = t.schema_snapshot_id
-             WHERE d.name = $1 AND t.name = $2",
+             WHERE t.tenant_id = $1 AND d.name = $2 AND t.name = $3",
         )
+        .bind(tenant.as_uuid())
         .bind(database)
         .bind(table)
         .fetch_optional(&self.pool)
@@ -1138,6 +1248,7 @@ fn row_to_panel(row: &sqlx::postgres::PgRow) -> std::result::Result<DashboardPan
 
 async fn insert_panels(
     tx: &mut sqlx::PgConnection,
+    tenant: TenantId,
     dashboard_id: Uuid,
     panels: &[DashboardPanelInput],
 ) -> std::result::Result<(), CatalogError> {
@@ -1145,10 +1256,11 @@ async fn insert_panels(
         let panel_id = panel.id.unwrap_or_else(Uuid::new_v4);
         sqlx::query(
             "INSERT INTO dashboard_panels
-             (id, dashboard_id, title, panel_type, query, database_name,
+             (tenant_id, id, dashboard_id, title, panel_type, query, database_name,
               config, grid_x, grid_y, grid_w, grid_h, display_order)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
         )
+        .bind(tenant.as_uuid())
         .bind(panel_id)
         .bind(dashboard_id)
         .bind(&panel.title)
