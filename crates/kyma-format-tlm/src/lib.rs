@@ -63,6 +63,10 @@ pub struct TelemetryFormat {
     store: Arc<dyn ObjectStore>,
     /// Prefix prepended to every extent's object key, e.g. `"kyma"`.
     path_prefix: String,
+    /// Tenant segment injected between prefix and `extents/` for cloud
+    /// deployments. Empty string = self-hosted / legacy mode (no tenant
+    /// segment in the path).
+    tenant_segment: String,
 }
 
 impl TelemetryFormat {
@@ -71,6 +75,21 @@ impl TelemetryFormat {
         Self {
             store,
             path_prefix: path_prefix.into(),
+            tenant_segment: String::new(),
+        }
+    }
+
+    /// Build a format that namespaces every new extent under
+    /// `<prefix>/<tenant_id>/extents/<extent_id>.kyma`.
+    pub fn with_tenant(
+        store: Arc<dyn ObjectStore>,
+        path_prefix: impl Into<String>,
+        tenant: kyma_core::tenant::TenantId,
+    ) -> Self {
+        Self {
+            store,
+            path_prefix: path_prefix.into(),
+            tenant_segment: tenant.to_string(),
         }
     }
 
@@ -82,6 +101,13 @@ impl TelemetryFormat {
     /// Borrow the path prefix (e.g. "kyma") used when building extent paths.
     pub(crate) fn path_prefix(&self) -> &str {
         &self.path_prefix
+    }
+
+    /// Borrow the tenant segment (e.g. a UUID string) used when building
+    /// tenant-namespaced extent paths. Empty string = legacy / self-hosted
+    /// mode with no tenant segment.
+    pub(crate) fn tenant_segment(&self) -> &str {
+        &self.tenant_segment
     }
 }
 

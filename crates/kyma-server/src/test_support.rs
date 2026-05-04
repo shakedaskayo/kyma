@@ -167,18 +167,26 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
 pub async fn start_test_server_with_seeded_data() -> TestServer {
     let state = seeded_state_with_obs_otel_logs().await;
 
-    let auth = crate::auth::AuthConfig::from_str("test-read-token:read");
+    let backend: std::sync::Arc<dyn crate::auth::AuthBackend> = std::sync::Arc::new(
+        crate::auth::EnvAuthBackend::from_str("test-read-token:read"),
+    );
 
     // Build the query router with auth.
     let query_router = crate::router(state.clone()).layer(axum::middleware::from_fn_with_state(
-        (auth.clone(), crate::auth::Role::Read),
+        crate::auth::AuthLayerState {
+            backend: backend.clone(),
+            required: crate::auth::Role::Read,
+        },
         crate::auth::require_role_middleware,
     ));
 
     // Build the flight-web router with auth.
     let flight_router =
         crate::flight_web_router(state).layer(axum::middleware::from_fn_with_state(
-            (auth, crate::auth::Role::Read),
+            crate::auth::AuthLayerState {
+                backend: backend.clone(),
+                required: crate::auth::Role::Read,
+            },
             crate::auth::require_role_middleware,
         ));
 

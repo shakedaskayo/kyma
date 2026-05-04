@@ -54,6 +54,7 @@ adk-rust.workspace = true
 schemars.workspace = true
 sqlx.workspace = true
 chrono.workspace = true
+sha2 = "0.10"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
@@ -69,6 +70,7 @@ kyma-catalog.workspace = true
 
 [features]
 default = []
+cloud-auth = []
 web-ui  = ["dep:kyma-web-assets", "dep:tonic-web", "dep:http-body-util"]
 test-support = [
     "dep:kyma-format-tlm",
@@ -93,3 +95,7 @@ required-features = ["test-support"]
 [[test]]
 name = "cleanup_http"
 required-features = ["test-support"]
+
+[[test]]
+name = "auth_backends_it"
+required-features = ["test-support", "cloud-auth"]

@@ -6,8 +6,9 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use kyma_catalog::PostgresCatalog;
+use kyma_core::tenant::TenantId;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -47,7 +48,11 @@ struct IdResp {
     id: Uuid,
 }
 
-async fn create(State(s): State<AdminState>, Json(req): Json<CreateReq>) -> impl IntoResponse {
+async fn create(
+    Extension(tenant): Extension<TenantId>,
+    State(s): State<AdminState>,
+    Json(req): Json<CreateReq>,
+) -> impl IntoResponse {
     let Some(c) = s.registry.lookup(&req.type_id) else {
         return (
             StatusCode::BAD_REQUEST,
@@ -75,6 +80,7 @@ async fn create(State(s): State<AdminState>, Json(req): Json<CreateReq>) -> impl
     }
     let res = catalog_sql::create_connector_direct(
         s.catalog.pool(),
+        tenant,
         &req.name,
         &req.type_id,
         &req.target_database,
@@ -94,10 +100,16 @@ async fn create(State(s): State<AdminState>, Json(req): Json<CreateReq>) -> impl
     }
 }
 
-async fn list(State(s): State<AdminState>) -> impl IntoResponse {
+async fn list(
+    Extension(tenant): Extension<TenantId>,
+    State(s): State<AdminState>,
+) -> impl IntoResponse {
     let rows = sqlx::query_as::<_, (Uuid, String, String, bool)>(
-        "SELECT id, name, type, enabled FROM connectors ORDER BY name",
+        "SELECT id, name, type, enabled FROM connectors
+         WHERE tenant_id = $1
+         ORDER BY name",
     )
+    .bind(tenant.as_uuid())
     .fetch_all(s.catalog.pool())
     .await;
     match rows {
@@ -123,8 +135,12 @@ async fn list(State(s): State<AdminState>) -> impl IntoResponse {
     }
 }
 
-async fn get_one(State(s): State<AdminState>, Path(id): Path<Uuid>) -> impl IntoResponse {
-    match catalog_sql::load_connector(s.catalog.pool(), id).await {
+async fn get_one(
+    Extension(tenant): Extension<TenantId>,
+    State(s): State<AdminState>,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
+    match catalog_sql::load_connector(s.catalog.pool(), tenant, id).await {
         Ok(Some(c)) => {
             let scrubbed = scrub_secrets(c.config_jsonb.clone());
             (
@@ -198,6 +214,7 @@ struct PatchReq {
 }
 
 async fn patch_one(
+    Extension(tenant): Extension<TenantId>,
     State(s): State<AdminState>,
     Path(id): Path<Uuid>,
     Json(req): Json<PatchReq>,
@@ -214,7 +231,7 @@ async fn patch_one(
         }
     }
     if let Some(cfg) = &req.config {
-        let Some(c) = catalog_sql::load_connector(s.catalog.pool(), id)
+        let Some(c) = catalog_sql::load_connector(s.catalog.pool(), tenant, id)
             .await
             .ok()
             .flatten()
@@ -238,14 +255,15 @@ async fn patch_one(
     }
     let res = sqlx::query(
         "UPDATE connectors SET
-             name = COALESCE($2, name),
-             schedule_ms = COALESCE($3, schedule_ms),
-             enabled = COALESCE($4, enabled),
-             config_jsonb = COALESCE($5, config_jsonb),
-             disabled_reason = CASE WHEN $4 = TRUE THEN NULL ELSE disabled_reason END,
+             name = COALESCE($3, name),
+             schedule_ms = COALESCE($4, schedule_ms),
+             enabled = COALESCE($5, enabled),
+             config_jsonb = COALESCE($6, config_jsonb),
+             disabled_reason = CASE WHEN $5 = TRUE THEN NULL ELSE disabled_reason END,
              updated_at = now()
-         WHERE id = $1",
+         WHERE tenant_id = $1 AND id = $2",
     )
+    .bind(tenant.as_uuid())
     .bind(id)
     .bind(req.name.as_deref())
     .bind(req.schedule_ms)
@@ -263,8 +281,13 @@ async fn patch_one(
     }
 }
 
-async fn delete_one(State(s): State<AdminState>, Path(id): Path<Uuid>) -> impl IntoResponse {
-    let res = sqlx::query("DELETE FROM connectors WHERE id = $1")
+async fn delete_one(
+    Extension(tenant): Extension<TenantId>,
+    State(s): State<AdminState>,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
+    let res = sqlx::query("DELETE FROM connectors WHERE tenant_id = $1 AND id = $2")
+        .bind(tenant.as_uuid())
         .bind(id)
         .execute(s.catalog.pool())
         .await;
@@ -278,30 +301,44 @@ async fn delete_one(State(s): State<AdminState>, Path(id): Path<Uuid>) -> impl I
     }
 }
 
-async fn pause(State(s): State<AdminState>, Path(id): Path<Uuid>) -> impl IntoResponse {
+async fn pause(
+    Extension(tenant): Extension<TenantId>,
+    State(s): State<AdminState>,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
     let _ = sqlx::query(
         "UPDATE connectors SET enabled = FALSE, disabled_reason = 'manual',
-         updated_at = now() WHERE id = $1",
+         updated_at = now() WHERE tenant_id = $1 AND id = $2",
     )
+    .bind(tenant.as_uuid())
     .bind(id)
     .execute(s.catalog.pool())
     .await;
     StatusCode::NO_CONTENT
 }
 
-async fn resume(State(s): State<AdminState>, Path(id): Path<Uuid>) -> impl IntoResponse {
+async fn resume(
+    Extension(tenant): Extension<TenantId>,
+    State(s): State<AdminState>,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
     let _ = sqlx::query(
         "UPDATE connectors SET enabled = TRUE, disabled_reason = NULL,
-         updated_at = now() WHERE id = $1",
+         updated_at = now() WHERE tenant_id = $1 AND id = $2",
     )
+    .bind(tenant.as_uuid())
     .bind(id)
     .execute(s.catalog.pool())
     .await;
     StatusCode::NO_CONTENT
 }
 
-async fn trigger(State(s): State<AdminState>, Path(id): Path<Uuid>) -> impl IntoResponse {
+async fn trigger(
+    Extension(tenant): Extension<TenantId>,
+    State(s): State<AdminState>,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
     let now_ms = chrono::Utc::now().timestamp_millis();
-    let _ = catalog_sql::enqueue_tick(s.catalog.pool(), id, now_ms).await;
+    let _ = catalog_sql::enqueue_tick(s.catalog.pool(), tenant, id, now_ms).await;
     StatusCode::ACCEPTED
 }

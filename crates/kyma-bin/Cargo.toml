@@ -48,3 +48,4 @@ chrono.workspace = true
 [features]
 default = []
 web-ui  = ["kyma-server/web-ui"]
+cloud-auth = ["kyma-server/cloud-auth"]

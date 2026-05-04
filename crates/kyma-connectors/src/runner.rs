@@ -9,6 +9,7 @@ use chrono::Utc;
 use futures::future::BoxFuture;
 use kyma_catalog::PostgresCatalog;
 use kyma_core::catalog::Catalog;
+use kyma_core::tenant::{TenantId, DEFAULT_TENANT};
 use kyma_core::types::NodeId;
 use std::future::Future;
 use std::sync::Arc;
@@ -86,8 +87,19 @@ impl ConnectorRunner {
             .ok_or_else(|| anyhow::anyhow!("task missing scheduled_for"))?;
         let scheduled_for = chrono::DateTime::<Utc>::from_timestamp_millis(scheduled_for_ms)
             .ok_or_else(|| anyhow::anyhow!("bad scheduled_for"))?;
+        // tenant_id was stamped into the task payload by the scheduler. Older
+        // pre-tenancy enqueues didn't carry one — fall back to DEFAULT_TENANT
+        // (the all-zero UUID used by self-hosted deployments).
+        let tenant: TenantId = task
+            .payload
+            .get("tenant_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_TENANT);
 
-        let conn = match catalog_sql::load_connector(self.catalog.pool(), connector_id).await? {
+        let conn = match catalog_sql::load_connector(self.catalog.pool(), tenant, connector_id)
+            .await?
+        {
             Some(c) if c.enabled => c,
             Some(_) => {
                 debug!(connector_id = %connector_id, "skipping disabled connector");
@@ -106,7 +118,7 @@ impl ConnectorRunner {
             .lookup(&conn.type_id)
             .ok_or_else(|| anyhow::anyhow!("no registered impl for type {}", conn.type_id))?;
 
-        let cursor = catalog_sql::load_cursor(self.catalog.pool(), connector_id).await?;
+        let cursor = catalog_sql::load_cursor(self.catalog.pool(), tenant, connector_id).await?;
         let metrics = ConnectorMetrics {
             connector_id,
             type_id: impl_arc.type_id(),
@@ -146,7 +158,13 @@ impl ConnectorRunner {
                 {
                     let msg = format!("sink: {e}");
                     warn!(connector_id = %connector_id, error = %msg, "sink failed");
-                    catalog_sql::mark_run_failure(self.catalog.pool(), connector_id, &msg).await?;
+                    catalog_sql::mark_run_failure(
+                        self.catalog.pool(),
+                        tenant,
+                        connector_id,
+                        &msg,
+                    )
+                    .await?;
                     self.catalog.fail_task(task.id, &msg).await?;
                     metrics.record_error("sink");
                     metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
@@ -154,21 +172,31 @@ impl ConnectorRunner {
                 }
                 if let Some(c) = new_cursor {
                     if let Err(e) =
-                        catalog_sql::upsert_cursor(self.catalog.pool(), connector_id, &c).await
+                        catalog_sql::upsert_cursor(self.catalog.pool(), tenant, connector_id, &c)
+                            .await
                     {
                         let msg = format!("cursor upsert: {e}");
                         warn!(connector_id = %connector_id, error = %msg, "cursor upsert failed");
-                        catalog_sql::mark_run_failure(self.catalog.pool(), connector_id, &msg)
-                            .await?;
+                        catalog_sql::mark_run_failure(
+                            self.catalog.pool(),
+                            tenant,
+                            connector_id,
+                            &msg,
+                        )
+                        .await?;
                         self.catalog.fail_task(task.id, &msg).await?;
                         metrics.record_error("cursor");
                         metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
                         return Ok(true);
                     }
                 }
-                if let Err(e) =
-                    catalog_sql::mark_run_success(self.catalog.pool(), connector_id, n_rows as i64)
-                        .await
+                if let Err(e) = catalog_sql::mark_run_success(
+                    self.catalog.pool(),
+                    tenant,
+                    connector_id,
+                    n_rows as i64,
+                )
+                .await
                 {
                     error!(connector_id = %connector_id, error = %e, "mark_run_success failed");
                     // Fall through — still attempt to complete the task so it
@@ -184,7 +212,8 @@ impl ConnectorRunner {
             }
             Err(ConnectorError::Transient(msg)) => {
                 warn!(connector_id = %connector_id, error = %msg, "transient");
-                catalog_sql::mark_run_failure(self.catalog.pool(), connector_id, &msg).await?;
+                catalog_sql::mark_run_failure(self.catalog.pool(), tenant, connector_id, &msg)
+                    .await?;
                 self.catalog.fail_task(task.id, &msg).await?;
                 metrics.record_error("transient");
                 metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
@@ -192,7 +221,8 @@ impl ConnectorRunner {
             }
             Err(ConnectorError::Permanent(msg)) => {
                 warn!(connector_id = %connector_id, error = %msg, "permanent");
-                catalog_sql::mark_run_failure(self.catalog.pool(), connector_id, &msg).await?;
+                catalog_sql::mark_run_failure(self.catalog.pool(), tenant, connector_id, &msg)
+                    .await?;
                 self.catalog.complete_task(task.id).await?;
                 metrics.record_error("permanent");
                 metrics.record_tick(TickResult::Permanent, t0.elapsed().as_secs_f64());
@@ -200,7 +230,8 @@ impl ConnectorRunner {
             }
             Err(ConnectorError::Config(msg)) => {
                 error!(connector_id = %connector_id, error = %msg, "config");
-                catalog_sql::disable_connector(self.catalog.pool(), connector_id, &msg).await?;
+                catalog_sql::disable_connector(self.catalog.pool(), tenant, connector_id, &msg)
+                    .await?;
                 self.catalog.complete_task(task.id).await?;
                 metrics.record_error("config");
                 metrics.record_tick(TickResult::Config, t0.elapsed().as_secs_f64());

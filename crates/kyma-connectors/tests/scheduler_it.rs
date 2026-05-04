@@ -3,6 +3,7 @@
 use kyma_catalog::PostgresCatalog;
 use kyma_connectors::catalog_sql;
 use kyma_connectors::scheduler::ConnectorScheduler;
+use kyma_core::tenant::DEFAULT_TENANT;
 use std::sync::Arc;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
@@ -23,6 +24,7 @@ async fn inserts_tick_after_interval() {
     let (_pg, catalog) = pg_catalog().await;
     let id = catalog_sql::create_connector_direct(
         catalog.pool(),
+        DEFAULT_TENANT,
         "p1",
         "prometheus",
         "db",
@@ -58,6 +60,7 @@ async fn disabled_connectors_are_skipped() {
     let (_pg, catalog) = pg_catalog().await;
     let id = catalog_sql::create_connector_direct(
         catalog.pool(),
+        DEFAULT_TENANT,
         "p2",
         "prometheus",
         "db",

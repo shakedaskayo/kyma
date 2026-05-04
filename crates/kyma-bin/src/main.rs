@@ -30,14 +30,16 @@ use kyma_ingest_filedrop::{FiledropConfig, FiledropWatcher};
 use kyma_ingest_kafka::{KafkaConsumerConfig, KafkaConsumerWorker};
 use kyma_ingest_otlp::OtlpLogsService;
 use kyma_ingest_rest::IngestState;
-use kyma_server::auth::{require_role_middleware, AuthConfig, Role};
+use kyma_server::auth::{
+    require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role,
+};
 use kyma_server::{ConnectorAdminState, QueryState};
 use kyma_storage::{build_object_store, config_from_env};
 use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer as OtlpLogsServer;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::signal;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -132,8 +134,33 @@ async fn main() -> Result<()> {
     //    Build the HTTP router by merging ingest + query + health + metrics.
     //    Health + metrics stay unauthenticated; ingest + query get the auth
     //    middleware (bypassed at runtime when KYMA_AUTH_TOKENS is empty).
-    let auth = AuthConfig::from_env();
-    if auth.enabled() {
+    let backend: Arc<dyn AuthBackend> = match std::env::var("KYMA_AUTH_BACKEND")
+        .ok()
+        .as_deref()
+    {
+        #[cfg(feature = "cloud-auth")]
+        Some("db") => {
+            use kyma_server::auth::DbAuthBackend;
+            info!("auth: using db backend (api_tokens table)");
+            Arc::new(DbAuthBackend::new(pg_pool.clone()))
+        }
+        #[cfg(not(feature = "cloud-auth"))]
+        Some("db") => {
+            warn!(
+                "KYMA_AUTH_BACKEND=db requested but the binary was compiled without \
+                 the `cloud-auth` feature; falling back to EnvAuthBackend."
+            );
+            Arc::new(EnvAuthBackend::from_env())
+        }
+        Some(other) if !other.is_empty() => {
+            warn!(
+                "KYMA_AUTH_BACKEND={other:?} unrecognized; using EnvAuthBackend."
+            );
+            Arc::new(EnvAuthBackend::from_env())
+        }
+        _ => Arc::new(EnvAuthBackend::from_env()),
+    };
+    if backend.enabled() {
         info!("auth: bearer-token protection enabled on /v1/ingest (write) + /v1/query (read)");
     } else {
         info!("auth: disabled (set KYMA_AUTH_TOKENS to enable)");
@@ -169,7 +196,10 @@ async fn main() -> Result<()> {
         write_path: write_path.clone(),
     })
     .layer(axum::middleware::from_fn_with_state(
-        (auth.clone(), Role::Write),
+        AuthLayerState {
+            backend: backend.clone(),
+            required: Role::Write,
+        },
         require_role_middleware,
     ));
     let agent_state = kyma_server::agent::AgentState {
@@ -190,7 +220,10 @@ async fn main() -> Result<()> {
             agent_state,
         )
         .layer(axum::middleware::from_fn_with_state(
-            (auth.clone(), Role::Read),
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Read,
+            },
             require_role_middleware,
         ));
     // Connector registry + row-sink.
@@ -231,14 +264,30 @@ async fn main() -> Result<()> {
         registry: conn_registry.clone(),
     })
     .layer(axum::middleware::from_fn_with_state(
-        (auth.clone(), Role::Write),
+        AuthLayerState {
+            backend: backend.clone(),
+            required: Role::Write,
+        },
         require_role_middleware,
     ));
-    let dashboards_write_router = kyma_server::dashboards_write_router(catalog.clone()).layer(
-        axum::middleware::from_fn_with_state((auth.clone(), Role::Write), require_role_middleware),
-    );
+    let dashboards_write_router =
+        kyma_server::dashboards_write_router(catalog.clone()).layer(
+            axum::middleware::from_fn_with_state(
+                AuthLayerState {
+                    backend: backend.clone(),
+                    required: Role::Write,
+                },
+                require_role_middleware,
+            ),
+        );
     let cleanup_write_router = kyma_server::cleanup_write_router(catalog.clone()).layer(
-        axum::middleware::from_fn_with_state((auth.clone(), Role::Write), require_role_middleware),
+        axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Write,
+            },
+            require_role_middleware,
+        ),
     );
     let app = ingest_router
         .merge(query_router)
@@ -264,7 +313,10 @@ async fn main() -> Result<()> {
                 node_id: Some(lease.node_id),
             })
             .layer(axum::middleware::from_fn_with_state(
-                (auth.clone(), kyma_server::auth::Role::Read),
+                AuthLayerState {
+                    backend: backend.clone(),
+                    required: kyma_server::auth::Role::Read,
+                },
                 kyma_server::auth::require_role_middleware,
             ));
         app.merge(flight_router)
