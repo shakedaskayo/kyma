@@ -20,3 +20,10 @@ pub mod tools;
 
 #[cfg(test)]
 mod tools_unit_tests;
+
+pub mod router;
+
+#[cfg(test)]
+mod router_unit_tests;
+
+pub use router::{router, McpState};
