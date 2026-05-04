@@ -5,3 +5,8 @@
 //! <https://modelcontextprotocol.io/>.
 
 #![forbid(unsafe_code)]
+
+pub mod jsonrpc;
+
+#[cfg(test)]
+mod jsonrpc_unit_tests;
