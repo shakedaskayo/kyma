@@ -63,9 +63,9 @@ impl ToolDispatch {
         match tool.execute(ctx, arguments).await {
             Ok(value) => Ok(json!({
                 "content": [
-                    {"type": "text", "text": serde_json::to_string(&value).unwrap_or_else(|_| "{}".into())}
+                    {"type": "text", "text": serde_json::to_string(&value).expect("serializing serde_json::Value to string is infallible")}
                 ],
-                "isError": value.get("error").is_some(),
+                "isError": false,
                 "structuredContent": value,
             })),
             Err(e) => Err(ErrorObject::new(
