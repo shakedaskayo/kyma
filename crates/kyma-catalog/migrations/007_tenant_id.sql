@@ -8,6 +8,11 @@
 --      cloud product needs same-name resources across workspaces.
 --   4. Index every tenant_id column so per-tenant queries hit indices.
 --   5. Add connector KMS schema columns now (Slice 2 wires the actual encryption).
+--
+-- Lock note: `ADD COLUMN ... NOT NULL DEFAULT '...'` is safe on Postgres 11+
+-- (no table rewrite for non-volatile defaults), but takes ACCESS EXCLUSIVE
+-- briefly per ALTER. Revisit if any of these tables grow past ~10M rows;
+-- in that regime, prefer the column-then-default-then-not-null three-step.
 
 -- 1. databases
 ALTER TABLE databases ADD COLUMN tenant_id uuid NOT NULL
@@ -77,8 +82,8 @@ CREATE INDEX dashboard_panels_tenant_idx ON dashboard_panels (tenant_id);
 ALTER TABLE connectors ADD COLUMN tenant_id uuid NOT NULL
     DEFAULT '00000000-0000-0000-0000-000000000000';
 ALTER TABLE connectors ALTER COLUMN tenant_id DROP DEFAULT;
-ALTER TABLE connectors ADD COLUMN encrypted_with_kms_key_id text;
-ALTER TABLE connectors ADD COLUMN encrypted_secrets_blob bytea;
+ALTER TABLE connectors ADD COLUMN kms_key_id text;
+ALTER TABLE connectors ADD COLUMN encrypted_secrets bytea;
 ALTER TABLE connectors DROP CONSTRAINT IF EXISTS connectors_name_key;
 ALTER TABLE connectors ADD CONSTRAINT connectors_tenant_name_uniq UNIQUE (tenant_id, name);
 CREATE INDEX connectors_tenant_idx ON connectors (tenant_id);
@@ -103,6 +108,7 @@ CREATE INDEX agent_sessions_tenant_idx ON agent_sessions (tenant_id);
 ALTER TABLE agent_session_turns ADD COLUMN tenant_id uuid NOT NULL
     DEFAULT '00000000-0000-0000-0000-000000000000';
 ALTER TABLE agent_session_turns ALTER COLUMN tenant_id DROP DEFAULT;
+CREATE INDEX agent_session_turns_tenant_idx ON agent_session_turns (tenant_id);
 ALTER TABLE agent_replay_cache ADD COLUMN tenant_id uuid NOT NULL
     DEFAULT '00000000-0000-0000-0000-000000000000';
 ALTER TABLE agent_replay_cache ALTER COLUMN tenant_id DROP DEFAULT;
