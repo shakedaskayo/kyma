@@ -18,6 +18,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use kyma_core::catalog::{ExtentManifest, SnapshotSummary, SnapshotTxn};
 use kyma_core::errors::{CatalogError, Error, Result};
+use kyma_core::tenant::TenantId;
 use kyma_core::types::{ExtentId, SchemaSnapshotId, SnapshotId, TableId};
 use sqlx::error::ErrorKind;
 use sqlx::PgPool;
@@ -27,6 +28,7 @@ use uuid::Uuid;
 #[derive(Debug)]
 pub struct PgSnapshotTxn {
     pool: PgPool,
+    tenant: TenantId,
     table_id: TableId,
     parent_snapshot_id: SnapshotId,
     schema_snapshot_id: SchemaSnapshotId,
@@ -37,12 +39,14 @@ pub struct PgSnapshotTxn {
 impl PgSnapshotTxn {
     pub fn new(
         pool: PgPool,
+        tenant: TenantId,
         table_id: TableId,
         parent_snapshot_id: SnapshotId,
         schema_snapshot_id: SchemaSnapshotId,
     ) -> Self {
         Self {
             pool,
+            tenant,
             table_id,
             parent_snapshot_id,
             schema_snapshot_id,
@@ -71,6 +75,7 @@ impl SnapshotTxn for PgSnapshotTxn {
     async fn commit(self: Box<Self>, summary: SnapshotSummary) -> Result<SnapshotId> {
         let Self {
             pool,
+            tenant,
             table_id,
             parent_snapshot_id,
             schema_snapshot_id,
@@ -113,9 +118,10 @@ impl SnapshotTxn for PgSnapshotTxn {
         // to `CatalogError::Conflict` so callers handle the race uniformly
         // regardless of which line detected it.
         let (new_snap_id,): (Uuid,) = sqlx::query_as(
-            "INSERT INTO snapshots (table_id, parent_id, sequence_number, schema_snapshot_id, summary)
-             VALUES ($1, $2, $3, $4, $5) RETURNING id",
+            "INSERT INTO snapshots (tenant_id, table_id, parent_id, sequence_number, schema_snapshot_id, summary)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
         )
+        .bind(tenant.as_uuid())
         .bind(table_id.as_uuid())
         .bind(parent_snapshot_id.as_uuid())
         .bind(new_seq)
@@ -127,9 +133,10 @@ impl SnapshotTxn for PgSnapshotTxn {
 
         // 2. Insert a manifest row for this snapshot (kind=data).
         let (manifest_id,): (Uuid,) = sqlx::query_as(
-            "INSERT INTO manifests (snapshot_id, kind, extent_count, byte_size)
-             VALUES ($1, 'data', $2, $3) RETURNING id",
+            "INSERT INTO manifests (tenant_id, snapshot_id, kind, extent_count, byte_size)
+             VALUES ($1, $2, 'data', $3, $4) RETURNING id",
         )
+        .bind(tenant.as_uuid())
         .bind(new_snap_id)
         .bind(added.len() as i32)
         .bind(added.iter().map(|e| e.byte_size as i64).sum::<i64>())
@@ -141,11 +148,12 @@ impl SnapshotTxn for PgSnapshotTxn {
         for e in &added {
             sqlx::query(
                 "INSERT INTO extents (
-                    id, table_id, manifest_id, schema_snapshot_id, object_path, byte_size,
+                    tenant_id, id, table_id, manifest_id, schema_snapshot_id, object_path, byte_size,
                     row_count, min_timestamp, max_timestamp, column_stats, present_paths,
                     compaction_gen, created_at
-                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
             )
+            .bind(tenant.as_uuid())
             .bind(e.id.as_uuid())
             .bind(e.table_id.as_uuid())
             .bind(manifest_id)
@@ -169,9 +177,10 @@ impl SnapshotTxn for PgSnapshotTxn {
             let ids: Vec<Uuid> = removed.iter().map(|e| *e.as_uuid()).collect();
             let now: DateTime<Utc> = Utc::now();
             sqlx::query(
-                "UPDATE extents SET deleted_at = $1 WHERE id = ANY($2) AND deleted_at IS NULL",
+                "UPDATE extents SET deleted_at = $1 WHERE tenant_id = $2 AND id = ANY($3) AND deleted_at IS NULL",
             )
             .bind(now)
+            .bind(tenant.as_uuid())
             .bind(&ids)
             .execute(&mut *tx)
             .await
@@ -183,9 +192,10 @@ impl SnapshotTxn for PgSnapshotTxn {
         let swapped = sqlx::query(
             "UPDATE tables
              SET current_snapshot_id = $1
-             WHERE id = $2 AND current_snapshot_id = $3",
+             WHERE tenant_id = $2 AND id = $3 AND current_snapshot_id = $4",
         )
         .bind(new_snap_id)
+        .bind(tenant.as_uuid())
         .bind(table_id.as_uuid())
         .bind(parent_snapshot_id.as_uuid())
         .execute(&mut *tx)

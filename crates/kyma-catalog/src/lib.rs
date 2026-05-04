@@ -413,14 +413,9 @@ impl Catalog for PostgresCatalog {
             .map_err(sql_err)?
             .ok_or_else(|| CatalogError::Sql("table has no schema_snapshot_id".into()))?;
 
-        // Task 5 will thread `tenant` into PgSnapshotTxn so commits can
-        // bind tenant_id on the snapshots/manifests inserts. For now the
-        // legacy 4-arg constructor is preserved; the row-level CAS still
-        // protects against cross-tenant snapshot writes because the
-        // tables-CAS step only succeeds for the matching table_id.
-        let _ = tenant;
         Ok(Box::new(PgSnapshotTxn::new(
             self.pool.clone(),
+            tenant,
             table_id,
             SnapshotId::from_uuid(parent),
             SchemaSnapshotId::from_uuid(schema_snap),
