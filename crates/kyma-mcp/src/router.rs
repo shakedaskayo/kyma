@@ -88,7 +88,22 @@ async fn dispatch_one_inner(state: &McpState, req: RpcRequest) -> Option<RpcResp
                 let name = p.get("name").and_then(|v| v.as_str()).map(str::to_owned);
                 let arguments = p.get("arguments").cloned().unwrap_or(json!({}));
                 match name {
-                    Some(n) => state.dispatch.call(&n, arguments).await,
+                    Some(n) => {
+                        ::metrics::counter!(
+                            "kyma_mcp_tool_calls_total",
+                            "tool" => n.clone()
+                        )
+                        .increment(1);
+                        let outcome = state.dispatch.call(&n, arguments).await;
+                        let result_label = if outcome.is_ok() { "ok" } else { "error" };
+                        ::metrics::counter!(
+                            "kyma_mcp_tool_results_total",
+                            "tool" => n.clone(),
+                            "result" => result_label
+                        )
+                        .increment(1);
+                        outcome
+                    }
                     None => Err(ErrorObject::new(
                         ErrorCode::InvalidParams as i64,
                         "tools/call requires `name`",
