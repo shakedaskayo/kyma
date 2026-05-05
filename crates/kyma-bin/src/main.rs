@@ -110,8 +110,18 @@ async fn main() -> Result<()> {
     let storage_config = config_from_env();
     let store = build_object_store(&storage_config).context("building object store")?;
     info!("object store ready");
-    let format: Arc<dyn SegmentFormat> =
-        Arc::new(TelemetryFormat::new(store.clone(), cli.path_prefix.clone()));
+    // Self-hosted single-tenant deployments write under DEFAULT_TENANT —
+    // every extent path becomes `<prefix>/<tenant_id>/extents/<id>.kyma`,
+    // mirroring what cloud workspaces will do once Slice 2 plumbs per-tenant
+    // formats through the write path. For self-hosted users this means a
+    // one-time path-layout shift: pre-Slice-0 extents stay at their
+    // catalog-stored `object_path` (read by exact match), new extents get
+    // the tenant segment.
+    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::with_tenant(
+        store.clone(),
+        cli.path_prefix.clone(),
+        kyma_core::tenant::DEFAULT_TENANT,
+    ));
 
     // 3. Register this node in the catalog.
     let lease = catalog
