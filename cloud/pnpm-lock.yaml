@@ -8,6 +8,55 @@ importers:
 
   .: {}
 
+  admin:
+    dependencies:
+      '@kyma/shared':
+        specifier: workspace:*
+        version: link:../packages/shared
+      drizzle-orm:
+        specifier: ^0.38.0
+        version: 0.38.4(@types/pg@8.20.0)(@types/react@19.2.14)(pg@8.20.0)(react@19.2.6)
+      jose:
+        specifier: ^6.0.0
+        version: 6.2.3
+      next:
+        specifier: ^15.3.0
+        version: 15.5.18(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      pg:
+        specifier: ^8.13.0
+        version: 8.20.0
+      react:
+        specifier: ^19.1.0
+        version: 19.2.6
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.6(react@19.2.6)
+    devDependencies:
+      '@tailwindcss/postcss':
+        specifier: ^4.1.0
+        version: 4.2.4
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.18
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.20.0
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.1.0
+        version: 19.2.3(@types/react@19.2.14)
+      postcss:
+        specifier: ^8.5.0
+        version: 8.5.14
+      tailwindcss:
+        specifier: ^4.1.0
+        version: 4.2.4
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   api:
     dependencies:
       '@hono/node-server':
