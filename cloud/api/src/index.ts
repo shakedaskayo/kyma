@@ -5,7 +5,7 @@ import { logger } from 'hono/logger';
 import { getEnv } from './env.js';
 import { AppError } from './lib/errors.js';
 import { authRoutes } from './routes/auth.js';
-import { workspaceRoutes } from './routes/workspaces.js';
+import { workspaceRoutes, workspaceTokenRoutes } from './routes/workspaces.js';
 import { billingRoutes } from './routes/billing.js';
 import { stripeWebhookRoutes } from './routes/webhooks.js';
 import { usageRoutes } from './routes/usage.js';
@@ -29,6 +29,7 @@ export function buildApp() {
 
   app.route('/api/auth', authRoutes);
   app.route('/api/workspaces', workspaceRoutes);
+  app.route('/api/workspaces', workspaceTokenRoutes);
   app.route('/api/billing', billingRoutes);
   app.route('/api/usage', usageRoutes);
 

@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { sessionMiddleware } from '../middleware/session.js';
-import { badRequest, forbidden } from '../lib/errors.js';
+import { AppError, badRequest, forbidden } from '../lib/errors.js';
 import * as ws from '../services/workspace.service.js';
 import * as tok from '../services/mcp-token.service.js';
+import { authenticateForDebug } from '../services/mcp-token.service.js';
+import * as engine from '../services/engine-proxy.service.js';
 
 export const workspaceRoutes = new Hono();
 workspaceRoutes.use('*', sessionMiddleware);
@@ -71,4 +73,43 @@ workspaceRoutes.post('/:slug/tokens/:id/revoke', async (c) => {
   if (!['owner', 'admin'].includes(role)) throw forbidden('Only owner or admin can revoke tokens');
   await tok.revokeToken(workspace.id, c.req.param('id'));
   return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Token-authenticated routes (engine-proxy surface)
+// ---------------------------------------------------------------------------
+//
+// These are mounted at the same prefix as `workspaceRoutes` but use bearer-
+// token auth (the `Authorization: Bearer kyma_*` token the CLI minted) rather
+// than the session cookie. Hono routes by method+path, so the two sub-routers
+// coexist cleanly.
+
+export const workspaceTokenRoutes = new Hono();
+
+async function authWithToken(c: any): Promise<{ tenantId: string; token: string }> {
+  const h = c.req.header('Authorization');
+  if (!h?.startsWith('Bearer ')) throw new AppError(401, 'UNAUTH', 'Missing token');
+  const token = h.slice(7);
+  const principal = await authenticateForDebug(token);
+  if (!principal) throw new AppError(401, 'UNAUTH', 'Invalid token');
+  return { tenantId: principal.tenantId, token };
+}
+
+workspaceTokenRoutes.post('/:slug/ingest/:db/:table', async (c) => {
+  const { token } = await authWithToken(c);
+  const ndjson = await c.req.raw.text();
+  await engine.ingest({
+    tenantId: '', // engine derives from token
+    database: c.req.param('db'),
+    table: c.req.param('table'),
+    ndjson,
+    token,
+  });
+  return c.json({ ok: true });
+});
+
+workspaceTokenRoutes.get('/:slug/databases/:db/tables', async (c) => {
+  const { token } = await authWithToken(c);
+  const r = await engine.listTables({ database: c.req.param('db'), token });
+  return c.json(r);
 });
