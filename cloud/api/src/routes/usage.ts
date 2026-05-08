@@ -2,9 +2,10 @@ import { Hono } from 'hono';
 import { and, eq, gte } from 'drizzle-orm';
 import { sessionMiddleware } from '../middleware/session.js';
 import { getDb, schema } from '../db/client.js';
+import type { HonoEnv } from '../lib/hono-env.js';
 import * as ws from '../services/workspace.service.js';
 
-export const usageRoutes = new Hono();
+export const usageRoutes = new Hono<HonoEnv>();
 usageRoutes.use('*', sessionMiddleware);
 
 usageRoutes.get('/:slug/daily', async (c) => {

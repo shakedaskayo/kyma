@@ -2,12 +2,13 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { sessionMiddleware } from '../middleware/session.js';
 import { AppError, badRequest, forbidden } from '../lib/errors.js';
+import type { HonoEnv } from '../lib/hono-env.js';
 import * as ws from '../services/workspace.service.js';
 import * as tok from '../services/mcp-token.service.js';
 import { authenticateForDebug } from '../services/mcp-token.service.js';
 import * as engine from '../services/engine-proxy.service.js';
 
-export const workspaceRoutes = new Hono();
+export const workspaceRoutes = new Hono<HonoEnv>();
 workspaceRoutes.use('*', sessionMiddleware);
 
 const createSchema = z.object({

@@ -3,12 +3,13 @@ import { z } from 'zod';
 import { sessionMiddleware } from '../middleware/session.js';
 import { getEnv } from '../env.js';
 import { AppError, badRequest, forbidden } from '../lib/errors.js';
+import type { HonoEnv } from '../lib/hono-env.js';
 import * as ws from '../services/workspace.service.js';
 import {
   getStripe, isStripeConfigured, getPriceIdForPlan, getOrCreateStripeCustomer,
 } from '../services/stripe.service.js';
 
-export const billingRoutes = new Hono();
+export const billingRoutes = new Hono<HonoEnv>();
 billingRoutes.use('*', sessionMiddleware);
 
 function billingDisabled() {

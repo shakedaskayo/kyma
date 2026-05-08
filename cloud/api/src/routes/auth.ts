@@ -3,6 +3,7 @@ import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { getEnv } from '../env.js';
 import { badRequest, unauthorized } from '../lib/errors.js';
+import type { HonoEnv } from '../lib/hono-env.js';
 import { signSessionCookie, SESSION_COOKIE_NAME } from '../lib/sessions.js';
 import * as auth from '../services/auth.service.js';
 import { sendMagicLinkEmail } from '../services/email.service.js';
@@ -10,7 +11,7 @@ import { sessionMiddleware } from '../middleware/session.js';
 
 const STATE_COOKIE = 'kyma_oauth_state';
 
-export const authRoutes = new Hono();
+export const authRoutes = new Hono<HonoEnv>();
 
 // GET /api/auth/github/start
 authRoutes.get('/github/start', (c) => {
