@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --kyma-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --kyma-font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    --kyma-bg: #ffffff;
+    --kyma-bg-soft: #f7f7f6;
+    --kyma-fg: #14171c;
+    --kyma-fg-soft: #51555c;
+    --kyma-muted: #767880;
+    --kyma-rule: #2a2e36;
+    --kyma-rule-soft: rgba(20, 23, 28, 0.10);
+    --kyma-accent: #2d6f1f;
+    --kyma-link: #2a5085;
+  }
+  .dark {
+    --kyma-bg: #0d1015; --kyma-bg-soft: #14181f; --kyma-fg: #e8e6e0;
+    --kyma-fg-soft: #b3b0a8; --kyma-muted: #818488; --kyma-rule: #2a2e36;
+    --kyma-rule-soft: rgba(232, 230, 224, 0.10);
+    --kyma-accent: #7ed957; --kyma-link: #7eaae6;
+  }
+  body {
+    background: var(--kyma-bg); color: var(--kyma-fg);
+    font-family: var(--kyma-font-body);
+  }
+  h1, h2, h3, h4 { font-family: var(--kyma-font-mono); letter-spacing: -0.005em; font-weight: 600; }
+  code, pre, kbd { font-family: var(--kyma-font-mono); }
+}
