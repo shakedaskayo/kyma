@@ -7,6 +7,7 @@ import { AppError } from './lib/errors.js';
 import { authRoutes } from './routes/auth.js';
 import { workspaceRoutes } from './routes/workspaces.js';
 import { billingRoutes } from './routes/billing.js';
+import { stripeWebhookRoutes } from './routes/webhooks.js';
 
 export function buildApp() {
   const app = new Hono();
@@ -18,11 +19,15 @@ export function buildApp() {
     allowHeaders: ['Content-Type', 'Authorization', 'Cookie'],
   }));
 
+  app.get('/health', (c) => c.json({ status: 'ok', service: 'kyma-cloud-api' }));
+
+  // Public webhook — must be mounted BEFORE auth-gated routes. Reads raw body
+  // for Stripe signature verification.
+  app.route('/api/webhooks', stripeWebhookRoutes);
+
   app.route('/api/auth', authRoutes);
   app.route('/api/workspaces', workspaceRoutes);
   app.route('/api/billing', billingRoutes);
-
-  app.get('/health', (c) => c.json({ status: 'ok', service: 'kyma-cloud-api' }));
 
   app.onError((err, c) => {
     if (err instanceof AppError) {
