@@ -1,0 +1,8 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "cloud/Dockerfile.admin"
+watchPatterns = ["cloud/admin/**", "cloud/packages/**"]
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
