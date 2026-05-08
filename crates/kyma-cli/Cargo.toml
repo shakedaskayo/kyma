@@ -22,7 +22,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
-serde.workspace = true
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 chrono.workspace = true
 uuid.workspace = true
@@ -30,3 +30,12 @@ arrow-schema.workspace = true
 sqlx.workspace = true
 # clap will be needed for subcommands — adding directly here since only kyma-cli uses it
 clap = { version = "4", features = ["derive", "env"] }
+
+# Cloud control-plane client (Slice 2: kyma login / workspace / ingest / table).
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+dirs = "5"
+toml = "0.8"
+webbrowser = "1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"

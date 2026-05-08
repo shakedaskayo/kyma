@@ -54,21 +54,22 @@ echo "[bootstrap] Creating kyma Postgres database (idempotent)..."
 psql "$ROOT_URL" -c "CREATE DATABASE kyma" 2>&1 | grep -v "already exists" || true
 echo "[bootstrap] Kyma database ready. Creating context tables via kyma-cli..."
 CLI=/usr/local/bin/kyma-cli
-$CLI create-database kyma 2>&1 | grep -v 'duplicate key' | grep -v 'already exists' || true
-$CLI create-table --db kyma --name context_nodes \
+# Slice 2 moved direct-Postgres admin commands under `kyma-cli db <cmd>`.
+$CLI db create-database kyma 2>&1 | grep -v 'duplicate key' | grep -v 'already exists' || true
+$CLI db create-table --db kyma --name context_nodes \
   --schema "id:string,label:string,realm:string,source_type:string,source_id:string,run_id:string,created_at:timestamp,updated_at:timestamp,properties:dynamic" \
   2>&1 | grep -v 'duplicate key' || true
-$CLI create-table --db kyma --name context_edges \
+$CLI db create-table --db kyma --name context_edges \
   --schema "id:string,src:string,dst:string,type:string,realm:string,source_type:string,source_id:string,run_id:string,created_at:timestamp,properties:dynamic" \
   2>&1 | grep -v 'duplicate key' || true
-$CLI create-table --db kyma --name context_pipeline_runs \
+$CLI db create-table --db kyma --name context_pipeline_runs \
   --schema "id:string,pipeline_id:string,source_type:string,status:string,started_at:timestamp,finished_at:timestamp,error:string,rows_in:long,rows_out:long" \
   2>&1 | grep -v 'duplicate key' || true
-$CLI create-table --db kyma --name context_events \
+$CLI db create-table --db kyma --name context_events \
   --schema "ts:timestamp,kind:string,actor:string,subject:string,attributes:dynamic" \
   2>&1 | grep -v 'duplicate key' || true
 echo "[bootstrap] Kyma context tables ready."
-$CLI list-tables --db kyma
+$CLI db list-tables --db kyma
 SCRIPT
 chmod +x /usr/local/bin/kyma-bootstrap.sh
 BOOTSTRAP
