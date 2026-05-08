@@ -21,7 +21,7 @@ COPY --from=web /src/web/dist ./web/dist
 # Docker Desktop (which caps memory at ~8 GB on macOS).
 ENV CARGO_PROFILE_RELEASE_LTO=off \
     CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4
-RUN cargo build -p kyma-bin -p kyma-cli --release --features web-ui
+RUN cargo build -p kyma-bin -p kyma-cli --release --features "web-ui cloud-auth"
 
 # ---------- stage 3: runtime ----------
 # Use debian:12-slim instead of distroless because kyma dynamically links
