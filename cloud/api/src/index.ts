@@ -6,6 +6,7 @@ import { getEnv } from './env.js';
 import { AppError } from './lib/errors.js';
 import { authRoutes } from './routes/auth.js';
 import { workspaceRoutes } from './routes/workspaces.js';
+import { billingRoutes } from './routes/billing.js';
 
 export function buildApp() {
   const app = new Hono();
@@ -19,6 +20,7 @@ export function buildApp() {
 
   app.route('/api/auth', authRoutes);
   app.route('/api/workspaces', workspaceRoutes);
+  app.route('/api/billing', billingRoutes);
 
   app.get('/health', (c) => c.json({ status: 'ok', service: 'kyma-cloud-api' }));
 
