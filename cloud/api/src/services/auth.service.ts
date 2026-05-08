@@ -1,8 +1,8 @@
-import { eq } from 'drizzle-orm';
+import { eq, and, gt, isNull } from 'drizzle-orm';
 import { getDb, schema } from '../db/client.js';
 import { getEnv } from '../env.js';
 import { badRequest, unauthorized } from '../lib/errors.js';
-import { randomBytesHex } from '../lib/tokens.js';
+import { randomBytesHex, hashToken } from '../lib/tokens.js';
 
 export function buildGithubAuthorizeUrl(state: string, redirectUri: string): string {
   const params = new URLSearchParams({
@@ -76,6 +76,41 @@ export async function exchangeGithubCode(code: string, redirectUri: string): Pro
         avatarUrl: profile.avatar_url,
       }).returning();
     }
+  }
+  return { user };
+}
+
+export async function issueMagicLink(email: string): Promise<{ link: string }> {
+  const db = getDb();
+  const env = getEnv();
+  const raw = randomBytesHex(32);
+  const tokenHash = hashToken(raw);
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  await db.insert(schema.magicLinks).values({ email, tokenHash, expiresAt });
+  return { link: `${env.CLOUD_BASE_URL}/login/callback?token=${raw}` };
+}
+
+export async function exchangeMagicLink(rawToken: string): Promise<{
+  user: typeof schema.users.$inferSelect;
+}> {
+  const db = getDb();
+  const tokenHash = hashToken(rawToken);
+  const [row] = await db.select().from(schema.magicLinks)
+    .where(and(
+      eq(schema.magicLinks.tokenHash, tokenHash),
+      gt(schema.magicLinks.expiresAt, new Date()),
+      isNull(schema.magicLinks.consumedAt),
+    ))
+    .limit(1);
+  if (!row) throw unauthorized('Invalid or expired magic link');
+
+  await db.update(schema.magicLinks)
+    .set({ consumedAt: new Date() })
+    .where(eq(schema.magicLinks.id, row.id));
+
+  let [user] = await db.select().from(schema.users).where(eq(schema.users.email, row.email)).limit(1);
+  if (!user) {
+    [user] = await db.insert(schema.users).values({ email: row.email }).returning();
   }
   return { user };
 }
