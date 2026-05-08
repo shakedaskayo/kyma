@@ -8,6 +8,7 @@ import { authRoutes } from './routes/auth.js';
 import { workspaceRoutes } from './routes/workspaces.js';
 import { billingRoutes } from './routes/billing.js';
 import { stripeWebhookRoutes } from './routes/webhooks.js';
+import { usageRoutes } from './routes/usage.js';
 import { startReconciler } from './services/billing-reconciler.js';
 
 export function buildApp() {
@@ -29,6 +30,7 @@ export function buildApp() {
   app.route('/api/auth', authRoutes);
   app.route('/api/workspaces', workspaceRoutes);
   app.route('/api/billing', billingRoutes);
+  app.route('/api/usage', usageRoutes);
 
   app.onError((err, c) => {
     if (err instanceof AppError) {
