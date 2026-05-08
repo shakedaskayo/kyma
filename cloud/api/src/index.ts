@@ -8,6 +8,7 @@ import { authRoutes } from './routes/auth.js';
 import { workspaceRoutes } from './routes/workspaces.js';
 import { billingRoutes } from './routes/billing.js';
 import { stripeWebhookRoutes } from './routes/webhooks.js';
+import { startReconciler } from './services/billing-reconciler.js';
 
 export function buildApp() {
   const app = new Hono();
@@ -46,5 +47,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const env = getEnv();
   const app = buildApp();
   console.log(`[cloud] listening on :${env.PORT}`);
-  serve({ fetch: app.fetch, port: env.PORT });
+  serve({ fetch: app.fetch, port: env.PORT }, () => {
+    if (env.STRIPE_SECRET_KEY) startReconciler();
+  });
 }
