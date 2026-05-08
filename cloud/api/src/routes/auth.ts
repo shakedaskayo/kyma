@@ -6,6 +6,7 @@ import { badRequest, unauthorized } from '../lib/errors.js';
 import { signSessionCookie, SESSION_COOKIE_NAME } from '../lib/sessions.js';
 import * as auth from '../services/auth.service.js';
 import { sendMagicLinkEmail } from '../services/email.service.js';
+import { sessionMiddleware } from '../middleware/session.js';
 
 const STATE_COOKIE = 'kyma_oauth_state';
 
@@ -74,4 +75,9 @@ authRoutes.post('/magic-link/exchange', async (c) => {
     path: '/', maxAge: 60 * 60 * 24 * 30,
   });
   return c.json({ user: { id: user.id, email: user.email, name: user.name } });
+});
+
+authRoutes.get('/me', sessionMiddleware, (c) => {
+  const u = c.get('user');
+  return c.json({ user: { id: u.userId, email: u.email, name: u.name } });
 });
