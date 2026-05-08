@@ -4,6 +4,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { getEnv } from './env.js';
 import { AppError } from './lib/errors.js';
+import { authRoutes } from './routes/auth.js';
 
 export function buildApp() {
   const app = new Hono();
@@ -14,6 +15,8 @@ export function buildApp() {
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'Cookie'],
   }));
+
+  app.route('/api/auth', authRoutes);
 
   app.get('/health', (c) => c.json({ status: 'ok', service: 'kyma-cloud-api' }));
 
