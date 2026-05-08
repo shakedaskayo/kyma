@@ -1,0 +1,11 @@
+{
+  "name": "kyma-cloud",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel -r run dev",
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "db:generate": "pnpm --filter @kyma/cloud-api run db:generate",
+    "db:migrate": "pnpm --filter @kyma/cloud-api run db:migrate"
+  }
+}

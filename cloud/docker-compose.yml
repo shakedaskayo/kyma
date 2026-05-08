@@ -1,0 +1,16 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: kyma
+      POSTGRES_PASSWORD: kyma_dev
+      POSTGRES_DB: kyma_cloud
+    ports:
+      - '5434:5432'
+    volumes:
+      - kyma_cloud_pg:/var/lib/postgresql/data
+
+volumes:
+  kyma_cloud_pg:
