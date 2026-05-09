@@ -1,7 +1,8 @@
-const API_URL = process.env.NEXT_PUBLIC_CLOUD_BASE_URL ?? '';
-
+// All /api/* requests go to cloud-web's domain, which proxies them to
+// cloud-api via Next.js rewrites (see next.config.ts). This keeps cookies
+// origin to a single domain so sessions work across the auth flow.
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(path, {
     ...init,
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
@@ -14,7 +15,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  startGithubAuth: () => { window.location.href = `${API_URL}/api/auth/github/start`; },
+  startGithubAuth: () => { window.location.href = '/api/auth/github/start'; },
   requestMagicLink: (email: string) => call<{ ok: true }>('/api/auth/magic-link/request', {
     method: 'POST', body: JSON.stringify({ email }),
   }),
