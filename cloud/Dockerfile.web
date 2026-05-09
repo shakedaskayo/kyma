@@ -2,11 +2,11 @@ FROM node:22-alpine AS builder
 RUN corepack enable
 WORKDIR /app
 
-COPY cloud/package.json cloud/pnpm-workspace.yaml cloud/pnpm-lock.yaml ./
+COPY cloud/package.json cloud/pnpm-workspace.yaml cloud/pnpm-lock.yaml cloud/.npmrc ./
 COPY cloud/packages/ packages/
 COPY cloud/web/ web/
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 WORKDIR /app/web
 ARG NEXT_PUBLIC_CLOUD_BASE_URL
