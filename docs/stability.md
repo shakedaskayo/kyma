@@ -278,7 +278,7 @@ policy in section 10.
 - Headers:
   - `Authorization: Bearer <token>` (required when auth is enabled; `Role::Write`)
 - Request body: none.
-- Response: `200 OK` with JSON body containing full connector detail: `id`, `name`, `type`, `target_database`, `target_table`, `schedule_ms`, `drive_model`, `enabled`, `disabled_reason`, `last_run_at`, `last_success_at`, `last_error`, `last_rows_ingested`, `config` (secret fields scrubbed to `"***"`).
+- Response: `200 OK` with JSON body containing full connector detail: `id`, `name`, `type`, `target_database`, `target_table`, `schedule_ms`, `drive_model` (the connector's execution model; currently `"periodic"` for all connectors), `enabled`, `disabled_reason`, `last_run_at`, `last_success_at`, `last_error`, `last_rows_ingested`, `config` (secret fields scrubbed to `"***"`).
 - Stable error codes: `404 Not Found` (no body); `{ "error": "<message>" }` (`500`).
 
 ### `PATCH /v1/connectors/:id` — update a connector
