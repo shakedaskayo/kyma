@@ -453,6 +453,8 @@ The KQL dialect that v1.0 supports is a defined subset of Kusto Query Language. 
 
 The implementation is a direct-lowering KQL→SQL translator (`crates/kyma-kql/`). It does not build an AST; it streams parsed operators into a `QueryState` accumulator and renders SQL once. This means multi-operator compositions that require IR-level rewrites (e.g., `join`, `make-series`) are deferred to a future phase and are explicitly not in v1.0.
 
+**Known doc-debt:** The project README (`README.md`) contains example KQL queries that use `tostring(...)` and `toint(...)` functions — 8 occurrences total across five query examples. These functions are NOT implemented in the v1.0 KQL parser and will be rejected with a `kql_parse_error` if executed. The README examples are illustrative of the *engine's intent* (extracting typed values from the dynamic `attributes` object), not the *parser's actual surface*. Until the README is updated, treat those queries as reference documentation rather than working code. See Task 4 of the F1 plan.
+
 ### Operators (frozen)
 
 | Operator | Form | Notes |
@@ -544,7 +546,9 @@ Duration literals are lexed as a native Duration token and lowered to SQL INTERV
 | Boolean literal | boolean | `true`, `false` |
 | `null` | null | `null` |
 | Duration literal | SQL INTERVAL | `30s`, `5m`, `2h`, `7d` |
-| `datetime(x)` | TIMESTAMP | `datetime(2026-04-19T10:00:00Z)` |
+| `datetime(x)` | TIMESTAMP | `datetime("2026-04-19T10:00:00Z")` or `datetime("2026-04-19")` |
+
+Note on `datetime`: the argument `x` is cast to TIMESTAMP via SQL's native type coercion. Both ISO 8601 formats (with `T` and `Z`) and space-separated date-time strings are accepted, depending on the underlying SQL engine's timestamp parser. Recommended: use ISO 8601 format with explicit `T` separator and timezone (e.g., `datetime("2026-04-19T10:00:00Z")`). Formats without timezone information may be interpreted in the server's local timezone.
 
 ### Error taxonomy
 
