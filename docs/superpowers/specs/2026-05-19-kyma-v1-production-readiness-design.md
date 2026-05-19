@@ -129,20 +129,27 @@ Each follows the same template: current state + known gaps → durability invari
 
 ## 4. Sequencing & milestones
 
+P0, F1, and F2 all start at week 0 and run on parallel tracks. P0 gates only the *format-related clauses* of F1 (the extent-format freeze section of `docs/stability.md`) and the *format-level scenarios* of F2 — most of F1 and F2 can be built without waiting on P0. M2 cannot start until P0, F1, and F2 are all complete.
+
 ```
-P0 (Format v1) ──┬──> F1 (stability)  ──┬──> A1 (ingest)   ──┐
-                 └──> F2 (gauntlet)   ──┼──> A2 (query+MCP) ──┤
-                                       ├──> A3 (storage)   ──┼──> R1 ──> v1.0.0
-                                       └──> A4 (security)  ──┘
-                                       └──> [gauntlet grows alongside every area spec]
+P0 (Format v1) ────────────────────────────┐
+                                           │
+F1 (stability)  ─── most clauses ──────────┤
+                    └── format clauses ────┤
+F2 (gauntlet)   ─── most scaffolding ──────┤
+                    └── format scenarios ──┴──> A1 (ingest)    ──┐
+                                              ├──> A2 (query+MCP) ──┤
+                                              ├──> A3 (storage)   ──┼──> R1 ──> v1.0.0
+                                              └──> A4 (security)  ──┘
+                                              └── [gauntlet grows alongside every area spec]
 ```
 
 | Phase | Weeks | Outputs |
 |---|---|---|
-| **P0 — Format v1 prereq** | ~12+ (estimated) | Telemetry format work landed and stable; format-level gauntlet scenarios |
-| **M1 — Foundations** | 6 (weeks 0–6 post-P0) | F1, F2 skeleton, `v1.0.0-pre.1` |
-| **M2 — Area readiness** | 14 (weeks 6–20) | A1 + A3, A2, A4, gauntlet expanded |
-| **M3 — Release eng + RCs** | 6 (weeks 20–26) | R1, ≥ 4 weeks of `v1.0.0-rc.N` tags, signed `v1.0.0` |
+| **P0 — Format v1** | ~12+ (estimated), parallel with M1 | Format work landed and stable; format-level gauntlet scenarios |
+| **M1 — Foundations** | weeks 0–6 (parallel with P0); format clauses finalize after P0 lands | F1, F2 skeleton; `v1.0.0-pre.1` tag waits on P0 |
+| **M2 — Area readiness** | 14 weeks, starts after both M1 and P0 complete | A1 + A3, A2, A4; gauntlet expanded |
+| **M3 — Release eng + RCs** | 6 weeks | R1, ≥ 4 weeks of `v1.0.0-rc.N` tags, signed `v1.0.0` |
 
 **M2 wave ordering:**
 
