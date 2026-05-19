@@ -941,7 +941,420 @@ The back-compat workflow (Task 17) may add MCP smoke tests (`initialize` → `to
 
 ## 6. Catalog Postgres schema
 
-_Filled in by Task 7._
+The catalog schema is **forward-only** across the v1.x series. v1.x migrations may:
+
+- Add new tables.
+- Add new columns to existing tables (must be nullable or have a default).
+- Add new indexes.
+- Add new constraints that the existing data already satisfies.
+
+v1.x migrations may **not**:
+
+- Rename a table or a column.
+- Drop a table or a column.
+- Change the type of a column.
+- Tighten a constraint in a way that requires data backfill.
+
+These rules apply across the v1.x series. Breaking the schema requires the deprecation policy in section 10.
+
+### Current tables (as of v1.0 freeze)
+
+| Table | Purpose | Key columns | Notes |
+|---|---|---|---|
+| `databases` | Logical database registry | `id` (PK), `tenant_id`, `name` | UNIQUE `(tenant_id, name)`; parent of `tables` |
+| `tables` | Table metadata; mirrors Iceberg table hierarchy | `id` (PK), `tenant_id`, `database_id` | FK → `databases`, `snapshots`, `schema_snapshots`; deferred FKs allow bootstrap insert |
+| `schema_snapshots` | Immutable Arrow schema versions (JSON) per table | `id` (PK), `tenant_id`, `table_id` | FK → `tables` (deferred); referenced by `tables`, `snapshots`, `extents` |
+| `snapshots` | Iceberg-style snapshot chain per table | `id` (PK), `tenant_id`, `table_id`, `sequence_number` | FK → `tables`, parent `snapshots`, `schema_snapshots`; UNIQUE `(table_id, sequence_number)` |
+| `manifests` | Per-snapshot manifest groupings | `id` (PK), `tenant_id`, `snapshot_id` | FK → `snapshots`; `kind` IN `('data','delete','compaction')` |
+| `extents` | Individual data-file metadata (object-store paths, stats) | `id` (PK), `tenant_id`, `table_id` | FK → `tables`, `manifests`, `schema_snapshots`; soft-delete via `deleted_at`; GIST + GIN + partial indexes |
+| `nodes` | Cluster membership and heartbeat leases | `id` (PK), `lease_id` | Not tenant-scoped; `role` IN `('all_in_one','ingest','query','compaction')` |
+| `ingest_ledger` | Idempotency records for POST /v1/ingest | `(tenant_id, idempotency_key)` (composite PK) | FK → `tables`, `snapshots`; TTL via `ttl_expires_at` |
+| `background_tasks` | Distributed work queue (compaction, GC, connectors) | `id` (PK), `tenant_id` | FK → `tables`, `nodes`; `status` IN `('pending','claimed','done','failed')` |
+| `connectors` | Ingestion-connector definitions | `id` (PK), `tenant_id`, `name` | UNIQUE `(tenant_id, name)`; `drive_model` IN `('periodic','continuous')`; KMS columns added in 007 |
+| `connector_cursors` | Per-connector checkpoint/cursor state | `connector_id` (PK) | FK → `connectors`; one row per connector |
+| `connector_leases` | Streaming-connector node leases (reserved for Slice 2) | `connector_id` (PK) | FK → `connectors`; unused in v1.0 |
+| `dashboards` | Dashboard metadata | `id` (PK), `tenant_id` | No name-uniqueness constraint (names may repeat across tenants) |
+| `dashboard_panels` | Individual panels within a dashboard | `id` (PK), `tenant_id`, `dashboard_id` | FK → `dashboards`; `panel_type` IN `('chart','table','markdown','stat')` |
+| `column_metadata` | Per-column semantic annotations for the agent | `(tenant_id, database, table_name, column_name)` (composite PK) | Optional embedding link via `embedding_model_id` |
+| `schema_embeddings` | Vector embeddings of table/column descriptions | `id` (PK), `tenant_id` | pgvector `vector(384)`; HNSW index; UNIQUE partial indexes per kind |
+| `agent_runs` | Completed NL-query agent run records | `run_id` (PK), `tenant_id` | `status` IN `('success','error','budget_exceeded','cancelled','replay_miss')` |
+| `agent_sessions` | Agent conversation session state | `session_id` (PK), `tenant_id` | Parent of `agent_session_turns` |
+| `agent_session_turns` | Individual turns within an agent session | `(session_id, turn_index)` (composite PK), `tenant_id` | FK → `agent_sessions`, `agent_runs`; `role` IN `('user','assistant')` |
+| `agent_replay_cache` | Deterministic replay cache for agent generate/run layers | `(tenant_id, cache_key)` (composite PK) | `layer` IN `('generate','run')`; `cache_key` is `BYTEA` (hash) |
+
+### Per-table schema detail
+
+#### `databases`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | `uuid_generate_v4()` | PK |
+| `name` | `TEXT` | no | none | Part of UNIQUE `(tenant_id, name)` (added in 007, replacing single-column UNIQUE) |
+| `created_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `databases_tenant_name_uniq` UNIQUE on `(tenant_id, name)` (replaces `databases_name_key` from 001). `databases_tenant_idx` on `(tenant_id)`.
+
+---
+
+#### `schema_snapshots`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | `uuid_generate_v4()` | PK |
+| `table_id` | `UUID` | no | none | FK → `tables(id)` ON DELETE CASCADE, DEFERRABLE INITIALLY DEFERRED |
+| `arrow_schema` | `JSONB` | no | none | Serialized Arrow schema in JSON form |
+| `created_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `schema_snapshots_tenant_idx` on `(tenant_id)`.
+
+---
+
+#### `tables`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | `uuid_generate_v4()` | PK |
+| `database_id` | `UUID` | no | none | FK → `databases(id)` ON DELETE CASCADE |
+| `name` | `TEXT` | no | none | Part of UNIQUE `(database_id, name)` |
+| `current_snapshot_id` | `UUID` | yes | none | FK → `snapshots(id)` DEFERRABLE INITIALLY DEFERRED; NULL during bootstrap window only |
+| `schema_snapshot_id` | `UUID` | yes | none | FK → `schema_snapshots(id)`; NULL during bootstrap window only |
+| `config` | `JSONB` | no | `'{}'::jsonb` | Table-level configuration (retention, partitioning, etc.) |
+| `created_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `tables_tenant_idx` on `(tenant_id)`. UNIQUE `(database_id, name)`.
+
+---
+
+#### `snapshots`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | `uuid_generate_v4()` | PK |
+| `table_id` | `UUID` | no | none | FK → `tables(id)` ON DELETE CASCADE |
+| `parent_id` | `UUID` | yes | none | FK → `snapshots(id)` (self-referential); NULL for snapshot #0 |
+| `sequence_number` | `BIGINT` | no | none | Monotonically increasing per table; UNIQUE `(table_id, sequence_number)` |
+| `schema_snapshot_id` | `UUID` | no | none | FK → `schema_snapshots(id)` |
+| `summary` | `JSONB` | no | `'{}'::jsonb` | Operation metadata (e.g. `{ "operation": "bootstrap" }`) |
+| `created_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `snapshots_tenant_idx` on `(tenant_id)`. UNIQUE `(table_id, sequence_number)`.
+
+---
+
+#### `manifests`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | `uuid_generate_v4()` | PK |
+| `snapshot_id` | `UUID` | no | none | FK → `snapshots(id)` ON DELETE CASCADE |
+| `kind` | `TEXT` | no | none | CHECK `kind IN ('data','delete','compaction')` |
+| `extent_count` | `INTEGER` | no | `0` | |
+| `byte_size` | `BIGINT` | no | `0` | |
+| `created_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `manifests_tenant_idx` on `(tenant_id)`.
+
+---
+
+#### `extents`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | `uuid_generate_v4()` | PK |
+| `table_id` | `UUID` | no | none | FK → `tables(id)` ON DELETE CASCADE |
+| `manifest_id` | `UUID` | yes | none | FK → `manifests(id)` ON DELETE CASCADE |
+| `schema_snapshot_id` | `UUID` | no | none | FK → `schema_snapshots(id)` |
+| `object_path` | `TEXT` | no | none | Object-store path of the data file |
+| `byte_size` | `BIGINT` | no | none | File size in bytes |
+| `row_count` | `BIGINT` | no | none | Number of rows in the extent |
+| `min_timestamp` | `TIMESTAMPTZ` | yes | none | Time-range pruning lower bound |
+| `max_timestamp` | `TIMESTAMPTZ` | yes | none | Time-range pruning upper bound |
+| `column_stats` | `JSONB` | no | `'{}'::jsonb` | Per-column distinct-value and token indexes for extent pruning |
+| `present_paths` | `TEXT[]` | no | `'{}'::text[]` | Dynamic-path index for nested-field pruning |
+| `bloom_filters` | `BYTEA` | yes | none | Reserved; not yet used |
+| `compaction_gen` | `INTEGER` | no | `0` | Compaction generation counter |
+| `created_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `deleted_at` | `TIMESTAMPTZ` | yes | none | Soft-delete timestamp; NULL means live |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `extents_tbl_ts_range` GIST on `(table_id, tstzrange(min_timestamp, max_timestamp))` — time-range pruning. `extents_present_paths` GIN on `(present_paths)` — dynamic-path pruning. `extents_live` partial on `(tenant_id, table_id) WHERE deleted_at IS NULL` (recreated in 007 to include `tenant_id`). `extents_tenant_idx` on `(tenant_id)`.
+
+---
+
+#### `nodes`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | `uuid_generate_v4()` | PK |
+| `role` | `TEXT` | no | none | CHECK `role IN ('all_in_one','ingest','query','compaction')` |
+| `endpoint` | `TEXT` | no | none | gRPC/HTTP address of this node |
+| `capabilities` | `JSONB` | no | `'{}'::jsonb` | Feature flags and node-level metadata |
+| `lease_id` | `UUID` | no | none | Rotating lease; heartbeat must match to update |
+| `last_heartbeat` | `TIMESTAMPTZ` | no | `now()` | Updated by heartbeat calls |
+| `created_at` | `TIMESTAMPTZ` | no | `now()` | |
+
+Indexes: `nodes_last_heartbeat` on `(last_heartbeat)`. **Not tenant-scoped** — node identity is cluster-global.
+
+---
+
+#### `ingest_ledger`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `idempotency_key` | `TEXT` | no | none | Part of composite PK `(tenant_id, idempotency_key)` (PK changed in 007 from single-column) |
+| `table_id` | `UUID` | no | none | FK → `tables(id)` ON DELETE CASCADE |
+| `snapshot_id` | `UUID` | no | none | FK → `snapshots(id)` ON DELETE CASCADE |
+| `rows_ingested` | `BIGINT` | no | none | |
+| `bytes_written` | `BIGINT` | no | none | |
+| `applied_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `ttl_expires_at` | `TIMESTAMPTZ` | no | none | Row expires after this timestamp; filtered on read |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration; part of composite PK |
+
+Indexes: `ingest_ledger_ttl` on `(ttl_expires_at)`.
+
+---
+
+#### `background_tasks`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | `uuid_generate_v4()` | PK |
+| `kind` | `TEXT` | no | none | Task kind: `'compaction'`, `'retention_sweep'`, `'physical_gc'`, `'connector_tick'`, etc. |
+| `table_id` | `UUID` | yes | none | FK → `tables(id)` ON DELETE CASCADE; NULL for non-table tasks |
+| `payload` | `JSONB` | no | `'{}'::jsonb` | Task-specific parameters |
+| `status` | `TEXT` | no | `'pending'` | CHECK `status IN ('pending','claimed','done','failed')` |
+| `claimed_by` | `UUID` | yes | none | FK → `nodes(id)` ON DELETE SET NULL |
+| `claim_expires_at` | `TIMESTAMPTZ` | yes | none | Dead-worker lease expiry |
+| `priority` | `INTEGER` | no | `0` | Higher values are claimed first |
+| `attempt` | `INTEGER` | no | `0` | Number of claim attempts made |
+| `max_attempts` | `INTEGER` | no | `3` | Maximum allowed attempts before status → `'failed'` |
+| `last_error` | `TEXT` | yes | none | Error message from the last failed attempt |
+| `created_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `updated_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `background_tasks_pending` partial on `(kind, priority DESC, created_at) WHERE status = 'pending'`. `background_tasks_claimed_expiry` partial on `(claim_expires_at) WHERE status = 'claimed'`. `background_tasks_connector_tick_uniq` UNIQUE partial on `((payload->>'connector_id'), (payload->>'scheduled_for')) WHERE kind = 'connector_tick' AND status IN ('pending', 'claimed')` (added in 005). `background_tasks_tenant_idx` on `(tenant_id)`.
+
+---
+
+#### `connectors`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | `uuid_generate_v4()` | PK |
+| `name` | `TEXT` | no | none | Part of UNIQUE `(tenant_id, name)` (added in 007, replacing single-column UNIQUE) |
+| `type` | `TEXT` | no | none | Connector type identifier |
+| `target_database` | `TEXT` | no | none | Destination database name |
+| `target_table` | `TEXT` | no | none | Destination table name |
+| `config_jsonb` | `JSONB` | no | none | Connector-specific configuration (secret fields encrypted via KMS in Slice 2) |
+| `schedule_ms` | `BIGINT` | no | none | Polling interval in milliseconds; CHECK `(schedule_ms >= 100 AND schedule_ms <= 86400000)` |
+| `drive_model` | `TEXT` | no | none | CHECK `drive_model IN ('periodic','continuous')` |
+| `enabled` | `BOOLEAN` | no | `TRUE` | |
+| `disabled_reason` | `TEXT` | yes | none | Human-readable reason when `enabled = FALSE` |
+| `last_run_at` | `TIMESTAMPTZ` | yes | none | |
+| `last_success_at` | `TIMESTAMPTZ` | yes | none | |
+| `last_error` | `TEXT` | yes | none | |
+| `last_rows_ingested` | `BIGINT` | yes | none | |
+| `created_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `updated_at` | `TIMESTAMPTZ` | no | `now()` | Updated by writers; no trigger |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+| `kms_key_id` | `TEXT` | yes | none | Added in 007; KMS key reference for secret encryption (Slice 2) |
+| `encrypted_secrets` | `BYTEA` | yes | none | Added in 007; encrypted connector secrets (Slice 2) |
+
+Indexes: `connectors_enabled_drive_idx` partial on `(drive_model, enabled) WHERE enabled = TRUE`. `connectors_tenant_name_uniq` UNIQUE on `(tenant_id, name)`. `connectors_tenant_idx` on `(tenant_id)`.
+
+---
+
+#### `connector_cursors`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `connector_id` | `UUID` | no | none | PK; FK → `connectors(id)` ON DELETE CASCADE; one row per connector |
+| `cursor_jsonb` | `JSONB` | yes | none | Last checkpoint (API cursor, timestamp, etc.) |
+| `updated_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `connector_cursors_tenant_idx` on `(tenant_id)`.
+
+---
+
+#### `connector_leases`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `connector_id` | `UUID` | no | none | PK; FK → `connectors(id)` ON DELETE CASCADE |
+| `node_id` | `TEXT` | no | none | Claiming node identity |
+| `expires_at` | `TIMESTAMPTZ` | no | none | Lease expiry |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `connector_leases_tenant_idx` on `(tenant_id)`. **Note:** this table is pre-provisioned for the `Continuous` drive model (streaming connectors) and is unused in v1.0.
+
+---
+
+#### `dashboards`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | `gen_random_uuid()` | PK |
+| `name` | `TEXT` | no | none | |
+| `description` | `TEXT` | yes | none | |
+| `time_range_preset` | `TEXT` | no | `'1h'` | |
+| `refresh_interval_seconds` | `INTEGER` | yes | none | |
+| `created_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `updated_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `dashboards_tenant_idx` on `(tenant_id)`.
+
+---
+
+#### `dashboard_panels`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | `gen_random_uuid()` | PK |
+| `dashboard_id` | `UUID` | no | none | FK → `dashboards(id)` ON DELETE CASCADE |
+| `title` | `TEXT` | no | none | |
+| `panel_type` | `TEXT` | no | none | CHECK `panel_type IN ('chart','table','markdown','stat')` |
+| `query` | `TEXT` | yes | none | SQL or KQL query text |
+| `database_name` | `TEXT` | yes | none | Target database for the query |
+| `config` | `JSONB` | no | `'{}'` | Panel display configuration |
+| `grid_x` | `INTEGER` | no | none | |
+| `grid_y` | `INTEGER` | no | none | |
+| `grid_w` | `INTEGER` | no | none | |
+| `grid_h` | `INTEGER` | no | none | |
+| `display_order` | `INTEGER` | no | none | Sort key within dashboard |
+| `created_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `updated_at` | `TIMESTAMPTZ` | no | `now()` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `dashboard_panels_dashboard_id_idx` on `(dashboard_id, display_order)`. `dashboard_panels_tenant_idx` on `(tenant_id)`.
+
+---
+
+#### `column_metadata`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `database` | `TEXT` | no | none | Part of composite PK `(tenant_id, database, table_name, column_name)` (PK changed in 007) |
+| `table_name` | `TEXT` | no | none | Part of composite PK |
+| `column_name` | `TEXT` | no | none | Part of composite PK |
+| `column_type` | `TEXT` | no | none | Arrow type string |
+| `description` | `TEXT` | yes | none | Human-readable column description for embedding |
+| `embedding_model_id` | `TEXT` | yes | none | Model used to generate the embedding |
+| `dimension` | `INT` | yes | none | Embedding vector dimension |
+| `distance_metric` | `TEXT` | yes | none | Distance metric (`cosine`, `l2`, etc.) |
+| `updated_at` | `TIMESTAMPTZ` | no | `NOW()` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration; part of composite PK |
+
+No additional indexes beyond the composite PK.
+
+---
+
+#### `schema_embeddings`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `UUID` | no | `gen_random_uuid()` | PK |
+| `database` | `TEXT` | no | none | |
+| `table_name` | `TEXT` | no | none | |
+| `column_name` | `TEXT` | yes | none | NULL when `kind = 'table'` |
+| `kind` | `TEXT` | no | none | CHECK `kind IN ('table','column')` |
+| `text_source` | `TEXT` | no | none | The text that was embedded |
+| `text_source_sha256` | `BYTEA` | no | none | SHA-256 of `text_source` for change detection |
+| `text_format_version` | `TEXT` | no | `'v1'` | Template version for the text rendering |
+| `model_id` | `TEXT` | no | none | Embedding model identifier |
+| `embedding` | `vector(384)` | no | none | pgvector embedding; requires `vector` extension |
+| `updated_at` | `TIMESTAMPTZ` | no | `NOW()` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `schema_embeddings_uniq_table` UNIQUE partial on `(tenant_id, database, table_name, model_id) WHERE column_name IS NULL` (rebuilt in 007). `schema_embeddings_uniq_column` UNIQUE partial on `(tenant_id, database, table_name, column_name, model_id) WHERE column_name IS NOT NULL` (rebuilt in 007). `schema_embeddings_hnsw` HNSW on `(embedding vector_cosine_ops)` — ANN vector search. `schema_embeddings_db` on `(tenant_id, database)` (rebuilt in 007).
+
+---
+
+#### `agent_runs`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `run_id` | `UUID` | no | none | PK (no default — caller supplies) |
+| `question` | `TEXT` | no | none | Natural-language question |
+| `model_id` | `TEXT` | no | none | LLM model identifier |
+| `auth_subject` | `TEXT` | no | none | Authenticated user subject |
+| `session_id` | `UUID` | yes | none | FK → `agent_sessions(session_id)`; NULL for one-shot runs |
+| `started_at` | `TIMESTAMPTZ` | no | none | |
+| `finished_at` | `TIMESTAMPTZ` | no | none | |
+| `status` | `TEXT` | no | none | CHECK `status IN ('success','error','budget_exceeded','cancelled','replay_miss')` |
+| `usage_json` | `JSONB` | no | none | Token counts and cost metadata |
+| `trace_json` | `JSONB` | no | none | Full agent execution trace |
+| `replay_cache_hit` | `BOOL` | no | `FALSE` | Whether the result was served from `agent_replay_cache` |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `agent_runs_subject_time` on `(auth_subject, started_at DESC)`. `agent_runs_session` on `(session_id, started_at DESC)`. `agent_runs_tenant_idx` on `(tenant_id, started_at DESC)`.
+
+---
+
+#### `agent_sessions`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `session_id` | `UUID` | no | none | PK (no default — caller supplies) |
+| `auth_subject` | `TEXT` | no | none | |
+| `created_at` | `TIMESTAMPTZ` | no | `NOW()` | |
+| `last_active` | `TIMESTAMPTZ` | no | `NOW()` | |
+| `metadata_json` | `JSONB` | no | `'{}'` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `agent_sessions_tenant_idx` on `(tenant_id)`.
+
+---
+
+#### `agent_session_turns`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `session_id` | `UUID` | no | none | Part of composite PK `(session_id, turn_index)`; FK → `agent_sessions(session_id)` ON DELETE CASCADE |
+| `turn_index` | `INT` | no | none | Part of composite PK; zero-based turn counter |
+| `role` | `TEXT` | no | none | CHECK `role IN ('user','assistant')` |
+| `content_json` | `JSONB` | no | none | Turn content (messages, tool calls, etc.) |
+| `run_id` | `UUID` | yes | none | FK → `agent_runs(run_id)`; NULL for user turns |
+| `created_at` | `TIMESTAMPTZ` | no | `NOW()` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
+
+Indexes: `agent_session_turns_tenant_idx` on `(tenant_id)`.
+
+---
+
+#### `agent_replay_cache`
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `cache_key` | `BYTEA` | no | none | Part of composite PK `(tenant_id, cache_key)` (PK changed in 007 from single-column) |
+| `layer` | `TEXT` | no | none | CHECK `layer IN ('generate','run')` |
+| `response_json` | `JSONB` | no | none | Cached response |
+| `model_id` | `TEXT` | no | none | |
+| `created_at` | `TIMESTAMPTZ` | no | `NOW()` | |
+| `hit_count` | `INT` | no | `0` | |
+| `tenant_id` | `UUID` | no | none | Added in 007; no default after migration; part of composite PK |
+
+Indexes: `agent_replay_cache_layer_model` on `(layer, model_id)`.
+
+---
+
+### Migration discipline
+
+- Each migration is a single SQL file at `crates/kyma-catalog/migrations/<NNNN_name.sql>`.
+- File name format: `NNN_snake_case_description.sql` (three-digit prefix, underscore-separated words).
+- Numbering is monotonic but not required to be gapless; current series is 001–007 with no gaps.
+- The back-compat workflow (Task 17 in F1 plan) runs every PR's migrations against the previous version's catalog dump and fails if any of the forward-only rules above is violated.
+
+### Migration tooling
+
+The migrations are applied by `sqlx::migrate!("./migrations")` embedded at compile time in `crates/kyma-catalog/src/lib.rs`. The macro runs all pending migrations at startup via `sqlx-migrate` (the `sqlx` crate's built-in migrate feature). Migration state is tracked in the standard `_sqlx_migrations` table (created and managed automatically by sqlx; not part of the application schema freeze).
 
 ## 7. Configuration keys and environment variables
 
