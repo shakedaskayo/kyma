@@ -5,7 +5,7 @@ description: Federation for live reads, replication-slot CDC for sync, both at o
 
 # Postgres
 
-> 🚧 **Roadmap.** This connector ships in DB-M1. The design below is committed and stable; the implementation is in progress. See [the spec](https://github.com/shaked/engine/blob/main/docs/superpowers/specs/2026-05-02-multi-source-database-integration-design.md) for status.
+> 🚧 **Roadmap.** This connector ships in DB-M1. The design below is committed and stable; the implementation is in progress.
 
 The Postgres engine is the first of three operational-database
 connectors. It registers as a DataFusion catalog (federation), replays
@@ -171,4 +171,3 @@ without a PK can't dedupe replays or build tombstones correctly. Use
   [Multi-source data](/connectors/multi-source-data).
 - The conceptual model: [Multi-source data](/concepts/multi-source-data).
 - The framework: [Connector framework](/connectors/framework).
-- The full design: [the spec](https://github.com/shaked/engine/blob/main/docs/superpowers/specs/2026-05-02-multi-source-database-integration-design.md).

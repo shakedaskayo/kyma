@@ -125,9 +125,7 @@ is returned verbatim.
 DB-M0 extends `POST /v1/connectors` with `mode`, `connection`, `scope`,
 and `sync` fields, plus `GET /v1/connectors/:id/status`,
 `/events`, `/test-connection`, and a scoped pause
-(`?scope=sync|federation|all`). See
-[the design spec](https://github.com/shaked/engine/blob/main/docs/superpowers/specs/2026-05-02-multi-source-database-integration-design.md)
-for the full shape.
+(`?scope=sync|federation|all`).
 
 ## Secrets by reference
 
@@ -175,5 +173,3 @@ idempotency key on the sink ensures replay-safety.
 - Database engines: [Postgres](/connectors/postgres),
   [MySQL](/connectors/mysql), [MongoDB](/connectors/mongo).
 - The conceptual companion: [Multi-source data](/concepts/multi-source-data).
-- The full admin shape and CDC details:
-  [the spec](https://github.com/shaked/engine/blob/main/docs/superpowers/specs/2026-05-02-multi-source-database-integration-design.md).

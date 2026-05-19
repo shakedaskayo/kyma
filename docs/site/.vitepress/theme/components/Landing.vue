@@ -222,7 +222,7 @@ const buildDate = new Date().toISOString().slice(0, 10)
       <div class="kyma-cta-row">
         <a href="/quickstart/five-minute-start" class="kyma-cta kyma-cta--primary">Quickstart</a>
         <a href="/concepts/what-is-kyma" class="kyma-cta">What is kyma?</a>
-        <a href="https://github.com/shaked/engine" target="_blank" rel="noopener" class="kyma-cta">GitHub</a>
+        <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener" class="kyma-cta">GitHub</a>
       </div>
 
       <!-- The orbit — one SVG containing geometry, beams, rings; nodes overlay
@@ -580,7 +580,7 @@ otel_logs
       </a>
       <p class="kyma-landing-footer-meta">
         Apache-2.0 licensed · Source on
-        <a href="https://github.com/shaked/engine" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener">GitHub</a>
         · Built {{ buildDate }}
       </p>
     </footer>

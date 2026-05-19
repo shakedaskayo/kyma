@@ -5,7 +5,7 @@ description: Federation and binlog-CDC sync against MySQL 8.0+. Same shape as th
 
 # MySQL
 
-> 🚧 **Roadmap.** This connector ships in DB-M2, after [Postgres](/connectors/postgres). The design below is committed and stable; the implementation is in progress. See [the spec](https://github.com/shaked/engine/blob/main/docs/superpowers/specs/2026-05-02-multi-source-database-integration-design.md) for status.
+> 🚧 **Roadmap.** This connector ships in DB-M2, after [Postgres](/connectors/postgres). The design below is committed and stable; the implementation is in progress.
 
 The MySQL engine reuses everything DB-M1 delivered for Postgres — the
 `ExternalSource` trait, the federation crate, the CDC consumer, the
@@ -141,4 +141,3 @@ collation-unsafe filters described above, which always go residual.
 - Cross-source joins, the `pushdown_summary`, `live(...)`:
   [Multi-source data](/connectors/multi-source-data).
 - The framework: [Connector framework](/connectors/framework).
-- The full design: [the spec](https://github.com/shaked/engine/blob/main/docs/superpowers/specs/2026-05-02-multi-source-database-integration-design.md).

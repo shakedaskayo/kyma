@@ -149,9 +149,9 @@ The latest-failures query, on a healthy weekday:
 
 | _timestamp           | repo            | workflow      | branch  | url (truncated)                   |
 | -------------------- | --------------- | ------------- | ------- | --------------------------------- |
-| 2026-05-03T14:32:11Z | shaked/engine   | ci            | feat/x  | github.com/shaked/engine/actions… |
-| 2026-05-03T14:18:04Z | shaked/web      | deploy-stage  | main    | github.com/shaked/web/actions/…   |
-| 2026-05-03T13:51:59Z | shaked/engine   | bench-nightly | main    | github.com/shaked/engine/actions… |
+| 2026-05-03T14:32:11Z | acme/engine     | ci            | feat/x  | github.com/acme/engine/actions/…  |
+| 2026-05-03T14:18:04Z | acme/web        | deploy-stage  | main    | github.com/acme/web/actions/…     |
+| 2026-05-03T13:51:59Z | acme/engine     | bench-nightly | main    | github.com/acme/engine/actions/…  |
 
 ## Variations
 

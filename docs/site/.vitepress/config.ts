@@ -7,13 +7,10 @@ export default withMermaid(defineConfig({
   description: 'Production knowledge, as a query.',
   cleanUrls: true,
 
-  // Excluded from the build:
-  // - `superpowers/**` is a sibling of srcDir today, but kept in case layout
-  //   ever changes (defensive, per spec §3.1).
-  // - `README.md` is operator-facing notes on the docs site itself; not
-  //   part of the published surface. It's a sibling of `index.md` so it
-  //   would otherwise be picked up as a routable page.
-  srcExclude: ['**/superpowers/**', 'README.md'],
+  // `README.md` is operator-facing notes on the docs site itself, not part of
+  // the published surface. Sibling of `index.md`, so without exclusion it
+  // would otherwise be picked up as a routable page.
+  srcExclude: ['README.md'],
 
   // Localhost code samples shouldn't fail the build.
   ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?/],
@@ -133,14 +130,14 @@ export default withMermaid(defineConfig({
       }],
     },
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/shaked/engine' },
+      { icon: 'github', link: 'https://github.com/shakedaskayo/kyma' },
     ],
     search: {
       provider: 'local',
     },
     footer: {
       message: 'An open project by <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link"><img src="/icons/brand/agentcy.svg" alt="" width="12" height="12" class="kyma-footer-mark"/> AgentcyLabs</a> · Apache-2.0 licensed.',
-      copyright: 'Copyright © 2026 AgentcyLabs · <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link">agentcylabs.com</a> · <a href="https://github.com/shaked/engine" target="_blank" rel="noopener" class="kyma-footer-link">GitHub</a>',
+      copyright: 'Copyright © 2026 AgentcyLabs · <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link">agentcylabs.com</a> · <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener" class="kyma-footer-link">GitHub</a>',
     },
   },
 

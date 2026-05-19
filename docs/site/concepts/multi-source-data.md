@@ -158,5 +158,3 @@ correctly; you'd silently lose data. Use federation instead.
 
 - Connector administration: [Connectors](/connectors/).
 - Pushdown details and the `pushdown_summary`: [Observability](/concepts/observability).
-- The exact-once mechanism in depth: spec
-  [`docs/superpowers/specs/2026-05-02-multi-source-database-integration-design.md`](https://github.com/shaked/engine/blob/main/docs/superpowers/specs/2026-05-02-multi-source-database-integration-design.md).
