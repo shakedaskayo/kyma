@@ -1358,7 +1358,136 @@ The migrations are applied by `sqlx::migrate!("./migrations")` embedded at compi
 
 ## 7. Configuration keys and environment variables
 
-_Filled in by Task 8._
+Every `KYMA_*` env var below is part of the v1.0 contract. Removing or renaming any of them requires the deprecation policy in section 10. New env vars may be added at any v1.x minor release.
+
+### Runtime configuration (frozen)
+
+#### Network / server
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KYMA_CATALOG_URL` | `postgres://kyma:kyma_dev@localhost:5433/kyma` | PostgreSQL connection URL for the catalog database. Accepted by both `kyma` (engine) and `kyma-cli` (admin CLI). Must be a valid libpq/sqlx connection string. |
+| `KYMA_HTTP_ADDR` | `0.0.0.0:8080` | TCP socket address the HTTP server listens on. Format: `host:port`. |
+| `KYMA_GRPC_ADDR` | `0.0.0.0:9090` | TCP socket address for the Arrow Flight gRPC server. Set to `off` (case-insensitive) to disable Flight entirely. |
+| `KYMA_OTLP_ADDR` | `off` | TCP socket address for the OTLP gRPC log-receiver (standard port `4317`). Set to `off` (case-insensitive, default) to disable. |
+| `KYMA_OTLP_DATABASE` | `default` | Target kyma database name for logs received via the OTLP gRPC endpoint. |
+| `KYMA_PATH_PREFIX` | `kyma` | Object-store path prefix prepended to every extent key. All extents are stored under `<prefix>/<tenant_id>/extents/<id>.kyma`. |
+
+#### Authentication
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KYMA_AUTH_BACKEND` | _(unset — uses `EnvAuthBackend`)_ | Selects the authentication backend. Accepted values: `db` (requires the `cloud-auth` compile feature; uses the `api_tokens` Postgres table). Any other value or unset falls back to `EnvAuthBackend` (token list from `KYMA_AUTH_TOKENS`). |
+| `KYMA_AUTH_TOKENS` | _(unset — auth disabled)_ | Comma-separated list of `token:role` pairs that grant bearer-token access, e.g. `alice-tok:admin,bob-tok:write,reader-tok:read`. Accepted roles: `admin`, `write`, `read`. Empty or unset disables all auth (open access). |
+
+#### Object storage (S3-compatible)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KYMA_S3_ENDPOINT` | _(unset — AWS public endpoint)_ | URL of the S3-compatible endpoint, e.g. `http://localhost:9000` for MinIO. Omit for real AWS. |
+| `KYMA_S3_BUCKET` | `kyma` | Name of the S3 bucket kyma stores extents in. |
+| `KYMA_S3_REGION` | `us-east-1` | AWS region or MinIO region string. |
+| `KYMA_S3_ACCESS_KEY_ID` | _(unset — SDK credential chain)_ | S3 access key id. If unset, `object_store`/AWS SDK falls back to its standard credential chain (`AWS_ACCESS_KEY_ID`, instance role, etc.). |
+| `KYMA_S3_SECRET_ACCESS_KEY` | _(unset — SDK credential chain)_ | S3 secret access key. Same fallback behaviour as `KYMA_S3_ACCESS_KEY_ID`. |
+| `KYMA_S3_PATH_STYLE` | `true` | Use path-style S3 addressing (`true`, default, required for MinIO) instead of virtual-hosted-style (`false`, AWS default). Set `false` only when connecting to real AWS. |
+| `KYMA_S3_ALLOW_HTTP` | `true` | Allow plain HTTP to the object-store endpoint (default `true` for dev). Set to `false` or `0` to require TLS in production. |
+
+#### Ingest staging (group-commit)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KYMA_STAGING_DISABLED` | _(unset — staging enabled)_ | Set to `1` or `true` to disable the staging buffer and write one extent per ingest request. Intended for integration tests that need exact per-request semantics; not recommended in production. |
+| `KYMA_FLUSH_MAX_ROWS` | `8000` | Flush the staging buffer for a table when it accumulates this many rows. Unsigned integer. |
+| `KYMA_FLUSH_MAX_BYTES` | `16777216` (16 MiB) | Flush the staging buffer when its in-memory footprint exceeds this many bytes. Unsigned integer. |
+| `KYMA_FLUSH_MAX_AGE_MS` | `50` | Flush any buffer entry that has been waiting longer than this many milliseconds, even if thresholds are not yet met. Unsigned integer. |
+| `KYMA_COMMIT_WINDOW_MS` | `5` | Commit-coordinator batch window: wait up to this many milliseconds after the first extent arrives before committing the group. Lower = less latency; higher = more throughput. Unsigned integer. |
+| `KYMA_COMMIT_MAX_EXTENTS` | `128` | Hard cap on the number of extents bundled into a single coordinator snapshot commit. Unsigned integer. |
+
+#### Compaction
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KYMA_COMPACTION_IDLE_SLEEP_MS` | `2000` (2 s) | How long the compaction worker sleeps between idle polls (no task available). Unsigned integer (ms). |
+| `KYMA_COMPACTION_POLL_SECS` | `30` | How often the compaction scheduler scans the catalog for tables with enough extents to compact. Unsigned integer (seconds). |
+| `KYMA_COMPACTION_MIN_EXTENTS` | `4` | Minimum number of extents a table must have before the scheduler submits a compaction task. Signed 64-bit integer. |
+
+#### Retention and physical GC
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KYMA_RETENTION_POLL_SECS` | `60` | How often the retention sweeper checks for expired (soft-deleted) extents and marks them for physical deletion. Unsigned integer (seconds). |
+| `KYMA_PHYSICAL_GC_POLL_SECS` | `300` (5 min) | How often the physical-delete worker checks for extents past their grace period and deletes object-store bytes. Unsigned integer (seconds). |
+| `KYMA_PHYSICAL_GC_GRACE_SECS` | `86400` (24 h) | Time after soft-deletion before an extent's object-store bytes are actually removed. Signed integer (seconds). |
+
+#### File-drop watcher
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KYMA_FILEDROP_ENABLED` | `0` (disabled) | Set to `1` or `true` to activate the file-drop watcher. Off by default. |
+| `KYMA_FILEDROP_PREFIXES` | `ingest` | Comma-separated list of object-store prefixes to watch, e.g. `ingest,staging`. Takes precedence over the legacy `KYMA_FILEDROP_PREFIX`. Files must follow the `{prefix}/{database}/{table}/{filename}` path convention. |
+| `KYMA_FILEDROP_PREFIX` | `ingest` | Legacy single-prefix override. Ignored when `KYMA_FILEDROP_PREFIXES` is set. |
+| `KYMA_FILEDROP_POLL_SECS` | `5` | How often each configured prefix is scanned. Unsigned integer (seconds). |
+| `KYMA_FILEDROP_DELETE_AFTER_INGEST` | `false` | Set to `1` or `true` to delete object-store files after successful ingest. Default `false` preserves files for replay via the idempotency ledger. |
+| `KYMA_FILEDROP_AUTO_CREATE` | `true` | Automatically create the target table on the first NDJSON file with the engine's default schema. Set to `0` or `false` to require tables to exist before ingest. |
+| `KYMA_FILEDROP_SCHEMA_EVOLVE` | `true` | Scan each NDJSON file for new top-level keys and `ALTER TABLE ADD COLUMN` for any missing columns. Set to `0` or `false` to enforce strict schema. |
+
+#### Kafka ingest
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KYMA_KAFKA_ENABLED` | `0` (disabled) | Set to `1` or `true` to activate the Kafka consumer. |
+| `KYMA_KAFKA_BROKERS` | `localhost:9092` | Comma-separated list of Kafka broker addresses, e.g. `broker1:9092,broker2:9092`. |
+| `KYMA_KAFKA_GROUP` | `kyma-ingest` | Kafka consumer group id. |
+| `KYMA_KAFKA_TOPICS` | _(unset — consumer will not start)_ | Comma-separated `topic:database.table` routing specs, e.g. `events:mydb.mytable,logs:obs.raw`. The consumer ignores topics with no mapping. |
+| `KYMA_KAFKA_BATCH_SIZE` | `500` | Number of Kafka messages accumulated per flush to `WritePath`. Unsigned integer. |
+| `KYMA_KAFKA_BATCH_TIMEOUT_MS` | `500` | Max time (ms) a partial batch may linger before flushing regardless of size. Unsigned integer. |
+
+#### Schema cache
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KYMA_SCHEMA_CACHE_TTL_SECS` | `5` | Server-side TTL in seconds for the `GET /v1/catalog/schema` response cache. Set to `0` to disable caching. Unsigned integer. |
+
+#### Connector runner
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KYMA_CONNECTOR_WORKERS` | `4` | Number of concurrent connector runner goroutines. Unsigned integer. |
+
+#### Embedding provider
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KYMA_EMBED_PROVIDER` | _(unset — `fastembed`)_ | Embedding backend to use. Accepted values: `fastembed`, `ollama`, `openai-compat`, `gemini`. Unset defaults to `fastembed`. |
+| `KYMA_EMBED_MODEL_ID` | Provider-specific (see notes) | Embedding model identifier. Default per provider: `fastembed` → `bge-small-en-v1.5`; `ollama` → `nomic-embed-text`; `openai-compat` → `text-embedding-3-small`; `gemini` → `text-embedding-004`. |
+| `KYMA_EMBED_BASE_URL` | Provider-specific (see notes) | Base URL for network embedding providers. Default: `http://localhost:11434` for `ollama`; `https://api.openai.com/v1` for `openai-compat`. Ignored for `fastembed` and `gemini`. |
+| `KYMA_EMBED_MODEL_PATH` | _(unset)_ | Local filesystem path to a pre-downloaded fastembed model. Only used when `KYMA_EMBED_PROVIDER=fastembed`. |
+| `KYMA_EMBED_API_KEY_ENV` | `OPENAI_API_KEY` | Name of the environment variable that holds the API key for `openai-compat`. The engine reads the named env var at query time via the connector secret store. Only used when `KYMA_EMBED_PROVIDER=openai-compat`. |
+
+#### Inline data-assistant (agent)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KYMA_AGENT_OLLAMA_HOST` | `http://localhost:11434` | Base URL of the Ollama server used by the inline `/v1/agent` endpoint. |
+| `KYMA_AGENT_MODEL` | `gemma4:latest` | Ollama model tag to use for the inline agent. Must be pulled on the Ollama host before use. |
+
+### Inherited / third-party variables
+
+These env vars come from libraries kyma uses or from runtime convention. kyma inherits them as-is; their semantics belong to the library, not to kyma.
+
+| Variable | Source | Notes |
+|---|---|---|
+| `RUST_LOG` | `tracing-subscriber` | Controls the log level filter. Parsed by `EnvFilter::try_from_default_env()`. When unset, kyma defaults to `info,sqlx=warn,hyper=warn,h2=warn`. Syntax: `[target=]level[,...]`, e.g. `RUST_LOG=debug,sqlx=warn`. |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `object_store` / `aws-sdk` | Standard AWS credential env vars. Used as fallback when `KYMA_S3_ACCESS_KEY_ID` / `KYMA_S3_SECRET_ACCESS_KEY` are unset and no instance-role credential is available. |
+| `AWS_DEFAULT_REGION` | `object_store` / `aws-sdk` | AWS region fallback when `KYMA_S3_REGION` is unset. |
+| `OPENAI_API_KEY` | Embedding / connector | API key for OpenAI-compatible embedding providers. The variable name is configurable via `KYMA_EMBED_API_KEY_ENV`; `OPENAI_API_KEY` is the default. |
+| `GOOGLE_API_KEY` | Embedding | API key for the Gemini embedding provider. Hard-coded variable name when `KYMA_EMBED_PROVIDER=gemini`; not configurable. |
+
+### Test-only variables
+
+These are not part of the v1.0 contract; they may change at any time.
+
+- `KYMA_TEST_DATABASE_URL` — PostgreSQL connection URL used by integration and unit tests (MCP, ingest, schema) to connect to a test-specific catalog. Read directly in test code; never read by the main engine binary.
 
 ## 8. Extent on-disk format
 
