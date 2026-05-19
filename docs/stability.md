@@ -583,7 +583,68 @@ The lexer emits `LexError` (converted to `ParseError` before surfacing) in these
 
 ## 4. SQL dialect
 
-_Filled in by Task 5._
+The SQL dialect that v1.0 supports is the DataFusion SQL subset at version `44.0.0` (pinned in workspace `Cargo.toml` as `datafusion = "44"`; resolved to `44.0.0` in `Cargo.lock`), minus the opt-outs below.
+
+### What's included
+
+The DataFusion SQL surface at the level documented at <https://datafusion.apache.org/user-guide/sql/index.html> for the pinned version, as filtered through kyma's thin HTTP and Flight query handlers. Both `POST /v1/query` and Arrow Flight `do_get` (language `"sql"`) call `SessionContext::sql()` directly — there is no kyma-level SQL parser or statement filter on either path (the agent's `run_sql` tool is the one exception; see opt-outs).
+
+Specific guarantees (verified end-to-end in `scripts/e2e-test.sh`, `scripts/test-flight.sh`, `scripts/test-pushdown.sh`, `scripts/test-block-pruning.sh`, and `scripts/test-vectors.sh`):
+
+- `SELECT` with column lists and `SELECT *`.
+- `WHERE` with scalar predicates, comparison operators (`=`, `!=`, `<`, `<=`, `>`, `>=`), and boolean connectives (`AND`, `OR`, `NOT`).
+- `WHERE` with timestamp range predicates: `col >= TIMESTAMP 'literal'`, `col < TIMESTAMP 'literal'`, `col BETWEEN TIMESTAMP 'a' AND TIMESTAMP 'b'`. These also engage kyma's extent-level and block-level pruning.
+- `WHERE` with equality predicates and `IN (list)` on string/integer columns (also drives index-based extent pruning).
+- `WHERE` with `LIKE` patterns (`%needle%`, `prefix%`, `%suffix`) on string columns (also drives text-token extent pruning).
+- `GROUP BY` with one or more columns.
+- `ORDER BY col [ASC|DESC]` with one or more keys.
+- `LIMIT N`.
+- `SELECT DISTINCT col, ...`.
+- Aggregate functions: `COUNT(*)`, `COUNT(col)`, `COUNT(DISTINCT col)`, `SUM`, `AVG`, `MIN`, `MAX`.
+- Scalar functions: `date_trunc('unit', col)`, `date_bin(interval, col, origin)` (used by KQL→SQL lowering), standard DataFusion scalar functions.
+- `INNER JOIN` on equality conditions between two tables registered in the same database.
+- Common table expressions (`WITH ... AS (...) SELECT ...`) — accepted by DataFusion's planner; confirmed working by the `is_read_only_sql` guard in the agent path which explicitly allows `WITH`-prefixed queries.
+- `EXPLAIN` / `SHOW` — accepted by DataFusion's planner.
+- kyma-specific UDFs (registered at session startup by `kyma_exec::register_vector_udfs`): `cosine_distance(a, b)`, `l2_distance(a, b)`, `inner_product(a, b)` — each accepts `FixedSizeList<Float32>` or `List<Float32>` arguments and returns `Float64`. Mismatched-length vectors return `NULL`.
+
+Untested but likely working (DataFusion 44 includes these; not exercised through kyma's stack in current test scripts): window functions (`OVER (PARTITION BY ... ORDER BY ...)`), `LEFT JOIN`, `RIGHT JOIN`, `FULL OUTER JOIN`, `CROSS JOIN`, subqueries in `FROM` and `WHERE`, `UNION`/`INTERSECT`/`EXCEPT`. These are not part of the frozen surface because they have not been exercised end-to-end.
+
+### Opt-outs (not in v1.0)
+
+- **DDL statements** (`CREATE TABLE`, `DROP TABLE`, `ALTER TABLE`, `CREATE SCHEMA`, etc.) — kyma does not pre-filter DDL on the `POST /v1/query` or Arrow Flight `do_get` paths. DataFusion's `SessionContext::sql()` is called directly. In practice, DataFusion 44 operates on a read-only catalog (kyma registers `KymaTable` providers but does not register a mutable catalog); DDL statements that DataFusion tries to execute will fail at the execution layer with a DataFusion plan or execution error. At `POST /v1/query`, this surfaces as HTTP `500` with code `query_execution_error`; at Flight `do_get`, as gRPC status `Internal`. Behavior is not contractually defined — do not rely on DDL statements succeeding or failing with any specific error.
+
+- **DML other than reads** (`UPDATE`, `DELETE`, `MERGE`, `INSERT INTO ... SELECT`) — same situation as DDL. kyma registers no writable `TableProvider` implementations; DataFusion will fail such statements at the execution layer. Response shape is the same as DDL failures above. Not part of the v1.0 contract.
+
+- **`INSERT INTO ... VALUES`** — not supported. DataFusion may accept the syntax at the planning layer but kyma tables are read-only `TableProvider` implementations. Any insert attempt will fail at execution with a DataFusion internal error.
+
+- **Transactions** (`BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`) — DataFusion 44 does not support transaction-control statements. Any such statement is rejected by DataFusion at the planning stage. At `POST /v1/query` this surfaces as HTTP `400` with code `sql_parse_error`; at Flight `do_get`, as gRPC status `InvalidArgument`.
+
+- **Runtime user-defined functions** — UDF registration is not exposed via any API surface. The only UDFs available are the three vector-distance functions compiled in at startup (`cosine_distance`, `l2_distance`, `inner_product`). There is no endpoint or mechanism to register additional UDFs at runtime.
+
+- **Agent `run_sql` tool** — the inline AI agent's `run_sql` tool applies an additional pre-DataFusion filter (`is_read_only_sql`): only queries whose trimmed text begins with `SELECT`, `SHOW`, `EXPLAIN`, or `WITH` (case-insensitive) are forwarded to DataFusion. All other statements are rejected before reaching DataFusion with a JSON-level error `{"error": "only SELECT / SHOW / EXPLAIN supported"}`. This filter applies only to the agent tool path, not to `POST /v1/query` or Arrow Flight.
+
+### DataFusion version policy
+
+v1.0 ships against DataFusion `44.0.0`. v1.x minor releases may upgrade DataFusion only if the new version is fully back-compat against the queries in `scripts/backcompat-queries.txt` and any SQL queries used in `scripts/test-flight.sh`. R1 (release engineering) owns this policy.
+
+### Error taxonomy
+
+Stable error codes returned by the SQL frontend:
+
+HTTP (`POST /v1/query`):
+- `sql_parse_error` — DataFusion rejected the SQL at parse or plan time (returned by `ctx.sql()`); HTTP `400 Bad Request`.
+- `query_execution_error` — DataFusion failed at execution time (returned by `df.collect()`); HTTP `500 Internal Server Error`.
+- `memory_exceeded` — DataFusion's `GreedyMemoryPool` was exhausted during execution (error message contains `"ResourcesExhausted"` or `"Resources exhausted"`); HTTP `429 Too Many Requests` with `Retry-After: 1` and `X-Kyma-Budget-Limit` header.
+- `wall_clock_exceeded` — query did not complete within the `X-Kyma-Max-Wall-Clock-Ms` budget; HTTP `429 Too Many Requests`.
+- `serialization_error` — Arrow-to-NDJSON serialization failed post-execution; HTTP `500 Internal Server Error`.
+
+Arrow Flight (`do_get`, language `"sql"`):
+- `InvalidArgument` — `ctx.sql()` returned a DataFusion plan error (SQL rejected at parse or plan time).
+- `Internal` — DataFusion execute-stream or encoding failed.
+
+### Tests proving the freeze
+
+`scripts/test-flight.sh` exercises SQL via the Flight gRPC API (delegating to Rust integration tests tagged `--ignored` in `crates/kyma-server/tests/flight_smoke.rs`). `scripts/e2e-test.sh` exercises SQL via `POST /v1/query` with the queries listed under "What's included" above. `scripts/test-pushdown.sh`, `scripts/test-block-pruning.sh`, and `scripts/test-vectors.sh` exercise timestamp-range predicates, equality pushdown, and UDF calls respectively. The back-compat workflow (Task 17 in the F1 plan) replays SQL queries from `scripts/backcompat-queries.txt` against each tagged fixture.
 
 ## 5. MCP surface
 
