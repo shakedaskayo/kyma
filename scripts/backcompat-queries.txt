@@ -1,0 +1,18 @@
+# back-compat fixed query set — v1.0 contract verification
+#
+# Format: each non-empty, non-comment line is one query in the form:
+#   <id>\t<endpoint>\t<content-type>\t<database>\t<query-body>
+#
+# The replayer (scripts/backcompat-replay.sh) POSTs each query to the
+# running engine, hashes the response body (after sorting JSON object
+# keys), and compares against the per-fixture expected-hash file.
+#
+# Adding queries: append only. Never reorder; never edit an existing
+# query's text. Tagged fixtures are pinned to specific IDs.
+
+q-rest-health	GET /health	-	-	-
+q-rest-metrics-shape	GET /metrics	-	-	-
+q-kql-where-count	POST /v1/query	application/x-kql	obs	otel_logs | where severity_text == "ERROR" | summarize n = count()
+q-kql-summarize-by	POST /v1/query	application/x-kql	obs	otel_logs | summarize n = count() by severity_text | order by severity_text asc
+q-sql-select-count	POST /v1/query	application/sql	obs	SELECT COUNT(*) AS n FROM otel_logs
+q-sql-group-by	POST /v1/query	application/sql	obs	SELECT severity_text, COUNT(*) AS n FROM otel_logs GROUP BY severity_text ORDER BY severity_text ASC
