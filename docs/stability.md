@@ -449,7 +449,133 @@ Errors are returned as gRPC `Status` codes. The status-code-to-meaning mapping f
 
 ## 3. KQL dialect
 
-_Filled in by Task 4._
+The KQL dialect that v1.0 supports is a defined subset of Kusto Query Language. Anything in this section is part of the v1.0 frozen contract; anything not in this section is "best-effort, not v1.0 surface" — the parser may accept it but the behavior is not contract.
+
+The implementation is a direct-lowering KQL→SQL translator (`crates/kyma-kql/`). It does not build an AST; it streams parsed operators into a `QueryState` accumulator and renders SQL once. This means multi-operator compositions that require IR-level rewrites (e.g., `join`, `make-series`) are deferred to a future phase and are explicitly not in v1.0.
+
+### Operators (frozen)
+
+| Operator | Form | Notes |
+|---|---|---|
+| `where` | `T \| where <expr>` | Predicates may use any expression from the expression table below. Multiple `where` clauses AND together. |
+| `project` | `T \| project col1, col2, ...` | Selects the named columns; any column not listed is dropped from the result. |
+| `extend` | `T \| extend name = <expr>, ...` | Adds computed columns. Arithmetic, string, and time functions are usable in the expression. |
+| `summarize` | `T \| summarize agg() [by col, ...]` | Aggregates rows. Optional `by` clause groups by one or more columns or bin-expressions. |
+| `sort by` / `order by` | `T \| sort by col [asc\|desc], ...` | Sorts result. `asc`/`desc` keyword optional; default is `desc` (matching KQL semantics). Both `sort` and `order` are accepted as synonyms. |
+| `take` / `limit` | `T \| take N` | Returns at most N rows. Both `take` and `limit` are accepted as synonyms. N must be a non-negative integer literal. |
+| `top` | `T \| top N by <expr> [asc\|desc]` | Equivalent to `sort by <expr> [asc\|desc] \| take N`. |
+| `count` | `T \| count` | Returns a single row with column `Count` holding the row count for the table or the result of earlier pipeline operators. |
+| `distinct` | `T \| distinct col1, col2, ...` | Returns distinct combinations of the listed columns. When no columns are listed, returns distinct rows over all columns. |
+
+### Operators explicitly not in v1.0
+
+| Operator | Status | Notes |
+|---|---|---|
+| `project-away` | Parser accepts; behavior is best-effort | Lowered to `SELECT *`; excluded columns are not actually removed. Behavior diverges from Kusto. Freeze deferred. |
+| `join` | Not implemented | Parser rejects with "unsupported operator". Deferred to Phase E.2 (unified-plan IR). |
+| `make-series` | Not implemented | Parser rejects. Requires IR-level auto-fill semantics not yet present. |
+| `mv-expand` | Not implemented | Parser rejects. Deferred. |
+| `graph-traverse` | Parser accepts; not v1.0 | CTE-based recursive SQL emitted; semantics are non-standard relative to Kusto's native graph operators. No test coverage in `scripts/test-kql.sh`. |
+| `graph-shortest-path` | Parser accepts; not v1.0 | Same status as `graph-traverse`. No test coverage. |
+| `parse` | Not implemented | Parser rejects. |
+| `evaluate` | Not implemented | Parser rejects. |
+| `render` | Not implemented | Parser rejects. |
+
+### Expressions (frozen)
+
+All frozen operators accept the following expression forms:
+
+| Category | Forms |
+|---|---|
+| Comparison | `==`, `!=`, `<`, `<=`, `>`, `>=` |
+| Logical | `and`, `or`, `not` |
+| Arithmetic | `+`, `-`, `*`, `/`, `%` |
+| String predicates | `contains "s"`, `startswith "s"`, `endswith "s"`, `has "s"` |
+| Range | `col between (low .. high)` — inclusive on both ends |
+| Set membership | `col in (v1, v2, ...)` |
+| Literals | Integer (`42`), float (`3.14`), string (`"x"` or `'x'`), bool (`true`/`false`), `null`, duration (`30s`, `5m`, `2h`, `7d`), datetime (`datetime(2026-04-19T10:00:00Z)`) |
+
+Notes on string predicates: `contains`, `startswith`, `endswith` lower to SQL `LIKE`. `has` lowers to `LIKE '%needle%'` (not true word-boundary semantics). Case-sensitivity follows the underlying DataFusion/Arrow behavior (case-sensitive).
+
+### Scalar functions (frozen)
+
+| Function | Signature | Returns | SQL lowering |
+|---|---|---|---|
+| `now` | `now()` | Current timestamp | `now()` |
+| `ago` | `ago(duration)` | Timestamp N duration before now | `(now() - INTERVAL 'N unit')` |
+| `bin` | `bin(col, duration)` | Floor of col to bucket | `date_bin(bucket, col, TIMESTAMP '1970-01-01')` |
+| `startofhour` | `startofhour(col)` | Timestamp truncated to hour | `date_trunc('hour', col)` |
+| `startofday` | `startofday(col)` | Timestamp truncated to day | `date_trunc('day', col)` |
+| `startofmonth` | `startofmonth(col)` | Timestamp truncated to month | `date_trunc('month', col)` |
+| `datetime` | `datetime(literal)` | Timestamp value | `CAST(literal AS TIMESTAMP)` |
+| `strcat` | `strcat(a, b, ...)` | Concatenated string | `concat(a, b, ...)` |
+| `tolower` | `tolower(s)` | Lowercased string | `lower(s)` |
+| `toupper` | `toupper(s)` | Uppercased string | `upper(s)` |
+| `strlen` | `strlen(s)` | Length of string | `char_length(s)` |
+| `isnull` | `isnull(x)` | Boolean — whether x is NULL | `(x IS NULL)` |
+| `isnotnull` | `isnotnull(x)` | Boolean — whether x is not NULL | `(x IS NOT NULL)` |
+| `iff` | `iff(cond, a, b)` | a if cond is true, else b | `(CASE WHEN cond THEN a ELSE b END)` |
+
+### Aggregate functions (frozen)
+
+Used inside `summarize`. All are used in the SQL aggregation context.
+
+| Function | Signature | Notes |
+|---|---|---|
+| `count` | `count()` or `count(col)` | `count(*)` or `count(col)`. When used as a bare pipe operator (`T \| count`), emits `count(*) AS "Count"`. |
+| `sum` | `sum(col)` | Sum of column values. |
+| `avg` | `avg(col)` | Arithmetic mean. |
+| `min` | `min(col)` | Minimum value. |
+| `max` | `max(col)` | Maximum value. |
+| `dcount` | `dcount(col)` | Distinct count; lowers to `count(DISTINCT col)`. |
+| `dcountif` | `dcountif(col, cond)` | Conditional distinct count; lowers to `count(DISTINCT CASE WHEN cond THEN col ELSE NULL END)`. |
+
+### Type names
+
+KQL type casts use the `datetime(...)` function form. There are no explicit `toint`, `tostring`, etc. type-cast functions in v1.0 — the parser does not implement them and will reject them. The `datetime(x)` function is the only explicit type conversion in v1.0.
+
+Duration literals are lexed as a native Duration token and lowered to SQL INTERVAL at parse time. They are not a type-cast function.
+
+| Literal / form | Backing SQL type | Example |
+|---|---|---|
+| Integer literal | int64 | `42` |
+| Float literal | float64 | `3.14` |
+| String literal | UTF-8 string | `"hello"` or `'hello'` |
+| Boolean literal | boolean | `true`, `false` |
+| `null` | null | `null` |
+| Duration literal | SQL INTERVAL | `30s`, `5m`, `2h`, `7d` |
+| `datetime(x)` | TIMESTAMP | `datetime(2026-04-19T10:00:00Z)` |
+
+### Error taxonomy
+
+The KQL frontend (`crates/kyma-kql/`) produces a single error type: `ParseError(String)`. At the HTTP layer, a parse failure causes a `400 Bad Request` with a JSON error body using code `kql_parse_error`. At the Arrow Flight layer, a parse failure returns gRPC status `InvalidArgument`.
+
+There is no structured sub-code within `ParseError` — the message string is free-form. The only stable error code at the API level is:
+
+- `kql_parse_error` — emitted by `POST /v1/query` when `Content-Type: application/x-kql` and the KQL parser returns a `ParseError`. The `message` field contains the parser's free-form error string (table name not found as identifier, unsupported operator name, unsupported function name, unexpected token, unterminated string literal, bad duration unit, unexpected end of query, trailing tokens). Free-form message text is not contract.
+
+The lexer emits `LexError` (converted to `ParseError` before surfacing) in these cases: unterminated double-quoted string, unterminated single-quoted string, dangling backslash in string, unexpected character.
+
+### Tests proving the freeze
+
+`scripts/test-kql.sh` exercises the following frozen operators end-to-end: `count` (bare), `where`, `project`, `take`, `summarize … by`, `sort by`, `extend`, `distinct`, plus the scalar functions `ago`, `now`, and string predicates `contains` and `startswith`. The back-compat workflow (Task 14) replays `scripts/test-kql.sh`-style queries against each tagged version's fixture.
+
+**Operators frozen but not yet exercised by `scripts/test-kql.sh`** (gaps for A2 to close):
+
+| Operator / Feature | Gap |
+|---|---|
+| `top N by` | No dedicated test case in `scripts/test-kql.sh`. Covered by unit tests in `crates/kyma-kql/src/parser.rs`. |
+| `limit` (synonym for `take`) | Not explicitly tested; tested implicitly via `take`. |
+| `order by` (synonym for `sort by`) | Not explicitly tested. |
+| `bin(col, duration)` | Used only implicitly; no dedicated E2E test. |
+| `startofhour`, `startofday`, `startofmonth` | Not tested in `scripts/test-kql.sh`. |
+| `strcat`, `tolower`, `toupper`, `strlen` | Not tested in `scripts/test-kql.sh`. |
+| `isnull`, `isnotnull` | Not tested in `scripts/test-kql.sh`. |
+| `iff` | Not tested in `scripts/test-kql.sh`. |
+| `sum`, `avg`, `min`, `max`, `dcount`, `dcountif` | Not tested in `scripts/test-kql.sh`. |
+| `endswith`, `has` string predicates | Not tested in `scripts/test-kql.sh`. |
+| `between` range expression | Not tested in `scripts/test-kql.sh` (covered by unit tests). |
+| `in` set membership | Not tested in `scripts/test-kql.sh` (covered by unit tests). |
 
 ## 4. SQL dialect
 
