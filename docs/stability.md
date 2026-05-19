@@ -648,7 +648,296 @@ Arrow Flight (`do_get`, language `"sql"`):
 
 ## 5. MCP surface
 
-_Filled in by Task 6._
+The MCP server exposed by `kyma-mcp` is part of the v1.0 frozen surface. Agents that consume this surface can rely on tool names, argument schemas, and return shapes across the v1.x series.
+
+### Transport
+
+- HTTP POST: `POST /mcp/v1` — JSON-RPC 2.0 channel. Request body must be a single JSON-RPC 2.0 request object or a non-empty batch array. Notifications (id absent) return `202 Accepted` with empty body. Batch responses omit entries for pure notifications; if every item in a batch is a notification the whole response is `202 Accepted` with empty body.
+- HTTP GET (SSE keepalive): `GET /mcp/v1` — `Content-Type: text/event-stream`. Emits a keepalive ping every 15 seconds. MCP clients that probe SSE before falling back to POST receive a valid Streamable HTTP handshake. The stream carries no tool results; it is purely a connection-maintenance channel.
+- stdio: not supported. The server is exclusively HTTP-based.
+- Auth: `Authorization: Bearer <token>` (required when auth is enabled; `Role::Read`). The same bearer-token model as the REST surface applies — `kyma-bin` wraps the MCP router with the `require_role_middleware(Role::Read)` layer. Unauthenticated requests to either endpoint return `401 Unauthorized`.
+
+### Protocol version and capability negotiation
+
+The server speaks MCP protocol version `2025-03-26` (per `initialize.rs`). The `initialize` method responds with:
+
+```json
+{
+  "protocolVersion": "2025-03-26",
+  "capabilities": {
+    "tools": { "listChanged": false }
+  },
+  "serverInfo": {
+    "name": "<server-name>",
+    "version": "<semver>"
+  }
+}
+```
+
+If the client sends a matching `protocolVersion`, the server echoes it back. Otherwise it advertises its own version. Capabilities advertise tools support; resources, prompts, and sampling are not advertised.
+
+### Methods (frozen)
+
+Four JSON-RPC methods are dispatched:
+
+- `initialize` — handshake. Params: `{ "protocolVersion": "<string>", "capabilities": {}, "clientInfo": { "name": "...", "version": "..." } }`. Returns the capability block above.
+- `notifications/initialized` — post-handshake notification. No response (HTTP `202`).
+- `tools/list` — enumerate all tools. No params. Returns `{ "tools": [ <tool-entry>, ... ] }`. Tool entries are `{ "name", "description", "inputSchema" }`.
+- `tools/call` — invoke a tool. Params: `{ "name": "<tool-name>", "arguments": { ... } }`. Returns a tool-result envelope (see below).
+
+Any other method name returns JSON-RPC error `-32601` (MethodNotFound).
+
+### Tool-call return envelope
+
+A successful `tools/call` always returns:
+
+```json
+{
+  "content": [
+    { "type": "text", "text": "<JSON string of result>" }
+  ],
+  "isError": false,
+  "structuredContent": { "...result fields..." }
+}
+```
+
+Tool-level errors (e.g. bad arguments, catalog failures, SQL execution failures) are surfaced as `{ "error": "<message>" }` inside `structuredContent` with `"isError": false` — the outer JSON-RPC call succeeds and the error is data for the model to self-correct. JSON-RPC-level errors (`ErrorObject`) are returned only for unknown tool names (`-32601`) or dispatcher-internal failures (`-32603`).
+
+### Tools (frozen)
+
+All eight tools are read-only (`with_read_only(true)`) and concurrency-safe (`with_concurrency_safe(true)`).
+
+---
+
+- **`list_databases`** — List every database in the kyma cluster. Call first to discover what databases exist.
+  - Arguments (JSON Schema):
+    ```json
+    { "type": "object" }
+    ```
+    (no arguments — empty object or omit `arguments` key)
+  - Returns: `{ "databases": ["<name>", ...] }` on success; `{ "error": "<message>" }` on catalog failure.
+  - Behavior: calls `catalog.list_databases()` and returns the array of database name strings.
+
+---
+
+- **`describe_table`** — Describe the columns of a table: names, Arrow data types, nullability. Call before writing a SQL query against an unfamiliar table.
+  - Arguments (JSON Schema):
+    ```json
+    {
+      "type": "object",
+      "required": ["database", "table"],
+      "properties": {
+        "database": { "type": "string", "description": "Database name." },
+        "table":    { "type": "string", "description": "Table name inside that database." }
+      }
+    }
+    ```
+  - Returns:
+    ```json
+    {
+      "database": "<name>",
+      "table": "<name>",
+      "columns": [
+        { "name": "<col>", "type": "<Arrow type string>", "nullable": true }
+      ]
+    }
+    ```
+    On failure: `{ "error": "lookup_table: <message>" }`.
+  - Behavior: calls `catalog.lookup_table(database, table)` and renders each Arrow field as a `{ name, type, nullable }` object. `type` is the `Debug` representation of the Arrow `DataType` enum (e.g. `"Utf8"`, `"Int64"`, `"Timestamp(Microsecond, None)"`).
+
+---
+
+- **`run_sql`** — Execute a read-only SQL query via DataFusion. Use `cosine_distance` / `l2_distance` UDFs for vector similarity. Returns up to `max_rows` rows as JSON. Queries that modify data are rejected (SELECT only; SHOW/EXPLAIN also allowed).
+  - Arguments (JSON Schema):
+    ```json
+    {
+      "type": "object",
+      "required": ["database", "sql"],
+      "properties": {
+        "database": { "type": "string", "description": "Database whose tables should be registered into the DataFusion session for this query." },
+        "sql":      { "type": "string", "description": "Full SQL query text. Only SELECT / SHOW / EXPLAIN are accepted." },
+        "max_rows": { "type": "integer", "description": "Row cap applied to the JSON response. Default 200.", "default": 200 }
+      }
+    }
+    ```
+  - Returns:
+    ```json
+    {
+      "columns": [{ "name": "<col>", "type": "<Arrow type string>" }],
+      "rows": [{ "<col>": "<value>", ... }],
+      "row_count": 123,
+      "truncated": false
+    }
+    ```
+    On failure: `{ "error": "<message>" }`. If the query does not begin with `SELECT`, `SHOW`, `EXPLAIN`, or `WITH` (case-insensitive), returns `{ "error": "only SELECT / SHOW / EXPLAIN supported" }` without reaching DataFusion.
+  - Behavior: builds a fresh DataFusion `SessionContext`, registers all tables in `database`, applies the `is_read_only_sql` guard, executes the query, and streams results as JSON-serialized Arrow batches capped at `max_rows` (clamped to requested value; default 200). Memory hard-capped at 256 MiB per call via `GreedyMemoryPool`. Vector UDFs (`cosine_distance`, `l2_distance`, `inner_product`) are registered at session startup.
+
+---
+
+- **`run_kql`** — Execute a KQL query against kyma — the primary query tool. KQL is pipe-syntax: `requests | where status >= 500 | summarize n=count() by url | top 10 by n`.
+  - Arguments (JSON Schema):
+    ```json
+    {
+      "type": "object",
+      "required": ["database", "kql"],
+      "properties": {
+        "database": { "type": "string", "description": "Database whose tables should be registered into the DataFusion session for this query." },
+        "kql":      { "type": "string", "description": "KQL query text. Starts with a table reference, pipe-separated operators." },
+        "max_rows": { "type": "integer", "description": "Row cap applied to the JSON response. Default 200.", "default": 200 }
+      }
+    }
+    ```
+  - Returns:
+    ```json
+    {
+      "columns": [{ "name": "<col>", "type": "<Arrow type string>" }],
+      "rows": [{ "<col>": "<value>", ... }],
+      "row_count": 123,
+      "truncated": false,
+      "compiled_sql": "<the SQL lowered from KQL>"
+    }
+    ```
+    On KQL parse error: `{ "error": "kql_parse: <message>", "hint": "Check pipe syntax..." }`. On execution failure: `{ "error": "<message>" }`.
+  - Behavior: compiles KQL to SQL via `kyma_kql::kql_to_sql`, then delegates to the same `execute_sql` path as `run_sql`. The compiled SQL is attached to the result as `compiled_sql` for debugging. Memory hard-capped at 256 MiB per call. The KQL surface is governed by section 3 of this document.
+
+---
+
+- **`sample_rows`** — Fetch N representative rows from a table. Use when `describe_table`'s column types aren't enough to understand the data shape (e.g. JSON/dynamic columns, text formats).
+  - Arguments (JSON Schema):
+    ```json
+    {
+      "type": "object",
+      "required": ["database", "table"],
+      "properties": {
+        "database": { "type": "string" },
+        "table":    { "type": "string" },
+        "n":        { "type": "integer", "description": "Number of rows to return. Default 5, clamped to [1, 1000].", "default": 5 }
+      }
+    }
+    ```
+  - Returns: same shape as `run_sql` — `{ "columns", "rows", "row_count", "truncated" }`. On failure: `{ "error": "<message>" }`. If `database` or `table` contain non-alphanumeric/underscore characters, returns `{ "error": "database and table must be ascii-alphanumeric / underscore only" }`.
+  - Behavior: validates identifier safety, clamps `n` to `[1, 1000]`, issues `SELECT * FROM <database>.<table> LIMIT <n>` via `execute_sql`.
+
+---
+
+- **`explore_schema`** — Return the full schema of a database in one call: every table, every column, types, and a few sample values per column. Use first for any question that spans multiple tables or when entity relationships are unknown. More efficient than calling `list_databases` + `describe_table` per table.
+  - Arguments (JSON Schema):
+    ```json
+    {
+      "type": "object",
+      "required": ["database"],
+      "properties": {
+        "database":           { "type": "string", "description": "Database whose schema graph to surface." },
+        "samples_per_column": { "type": "integer", "description": "Number of sample values per column (cap 10; default 3).", "default": 3 }
+      }
+    }
+    ```
+  - Returns:
+    ```json
+    {
+      "database": "<name>",
+      "tables": [
+        {
+          "name": "<table>",
+          "columns": [{ "name": "<col>", "type": "<Arrow type string>", "nullable": true }],
+          "sample_values": { "<col>": ["<val>", ...], ... }
+        }
+      ],
+      "table_count": 3,
+      "hint": "Columns whose sample values look like ids (...) are likely foreign-key candidates..."
+    }
+    ```
+    On failure: `{ "error": "<message>" }`.
+  - Behavior: lists all tables via `catalog.list_tables_in_database`, runs `SELECT * LIMIT <samples_per_column>` per table to gather sample values (capped at 10 samples per column), and assembles the result in one response.
+
+---
+
+- **`find_references_to`** — Find every (database, table, column) where a given value appears in the catalog's distinct-value index. The relationship-traversal primitive — use when the user asks "what else references X?" or "where does X show up?". Returns up to 200 matches.
+  - Arguments (JSON Schema):
+    ```json
+    {
+      "type": "object",
+      "required": ["value"],
+      "properties": {
+        "database": { "type": ["string", "null"], "description": "Database to search within. Pass null or omit for cluster-wide search.", "default": null },
+        "value":    { "type": "string", "description": "Value to locate across all columns." }
+      }
+    }
+    ```
+  - Returns:
+    ```json
+    {
+      "value": "<searched value>",
+      "matches": [
+        { "database": "<db>", "table": "<table>", "column": "<col>" }
+      ],
+      "match_count": 5,
+      "hint": "For each match, you can call run_kql to fetch the rows: `<table> | where <column> == \"<value>\"`"
+    }
+    ```
+    On failure: `{ "error": "pg_query: <message>" }`.
+  - Behavior: queries the Postgres `extents.column_stats` JSONB index directly (no full table scan). For string values, performs a `@>` containment check against the `distinct` array in each column's stats. For numeric-looking values, also attempts a numeric cast and tests for numeric containment. Results are limited to 200 rows, ordered by `(database_name, table_name, column_name)`.
+
+---
+
+- **`graph_traverse`** — Traverse a graph stored as edges in a kyma table. Wraps the KQL `graph-traverse` operator. Returns reachable nodes as `(node, depth)` pairs. Use for connectivity questions: "what services depend on X?", "which users trigger Y?".
+  - Arguments (JSON Schema):
+    ```json
+    {
+      "type": "object",
+      "required": ["database", "edges_table", "source", "from_column", "to_column"],
+      "properties": {
+        "database":    { "type": "string" },
+        "edges_table": { "type": "string", "description": "Table whose rows represent edges (each row has a source and target)." },
+        "source":      { "type": "string", "description": "Starting node value." },
+        "from_column": { "type": "string", "description": "Column in edges_table that holds the source node id." },
+        "to_column":   { "type": "string", "description": "Column in edges_table that holds the target node id." },
+        "max_hops":    { "type": "integer", "description": "Maximum hops. Default 5, clamped to [1, 20].", "default": 5 },
+        "direction":   { "type": "string", "description": "\"forward\" (default), \"backward\", or \"both\".", "default": "forward" }
+      }
+    }
+    ```
+  - Returns: same `{ "columns", "rows", "row_count", "truncated" }` shape as `run_sql` (row cap 1000), plus:
+    ```json
+    {
+      "compiled_sql": "<SQL from KQL lowering>",
+      "compiled_kql": "<KQL string passed to kql_to_sql>"
+    }
+    ```
+    On identifier validation failure: `{ "error": "edges_table / from_column / to_column must be ascii-alphanumeric / underscore only" }`. On invalid `direction`: `{ "error": "direction must be forward | backward | both" }`. On KQL compile failure: `{ "error": "kql_compile: <message>", "kql": "<kql>" }`.
+  - Behavior: validates that `edges_table`, `from_column`, and `to_column` are safe identifiers (ASCII alphanumeric / underscore only), clamps `max_hops` to `[1, 20]`, builds a KQL `graph-traverse` expression, compiles it to SQL via `kyma_kql::kql_to_sql`, and executes via `execute_sql` with a 1000-row cap. Note: `graph-traverse` is not part of the v1.0 frozen KQL surface (section 3 lists it as "not v1.0"), but this tool's argument schema and return shape are frozen.
+
+---
+
+### Resources (frozen)
+
+None in v1.0. The `resources/list` method (and any `resources/*` method) returns JSON-RPC error `-32601` (MethodNotFound). No URI templates are registered.
+
+### Prompts (frozen)
+
+None in v1.0. The `prompts/list` method (and any `prompts/*` method) returns JSON-RPC error `-32601` (MethodNotFound). No prompt templates are registered.
+
+### Error model
+
+MCP errors follow the JSON-RPC 2.0 error spec. The `error` field in a response is an object `{ "code": <integer>, "message": "<string>" }`. Error codes emitted:
+
+- `-32700` (`ParseError`) — the request body is not valid JSON. Returned with `"id": null`.
+- `-32600` (`InvalidRequest`) — the JSON-RPC envelope is structurally invalid: `jsonrpc` field is not `"2.0"`, the top-level value is neither object nor array, or the batch array is empty.
+- `-32601` (`MethodNotFound`) — the requested method is not one of `initialize`, `notifications/initialized`, `tools/list`, `tools/call`. Also returned when `tools/call` names an unknown tool.
+- `-32602` (`InvalidParams`) — `tools/call` was called without a `params` object, or without a `name` field inside params. Also returned if `initialize` params cannot be deserialized.
+- `-32603` (`InternalError`) — a registered tool returned an ADK execution error (distinct from tool-level `{"error": "..."}` results; this is only raised if the tool's async execution itself panics or returns an Err).
+
+Tool-level failures (bad arguments, catalog errors, SQL execution errors, KQL parse errors) are **not** JSON-RPC errors — they are returned as `{ "error": "<message>" }` values inside `structuredContent` with `"isError": false`. The outer JSON-RPC call succeeds with `200 OK`.
+
+### Tests proving the freeze
+
+`crates/kyma-mcp/tests/end_to_end.rs` — integration test `full_mcp_handshake_against_seeded_server` exercises the complete MCP lifecycle against a real TCP listener: `initialize` handshake, `notifications/initialized`, `tools/list` (asserts 8 tools), and `tools/call list_databases`. `rejects_request_without_bearer_token` asserts `401` when the bearer token is absent.
+
+`crates/kyma-mcp/tests/jsonrpc_framing.rs` — wire-protocol tests covering: parse error for invalid JSON (`-32700`), invalid request for wrong JSON-RPC version (`-32600`), method not found for unknown method (`-32601`), invalid params for `tools/call` without `name` (`-32602`), batch with mixed results, batch of only notifications returning `202`, empty batch returning `InvalidRequest`.
+
+`crates/kyma-mcp/src/tools_unit_tests.rs` — unit tests asserting `tools/list` returns exactly 8 named entries (`list_databases`, `describe_table`, `run_sql`, `run_kql`, `sample_rows`, `explore_schema`, `find_references_to`, `graph_traverse`) each with an `inputSchema` object and non-trivial description.
+
+The back-compat workflow (Task 17) may add MCP smoke tests (`initialize` → `tools/list` → `tools/call list_databases`) against each tagged version's fixture in the future.
 
 ## 6. Catalog Postgres schema
 
