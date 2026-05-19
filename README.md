@@ -1,6 +1,29 @@
-# kyma
+<p align="center">
+  <a href="https://www.getkyma.dev">
+    <img src="docs/site/public/icons/kyma-mark.svg" alt="kyma" width="128" height="128" />
+  </a>
+</p>
 
-**Production knowledge, as a query.**
+<h1 align="center">kyma</h1>
+
+<p align="center"><strong>Production knowledge, as a query.</strong></p>
+
+<p align="center">
+  <a href="https://www.getkyma.dev"><img alt="Docs" src="https://img.shields.io/badge/docs-getkyma.dev-7ed957?style=flat-square" /></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" /></a>
+  <img alt="Rust" src="https://img.shields.io/badge/rust-1.95%2B-orange?style=flat-square" />
+  <img alt="Status" src="https://img.shields.io/badge/status-pre--alpha-yellow?style=flat-square" />
+</p>
+
+<p align="center">
+  <a href="https://www.getkyma.dev/quickstart/five-minute-start">Quickstart</a> ·
+  <a href="https://www.getkyma.dev/concepts/">Concepts</a> ·
+  <a href="https://www.getkyma.dev/architecture/architecture">Architecture</a> ·
+  <a href="https://www.getkyma.dev/connectors/">Connectors</a> ·
+  <a href="https://www.getkyma.dev/recipes/">Recipes</a>
+</p>
+
+---
 
 Point every OTLP emitter in your stack — services, Kubernetes, CI, databases,
 queues, frontend RUM, your agents themselves — at one engine. Then let your
@@ -10,6 +33,8 @@ history. No dashboards to scrape. No vendor APIs to juggle. No rate limits.
 kyma is a ground-up, Rust-based, distributed-ready data engine in the spirit of
 Azure Data Explorer (Kusto) — purpose-built to be the **answer layer** for
 agents that need production awareness across the whole stack.
+
+Full docs live at **[getkyma.dev](https://www.getkyma.dev)**.
 
 ![kyma fan-in: your tech stack to kyma to your agents](docs/images/fan-in.svg)
 
