@@ -1491,7 +1491,19 @@ These are not part of the v1.0 contract; they may change at any time.
 
 ## 8. Extent on-disk format
 
-_Filled in by Task 9. Final freeze blocked on P0 (format v1)._
+**Status:** placeholder — final freeze blocked on P0 (format-v1 completion).
+
+The v1.0 extent format will be frozen when P0 lands. Until then, the following invariants are committed:
+
+- Every extent carries a leading magic + version byte sequence: ASCII `KYMA` (`0x4B 0x59 0x4D 0x41`) followed by a `u8` format version. Readers MUST check both before decoding.
+- v1.x readers will read every extent any v1.x writer produces. v1.x readers will read extents written by P0-era pre-v1.0 builds on a best-effort basis (back-compat fixtures pinned at the first `v1.0.0-pre.N` tag set the lower bound for guaranteed read-back).
+- Format version `0` is reserved for the current pre-P0 telemetry format.
+- Format version `1` will be the post-P0 telemetry format (Gorilla floats, delta-of-delta timestamps, FST term dictionaries, full inverted index — per the README roadmap).
+- The catalog `extents.format_id` column carries the format version per extent. Readers select the decoder by `format_id`.
+
+When P0 lands, this section is replaced with the full format-v1 freeze (layout, encoding scheme, dictionary format, posting-list format, footer layout, magic-byte verification semantics, error codes for malformed extents). That work is tracked separately under P0's implementation plan.
+
+**Verification:** Before P0 closes, the back-compat workflow (Task 17 of this plan) MUST include a test that reads at least one extent of each known `format_id` value, to ensure the version-byte handshake doesn't regress.
 
 ## 9. Metrics, structured logs, internal traces
 
