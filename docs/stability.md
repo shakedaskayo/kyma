@@ -1513,4 +1513,28 @@ concrete metric/log/trace inventories are owned by the per-area specs
 
 ## 10. Deprecation policy
 
-_Filled in by Task 10. Mirrored in `CONTRIBUTING.md` by Task 11._
+Any change to a frozen surface in this document — including removing a KQL operator, renaming an env var, changing a REST field's meaning, or breaking the extent format beyond the version-byte escape hatch — follows this policy.
+
+### Minimum window
+
+A deprecated surface must continue to work for at least **6 months** (or two minor releases, whichever is longer) before removal.
+
+### Required steps
+
+1. **Announce.** Open an RFC issue tagged `stability` describing the change, the migration path, and the proposed removal version.
+2. **Land the replacement.** The new surface ships in the same release as (or before) the deprecation warning.
+3. **Warn.** Calls to the deprecated surface emit a structured warning:
+   - HTTP / Flight: response carries `X-Kyma-Deprecation: <surface>; sunset=<version>; replacement=<surface>`.
+   - Log: `kyma_deprecation_used_total{surface, replacement}` counter increments; structured log entry at WARN with `event=deprecation_used`.
+4. **Document.** Changelog entry under "Deprecated" with the sunset version.
+5. **Wait.** At least 6 months and 2 minor releases.
+6. **Remove.** In the sunset release, drop the surface. Changelog entry under "Removed."
+
+### Exceptions
+
+- **Security fixes** may change a surface immediately when continued support enables a vulnerability. The change is announced in the release notes and `SECURITY.md` rather than via the deprecation cycle.
+- **Pre-1.0 builds** (`v0.x`, `v1.0.0-pre.N`, `v1.0.0-rc.N`) are not subject to this policy.
+
+### Enforcement
+
+The back-compat workflow (`.github/workflows/backcompat.yml`) replays a fixed query set from every tagged version's fixture against the current build. A removed surface in a PR breaks the workflow.
