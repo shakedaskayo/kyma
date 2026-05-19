@@ -383,7 +383,7 @@ wrapper is not independently frozen.
 
 ## 2. Arrow Flight gRPC API
 
-**Frozen.** The server exposes Arrow Flight on `:9090` by default (configurable via `KYMA_FLIGHT_ADDR`). The following surface is part of the v1.0 contract.
+**Frozen.** The server exposes Arrow Flight on `:9090` by default (configurable via `KYMA_GRPC_ADDR`). The following surface is part of the v1.0 contract.
 
 ### Flight methods implemented
 
@@ -603,7 +603,7 @@ Specific guarantees (verified end-to-end in `scripts/e2e-test.sh`, `scripts/test
 - Aggregate functions: `COUNT(*)`, `COUNT(col)`, `COUNT(DISTINCT col)`, `SUM`, `AVG`, `MIN`, `MAX`.
 - Scalar functions: `date_trunc('unit', col)`, `date_bin(interval, col, origin)` (used by KQL→SQL lowering), standard DataFusion scalar functions.
 - `INNER JOIN` on equality conditions between two tables registered in the same database.
-- Common table expressions (`WITH ... AS (...) SELECT ...`) — accepted by DataFusion's planner; confirmed working by the `is_read_only_sql` guard in the agent path which explicitly allows `WITH`-prefixed queries.
+- Common table expressions (`WITH ... AS (...) SELECT ...`) — accepted by DataFusion's planner. The agent path's `is_read_only_sql` guard also accepts `WITH`-prefixed queries (syntax-level check only). CTE execution has not been exercised end-to-end in kyma's test scripts, so this is "untested but likely working" rather than a fully verified frozen claim.
 - `EXPLAIN` / `SHOW` — accepted by DataFusion's planner.
 - kyma-specific UDFs (registered at session startup by `kyma_exec::register_vector_udfs`): `cosine_distance(a, b)`, `l2_distance(a, b)`, `inner_product(a, b)` — each accepts `FixedSizeList<Float32>` or `List<Float32>` arguments and returns `Float64`. Mismatched-length vectors return `NULL`.
 
@@ -621,7 +621,7 @@ Untested but likely working (DataFusion 44 includes these; not exercised through
 
 - **Runtime user-defined functions** — UDF registration is not exposed via any API surface. The only UDFs available are the three vector-distance functions compiled in at startup (`cosine_distance`, `l2_distance`, `inner_product`). There is no endpoint or mechanism to register additional UDFs at runtime.
 
-- **Agent `run_sql` tool** — the inline AI agent's `run_sql` tool applies an additional pre-DataFusion filter (`is_read_only_sql`): only queries whose trimmed text begins with `SELECT`, `SHOW`, `EXPLAIN`, or `WITH` (case-insensitive) are forwarded to DataFusion. All other statements are rejected before reaching DataFusion with a JSON-level error `{"error": "only SELECT / SHOW / EXPLAIN supported"}`. This filter applies only to the agent tool path, not to `POST /v1/query` or Arrow Flight.
+- **Agent `run_sql` tool** — the inline AI agent's `run_sql` tool applies an additional pre-DataFusion filter (`is_read_only_sql`): only queries whose trimmed text begins with `SELECT`, `SHOW`, `EXPLAIN`, or `WITH` (case-insensitive) are forwarded to DataFusion. All other statements are rejected before reaching DataFusion with a JSON-level error `{"error": "only SELECT / SHOW / EXPLAIN supported"}`. Note: the error message text does not mention `WITH`, but the filter does accept `WITH`-prefixed queries — the message is intentionally conservative. This filter applies only to the agent tool path, not to `POST /v1/query` or Arrow Flight.
 
 ### DataFusion version policy
 
@@ -797,7 +797,7 @@ All eight tools are read-only (`with_read_only(true)`) and concurrency-safe (`wi
       "compiled_sql": "<the SQL lowered from KQL>"
     }
     ```
-    On KQL parse error: `{ "error": "kql_parse: <message>", "hint": "Check pipe syntax..." }`. On execution failure: `{ "error": "<message>" }`.
+    On KQL parse error: `{ "error": "kql_parse: <message>", "hint": "Check pipe syntax..." }` — `hint` is always present when `error` starts with `"kql_parse:"`. On execution failure: `{ "error": "<message>" }`.
   - Behavior: compiles KQL to SQL via `kyma_kql::kql_to_sql`, then delegates to the same `execute_sql` path as `run_sql`. The compiled SQL is attached to the result as `compiled_sql` for debugging. Memory hard-capped at 256 MiB per call. The KQL surface is governed by section 3 of this document.
 
 ---
