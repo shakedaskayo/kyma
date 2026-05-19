@@ -1,0 +1,5 @@
+{"timestamp":"2026-01-01T00:00:00Z","service.name":"svc-a","severity_text":"ERROR","message":"e1"}
+{"timestamp":"2026-01-01T00:00:01Z","service.name":"svc-a","severity_text":"ERROR","message":"e2"}
+{"timestamp":"2026-01-01T00:00:02Z","service.name":"svc-a","severity_text":"INFO","message":"i1"}
+{"timestamp":"2026-01-01T00:00:03Z","service.name":"svc-a","severity_text":"INFO","message":"i2"}
+{"timestamp":"2026-01-01T00:00:04Z","service.name":"svc-a","severity_text":"INFO","message":"i3"}
