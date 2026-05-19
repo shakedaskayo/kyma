@@ -205,6 +205,8 @@ Each stub is the seed for a per-spec brainstorming/writing-plans cycle. They are
 - Define the metrics-taxonomy *rules* (naming, labels, deprecation procedure) that area specs follow.
 - Build back-compat CI job: pull the last 3 tagged versions, replay a fixed query set, fail on divergence.
 
+**Status:** ✅ F1 implementation complete — see `docs/superpowers/plans/2026-05-19-f1-stability-contract.md`. Format clause in `docs/stability.md` section 8 is a placeholder until P0 lands.
+
 ### F2 — Test Gauntlet
 
 - Design the deterministic-sim harness (a new test module or `kyma-sim` crate); scope strictly to invariants.
