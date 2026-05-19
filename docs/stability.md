@@ -383,7 +383,69 @@ wrapper is not independently frozen.
 
 ## 2. Arrow Flight gRPC API
 
-_Filled in by Task 3._
+**Frozen.** The server exposes Arrow Flight on `:9090` by default (configurable via `KYMA_FLIGHT_ADDR`). The following surface is part of the v1.0 contract.
+
+### Flight methods implemented
+
+- `do_get(ticket)` — execute a query and stream results as Arrow RecordBatches. Ticket shape documented below. This is the only method clients need for querying.
+- `handshake` — accepts unauthenticated connections; returns an empty response stream. No token exchange occurs. Auth hardening is planned for a future phase.
+
+### Flight methods not in v1.0 (return `Unimplemented`)
+
+- `list_flights` — not in v1.0; returns `Unimplemented` ("list_flights not supported; issue do_get with a JSON ticket").
+- `get_flight_info` — not in v1.0; returns `Unimplemented` ("get_flight_info not supported; issue do_get directly").
+- `get_schema` — not in v1.0; returns `Unimplemented` ("get_schema not supported").
+- `do_put` — ingest-via-Flight not in v1.0; returns `Unimplemented` ("do_put not supported; use POST /v1/ingest for now").
+- `do_action` — not in v1.0; returns `Unimplemented` ("do_action not supported").
+- `list_actions` — not in v1.0; returns `Unimplemented` ("list_actions not supported").
+- `do_exchange` — not in v1.0; returns `Unimplemented` ("do_exchange not supported").
+- `poll_flight_info` — not in v1.0; returns `Unimplemented` ("poll_flight_info not supported").
+
+### `do_get` ticket shape
+
+The ticket bytes deserialize as UTF-8 JSON. There are two distinct ticket kinds, selected by the `kind` field.
+
+#### Kind `"query"` (default) — user-facing query ticket
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `kind` | string | no | Must be `"query"` or omitted; defaults to `"query"`. |
+| `database` | string | no | Target database name. Defaults to `"default"`. |
+| `query` | string | no | The query text. Defaults to `""` (empty string yields an error). |
+| `language` | string | no | Query language: `"sql"` (default) or `"kql"`. Any other value is rejected. |
+
+#### Kind `"extent"` — internal node-to-node ticket (not a client-facing API)
+
+This ticket kind is used by the read-fan-out router when a peer node fetches a raw extent from another node. It is part of the internal cluster protocol, not the external v1.0 client contract. It is documented here for completeness; client code must not construct `kind:"extent"` tickets.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `kind` | string | yes | Must be `"extent"`. |
+| `database` | string | no | Database name containing the table. Defaults to `"default"`. |
+| `table` | string | no | Table name to open. Defaults to `""`. |
+| `object_path` | string | no | Object-store path of the extent file. Defaults to `""`. |
+| `byte_size` | u64 | no | Declared byte size of the extent. Defaults to `0`. |
+
+Unknown fields in either ticket kind are ignored by `serde` (no `deny_unknown_fields`). New optional fields may be added; existing fields' meanings are fixed.
+
+### Actions
+
+No actions are implemented in v1.0. `do_action` and `list_actions` both return `Unimplemented`.
+
+### Schemas returned
+
+Arrow schemas returned by `do_get` (kind `"query"`) mirror the table schemas registered in the catalog for the requested database. The schema header is emitted automatically by the `FlightDataEncoderBuilder` as the first `FlightData` frame before any data batches.
+
+`ALTER TABLE ADD COLUMN` may extend a schema; an existing column's Arrow type never changes after the table is created.
+
+### Error model
+
+Errors are returned as gRPC `Status` codes. The status-code-to-meaning mapping for `do_get` is:
+
+- `InvalidArgument` — the ticket bytes are not valid JSON; the `language` field is not `"sql"` or `"kql"`; the KQL query fails to parse; the SQL query fails to plan (DataFusion plan error).
+- `NotFound` — the database does not exist or contains no tables (kind `"query"`); the catalog `lookup_table` call fails for the extent's database/table combination (kind `"extent"`).
+- `Internal` — DataFusion runtime initialization failed; a table could not be registered into the session context; query execution failed after planning; Arrow Flight encoding failed; extent open, block listing, or block read failed (kind `"extent"`).
+- `Unimplemented` — the called Flight method is not implemented in v1.0 (see list above).
 
 ## 3. KQL dialect
 
