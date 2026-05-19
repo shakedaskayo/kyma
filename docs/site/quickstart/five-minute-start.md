@@ -19,7 +19,7 @@ That is the entire list. No language toolchain, no cloud account.
 ## Step 1: Boot
 
 ```bash
-git clone https://github.com/shaked/engine kyma
+git clone https://github.com/shakedaskayo/kyma kyma
 cd kyma
 docker compose up -d
 ```

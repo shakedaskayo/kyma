@@ -10,7 +10,7 @@ description: PromQL is on the kyma roadmap. The frontend will plug into the same
 > requests with that `Content-Type` fall through to the SQL parser and
 > error with `400 sql_parse_error` — i.e. the response is honest about
 > what hasn't been implemented yet, but the surface isn't usable. Track
-> progress in the [README roadmap](https://github.com/shaked/engine#roadmap).
+> progress in the [README roadmap](https://github.com/shakedaskayo/kyma#roadmap).
 
 ## Why PromQL fits
 
@@ -61,13 +61,11 @@ data](/concepts/multi-source-data).
 
 ## Where to track progress
 
-- The [README roadmap](https://github.com/shaked/engine#roadmap) — PromQL
+- The [README roadmap](https://github.com/shakedaskayo/kyma#roadmap) — PromQL
   is in the "next" tier.
 - The [`QueryFrontend`
-  trait](https://github.com/shaked/engine/blob/main/crates/kyma-core/src/query_frontend.rs)
+  trait](https://github.com/shakedaskayo/kyma/blob/main/crates/kyma-core/src/query_frontend.rs)
   is the contract a future implementation will satisfy.
-- Discussions and the eventual spec land under
-  [`docs/superpowers/specs/`](https://github.com/shaked/engine/tree/main/docs/superpowers/specs).
 
 ## What to use today
 

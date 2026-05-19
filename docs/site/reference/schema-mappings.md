@@ -139,7 +139,4 @@ union-read the typed and dynamic copies via
 - **Raw bytes.** `bytea`, `binary`, `varbinary`, `blob`, and Mongo
   binary subtypes all land base64-encoded in `string` for v1.
 
-The full design lives in
-`docs/superpowers/specs/2026-05-02-multi-source-database-integration-design.md`.
-This page is the user-facing extract; the spec is the source of
-truth.
+This page is the user-facing extract of the multi-source mapping rules.

@@ -329,4 +329,9 @@ docker-compose dev stack plus the `scripts/` test suite is the front door.
 
 ## License
 
-Apache-2.0 (planned — not yet cut; pre-release code).
+[Apache License 2.0](LICENSE).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: please follow
+[SECURITY.md](SECURITY.md) rather than the public issue tracker.

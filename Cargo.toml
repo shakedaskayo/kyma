@@ -30,7 +30,7 @@ version = "0.0.1"
 edition = "2021"
 rust-version = "1.95"
 license = "Apache-2.0"
-repository = "https://github.com/shaked/engine"
+repository = "https://github.com/shakedaskayo/kyma"
 authors = ["kyma contributors"]
 
 [workspace.lints.rust]

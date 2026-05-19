@@ -54,7 +54,7 @@ FROM node:22-alpine AS runner
 
 LABEL org.opencontainers.image.title="kyma-docs" \
       org.opencontainers.image.description="Static VitePress site for the kyma engine documentation." \
-      org.opencontainers.image.source="https://github.com/shaked/engine"
+      org.opencontainers.image.source="https://github.com/shakedaskayo/kyma"
 
 RUN npm install -g serve@14 && \
     addgroup -S app && adduser -S app -G app

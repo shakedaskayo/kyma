@@ -310,7 +310,7 @@ impl Catalog for PostgresCatalog {
             .map_err(|e| CatalogError::Sql(e.to_string()))?;
 
         let row = sqlx::query(
-            "SELECT t.schema_snapshot_id, ss.arrow_schema
+            "SELECT t.tenant_id, t.schema_snapshot_id, ss.arrow_schema
              FROM tables t
              JOIN schema_snapshots ss ON ss.id = t.schema_snapshot_id
              WHERE t.id = $1
@@ -322,6 +322,7 @@ impl Catalog for PostgresCatalog {
         .map_err(sql_err)?
         .ok_or_else(|| CatalogError::Sql(format!("table {table_id} not found")))?;
 
+        let tenant_id: Uuid = row.try_get("tenant_id").map_err(sql_err)?;
         let current_schema_snapshot_id: Uuid =
             row.try_get("schema_snapshot_id").map_err(sql_err)?;
         let mut schema_json: Json = row.try_get("arrow_schema").map_err(sql_err)?;
@@ -349,11 +350,13 @@ impl Catalog for PostgresCatalog {
             return Err(CatalogError::Sql("existing schema has no `fields` array".into()).into());
         }
 
-        // Insert the new schema_snapshot.
+        // Insert the new schema_snapshot, carrying the table's tenant_id
+        // (NOT NULL since migration 007 — issue #18).
         let (new_schema_snap_id,): (Uuid,) = sqlx::query_as(
-            "INSERT INTO schema_snapshots (table_id, arrow_schema)
-             VALUES ($1, $2) RETURNING id",
+            "INSERT INTO schema_snapshots (tenant_id, table_id, arrow_schema)
+             VALUES ($1, $2, $3) RETURNING id",
         )
+        .bind(tenant_id)
         .bind(table_id.as_uuid())
         .bind(&schema_json)
         .fetch_one(&mut *tx)

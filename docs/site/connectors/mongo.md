@@ -5,7 +5,7 @@ description: Federation and change-stream sync against MongoDB 7.0+. Nested-docu
 
 # MongoDB
 
-> 🚧 **Roadmap.** This connector ships in DB-M3, after [Postgres](/connectors/postgres) and [MySQL](/connectors/mysql). The design below is committed and stable; the implementation is in progress. See [the spec](https://github.com/shaked/engine/blob/main/docs/superpowers/specs/2026-05-02-multi-source-database-integration-design.md) for status.
+> 🚧 **Roadmap.** This connector ships in DB-M3, after [Postgres](/connectors/postgres) and [MySQL](/connectors/mysql). The design below is committed and stable; the implementation is in progress.
 
 The MongoDB engine is the document-store member of the family. The
 trait is the same; what changes is everything below it: BSON instead of
@@ -181,4 +181,3 @@ runs at its source; DataFusion joins the streams.
 - Cross-source queries, `live(...)`, the `pushdown_summary`:
   [Multi-source data](/connectors/multi-source-data).
 - How `dynamic` works in queries: [Dynamic and vectors](/concepts/dynamic-and-vectors).
-- The full design: [the spec](https://github.com/shaked/engine/blob/main/docs/superpowers/specs/2026-05-02-multi-source-database-integration-design.md).

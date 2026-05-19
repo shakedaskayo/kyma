@@ -224,5 +224,3 @@ catches up later.
 - Engine pages: [Postgres](/connectors/postgres),
   [MySQL](/connectors/mysql), [MongoDB](/connectors/mongo).
 - The shape of pushdown decisions: [Pruning and performance](/query/pruning-and-performance).
-- The full design and milestones:
-  [the spec](https://github.com/shaked/engine/blob/main/docs/superpowers/specs/2026-05-02-multi-source-database-integration-design.md).

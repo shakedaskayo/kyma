@@ -82,6 +82,3 @@ The deployment is git-driven. Push to `main`; Railway picks up the change via `w
 - **Architecture** — the synced architecture overview and benchmarks, plus the slice roadmap and storage format.
 - **Recipes** — worked examples that run as written.
 
-## Internal specs
-
-`docs/superpowers/specs/` and `docs/superpowers/plans/` are excluded from the build via `srcExclude` in `.vitepress/config.ts`. They're internal planning docs and shouldn't ship to end users.
