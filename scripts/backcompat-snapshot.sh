@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # backcompat-snapshot.sh — capture a back-compat fixture of a running engine.
 # Usage: backcompat-snapshot.sh <engine-url> <out-dir>
+# Requires KYMA_CATALOG_URL (or KYMA_DATABASE_URL as a fallback) to be set to the catalog Postgres URL.
 set -euo pipefail
 
 ENGINE_URL="${1:?engine URL required}"
@@ -15,7 +16,7 @@ cargo metadata --format-version 1 --no-deps \
   > "$OUT_DIR/build-version.txt"
 
 # 2. catalog schema dump (DDL only, no data)
-PG_URL="${KYMA_DATABASE_URL:?KYMA_DATABASE_URL must be set}"
+PG_URL="${KYMA_CATALOG_URL:-${KYMA_DATABASE_URL:?KYMA_CATALOG_URL must be set (KYMA_DATABASE_URL also accepted)}}"
 pg_dump --schema-only --no-owner --no-privileges "$PG_URL" > "$OUT_DIR/catalog-schema.sql"
 
 # 3. Catalog schema version — query the highest applied sqlx migration version

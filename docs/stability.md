@@ -1350,7 +1350,7 @@ Indexes: `agent_replay_cache_layer_model` on `(layer, model_id)`.
 - Each migration is a single SQL file at `crates/kyma-catalog/migrations/<NNNN_name.sql>`.
 - File name format: `NNN_snake_case_description.sql` (three-digit prefix, underscore-separated words).
 - Numbering is monotonic but not required to be gapless; current series is 001–007 with no gaps.
-- The back-compat workflow (Task 17 in F1 plan) runs every PR's migrations against the previous version's catalog dump and fails if any of the forward-only rules above is violated.
+- The back-compat workflow seeds the fixture's dataset into a fresh engine and replays a fixed query set against it. Forward-only schema discipline is enforced by code review and by the per-fixture `catalog-schema.sql` snapshot kept under `scripts/fixtures/backcompat/<tag>/` — divergence shows up in PR diffs. Automated schema-diff tooling is planned for A3.
 
 ### Migration tooling
 
@@ -1499,7 +1499,7 @@ The v1.0 extent format will be frozen when P0 lands. Until then, the following i
 - v1.x readers will read every extent any v1.x writer produces. v1.x readers will read extents written by P0-era pre-v1.0 builds on a best-effort basis (back-compat fixtures pinned at the first `v1.0.0-pre.N` tag set the lower bound for guaranteed read-back).
 - Format version `0` is reserved for the current pre-P0 telemetry format.
 - Format version `1` will be the post-P0 telemetry format (Gorilla floats, delta-of-delta timestamps, FST term dictionaries, full inverted index — per the README roadmap).
-- The catalog `extents.format_id` column carries the format version per extent. Readers select the decoder by `format_id`.
+- When P0 lands, a `format_id` column will be added to the `extents` table. Readers will select the decoder by that value.
 
 When P0 lands, this section is replaced with the full format-v1 freeze (layout, encoding scheme, dictionary format, posting-list format, footer layout, magic-byte verification semantics, error codes for malformed extents). That work is tracked separately under P0's implementation plan.
 

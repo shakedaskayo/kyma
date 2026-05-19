@@ -40,7 +40,7 @@ Removing or renaming a metric follows the same 6-month / 2-minor-release policy 
 
 ## Verification
 
-The back-compat CI workflow verifies that every metric exported by a prior tagged version is still exported by the current build (unless formally deprecated). Verification mechanism: the workflow scrapes `/metrics` against each fixture and diffs metric-name sets, failing on any unannotated removal.
+The back-compat CI workflow scrapes `/metrics` against each fixture and SHA-256-hashes a normalized form of the output (counter values normalized to `0`, lines sorted) before comparing against the per-fixture `expected-hashes.txt`. Any change to the set of metric names or labels — additions OR removals — produces a hash mismatch and fails the workflow. A metric addition therefore requires a deliberate fixture re-capture; a metric removal without prior deprecation announcement fails CI.
 
 ## Current state (as of F1)
 

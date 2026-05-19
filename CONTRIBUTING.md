@@ -75,7 +75,7 @@ From `v1.0.0` onward, kyma maintains a written stability contract: [`docs/stabil
 
 If your change touches any frozen surface, your PR must either:
 
-- Stay within the contract (additive, non-breaking) — preferred. The CI workflow `.github/workflows/backcompat.yml` enforces this on every PR by replaying a fixed query set against the last three tagged versions.
+- Stay within the contract (additive, non-breaking) — preferred. The CI workflow `.github/workflows/backcompat.yml` enforces this on every PR by replaying a fixed query set against every committed version fixture under `scripts/fixtures/backcompat/` (one per tag, growing as `v1.0.0-pre.N` tags are cut).
 - Or follow the deprecation policy in `docs/stability.md` section 10 (RFC, replacement-first, 6-month warning window).
 
 Pre-`v1.0.0` builds (`v0.x`, `v1.0.0-pre.N`, `v1.0.0-rc.N`) are not under the contract.
