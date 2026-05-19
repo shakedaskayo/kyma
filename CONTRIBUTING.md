@@ -69,6 +69,17 @@ Architectural tests enforce these. If your change requires bending an
 invariant, please flag it explicitly in the PR description — there is almost
 always another way.
 
+## Stability and deprecation policy
+
+From `v1.0.0` onward, kyma maintains a written stability contract: [`docs/stability.md`](docs/stability.md). It lists every surface kyma promises not to break across the v1.x series — HTTP REST API, Flight gRPC, KQL dialect, SQL dialect, MCP surface, catalog schema, config keys, extent format, metrics naming.
+
+If your change touches any frozen surface, your PR must either:
+
+- Stay within the contract (additive, non-breaking) — preferred. The CI workflow `.github/workflows/backcompat.yml` enforces this on every PR by replaying a fixed query set against the last three tagged versions.
+- Or follow the deprecation policy in `docs/stability.md` section 10 (RFC, replacement-first, 6-month warning window).
+
+Pre-`v1.0.0` builds (`v0.x`, `v1.0.0-pre.N`, `v1.0.0-rc.N`) are not under the contract.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the
