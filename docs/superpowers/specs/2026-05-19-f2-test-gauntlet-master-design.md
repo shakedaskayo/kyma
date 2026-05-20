@@ -127,6 +127,8 @@ Five sub-specs. Each is sized for its own brainstorm → plan → execution cycl
 | **F2.4** Chaos extensions | `scripts/chaos/` restructure + 4 new scenarios + toxiproxy/libfaketime | F2.2, F2.3, F2.5 | 1–2 weeks |
 | **F2.5** Soak harness | `scripts/soak.sh` + 3 health checks + failure-artifact tarball | F2.2, F2.3, F2.4 | 1 week |
 
+**F2.1 status:** ✅ implementation complete — see `docs/superpowers/plans/2026-05-19-f2.1-gauntlet-orchestrator.md`. Initial perf baseline (`scripts/fixtures/perf-baseline.json`) deferred until GitHub Actions billing is unblocked; can be captured via the `perf-baseline-capture` workflow.
+
 ---
 
 ## 4. Sequencing
