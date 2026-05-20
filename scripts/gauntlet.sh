@@ -146,7 +146,6 @@ done
 # Write final results file (results array wrapped with tier metadata).
 # ---------------------------------------------------------------------------
 
-overall_pass_json="$( $overall_pass && echo true || echo true )"
 if $overall_pass; then
   overall_pass_json="true"
 else
