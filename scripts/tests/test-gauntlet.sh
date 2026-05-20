@@ -56,4 +56,23 @@ if ./gauntlet.sh --tier=bogus 2>/dev/null; then
 fi
 echo "OK: invalid tier rejected"
 
+# --- Test 7: perf-regression.sh emits valid per-family JSON ---
+# Requires running engine on $ENGINE_URL.
+ENGINE_URL_CHECK="${ENGINE_URL:-http://localhost:8080}"
+if curl -fsS "$ENGINE_URL_CHECK/health" >/dev/null 2>&1; then
+  ./gauntlet/perf-regression.sh --tier=nightly > "$TMPDIR/perf.json"
+  python3 -c "
+import json
+r = json.load(open('$TMPDIR/perf.json'))
+required = ['family', 'tier', 'started_at', 'finished_at', 'pass', 'observations']
+for k in required:
+    assert k in r, k
+assert r['family'] == 'perf-regression'
+assert r['tier'] == 'nightly'
+print('OK: perf-regression.sh emits valid family JSON')
+"
+else
+  echo "SKIP: perf-regression.sh test (no engine running)"
+fi
+
 echo "PASS"
