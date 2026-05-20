@@ -12,7 +12,7 @@ The file IS the contract — regenerating must produce identical bytes (same
 input → same output). If you change the generator, re-baseline.
 
 `perf-baseline.sh` ingests this dataset N times (default `--target-rows=100000`,
-so ~2.5 copies) to reach the target row count.
+so 3 copies — ceiling division; ~120k rows total) to reach the target row count.
 
 ## queries.txt
 

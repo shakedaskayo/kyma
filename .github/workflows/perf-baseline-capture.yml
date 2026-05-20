@@ -60,7 +60,7 @@ jobs:
             target
           key: perf-capture-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
-      - name: install postgresql client
+      - name: install postgresql client (kept for F2.x families that may need psql)
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: build engine

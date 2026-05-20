@@ -10,6 +10,7 @@ jobs:
   gauntlet:
     name: gauntlet --tier=pr
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16
@@ -54,7 +55,7 @@ jobs:
             target
           key: gauntlet-pr-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
-      - name: install postgresql client (used by perf scripts)
+      - name: install postgresql client (kept for F2.x families that may need psql)
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: build engine
