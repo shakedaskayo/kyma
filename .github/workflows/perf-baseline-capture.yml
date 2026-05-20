@@ -1,0 +1,102 @@
+name: perf-baseline-capture
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_rows:
+        description: "Target row count for baseline ingest"
+        required: false
+        default: "100000"
+        type: string
+
+jobs:
+  capture:
+    name: capture perf baseline
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: kyma
+          POSTGRES_PASSWORD: kyma_dev
+          POSTGRES_DB: kyma
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U kyma"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: kyma_admin
+          MINIO_ROOT_PASSWORD: kyma_admin_dev
+          MINIO_DEFAULT_BUCKETS: kyma
+        ports: ["9000:9000"]
+    env:
+      KYMA_CATALOG_URL: postgresql://kyma:kyma_dev@localhost:5432/kyma
+      KYMA_S3_ENDPOINT: http://localhost:9000
+      KYMA_S3_BUCKET: kyma
+      KYMA_S3_REGION: us-east-1
+      KYMA_S3_ACCESS_KEY_ID: kyma_admin
+      KYMA_S3_SECRET_ACCESS_KEY: kyma_admin_dev
+      KYMA_S3_PATH_STYLE: "true"
+      KYMA_S3_ALLOW_HTTP: "true"
+      KYMA_GRPC_ADDR: "off"
+      KYMA_OTLP_ADDR: "off"
+      AWS_ACCESS_KEY_ID: kyma_admin
+      AWS_SECRET_ACCESS_KEY: kyma_admin_dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: perf-capture-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: install postgresql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: build engine
+        run: cargo build --release -p kyma-bin
+
+      - name: start engine
+        run: |
+          ./target/release/kyma > /tmp/kyma-engine.log 2>&1 &
+          echo $! > /tmp/engine.pid
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/health || { tail -50 /tmp/kyma-engine.log; exit 1; }
+
+      - name: capture baseline
+        run: scripts/perf-capture-baseline.sh --target-rows=${{ inputs.target_rows }}
+
+      - name: stop engine
+        if: always()
+        run: kill "$(cat /tmp/engine.pid)" 2>/dev/null || true
+
+      - name: open PR with new baseline
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "perf: re-baseline perf-baseline.json (ubuntu-22.04-gha)"
+          title: "perf: re-baseline ${{ github.run_id }}"
+          body: |
+            Automated baseline capture from `perf-baseline-capture.yml`.
+
+            Target rows: ${{ inputs.target_rows }}
+            Triggered by: ${{ github.actor }}
+            Workflow run: ${{ github.run_id }}
+
+            Review the metric deltas vs. the previous baseline before merging.
+          branch: perf-baseline-${{ github.run_id }}
+          base: main
+          add-paths: |
+            scripts/fixtures/perf-baseline.json
