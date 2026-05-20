@@ -1,0 +1,14 @@
+# Reference query set for perf-baseline.sh. Each line runs K=10 times during
+# measurement; p50 and p99 latency computed across all queries × all reps.
+#
+# Each query targets a specific level of the 3-level pruning cascade.
+#
+# Format: <id>\t<endpoint>\t<content-type>\t<database>\t<query-body>
+# Field separator MUST be a single TAB character.
+
+q-broad-scan	POST /v1/query	application/sql	obs	SELECT COUNT(*) FROM otel_logs
+q-time-prune	POST /v1/query	application/sql	obs	SELECT COUNT(*) FROM otel_logs WHERE timestamp >= '2026-01-01T12:00:00Z' AND timestamp < '2026-01-01T13:00:00Z'
+q-equality-prune	POST /v1/query	application/x-kql	obs	otel_logs | where ["service.name"] == "payments-svc" | summarize n = count()
+q-low-card-prune	POST /v1/query	application/x-kql	obs	otel_logs | where severity_text == "ERROR" | summarize n = count() by ["service.name"]
+q-token-prune	POST /v1/query	application/x-kql	obs	otel_logs | where message has "event-00010000" | summarize n = count()
+q-multi-prune	POST /v1/query	application/sql	obs	SELECT severity_text, COUNT(*) AS n FROM otel_logs WHERE timestamp >= '2026-01-01T06:00:00Z' AND timestamp < '2026-01-01T08:00:00Z' AND "service.name" = 'auth-svc' GROUP BY severity_text ORDER BY severity_text
