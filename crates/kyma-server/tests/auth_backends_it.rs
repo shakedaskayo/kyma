@@ -48,6 +48,7 @@ async fn db_backend_returns_workspace_tenant() {
             subject       text,
             last_used_at  timestamptz,
             revoked_at    timestamptz,
+            expires_at    timestamptz,
             created_at    timestamptz NOT NULL DEFAULT now()
         )"#,
     ).execute(&pool).await.unwrap();
@@ -109,6 +110,7 @@ async fn db_backend_rejects_revoked_tokens() {
             subject text,
             last_used_at timestamptz,
             revoked_at timestamptz,
+            expires_at timestamptz,
             created_at timestamptz NOT NULL DEFAULT now()
         )"#,
     ).execute(&pool).await.unwrap();
@@ -121,6 +123,48 @@ async fn db_backend_rejects_revoked_tokens() {
     sqlx::query(
         "INSERT INTO api_tokens (tenant_id, token_hash, scopes, revoked_at)
          VALUES ($1, $2, 'admin', now())",
+    )
+    .bind(tenant.as_uuid()).bind(&hash)
+    .execute(&pool).await.unwrap();
+
+    let backend = DbAuthBackend::new(pool);
+    assert!(backend.authenticate(token).await.is_err());
+}
+
+#[tokio::test]
+async fn db_backend_rejects_expired_tokens() {
+    let container = Postgres::default()
+        .with_user("kyma").with_password("kyma_dev").with_db_name("kyma")
+        .start().await.unwrap();
+    let port = container.get_host_port_ipv4(5432).await.unwrap();
+    let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
+    let pool = PgPoolOptions::new().max_connections(4).connect(&url).await.unwrap();
+
+    sqlx::query(r#"CREATE EXTENSION IF NOT EXISTS "pgcrypto""#)
+        .execute(&pool).await.unwrap();
+    sqlx::query(
+        r#"CREATE TABLE api_tokens (
+            id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id uuid NOT NULL,
+            token_hash bytea NOT NULL UNIQUE,
+            scopes text NOT NULL,
+            subject text,
+            last_used_at timestamptz,
+            revoked_at timestamptz,
+            expires_at timestamptz,
+            created_at timestamptz NOT NULL DEFAULT now()
+        )"#,
+    ).execute(&pool).await.unwrap();
+
+    let tenant = TenantId::from_uuid(Uuid::new_v4());
+    let token = "expired-tok";
+    let mut h = Sha256::new();
+    h.update(token.as_bytes());
+    let hash = h.finalize().to_vec();
+    // Insert token with expires_at already in the past (1 second ago).
+    sqlx::query(
+        "INSERT INTO api_tokens (tenant_id, token_hash, scopes, expires_at)
+         VALUES ($1, $2, 'admin', now() - interval '1 second')",
     )
     .bind(tenant.as_uuid()).bind(&hash)
     .execute(&pool).await.unwrap();
