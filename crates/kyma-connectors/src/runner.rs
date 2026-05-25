@@ -4,7 +4,7 @@ use crate::catalog_sql;
 use crate::metrics::{ConnectorMetrics, TickResult};
 use crate::registry::ConnectorRegistry;
 use crate::secrets::SecretStore;
-use crate::types::{ConnectorCtx, ConnectorError, ConnectorRun};
+use crate::types::{ConnectorCtx, ConnectorError, ConnectorRun, GraphHint};
 use chrono::Utc;
 use futures::future::BoxFuture;
 use kyma_catalog::PostgresCatalog;
@@ -31,11 +31,21 @@ pub type RowSink = Arc<
         + Sync,
 >;
 
+/// Async closure that registers (or idempotently re-registers) a
+/// property-graph in the catalog. Called after all tables have been
+/// successfully ingested. Failures are treated as Transient.
+///
+/// Arguments: `(database: String, hint: GraphHint)`.
+pub type GraphRegisterFn = Arc<
+    dyn Fn(String, GraphHint) -> BoxFuture<'static, Result<(), anyhow::Error>> + Send + Sync,
+>;
+
 #[derive(Clone)]
 pub struct ConnectorRunner {
     catalog: Arc<PostgresCatalog>,
     registry: Arc<ConnectorRegistry>,
     sink: RowSink,
+    graph_register: GraphRegisterFn,
     secrets: Arc<dyn SecretStore>,
     /// NodeId of the already-registered node (supplied by the caller).
     node_id: NodeId,
@@ -51,15 +61,26 @@ impl ConnectorRunner {
         secrets: S,
         node_id: NodeId,
     ) -> Self {
+        // Default graph_register is a no-op; callers can supply a real one
+        // via `with_graph_register`.
+        let graph_register: GraphRegisterFn =
+            Arc::new(|_db, _hint| Box::pin(async move { Ok(()) }));
         Self {
             catalog,
             registry,
             sink,
+            graph_register,
             secrets: Arc::new(secrets),
             node_id,
             idle_sleep: Duration::from_millis(200),
             claim_lease: chrono::Duration::seconds(60),
         }
+    }
+
+    /// Replace the graph-registration closure. Returns `self` for chaining.
+    pub fn with_graph_register(mut self, f: GraphRegisterFn) -> Self {
+        self.graph_register = f;
+        self
     }
 
     pub async fn claim_and_run_one(&self) -> Result<bool, anyhow::Error> {
@@ -137,39 +158,109 @@ impl ConnectorRunner {
             .await;
 
         match outcome {
-            Ok(ConnectorRun { rows, new_cursor }) => {
-                let n_rows = rows.len() as u64;
-                let idem = format!(
-                    "connector:{}:{}",
-                    connector_id,
-                    scheduled_for_ms * 1_000_000
-                );
-                // Sink → WritePath. A failure here (table missing, schema
-                // mismatch, object-store down, CAS exhaustion) is treated as
-                // Transient so background_tasks retries within the attempt
-                // budget instead of orphaning the claimed task.
-                if let Err(e) = (self.sink)(
-                    conn.target_database.clone(),
-                    conn.target_table.clone(),
-                    rows,
-                    Some(idem),
-                )
-                .await
-                {
-                    let msg = format!("sink: {e}");
-                    warn!(connector_id = %connector_id, error = %msg, "sink failed");
-                    catalog_sql::mark_run_failure(
-                        self.catalog.pool(),
-                        tenant,
+            Ok(ConnectorRun {
+                rows,
+                new_cursor,
+                tables,
+                graph,
+            }) => {
+                // ---- Legacy single-table path (run.rows) ----
+                let legacy_rows = rows.len() as u64;
+                if !rows.is_empty() {
+                    let idem = format!(
+                        "connector:{}:{}",
                         connector_id,
-                        &msg,
+                        scheduled_for_ms * 1_000_000
+                    );
+                    // Sink → WritePath. A failure here (table missing, schema
+                    // mismatch, object-store down, CAS exhaustion) is treated as
+                    // Transient so background_tasks retries within the attempt
+                    // budget instead of orphaning the claimed task.
+                    if let Err(e) = (self.sink)(
+                        conn.target_database.clone(),
+                        conn.target_table.clone(),
+                        rows,
+                        Some(idem),
                     )
-                    .await?;
-                    self.catalog.fail_task(task.id, &msg).await?;
-                    metrics.record_error("sink");
-                    metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
-                    return Ok(true);
+                    .await
+                    {
+                        let msg = format!("sink: {e}");
+                        warn!(connector_id = %connector_id, error = %msg, "sink failed");
+                        catalog_sql::mark_run_failure(
+                            self.catalog.pool(),
+                            tenant,
+                            connector_id,
+                            &msg,
+                        )
+                        .await?;
+                        self.catalog.fail_task(task.id, &msg).await?;
+                        metrics.record_error("sink");
+                        metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
+                        return Ok(true);
+                    }
                 }
+
+                // ---- Multi-table path (run.tables) ----
+                // Each table gets its own idempotency key so tables within the
+                // same tick don't deduplicate each other (the critical
+                // per-table-key invariant).
+                let mut multi_rows: u64 = 0;
+                for table_rows in tables {
+                    let table_name = table_rows.table;
+                    let idem = format!(
+                        "connector:{}:{}:{}",
+                        connector_id,
+                        table_name,
+                        scheduled_for_ms * 1_000_000
+                    );
+                    let n = table_rows.rows.len() as u64;
+                    if let Err(e) = (self.sink)(
+                        conn.target_database.clone(),
+                        table_name.clone(),
+                        table_rows.rows,
+                        Some(idem),
+                    )
+                    .await
+                    {
+                        let msg = format!("sink({table_name}): {e}");
+                        warn!(connector_id = %connector_id, table = %table_name, error = %msg, "multi-table sink failed");
+                        catalog_sql::mark_run_failure(
+                            self.catalog.pool(),
+                            tenant,
+                            connector_id,
+                            &msg,
+                        )
+                        .await?;
+                        self.catalog.fail_task(task.id, &msg).await?;
+                        metrics.record_error("sink");
+                        metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
+                        return Ok(true);
+                    }
+                    multi_rows += n;
+                }
+
+                // ---- Graph auto-registration ----
+                if let Some(hint) = graph {
+                    if let Err(e) =
+                        (self.graph_register)(conn.target_database.clone(), hint).await
+                    {
+                        let msg = format!("graph_register: {e}");
+                        warn!(connector_id = %connector_id, error = %msg, "graph registration failed");
+                        catalog_sql::mark_run_failure(
+                            self.catalog.pool(),
+                            tenant,
+                            connector_id,
+                            &msg,
+                        )
+                        .await?;
+                        self.catalog.fail_task(task.id, &msg).await?;
+                        metrics.record_error("graph_register");
+                        metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
+                        return Ok(true);
+                    }
+                }
+
+                let n_rows = legacy_rows + multi_rows;
                 if let Some(c) = new_cursor {
                     if let Err(e) =
                         catalog_sql::upsert_cursor(self.catalog.pool(), tenant, connector_id, &c)
