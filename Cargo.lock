@@ -4471,6 +4471,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyma-graph"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "kyma-ingest-core"
 version = "0.0.1"
 dependencies = [
