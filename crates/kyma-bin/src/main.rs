@@ -107,6 +107,42 @@ async fn main() -> Result<()> {
     let catalog: Arc<dyn Catalog> = pg_catalog.clone();
     info!("catalog connected; migrations applied");
 
+    // 1a. Seed the admin user from env if requested and no users exist yet.
+    //     Both KYMA_ADMIN_USER and KYMA_ADMIN_PASSWORD must be set; if only
+    //     one is set we skip seeding and warn instead of failing.
+    {
+        let admin_user = std::env::var("KYMA_ADMIN_USER").ok();
+        let admin_pw = std::env::var("KYMA_ADMIN_PASSWORD").ok();
+        match (admin_user, admin_pw) {
+            (Some(user), Some(pw)) => {
+                let user_count = catalog
+                    .count_users()
+                    .await
+                    .context("counting users for admin seed check")?;
+                if user_count == 0 {
+                    let phc = kyma_server::auth::passwords::hash_password(&pw)
+                        .map_err(|e| anyhow::anyhow!("hashing admin password: {e}"))?;
+                    catalog
+                        .create_user(&user, &phc, "admin")
+                        .await
+                        .context("seeding admin user")?;
+                    info!(username = %user, "seeded admin user");
+                } else {
+                    info!("KYMA_ADMIN_USER set but users already exist — skipping seed");
+                }
+            }
+            (Some(_), None) => {
+                warn!("KYMA_ADMIN_USER is set but KYMA_ADMIN_PASSWORD is not — skipping admin seed");
+            }
+            (None, Some(_)) => {
+                warn!("KYMA_ADMIN_PASSWORD is set but KYMA_ADMIN_USER is not — skipping admin seed");
+            }
+            (None, None) => {
+                // Neither set — no seeding requested, this is fine.
+            }
+        }
+    }
+
     // 2. Object store + format.
     let storage_config = config_from_env();
     let store = build_object_store(&storage_config).context("building object store")?;
@@ -145,6 +181,18 @@ async fn main() -> Result<()> {
     //    Build the HTTP router by merging ingest + query + health + metrics.
     //    Health + metrics stay unauthenticated; ingest + query get the auth
     //    middleware (bypassed at runtime when KYMA_AUTH_TOKENS is empty).
+    //
+    //    Backend selection order:
+    //    1. KYMA_AUTH_BACKEND=db  → DbAuthBackend (cloud-auth feature, cloud only)
+    //    2. KYMA_AUTH_BACKEND=session OR users_exist → SessionAuthBackend
+    //       (session tokens + env static tokens in one backend)
+    //    3. Otherwise → EnvAuthBackend (static KYMA_AUTH_TOKENS only)
+    let users_exist = catalog
+        .count_users()
+        .await
+        .context("counting users for backend selection")?
+        > 0;
+
     let backend: Arc<dyn AuthBackend> = match std::env::var("KYMA_AUTH_BACKEND")
         .ok()
         .as_deref()
@@ -159,15 +207,39 @@ async fn main() -> Result<()> {
         Some("db") => {
             warn!(
                 "KYMA_AUTH_BACKEND=db requested but the binary was compiled without \
-                 the `cloud-auth` feature; falling back to EnvAuthBackend."
+                 the `cloud-auth` feature; falling back to SessionAuthBackend."
             );
-            Arc::new(EnvAuthBackend::from_env())
+            Arc::new(kyma_server::auth::SessionAuthBackend::new(
+                catalog.clone(),
+                EnvAuthBackend::from_env(),
+                users_exist,
+            ))
+        }
+        Some("session") => {
+            info!("auth: using session backend (KYMA_AUTH_BACKEND=session)");
+            Arc::new(kyma_server::auth::SessionAuthBackend::new(
+                catalog.clone(),
+                EnvAuthBackend::from_env(),
+                users_exist,
+            ))
         }
         Some(other) if !other.is_empty() => {
             warn!(
-                "KYMA_AUTH_BACKEND={other:?} unrecognized; using EnvAuthBackend."
+                "KYMA_AUTH_BACKEND={other:?} unrecognized; using SessionAuthBackend."
             );
-            Arc::new(EnvAuthBackend::from_env())
+            Arc::new(kyma_server::auth::SessionAuthBackend::new(
+                catalog.clone(),
+                EnvAuthBackend::from_env(),
+                users_exist,
+            ))
+        }
+        _ if users_exist => {
+            info!("auth: users exist — using session backend");
+            Arc::new(kyma_server::auth::SessionAuthBackend::new(
+                catalog.clone(),
+                EnvAuthBackend::from_env(),
+                users_exist,
+            ))
         }
         _ => Arc::new(EnvAuthBackend::from_env()),
     };
@@ -366,6 +438,19 @@ async fn main() -> Result<()> {
             require_role_middleware,
         ),
     );
+    // Auth routes: login is unauthenticated; me/logout are authenticated.
+    let auth_login_router =
+        kyma_server::auth_handler::auth_login_router(catalog.clone());
+    let auth_session_router =
+        kyma_server::auth_handler::auth_session_router(catalog.clone()).layer(
+            axum::middleware::from_fn_with_state(
+                AuthLayerState {
+                    backend: backend.clone(),
+                    required: Role::Read,
+                },
+                require_role_middleware,
+            ),
+        );
     let app = ingest_router
         .merge(query_router)
         .merge(mcp_router)
@@ -373,7 +458,9 @@ async fn main() -> Result<()> {
         .merge(cleanup_write_router)
         .merge(health_router)
         .merge(metrics_router)
-        .merge(connector_admin_router);
+        .merge(connector_admin_router)
+        .merge(auth_login_router)
+        .merge(auth_session_router);
     #[cfg(feature = "web-ui")]
     let app = app.merge(kyma_server::web_ui::router());
 
