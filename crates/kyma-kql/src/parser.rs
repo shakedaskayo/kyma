@@ -385,7 +385,7 @@ impl Parser {
     ///    Strictly additive: callers reading only `dst`/`depth` still work.
     fn op_graph_traverse(&mut self) -> Result<(), ParseError> {
         self.expect_ident_eq("source")?;
-        let source_sql = self.parse_scalar_literal()?;
+        let seeds = self.parse_source_seeds()?;
         let (src_col, dst_col, max_hops, direction) = self.parse_graph_preamble()?;
 
         let edge_table = self.state.table.clone();
@@ -394,12 +394,28 @@ impl Parser {
         // so we can join back to the edge table in the result CTE.
         let step_sql = build_recursive_step_with_src(&edge_table, &src_col, &dst_col, direction);
 
-        // Anchor: the seed node has depth=0 and no incoming edge, so path_src
+        // Anchor: the seed node(s) have depth=0 and no incoming edge, so path_src
         // is the node itself (a self-reference; won't match any real edge in
         // the result join, which is correct — the seed has no inbound edge).
+        let anchor = if seeds.len() == 1 {
+            let s = &seeds[0];
+            format!(
+                "SELECT CAST({s} AS VARCHAR) AS node, 0 AS depth, \
+                        CAST({s} AS VARCHAR) AS path_src"
+            )
+        } else {
+            let values = seeds
+                .iter()
+                .map(|s| format!("(CAST({s} AS VARCHAR))"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "SELECT node, 0 AS depth, node AS path_src \
+                 FROM (VALUES {values}) AS _seeds(node)"
+            )
+        };
         let body = format!(
-            "SELECT CAST({source_sql} AS VARCHAR) AS node, 0 AS depth, \
-                    CAST({source_sql} AS VARCHAR) AS path_src \
+            "{anchor} \
              UNION ALL \
              SELECT {step_sql} \
              FROM _gt t \
@@ -485,6 +501,31 @@ impl Parser {
             .push(("_sp_result".to_string(), result_body, false));
         self.state.table = "_sp_result".to_string();
         Ok(())
+    }
+
+    /// Parse the `source` value: either a single scalar literal, or a
+    /// parenthesized comma list `( <lit>, <lit>, … )`. Returns the SQL scalar
+    /// literal strings (already SQL-escaped by `parse_scalar_literal`).
+    fn parse_source_seeds(&mut self) -> Result<Vec<String>, ParseError> {
+        if self.eat(&Token::LParen) {
+            let mut seeds = Vec::new();
+            loop {
+                seeds.push(self.parse_scalar_literal()?);
+                if self.eat(&Token::Comma) {
+                    continue;
+                }
+                break;
+            }
+            if !self.eat(&Token::RParen) {
+                return Err(ParseError("expected ')' to close source list".into()));
+            }
+            if seeds.is_empty() {
+                return Err(ParseError("source list must have at least one value".into()));
+            }
+            Ok(seeds)
+        } else {
+            Ok(vec![self.parse_scalar_literal()?])
+        }
     }
 
     /// Parse a single scalar literal (string, int, or bare identifier wrapped
@@ -997,6 +1038,21 @@ mod tests {
         assert!(sql.contains("IN"), "expected SQL IN, got: {sql}");
         assert!(sql.contains("200"), "got: {sql}");
         assert!(sql.contains("204"), "got: {sql}");
+    }
+
+    #[test]
+    fn graph_traverse_multi_source_uses_values_anchor() {
+        let sql = kql_to_sql(r#"e | graph-traverse source ("a","b") from src to dst max-hops 2"#).expect("parse");
+        assert!(sql.to_uppercase().contains("VALUES"), "expected VALUES anchor, got: {sql}");
+        assert!(sql.contains("'a'") && sql.contains("'b'"), "expected both seeds, got: {sql}");
+        assert!(sql.contains("path_src"), "still a traverse, got: {sql}");
+    }
+    #[test]
+    fn graph_traverse_single_source_unchanged() {
+        // regression: single-literal source keeps the original CAST(... AS VARCHAR) anchor
+        let sql = kql_to_sql(r#"e | graph-traverse source "a" from src to dst max-hops 2"#).expect("parse");
+        assert!(sql.contains("CAST('a' AS VARCHAR) AS node") || sql.contains("CAST('a' AS VARCHAR) AS NODE")
+            || sql.contains("CAST('a' AS VARCHAR)"), "expected single-source CAST anchor, got: {sql}");
     }
 
     #[test]
