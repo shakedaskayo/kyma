@@ -59,7 +59,9 @@ impl AuthBackend for DbAuthBackend {
         // token (which changes the hash) rather than soft-revoking.
         let row = sqlx::query(
             "SELECT tenant_id, scopes, subject FROM api_tokens
-             WHERE token_hash = $1 AND revoked_at IS NULL",
+             WHERE token_hash = $1
+               AND revoked_at IS NULL
+               AND (expires_at IS NULL OR expires_at > now())",
         )
         .bind(&hash)
         .fetch_optional(&self.pool)

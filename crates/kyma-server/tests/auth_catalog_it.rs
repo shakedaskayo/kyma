@@ -5,6 +5,7 @@
 
 #![cfg(feature = "test-support")]
 
+use chrono::Utc;
 use sha2::{Digest, Sha256};
 
 fn sha256(data: &[u8]) -> Vec<u8> {
@@ -75,4 +76,25 @@ async fn auth_user_and_token_crud_roundtrip() {
 
     // Second revoke → false (already revoked).
     assert!(!cat.revoke_api_token(&token_hash).await.unwrap());
+}
+
+#[tokio::test]
+async fn lookup_api_token_returns_none_for_expired_token() {
+    let state = kyma_server::test_support::seeded_state_empty().await;
+    let cat = &state.catalog;
+
+    let raw_token = b"expired-token-secret-for-expiry-test";
+    let token_hash = sha256(raw_token);
+
+    // Insert a token that expired 1 second ago.
+    let past = Utc::now() - chrono::Duration::seconds(1);
+    cat.insert_api_token(&token_hash, "admin", Some("alice"), "session", Some(past))
+        .await
+        .unwrap();
+
+    // lookup_api_token must return None — the token is expired.
+    assert!(
+        cat.lookup_api_token(&token_hash).await.unwrap().is_none(),
+        "expired token should not be found"
+    );
 }
