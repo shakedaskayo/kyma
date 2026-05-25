@@ -59,6 +59,9 @@ pub enum CatalogError {
     #[error("dashboard not found: {id}")]
     DashboardNotFound { id: uuid::Uuid },
 
+    #[error("graph registration not found: {database}.{name}")]
+    GraphNotFound { database: String, name: String },
+
     #[error("sql error: {0}")]
     Sql(String),
 
