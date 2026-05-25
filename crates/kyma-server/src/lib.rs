@@ -21,6 +21,7 @@ pub mod auth;
 pub mod catalog_handler;
 pub mod cleanup_handler;
 pub mod dashboards_handler;
+pub mod graph_handler;
 pub mod flight;
 mod health;
 pub mod metrics;
@@ -111,8 +112,9 @@ pub fn router(state: QueryState) -> Router {
     Router::new()
         .route("/v1/query", post(query_handler))
         .route("/v1/catalog/schema", get(catalog_handler::schema_handler))
-        .with_state(state)
+        .with_state(state.clone())
         .merge(dash_read_router)
+        .merge(graph_handler::graph_router(state))
         .layer(SetRequestIdLayer::new(
             REQUEST_ID_HEADER.clone(),
             MakeRequestUuid,
