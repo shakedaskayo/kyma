@@ -89,7 +89,7 @@ export function AddPanelModal({ open, onClose, onSave, initial }: Props) {
     queryKey: ["schema", endpoint],
     queryFn: () => fetchSchema({ endpoint, token }),
     staleTime: 5 * 60_000,
-    enabled: Boolean(endpoint && token),
+    enabled: Boolean(endpoint),
   });
 
   const databases = schema?.databases.map((d) => d.name) ?? [];

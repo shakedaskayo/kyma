@@ -58,17 +58,31 @@ filters at each hop.
 ```kql
 Edges
 | graph-traverse
-    source <starting-value>
+    source <starting-value>           // single seed: "a"
+    source (<v1>, <v2>, …)            // multi-seed: ("a","b","c")
     from   <src-column>
     to     <dst-column>
     max-hops N
     [direction forward|backward|both]
+    [edge-type <type-value>]          // prune per hop: only edges where e."type" = <value>
 | where depth > 0
 | distinct <dst-column>
 ```
 
 Emits one row per node reachable from `source` within `N` hops. Columns:
 `<dst-column>` (the reached node) and `depth` (min hops to reach it).
+
+**Multi-source** — pass a parenthesized list to seed the traversal from several
+nodes at once; each seed starts at `depth=0`:
+```kql
+service_calls | graph-traverse source ("api","worker") from caller to callee max-hops 5
+```
+
+**Edge-type filter** — restrict each hop to edges whose `type` column equals
+the given value; pruning happens inside the recursive CTE (not on the final result):
+```kql
+service_calls | graph-traverse source "api" from caller to callee max-hops 5 edge-type "CALLS"
+```
 
 **Typical patterns:**
 
@@ -114,6 +128,34 @@ Returns a single-row result with `depth` (min hops if reachable) and
 service_calls
 | graph-shortest-path source "api" target "s3-archive" from caller to callee max-hops 10
 ```
+
+### `make-graph` + `graph-match`
+
+`make-graph` binds a **graph definition** — edge src/dst columns plus the node table used for property lookups — to the pipeline. `graph-match` then matches a fixed single-hop pattern and projects node/edge properties across it.
+
+```kql
+Edges
+| make-graph <src_col> --> <dst_col> with <NodeTable> on <id_col>
+| graph-match ( <a> ) - [ <e> [: <TYPE>] ] -> ( <b> )
+    project <var>.<col> [as <alias>] [, …]
+```
+
+- `make-graph` emits no SQL itself; it records the edge/node tables for `graph-match`.
+- `graph-match` **requires** a preceding `make-graph` in the same pipeline (errors otherwise).
+- `: <TYPE>` is optional; when present it filters `WHERE e."type" = '<TYPE>'` (the conventional `type` edge column).
+- `project` is **required** — it selects which node/edge columns to return. Use `<var>.<col>` where `var` is one of the pattern names (`a`, `e`, `b`). Without an `as <alias>` the output column is named `<var>_<col>`.
+- v1: fixed single-hop forward pattern only. Variable-length traversal stays with `graph-traverse`.
+
+**Example — service call properties across a CALLS edge:**
+
+```kql
+service_calls
+| make-graph caller --> callee with services on id
+| graph-match (a)-[e:CALLS]->(b)
+    project a.name as src_name, e.latency_ms, b.name as dst_name
+```
+
+Returns one row per matching edge with `src_name` (the calling service name), `latency_ms` (from the edge), and `dst_name` (the called service name). The underlying SQL is a 3-way JOIN of the edge table against the node table twice — once for the source node, once for the destination node.
 
 ### Composability
 

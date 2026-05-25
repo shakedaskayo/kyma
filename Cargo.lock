@@ -4471,6 +4471,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyma-graph"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "kyma-ingest-core"
 version = "0.0.1"
 dependencies = [
@@ -4651,6 +4662,7 @@ name = "kyma-server"
 version = "0.0.1"
 dependencies = [
  "adk-rust",
+ "anyhow",
  "arrow",
  "arrow-array",
  "arrow-flight",
@@ -4667,6 +4679,7 @@ dependencies = [
  "kyma-core",
  "kyma-exec",
  "kyma-format-tlm",
+ "kyma-graph",
  "kyma-kql",
  "kyma-plan",
  "kyma-web-assets",

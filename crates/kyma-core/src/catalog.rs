@@ -273,6 +273,59 @@ pub struct DashboardPanelInput {
     pub display_order: i32,
 }
 
+// -------------------- Graphs --------------------
+
+/// A registered property-graph: binds a node table + edge table in a database,
+/// with the column roles that identify nodes/edges. Read by the graph layer's
+/// stored-graph provider to serve `/v1/graph/<name>/*`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GraphRegistration {
+    pub id: uuid::Uuid,
+    pub database: String,
+    pub name: String,
+    pub node_table: String,
+    pub edge_table: String,
+    pub id_col: String,
+    pub label_col: String,
+    pub src_col: String,
+    pub dst_col: String,
+    pub type_col: String,
+    pub realm_col: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Column-role spec supplied when registering a graph. Defaults match the
+/// conventional node/edge schema (see the graph-layer design §3.1).
+#[derive(Debug, Clone)]
+pub struct GraphSpec {
+    pub node_table: String,
+    pub edge_table: String,
+    pub id_col: String,
+    pub label_col: String,
+    pub src_col: String,
+    pub dst_col: String,
+    pub type_col: String,
+    pub realm_col: Option<String>,
+}
+
+impl GraphSpec {
+    /// Conventional defaults: nodes(`id`,`labels`), edges(`src`,`dst`,`type`),
+    /// optional `realm`. Caller overrides the column names as needed.
+    pub fn with_defaults(node_table: impl Into<String>, edge_table: impl Into<String>) -> Self {
+        Self {
+            node_table: node_table.into(),
+            edge_table: edge_table.into(),
+            id_col: "id".into(),
+            label_col: "labels".into(),
+            src_col: "src".into(),
+            dst_col: "dst".into(),
+            type_col: "type".into(),
+            realm_col: None,
+        }
+    }
+}
+
 /// Result returned by [`Catalog::cleanup_soft_deleted_extents`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CleanupResult {
@@ -607,6 +660,62 @@ pub trait Catalog: Send + Sync {
         &self,
         tenant: crate::tenant::TenantId,
         id: uuid::Uuid,
+    ) -> Result<bool, CatalogError>;
+
+    // -------------------- Graphs --------------------
+
+    /// Register a property-graph in `database` under `name`.
+    async fn create_graph(
+        &self,
+        database: &str,
+        name: &str,
+        spec: GraphSpec,
+    ) -> Result<GraphRegistration, CatalogError> {
+        self.create_graph_in_tenant(crate::tenant::DEFAULT_TENANT, database, name, spec).await
+    }
+    async fn create_graph_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        database: &str,
+        name: &str,
+        spec: GraphSpec,
+    ) -> Result<GraphRegistration, CatalogError>;
+
+    /// List all graphs registered in `database`.
+    async fn list_graphs(&self, database: &str) -> Result<Vec<GraphRegistration>, CatalogError> {
+        self.list_graphs_in_tenant(crate::tenant::DEFAULT_TENANT, database).await
+    }
+    async fn list_graphs_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        database: &str,
+    ) -> Result<Vec<GraphRegistration>, CatalogError>;
+
+    /// Look up a single graph by `database` + `name`.
+    async fn get_graph(
+        &self,
+        database: &str,
+        name: &str,
+    ) -> Result<Option<GraphRegistration>, CatalogError> {
+        self.get_graph_in_tenant(crate::tenant::DEFAULT_TENANT, database, name).await
+    }
+    async fn get_graph_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        database: &str,
+        name: &str,
+    ) -> Result<Option<GraphRegistration>, CatalogError>;
+
+    /// Drop a graph registration (does NOT drop the underlying tables).
+    /// Returns true if a registration was removed.
+    async fn drop_graph(&self, database: &str, name: &str) -> Result<bool, CatalogError> {
+        self.drop_graph_in_tenant(crate::tenant::DEFAULT_TENANT, database, name).await
+    }
+    async fn drop_graph_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        database: &str,
+        name: &str,
     ) -> Result<bool, CatalogError>;
 
     // --- ingest idempotency ledger ---

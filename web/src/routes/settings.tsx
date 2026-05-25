@@ -43,7 +43,7 @@ function Settings() {
             <Input id="endpoint" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="http://localhost:8080" />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="token">Bearer token</Label>
+            <Label htmlFor="token">Bearer token <span className="font-normal text-muted-foreground">(optional)</span></Label>
             <Input id="token" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="paste token from KYMA_AUTH_TOKENS" />
             <p className="text-xs text-muted-foreground">
               Configure with <code className="font-mono">KYMA_AUTH_TOKENS=token:read</code> on the server; leave blank
