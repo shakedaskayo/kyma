@@ -19,6 +19,6 @@ change requires a new dated entry, not an edit.
 | 10 | Secrets | GH OIDC→AWS; tokens in Secrets Manager/Doppler; none in state | Supply-chain hygiene |
 
 ## Open items to confirm during C0 (close before C0 done)
-- [ ] Railway Terraform provider maturity (Task 4) — else fall back to `railway.json` config-as-code + a thin `null_resource`/CLI wrapper.
+- [x] Railway Terraform provider maturity (Task 4) — provider `terraform-community-providers/railway` is pre-1.0 (0.6.2); chose the `null_resource` + Railway CLI fallback for now (revisit at C1). See `infra/modules/_providers.md`.
 - [ ] Supabase region parity with `us-east-1` (Task 7).
 - [ ] Secrets manager choice: AWS Secrets Manager vs Doppler (Task 9).
