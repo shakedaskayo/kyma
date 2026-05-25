@@ -97,6 +97,27 @@ impl Parser {
         }
     }
 
+    /// Consume the next token and require it to be an identifier. Returns the
+    /// raw identifier string (not `quote_ident`-d — quote at the use-site).
+    fn expect_ident(&mut self) -> Result<String, ParseError> {
+        match self.bump()? {
+            Token::Ident(s) => Ok(s),
+            other => Err(ParseError(format!("expected identifier, got {other:?}"))),
+        }
+    }
+
+    /// If the next token is `Ident(kw)`, consume it and return `true`;
+    /// otherwise leave position unchanged and return `false`.
+    fn eat_ident_eq(&mut self, kw: &str) -> bool {
+        match self.peek() {
+            Some(Token::Ident(s)) if s == kw => {
+                self.pos += 1;
+                true
+            }
+            _ => false,
+        }
+    }
+
     // -----------------------------------------------------------------
     // Top-level
     // -----------------------------------------------------------------
@@ -138,6 +159,8 @@ impl Parser {
             "distinct" => self.op_distinct(),
             "graph-traverse" => self.op_graph_traverse(),
             "graph-shortest-path" => self.op_graph_shortest_path(),
+            "make-graph" => self.op_make_graph(),
+            "graph-match" => self.op_graph_match(),
             other => Err(ParseError(format!("unsupported operator: `{other}`"))),
         }
     }
@@ -513,6 +536,126 @@ impl Parser {
             .ctes
             .push(("_sp_result".to_string(), result_body, false));
         self.state.table = "_sp_result".to_string();
+        Ok(())
+    }
+
+    /// `make-graph <src> --> <dst> with <NodeTable> on <id>`
+    ///
+    /// Records a [`crate::state::GraphDef`] on the state for the following
+    /// `graph-match` operator. Emits no SQL itself — the active table is
+    /// unchanged.
+    fn op_make_graph(&mut self) -> Result<(), ParseError> {
+        let src_col = self.expect_ident()?;
+        if !self.eat(&Token::Arrow) {
+            return Err(ParseError(
+                "make-graph: expected `-->` between src and dst".into(),
+            ));
+        }
+        let dst_col = self.expect_ident()?;
+        self.expect_ident_eq("with")?;
+        let node_table = self.expect_ident()?;
+        self.expect_ident_eq("on")?;
+        let id_col = self.expect_ident()?;
+        self.state.graph_def = Some(crate::state::GraphDef {
+            edge_table: self.state.table.clone(),
+            src_col,
+            dst_col,
+            node_table,
+            id_col,
+        });
+        Ok(())
+    }
+
+    /// `graph-match (a)-[e[:TYPE]]->(b) project <var>.<col> [as <alias>], …`
+    ///
+    /// Requires a preceding `make-graph` (errors otherwise). Parses a
+    /// fixed single-hop forward pattern and a required `project` list.
+    /// Pushes a non-recursive CTE `_gm_result` that 3-way-joins the edge
+    /// table to the node table twice (src-side alias `a`, dst-side alias `b`),
+    /// with an optional `WHERE e."type" = '<TYPE>'` when `:TYPE` is given.
+    fn op_graph_match(&mut self) -> Result<(), ParseError> {
+        let def = self
+            .state
+            .graph_def
+            .clone()
+            .ok_or_else(|| ParseError("graph-match requires a preceding make-graph".into()))?;
+
+        // Pattern: ( a ) - [ e [: TYPE] ] -> ( b )
+        self.expect(&Token::LParen, "(")?;
+        let a = self.expect_ident()?;
+        self.expect(&Token::RParen, ")")?;
+        self.expect(&Token::Minus, "-")?;
+        self.expect(&Token::LBracket, "[")?;
+        let e = self.expect_ident()?;
+        let edge_type = if self.eat(&Token::Colon) {
+            Some(self.expect_ident()?)
+        } else {
+            None
+        };
+        self.expect(&Token::RBracket, "]")?;
+        self.expect(&Token::RightArrow, "->")?;
+        self.expect(&Token::LParen, "(")?;
+        let b = self.expect_ident()?;
+        self.expect(&Token::RParen, ")")?;
+
+        // Required: project <var>.<col> [as <alias>], …
+        self.expect_ident_eq("project")?;
+        let mut select_items: Vec<String> = Vec::new();
+        loop {
+            let var = self.expect_ident()?;
+            self.expect(&Token::Dot, ".")?;
+            let col = self.expect_ident()?;
+            // Map the pattern variable to its SQL table alias.
+            let alias_tbl = if var == a {
+                "a"
+            } else if var == e {
+                "e"
+            } else if var == b {
+                "b"
+            } else {
+                return Err(ParseError(format!(
+                    "graph-match project: unknown variable `{var}` (expected {a}, {e}, or {b})"
+                )));
+            };
+            let out_alias = if self.eat_ident_eq("as") {
+                self.expect_ident()?
+            } else {
+                format!("{var}_{col}")
+            };
+            select_items.push(format!(
+                "{alias_tbl}.{} AS {}",
+                quote_ident(&col),
+                quote_ident(&out_alias)
+            ));
+            if !self.eat(&Token::Comma) {
+                break;
+            }
+        }
+        if select_items.is_empty() {
+            return Err(ParseError(
+                "graph-match: project must list at least one column".into(),
+            ));
+        }
+
+        let where_clause = match &edge_type {
+            Some(t) => format!(r#" WHERE e."type" = '{}'"#, t.replace('\'', "''")),
+            None => String::new(),
+        };
+        let body = format!(
+            "SELECT {sel} FROM {edges} e \
+             JOIN {nodes} a ON e.{src} = a.{id} \
+             JOIN {nodes} b ON e.{dst} = b.{id}{where_clause}",
+            sel = select_items.join(", "),
+            edges = def.edge_table,
+            nodes = def.node_table,
+            src = quote_ident(&def.src_col),
+            dst = quote_ident(&def.dst_col),
+            id = quote_ident(&def.id_col),
+        );
+        self.state
+            .ctes
+            .push(("_gm_result".to_string(), body, false));
+        self.state.table = "_gm_result".to_string();
         Ok(())
     }
 
@@ -1082,6 +1225,60 @@ mod tests {
     fn graph_traverse_multi_source_and_edge_type_compose() {
         let sql = kql_to_sql(r#"e | graph-traverse source ("a","b") from src to dst max-hops 2 edge-type "X""#).expect("parse");
         assert!(sql.to_uppercase().contains("VALUES") && sql.contains(r#"e."type" = 'X'"#), "got: {sql}");
+    }
+
+    #[test]
+    fn make_graph_then_match_projects_join() {
+        let sql = kql_to_sql(
+            r#"edges | make-graph caller --> callee with services on id | graph-match (a)-[e:CALLS]->(b) project a.name, e.latency, b.name"#
+        ).expect("parse");
+        let u = sql.to_uppercase();
+        // Node table joined twice (a = src side, b = dst side).
+        assert!(
+            u.contains("JOIN SERVICES A ON"),
+            "expected node join for a, got: {sql}"
+        );
+        assert!(
+            u.contains("JOIN SERVICES B ON"),
+            "expected node join for b, got: {sql}"
+        );
+        // Join predicates: quote_ident("caller")="caller", quote_ident("id")="id" — simple idents, no quotes.
+        assert!(
+            sql.contains("e.caller = a.id"),
+            "a joins on src=id, got: {sql}"
+        );
+        assert!(
+            sql.contains("e.callee = b.id"),
+            "b joins on dst=id, got: {sql}"
+        );
+        // Edge-type filter uses the conventional quoted "type" column.
+        assert!(
+            sql.contains(r#"e."type" = 'CALLS'"#),
+            "edge-type filter, got: {sql}"
+        );
+        // Projected columns: quote_ident("name")="name" (simple), "latency"="latency" (simple).
+        // Aliases: a_name, e_latency, b_name (auto from var_col).
+        assert!(
+            sql.contains("a.name AS a_name"),
+            "expected a.name AS a_name, got: {sql}"
+        );
+        assert!(
+            sql.contains("e.latency AS e_latency"),
+            "expected e.latency AS e_latency, got: {sql}"
+        );
+        assert!(
+            sql.contains("b.name AS b_name"),
+            "expected b.name AS b_name, got: {sql}"
+        );
+    }
+
+    #[test]
+    fn graph_match_without_make_graph_errors() {
+        let err = kql_to_sql(r#"edges | graph-match (a)-[e]->(b) project a.x"#);
+        assert!(
+            err.is_err(),
+            "graph-match requires a preceding make-graph"
+        );
     }
 
     #[test]
