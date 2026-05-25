@@ -4,6 +4,22 @@
 //! SQL is a flat SELECT. The `QueryState` captures what's been said so far;
 //! `to_sql` renders at the end.
 
+/// Holds the graph definition recorded by `make-graph` for use by a
+/// following `graph-match` operator.
+#[derive(Debug, Clone)]
+pub struct GraphDef {
+    /// The edge table (the table that was active when `make-graph` ran).
+    pub edge_table: String,
+    /// The edge column that holds the source node id.
+    pub src_col: String,
+    /// The edge column that holds the destination node id.
+    pub dst_col: String,
+    /// The node table to join for property lookup.
+    pub node_table: String,
+    /// The node table's primary-key column (joined to src/dst).
+    pub id_col: String,
+}
+
 #[derive(Debug, Default)]
 pub struct QueryState {
     pub table: String,
@@ -23,6 +39,8 @@ pub struct QueryState {
     pub order_by: Vec<(String, bool)>,
     pub limit: Option<u64>,
     pub distinct: bool,
+    /// Graph definition recorded by `make-graph`; consumed by `graph-match`.
+    pub graph_def: Option<GraphDef>,
     /// CTEs to emit in a `WITH [RECURSIVE] …` prelude. Tuple:
     /// `(name, body, needs_recursive)`. When any cte has
     /// `needs_recursive = true`, the whole WITH clause becomes
