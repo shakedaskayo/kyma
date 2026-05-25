@@ -78,3 +78,17 @@ test("listGraphs GETs /v1/graph and returns refs", async () => {
   const refs = await listGraphs(base);
   expect(refs[0].name).toBe("schema");
 });
+
+test("sends x-database header when database is set", async () => {
+  mockFetch.mockResolvedValue(ok({ stats: { total_nodes: 0, total_relationships: 0, label_counts: {}, relationship_type_counts: {} }, nodes: [], edges: [] }));
+  await getOverview({ ...base, database: "obs", graph: "kg" });
+  const [, init] = mockFetch.mock.calls[0];
+  expect(init.headers["x-database"]).toBe("obs");
+});
+
+test("omits x-database header when database is absent", async () => {
+  mockFetch.mockResolvedValue(ok([{ name: "schema", kind: "schema", description: "" }]));
+  await listGraphs(base); // base has no database
+  const [, init] = mockFetch.mock.calls[0];
+  expect(init.headers["x-database"]).toBeUndefined();
+});
