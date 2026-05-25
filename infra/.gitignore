@@ -1,0 +1,18 @@
+# Terraform — never commit provider downloads, state, or secret tfvars.
+# The dependency lock file (.terraform.lock.hcl) IS committed for root configs.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Secret var files; the .example template is tracked.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
