@@ -20,5 +20,5 @@ change requires a new dated entry, not an edit.
 
 ## Open items to confirm during C0 (close before C0 done)
 - [x] Railway Terraform provider maturity (Task 4) — provider `terraform-community-providers/railway` is pre-1.0 (0.6.2); chose the `null_resource` + Railway CLI fallback for now (revisit at C1). See `infra/modules/_providers.md`.
-- [ ] Supabase region parity with `us-east-1` (Task 7).
-- [ ] Secrets manager choice: AWS Secrets Manager vs Doppler (Task 9).
+- [x] Supabase region parity with `us-east-1` — confirmed; Supabase is AWS-backed and offers `us-east-1` (East US, N. Virginia), co-locating with the S3 bucket + Railway (decision #7).
+- [x] Secrets manager choice — **AWS Secrets Manager**. Platform is already AWS-heavy (S3/STS/IAM/OIDC); native IAM integration + rotation, no extra vendor. CI provider tokens stay in GH Actions secrets; runtime app secrets live in Secrets Manager. Doppler rejected only to avoid a second vendor.
