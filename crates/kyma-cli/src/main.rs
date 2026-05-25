@@ -64,6 +64,28 @@ enum Command {
     },
     /// Print the CLI version.
     Version,
+    /// Register a property-graph (binds a node table + edge table).
+    CreateGraph {
+        #[arg(long)] db: String,
+        #[arg(long)] name: String,
+        #[arg(long)] nodes: String,                 // node table
+        #[arg(long)] edges: String,                 // edge table
+        #[arg(long, default_value = "id")] id_col: String,
+        #[arg(long, default_value = "labels")] label_col: String,
+        #[arg(long, default_value = "src")] src_col: String,
+        #[arg(long, default_value = "dst")] dst_col: String,
+        #[arg(long, default_value = "type")] type_col: String,
+        #[arg(long)] realm_col: Option<String>,
+    },
+    /// List registered graphs in a database.
+    ListGraphs {
+        #[arg(long)] db: String,
+    },
+    /// Drop a graph registration (leaves the underlying tables intact).
+    DropGraph {
+        #[arg(long)] db: String,
+        #[arg(long)] name: String,
+    },
 }
 
 #[tokio::main]
@@ -138,6 +160,45 @@ async fn main() -> Result<()> {
                         .collect();
                     println!("{}  [{}]", t.name, cols.join(", "));
                 }
+            }
+        }
+        Command::CreateGraph {
+            db, name, nodes, edges, id_col, label_col, src_col, dst_col, type_col, realm_col,
+        } => {
+            if name == "schema" {
+                anyhow::bail!("'schema' is reserved for the synthetic schema-graph; choose another name");
+            }
+            let cat = connect(&cli.catalog_url).await?;
+            let spec = kyma_core::catalog::GraphSpec {
+                node_table: nodes,
+                edge_table: edges,
+                id_col,
+                label_col,
+                src_col,
+                dst_col,
+                type_col,
+                realm_col,
+            };
+            let reg = cat.create_graph(&db, &name, spec).await?;
+            println!("registered graph '{}' in db '{}' (nodes={}, edges={})", reg.name, db, reg.node_table, reg.edge_table);
+        }
+        Command::ListGraphs { db } => {
+            let cat = connect(&cli.catalog_url).await?;
+            let graphs = cat.list_graphs(&db).await?;
+            if graphs.is_empty() {
+                println!("(no graphs registered in '{db}')");
+            } else {
+                for g in graphs {
+                    println!("{}\tnodes={}\tedges={}\trealm={}", g.name, g.node_table, g.edge_table, g.realm_col.as_deref().unwrap_or("-"));
+                }
+            }
+        }
+        Command::DropGraph { db, name } => {
+            let cat = connect(&cli.catalog_url).await?;
+            if cat.drop_graph(&db, &name).await? {
+                println!("dropped graph '{name}' from '{db}'");
+            } else {
+                println!("no graph '{name}' in '{db}'");
             }
         }
     }
