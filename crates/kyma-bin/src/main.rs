@@ -332,6 +332,8 @@ async fn main() -> Result<()> {
     // Connector registry + row-sink.
     let mut conn_reg = ConnectorRegistry::new();
     conn_reg.register(Arc::new(PromConnector));
+    #[cfg(feature = "github")]
+    conn_reg.register(Arc::new(kyma_connectors::github::GithubConnector));
     let conn_registry = Arc::new(conn_reg);
 
     // RowSink: bridges connector JSON rows → arrow coercion → WritePath.
@@ -419,6 +421,22 @@ async fn main() -> Result<()> {
         },
         require_role_middleware,
     ));
+
+    // GitHub connector — repos picker endpoint (Role::Write, behind auth).
+    #[cfg(feature = "github")]
+    let github_repos_router = {
+        let secrets: std::sync::Arc<dyn kyma_connectors::secrets::SecretStore> =
+            Arc::new(kyma_connectors::secrets::EnvSecretStore);
+        kyma_connectors::github::github_repos_router(secrets).layer(
+            axum::middleware::from_fn_with_state(
+                AuthLayerState {
+                    backend: backend.clone(),
+                    required: Role::Write,
+                },
+                require_role_middleware,
+            ),
+        )
+    };
     let dashboards_write_router =
         kyma_server::dashboards_write_router(catalog.clone()).layer(
             axum::middleware::from_fn_with_state(
@@ -461,6 +479,9 @@ async fn main() -> Result<()> {
         .merge(connector_admin_router)
         .merge(auth_login_router)
         .merge(auth_session_router);
+
+    #[cfg(feature = "github")]
+    let app = app.merge(github_repos_router);
     #[cfg(feature = "web-ui")]
     let app = app.merge(kyma_server::web_ui::router());
 

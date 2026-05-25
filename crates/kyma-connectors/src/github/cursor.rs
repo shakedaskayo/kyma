@@ -1,0 +1,89 @@
+//! Incremental-fetch cursor for the GitHub connector.
+//!
+//! The cursor is serialized as JSON and stored in `connector_cursors`. On
+//! each tick we read it back, use the stored timestamps for `since`-filtered
+//! pulls/issues queries, and write an updated cursor after ingestion.
+
+use std::collections::HashMap;
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+/// Per-repository incremental state.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RepoCursor {
+    /// RFC-3339 timestamp: fetch pulls updated at or after this time.
+    /// `None` means "first run" → fetch all.
+    pub pulls_since: Option<DateTime<Utc>>,
+    /// RFC-3339 timestamp: fetch issues updated at or after this time.
+    /// `None` means "first run" → fetch all.
+    pub issues_since: Option<DateTime<Utc>>,
+}
+
+/// Top-level cursor — keyed by `"owner/name"`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Cursor {
+    pub repos: HashMap<String, RepoCursor>,
+}
+
+impl Cursor {
+    /// Deserialize from the `Option<Value>` the framework passes in.
+    pub fn from_value(v: Option<&serde_json::Value>) -> Self {
+        match v {
+            None => Self::default(),
+            Some(val) => serde_json::from_value(val.clone()).unwrap_or_default(),
+        }
+    }
+
+    /// Serialize to a JSON value for storage.
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or_default()
+    }
+
+    /// Get or create the cursor for a repo.
+    pub fn for_repo(&self, repo: &str) -> RepoCursor {
+        self.repos.get(repo).cloned().unwrap_or_default()
+    }
+
+    /// Update the cursor for a repo after a successful fetch.
+    pub fn update_repo(&mut self, repo: &str, pulls_since: Option<DateTime<Utc>>, issues_since: Option<DateTime<Utc>>) {
+        let entry = self.repos.entry(repo.to_string()).or_default();
+        if let Some(ts) = pulls_since {
+            entry.pulls_since = Some(ts);
+        }
+        if let Some(ts) = issues_since {
+            entry.issues_since = Some(ts);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trip_empty() {
+        let c = Cursor::default();
+        let v = c.to_value();
+        let c2 = Cursor::from_value(Some(&v));
+        assert!(c2.repos.is_empty());
+    }
+
+    #[test]
+    fn round_trip_with_data() {
+        let mut c = Cursor::default();
+        let ts = Utc::now();
+        c.update_repo("owner/repo", Some(ts), Some(ts));
+        let v = c.to_value();
+        let c2 = Cursor::from_value(Some(&v));
+        let rc = c2.for_repo("owner/repo");
+        assert!(rc.pulls_since.is_some());
+        assert!(rc.issues_since.is_some());
+    }
+
+    #[test]
+    fn missing_cursor_returns_default() {
+        let c = Cursor::from_value(None);
+        assert!(c.repos.is_empty());
+    }
+}

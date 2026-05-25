@@ -33,7 +33,11 @@ fastrand = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 sqlx = { workspace = true }
 
+[features]
+github = []
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 testcontainers = { workspace = true }
 testcontainers-modules = { workspace = true }
+wiremock = "0.6"
