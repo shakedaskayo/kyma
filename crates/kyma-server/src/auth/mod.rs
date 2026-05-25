@@ -3,6 +3,7 @@
 mod backend;
 mod env_backend;
 mod middleware;
+pub mod passwords;
 
 #[cfg(feature = "cloud-auth")]
 mod db_backend;

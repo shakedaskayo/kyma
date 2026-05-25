@@ -273,6 +273,27 @@ pub struct DashboardPanelInput {
     pub display_order: i32,
 }
 
+// -------------------- Auth: users + api tokens --------------------
+
+/// A user record (password_hash is deliberately omitted — use
+/// [`Catalog::get_user_with_hash_in_tenant`] when verification is required).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct User {
+    pub id: uuid::Uuid,
+    pub username: String,
+    pub role: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Resolved principal returned by a successful [`Catalog::lookup_api_token`].
+#[derive(Debug, Clone)]
+pub struct TokenPrincipal {
+    pub tenant: crate::tenant::TenantId,
+    pub role: String,
+    pub subject: Option<String>,
+}
+
 // -------------------- Graphs --------------------
 
 /// A registered property-graph: binds a node table + edge table in a database,
@@ -717,6 +738,110 @@ pub trait Catalog: Send + Sync {
         database: &str,
         name: &str,
     ) -> Result<bool, CatalogError>;
+
+    // --- auth: users ---
+
+    /// Create a new user in the given tenant.
+    async fn create_user(
+        &self,
+        username: &str,
+        password_hash: &str,
+        role: &str,
+    ) -> Result<User, CatalogError> {
+        self.create_user_in_tenant(
+            crate::tenant::DEFAULT_TENANT,
+            username,
+            password_hash,
+            role,
+        )
+        .await
+    }
+
+    /// Tenant-scoped variant of [`create_user`].
+    async fn create_user_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        username: &str,
+        password_hash: &str,
+        role: &str,
+    ) -> Result<User, CatalogError>;
+
+    /// Look up a user by username, returning the public [`User`] struct plus
+    /// the stored password hash for verification. Returns `None` if the user
+    /// does not exist.
+    async fn get_user_with_hash(
+        &self,
+        username: &str,
+    ) -> Result<Option<(User, String)>, CatalogError> {
+        self.get_user_with_hash_in_tenant(crate::tenant::DEFAULT_TENANT, username)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`get_user_with_hash`].
+    async fn get_user_with_hash_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        username: &str,
+    ) -> Result<Option<(User, String)>, CatalogError>;
+
+    /// Count users in the default tenant (used to detect whether seeding is
+    /// needed).
+    async fn count_users(&self) -> Result<u64, CatalogError> {
+        self.count_users_in_tenant(crate::tenant::DEFAULT_TENANT).await
+    }
+
+    /// Tenant-scoped variant of [`count_users`].
+    async fn count_users_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+    ) -> Result<u64, CatalogError>;
+
+    // --- auth: api tokens ---
+
+    /// Insert an API token row (tenant-scoped).
+    async fn insert_api_token(
+        &self,
+        token_hash: &[u8],
+        scopes: &str,
+        subject: Option<&str>,
+        kind: &str,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> Result<(), CatalogError> {
+        self.insert_api_token_in_tenant(
+            crate::tenant::DEFAULT_TENANT,
+            token_hash,
+            scopes,
+            subject,
+            kind,
+            expires_at,
+        )
+        .await
+    }
+
+    /// Tenant-scoped variant of [`insert_api_token`].
+    async fn insert_api_token_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        token_hash: &[u8],
+        scopes: &str,
+        subject: Option<&str>,
+        kind: &str,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> Result<(), CatalogError>;
+
+    /// Look up an API token globally (token_hash is unique across tenants).
+    ///
+    /// Returns `None` when the token is unknown, revoked, or expired.
+    /// As a side-effect, updates `last_used_at` (fire-and-forget).
+    async fn lookup_api_token(
+        &self,
+        token_hash: &[u8],
+    ) -> Result<Option<TokenPrincipal>, CatalogError>;
+
+    /// Revoke an API token. Returns `true` if a row was actually revoked
+    /// (i.e. it was previously active), `false` if it was already revoked or
+    /// not found.
+    async fn revoke_api_token(&self, token_hash: &[u8]) -> Result<bool, CatalogError>;
 
     // --- ingest idempotency ledger ---
 
