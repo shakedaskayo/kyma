@@ -58,17 +58,31 @@ filters at each hop.
 ```kql
 Edges
 | graph-traverse
-    source <starting-value>
+    source <starting-value>           // single seed: "a"
+    source (<v1>, <v2>, …)            // multi-seed: ("a","b","c")
     from   <src-column>
     to     <dst-column>
     max-hops N
     [direction forward|backward|both]
+    [edge-type <type-value>]          // prune per hop: only edges where e."type" = <value>
 | where depth > 0
 | distinct <dst-column>
 ```
 
 Emits one row per node reachable from `source` within `N` hops. Columns:
 `<dst-column>` (the reached node) and `depth` (min hops to reach it).
+
+**Multi-source** — pass a parenthesized list to seed the traversal from several
+nodes at once; each seed starts at `depth=0`:
+```kql
+service_calls | graph-traverse source ("api","worker") from caller to callee max-hops 5
+```
+
+**Edge-type filter** — restrict each hop to edges whose `type` column equals
+the given value; pruning happens inside the recursive CTE (not on the final result):
+```kql
+service_calls | graph-traverse source "api" from caller to callee max-hops 5 edge-type "CALLS"
+```
 
 **Typical patterns:**
 
