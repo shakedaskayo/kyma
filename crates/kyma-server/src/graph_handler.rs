@@ -405,4 +405,35 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
+
+    #[tokio::test]
+    async fn graph_registration_crud_roundtrip() {
+        use kyma_core::catalog::GraphSpec;
+        let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
+        let cat = &state.catalog;
+
+        // none registered yet
+        assert!(cat.list_graphs("obs").await.unwrap().is_empty());
+        assert!(cat.get_graph("obs", "kg").await.unwrap().is_none());
+
+        // create
+        let mut spec = GraphSpec::with_defaults("kg_nodes", "kg_edges");
+        spec.realm_col = Some("realm".into());
+        let reg = cat.create_graph("obs", "kg", spec).await.unwrap();
+        assert_eq!(reg.name, "kg");
+        assert_eq!(reg.node_table, "kg_nodes");
+        assert_eq!(reg.edge_table, "kg_edges");
+        assert_eq!(reg.id_col, "id");
+        assert_eq!(reg.realm_col.as_deref(), Some("realm"));
+
+        // get + list
+        let got = cat.get_graph("obs", "kg").await.unwrap().unwrap();
+        assert_eq!(got.id, reg.id);
+        assert_eq!(cat.list_graphs("obs").await.unwrap().len(), 1);
+
+        // drop
+        assert!(cat.drop_graph("obs", "kg").await.unwrap());
+        assert!(!cat.drop_graph("obs", "kg").await.unwrap()); // idempotent: now false
+        assert!(cat.get_graph("obs", "kg").await.unwrap().is_none());
+    }
 }
