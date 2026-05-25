@@ -56,11 +56,13 @@ export interface GraphRef {
 }
 export type Direction = "forward" | "backward" | "both";
 
-type BaseArgs = { endpoint: string; token: string };
+type BaseArgs = { endpoint: string; token: string; database?: string };
 type GraphArgs = BaseArgs & { graph: string };
 
-function headers(token: string): Record<string, string> {
-  return { authorization: `Bearer ${token}`, "content-type": "application/json" };
+function headers(token: string, database?: string): Record<string, string> {
+  const h: Record<string, string> = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+  if (database) h["x-database"] = database;
+  return h;
 }
 function base(endpoint: string): string {
   return endpoint.replace(/\/$/, "");
@@ -76,7 +78,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 export async function listGraphs(args: BaseArgs): Promise<GraphRef[]> {
-  const res = await fetch(`${base(args.endpoint)}/v1/graph`, { headers: headers(args.token) });
+  const res = await fetch(`${base(args.endpoint)}/v1/graph`, { headers: headers(args.token, args.database) });
   return handleResponse<GraphRef[]>(res);
 }
 
@@ -89,7 +91,7 @@ export async function getOverview(
   const qs = q.toString();
   const res = await fetch(
     `${base(args.endpoint)}/v1/graph/${args.graph}/overview${qs ? `?${qs}` : ""}`,
-    { headers: headers(args.token) },
+    { headers: headers(args.token, args.database) },
   );
   return handleResponse<GraphPayload>(res);
 }
@@ -99,14 +101,14 @@ export async function getStats(args: GraphArgs & { realm?: string }): Promise<Gr
   if (args.realm) q.set("realm", args.realm);
   const qs = q.toString();
   const res = await fetch(`${base(args.endpoint)}/v1/graph/${args.graph}/stats${qs ? `?${qs}` : ""}`, {
-    headers: headers(args.token),
+    headers: headers(args.token, args.database),
   });
   return handleResponse<GraphStats>(res);
 }
 
 export async function getGraphSchema(args: GraphArgs): Promise<GraphSchema> {
   const res = await fetch(`${base(args.endpoint)}/v1/graph/${args.graph}/schema`, {
-    headers: headers(args.token),
+    headers: headers(args.token, args.database),
   });
   return handleResponse<GraphSchema>(res);
 }
@@ -114,7 +116,7 @@ export async function getGraphSchema(args: GraphArgs): Promise<GraphSchema> {
 export async function getNode(args: GraphArgs & { id: string }): Promise<GraphNode> {
   const res = await fetch(
     `${base(args.endpoint)}/v1/graph/${args.graph}/nodes/${encodeURIComponent(args.id)}`,
-    { headers: headers(args.token) },
+    { headers: headers(args.token, args.database) },
   );
   return handleResponse<GraphNode>(res);
 }
@@ -125,7 +127,7 @@ export async function getSubgraph(
   const qs = args.depth != null ? `?depth=${args.depth}` : "";
   const res = await fetch(
     `${base(args.endpoint)}/v1/graph/${args.graph}/nodes/${encodeURIComponent(args.id)}/subgraph${qs}`,
-    { headers: headers(args.token) },
+    { headers: headers(args.token, args.database) },
   );
   return handleResponse<GraphPayload>(res);
 }
@@ -135,7 +137,7 @@ export async function searchNodes(
 ): Promise<SearchHits> {
   const res = await fetch(`${base(args.endpoint)}/v1/graph/${args.graph}/search`, {
     method: "POST",
-    headers: headers(args.token),
+    headers: headers(args.token, args.database),
     body: JSON.stringify({
       text: args.text,
       labels: args.labels ?? [],
@@ -152,7 +154,7 @@ export async function expandNeighbors(
 ): Promise<EdgeExpansion> {
   const res = await fetch(`${base(args.endpoint)}/v1/graph/${args.graph}/neighbors`, {
     method: "POST",
-    headers: headers(args.token),
+    headers: headers(args.token, args.database),
     body: JSON.stringify({
       node_ids: args.nodeIds,
       direction: args.direction ?? "both",
