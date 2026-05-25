@@ -388,6 +388,19 @@ impl Parser {
         let seeds = self.parse_source_seeds()?;
         let (src_col, dst_col, max_hops, direction) = self.parse_graph_preamble()?;
 
+        // Optional edge-type filter: `edge-type "<value>"` — prunes per hop.
+        let edge_type: Option<String> =
+            if matches!(self.peek(), Some(Token::Ident(s)) if s == "edge-type") {
+                self.pos += 1; // consume 'edge-type'
+                Some(self.parse_scalar_literal()?)
+            } else {
+                None
+            };
+        let type_filter = match &edge_type {
+            Some(v) => format!(r#" AND e."type" = {v}"#),
+            None => String::new(),
+        };
+
         let edge_table = self.state.table.clone();
 
         // Recursive step: next-hop node + depth+1 + the edge's src (path_src)
@@ -420,7 +433,7 @@ impl Parser {
              SELECT {step_sql} \
              FROM _gt t \
              JOIN {edge_table} e ON {join_cond} \
-             WHERE t.depth < {max_hops}",
+             WHERE t.depth < {max_hops}{type_filter}",
             join_cond = match direction {
                 GraphDirection::Forward => format!("e.{src_col} = t.node"),
                 GraphDirection::Backward => format!("e.{dst_col} = t.node"),
@@ -1053,6 +1066,22 @@ mod tests {
         let sql = kql_to_sql(r#"e | graph-traverse source "a" from src to dst max-hops 2"#).expect("parse");
         assert!(sql.contains("CAST('a' AS VARCHAR) AS node") || sql.contains("CAST('a' AS VARCHAR) AS NODE")
             || sql.contains("CAST('a' AS VARCHAR)"), "expected single-source CAST anchor, got: {sql}");
+    }
+
+    #[test]
+    fn graph_traverse_edge_type_filters_per_hop() {
+        let sql = kql_to_sql(r#"e | graph-traverse source "a" from src to dst max-hops 3 edge-type "CALLS""#).expect("parse");
+        assert!(sql.contains(r#"e."type" = 'CALLS'"#), "expected per-hop edge-type filter, got: {sql}");
+    }
+    #[test]
+    fn graph_traverse_no_edge_type_has_no_type_filter() {
+        let sql = kql_to_sql(r#"e | graph-traverse source "a" from src to dst max-hops 3"#).expect("parse");
+        assert!(!sql.contains(r#""type" ="#), "no edge-type clause expected, got: {sql}");
+    }
+    #[test]
+    fn graph_traverse_multi_source_and_edge_type_compose() {
+        let sql = kql_to_sql(r#"e | graph-traverse source ("a","b") from src to dst max-hops 2 edge-type "X""#).expect("parse");
+        assert!(sql.to_uppercase().contains("VALUES") && sql.contains(r#"e."type" = 'X'"#), "got: {sql}");
     }
 
     #[test]
