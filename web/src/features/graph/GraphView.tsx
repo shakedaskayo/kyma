@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Network } from "lucide-react";
 import { useGraphStore } from "./graph-store";
-import { useGraphOverview, useExpandNeighbors } from "./useGraph";
+import { useGraphOverview, useExpandNeighbors, useGraphList } from "./useGraph";
 import { getNode, type GraphNode, type GraphRelationship } from "@/sdk/graph";
 import { useSession } from "@/sdk/session";
 import { GraphCanvas } from "./GraphCanvas";
@@ -11,6 +11,7 @@ import { CanvasToolbar } from "./CanvasToolbar";
 
 export function GraphView() {
   const graph = useGraphStore((s) => s.graph);
+  const setGraph = useGraphStore((s) => s.setGraph);
   const layout = useGraphStore((s) => s.layout);
   const setLayout = useGraphStore((s) => s.setLayout);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
@@ -22,6 +23,7 @@ export function GraphView() {
 
   const overview = useGraphOverview(graph);
   const expand = useExpandNeighbors(graph);
+  const graphList = useGraphList();
   const { endpoint, token } = useSession();
 
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -63,6 +65,24 @@ export function GraphView() {
   return (
     <div className="relative flex h-full w-full">
       <div className="relative flex-1">
+        <div className="pointer-events-auto absolute left-3 top-3 z-20">
+          <select
+            value={graph}
+            onChange={(e) => setGraph(e.target.value)}
+            className="rounded-md border border-border bg-background/90 px-2 py-1 text-xs shadow-sm backdrop-blur focus:outline-none"
+            title="Graph"
+          >
+            {(graphList.data && graphList.data.length > 0
+              ? graphList.data
+              : [{ name: "schema", kind: "schema", description: "" }]
+            ).map((g) => (
+              <option key={g.name} value={g.name}>
+                {g.name}
+                {g.kind === "stored" ? " (stored)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
         {overview.isLoading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground">
             Loading graph…
