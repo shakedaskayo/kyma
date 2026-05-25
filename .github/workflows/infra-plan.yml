@@ -1,0 +1,48 @@
+name: infra-plan
+on:
+  pull_request:
+    paths: ["infra/**", ".tflint.hcl", ".github/workflows/infra-*.yml"]
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+jobs:
+  plan:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        env: [dev]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: fmt
+        run: terraform fmt -check -recursive infra
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+      - name: tflint
+        run: tflint --init && tflint --recursive
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: init
+        run: terraform -chdir=infra/envs/${{ matrix.env }} init
+
+      - name: validate
+        run: terraform -chdir=infra/envs/${{ matrix.env }} validate -no-color
+
+      - name: plan
+        env:
+          TF_VAR_supabase_org_id: ${{ secrets.SUPABASE_ORG_ID }}
+          TF_VAR_supabase_db_pass: ${{ secrets.SUPABASE_DB_PASS }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: terraform -chdir=infra/envs/${{ matrix.env }} plan -no-color

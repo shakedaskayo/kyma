@@ -34,6 +34,7 @@ architecture and `docs/cloud/decisions.md` for locked decisions.
 The infra workflows authenticate to AWS via GitHub OIDC and need these GitHub
 Actions secrets set on the repo (no long-lived AWS keys anywhere):
 - `AWS_CI_ROLE_ARN` — the `ci_role_arn` output from `bootstrap/`.
-- `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASS` — Supabase management API + DB pass.
+- `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASS`, `SUPABASE_ORG_ID` — Supabase
+  management API token, DB password, and owning org id.
 - `STRIPE_API_KEY` — Stripe secret key (test mode for `dev`).
 - `RAILWAY_TOKEN` — Railway account/project token (or CLI fallback token).
