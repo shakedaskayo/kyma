@@ -14,4 +14,7 @@ pub use provider::GraphProvider;
 // TODO(G1a Task 5): re-export SchemaGraphProvider
 // pub use schema_graph::SchemaGraphProvider;
 pub use source::{ColumnDef, SchemaSource};
-pub use types::*;
+pub use types::{
+    Direction, EdgeExpansion, GraphNode, GraphPayload, GraphRef, GraphRelationship,
+    GraphSchema, GraphStats, NodeMetadata, Props, SearchHits,
+};
