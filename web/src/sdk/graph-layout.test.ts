@@ -26,3 +26,14 @@ test("kyma label colors resolve; unknown labels still get a color", () => {
   expect(typeof getLabelColor("SomethingUnknown")).toBe("string");
   expect(getRelationshipColor("REFERENCES")).toBe("#94a3b8");
 });
+
+test("radial layout positions every node with finite coords", () => {
+  const ids = ["a", "b", "c", "d", "e"];
+  const pos = computeLayout("radial", ids.map((id) => ({ id })), [], 800, 600);
+  expect(pos.size).toBe(5);
+  for (const id of ids) {
+    const p = pos.get(id)!;
+    expect(Number.isFinite(p.x)).toBe(true);
+    expect(Number.isFinite(p.y)).toBe(true);
+  }
+});

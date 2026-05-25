@@ -95,8 +95,10 @@ export async function getOverview(
 }
 
 export async function getStats(args: GraphArgs & { realm?: string }): Promise<GraphStats> {
-  const qs = args.realm ? `?realm=${encodeURIComponent(args.realm)}` : "";
-  const res = await fetch(`${base(args.endpoint)}/v1/graph/${args.graph}/stats${qs}`, {
+  const q = new URLSearchParams();
+  if (args.realm) q.set("realm", args.realm);
+  const qs = q.toString();
+  const res = await fetch(`${base(args.endpoint)}/v1/graph/${args.graph}/stats${qs ? `?${qs}` : ""}`, {
     headers: headers(args.token),
   });
   return handleResponse<GraphStats>(res);

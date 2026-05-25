@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
-import { getOverview, getNode, searchNodes, expandNeighbors } from "./graph";
+import { getOverview, getNode, searchNodes, expandNeighbors, getStats, getSubgraph, listGraphs } from "./graph";
 
 const mockFetch = vi.fn();
 beforeEach(() => {
@@ -50,4 +50,31 @@ test("expandNeighbors POSTs node_ids + direction", async () => {
 test("throws on 401", async () => {
   mockFetch.mockResolvedValue(new Response("no", { status: 401 }));
   await expect(getOverview({ ...base, graph: "schema" })).rejects.toThrow(/unauthorized/i);
+});
+
+test("getOverview without limit/realm omits the query string", async () => {
+  mockFetch.mockResolvedValue(ok({ stats: { total_nodes: 0, total_relationships: 0, label_counts: {}, relationship_type_counts: {} }, nodes: [], edges: [] }));
+  await getOverview({ ...base, graph: "schema" });
+  const [url] = mockFetch.mock.calls[0];
+  expect(url).toBe("http://localhost:7070/v1/graph/schema/overview");
+});
+
+test("getSubgraph encodes the id and sends depth", async () => {
+  mockFetch.mockResolvedValue(ok({ stats: { total_nodes: 0, total_relationships: 0, label_counts: {}, relationship_type_counts: {} }, nodes: [], edges: [] }));
+  await getSubgraph({ ...base, graph: "schema", id: "default::orders", depth: 3 });
+  const [url] = mockFetch.mock.calls[0];
+  expect(url).toBe("http://localhost:7070/v1/graph/schema/nodes/default%3A%3Aorders/subgraph?depth=3");
+});
+
+test("getStats sends realm query param", async () => {
+  mockFetch.mockResolvedValue(ok({ total_nodes: 0, total_relationships: 0, label_counts: {}, relationship_type_counts: {} }));
+  await getStats({ ...base, graph: "schema", realm: "default" });
+  const [url] = mockFetch.mock.calls[0];
+  expect(url).toBe("http://localhost:7070/v1/graph/schema/stats?realm=default");
+});
+
+test("listGraphs GETs /v1/graph and returns refs", async () => {
+  mockFetch.mockResolvedValue(ok([{ name: "schema", kind: "schema", description: "x" }]));
+  const refs = await listGraphs(base);
+  expect(refs[0].name).toBe("schema");
 });
