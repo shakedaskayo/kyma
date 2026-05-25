@@ -5,11 +5,14 @@
 //! narrow [`SchemaSource`] trait rather than the full catalog, so providers
 //! are unit-testable without a database.
 
+pub mod executor;
 pub mod provider;
 pub mod schema_graph;
 pub mod source;
+pub mod stored_graph;
 pub mod types;
 
+pub use executor::{GraphQueryExecutor, JsonRow, StoredGraphConfig};
 pub use provider::GraphProvider;
 pub use schema_graph::SchemaGraphProvider;
 pub use source::{ColumnDef, SchemaSource};
