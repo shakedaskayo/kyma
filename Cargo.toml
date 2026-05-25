@@ -135,6 +135,7 @@ kyma-ingest-rest       = { path = "crates/kyma-ingest-rest" }
 kyma-ingest-filedrop   = { path = "crates/kyma-ingest-filedrop" }
 kyma-ingest-otlp       = { path = "crates/kyma-ingest-otlp" }
 kyma-ingest-kafka      = { path = "crates/kyma-ingest-kafka" }
+kyma-graph             = { path = "crates/kyma-graph" }
 kyma-kql               = { path = "crates/kyma-kql" }
 kyma-compaction        = { path = "crates/kyma-compaction" }
 kyma-connectors        = { path = "crates/kyma-connectors" }
