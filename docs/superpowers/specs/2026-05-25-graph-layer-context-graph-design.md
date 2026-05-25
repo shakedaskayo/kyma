@@ -256,3 +256,21 @@ We write **and execute G1 first**; G2–G4 each get their own plan afterward.
 - Whether per-column schema-graph nodes are worth the clutter, or columns stay as node props with a depth toggle.
 - The precise object-storage key layout for sidecar graph indices (G3, but decided early so G1 schemas don't fight it).
 - Confirm current format-v1 status to double-check the sidecar-index decision is still the right call (vs folding into format-v1 if still open).
+
+---
+
+## 11. G1a acceptance notes & deferred follow-ups
+
+**G1a is complete and accepted** (2026-05-25): the `kyma-graph` crate (`GraphProvider` trait, `SchemaGraphProvider`, wire types) + read-side `/v1/graph/*` endpoints in `kyma-server` over the schema-graph. `kyma-graph`: 13/13 tests; `kyma-server` `graph_handler`: 7/7; scoped build clean. (The full-workspace `cargo build` fails only on `kyma-web-assets` needing `web/dist`, which the web phase G1c/G1d builds — `kyma-server` pulls that crate only behind the optional `web-ui` feature, so it is not a graph regression.)
+
+**Contract reality for the G1c TypeScript types (code against THESE, not the §5.3 sketch):**
+- `search` returns `{ hits, total, limit, offset }` — there is no `took_ms`. Drop `took_ms` from the §5.3 sketch.
+- `subgraph` returns a full `GraphPayload` `{ stats, nodes, edges }` (stats included), not just `{ nodes, edges }`.
+- `Direction` deserializes **strict lowercase** (`forward`/`backward`/`both`); omitted defaults to `both`. A non-lowercase value yields a raw 422 that bypasses the `{"error":{...}}` envelope. **G1c action:** document lowercase in the client, or add a tolerant deserializer server-side.
+- Node ids are `"{db}::{table}"` and ride in the URL path (`/v1/graph/:graph/nodes/:id`). Fine for schema-graph ids (no `/`). **G1b action:** when stored-graph node ids become free-form (may contain `/`), move the id off the path segment (query param / body / base64url) for `node` + `subgraph`.
+
+**Deferred (do not inherit as a baseline in later phases):**
+- `node`/`neighbors`/`subgraph` currently rebuild the whole schema-graph per request then filter — acceptable at schema-graph scale, but the G1b `StoredGraphProvider` + G3 indexing must implement targeted lookups, not "rebuild everything."
+- Edge inference is the name-based `<x>_id` heuristic; spec §3.3's value-based `find_references_to` inference is deliberately deferred.
+- The `CatalogSchemaSource` adapter uses default-tenant `Catalog` methods (same as the existing `/v1/catalog/schema` handler) — no new tenancy gap, but pick up the `*_in_tenant` variants when server-wide multi-tenant scoping lands.
+- `ensure_schema` (the `graph == "schema"` 404 gate) is the right seam: G1b replaces it with a registry lookup (synthetic `schema` + registered graphs) returning the same 404 envelope.
