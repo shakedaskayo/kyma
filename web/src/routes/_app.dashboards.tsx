@@ -32,7 +32,7 @@ function DashboardsListPage() {
     queryKey: ["dashboards", endpoint],
     queryFn: () => listDashboards({ endpoint, token }),
     staleTime: 30_000,
-    enabled: Boolean(endpoint && token),
+    enabled: Boolean(endpoint),
   });
 
   const { mutate: create, isPending } = useMutation({

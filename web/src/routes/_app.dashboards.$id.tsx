@@ -72,7 +72,7 @@ function DashboardPage() {
     queryKey: ["dashboard", id, endpoint],
     queryFn: () => getDashboard({ endpoint, token, id }),
     staleTime: 30_000,
-    enabled: Boolean(endpoint && token && id),
+    enabled: Boolean(endpoint && id),
   });
 
   // ── draft state ──────────────────────────────────────────────────────────────
