@@ -34,6 +34,8 @@ pub trait GraphProvider: Send + Sync {
         limit: usize,
         offset: usize,
     ) -> anyhow::Result<SearchHits>;
+    /// Node and relationship counts, optionally scoped to a single realm.
     async fn stats(&self, realm: Option<&str>) -> anyhow::Result<GraphStats>;
+    /// Structural summary: known node kinds, edge types, and property keys per kind.
     async fn schema(&self) -> anyhow::Result<GraphSchema>;
 }

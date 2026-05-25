@@ -1,5 +1,6 @@
 [package]
 name = "kyma-graph"
+description = "Property-graph layer for kyma: wire types, the SchemaSource catalog interface, and the GraphProvider abstraction."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

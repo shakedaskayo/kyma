@@ -46,20 +46,20 @@ pub struct GraphStats {
     pub relationship_type_counts: BTreeMap<String, usize>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GraphPayload {
     pub stats: GraphStats,
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphRelationship>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EdgeExpansion {
     pub edges: Vec<GraphRelationship>,
     pub new_node_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SearchHits {
     pub hits: Vec<GraphNode>,
     pub total: usize,
@@ -67,7 +67,7 @@ pub struct SearchHits {
     pub offset: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GraphSchema {
     pub node_kinds: Vec<String>,
     pub edge_types: Vec<String>,
@@ -75,7 +75,7 @@ pub struct GraphSchema {
 }
 
 /// One entry in the `GET /v1/graph` listing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GraphRef {
     pub name: String,
     /// `"schema"` (synthetic) or `"stored"` (registered — later).
@@ -96,7 +96,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn graph_node_serializes_to_agentcy_shape() {
+    fn graph_node_serializes_to_wire_shape() {
         let node = GraphNode {
             id: "default::otel_logs".into(),
             labels: vec!["Table".into()],
