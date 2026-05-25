@@ -1,6 +1,7 @@
 //! The synthetic schema-graph: the catalog rendered as a property-graph.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
@@ -10,6 +11,9 @@ use crate::types::{
     Direction, EdgeExpansion, GraphNode, GraphPayload, GraphRelationship, GraphSchema, GraphStats,
     NodeMetadata, Props, SearchHits,
 };
+
+// The schema graph is timeless; use a fixed stable timestamp for deterministic JSON.
+const SCHEMA_TS: &str = "1970-01-01T00:00:00Z";
 
 /// Stable node id for a table.
 fn table_node_id(database: &str, table: &str) -> String {
@@ -62,8 +66,6 @@ pub(crate) fn infer_edges(
     edges
 }
 
-use std::sync::Arc;
-
 /// Synthetic graph computed live from a [`SchemaSource`]. Cheap to construct;
 /// each call snapshots the catalog (the server already caches schema reads).
 pub struct SchemaGraphProvider {
@@ -82,7 +84,6 @@ impl SchemaGraphProvider {
         &self,
         realm: Option<&str>,
     ) -> anyhow::Result<(Vec<GraphNode>, Vec<GraphRelationship>)> {
-        let now = "1970-01-01T00:00:00Z".to_string();
         let mut nodes = Vec::new();
         let mut edges = Vec::new();
         for db in self.source.databases().await? {
@@ -112,8 +113,8 @@ impl SchemaGraphProvider {
                     labels: vec!["Table".into()],
                     properties: props,
                     metadata: NodeMetadata {
-                        created_at: now.clone(),
-                        updated_at: now.clone(),
+                        created_at: SCHEMA_TS.into(),
+                        updated_at: SCHEMA_TS.into(),
                         source_type: Some("schema".into()),
                         source_id: None,
                         realm: db.clone(),
@@ -149,6 +150,7 @@ fn compute_stats(nodes: &[GraphNode], edges: &[GraphRelationship]) -> GraphStats
 impl GraphProvider for SchemaGraphProvider {
     async fn overview(&self, realm: Option<&str>, limit: usize) -> anyhow::Result<GraphPayload> {
         let (mut nodes, edges) = self.build(realm).await?;
+        // stats reflect the FULL catalog; nodes/edges below are the capped view, so stats.total_* may exceed the returned slice lengths.
         let stats = compute_stats(&nodes, &edges);
         if nodes.len() > limit {
             nodes.truncate(limit);
@@ -173,6 +175,7 @@ impl GraphProvider for SchemaGraphProvider {
         _only_internal: bool,
         limit: usize,
     ) -> anyhow::Result<EdgeExpansion> {
+        // `only_internal` is N/A for the schema graph: every node is internal by definition.
         let (_, all_edges) = self.build(None).await?;
         let idset: std::collections::HashSet<&String> = ids.iter().collect();
         let mut edges = Vec::new();
@@ -242,7 +245,8 @@ impl GraphProvider for SchemaGraphProvider {
         let mut matched: Vec<GraphNode> = nodes
             .into_iter()
             .filter(|n| {
-                let name_ok = n.id.to_lowercase().contains(&needle);
+                let table_name = n.id.rsplit("::").next().unwrap_or(n.id.as_str());
+                let name_ok = table_name.to_lowercase().contains(&needle);
                 let label_ok = labels.is_empty() || labels.iter().any(|l| n.labels.contains(l));
                 name_ok && label_ok
             })
@@ -392,10 +396,65 @@ mod provider_tests {
     }
 
     #[tokio::test]
+    async fn search_does_not_match_database_prefix() {
+        let p = provider();
+        // "default" is the database name (part of every id) but not a table name.
+        let hits = p.search("default", &[], None, 10, 0).await.unwrap();
+        assert_eq!(hits.total, 0, "search must match table names, not the db prefix");
+        // sanity: a real table-name substring still matches
+        let hits2 = p.search("ord", &[], None, 10, 0).await.unwrap();
+        assert_eq!(hits2.total, 1);
+    }
+
+    #[tokio::test]
     async fn schema_reports_table_kind_and_references_edge() {
         let p = provider();
         let s = p.schema().await.unwrap();
         assert_eq!(s.node_kinds, vec!["Table".to_string()]);
         assert_eq!(s.edge_types, vec!["REFERENCES".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn overview_caps_nodes_but_stats_reflect_full_graph() {
+        let p = provider();
+        let payload = p.overview(None, 1).await.unwrap();
+        assert_eq!(payload.nodes.len(), 1, "nodes capped to limit");
+        assert_eq!(payload.stats.total_nodes, 2, "stats reflect full graph");
+        // the single FK edge needs both endpoints; with only 1 node kept it's filtered out
+        assert_eq!(payload.edges.len(), 0);
+        assert_eq!(payload.stats.total_relationships, 1);
+    }
+
+    struct ChainSource;
+
+    #[async_trait]
+    impl SchemaSource for ChainSource {
+        async fn databases(&self) -> anyhow::Result<Vec<String>> {
+            Ok(vec!["default".into()])
+        }
+        async fn tables(&self, _db: &str) -> anyhow::Result<Vec<String>> {
+            Ok(vec!["as_".into(), "bs".into(), "cs".into()])
+        }
+        async fn columns(&self, _db: &str, table: &str) -> anyhow::Result<Vec<ColumnDef>> {
+            // as_ -> bs (via b_id), bs -> cs (via c_id)
+            Ok(match table {
+                "as_" => vec![col("id", "string"), col("b_id", "string")],
+                "bs" => vec![col("id", "string"), col("c_id", "string")],
+                "cs" => vec![col("id", "string")],
+                _ => vec![],
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn subgraph_two_hops_collects_chain() {
+        let p = SchemaGraphProvider::new(std::sync::Arc::new(ChainSource));
+        // depth 2 from as_ should reach bs (hop 1) and cs (hop 2)
+        let sg = p.subgraph("default::as_", 2).await.unwrap();
+        let ids: std::collections::HashSet<String> = sg.nodes.iter().map(|n| n.id.clone()).collect();
+        assert!(ids.contains("default::as_"));
+        assert!(ids.contains("default::bs"));
+        assert!(ids.contains("default::cs"));
+        assert_eq!(sg.edges.len(), 2);
     }
 }
