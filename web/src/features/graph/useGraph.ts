@@ -15,67 +15,67 @@ import {
 } from "@/sdk/graph";
 
 export function useGraphList() {
-  const { endpoint, token } = useSession();
+  const { endpoint, token, database } = useSession();
   return useQuery({
-    queryKey: ["graph", "list", endpoint],
-    queryFn: () => listGraphs({ endpoint, token }),
+    queryKey: ["graph", "list", endpoint, database],
+    queryFn: () => listGraphs({ endpoint, token, database }),
     enabled: Boolean(endpoint && token),
     staleTime: 5 * 60_000,
   });
 }
 
 export function useGraphOverview(graph: string, realm?: string, limit = 800) {
-  const { endpoint, token } = useSession();
+  const { endpoint, token, database } = useSession();
   return useQuery<GraphPayload>({
-    queryKey: ["graph", "overview", endpoint, graph, realm ?? null, limit],
-    queryFn: () => getOverview({ endpoint, token, graph, realm, limit }),
+    queryKey: ["graph", "overview", endpoint, database, graph, realm ?? null, limit],
+    queryFn: () => getOverview({ endpoint, token, database, graph, realm, limit }),
     enabled: Boolean(endpoint && token && graph),
   });
 }
 
 export function useGraphStats(graph: string, realm?: string) {
-  const { endpoint, token } = useSession();
+  const { endpoint, token, database } = useSession();
   return useQuery({
-    queryKey: ["graph", "stats", endpoint, graph, realm ?? null],
-    queryFn: () => getStats({ endpoint, token, graph, realm }),
+    queryKey: ["graph", "stats", endpoint, database, graph, realm ?? null],
+    queryFn: () => getStats({ endpoint, token, database, graph, realm }),
     enabled: Boolean(endpoint && token && graph),
   });
 }
 
 export function useGraphSchema(graph: string) {
-  const { endpoint, token } = useSession();
+  const { endpoint, token, database } = useSession();
   return useQuery({
-    queryKey: ["graph", "schema", endpoint, graph],
-    queryFn: () => getGraphSchema({ endpoint, token, graph }),
+    queryKey: ["graph", "schema", endpoint, database, graph],
+    queryFn: () => getGraphSchema({ endpoint, token, database, graph }),
     enabled: Boolean(endpoint && token && graph),
     staleTime: 5 * 60_000,
   });
 }
 
 export function useGraphSubgraph(graph: string, id: string | null, depth = 2) {
-  const { endpoint, token } = useSession();
+  const { endpoint, token, database } = useSession();
   return useQuery<GraphPayload>({
-    queryKey: ["graph", "subgraph", endpoint, graph, id, depth],
-    queryFn: () => getSubgraph({ endpoint, token, graph, id: id!, depth }),
+    queryKey: ["graph", "subgraph", endpoint, database, graph, id, depth],
+    queryFn: () => getSubgraph({ endpoint, token, database, graph, id: id!, depth }),
     enabled: Boolean(endpoint && token && graph && id),
   });
 }
 
 /** Imperative neighbor expansion bound to the current session. */
 export function useExpandNeighbors(graph: string) {
-  const { endpoint, token } = useSession();
+  const { endpoint, token, database } = useSession();
   return useCallback(
     (nodeIds: string[], direction: Direction = "both"): Promise<EdgeExpansion> =>
-      apiExpandNeighbors({ endpoint, token, graph, nodeIds, direction }),
-    [endpoint, token, graph],
+      apiExpandNeighbors({ endpoint, token, database, graph, nodeIds, direction }),
+    [endpoint, token, database, graph],
   );
 }
 
 /** Imperative node search bound to the current session. */
 export function useSearchNodes(graph: string) {
-  const { endpoint, token } = useSession();
+  const { endpoint, token, database } = useSession();
   return useCallback(
-    (text: string) => searchNodes({ endpoint, token, graph, text }),
-    [endpoint, token, graph],
+    (text: string) => searchNodes({ endpoint, token, database, graph, text }),
+    [endpoint, token, database, graph],
   );
 }
