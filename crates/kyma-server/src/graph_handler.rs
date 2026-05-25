@@ -22,17 +22,17 @@ impl CatalogSchemaSource {
 #[async_trait]
 impl SchemaSource for CatalogSchemaSource {
     async fn databases(&self) -> anyhow::Result<Vec<String>> {
-        Ok(self.catalog.list_databases().await.map_err(|e| anyhow::anyhow!(e.to_string()))?)
+        Ok(self.catalog.list_databases().await.map_err(anyhow::Error::from)?)
     }
     async fn tables(&self, database: &str) -> anyhow::Result<Vec<String>> {
-        Ok(self.catalog.list_tables(database).await.map_err(|e| anyhow::anyhow!(e.to_string()))?)
+        Ok(self.catalog.list_tables(database).await.map_err(anyhow::Error::from)?)
     }
     async fn columns(&self, database: &str, table: &str) -> anyhow::Result<Vec<ColumnDef>> {
         let cols = self
             .catalog
             .get_table_columns(database, table)
             .await
-            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            .map_err(anyhow::Error::from)?;
         Ok(cols
             .into_iter()
             .map(|c| ColumnDef { name: c.name, type_: c.r#type, nullable: c.nullable })
@@ -339,5 +339,70 @@ mod tests {
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(v[0]["name"], "schema");
         assert_eq!(v[0]["kind"], "schema");
+    }
+
+    #[tokio::test]
+    async fn search_endpoint_returns_hits() {
+        let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
+        let app = graph_router(state);
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/graph/schema/search")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"text":"otel"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(v["total"].as_u64().unwrap() >= 1, "expected a hit for 'otel'");
+        assert!(v["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n["id"].as_str().unwrap().ends_with("::otel_logs")));
+    }
+
+    #[tokio::test]
+    async fn neighbors_endpoint_ok_shape_with_default_direction() {
+        let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
+        let app = graph_router(state);
+        // direction omitted -> exercises the serde default (Both); node id need not exist.
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/graph/schema/neighbors")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"node_ids":["default::otel_logs"]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(v["edges"].is_array());
+        assert!(v["new_node_ids"].is_array());
+    }
+
+    #[tokio::test]
+    async fn node_endpoint_404_for_missing() {
+        let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
+        let app = graph_router(state);
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/graph/schema/nodes/default::does_not_exist")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 }

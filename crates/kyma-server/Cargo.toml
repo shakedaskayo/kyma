@@ -11,7 +11,7 @@ workspace = true
 
 [dependencies]
 kyma-core.workspace = true
-kyma-graph = { path = "../kyma-graph" }
+kyma-graph.workspace = true
 anyhow = { workspace = true }
 kyma-plan.workspace = true
 kyma-exec.workspace = true
