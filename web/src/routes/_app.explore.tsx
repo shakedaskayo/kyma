@@ -46,7 +46,7 @@ function ExplorePage() {
     queryKey: ["schema", endpoint],
     queryFn: () => fetchSchema({ endpoint, token }),
     staleTime: 5 * 60_000,
-    enabled: Boolean(endpoint && token),
+    enabled: Boolean(endpoint),
   });
 
   // Build knownValues from FieldStats data (top-20 observed values per column)
