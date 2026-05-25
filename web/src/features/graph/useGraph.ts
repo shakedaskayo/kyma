@@ -19,7 +19,7 @@ export function useGraphList() {
   return useQuery({
     queryKey: ["graph", "list", endpoint, database],
     queryFn: () => listGraphs({ endpoint, token, database }),
-    enabled: Boolean(endpoint && token),
+    enabled: Boolean(endpoint),
     staleTime: 5 * 60_000,
   });
 }
@@ -29,7 +29,7 @@ export function useGraphOverview(graph: string, realm?: string, limit = 800) {
   return useQuery<GraphPayload>({
     queryKey: ["graph", "overview", endpoint, database, graph, realm ?? null, limit],
     queryFn: () => getOverview({ endpoint, token, database, graph, realm, limit }),
-    enabled: Boolean(endpoint && token && graph),
+    enabled: Boolean(endpoint && graph),
   });
 }
 
@@ -38,7 +38,7 @@ export function useGraphStats(graph: string, realm?: string) {
   return useQuery({
     queryKey: ["graph", "stats", endpoint, database, graph, realm ?? null],
     queryFn: () => getStats({ endpoint, token, database, graph, realm }),
-    enabled: Boolean(endpoint && token && graph),
+    enabled: Boolean(endpoint && graph),
   });
 }
 
@@ -47,7 +47,7 @@ export function useGraphSchema(graph: string) {
   return useQuery({
     queryKey: ["graph", "schema", endpoint, database, graph],
     queryFn: () => getGraphSchema({ endpoint, token, database, graph }),
-    enabled: Boolean(endpoint && token && graph),
+    enabled: Boolean(endpoint && graph),
     staleTime: 5 * 60_000,
   });
 }
@@ -57,7 +57,7 @@ export function useGraphSubgraph(graph: string, id: string | null, depth = 2) {
   return useQuery<GraphPayload>({
     queryKey: ["graph", "subgraph", endpoint, database, graph, id, depth],
     queryFn: () => getSubgraph({ endpoint, token, database, graph, id: id!, depth }),
-    enabled: Boolean(endpoint && token && graph && id),
+    enabled: Boolean(endpoint && graph && id),
   });
 }
 
