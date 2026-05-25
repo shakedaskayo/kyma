@@ -1,0 +1,14 @@
+# Non-secret example values for `envs/dev`. Copy to terraform.tfvars for local
+# plans, OR pass via TF_VAR_* env in CI. SECRETS NEVER GO IN A COMMITTED FILE.
+
+aws_region      = "us-east-1"
+supabase_org_id = "your-supabase-org-id"
+supabase_region = "us-east-1"
+
+# Secrets — supply via environment, not this file:
+#   TF_VAR_supabase_db_pass   (GH secret SUPABASE_DB_PASS)
+#   SUPABASE_ACCESS_TOKEN     (provider env)
+#   STRIPE_API_KEY            (provider env)
+#
+# gateway_principal_arn defaults to a TODO placeholder; set the real gateway
+# role ARN in C2.
