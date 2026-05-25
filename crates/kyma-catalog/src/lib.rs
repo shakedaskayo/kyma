@@ -27,7 +27,7 @@ use kyma_core::catalog::{
     BackgroundTask, Catalog, CleanupResult, ColumnInfo, ColumnPrune, Dashboard, DashboardPanel,
     DashboardPanelInput, DashboardUpdate, DashboardWithPanels, ExtentManifest, GraphRegistration,
     GraphSpec, IngestLedgerEntry, NodeInfo, NodeLease, NodeRole, PrunePredicate, SnapshotTxn,
-    TableConfig, TableRef,
+    TableConfig, TableRef, TokenPrincipal, User,
 };
 use kyma_core::errors::{CatalogError, Result};
 use kyma_core::tenant::TenantId;
@@ -1193,6 +1193,159 @@ impl Catalog for PostgresCatalog {
         Ok(res.rows_affected() > 0)
     }
 
+    // --- auth: users ---
+
+    async fn create_user_in_tenant(
+        &self,
+        tenant: TenantId,
+        username: &str,
+        password_hash: &str,
+        role: &str,
+    ) -> std::result::Result<User, CatalogError> {
+        let row = sqlx::query(
+            "INSERT INTO users (tenant_id, username, password_hash, role)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id, username, role, created_at, updated_at",
+        )
+        .bind(tenant.as_uuid())
+        .bind(username)
+        .bind(password_hash)
+        .bind(role)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        row_to_user(&row)
+    }
+
+    async fn get_user_with_hash_in_tenant(
+        &self,
+        tenant: TenantId,
+        username: &str,
+    ) -> std::result::Result<Option<(User, String)>, CatalogError> {
+        let maybe = sqlx::query(
+            "SELECT id, username, role, password_hash, created_at, updated_at
+             FROM users
+             WHERE tenant_id = $1 AND username = $2",
+        )
+        .bind(tenant.as_uuid())
+        .bind(username)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        let Some(row) = maybe else { return Ok(None) };
+        use sqlx::Row as _;
+        let hash: String = row.try_get("password_hash").map_err(sql_err)?;
+        let user = row_to_user(&row)?;
+        Ok(Some((user, hash)))
+    }
+
+    async fn count_users_in_tenant(
+        &self,
+        tenant: TenantId,
+    ) -> std::result::Result<u64, CatalogError> {
+        let (count,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM users WHERE tenant_id = $1")
+                .bind(tenant.as_uuid())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(count as u64)
+    }
+
+    // --- auth: api tokens ---
+
+    async fn insert_api_token_in_tenant(
+        &self,
+        tenant: TenantId,
+        token_hash: &[u8],
+        scopes: &str,
+        subject: Option<&str>,
+        kind: &str,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> std::result::Result<(), CatalogError> {
+        sqlx::query(
+            "INSERT INTO api_tokens (tenant_id, token_hash, scopes, subject, kind, expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(tenant.as_uuid())
+        .bind(token_hash)
+        .bind(scopes)
+        .bind(subject)
+        .bind(kind)
+        .bind(expires_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn lookup_api_token(
+        &self,
+        token_hash: &[u8],
+    ) -> std::result::Result<Option<TokenPrincipal>, CatalogError> {
+        let maybe = sqlx::query(
+            "SELECT tenant_id, scopes, subject
+             FROM api_tokens
+             WHERE token_hash = $1
+               AND revoked_at IS NULL
+               AND (expires_at IS NULL OR expires_at > now())",
+        )
+        .bind(token_hash)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        let Some(row) = maybe else { return Ok(None) };
+
+        use sqlx::Row as _;
+        let tenant_uuid: Uuid = row.try_get("tenant_id").map_err(sql_err)?;
+        let scopes: String = row.try_get("scopes").map_err(sql_err)?;
+        let subject: Option<String> = row.try_get("subject").map_err(sql_err)?;
+
+        // Resolve the highest-privilege role from the scopes string (mirrors db_backend.rs).
+        let role = scopes
+            .split(',')
+            .map(str::trim)
+            .filter(|s| matches!(*s, "admin" | "write" | "read"))
+            .max_by_key(|s| match *s {
+                "admin" => 2u8,
+                "write" => 1,
+                _ => 0,
+            })
+            .unwrap_or("read")
+            .to_owned();
+
+        // Fire-and-forget last_used_at update — ignore errors.
+        let _ = sqlx::query(
+            "UPDATE api_tokens SET last_used_at = now() WHERE token_hash = $1",
+        )
+        .bind(token_hash)
+        .execute(&self.pool)
+        .await;
+
+        Ok(Some(TokenPrincipal {
+            tenant: kyma_core::tenant::TenantId::from_uuid(tenant_uuid),
+            role,
+            subject,
+        }))
+    }
+
+    async fn revoke_api_token(
+        &self,
+        token_hash: &[u8],
+    ) -> std::result::Result<bool, CatalogError> {
+        let res = sqlx::query(
+            "UPDATE api_tokens
+             SET revoked_at = now()
+             WHERE token_hash = $1 AND revoked_at IS NULL",
+        )
+        .bind(token_hash)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(res.rows_affected() > 0)
+    }
+
     // --- schema-listing ---
 
     async fn list_databases_in_tenant(
@@ -1341,6 +1494,17 @@ fn row_to_panel(row: &sqlx::postgres::PgRow) -> std::result::Result<DashboardPan
         grid_w: row.try_get("grid_w").map_err(sql_err)?,
         grid_h: row.try_get("grid_h").map_err(sql_err)?,
         display_order: row.try_get("display_order").map_err(sql_err)?,
+    })
+}
+
+fn row_to_user(row: &sqlx::postgres::PgRow) -> std::result::Result<User, CatalogError> {
+    use sqlx::Row as _;
+    Ok(User {
+        id: row.try_get("id").map_err(sql_err)?,
+        username: row.try_get("username").map_err(sql_err)?,
+        role: row.try_get("role").map_err(sql_err)?,
+        created_at: row.try_get("created_at").map_err(sql_err)?,
+        updated_at: row.try_get("updated_at").map_err(sql_err)?,
     })
 }
 
