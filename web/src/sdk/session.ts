@@ -40,10 +40,11 @@ export const useSession = create<SessionState>()(
       database: "obs",
       set: (p) => set(p),
       reset: () => set({ endpoint: "", token: "", database: "obs" }),
-      isConfigured: () => {
-        const { endpoint, token } = get();
-        return endpoint.length > 0 && token.length > 0;
-      },
+      // Configured once we have a server endpoint. The token is optional — a
+      // kyma engine with auth disabled (empty KYMA_AUTH_TOKENS) accepts any
+      // bearer, so requiring a token here would trap unauthenticated dev on
+      // the settings page after Save + Connect.
+      isConfigured: () => get().endpoint.length > 0,
     }),
     {
       name: "kyma.session",

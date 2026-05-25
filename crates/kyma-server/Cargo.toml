@@ -11,6 +11,8 @@ workspace = true
 
 [dependencies]
 kyma-core.workspace = true
+kyma-graph.workspace = true
+anyhow = { workspace = true }
 kyma-plan.workspace = true
 kyma-exec.workspace = true
 kyma-kql.workspace = true

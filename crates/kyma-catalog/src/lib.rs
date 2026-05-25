@@ -25,8 +25,9 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use kyma_core::catalog::{
     BackgroundTask, Catalog, CleanupResult, ColumnInfo, ColumnPrune, Dashboard, DashboardPanel,
-    DashboardPanelInput, DashboardUpdate, DashboardWithPanels, ExtentManifest, IngestLedgerEntry,
-    NodeInfo, NodeLease, NodeRole, PrunePredicate, SnapshotTxn, TableConfig, TableRef,
+    DashboardPanelInput, DashboardUpdate, DashboardWithPanels, ExtentManifest, GraphRegistration,
+    GraphSpec, IngestLedgerEntry, NodeInfo, NodeLease, NodeRole, PrunePredicate, SnapshotTxn,
+    TableConfig, TableRef,
 };
 use kyma_core::errors::{CatalogError, Result};
 use kyma_core::tenant::TenantId;
@@ -1093,6 +1094,105 @@ impl Catalog for PostgresCatalog {
         Ok(result.rows_affected() > 0)
     }
 
+    // --- graphs ---
+
+    async fn create_graph_in_tenant(
+        &self,
+        tenant: TenantId,
+        database: &str,
+        name: &str,
+        spec: GraphSpec,
+    ) -> std::result::Result<GraphRegistration, CatalogError> {
+        let row = sqlx::query(
+            "INSERT INTO graph_registrations
+               (tenant_id, database, name, node_table, edge_table,
+                id_col, label_col, src_col, dst_col, type_col, realm_col)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+             RETURNING id, database, name, node_table, edge_table,
+                       id_col, label_col, src_col, dst_col, type_col, realm_col,
+                       created_at, updated_at",
+        )
+        .bind(tenant.as_uuid())
+        .bind(database)
+        .bind(name)
+        .bind(&spec.node_table)
+        .bind(&spec.edge_table)
+        .bind(&spec.id_col)
+        .bind(&spec.label_col)
+        .bind(&spec.src_col)
+        .bind(&spec.dst_col)
+        .bind(&spec.type_col)
+        .bind(spec.realm_col.as_deref())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        row_to_graph(&row)
+    }
+
+    async fn list_graphs_in_tenant(
+        &self,
+        tenant: TenantId,
+        database: &str,
+    ) -> std::result::Result<Vec<GraphRegistration>, CatalogError> {
+        let rows = sqlx::query(
+            "SELECT id, database, name, node_table, edge_table,
+                    id_col, label_col, src_col, dst_col, type_col, realm_col,
+                    created_at, updated_at
+             FROM graph_registrations
+             WHERE tenant_id = $1 AND database = $2
+             ORDER BY name",
+        )
+        .bind(tenant.as_uuid())
+        .bind(database)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        rows.iter().map(row_to_graph).collect()
+    }
+
+    async fn get_graph_in_tenant(
+        &self,
+        tenant: TenantId,
+        database: &str,
+        name: &str,
+    ) -> std::result::Result<Option<GraphRegistration>, CatalogError> {
+        let maybe = sqlx::query(
+            "SELECT id, database, name, node_table, edge_table,
+                    id_col, label_col, src_col, dst_col, type_col, realm_col,
+                    created_at, updated_at
+             FROM graph_registrations
+             WHERE tenant_id = $1 AND database = $2 AND name = $3",
+        )
+        .bind(tenant.as_uuid())
+        .bind(database)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        match maybe {
+            Some(row) => Ok(Some(row_to_graph(&row)?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn drop_graph_in_tenant(
+        &self,
+        tenant: TenantId,
+        database: &str,
+        name: &str,
+    ) -> std::result::Result<bool, CatalogError> {
+        let res = sqlx::query(
+            "DELETE FROM graph_registrations WHERE tenant_id = $1 AND database = $2 AND name = $3",
+        )
+        .bind(tenant.as_uuid())
+        .bind(database)
+        .bind(name)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(res.rows_affected() > 0)
+    }
+
     // --- schema-listing ---
 
     async fn list_databases_in_tenant(
@@ -1241,6 +1341,25 @@ fn row_to_panel(row: &sqlx::postgres::PgRow) -> std::result::Result<DashboardPan
         grid_w: row.try_get("grid_w").map_err(sql_err)?,
         grid_h: row.try_get("grid_h").map_err(sql_err)?,
         display_order: row.try_get("display_order").map_err(sql_err)?,
+    })
+}
+
+fn row_to_graph(row: &sqlx::postgres::PgRow) -> std::result::Result<GraphRegistration, CatalogError> {
+    use sqlx::Row as _;
+    Ok(GraphRegistration {
+        id: row.try_get("id").map_err(sql_err)?,
+        database: row.try_get("database").map_err(sql_err)?,
+        name: row.try_get("name").map_err(sql_err)?,
+        node_table: row.try_get("node_table").map_err(sql_err)?,
+        edge_table: row.try_get("edge_table").map_err(sql_err)?,
+        id_col: row.try_get("id_col").map_err(sql_err)?,
+        label_col: row.try_get("label_col").map_err(sql_err)?,
+        src_col: row.try_get("src_col").map_err(sql_err)?,
+        dst_col: row.try_get("dst_col").map_err(sql_err)?,
+        type_col: row.try_get("type_col").map_err(sql_err)?,
+        realm_col: row.try_get("realm_col").map_err(sql_err)?,
+        created_at: row.try_get("created_at").map_err(sql_err)?,
+        updated_at: row.try_get("updated_at").map_err(sql_err)?,
     })
 }
 

@@ -27,6 +27,9 @@ pub enum Token {
     Slash,
     Percent,
     Assign, // = (extend binding)
+    Colon,      // :
+    Arrow,      // -->
+    RightArrow, // ->
 }
 
 #[derive(Debug)]
@@ -90,9 +93,23 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
                 chars.next();
                 out.push(Token::Plus);
             }
+            ':' => {
+                chars.next();
+                out.push(Token::Colon);
+            }
             '-' => {
                 chars.next();
-                out.push(Token::Minus);
+                // Check for --> (Arrow) or -> (RightArrow); otherwise Minus.
+                if peek2(&chars, "->") {
+                    chars.next(); // consume '-'
+                    chars.next(); // consume '>'
+                    out.push(Token::Arrow);
+                } else if chars.peek() == Some(&'>') {
+                    chars.next(); // consume '>'
+                    out.push(Token::RightArrow);
+                } else {
+                    out.push(Token::Minus);
+                }
             }
             '*' => {
                 chars.next();
@@ -271,6 +288,59 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{tokenize, Token};
+
+    #[test]
+    fn lexes_graph_pattern_punctuation() {
+        use Token::*;
+        let t = tokenize("(a)-[e:T]->(b)").expect("lex");
+        assert_eq!(
+            t,
+            vec![
+                LParen,
+                Ident("a".into()),
+                RParen,
+                Minus,
+                LBracket,
+                Ident("e".into()),
+                Colon,
+                Ident("T".into()),
+                RBracket,
+                RightArrow,
+                LParen,
+                Ident("b".into()),
+                RParen
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_double_arrow() {
+        assert_eq!(
+            tokenize("src --> dst").expect("lex"),
+            vec![
+                Token::Ident("src".into()),
+                Token::Arrow,
+                Token::Ident("dst".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn minus_still_lexes_alone() {
+        assert_eq!(
+            tokenize("a - b").expect("lex"),
+            vec![
+                Token::Ident("a".into()),
+                Token::Minus,
+                Token::Ident("b".into())
+            ]
+        );
+    }
 }
 
 fn peek2(chars: &std::iter::Peekable<std::str::Chars<'_>>, tag: &str) -> bool {
