@@ -15,6 +15,7 @@ pub mod types;
 pub use executor::{GraphQueryExecutor, JsonRow, StoredGraphConfig};
 pub use provider::GraphProvider;
 pub use schema_graph::SchemaGraphProvider;
+pub use stored_graph::StoredGraphProvider;
 pub use source::{ColumnDef, SchemaSource};
 pub use types::{
     Direction, EdgeExpansion, GraphNode, GraphPayload, GraphRef, GraphRelationship,
