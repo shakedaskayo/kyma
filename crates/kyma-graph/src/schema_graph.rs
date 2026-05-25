@@ -62,6 +62,222 @@ pub(crate) fn infer_edges(
     edges
 }
 
+use std::sync::Arc;
+
+/// Synthetic graph computed live from a [`SchemaSource`]. Cheap to construct;
+/// each call snapshots the catalog (the server already caches schema reads).
+pub struct SchemaGraphProvider {
+    source: Arc<dyn SchemaSource>,
+}
+
+impl SchemaGraphProvider {
+    pub fn new(source: Arc<dyn SchemaSource>) -> Self {
+        Self { source }
+    }
+
+    /// Build the full node + edge set, optionally restricted to one realm
+    /// (= database). Timestamps are a fixed stable value (the schema graph is
+    /// timeless), keeping JSON deterministic.
+    async fn build(
+        &self,
+        realm: Option<&str>,
+    ) -> anyhow::Result<(Vec<GraphNode>, Vec<GraphRelationship>)> {
+        let now = "1970-01-01T00:00:00Z".to_string();
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        for db in self.source.databases().await? {
+            if let Some(r) = realm {
+                if r != db {
+                    continue;
+                }
+            }
+            let mut tables: Vec<(String, Vec<ColumnDef>)> = Vec::new();
+            for t in self.source.tables(&db).await? {
+                let cols = self.source.columns(&db, &t).await?;
+                tables.push((t, cols));
+            }
+            for (tname, cols) in &tables {
+                let mut props: Props = BTreeMap::new();
+                props.insert("database".into(), serde_json::json!(db));
+                props.insert("column_count".into(), serde_json::json!(cols.len()));
+                props.insert(
+                    "columns".into(),
+                    serde_json::json!(cols
+                        .iter()
+                        .map(|c| serde_json::json!({"name": c.name, "type": c.type_, "nullable": c.nullable}))
+                        .collect::<Vec<_>>()),
+                );
+                nodes.push(GraphNode {
+                    id: table_node_id(&db, tname),
+                    labels: vec!["Table".into()],
+                    properties: props,
+                    metadata: NodeMetadata {
+                        created_at: now.clone(),
+                        updated_at: now.clone(),
+                        source_type: Some("schema".into()),
+                        source_id: None,
+                        realm: db.clone(),
+                    },
+                });
+            }
+            edges.extend(infer_edges(&db, &tables));
+        }
+        Ok((nodes, edges))
+    }
+}
+
+fn compute_stats(nodes: &[GraphNode], edges: &[GraphRelationship]) -> GraphStats {
+    let mut label_counts: BTreeMap<String, usize> = BTreeMap::new();
+    for n in nodes {
+        for l in &n.labels {
+            *label_counts.entry(l.clone()).or_default() += 1;
+        }
+    }
+    let mut relationship_type_counts: BTreeMap<String, usize> = BTreeMap::new();
+    for e in edges {
+        *relationship_type_counts.entry(e.relationship_type.clone()).or_default() += 1;
+    }
+    GraphStats {
+        total_nodes: nodes.len(),
+        total_relationships: edges.len(),
+        label_counts,
+        relationship_type_counts,
+    }
+}
+
+#[async_trait]
+impl GraphProvider for SchemaGraphProvider {
+    async fn overview(&self, realm: Option<&str>, limit: usize) -> anyhow::Result<GraphPayload> {
+        let (mut nodes, edges) = self.build(realm).await?;
+        let stats = compute_stats(&nodes, &edges);
+        if nodes.len() > limit {
+            nodes.truncate(limit);
+        }
+        let kept: std::collections::HashSet<&String> = nodes.iter().map(|n| &n.id).collect();
+        let edges = edges
+            .into_iter()
+            .filter(|e| kept.contains(&e.source_id) && kept.contains(&e.target_id))
+            .collect();
+        Ok(GraphPayload { stats, nodes, edges })
+    }
+
+    async fn node(&self, id: &str) -> anyhow::Result<Option<GraphNode>> {
+        let (nodes, _) = self.build(None).await?;
+        Ok(nodes.into_iter().find(|n| n.id == id))
+    }
+
+    async fn neighbors(
+        &self,
+        ids: &[String],
+        dir: Direction,
+        _only_internal: bool,
+        limit: usize,
+    ) -> anyhow::Result<EdgeExpansion> {
+        let (_, all_edges) = self.build(None).await?;
+        let idset: std::collections::HashSet<&String> = ids.iter().collect();
+        let mut edges = Vec::new();
+        let mut new_ids = Vec::new();
+        for e in all_edges {
+            let touches = match dir {
+                Direction::Forward => idset.contains(&e.source_id),
+                Direction::Backward => idset.contains(&e.target_id),
+                Direction::Both => idset.contains(&e.source_id) || idset.contains(&e.target_id),
+            };
+            if !touches {
+                continue;
+            }
+            for end in [&e.source_id, &e.target_id] {
+                if !idset.contains(end) && !new_ids.contains(end) {
+                    new_ids.push(end.clone());
+                }
+            }
+            edges.push(e);
+            if edges.len() >= limit {
+                break;
+            }
+        }
+        Ok(EdgeExpansion { edges, new_node_ids: new_ids })
+    }
+
+    async fn subgraph(&self, id: &str, depth: usize) -> anyhow::Result<GraphPayload> {
+        let (all_nodes, all_edges) = self.build(None).await?;
+        let mut frontier = vec![id.to_string()];
+        let mut visited: std::collections::HashSet<String> = frontier.iter().cloned().collect();
+        let mut kept_edges: Vec<GraphRelationship> = Vec::new();
+        for _ in 0..depth {
+            let mut next = Vec::new();
+            for e in &all_edges {
+                let (a, b) = (&e.source_id, &e.target_id);
+                let hit = frontier.contains(a) || frontier.contains(b);
+                if hit && !kept_edges.iter().any(|k| k.id == e.id) {
+                    kept_edges.push(e.clone());
+                    for end in [a, b] {
+                        if visited.insert(end.clone()) {
+                            next.push(end.clone());
+                        }
+                    }
+                }
+            }
+            if next.is_empty() {
+                break;
+            }
+            frontier = next;
+        }
+        let nodes: Vec<GraphNode> =
+            all_nodes.into_iter().filter(|n| visited.contains(&n.id)).collect();
+        let stats = compute_stats(&nodes, &kept_edges);
+        Ok(GraphPayload { stats, nodes, edges: kept_edges })
+    }
+
+    async fn search(
+        &self,
+        text: &str,
+        labels: &[String],
+        realm: Option<&str>,
+        limit: usize,
+        offset: usize,
+    ) -> anyhow::Result<SearchHits> {
+        let (nodes, _) = self.build(realm).await?;
+        let needle = text.to_lowercase();
+        let mut matched: Vec<GraphNode> = nodes
+            .into_iter()
+            .filter(|n| {
+                let name_ok = n.id.to_lowercase().contains(&needle);
+                let label_ok = labels.is_empty() || labels.iter().any(|l| n.labels.contains(l));
+                name_ok && label_ok
+            })
+            .collect();
+        let total = matched.len();
+        let hits = matched.drain(..).skip(offset).take(limit).collect();
+        Ok(SearchHits { hits, total, limit, offset })
+    }
+
+    async fn stats(&self, realm: Option<&str>) -> anyhow::Result<GraphStats> {
+        let (nodes, edges) = self.build(realm).await?;
+        Ok(compute_stats(&nodes, &edges))
+    }
+
+    async fn schema(&self) -> anyhow::Result<GraphSchema> {
+        let (nodes, edges) = self.build(None).await?;
+        let mut edge_types: Vec<String> =
+            edges.iter().map(|e| e.relationship_type.clone()).collect();
+        edge_types.sort();
+        edge_types.dedup();
+        let mut property_keys: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        if !nodes.is_empty() {
+            property_keys.insert(
+                "Table".into(),
+                vec!["database".into(), "column_count".into(), "columns".into()],
+            );
+        }
+        Ok(GraphSchema {
+            node_kinds: if nodes.is_empty() { vec![] } else { vec!["Table".into()] },
+            edge_types,
+            property_keys,
+        })
+    }
+}
+
 #[cfg(test)]
 mod edge_tests {
     use super::*;
@@ -98,5 +314,88 @@ mod edge_tests {
     fn plain_id_column_is_not_an_edge() {
         let tables = vec![("users".to_string(), vec![col("id")])];
         assert!(infer_edges("default", &tables).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod provider_tests {
+    use super::*;
+    use crate::source::{ColumnDef, SchemaSource};
+
+    struct FakeSource;
+
+    fn col(name: &str, t: &str) -> ColumnDef {
+        ColumnDef { name: name.into(), type_: t.into(), nullable: true }
+    }
+
+    #[async_trait]
+    impl SchemaSource for FakeSource {
+        async fn databases(&self) -> anyhow::Result<Vec<String>> {
+            Ok(vec!["default".into()])
+        }
+        async fn tables(&self, _db: &str) -> anyhow::Result<Vec<String>> {
+            Ok(vec!["users".into(), "orders".into()])
+        }
+        async fn columns(&self, _db: &str, table: &str) -> anyhow::Result<Vec<ColumnDef>> {
+            Ok(match table {
+                "users" => vec![col("id", "string"), col("email", "string")],
+                "orders" => vec![col("id", "string"), col("user_id", "string")],
+                _ => vec![],
+            })
+        }
+    }
+
+    fn provider() -> SchemaGraphProvider {
+        SchemaGraphProvider::new(std::sync::Arc::new(FakeSource))
+    }
+
+    #[tokio::test]
+    async fn overview_has_two_table_nodes_and_one_edge() {
+        let p = provider();
+        let payload = p.overview(None, 100).await.unwrap();
+        assert_eq!(payload.nodes.len(), 2);
+        assert!(payload.nodes.iter().all(|n| n.labels == vec!["Table".to_string()]));
+        assert!(payload.nodes.iter().any(|n| n.id == "default::users"));
+        assert_eq!(payload.edges.len(), 1);
+        assert_eq!(payload.stats.total_nodes, 2);
+        assert_eq!(payload.stats.total_relationships, 1);
+        assert_eq!(payload.stats.label_counts["Table"], 2);
+    }
+
+    #[tokio::test]
+    async fn node_lookup_returns_table_props() {
+        let p = provider();
+        let n = p.node("default::orders").await.unwrap().unwrap();
+        assert_eq!(n.metadata.realm, "default");
+        assert_eq!(n.properties["database"], "default");
+        assert_eq!(n.properties["column_count"], 2);
+        assert!(p.node("default::nope").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn search_filters_by_name_substring() {
+        let p = provider();
+        let hits = p.search("ord", &[], None, 10, 0).await.unwrap();
+        assert_eq!(hits.total, 1);
+        assert_eq!(hits.hits[0].id, "default::orders");
+    }
+
+    #[tokio::test]
+    async fn neighbors_of_orders_returns_the_reference_edge() {
+        let p = provider();
+        let exp = p
+            .neighbors(&["default::orders".into()], Direction::Both, true, 100)
+            .await
+            .unwrap();
+        assert_eq!(exp.edges.len(), 1);
+        assert_eq!(exp.new_node_ids, vec!["default::users".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn schema_reports_table_kind_and_references_edge() {
+        let p = provider();
+        let s = p.schema().await.unwrap();
+        assert_eq!(s.node_kinds, vec!["Table".to_string()]);
+        assert_eq!(s.edge_types, vec!["REFERENCES".to_string()]);
     }
 }
