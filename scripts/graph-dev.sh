@@ -49,7 +49,7 @@ KYMA_GRPC_ADDR="127.0.0.1:9090" \
 KYMA_OTLP_ADDR="off" \
 KYMA_PATH_PREFIX="kyma" \
 KYMA_AUTH_TOKENS="$TOKEN" \
-  ./target/debug/kyma-bin &
+  ./target/debug/kyma &
 SERVER_PID=$!
 trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
 
