@@ -1,3 +1,4 @@
+# tfsec:ignore:aws-s3-enable-bucket-logging access logging needs a separate log-target bucket; tracked for C5 hardening.
 resource "aws_s3_bucket" "this" {
   bucket = var.bucket_name
   tags   = { Project = "kyma-cloud", Env = var.env, ManagedBy = "terraform" }
@@ -8,6 +9,7 @@ resource "aws_s3_bucket_versioning" "this" {
   versioning_configuration { status = "Enabled" }
 }
 
+# tfsec:ignore:aws-s3-encryption-customer-key SSE-KMS with the AWS-managed key; CMK migration is part of the C5 encryption-at-rest audit.
 resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
   bucket = aws_s3_bucket.this.id
   rule {
