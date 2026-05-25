@@ -234,6 +234,8 @@ infra/
 Each stub seeds a per-spec brainstorming/writing-plans cycle. Not implementation plans.
 
 ### C0 — Foundations
+**Status:** 🟢 IaC authored + validated locally — see `docs/superpowers/plans/2026-05-25-c0-foundations.md`. All §7 decisions + 3 open items locked in `docs/cloud/decisions.md`; bootstrap, 5 modules, and `envs/dev` pass `terraform validate`; `tflint --recursive` and `tfsec` clean. **Operator steps pending** (need cloud creds, not done here): the one-time `bootstrap` apply + state migration, the GitHub Actions secrets, and verifying the live OIDC plan on a PR.
+
 - Stand up bootstrap AWS account, TF remote state, GitHub OIDC.
 - Author `infra/modules` skeletons + `envs/dev`.
 - Confirm + pin Railway, Supabase, Stripe TF providers; document fallbacks.
