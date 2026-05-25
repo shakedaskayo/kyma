@@ -22,6 +22,8 @@ impl Connector for FakeConn {
         Ok(ConnectorRun {
             rows: vec![],
             new_cursor: None,
+            tables: vec![],
+            graph: None,
         })
     }
 }

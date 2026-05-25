@@ -1,12 +1,17 @@
 //! Smoke test: migration 005 applies cleanly and creates expected objects.
 
 use kyma_catalog::PostgresCatalog;
-use testcontainers::runners::AsyncRunner;
+use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 
 #[tokio::test]
 async fn migration_005_creates_connector_tables() {
-    let pg = Postgres::default().start().await.unwrap();
+    let pg = Postgres::default()
+        .with_name("pgvector/pgvector")
+        .with_tag("pg16")
+        .start()
+        .await
+        .unwrap();
     let port = pg.get_host_port_ipv4(5432).await.unwrap();
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
 

@@ -22,9 +22,10 @@ use kyma_connectors::secrets::EnvSecretStore;
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use kyma_core::segment_format::SegmentFormat;
 use kyma_format_tlm::TelemetryFormat;
+use kyma_core::catalog::GraphSpec;
 use kyma_ingest_core::{
-    spawn_idempotency_cleanup, CommitCoordinator, CoordinatorConfig, StagingBuffer, StagingConfig,
-    WritePath,
+    ensure_table, evolve_schema_for_records, spawn_idempotency_cleanup, CommitCoordinator,
+    CoordinatorConfig, StagingBuffer, StagingConfig, WritePath,
 };
 use kyma_ingest_filedrop::{FiledropConfig, FiledropWatcher};
 use kyma_ingest_kafka::{KafkaConsumerConfig, KafkaConsumerWorker};
@@ -262,6 +263,12 @@ async fn main() -> Result<()> {
     let conn_registry = Arc::new(conn_reg);
 
     // RowSink: bridges connector JSON rows → arrow coercion → WritePath.
+    //
+    // The sink auto-creates the target table (ensure_table) and promotes
+    // unknown JSON properties to columns (evolve_schema_for_records) before
+    // coercing + ingesting. Both helpers are no-ops on the happy path when the
+    // table already exists with the right shape, so the legacy Prometheus path
+    // is unaffected.
     let conn_sink: kyma_connectors::runner::RowSink = {
         let catalog_for_sink = catalog.clone();
         let write_path_for_sink = write_path.clone();
@@ -270,10 +277,16 @@ async fn main() -> Result<()> {
                 let catalog = catalog_for_sink.clone();
                 let write_path = write_path_for_sink.clone();
                 Box::pin(async move {
-                    let table = catalog
-                        .lookup_table(&db, &tbl)
+                    // Auto-create the database + table if they don't exist yet
+                    // (idempotent — single SQL lookup on the happy path).
+                    let table = ensure_table(catalog.as_ref(), &db, &tbl)
                         .await
-                        .map_err(|e| anyhow::anyhow!("lookup_table: {e}"))?;
+                        .map_err(|e| anyhow::anyhow!("ensure_table: {e}"))?;
+                    // Promote unknown JSON property names to nullable Utf8
+                    // columns (capped at 32 new columns per request).
+                    let table = evolve_schema_for_records(catalog.as_ref(), &db, table, &rows)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("evolve_schema: {e}"))?;
                     let batches =
                         kyma_connectors::arrow_coerce::rows_to_batches(&table.schema, rows)
                             .map_err(|e| anyhow::anyhow!("arrow coerce: {e}"))?;
@@ -281,6 +294,40 @@ async fn main() -> Result<()> {
                         .ingest_with_idempotency(&table, batches, idem.as_deref())
                         .await
                         .map_err(|e| anyhow::anyhow!("ingest: {e}"))?;
+                    Ok(())
+                })
+            },
+        )
+    };
+
+    // GraphRegisterFn: registers (or idempotently re-registers) a
+    // property-graph binding in the catalog after multi-table ingest.
+    let graph_register: kyma_connectors::runner::GraphRegisterFn = {
+        let catalog_for_graph = catalog.clone();
+        Arc::new(
+            move |db: String, hint: kyma_connectors::GraphHint| {
+                let catalog = catalog_for_graph.clone();
+                Box::pin(async move {
+                    let spec = GraphSpec::with_defaults(
+                        hint.node_table.clone(),
+                        hint.edge_table.clone(),
+                    );
+                    match catalog.create_graph(&db, &hint.graph_name, spec).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            // Swallow "already exists" — the graph was registered
+                            // on a previous tick; nothing to do.
+                            let msg = e.to_string();
+                            if msg.contains("already exists")
+                                || msg.contains("duplicate")
+                                || msg.contains("23505")
+                            {
+                                // idempotent — ignore
+                            } else {
+                                return Err(anyhow::anyhow!("create_graph: {msg}"));
+                            }
+                        }
+                    }
                     Ok(())
                 })
             },
@@ -472,7 +519,8 @@ async fn main() -> Result<()> {
             conn_sink.clone(),
             EnvSecretStore,
             lease.node_id,
-        );
+        )
+        .with_graph_register(graph_register.clone());
         let runner_rx = shutdown_tx.subscribe();
         conn_runner_handles.push(tokio::spawn(async move {
             let mut rx = runner_rx;
