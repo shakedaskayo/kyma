@@ -4662,6 +4662,7 @@ name = "kyma-server"
 version = "0.0.1"
 dependencies = [
  "adk-rust",
+ "anyhow",
  "arrow",
  "arrow-array",
  "arrow-flight",
@@ -4678,6 +4679,7 @@ dependencies = [
  "kyma-core",
  "kyma-exec",
  "kyma-format-tlm",
+ "kyma-graph",
  "kyma-kql",
  "kyma-plan",
  "kyma-web-assets",
