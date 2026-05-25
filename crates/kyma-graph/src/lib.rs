@@ -11,8 +11,7 @@ pub mod source;
 pub mod types;
 
 pub use provider::GraphProvider;
-// TODO(G1a Task 5): re-export SchemaGraphProvider
-// pub use schema_graph::SchemaGraphProvider;
+pub use schema_graph::SchemaGraphProvider;
 pub use source::{ColumnDef, SchemaSource};
 pub use types::{
     Direction, EdgeExpansion, GraphNode, GraphPayload, GraphRef, GraphRelationship,
