@@ -1,4 +1,5 @@
 # --- Remote state backend resources ---
+# tfsec:ignore:aws-s3-enable-bucket-logging access logging needs a separate log-target bucket; tracked for C5 hardening (DR/audit).
 resource "aws_s3_bucket" "state" {
   bucket = var.state_bucket_name
 }
@@ -8,6 +9,7 @@ resource "aws_s3_bucket_versioning" "state" {
   versioning_configuration { status = "Enabled" }
 }
 
+# tfsec:ignore:aws-s3-encryption-customer-key SSE-KMS with the AWS-managed key; CMK migration is part of the C5 encryption-at-rest audit.
 resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
   bucket = aws_s3_bucket.state.id
   rule {
@@ -23,6 +25,7 @@ resource "aws_s3_bucket_public_access_block" "state" {
   restrict_public_buckets = true
 }
 
+# tfsec:ignore:aws-dynamodb-table-customer-key AWS-owned key suffices for transient lock data; CMK audit is C5.
 resource "aws_dynamodb_table" "lock" {
   name         = var.lock_table_name
   billing_mode = "PAY_PER_REQUEST"
@@ -30,6 +33,12 @@ resource "aws_dynamodb_table" "lock" {
   attribute {
     name = "LockID"
     type = "S"
+  }
+  server_side_encryption {
+    enabled = true
+  }
+  point_in_time_recovery {
+    enabled = true
   }
 }
 

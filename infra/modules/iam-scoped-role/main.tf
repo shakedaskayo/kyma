@@ -16,6 +16,7 @@ resource "aws_iam_role" "tenant_data" {
 # Broad bucket access on the ROLE; the gateway passes a SESSION POLICY at
 # AssumeRole time that restricts s3:prefix to s3://<bucket>/<tenant_id>/*.
 # Effective permission = intersection(role policy, session policy).
+# tfsec:ignore:aws-iam-no-policy-wildcards the bucket-wide grant is intentional; per-request STS session policies confine each tenant to its prefix (see README, enforced in C2).
 data "aws_iam_policy_document" "bucket_rw" {
   statement {
     actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
