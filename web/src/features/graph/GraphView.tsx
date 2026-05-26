@@ -20,6 +20,10 @@ export function GraphView() {
   const hoverNode = useGraphStore((s) => s.hoverNode);
   const labelFilter = useGraphStore((s) => s.labelFilter);
   const setLabelFilter = useGraphStore((s) => s.setLabelFilter);
+  const relTypeFilter = useGraphStore((s) => s.relTypeFilter);
+  const setRelTypeFilter = useGraphStore((s) => s.setRelTypeFilter);
+  const showEdgeLabels = useGraphStore((s) => s.showEdgeLabels);
+  const toggleEdgeLabels = useGraphStore((s) => s.toggleEdgeLabels);
 
   const overview = useGraphOverview(graph);
   const expand = useExpandNeighbors(graph);
@@ -106,6 +110,8 @@ export function GraphView() {
           selectedNodeId={selectedNodeId}
           hoveredNodeId={hoveredNodeId}
           labelFilter={labelFilter}
+          relTypeFilter={relTypeFilter}
+          showEdgeLabels={showEdgeLabels}
           onNodeClick={(id) => selectNode(id === "" ? null : id)}
           onNodeHover={hoverNode}
         />
@@ -114,10 +120,17 @@ export function GraphView() {
             stats={overview.data?.stats}
             activeLabel={labelFilter}
             onLabelClick={(l) => setLabelFilter(l === labelFilter ? null : l)}
+            activeRel={relTypeFilter}
+            onRelClick={(r) => setRelTypeFilter(r === relTypeFilter ? null : r)}
           />
         </div>
         <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 -translate-x-1/2">
-          <CanvasToolbar layout={layout} onLayoutChange={setLayout} />
+          <CanvasToolbar
+            layout={layout}
+            onLayoutChange={setLayout}
+            showEdgeLabels={showEdgeLabels}
+            onToggleEdgeLabels={toggleEdgeLabels}
+          />
         </div>
       </div>
       {selectedNode && (

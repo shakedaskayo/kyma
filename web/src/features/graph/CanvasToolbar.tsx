@@ -1,11 +1,14 @@
 'use client';
 
+import { Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { LayoutAlgorithm } from '@/sdk/graph-layout';
 
 interface CanvasToolbarProps {
   layout: LayoutAlgorithm;
   onLayoutChange: (l: LayoutAlgorithm) => void;
+  showEdgeLabels: boolean;
+  onToggleEdgeLabels: () => void;
 }
 
 const LAYOUTS: { value: LayoutAlgorithm; label: string }[] = [
@@ -15,7 +18,7 @@ const LAYOUTS: { value: LayoutAlgorithm; label: string }[] = [
   { value: 'grid', label: 'Grid' },
 ];
 
-export function CanvasToolbar({ layout, onLayoutChange }: CanvasToolbarProps) {
+export function CanvasToolbar({ layout, onLayoutChange, showEdgeLabels, onToggleEdgeLabels }: CanvasToolbarProps) {
   return (
     <div className="pointer-events-auto flex items-center gap-1 rounded-md border border-border bg-background/90 p-1 text-xs shadow-sm backdrop-blur">
       {LAYOUTS.map(({ value, label }) => (
@@ -33,6 +36,20 @@ export function CanvasToolbar({ layout, onLayoutChange }: CanvasToolbarProps) {
           {label}
         </button>
       ))}
+      <span className="mx-0.5 h-4 w-px bg-border" />
+      <button
+        type="button"
+        onClick={onToggleEdgeLabels}
+        title="Toggle relationship labels"
+        className={cn(
+          'flex items-center gap-1 rounded px-2 py-1 transition-colors',
+          showEdgeLabels
+            ? 'bg-accent text-accent-foreground'
+            : 'text-muted-foreground hover:bg-accent/60',
+        )}
+      >
+        <Tag className="h-3.5 w-3.5" /> Labels
+      </button>
     </div>
   );
 }
