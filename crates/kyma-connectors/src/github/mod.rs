@@ -12,6 +12,7 @@
 
 pub mod admin;
 pub mod client;
+pub mod clone;
 pub mod config;
 pub mod cursor;
 pub mod parse;
@@ -317,93 +318,71 @@ impl Connector for GithubConnector {
                     continue;
                 }
 
-                // Fetch the recursive git tree.
-                let tree_entries = match gh.get_tree(owner, name, head_sha).await {
-                    Ok(entries) => entries,
+                // Clone the repo (shallow) and parse EVERY source file from disk
+                // — removes the trees+blobs API per-file cost and per-tick cap.
+                // git + fs + tree-sitter are all synchronous, so this whole pass
+                // runs on a blocking thread.
+                let token_c = gh.token.clone();
+                let owner_c = owner.to_string();
+                let name_c = name.to_string();
+                let exclude = config.code.exclude_globs.clone();
+                let langs = config.code.languages.clone();
+                let max_bytes = config.code.max_file_bytes;
+                let max_files = config.code.max_files_per_tick;
+
+                let parsed = tokio::task::spawn_blocking(
+                    move || -> Result<Vec<FileImports>, ConnectorError> {
+                        let checkout = clone::clone_repo(&token_c, &owner_c, &name_c, None)?;
+                        let glob_set = build_glob_set(&exclude);
+                        let disk = clone::walk_source_files(
+                            &checkout.root,
+                            |rel, size| {
+                                size <= max_bytes
+                                    && !is_excluded(rel, &glob_set)
+                                    && parse::Lang::from_path(rel)
+                                        .map(|l| langs.contains(&l.name().to_string()))
+                                        .unwrap_or(false)
+                            },
+                            max_files,
+                        );
+                        let all_paths: HashSet<String> =
+                            disk.iter().map(|f| f.rel_path.clone()).collect();
+                        let mut fis = Vec::with_capacity(disk.len());
+                        for f in &disk {
+                            let Some(lang) = parse::Lang::from_path(&f.rel_path) else { continue };
+                            let raw_imports = parse::extract_imports(lang, &f.content);
+                            let symbols = parse::extract_symbols(lang, &f.content);
+                            let calls = parse::extract_calls(lang, &f.content);
+                            let resolved =
+                                resolve_imports(lang.name(), &f.rel_path, &raw_imports, &all_paths);
+                            fis.push(FileImports {
+                                path: f.rel_path.clone(),
+                                size: f.size,
+                                language: lang.name().to_string(),
+                                imports: resolved,
+                                symbols,
+                                calls,
+                            });
+                        }
+                        Ok(fis)
+                        // `checkout` drops here → temp dir removed.
+                    },
+                )
+                .await
+                .unwrap_or_else(|e| Err(ConnectorError::Config(format!("clone task join: {e}"))));
+
+                let file_imports = match parsed {
+                    Ok(fis) => fis,
                     Err(ConnectorError::Transient(e)) => {
-                        tracing::warn!(repo = %repo_slug, error = %e, "get_tree failed; skipping");
+                        tracing::warn!(repo = %repo_slug, error = %e, "git clone failed; skipping code graph this tick");
                         continue;
                     }
                     Err(e) => {
-                        tracing::warn!(repo = %repo_slug, error = %e, "get_tree permanent error; skipping");
+                        tracing::warn!(repo = %repo_slug, error = %e, "code clone error; skipping code graph");
                         continue;
                     }
                 };
-
-                // Build the set of all file paths for import resolution.
-                let all_paths: HashSet<String> = tree_entries
-                    .iter()
-                    .filter(|e| e.entry_type == "blob")
-                    .map(|e| e.path.clone())
-                    .collect();
-
-                // Build glob set for exclusions.
-                let glob_set = build_glob_set(&config.code.exclude_globs);
-
-                // Filter + fetch + parse files.
-                let blob_entries: Vec<_> = tree_entries
-                    .iter()
-                    .filter(|e| {
-                        e.entry_type == "blob"
-                            && e.size <= config.code.max_file_bytes
-                            && !is_excluded(&e.path, &glob_set)
-                            && parse::Lang::from_path(&e.path)
-                                .map(|l| config.code.languages.contains(&l.name().to_string()))
-                                .unwrap_or(false)
-                    })
-                    .take(config.code.max_files_per_tick)
-                    .collect();
-
-                let files_cap = blob_entries.len();
-                let mut file_imports: Vec<FileImports> = Vec::new();
-
-                for entry in &blob_entries {
-                    let lang = match parse::Lang::from_path(&entry.path) {
-                        Some(l) => l,
-                        None => continue,
-                    };
-
-                    // Fetch the blob asynchronously; parse imports on spawn_blocking
-                    // (tree-sitter is sync/CPU) below.
-                    let gh2 = gh.clone();
-                    let owner2 = owner.to_string();
-                    let name2 = name.to_string();
-                    let sha2 = entry.sha.clone();
-                    let max_bytes = config.code.max_file_bytes;
-
-                    let content = match gh2.get_blob(&owner2, &name2, &sha2, max_bytes).await {
-                        Ok(Some(c)) => c,
-                        Ok(None) => continue,
-                        Err(e) => {
-                            tracing::debug!(path = %entry.path, error = %e, "get_blob failed; skipping");
-                            continue;
-                        }
-                    };
-
-                    // Parse imports + symbols on a blocking thread (tree-sitter
-                    // is sync/CPU). One pass over the content extracts both.
-                    let content2 = content.clone();
-                    let (raw_imports, symbols, calls) = tokio::task::spawn_blocking(move || {
-                        (
-                            parse::extract_imports(lang, &content2),
-                            parse::extract_symbols(lang, &content2),
-                            parse::extract_calls(lang, &content2),
-                        )
-                    })
-                    .await
-                    .unwrap_or_default();
-
-                    let resolved = resolve_imports(lang.name(), &entry.path, &raw_imports, &all_paths);
-
-                    file_imports.push(FileImports {
-                        path: entry.path.clone(),
-                        size: entry.size,
-                        language: lang.name().to_string(),
-                        imports: resolved,
-                        symbols,
-                        calls,
-                    });
-                }
+                let files_cap = file_imports.len();
 
                 // Merge code graph into existing nodes/edges.
                 let (code_tables, _) = code_to_graph(owner, name, &file_imports, nodes, edges);
