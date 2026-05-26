@@ -640,14 +640,18 @@ fn resolve_go(raw: &str, all_paths: &std::collections::HashSet<String>) -> Optio
         let suffix = parts[i..].join("/");
         // Check if any .go file exists under this suffix directory
         let candidate_dir = suffix.clone();
+        // Use a directory-boundary match (`candidate_dir/`) to avoid matching
+        // paths that only share a prefix but are in a different directory
+        // (e.g. `foo/` must not match `foobar/baz.go`).
+        let dir_prefix = format!("{candidate_dir}/");
         let found = all_paths.iter().any(|p| {
-            p.starts_with(&candidate_dir) && p.ends_with(".go")
+            p.starts_with(&dir_prefix) && p.ends_with(".go")
         });
         if found {
             // Return the first .go file in this dir (deterministic via sorted set)
             return all_paths
                 .iter()
-                .find(|p| p.starts_with(&candidate_dir) && p.ends_with(".go"))
+                .find(|p| p.starts_with(&dir_prefix) && p.ends_with(".go"))
                 .cloned();
         }
     }
@@ -1114,5 +1118,53 @@ mod tests {
         assert_eq!(normalize_path("src/../lib/foo"), "lib/foo");
         assert_eq!(normalize_path("src/./bar"), "src/bar");
         assert_eq!(normalize_path("a/b/c/../../d"), "a/d");
+    }
+
+    // ── Go import resolver tests ──────────────────────────────────────────────
+
+    #[test]
+    fn resolve_go_finds_package() {
+        let mut paths = std::collections::HashSet::new();
+        paths.insert("pkg/util/helper.go".to_string());
+
+        let imports = vec![crate::github::parse::RawImport {
+            raw: "github.com/acme/repo/pkg/util".into(),
+            line: 1,
+        }];
+        let resolved = resolve_imports("go", "cmd/main.go", &imports, &paths);
+        assert_eq!(
+            resolved[0].resolved_path.as_deref(),
+            Some("pkg/util/helper.go")
+        );
+    }
+
+    #[test]
+    fn resolve_go_no_prefix_match_false_positive() {
+        // "foo" dir exists but import is for "foobar" — must not match.
+        let mut paths = std::collections::HashSet::new();
+        paths.insert("foo/main.go".to_string());
+
+        let imports = vec![crate::github::parse::RawImport {
+            raw: "github.com/acme/repo/foobar".into(),
+            line: 1,
+        }];
+        let resolved = resolve_imports("go", "cmd/main.go", &imports, &paths);
+        // "foobar/" prefix must not match "foo/main.go"
+        assert_eq!(
+            resolved[0].resolved_path,
+            None,
+            "foobar import must not resolve via foo/ directory"
+        );
+    }
+
+    #[test]
+    fn resolve_go_stdlib_unresolved() {
+        let paths = std::collections::HashSet::new();
+        let imports = vec![crate::github::parse::RawImport {
+            raw: "fmt".into(),
+            line: 1,
+        }];
+        let resolved = resolve_imports("go", "main.go", &imports, &paths);
+        assert_eq!(resolved[0].resolved_path, None);
     }
 }

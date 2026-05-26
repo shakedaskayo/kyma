@@ -24,7 +24,7 @@ use chrono::Utc;
 use std::collections::HashSet;
 
 use crate::types::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
-use client::GithubClient;
+use client::{GithubClient, StopReason};
 use config::GithubConfig;
 use cursor::Cursor;
 use transform::{FileImports, RawRecord, code_to_graph, resolve_imports, to_graph};
@@ -101,21 +101,6 @@ impl Connector for GithubConnector {
                 None
             };
 
-            // Extract default-branch HEAD SHA from repo metadata for code graph.
-            if let Some(ref rj) = repo_json {
-                if let Some(sha) = rj["default_branch"]
-                    .as_str()
-                    .and_then(|_| rj.pointer("/default_branch"))
-                    // The SHA is in the commit object: we need to fetch it separately.
-                    // For now, use the branch sha from a branches call, or store it in cursor.
-                    // Actually GitHub's repo endpoint gives us `default_branch` name but not the SHA.
-                    // We'll fetch it from the branches list or via a dedicated call.
-                    .and_then(|v| v.as_str())
-                {
-                    repo_head_shas.insert(repo_slug.clone(), sha.to_string());
-                }
-            }
-
             // 2. Branches
             if config.modules.branches {
                 match gh.list_branches(owner, name, max_pages).await {
@@ -154,12 +139,20 @@ impl Connector for GithubConnector {
 
             // 3. Pull requests
             let mut latest_pr_ts = repo_cur.pulls_since;
+            let mut pulls_rate_limited = false;
             if config.modules.pulls {
                 match gh
                     .list_pulls(owner, name, repo_cur.pulls_since, max_pages)
                     .await
                 {
-                    Ok((pulls, _stop)) => {
+                    Ok((pulls, stop)) => {
+                        if stop == StopReason::RateLimited {
+                            tracing::warn!(
+                                repo = %repo_slug,
+                                "pulls fetch hit rate-limit floor; cursor will not advance this tick"
+                            );
+                            pulls_rate_limited = true;
+                        }
                         for p in &pulls {
                             // Track latest updated_at for cursor update.
                             if let Some(ts_str) = p["updated_at"].as_str() {
@@ -191,12 +184,20 @@ impl Connector for GithubConnector {
 
             // 4. Issues
             let mut latest_issue_ts = repo_cur.issues_since;
+            let mut issues_rate_limited = false;
             if config.modules.issues {
                 match gh
                     .list_issues(owner, name, repo_cur.issues_since, max_pages)
                     .await
                 {
-                    Ok((issues, _stop)) => {
+                    Ok((issues, stop)) => {
+                        if stop == StopReason::RateLimited {
+                            tracing::warn!(
+                                repo = %repo_slug,
+                                "issues fetch hit rate-limit floor; cursor will not advance this tick"
+                            );
+                            issues_rate_limited = true;
+                        }
                         for i in &issues {
                             if let Some(ts_str) = i["updated_at"].as_str() {
                                 if let Ok(ts) = ts_str.parse::<chrono::DateTime<Utc>>() {
@@ -245,7 +246,14 @@ impl Connector for GithubConnector {
             }
 
             // Update metadata cursor with the latest timestamps seen.
-            cur.update_repo(repo_slug, latest_pr_ts, latest_issue_ts);
+            // When a resource was rate-limited mid-page, do NOT advance that
+            // resource's cursor — leave it at the previous value so the next
+            // tick re-fetches from the same point and no items are skipped.
+            cur.update_repo(
+                repo_slug,
+                if pulls_rate_limited { repo_cur.pulls_since } else { latest_pr_ts },
+                if issues_rate_limited { repo_cur.issues_since } else { latest_issue_ts },
+            );
         }
 
         // ── Transform metadata records ────────────────────────────────────────
@@ -337,7 +345,8 @@ impl Connector for GithubConnector {
                         None => continue,
                     };
 
-                    // Fetch blob on spawn_blocking to keep the async executor free.
+                    // Fetch the blob asynchronously; parse imports on spawn_blocking
+                    // (tree-sitter is sync/CPU) below.
                     let gh2 = gh.clone();
                     let owner2 = owner.to_string();
                     let name2 = name.to_string();
