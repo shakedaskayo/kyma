@@ -16,8 +16,10 @@ import { Route as IndexRouteImport } from './../routes/index'
 import { Route as AppGraphRouteImport } from './../routes/_app.graph'
 import { Route as AppExploreRouteImport } from './../routes/_app.explore'
 import { Route as AppDashboardsRouteImport } from './../routes/_app.dashboards'
+import { Route as AppConnectorsRouteImport } from './../routes/_app.connectors'
 import { Route as AppAgentRouteImport } from './../routes/_app.agent'
 import { Route as AppDashboardsIdRouteImport } from './../routes/_app.dashboards.$id'
+import { Route as AppConnectorsIdRouteImport } from './../routes/_app.connectors.$id'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -53,6 +55,11 @@ const AppDashboardsRoute = AppDashboardsRouteImport.update({
   path: '/dashboards',
   getParentRoute: () => AppRoute,
 } as any)
+const AppConnectorsRoute = AppConnectorsRouteImport.update({
+  id: '/connectors',
+  path: '/connectors',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAgentRoute = AppAgentRouteImport.update({
   id: '/agent',
   path: '/agent',
@@ -63,15 +70,22 @@ const AppDashboardsIdRoute = AppDashboardsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AppDashboardsRoute,
 } as any)
+const AppConnectorsIdRoute = AppConnectorsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppConnectorsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/agent': typeof AppAgentRoute
+  '/connectors': typeof AppConnectorsRouteWithChildren
   '/dashboards': typeof AppDashboardsRouteWithChildren
   '/explore': typeof AppExploreRoute
   '/graph': typeof AppGraphRoute
+  '/connectors/$id': typeof AppConnectorsIdRoute
   '/dashboards/$id': typeof AppDashboardsIdRoute
 }
 export interface FileRoutesByTo {
@@ -79,9 +93,11 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/agent': typeof AppAgentRoute
+  '/connectors': typeof AppConnectorsRouteWithChildren
   '/dashboards': typeof AppDashboardsRouteWithChildren
   '/explore': typeof AppExploreRoute
   '/graph': typeof AppGraphRoute
+  '/connectors/$id': typeof AppConnectorsIdRoute
   '/dashboards/$id': typeof AppDashboardsIdRoute
 }
 export interface FileRoutesById {
@@ -91,9 +107,11 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/_app/agent': typeof AppAgentRoute
+  '/_app/connectors': typeof AppConnectorsRouteWithChildren
   '/_app/dashboards': typeof AppDashboardsRouteWithChildren
   '/_app/explore': typeof AppExploreRoute
   '/_app/graph': typeof AppGraphRoute
+  '/_app/connectors/$id': typeof AppConnectorsIdRoute
   '/_app/dashboards/$id': typeof AppDashboardsIdRoute
 }
 export interface FileRouteTypes {
@@ -103,9 +121,11 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/agent'
+    | '/connectors'
     | '/dashboards'
     | '/explore'
     | '/graph'
+    | '/connectors/$id'
     | '/dashboards/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -113,9 +133,11 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/agent'
+    | '/connectors'
     | '/dashboards'
     | '/explore'
     | '/graph'
+    | '/connectors/$id'
     | '/dashboards/$id'
   id:
     | '__root__'
@@ -124,9 +146,11 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/_app/agent'
+    | '/_app/connectors'
     | '/_app/dashboards'
     | '/_app/explore'
     | '/_app/graph'
+    | '/_app/connectors/$id'
     | '/_app/dashboards/$id'
   fileRoutesById: FileRoutesById
 }
@@ -188,6 +212,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/connectors': {
+      id: '/_app/connectors'
+      path: '/connectors'
+      fullPath: '/connectors'
+      preLoaderRoute: typeof AppConnectorsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/agent': {
       id: '/_app/agent'
       path: '/agent'
@@ -202,8 +233,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardsIdRouteImport
       parentRoute: typeof AppDashboardsRoute
     }
+    '/_app/connectors/$id': {
+      id: '/_app/connectors/$id'
+      path: '/$id'
+      fullPath: '/connectors/$id'
+      preLoaderRoute: typeof AppConnectorsIdRouteImport
+      parentRoute: typeof AppConnectorsRoute
+    }
   }
 }
+
+interface AppConnectorsRouteChildren {
+  AppConnectorsIdRoute: typeof AppConnectorsIdRoute
+}
+
+const AppConnectorsRouteChildren: AppConnectorsRouteChildren = {
+  AppConnectorsIdRoute: AppConnectorsIdRoute,
+}
+
+const AppConnectorsRouteWithChildren = AppConnectorsRoute._addFileChildren(
+  AppConnectorsRouteChildren,
+)
 
 interface AppDashboardsRouteChildren {
   AppDashboardsIdRoute: typeof AppDashboardsIdRoute
@@ -219,6 +269,7 @@ const AppDashboardsRouteWithChildren = AppDashboardsRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppAgentRoute: typeof AppAgentRoute
+  AppConnectorsRoute: typeof AppConnectorsRouteWithChildren
   AppDashboardsRoute: typeof AppDashboardsRouteWithChildren
   AppExploreRoute: typeof AppExploreRoute
   AppGraphRoute: typeof AppGraphRoute
@@ -226,6 +277,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAgentRoute: AppAgentRoute,
+  AppConnectorsRoute: AppConnectorsRouteWithChildren,
   AppDashboardsRoute: AppDashboardsRouteWithChildren,
   AppExploreRoute: AppExploreRoute,
   AppGraphRoute: AppGraphRoute,

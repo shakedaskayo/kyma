@@ -1,5 +1,5 @@
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Database, Settings as SettingsIcon, Compass, LayoutDashboard, Sparkles, Network, LogOut } from "lucide-react";
+import { Database, Settings as SettingsIcon, Compass, LayoutDashboard, Sparkles, Network, Plug, LogOut } from "lucide-react";
 import { useEffect } from "react";
 import { useSession } from "@/sdk/session";
 import { useHealth } from "@/sdk/reconnect";
@@ -127,6 +127,9 @@ export function Shell() {
           </Link>
           <Link to="/graph" className={btn(active.startsWith("/graph"))}>
             <Network className="h-4 w-4" /> Graph
+          </Link>
+          <Link to="/connectors" className={btn(active.startsWith("/connectors"))}>
+            <Plug className="h-4 w-4" /> Connectors
           </Link>
           <Link to="/settings" search={{ next: active }} className={btn(active === "/settings")}>
             <SettingsIcon className="h-4 w-4" /> Settings
