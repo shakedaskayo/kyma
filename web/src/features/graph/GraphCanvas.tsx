@@ -120,11 +120,13 @@ function GraphCanvasInner({
         markerEnd: {
           type: MarkerType.ArrowClosed,
           color,
+          width: 12,
+          height: 12,
         },
         style: {
           stroke: color,
-          strokeWidth: edgeHighlighted ? 2.4 : 1.2,
-          opacity: edgeDimmed ? 0.1 : 0.7,
+          strokeWidth: edgeHighlighted ? 2.2 : 1.2,
+          opacity: edgeDimmed ? 0.08 : 0.45,
         },
       };
     });
@@ -149,6 +151,7 @@ function GraphCanvasInner({
       minZoom={0.05}
       maxZoom={4}
       proOptions={{ hideAttribution: true }}
+      style={{ background: "#fafbfc" }}
       onNodeClick={(_, n) => onNodeClick(n.id)}
       onNodeMouseEnter={(_, n) => onNodeHover(n.id)}
       onNodeMouseLeave={() => onNodeHover(null)}
@@ -158,9 +161,10 @@ function GraphCanvasInner({
       <MiniMap
         pannable
         zoomable
-        nodeColor={(n) => (n.data as { color?: string }).color ?? "#64748b"}
+        nodeColor={(n) => (n.data as { color?: string }).color ?? "#94a3b8"}
+        maskColor="rgba(0,0,0,0.04)"
       />
-      <Background variant={BackgroundVariant.Dots} gap={20} size={0.6} />
+      <Background variant={BackgroundVariant.Dots} gap={22} size={0.8} color="#e2e8f0" />
     </ReactFlow>
   );
 }

@@ -9,9 +9,10 @@ interface CanvasToolbarProps {
 }
 
 const LAYOUTS: { value: LayoutAlgorithm; label: string }[] = [
+  { value: 'tree', label: 'Tree' },
   { value: 'force', label: 'Force' },
-  { value: 'grid', label: 'Grid' },
   { value: 'radial', label: 'Radial' },
+  { value: 'grid', label: 'Grid' },
 ];
 
 export function CanvasToolbar({ layout, onLayoutChange }: CanvasToolbarProps) {
