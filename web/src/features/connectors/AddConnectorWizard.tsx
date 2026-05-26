@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Check, Database, GitBranch, Table2, Timer } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -8,9 +8,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useSession } from "@/sdk/session";
 import {
   CONNECTOR_KINDS,
+  formatInterval,
   githubKind,
   type ConnectorKindDef,
   type KindFormValues,
@@ -20,7 +22,14 @@ import { ConnectorConfigForm } from "./ConnectorConfigForm";
 import { RepoPicker } from "./RepoPicker";
 import { useCreateConnector } from "./useConnectors";
 
-type Step = "kind" | "config" | "resources";
+type Step = "kind" | "config" | "resources" | "review";
+
+const STEP_LABEL: Record<Step, string> = {
+  kind: "Source",
+  config: "Configure",
+  resources: "Repositories",
+  review: "Review",
+};
 
 function blankValues(kind: ConnectorKindDef): KindFormValues {
   return {
@@ -31,6 +40,66 @@ function blankValues(kind: ConnectorKindDef): KindFormValues {
     targetTable: "",
     resources: [],
   };
+}
+
+/** The ordered steps for a given kind (kind-picker shown only with >1 kind). */
+function stepsFor(kind: ConnectorKindDef, multiKind: boolean): Step[] {
+  const s: Step[] = [];
+  if (multiKind) s.push("kind");
+  s.push("config");
+  if (kind.resourceStep) s.push("resources");
+  s.push("review");
+  return s;
+}
+
+function Stepper({ steps, current }: { steps: Step[]; current: Step }) {
+  const idx = steps.indexOf(current);
+  return (
+    <ol className="flex items-center gap-1 px-1 pb-1 text-xs">
+      {steps.map((s, i) => {
+        const done = i < idx;
+        const active = i === idx;
+        return (
+          <li key={s} className="flex items-center gap-1">
+            <span
+              className={cn(
+                "flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-medium",
+                active && "border-primary bg-primary text-primary-foreground",
+                done && "border-primary bg-primary/10 text-primary",
+                !active && !done && "border-input text-muted-foreground",
+              )}
+            >
+              {done ? <Check className="h-3 w-3" /> : i + 1}
+            </span>
+            <span className={cn(active ? "font-medium text-foreground" : "text-muted-foreground")}>
+              {STEP_LABEL[s]}
+            </span>
+            {i < steps.length - 1 && <span className="mx-1 h-px w-5 bg-border" />}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function ReviewRow({
+  icon,
+  label,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-2.5 py-2">
+      <span className="mt-0.5 text-muted-foreground">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="text-sm">{children}</div>
+      </div>
+    </div>
+  );
 }
 
 export function AddConnectorWizard({
@@ -46,20 +115,22 @@ export function AddConnectorWizard({
   const create = useCreateConnector();
 
   // v1 auto-skips the kind step (only GitHub registered).
-  const onlyKind = CONNECTOR_KINDS.length === 1 ? CONNECTOR_KINDS[0] : null;
+  const multiKind = CONNECTOR_KINDS.length > 1;
+  const onlyKind = multiKind ? null : CONNECTOR_KINDS[0] ?? githubKind;
   const [kind, setKind] = useState<ConnectorKindDef>(onlyKind ?? githubKind);
-  const [step, setStep] = useState<Step>(onlyKind ? "config" : "kind");
-  const [values, setValues] = useState<KindFormValues>(() =>
-    blankValues(onlyKind ?? githubKind),
-  );
+  const [step, setStep] = useState<Step>(multiKind ? "kind" : "config");
+  const [values, setValues] = useState<KindFormValues>(() => blankValues(onlyKind ?? githubKind));
   const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const steps = stepsFor(kind, multiKind);
 
   const reset = () => {
     const k = onlyKind ?? githubKind;
     setKind(k);
-    setStep(onlyKind ? "config" : "kind");
+    setStep(multiKind ? "kind" : "config");
     setValues(blankValues(k));
     setAdvancedOpen(false);
+    create.reset();
   };
 
   const close = () => {
@@ -67,22 +138,22 @@ export function AddConnectorWizard({
     onClose();
   };
 
-  const tokenFieldValue = kind.resourceTokenField
-    ? values.fields[kind.resourceTokenField] ?? ""
-    : "";
-
-  const update = (patch: Partial<KindFormValues>) =>
-    setValues((v) => ({ ...v, ...patch }));
+  const tokenFieldValue = kind.resourceTokenField ? values.fields[kind.resourceTokenField] ?? "" : "";
+  const update = (patch: Partial<KindFormValues>) => setValues((v) => ({ ...v, ...patch }));
 
   const configValid = useMemo(() => {
     if (!values.name.trim()) return false;
     return kind.fields.every((f) => !f.required || (values.fields[f.key] ?? "").trim());
   }, [kind, values]);
+  const resourcesValid = !kind.resourceStep || values.resources.length > 0;
 
-  const handleNextFromConfig = () => {
-    if (!configValid) return;
-    if (kind.resourceStep) setStep("resources");
-    else handleCreate();
+  const prevStep = () => {
+    const i = steps.indexOf(step);
+    if (i > 0) setStep(steps[i - 1]);
+  };
+  const nextStep = () => {
+    const i = steps.indexOf(step);
+    if (i < steps.length - 1) setStep(steps[i + 1]);
   };
 
   const handleCreate = () => {
@@ -95,29 +166,31 @@ export function AddConnectorWizard({
     });
   };
 
-  const resourcesValid = !kind.resourceStep || values.resources.length > 0;
+  const canAdvance =
+    step === "kind" ||
+    (step === "config" && configValid) ||
+    (step === "resources" && resourcesValid);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
       <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {step !== "kind" && !onlyKind && (
+            {steps.indexOf(step) > 0 && (
               <button
                 type="button"
                 className="rounded p-0.5 text-muted-foreground hover:bg-accent"
-                onClick={() =>
-                  setStep(step === "resources" ? "config" : "kind")
-                }
+                onClick={prevStep}
+                aria-label="Back"
               >
                 <ArrowLeft className="h-4 w-4" />
               </button>
             )}
-            {step === "kind" && "Add connector"}
-            {step === "config" && `Add ${kind.label} connector`}
-            {step === "resources" && "Select repositories"}
+            {step === "kind" ? "Add connector" : `Add ${kind.label} connector`}
           </DialogTitle>
         </DialogHeader>
+
+        {step !== "kind" && <Stepper steps={steps} current={step} />}
 
         <div className="py-1">
           {step === "kind" && (
@@ -148,25 +221,68 @@ export function AddConnectorWizard({
               onChange={(resources) => update({ resources })}
             />
           )}
+
+          {step === "review" && (
+            <div className="divide-y rounded-md border px-3">
+              <ReviewRow icon={<GitBranch className="h-4 w-4" />} label="Source">
+                {kind.label}
+                <span className="ml-1 text-muted-foreground">· PAT auth</span>
+              </ReviewRow>
+              <ReviewRow icon={<Check className="h-4 w-4" />} label="Name">
+                <span className="font-medium">{values.name.trim() || "—"}</span>
+              </ReviewRow>
+              <ReviewRow icon={<Timer className="h-4 w-4" />} label="Sync interval">
+                {formatInterval(values.scheduleMs)}
+              </ReviewRow>
+              <ReviewRow icon={<Database className="h-4 w-4" />} label="Target database">
+                <span className="font-mono text-xs">{values.targetDatabase.trim() || database}</span>
+              </ReviewRow>
+              <ReviewRow icon={<Table2 className="h-4 w-4" />} label="Graph tables">
+                <span className="font-mono text-xs">
+                  {(values.targetTable.trim() || kind.defaultTargetTable).replace(/_nodes$/, "")}_nodes / _edges
+                </span>
+              </ReviewRow>
+              {kind.resourceStep && (
+                <ReviewRow
+                  icon={<GitBranch className="h-4 w-4" />}
+                  label={`Repositories (${values.resources.length})`}
+                >
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {values.resources.slice(0, 8).map((r) => (
+                      <span key={r} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
+                        {r}
+                      </span>
+                    ))}
+                    {values.resources.length > 8 && (
+                      <span className="text-xs text-muted-foreground">
+                        +{values.resources.length - 8} more
+                      </span>
+                    )}
+                  </div>
+                </ReviewRow>
+              )}
+            </div>
+          )}
+
+          {create.isError && (
+            <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {(create.error as Error)?.message ?? "Failed to create connector."}
+            </p>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={close}>
             Cancel
           </Button>
-          {step === "config" && (
-            <Button onClick={handleNextFromConfig} disabled={!configValid}>
-              {kind.resourceStep ? "Next" : create.isPending ? "Creating…" : "Create"}
+          {step !== "review" && step !== "kind" && (
+            <Button onClick={nextStep} disabled={!canAdvance}>
+              Next
             </Button>
           )}
-          {step === "resources" && (
-            <Button
-              onClick={handleCreate}
-              disabled={!resourcesValid || create.isPending}
-            >
-              {create.isPending
-                ? "Creating…"
-                : `Create${values.resources.length ? ` (${values.resources.length})` : ""}`}
+          {step === "review" && (
+            <Button onClick={handleCreate} disabled={create.isPending}>
+              {create.isPending ? "Creating…" : "Create connector"}
             </Button>
           )}
         </DialogFooter>
