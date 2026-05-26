@@ -15,6 +15,20 @@ use crate::types::{
 // The schema graph is timeless; use a fixed stable timestamp for deterministic JSON.
 const SCHEMA_TS: &str = "1970-01-01T00:00:00Z";
 
+/// True if `name` is a `<g>_nodes`/`<g>_edges` table that backs a registered
+/// property-graph (its sibling table exists). These are storage plumbing for
+/// the connector/stored graphs and are hidden from the catalog *schema* graph —
+/// surfacing them as standalone `Table` nodes is confusing.
+fn is_graph_storage_table(name: &str, all: &std::collections::HashSet<String>) -> bool {
+    if let Some(base) = name.strip_suffix("_nodes") {
+        return all.contains(&format!("{base}_edges"));
+    }
+    if let Some(base) = name.strip_suffix("_edges") {
+        return all.contains(&format!("{base}_nodes"));
+    }
+    false
+}
+
 /// Stable node id for a table.
 fn table_node_id(database: &str, table: &str) -> String {
     format!("{database}::{table}")
@@ -92,11 +106,18 @@ impl SchemaGraphProvider {
                     continue;
                 }
             }
+            let all_names: std::collections::HashSet<String> =
+                self.source.tables(&db).await?.into_iter().collect();
             let mut tables: Vec<(String, Vec<ColumnDef>)> = Vec::new();
-            for t in self.source.tables(&db).await? {
-                let cols = self.source.columns(&db, &t).await?;
-                tables.push((t, cols));
+            for t in &all_names {
+                // Hide graph-storage plumbing (`<g>_nodes`/`<g>_edges` pairs).
+                if is_graph_storage_table(t, &all_names) {
+                    continue;
+                }
+                let cols = self.source.columns(&db, t).await?;
+                tables.push((t.clone(), cols));
             }
+            tables.sort_by(|a, b| a.0.cmp(&b.0));
             for (tname, cols) in &tables {
                 let mut props: Props = BTreeMap::new();
                 props.insert("database".into(), serde_json::json!(db));
@@ -289,6 +310,26 @@ mod edge_tests {
 
     fn col(name: &str) -> ColumnDef {
         ColumnDef { name: name.into(), type_: "string".into(), nullable: true }
+    }
+
+    #[test]
+    fn hides_graph_storage_table_pairs() {
+        let all: std::collections::HashSet<String> = [
+            "github_nodes", "github_edges", "kg_nodes", "kg_edges", "api_calls", "users", "lonely_nodes",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        // `<g>_nodes`/`<g>_edges` pairs that back a graph are hidden.
+        assert!(is_graph_storage_table("github_nodes", &all));
+        assert!(is_graph_storage_table("github_edges", &all));
+        assert!(is_graph_storage_table("kg_nodes", &all));
+        assert!(is_graph_storage_table("kg_edges", &all));
+        // Real schema tables stay visible.
+        assert!(!is_graph_storage_table("api_calls", &all));
+        assert!(!is_graph_storage_table("users", &all));
+        // A lone `_nodes` table with no `_edges` sibling is NOT hidden.
+        assert!(!is_graph_storage_table("lonely_nodes", &all));
     }
 
     #[test]
