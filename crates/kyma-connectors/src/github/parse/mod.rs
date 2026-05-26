@@ -72,6 +72,16 @@ impl Lang {
         }
     }
 
+    /// The query string for definition (function/class) extraction.
+    fn defs_query_str(self) -> &'static str {
+        match self {
+            Self::Rust => queries::RUST_DEFS,
+            Self::Python => queries::PYTHON_DEFS,
+            Self::TypeScript | Self::JavaScript => queries::TS_JS_DEFS,
+            Self::Go => queries::GO_DEFS,
+        }
+    }
+
     /// Name shown in node `props`.
     pub fn name(self) -> &'static str {
         match self {
@@ -147,6 +157,72 @@ pub fn extract_imports(lang: Lang, source: &str) -> Vec<RawImport> {
     // sub-queries; keep first occurrence per raw string + line.
     imports.dedup_by(|a, b| a.raw == b.raw && a.line == b.line);
     imports
+}
+
+/// The kind of a code definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SymbolKind {
+    Function,
+    Class,
+}
+
+/// A function/method or class/type definition extracted from a source file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeSymbol {
+    pub kind: SymbolKind,
+    /// The defined symbol's name (e.g. `parse_config`, `HttpClient`).
+    pub name: String,
+    /// 1-based line of the definition.
+    pub line: usize,
+}
+
+/// Parse `source` and return the function/method and class/type definitions.
+///
+/// Synchronous + CPU-bound — wrap in `spawn_blocking` from async code.
+/// Best-effort: returns an empty `Vec` if the source can't be parsed.
+pub fn extract_symbols(lang: Lang, source: &str) -> Vec<CodeSymbol> {
+    let ts_lang = lang.ts_language();
+    let query_str = lang.defs_query_str();
+
+    let mut parser = Parser::new();
+    if parser.set_language(&ts_lang).is_err() {
+        return vec![];
+    }
+    let tree = match parser.parse(source, None) {
+        Some(t) => t,
+        None => return vec![],
+    };
+    let query = match Query::new(&ts_lang, query_str) {
+        Ok(q) => q,
+        Err(_) => return vec![],
+    };
+    let func_idx = query.capture_index_for_name("func");
+    let class_idx = query.capture_index_for_name("class");
+
+    let mut qcursor = QueryCursor::new();
+    let source_bytes = source.as_bytes();
+    let mut matches = qcursor.matches(&query, tree.root_node(), source_bytes);
+
+    let mut out = Vec::new();
+    while let Some(m) = matches.next() {
+        for cap in m.captures {
+            let kind = if Some(cap.index) == func_idx {
+                SymbolKind::Function
+            } else if Some(cap.index) == class_idx {
+                SymbolKind::Class
+            } else {
+                continue;
+            };
+            let name = cap.node.utf8_text(source_bytes).unwrap_or("").to_string();
+            if name.is_empty() {
+                continue;
+            }
+            let line = cap.node.start_position().row + 1;
+            out.push(CodeSymbol { kind, name, line });
+        }
+    }
+    out.dedup_by(|a, b| a.kind == b.kind && a.name == b.name && a.line == b.line);
+    out
 }
 
 /// Strip surrounding `"`, `'`, or `` ` `` from a string literal.
@@ -335,5 +411,61 @@ import (
         let src = "fn main() { println!(\"hello\"); }\n";
         let imports = extract_imports(Lang::Rust, src);
         assert!(imports.is_empty(), "expected no imports, got: {:?}", imports);
+    }
+
+    // ── symbol extraction (functions + classes) ─────────────────────────────────
+
+    fn names(syms: &[CodeSymbol], kind: SymbolKind) -> Vec<&str> {
+        syms.iter().filter(|s| s.kind == kind).map(|s| s.name.as_str()).collect()
+    }
+
+    #[test]
+    fn python_symbols_functions_and_classes() {
+        let src = "import os\n\nclass Client:\n    def connect(self):\n        pass\n\ndef main():\n    pass\n";
+        let syms = extract_symbols(Lang::Python, src);
+        assert!(names(&syms, SymbolKind::Class).contains(&"Client"), "classes: {:?}", syms);
+        let fns = names(&syms, SymbolKind::Function);
+        assert!(fns.contains(&"connect"), "fns: {:?}", fns);
+        assert!(fns.contains(&"main"), "fns: {:?}", fns);
+        // line numbers are 1-based
+        assert!(syms.iter().any(|s| s.name == "main" && s.line == 7), "main line: {:?}", syms);
+    }
+
+    #[test]
+    fn rust_symbols_functions_structs_traits() {
+        let src = "struct Server;\ntrait Handler { fn handle(&self); }\nfn run() {}\nenum State { On, Off }\n";
+        let syms = extract_symbols(Lang::Rust, src);
+        let classes = names(&syms, SymbolKind::Class);
+        assert!(classes.contains(&"Server"), "classes: {:?}", classes);
+        assert!(classes.contains(&"Handler"), "classes: {:?}", classes);
+        assert!(classes.contains(&"State"), "classes: {:?}", classes);
+        let fns = names(&syms, SymbolKind::Function);
+        assert!(fns.contains(&"run"), "fns: {:?}", fns);
+        assert!(fns.contains(&"handle"), "fns: {:?}", fns);
+    }
+
+    #[test]
+    fn ts_symbols_class_and_methods() {
+        let src = "export class Repo {\n  fetch() {}\n}\nfunction helper() {}\n";
+        let syms = extract_symbols(Lang::TypeScript, src);
+        assert!(names(&syms, SymbolKind::Class).contains(&"Repo"), "classes: {:?}", syms);
+        let fns = names(&syms, SymbolKind::Function);
+        assert!(fns.contains(&"helper"), "fns: {:?}", fns);
+        assert!(fns.contains(&"fetch"), "fns: {:?}", fns);
+    }
+
+    #[test]
+    fn go_symbols_funcs_methods_types() {
+        let src = "package main\ntype Server struct {}\nfunc (s *Server) Start() {}\nfunc main() {}\n";
+        let syms = extract_symbols(Lang::Go, src);
+        assert!(names(&syms, SymbolKind::Class).contains(&"Server"), "classes: {:?}", syms);
+        let fns = names(&syms, SymbolKind::Function);
+        assert!(fns.contains(&"Start"), "fns: {:?}", fns);
+        assert!(fns.contains(&"main"), "fns: {:?}", fns);
+    }
+
+    #[test]
+    fn symbols_empty_source() {
+        assert_eq!(extract_symbols(Lang::Python, ""), vec![]);
     }
 }

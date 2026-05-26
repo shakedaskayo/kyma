@@ -71,6 +71,12 @@ pub fn module_id(raw: &str) -> String {
     format!("module:{raw}")
 }
 
+/// Deterministic id for a code symbol (function/class). `kind` is `func` or
+/// `class`; `line` disambiguates same-named symbols in one file.
+pub fn symbol_id(owner: &str, repo: &str, path: &str, name: &str, line: usize, kind: &str) -> String {
+    format!("{kind}:{owner}/{repo}:{path}#{name}#{line}")
+}
+
 /// Deterministic edge id: `src|TYPE|dst`.
 pub fn edge_id(src: &str, rel: &str, dst: &str) -> String {
     format!("{src}|{rel}|{dst}")
@@ -326,7 +332,7 @@ pub fn to_graph(records: &[RawRecord]) -> (Vec<TableRows>, GraphHint) {
 
 // ── Code graph transform (B2) ─────────────────────────────────────────────────
 
-/// A file path + its extracted import list.
+/// A file path + its extracted imports and symbol definitions.
 pub struct FileImports {
     /// Repo-relative path (e.g. `"src/main.rs"`).
     pub path: String,
@@ -336,6 +342,8 @@ pub struct FileImports {
     pub language: String,
     /// Import targets extracted by tree-sitter.
     pub imports: Vec<ImportTarget>,
+    /// Function/class definitions extracted by tree-sitter.
+    pub symbols: Vec<crate::github::parse::CodeSymbol>,
 }
 
 /// A single resolved/unresolved import from a source file.
@@ -460,6 +468,24 @@ pub fn code_to_graph(
             eprops.insert("line".into(), Value::Number(imp.line.into()));
             eprops.insert("resolved".into(), Value::Bool(resolved));
             edges.push(make_edge(&fid, "IMPORTS", &dst_id, eprops));
+        }
+    }
+
+    // Emit CodeFunction / CodeClass nodes + DEFINES edges (file → symbol).
+    for fi in files {
+        let fid = file_id(owner, repo_name, &fi.path);
+        for sym in &fi.symbols {
+            let (label, kind) = match sym.kind {
+                crate::github::parse::SymbolKind::Function => ("CodeFunction", "func"),
+                crate::github::parse::SymbolKind::Class => ("CodeClass", "class"),
+            };
+            let sid = symbol_id(owner, repo_name, &fi.path, &sym.name, sym.line, kind);
+            let mut props = Map::new();
+            props.insert("language".into(), Value::String(fi.language.clone()));
+            props.insert("line".into(), Value::Number(sym.line.into()));
+            props.insert("file".into(), Value::String(fi.path.clone()));
+            nodes.push(make_node(&sid, label, &sym.name, props));
+            edges.push(make_edge(&fid, "DEFINES", &sid, Map::new()));
         }
     }
 
@@ -927,6 +953,7 @@ mod tests {
     // ── Code graph tests (B2) ─────────────────────────────────────────────────
 
     fn make_file_tree() -> Vec<FileImports> {
+        use crate::github::parse::{CodeSymbol, SymbolKind};
         vec![
             FileImports {
                 path: "src/main.rs".into(),
@@ -944,20 +971,55 @@ mod tests {
                         resolved_path: None,
                     },
                 ],
+                symbols: vec![
+                    CodeSymbol { kind: SymbolKind::Function, name: "main".into(), line: 4 },
+                    CodeSymbol { kind: SymbolKind::Class, name: "App".into(), line: 8 },
+                ],
             },
             FileImports {
                 path: "src/lib.rs".into(),
                 size: 200,
                 language: "rust".into(),
                 imports: vec![],
+                symbols: vec![],
             },
             FileImports {
                 path: "src/helpers/mod.rs".into(),
                 size: 50,
                 language: "rust".into(),
                 imports: vec![],
+                symbols: vec![],
             },
         ]
+    }
+
+    #[test]
+    fn code_graph_emits_symbols_and_defines() {
+        let files = make_file_tree();
+        let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        let nodes = &tables[0].rows;
+        let edges = &tables[1].rows;
+        let fn_id = symbol_id("acme", "myrepo", "src/main.rs", "main", 4, "func");
+        let cls_id = symbol_id("acme", "myrepo", "src/main.rs", "App", 8, "class");
+        assert!(
+            nodes.iter().any(|n| n["id"].as_str() == Some(fn_id.as_str()) && n["labels"].as_str() == Some("CodeFunction")),
+            "missing CodeFunction node"
+        );
+        assert!(
+            nodes.iter().any(|n| n["id"].as_str() == Some(cls_id.as_str()) && n["labels"].as_str() == Some("CodeClass")),
+            "missing CodeClass node"
+        );
+        let file = file_id("acme", "myrepo", "src/main.rs");
+        assert!(
+            edges.iter().any(|e| e["type"].as_str() == Some("DEFINES")
+                && e["src"].as_str() == Some(file.as_str())
+                && e["dst"].as_str() == Some(fn_id.as_str())),
+            "missing DEFINES edge file→function"
+        );
+        assert!(
+            edges.iter().any(|e| e["type"].as_str() == Some("DEFINES") && e["dst"].as_str() == Some(cls_id.as_str())),
+            "missing DEFINES edge file→class"
+        );
     }
 
     #[test]

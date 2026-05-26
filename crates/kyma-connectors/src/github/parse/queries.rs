@@ -68,3 +68,37 @@ pub const GO_IMPORTS: &str = r#"
 (import_spec
   path: (interpreted_string_literal) @import)
 "#;
+
+// ── Definition queries (functions + classes) ────────────────────────────────
+// Capture `@func` for callable definitions and `@class` for type definitions.
+// The parse module records each captured name + its 1-based line.
+
+/// Rust: functions, plus struct/enum/trait as "classes".
+pub const RUST_DEFS: &str = r#"
+(function_item name: (identifier) @func)
+(function_signature_item name: (identifier) @func)
+(struct_item name: (type_identifier) @class)
+(enum_item name: (type_identifier) @class)
+(trait_item name: (type_identifier) @class)
+"#;
+
+/// Python: functions/methods + classes.
+pub const PYTHON_DEFS: &str = r#"
+(function_definition name: (identifier) @func)
+(class_definition name: (identifier) @class)
+"#;
+
+/// TypeScript / JavaScript: function declarations, methods, classes.
+/// `(_)` for the class name handles both grammars (type_identifier vs identifier).
+pub const TS_JS_DEFS: &str = r#"
+(function_declaration name: (identifier) @func)
+(method_definition name: (property_identifier) @func)
+(class_declaration name: (_) @class)
+"#;
+
+/// Go: functions, methods (with receiver), and type specs as "classes".
+pub const GO_DEFS: &str = r#"
+(function_declaration name: (identifier) @func)
+(method_declaration name: (field_identifier) @func)
+(type_spec name: (type_identifier) @class)
+"#;
