@@ -76,6 +76,45 @@ pub fn edge_id(src: &str, rel: &str, dst: &str) -> String {
     format!("{src}|{rel}|{dst}")
 }
 
+/// Node labels re-fetched in full on every poll (vs the cursor-incremental
+/// pulls/issues stream). Their rows are gated by [`refetch_signature`].
+pub const REFETCH_NODE_LABELS: [&str; 3] = ["Repository", "User", "Branch"];
+/// Edge types re-fetched in full on every poll.
+pub const REFETCH_EDGE_TYPES: [&str; 2] = ["OWNS", "HAS_BRANCH"];
+
+/// True if this node row comes from a full-refetch module.
+pub fn is_refetch_node(n: &Value) -> bool {
+    n.get("labels").and_then(Value::as_str).is_some_and(|l| REFETCH_NODE_LABELS.contains(&l))
+}
+/// True if this edge row comes from a full-refetch module.
+pub fn is_refetch_edge(e: &Value) -> bool {
+    e.get("type").and_then(Value::as_str).is_some_and(|t| REFETCH_EDGE_TYPES.contains(&t))
+}
+
+/// A stable, order-independent signature over the full-refetch metadata rows.
+///
+/// Used to skip re-emitting unchanged repo/user/branch rows every tick: the
+/// connector re-fetches these modules in full each poll, and the node/edge
+/// tables are append-only, so without a gate a continuous connector grows the
+/// tables without bound. Hashing the *emitted rows* (not the raw API payload)
+/// means only changes to the fields we actually store trigger a re-emit.
+pub fn refetch_signature(nodes: &[Value], edges: &[Value]) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut parts: Vec<String> = Vec::new();
+    for n in nodes.iter().filter(|n| is_refetch_node(n)) {
+        parts.push(serde_json::to_string(n).unwrap_or_default());
+    }
+    for e in edges.iter().filter(|e| is_refetch_edge(e)) {
+        parts.push(serde_json::to_string(e).unwrap_or_default());
+    }
+    parts.sort();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for p in &parts {
+        p.hash(&mut h);
+    }
+    format!("{:016x}", h.finish())
+}
+
 // ── node builders ─────────────────────────────────────────────────────────────
 
 fn make_node(id: &str, label: &str, name: &str, extra: Map<String, Value>) -> Value {
@@ -1166,5 +1205,40 @@ mod tests {
         }];
         let resolved = resolve_imports("go", "main.go", &imports, &paths);
         assert_eq!(resolved[0].resolved_path, None);
+    }
+
+    #[test]
+    fn refetch_classification() {
+        assert!(is_refetch_node(&make_node("repo:o/r", "Repository", "r", Map::new())));
+        assert!(is_refetch_node(&make_node("user:o", "User", "o", Map::new())));
+        assert!(is_refetch_node(&make_node("branch:o/r@main", "Branch", "main", Map::new())));
+        assert!(!is_refetch_node(&make_node("pr:o/r#1", "PullRequest", "t", Map::new())));
+        assert!(!is_refetch_node(&make_node("file:o/r:a.py", "CodeFile", "a.py", Map::new())));
+        assert!(is_refetch_edge(&make_edge("user:o", "OWNS", "repo:o/r", Map::new())));
+        assert!(is_refetch_edge(&make_edge("repo:o/r", "HAS_BRANCH", "branch:o/r@main", Map::new())));
+        assert!(!is_refetch_edge(&make_edge("repo:o/r", "HAS_PULL_REQUEST", "pr:o/r#1", Map::new())));
+    }
+
+    #[test]
+    fn refetch_signature_is_stable_order_independent_and_change_sensitive() {
+        let mut p1 = Map::new();
+        p1.insert("description".into(), Value::String("scripts".into()));
+        let repo = make_node("repo:o/r", "Repository", "r", p1);
+        let user = make_node("user:o", "User", "o", Map::new());
+        let owns = make_edge("user:o", "OWNS", "repo:o/r", Map::new());
+        // Non-refetch rows must not affect the signature.
+        let pr = make_node("pr:o/r#1", "PullRequest", "t", Map::new());
+
+        let sig_a = refetch_signature(&[repo.clone(), user.clone(), pr.clone()], &[owns.clone()]);
+        // Reordered nodes + the PR removed → same signature.
+        let sig_b = refetch_signature(&[user.clone(), repo.clone()], &[owns.clone()]);
+        assert_eq!(sig_a, sig_b, "signature must be order-independent and ignore non-refetch rows");
+
+        // Change a stored prop on the repo → signature changes.
+        let mut p2 = Map::new();
+        p2.insert("description".into(), Value::String("renamed".into()));
+        let repo2 = make_node("repo:o/r", "Repository", "r", p2);
+        let sig_c = refetch_signature(&[repo2, user], &[owns]);
+        assert_ne!(sig_a, sig_c, "a changed stored prop must change the signature");
     }
 }

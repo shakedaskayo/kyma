@@ -34,6 +34,15 @@ pub struct RepoCursor {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Cursor {
     pub repos: HashMap<String, RepoCursor>,
+    /// Content signature of the full-refetch metadata (Repository/User/Branch
+    /// nodes + OWNS/HAS_BRANCH edges) emitted on the last successful tick.
+    /// These modules are re-fetched in full every poll (unlike the
+    /// cursor-incremental pulls/issues), so without this gate a continuous
+    /// connector would re-append identical rows on every tick. When the new
+    /// signature matches, those rows are dropped before ingest. `None` = never
+    /// ingested.
+    #[serde(default)]
+    pub refetch_signature: Option<String>,
 }
 
 impl Cursor {

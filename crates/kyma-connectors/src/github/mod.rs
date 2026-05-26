@@ -269,6 +269,24 @@ impl Connector for GithubConnector {
             .map(|t| t.rows.clone())
             .unwrap_or_default();
 
+        // ── Skip re-emitting unchanged full-refetch metadata ─────────────────
+        // repo/user/branch are re-fetched in full every poll, but the node/edge
+        // tables are append-only. Gate those rows by a content signature so a
+        // steady-state tick (nothing changed) writes zero rows instead of
+        // duplicating them. Pulls/issues are cursor-incremental and pass through.
+        let sig = transform::refetch_signature(&nodes, &edges);
+        if cur.refetch_signature.as_deref() == Some(sig.as_str()) {
+            let before = nodes.len() + edges.len();
+            nodes.retain(|n| !transform::is_refetch_node(n));
+            edges.retain(|e| !transform::is_refetch_edge(e));
+            tracing::debug!(
+                dropped = before - (nodes.len() + edges.len()),
+                "github: full-refetch metadata unchanged; skipping re-emit"
+            );
+        } else {
+            cur.refetch_signature = Some(sig);
+        }
+
         // ── Code graph (B2) ───────────────────────────────────────────────────
         if config.modules.codebase {
             for repo_slug in &config.repos {
