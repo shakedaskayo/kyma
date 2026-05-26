@@ -38,6 +38,11 @@ struct CreateReq {
     #[serde(rename = "type")]
     type_id: String,
     target_database: String,
+    /// Graph-style connectors that emit multiple tables via `ConnectorRun::tables`
+    /// may omit `target_table` (or pass an empty string); the connector's
+    /// `GraphHint` dictates the actual tables. Single-table connectors
+    /// (e.g. Prometheus) should still supply it.
+    #[serde(default)]
     target_table: String,
     schedule_ms: i64,
     config: serde_json::Value,

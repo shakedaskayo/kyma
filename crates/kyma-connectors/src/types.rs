@@ -16,13 +16,48 @@ pub enum DriveModel {
     Continuous { heartbeat_ms: u64 },
 }
 
+/// A named batch of rows destined for a specific table. Used by the
+/// multi-table output path so a single `run_once` can populate several
+/// tables (e.g. graph nodes + edges) in one tick.
+#[derive(Debug)]
+pub struct TableRows {
+    /// Target table name within the connector's `target_database`.
+    pub table: String,
+    /// JSON rows — run through JSON→Arrow coercion before ingest.
+    pub rows: Vec<serde_json::Value>,
+}
+
+/// Optional hint from a connector that the framework should auto-register
+/// a property-graph binding after the tables have been ingested.
+#[derive(Debug, Clone)]
+pub struct GraphHint {
+    /// Name of the graph to register (idempotent — "already exists" is
+    /// swallowed).
+    pub graph_name: String,
+    /// Node table name (must match one of the `TableRows` or
+    /// `ConnectorRun::rows` target table names).
+    pub node_table: String,
+    /// Edge table name.
+    pub edge_table: String,
+}
+
 /// Produced by a single `run_once` invocation.
 #[derive(Debug)]
 pub struct ConnectorRun {
-    /// JSON rows — run through JSON→Arrow coercion before ingest.
+    /// Legacy single-table path: JSON rows destined for the connector's
+    /// configured `target_table`. Kept for backwards-compatibility with
+    /// existing connectors (e.g. Prometheus). Set to an empty `Vec` when
+    /// using the multi-table `tables` path.
     pub rows: Vec<serde_json::Value>,
     /// When `Some`, the framework upserts this into `connector_cursors`.
     pub new_cursor: Option<serde_json::Value>,
+    /// Multi-table output path. Each entry names a distinct target table
+    /// and its rows. The framework ingests each entry independently, with
+    /// per-table idempotency keys so entries don't deduplicate each other.
+    pub tables: Vec<TableRows>,
+    /// When `Some`, the framework calls `GraphRegisterFn` after all
+    /// tables have been successfully ingested.
+    pub graph: Option<GraphHint>,
 }
 
 /// Context passed to `Connector::run_once`. Cheap to clone per-tick; the

@@ -1,10 +1,11 @@
-import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Database, Settings as SettingsIcon, Compass, LayoutDashboard, Sparkles, Network } from "lucide-react";
+import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Database, Settings as SettingsIcon, Compass, LayoutDashboard, Sparkles, Network, LogOut } from "lucide-react";
 import { useEffect } from "react";
 import { useSession } from "@/sdk/session";
 import { useHealth } from "@/sdk/reconnect";
 import { useWorkspace } from "@/features/tabs/workspace-store";
 import { ReconnectBanner } from "@/features/reconnect/ReconnectBanner";
+import { logout } from "@/sdk/auth";
 
 // ── query status pill ─────────────────────────────────────────────────────────
 
@@ -62,6 +63,39 @@ function ConnectionDot() {
   );
 }
 
+// ── user badge + logout ───────────────────────────────────────────────────────
+
+function UserBadge() {
+  const session = useSession();
+  const navigate = useNavigate();
+
+  if (!session.user) return null;
+
+  const handleLogout = async () => {
+    if (session.token) {
+      await logout({ endpoint: session.endpoint, token: session.token }).catch(() => {});
+    }
+    session.reset();
+    navigate({ to: "/login", search: { next: undefined } });
+  };
+
+  return (
+    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+      <span className="max-w-[16ch] truncate font-medium text-foreground">
+        {session.user.username}
+      </span>
+      <button
+        type="button"
+        title="Log out"
+        onClick={handleLogout}
+        className="rounded p-0.5 hover:bg-accent transition-colors"
+      >
+        <LogOut className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 // ── shell ─────────────────────────────────────────────────────────────────────
 
 export function Shell() {
@@ -102,6 +136,7 @@ export function Shell() {
           <ConnectionDot />
           <span className="max-w-[22ch] truncate text-xs text-muted-foreground">{endpoint || "no server"}</span>
         </div>
+        <UserBadge />
       </header>
       <ReconnectBanner />
       <main className="flex-1 overflow-hidden">

@@ -22,9 +22,10 @@ use kyma_connectors::secrets::EnvSecretStore;
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use kyma_core::segment_format::SegmentFormat;
 use kyma_format_tlm::TelemetryFormat;
+use kyma_core::catalog::GraphSpec;
 use kyma_ingest_core::{
-    spawn_idempotency_cleanup, CommitCoordinator, CoordinatorConfig, StagingBuffer, StagingConfig,
-    WritePath,
+    ensure_table, evolve_schema_for_records, spawn_idempotency_cleanup, CommitCoordinator,
+    CoordinatorConfig, StagingBuffer, StagingConfig, WritePath,
 };
 use kyma_ingest_filedrop::{FiledropConfig, FiledropWatcher};
 use kyma_ingest_kafka::{KafkaConsumerConfig, KafkaConsumerWorker};
@@ -106,6 +107,42 @@ async fn main() -> Result<()> {
     let catalog: Arc<dyn Catalog> = pg_catalog.clone();
     info!("catalog connected; migrations applied");
 
+    // 1a. Seed the admin user from env if requested and no users exist yet.
+    //     Both KYMA_ADMIN_USER and KYMA_ADMIN_PASSWORD must be set; if only
+    //     one is set we skip seeding and warn instead of failing.
+    {
+        let admin_user = std::env::var("KYMA_ADMIN_USER").ok();
+        let admin_pw = std::env::var("KYMA_ADMIN_PASSWORD").ok();
+        match (admin_user, admin_pw) {
+            (Some(user), Some(pw)) => {
+                let user_count = catalog
+                    .count_users()
+                    .await
+                    .context("counting users for admin seed check")?;
+                if user_count == 0 {
+                    let phc = kyma_server::auth::passwords::hash_password(&pw)
+                        .map_err(|e| anyhow::anyhow!("hashing admin password: {e}"))?;
+                    catalog
+                        .create_user(&user, &phc, "admin")
+                        .await
+                        .context("seeding admin user")?;
+                    info!(username = %user, "seeded admin user");
+                } else {
+                    info!("KYMA_ADMIN_USER set but users already exist — skipping seed");
+                }
+            }
+            (Some(_), None) => {
+                warn!("KYMA_ADMIN_USER is set but KYMA_ADMIN_PASSWORD is not — skipping admin seed");
+            }
+            (None, Some(_)) => {
+                warn!("KYMA_ADMIN_PASSWORD is set but KYMA_ADMIN_USER is not — skipping admin seed");
+            }
+            (None, None) => {
+                // Neither set — no seeding requested, this is fine.
+            }
+        }
+    }
+
     // 2. Object store + format.
     let storage_config = config_from_env();
     let store = build_object_store(&storage_config).context("building object store")?;
@@ -144,6 +181,18 @@ async fn main() -> Result<()> {
     //    Build the HTTP router by merging ingest + query + health + metrics.
     //    Health + metrics stay unauthenticated; ingest + query get the auth
     //    middleware (bypassed at runtime when KYMA_AUTH_TOKENS is empty).
+    //
+    //    Backend selection order:
+    //    1. KYMA_AUTH_BACKEND=db  → DbAuthBackend (cloud-auth feature, cloud only)
+    //    2. KYMA_AUTH_BACKEND=session OR users_exist → SessionAuthBackend
+    //       (session tokens + env static tokens in one backend)
+    //    3. Otherwise → EnvAuthBackend (static KYMA_AUTH_TOKENS only)
+    let users_exist = catalog
+        .count_users()
+        .await
+        .context("counting users for backend selection")?
+        > 0;
+
     let backend: Arc<dyn AuthBackend> = match std::env::var("KYMA_AUTH_BACKEND")
         .ok()
         .as_deref()
@@ -158,15 +207,39 @@ async fn main() -> Result<()> {
         Some("db") => {
             warn!(
                 "KYMA_AUTH_BACKEND=db requested but the binary was compiled without \
-                 the `cloud-auth` feature; falling back to EnvAuthBackend."
+                 the `cloud-auth` feature; falling back to SessionAuthBackend."
             );
-            Arc::new(EnvAuthBackend::from_env())
+            Arc::new(kyma_server::auth::SessionAuthBackend::new(
+                catalog.clone(),
+                EnvAuthBackend::from_env(),
+                users_exist,
+            ))
+        }
+        Some("session") => {
+            info!("auth: using session backend (KYMA_AUTH_BACKEND=session)");
+            Arc::new(kyma_server::auth::SessionAuthBackend::new(
+                catalog.clone(),
+                EnvAuthBackend::from_env(),
+                users_exist,
+            ))
         }
         Some(other) if !other.is_empty() => {
             warn!(
-                "KYMA_AUTH_BACKEND={other:?} unrecognized; using EnvAuthBackend."
+                "KYMA_AUTH_BACKEND={other:?} unrecognized; using SessionAuthBackend."
             );
-            Arc::new(EnvAuthBackend::from_env())
+            Arc::new(kyma_server::auth::SessionAuthBackend::new(
+                catalog.clone(),
+                EnvAuthBackend::from_env(),
+                users_exist,
+            ))
+        }
+        _ if users_exist => {
+            info!("auth: users exist — using session backend");
+            Arc::new(kyma_server::auth::SessionAuthBackend::new(
+                catalog.clone(),
+                EnvAuthBackend::from_env(),
+                users_exist,
+            ))
         }
         _ => Arc::new(EnvAuthBackend::from_env()),
     };
@@ -262,6 +335,12 @@ async fn main() -> Result<()> {
     let conn_registry = Arc::new(conn_reg);
 
     // RowSink: bridges connector JSON rows → arrow coercion → WritePath.
+    //
+    // The sink auto-creates the target table (ensure_table) and promotes
+    // unknown JSON properties to columns (evolve_schema_for_records) before
+    // coercing + ingesting. Both helpers are no-ops on the happy path when the
+    // table already exists with the right shape, so the legacy Prometheus path
+    // is unaffected.
     let conn_sink: kyma_connectors::runner::RowSink = {
         let catalog_for_sink = catalog.clone();
         let write_path_for_sink = write_path.clone();
@@ -270,10 +349,16 @@ async fn main() -> Result<()> {
                 let catalog = catalog_for_sink.clone();
                 let write_path = write_path_for_sink.clone();
                 Box::pin(async move {
-                    let table = catalog
-                        .lookup_table(&db, &tbl)
+                    // Auto-create the database + table if they don't exist yet
+                    // (idempotent — single SQL lookup on the happy path).
+                    let table = ensure_table(catalog.as_ref(), &db, &tbl)
                         .await
-                        .map_err(|e| anyhow::anyhow!("lookup_table: {e}"))?;
+                        .map_err(|e| anyhow::anyhow!("ensure_table: {e}"))?;
+                    // Promote unknown JSON property names to nullable Utf8
+                    // columns (capped at 32 new columns per request).
+                    let table = evolve_schema_for_records(catalog.as_ref(), &db, table, &rows)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("evolve_schema: {e}"))?;
                     let batches =
                         kyma_connectors::arrow_coerce::rows_to_batches(&table.schema, rows)
                             .map_err(|e| anyhow::anyhow!("arrow coerce: {e}"))?;
@@ -281,6 +366,40 @@ async fn main() -> Result<()> {
                         .ingest_with_idempotency(&table, batches, idem.as_deref())
                         .await
                         .map_err(|e| anyhow::anyhow!("ingest: {e}"))?;
+                    Ok(())
+                })
+            },
+        )
+    };
+
+    // GraphRegisterFn: registers (or idempotently re-registers) a
+    // property-graph binding in the catalog after multi-table ingest.
+    let graph_register: kyma_connectors::runner::GraphRegisterFn = {
+        let catalog_for_graph = catalog.clone();
+        Arc::new(
+            move |db: String, hint: kyma_connectors::GraphHint| {
+                let catalog = catalog_for_graph.clone();
+                Box::pin(async move {
+                    let spec = GraphSpec::with_defaults(
+                        hint.node_table.clone(),
+                        hint.edge_table.clone(),
+                    );
+                    match catalog.create_graph(&db, &hint.graph_name, spec).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            // Swallow "already exists" — the graph was registered
+                            // on a previous tick; nothing to do.
+                            let msg = e.to_string();
+                            if msg.contains("already exists")
+                                || msg.contains("duplicate")
+                                || msg.contains("23505")
+                            {
+                                // idempotent — ignore
+                            } else {
+                                return Err(anyhow::anyhow!("create_graph: {msg}"));
+                            }
+                        }
+                    }
                     Ok(())
                 })
             },
@@ -319,6 +438,19 @@ async fn main() -> Result<()> {
             require_role_middleware,
         ),
     );
+    // Auth routes: login is unauthenticated; me/logout are authenticated.
+    let auth_login_router =
+        kyma_server::auth_handler::auth_login_router(catalog.clone());
+    let auth_session_router =
+        kyma_server::auth_handler::auth_session_router(catalog.clone()).layer(
+            axum::middleware::from_fn_with_state(
+                AuthLayerState {
+                    backend: backend.clone(),
+                    required: Role::Read,
+                },
+                require_role_middleware,
+            ),
+        );
     let app = ingest_router
         .merge(query_router)
         .merge(mcp_router)
@@ -326,7 +458,9 @@ async fn main() -> Result<()> {
         .merge(cleanup_write_router)
         .merge(health_router)
         .merge(metrics_router)
-        .merge(connector_admin_router);
+        .merge(connector_admin_router)
+        .merge(auth_login_router)
+        .merge(auth_session_router);
     #[cfg(feature = "web-ui")]
     let app = app.merge(kyma_server::web_ui::router());
 
@@ -472,7 +606,8 @@ async fn main() -> Result<()> {
             conn_sink.clone(),
             EnvSecretStore,
             lease.node_id,
-        );
+        )
+        .with_graph_register(graph_register.clone());
         let runner_rx = shutdown_tx.subscribe();
         conn_runner_handles.push(tokio::spawn(async move {
             let mut rx = runner_rx;

@@ -5,14 +5,19 @@ use kyma_connectors::catalog_sql;
 use kyma_connectors::scheduler::ConnectorScheduler;
 use kyma_core::tenant::DEFAULT_TENANT;
 use std::sync::Arc;
-use testcontainers::runners::AsyncRunner;
+use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 
 async fn pg_catalog() -> (
     testcontainers::ContainerAsync<Postgres>,
     Arc<PostgresCatalog>,
 ) {
-    let pg = Postgres::default().start().await.unwrap();
+    let pg = Postgres::default()
+        .with_name("pgvector/pgvector")
+        .with_tag("pg16")
+        .start()
+        .await
+        .unwrap();
     let port = pg.get_host_port_ipv4(5432).await.unwrap();
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
     let catalog = Arc::new(PostgresCatalog::connect(&url).await.unwrap());

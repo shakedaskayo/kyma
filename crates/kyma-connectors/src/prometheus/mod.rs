@@ -172,6 +172,8 @@ impl Connector for PromConnector {
         Ok(ConnectorRun {
             rows,
             new_cursor: None,
+            tables: vec![],
+            graph: None,
         })
     }
 }

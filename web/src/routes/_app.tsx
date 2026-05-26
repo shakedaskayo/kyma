@@ -5,8 +5,8 @@ import { useSession } from "@/sdk/session";
 export const Route = createFileRoute("/_app")({
   beforeLoad: ({ location }) => {
     const s = useSession.getState();
-    if (!s.isConfigured() && location.pathname !== "/settings") {
-      throw redirect({ to: "/settings", search: { next: location.pathname } });
+    if (!s.isConfigured() && location.pathname !== "/login") {
+      throw redirect({ to: "/login", search: { next: location.pathname } });
     }
   },
   component: Shell,

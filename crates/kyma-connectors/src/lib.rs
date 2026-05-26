@@ -14,4 +14,7 @@ pub mod scheduler;
 pub mod secrets;
 pub mod types;
 
-pub use types::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, DriveModel};
+pub use types::{
+    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, DriveModel, GraphHint,
+    TableRows,
+};

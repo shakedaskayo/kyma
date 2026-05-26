@@ -57,6 +57,9 @@ schemars.workspace = true
 sqlx.workspace = true
 chrono.workspace = true
 sha2 = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+base64 = "0.22"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
@@ -101,3 +104,15 @@ required-features = ["test-support"]
 [[test]]
 name = "auth_backends_it"
 required-features = ["test-support", "cloud-auth"]
+
+[[test]]
+name = "auth_catalog_it"
+required-features = ["test-support"]
+
+[[test]]
+name = "auth_handler_it"
+required-features = ["test-support"]
+
+[[test]]
+name = "session_backend_it"
+required-features = ["test-support"]

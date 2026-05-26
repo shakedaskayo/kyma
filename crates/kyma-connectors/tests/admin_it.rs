@@ -8,7 +8,7 @@ use kyma_connectors::{ConfigError, Connector, ConnectorCtx, ConnectorError, Conn
 use kyma_core::tenant::DEFAULT_TENANT;
 use serde_json::json;
 use std::sync::Arc;
-use testcontainers::runners::AsyncRunner;
+use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 use tower::ServiceExt;
 
@@ -35,12 +35,19 @@ impl Connector for StubConn {
         Ok(ConnectorRun {
             rows: vec![],
             new_cursor: None,
+            tables: vec![],
+            graph: None,
         })
     }
 }
 
 async fn state() -> (testcontainers::ContainerAsync<Postgres>, AdminState) {
-    let pg = Postgres::default().start().await.unwrap();
+    let pg = Postgres::default()
+        .with_name("pgvector/pgvector")
+        .with_tag("pg16")
+        .start()
+        .await
+        .unwrap();
     let port = pg.get_host_port_ipv4(5432).await.unwrap();
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
     let catalog = Arc::new(PostgresCatalog::connect(&url).await.unwrap());

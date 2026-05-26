@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './../routes/__root'
 import { Route as SettingsRouteImport } from './../routes/settings'
+import { Route as LoginRouteImport } from './../routes/login'
 import { Route as AppRouteImport } from './../routes/_app'
 import { Route as IndexRouteImport } from './../routes/index'
 import { Route as AppGraphRouteImport } from './../routes/_app.graph'
@@ -21,6 +22,11 @@ import { Route as AppDashboardsIdRouteImport } from './../routes/_app.dashboards
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
@@ -60,6 +66,7 @@ const AppDashboardsIdRoute = AppDashboardsIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/agent': typeof AppAgentRoute
   '/dashboards': typeof AppDashboardsRouteWithChildren
@@ -69,6 +76,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/agent': typeof AppAgentRoute
   '/dashboards': typeof AppDashboardsRouteWithChildren
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/_app/agent': typeof AppAgentRoute
   '/_app/dashboards': typeof AppDashboardsRouteWithChildren
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/login'
     | '/settings'
     | '/agent'
     | '/dashboards'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/login'
     | '/settings'
     | '/agent'
     | '/dashboards'
@@ -110,6 +121,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_app'
+    | '/login'
     | '/settings'
     | '/_app/agent'
     | '/_app/dashboards'
@@ -121,6 +133,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
 }
 
@@ -131,6 +144,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {
@@ -216,6 +236,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
 }
 export const routeTree = rootRouteImport
