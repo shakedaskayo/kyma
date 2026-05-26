@@ -1,22 +1,35 @@
-//! JSON rows → Arrow `RecordBatch` coercion, matching kyma-ingest-rest.
+//! JSON rows → Arrow `RecordBatch` coercion for the connector sink.
 //!
-//! Serializes to NDJSON bytes and feeds `arrow::json::ReaderBuilder`, so the
-//! coercion rules (type promotion, missing-column null-fill, etc.) are
-//! exactly identical to what REST ingest applies.
+//! Delegates to the shared [`kyma_ingest_core::parse_ndjson`] so connector
+//! ingest applies *exactly* the same coercion rules as REST, Kafka, and
+//! file-drop. Crucially that includes the two column kinds arrow-json's reader
+//! cannot decode on its own:
+//!
+//! - dynamic `Binary` / `LargeBinary` columns (the default-schema `props`
+//!   catch-all) — stored as raw JSON bytes,
+//! - `FixedSizeList<Float32, N>` vector columns.
+//!
+//! Reimplementing this here previously caused connector ingest into any
+//! default-schema table to fail with "Binary is not supported by JSON", since
+//! `ensure_table` always provisions a Binary `props` column.
 
 use arrow_array::RecordBatch;
 use arrow_schema::Schema;
-use std::io::Cursor;
 use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CoerceError {
     #[error("serialize: {0}")]
     Serialize(#[from] serde_json::Error),
-    #[error("arrow: {0}")]
-    Arrow(#[from] arrow::error::ArrowError),
+    #[error("ndjson: {0}")]
+    Ndjson(#[from] kyma_ingest_core::NdjsonError),
 }
 
+/// Coerce connector JSON rows into `RecordBatch`es against `schema`.
+///
+/// Serializes the rows to NDJSON and feeds the shared `parse_ndjson` helper,
+/// so Binary/vector columns are handled identically to every other ingest
+/// frontend. Empty input yields an empty batch list.
 pub fn rows_to_batches(
     schema: &Arc<Schema>,
     rows: Vec<serde_json::Value>,
@@ -29,10 +42,5 @@ pub fn rows_to_batches(
         serde_json::to_writer(&mut buf, r)?;
         buf.push(b'\n');
     }
-    let reader = arrow::json::ReaderBuilder::new(schema.clone()).build(Cursor::new(buf))?;
-    let mut out = Vec::new();
-    for b in reader {
-        out.push(b?);
-    }
-    Ok(out)
+    Ok(kyma_ingest_core::parse_ndjson(&buf, schema.clone())?)
 }
