@@ -17,7 +17,7 @@
 
 pub mod queries;
 
-use tree_sitter::{Language, Parser, Query, QueryCursor};
+use tree_sitter::{Language, Node, Parser, Query, QueryCursor};
 use tree_sitter::StreamingIterator as _;
 
 /// Supported languages — maps to the grammar crates.
@@ -79,6 +79,26 @@ impl Lang {
             Self::Python => queries::PYTHON_DEFS,
             Self::TypeScript | Self::JavaScript => queries::TS_JS_DEFS,
             Self::Go => queries::GO_DEFS,
+        }
+    }
+
+    /// The query string for call-site extraction.
+    fn calls_query_str(self) -> &'static str {
+        match self {
+            Self::Rust => queries::RUST_CALLS,
+            Self::Python => queries::PYTHON_CALLS,
+            Self::TypeScript | Self::JavaScript => queries::TS_JS_CALLS,
+            Self::Go => queries::GO_CALLS,
+        }
+    }
+
+    /// Tree-sitter node kinds that introduce a named function scope.
+    fn fn_def_kinds(self) -> &'static [&'static str] {
+        match self {
+            Self::Rust => &["function_item"],
+            Self::Python => &["function_definition"],
+            Self::TypeScript | Self::JavaScript => &["function_declaration", "method_definition"],
+            Self::Go => &["function_declaration", "method_declaration"],
         }
     }
 
@@ -222,6 +242,79 @@ pub fn extract_symbols(lang: Lang, source: &str) -> Vec<CodeSymbol> {
         }
     }
     out.dedup_by(|a, b| a.kind == b.kind && a.name == b.name && a.line == b.line);
+    out
+}
+
+/// A call site: who calls what, and whether it's via a receiver (`obj.m()`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawCall {
+    /// Enclosing function name, if the call is inside one.
+    pub caller: Option<String>,
+    /// Called name: the function (`foo()`) or the receiver root (`boto3.x()`).
+    pub callee: String,
+    /// 1-based line of the call.
+    pub line: usize,
+    /// True when `callee` is a receiver root (`boto3` in `boto3.client()`),
+    /// used to link functions to the libraries/modules they use.
+    pub via_receiver: bool,
+}
+
+/// Walk up from `node` to the nearest enclosing function definition and return
+/// its name.
+fn enclosing_function_name(node: Node, lang: Lang, src: &[u8]) -> Option<String> {
+    let kinds = lang.fn_def_kinds();
+    let mut cur = node.parent();
+    while let Some(p) = cur {
+        if kinds.contains(&p.kind()) {
+            if let Some(name) = p.child_by_field_name("name") {
+                return name.utf8_text(src).ok().map(|s| s.to_string());
+            }
+        }
+        cur = p.parent();
+    }
+    None
+}
+
+/// Parse `source` and return the call sites (direct calls + receiver roots).
+///
+/// Synchronous + CPU-bound — wrap in `spawn_blocking` from async code.
+pub fn extract_calls(lang: Lang, source: &str) -> Vec<RawCall> {
+    let ts_lang = lang.ts_language();
+    let mut parser = Parser::new();
+    if parser.set_language(&ts_lang).is_err() {
+        return vec![];
+    }
+    let tree = match parser.parse(source, None) {
+        Some(t) => t,
+        None => return vec![],
+    };
+    let query = match Query::new(&ts_lang, lang.calls_query_str()) {
+        Ok(q) => q,
+        Err(_) => return vec![],
+    };
+    let fn_idx = query.capture_index_for_name("call_fn");
+    let recv_idx = query.capture_index_for_name("call_recv");
+
+    let mut qcursor = QueryCursor::new();
+    let src = source.as_bytes();
+    let mut matches = qcursor.matches(&query, tree.root_node(), src);
+
+    let mut out = Vec::new();
+    while let Some(m) = matches.next() {
+        for cap in m.captures {
+            let via_receiver = Some(cap.index) == recv_idx;
+            if Some(cap.index) != fn_idx && !via_receiver {
+                continue;
+            }
+            let callee = cap.node.utf8_text(src).unwrap_or("").to_string();
+            if callee.is_empty() {
+                continue;
+            }
+            let caller = enclosing_function_name(cap.node, lang, src);
+            let line = cap.node.start_position().row + 1;
+            out.push(RawCall { caller, callee, line, via_receiver });
+        }
+    }
     out
 }
 
@@ -467,5 +560,38 @@ import (
     #[test]
     fn symbols_empty_source() {
         assert_eq!(extract_symbols(Lang::Python, ""), vec![]);
+    }
+
+    // ── call extraction ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn python_calls_direct_and_receiver() {
+        let src = "import boto3\n\ndef main():\n    helper()\n    boto3.client('iam')\n\ndef helper():\n    pass\n";
+        let calls = extract_calls(Lang::Python, src);
+        // direct call helper() inside main → caller=main, callee=helper
+        assert!(
+            calls.iter().any(|c| c.caller.as_deref() == Some("main") && c.callee == "helper" && !c.via_receiver),
+            "expected main→helper, got: {:?}", calls
+        );
+        // receiver boto3 inside main → caller=main, callee=boto3, via_receiver
+        assert!(
+            calls.iter().any(|c| c.caller.as_deref() == Some("main") && c.callee == "boto3" && c.via_receiver),
+            "expected main→boto3 (receiver), got: {:?}", calls
+        );
+    }
+
+    #[test]
+    fn rust_calls_caller_resolution() {
+        let src = "fn run() {\n    helper();\n    std::fs::read(\"x\");\n}\nfn helper() {}\n";
+        let calls = extract_calls(Lang::Rust, src);
+        assert!(
+            calls.iter().any(|c| c.caller.as_deref() == Some("run") && c.callee == "helper"),
+            "expected run→helper, got: {:?}", calls
+        );
+    }
+
+    #[test]
+    fn calls_empty_source() {
+        assert_eq!(extract_calls(Lang::Python, ""), vec![]);
     }
 }

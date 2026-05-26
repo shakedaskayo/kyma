@@ -383,10 +383,11 @@ impl Connector for GithubConnector {
                     // Parse imports + symbols on a blocking thread (tree-sitter
                     // is sync/CPU). One pass over the content extracts both.
                     let content2 = content.clone();
-                    let (raw_imports, symbols) = tokio::task::spawn_blocking(move || {
+                    let (raw_imports, symbols, calls) = tokio::task::spawn_blocking(move || {
                         (
                             parse::extract_imports(lang, &content2),
                             parse::extract_symbols(lang, &content2),
+                            parse::extract_calls(lang, &content2),
                         )
                     })
                     .await
@@ -400,6 +401,7 @@ impl Connector for GithubConnector {
                         language: lang.name().to_string(),
                         imports: resolved,
                         symbols,
+                        calls,
                     });
                 }
 

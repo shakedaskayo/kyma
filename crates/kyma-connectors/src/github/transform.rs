@@ -344,6 +344,8 @@ pub struct FileImports {
     pub imports: Vec<ImportTarget>,
     /// Function/class definitions extracted by tree-sitter.
     pub symbols: Vec<crate::github::parse::CodeSymbol>,
+    /// Call sites extracted by tree-sitter (for CALLS edges).
+    pub calls: Vec<crate::github::parse::RawCall>,
 }
 
 /// A single resolved/unresolved import from a source file.
@@ -486,6 +488,69 @@ pub fn code_to_graph(
             props.insert("file".into(), Value::String(fi.path.clone()));
             nodes.push(make_node(&sid, label, &sym.name, props));
             edges.push(make_edge(&fid, "DEFINES", &sid, Map::new()));
+        }
+    }
+
+    // Emit CALLS edges: function → function (resolved intra-repo) and
+    // function → Module (library usage, via a receiver like `boto3.client()`).
+    use std::collections::{HashMap, HashSet};
+    let func_sid = |path: &str, sym: &crate::github::parse::CodeSymbol| {
+        symbol_id(owner, repo_name, path, &sym.name, sym.line, "func")
+    };
+    // Repo-wide function name → ids (cross-file resolution fallback).
+    let mut repo_fns: HashMap<&str, Vec<String>> = HashMap::new();
+    for fi in files {
+        for sym in &fi.symbols {
+            if matches!(sym.kind, crate::github::parse::SymbolKind::Function) {
+                repo_fns.entry(sym.name.as_str()).or_default().push(func_sid(&fi.path, sym));
+            }
+        }
+    }
+    for fi in files {
+        // This file's function name → id (caller + same-file callee preference).
+        let mut file_fns: HashMap<&str, String> = HashMap::new();
+        for sym in &fi.symbols {
+            if matches!(sym.kind, crate::github::parse::SymbolKind::Function) {
+                file_fns.entry(sym.name.as_str()).or_insert_with(|| func_sid(&fi.path, sym));
+            }
+        }
+        // Imported module names (unresolved imports become Module nodes).
+        let imported_mods: HashSet<&str> = fi
+            .imports
+            .iter()
+            .filter(|i| i.resolved_path.is_none())
+            .map(|i| i.raw.as_str())
+            .collect();
+
+        for call in &fi.calls {
+            let Some(caller_name) = call.caller.as_deref() else { continue };
+            let Some(caller_id) = file_fns.get(caller_name).cloned() else { continue };
+
+            let (target, resolved) = if call.via_receiver {
+                // function → library/module it uses
+                if imported_mods.contains(call.callee.as_str()) {
+                    (Some(module_id(&call.callee)), true)
+                } else {
+                    (None, false)
+                }
+            } else {
+                // direct call → repo function (prefer same file)
+                let t = file_fns
+                    .get(call.callee.as_str())
+                    .cloned()
+                    .or_else(|| repo_fns.get(call.callee.as_str()).and_then(|v| v.first().cloned()));
+                (t, true)
+            };
+
+            if let Some(t) = target {
+                if t == caller_id {
+                    continue; // skip self-recursion edges
+                }
+                let mut ep = Map::new();
+                ep.insert("line".into(), Value::Number(call.line.into()));
+                ep.insert("resolved".into(), Value::Bool(resolved));
+                edges.push(make_edge(&caller_id, "CALLS", &t, ep));
+            }
         }
     }
 
@@ -953,7 +1018,7 @@ mod tests {
     // ── Code graph tests (B2) ─────────────────────────────────────────────────
 
     fn make_file_tree() -> Vec<FileImports> {
-        use crate::github::parse::{CodeSymbol, SymbolKind};
+        use crate::github::parse::{CodeSymbol, RawCall, SymbolKind};
         vec![
             FileImports {
                 path: "src/main.rs".into(),
@@ -966,7 +1031,7 @@ mod tests {
                         resolved_path: Some("src/lib.rs".into()),
                     },
                     ImportTarget {
-                        raw: "std::io".into(),
+                        raw: "serde".into(),
                         line: 2,
                         resolved_path: None,
                     },
@@ -974,6 +1039,13 @@ mod tests {
                 symbols: vec![
                     CodeSymbol { kind: SymbolKind::Function, name: "main".into(), line: 4 },
                     CodeSymbol { kind: SymbolKind::Class, name: "App".into(), line: 8 },
+                    CodeSymbol { kind: SymbolKind::Function, name: "helper".into(), line: 12 },
+                ],
+                calls: vec![
+                    // main() calls helper() → CALLS edge main→helper
+                    RawCall { caller: Some("main".into()), callee: "helper".into(), line: 5, via_receiver: false },
+                    // main() uses serde.something() → CALLS edge main→module(serde)
+                    RawCall { caller: Some("main".into()), callee: "serde".into(), line: 6, via_receiver: true },
                 ],
             },
             FileImports {
@@ -982,6 +1054,7 @@ mod tests {
                 language: "rust".into(),
                 imports: vec![],
                 symbols: vec![],
+                calls: vec![],
             },
             FileImports {
                 path: "src/helpers/mod.rs".into(),
@@ -989,6 +1062,7 @@ mod tests {
                 language: "rust".into(),
                 imports: vec![],
                 symbols: vec![],
+                calls: vec![],
             },
         ]
     }
@@ -1019,6 +1093,29 @@ mod tests {
         assert!(
             edges.iter().any(|e| e["type"].as_str() == Some("DEFINES") && e["dst"].as_str() == Some(cls_id.as_str())),
             "missing DEFINES edge file→class"
+        );
+    }
+
+    #[test]
+    fn code_graph_emits_calls_edges() {
+        let files = make_file_tree();
+        let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        let edges = &tables[1].rows;
+        let main_id = symbol_id("acme", "myrepo", "src/main.rs", "main", 4, "func");
+        let helper_id = symbol_id("acme", "myrepo", "src/main.rs", "helper", 12, "func");
+        // function → function (resolved intra-repo)
+        assert!(
+            edges.iter().any(|e| e["type"].as_str() == Some("CALLS")
+                && e["src"].as_str() == Some(main_id.as_str())
+                && e["dst"].as_str() == Some(helper_id.as_str())),
+            "missing CALLS main→helper"
+        );
+        // function → module (library usage via receiver)
+        assert!(
+            edges.iter().any(|e| e["type"].as_str() == Some("CALLS")
+                && e["src"].as_str() == Some(main_id.as_str())
+                && e["dst"].as_str() == Some(module_id("serde").as_str())),
+            "missing CALLS main→module(serde)"
         );
     }
 
@@ -1144,14 +1241,14 @@ mod tests {
     fn code_graph_imports_unresolved_emits_module_node() {
         let files = make_file_tree();
         let main_fid = file_id("acme", "myrepo", "src/main.rs");
-        let mod_id = module_id("std::io");
+        let mod_id = module_id("serde");
         let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
 
         let edges = &tables[1].rows;
         let import_edge = edges.iter().find(|e| {
             e["type"] == "IMPORTS" && e["src"] == main_fid && e["dst"] == mod_id
         });
-        assert!(import_edge.is_some(), "expected IMPORTS main.rs→module:std::io");
+        assert!(import_edge.is_some(), "expected IMPORTS main.rs→module:serde");
         let props: Value = serde_json::from_str(
             import_edge.unwrap()["props"].as_str().unwrap()
         ).unwrap();
@@ -1160,7 +1257,7 @@ mod tests {
         // Module node should exist
         let nodes = &tables[0].rows;
         let mod_node = nodes.iter().find(|n| n["id"] == mod_id);
-        assert!(mod_node.is_some(), "expected Module node for std::io");
+        assert!(mod_node.is_some(), "expected Module node for serde");
         assert_eq!(mod_node.unwrap()["labels"], "Module");
     }
 

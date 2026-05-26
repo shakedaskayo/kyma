@@ -102,3 +102,29 @@ pub const GO_DEFS: &str = r#"
 (method_declaration name: (field_identifier) @func)
 (type_spec name: (type_identifier) @class)
 "#;
+
+// ── Call queries ────────────────────────────────────────────────────────────
+// `@call_fn` captures a directly-called function name (`foo()`); `@call_recv`
+// captures the receiver root of a method/attribute call (`boto3.client()` →
+// `boto3`) so functions can be linked to the libraries/modules they use.
+
+pub const RUST_CALLS: &str = r#"
+(call_expression function: (identifier) @call_fn)
+(call_expression function: (field_expression value: (identifier) @call_recv))
+(call_expression function: (scoped_identifier path: (identifier) @call_recv))
+"#;
+
+pub const PYTHON_CALLS: &str = r#"
+(call function: (identifier) @call_fn)
+(call function: (attribute object: (identifier) @call_recv))
+"#;
+
+pub const TS_JS_CALLS: &str = r#"
+(call_expression function: (identifier) @call_fn)
+(call_expression function: (member_expression object: (identifier) @call_recv))
+"#;
+
+pub const GO_CALLS: &str = r#"
+(call_expression function: (identifier) @call_fn)
+(call_expression function: (selector_expression operand: (identifier) @call_recv))
+"#;
