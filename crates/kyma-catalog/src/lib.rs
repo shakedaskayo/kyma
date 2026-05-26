@@ -26,8 +26,8 @@ use chrono::{DateTime, Utc};
 use kyma_core::catalog::{
     BackgroundTask, Catalog, CleanupResult, ColumnInfo, ColumnPrune, Dashboard, DashboardPanel,
     DashboardPanelInput, DashboardUpdate, DashboardWithPanels, ExtentManifest, GraphRegistration,
-    GraphSpec, IngestLedgerEntry, NodeInfo, NodeLease, NodeRole, PrunePredicate, SnapshotTxn,
-    TableConfig, TableRef, TokenPrincipal, User,
+    GraphSpec, IngestLedgerEntry, NodeInfo, NodeLease, NodeRole, PrunePredicate, RefreshClaim,
+    SnapshotTxn, TableConfig, TableRef, TokenPrincipal, User,
 };
 use kyma_core::errors::{CatalogError, Result};
 use kyma_core::tenant::TenantId;
@@ -1288,6 +1288,7 @@ impl Catalog for PostgresCatalog {
              FROM api_tokens
              WHERE token_hash = $1
                AND revoked_at IS NULL
+               AND kind <> 'refresh'
                AND (expires_at IS NULL OR expires_at > now())",
         )
         .bind(token_hash)
@@ -1344,6 +1345,97 @@ impl Catalog for PostgresCatalog {
         .await
         .map_err(|e| CatalogError::Sql(e.to_string()))?;
         Ok(res.rows_affected() > 0)
+    }
+
+    async fn insert_session_token(
+        &self,
+        token_hash: &[u8],
+        scopes: &str,
+        subject: Option<&str>,
+        kind: &str,
+        expires_at: DateTime<Utc>,
+        session_id: Uuid,
+    ) -> std::result::Result<(), CatalogError> {
+        sqlx::query(
+            "INSERT INTO api_tokens (tenant_id, token_hash, scopes, subject, kind, expires_at, session_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        )
+        .bind(kyma_core::tenant::DEFAULT_TENANT.as_uuid())
+        .bind(token_hash)
+        .bind(scopes)
+        .bind(subject)
+        .bind(kind)
+        .bind(expires_at)
+        .bind(session_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn lookup_refresh_token(
+        &self,
+        token_hash: &[u8],
+    ) -> std::result::Result<Option<RefreshClaim>, CatalogError> {
+        let maybe = sqlx::query(
+            "SELECT tenant_id, scopes, subject, session_id
+             FROM api_tokens
+             WHERE token_hash = $1
+               AND kind = 'refresh'
+               AND revoked_at IS NULL
+               AND (expires_at IS NULL OR expires_at > now())",
+        )
+        .bind(token_hash)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+
+        let Some(row) = maybe else { return Ok(None) };
+
+        use sqlx::Row as _;
+        let tenant_uuid: Uuid = row.try_get("tenant_id").map_err(sql_err)?;
+        let scopes: String = row.try_get("scopes").map_err(sql_err)?;
+        let subject: Option<String> = row.try_get("subject").map_err(sql_err)?;
+        let session_id: Option<Uuid> = row.try_get("session_id").map_err(sql_err)?;
+
+        let role = scopes
+            .split(',')
+            .map(str::trim)
+            .filter(|s| matches!(*s, "admin" | "write" | "read"))
+            .max_by_key(|s| match *s {
+                "admin" => 2u8,
+                "write" => 1,
+                _ => 0,
+            })
+            .unwrap_or("read")
+            .to_owned();
+
+        Ok(Some(RefreshClaim {
+            tenant: kyma_core::tenant::TenantId::from_uuid(tenant_uuid),
+            role,
+            subject,
+            session_id: session_id.unwrap_or_else(Uuid::nil),
+        }))
+    }
+
+    async fn revoke_session_by_token(
+        &self,
+        token_hash: &[u8],
+    ) -> std::result::Result<u64, CatalogError> {
+        // Revoke every active token sharing this token's session_id, plus the
+        // token itself (covers a session-less token where the subquery is NULL).
+        let res = sqlx::query(
+            "UPDATE api_tokens
+             SET revoked_at = now()
+             WHERE revoked_at IS NULL
+               AND (token_hash = $1
+                    OR session_id = (SELECT session_id FROM api_tokens WHERE token_hash = $1))",
+        )
+        .bind(token_hash)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(res.rows_affected())
     }
 
     // --- schema-listing ---

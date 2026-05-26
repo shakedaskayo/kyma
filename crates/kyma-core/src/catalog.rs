@@ -294,6 +294,16 @@ pub struct TokenPrincipal {
     pub subject: Option<String>,
 }
 
+/// Claim resolved from a valid refresh token — the inputs needed to mint a
+/// rotated access+refresh pair within the same login session.
+#[derive(Debug, Clone)]
+pub struct RefreshClaim {
+    pub tenant: crate::tenant::TenantId,
+    pub role: String,
+    pub subject: Option<String>,
+    pub session_id: uuid::Uuid,
+}
+
 // -------------------- Graphs --------------------
 
 /// A registered property-graph: binds a node table + edge table in a database,
@@ -842,6 +852,33 @@ pub trait Catalog: Send + Sync {
     /// (i.e. it was previously active), `false` if it was already revoked or
     /// not found.
     async fn revoke_api_token(&self, token_hash: &[u8]) -> Result<bool, CatalogError>;
+
+    /// Insert a session token (an `access` or `refresh` token) tagged with a
+    /// `session_id` so the whole login session can be rotated and revoked
+    /// together. Uses the default tenant.
+    async fn insert_session_token(
+        &self,
+        token_hash: &[u8],
+        scopes: &str,
+        subject: Option<&str>,
+        kind: &str,
+        expires_at: DateTime<Utc>,
+        session_id: uuid::Uuid,
+    ) -> Result<(), CatalogError>;
+
+    /// Look up a **refresh** token (`kind = 'refresh'`, not revoked, not
+    /// expired). Returns the claim needed to mint a rotated pair, or `None`.
+    /// Refresh tokens are deliberately *not* returned by [`lookup_api_token`],
+    /// so they can never authenticate ordinary API requests.
+    async fn lookup_refresh_token(
+        &self,
+        token_hash: &[u8],
+    ) -> Result<Option<RefreshClaim>, CatalogError>;
+
+    /// Revoke the entire login session that `token_hash` belongs to — every
+    /// access + refresh token sharing its `session_id` (and the token itself
+    /// if it has no session). Returns the number of tokens revoked.
+    async fn revoke_session_by_token(&self, token_hash: &[u8]) -> Result<u64, CatalogError>;
 
     // --- ingest idempotency ledger ---
 
