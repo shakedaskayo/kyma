@@ -1,31 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Check, Lock, RefreshCw, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { GitHubRepo } from "@/sdk/connectors";
-import { useGitHubRepos } from "./useConnectors";
 
 interface Props {
-  /** The PAT entered on the config step — used once to fetch the repo list. */
-  pat: string;
+  /** Fetched repos (lifted to the wizard so the PAT is fetched once). */
+  repos: GitHubRepo[] | undefined;
+  isPending: boolean;
+  isError: boolean;
+  /** Re-fetch the repo list. */
+  onRefresh: () => void;
   /** Selected repo full_names ("owner/name"). */
   selected: string[];
   onChange: (selected: string[]) => void;
 }
 
-export function RepoPicker({ pat, selected, onChange }: Props) {
-  const fetchRepos = useGitHubRepos();
+export function RepoPicker({ repos, isPending, isError, onRefresh, selected, onChange }: Props) {
   const [query, setQuery] = useState("");
-
-  // Auto-fetch when the picker mounts with a token. The mutation keeps the PAT
-  // out of any react-query cache key.
-  const { mutate, data: repos, isPending, isError } = fetchRepos;
-  useEffect(() => {
-    if (pat) mutate(pat);
-    // mutate identity is stable per session; refetch only when the PAT changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pat]);
 
   const filtered = useMemo(() => {
     const list = repos ?? [];
@@ -61,7 +54,7 @@ export function RepoPicker({ pat, selected, onChange }: Props) {
         <button
           type="button"
           className="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs text-muted-foreground hover:bg-accent"
-          onClick={() => pat && mutate(pat)}
+          onClick={onRefresh}
           disabled={isPending}
         >
           <RefreshCw className={cn("h-3.5 w-3.5", isPending && "animate-spin")} />
@@ -77,9 +70,7 @@ export function RepoPicker({ pat, selected, onChange }: Props) {
             className="hover:text-foreground"
             onClick={() =>
               onChange(
-                selected.length === filtered.length
-                  ? []
-                  : filtered.map((r) => r.full_name),
+                selected.length === filtered.length ? [] : filtered.map((r) => r.full_name),
               )
             }
           >
@@ -100,7 +91,7 @@ export function RepoPicker({ pat, selected, onChange }: Props) {
             <button
               type="button"
               className="rounded-md border px-3 py-1 text-xs text-foreground hover:bg-accent"
-              onClick={() => pat && mutate(pat)}
+              onClick={onRefresh}
             >
               Retry
             </button>
@@ -152,9 +143,7 @@ function RepoItem({
         <span
           className={cn(
             "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-            checked
-              ? "border-primary bg-primary text-primary-foreground"
-              : "border-input",
+            checked ? "border-primary bg-primary text-primary-foreground" : "border-input",
           )}
         >
           {checked && <Check className="h-3 w-3" />}

@@ -20,7 +20,7 @@ import {
 import { KindPicker } from "./KindPicker";
 import { ConnectorConfigForm } from "./ConnectorConfigForm";
 import { RepoPicker } from "./RepoPicker";
-import { useCreateConnector } from "./useConnectors";
+import { useCreateConnector, useGitHubRepos } from "./useConnectors";
 
 type Step = "kind" | "config" | "resources" | "review";
 
@@ -113,6 +113,7 @@ export function AddConnectorWizard({
 }) {
   const { database } = useSession();
   const create = useCreateConnector();
+  const repos = useGitHubRepos();
 
   // v1 auto-skips the kind step (only GitHub registered).
   const multiKind = CONNECTOR_KINDS.length > 1;
@@ -121,8 +122,19 @@ export function AddConnectorWizard({
   const [step, setStep] = useState<Step>(multiKind ? "kind" : "config");
   const [values, setValues] = useState<KindFormValues>(() => blankValues(onlyKind ?? githubKind));
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // The token last submitted for verification — lets us scope the verified/error
+  // state to the *current* token so editing it clears stale feedback.
+  const [attemptedPat, setAttemptedPat] = useState("");
 
   const steps = stepsFor(kind, multiKind);
+  const tokenFieldValue = kind.resourceTokenField ? values.fields[kind.resourceTokenField] ?? "" : "";
+
+  const verify = () => {
+    const pat = tokenFieldValue.trim();
+    if (!pat) return;
+    setAttemptedPat(pat);
+    repos.mutate(pat);
+  };
 
   const reset = () => {
     const k = onlyKind ?? githubKind;
@@ -130,7 +142,9 @@ export function AddConnectorWizard({
     setStep(multiKind ? "kind" : "config");
     setValues(blankValues(k));
     setAdvancedOpen(false);
+    setAttemptedPat("");
     create.reset();
+    repos.reset();
   };
 
   const close = () => {
@@ -138,7 +152,6 @@ export function AddConnectorWizard({
     onClose();
   };
 
-  const tokenFieldValue = kind.resourceTokenField ? values.fields[kind.resourceTokenField] ?? "" : "";
   const update = (patch: Partial<KindFormValues>) => setValues((v) => ({ ...v, ...patch }));
 
   const configValid = useMemo(() => {
@@ -153,7 +166,14 @@ export function AddConnectorWizard({
   };
   const nextStep = () => {
     const i = steps.indexOf(step);
-    if (i < steps.length - 1) setStep(steps[i + 1]);
+    if (i >= steps.length - 1) return;
+    const target = steps[i + 1];
+    // Fetch the repo list when entering the Repositories step (unless already
+    // fetched for this token).
+    if (target === "resources" && tokenFieldValue.trim() && attemptedPat !== tokenFieldValue.trim()) {
+      verify();
+    }
+    setStep(target);
   };
 
   const handleCreate = () => {
@@ -211,12 +231,26 @@ export function AddConnectorWizard({
               onChange={update}
               advancedOpen={advancedOpen}
               onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
+              verify={
+                kind.resourceTokenField
+                  ? {
+                      onVerify: verify,
+                      isPending: repos.isPending,
+                      isError: repos.isError && attemptedPat === tokenFieldValue.trim(),
+                      verified: repos.isSuccess && attemptedPat === tokenFieldValue.trim() && !!attemptedPat,
+                      repoCount: repos.data?.length,
+                    }
+                  : undefined
+              }
             />
           )}
 
           {step === "resources" && (
             <RepoPicker
-              pat={tokenFieldValue}
+              repos={repos.data}
+              isPending={repos.isPending}
+              isError={repos.isError}
+              onRefresh={verify}
               selected={values.resources}
               onChange={(resources) => update({ resources })}
             />

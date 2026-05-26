@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -7,12 +7,25 @@ import {
   type KindFormValues,
 } from "./connector-kinds";
 
+/** Inline token-verification state for PAT-auth kinds. */
+export interface TokenVerify {
+  onVerify: () => void;
+  isPending: boolean;
+  isError: boolean;
+  /** Number of repositories the token can read, when verified. */
+  repoCount?: number;
+  /** True once a successful verification has returned for the current token. */
+  verified: boolean;
+}
+
 interface Props {
   kind: ConnectorKindDef;
   values: KindFormValues;
   onChange: (patch: Partial<KindFormValues>) => void;
   advancedOpen: boolean;
   onToggleAdvanced: () => void;
+  /** Verification controls for the resource-token field (e.g. the PAT). */
+  verify?: TokenVerify;
 }
 
 export function ConnectorConfigForm({
@@ -21,9 +34,13 @@ export function ConnectorConfigForm({
   onChange,
   advancedOpen,
   onToggleAdvanced,
+  verify,
 }: Props) {
   const setField = (key: string, val: string) =>
     onChange({ fields: { ...values.fields, [key]: val } });
+
+  const tokenKey = kind.resourceTokenField;
+  const tokenVal = tokenKey ? values.fields[tokenKey] ?? "" : "";
 
   return (
     <div className="space-y-4">
@@ -57,6 +74,33 @@ export function ConnectorConfigForm({
           {f.help && <p className="text-xs text-muted-foreground">{f.help}</p>}
         </div>
       ))}
+
+      {/* Inline token verification (PAT-auth kinds) */}
+      {verify && tokenKey && (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={verify.onVerify}
+            disabled={!tokenVal.trim() || verify.isPending}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium hover:bg-accent disabled:opacity-50"
+          >
+            {verify.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {verify.isPending ? "Verifying…" : "Verify token"}
+          </button>
+          {!verify.isPending && verify.verified && (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {verify.repoCount ?? 0} repositories accessible
+            </span>
+          )}
+          {!verify.isPending && verify.isError && (
+            <span className="inline-flex items-center gap-1 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5" />
+              Couldn't verify — check the token & its scopes
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Sync interval */}
       <div className="space-y-1">
