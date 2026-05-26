@@ -128,3 +128,26 @@ pub const GO_CALLS: &str = r#"
 (call_expression function: (identifier) @call_fn)
 (call_expression function: (selector_expression operand: (identifier) @call_recv))
 "#;
+
+// ── Inheritance queries ─────────────────────────────────────────────────────
+// `@cls` = the subclass/implementing type, `@super` = a base class/trait.
+// One match per (subclass, base) pair, so multiple inheritance is captured.
+
+/// Rust: `impl Trait for Type` → Type implements Trait.
+pub const RUST_INHERITS: &str = r#"
+(impl_item trait: (type_identifier) @super type: (type_identifier) @cls)
+"#;
+
+/// Python: `class Sub(Base1, Base2):`.
+pub const PYTHON_INHERITS: &str = r#"
+(class_definition
+  name: (identifier) @cls
+  superclasses: (argument_list (identifier) @super))
+"#;
+
+/// TypeScript / JavaScript: `class Sub extends Base`.
+pub const TS_JS_INHERITS: &str = r#"
+(class_declaration
+  name: (_) @cls
+  (class_heritage (extends_clause (identifier) @super)))
+"#;

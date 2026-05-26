@@ -346,6 +346,8 @@ pub struct FileImports {
     pub symbols: Vec<crate::github::parse::CodeSymbol>,
     /// Call sites extracted by tree-sitter (for CALLS edges).
     pub calls: Vec<crate::github::parse::RawCall>,
+    /// Inheritance pairs extracted by tree-sitter (for INHERITS edges).
+    pub inherits: Vec<crate::github::parse::RawInherit>,
 }
 
 /// A single resolved/unresolved import from a source file.
@@ -550,6 +552,43 @@ pub fn code_to_graph(
                 ep.insert("line".into(), Value::Number(call.line.into()));
                 ep.insert("resolved".into(), Value::Bool(resolved));
                 edges.push(make_edge(&caller_id, "CALLS", &t, ep));
+            }
+        }
+    }
+
+    // Emit INHERITS edges between CodeClass nodes (subclass → base), resolved
+    // intra-repo by class name. External base classes are skipped for now.
+    let class_sid = |path: &str, sym: &crate::github::parse::CodeSymbol| {
+        symbol_id(owner, repo_name, path, &sym.name, sym.line, "class")
+    };
+    let mut repo_classes: HashMap<&str, Vec<String>> = HashMap::new();
+    for fi in files {
+        for sym in &fi.symbols {
+            if matches!(sym.kind, crate::github::parse::SymbolKind::Class) {
+                repo_classes.entry(sym.name.as_str()).or_default().push(class_sid(&fi.path, sym));
+            }
+        }
+    }
+    for fi in files {
+        let mut file_classes: HashMap<&str, String> = HashMap::new();
+        for sym in &fi.symbols {
+            if matches!(sym.kind, crate::github::parse::SymbolKind::Class) {
+                file_classes.entry(sym.name.as_str()).or_insert_with(|| class_sid(&fi.path, sym));
+            }
+        }
+        for inh in &fi.inherits {
+            let Some(sub_id) = file_classes.get(inh.subclass.as_str()).cloned() else { continue };
+            let super_id = file_classes
+                .get(inh.superclass.as_str())
+                .cloned()
+                .or_else(|| repo_classes.get(inh.superclass.as_str()).and_then(|v| v.first().cloned()));
+            if let Some(s) = super_id {
+                if s != sub_id {
+                    let mut ep = Map::new();
+                    ep.insert("line".into(), Value::Number(inh.line.into()));
+                    ep.insert("resolved".into(), Value::Bool(true));
+                    edges.push(make_edge(&sub_id, "INHERITS", &s, ep));
+                }
             }
         }
     }
@@ -1018,7 +1057,7 @@ mod tests {
     // ── Code graph tests (B2) ─────────────────────────────────────────────────
 
     fn make_file_tree() -> Vec<FileImports> {
-        use crate::github::parse::{CodeSymbol, RawCall, SymbolKind};
+        use crate::github::parse::{CodeSymbol, RawCall, RawInherit, SymbolKind};
         vec![
             FileImports {
                 path: "src/main.rs".into(),
@@ -1040,12 +1079,17 @@ mod tests {
                     CodeSymbol { kind: SymbolKind::Function, name: "main".into(), line: 4 },
                     CodeSymbol { kind: SymbolKind::Class, name: "App".into(), line: 8 },
                     CodeSymbol { kind: SymbolKind::Function, name: "helper".into(), line: 12 },
+                    CodeSymbol { kind: SymbolKind::Class, name: "Base".into(), line: 16 },
                 ],
                 calls: vec![
                     // main() calls helper() → CALLS edge main→helper
                     RawCall { caller: Some("main".into()), callee: "helper".into(), line: 5, via_receiver: false },
                     // main() uses serde.something() → CALLS edge main→module(serde)
                     RawCall { caller: Some("main".into()), callee: "serde".into(), line: 6, via_receiver: true },
+                ],
+                inherits: vec![
+                    // App inherits Base → INHERITS edge App→Base
+                    RawInherit { subclass: "App".into(), superclass: "Base".into(), line: 8 },
                 ],
             },
             FileImports {
@@ -1055,6 +1099,7 @@ mod tests {
                 imports: vec![],
                 symbols: vec![],
                 calls: vec![],
+                inherits: vec![],
             },
             FileImports {
                 path: "src/helpers/mod.rs".into(),
@@ -1063,6 +1108,7 @@ mod tests {
                 imports: vec![],
                 symbols: vec![],
                 calls: vec![],
+                inherits: vec![],
             },
         ]
     }
@@ -1116,6 +1162,21 @@ mod tests {
                 && e["src"].as_str() == Some(main_id.as_str())
                 && e["dst"].as_str() == Some(module_id("serde").as_str())),
             "missing CALLS main→module(serde)"
+        );
+    }
+
+    #[test]
+    fn code_graph_emits_inherits_edges() {
+        let files = make_file_tree();
+        let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        let edges = &tables[1].rows;
+        let app_id = symbol_id("acme", "myrepo", "src/main.rs", "App", 8, "class");
+        let base_id = symbol_id("acme", "myrepo", "src/main.rs", "Base", 16, "class");
+        assert!(
+            edges.iter().any(|e| e["type"].as_str() == Some("INHERITS")
+                && e["src"].as_str() == Some(app_id.as_str())
+                && e["dst"].as_str() == Some(base_id.as_str())),
+            "missing INHERITS App→Base"
         );
     }
 

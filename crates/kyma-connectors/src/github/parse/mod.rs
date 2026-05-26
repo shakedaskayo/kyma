@@ -92,6 +92,16 @@ impl Lang {
         }
     }
 
+    /// The query string for inheritance extraction (`None` if unsupported).
+    fn inherits_query_str(self) -> Option<&'static str> {
+        match self {
+            Self::Rust => Some(queries::RUST_INHERITS),
+            Self::Python => Some(queries::PYTHON_INHERITS),
+            Self::TypeScript | Self::JavaScript => Some(queries::TS_JS_INHERITS),
+            Self::Go => None,
+        }
+    }
+
     /// Tree-sitter node kinds that introduce a named function scope.
     fn fn_def_kinds(self) -> &'static [&'static str] {
         match self {
@@ -313,6 +323,61 @@ pub fn extract_calls(lang: Lang, source: &str) -> Vec<RawCall> {
             let caller = enclosing_function_name(cap.node, lang, src);
             let line = cap.node.start_position().row + 1;
             out.push(RawCall { caller, callee, line, via_receiver });
+        }
+    }
+    out
+}
+
+/// A class-inheritance relationship (subclass → base class/trait).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawInherit {
+    pub subclass: String,
+    pub superclass: String,
+    /// 1-based line of the subclass definition.
+    pub line: usize,
+}
+
+/// Parse `source` and return inheritance pairs (`class Sub(Base)`,
+/// `impl Trait for Type`, `class Sub extends Base`). Empty for Go.
+pub fn extract_inherits(lang: Lang, source: &str) -> Vec<RawInherit> {
+    let Some(query_str) = lang.inherits_query_str() else { return vec![] };
+    let ts_lang = lang.ts_language();
+    let mut parser = Parser::new();
+    if parser.set_language(&ts_lang).is_err() {
+        return vec![];
+    }
+    let tree = match parser.parse(source, None) {
+        Some(t) => t,
+        None => return vec![],
+    };
+    let query = match Query::new(&ts_lang, query_str) {
+        Ok(q) => q,
+        Err(_) => return vec![],
+    };
+    let cls_idx = query.capture_index_for_name("cls");
+    let super_idx = query.capture_index_for_name("super");
+
+    let mut qcursor = QueryCursor::new();
+    let src = source.as_bytes();
+    let mut matches = qcursor.matches(&query, tree.root_node(), src);
+
+    let mut out = Vec::new();
+    while let Some(m) = matches.next() {
+        let mut subclass = None;
+        let mut superclass = None;
+        let mut line = 0usize;
+        for cap in m.captures {
+            if Some(cap.index) == cls_idx {
+                subclass = cap.node.utf8_text(src).ok().map(|s| s.to_string());
+                line = cap.node.start_position().row + 1;
+            } else if Some(cap.index) == super_idx {
+                superclass = cap.node.utf8_text(src).ok().map(|s| s.to_string());
+            }
+        }
+        if let (Some(c), Some(s)) = (subclass, superclass) {
+            if !c.is_empty() && !s.is_empty() && c != s {
+                out.push(RawInherit { subclass: c, superclass: s, line });
+            }
         }
     }
     out
@@ -593,5 +658,42 @@ import (
     #[test]
     fn calls_empty_source() {
         assert_eq!(extract_calls(Lang::Python, ""), vec![]);
+    }
+
+    // ── inheritance ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn python_inherits_base_class() {
+        let src = "class Base:\n    pass\n\nclass Sub(Base):\n    pass\n";
+        let inh = extract_inherits(Lang::Python, src);
+        assert!(
+            inh.iter().any(|i| i.subclass == "Sub" && i.superclass == "Base"),
+            "expected Sub→Base, got: {:?}", inh
+        );
+    }
+
+    #[test]
+    fn rust_inherits_impl_trait() {
+        let src = "trait Greet {}\nstruct Robot;\nimpl Greet for Robot {}\n";
+        let inh = extract_inherits(Lang::Rust, src);
+        assert!(
+            inh.iter().any(|i| i.subclass == "Robot" && i.superclass == "Greet"),
+            "expected Robot→Greet, got: {:?}", inh
+        );
+    }
+
+    #[test]
+    fn ts_inherits_extends() {
+        let src = "class Base {}\nclass Sub extends Base {}\n";
+        let inh = extract_inherits(Lang::TypeScript, src);
+        assert!(
+            inh.iter().any(|i| i.subclass == "Sub" && i.superclass == "Base"),
+            "expected Sub→Base, got: {:?}", inh
+        );
+    }
+
+    #[test]
+    fn go_inherits_empty() {
+        assert_eq!(extract_inherits(Lang::Go, "package main\ntype X struct{}\n"), vec![]);
     }
 }

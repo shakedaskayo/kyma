@@ -353,6 +353,7 @@ impl Connector for GithubConnector {
                             let raw_imports = parse::extract_imports(lang, &f.content);
                             let symbols = parse::extract_symbols(lang, &f.content);
                             let calls = parse::extract_calls(lang, &f.content);
+                            let inherits = parse::extract_inherits(lang, &f.content);
                             let resolved =
                                 resolve_imports(lang.name(), &f.rel_path, &raw_imports, &all_paths);
                             fis.push(FileImports {
@@ -362,6 +363,7 @@ impl Connector for GithubConnector {
                                 imports: resolved,
                                 symbols,
                                 calls,
+                                inherits,
                             });
                         }
                         Ok(fis)
