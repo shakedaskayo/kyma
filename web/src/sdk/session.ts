@@ -4,17 +4,27 @@ import type { AuthUser } from "./auth";
 
 export type SessionState = {
   endpoint: string;
+  /** The short-lived access token sent as the API bearer. */
   token: string;
+  /** The long-lived refresh token, exchanged for a new pair on expiry. */
+  refreshToken: string;
+  /** ISO timestamp when the access token expires (informational). */
+  accessExpiresAt: string;
   database: string;
   user: AuthUser | null;
-  set: (p: Partial<Pick<SessionState, "endpoint" | "token" | "database" | "user">>) => void;
+  set: (
+    p: Partial<
+      Pick<
+        SessionState,
+        "endpoint" | "token" | "refreshToken" | "accessExpiresAt" | "database" | "user"
+      >
+    >,
+  ) => void;
   reset: () => void;
-  // Configured once we have a server endpoint. The token is optional — a
-  // kyma engine with auth disabled (empty KYMA_AUTH_TOKENS) accepts any
-  // bearer, so requiring a token here would trap unauthenticated dev on
-  // the settings page after Save + Connect.
+  // Configured once we have a server endpoint (used by the Settings form).
   isConfigured: () => boolean;
-  // True when a session token is present (i.e. the user went through login).
+  // Authenticated once we hold an access token. Guests are not allowed — the
+  // only ways to obtain a token are logging in or pasting a static API token.
   isAuthenticated: () => boolean;
 };
 
@@ -45,10 +55,20 @@ export const useSession = create<SessionState>()(
     (set, get) => ({
       endpoint: "",
       token: "",
+      refreshToken: "",
+      accessExpiresAt: "",
       database: "obs",
       user: null,
       set: (p) => set(p),
-      reset: () => set({ endpoint: "", token: "", database: "obs", user: null }),
+      reset: () =>
+        set({
+          endpoint: "",
+          token: "",
+          refreshToken: "",
+          accessExpiresAt: "",
+          database: "obs",
+          user: null,
+        }),
       isConfigured: () => get().endpoint.length > 0,
       isAuthenticated: () => Boolean(get().token),
     }),

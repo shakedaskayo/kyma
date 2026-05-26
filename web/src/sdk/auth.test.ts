@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
-import { login, me, logout } from "./auth";
+import { login, me, logout, refresh } from "./auth";
 
 const mockFetch = vi.fn();
 beforeEach(() => {
@@ -17,12 +17,21 @@ function ok(body: unknown, status = 200) {
 const endpoint = "http://localhost:8080";
 const token = "session-token-abc";
 
+function pair(overrides: Record<string, unknown> = {}) {
+  return {
+    access_token: "access-abc",
+    refresh_token: "refresh-xyz",
+    access_expires_at: "2026-06-01T00:00:00Z",
+    refresh_expires_at: "2026-07-01T00:00:00Z",
+    user: { username: "admin", role: "admin" },
+    ...overrides,
+  };
+}
+
 // ── login ─────────────────────────────────────────────────────────────────────
 
 test("login POSTs to /v1/auth/login with content-type but NO authorization header", async () => {
-  mockFetch.mockResolvedValue(
-    ok({ token, user: { username: "admin", role: "admin" }, expires_at: "2026-06-01T00:00:00Z" }),
-  );
+  mockFetch.mockResolvedValue(ok(pair()));
   const result = await login({ endpoint, username: "admin", password: "hunter2" });
 
   const [url, init] = mockFetch.mock.calls[0];
@@ -32,9 +41,30 @@ test("login POSTs to /v1/auth/login with content-type but NO authorization heade
   // Must NOT send an Authorization header on the login request.
   expect(init.headers["authorization"]).toBeUndefined();
   expect(JSON.parse(init.body)).toMatchObject({ username: "admin", password: "hunter2" });
-  expect(result.token).toBe(token);
+  expect(result.access_token).toBe("access-abc");
+  expect(result.refresh_token).toBe("refresh-xyz");
   expect(result.user.username).toBe("admin");
   expect(result.user.role).toBe("admin");
+});
+
+// ── refresh ─────────────────────────────────────────────────────────────────────
+
+test("refresh POSTs the refresh_token to /v1/auth/refresh and returns a rotated pair", async () => {
+  mockFetch.mockResolvedValue(ok(pair({ access_token: "access-2", refresh_token: "refresh-2" })));
+  const result = await refresh({ endpoint, refreshToken: "refresh-xyz" });
+
+  const [url, init] = mockFetch.mock.calls[0];
+  expect(url).toBe("http://localhost:8080/v1/auth/refresh");
+  expect(init.method).toBe("POST");
+  expect(init.headers["authorization"]).toBeUndefined();
+  expect(JSON.parse(init.body)).toEqual({ refresh_token: "refresh-xyz" });
+  expect(result.access_token).toBe("access-2");
+  expect(result.refresh_token).toBe("refresh-2");
+});
+
+test("refresh throws on 401 (expired/revoked refresh token)", async () => {
+  mockFetch.mockResolvedValue(new Response("{}", { status: 401 }));
+  await expect(refresh({ endpoint, refreshToken: "stale" })).rejects.toThrow(/unauthorized/i);
 });
 
 test("login throws on 401 with server error message", async () => {
@@ -53,7 +83,7 @@ test("login throws on 401 without a body message", async () => {
 });
 
 test("login strips trailing slash from endpoint", async () => {
-  mockFetch.mockResolvedValue(ok({ token, user: { username: "admin", role: "admin" } }));
+  mockFetch.mockResolvedValue(ok(pair()));
   await login({ endpoint: "http://localhost:8080/", username: "admin", password: "pw" });
   const [url] = mockFetch.mock.calls[0];
   expect(url).toBe("http://localhost:8080/v1/auth/login");

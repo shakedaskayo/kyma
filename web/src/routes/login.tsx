@@ -39,7 +39,9 @@ function Login() {
       const result = await login({ endpoint: trimSlash(endpoint), username, password });
       session.set({
         endpoint: trimSlash(endpoint),
-        token: result.token,
+        token: result.access_token,
+        refreshToken: result.refresh_token,
+        accessExpiresAt: result.access_expires_at,
         user: result.user,
         database: database || "obs",
       });
@@ -53,30 +55,6 @@ function Login() {
       } else {
         toast.error(msg || "Sign in failed");
       }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConnectWithoutSignIn = async () => {
-    if (!endpoint) {
-      toast.error("Server URL is required.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const ping = await fetch(`${trimSlash(endpoint)}/health`);
-      if (!ping.ok) throw new Error(`health check returned ${ping.status}`);
-      session.set({
-        endpoint: trimSlash(endpoint),
-        token: "",
-        user: null,
-        database: database || "obs",
-      });
-      toast.success("Connected");
-      navigate({ to: next ?? "/explore" });
-    } catch (err) {
-      toast.error(`Can't reach ${endpoint}: ${(err as Error).message}`);
     } finally {
       setLoading(false);
     }
@@ -131,18 +109,9 @@ function Login() {
                   placeholder="obs"
                 />
               </div>
-              <div className="pt-2 space-y-2">
+              <div className="pt-2">
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? "Signing in…" : "Sign in"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="w-full text-xs text-muted-foreground"
-                  onClick={handleConnectWithoutSignIn}
-                  disabled={loading}
-                >
-                  Connect without sign-in (unauthenticated dev server)
                 </Button>
               </div>
             </form>

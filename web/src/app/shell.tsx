@@ -1,6 +1,6 @@
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Database, Settings as SettingsIcon, Compass, LayoutDashboard, Sparkles, Network, Plug, LogOut } from "lucide-react";
-import { useEffect } from "react";
+import { Database, Settings as SettingsIcon, Compass, LayoutDashboard, Sparkles, Network, Plug, LogOut, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/sdk/session";
 import { useHealth } from "@/sdk/reconnect";
 import { useWorkspace } from "@/features/tabs/workspace-store";
@@ -65,13 +65,36 @@ function ConnectionDot() {
 
 // ── user badge + logout ───────────────────────────────────────────────────────
 
-function UserBadge() {
+function UserMenu() {
   const session = useSession();
   const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
-  if (!session.user) return null;
+  // Close on outside click / Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (!session.token) return null;
+
+  const label = session.user?.username ?? "Signed in";
+  const role = session.user?.role;
+  const initial = (session.user?.username ?? "?").charAt(0).toUpperCase();
 
   const handleLogout = async () => {
+    setLoggingOut(true);
     if (session.token) {
       await logout({ endpoint: session.endpoint, token: session.token }).catch(() => {});
     }
@@ -80,18 +103,58 @@ function UserBadge() {
   };
 
   return (
-    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-      <span className="max-w-[16ch] truncate font-medium text-foreground">
-        {session.user.username}
-      </span>
+    <div className="relative" ref={ref}>
       <button
         type="button"
-        title="Log out"
-        onClick={handleLogout}
-        className="rounded p-0.5 hover:bg-accent transition-colors"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs hover:bg-accent transition-colors"
+        aria-haspopup="menu"
+        aria-expanded={open}
       >
-        <LogOut className="h-3.5 w-3.5" />
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
+          {initial}
+        </span>
+        <span className="max-w-[14ch] truncate font-medium text-foreground">{label}</span>
+        <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-50 mt-1 w-56 overflow-hidden rounded-md border bg-popover p-1 text-sm shadow-md"
+        >
+          <div className="flex items-center gap-2 px-2 py-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+              {initial}
+            </span>
+            <div className="min-w-0">
+              <div className="truncate font-medium text-foreground">{label}</div>
+              {role && <div className="text-xs capitalize text-muted-foreground">{role}</div>}
+            </div>
+          </div>
+          <div className="my-1 h-px bg-border" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              navigate({ to: "/settings", search: { next: "/explore" } });
+            }}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <SettingsIcon className="h-4 w-4" /> Settings
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-destructive hover:bg-destructive/10 disabled:opacity-60"
+          >
+            <LogOut className="h-4 w-4" /> {loggingOut ? "Logging out…" : "Log out"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -139,7 +202,7 @@ export function Shell() {
           <ConnectionDot />
           <span className="max-w-[22ch] truncate text-xs text-muted-foreground">{endpoint || "no server"}</span>
         </div>
-        <UserBadge />
+        <UserMenu />
       </header>
       <ReconnectBanner />
       <main className="flex-1 overflow-hidden">
