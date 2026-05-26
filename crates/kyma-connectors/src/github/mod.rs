@@ -1,11 +1,9 @@
-//! GitHub metadata connector.
+//! GitHub metadata + structural code graph connector.
 //!
 //! Ingests repository metadata (repos, branches, pull requests, issues,
-//! contributors) into a property-graph via the GitHub REST API using a
-//! Personal Access Token (PAT).
-//!
-//! Code/AST extraction is intentionally **not** part of this unit — that
-//! lands in the next task (B2, tree-sitter).
+//! contributors) **and** the structural code graph (Repo→Dir→File `CONTAINS`
+//! + file-level `IMPORTS` via tree-sitter) into a property-graph via the
+//! GitHub REST API using a Personal Access Token (PAT).
 //!
 //! ## Graph shape
 //! - Nodes → `github_nodes` (4 columns: id, labels, name, props)
@@ -16,18 +14,20 @@ pub mod admin;
 pub mod client;
 pub mod config;
 pub mod cursor;
+pub mod parse;
 pub mod transform;
 
 pub use admin::github_repos_router;
 
 use async_trait::async_trait;
 use chrono::Utc;
+use std::collections::HashSet;
 
 use crate::types::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
 use client::GithubClient;
 use config::GithubConfig;
 use cursor::Cursor;
-use transform::{RawRecord, to_graph};
+use transform::{FileImports, RawRecord, code_to_graph, resolve_imports, to_graph};
 
 #[derive(Default, Clone, Debug)]
 pub struct GithubConnector;
@@ -65,6 +65,10 @@ impl Connector for GithubConnector {
         let mut records: Vec<RawRecord> = Vec::new();
         let max_pages = config.max_pages_per_tick;
 
+        // Collect default-branch HEAD SHAs per repo (needed for code graph).
+        let mut repo_head_shas: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+
         for repo_slug in &config.repos {
             let parts: Vec<&str> = repo_slug.splitn(2, '/').collect();
             if parts.len() != 2 {
@@ -76,9 +80,13 @@ impl Connector for GithubConnector {
             let name = parts[1];
 
             // 1. Repo metadata
-            if config.modules.repos {
+            let repo_json = if config.modules.repos {
                 match gh.get_repo(owner, name).await {
-                    Ok(repo) => records.push(RawRecord::Repo(repo)),
+                    Ok(repo) => {
+                        let j = repo.clone();
+                        records.push(RawRecord::Repo(repo));
+                        Some(j)
+                    }
                     Err(ConnectorError::Transient(e)) => {
                         return Err(ConnectorError::Transient(format!(
                             "get_repo {repo_slug}: {e}"
@@ -86,7 +94,25 @@ impl Connector for GithubConnector {
                     }
                     Err(e) => {
                         tracing::warn!(repo = %repo_slug, error = %e, "get_repo failed; skipping");
+                        None
                     }
+                }
+            } else {
+                None
+            };
+
+            // Extract default-branch HEAD SHA from repo metadata for code graph.
+            if let Some(ref rj) = repo_json {
+                if let Some(sha) = rj["default_branch"]
+                    .as_str()
+                    .and_then(|_| rj.pointer("/default_branch"))
+                    // The SHA is in the commit object: we need to fetch it separately.
+                    // For now, use the branch sha from a branches call, or store it in cursor.
+                    // Actually GitHub's repo endpoint gives us `default_branch` name but not the SHA.
+                    // We'll fetch it from the branches list or via a dedicated call.
+                    .and_then(|v| v.as_str())
+                {
+                    repo_head_shas.insert(repo_slug.clone(), sha.to_string());
                 }
             }
 
@@ -94,6 +120,17 @@ impl Connector for GithubConnector {
             if config.modules.branches {
                 match gh.list_branches(owner, name, max_pages).await {
                     Ok(branches) => {
+                        // Capture the default branch SHA for code graph
+                        if let Some(ref rj) = repo_json {
+                            let default_branch = rj["default_branch"].as_str().unwrap_or("main");
+                            for b in &branches {
+                                if b["name"].as_str() == Some(default_branch) {
+                                    if let Some(sha) = b["commit"]["sha"].as_str() {
+                                        repo_head_shas.insert(repo_slug.clone(), sha.to_string());
+                                    }
+                                }
+                            }
+                        }
                         for b in branches {
                             records.push(RawRecord::Branch {
                                 owner: owner.to_string(),
@@ -207,11 +244,162 @@ impl Connector for GithubConnector {
                 }
             }
 
-            // Update cursor with the latest timestamps seen.
+            // Update metadata cursor with the latest timestamps seen.
             cur.update_repo(repo_slug, latest_pr_ts, latest_issue_ts);
         }
 
-        let (tables, hint) = to_graph(&records);
+        // ── Transform metadata records ────────────────────────────────────────
+        let (meta_tables, hint) = to_graph(&records);
+        let mut nodes: Vec<serde_json::Value> = meta_tables
+            .iter()
+            .find(|t| t.table == transform::NODE_TABLE)
+            .map(|t| t.rows.clone())
+            .unwrap_or_default();
+        let mut edges: Vec<serde_json::Value> = meta_tables
+            .iter()
+            .find(|t| t.table == transform::EDGE_TABLE)
+            .map(|t| t.rows.clone())
+            .unwrap_or_default();
+
+        // ── Code graph (B2) ───────────────────────────────────────────────────
+        if config.modules.codebase {
+            for repo_slug in &config.repos {
+                let parts: Vec<&str> = repo_slug.splitn(2, '/').collect();
+                if parts.len() != 2 {
+                    continue;
+                }
+                let owner = parts[0];
+                let name = parts[1];
+
+                // Get the current HEAD SHA.
+                let Some(head_sha) = repo_head_shas.get(repo_slug) else {
+                    tracing::debug!(
+                        repo = %repo_slug,
+                        "no HEAD SHA available; skipping code graph"
+                    );
+                    continue;
+                };
+
+                // Skip if nothing changed since last ingest.
+                let repo_cur = cur.for_repo(repo_slug);
+                if repo_cur.tree_sha_ingested.as_deref() == Some(head_sha.as_str()) {
+                    tracing::debug!(
+                        repo = %repo_slug,
+                        sha = %head_sha,
+                        "HEAD SHA unchanged; skipping code graph re-ingest"
+                    );
+                    continue;
+                }
+
+                // Fetch the recursive git tree.
+                let tree_entries = match gh.get_tree(owner, name, head_sha).await {
+                    Ok(entries) => entries,
+                    Err(ConnectorError::Transient(e)) => {
+                        tracing::warn!(repo = %repo_slug, error = %e, "get_tree failed; skipping");
+                        continue;
+                    }
+                    Err(e) => {
+                        tracing::warn!(repo = %repo_slug, error = %e, "get_tree permanent error; skipping");
+                        continue;
+                    }
+                };
+
+                // Build the set of all file paths for import resolution.
+                let all_paths: HashSet<String> = tree_entries
+                    .iter()
+                    .filter(|e| e.entry_type == "blob")
+                    .map(|e| e.path.clone())
+                    .collect();
+
+                // Build glob set for exclusions.
+                let glob_set = build_glob_set(&config.code.exclude_globs);
+
+                // Filter + fetch + parse files.
+                let blob_entries: Vec<_> = tree_entries
+                    .iter()
+                    .filter(|e| {
+                        e.entry_type == "blob"
+                            && e.size <= config.code.max_file_bytes
+                            && !is_excluded(&e.path, &glob_set)
+                            && parse::Lang::from_path(&e.path)
+                                .map(|l| config.code.languages.contains(&l.name().to_string()))
+                                .unwrap_or(false)
+                    })
+                    .take(config.code.max_files_per_tick)
+                    .collect();
+
+                let files_cap = blob_entries.len();
+                let mut file_imports: Vec<FileImports> = Vec::new();
+
+                for entry in &blob_entries {
+                    let lang = match parse::Lang::from_path(&entry.path) {
+                        Some(l) => l,
+                        None => continue,
+                    };
+
+                    // Fetch blob on spawn_blocking to keep the async executor free.
+                    let gh2 = gh.clone();
+                    let owner2 = owner.to_string();
+                    let name2 = name.to_string();
+                    let sha2 = entry.sha.clone();
+                    let max_bytes = config.code.max_file_bytes;
+
+                    let content = match gh2.get_blob(&owner2, &name2, &sha2, max_bytes).await {
+                        Ok(Some(c)) => c,
+                        Ok(None) => continue,
+                        Err(e) => {
+                            tracing::debug!(path = %entry.path, error = %e, "get_blob failed; skipping");
+                            continue;
+                        }
+                    };
+
+                    // Parse imports on a blocking thread (tree-sitter is sync/CPU).
+                    let content2 = content.clone();
+                    let raw_imports = tokio::task::spawn_blocking(move || {
+                        parse::extract_imports(lang, &content2)
+                    })
+                    .await
+                    .unwrap_or_default();
+
+                    let resolved = resolve_imports(lang.name(), &entry.path, &raw_imports, &all_paths);
+
+                    file_imports.push(FileImports {
+                        path: entry.path.clone(),
+                        size: entry.size,
+                        language: lang.name().to_string(),
+                        imports: resolved,
+                    });
+                }
+
+                // Merge code graph into existing nodes/edges.
+                let (code_tables, _) = code_to_graph(owner, name, &file_imports, nodes, edges);
+                nodes = code_tables
+                    .iter()
+                    .find(|t| t.table == transform::NODE_TABLE)
+                    .map(|t| t.rows.clone())
+                    .unwrap_or_default();
+                edges = code_tables
+                    .iter()
+                    .find(|t| t.table == transform::EDGE_TABLE)
+                    .map(|t| t.rows.clone())
+                    .unwrap_or_default();
+
+                // Update code cursor.
+                cur.update_code_cursor(repo_slug, head_sha.clone(), files_cap);
+            }
+        }
+
+        // ── Reassemble final TableRows ────────────────────────────────────────
+        let tables = vec![
+            crate::types::TableRows {
+                table: transform::NODE_TABLE.to_string(),
+                rows: nodes,
+            },
+            crate::types::TableRows {
+                table: transform::EDGE_TABLE.to_string(),
+                rows: edges,
+            },
+        ];
 
         Ok(ConnectorRun {
             rows: vec![],
@@ -219,6 +407,28 @@ impl Connector for GithubConnector {
             tables,
             graph: Some(hint),
         })
+    }
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+/// Build a `GlobSet` from a list of glob patterns. Errors are silently ignored
+/// (a failed pattern simply doesn't exclude anything).
+fn build_glob_set(patterns: &[String]) -> Option<globset::GlobSet> {
+    let mut builder = globset::GlobSetBuilder::new();
+    for pat in patterns {
+        if let Ok(g) = globset::Glob::new(pat) {
+            builder.add(g);
+        }
+    }
+    builder.build().ok()
+}
+
+/// Return `true` if `path` matches any glob in `set`.
+fn is_excluded(path: &str, set: &Option<globset::GlobSet>) -> bool {
+    match set {
+        Some(gs) => gs.is_match(path),
+        None => false,
     }
 }
 

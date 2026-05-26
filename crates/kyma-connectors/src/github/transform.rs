@@ -14,6 +14,11 @@
 //! so it lands cleanly in a Utf8 column and `parse_labels` can wrap it.
 //! `props` is a JSON blob so entity-specific fields don't cause column
 //! explosion.
+//!
+//! ## Code graph (B2)
+//! `code_to_graph` appends `Directory`/`CodeFile` nodes and `CONTAINS`/`IMPORTS`
+//! edges derived from the git-tree + per-file import lists produced by
+//! `parse::extract_imports`.
 
 use crate::types::{GraphHint, TableRows};
 use serde_json::{json, Map, Value};
@@ -52,6 +57,18 @@ pub fn pr_id(owner: &str, repo: &str, number: i64) -> String {
 
 pub fn issue_id(owner: &str, repo: &str, number: i64) -> String {
     format!("issue:{owner}/{repo}#{number}")
+}
+
+pub fn dir_id(owner: &str, repo: &str, path: &str) -> String {
+    format!("dir:{owner}/{repo}:{path}")
+}
+
+pub fn file_id(owner: &str, repo: &str, path: &str) -> String {
+    format!("file:{owner}/{repo}:{path}")
+}
+
+pub fn module_id(raw: &str) -> String {
+    format!("module:{raw}")
 }
 
 /// Deterministic edge id: `src|TYPE|dst`.
@@ -105,7 +122,7 @@ fn parse_closes(body: &str) -> Vec<i64> {
     numbers
 }
 
-// ── main transform ───────────────────────────────────────────────────────────
+// ── main metadata transform ──────────────────────────────────────────────────
 
 /// Convert a slice of `RawRecord`s into `(Vec<TableRows>, GraphHint)`.
 ///
@@ -265,11 +282,157 @@ pub fn to_graph(records: &[RawRecord]) -> (Vec<TableRows>, GraphHint) {
         }
     }
 
-    // Deduplicate nodes by id (last-writer wins — later records overwrite
-    // earlier ones for the same id, e.g. a User stub emitted during repo
-    // processing may be overwritten by a richer contributor record).
-    // Use a BTreeMap for deterministic output order.
-    let mut node_map: std::collections::BTreeMap<String, Value> = std::collections::BTreeMap::new();
+    build_tables(nodes, edges)
+}
+
+// ── Code graph transform (B2) ─────────────────────────────────────────────────
+
+/// A file path + its extracted import list.
+pub struct FileImports {
+    /// Repo-relative path (e.g. `"src/main.rs"`).
+    pub path: String,
+    /// File size in bytes (from the tree entry).
+    pub size: usize,
+    /// Detected language name (e.g. `"rust"`).
+    pub language: String,
+    /// Import targets extracted by tree-sitter.
+    pub imports: Vec<ImportTarget>,
+}
+
+/// A single resolved/unresolved import from a source file.
+pub struct ImportTarget {
+    /// The raw import string as it appears in source.
+    pub raw: String,
+    /// 1-based source line.
+    pub line: usize,
+    /// Path in the same repo that this import resolves to, if resolvable.
+    pub resolved_path: Option<String>,
+}
+
+/// Build the code portion of the graph from a file tree + parsed imports.
+///
+/// Emits:
+/// - `Directory` nodes for every directory that appears in the tree.
+/// - `CodeFile` nodes for every file.
+/// - `CONTAINS` edges: `repo → dir/file` (top-level) and `dir → child`.
+/// - `IMPORTS` edges: `file → file` (resolved) or `file → external module`
+///   (unresolved).
+///
+/// Results are appended to the existing `nodes`/`edges` vecs (callers
+/// typically call `to_graph` first for metadata and then this function).
+pub fn code_to_graph(
+    owner: &str,
+    repo_name: &str,
+    files: &[FileImports],
+    existing_nodes: Vec<Value>,
+    existing_edges: Vec<Value>,
+) -> (Vec<TableRows>, GraphHint) {
+    let mut nodes = existing_nodes;
+    let mut edges = existing_edges;
+
+    let rid = repo_id(owner, repo_name);
+
+    // Collect all directories that appear in the tree.
+    let mut dirs: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for fi in files {
+        // All ancestor directories.
+        let mut p = std::path::Path::new(&fi.path);
+        while let Some(parent) = p.parent() {
+            let ps = parent.to_string_lossy().to_string();
+            if ps.is_empty() || ps == "." {
+                break;
+            }
+            dirs.insert(ps);
+            p = parent;
+        }
+    }
+
+    // Emit Directory nodes.
+    for dir_path in &dirs {
+        let did = dir_id(owner, repo_name, dir_path);
+        let name = std::path::Path::new(dir_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| dir_path.clone());
+        nodes.push(make_node(&did, "Directory", &name, Map::new()));
+    }
+
+    // Emit CodeFile nodes.
+    for fi in files {
+        let fid = file_id(owner, repo_name, &fi.path);
+        let name = std::path::Path::new(&fi.path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| fi.path.clone());
+        let loc = 0usize; // LOC counting requires content; not available here
+        let mut props = Map::new();
+        props.insert("language".into(), Value::String(fi.language.clone()));
+        props.insert("size".into(), Value::Number(fi.size.into()));
+        props.insert("loc".into(), Value::Number(loc.into()));
+        nodes.push(make_node(&fid, "CodeFile", &name, props));
+    }
+
+    // Emit CONTAINS edges.
+    // Helper: parent id (repo or dir) for a given path.
+    let parent_node_id = |path: &str| -> String {
+        let p = std::path::Path::new(path);
+        match p.parent() {
+            Some(parent) => {
+                let ps = parent.to_string_lossy().to_string();
+                if ps.is_empty() || ps == "." {
+                    rid.clone()
+                } else {
+                    dir_id(owner, repo_name, &ps)
+                }
+            }
+            None => rid.clone(),
+        }
+    };
+
+    for dir_path in &dirs {
+        let did = dir_id(owner, repo_name, dir_path);
+        let pid = parent_node_id(dir_path);
+        edges.push(make_edge(&pid, "CONTAINS", &did, Map::new()));
+    }
+
+    for fi in files {
+        let fid = file_id(owner, repo_name, &fi.path);
+        let pid = parent_node_id(&fi.path);
+        edges.push(make_edge(&pid, "CONTAINS", &fid, Map::new()));
+    }
+
+    // Emit IMPORTS edges.
+    for fi in files {
+        let fid = file_id(owner, repo_name, &fi.path);
+        for imp in &fi.imports {
+            let (dst_id, resolved) = match &imp.resolved_path {
+                Some(rp) => (file_id(owner, repo_name, rp), true),
+                None => (module_id(&imp.raw), false),
+            };
+
+            // Emit external module node if not resolved (best-effort dedup via
+            // the BTreeMap pass below).
+            if !resolved {
+                nodes.push(make_node(&dst_id, "Module", &imp.raw, Map::new()));
+            }
+
+            let mut eprops = Map::new();
+            eprops.insert("raw".into(), Value::String(imp.raw.clone()));
+            eprops.insert("line".into(), Value::Number(imp.line.into()));
+            eprops.insert("resolved".into(), Value::Bool(resolved));
+            edges.push(make_edge(&fid, "IMPORTS", &dst_id, eprops));
+        }
+    }
+
+    build_tables(nodes, edges)
+}
+
+// ── shared dedup + table builder ─────────────────────────────────────────────
+
+fn build_tables(nodes: Vec<Value>, edges: Vec<Value>) -> (Vec<TableRows>, GraphHint) {
+    // Deduplicate nodes by id (last-writer wins).
+    let mut node_map: std::collections::BTreeMap<String, Value> =
+        std::collections::BTreeMap::new();
     for n in nodes {
         if let Some(id) = n["id"].as_str() {
             node_map.insert(id.to_string(), n);
@@ -277,7 +440,8 @@ pub fn to_graph(records: &[RawRecord]) -> (Vec<TableRows>, GraphHint) {
     }
 
     // Deduplicate edges by id.
-    let mut edge_map: std::collections::BTreeMap<String, Value> = std::collections::BTreeMap::new();
+    let mut edge_map: std::collections::BTreeMap<String, Value> =
+        std::collections::BTreeMap::new();
     for e in edges {
         if let Some(id) = e["id"].as_str() {
             edge_map.insert(id.to_string(), e);
@@ -305,6 +469,204 @@ pub fn to_graph(records: &[RawRecord]) -> (Vec<TableRows>, GraphHint) {
     };
 
     (tables, hint)
+}
+
+// ── import resolution ─────────────────────────────────────────────────────────
+
+/// Resolve raw imports for `lang` to repo-relative paths where possible.
+///
+/// This is heuristic and best-effort.  Unresolvable imports (external crates,
+/// stdlib, etc.) get `resolved_path = None` and become external `Module` nodes.
+pub fn resolve_imports(
+    lang: &str,
+    file_path: &str,
+    raw_imports: &[crate::github::parse::RawImport],
+    all_paths: &std::collections::HashSet<String>,
+) -> Vec<ImportTarget> {
+    raw_imports
+        .iter()
+        .map(|ri| {
+            let resolved_path = try_resolve(lang, file_path, &ri.raw, all_paths);
+            ImportTarget {
+                raw: ri.raw.clone(),
+                line: ri.line,
+                resolved_path,
+            }
+        })
+        .collect()
+}
+
+/// Attempt to resolve a single raw import string to a repo path.
+fn try_resolve(
+    lang: &str,
+    file_path: &str,
+    raw: &str,
+    all_paths: &std::collections::HashSet<String>,
+) -> Option<String> {
+    match lang {
+        "rust" => resolve_rust(raw, all_paths),
+        "python" => resolve_python(file_path, raw, all_paths),
+        "typescript" | "javascript" => resolve_ts_js(file_path, raw, all_paths),
+        "go" => resolve_go(raw, all_paths),
+        _ => None,
+    }
+}
+
+/// Rust: `crate::foo::bar` → `src/foo/bar.rs` or `src/foo/bar/mod.rs`.
+/// `use std::` and other external crates → unresolved.
+fn resolve_rust(raw: &str, all_paths: &std::collections::HashSet<String>) -> Option<String> {
+    if !raw.starts_with("crate::") && !raw.starts_with("super::") {
+        return None; // external crate
+    }
+    let inner = raw
+        .strip_prefix("crate::")
+        .or_else(|| raw.strip_prefix("super::"))
+        .unwrap_or(raw);
+    let rel = inner.replace("::", "/");
+    // Try `src/{rel}.rs` and `src/{rel}/mod.rs`
+    let candidate1 = format!("src/{rel}.rs");
+    let candidate2 = format!("src/{rel}/mod.rs");
+    if all_paths.contains(&candidate1) {
+        return Some(candidate1);
+    }
+    if all_paths.contains(&candidate2) {
+        return Some(candidate2);
+    }
+    None
+}
+
+/// Python: `from .rel import X` → sibling file; `from pkg import X` →
+/// `pkg/__init__.py` or `pkg.py`.
+fn resolve_python(
+    file_path: &str,
+    raw: &str,
+    all_paths: &std::collections::HashSet<String>,
+) -> Option<String> {
+    let dir = std::path::Path::new(file_path)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    if raw.starts_with('.') {
+        // Relative import — strip leading dots
+        let stripped = raw.trim_start_matches('.');
+        let base = if dir.is_empty() {
+            stripped.replace('.', "/")
+        } else {
+            format!("{dir}/{}", stripped.replace('.', "/"))
+        };
+        let c1 = format!("{base}.py");
+        let c2 = format!("{base}/__init__.py");
+        if all_paths.contains(&c1) {
+            return Some(c1);
+        }
+        if all_paths.contains(&c2) {
+            return Some(c2);
+        }
+        return None;
+    }
+
+    // Absolute import
+    let base = raw.replace('.', "/");
+    let c1 = format!("{base}.py");
+    let c2 = format!("{base}/__init__.py");
+    if all_paths.contains(&c1) {
+        return Some(c1);
+    }
+    if all_paths.contains(&c2) {
+        return Some(c2);
+    }
+    None
+}
+
+/// TypeScript/JavaScript: `./foo` → sibling with any extension, relative to
+/// the importing file's directory.
+fn resolve_ts_js(
+    file_path: &str,
+    raw: &str,
+    all_paths: &std::collections::HashSet<String>,
+) -> Option<String> {
+    if !raw.starts_with('.') {
+        return None; // external npm package
+    }
+    let dir = std::path::Path::new(file_path)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let joined = if dir.is_empty() {
+        raw.to_string()
+    } else {
+        format!("{dir}/{raw}")
+    };
+    // Normalize `./` and `../`
+    let normalized = normalize_path(&joined);
+
+    // Probe with various extensions
+    for ext in &["ts", "tsx", "js", "jsx", "mjs"] {
+        let c = if normalized.contains('.') && !normalized.ends_with('/') {
+            // Already has extension
+            normalized.clone()
+        } else {
+            format!("{normalized}.{ext}")
+        };
+        if all_paths.contains(&c) {
+            return Some(c);
+        }
+    }
+    // Try index file
+    for ext in &["ts", "tsx", "js", "jsx"] {
+        let c = format!("{normalized}/index.{ext}");
+        if all_paths.contains(&c) {
+            return Some(c);
+        }
+    }
+    None
+}
+
+/// Go: `"github.com/owner/repo/pkg"` → check if any file at `pkg/*.go` exists
+/// in the repo (module-relative heuristic).
+fn resolve_go(raw: &str, all_paths: &std::collections::HashSet<String>) -> Option<String> {
+    // Standard library (no dot in first segment) → unresolved
+    if !raw.contains('/') {
+        return None;
+    }
+    // For repo-internal imports: a Go module path typically starts with the
+    // module name (e.g. `github.com/org/repo`).  We can't know the module name
+    // from the tree alone, so we heuristically strip leading segments until we
+    // find a directory that exists in the tree.
+    let parts: Vec<&str> = raw.split('/').collect();
+    for i in 1..parts.len() {
+        let suffix = parts[i..].join("/");
+        // Check if any .go file exists under this suffix directory
+        let candidate_dir = suffix.clone();
+        let found = all_paths.iter().any(|p| {
+            p.starts_with(&candidate_dir) && p.ends_with(".go")
+        });
+        if found {
+            // Return the first .go file in this dir (deterministic via sorted set)
+            return all_paths
+                .iter()
+                .find(|p| p.starts_with(&candidate_dir) && p.ends_with(".go"))
+                .cloned();
+        }
+    }
+    None
+}
+
+/// Naive path normalizer: remove `.` components and resolve `..`.
+fn normalize_path(path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for seg in path.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other),
+        }
+    }
+    parts.join("/")
 }
 
 #[cfg(test)]
@@ -517,5 +879,240 @@ mod tests {
             let parsed: serde_json::Result<Value> = serde_json::from_str(props_str);
             assert!(parsed.is_ok(), "props is not valid JSON: {:?}", props_str);
         }
+    }
+
+    // ── Code graph tests (B2) ─────────────────────────────────────────────────
+
+    fn make_file_tree() -> Vec<FileImports> {
+        vec![
+            FileImports {
+                path: "src/main.rs".into(),
+                size: 100,
+                language: "rust".into(),
+                imports: vec![
+                    ImportTarget {
+                        raw: "crate::lib".into(),
+                        line: 1,
+                        resolved_path: Some("src/lib.rs".into()),
+                    },
+                    ImportTarget {
+                        raw: "std::io".into(),
+                        line: 2,
+                        resolved_path: None,
+                    },
+                ],
+            },
+            FileImports {
+                path: "src/lib.rs".into(),
+                size: 200,
+                language: "rust".into(),
+                imports: vec![],
+            },
+            FileImports {
+                path: "src/helpers/mod.rs".into(),
+                size: 50,
+                language: "rust".into(),
+                imports: vec![],
+            },
+        ]
+    }
+
+    #[test]
+    fn code_graph_emits_directory_nodes() {
+        let files = make_file_tree();
+        let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        let node_ids: Vec<_> = tables[0].rows.iter()
+            .map(|r| r["id"].as_str().unwrap().to_string())
+            .collect();
+        // Expect Directory nodes for "src" and "src/helpers"
+        assert!(
+            node_ids.contains(&dir_id("acme", "myrepo", "src")),
+            "expected src dir, got: {:?}", node_ids
+        );
+        assert!(
+            node_ids.contains(&dir_id("acme", "myrepo", "src/helpers")),
+            "expected src/helpers dir, got: {:?}", node_ids
+        );
+    }
+
+    #[test]
+    fn code_graph_emits_codefile_nodes() {
+        let files = make_file_tree();
+        let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        let node_ids: Vec<_> = tables[0].rows.iter()
+            .map(|r| r["id"].as_str().unwrap().to_string())
+            .collect();
+        assert!(
+            node_ids.contains(&file_id("acme", "myrepo", "src/main.rs")),
+            "expected src/main.rs file, got: {:?}", node_ids
+        );
+        assert!(
+            node_ids.contains(&file_id("acme", "myrepo", "src/lib.rs")),
+            "expected src/lib.rs file, got: {:?}", node_ids
+        );
+    }
+
+    #[test]
+    fn code_graph_codefile_labels_are_string() {
+        let files = make_file_tree();
+        let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        for row in &tables[0].rows {
+            let labels = &row["labels"];
+            assert!(labels.is_string(), "labels must be string, got: {:?}", labels);
+        }
+    }
+
+    #[test]
+    fn code_graph_node_columns_le_4() {
+        let files = make_file_tree();
+        let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        for row in &tables[0].rows {
+            let obj = row.as_object().unwrap();
+            assert!(
+                obj.len() <= 4,
+                "node has {} columns: {:?}",
+                obj.len(),
+                obj.keys().collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn code_graph_edge_columns_le_5() {
+        let files = make_file_tree();
+        let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        for row in &tables[1].rows {
+            let obj = row.as_object().unwrap();
+            assert!(obj.len() <= 5, "edge has {} columns: {:?}", obj.len(), obj.keys().collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
+    fn code_graph_contains_edges_repo_to_dir() {
+        let files = make_file_tree();
+        let rid = repo_id("acme", "myrepo");
+        let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        let edges = &tables[1].rows;
+        // repo → src dir
+        let src_did = dir_id("acme", "myrepo", "src");
+        let repo_to_src = edges.iter().any(|e| {
+            e["type"] == "CONTAINS" && e["src"] == rid && e["dst"] == src_did
+        });
+        assert!(repo_to_src, "expected CONTAINS repo→src, edges: {:?}",
+            edges.iter().map(|e| (e["type"].as_str(), e["src"].as_str(), e["dst"].as_str())).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn code_graph_contains_edges_dir_to_file() {
+        let files = make_file_tree();
+        let src_did = dir_id("acme", "myrepo", "src");
+        let main_fid = file_id("acme", "myrepo", "src/main.rs");
+        let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        let edges = &tables[1].rows;
+        let dir_to_file = edges.iter().any(|e| {
+            e["type"] == "CONTAINS" && e["src"] == src_did && e["dst"] == main_fid
+        });
+        assert!(dir_to_file, "expected CONTAINS src→main.rs");
+    }
+
+    #[test]
+    fn code_graph_imports_resolved_edge() {
+        let files = make_file_tree();
+        let main_fid = file_id("acme", "myrepo", "src/main.rs");
+        let lib_fid = file_id("acme", "myrepo", "src/lib.rs");
+        let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        let edges = &tables[1].rows;
+        let import_edge = edges.iter().find(|e| {
+            e["type"] == "IMPORTS" && e["src"] == main_fid && e["dst"] == lib_fid
+        });
+        assert!(import_edge.is_some(), "expected IMPORTS main.rs→lib.rs");
+        let props: Value = serde_json::from_str(
+            import_edge.unwrap()["props"].as_str().unwrap()
+        ).unwrap();
+        assert_eq!(props["resolved"], true);
+        assert_eq!(props["raw"], "crate::lib");
+        assert_eq!(props["line"], 1);
+    }
+
+    #[test]
+    fn code_graph_imports_unresolved_emits_module_node() {
+        let files = make_file_tree();
+        let main_fid = file_id("acme", "myrepo", "src/main.rs");
+        let mod_id = module_id("std::io");
+        let (tables, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+
+        let edges = &tables[1].rows;
+        let import_edge = edges.iter().find(|e| {
+            e["type"] == "IMPORTS" && e["src"] == main_fid && e["dst"] == mod_id
+        });
+        assert!(import_edge.is_some(), "expected IMPORTS main.rs→module:std::io");
+        let props: Value = serde_json::from_str(
+            import_edge.unwrap()["props"].as_str().unwrap()
+        ).unwrap();
+        assert_eq!(props["resolved"], false);
+
+        // Module node should exist
+        let nodes = &tables[0].rows;
+        let mod_node = nodes.iter().find(|n| n["id"] == mod_id);
+        assert!(mod_node.is_some(), "expected Module node for std::io");
+        assert_eq!(mod_node.unwrap()["labels"], "Module");
+    }
+
+    #[test]
+    fn code_graph_deterministic() {
+        let files = make_file_tree();
+        let (t1, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        let (t2, _) = code_to_graph("acme", "myrepo", &files, vec![], vec![]);
+        let ids1: Vec<_> = t1[0].rows.iter().map(|r| r["id"].as_str().unwrap().to_string()).collect();
+        let ids2: Vec<_> = t2[0].rows.iter().map(|r| r["id"].as_str().unwrap().to_string()).collect();
+        assert_eq!(ids1, ids2);
+    }
+
+    // ── Import resolution tests ───────────────────────────────────────────────
+
+    #[test]
+    fn resolve_ts_js_relative_import() {
+        let mut paths = std::collections::HashSet::new();
+        paths.insert("src/utils.ts".to_string());
+        paths.insert("src/index.ts".to_string());
+
+        // ./utils from src/index.ts → src/utils.ts
+        let imports = vec![crate::github::parse::RawImport { raw: "./utils".into(), line: 1 }];
+        let resolved = resolve_imports("typescript", "src/index.ts", &imports, &paths);
+        assert_eq!(resolved[0].resolved_path.as_deref(), Some("src/utils.ts"));
+    }
+
+    #[test]
+    fn resolve_ts_js_external_npm_unresolved() {
+        let paths = std::collections::HashSet::new();
+        let imports = vec![crate::github::parse::RawImport { raw: "react".into(), line: 1 }];
+        let resolved = resolve_imports("typescript", "src/index.ts", &imports, &paths);
+        assert_eq!(resolved[0].resolved_path, None);
+    }
+
+    #[test]
+    fn resolve_rust_crate_import() {
+        let mut paths = std::collections::HashSet::new();
+        paths.insert("src/utils.rs".to_string());
+
+        let imports = vec![crate::github::parse::RawImport { raw: "crate::utils".into(), line: 1 }];
+        let resolved = resolve_imports("rust", "src/main.rs", &imports, &paths);
+        assert_eq!(resolved[0].resolved_path.as_deref(), Some("src/utils.rs"));
+    }
+
+    #[test]
+    fn resolve_rust_std_unresolved() {
+        let paths = std::collections::HashSet::new();
+        let imports = vec![crate::github::parse::RawImport { raw: "std::io".into(), line: 1 }];
+        let resolved = resolve_imports("rust", "src/main.rs", &imports, &paths);
+        assert_eq!(resolved[0].resolved_path, None);
+    }
+
+    #[test]
+    fn normalize_path_resolves_dotdot() {
+        assert_eq!(normalize_path("src/../lib/foo"), "lib/foo");
+        assert_eq!(normalize_path("src/./bar"), "src/bar");
+        assert_eq!(normalize_path("a/b/c/../../d"), "a/d");
     }
 }

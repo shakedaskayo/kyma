@@ -14,6 +14,10 @@
 //! 403 (GitHub rate-limit), 429, and 5xx responses trigger a Transient error.
 //! 4xx (other) responses return Permanent. Network/timeout errors retry up to
 //! 3 times with exponential back-off + jitter (mirrors prometheus connector).
+//!
+//! ## Code graph (B2 additions)
+//! `get_tree` fetches the recursive git-tree for a commit SHA.
+//! `get_blob` fetches and base64-decodes a single file blob.
 
 use chrono::{DateTime, Utc};
 use reqwest::{Client, Response, StatusCode};
@@ -23,6 +27,19 @@ use crate::types::ConnectorError;
 
 const RATE_LIMIT_FLOOR: u64 = 10;
 const GITHUB_API_BASE: &str = "https://api.github.com";
+
+/// A single entry from the recursive git-tree API response.
+#[derive(Debug, Clone)]
+pub struct TreeEntry {
+    /// Repo-relative path (e.g. `"src/main.rs"`).
+    pub path: String,
+    /// `"blob"` for files, `"tree"` for directories.
+    pub entry_type: String,
+    /// Object SHA (used to fetch blob content).
+    pub sha: String,
+    /// File size in bytes (only present for blobs; 0 for trees).
+    pub size: usize,
+}
 
 /// Thin GitHub REST client. Cheaply cloneable.
 #[derive(Clone)]
@@ -264,6 +281,102 @@ impl GithubClient {
         let (items, _reason) = self.paginate(&url, max_pages).await?;
         Ok(items)
     }
+
+    // ── Code graph (B2) ───────────────────────────────────────────────────────
+
+    /// `GET /repos/{owner}/{name}/git/trees/{sha}?recursive=1`
+    ///
+    /// Returns all entries in the repo tree at `sha`.  If the response is
+    /// `truncated` (trees > 100k objects), GitHub only returns a partial list;
+    /// we log a warning and proceed with what we got.
+    pub async fn get_tree(
+        &self,
+        owner: &str,
+        name: &str,
+        sha: &str,
+    ) -> Result<Vec<TreeEntry>, ConnectorError> {
+        let url = format!(
+            "{}/repos/{owner}/{name}/git/trees/{sha}?recursive=1",
+            self.base_url
+        );
+        let (body, _) = self.fetch_one(&url).await?;
+
+        if body.get("truncated").and_then(|v| v.as_bool()).unwrap_or(false) {
+            tracing::warn!(
+                owner,
+                repo = name,
+                sha,
+                "git tree response was truncated; proceeding with partial list"
+            );
+        }
+
+        let entries = body["tree"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| {
+                        let path = item["path"].as_str()?.to_string();
+                        let entry_type = item["type"].as_str().unwrap_or("blob").to_string();
+                        let sha = item["sha"].as_str().unwrap_or("").to_string();
+                        let size = item["size"].as_u64().unwrap_or(0) as usize;
+                        Some(TreeEntry { path, entry_type, sha, size })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        Ok(entries)
+    }
+
+    /// `GET /repos/{owner}/{name}/git/blobs/{sha}`
+    ///
+    /// Fetches and base64-decodes the blob content. Returns `None` if the
+    /// file is too large (> `max_file_bytes`) or if the encoding is not
+    /// base64.
+    pub async fn get_blob(
+        &self,
+        owner: &str,
+        name: &str,
+        sha: &str,
+        max_file_bytes: usize,
+    ) -> Result<Option<String>, ConnectorError> {
+        let url = format!(
+            "{}/repos/{owner}/{name}/git/blobs/{sha}",
+            self.base_url
+        );
+        let (body, _) = self.fetch_one(&url).await?;
+
+        let encoding = body["encoding"].as_str().unwrap_or("");
+        if encoding != "base64" {
+            // Shouldn't happen in practice; skip rather than error.
+            return Ok(None);
+        }
+
+        let raw_b64 = body["content"].as_str().unwrap_or("");
+        // GitHub adds newlines every 60 chars — strip all whitespace.
+        let clean: String = raw_b64.chars().filter(|c| !c.is_whitespace()).collect();
+
+        // Size check before allocating: base64 overhead ≈ 4/3.
+        let estimated_bytes = clean.len() * 3 / 4;
+        if estimated_bytes > max_file_bytes {
+            return Ok(None);
+        }
+
+        use base64::Engine as _;
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(clean.as_bytes())
+            .map_err(|e| ConnectorError::Permanent(format!("base64 decode: {e}")))?;
+
+        if decoded.len() > max_file_bytes {
+            return Ok(None);
+        }
+
+        // Convert to UTF-8; skip binary files.
+        match String::from_utf8(decoded) {
+            Ok(s) => Ok(Some(s)),
+            Err(_) => Ok(None), // binary file
+        }
+    }
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -462,4 +575,149 @@ mod tests {
         // This test simply confirms the test file compiles correctly.
         let _ = "placeholder";
     }
+
+    // ── Code graph client tests (B2) ──────────────────────────────────────────
+
+    #[tokio::test]
+    async fn get_tree_returns_entries() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/repos/acme/repo/git/trees/abc123"))
+            .and(query_param("recursive", "1"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "truncated": false,
+                    "tree": [
+                        { "path": "src/main.rs", "type": "blob", "sha": "sha1", "size": 100 },
+                        { "path": "src", "type": "tree", "sha": "sha2", "size": 0 },
+                        { "path": "Cargo.toml", "type": "blob", "sha": "sha3", "size": 200 }
+                    ]
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = make_client(&server).await;
+        let entries = client.get_tree("acme", "repo", "abc123").await.unwrap();
+        assert_eq!(entries.len(), 3);
+
+        let blob = entries.iter().find(|e| e.path == "src/main.rs").unwrap();
+        assert_eq!(blob.entry_type, "blob");
+        assert_eq!(blob.sha, "sha1");
+        assert_eq!(blob.size, 100);
+
+        let tree_entry = entries.iter().find(|e| e.path == "src").unwrap();
+        assert_eq!(tree_entry.entry_type, "tree");
+    }
+
+    #[tokio::test]
+    async fn get_tree_handles_truncated() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/repos/acme/repo/git/trees/abc123"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "truncated": true,
+                    "tree": [
+                        { "path": "src/main.rs", "type": "blob", "sha": "sha1", "size": 50 }
+                    ]
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = make_client(&server).await;
+        // Truncated should not error — just returns partial results.
+        let entries = client.get_tree("acme", "repo", "abc123").await.unwrap();
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn get_blob_decodes_base64() {
+        let server = MockServer::start().await;
+
+        // "fn main() {}" base64-encoded
+        let content = base64::engine::general_purpose::STANDARD.encode(b"fn main() {}");
+        // GitHub includes newlines every 60 chars; simulate that
+        let content_with_newlines = format!("{content}\n");
+
+        Mock::given(method("GET"))
+            .and(path("/repos/acme/repo/git/blobs/sha1"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "encoding": "base64",
+                    "content": content_with_newlines,
+                    "size": 13
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = make_client(&server).await;
+        let result = client
+            .get_blob("acme", "repo", "sha1", 1_048_576)
+            .await
+            .unwrap();
+        assert_eq!(result, Some("fn main() {}".to_string()));
+    }
+
+    #[tokio::test]
+    async fn get_blob_skips_oversized_files() {
+        let server = MockServer::start().await;
+
+        // Large content: 200 bytes, max = 100 → should skip
+        let big_content = "a".repeat(200);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(big_content.as_bytes());
+
+        Mock::given(method("GET"))
+            .and(path("/repos/acme/repo/git/blobs/sha_big"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "encoding": "base64",
+                    "content": encoded,
+                    "size": 200
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = make_client(&server).await;
+        // max_file_bytes = 100, file is 200 bytes → should return None
+        let result = client
+            .get_blob("acme", "repo", "sha_big", 100)
+            .await
+            .unwrap();
+        assert_eq!(result, None, "expected None for oversized file");
+    }
+
+    #[tokio::test]
+    async fn get_blob_skips_non_base64() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/repos/acme/repo/git/blobs/sha_utf8"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "encoding": "utf-8",
+                    "content": "fn main() {}",
+                    "size": 13
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = make_client(&server).await;
+        let result = client
+            .get_blob("acme", "repo", "sha_utf8", 1_048_576)
+            .await
+            .unwrap();
+        assert_eq!(result, None, "expected None for non-base64 encoding");
+    }
 }
+
+// ── internal use of base64 in tests only when feature enabled ────────────────
+#[cfg(test)]
+#[allow(unused_imports)]
+use base64::Engine as _;

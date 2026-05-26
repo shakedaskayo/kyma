@@ -18,6 +18,16 @@ pub struct RepoCursor {
     /// RFC-3339 timestamp: fetch issues updated at or after this time.
     /// `None` means "first run" → fetch all.
     pub issues_since: Option<DateTime<Utc>>,
+    /// The default-branch HEAD SHA that was last fully ingested for the code
+    /// graph.  When the current HEAD SHA matches this value, the code-graph
+    /// walk is skipped.  `None` means the code graph has never been ingested
+    /// for this repo.
+    pub tree_sha_ingested: Option<String>,
+    /// Number of files successfully ingested in the last code-graph tick.
+    /// Used for resume when a tick hits `max_files_per_tick`: the next tick
+    /// can skip already-processed paths (implementation detail, carried as
+    /// informational state).
+    pub files_done: Option<usize>,
 }
 
 /// Top-level cursor — keyed by `"owner/name"`.
@@ -45,8 +55,13 @@ impl Cursor {
         self.repos.get(repo).cloned().unwrap_or_default()
     }
 
-    /// Update the cursor for a repo after a successful fetch.
-    pub fn update_repo(&mut self, repo: &str, pulls_since: Option<DateTime<Utc>>, issues_since: Option<DateTime<Utc>>) {
+    /// Update the metadata cursor for a repo after a successful fetch.
+    pub fn update_repo(
+        &mut self,
+        repo: &str,
+        pulls_since: Option<DateTime<Utc>>,
+        issues_since: Option<DateTime<Utc>>,
+    ) {
         let entry = self.repos.entry(repo.to_string()).or_default();
         if let Some(ts) = pulls_since {
             entry.pulls_since = Some(ts);
@@ -54,6 +69,16 @@ impl Cursor {
         if let Some(ts) = issues_since {
             entry.issues_since = Some(ts);
         }
+    }
+
+    /// Update the code-graph cursor for a repo after a successful tree walk.
+    ///
+    /// `sha` is the default-branch HEAD commit SHA that was just ingested.
+    /// `files_done` is the number of files that were processed this tick.
+    pub fn update_code_cursor(&mut self, repo: &str, sha: String, files_done: usize) {
+        let entry = self.repos.entry(repo.to_string()).or_default();
+        entry.tree_sha_ingested = Some(sha);
+        entry.files_done = Some(files_done);
     }
 }
 
@@ -85,5 +110,24 @@ mod tests {
     fn missing_cursor_returns_default() {
         let c = Cursor::from_value(None);
         assert!(c.repos.is_empty());
+    }
+
+    #[test]
+    fn code_cursor_round_trip() {
+        let mut c = Cursor::default();
+        c.update_code_cursor("owner/repo", "abc123sha".to_string(), 42);
+        let v = c.to_value();
+        let c2 = Cursor::from_value(Some(&v));
+        let rc = c2.for_repo("owner/repo");
+        assert_eq!(rc.tree_sha_ingested.as_deref(), Some("abc123sha"));
+        assert_eq!(rc.files_done, Some(42));
+    }
+
+    #[test]
+    fn tree_sha_default_is_none() {
+        let c = Cursor::default();
+        let rc = c.for_repo("any/repo");
+        assert!(rc.tree_sha_ingested.is_none());
+        assert!(rc.files_done.is_none());
     }
 }
