@@ -98,16 +98,88 @@ fn parse_labels(v: Option<&serde_json::Value>) -> Vec<String> {
     }
 }
 
+/// The conventional dynamic-JSON catch-all column (see kyma's default table
+/// schema). Connectors stash entity-specific fields here as a JSON blob.
+const PROPS_COL: &str = "props";
+
+/// Decode an even-length lowercase/uppercase hex string into bytes.
+fn hex_decode(s: &str) -> Option<Vec<u8>> {
+    if s.is_empty() || s.len() % 2 != 0 {
+        return None;
+    }
+    let val = |c: u8| match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    };
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len() / 2);
+    let mut i = 0;
+    while i < b.len() {
+        out.push((val(b[i])? << 4) | val(b[i + 1])?);
+        i += 2;
+    }
+    Some(out)
+}
+
+/// Decode the `props` catch-all blob into an object so its fields surface as
+/// real properties. `ensure_table` types `props` as Binary, so the executor
+/// (arrow-json) renders it as a hex string; we hex-decode → UTF-8 → JSON. Also
+/// handles a Utf8 `props` column whose value is the JSON text directly.
+fn decode_props_blob(v: &serde_json::Value) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let s = v.as_str()?;
+    if let Some(bytes) = hex_decode(s) {
+        if let Ok(txt) = std::str::from_utf8(&bytes) {
+            if let Ok(serde_json::Value::Object(m)) = serde_json::from_str(txt) {
+                return Some(m);
+            }
+        }
+    }
+    if let Ok(serde_json::Value::Object(m)) = serde_json::from_str::<serde_json::Value>(s) {
+        return Some(m);
+    }
+    None
+}
+
+/// Build the property map for a row: explicit (promoted) columns win; the
+/// `props` blob is decoded and merged in to fill any remaining keys. Role
+/// columns and the `__rn` dedup helper are excluded.
+fn collect_props(row: &JsonRow, role_cols: &[&str]) -> Props {
+    let mut props: Props = BTreeMap::new();
+    let mut blob: Option<&serde_json::Value> = None;
+    for (k, v) in row {
+        if role_cols.contains(&k.as_str()) || k == "__rn" {
+            continue;
+        }
+        if k == PROPS_COL {
+            blob = Some(v);
+            continue;
+        }
+        props.insert(k.clone(), v.clone());
+    }
+    if let Some(v) = blob {
+        match decode_props_blob(v) {
+            Some(obj) => {
+                for (pk, pv) in obj {
+                    props.entry(pk).or_insert(pv);
+                }
+            }
+            // Undecodable (not JSON): keep the raw value so nothing is lost.
+            None => {
+                props.insert(PROPS_COL.to_string(), v.clone());
+            }
+        }
+    }
+    props
+}
+
 pub(crate) fn row_to_node(c: &StoredGraphConfig, row: &JsonRow) -> GraphNode {
     let id = row.get(&c.id_col).map(as_str).unwrap_or_default();
     let labels = parse_labels(row.get(&c.label_col));
     let realm = c.realm_col.as_ref().and_then(|rc| row.get(rc)).map(as_str).unwrap_or_else(|| c.database.clone());
     let role_cols: [&str; 3] = [c.id_col.as_str(), c.label_col.as_str(), c.realm_col.as_deref().unwrap_or("")];
-    let mut props: Props = BTreeMap::new();
-    for (k, v) in row {
-        if role_cols.contains(&k.as_str()) || k == "__rn" { continue; }
-        props.insert(k.clone(), v.clone());
-    }
+    let props = collect_props(row, &role_cols);
     GraphNode {
         id, labels, properties: props,
         metadata: NodeMetadata { created_at: NOW.into(), updated_at: NOW.into(), source_type: Some("stored".into()), source_id: None, realm },
@@ -119,11 +191,7 @@ pub(crate) fn row_to_edge(c: &StoredGraphConfig, row: &JsonRow) -> GraphRelation
     let dst = row.get(&c.dst_col).map(as_str).unwrap_or_default();
     let ty = row.get(&c.type_col).map(as_str).unwrap_or_default();
     let role_cols = [c.src_col.as_str(), c.dst_col.as_str(), c.type_col.as_str()];
-    let mut props: Props = BTreeMap::new();
-    for (k, v) in row {
-        if role_cols.contains(&k.as_str()) || k == "__rn" { continue; }
-        props.insert(k.clone(), v.clone());
-    }
+    let props = collect_props(row, &role_cols);
     GraphRelationship {
         id: format!("{src}->{dst}:{ty}"),
         source_id: src, target_id: dst, relationship_type: ty, properties: props,
@@ -328,6 +396,56 @@ mod sql_tests {
         assert_eq!(e.target_id, "b");
         assert_eq!(e.relationship_type, "CALLS");
         assert_eq!(e.properties.get("weight").unwrap(), &serde_json::json!(5));
+    }
+
+    #[test]
+    fn hex_decode_round_trips() {
+        // `{"k":"v"}` as lowercase hex.
+        assert_eq!(hex_decode("7b226b223a2276227d").unwrap(), br#"{"k":"v"}"#.to_vec());
+        assert!(hex_decode("abc").is_none(), "odd length");
+        assert!(hex_decode("zz").is_none(), "non-hex");
+    }
+
+    #[test]
+    fn decode_props_blob_handles_hex_and_plain_json() {
+        // Binary props arrives hex-encoded from arrow-json.
+        let hex = serde_json::json!("7b226b223a2276227d");
+        let m = decode_props_blob(&hex).expect("hex json");
+        assert_eq!(m.get("k").unwrap(), &serde_json::json!("v"));
+        // A Utf8 props column arrives as the JSON text directly.
+        let plain = serde_json::json!(r#"{"a":1}"#);
+        assert_eq!(decode_props_blob(&plain).unwrap().get("a").unwrap(), &serde_json::json!(1));
+        // A non-JSON hex string (e.g. a sha) is left undecoded.
+        assert!(decode_props_blob(&serde_json::json!("deadbeef")).is_none());
+    }
+
+    #[test]
+    fn collect_props_merges_blob_and_explicit_wins() {
+        // hex of {"language":"python","name":"blob-name"}
+        let blob = "7b226c616e6775616765223a22707974686f6e222c226e616d65223a22626c6f622d6e616d65227d";
+        let mut row = JsonRow::new();
+        row.insert("id".into(), serde_json::json!("file:1"));
+        row.insert("labels".into(), serde_json::json!("CodeFile"));
+        row.insert("name".into(), serde_json::json!("real-name")); // explicit promoted col
+        row.insert("props".into(), serde_json::json!(blob));
+        row.insert("__rn".into(), serde_json::json!(1)); // dedup helper — excluded
+        let props = collect_props(&row, &["id", "labels"]);
+        // decoded blob field surfaces
+        assert_eq!(props.get("language").unwrap(), &serde_json::json!("python"));
+        // explicit `name` column wins over the blob's `name`
+        assert_eq!(props.get("name").unwrap(), &serde_json::json!("real-name"));
+        // helper + role cols excluded; raw hex `props` not leaked
+        assert!(!props.contains_key("__rn"));
+        assert!(!props.contains_key("props"));
+        assert!(!props.contains_key("id"));
+    }
+
+    #[test]
+    fn collect_props_keeps_undecodable_blob_raw() {
+        let mut row = JsonRow::new();
+        row.insert("props".into(), serde_json::json!("not-json"));
+        let props = collect_props(&row, &[]);
+        assert_eq!(props.get("props").unwrap(), &serde_json::json!("not-json"));
     }
 }
 
