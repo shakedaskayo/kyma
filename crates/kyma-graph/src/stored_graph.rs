@@ -32,14 +32,37 @@ fn as_str(v: &serde_json::Value) -> String {
     }
 }
 
+/// A deduplicated node source: one row per node id.
+///
+/// Connector tables are append-only, so a *continuous* connector re-ingests a
+/// fresh row for every node on each poll (metadata is re-emitted even when
+/// unchanged). Without dedup, the graph would render N copies of every node
+/// after N polls. We keep one row per id via a `ROW_NUMBER()` window. There is
+/// no reliable ingest-order column to pick the truly-latest row, so the choice
+/// is deterministic-arbitrary; re-ingested rows are identical in practice.
+fn node_source(c: &StoredGraphConfig) -> String {
+    format!(
+        "(select * from (select *, row_number() over (partition by {id} order by {id}) as __rn from {t}) where __rn = 1)",
+        id = ident(&c.id_col), t = ident(&c.node_table),
+    )
+}
+/// A deduplicated edge source: one row per (src, dst, type), matching the
+/// connector's deterministic edge identity (`hash(src, type, dst)`).
+fn edge_source(c: &StoredGraphConfig) -> String {
+    format!(
+        "(select * from (select *, row_number() over (partition by {s},{d},{ty} order by {s}) as __rn from {t}) where __rn = 1)",
+        s = ident(&c.src_col), d = ident(&c.dst_col), ty = ident(&c.type_col), t = ident(&c.edge_table),
+    )
+}
+
 pub(crate) fn node_sample_sql(c: &StoredGraphConfig, limit: usize) -> String {
-    format!("select * from {} limit {}", ident(&c.node_table), limit)
+    format!("select * from {} limit {}", node_source(c), limit)
 }
 pub(crate) fn edge_sample_sql(c: &StoredGraphConfig, limit: usize) -> String {
-    format!("select * from {} limit {}", ident(&c.edge_table), limit)
+    format!("select * from {} limit {}", edge_source(c), limit)
 }
 pub(crate) fn node_by_id_sql(c: &StoredGraphConfig, id: &str) -> String {
-    format!("select * from {} where {} = {} limit 1", ident(&c.node_table), ident(&c.id_col), lit(id))
+    format!("select * from {} where {} = {} limit 1", node_source(c), ident(&c.id_col), lit(id))
 }
 pub(crate) fn neighbors_sql(c: &StoredGraphConfig, ids: &[String], dir: Direction, limit: usize) -> String {
     let list = in_list(ids);
@@ -48,20 +71,22 @@ pub(crate) fn neighbors_sql(c: &StoredGraphConfig, ids: &[String], dir: Directio
         Direction::Backward => format!("{} in ({list})", ident(&c.dst_col)),
         Direction::Both => format!("{} in ({list}) or {} in ({list})", ident(&c.src_col), ident(&c.dst_col)),
     };
-    format!("select * from {} where {pred} limit {limit}", ident(&c.edge_table))
+    format!("select * from {} where {pred} limit {limit}", edge_source(c))
 }
 pub(crate) fn search_sql(c: &StoredGraphConfig, text: &str, limit: usize, offset: usize) -> String {
     let needle = lit(&format!("%{}%", text.to_lowercase()));
     format!(
         "select * from {t} where lower(cast({id} as varchar)) like {n} or lower(cast({lbl} as varchar)) like {n} limit {limit} offset {offset}",
-        t = ident(&c.node_table), id = ident(&c.id_col), lbl = ident(&c.label_col), n = needle,
+        t = node_source(c), id = ident(&c.id_col), lbl = ident(&c.label_col), n = needle,
     )
 }
-pub(crate) fn count_sql(table: &str) -> String {
-    format!("select count(*) as n from {}", ident(table))
+/// Count rows of an already-built (possibly deduplicated) source expression.
+pub(crate) fn count_sql(source: &str) -> String {
+    format!("select count(*) as n from {}", source)
 }
-pub(crate) fn group_count_sql(table: &str, col: &str) -> String {
-    format!("select cast({c} as varchar) as k, count(*) as n from {t} group by {c}", c = ident(col), t = ident(table))
+/// Group-count over an already-built source expression.
+pub(crate) fn group_count_sql(source: &str, col: &str) -> String {
+    format!("select cast({c} as varchar) as k, count(*) as n from {t} group by {c}", c = ident(col), t = source)
 }
 
 fn parse_labels(v: Option<&serde_json::Value>) -> Vec<String> {
@@ -80,7 +105,7 @@ pub(crate) fn row_to_node(c: &StoredGraphConfig, row: &JsonRow) -> GraphNode {
     let role_cols: [&str; 3] = [c.id_col.as_str(), c.label_col.as_str(), c.realm_col.as_deref().unwrap_or("")];
     let mut props: Props = BTreeMap::new();
     for (k, v) in row {
-        if role_cols.contains(&k.as_str()) { continue; }
+        if role_cols.contains(&k.as_str()) || k == "__rn" { continue; }
         props.insert(k.clone(), v.clone());
     }
     GraphNode {
@@ -96,7 +121,7 @@ pub(crate) fn row_to_edge(c: &StoredGraphConfig, row: &JsonRow) -> GraphRelation
     let role_cols = [c.src_col.as_str(), c.dst_col.as_str(), c.type_col.as_str()];
     let mut props: Props = BTreeMap::new();
     for (k, v) in row {
-        if role_cols.contains(&k.as_str()) { continue; }
+        if role_cols.contains(&k.as_str()) || k == "__rn" { continue; }
         props.insert(k.clone(), v.clone());
     }
     GraphRelationship {
@@ -123,16 +148,16 @@ impl StoredGraphProvider {
 }
 
 async fn stats_for(p: &StoredGraphProvider) -> anyhow::Result<GraphStats> {
-    let total_nodes = StoredGraphProvider::count_of(&p.rows(count_sql(&p.cfg.node_table)).await?);
-    let total_relationships = StoredGraphProvider::count_of(&p.rows(count_sql(&p.cfg.edge_table)).await?);
+    let total_nodes = StoredGraphProvider::count_of(&p.rows(count_sql(&node_source(&p.cfg))).await?);
+    let total_relationships = StoredGraphProvider::count_of(&p.rows(count_sql(&edge_source(&p.cfg))).await?);
     let mut label_counts = BTreeMap::new();
-    for r in p.rows(group_count_sql(&p.cfg.node_table, &p.cfg.label_col)).await? {
+    for r in p.rows(group_count_sql(&node_source(&p.cfg), &p.cfg.label_col)).await? {
         let k = r.get("k").map(as_str).unwrap_or_default();
         let n = r.get("n").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         label_counts.insert(k, n);
     }
     let mut relationship_type_counts = BTreeMap::new();
-    for r in p.rows(group_count_sql(&p.cfg.edge_table, &p.cfg.type_col)).await? {
+    for r in p.rows(group_count_sql(&edge_source(&p.cfg), &p.cfg.type_col)).await? {
         let k = r.get("k").map(as_str).unwrap_or_default();
         let n = r.get("n").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         relationship_type_counts.insert(k, n);
@@ -246,6 +271,34 @@ mod sql_tests {
         assert!(s.contains(r#""src" in ('x','y')"#), "{s}");
         assert!(s.contains(r#""dst" in ('x','y')"#), "{s}");
         assert!(s.to_lowercase().contains("limit 50"));
+    }
+
+    #[test]
+    fn node_sample_dedups_by_id() {
+        // Append-only connector tables accumulate a fresh row per node on every
+        // poll; the node source must collapse to one row per id.
+        let s = node_sample_sql(&cfg(), 50).to_lowercase();
+        assert!(s.contains("row_number()"), "{s}");
+        assert!(s.contains(r#"partition by "id""#), "{s}");
+        assert!(s.contains("kg_nodes"), "{s}");
+        assert!(s.contains("limit 50"), "{s}");
+    }
+
+    #[test]
+    fn edge_sample_dedups_by_src_dst_type() {
+        let s = edge_sample_sql(&cfg(), 50).to_lowercase();
+        assert!(s.contains("row_number()"), "{s}");
+        assert!(s.contains(r#"partition by "src","dst","type""#), "{s}");
+        assert!(s.contains("kg_edges"), "{s}");
+    }
+
+    #[test]
+    fn count_and_group_count_run_over_deduped_source() {
+        // stats must count distinct ids, not raw rows.
+        let cnt = count_sql(&node_source(&cfg())).to_lowercase();
+        assert!(cnt.contains("count(*)") && cnt.contains("row_number()"), "{cnt}");
+        let grp = group_count_sql(&node_source(&cfg()), &cfg().label_col).to_lowercase();
+        assert!(grp.contains("group by") && grp.contains("row_number()"), "{grp}");
     }
 
     #[test]
