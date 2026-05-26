@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useGraphStore } from "@/features/graph/graph-store";
+import { useGraphStats } from "@/features/graph/useGraph";
 import { deriveStatus, type ConnectorDetail as Detail } from "@/sdk/connectors";
 import { formatInterval, graphNameForType, kindByType } from "./connector-kinds";
 import { StatusBadge } from "./StatusBadge";
@@ -171,13 +172,14 @@ export function ConnectorDetail({
 }
 
 function SyncStatus({ detail }: { detail: Detail }) {
+  // Show the connector's *graph size* (the meaningful, cumulative number) rather
+  // than last-run rows — which sit at 0 once polling reaches a steady state.
+  const graphName = graphNameForType(detail.type);
+  const { data: gstats } = useGraphStats(graphName);
   const stats = [
-    { label: "Last run", value: fmtDate(detail.last_run_at) },
-    { label: "Last success", value: fmtDate(detail.last_success_at) },
-    {
-      label: "Rows ingested",
-      value: detail.last_rows_ingested != null ? detail.last_rows_ingested.toLocaleString() : "—",
-    },
+    { label: "Last sync", value: fmtDate(detail.last_success_at) },
+    { label: "Nodes", value: gstats ? gstats.total_nodes.toLocaleString() : "—" },
+    { label: "Edges", value: gstats ? gstats.total_relationships.toLocaleString() : "—" },
   ];
   return (
     <div className="grid grid-cols-3 gap-3">
