@@ -4,6 +4,7 @@ import { runQuery, type Column } from "@/sdk/query";
 import { useSession } from "@/sdk/session";
 import { useWorkspace, type Tab } from "@/features/tabs/workspace-store";
 import { prependTimeFilter } from "@/features/time-range/time-range";
+import { extractLeadingTable } from "@/features/search/parseSearch";
 
 export type TabResult = {
   columns: Column[];
@@ -11,7 +12,13 @@ export type TabResult = {
   chartPoints: Record<string, unknown>[];
 };
 
-export function useRunQuery() {
+/**
+ * @param timestampTables Tables that actually have a `timestamp` column. The
+ * time-range filter is only injected for those — code/graph tables without a
+ * timestamp would otherwise fail every query with "column not found". When
+ * omitted, the filter is injected (legacy behaviour).
+ */
+export function useRunQuery(timestampTables?: Set<string>) {
   const aborters = useRef(new Map<string, AbortController>());
 
   const run = useCallback(async (tab: Tab, onBatch: (r: TabResult) => void) => {
@@ -24,7 +31,10 @@ export function useRunQuery() {
     const ctl = new AbortController();
     aborters.current.set(tab.id, ctl);
 
-    const finalQuery = prependTimeFilter(tab.query, tab.timeRange);
+    // Only add the time filter when the leading table has a `timestamp` column.
+    const lead = extractLeadingTable(tab.query);
+    const hasTime = lead != null && (timestampTables?.has(lead) ?? true);
+    const finalQuery = hasTime ? prependTimeFilter(tab.query, tab.timeRange) : tab.query;
     const startedAt = performance.now();
     workspace.markSubmitted(tab.id, tab.query);
     workspace.setResults(tab.id, { kind: "running", startedAt: Date.now() });
@@ -57,7 +67,7 @@ export function useRunQuery() {
       toast.error(msg);
       workspace.setResults(tab.id, { kind: "error", message: msg });
     }
-  }, []);
+  }, [timestampTables]);
 
   const cancel = useCallback((tabId: string) => {
     aborters.current.get(tabId)?.abort();

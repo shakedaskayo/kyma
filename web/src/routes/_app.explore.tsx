@@ -35,7 +35,6 @@ export const Route = createFileRoute("/_app/explore")({
 function ExplorePage() {
   const { endpoint, token, database } = useSession();
   const workspace = useWorkspace();
-  const { run, cancel } = useRunQuery();
   const [liveResult, setLiveResult] = useState<TabResult | null>(null);
   const [view, setView] = useState<"grid" | "chart">("grid");
   const [rowFilter, setRowFilter] = useState("");
@@ -48,6 +47,19 @@ function ExplorePage() {
     staleTime: 5 * 60_000,
     enabled: Boolean(endpoint),
   });
+
+  // Tables (in the current db) that actually have a `timestamp` column — only
+  // those get the time-range filter injected; code/graph tables don't.
+  const timestampTables = useMemo(() => {
+    const set = new Set<string>();
+    schema?.databases
+      .find((d) => d.name === database)
+      ?.tables.forEach((t) => {
+        if (t.columns.some((c) => c.name.toLowerCase() === "timestamp")) set.add(t.name);
+      });
+    return set;
+  }, [schema, database]);
+  const { run, cancel } = useRunQuery(timestampTables);
 
   // Build knownValues from FieldStats data (top-20 observed values per column)
   const knownValues = useMemo<Record<string, string[]>>(() => {
@@ -83,15 +95,34 @@ function ExplorePage() {
       if (decoded) {
         workspace.newTab({ query: decoded.query, timeRange: { preset: decoded.preset, from: decoded.from, to: decoded.to } });
       } else if (workspace.tabs.length === 0) {
-        workspace.newTab({ query: "otel_logs | take 50" });
+        workspace.newTab({ query: "" });
       }
     } else if (workspace.tabs.length === 0) {
-      workspace.newTab({ query: "otel_logs | take 50" });
+      workspace.newTab({ query: "" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const active = workspace.tabs.find((t) => t.id === workspace.activeId) ?? workspace.tabs[0];
+
+  // Once the schema loads, seed the initial tab with a real first-table query
+  // (replacing an empty editor or the legacy `otel_logs | take 50` default that
+  // doesn't exist in most databases). Runs once — never tramples a real query.
+  const seededDefault = useRef(false);
+  useEffect(() => {
+    if (seededDefault.current || !schema || !active) return;
+    const cur = active.query.trim();
+    if (cur === "" || cur === "otel_logs | take 50") {
+      const t0 = schema.databases.find((d) => d.name === database)?.tables[0]?.name;
+      if (t0) {
+        workspace.setQuery(active.id, `${t0} | take 50`);
+        seededDefault.current = true;
+      }
+    } else {
+      seededDefault.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schema, database, active?.id]);
 
   // Build search schema for SmartSearchBar
   const searchSchema = useMemo<SearchSchema | null>(() => {
@@ -227,8 +258,8 @@ function ExplorePage() {
         {/* Tab bar */}
         <TabBar />
 
-        {/* Saved query chips */}
-        <SavedQueryChips onPick={handlePickSavedQuery} />
+        {/* Saved query chips — derived from the connected schema */}
+        <SavedQueryChips onPick={handlePickSavedQuery} schema={schema} database={database} />
 
         {/* Smart search bar */}
         <SmartSearchBar
