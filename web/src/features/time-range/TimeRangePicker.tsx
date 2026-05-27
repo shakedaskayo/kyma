@@ -13,12 +13,31 @@ const PRESETS: { value: TimeRangePreset; label: string }[] = [
   { value: "custom", label: "Custom…" },
 ];
 
-export function TimeRangePicker({ value, onChange }: { value: TimeRange; onChange: (r: TimeRange) => void }) {
+export function TimeRangePicker({
+  value,
+  onChange,
+  disabled = false,
+  disabledReason,
+}: {
+  value: TimeRange;
+  onChange: (r: TimeRange) => void;
+  /** Disable when the active table has no time column (filter wouldn't apply). */
+  disabled?: boolean;
+  disabledReason?: string;
+}) {
   const [open, setOpen] = useState(false);
-  const label = PRESETS.find((p) => p.value === value.preset)?.label ?? "Last 1 hour";
+  const label = disabled
+    ? "No time column"
+    : PRESETS.find((p) => p.value === value.preset)?.label ?? "Last 1 hour";
   return (
     <div className="relative">
-      <Button variant="outline" size="sm" onClick={() => setOpen((v) => !v)}>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={disabled}
+        title={disabled ? disabledReason : undefined}
+        onClick={() => !disabled && setOpen((v) => !v)}
+      >
         {label}
       </Button>
       {open && (

@@ -276,6 +276,8 @@ function ExplorePage() {
           <TimeRangePicker
             value={active?.timeRange ?? { preset: "1h" }}
             onChange={(r) => active && workspace.setTimeRange(active.id, r)}
+            disabled={Boolean(leadingTable) && !timestampTables.has(leadingTable!)}
+            disabledReason="This table has no timestamp column — the time range doesn't apply."
           />
           {status === "running" ? (
             <Button size="sm" variant="destructive" onClick={() => active && cancel(active.id)}>
