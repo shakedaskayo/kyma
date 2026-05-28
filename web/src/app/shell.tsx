@@ -1,5 +1,5 @@
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Database, Settings as SettingsIcon, Compass, LayoutDashboard, Sparkles, Network, Plug, LogOut, ChevronDown } from "lucide-react";
+import { Database, Settings as SettingsIcon, LayoutDashboard, Sparkles, Network, Plug, LogOut, ChevronDown, Search, Code } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/sdk/session";
 import { useHealth } from "@/sdk/reconnect";
@@ -11,9 +11,9 @@ import { logout } from "@/sdk/auth";
 
 function QueryStatusPill() {
   const activeTab = useWorkspace((s) => s.tabs.find((t) => t.id === s.activeId));
-  if (!activeTab) return null;
+  if (!activeTab || activeTab.kind !== "query") return null;
 
-  const r = activeTab.results;
+  const r = activeTab.state.results;
 
   if (r.kind === "idle") return null;
 
@@ -138,7 +138,7 @@ function UserMenu() {
             role="menuitem"
             onClick={() => {
               setOpen(false);
-              navigate({ to: "/settings", search: { next: "/explore" } });
+              navigate({ to: "/settings", search: { next: "/discover" } });
             }}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-accent hover:text-foreground"
           >
@@ -179,8 +179,11 @@ export function Shell() {
         </div>
         <QueryStatusPill />
         <nav className="ml-auto flex items-center gap-1">
-          <Link to="/explore" search={{ q: undefined }} className={btn(active.startsWith("/explore"))}>
-            <Compass className="h-4 w-4" /> Explore
+          <Link to="/discover" className={btn(active.startsWith("/discover"))}>
+            <Search className="h-4 w-4" /> Discover
+          </Link>
+          <Link to="/query" search={{ q: undefined }} className={btn(active.startsWith("/query") || active.startsWith("/explore"))}>
+            <Code className="h-4 w-4" /> Query Editor
           </Link>
           <Link to="/dashboards" className={btn(active.startsWith("/dashboards"))}>
             <LayoutDashboard className="h-4 w-4" /> Dashboards

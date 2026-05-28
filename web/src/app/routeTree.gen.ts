@@ -13,8 +13,10 @@ import { Route as SettingsRouteImport } from './../routes/settings'
 import { Route as LoginRouteImport } from './../routes/login'
 import { Route as AppRouteImport } from './../routes/_app'
 import { Route as IndexRouteImport } from './../routes/index'
+import { Route as AppQueryRouteImport } from './../routes/_app.query'
 import { Route as AppGraphRouteImport } from './../routes/_app.graph'
 import { Route as AppExploreRouteImport } from './../routes/_app.explore'
+import { Route as AppDiscoverRouteImport } from './../routes/_app.discover'
 import { Route as AppDashboardsRouteImport } from './../routes/_app.dashboards'
 import { Route as AppConnectorsRouteImport } from './../routes/_app.connectors'
 import { Route as AppAgentRouteImport } from './../routes/_app.agent'
@@ -41,6 +43,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppQueryRoute = AppQueryRouteImport.update({
+  id: '/query',
+  path: '/query',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppGraphRoute = AppGraphRouteImport.update({
   id: '/graph',
   path: '/graph',
@@ -49,6 +56,11 @@ const AppGraphRoute = AppGraphRouteImport.update({
 const AppExploreRoute = AppExploreRouteImport.update({
   id: '/explore',
   path: '/explore',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDiscoverRoute = AppDiscoverRouteImport.update({
+  id: '/discover',
+  path: '/discover',
   getParentRoute: () => AppRoute,
 } as any)
 const AppDashboardsRoute = AppDashboardsRouteImport.update({
@@ -89,8 +101,10 @@ export interface FileRoutesByFullPath {
   '/agent': typeof AppAgentRoute
   '/connectors': typeof AppConnectorsRouteWithChildren
   '/dashboards': typeof AppDashboardsRouteWithChildren
+  '/discover': typeof AppDiscoverRoute
   '/explore': typeof AppExploreRoute
   '/graph': typeof AppGraphRoute
+  '/query': typeof AppQueryRoute
   '/connectors/$id': typeof AppConnectorsIdRoute
   '/dashboards/$id': typeof AppDashboardsIdRoute
   '/connectors/': typeof AppConnectorsIndexRoute
@@ -101,8 +115,10 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/agent': typeof AppAgentRoute
   '/dashboards': typeof AppDashboardsRouteWithChildren
+  '/discover': typeof AppDiscoverRoute
   '/explore': typeof AppExploreRoute
   '/graph': typeof AppGraphRoute
+  '/query': typeof AppQueryRoute
   '/connectors/$id': typeof AppConnectorsIdRoute
   '/dashboards/$id': typeof AppDashboardsIdRoute
   '/connectors': typeof AppConnectorsIndexRoute
@@ -116,8 +132,10 @@ export interface FileRoutesById {
   '/_app/agent': typeof AppAgentRoute
   '/_app/connectors': typeof AppConnectorsRouteWithChildren
   '/_app/dashboards': typeof AppDashboardsRouteWithChildren
+  '/_app/discover': typeof AppDiscoverRoute
   '/_app/explore': typeof AppExploreRoute
   '/_app/graph': typeof AppGraphRoute
+  '/_app/query': typeof AppQueryRoute
   '/_app/connectors/$id': typeof AppConnectorsIdRoute
   '/_app/dashboards/$id': typeof AppDashboardsIdRoute
   '/_app/connectors/': typeof AppConnectorsIndexRoute
@@ -131,8 +149,10 @@ export interface FileRouteTypes {
     | '/agent'
     | '/connectors'
     | '/dashboards'
+    | '/discover'
     | '/explore'
     | '/graph'
+    | '/query'
     | '/connectors/$id'
     | '/dashboards/$id'
     | '/connectors/'
@@ -143,8 +163,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/agent'
     | '/dashboards'
+    | '/discover'
     | '/explore'
     | '/graph'
+    | '/query'
     | '/connectors/$id'
     | '/dashboards/$id'
     | '/connectors'
@@ -157,8 +179,10 @@ export interface FileRouteTypes {
     | '/_app/agent'
     | '/_app/connectors'
     | '/_app/dashboards'
+    | '/_app/discover'
     | '/_app/explore'
     | '/_app/graph'
+    | '/_app/query'
     | '/_app/connectors/$id'
     | '/_app/dashboards/$id'
     | '/_app/connectors/'
@@ -201,6 +225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/query': {
+      id: '/_app/query'
+      path: '/query'
+      fullPath: '/query'
+      preLoaderRoute: typeof AppQueryRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/graph': {
       id: '/_app/graph'
       path: '/graph'
@@ -213,6 +244,13 @@ declare module '@tanstack/react-router' {
       path: '/explore'
       fullPath: '/explore'
       preLoaderRoute: typeof AppExploreRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/discover': {
+      id: '/_app/discover'
+      path: '/discover'
+      fullPath: '/discover'
+      preLoaderRoute: typeof AppDiscoverRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/dashboards': {
@@ -290,16 +328,20 @@ interface AppRouteChildren {
   AppAgentRoute: typeof AppAgentRoute
   AppConnectorsRoute: typeof AppConnectorsRouteWithChildren
   AppDashboardsRoute: typeof AppDashboardsRouteWithChildren
+  AppDiscoverRoute: typeof AppDiscoverRoute
   AppExploreRoute: typeof AppExploreRoute
   AppGraphRoute: typeof AppGraphRoute
+  AppQueryRoute: typeof AppQueryRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppAgentRoute: AppAgentRoute,
   AppConnectorsRoute: AppConnectorsRouteWithChildren,
   AppDashboardsRoute: AppDashboardsRouteWithChildren,
+  AppDiscoverRoute: AppDiscoverRoute,
   AppExploreRoute: AppExploreRoute,
   AppGraphRoute: AppGraphRoute,
+  AppQueryRoute: AppQueryRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
