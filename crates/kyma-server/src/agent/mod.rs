@@ -11,6 +11,7 @@
 pub mod engine;
 pub mod routes;
 pub mod runner;
+pub mod skills;
 pub mod state;
 pub mod tools;
 
