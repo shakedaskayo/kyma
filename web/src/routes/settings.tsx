@@ -9,6 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ChevronDown } from "lucide-react";
 import { useSession } from "@/sdk/session";
 import { logout } from "@/sdk/auth";
+import { EngineSettings } from "@/features/settings/EngineSettings";
 
 export const Route = createFileRoute("/settings")({
   validateSearch: (s: Record<string, unknown>) => ({ next: typeof s.next === "string" ? s.next : "/explore" }),
@@ -82,6 +83,9 @@ function Settings() {
           </CardContent>
         </Card>
       )}
+
+      {/* Agent engine — provider + model + credential */}
+      <EngineSettings />
 
       {/* Connection / advanced settings */}
       <Card>
