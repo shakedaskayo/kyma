@@ -51,6 +51,31 @@ function refreshOnce(): Promise<boolean> {
   return refreshInFlight;
 }
 
+/**
+ * Authenticated fetch against the configured kyma endpoint.
+ *
+ * Accepts a path (e.g. "/v1/explore/search") or absolute URL. Paths are
+ * resolved against the current session's `endpoint`. The session's access
+ * token is attached as `Authorization: Bearer …`. Other headers from `init`
+ * are preserved.
+ *
+ * The installed global fetch wrapper transparently handles 401 -> refresh -> retry.
+ */
+export async function authFetch(
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
+  const { endpoint, token } = useSession.getState();
+  const url = path.startsWith("http")
+    ? path
+    : `${endpoint.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+  const headers = new Headers(init?.headers);
+  if (token && !headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${token}`);
+  }
+  return fetch(url, { ...init, headers });
+}
+
 /** Install the global fetch wrapper. Idempotent. */
 export function installAuthFetch(): void {
   if (installed || typeof window === "undefined") return;
