@@ -48,6 +48,7 @@ tonic.workspace = true
 prost.workspace = true
 arrow-flight.workspace = true
 tokio-stream = "0.1"
+async-stream = "0.3"
 arrow-schema.workspace = true
 futures.workspace = true
 serde.workspace = true

@@ -113,6 +113,10 @@ pub fn router(state: QueryState) -> Router {
 
     Router::new()
         .route("/v1/query", post(query_handler))
+        .route(
+            "/v1/explore/search",
+            post(discover::handler::discover_search_handler),
+        )
         .route("/v1/catalog/schema", get(catalog_handler::schema_handler))
         .with_state(state.clone())
         .merge(dash_read_router)
@@ -209,7 +213,7 @@ struct ErrorDetail<'a> {
     request_id: &'a str,
 }
 
-fn error_response(status: StatusCode, code: &str, message: &str, request_id: &str) -> Response {
+pub(crate) fn error_response(status: StatusCode, code: &str, message: &str, request_id: &str) -> Response {
     ::metrics::counter!("kyma_http_errors_total", "code" => code.to_string()).increment(1);
     (
         status,
@@ -224,7 +228,7 @@ fn error_response(status: StatusCode, code: &str, message: &str, request_id: &st
         .into_response()
 }
 
-fn resolve_query_budget(headers: &HeaderMap) -> kyma_core::query_frontend::QueryBudget {
+pub(crate) fn resolve_query_budget(headers: &HeaderMap) -> kyma_core::query_frontend::QueryBudget {
     let mut b = kyma_core::query_frontend::QueryBudget::default();
     if let Some(v) = headers
         .get("x-kyma-max-wall-clock-ms")
@@ -269,7 +273,7 @@ fn budget_exceeded_response(
     resp
 }
 
-fn extract_request_id(headers: &HeaderMap) -> String {
+pub(crate) fn extract_request_id(headers: &HeaderMap) -> String {
     headers
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())

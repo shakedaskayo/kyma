@@ -4746,6 +4746,7 @@ dependencies = [
  "arrow-array",
  "arrow-flight",
  "arrow-schema",
+ "async-stream",
  "async-trait",
  "axum",
  "base64 0.22.1",

@@ -7,4 +7,5 @@ pub mod compile;
 pub mod fanout;
 pub mod frames;
 pub mod grammar;
+pub mod handler;
 pub mod scope;
