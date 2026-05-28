@@ -139,12 +139,33 @@ pub async fn discover_search_handler(
         .unwrap_or(DEFAULT_MAX_SOURCES);
 
     // 7. Resolve the scope under the caller's tenant.
+    //
+    //    Build a SavedViewLookup adapter from the request principal so
+    //    `Scope::View` references resolve via the catalog's `saved_views`
+    //    table. Auth-disabled deployments inject an admin Principal with
+    //    `subject = None`; without a subject we have no owner column to
+    //    scope the lookup by, so we pass `None` and `Scope::View` requests
+    //    fall through to `ScopeError::ViewNotFound`.
+    let subject_opt: Option<&str> = parts
+        .extensions
+        .get::<crate::auth::Principal>()
+        .and_then(|p| p.subject.as_deref());
+
+    let lookup: Option<crate::discover::saved_views_lookup::CatalogSavedViewLookup> = subject_opt
+        .map(|s| crate::discover::saved_views_lookup::CatalogSavedViewLookup {
+            pool: state.pg_pool.clone(),
+            tenant_id: tenant.as_uuid(),
+            owner_subject: s.to_string(),
+        });
+
     let scope_kind = scope_kind_label(&payload.scope).to_string();
     let resolved = match resolve_scope(
         &payload.scope,
         tenant,
         state.catalog.clone(),
-        None,
+        lookup
+            .as_ref()
+            .map(|l| l as &(dyn crate::discover::scope::SavedViewLookup + Send + Sync)),
         max_sources,
     )
     .await

@@ -8,4 +8,6 @@ pub mod fanout;
 pub mod frames;
 pub mod grammar;
 pub mod handler;
+pub mod saved_views_handler;
+pub mod saved_views_lookup;
 pub mod scope;

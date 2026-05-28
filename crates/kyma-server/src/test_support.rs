@@ -62,11 +62,11 @@ pub async fn seeded_state_empty() -> QueryState {
     let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
     std::env::set_var("KYMA_TEST_DATABASE_URL", &url);
 
-    let catalog: Arc<dyn Catalog> = Arc::new(
-        PostgresCatalog::connect(&url)
-            .await
-            .expect("catalog connect + migrate"),
-    );
+    let pg_catalog = PostgresCatalog::connect(&url)
+        .await
+        .expect("catalog connect + migrate");
+    let pg_pool = Arc::new(pg_catalog.pool().clone());
+    let catalog: Arc<dyn Catalog> = Arc::new(pg_catalog);
 
     let store = Arc::new(InMemory::new());
     let format = Arc::new(TelemetryFormat::new(store, "kyma-test"));
@@ -79,6 +79,7 @@ pub async fn seeded_state_empty() -> QueryState {
         format,
         schema_cache: Arc::new(SchemaCache::default()),
         node_id: None,
+        pg_pool,
     }
 }
 
@@ -114,11 +115,11 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
     let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
     std::env::set_var("KYMA_TEST_DATABASE_URL", &url);
 
-    let catalog: Arc<dyn Catalog> = Arc::new(
-        PostgresCatalog::connect(&url)
-            .await
-            .expect("catalog connect + migrate"),
-    );
+    let pg_catalog = PostgresCatalog::connect(&url)
+        .await
+        .expect("catalog connect + migrate");
+    let pg_pool = Arc::new(pg_catalog.pool().clone());
+    let catalog: Arc<dyn Catalog> = Arc::new(pg_catalog);
 
     // Seed: database "obs" + table "otel_logs" with 3 columns.
     let db_id = catalog
@@ -151,6 +152,7 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
         format,
         schema_cache: Arc::new(SchemaCache::default()),
         node_id: None,
+        pg_pool,
     }
 }
 

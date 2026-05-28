@@ -299,6 +299,7 @@ async fn main() -> Result<()> {
                     kyma_server::catalog_handler::SchemaCache::from_env(),
                 ),
                 node_id: Some(lease.node_id),
+                pg_pool: std::sync::Arc::new(pg_pool.clone()),
             },
             agent_state,
         )
@@ -447,6 +448,17 @@ async fn main() -> Result<()> {
                 require_role_middleware,
             ),
         );
+    // Saved-views CRUD (write side) — list endpoint is on the read router.
+    let discover_views_write_router =
+        kyma_server::discover_views_write_router(std::sync::Arc::new(pg_pool.clone())).layer(
+            axum::middleware::from_fn_with_state(
+                AuthLayerState {
+                    backend: backend.clone(),
+                    required: Role::Write,
+                },
+                require_role_middleware,
+            ),
+        );
     let cleanup_write_router = kyma_server::cleanup_write_router(catalog.clone()).layer(
         axum::middleware::from_fn_with_state(
             AuthLayerState {
@@ -473,6 +485,7 @@ async fn main() -> Result<()> {
         .merge(query_router)
         .merge(mcp_router)
         .merge(dashboards_write_router)
+        .merge(discover_views_write_router)
         .merge(cleanup_write_router)
         .merge(health_router)
         .merge(metrics_router)
@@ -497,6 +510,7 @@ async fn main() -> Result<()> {
                     kyma_server::catalog_handler::SchemaCache::from_env(),
                 ),
                 node_id: Some(lease.node_id),
+                pg_pool: std::sync::Arc::new(pg_pool.clone()),
             })
             .layer(axum::middleware::from_fn_with_state(
                 AuthLayerState {
