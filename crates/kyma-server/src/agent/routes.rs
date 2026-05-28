@@ -589,21 +589,59 @@ async fn test_engine(
     State(state): State<AgentState>,
     axum::Json(cfg): axum::Json<EngineConfig>,
 ) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    use adk_rust::model::Llm;
+    use adk_rust::{GenerateContentConfig, LlmRequest};
+    use adk_rust::futures::StreamExt;
+
     let resolver = CredentialResolver::new(state.credentials.clone(), state.tenant);
     let key = resolver
         .resolve(&cfg)
         .await
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("credential: {e}")))?;
-    // Just constructing the LLM proves the API key + endpoint shape — we
-    // don't make a real generation call here because some providers count
-    // probes against quota.
-    let _llm = build_engine(&cfg, key)
+    let llm = build_engine(&cfg, key)
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("init: {e}")))?;
-    Ok(axum::Json(serde_json::json!({
-        "ok": true,
-        "kind": cfg.kind,
-        "model": cfg.model,
-    })))
+
+    // Real connectivity probe — cheapest possible request: 1-token user
+    // message + max_output_tokens=1, non-streaming. Confirms the API key,
+    // endpoint, and model name all actually work.
+    let req = LlmRequest {
+        model: cfg.model.clone(),
+        contents: vec![Content::new("user").with_text("ping")],
+        config: Some(GenerateContentConfig {
+            max_output_tokens: Some(1),
+            ..Default::default()
+        }),
+        tools: Default::default(),
+    };
+
+    // 10-second timeout so a hung provider doesn't pin the connection.
+    let probe = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let mut stream = llm
+            .generate_content(req, false)
+            .await
+            .map_err(|e| format!("provider: {e:?}"))?;
+        // Drain the first response item to confirm the call actually started;
+        // we don't need the body content.
+        while let Some(item) = stream.next().await {
+            item.map_err(|e| format!("stream: {e:?}"))?;
+            break;
+        }
+        Ok::<(), String>(())
+    })
+    .await;
+
+    match probe {
+        Ok(Ok(())) => Ok(axum::Json(serde_json::json!({
+            "ok": true,
+            "kind": cfg.kind,
+            "model": cfg.model,
+        }))),
+        Ok(Err(msg)) => Err((axum::http::StatusCode::BAD_GATEWAY, msg)),
+        Err(_elapsed) => Err((
+            axum::http::StatusCode::GATEWAY_TIMEOUT,
+            "probe timed out after 10s".into(),
+        )),
+    }
 }
 
 // Satisfy dead-code lint: Stream is only used implicitly via Sse::new.
