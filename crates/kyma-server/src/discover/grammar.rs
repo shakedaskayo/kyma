@@ -41,6 +41,10 @@ pub enum CmpOp {
 pub enum GrammarError {
     #[error("unterminated quoted string")]
     UnterminatedQuote,
+    #[error("dangling '-' with no following token")]
+    DanglingNegation,
+    #[error("negation requires a field — substrings cannot be negated")]
+    NegatedSubstring,
 }
 
 pub fn parse(input: &str) -> Result<Vec<Clause>, GrammarError> {
@@ -59,6 +63,9 @@ pub fn parse(input: &str) -> Result<Vec<Clause>, GrammarError> {
         };
         let token = read_token(&mut chars)?;
         if token.is_empty() {
+            if negated {
+                return Err(GrammarError::DanglingNegation);
+            }
             continue;
         }
         out.push(token_to_clause(token, negated)?);
@@ -122,6 +129,9 @@ fn token_to_clause(token: String, negated: bool) -> Result<Clause, GrammarError>
         }
     } else {
         // Substrings can't be negated (matches grammar spec).
+        if negated {
+            return Err(GrammarError::NegatedSubstring);
+        }
         Ok(Clause::Substring { value: token })
     }
 }
@@ -208,5 +218,38 @@ mod tests {
     #[test]
     fn unterminated_quote_is_an_error() {
         assert!(matches!(parse("foo:\"bar"), Err(GrammarError::UnterminatedQuote)));
+    }
+
+    #[test]
+    fn dangling_negation_is_an_error() {
+        assert!(matches!(parse("-"), Err(GrammarError::DanglingNegation)));
+        assert!(matches!(parse("- foo"), Err(GrammarError::DanglingNegation)));
+    }
+
+    #[test]
+    fn negated_bare_substring_is_an_error() {
+        assert!(matches!(parse("-foo"), Err(GrammarError::NegatedSubstring)));
+        assert!(matches!(parse("-\"foo bar\""), Err(GrammarError::NegatedSubstring)));
+    }
+
+    #[test]
+    fn multi_colon_takes_first_colon() {
+        // `a:b:c` → field "a", value "b:c"
+        assert_eq!(parse("a:b:c").unwrap(),
+            vec![Clause::Eq { field: "a".into(), value: "b:c".into() }]);
+    }
+
+    #[test]
+    fn empty_value_is_eq_to_empty_string() {
+        // `field:` → field "field", value "" — explicit equality with empty string.
+        assert_eq!(parse("field:").unwrap(),
+            vec![Clause::Eq { field: "field".into(), value: "".into() }]);
+    }
+
+    #[test]
+    fn cmp_with_empty_value_is_allowed() {
+        // `field:>` → Cmp with empty value. Engine will type-check + drop at compile time.
+        assert_eq!(parse("field:>").unwrap(),
+            vec![Clause::Cmp { field: "field".into(), op: CmpOp::Gt, value: "".into() }]);
     }
 }
