@@ -589,9 +589,8 @@ async fn test_engine(
     State(state): State<AgentState>,
     axum::Json(cfg): axum::Json<EngineConfig>,
 ) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    use adk_rust::model::Llm;
-    use adk_rust::{GenerateContentConfig, LlmRequest};
     use adk_rust::futures::StreamExt;
+    use adk_rust::{GenerateContentConfig, LlmRequest};
 
     let resolver = CredentialResolver::new(state.credentials.clone(), state.tenant);
     let key = resolver
