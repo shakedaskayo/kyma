@@ -1,6 +1,8 @@
 //! Agent engine registry — picks an LLM provider based on persisted config.
 
+use adk_rust::Llm;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,11 +33,56 @@ pub struct EngineConfig {
     pub extras: serde_json::Value,
 }
 
+pub mod anthropic;
 pub mod claude_creds;
+pub mod ollama;
+pub mod openai;
 pub mod resolver;
 pub mod store;
 pub use resolver::{CredentialResolver, ResolvedKey};
 pub use store::{EnginePreferenceStore, PgEnginePreferenceStore};
+
+/// Construct an `Llm` for the given engine config + resolved credential.
+pub fn build_engine(cfg: &EngineConfig, key: ResolvedKey) -> anyhow::Result<Arc<dyn Llm>> {
+    match cfg.kind {
+        EngineKind::Anthropic => anthropic::build(cfg, key),
+        EngineKind::Openai => openai::build(cfg, key),
+        EngineKind::Ollama => ollama::build(cfg, key),
+    }
+}
+
+/// Available providers and their default model menus. Returned by
+/// `GET /v1/agent/engines` so the UI can render the picker.
+#[derive(Debug, serde::Serialize)]
+pub struct EngineSummary {
+    pub kind: EngineKind,
+    pub label: &'static str,
+    pub models: Vec<&'static str>,
+    pub needs_key: bool,
+}
+
+pub fn engine_catalogue() -> Vec<EngineSummary> {
+    vec![
+        EngineSummary {
+            kind: EngineKind::Anthropic,
+            label: "Anthropic (Claude)",
+            models: anthropic::default_models(),
+            needs_key: true,
+        },
+        EngineSummary {
+            kind: EngineKind::Openai,
+            label: "OpenAI",
+            models: openai::default_models(),
+            needs_key: true,
+        },
+        EngineSummary {
+            kind: EngineKind::Ollama,
+            label: "Ollama (local)",
+            models: ollama::default_models(),
+            needs_key: false,
+        },
+    ]
+}
 
 #[cfg(test)]
 mod tests {
