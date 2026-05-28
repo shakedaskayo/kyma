@@ -18,7 +18,10 @@ pub fn build(cfg: &EngineConfig, key: ResolvedKey) -> anyhow::Result<Arc<dyn Llm
         llm_cfg = llm_cfg.with_base_url(host);
     }
     if let Some(mt) = cfg.extras.get("max_tokens").and_then(|v| v.as_u64()) {
-        llm_cfg = llm_cfg.with_max_tokens(mt as u32);
+        // Clamp instead of `as u32` truncating — `with_max_tokens` is u32, the
+        // upstream cap is far below u32::MAX anyway, but silent truncation on a
+        // user-supplied number is a bad default.
+        llm_cfg = llm_cfg.with_max_tokens(mt.try_into().unwrap_or(u32::MAX));
     }
     let llm = AnthropicClient::new(llm_cfg)
         .map_err(|e| anyhow::anyhow!("anthropic init failed: {e:?}"))?;
