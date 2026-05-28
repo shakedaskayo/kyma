@@ -1,6 +1,6 @@
 //! Typed client for `/v1/agent/engines` + `/v1/agent/engine`.
 
-export type EngineKind = "anthropic" | "openai" | "ollama";
+export type EngineKind = "anthropic" | "openai" | "ollama" | "claude_cli";
 
 export interface EngineConfig {
   kind: EngineKind;

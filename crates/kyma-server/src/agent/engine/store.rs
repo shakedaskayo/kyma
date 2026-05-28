@@ -69,6 +69,7 @@ fn parse_kind(s: &str) -> anyhow::Result<EngineKind> {
         "anthropic" => EngineKind::Anthropic,
         "openai" => EngineKind::Openai,
         "ollama" => EngineKind::Ollama,
+        "claude_cli" => EngineKind::ClaudeCli,
         other => anyhow::bail!("unknown engine kind: {other}"),
     })
 }

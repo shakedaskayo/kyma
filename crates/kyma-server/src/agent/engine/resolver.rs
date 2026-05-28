@@ -69,6 +69,9 @@ impl CredentialResolver {
                 )
             }
             EngineKind::Ollama => Ok(ResolvedKey::None),
+            // The CLI handles its own auth — Keychain OAuth, env vars,
+            // whatever. We never see a key for this kind.
+            EngineKind::ClaudeCli => Ok(ResolvedKey::None),
         }
     }
 }

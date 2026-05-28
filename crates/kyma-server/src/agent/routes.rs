@@ -27,7 +27,9 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
 
-use super::engine::{build_engine, engine_catalogue, CredentialResolver, EngineConfig};
+use super::engine::{
+    build_engine, claude_cli, engine_catalogue, CredentialResolver, EngineConfig, EngineKind,
+};
 use super::runner::{make_runner, model_id, ANON_USER};
 use super::state::AgentState;
 
@@ -95,6 +97,16 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
         )
             .into_response();
     }
+
+    // Engine-kind branch: the Claude CLI engine owns its own tool loop, OAuth,
+    // skills, and MCPs — adk-rust can't wrap it. Divert here before building
+    // the runner.
+    if let Ok(cfg) = state.engines.get().await {
+        if cfg.kind == EngineKind::ClaudeCli {
+            return ask_via_claude_cli(state.pool.clone(), &question, &cfg).await;
+        }
+    }
+
     let run_id = uuid::Uuid::new_v4();
     let session_id_str = uuid::Uuid::new_v4().to_string();
     let include_thinking = body.include_thinking;
@@ -546,12 +558,15 @@ async fn run_lookup_handler(
 async fn list_engines(
     State(state): State<AgentState>,
 ) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let catalogue = engine_catalogue();
     let active = state
         .engines
         .get()
         .await
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Pass the active Ollama host (if configured) so the catalogue's live
+    // `/api/tags` fetch hits the user's actual instance, not the default.
+    let ollama_hint = active.host.as_deref();
+    let catalogue = engine_catalogue(ollama_hint).await;
     Ok(axum::Json(serde_json::json!({
         "available": catalogue,
         "active": active,
@@ -652,4 +667,150 @@ fn _type_check<S>(_: S)
 where
     S: Stream<Item = Result<SseEvent, Infallible>>,
 {
+}
+
+// ---------------------------------------------------------------------------
+// Claude CLI engine — spawns `claude --print` and pipes its stdout through
+// the existing SSE event shape. Bypasses adk-rust entirely.
+// ---------------------------------------------------------------------------
+
+async fn ask_via_claude_cli(pool: PgPool, question: &str, cfg: &EngineConfig) -> Response {
+    let run_id = uuid::Uuid::new_v4();
+    let started_at = Utc::now();
+    let start = Instant::now();
+    let model = format!("claude_cli/{}", cfg.model);
+
+    info!(run_id = %run_id, model = %model, "claude_cli ask starting");
+
+    let (tx, rx) = mpsc::unbounded_channel::<Result<SseEvent, Infallible>>();
+    let _ = tx.send(Ok(SseEvent::default().event("run_started").data(
+        serde_json::to_string(&json!({
+            "run_id": run_id.to_string(),
+            "model": model,
+            "question": question,
+        }))
+        .unwrap_or_default(),
+    )));
+
+    let question_owned = question.to_string();
+    let model_label = cfg.model.clone();
+    tokio::spawn(async move {
+        let mut answer = String::new();
+        let mut errored = false;
+
+        let (mut chunks, wait) = match claude_cli::run(&question_owned, Some(&model_label), None) {
+            Ok(pair) => pair,
+            Err(e) => {
+                let _ = tx.send(Ok(SseEvent::default().event("run_error").data(
+                    serde_json::to_string(&json!({
+                        "code": "spawn_failed",
+                        "message": e.to_string(),
+                    }))
+                    .unwrap_or_default(),
+                )));
+                emit_finished(&tx, run_id, start.elapsed().as_millis() as u64);
+                let _ = persist_run(
+                    &pool,
+                    run_id,
+                    &question_owned,
+                    &model,
+                    started_at,
+                    Utc::now(),
+                    "error",
+                    &Value::Null,
+                    &json!([{ "event": "run_error", "data": { "message": e.to_string() } }]),
+                )
+                .await;
+                return;
+            }
+        };
+
+        while let Some(chunk) = chunks.recv().await {
+            match chunk {
+                claude_cli::Chunk::Stdout(line) => {
+                    if !answer.is_empty() {
+                        answer.push('\n');
+                    }
+                    answer.push_str(&line);
+                    let _ = tx.send(Ok(SseEvent::default().event("answer_delta").data(
+                        serde_json::to_string(&json!({"text": format!("{}\n", line)}))
+                            .unwrap_or_default(),
+                    )));
+                }
+                claude_cli::Chunk::Stderr(line) => {
+                    if !line.is_empty() {
+                        warn!(run_id = %run_id, line = %line, "claude_cli stderr");
+                    }
+                }
+            }
+        }
+
+        let exit_code = match wait.await {
+            Ok(Ok(code)) => code,
+            Ok(Err(e)) => {
+                let _ = tx.send(Ok(SseEvent::default().event("run_error").data(
+                    serde_json::to_string(&json!({
+                        "code": "io",
+                        "message": e.to_string(),
+                    }))
+                    .unwrap_or_default(),
+                )));
+                errored = true;
+                -1
+            }
+            Err(_join_err) => -1,
+        };
+
+        if exit_code != 0 && !errored {
+            let _ = tx.send(Ok(SseEvent::default().event("run_error").data(
+                serde_json::to_string(&json!({
+                    "code": "nonzero_exit",
+                    "exit_code": exit_code,
+                }))
+                .unwrap_or_default(),
+            )));
+            errored = true;
+        }
+
+        if !errored {
+            let _ = tx.send(Ok(SseEvent::default().event("answer_final").data(
+                serde_json::to_string(&json!({"text": answer.clone()}))
+                    .unwrap_or_default(),
+            )));
+        }
+
+        let elapsed_ms = start.elapsed().as_millis() as u64;
+        emit_finished(&tx, run_id, elapsed_ms);
+        let _ = persist_run(
+            &pool,
+            run_id,
+            &question_owned,
+            &model,
+            started_at,
+            Utc::now(),
+            if errored { "error" } else { "ok" },
+            &Value::String(answer.clone()),
+            &json!([{ "event": "answer_final", "data": { "text": answer } }]),
+        )
+        .await;
+    });
+
+    Sse::new(UnboundedReceiverStream::new(rx))
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
+fn emit_finished(
+    tx: &mpsc::UnboundedSender<Result<SseEvent, Infallible>>,
+    run_id: uuid::Uuid,
+    elapsed_ms: u64,
+) {
+    let _ = tx.send(Ok(SseEvent::default().event("run_finished").data(
+        serde_json::to_string(&json!({
+            "run_id": run_id.to_string(),
+            "elapsed_ms": elapsed_ms,
+            "tool_calls": 0,
+        }))
+        .unwrap_or_default(),
+    )));
 }
