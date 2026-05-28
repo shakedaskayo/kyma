@@ -14,9 +14,10 @@
 //! fanning out; each child computes its own `remaining` budget against it.
 
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use arrow::json::ArrayWriter;
+use datafusion::error::DataFusionError;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
 use datafusion::prelude::{SessionConfig, SessionContext};
@@ -26,6 +27,7 @@ use kyma_core::segment_format::SegmentFormat;
 use kyma_core::types::NodeId;
 use kyma_exec::KymaTable;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 
 use super::compile::{compile_for_source, CompiledSource, TimeRange};
 use super::frames::{Frame, PlanSource};
@@ -53,26 +55,14 @@ pub fn run(input: FanoutInput, tx: mpsc::Sender<Frame>) {
 
 async fn run_inner(input: FanoutInput, tx: mpsc::Sender<Frame>) {
     let start = Instant::now();
-    let deadline = start + input.budget.max_wall_clock;
+    // Saturating deadline computation: overly large budgets fall back to a
+    // one-hour ceiling rather than panicking on overflow.
+    let deadline = Instant::now()
+        .checked_add(input.budget.max_wall_clock)
+        .unwrap_or_else(|| Instant::now() + Duration::from_secs(3600));
 
-    // 1. Build the plan frame. has_timestamp is a per-source schema property,
-    //    so we compute it via compile_for_source with empty clauses.
-    let plan_sources: Vec<PlanSource> = input
-        .sources
-        .iter()
-        .map(|src| {
-            let compiled = compile_for_source(&src.table, &[], None, input.per_source_limit);
-            PlanSource {
-                source: format!("{}.{}", src.db, src.table.name),
-                has_timestamp: compiled.has_timestamp,
-            }
-        })
-        .collect();
-
-    // Receiver may have dropped — that's OK, fall through cleanly.
-    let _ = tx.send(Frame::Plan { sources: plan_sources }).await;
-
-    // 2. Pre-compile every source.
+    // 1. Pre-compile every source. The result also exposes `has_timestamp`,
+    //    which we reuse for the Plan frame so we don't compile twice per source.
     let compiled: Vec<(ResolvedSource, CompiledSource)> = input
         .sources
         .into_iter()
@@ -87,8 +77,23 @@ async fn run_inner(input: FanoutInput, tx: mpsc::Sender<Frame>) {
         })
         .collect();
 
-    // 3. Spawn a child task per source.
-    let mut handles = Vec::with_capacity(compiled.len());
+    // 2. Build + emit the Plan frame from the single compile result per source.
+    let plan_sources: Vec<PlanSource> = compiled
+        .iter()
+        .map(|(src, c)| PlanSource {
+            source: format!("{}.{}", src.db, src.table.name),
+            has_timestamp: c.has_timestamp,
+        })
+        .collect();
+
+    // Receiver may have dropped — that's OK, fall through cleanly.
+    let _ = tx.send(Frame::Plan { sources: plan_sources }).await;
+
+    // 3. Spawn a child task per source into a JoinSet. JoinSet::drop aborts
+    //    every running task on drop, so if the orchestrator future is dropped
+    //    (e.g. client disconnect), children are aborted and their per-source
+    //    GreedyMemoryPool is released promptly instead of running to completion.
+    let mut set: JoinSet<()> = JoinSet::new();
     for (src, compiled) in compiled {
         let tx = tx.clone();
         let catalog = input.catalog.clone();
@@ -96,7 +101,7 @@ async fn run_inner(input: FanoutInput, tx: mpsc::Sender<Frame>) {
         let node_id = input.node_id;
         let budget = input.budget.clone();
         let per_source_limit = input.per_source_limit;
-        let h = tokio::spawn(async move {
+        set.spawn(async move {
             run_source(
                 src,
                 compiled,
@@ -110,14 +115,26 @@ async fn run_inner(input: FanoutInput, tx: mpsc::Sender<Frame>) {
             )
             .await;
         });
-        handles.push(h);
     }
 
-    // 4. Wait for all children. We ignore JoinErrors (panics) — they don't
-    //    fit the per-source error model cleanly; the orchestrator just moves
-    //    on so the receiver still gets the final Done frame.
-    for h in handles {
-        let _ = h.await;
+    // 4. Drain children. We can't synthesize a per-source error frame for a
+    //    panicked task here because the source identity is lost in JoinError;
+    //    `run_source` emits its own Frame::Error for any handled failure, so
+    //    a missing SourceDone for one source is the cancellation/panic signal.
+    while let Some(joined) = set.join_next().await {
+        match joined {
+            Ok(()) => {}
+            Err(je) if je.is_cancelled() => {
+                // Orchestrator itself was dropped → children aborted. Exit.
+                return;
+            }
+            Err(je) if je.is_panic() => {
+                tracing::error!(error = ?je, "discover fanout: child task panicked");
+            }
+            Err(je) => {
+                tracing::error!(error = ?je, "discover fanout: child task join error");
+            }
+        }
     }
 
     let elapsed_ms = start.elapsed().as_millis() as u64;
@@ -224,14 +241,14 @@ async fn run_source(
     let batches = match tokio::time::timeout(remaining, df.collect()).await {
         Ok(Ok(b)) => b,
         Ok(Err(e)) => {
-            // g. Classify the error.
-            let msg = e.to_string();
-            let (code, message) = if msg.contains("ResourcesExhausted")
-                || msg.contains("Resources exhausted")
-            {
-                ("memory_exceeded", msg)
+            // g. Classify the error by matching the variant directly. Message
+            //    substring matching on `e.to_string()` was brittle across
+            //    DataFusion versions; `DataFusionError::ResourcesExhausted` is
+            //    the canonical signal for memory-pool exhaustion.
+            let (code, message) = if matches!(e, DataFusionError::ResourcesExhausted(_)) {
+                ("memory_exceeded", e.to_string())
             } else {
-                ("query_execution_error", format!("query execution: {msg}"))
+                ("query_execution_error", format!("query execution: {e}"))
             };
             let _ = tx
                 .send(Frame::Error {
@@ -260,7 +277,7 @@ async fn run_source(
     // h. Serialize rows + emit final frames.
     let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
 
-    let mut body_bytes: Vec<u8> = Vec::with_capacity(total_rows * 128);
+    let mut body_bytes: Vec<u8> = Vec::with_capacity(total_rows.saturating_mul(128));
     for batch in &batches {
         let mut writer = ArrayWriter::new(&mut body_bytes);
         if let Err(e) = writer.write(batch) {
