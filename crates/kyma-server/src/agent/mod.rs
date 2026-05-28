@@ -8,6 +8,7 @@
 //! See `docs/superpowers/specs/2026-04-21-nl-query-agent-and-vectors-design.md`
 //! for the broader design context.
 
+pub mod engine;
 pub mod routes;
 pub mod runner;
 pub mod state;
