@@ -65,6 +65,12 @@ pub async fn discover_search_handler(
     let (parts, body) = req.into_parts();
     let request_id = crate::extract_request_id(&parts.headers);
 
+    // Count every request at entry so very-early failures (body-too-large,
+    // bad JSON, scope_too_large, view_not_found) are visible in the
+    // requests_total counter alongside the kyma_http_errors_total counter.
+    ::metrics::counter!("kyma_explore_search_requests_total", "scope_kind" => "unknown")
+        .increment(1);
+
     // 1. Read body (max 1 MiB).
     let body_bytes: Bytes = match axum::body::to_bytes(body, MAX_BODY_BYTES).await {
         Ok(b) => b,
@@ -176,10 +182,11 @@ pub async fn discover_search_handler(
     // 9. Spawn the fanout and stream frames over the mpsc.
     let (tx, rx) = mpsc::channel::<Frame>(64);
 
-    // Up-front request counter — recorded before fanout spawns so that
-    // very-fast errors (e.g. client disconnect mid-stream) still show up.
+    // Now that scope_kind is known, count an executed request labeled with it.
+    // The entry-counter above uses scope_kind="unknown" so it covers requests
+    // that never made it past parsing.
     ::metrics::counter!(
-        "kyma_explore_search_requests_total",
+        "kyma_explore_search_executed_total",
         "scope_kind" => scope_kind.clone()
     )
     .increment(1);
