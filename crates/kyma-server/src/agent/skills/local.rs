@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use super::{SkillSource, SkillSpec};
 
 pub struct LocalSkillSource {
-    pub project_dir: Option<PathBuf>,
-    pub user_dir: Option<PathBuf>,
+    pub project_dirs: Vec<PathBuf>,
+    pub user_dirs: Vec<PathBuf>,
     pub plugin_root: Option<PathBuf>,
 }
 
@@ -15,10 +15,38 @@ impl LocalSkillSource {
     pub fn new() -> Self {
         let cwd = std::env::current_dir().ok();
         let home = std::env::var_os("HOME").map(PathBuf::from);
+
+        // Project-local: both .claude/skills (Claude Code) and .skills
+        // (vendor-neutral). The order matters — first match wins on name.
+        let project_dirs = cwd
+            .iter()
+            .flat_map(|p| {
+                [
+                    p.join(".claude").join("skills"),
+                    p.join(".skills"),
+                ]
+            })
+            .collect();
+
+        // User-installed: claude path first (it's where most existing
+        // skills live), then the Kyma-specific and vendor-neutral spots.
+        let user_dirs = home
+            .as_ref()
+            .map(|h| {
+                vec![
+                    h.join(".claude").join("skills"),
+                    h.join(".kyma").join("skills"),
+                    h.join(".skills"),
+                ]
+            })
+            .unwrap_or_default();
+
+        let plugin_root = home.map(|h| h.join(".claude").join("plugins").join("cache"));
+
         Self {
-            project_dir: cwd.map(|p| p.join(".claude").join("skills")),
-            user_dir: home.as_ref().map(|h| h.join(".claude").join("skills")),
-            plugin_root: home.map(|h| h.join(".claude").join("plugins").join("cache")),
+            project_dirs,
+            user_dirs,
+            plugin_root,
         }
     }
 
@@ -26,10 +54,10 @@ impl LocalSkillSource {
         let mut out: Vec<SkillSpec> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
 
-        if let Some(p) = &self.project_dir {
+        for p in &self.project_dirs {
             collect_dir(p, SkillSource::Project, &mut out, &mut seen);
         }
-        if let Some(p) = &self.user_dir {
+        for p in &self.user_dirs {
             collect_dir(p, SkillSource::User, &mut out, &mut seen);
         }
         if let Some(root) = &self.plugin_root {
@@ -247,5 +275,31 @@ mod tests {
         collect_dir(&index, SkillSource::User, &mut out, &mut seen);
         assert_eq!(out.len(), 1, "expected exactly one skill via symlink");
         assert_eq!(out[0].name, "real-skill");
+    }
+
+    #[test]
+    fn duplicate_names_dedupe_first_wins() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Two skills dirs, both containing a skill called "shared".
+        let a = tmp.path().join("a");
+        let b = tmp.path().join("b");
+        std::fs::create_dir_all(a.join("shared")).unwrap();
+        std::fs::create_dir_all(b.join("shared")).unwrap();
+        std::fs::write(
+            a.join("shared").join("SKILL.md"),
+            "---\nname: shared\ndescription: from-a\n---\n",
+        )
+        .unwrap();
+        std::fs::write(
+            b.join("shared").join("SKILL.md"),
+            "---\nname: shared\ndescription: from-b\n---\n",
+        )
+        .unwrap();
+        let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        collect_dir(&a, SkillSource::User, &mut out, &mut seen);
+        collect_dir(&b, SkillSource::User, &mut out, &mut seen);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].description, "from-a");
     }
 }
