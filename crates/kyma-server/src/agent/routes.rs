@@ -47,6 +47,8 @@ pub fn router(state: AgentState) -> axum::Router {
         .route("/engines", get(list_engines))
         .route("/engine", get(get_engine).put(put_engine))
         .route("/engine/test", post(test_engine))
+        .route("/skills", get(list_skills))
+        .route("/skills/enabled", get(get_enabled_skills).put(put_enabled_skills))
         .with_state(state)
 }
 
@@ -667,6 +669,94 @@ fn _type_check<S>(_: S)
 where
     S: Stream<Item = Result<SseEvent, Infallible>>,
 {
+}
+
+// ---------------------------------------------------------------------------
+// Skill management routes
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Serialize)]
+struct SkillRow {
+    name: String,
+    description: String,
+    source: super::skills::SkillSource,
+    path: String,
+    enabled: bool,
+    /// Truncated body preview for the UI tooltip.
+    preview: String,
+}
+
+/// `GET /skills` — list every discovered skill on the host, plus its enabled
+/// state. Discovery is cheap (filesystem walk), so we run it on every request
+/// rather than caching.
+async fn list_skills(
+    State(state): State<AgentState>,
+) -> Result<axum::Json<Vec<SkillRow>>, (axum::http::StatusCode, String)> {
+    let enabled = state
+        .skills
+        .get()
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let enabled_set: std::collections::HashSet<&str> =
+        enabled.iter().map(String::as_str).collect();
+
+    let mut rows: Vec<SkillRow> = super::skills::discover_all()
+        .into_iter()
+        .map(|s| {
+            let preview = preview_body(&s.body);
+            SkillRow {
+                enabled: enabled_set.contains(s.name.as_str()),
+                name: s.name,
+                description: s.description,
+                source: s.source,
+                path: s.path,
+                preview,
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(axum::Json(rows))
+}
+
+/// `GET /skills/enabled` — just the toggled set, for callers that don't need
+/// the full discovery payload.
+async fn get_enabled_skills(
+    State(state): State<AgentState>,
+) -> Result<axum::Json<Vec<String>>, (axum::http::StatusCode, String)> {
+    state
+        .skills
+        .get()
+        .await
+        .map(axum::Json)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct PutEnabledSkillsBody {
+    skills: Vec<String>,
+}
+
+/// `PUT /skills/enabled` — replace the toggled set wholesale.
+async fn put_enabled_skills(
+    State(state): State<AgentState>,
+    axum::Json(body): axum::Json<PutEnabledSkillsBody>,
+) -> Result<axum::Json<Vec<String>>, (axum::http::StatusCode, String)> {
+    state
+        .skills
+        .put(&body.skills)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(axum::Json(body.skills))
+}
+
+fn preview_body(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.chars().count() <= 200 {
+        return trimmed.to_string();
+    }
+    let mut out: String = trimmed.chars().take(200).collect();
+    out.push('…');
+    out
 }
 
 // ---------------------------------------------------------------------------

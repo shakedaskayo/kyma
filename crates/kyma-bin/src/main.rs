@@ -285,10 +285,33 @@ async fn main() -> Result<()> {
         },
         require_role_middleware,
     ));
+    // System-wide encrypted credentials store + engine-preference store.
+    // Built here (not later) because AgentState and the connector runner both
+    // need them — see /v1/agent/* and /v1/connectors/*. Key loaded from
+    // KYMA_SECRET_KEY (sha256-stretched if shorter than 32 bytes).
+    let crypto = std::sync::Arc::new(
+        kyma_core::crypto::Crypto::from_env()
+            .context("loading credentials encryption key (KYMA_SECRET_KEY)")?,
+    );
+    let cred_store = std::sync::Arc::new(kyma_catalog::PgCredentialStore::new(
+        pg_catalog.pool().clone(),
+        crypto.clone(),
+    ));
+    let engine_store = std::sync::Arc::new(
+        kyma_server::agent::engine::PgEnginePreferenceStore::new(pg_pool.clone()),
+    );
+
+    let skills_store = std::sync::Arc::new(
+        kyma_server::agent::skills::PgEnabledSkillsStore::new(pg_pool.clone()),
+    );
     let agent_state = kyma_server::agent::AgentState {
         catalog: catalog.clone(),
         format: format.clone(),
         pool: pg_pool.clone(),
+        engines: engine_store.clone(),
+        credentials: cred_store.clone(),
+        tenant: kyma_core::tenant::DEFAULT_TENANT,
+        skills: skills_store,
     };
     let query_router =
         kyma_server::router_with_agent(
@@ -332,6 +355,10 @@ async fn main() -> Result<()> {
     // Connector registry + row-sink.
     let mut conn_reg = ConnectorRegistry::new();
     conn_reg.register(Arc::new(PromConnector));
+    conn_reg.register(Arc::new(kyma_connectors::postgres::PgIntrospectConnector));
+    conn_reg.register(Arc::new(kyma_connectors::s3::S3Connector));
+    conn_reg.register(Arc::new(kyma_connectors::gitlab::GitlabConnector));
+    conn_reg.register(Arc::new(kyma_connectors::bitbucket::BitbucketConnector));
     #[cfg(feature = "github")]
     conn_reg.register(Arc::new(kyma_connectors::github::GithubConnector));
     let conn_registry = Arc::new(conn_reg);
@@ -422,6 +449,21 @@ async fn main() -> Result<()> {
         require_role_middleware,
     ));
 
+    // Credentials router — reuses the cred_store built above (alongside the
+    // AgentState wiring). Kept here so the router-mounting block stays
+    // logically together.
+    let _ = &crypto; // silence "unused" if no other consumer wires in later
+    let credentials_router = kyma_server::credentials_handler::router(
+        kyma_server::credentials_handler::CredentialsState { store: cred_store.clone() },
+    )
+    .layer(axum::middleware::from_fn_with_state(
+        AuthLayerState {
+            backend: backend.clone(),
+            required: Role::Write,
+        },
+        require_role_middleware,
+    ));
+
     // GitHub connector — repos picker endpoint (Role::Write, behind auth).
     #[cfg(feature = "github")]
     let github_repos_router = {
@@ -477,6 +519,7 @@ async fn main() -> Result<()> {
         .merge(health_router)
         .merge(metrics_router)
         .merge(connector_admin_router)
+        .merge(credentials_router)
         .merge(auth_login_router)
         .merge(auth_session_router);
 
@@ -628,7 +671,8 @@ async fn main() -> Result<()> {
             EnvSecretStore,
             lease.node_id,
         )
-        .with_graph_register(graph_register.clone());
+        .with_graph_register(graph_register.clone())
+        .with_credentials(cred_store.clone());
         let runner_rx = shutdown_tx.subscribe();
         conn_runner_handles.push(tokio::spawn(async move {
             let mut rx = runner_rx;

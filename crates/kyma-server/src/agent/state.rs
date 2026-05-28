@@ -1,6 +1,7 @@
 //! Shared handler state for the `/v1/agent/*` surface.
 
 use crate::agent::engine::EnginePreferenceStore;
+use crate::agent::skills::EnabledSkillsStore;
 use kyma_core::catalog::Catalog;
 use kyma_core::credentials::CredentialStore;
 use kyma_core::segment_format::SegmentFormat;
@@ -22,4 +23,6 @@ pub struct AgentState {
     pub credentials: Arc<dyn CredentialStore>,
     /// Tenant id this server is scoped to. v1 single-tenant: `DEFAULT_TENANT`.
     pub tenant: TenantId,
+    /// Enabled-skill names — drives system-prompt injection for non-CLI engines.
+    pub skills: Arc<dyn EnabledSkillsStore>,
 }
