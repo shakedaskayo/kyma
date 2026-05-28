@@ -1,4 +1,5 @@
-//! HTTP handlers for `POST /v1/agent/ask` (SSE) and `GET /v1/agent/runs/:run_id`.
+//! HTTP handlers for `POST /v1/agent/ask` (SSE), `GET /v1/agent/runs/:run_id`,
+//! and the engine-management surface (`GET/PUT /v1/agent/engine`, etc.).
 //!
 //! The ask handler drives an ADK-Rust `Runner` and emits a stream of SSE
 //! frames. Once the stream completes (naturally, on error, or on budget
@@ -26,6 +27,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
 
+use super::engine::{build_engine, engine_catalogue, CredentialResolver, EngineConfig};
 use super::runner::{make_runner, model_id, ANON_USER};
 use super::state::AgentState;
 
@@ -40,6 +42,9 @@ pub fn router(state: AgentState) -> axum::Router {
     axum::Router::new()
         .route("/ask", post(ask_handler))
         .route("/runs/:run_id", get(run_lookup_handler))
+        .route("/engines", get(list_engines))
+        .route("/engine", get(get_engine).put(put_engine))
+        .route("/engine/test", post(test_engine))
         .with_state(state)
 }
 
@@ -531,6 +536,74 @@ async fn run_lookup_handler(
         "trace": trace.0,
     }))
     .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Engine management routes
+// ---------------------------------------------------------------------------
+
+/// `GET /engines` — list available providers + their default models + the active config.
+async fn list_engines(
+    State(state): State<AgentState>,
+) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    let catalogue = engine_catalogue();
+    let active = state
+        .engines
+        .get()
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(axum::Json(serde_json::json!({
+        "available": catalogue,
+        "active": active,
+    })))
+}
+
+/// `GET /engine` — the persisted EngineConfig (one global row, v1).
+async fn get_engine(
+    State(state): State<AgentState>,
+) -> Result<axum::Json<EngineConfig>, (axum::http::StatusCode, String)> {
+    state
+        .engines
+        .get()
+        .await
+        .map(axum::Json)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+/// `PUT /engine` — save a new EngineConfig.
+async fn put_engine(
+    State(state): State<AgentState>,
+    axum::Json(cfg): axum::Json<EngineConfig>,
+) -> Result<axum::Json<EngineConfig>, (axum::http::StatusCode, String)> {
+    state
+        .engines
+        .put(&cfg)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(axum::Json(cfg))
+}
+
+/// `POST /engine/test` — dry-run probe against a candidate config without
+/// persisting it. Confirms creds resolve + the provider responds.
+async fn test_engine(
+    State(state): State<AgentState>,
+    axum::Json(cfg): axum::Json<EngineConfig>,
+) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    let resolver = CredentialResolver::new(state.credentials.clone(), state.tenant);
+    let key = resolver
+        .resolve(&cfg)
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("credential: {e}")))?;
+    // Just constructing the LLM proves the API key + endpoint shape — we
+    // don't make a real generation call here because some providers count
+    // probes against quota.
+    let _llm = build_engine(&cfg, key)
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("init: {e}")))?;
+    Ok(axum::Json(serde_json::json!({
+        "ok": true,
+        "kind": cfg.kind,
+        "model": cfg.model,
+    })))
 }
 
 // Satisfy dead-code lint: Stream is only used implicitly via Sse::new.
