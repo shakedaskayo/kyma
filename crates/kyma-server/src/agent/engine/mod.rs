@@ -31,6 +31,9 @@ pub struct EngineConfig {
     pub extras: serde_json::Value,
 }
 
+pub mod store;
+pub use store::{EnginePreferenceStore, PgEnginePreferenceStore};
+
 #[cfg(test)]
 mod tests {
     use super::*;
