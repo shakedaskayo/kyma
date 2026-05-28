@@ -159,6 +159,8 @@ adk-rust = { version = "0.6", default-features = false, features = [
     "agents",
     "models",
     "ollama",
+    "anthropic",
+    "openai",
     "tools",
     "sessions",
     "runner",
