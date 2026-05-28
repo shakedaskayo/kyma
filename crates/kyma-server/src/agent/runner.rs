@@ -65,6 +65,43 @@ Rules:
 - You have at most 12 tool calls per question.
 "#;
 
+/// Compose the agent's system prompt: the base [`SYSTEM_PROMPT`] constant
+/// plus a block listing every enabled skill the user has toggled on. The
+/// skill block is what makes "Settings → Skills" load-bearing — the agent
+/// only sees skills that appear here.
+async fn compose_system_prompt(state: &AgentState) -> String {
+    let enabled = match state.skills.get().await {
+        Ok(s) => s,
+        Err(_) => return SYSTEM_PROMPT.to_string(),
+    };
+    if enabled.is_empty() {
+        return SYSTEM_PROMPT.to_string();
+    }
+    let enabled_set: std::collections::HashSet<&str> =
+        enabled.iter().map(String::as_str).collect();
+    let discovered = crate::agent::skills::discover_all();
+    let mut active: Vec<_> = discovered
+        .into_iter()
+        .filter(|s| enabled_set.contains(s.name.as_str()))
+        .collect();
+    if active.is_empty() {
+        return SYSTEM_PROMPT.to_string();
+    }
+    active.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let mut out = String::from(SYSTEM_PROMPT);
+    out.push_str("\n\n---\nADDITIONAL SKILLS — the user has enabled these. Use them when they apply.\n");
+    for s in active {
+        out.push_str(&format!("\n## Skill: {}\n", s.name));
+        if !s.description.is_empty() {
+            out.push_str(&format!("**When to use:** {}\n\n", s.description));
+        }
+        out.push_str(s.body.trim());
+        out.push_str("\n");
+    }
+    out
+}
+
 /// Build a fresh agent backed by the configured engine and wired with the
 /// inline tools. Async now — the engine store and credential store are both
 /// IO-bound.
@@ -84,7 +121,7 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
         .description(
             "Kyma inline data assistant — answers English questions about the user's data.",
         )
-        .instruction(SYSTEM_PROMPT)
+        .instruction(compose_system_prompt(state).await)
         .model(llm)
         .tool(tool_list_databases(shared.clone()))
         .tool(tool_explore_schema(shared.clone()))
