@@ -22,6 +22,11 @@ pub fn build(cfg: &EngineConfig, key: ResolvedKey) -> anyhow::Result<Arc<dyn Llm
     Ok(Arc::new(llm))
 }
 
-pub fn default_models() -> Vec<&'static str> {
-    vec!["gpt-5", "gpt-5-mini", "gpt-4.1", "o4-mini"]
+pub fn default_models() -> Vec<String> {
+    vec![
+        "gpt-5".into(),
+        "gpt-5-mini".into(),
+        "gpt-4.1".into(),
+        "o4-mini".into(),
+    ]
 }

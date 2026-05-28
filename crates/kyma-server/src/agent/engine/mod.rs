@@ -11,6 +11,10 @@ pub enum EngineKind {
     Anthropic,
     Openai,
     Ollama,
+    /// Spawn the local `claude` CLI as the engine — inherits Keychain OAuth,
+    /// MCPs, skills, and everything else Claude Code has configured on the
+    /// host. The /v1/agent/ask handler bypasses adk-rust for this kind.
+    ClaudeCli,
 }
 
 impl EngineKind {
@@ -19,6 +23,7 @@ impl EngineKind {
             Self::Anthropic => "anthropic",
             Self::Openai => "openai",
             Self::Ollama => "ollama",
+            Self::ClaudeCli => "claude_cli",
         }
     }
 }
@@ -34,6 +39,7 @@ pub struct EngineConfig {
 }
 
 pub mod anthropic;
+pub mod claude_cli;
 pub mod claude_creds;
 pub mod ollama;
 pub mod openai;
@@ -43,11 +49,19 @@ pub use resolver::{CredentialResolver, ResolvedKey};
 pub use store::{EnginePreferenceStore, PgEnginePreferenceStore};
 
 /// Construct an `Llm` for the given engine config + resolved credential.
+///
+/// The Claude CLI engine bypasses the adk-rust path entirely (its own tool
+/// loop is what makes it useful), so this returns a typed error for that
+/// kind — callers must check `cfg.kind == ClaudeCli` first and route
+/// through `claude_cli::run` instead.
 pub fn build_engine(cfg: &EngineConfig, key: ResolvedKey) -> anyhow::Result<Arc<dyn Llm>> {
     match cfg.kind {
         EngineKind::Anthropic => anthropic::build(cfg, key),
         EngineKind::Openai => openai::build(cfg, key),
         EngineKind::Ollama => ollama::build(cfg, key),
+        EngineKind::ClaudeCli => anyhow::bail!(
+            "the claude_cli engine doesn't run through adk-rust — call claude_cli::run directly"
+        ),
     }
 }
 
@@ -57,12 +71,20 @@ pub fn build_engine(cfg: &EngineConfig, key: ResolvedKey) -> anyhow::Result<Arc<
 pub struct EngineSummary {
     pub kind: EngineKind,
     pub label: &'static str,
-    pub models: Vec<&'static str>,
+    pub models: Vec<String>,
     pub needs_key: bool,
 }
 
-pub fn engine_catalogue() -> Vec<EngineSummary> {
-    vec![
+/// Build the engine catalogue, live-fetching the Ollama model list from the
+/// active config's host (so the picker shows actually-installed models, not
+/// phantom defaults like `gemma4:latest` that nobody pulled).
+///
+/// `ollama_host_hint` is consulted ONLY for the live `/api/tags` fetch — the
+/// other providers' lists are static so they're returned regardless.
+pub async fn engine_catalogue(ollama_host_hint: Option<&str>) -> Vec<EngineSummary> {
+    let host = ollama_host_hint.unwrap_or(ollama::DEFAULT_HOST);
+    let ollama_models = ollama::installed_models(host).await;
+    let mut out = vec![
         EngineSummary {
             kind: EngineKind::Anthropic,
             label: "Anthropic (Claude)",
@@ -78,10 +100,22 @@ pub fn engine_catalogue() -> Vec<EngineSummary> {
         EngineSummary {
             kind: EngineKind::Ollama,
             label: "Ollama (local)",
-            models: ollama::default_models(),
+            models: ollama_models,
             needs_key: false,
         },
-    ]
+    ];
+    // Only advertise the Claude CLI engine if `claude` is actually on
+    // PATH — picking it on a host without Claude Code installed would just
+    // error every ask.
+    if claude_cli::locate_binary().is_some() {
+        out.push(EngineSummary {
+            kind: EngineKind::ClaudeCli,
+            label: "Claude Code (local CLI)",
+            models: claude_cli::default_models(),
+            needs_key: false,
+        });
+    }
+    out
 }
 
 #[cfg(test)]

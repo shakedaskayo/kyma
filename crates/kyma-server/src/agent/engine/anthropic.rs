@@ -28,10 +28,10 @@ pub fn build(cfg: &EngineConfig, key: ResolvedKey) -> anyhow::Result<Arc<dyn Llm
     Ok(Arc::new(llm))
 }
 
-pub fn default_models() -> Vec<&'static str> {
+pub fn default_models() -> Vec<String> {
     vec![
-        "claude-opus-4-7",
-        "claude-sonnet-4-6",
-        "claude-haiku-4-5",
+        "claude-opus-4-7".into(),
+        "claude-sonnet-4-6".into(),
+        "claude-haiku-4-5".into(),
     ]
 }
