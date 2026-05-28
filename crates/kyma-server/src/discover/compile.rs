@@ -46,9 +46,8 @@ pub fn compile_for_source(
     time_range: Option<&TimeRange>,
     per_source_limit: usize,
 ) -> CompiledSource {
-    let has_timestamp = source.schema.fields().iter().any(|f| {
-        f.name() == "timestamp" && matches!(f.data_type(), DataType::Timestamp(_, _))
-    });
+    let ts_col = find_timestamp_column(source);
+    let has_timestamp = ts_col.is_some();
 
     let mut where_parts: Vec<String> = Vec::new();
     let mut dropped: Vec<DroppedClause> = Vec::new();
@@ -65,9 +64,10 @@ pub fn compile_for_source(
     }
 
     if let Some(tr) = time_range {
-        if has_timestamp {
+        if let Some(col) = &ts_col {
             where_parts.push(format!(
-                "timestamp >= datetime({from}) and timestamp < datetime({to})",
+                "{col} >= datetime({from}) and {col} < datetime({to})",
+                col = col,
                 from = tr.from_ms,
                 to = tr.to_ms,
             ));
@@ -152,8 +152,21 @@ fn require_field(source: &TableRef, name: &str) -> Result<(), DropReason> {
     }
 }
 
+fn find_timestamp_column(source: &TableRef) -> Option<String> {
+    source.schema.fields().iter().find_map(|f| {
+        if matches!(f.data_type(), DataType::Timestamp(_, _)) {
+            Some(f.name().clone())
+        } else {
+            None
+        }
+    })
+}
+
 fn is_string_type(ty: &DataType) -> bool {
-    matches!(ty, DataType::Utf8 | DataType::LargeUtf8)
+    matches!(
+        ty,
+        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+    )
 }
 
 fn is_numeric_or_timestamp(ty: &DataType) -> bool {
@@ -170,6 +183,8 @@ fn is_numeric_or_timestamp(ty: &DataType) -> bool {
             | DataType::Float16
             | DataType::Float32
             | DataType::Float64
+            | DataType::Decimal128(_, _)
+            | DataType::Decimal256(_, _)
             | DataType::Timestamp(_, _)
     )
 }
@@ -414,5 +429,69 @@ mod tests {
             c.kql,
             "otel_logs | where message == \"say \\\"hi\\\"\" | take 10"
         );
+    }
+
+    #[test]
+    fn substring_accepts_utf8_view_columns() {
+        let t = table(
+            "otel_logs",
+            &[
+                ("timestamp", DataType::Timestamp(TimeUnit::Microsecond, None)),
+                ("message", DataType::Utf8View),
+            ],
+        );
+        let c = compile_for_source(
+            &t,
+            &[Clause::Substring {
+                value: "auth".into(),
+            }],
+            None,
+            50,
+        );
+        assert_eq!(
+            c.kql,
+            "otel_logs | where message contains \"auth\" | take 50"
+        );
+    }
+
+    #[test]
+    fn cmp_on_decimal_column_compiles() {
+        let t = table("billing", &[("amount", DataType::Decimal128(18, 2))]);
+        let c = compile_for_source(
+            &t,
+            &[Clause::Cmp {
+                field: "amount".into(),
+                op: CmpOp::Gt,
+                value: "100.50".into(),
+            }],
+            None,
+            100,
+        );
+        assert_eq!(c.kql, "billing | where amount > 100.50 | take 100");
+    }
+
+    #[test]
+    fn time_range_uses_first_timestamp_column_by_name() {
+        let t = table(
+            "events",
+            &[
+                ("event_time", DataType::Timestamp(TimeUnit::Microsecond, None)),
+                ("payload", DataType::Utf8),
+            ],
+        );
+        let c = compile_for_source(
+            &t,
+            &[],
+            Some(&TimeRange {
+                from_ms: 1_700_000_000_000,
+                to_ms: 1_700_000_900_000,
+            }),
+            100,
+        );
+        assert_eq!(
+            c.kql,
+            "events | where event_time >= datetime(1700000000000) and event_time < datetime(1700000900000) | take 100"
+        );
+        assert!(c.has_timestamp);
     }
 }
