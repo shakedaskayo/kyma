@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { useSession } from "@/sdk/session";
 import {
   listEngines,
@@ -92,10 +92,7 @@ export function EngineSettings() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Agent engine</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 p-4">
         <p className="text-xs text-muted-foreground">
           Pick the model Ask Kyma uses. Anthropic / OpenAI keys are
           auto-detected from <code className="font-mono">ANTHROPIC_API_KEY</code>,{" "}

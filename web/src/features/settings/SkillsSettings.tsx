@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { useSession } from "@/sdk/session";
 import {
   listSkills,
@@ -79,10 +79,7 @@ export function SkillsSettings() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Skills</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 p-4">
         <p className="text-xs text-muted-foreground">
           Skills are markdown files Kyma discovers in{" "}
           <code className="font-mono">~/.claude/skills/</code>, Claude Code
