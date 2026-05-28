@@ -1,16 +1,17 @@
 //! ADK-Rust `Runner` wiring for the kyma inline data-assistant.
 //!
-//! Builds a fresh Ollama-backed [`LlmAgent`](adk_rust::agent::LlmAgent) with the
-//! four inline tools from [`super::tools`] and returns a [`Runner`] + session
-//! id that the HTTP layer drives via SSE.
+//! Builds a fresh agent backed by the configured engine (Ollama, Anthropic, or
+//! OpenAI) with the inline tools from [`super::tools`] and returns a [`Runner`]
+//! that the HTTP layer drives via SSE.
 
 use adk_rust::agent::LlmAgentBuilder;
-use adk_rust::model::ollama::{OllamaConfig, OllamaModel};
 use adk_rust::runner::{Runner, RunnerConfig};
 use adk_rust::session::{CreateRequest, InMemorySessionService, SessionService};
-use adk_rust::{Agent, Llm};
+use adk_rust::Agent;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+use crate::agent::engine::{build_engine, CredentialResolver};
 
 use super::state::AgentState;
 use super::tools::{
@@ -64,18 +65,14 @@ Rules:
 - You have at most 12 tool calls per question.
 "#;
 
-/// Build a fresh agent backed by Ollama and wired with the four inline tools.
-pub fn build_agent(state: &AgentState) -> adk_rust::Result<Arc<dyn Agent>> {
-    let cfg = OllamaConfig {
-        host: std::env::var("KYMA_AGENT_OLLAMA_HOST")
-            .unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string()),
-        model: std::env::var("KYMA_AGENT_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string()),
-        temperature: Some(0.0),
-        num_ctx: None,
-        top_p: None,
-        top_k: None,
-    };
-    let llm: Arc<dyn Llm> = Arc::new(OllamaModel::new(cfg)?);
+/// Build a fresh agent backed by the configured engine and wired with the
+/// inline tools. Async now — the engine store and credential store are both
+/// IO-bound.
+pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
+    let cfg = state.engines.get().await?;
+    let resolver = CredentialResolver::new(state.credentials.clone(), state.tenant);
+    let key = resolver.resolve(&cfg).await?;
+    let llm = build_engine(&cfg, key)?;
 
     let shared = SharedToolCtx {
         catalog: state.catalog.clone(),
@@ -97,7 +94,8 @@ pub fn build_agent(state: &AgentState) -> adk_rust::Result<Arc<dyn Agent>> {
         .tool(tool_sample_rows(shared.clone()))
         .tool(tool_find_references_to(shared.clone()))
         .tool(tool_graph_traverse(shared))
-        .build()?;
+        .build()
+        .map_err(|e| anyhow::anyhow!("agent build failed: {e:?}"))?;
 
     Ok(Arc::new(agent))
 }
@@ -105,8 +103,8 @@ pub fn build_agent(state: &AgentState) -> adk_rust::Result<Arc<dyn Agent>> {
 /// Construct a `Runner` and create a fresh in-memory session bound to
 /// `session_id`. Returns the runner + the session id (unchanged) so the
 /// caller can drive `runner.run(...)` next.
-pub async fn make_runner(state: &AgentState, session_id: &str) -> adk_rust::Result<Runner> {
-    let agent = build_agent(state)?;
+pub async fn make_runner(state: &AgentState, session_id: &str) -> anyhow::Result<Runner> {
+    let agent = build_agent(state).await?;
 
     let sessions: Arc<dyn SessionService> = Arc::new(InMemorySessionService::new());
     sessions
@@ -116,7 +114,8 @@ pub async fn make_runner(state: &AgentState, session_id: &str) -> adk_rust::Resu
             session_id: Some(session_id.to_string()),
             state: HashMap::new(),
         })
-        .await?;
+        .await
+        .map_err(|e| anyhow::anyhow!("session create failed: {e:?}"))?;
 
     let runner = Runner::new(RunnerConfig {
         app_name: APP_NAME.to_string(),
@@ -131,13 +130,18 @@ pub async fn make_runner(state: &AgentState, session_id: &str) -> adk_rust::Resu
         cache_capable: None,
         request_context: None,
         cancellation_token: None,
-    })?;
+    })
+    .map_err(|e| anyhow::anyhow!("runner build failed: {e:?}"))?;
 
     Ok(runner)
 }
 
-/// Effective model id string persisted into `agent_runs.model_id`.
-pub fn model_id() -> String {
-    let m = std::env::var("KYMA_AGENT_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
-    format!("ollama/{m}")
+/// Effective model id string persisted into `agent_runs.model_id`. Reads the
+/// active engine config; if the store is unreachable for any reason, returns
+/// the legacy Ollama default so the row insert never fails.
+pub async fn model_id(state: &AgentState) -> String {
+    match state.engines.get().await {
+        Ok(cfg) => format!("{}/{}", cfg.kind.as_str(), cfg.model),
+        Err(_) => format!("ollama/{}", DEFAULT_MODEL),
+    }
 }

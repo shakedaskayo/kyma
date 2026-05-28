@@ -93,7 +93,7 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
     let run_id = uuid::Uuid::new_v4();
     let session_id_str = uuid::Uuid::new_v4().to_string();
     let include_thinking = body.include_thinking;
-    let model = model_id();
+    let model = model_id(&state).await;
     let started_at = Utc::now();
     let start = Instant::now();
 
