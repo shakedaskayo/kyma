@@ -10,6 +10,7 @@ import { ChevronDown } from "lucide-react";
 import { useSession } from "@/sdk/session";
 import { logout } from "@/sdk/auth";
 import { EngineSettings } from "@/features/settings/EngineSettings";
+import { SkillsSettings } from "@/features/settings/SkillsSettings";
 
 export const Route = createFileRoute("/settings")({
   validateSearch: (s: Record<string, unknown>) => ({ next: typeof s.next === "string" ? s.next : "/explore" }),
@@ -86,6 +87,9 @@ function Settings() {
 
       {/* Agent engine — provider + model + credential */}
       <EngineSettings />
+
+      {/* Skills upstream */}
+      <SkillsSettings />
 
       {/* Connection / advanced settings */}
       <Card>
