@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 
 mod error;
+pub mod saved_views;
 mod snapshot;
 
 pub use snapshot::PgSnapshotTxn;
