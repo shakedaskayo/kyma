@@ -40,22 +40,54 @@ impl LocalSkillSource {
     }
 }
 
+/// Walk `~/.claude/plugins/cache/<vendor>/<plugin>/<version>/skills/`.
+///
+/// The Claude Code plugin cache nests three levels deep — vendor (e.g.
+/// `claude-plugins-official`), plugin (e.g. `superpowers`), version (e.g.
+/// `5.1.0`). Underneath each version is a `skills/` directory that follows
+/// the same layout as `~/.claude/skills/`.
 fn collect_plugins(root: &Path, out: &mut Vec<SkillSpec>, seen: &mut HashSet<String>) {
-    // root/<plugin>/<version>/skills/
-    let Ok(plugins) = std::fs::read_dir(root) else {
+    let Ok(vendors) = std::fs::read_dir(root) else {
         return;
     };
-    for plugin in plugins.flatten() {
-        let Ok(versions) = std::fs::read_dir(plugin.path()) else {
+    for vendor in vendors.flatten() {
+        let vendor_path = vendor.path();
+        if !is_dir_following_symlinks(&vendor_path) {
+            continue;
+        }
+        let Ok(plugins) = std::fs::read_dir(&vendor_path) else {
             continue;
         };
-        for version in versions.flatten() {
-            let skills_dir = version.path().join("skills");
-            collect_dir(&skills_dir, SkillSource::Plugin, out, seen);
+        for plugin in plugins.flatten() {
+            let plugin_path = plugin.path();
+            if !is_dir_following_symlinks(&plugin_path) {
+                continue;
+            }
+            let Ok(versions) = std::fs::read_dir(&plugin_path) else {
+                continue;
+            };
+            for version in versions.flatten() {
+                let skills_dir = version.path().join("skills");
+                collect_dir(&skills_dir, SkillSource::Plugin, out, seen);
+            }
         }
     }
 }
 
+/// Walk a single `skills/` directory.
+///
+/// Entries can be:
+/// - A directory with a `SKILL.md` inside (the canonical layout used by
+///   Claude Code plugins).
+/// - A flat `.md` file (occasional simpler layout used by user-installed
+///   skills).
+/// - A symlink to either of the above (very common in `~/.claude/skills/`
+///   — Claude Code links into `~/.agents/skills/<name>` and elsewhere).
+///
+/// We follow symlinks deliberately: `std::fs::metadata` resolves the
+/// target, so `is_dir()` / `is_file()` work for both real entries and
+/// symlinks. `read_dir().file_type()` does NOT follow symlinks on macOS
+/// and was the cause of the original bug.
 fn collect_dir(
     dir: &Path,
     source: SkillSource,
@@ -67,12 +99,11 @@ fn collect_dir(
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        let ft = match entry.file_type() {
-            Ok(ft) => ft,
-            Err(_) => continue,
+        // Use metadata (follows symlinks) instead of file_type (doesn't).
+        let Ok(meta) = std::fs::metadata(&path) else {
+            continue;
         };
-        if ft.is_dir() {
-            // Look for SKILL.md inside.
+        if meta.is_dir() {
             let canonical = path.join("SKILL.md");
             if canonical.is_file() {
                 if let Some(spec) = parse_skill(&canonical, source) {
@@ -81,7 +112,7 @@ fn collect_dir(
                     }
                 }
             }
-        } else if ft.is_file()
+        } else if meta.is_file()
             && path
                 .extension()
                 .and_then(|s| s.to_str())
@@ -97,6 +128,10 @@ fn collect_dir(
     }
 }
 
+fn is_dir_following_symlinks(p: &Path) -> bool {
+    std::fs::metadata(p).map(|m| m.is_dir()).unwrap_or(false)
+}
+
 /// Parse a single `.md` file. Returns None if it has no recognisable
 /// frontmatter and no usable filename stem.
 fn parse_skill(path: &Path, source: SkillSource) -> Option<SkillSpec> {
@@ -105,8 +140,6 @@ fn parse_skill(path: &Path, source: SkillSource) -> Option<SkillSpec> {
 
     let name = name_fm
         .or_else(|| {
-            // Fall back to the parent directory name if the file is SKILL.md,
-            // otherwise the file stem.
             let stem = path.file_stem().and_then(|s| s.to_str())?;
             if stem.eq_ignore_ascii_case("skill") {
                 path.parent()
@@ -127,15 +160,11 @@ fn parse_skill(path: &Path, source: SkillSource) -> Option<SkillSpec> {
     })
 }
 
-/// Returns (name, description, body_without_frontmatter). Frontmatter is
-/// delimited by `---` lines. We don't pull in a full YAML parser — just
-/// look for `name:` and `description:` in the obvious place.
 fn extract_frontmatter(raw: &str) -> (Option<String>, Option<String>, String) {
     let trimmed = raw.trim_start();
     if !trimmed.starts_with("---") {
         return (None, None, raw.to_string());
     }
-    // Find the second `---` line.
     let after_first = match trimmed.strip_prefix("---") {
         Some(s) => s.trim_start_matches(['\r', '\n']),
         None => return (None, None, raw.to_string()),
@@ -192,5 +221,31 @@ mod tests {
         std::fs::write(&p, "no frontmatter").unwrap();
         let spec = parse_skill(&p, SkillSource::User).unwrap();
         assert_eq!(spec.name, "foo-skill");
+    }
+
+    #[test]
+    fn discover_follows_symlinks_to_skill_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Real skill dir.
+        let real = tmp.path().join("real-skill");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(
+            real.join("SKILL.md"),
+            "---\nname: real-skill\ndescription: yes\n---\nbody\n",
+        )
+        .unwrap();
+        // Skills index dir containing a SYMLINK to the real skill.
+        let index = tmp.path().join("skills");
+        std::fs::create_dir_all(&index).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real, index.join("via-symlink")).unwrap();
+        #[cfg(not(unix))]
+        return; // Test skipped on non-unix.
+
+        let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        collect_dir(&index, SkillSource::User, &mut out, &mut seen);
+        assert_eq!(out.len(), 1, "expected exactly one skill via symlink");
+        assert_eq!(out[0].name, "real-skill");
     }
 }
