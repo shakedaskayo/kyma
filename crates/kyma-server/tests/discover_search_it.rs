@@ -18,8 +18,7 @@ use tower::ServiceExt;
 /// will short-circuit to an Admin principal in `DEFAULT_TENANT`. This is the
 /// same trick the auth handler integration tests use to bypass real tokens.
 fn build_app(state: kyma_server::QueryState) -> axum::Router {
-    let backend: Arc<dyn kyma_server::auth::AuthBackend> =
-        Arc::new(EnvAuthBackend::from_str(""));
+    let backend: Arc<dyn kyma_server::auth::AuthBackend> = Arc::new(EnvAuthBackend::from_str(""));
     kyma_server::router(state).layer(axum::middleware::from_fn_with_state(
         AuthLayerState {
             backend,

@@ -10,23 +10,40 @@ use super::compile::DroppedClause;
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Frame {
-    Plan { sources: Vec<PlanSource> },
-    SourceProgress { source: String, state: ProgressState },
-    Rows { source: String, rows: Vec<serde_json::Value> },
-    Histogram { source: String, buckets: Vec<Bucket> },
+    Plan {
+        sources: Vec<PlanSource>,
+    },
+    SourceProgress {
+        source: String,
+        state: ProgressState,
+    },
+    Rows {
+        source: String,
+        rows: Vec<serde_json::Value>,
+    },
+    Histogram {
+        source: String,
+        buckets: Vec<Bucket>,
+    },
     SourceDone {
         source: String,
         total: usize,
         capped: bool,
         dropped_clauses: Vec<DroppedClause>,
     },
-    Error { source: Option<String>, code: String, message: String },
-    Done { elapsed_ms: u64 },
+    Error {
+        source: Option<String>,
+        code: String,
+        message: String,
+    },
+    Done {
+        elapsed_ms: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PlanSource {
-    pub source: String,           // "db.table"
+    pub source: String, // "db.table"
     pub has_timestamp: bool,
 }
 
@@ -38,7 +55,7 @@ pub enum ProgressState {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Bucket {
-    pub t: String,    // ISO-8601 UTC
+    pub t: String, // ISO-8601 UTC
     pub n: u64,
 }
 
@@ -56,8 +73,14 @@ mod tests {
     fn plan_frame_round_trips() {
         let f = Frame::Plan {
             sources: vec![
-                PlanSource { source: "prod.otel_logs".into(), has_timestamp: true },
-                PlanSource { source: "prod.metrics".into(), has_timestamp: false },
+                PlanSource {
+                    source: "prod.otel_logs".into(),
+                    has_timestamp: true,
+                },
+                PlanSource {
+                    source: "prod.metrics".into(),
+                    has_timestamp: false,
+                },
             ],
         };
         let line = frame_to_line(&f);
@@ -91,8 +114,8 @@ mod tests {
 
     #[test]
     fn source_done_includes_dropped_clauses() {
-        use crate::discover::grammar::Clause;
         use crate::discover::compile::{DropReason, DroppedClause};
+        use crate::discover::grammar::Clause;
 
         let f = Frame::SourceDone {
             source: "prod.otel_logs".into(),
@@ -100,7 +123,10 @@ mod tests {
             capped: true,
             dropped_clauses: vec![DroppedClause {
                 reason: DropReason::UnknownField,
-                clause: Clause::Eq { field: "foo".into(), value: "bar".into() },
+                clause: Clause::Eq {
+                    field: "foo".into(),
+                    value: "bar".into(),
+                },
             }],
         };
         let v: serde_json::Value = serde_json::from_str(frame_to_line(&f).trim()).unwrap();

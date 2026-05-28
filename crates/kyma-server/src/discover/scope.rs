@@ -86,11 +86,7 @@ pub async fn resolve(
         Scope::Sources { sources } => sources.clone(),
         Scope::View { view_id } => match saved_view_lookup {
             None => return Err(ScopeError::ViewNotFound(view_id.clone())),
-            Some(l) => match l
-                .load_sources(view_id)
-                .await
-                .map_err(ScopeError::Catalog)?
-            {
+            Some(l) => match l.load_sources(view_id).await.map_err(ScopeError::Catalog)? {
                 None => return Err(ScopeError::ViewNotFound(view_id.clone())),
                 Some(srcs) => srcs,
             },
@@ -104,17 +100,12 @@ pub async fn resolve(
 
     let mut out: Vec<ResolvedSource> = Vec::new();
     for db in dbs {
-        let tables = match catalog
-            .list_tables_in_database_in_tenant(tenant, &db)
-            .await
-        {
+        let tables = match catalog.list_tables_in_database_in_tenant(tenant, &db).await {
             Ok(t) => t,
             Err(_) => continue, // RBAC drop / per-DB error: skip silently
         };
         for t in tables {
-            let matched = patterns
-                .iter()
-                .any(|p| matches_pattern(p, &db, &t.name));
+            let matched = patterns.iter().any(|p| matches_pattern(p, &db, &t.name));
             if !matched {
                 continue;
             }

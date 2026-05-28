@@ -87,7 +87,11 @@ async fn run_inner(input: FanoutInput, tx: mpsc::Sender<Frame>) {
         .collect();
 
     // Receiver may have dropped — that's OK, fall through cleanly.
-    let _ = tx.send(Frame::Plan { sources: plan_sources }).await;
+    let _ = tx
+        .send(Frame::Plan {
+            sources: plan_sources,
+        })
+        .await;
 
     // 3. Spawn a child task per source into a JoinSet. JoinSet::drop aborts
     //    every running task on drop, so if the orchestrator future is dropped

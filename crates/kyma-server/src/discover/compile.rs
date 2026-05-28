@@ -370,10 +370,7 @@ mod tests {
             None,
             10,
         );
-        assert_eq!(
-            c.kql,
-            "otel_logs | where isnotnull(trace_id) | take 10"
-        );
+        assert_eq!(c.kql, "otel_logs | where isnotnull(trace_id) | take 10");
     }
 
     #[test]
@@ -436,7 +433,10 @@ mod tests {
         let t = table(
             "otel_logs",
             &[
-                ("timestamp", DataType::Timestamp(TimeUnit::Microsecond, None)),
+                (
+                    "timestamp",
+                    DataType::Timestamp(TimeUnit::Microsecond, None),
+                ),
                 ("message", DataType::Utf8View),
             ],
         );
@@ -475,7 +475,10 @@ mod tests {
         let t = table(
             "events",
             &[
-                ("event_time", DataType::Timestamp(TimeUnit::Microsecond, None)),
+                (
+                    "event_time",
+                    DataType::Timestamp(TimeUnit::Microsecond, None),
+                ),
                 ("payload", DataType::Utf8),
             ],
         );
