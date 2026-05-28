@@ -31,6 +31,7 @@ pub struct EngineConfig {
     pub extras: serde_json::Value,
 }
 
+pub mod claude_creds;
 pub mod store;
 pub use store::{EnginePreferenceStore, PgEnginePreferenceStore};
 
