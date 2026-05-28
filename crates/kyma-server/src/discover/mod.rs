@@ -5,3 +5,4 @@
 
 pub mod compile;
 pub mod grammar;
+pub mod scope;
