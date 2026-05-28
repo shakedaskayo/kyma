@@ -117,3 +117,7 @@ required-features = ["test-support"]
 [[test]]
 name = "session_backend_it"
 required-features = ["test-support"]
+
+[[test]]
+name = "discover_saved_views_it"
+required-features = ["test-support"]
