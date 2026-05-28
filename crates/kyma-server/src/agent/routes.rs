@@ -609,6 +609,49 @@ async fn test_engine(
     use adk_rust::futures::StreamExt;
     use adk_rust::{GenerateContentConfig, LlmRequest};
 
+    // Claude CLI engine: spawn the binary with a 1-token prompt and confirm
+    // it produces *any* stdout + exits 0. Bypasses build_engine entirely
+    // because the CLI doesn't go through adk-rust.
+    if cfg.kind == EngineKind::ClaudeCli {
+        let probe = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            let (mut chunks, wait) = claude_cli::run("ping", Some(&cfg.model), None)
+                .map_err(|e| format!("spawn: {e}"))?;
+            let mut got_output = false;
+            while let Some(chunk) = chunks.recv().await {
+                if matches!(chunk, claude_cli::Chunk::Stdout(_)) {
+                    got_output = true;
+                }
+            }
+            let code = match wait.await {
+                Ok(Ok(c)) => c,
+                Ok(Err(e)) => return Err(format!("io: {e}")),
+                Err(e) => return Err(format!("join: {e}")),
+            };
+            if code != 0 {
+                return Err(format!("claude exited with {code}"));
+            }
+            if !got_output {
+                return Err("claude produced no output".to_string());
+            }
+            Ok::<(), String>(())
+        })
+        .await;
+
+        return match probe {
+            Ok(Ok(())) => Ok(axum::Json(serde_json::json!({
+                "ok": true,
+                "kind": cfg.kind,
+                "model": cfg.model,
+            }))),
+            Ok(Err(msg)) => Err((axum::http::StatusCode::BAD_GATEWAY, msg)),
+            Err(_elapsed) => Err((
+                axum::http::StatusCode::GATEWAY_TIMEOUT,
+                "claude_cli probe timed out after 30s".into(),
+            )),
+        };
+    }
+
+    // adk-rust path for Anthropic / OpenAI / Ollama.
     let resolver = CredentialResolver::new(state.credentials.clone(), state.tenant);
     let key = resolver
         .resolve(&cfg)
@@ -617,9 +660,6 @@ async fn test_engine(
     let llm = build_engine(&cfg, key)
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("init: {e}")))?;
 
-    // Real connectivity probe — cheapest possible request: 1-token user
-    // message + max_output_tokens=1, non-streaming. Confirms the API key,
-    // endpoint, and model name all actually work.
     let req = LlmRequest {
         model: cfg.model.clone(),
         contents: vec![Content::new("user").with_text("ping")],
@@ -630,17 +670,11 @@ async fn test_engine(
         tools: Default::default(),
     };
 
-    // 10-second timeout so a hung provider doesn't pin the connection.
-    // 30s timeout — Ollama cold-loads, slower providers, and our own
-    // adk-rust round-trips can all easily exceed 10s. 30s is generous enough
-    // for a real connectivity probe while still bounding a hung connection.
     let probe = tokio::time::timeout(std::time::Duration::from_secs(30), async {
         let mut stream = llm
             .generate_content(req, false)
             .await
             .map_err(|e| format!("provider: {e:?}"))?;
-        // Drain the first response item to confirm the call actually started;
-        // we don't need the body content.
         while let Some(item) = stream.next().await {
             item.map_err(|e| format!("stream: {e:?}"))?;
             break;
