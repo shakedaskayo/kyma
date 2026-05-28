@@ -3,4 +3,5 @@
 //! See `docs/superpowers/specs/2026-05-28-explore-discover-refactor-design.md`
 //! sections 4 + 5 for the full contract.
 
+pub mod compile;
 pub mod grammar;
