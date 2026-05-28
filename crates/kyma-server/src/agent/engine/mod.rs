@@ -32,7 +32,9 @@ pub struct EngineConfig {
 }
 
 pub mod claude_creds;
+pub mod resolver;
 pub mod store;
+pub use resolver::{CredentialResolver, ResolvedKey};
 pub use store::{EnginePreferenceStore, PgEnginePreferenceStore};
 
 #[cfg(test)]
