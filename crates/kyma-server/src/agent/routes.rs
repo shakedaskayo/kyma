@@ -614,7 +614,10 @@ async fn test_engine(
     };
 
     // 10-second timeout so a hung provider doesn't pin the connection.
-    let probe = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+    // 30s timeout — Ollama cold-loads, slower providers, and our own
+    // adk-rust round-trips can all easily exceed 10s. 30s is generous enough
+    // for a real connectivity probe while still bounding a hung connection.
+    let probe = tokio::time::timeout(std::time::Duration::from_secs(30), async {
         let mut stream = llm
             .generate_content(req, false)
             .await
@@ -638,7 +641,7 @@ async fn test_engine(
         Ok(Err(msg)) => Err((axum::http::StatusCode::BAD_GATEWAY, msg)),
         Err(_elapsed) => Err((
             axum::http::StatusCode::GATEWAY_TIMEOUT,
-            "probe timed out after 10s".into(),
+            "probe timed out after 30s".into(),
         )),
     }
 }
