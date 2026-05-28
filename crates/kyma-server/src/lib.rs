@@ -22,6 +22,7 @@ pub mod auth_handler;
 pub mod catalog_handler;
 pub mod cleanup_handler;
 pub mod dashboards_handler;
+pub mod discover;
 pub mod graph_handler;
 pub mod flight;
 mod health;
