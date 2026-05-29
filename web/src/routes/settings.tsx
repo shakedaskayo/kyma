@@ -47,7 +47,7 @@ const SECTIONS: Section[] = [
   {
     id: "engine",
     label: "Agent engine",
-    description: "Which model Ask Kyma uses",
+    description: "Which model the agent uses",
     icon: Cpu,
     component: EngineSettings,
   },

@@ -94,7 +94,7 @@ export function EngineSettings() {
     <Card>
       <CardContent className="space-y-4 p-4">
         <p className="text-xs text-muted-foreground">
-          Pick the model Ask Kyma uses. Anthropic / OpenAI keys are
+          Pick the model the agent uses. Anthropic / OpenAI keys are
           auto-detected from <code className="font-mono">ANTHROPIC_API_KEY</code>,{" "}
           <code className="font-mono">OPENAI_API_KEY</code>, or{" "}
           <code className="font-mono">~/.claude/.credentials.json</code> when

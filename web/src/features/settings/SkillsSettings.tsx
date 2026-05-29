@@ -17,7 +17,7 @@ import {
  * Lists every skill discovered on the host (project + user + plugin dirs).
  * The user toggles the checkbox to enable a skill; on Save, the enabled
  * set is persisted via PUT /v1/agent/skills/enabled. Enabled skills are
- * injected into Ask Kyma's system prompt for non-Claude-CLI engines —
+ * injected into the agent's system prompt for non-Claude-CLI engines —
  * the Claude CLI engine loads them natively.
  */
 export function SkillsSettings() {
@@ -85,7 +85,7 @@ export function SkillsSettings() {
           <code className="font-mono">~/.claude/skills/</code>, Claude Code
           plugin caches, and{" "}
           <code className="font-mono">./.claude/skills/</code>. Enabled skills
-          are injected into Ask Kyma's system prompt for Anthropic / OpenAI /
+          are injected into the agent's system prompt for Anthropic / OpenAI /
           Ollama engines. The Claude Code CLI engine loads skills natively, so
           toggles here don't apply to it.
         </p>

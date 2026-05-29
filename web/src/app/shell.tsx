@@ -1,16 +1,24 @@
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Database, Settings as SettingsIcon, Compass, LayoutDashboard, Sparkles, Network, Plug, LogOut, ChevronDown } from "lucide-react";
+import { Settings as SettingsIcon, Compass, LayoutDashboard, Sparkles, Network, Plug, KeyRound, LogOut, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/sdk/session";
 import { useHealth } from "@/sdk/reconnect";
 import { useWorkspace } from "@/features/tabs/workspace-store";
 import { ReconnectBanner } from "@/features/reconnect/ReconnectBanner";
+import { DatabaseSwitcher } from "./DatabaseSwitcher";
+import { ThemeToggle } from "./ThemeToggle";
 import { logout } from "@/sdk/auth";
 
 // ── query status pill ─────────────────────────────────────────────────────────
 
 function QueryStatusPill() {
+  // The pill mirrors the *active Explore tab's* last query result. Showing
+  // it from any other route was misleading — a stale "error" from a search
+  // run hours ago sat in the header on Connectors/Graph/etc. as if the
+  // current page had failed. Scope to /explore.
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const activeTab = useWorkspace((s) => s.tabs.find((t) => t.id === s.activeId));
+  if (!pathname.startsWith("/explore")) return null;
   if (!activeTab) return null;
 
   const r = activeTab.results;
@@ -162,7 +170,7 @@ function UserMenu() {
 // ── shell ─────────────────────────────────────────────────────────────────────
 
 export function Shell() {
-  const { endpoint, database } = useSession();
+  const { endpoint } = useSession();
   const active = useRouterState().location.pathname;
   const startHealth = useHealth((s) => s.start);
   useEffect(() => {
@@ -174,9 +182,7 @@ export function Shell() {
     <div className="flex h-screen flex-col bg-background text-foreground">
       <header className="flex h-12 items-center gap-3 border-b px-4 text-sm">
         <div className="font-semibold tracking-tight">kyma</div>
-        <div className="flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-0.5 text-xs">
-          <Database className="h-3.5 w-3.5" /> {database || "—"}
-        </div>
+        <DatabaseSwitcher />
         <QueryStatusPill />
         <nav className="ml-auto flex items-center gap-1">
           <Link to="/explore" search={{ q: undefined }} className={btn(active.startsWith("/explore"))}>
@@ -186,13 +192,16 @@ export function Shell() {
             <LayoutDashboard className="h-4 w-4" /> Dashboards
           </Link>
           <Link to="/agent" className={btn(active.startsWith("/agent"))}>
-            <Sparkles className="h-4 w-4" /> Ask Kyma
+            <Sparkles className="h-4 w-4" /> Agent
           </Link>
           <Link to="/graph" className={btn(active.startsWith("/graph"))}>
             <Network className="h-4 w-4" /> Graph
           </Link>
           <Link to="/connectors" className={btn(active.startsWith("/connectors"))}>
             <Plug className="h-4 w-4" /> Connectors
+          </Link>
+          <Link to="/credentials" className={btn(active.startsWith("/credentials"))}>
+            <KeyRound className="h-4 w-4" /> Credentials
           </Link>
           <Link to="/settings" search={{ next: active }} className={btn(active === "/settings")}>
             <SettingsIcon className="h-4 w-4" /> Settings
@@ -202,6 +211,7 @@ export function Shell() {
           <ConnectionDot />
           <span className="max-w-[22ch] truncate text-xs text-muted-foreground">{endpoint || "no server"}</span>
         </div>
+        <ThemeToggle />
         <UserMenu />
       </header>
       <ReconnectBanner />
