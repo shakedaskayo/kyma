@@ -2,12 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/sdk/session";
-import { User2, Plug, Cpu, Sparkles, Palette } from "lucide-react";
+import { User2, Plug, Cpu, Sparkles, Terminal, Palette } from "lucide-react";
 
 import { AccountSettings } from "@/features/settings/AccountSettings";
 import { ConnectionSettings } from "@/features/settings/ConnectionSettings";
 import { EngineSettings } from "@/features/settings/EngineSettings";
 import { SkillsSettings } from "@/features/settings/SkillsSettings";
+import { ConnectAgentSettings } from "@/features/settings/ConnectAgentSettings";
 import { AppearanceSettings } from "@/features/settings/AppearanceSettings";
 
 export const Route = createFileRoute("/settings")({
@@ -17,7 +18,7 @@ export const Route = createFileRoute("/settings")({
   component: Settings,
 });
 
-type SectionId = "account" | "connection" | "engine" | "skills" | "appearance";
+type SectionId = "account" | "connection" | "engine" | "skills" | "connect-agent" | "appearance";
 
 interface Section {
   id: SectionId;
@@ -57,6 +58,13 @@ const SECTIONS: Section[] = [
     description: "Skill upstreams the agent can use",
     icon: Sparkles,
     component: SkillsSettings,
+  },
+  {
+    id: "connect-agent",
+    label: "Connect agent",
+    description: "Install the CLI so coding agents (Claude Code, …) can query this server",
+    icon: Terminal,
+    component: ConnectAgentSettings,
   },
   {
     id: "appearance",
