@@ -42,6 +42,7 @@ export default withMermaid(defineConfig({
       { text: 'Ingest', link: '/ingest/' },
       { text: 'Query', link: '/query/' },
       { text: 'Connectors', link: '/connectors/' },
+      { text: 'Agent', link: '/agent/' },
       { text: 'Reference', link: '/reference/' },
       { text: 'Architecture', link: '/architecture/' },
       { text: 'Recipes', link: '/recipes/' },
@@ -93,11 +94,25 @@ export default withMermaid(defineConfig({
         collapsed: false,
         items: [
           { text: 'Framework',           link: '/connectors/framework' },
+          { text: 'GitHub',              link: '/connectors/github' },
+          { text: 'GitLab',              link: '/connectors/gitlab' },
+          { text: 'Bitbucket',           link: '/connectors/bitbucket' },
           { text: 'Prometheus',          link: '/connectors/prometheus' },
           { text: 'Postgres',            link: '/connectors/postgres' },
           { text: 'MySQL',               link: '/connectors/mysql' },
           { text: 'MongoDB',             link: '/connectors/mongo' },
           { text: 'Multi-source data',   link: '/connectors/multi-source-data' },
+        ],
+      }],
+      '/agent/': [{
+        text: 'Agent',
+        collapsed: false,
+        items: [
+          { text: 'Overview',            link: '/agent/' },
+          { text: 'Engines',             link: '/agent/engines' },
+          { text: 'Claude Code engine',  link: '/agent/claude-cli' },
+          { text: 'Skills',              link: '/agent/skills' },
+          { text: 'Connect a coding agent', link: '/agent/connect-from-cli' },
         ],
       }],
       '/reference/': [{
