@@ -22,6 +22,7 @@ pub struct AdminState {
 pub fn router(state: AdminState) -> Router {
     Router::new()
         .route("/v1/connectors", post(create).get(list))
+        .route("/v1/connectors/catalog", get(catalog))
         .route(
             "/v1/connectors/:id",
             get(get_one).patch(patch_one).delete(delete_one),
@@ -103,6 +104,27 @@ async fn create(
         )
             .into_response(),
     }
+}
+
+/// `GET /v1/connectors/catalog` — the vendor-agnostic catalog that drives the
+/// connectors UI. Merges registered connectors (self-described, status
+/// `"available"`) with the static `coming_soon` list (registered wins on a
+/// `type_id` collision), sorted available-first then by category and label.
+async fn catalog(State(s): State<AdminState>) -> impl IntoResponse {
+    let mut entries = s.registry.catalog();
+    let have: std::collections::HashSet<String> =
+        entries.iter().map(|e| e.type_id.clone()).collect();
+    for cs in crate::catalog::coming_soon() {
+        if !have.contains(&cs.type_id) {
+            entries.push(cs);
+        }
+    }
+    entries.sort_by(|a, b| {
+        let av = (a.status != "available", a.category.clone(), a.label.clone());
+        let bv = (b.status != "available", b.category.clone(), b.label.clone());
+        av.cmp(&bv)
+    });
+    (StatusCode::OK, Json(serde_json::json!({ "items": entries }))).into_response()
 }
 
 async fn list(

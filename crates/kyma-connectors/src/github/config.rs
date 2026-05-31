@@ -112,8 +112,14 @@ impl Default for CodeOpts {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GithubConfig {
-    /// SecretStore ref (e.g. `"$env:GITHUB_TOKEN"`) or raw PAT.
+    /// SecretStore ref (e.g. `"$env:GITHUB_TOKEN"`) or raw PAT. Optional when
+    /// `credential_id` is set — exactly one of the two must be present.
+    #[serde(default)]
     pub token: String,
+    /// Reference to a stored credential of kind `pat`. Preferred over inline
+    /// `token`; one rotation propagates and the secret is encrypted at rest.
+    #[serde(default)]
+    pub credential_id: Option<uuid::Uuid>,
     /// Repositories to ingest, each as `"owner/name"`.
     pub repos: Vec<String>,
     /// Which modules to fetch (all enabled by default).
@@ -131,8 +137,10 @@ pub struct GithubConfig {
 impl GithubConfig {
     /// Validate the config, returning a descriptive error string on failure.
     pub fn validate(&self) -> Result<(), String> {
-        if self.token.is_empty() {
-            return Err("token must not be empty".into());
+        // Either an inline token / SecretStore reference OR a credential_id
+        // must be present. Belt-and-suspenders both is fine; neither isn't.
+        if self.token.is_empty() && self.credential_id.is_none() {
+            return Err("provide either `credential_id` (preferred) or inline `token`".into());
         }
         if self.repos.is_empty() {
             return Err("repos must contain at least one entry".into());

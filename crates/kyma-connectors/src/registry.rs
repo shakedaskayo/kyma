@@ -1,5 +1,6 @@
 //! Compile-time connector-type registry.
 
+use crate::catalog::CatalogEntry;
 use crate::types::Connector;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -29,5 +30,10 @@ impl ConnectorRegistry {
 
     pub fn types(&self) -> impl Iterator<Item = &'static str> + '_ {
         self.by_type.keys().copied()
+    }
+
+    /// Catalog metadata for every registered connector (status `"available"`).
+    pub fn catalog(&self) -> Vec<CatalogEntry> {
+        self.by_type.values().map(|c| c.catalog()).collect()
     }
 }

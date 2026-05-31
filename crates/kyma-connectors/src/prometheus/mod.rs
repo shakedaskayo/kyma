@@ -45,6 +45,34 @@ impl Connector for PromConnector {
         "prometheus"
     }
 
+    fn catalog(&self) -> crate::catalog::CatalogEntry {
+        use crate::catalog::{CatalogEntry, CatalogField};
+        CatalogEntry {
+            type_id: "prometheus".into(),
+            label: "Prometheus".into(),
+            category: "data".into(),
+            description: "Scrape metrics from a Prometheus-compatible endpoint into a \
+                          time-series table."
+                .into(),
+            brand: "prometheus".into(),
+            auth_mode: "url".into(),
+            status: "available".into(),
+            default_schedule_ms: 60_000,
+            fields: vec![CatalogField::text(
+                "endpoint",
+                "Prometheus endpoint",
+                "http://localhost:9090",
+            )],
+            resource: None,
+            default_target_table: Some("metrics".into()),
+            config_defaults: None,
+            graph_name: None,
+            // Prometheus scrapes a public endpoint URL; if/when bearer auth is
+            // added it'll opt into `["pat"]` here.
+            accepted_credential_kinds: Vec::new(),
+        }
+    }
+
     fn validate_config(&self, cfg: &serde_json::Value) -> Result<(), ConfigError> {
         // Chosen policy: strict unknown-field rejection (catch operator
         // typos at POST time), serde-driven cross-field auth validation

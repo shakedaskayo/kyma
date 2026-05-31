@@ -4,6 +4,7 @@ use crate::catalog_sql;
 use crate::metrics::{ConnectorMetrics, TickResult};
 use crate::registry::ConnectorRegistry;
 use crate::secrets::SecretStore;
+use kyma_core::credentials::CredentialStore;
 use crate::types::{ConnectorCtx, ConnectorError, ConnectorRun, GraphHint};
 use chrono::Utc;
 use futures::future::BoxFuture;
@@ -47,6 +48,11 @@ pub struct ConnectorRunner {
     sink: RowSink,
     graph_register: GraphRegisterFn,
     secrets: Arc<dyn SecretStore>,
+    /// System-wide credential store, passed into every `ConnectorCtx`.
+    /// A no-op stub is supplied by default so existing builds (and tests)
+    /// don't need wiring; callers attach the real store via
+    /// [`Self::with_credentials`].
+    credentials: Arc<dyn CredentialStore>,
     /// NodeId of the already-registered node (supplied by the caller).
     node_id: NodeId,
     pub idle_sleep: Duration,
@@ -65,16 +71,35 @@ impl ConnectorRunner {
         // via `with_graph_register`.
         let graph_register: GraphRegisterFn =
             Arc::new(|_db, _hint| Box::pin(async move { Ok(()) }));
+        // No-op credentials store by default — connectors that don't look up
+        // credentials work unchanged; the real store is attached via
+        // `with_credentials` from kyma-bin.
+        let credentials: Arc<dyn CredentialStore> = Arc::new(NoopCredentialStore);
         Self {
             catalog,
             registry,
             sink,
             graph_register,
             secrets: Arc::new(secrets),
+            credentials,
             node_id,
             idle_sleep: Duration::from_millis(200),
-            claim_lease: chrono::Duration::seconds(60),
+            // 5 min: long enough for a sizeable repo clone or a multi-page
+            // GitLab walk to finish on a normal tick without the lease
+            // expiring mid-flight and inviting a concurrent re-claim by
+            // another worker. Tasks past their lease are auto-recoverable
+            // via the `claim_task` query's stale-claim branch.
+            claim_lease: chrono::Duration::seconds(300),
         }
+    }
+
+    /// Attach the system-wide credentials store. Without this call the runner
+    /// uses a no-op store that errors `not found` on every lookup — fine for
+    /// connectors that take inline secrets, required for ones that resolve a
+    /// `credential_id`.
+    pub fn with_credentials(mut self, store: Arc<dyn CredentialStore>) -> Self {
+        self.credentials = store;
+        self
     }
 
     /// Replace the graph-registration closure. Returns `self` for chaining.
@@ -146,8 +171,10 @@ impl ConnectorRunner {
         };
         let ctx = ConnectorCtx {
             connector_id,
+            tenant,
             http: reqwest::Client::builder().build()?,
             secrets: self.secrets.clone(),
+            credentials: self.credentials.clone(),
             scheduled_for,
             metrics: metrics.clone(),
         };
@@ -331,8 +358,36 @@ impl ConnectorRunner {
         }
     }
 
+    /// Recover abandoned claims from previous engine processes — any
+    /// connector_tick row left in `claimed` whose `claim_expires_at` is in the
+    /// past is marked `failed` so the queue self-heals across restarts.
+    /// Without this, a sigkill or panic mid-tick could permanently jam the
+    /// queue. Idempotent; safe to call from every worker on startup.
+    pub async fn recover_stale_claims(pool: &sqlx::PgPool) -> Result<u64, sqlx::Error> {
+        let result = sqlx::query(
+            "UPDATE background_tasks
+             SET status = 'failed',
+                 last_error = COALESCE(last_error, '') || ' [recovered: stale claim on restart]',
+                 updated_at = now()
+             WHERE kind = 'connector_tick'
+               AND status = 'claimed'
+               AND claim_expires_at < now()",
+        )
+        .execute(pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
     pub async fn run(self, shutdown: impl Future<Output = ()>) {
         info!(node_id = %self.node_id, "connector runner starting");
+        // Best-effort one-shot recovery on startup. If multiple workers race
+        // this in parallel, the SQL `UPDATE … WHERE status = 'claimed'` is
+        // idempotent — the second pass simply finds nothing to update.
+        match Self::recover_stale_claims(self.catalog.pool()).await {
+            Ok(0) => {}
+            Ok(n) => info!(stale_claims_recovered = n, "queue self-heal"),
+            Err(e) => warn!(error = %e, "stale-claim recovery failed (non-fatal)"),
+        }
         tokio::pin!(shutdown);
         loop {
             tokio::select! {
@@ -348,5 +403,22 @@ impl ConnectorRunner {
                 }
             }
         }
+    }
+}
+
+/// Default [`CredentialStore`] used until `with_credentials` is called. Returns
+/// `not found` on every lookup so connectors that genuinely need a credential
+/// fail with a clear error instead of silently using uninitialized state.
+struct NoopCredentialStore;
+#[async_trait::async_trait]
+impl CredentialStore for NoopCredentialStore {
+    async fn get(
+        &self,
+        _tenant: TenantId,
+        id: Uuid,
+    ) -> anyhow::Result<kyma_core::credentials::Credential> {
+        Err(anyhow::anyhow!(
+            "credential store not configured (looked up id={id})"
+        ))
     }
 }
