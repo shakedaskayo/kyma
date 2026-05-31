@@ -22,6 +22,7 @@ pub mod auth_handler;
 pub mod catalog_handler;
 pub mod cleanup_handler;
 pub mod dashboards_handler;
+pub mod discover;
 pub mod graph_handler;
 pub mod flight;
 mod health;
@@ -93,6 +94,10 @@ pub struct QueryState {
     /// Current node's id. Passed into `KymaTable` so the scan path can
     /// fan extents out to peer nodes via the read-router.
     pub node_id: Option<kyma_core::types::NodeId>,
+    /// Catalog Postgres pool. Threaded through so non-`Catalog`-trait
+    /// surfaces (saved Discover views, etc.) can run SQL directly without
+    /// having to downcast the `dyn Catalog`.
+    pub pg_pool: Arc<sqlx::PgPool>,
 }
 
 /// Build the query router (auth-eligible — caller wraps with middleware).
@@ -101,6 +106,7 @@ pub struct QueryState {
 /// the entire router with `require_role_middleware(Role::Read)`.
 pub fn router(state: QueryState) -> Router {
     use dashboards_handler::{get_dashboard, list_dashboards, DashboardState};
+    use discover::saved_views_handler::{list_views, SavedViewsState};
     let dash_read_state = DashboardState {
         catalog: state.catalog.clone(),
     };
@@ -110,11 +116,25 @@ pub fn router(state: QueryState) -> Router {
         .route("/v1/dashboards/:id", get(get_dashboard))
         .with_state(dash_read_state);
 
+    // Saved-views list endpoint — read-role; create/update/delete live on
+    // the separate write router so they can require Role::Write.
+    let views_read_state = SavedViewsState {
+        pool: state.pg_pool.clone(),
+    };
+    let views_read_router = Router::new()
+        .route("/v1/explore/views", get(list_views))
+        .with_state(views_read_state);
+
     Router::new()
         .route("/v1/query", post(query_handler))
+        .route(
+            "/v1/explore/search",
+            post(discover::handler::discover_search_handler),
+        )
         .route("/v1/catalog/schema", get(catalog_handler::schema_handler))
         .with_state(state.clone())
         .merge(dash_read_router)
+        .merge(views_read_router)
         .merge(graph_handler::graph_router(state))
         .layer(SetRequestIdLayer::new(
             REQUEST_ID_HEADER.clone(),
@@ -137,6 +157,35 @@ pub fn dashboards_write_router(catalog: Arc<dyn kyma_core::catalog::Catalog>) ->
         .route(
             "/v1/dashboards/:id",
             axum::routing::patch(update_dashboard).delete(delete_dashboard),
+        )
+        .with_state(state)
+        .layer(SetRequestIdLayer::new(
+            REQUEST_ID_HEADER.clone(),
+            MakeRequestUuid,
+        ))
+        .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER.clone()))
+}
+
+/// Build the Discover saved-views write router — POST, PATCH, DELETE
+/// require `Role::Write`.
+///
+/// Mounts:
+///   POST   /v1/explore/views        — create
+///   PATCH  /v1/explore/views/:id    — update
+///   DELETE /v1/explore/views/:id    — delete
+///
+/// The `GET /v1/explore/views` list endpoint lives on the read-side router
+/// (see [`router`]).
+pub fn discover_views_write_router(pool: Arc<sqlx::PgPool>) -> Router {
+    use discover::saved_views_handler::{
+        create_view, delete_view, update_view, SavedViewsState,
+    };
+    let state = SavedViewsState { pool };
+    Router::new()
+        .route("/v1/explore/views", post(create_view))
+        .route(
+            "/v1/explore/views/:id",
+            axum::routing::patch(update_view).delete(delete_view),
         )
         .with_state(state)
         .layer(SetRequestIdLayer::new(
@@ -208,7 +257,7 @@ struct ErrorDetail<'a> {
     request_id: &'a str,
 }
 
-fn error_response(status: StatusCode, code: &str, message: &str, request_id: &str) -> Response {
+pub(crate) fn error_response(status: StatusCode, code: &str, message: &str, request_id: &str) -> Response {
     ::metrics::counter!("kyma_http_errors_total", "code" => code.to_string()).increment(1);
     (
         status,
@@ -223,7 +272,7 @@ fn error_response(status: StatusCode, code: &str, message: &str, request_id: &st
         .into_response()
 }
 
-fn resolve_query_budget(headers: &HeaderMap) -> kyma_core::query_frontend::QueryBudget {
+pub(crate) fn resolve_query_budget(headers: &HeaderMap) -> kyma_core::query_frontend::QueryBudget {
     let mut b = kyma_core::query_frontend::QueryBudget::default();
     if let Some(v) = headers
         .get("x-kyma-max-wall-clock-ms")
@@ -268,7 +317,7 @@ fn budget_exceeded_response(
     resp
 }
 
-fn extract_request_id(headers: &HeaderMap) -> String {
+pub(crate) fn extract_request_id(headers: &HeaderMap) -> String {
     headers
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())

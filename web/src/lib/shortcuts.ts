@@ -7,7 +7,7 @@ export function useWorkspaceShortcuts(runActive: () => void) {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
       if (e.key === "Enter") { e.preventDefault(); runActive(); }
-      else if (e.key.toLowerCase() === "t") { e.preventDefault(); useWorkspace.getState().newTab({ query: "" }); }
+      else if (e.key.toLowerCase() === "t") { e.preventDefault(); useWorkspace.getState().newTab({ kind: "query" }); }
       else if (e.key.toLowerCase() === "w") {
         e.preventDefault();
         const s = useWorkspace.getState();

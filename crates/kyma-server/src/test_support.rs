@@ -62,11 +62,11 @@ pub async fn seeded_state_empty() -> QueryState {
     let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
     std::env::set_var("KYMA_TEST_DATABASE_URL", &url);
 
-    let catalog: Arc<dyn Catalog> = Arc::new(
-        PostgresCatalog::connect(&url)
-            .await
-            .expect("catalog connect + migrate"),
-    );
+    let pg_catalog = PostgresCatalog::connect(&url)
+        .await
+        .expect("catalog connect + migrate");
+    let pg_pool = Arc::new(pg_catalog.pool().clone());
+    let catalog: Arc<dyn Catalog> = Arc::new(pg_catalog);
 
     let store = Arc::new(InMemory::new());
     let format = Arc::new(TelemetryFormat::new(store, "kyma-test"));
@@ -79,6 +79,7 @@ pub async fn seeded_state_empty() -> QueryState {
         format,
         schema_cache: Arc::new(SchemaCache::default()),
         node_id: None,
+        pg_pool,
     }
 }
 
@@ -114,11 +115,11 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
     let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
     std::env::set_var("KYMA_TEST_DATABASE_URL", &url);
 
-    let catalog: Arc<dyn Catalog> = Arc::new(
-        PostgresCatalog::connect(&url)
-            .await
-            .expect("catalog connect + migrate"),
-    );
+    let pg_catalog = PostgresCatalog::connect(&url)
+        .await
+        .expect("catalog connect + migrate");
+    let pg_pool = Arc::new(pg_catalog.pool().clone());
+    let catalog: Arc<dyn Catalog> = Arc::new(pg_catalog);
 
     // Seed: database "obs" + table "otel_logs" with 3 columns.
     let db_id = catalog
@@ -151,7 +152,46 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
         format,
         schema_cache: Arc::new(SchemaCache::default()),
         node_id: None,
+        pg_pool,
     }
+}
+
+/// Spin up a fresh Postgres via testcontainers and seed it with TWO
+/// databases:
+///
+/// - `obs.otel_logs` (3 columns — see [`seeded_state_with_obs_otel_logs`])
+/// - `stg.http_reqs` (`timestamp`, `status`, `path`)
+///
+/// Both tables are **schema-only** — no rows are ingested. This is enough
+/// for cross-source plan/scope/error assertions in the Discover endpoint
+/// integration tests; the executor still runs end-to-end and emits a
+/// `source_done` per source.
+///
+/// # Panics
+///
+/// Panics on any fixture-setup failure.
+pub async fn seeded_state_two_databases() -> QueryState {
+    let state = seeded_state_with_obs_otel_logs().await;
+    let db_id = state
+        .catalog
+        .create_database("stg")
+        .await
+        .expect("create_database stg");
+    let schema = Arc::new(Schema::new(vec![
+        Field::new(
+            "timestamp",
+            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            false,
+        ),
+        Field::new("status", DataType::Int64, false),
+        Field::new("path", DataType::Utf8, false),
+    ]));
+    state
+        .catalog
+        .create_table(db_id, "http_reqs", schema, TableConfig::default())
+        .await
+        .expect("create_table stg.http_reqs");
+    state
 }
 
 /// Spin up a full HTTP server (query + flight-web routes) against a

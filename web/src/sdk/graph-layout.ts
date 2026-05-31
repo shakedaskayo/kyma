@@ -374,7 +374,96 @@ export function radialLayout(
   return positions;
 }
 
-export type LayoutAlgorithm = "force" | "grid" | "radial";
+/**
+ * Layered (Sugiyama-lite) hierarchical layout — ideal for the code/knowledge
+ * graph, which has a natural top-down structure (Repository → Branch/User/
+ * Directory → CodeFile → CodeFunction/Class/Module).
+ *
+ * Nodes are assigned a depth via BFS from the highest-ranked roots, grouped
+ * into rows by depth, and ordered within each row by the barycenter (mean x)
+ * of their already-placed neighbours to minimise edge crossings.
+ */
+export function hierarchicalLayout(
+  nodes: GraphNode[],
+  relationships: GraphRelationship[],
+  width: number,
+  height: number,
+): Map<string, { x: number; y: number }> {
+  if (nodes.length === 0) return new Map();
+
+  const adj = new Map<string, Set<string>>();
+  nodes.forEach((n) => adj.set(n.id, new Set()));
+  relationships.forEach((r) => {
+    adj.get(r.source_id)?.add(r.target_id);
+    adj.get(r.target_id)?.add(r.source_id);
+  });
+
+  // Lower rank = closer to the top of the hierarchy → preferred BFS root.
+  const ORDER = [
+    "Repository", "Database", "Service", "User", "Branch", "Directory", "Table",
+    "CodeFile", "PullRequest", "Issue", "CodeClass", "CodeFunction", "Module",
+  ];
+  const rankOf = (n: GraphNode) => {
+    const i = ORDER.indexOf(n.labels?.[0] ?? "");
+    return i < 0 ? 50 : i;
+  };
+
+  const depth = new Map<string, number>();
+  const byRank = [...nodes].sort((a, b) => rankOf(a) - rankOf(b));
+  for (const root of byRank) {
+    if (depth.has(root.id)) continue;
+    depth.set(root.id, 0);
+    const queue = [root.id];
+    while (queue.length) {
+      const cur = queue.shift()!;
+      const d = depth.get(cur)!;
+      for (const nb of adj.get(cur) ?? []) {
+        if (!depth.has(nb)) {
+          depth.set(nb, d + 1);
+          queue.push(nb);
+        }
+      }
+    }
+  }
+
+  const layers = new Map<number, string[]>();
+  for (const n of nodes) {
+    const d = depth.get(n.id) ?? 0;
+    (layers.get(d) ?? layers.set(d, []).get(d)!).push(n.id);
+  }
+
+  const depths = [...layers.keys()].sort((a, b) => a - b);
+  const layerGap = Math.max(130, Math.min(220, height / (depths.length + 1)));
+  const pos = new Map<string, { x: number; y: number }>();
+
+  for (const d of depths) {
+    const ids = layers.get(d)!;
+    // Order by barycenter of already-placed neighbours to reduce crossings.
+    const bary = (id: string) => {
+      const xs = [...(adj.get(id) ?? [])]
+        .map((nb) => pos.get(nb)?.x)
+        .filter((x): x is number => x != null);
+      return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : Number.NaN;
+    };
+    ids.sort((a, b) => {
+      const ba = bary(a);
+      const bb = bary(b);
+      if (Number.isNaN(ba) && Number.isNaN(bb)) return a.localeCompare(b);
+      if (Number.isNaN(ba)) return 1;
+      if (Number.isNaN(bb)) return -1;
+      return ba - bb;
+    });
+    const count = ids.length;
+    const gap = Math.max(150, width / (count + 1));
+    const startX = width / 2 - (gap * (count - 1)) / 2;
+    ids.forEach((id, i) => {
+      pos.set(id, { x: startX + i * gap, y: 70 + d * layerGap });
+    });
+  }
+  return pos;
+}
+
+export type LayoutAlgorithm = "tree" | "force" | "grid" | "radial";
 
 /**
  * Dispatch to the appropriate layout algorithm.
@@ -387,13 +476,17 @@ export function computeLayout(
   height: number,
 ): Map<string, { x: number; y: number }> {
   const ids = nodes.map((n) => n.id);
+  const gnodes = nodes as unknown as GraphNode[];
+  const grels = relationships as unknown as GraphRelationship[];
   switch (algorithm) {
     case "grid":
       return gridLayout(ids, width, height);
     case "radial":
       return radialLayout(ids, width, height);
+    case "tree":
+      return hierarchicalLayout(gnodes, grels, width, height);
     case "force":
     default:
-      return forceDirectedLayout(nodes as unknown as GraphNode[], relationships as unknown as GraphRelationship[], width, height);
+      return forceDirectedLayout(gnodes, grels, width, height);
   }
 }

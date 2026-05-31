@@ -32,14 +32,37 @@ fn as_str(v: &serde_json::Value) -> String {
     }
 }
 
+/// A deduplicated node source: one row per node id.
+///
+/// Connector tables are append-only, so a *continuous* connector re-ingests a
+/// fresh row for every node on each poll (metadata is re-emitted even when
+/// unchanged). Without dedup, the graph would render N copies of every node
+/// after N polls. We keep one row per id via a `ROW_NUMBER()` window. There is
+/// no reliable ingest-order column to pick the truly-latest row, so the choice
+/// is deterministic-arbitrary; re-ingested rows are identical in practice.
+fn node_source(c: &StoredGraphConfig) -> String {
+    format!(
+        "(select * from (select *, row_number() over (partition by {id} order by {id}) as __rn from {t}) where __rn = 1)",
+        id = ident(&c.id_col), t = ident(&c.node_table),
+    )
+}
+/// A deduplicated edge source: one row per (src, dst, type), matching the
+/// connector's deterministic edge identity (`hash(src, type, dst)`).
+fn edge_source(c: &StoredGraphConfig) -> String {
+    format!(
+        "(select * from (select *, row_number() over (partition by {s},{d},{ty} order by {s}) as __rn from {t}) where __rn = 1)",
+        s = ident(&c.src_col), d = ident(&c.dst_col), ty = ident(&c.type_col), t = ident(&c.edge_table),
+    )
+}
+
 pub(crate) fn node_sample_sql(c: &StoredGraphConfig, limit: usize) -> String {
-    format!("select * from {} limit {}", ident(&c.node_table), limit)
+    format!("select * from {} limit {}", node_source(c), limit)
 }
 pub(crate) fn edge_sample_sql(c: &StoredGraphConfig, limit: usize) -> String {
-    format!("select * from {} limit {}", ident(&c.edge_table), limit)
+    format!("select * from {} limit {}", edge_source(c), limit)
 }
 pub(crate) fn node_by_id_sql(c: &StoredGraphConfig, id: &str) -> String {
-    format!("select * from {} where {} = {} limit 1", ident(&c.node_table), ident(&c.id_col), lit(id))
+    format!("select * from {} where {} = {} limit 1", node_source(c), ident(&c.id_col), lit(id))
 }
 pub(crate) fn neighbors_sql(c: &StoredGraphConfig, ids: &[String], dir: Direction, limit: usize) -> String {
     let list = in_list(ids);
@@ -48,20 +71,22 @@ pub(crate) fn neighbors_sql(c: &StoredGraphConfig, ids: &[String], dir: Directio
         Direction::Backward => format!("{} in ({list})", ident(&c.dst_col)),
         Direction::Both => format!("{} in ({list}) or {} in ({list})", ident(&c.src_col), ident(&c.dst_col)),
     };
-    format!("select * from {} where {pred} limit {limit}", ident(&c.edge_table))
+    format!("select * from {} where {pred} limit {limit}", edge_source(c))
 }
 pub(crate) fn search_sql(c: &StoredGraphConfig, text: &str, limit: usize, offset: usize) -> String {
     let needle = lit(&format!("%{}%", text.to_lowercase()));
     format!(
         "select * from {t} where lower(cast({id} as varchar)) like {n} or lower(cast({lbl} as varchar)) like {n} limit {limit} offset {offset}",
-        t = ident(&c.node_table), id = ident(&c.id_col), lbl = ident(&c.label_col), n = needle,
+        t = node_source(c), id = ident(&c.id_col), lbl = ident(&c.label_col), n = needle,
     )
 }
-pub(crate) fn count_sql(table: &str) -> String {
-    format!("select count(*) as n from {}", ident(table))
+/// Count rows of an already-built (possibly deduplicated) source expression.
+pub(crate) fn count_sql(source: &str) -> String {
+    format!("select count(*) as n from {}", source)
 }
-pub(crate) fn group_count_sql(table: &str, col: &str) -> String {
-    format!("select cast({c} as varchar) as k, count(*) as n from {t} group by {c}", c = ident(col), t = ident(table))
+/// Group-count over an already-built source expression.
+pub(crate) fn group_count_sql(source: &str, col: &str) -> String {
+    format!("select cast({c} as varchar) as k, count(*) as n from {t} group by {c}", c = ident(col), t = source)
 }
 
 fn parse_labels(v: Option<&serde_json::Value>) -> Vec<String> {
@@ -73,16 +98,88 @@ fn parse_labels(v: Option<&serde_json::Value>) -> Vec<String> {
     }
 }
 
+/// The conventional dynamic-JSON catch-all column (see kyma's default table
+/// schema). Connectors stash entity-specific fields here as a JSON blob.
+const PROPS_COL: &str = "props";
+
+/// Decode an even-length lowercase/uppercase hex string into bytes.
+fn hex_decode(s: &str) -> Option<Vec<u8>> {
+    if s.is_empty() || s.len() % 2 != 0 {
+        return None;
+    }
+    let val = |c: u8| match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    };
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len() / 2);
+    let mut i = 0;
+    while i < b.len() {
+        out.push((val(b[i])? << 4) | val(b[i + 1])?);
+        i += 2;
+    }
+    Some(out)
+}
+
+/// Decode the `props` catch-all blob into an object so its fields surface as
+/// real properties. `ensure_table` types `props` as Binary, so the executor
+/// (arrow-json) renders it as a hex string; we hex-decode → UTF-8 → JSON. Also
+/// handles a Utf8 `props` column whose value is the JSON text directly.
+fn decode_props_blob(v: &serde_json::Value) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let s = v.as_str()?;
+    if let Some(bytes) = hex_decode(s) {
+        if let Ok(txt) = std::str::from_utf8(&bytes) {
+            if let Ok(serde_json::Value::Object(m)) = serde_json::from_str(txt) {
+                return Some(m);
+            }
+        }
+    }
+    if let Ok(serde_json::Value::Object(m)) = serde_json::from_str::<serde_json::Value>(s) {
+        return Some(m);
+    }
+    None
+}
+
+/// Build the property map for a row: explicit (promoted) columns win; the
+/// `props` blob is decoded and merged in to fill any remaining keys. Role
+/// columns and the `__rn` dedup helper are excluded.
+fn collect_props(row: &JsonRow, role_cols: &[&str]) -> Props {
+    let mut props: Props = BTreeMap::new();
+    let mut blob: Option<&serde_json::Value> = None;
+    for (k, v) in row {
+        if role_cols.contains(&k.as_str()) || k == "__rn" {
+            continue;
+        }
+        if k == PROPS_COL {
+            blob = Some(v);
+            continue;
+        }
+        props.insert(k.clone(), v.clone());
+    }
+    if let Some(v) = blob {
+        match decode_props_blob(v) {
+            Some(obj) => {
+                for (pk, pv) in obj {
+                    props.entry(pk).or_insert(pv);
+                }
+            }
+            // Undecodable (not JSON): keep the raw value so nothing is lost.
+            None => {
+                props.insert(PROPS_COL.to_string(), v.clone());
+            }
+        }
+    }
+    props
+}
+
 pub(crate) fn row_to_node(c: &StoredGraphConfig, row: &JsonRow) -> GraphNode {
     let id = row.get(&c.id_col).map(as_str).unwrap_or_default();
     let labels = parse_labels(row.get(&c.label_col));
     let realm = c.realm_col.as_ref().and_then(|rc| row.get(rc)).map(as_str).unwrap_or_else(|| c.database.clone());
     let role_cols: [&str; 3] = [c.id_col.as_str(), c.label_col.as_str(), c.realm_col.as_deref().unwrap_or("")];
-    let mut props: Props = BTreeMap::new();
-    for (k, v) in row {
-        if role_cols.contains(&k.as_str()) { continue; }
-        props.insert(k.clone(), v.clone());
-    }
+    let props = collect_props(row, &role_cols);
     GraphNode {
         id, labels, properties: props,
         metadata: NodeMetadata { created_at: NOW.into(), updated_at: NOW.into(), source_type: Some("stored".into()), source_id: None, realm },
@@ -94,11 +191,7 @@ pub(crate) fn row_to_edge(c: &StoredGraphConfig, row: &JsonRow) -> GraphRelation
     let dst = row.get(&c.dst_col).map(as_str).unwrap_or_default();
     let ty = row.get(&c.type_col).map(as_str).unwrap_or_default();
     let role_cols = [c.src_col.as_str(), c.dst_col.as_str(), c.type_col.as_str()];
-    let mut props: Props = BTreeMap::new();
-    for (k, v) in row {
-        if role_cols.contains(&k.as_str()) { continue; }
-        props.insert(k.clone(), v.clone());
-    }
+    let props = collect_props(row, &role_cols);
     GraphRelationship {
         id: format!("{src}->{dst}:{ty}"),
         source_id: src, target_id: dst, relationship_type: ty, properties: props,
@@ -123,16 +216,16 @@ impl StoredGraphProvider {
 }
 
 async fn stats_for(p: &StoredGraphProvider) -> anyhow::Result<GraphStats> {
-    let total_nodes = StoredGraphProvider::count_of(&p.rows(count_sql(&p.cfg.node_table)).await?);
-    let total_relationships = StoredGraphProvider::count_of(&p.rows(count_sql(&p.cfg.edge_table)).await?);
+    let total_nodes = StoredGraphProvider::count_of(&p.rows(count_sql(&node_source(&p.cfg))).await?);
+    let total_relationships = StoredGraphProvider::count_of(&p.rows(count_sql(&edge_source(&p.cfg))).await?);
     let mut label_counts = BTreeMap::new();
-    for r in p.rows(group_count_sql(&p.cfg.node_table, &p.cfg.label_col)).await? {
+    for r in p.rows(group_count_sql(&node_source(&p.cfg), &p.cfg.label_col)).await? {
         let k = r.get("k").map(as_str).unwrap_or_default();
         let n = r.get("n").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         label_counts.insert(k, n);
     }
     let mut relationship_type_counts = BTreeMap::new();
-    for r in p.rows(group_count_sql(&p.cfg.edge_table, &p.cfg.type_col)).await? {
+    for r in p.rows(group_count_sql(&edge_source(&p.cfg), &p.cfg.type_col)).await? {
         let k = r.get("k").map(as_str).unwrap_or_default();
         let n = r.get("n").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         relationship_type_counts.insert(k, n);
@@ -249,6 +342,34 @@ mod sql_tests {
     }
 
     #[test]
+    fn node_sample_dedups_by_id() {
+        // Append-only connector tables accumulate a fresh row per node on every
+        // poll; the node source must collapse to one row per id.
+        let s = node_sample_sql(&cfg(), 50).to_lowercase();
+        assert!(s.contains("row_number()"), "{s}");
+        assert!(s.contains(r#"partition by "id""#), "{s}");
+        assert!(s.contains("kg_nodes"), "{s}");
+        assert!(s.contains("limit 50"), "{s}");
+    }
+
+    #[test]
+    fn edge_sample_dedups_by_src_dst_type() {
+        let s = edge_sample_sql(&cfg(), 50).to_lowercase();
+        assert!(s.contains("row_number()"), "{s}");
+        assert!(s.contains(r#"partition by "src","dst","type""#), "{s}");
+        assert!(s.contains("kg_edges"), "{s}");
+    }
+
+    #[test]
+    fn count_and_group_count_run_over_deduped_source() {
+        // stats must count distinct ids, not raw rows.
+        let cnt = count_sql(&node_source(&cfg())).to_lowercase();
+        assert!(cnt.contains("count(*)") && cnt.contains("row_number()"), "{cnt}");
+        let grp = group_count_sql(&node_source(&cfg()), &cfg().label_col).to_lowercase();
+        assert!(grp.contains("group by") && grp.contains("row_number()"), "{grp}");
+    }
+
+    #[test]
     fn row_to_node_uses_roles() {
         let mut row = JsonRow::new();
         row.insert("id".into(), serde_json::json!("n1"));
@@ -275,6 +396,56 @@ mod sql_tests {
         assert_eq!(e.target_id, "b");
         assert_eq!(e.relationship_type, "CALLS");
         assert_eq!(e.properties.get("weight").unwrap(), &serde_json::json!(5));
+    }
+
+    #[test]
+    fn hex_decode_round_trips() {
+        // `{"k":"v"}` as lowercase hex.
+        assert_eq!(hex_decode("7b226b223a2276227d").unwrap(), br#"{"k":"v"}"#.to_vec());
+        assert!(hex_decode("abc").is_none(), "odd length");
+        assert!(hex_decode("zz").is_none(), "non-hex");
+    }
+
+    #[test]
+    fn decode_props_blob_handles_hex_and_plain_json() {
+        // Binary props arrives hex-encoded from arrow-json.
+        let hex = serde_json::json!("7b226b223a2276227d");
+        let m = decode_props_blob(&hex).expect("hex json");
+        assert_eq!(m.get("k").unwrap(), &serde_json::json!("v"));
+        // A Utf8 props column arrives as the JSON text directly.
+        let plain = serde_json::json!(r#"{"a":1}"#);
+        assert_eq!(decode_props_blob(&plain).unwrap().get("a").unwrap(), &serde_json::json!(1));
+        // A non-JSON hex string (e.g. a sha) is left undecoded.
+        assert!(decode_props_blob(&serde_json::json!("deadbeef")).is_none());
+    }
+
+    #[test]
+    fn collect_props_merges_blob_and_explicit_wins() {
+        // hex of {"language":"python","name":"blob-name"}
+        let blob = "7b226c616e6775616765223a22707974686f6e222c226e616d65223a22626c6f622d6e616d65227d";
+        let mut row = JsonRow::new();
+        row.insert("id".into(), serde_json::json!("file:1"));
+        row.insert("labels".into(), serde_json::json!("CodeFile"));
+        row.insert("name".into(), serde_json::json!("real-name")); // explicit promoted col
+        row.insert("props".into(), serde_json::json!(blob));
+        row.insert("__rn".into(), serde_json::json!(1)); // dedup helper — excluded
+        let props = collect_props(&row, &["id", "labels"]);
+        // decoded blob field surfaces
+        assert_eq!(props.get("language").unwrap(), &serde_json::json!("python"));
+        // explicit `name` column wins over the blob's `name`
+        assert_eq!(props.get("name").unwrap(), &serde_json::json!("real-name"));
+        // helper + role cols excluded; raw hex `props` not leaked
+        assert!(!props.contains_key("__rn"));
+        assert!(!props.contains_key("props"));
+        assert!(!props.contains_key("id"));
+    }
+
+    #[test]
+    fn collect_props_keeps_undecodable_blob_raw() {
+        let mut row = JsonRow::new();
+        row.insert("props".into(), serde_json::json!("not-json"));
+        let props = collect_props(&row, &[]);
+        assert_eq!(props.get("props").unwrap(), &serde_json::json!("not-json"));
     }
 }
 

@@ -1,14 +1,21 @@
-//! HTTP handlers for the login / me / logout auth surface.
+//! HTTP handlers for the login / refresh / me / logout auth surface.
+//!
+//! Sessions use short-lived **access** tokens + long-lived **refresh** tokens,
+//! both grouped by a `session_id`. The client authenticates API calls with the
+//! access token and silently exchanges the refresh token for a new pair when it
+//! nears expiry (refresh-token rotation). Logout revokes the whole session.
+//! Refresh tokens are barred from authenticating ordinary API requests.
 //!
 //! # Routes
 //!
 //! ## Unauthenticated (mount via [`auth_login_router`])
-//! - `POST /v1/auth/login` — username + password → session token.
+//! - `POST /v1/auth/login` — username + password → access+refresh pair.
+//! - `POST /v1/auth/refresh` — refresh token → rotated access+refresh pair.
 //!
 //! ## Authenticated (mount via [`auth_session_router`], wrapped with
 //!   `require_role_middleware` at `Role::Read`)
 //! - `GET /v1/auth/me` — return the current principal.
-//! - `POST /v1/auth/logout` — revoke the session token.
+//! - `POST /v1/auth/logout` — revoke the whole session.
 
 use crate::auth::{hash_token, Principal};
 use axum::{
@@ -44,11 +51,81 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RefreshRequest {
+    pub refresh_token: String,
+}
+
+/// Response for both login and refresh: a fresh access+refresh token pair.
 #[derive(Debug, Serialize)]
-pub struct LoginResponse {
-    pub token: String,
+pub struct TokenPairResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub access_expires_at: chrono::DateTime<Utc>,
+    pub refresh_expires_at: chrono::DateTime<Utc>,
     pub user: UserInfo,
-    pub expires_at: chrono::DateTime<Utc>,
+}
+
+/// Access-token lifetime. Short by design — the client silently refreshes.
+/// Overridable via `KYMA_ACCESS_TTL_SECS` (default 3600 = 1h).
+fn access_ttl() -> Duration {
+    std::env::var("KYMA_ACCESS_TTL_SECS")
+        .ok()
+        .and_then(|s| s.parse::<i64>().ok())
+        .map(Duration::seconds)
+        .unwrap_or_else(|| Duration::hours(1))
+}
+
+/// Refresh-token lifetime (the effective max session age before re-login).
+/// Overridable via `KYMA_REFRESH_TTL_SECS` (default 2592000 = 30d).
+fn refresh_ttl() -> Duration {
+    std::env::var("KYMA_REFRESH_TTL_SECS")
+        .ok()
+        .and_then(|s| s.parse::<i64>().ok())
+        .map(Duration::seconds)
+        .unwrap_or_else(|| Duration::days(30))
+}
+
+/// Mint a random URL-safe token; returns `(raw_token, sha256_hash)`.
+fn mint_token() -> (String, Vec<u8>) {
+    let mut raw_bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut raw_bytes);
+    use base64::Engine as _;
+    let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw_bytes);
+    let hash = hash_token(&raw);
+    (raw, hash)
+}
+
+/// Issue + persist an access+refresh pair for a login session.
+async fn issue_token_pair(
+    catalog: &dyn Catalog,
+    session_id: uuid::Uuid,
+    role: &str,
+    subject: &str,
+) -> std::result::Result<TokenPairResponse, String> {
+    let now = Utc::now();
+    let access_expires_at = now + access_ttl();
+    let refresh_expires_at = now + refresh_ttl();
+
+    let (access_raw, access_hash) = mint_token();
+    let (refresh_raw, refresh_hash) = mint_token();
+
+    catalog
+        .insert_session_token(&access_hash, role, Some(subject), "access", access_expires_at, session_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    catalog
+        .insert_session_token(&refresh_hash, role, Some(subject), "refresh", refresh_expires_at, session_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(TokenPairResponse {
+        access_token: access_raw,
+        refresh_token: refresh_raw,
+        access_expires_at,
+        refresh_expires_at,
+        user: UserInfo { username: subject.to_string(), role: role.to_string() },
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -119,43 +196,42 @@ async fn login_handler(
         return unauthorized_response();
     }
 
-    // Generate a 32-byte random session token.
-    let mut raw_bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut raw_bytes);
-    // base64url-encode (no padding) for a URL-safe, human-copyable token.
-    use base64::Engine as _;
-    let raw_token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw_bytes);
+    // Mint a fresh login session: an access + refresh token pair grouped by a
+    // new session_id so logout/refresh can act on the whole session.
+    let session_id = uuid::Uuid::new_v4();
+    match issue_token_pair(state.catalog.as_ref(), session_id, &user.role, &user.username).await {
+        Ok(pair) => (StatusCode::OK, Json(pair)).into_response(),
+        Err(e) => internal_error_response(&e),
+    }
+}
 
-    // Store the SHA-256 hash.
-    let token_hash = hash_token(&raw_token);
-    let expires_at = Utc::now() + Duration::days(30);
+/// `POST /v1/auth/refresh` — exchange a valid refresh token for a rotated pair.
+///
+/// Unauthenticated route: the refresh token itself is the credential. On
+/// success the presented refresh token is revoked (rotation) and a new
+/// access+refresh pair is issued within the same session.
+async fn refresh_handler(
+    State(state): State<AuthState>,
+    Json(body): Json<RefreshRequest>,
+) -> Response {
+    let presented_hash = hash_token(body.refresh_token.trim());
 
-    if let Err(e) = state
-        .catalog
-        .insert_api_token(
-            &token_hash,
-            &user.role,
-            Some(&user.username),
-            "session",
-            Some(expires_at),
-        )
-        .await
-    {
+    let claim = match state.catalog.lookup_refresh_token(&presented_hash).await {
+        Ok(Some(c)) => c,
+        Ok(None) => return unauthorized_response(),
+        Err(e) => return internal_error_response(&e.to_string()),
+    };
+
+    // Rotate: revoke the presented refresh token so it can't be replayed.
+    if let Err(e) = state.catalog.revoke_api_token(&presented_hash).await {
         return internal_error_response(&e.to_string());
     }
 
-    (
-        StatusCode::OK,
-        Json(LoginResponse {
-            token: raw_token,
-            user: UserInfo {
-                username: user.username,
-                role: user.role,
-            },
-            expires_at,
-        }),
-    )
-        .into_response()
+    let subject = claim.subject.clone().unwrap_or_default();
+    match issue_token_pair(state.catalog.as_ref(), claim.session_id, &claim.role, &subject).await {
+        Ok(pair) => (StatusCode::OK, Json(pair)).into_response(),
+        Err(e) => internal_error_response(&e),
+    }
 }
 
 /// `GET /v1/auth/me` — return the current principal (injected by middleware).
@@ -184,8 +260,10 @@ async fn logout_handler(State(state): State<AuthState>, req: Request) -> Respons
         return (StatusCode::BAD_REQUEST, "missing Authorization header").into_response();
     };
 
+    // Revoke the whole session (this access token + its paired refresh token),
+    // so a stolen refresh token can't outlive an explicit logout.
     let hash = hash_token(token);
-    match state.catalog.revoke_api_token(&hash).await {
+    match state.catalog.revoke_session_by_token(&hash).await {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => internal_error_response(&e.to_string()),
     }
@@ -203,6 +281,7 @@ pub fn auth_login_router(catalog: Arc<dyn Catalog>) -> Router {
     let state = AuthState { catalog };
     Router::new()
         .route("/v1/auth/login", post(login_handler))
+        .route("/v1/auth/refresh", post(refresh_handler))
         .with_state(state)
 }
 

@@ -5,7 +5,8 @@ import { useSession } from "@/sdk/session";
 export const Route = createFileRoute("/_app")({
   beforeLoad: ({ location }) => {
     const s = useSession.getState();
-    if (!s.isConfigured() && location.pathname !== "/login") {
+    // Require an authenticated session — no guest/anonymous access.
+    if (!s.isAuthenticated() && location.pathname !== "/login") {
       throw redirect({ to: "/login", search: { next: location.pathname } });
     }
   },

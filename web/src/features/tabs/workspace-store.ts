@@ -1,7 +1,19 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
+import type { DiscoverTabState } from "../discover/discover-store";
+import { initialDiscoverTabState } from "../discover/discover-store";
 
-export type TimeRangePreset = "5m" | "15m" | "1h" | "6h" | "24h" | "7d" | "30d" | "custom";
+// Defensive storage: tests run under jsdom but the persist middleware may grab
+// `localStorage` before jsdom finishes wiring it. Wrap with a no-op fallback so
+// the store doesn't throw on `set` when storage is unavailable.
+const noopStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+};
+
+export type TimeRangePreset =
+  | "5m" | "15m" | "1h" | "6h" | "24h" | "7d" | "30d" | "custom";
 export type TimeRange = { preset: TimeRangePreset; from?: string; to?: string };
 
 export type ResultsState =
@@ -14,8 +26,7 @@ export type ChartConfig = {
   override?: { type: "line" | "bar" | "scatter" | "stat"; x?: string; y?: string };
 };
 
-export type Tab = {
-  id: string;
+export type QueryTabState = {
   title: string;
   query: string;
   timeRange: TimeRange;
@@ -24,25 +35,79 @@ export type Tab = {
   submittedQuery: string | null;
 };
 
-export function isTabDirty(tab: Tab): boolean {
-  return tab.submittedQuery !== null && tab.submittedQuery !== tab.query;
+export type Tab =
+  | { id: string; kind: "query"; state: QueryTabState }
+  | { id: string; kind: "discover"; state: DiscoverTabState };
+
+export type QueryTab = Extract<Tab, { kind: "query" }>;
+export type DiscoverTab = Extract<Tab, { kind: "discover" }>;
+
+export function isQueryTabDirty(t: QueryTab): boolean {
+  return t.state.submittedQuery !== null && t.state.submittedQuery !== t.state.query;
 }
+
+// Compatibility wrapper used by TabBar — only query tabs can be "dirty".
+export function isTabDirty(t: Tab): boolean {
+  return t.kind === "query" && isQueryTabDirty(t);
+}
+
+const DEFAULT_RANGE: TimeRange = { preset: "1h" };
+
+// Exported so tests can verify the v1→v2 transformation as a pure function
+// without touching real localStorage / persist middleware machinery.
+export function migrateWorkspace(persisted: unknown, fromVersion: number): unknown {
+  const p = persisted as { state?: { tabs?: unknown[] } } | null;
+  if (!p?.state?.tabs) return persisted;
+  if (fromVersion < 2) {
+    p.state.tabs = p.state.tabs.map((oldRaw) => {
+      const old = oldRaw as {
+        id?: string; title?: string; query?: string;
+        timeRange?: TimeRange; results?: ResultsState;
+        chart?: ChartConfig; submittedQuery?: string | null;
+      };
+      return {
+        id: old.id ?? crypto.randomUUID(),
+        kind: "query" as const,
+        state: {
+          title: old.title ?? "query",
+          query: old.query ?? "",
+          timeRange: old.timeRange ?? DEFAULT_RANGE,
+          results: old.results ?? { kind: "idle" },
+          chart: old.chart ?? {},
+          submittedQuery: old.submittedQuery ?? null,
+        },
+      };
+    });
+  }
+  return persisted;
+}
+
+function defaultQueryState(idx: number): QueryTabState {
+  return {
+    title: `query ${idx}`,
+    query: "",
+    timeRange: DEFAULT_RANGE,
+    results: { kind: "idle" },
+    chart: {},
+    submittedQuery: null,
+  };
+}
+
+type NewTabSeed =
+  | { kind?: "query"; state?: Partial<QueryTabState> }
+  | { kind: "discover"; state?: Partial<DiscoverTabState> };
 
 type Store = {
   tabs: Tab[];
   activeId: string | null;
-  newTab: (seed?: Partial<Tab>) => string;
+  newTab: (seed?: NewTabSeed) => string;
   closeTab: (id: string) => void;
   setActive: (id: string) => void;
-  setQuery: (id: string, q: string) => void;
-  setTimeRange: (id: string, r: TimeRange) => void;
-  setResults: (id: string, r: ResultsState) => void;
-  setChart: (id: string, c: ChartConfig) => void;
-  markSubmitted: (id: string, query: string) => void;
+  updateQuery: (id: string, patch: Partial<QueryTabState>) => void;
+  updateDiscover: (id: string, next: DiscoverTabState) => void;
+  patchDiscover: (id: string, patch: Partial<DiscoverTabState>) => void;
   resetAll: () => void;
 };
-
-const DEFAULT_RANGE: TimeRange = { preset: "1h" };
 
 export const useWorkspace = create<Store>()(
   persist(
@@ -51,10 +116,26 @@ export const useWorkspace = create<Store>()(
       activeId: null,
       newTab: (seed) => {
         const id = crypto.randomUUID();
-        const tab: Tab = {
-          id, title: `query ${get().tabs.length + 1}`, query: "", timeRange: DEFAULT_RANGE,
-          results: { kind: "idle" }, chart: {}, submittedQuery: null, ...seed,
-        };
+        const idx = get().tabs.length + 1;
+        const kind = seed?.kind ?? "discover";
+        const tab: Tab =
+          kind === "query"
+            ? {
+                id,
+                kind: "query",
+                state: {
+                  ...defaultQueryState(idx),
+                  ...((seed?.state ?? {}) as Partial<QueryTabState>),
+                },
+              }
+            : {
+                id,
+                kind: "discover",
+                state: {
+                  ...initialDiscoverTabState(),
+                  ...((seed?.state ?? {}) as Partial<DiscoverTabState>),
+                },
+              };
         set({ tabs: [...get().tabs, tab], activeId: id });
         return id;
       },
@@ -64,23 +145,65 @@ export const useWorkspace = create<Store>()(
         set({ tabs, activeId });
       },
       setActive: (id) => set({ activeId: id }),
-      setQuery: (id, query) => set({
-        tabs: get().tabs.map((t) => (t.id === id ? { ...t, query } : t)),
-      }),
-      setTimeRange: (id, timeRange) => set({
-        tabs: get().tabs.map((t) => (t.id === id ? { ...t, timeRange } : t)),
-      }),
-      setResults: (id, results) => set({
-        tabs: get().tabs.map((t) => (t.id === id ? { ...t, results } : t)),
-      }),
-      setChart: (id, chart) => set({
-        tabs: get().tabs.map((t) => (t.id === id ? { ...t, chart } : t)),
-      }),
-      markSubmitted: (id, query) => set({
-        tabs: get().tabs.map((t) => (t.id === id ? { ...t, submittedQuery: query } : t)),
-      }),
+      updateQuery: (id, patch) =>
+        set({
+          tabs: get().tabs.map((t) =>
+            t.id === id && t.kind === "query"
+              ? { ...t, state: { ...t.state, ...patch } }
+              : t,
+          ),
+        }),
+      updateDiscover: (id, next) =>
+        set({
+          tabs: get().tabs.map((t) =>
+            t.id === id && t.kind === "discover"
+              ? { ...t, state: next }
+              : t,
+          ),
+        }),
+      patchDiscover: (id, patch) =>
+        set({
+          tabs: get().tabs.map((t) =>
+            t.id === id && t.kind === "discover"
+              ? { ...t, state: { ...t.state, ...patch } }
+              : t,
+          ),
+        }),
       resetAll: () => set({ tabs: [], activeId: null }),
     }),
-    { name: "kyma.workspace" },
+    {
+      name: "kyma.workspace",
+      version: 2,
+      storage: createJSONStorage(() =>
+        typeof window !== "undefined" && window.localStorage
+          ? window.localStorage
+          : noopStorage,
+      ),
+      migrate: (persisted, fromVersion) => migrateWorkspace(persisted, fromVersion),
+      // Discover results.sources is a Map and the rows can be arbitrarily large.
+      // Strip transient results on persist; rehydrate to idle.
+      partialize: (s) => ({
+        tabs: s.tabs.map((t) =>
+          t.kind === "discover"
+            ? {
+                ...t,
+                state: {
+                  ...t.state,
+                  results: { status: "idle" as const, sources: new Map() },
+                },
+              }
+            : t,
+        ),
+        activeId: s.activeId,
+      }),
+      onRehydrateStorage: () => (s) => {
+        if (!s) return;
+        for (const t of s.tabs) {
+          if (t.kind === "discover") {
+            t.state.results = { status: "idle", sources: new Map() };
+          }
+        }
+      },
+    },
   ),
 );

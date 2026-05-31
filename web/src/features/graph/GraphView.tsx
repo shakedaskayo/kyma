@@ -19,9 +19,17 @@ export function GraphView() {
   const hoveredNodeId = useGraphStore((s) => s.hoveredNodeId);
   const hoverNode = useGraphStore((s) => s.hoverNode);
   const labelFilter = useGraphStore((s) => s.labelFilter);
-  const setLabelFilter = useGraphStore((s) => s.setLabelFilter);
+  const relTypeFilter = useGraphStore((s) => s.relTypeFilter);
+  const setRelTypeFilter = useGraphStore((s) => s.setRelTypeFilter);
+  const hiddenLabels = useGraphStore((s) => s.hiddenLabels);
+  const toggleHiddenLabel = useGraphStore((s) => s.toggleHiddenLabel);
+  const setHiddenLabels = useGraphStore((s) => s.setHiddenLabels);
+  const showEdgeLabels = useGraphStore((s) => s.showEdgeLabels);
+  const toggleEdgeLabels = useGraphStore((s) => s.toggleEdgeLabels);
 
-  const overview = useGraphOverview(graph);
+  // Fetch the whole graph (raised cap) so nothing is silently dropped; large
+  // graphs are made readable via per-type visibility, not by truncation.
+  const overview = useGraphOverview(graph, undefined, 6000);
   const expand = useExpandNeighbors(graph);
   const graphList = useGraphList();
   const { endpoint, token } = useSession();
@@ -33,10 +41,38 @@ export function GraphView() {
     if (overview.data) {
       setNodes(overview.data.nodes);
       setEdges(overview.data.edges);
+      // On a big graph, hide the dominant (densest) node type by default so the
+      // structural skeleton is readable; the user toggles it back on in the
+      // legend. Only auto-set once per graph load (when nothing is hidden yet).
+      const n = overview.data.nodes.length;
+      if (n > 160) {
+        // Big graph: default to the structural skeleton (repo → dirs → files,
+        // services/tables) and hide the dense detail types (functions, classes,
+        // modules, PRs, issues). The user reveals them via the legend toggles or
+        // by expanding a node — progressive disclosure instead of a hairball.
+        const STRUCTURAL = new Set([
+          "Repository", "Directory", "CodeFile", "Branch", "User", "Table", "Service", "Database",
+        ]);
+        const all = Object.keys(overview.data.stats?.label_counts ?? {});
+        setHiddenLabels(all.filter((l) => !STRUCTURAL.has(l)));
+      } else {
+        setHiddenLabels([]);
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overview.data]);
 
   const nodesById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+
+  // Apply per-type visibility before handing nodes/edges to the canvas.
+  const visNodes = useMemo(
+    () => nodes.filter((n) => !hiddenLabels.includes(n.labels[0] ?? "")),
+    [nodes, hiddenLabels],
+  );
+  const visEdges = useMemo(() => {
+    const ids = new Set(visNodes.map((n) => n.id));
+    return edges.filter((e) => ids.has(e.source_id) && ids.has(e.target_id));
+  }, [edges, visNodes]);
 
   async function handleExpand(id: string) {
     const exp = await expand([id], "both");
@@ -100,24 +136,41 @@ export function GraphView() {
           </div>
         )}
         <GraphCanvas
-          nodes={nodes}
-          edges={edges}
+          nodes={visNodes}
+          edges={visEdges}
           layout={layout}
           selectedNodeId={selectedNodeId}
           hoveredNodeId={hoveredNodeId}
           labelFilter={labelFilter}
+          relTypeFilter={relTypeFilter}
+          showEdgeLabels={showEdgeLabels}
           onNodeClick={(id) => selectNode(id === "" ? null : id)}
           onNodeHover={hoverNode}
         />
+        {/* showing X of Y nodes */}
+        {nodes.length > 0 && (
+          <div className="pointer-events-none absolute left-3 bottom-3 z-20 rounded-md border border-border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur">
+            {visNodes.length === nodes.length
+              ? `${nodes.length} nodes · ${visEdges.length} edges`
+              : `${visNodes.length} of ${nodes.length} nodes shown`}
+          </div>
+        )}
         <div className="pointer-events-none absolute right-3 top-3 z-20">
           <GraphLegend
             stats={overview.data?.stats}
-            activeLabel={labelFilter}
-            onLabelClick={(l) => setLabelFilter(l === labelFilter ? null : l)}
+            hiddenLabels={hiddenLabels}
+            onToggleLabel={toggleHiddenLabel}
+            activeRel={relTypeFilter}
+            onRelClick={(r) => setRelTypeFilter(r === relTypeFilter ? null : r)}
           />
         </div>
         <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 -translate-x-1/2">
-          <CanvasToolbar layout={layout} onLayoutChange={setLayout} />
+          <CanvasToolbar
+            layout={layout}
+            onLayoutChange={setLayout}
+            showEdgeLabels={showEdgeLabels}
+            onToggleEdgeLabels={toggleEdgeLabels}
+          />
         </div>
       </div>
       {selectedNode && (

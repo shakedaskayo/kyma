@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Compass, Settings as Gear, FilePlus, Play } from "lucide-react";
+import { Search, Code, Settings as Gear, FilePlus, Play } from "lucide-react";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useWorkspace } from "@/features/tabs/workspace-store";
 
@@ -37,7 +37,7 @@ export function CommandPalette({ onRun }: { onRun: () => void }) {
           </CommandItem>
           <CommandItem
             onSelect={() => {
-              useWorkspace.getState().newTab({ query: "" });
+              useWorkspace.getState().newTab({ kind: "query" });
               close();
             }}
           >
@@ -47,15 +47,23 @@ export function CommandPalette({ onRun }: { onRun: () => void }) {
         <CommandGroup heading="Navigate">
           <CommandItem
             onSelect={() => {
-              navigate({ to: "/explore", search: { q: undefined } });
+              navigate({ to: "/discover" });
               close();
             }}
           >
-            <Compass className="mr-2 h-4 w-4" /> Explore
+            <Search className="mr-2 h-4 w-4" /> Discover
           </CommandItem>
           <CommandItem
             onSelect={() => {
-              navigate({ to: "/settings", search: { next: "/explore" } });
+              navigate({ to: "/query", search: { q: undefined } });
+              close();
+            }}
+          >
+            <Code className="mr-2 h-4 w-4" /> Query Editor
+          </CommandItem>
+          <CommandItem
+            onSelect={() => {
+              navigate({ to: "/settings", search: { next: "/discover" } });
               close();
             }}
           >

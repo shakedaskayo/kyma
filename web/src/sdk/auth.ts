@@ -7,10 +7,13 @@ export interface AuthUser {
   role: string;
 }
 
-export interface LoginResult {
-  token: string;
+/** Access + refresh token pair returned by login and refresh. */
+export interface TokenPair {
+  access_token: string;
+  refresh_token: string;
+  access_expires_at: string;
+  refresh_expires_at: string;
   user: AuthUser;
-  expires_at?: string;
 }
 
 function base(endpoint: string): string {
@@ -47,13 +50,29 @@ export async function login(args: {
   endpoint: string;
   username: string;
   password: string;
-}): Promise<LoginResult> {
+}): Promise<TokenPair> {
   const res = await fetch(`${base(args.endpoint)}/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ username: args.username, password: args.password }),
   });
-  return handleResponse<LoginResult>(res);
+  return handleResponse<TokenPair>(res);
+}
+
+/**
+ * POST /v1/auth/refresh — exchange a refresh token for a rotated pair.
+ * Unauthenticated (the refresh token is the credential). Throws on 401.
+ */
+export async function refresh(args: {
+  endpoint: string;
+  refreshToken: string;
+}): Promise<TokenPair> {
+  const res = await fetch(`${base(args.endpoint)}/v1/auth/refresh`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ refresh_token: args.refreshToken }),
+  });
+  return handleResponse<TokenPair>(res);
 }
 
 /**

@@ -13,6 +13,8 @@ pub mod runner;
 pub mod scheduler;
 pub mod secrets;
 pub mod types;
+#[cfg(feature = "github")]
+pub mod github;
 
 pub use types::{
     ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, DriveModel, GraphHint,

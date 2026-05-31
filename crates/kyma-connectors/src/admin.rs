@@ -344,6 +344,23 @@ async fn trigger(
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
     let now_ms = chrono::Utc::now().timestamp_millis();
-    let _ = catalog_sql::enqueue_tick(s.catalog.pool(), tenant, id, now_ms).await;
+    // Align the manual trigger to the scheduler's time-bucket so it dedups
+    // (ON CONFLICT DO NOTHING) with any pending/just-run scheduled tick. Without
+    // this a trigger enqueues a *separate* task that the SKIP-LOCKED workers run
+    // concurrently with the scheduled tick — both re-parse + re-emit the code
+    // graph before either persists the cursor (read-dedup hides it, but the
+    // append-only tables grow). One task per bucket keeps ingestion idempotent.
+    let schedule_ms: i64 = sqlx::query_scalar(
+        "SELECT schedule_ms FROM connectors WHERE tenant_id = $1 AND id = $2",
+    )
+    .bind(tenant.as_uuid())
+    .bind(id)
+    .fetch_optional(s.catalog.pool())
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(0);
+    let key = if schedule_ms > 0 { (now_ms / schedule_ms) * schedule_ms } else { now_ms };
+    let _ = catalog_sql::enqueue_tick(s.catalog.pool(), tenant, id, key).await;
     StatusCode::ACCEPTED
 }
