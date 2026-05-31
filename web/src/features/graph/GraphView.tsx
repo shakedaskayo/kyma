@@ -1,188 +1,234 @@
 import { useEffect, useMemo, useState } from "react";
 import { Network } from "lucide-react";
 import { useGraphStore } from "./graph-store";
-import { useGraphOverview, useExpandNeighbors, useGraphList } from "./useGraph";
-import { getNode, type GraphNode, type GraphRelationship } from "@/sdk/graph";
+import {
+  useUnifiedGraph,
+  useAllDatabaseGraphs,
+  graphKey,
+  type GraphCoord,
+} from "./useGraph";
+import {
+  expandNeighbors,
+  getNode,
+  type GraphNode,
+  type GraphRelationship,
+} from "@/sdk/graph";
 import { useSession } from "@/sdk/session";
 import { GraphCanvas } from "./GraphCanvas";
-import { NodeDetailPanel } from "./NodeDetailPanel";
-import { GraphLegend } from "./GraphLegend";
-import { CanvasToolbar } from "./CanvasToolbar";
+import { GraphSidebar } from "./GraphSidebar";
 
+/**
+ * Cross-database unified graph view. Always merges every (database, graph)
+ * pair into one canvas — the global database switcher does not constrain
+ * this view. UI is intentionally distinct from the rest of the app: dark
+ * canvas + 320px right sidebar, modeled on safishamsi/graphify.
+ */
 export function GraphView() {
   const graph = useGraphStore((s) => s.graph);
   const setGraph = useGraphStore((s) => s.setGraph);
-  const layout = useGraphStore((s) => s.layout);
-  const setLayout = useGraphStore((s) => s.setLayout);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const selectNode = useGraphStore((s) => s.selectNode);
-  const hoveredNodeId = useGraphStore((s) => s.hoveredNodeId);
   const hoverNode = useGraphStore((s) => s.hoverNode);
   const labelFilter = useGraphStore((s) => s.labelFilter);
-  const relTypeFilter = useGraphStore((s) => s.relTypeFilter);
-  const setRelTypeFilter = useGraphStore((s) => s.setRelTypeFilter);
   const hiddenLabels = useGraphStore((s) => s.hiddenLabels);
-  const toggleHiddenLabel = useGraphStore((s) => s.toggleHiddenLabel);
-  const setHiddenLabels = useGraphStore((s) => s.setHiddenLabels);
+  const hiddenNamespaces = useGraphStore((s) => s.hiddenNamespaces);
+  const setHiddenNamespaces = useGraphStore((s) => s.setHiddenNamespaces);
   const showEdgeLabels = useGraphStore((s) => s.showEdgeLabels);
-  const toggleEdgeLabels = useGraphStore((s) => s.toggleEdgeLabels);
+  const showMiniMap = useGraphStore((s) => s.showMiniMap);
+  const setShowMiniMap = useGraphStore((s) => s.setShowMiniMap);
+  const layout = useGraphStore((s) => s.layout);
 
-  // Fetch the whole graph (raised cap) so nothing is silently dropped; large
-  // graphs are made readable via per-type visibility, not by truncation.
-  const overview = useGraphOverview(graph, undefined, 6000);
-  const expand = useExpandNeighbors(graph);
-  const graphList = useGraphList();
   const { endpoint, token } = useSession();
+  const allGraphs = useAllDatabaseGraphs();
+
+  const coords: GraphCoord[] = useMemo(
+    () => allGraphs.data ?? [],
+    [allGraphs.data],
+  );
+  const namespaceKeys = useMemo(() => coords.map(graphKey), [coords]);
+  const namespaceKeysStr = namespaceKeys.join(",");
+  // Lower default cap per namespace — the cross-DB unified view is wide
+  // (many namespaces), so per-namespace fetches should be lean. Drill-down
+  // via the sidebar focus picker still gets the full graph.
+  const unified = useUnifiedGraph(coords, 800);
+
+  // When the set of graphs changes (new connector, new DB, first load):
+  // recover a stale focus selection, and default to hiding `schema`
+  // namespaces when real stored graphs exist (schemas are table-level noise
+  // when there's ingested content). Also disable the minimap if the unified
+  // payload is huge — it becomes a soup of dots otherwise.
+  useEffect(() => {
+    if (namespaceKeys.length === 0) return;
+    if (graph !== "all" && !namespaceKeys.includes(graph)) setGraph("all");
+    const hasStored = coords.some((c) => c.kind === "stored");
+    setHiddenNamespaces(
+      hasStored ? namespaceKeys.filter((k) => k.endsWith("/schema")) : [],
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [namespaceKeysStr]);
 
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [edges, setEdges] = useState<GraphRelationship[]>([]);
 
+  // Seed local state from the streaming hook — `unified.data` updates as
+  // each namespace lands, so the canvas grows progressively.
   useEffect(() => {
-    if (overview.data) {
-      setNodes(overview.data.nodes);
-      setEdges(overview.data.edges);
-      // On a big graph, hide the dominant (densest) node type by default so the
-      // structural skeleton is readable; the user toggles it back on in the
-      // legend. Only auto-set once per graph load (when nothing is hidden yet).
-      const n = overview.data.nodes.length;
-      if (n > 160) {
-        // Big graph: default to the structural skeleton (repo → dirs → files,
-        // services/tables) and hide the dense detail types (functions, classes,
-        // modules, PRs, issues). The user reveals them via the legend toggles or
-        // by expanding a node — progressive disclosure instead of a hairball.
-        const STRUCTURAL = new Set([
-          "Repository", "Directory", "CodeFile", "Branch", "User", "Table", "Service", "Database",
-        ]);
-        const all = Object.keys(overview.data.stats?.label_counts ?? {});
-        setHiddenLabels(all.filter((l) => !STRUCTURAL.has(l)));
-      } else {
-        setHiddenLabels([]);
-      }
+    if (unified.data) {
+      setNodes(unified.data.nodes);
+      setEdges(unified.data.edges);
     }
+  }, [unified.data]);
+
+  // Auto-disable the minimap on huge unified graphs — it stops being a
+  // useful overview and starts being a noisy soup.
+  useEffect(() => {
+    if (nodes.length > 800 && showMiniMap) setShowMiniMap(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overview.data]);
+  }, [nodes.length > 800]);
 
-  const nodesById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+  // Composite id helper — keep canvas/selection/lookup uniformly namespaced
+  // so id collisions across databases don't clash.
+  const keyOf = (n: { id: string; namespace?: string }) =>
+    `${n.namespace ?? ""}::${n.id}`;
 
-  // Apply per-type visibility before handing nodes/edges to the canvas.
+  const nodesByCompositeId = useMemo(
+    () => new Map(nodes.map((n) => [keyOf(n), n])),
+    [nodes],
+  );
+
+  const activeNamespaces = useMemo(() => {
+    if (graph !== "all" && namespaceKeys.includes(graph)) return new Set([graph]);
+    return new Set(namespaceKeys.filter((n) => !hiddenNamespaces.includes(n)));
+  }, [graph, namespaceKeys, hiddenNamespaces]);
+
+  // Apply namespace + label visibility before handing to the canvas. Label-
+  // filter (single-type focus) is handled inside the node component via
+  // dimming, so we don't filter it out here.
+  void labelFilter;
   const visNodes = useMemo(
-    () => nodes.filter((n) => !hiddenLabels.includes(n.labels[0] ?? "")),
-    [nodes, hiddenLabels],
+    () =>
+      nodes.filter(
+        (n) =>
+          activeNamespaces.has(n.namespace ?? "") &&
+          !hiddenLabels.includes(n.labels[0] ?? ""),
+      ),
+    [nodes, activeNamespaces, hiddenLabels],
   );
   const visEdges = useMemo(() => {
-    const ids = new Set(visNodes.map((n) => n.id));
-    return edges.filter((e) => ids.has(e.source_id) && ids.has(e.target_id));
+    const visIds = new Set(visNodes.map(keyOf));
+    return edges.filter(
+      (e) =>
+        visIds.has(`${e.namespace ?? ""}::${e.source_id}`) &&
+        visIds.has(`${e.namespace ?? ""}::${e.target_id}`),
+    );
   }, [edges, visNodes]);
 
-  async function handleExpand(id: string) {
-    const exp = await expand([id], "both");
-    setEdges((prev) => {
-      const seen = new Set(prev.map((e) => e.id));
-      return [...prev, ...exp.edges.filter((e) => !seen.has(e.id))];
+  async function handleExpand() {
+    const node = selectedNodeId ? nodesByCompositeId.get(selectedNodeId) : null;
+    if (!node || !node.namespace || !node.database) return;
+    const ns = node.namespace;
+    const db = node.database;
+    const graphName = ns.slice(db.length + 1);
+    if (!graphName) return;
+    const exp = await expandNeighbors({
+      endpoint,
+      token,
+      database: db,
+      graph: graphName,
+      nodeIds: [node.id],
+      direction: "both",
     });
-    const have = new Set(nodes.map((n) => n.id));
+    setEdges((prev) => {
+      const seen = new Set(prev.map((e) => `${e.namespace ?? ""}::${e.id}`));
+      return [
+        ...prev,
+        ...exp.edges
+          .filter((e) => !seen.has(`${ns}::${e.id}`))
+          .map((e) => ({ ...e, namespace: ns, database: db })),
+      ];
+    });
+    const have = new Set(
+      nodes.filter((n) => n.namespace === ns).map((n) => n.id),
+    );
     const missing = exp.new_node_ids.filter((nid) => !have.has(nid));
     if (missing.length) {
       const fetched = await Promise.all(
-        missing.map((nid) => getNode({ endpoint, token, graph, id: nid }).catch(() => null)),
+        missing.map((nid) =>
+          getNode({ endpoint, token, database: db, graph: graphName, id: nid }).catch(
+            () => null,
+          ),
+        ),
       );
-      const add = fetched.filter((n): n is GraphNode => n != null);
+      const add = fetched
+        .filter((n): n is GraphNode => n != null)
+        .map((n) => ({ ...n, namespace: ns, database: db }));
       if (add.length) {
         setNodes((prev) => {
-          const seen = new Set(prev.map((n) => n.id));
-          return [...prev, ...add.filter((n) => !seen.has(n.id))];
+          const seen = new Set(prev.map((n) => keyOf(n)));
+          return [...prev, ...add.filter((n) => !seen.has(keyOf(n)))];
         });
       }
     }
   }
 
-  const selectedNode = selectedNodeId ? nodesById.get(selectedNodeId) ?? null : null;
+  const selectedNode = selectedNodeId
+    ? nodesByCompositeId.get(selectedNodeId) ?? null
+    : null;
+
+  // Friendly progress text while per-namespace fetches stream in. Once all
+  // settle, this hides itself.
+  const loadingText =
+    unified.progress.total > 0 && unified.progress.settled < unified.progress.total
+      ? `Loading ${unified.progress.settled}/${unified.progress.total}`
+      : null;
 
   return (
-    <div className="relative flex h-full w-full">
+    <div className="flex h-full w-full bg-background">
       <div className="relative flex-1">
-        <div className="pointer-events-auto absolute left-3 top-3 z-20">
-          <select
-            value={graph}
-            onChange={(e) => setGraph(e.target.value)}
-            className="rounded-md border border-border bg-background/90 px-2 py-1 text-xs shadow-sm backdrop-blur focus:outline-none"
-            title="Graph"
-          >
-            {(graphList.data && graphList.data.length > 0
-              ? graphList.data
-              : [{ name: "schema", kind: "schema", description: "" }]
-            ).map((g) => (
-              <option key={g.name} value={g.name}>
-                {g.name}
-                {g.kind === "stored" ? " (stored)" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-        {overview.isLoading && (
+        {unified.isLoading && !unified.progress.hasAny && (
           <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground">
             Loading graph…
           </div>
         )}
-        {overview.isError && (
+        {unified.isError && (
           <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-destructive">
-            Failed to load graph: {(overview.error as Error)?.message}
+            Failed to load graph: {(unified.error as Error)?.message}
           </div>
         )}
-        {!overview.isLoading && !overview.isError && nodes.length === 0 && (
+        {!unified.isLoading && !unified.isError && nodes.length === 0 && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 text-muted-foreground">
             <Network className="h-8 w-8" />
-            <div className="text-sm">No graph data yet — ingest some tables to see the schema graph.</div>
+            <div className="text-sm">
+              No graph data yet — ingest some tables or connect a source to see
+              the graph.
+            </div>
           </div>
         )}
         <GraphCanvas
           nodes={visNodes}
           edges={visEdges}
           layout={layout}
-          selectedNodeId={selectedNodeId}
-          hoveredNodeId={hoveredNodeId}
-          labelFilter={labelFilter}
-          relTypeFilter={relTypeFilter}
           showEdgeLabels={showEdgeLabels}
+          showMiniMap={showMiniMap}
           onNodeClick={(id) => selectNode(id === "" ? null : id)}
           onNodeHover={hoverNode}
         />
-        {/* showing X of Y nodes */}
-        {nodes.length > 0 && (
-          <div className="pointer-events-none absolute left-3 bottom-3 z-20 rounded-md border border-border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur">
-            {visNodes.length === nodes.length
-              ? `${nodes.length} nodes · ${visEdges.length} edges`
-              : `${visNodes.length} of ${nodes.length} nodes shown`}
-          </div>
-        )}
-        <div className="pointer-events-none absolute right-3 top-3 z-20">
-          <GraphLegend
-            stats={overview.data?.stats}
-            hiddenLabels={hiddenLabels}
-            onToggleLabel={toggleHiddenLabel}
-            activeRel={relTypeFilter}
-            onRelClick={(r) => setRelTypeFilter(r === relTypeFilter ? null : r)}
-          />
-        </div>
-        <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 -translate-x-1/2">
-          <CanvasToolbar
-            layout={layout}
-            onLayoutChange={setLayout}
-            showEdgeLabels={showEdgeLabels}
-            onToggleEdgeLabels={toggleEdgeLabels}
-          />
-        </div>
       </div>
-      {selectedNode && (
-        <NodeDetailPanel
-          node={selectedNode}
-          edges={edges}
-          nodesById={nodesById}
-          onClose={() => selectNode(null)}
-          onExpand={handleExpand}
-          onSelect={(id) => selectNode(id)}
-        />
-      )}
+      <GraphSidebar
+        coords={coords}
+        namespaceCounts={unified.data?.namespaceCounts}
+        stats={unified.data?.stats}
+        visibleNodes={visNodes.length}
+        visibleEdges={visEdges.length}
+        totalNodes={nodes.length}
+        totalEdges={edges.length}
+        loadingText={loadingText}
+        selectedNode={selectedNode}
+        nodesByCompositeId={nodesByCompositeId}
+        edges={edges}
+        onSelectComposite={selectNode}
+        onExpand={handleExpand}
+      />
     </div>
   );
 }

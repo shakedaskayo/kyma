@@ -15,6 +15,10 @@ export interface GraphNode {
   labels: string[];
   properties: Props;
   metadata: NodeMetadata;
+  /** Which graph ("namespace") this node was merged from in the unified view. */
+  namespace?: string;
+  /** Database the node lives in — needed for cross-DB unified view (expand, deep-link). */
+  database?: string;
 }
 export interface GraphRelationship {
   id: string;
@@ -22,6 +26,10 @@ export interface GraphRelationship {
   target_id: string;
   relationship_type: string;
   properties: Props;
+  /** Which graph ("namespace") this edge was merged from in the unified view. */
+  namespace?: string;
+  /** Database the edge lives in — needed for cross-DB unified view. */
+  database?: string;
 }
 export interface GraphStats {
   total_nodes: number;

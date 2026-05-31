@@ -5,7 +5,7 @@ beforeEach(() => useGraphStore.getState().reset());
 
 test("default state", () => {
   const s = useGraphStore.getState();
-  expect(s.graph).toBe("schema");
+  expect(s.graph).toBe("all");
   expect(s.layout).toBe("force");
   expect(s.selectedNodeId).toBeNull();
   expect(s.labelFilter).toBeNull();
