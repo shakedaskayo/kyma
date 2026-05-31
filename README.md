@@ -40,6 +40,70 @@ Full docs live at **[getkyma.dev](https://www.getkyma.dev)**.
 
 ---
 
+## See it
+
+![Kyma's Graph Explorer rendering the cross-database unified graph — every database and every property graph on a single canvas, with force/tree/radial/grid layouts, search, namespace filters, and per-node inspector.](docs/images/graph-explorer.png)
+
+The **Graph Explorer** at `/graph` is one of three first-class
+surfaces in the web app:
+
+- **/explore** — KQL/SQL workbench with a streaming results grid,
+  histogram timeline, and per-tab state.
+- **/agent** — the Kyma Agent: pick an LLM provider (Anthropic /
+  OpenAI / Ollama / your local Claude Code OAuth), enable the skills
+  it should use, and ask production questions in English.
+- **/graph** — the cross-database unified graph. Every property
+  graph from every database, merged onto one canvas; the pruning
+  cascade keeps even decade-scale topology queries interactive.
+
+---
+
+## Ask Kyma from any coding agent
+
+Kyma ships a CLI that turns it into a tool any coding assistant
+(Claude Code, Cursor, Aider, Continue, …) can shell out to. Three
+commands and your agent can query production:
+
+```bash
+cargo install --path crates/kyma-cli
+kyma connect http://localhost:8080 --token "<bearer>"
+kyma install-skill --also-link-claude
+
+# Then from your terminal — or from inside Claude Code:
+kyma query "any error logs from prod-api in the last 15 minutes?"
+```
+
+The skill teaches the outer agent *when* to shell out; Kyma's own
+agent loop (with engine + tools + skills + pruning) answers in KQL.
+See [docs/site/agent/](docs/site/agent/index.md) for the full surface.
+
+---
+
+## Connect a GitHub repo in one command
+
+The same CLI provisions and triggers connectors. Token is auto-
+discovered from `$GITHUB_TOKEN`, `$GH_TOKEN`, or `gh auth token`:
+
+```bash
+kyma create-database github
+kyma connector add github shakedaskayo/kyma --start
+# Created connector gh-shakedaskayo-kyma (github) → id=…
+#   database:      github
+#   credential:    …
+#   schedule:      every 300000ms
+#
+# Triggering first run...
+#   [2026-05-31T09:06:58Z] success — last_success_at=…
+```
+
+Two tables (`github_nodes`, `github_edges`) and a property graph
+named `github` are auto-registered. Visit `/graph` to see them.
+GitLab and Bitbucket work the same way — `kyma connector add
+gitlab …` / `kyma connector add bitbucket …`. See
+[docs/site/connectors/github.md](docs/site/connectors/github.md).
+
+---
+
 ## What kyma is
 
 A single unified data engine that:

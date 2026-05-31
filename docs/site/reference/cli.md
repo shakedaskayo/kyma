@@ -108,6 +108,40 @@ kyma connector remove gh-shakedaskayo-kyma
 or the UUID. `--start` triggers an immediate first run after creating
 the connector and polls until the first tick completes (or 30 s).
 
+#### `add` ingestion knobs
+
+For git sources (github / gitlab / bitbucket), all modules are ON by
+default, including **codebase** (the structural code graph). Disable
+with `--no-<module>`:
+
+```bash
+# Metadata only — skip source parsing.
+kyma connector add github my-org/big-repo --no-codebase --start
+
+# Constrain code parsing to two languages, with a tighter file cap.
+kyma connector add github my-org/big-repo \
+  --languages rust,go \
+  --max-files 1000 \
+  --max-bytes 524288 \
+  --exclude 'vendor/**,**/*_test.go,dist/**' \
+  --start
+```
+
+| Flag                  | What it does                                                | Default                                  |
+| --------------------- | ----------------------------------------------------------- | ---------------------------------------- |
+| `--no-repos`          | Skip the repos / projects module.                           | enabled                                  |
+| `--no-branches`       | Skip the branches module.                                   | enabled                                  |
+| `--no-pulls`          | Skip the pulls / MR module.                                 | enabled                                  |
+| `--no-issues`         | Skip the issues module.                                     | enabled                                  |
+| `--no-contributors`   | Skip the contributors / members module.                     | enabled                                  |
+| `--no-codebase`       | Skip the structural code-graph module.                      | **enabled**                              |
+| `--languages a,b,c`   | Restrict code parsing to these languages.                   | rust, python, typescript, javascript, go |
+| `--max-bytes N`       | Skip files larger than N bytes.                             | 1 MiB                                    |
+| `--max-files N`       | Cap on files fetched + parsed per tick.                     | 300                                      |
+| `--exclude 'a,b,c'`   | Glob patterns to skip.                                      | sensible vendor/generated defaults       |
+| `--max-pages N`       | API pages per module per tick (100 items/page).             | 10                                       |
+| `--schedule-ms N`     | Tick interval in milliseconds.                              | 300 000 (5 min)                          |
+
 Token discovery for `connector add` (in order):
 `--token` → `--credential-id` → `$<KIND>_TOKEN` env → `gh auth token`
 shell-out (github only).

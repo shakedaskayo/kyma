@@ -73,40 +73,53 @@ pub(crate) enum IngestOp {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Source {
-    /// GitHub repository — pulls repos, branches, pulls, issues, contributors,
-    /// and (optionally) a code graph parsed from source.
+    /// GitHub repository — ingests metadata (repos, branches, pulls, issues,
+    /// contributors) AND a structural code graph (files, functions, classes,
+    /// calls, imports parsed via tree-sitter). Codebase parsing is ON by
+    /// default — disable with `--no-codebase` for metadata-only.
     Github {
         /// `owner/repo`, e.g. `shakedaskayo/kyma`. Pass multiple comma-separated
         /// to bundle them under one connector.
         repos: String,
         #[command(flatten)]
         common: CommonAdd,
-        /// Pull source files and parse a structural code graph (functions,
-        /// classes, calls, imports). Slower; off by default.
+        #[command(flatten)]
+        modules: ModuleFlags,
+        #[command(flatten)]
+        code: CodeOpts,
+        /// Cap on API pages fetched per module per tick (GitHub serves up to
+        /// 100 items per page).
         #[arg(long)]
-        codebase: bool,
-        /// Comma-separated list of modules to enable. Defaults to
-        /// "repos,branches,pulls,issues,contributors" plus "codebase" if
-        /// `--codebase` is set.
-        #[arg(long)]
-        modules: Option<String>,
+        max_pages: Option<usize>,
     },
-    /// GitLab project.
+    /// GitLab project — metadata (projects, branches, MRs, issues, members)
+    /// plus a code graph (when supported server-side; the `--codebase` flag
+    /// reserves the surface today).
     Gitlab {
         /// `group/project`, e.g. `gitlab-org/gitlab`. Multiple comma-separated OK.
         projects: String,
         #[command(flatten)]
         common: CommonAdd,
+        #[command(flatten)]
+        modules: ModuleFlags,
+        #[command(flatten)]
+        code: CodeOpts,
         /// Self-hosted GitLab API URL. Defaults to https://gitlab.com/api/v4.
         #[arg(long)]
         api_url: Option<String>,
     },
-    /// Bitbucket repository (Bitbucket Cloud).
+    /// Bitbucket repository (Bitbucket Cloud) — metadata plus a code graph
+    /// (when supported server-side; the `--codebase` flag reserves the surface
+    /// today).
     Bitbucket {
         /// `workspace/repo_slug`, e.g. `atlassian/python-bitbucket`. Multiple OK.
         repos: String,
         #[command(flatten)]
         common: CommonAdd,
+        #[command(flatten)]
+        modules: ModuleFlags,
+        #[command(flatten)]
+        code: CodeOpts,
         /// Atlassian username (paired with app-password).
         #[arg(long)]
         username: Option<String>,
@@ -116,6 +129,92 @@ pub(crate) enum Source {
         #[arg(long)]
         app_password: Option<String>,
     },
+}
+
+/// Per-module toggles shared across git sources. All modules are ON by default;
+/// `--no-<module>` disables one (e.g. `--no-codebase` for metadata-only).
+#[derive(Debug, Args)]
+pub(crate) struct ModuleFlags {
+    /// Disable the `repos` (or `projects`) module.
+    #[arg(long = "no-repos")]
+    pub no_repos: bool,
+    /// Disable the `branches` module.
+    #[arg(long = "no-branches")]
+    pub no_branches: bool,
+    /// Disable the `pulls` (or `merge_requests`) module.
+    #[arg(long = "no-pulls")]
+    pub no_pulls: bool,
+    /// Disable the `issues` module.
+    #[arg(long = "no-issues")]
+    pub no_issues: bool,
+    /// Disable the `contributors` (or `members`) module.
+    #[arg(long = "no-contributors")]
+    pub no_contributors: bool,
+    /// Disable the `codebase` module (structural code graph). Default ON.
+    #[arg(long = "no-codebase")]
+    pub no_codebase: bool,
+}
+
+impl ModuleFlags {
+    fn into_object(self) -> serde_json::Map<String, Value> {
+        let mut m = serde_json::Map::new();
+        m.insert("repos".into(), Value::Bool(!self.no_repos));
+        m.insert("branches".into(), Value::Bool(!self.no_branches));
+        m.insert("pulls".into(), Value::Bool(!self.no_pulls));
+        m.insert("issues".into(), Value::Bool(!self.no_issues));
+        m.insert(
+            "contributors".into(),
+            Value::Bool(!self.no_contributors),
+        );
+        m.insert("codebase".into(), Value::Bool(!self.no_codebase));
+        m
+    }
+}
+
+/// Fine-grained controls for the structural code-graph module. All have sane
+/// defaults; pass to tune resource use or scope.
+#[derive(Debug, Args)]
+pub(crate) struct CodeOpts {
+    /// Languages to parse, comma-separated (e.g. `rust,python,typescript`).
+    /// Defaults to all supported (rust, python, typescript, javascript, go).
+    #[arg(long)]
+    pub languages: Option<String>,
+    /// Skip files larger than this many bytes. Default 1 MiB.
+    #[arg(long)]
+    pub max_bytes: Option<usize>,
+    /// Cap on the number of files fetched + parsed per tick. Default 300.
+    #[arg(long)]
+    pub max_files: Option<usize>,
+    /// Glob patterns to exclude, comma-separated (e.g.
+    /// `vendor/**,**/*_test.go,dist/**`).
+    #[arg(long)]
+    pub exclude: Option<String>,
+}
+
+impl CodeOpts {
+    fn into_object(self) -> Option<serde_json::Map<String, Value>> {
+        if self.languages.is_none()
+            && self.max_bytes.is_none()
+            && self.max_files.is_none()
+            && self.exclude.is_none()
+        {
+            return None;
+        }
+        let mut m = serde_json::Map::new();
+        if let Some(langs) = self.languages {
+            m.insert("languages".into(), Value::Array(split_csv(&langs).into_iter().map(Value::String).collect()));
+        }
+        if let Some(b) = self.max_bytes {
+            m.insert("max_file_bytes".into(), Value::Number(b.into()));
+        }
+        if let Some(f) = self.max_files {
+            m.insert("max_files_per_tick".into(), Value::Number(f.into()));
+        }
+        if let Some(ex) = self.exclude {
+            m.insert("exclude_globs".into(), Value::Array(split_csv(&ex).into_iter().map(Value::String).collect()));
+        }
+        Some(m)
+    }
 }
 
 #[derive(Debug, Args)]
@@ -204,8 +303,9 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
         Source::Github {
             repos,
             common,
-            codebase,
             modules,
+            code,
+            max_pages,
         } => {
             let credential_id = resolve_credential(
                 cfg,
@@ -216,25 +316,34 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
                 |token| json!({ "kind": "pat", "token": token }),
             )
             .await?;
-            let modules_obj = build_github_modules(modules.as_deref(), codebase)?;
-            let config = json!({
-                "credential_id": credential_id,
-                "repos": split_csv(&repos),
-                "modules": modules_obj,
-            });
+            let mut config = serde_json::Map::new();
+            config.insert("credential_id".into(), Value::String(credential_id.clone()));
+            config.insert(
+                "repos".into(),
+                Value::Array(split_csv(&repos).into_iter().map(Value::String).collect()),
+            );
+            config.insert("modules".into(), Value::Object(modules.into_object()));
+            if let Some(p) = max_pages {
+                config.insert("max_pages_per_tick".into(), Value::Number(p.into()));
+            }
+            if let Some(c) = code.into_object() {
+                config.insert("code".into(), Value::Object(c));
+            }
             (
                 "github",
                 common.name.unwrap_or_else(|| default_name("gh", &repos)),
                 common.db.unwrap_or_else(|| "github".to_string()),
                 common.schedule_ms,
                 common.start,
-                config,
+                Value::Object(config),
                 credential_id,
             )
         }
         Source::Gitlab {
             projects,
             common,
+            modules,
+            code,
             api_url,
         } => {
             let credential_id = resolve_credential(
@@ -246,12 +355,21 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
                 |token| json!({ "kind": "pat", "token": token }),
             )
             .await?;
-            let mut config = json!({
-                "credential_id": credential_id,
-                "projects": split_csv(&projects),
-            });
+            let mut config = serde_json::Map::new();
+            config.insert("credential_id".into(), Value::String(credential_id.clone()));
+            config.insert(
+                "projects".into(),
+                Value::String(projects.clone()),
+            );
             if let Some(url) = api_url {
-                config["api_url"] = Value::String(url);
+                config.insert("api_url".into(), Value::String(url));
+            }
+            // Forward-compatibility: server doesn't read these yet, but the
+            // surface is reserved so today's `kyma connector add gitlab …
+            // --no-codebase` keeps working when codebase parsing lands.
+            config.insert("modules".into(), Value::Object(modules.into_object()));
+            if let Some(c) = code.into_object() {
+                config.insert("code".into(), Value::Object(c));
             }
             (
                 "gitlab",
@@ -259,13 +377,15 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
                 common.db.unwrap_or_else(|| "gitlab".to_string()),
                 common.schedule_ms,
                 common.start,
-                config,
+                Value::Object(config),
                 credential_id,
             )
         }
         Source::Bitbucket {
             repos,
             common,
+            modules,
+            code,
             username,
             app_password,
         } => {
@@ -290,16 +410,21 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
                 )
                 .await?
             };
+            let mut config = serde_json::Map::new();
+            config.insert("credential_id".into(), Value::String(credential_id.clone()));
+            config.insert("repos".into(), Value::String(repos.clone()));
+            // Reserved knobs — see Gitlab branch comment.
+            config.insert("modules".into(), Value::Object(modules.into_object()));
+            if let Some(c) = code.into_object() {
+                config.insert("code".into(), Value::Object(c));
+            }
             (
                 "bitbucket",
                 common.name.unwrap_or_else(|| default_name("bb", &repos)),
                 common.db.unwrap_or_else(|| "bitbucket".to_string()),
                 common.schedule_ms,
                 common.start,
-                json!({
-                    "credential_id": credential_id,
-                    "repos": split_csv(&repos),
-                }),
+                Value::Object(config),
                 credential_id,
             )
         }
@@ -365,29 +490,6 @@ fn split_csv(s: &str) -> Vec<String> {
         .collect()
 }
 
-fn build_github_modules(modules: Option<&str>, codebase: bool) -> Result<Value> {
-    let names: Vec<String> = if let Some(m) = modules {
-        split_csv(m)
-    } else {
-        let mut v = vec![
-            "repos".into(),
-            "branches".into(),
-            "pulls".into(),
-            "issues".into(),
-            "contributors".into(),
-        ];
-        if codebase {
-            v.push("codebase".into());
-        }
-        v
-    };
-    let mut obj = serde_json::Map::new();
-    for n in &["repos", "branches", "pulls", "issues", "contributors", "codebase"] {
-        obj.insert(n.to_string(), Value::Bool(names.iter().any(|m| m == n)));
-    }
-    Ok(Value::Object(obj))
-}
-
 // ── credential resolution ───────────────────────────────────────────────────
 
 async fn resolve_credential(
@@ -418,7 +520,13 @@ async fn resolve_credential(
             env_vars.join(", ")
         );
     };
-    let label = format!("{source_kind}-{}", short_label(repos_csv));
+    // Append a short timestamp suffix so re-runs don't collide on the
+    // (tenant, label) unique key.
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| format!("{:x}", d.as_secs() & 0xffff))
+        .unwrap_or_else(|_| "0".into());
+    let label = format!("{source_kind}-{}-{suffix}", short_label(repos_csv));
     create_credential(cfg, &label, build_value(&token)).await
 }
 

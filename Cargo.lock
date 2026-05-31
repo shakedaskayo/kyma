@@ -4601,6 +4601,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyma-connector-core"
+version = "0.0.1"
+dependencies = [
+ "kyma-connectors",
+ "kyma-core",
+]
+
+[[package]]
 name = "kyma-connectors"
 version = "0.0.1"
 dependencies = [

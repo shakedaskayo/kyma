@@ -39,15 +39,30 @@ config field (UI).
 
 ## Setup — CLI
 
+Codebase parsing (the tree-sitter structural code graph) is **ON by
+default**. Pass `--no-codebase` for metadata-only ingestion.
+
 ```bash
 # One repo. Token auto-discovered from $GITHUB_TOKEN, $GH_TOKEN,
 # or `gh auth token` (in that order).
 kyma connector add github shakedaskayo/kyma --start
 
-# Multiple repos under one connector. Codebase parsing on.
+# Multiple repos under one connector.
 kyma connector add github \
   "anthropics/claude-code,anthropics/anthropic-sdk-python" \
-  --codebase --start
+  --start
+
+# Metadata only (no source parsing) — faster, less API quota.
+kyma connector add github shakedaskayo/kyma --no-codebase --start
+
+# Restrict code parsing to specific languages + tune caps.
+kyma connector add github my-org/big-repo \
+  --languages rust,go \
+  --max-files 1000 \
+  --max-bytes 524288 \
+  --exclude 'vendor/**,**/*_test.go,dist/**' \
+  --max-pages 5 \
+  --start
 
 # Explicit token, custom name and database.
 kyma connector add github octocat/Hello-World \
@@ -66,6 +81,25 @@ kyma connector add github my-org/my-repo \
 (or 30 s). Without `--start`, the connector waits for its first
 scheduled tick.
 
+### Ingestion knobs
+
+All optional; defaults match server-side defaults.
+
+| Flag                  | What it does                                                     | Default                                 |
+| --------------------- | ---------------------------------------------------------------- | --------------------------------------- |
+| `--no-repos`          | Skip the repos module.                                           | enabled                                 |
+| `--no-branches`       | Skip the branches module.                                        | enabled                                 |
+| `--no-pulls`          | Skip the PR module.                                              | enabled                                 |
+| `--no-issues`         | Skip the issues module.                                          | enabled                                 |
+| `--no-contributors`   | Skip the contributors module.                                    | enabled                                 |
+| `--no-codebase`       | Skip structural code parsing.                                    | **enabled**                             |
+| `--languages a,b,c`   | Restrict code parsing to these languages.                        | rust, python, typescript, javascript, go |
+| `--max-bytes N`       | Skip files larger than N bytes.                                  | 1 048 576 (1 MiB)                       |
+| `--max-files N`       | Hard cap on files fetched + parsed per tick.                     | 300                                     |
+| `--exclude 'a,b,c'`   | Comma-separated glob patterns to skip.                           | sensible vendor/generated defaults      |
+| `--max-pages N`       | Cap on API pages per module per tick (100 items/page).           | 10                                      |
+| `--schedule-ms N`     | Tick interval in milliseconds.                                   | 300 000 (5 min)                         |
+
 ## Token sources, in order
 
 1. `--token <pat>` — explicit flag.
@@ -77,6 +111,14 @@ scheduled tick.
 
 If nothing resolves, `kyma connector add github` errors out with a
 clear hint.
+
+### Same knobs on gitlab / bitbucket
+
+`kyma connector add gitlab …` and `kyma connector add bitbucket …`
+accept the same `--no-codebase`, `--languages`, `--max-bytes`,
+`--max-files`, `--exclude` flags. The server-side codebase parsing
+for those providers is on the roadmap — the CLI surface is reserved
+so today's invocations keep working when it lands.
 
 ## What you get
 
