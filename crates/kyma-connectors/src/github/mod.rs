@@ -39,6 +39,42 @@ impl Connector for GithubConnector {
         "github"
     }
 
+    fn catalog(&self) -> crate::catalog::CatalogEntry {
+        use crate::catalog::{CatalogEntry, CatalogField, CatalogResource};
+        CatalogEntry {
+            type_id: "github".into(),
+            label: "GitHub".into(),
+            category: "code".into(),
+            description: "Repositories, branches, pull requests, issues and contributors — \
+                          plus a deep code graph (files, functions, classes, calls, imports)."
+                .into(),
+            brand: "github".into(),
+            auth_mode: "pat".into(),
+            status: "available".into(),
+            default_schedule_ms: 5 * 60_000,
+            fields: vec![CatalogField::secret(
+                "token",
+                "Personal access token",
+                "ghp_…",
+                "A classic or fine-grained PAT with repo read access. Stored encrypted; never shown again.",
+            )],
+            resource: Some(CatalogResource {
+                label: "Repositories".into(),
+                config_key: "repos".into(),
+                token_field: "token".into(),
+            }),
+            default_target_table: Some("github_nodes".into()),
+            config_defaults: Some(serde_json::json!({
+                "modules": {
+                    "repos": true, "branches": true, "pulls": true,
+                    "issues": true, "contributors": true, "codebase": true
+                }
+            })),
+            graph_name: Some("github".into()),
+            accepted_credential_kinds: vec!["pat".into()],
+        }
+    }
+
     fn validate_config(&self, cfg: &serde_json::Value) -> Result<(), ConfigError> {
         let parsed: GithubConfig =
             serde_json::from_value(cfg.clone()).map_err(|e| ConfigError(e.to_string()))?;
@@ -54,11 +90,30 @@ impl Connector for GithubConnector {
         let config: GithubConfig = serde_json::from_value(cfg.clone())
             .map_err(|e| ConnectorError::Config(format!("config parse: {e}")))?;
 
-        // Resolve the token (may be "$env:GITHUB_TOKEN" or a literal PAT).
-        let token = ctx
-            .secrets
-            .resolve(&config.token)
-            .map_err(|e| ConnectorError::Config(format!("token resolve: {e}")))?;
+        // Resolve the token: credential_id (preferred) → inline token via the
+        // SecretStore (which handles "$env:GITHUB_TOKEN" refs). At least one
+        // is guaranteed present by validate_config.
+        let token: String = if let Some(cid) = config.credential_id {
+            use kyma_core::credentials::CredentialValue;
+            let cred = ctx
+                .credentials
+                .get(ctx.tenant, cid)
+                .await
+                .map_err(|e| ConnectorError::Permanent(format!("resolve credential {cid}: {e}")))?;
+            match cred.value {
+                CredentialValue::Pat { token } => token,
+                other => {
+                    return Err(ConnectorError::Permanent(format!(
+                        "credential {cid} has kind={}; github connector requires `pat`",
+                        other.kind()
+                    )));
+                }
+            }
+        } else {
+            ctx.secrets
+                .resolve(&config.token)
+                .map_err(|e| ConnectorError::Config(format!("token resolve: {e}")))?
+        };
 
         let gh = GithubClient::new(ctx.http.clone(), token);
         let mut cur = Cursor::from_value(cursor);

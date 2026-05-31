@@ -7,7 +7,7 @@ license.workspace = true
 description = "Admin CLI: create-table, show-extents, compact, explain."
 
 [[bin]]
-name = "kyma-cli"
+name = "kyma"
 path = "src/main.rs"
 
 [lints]
@@ -30,3 +30,6 @@ arrow-schema.workspace = true
 sqlx.workspace = true
 # clap will be needed for subcommands — adding directly here since only kyma-cli uses it
 clap = { version = "4", features = ["derive", "env"] }
+reqwest = { workspace = true, features = ["json"] }
+futures-util = "0.3"
+directories = "5"

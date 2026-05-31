@@ -29,7 +29,8 @@ testcontainers = { workspace = true, optional = true }
 testcontainers-modules = { workspace = true, optional = true }
 tonic-web = { workspace = true, optional = true }
 http-body-util = { workspace = true, optional = true }
-reqwest = { workspace = true, optional = true }
+reqwest = { workspace = true }
+which = "6"
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 uuid.workspace = true
@@ -73,6 +74,7 @@ sqlx.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 kyma-catalog.workspace = true
+tempfile = "3"
 
 [features]
 default = []
@@ -83,7 +85,6 @@ test-support = [
     "dep:object_store",
     "dep:testcontainers",
     "dep:testcontainers-modules",
-    "dep:reqwest",
 ]
 
 [[test]]

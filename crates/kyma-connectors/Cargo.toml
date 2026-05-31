@@ -32,6 +32,8 @@ metrics = { workspace = true }
 fastrand = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 sqlx = { workspace = true }
+object_store = { workspace = true }
+base64 = "0.22"
 
 # tree-sitter structural code graph deps — only compiled when the `github`
 # feature is enabled (they bring in C grammar crates which are slow to build).
@@ -41,7 +43,6 @@ tree-sitter-python = { version = "0.25", optional = true }
 tree-sitter-typescript = { version = "0.23", optional = true }
 tree-sitter-javascript = { version = "0.25", optional = true }
 tree-sitter-go = { version = "0.25", optional = true }
-base64 = { version = "0.22", optional = true }
 globset = { version = "0.4", optional = true }
 
 [features]
@@ -52,7 +53,6 @@ github = [
     "dep:tree-sitter-typescript",
     "dep:tree-sitter-javascript",
     "dep:tree-sitter-go",
-    "dep:base64",
     "dep:globset",
 ]
 

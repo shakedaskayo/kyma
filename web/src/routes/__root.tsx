@@ -1,11 +1,20 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { Toaster } from "sonner";
+import { useTheme } from "@/lib/theme";
 
-export const Route = createRootRoute({
-  component: () => (
+function RootShell() {
+  // Drive sonner's theme from the resolved app theme so toasts (esp. the
+  // dense red error toasts) pick up the dark palette instead of staying on
+  // sonner's default light cards.
+  const resolved = useTheme((s) => s.resolved);
+  return (
     <>
       <Outlet />
-      <Toaster richColors position="top-right" />
+      <Toaster richColors position="top-right" theme={resolved} />
     </>
-  ),
+  );
+}
+
+export const Route = createRootRoute({
+  component: RootShell,
 });

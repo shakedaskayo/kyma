@@ -40,6 +40,35 @@ framework.
 
 <div class="feature-card">
 
+### [GitHub](/connectors/github)
+
+Repositories, branches, pulls, issues, contributors, plus an optional
+parsed code graph (functions, classes, calls, imports via tree-sitter).
+One CLI command stands it up — token discovered from
+`$GITHUB_TOKEN`, `$GH_TOKEN`, or `gh auth token`.
+
+</div>
+
+<div class="feature-card">
+
+### [GitLab](/connectors/gitlab)
+
+Projects, branches, merge requests, issues, members. Self-hosted
+GitLab supported via `--api-url`.
+
+</div>
+
+<div class="feature-card">
+
+### [Bitbucket](/connectors/bitbucket)
+
+Repositories, branches, pull requests, issues from Bitbucket Cloud.
+App-password + username (`basic`) or PAT auth.
+
+</div>
+
+<div class="feature-card">
+
 ### [Postgres](/connectors/postgres) 🚧
 
 Federation for live reads, replication-slot CDC for sync, both at

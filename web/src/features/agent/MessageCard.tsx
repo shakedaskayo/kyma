@@ -82,14 +82,14 @@ function UserBubble({ question }: { question: string }) {
 function AgentBubble({ turn }: { turn: ChatTurn }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-lg border bg-card p-3 text-sm text-card-foreground shadow-sm">
+    <div className="rounded-lg border bg-card px-4 py-3 text-card-foreground shadow-sm">
       {turn.trace.length > 0 && (
         <details
           open={open}
           onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
-          className="mb-2 rounded border bg-muted/30">
+          className="mb-2.5 rounded border bg-muted/30">
           <summary className="flex cursor-pointer list-none items-center gap-1 px-2 py-1 text-xs text-muted-foreground select-none">
-            {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
             Reasoning trace · {traceSummary(turn.trace)}
           </summary>
           <div className="space-y-1 px-3 py-2 font-mono text-xs">
@@ -114,7 +114,7 @@ function AgentBubble({ turn }: { turn: ChatTurn }) {
       )}
 
       {turn.sqlUsed && (
-        <div className="mt-3">
+        <div className="mt-3 pb-0.5">
           <Button
             variant="outline"
             size="sm"
@@ -128,7 +128,7 @@ function AgentBubble({ turn }: { turn: ChatTurn }) {
       )}
 
       {turn.done && !turn.error && (
-        <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="mt-2.5 flex items-center gap-2 text-[11px] text-muted-foreground">
           {turn.elapsedMs != null && <span>{turn.elapsedMs}ms</span>}
           {turn.toolCalls != null && <span>· {turn.toolCalls} tool{turn.toolCalls === 1 ? "" : "s"}</span>}
           {turn.model && <span>· {turn.model}</span>}
@@ -207,7 +207,7 @@ function StreamedMarkdown({ text, done }: { text: string; done: boolean }) {
   const visible = useTypewriter(text, done);
   const blocks = splitByFencedCode(visible);
   return (
-    <div className="space-y-2 text-sm leading-relaxed">
+    <div className="space-y-2 text-[15px] leading-relaxed">
       {blocks.map((b, i) =>
         b.kind === "code" ? (
           <pre

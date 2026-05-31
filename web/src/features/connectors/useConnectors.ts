@@ -5,6 +5,7 @@ import {
   createConnector,
   deleteConnector,
   getConnector,
+  getConnectorCatalog,
   listConnectors,
   listGitHubRepos,
   patchConnector,
@@ -20,6 +21,20 @@ const listKey = (endpoint: string, database: string) =>
   ["connectors", endpoint, database] as const;
 const detailKey = (endpoint: string, database: string, id: string) =>
   ["connectors", endpoint, database, id] as const;
+
+/**
+ * The engine-driven connector catalog (available + coming-soon vendors). Cached
+ * aggressively — it's static metadata that only changes on an engine deploy.
+ */
+export function useConnectorCatalog() {
+  const { endpoint, token, database } = useSession();
+  return useQuery({
+    queryKey: ["connectors", "catalog", endpoint],
+    queryFn: () => getConnectorCatalog({ endpoint, token, database }),
+    enabled: Boolean(endpoint),
+    staleTime: 10 * 60_000,
+  });
+}
 
 export function useConnectors() {
   const { endpoint, token, database } = useSession();

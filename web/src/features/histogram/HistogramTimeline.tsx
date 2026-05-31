@@ -1,6 +1,7 @@
 import ReactECharts from "echarts-for-react";
 import { useMemo } from "react";
 import { pickBucketSize, BUCKET_MS, bucketLabel } from "@/lib/time-bucket";
+import { useTheme } from "@/lib/theme";
 
 export type HistogramTimelineProps = {
   rows: Record<string, unknown>[];
@@ -9,6 +10,7 @@ export type HistogramTimelineProps = {
 };
 
 export function HistogramTimeline({ rows, timeCol, onBucketClick }: HistogramTimelineProps) {
+  const isDark = useTheme((s) => s.resolved === "dark");
   const { buckets, size } = useMemo(() => {
     const times: number[] = [];
     for (const row of rows) {
@@ -48,6 +50,14 @@ export function HistogramTimeline({ rows, timeCol, onBucketClick }: HistogramTim
   const labels = buckets.map((b) => bucketLabel(b.ts, size));
   const values = buckets.map((b) => b.count);
 
+  // Theme-aware chart colors. `#94a3b8` (slate-400) reads on both backgrounds,
+  // so the axis labels stay; the splitLine grid lines were `#f1f5f9` (near-
+  // white) which punched through the dark canvas — swap to slate-800 in dark.
+  const splitLineColor = isDark ? "#1e293b" : "#f1f5f9";
+  const tooltipBg = isDark ? "rgba(15,23,42,0.95)" : "rgba(255,255,255,0.95)";
+  const tooltipText = isDark ? "#e2e8f0" : "#0f172a";
+  const tooltipBorder = isDark ? "#1e293b" : "#e2e8f0";
+
   const option = {
     animation: false,
     grid: { left: 48, right: 8, top: 6, bottom: 22 },
@@ -61,7 +71,7 @@ export function HistogramTimeline({ rows, timeCol, onBucketClick }: HistogramTim
     yAxis: {
       type: "value",
       axisLabel: { fontSize: 9, color: "#94a3b8" },
-      splitLine: { lineStyle: { color: "#f1f5f9" } },
+      splitLine: { lineStyle: { color: splitLineColor } },
       minInterval: 1,
     },
     series: [
@@ -69,14 +79,16 @@ export function HistogramTimeline({ rows, timeCol, onBucketClick }: HistogramTim
         type: "bar",
         data: values,
         barMaxWidth: 32,
-        itemStyle: { color: "rgba(37,99,235,0.7)", borderRadius: [2, 2, 0, 0] },
-        emphasis: { itemStyle: { color: "rgba(37,99,235,0.9)" } },
+        itemStyle: { color: "rgba(59,130,246,0.7)", borderRadius: [2, 2, 0, 0] },
+        emphasis: { itemStyle: { color: "rgba(59,130,246,0.95)" } },
       },
     ],
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
-      textStyle: { fontSize: 11 },
+      backgroundColor: tooltipBg,
+      borderColor: tooltipBorder,
+      textStyle: { fontSize: 11, color: tooltipText },
       formatter: (params: Array<{ name: string; value: number }>) => {
         const p = params[0];
         return `${p.name}<br/><b>${p.value.toLocaleString()}</b> events`;
@@ -93,7 +105,7 @@ export function HistogramTimeline({ rows, timeCol, onBucketClick }: HistogramTim
   };
 
   return (
-    <div className="bg-background border-b px-2">
+    <div className="bg-card border-b px-2">
       <ReactECharts
         option={option}
         style={{ height: 80 }}

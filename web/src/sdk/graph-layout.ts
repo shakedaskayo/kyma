@@ -17,8 +17,13 @@ export function forceDirectedLayout(
 ): Map<string, { x: number; y: number }> {
   if (nodes.length === 0) return new Map();
 
-  // Scale canvas based on node count for better spacing
   const n = nodes.length;
+
+  // Force-directed for any size — the spatial-grid repulsion below is
+  // amortized O(n) per iteration, so even thousands of nodes settle into a
+  // proper organic "cloud" instead of the grid-shaped fallback we used to
+  // emit. (The previous threshold made big unified views look square; the
+  // user is right that's wrong — a graph should look like a graph.)
   const scaleFactor = Math.max(1, Math.sqrt(n / 40));
   const canvasW = width * scaleFactor;
   const canvasH = height * scaleFactor;
@@ -76,14 +81,31 @@ export function forceDirectedLayout(
 
   const nodeMap = new Map(layoutNodes.map((ln) => [ln.id, ln]));
 
-  // Scale forces based on node count — bigger graphs need stronger repulsion
-  const ITERATIONS = Math.min(150, 60 + Math.floor(n * 0.5));
-  const REPULSION = Math.max(4000, 10000 * Math.sqrt(60 / Math.max(n, 1)));
-  const ATTRACTION = 0.006;
+  // Scale forces based on node count. Big graphs need a much higher repulsion
+  // floor so dense same-type groups (e.g. 999 PRs hanging off one repo) spread
+  // into a 2-D cloud instead of collapsing onto a hub into a thin stripe. Keep
+  // label cohesion *low* on big graphs — strong cohesion collapses large
+  // homogeneous groups to a point; repulsion does the spreading instead.
+  const big = n > 200;
+  // Iteration count tapers off for big graphs — repulsion converges fast with
+  // spatial-grid evaluation, and extra iterations just spend time we don't
+  // have. (Was: min(150, 60 + 0.5n) which gave 150 for any n>180.) We still
+  // want *enough* iterations for thousands-of-node clouds to actually look
+  // organic instead of partially-relaxed.
+  const ITERATIONS =
+    n < 100 ? 120 : n < 400 ? 95 : n < 1200 ? 75 : n < 3000 ? 65 : 50;
+  const REPULSION = Math.max(big ? 14000 : 4000, 10000 * Math.sqrt(60 / Math.max(n, 1)));
+  const ATTRACTION = big ? 0.004 : 0.006;
   const DAMPING = 0.85;
   const MIN_DIST = 65;
-  const CENTER_GRAVITY = 0.008;
-  const LABEL_COHESION = 0.004;
+  const CENTER_GRAVITY = big ? 0.003 : 0.008;
+  const LABEL_COHESION = big ? 0.0015 : 0.004;
+  // Spatial grid: pairs are only evaluated within neighbouring cells, giving
+  // amortized O(n) repulsion instead of O(n²). The cell size must be larger
+  // than the repulsion cutoff so that two nodes that *should* feel each other
+  // end up in adjacent buckets.
+  const REPULSION_RADIUS = n > 200 ? 1100 : 700;
+  const CELL_SIZE = REPULSION_RADIUS;
 
   for (let iter = 0; iter < ITERATIONS; iter++) {
     const temp = 1 - iter / ITERATIONS;
@@ -97,24 +119,47 @@ export function forceDirectedLayout(
       node.vy += dy * CENTER_GRAVITY * cooled;
     }
 
-    // Repulsion between all nodes (use Barnes-Hut-like cutoff for large graphs)
-    const cutoffDist = n > 200 ? 600 : Infinity;
-    for (let i = 0; i < layoutNodes.length; i++) {
-      for (let j = i + 1; j < layoutNodes.length; j++) {
-        const a = layoutNodes[i];
-        const b = layoutNodes[j];
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        const distSq = dx * dx + dy * dy;
-        if (distSq > cutoffDist * cutoffDist) continue;
-        const dist = Math.max(Math.sqrt(distSq), MIN_DIST);
-        const force = (REPULSION * cooled) / (dist * dist);
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        a.vx += fx;
-        a.vy += fy;
-        b.vx -= fx;
-        b.vy -= fy;
+    // Bucket nodes into a spatial grid so repulsion is computed only between
+    // close neighbours. Cells are encoded as `${cx},${cy}` keys; for each
+    // bucket we walk it + the 4 forward-direction neighbours (no double work).
+    const grid = new Map<string, LayoutNode[]>();
+    for (const node of layoutNodes) {
+      const cx = Math.floor(node.x / CELL_SIZE);
+      const cy = Math.floor(node.y / CELL_SIZE);
+      const key = cx + "," + cy;
+      const bucket = grid.get(key);
+      if (bucket) bucket.push(node);
+      else grid.set(key, [node]);
+    }
+    const radiusSq = REPULSION_RADIUS * REPULSION_RADIUS;
+    const offsets: [number, number][] = [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 1]];
+    for (const [key, bucket] of grid) {
+      const [bxStr, byStr] = key.split(",");
+      const bx = Number(bxStr);
+      const by = Number(byStr);
+      for (const [dx, dy] of offsets) {
+        const other = dx === 0 && dy === 0 ? bucket : grid.get(bx + dx + "," + (by + dy));
+        if (!other) continue;
+        for (let i = 0; i < bucket.length; i++) {
+          const a = bucket[i];
+          // For the self-bucket we only pair j>i to avoid double accounting.
+          const jStart = other === bucket ? i + 1 : 0;
+          for (let j = jStart; j < other.length; j++) {
+            const b = other[j];
+            const ddx = a.x - b.x;
+            const ddy = a.y - b.y;
+            const distSq = ddx * ddx + ddy * ddy;
+            if (distSq > radiusSq) continue;
+            const dist = Math.max(Math.sqrt(distSq), MIN_DIST);
+            const force = (REPULSION * cooled) / (dist * dist);
+            const fx = (ddx / dist) * force;
+            const fy = (ddy / dist) * force;
+            a.vx += fx;
+            a.vy += fy;
+            b.vx -= fx;
+            b.vy -= fy;
+          }
+        }
       }
     }
 
@@ -141,15 +186,28 @@ export function forceDirectedLayout(
       target.vy -= fy;
     }
 
-    // Same-label cohesion — gentle pull toward group centroid
-    for (const label of labelList) {
-      const members = layoutNodes.filter((ln) => ln.label === label);
-      if (members.length < 2) continue;
-      const avgX = members.reduce((s, m) => s + m.x, 0) / members.length;
-      const avgY = members.reduce((s, m) => s + m.y, 0) / members.length;
-      for (const m of members) {
-        m.vx += (avgX - m.x) * LABEL_COHESION * cooled;
-        m.vy += (avgY - m.y) * LABEL_COHESION * cooled;
+    // Same-label cohesion — gentle pull toward group centroid. Iterating
+    // labelList × filter() was O(L·n) per iteration; one pass over nodes is
+    // O(n) flat.
+    if (LABEL_COHESION > 0 && labelList.length > 0) {
+      const sums = new Map<string, { x: number; y: number; count: number }>();
+      for (const ln of layoutNodes) {
+        const s = sums.get(ln.label);
+        if (s) {
+          s.x += ln.x;
+          s.y += ln.y;
+          s.count += 1;
+        } else {
+          sums.set(ln.label, { x: ln.x, y: ln.y, count: 1 });
+        }
+      }
+      for (const ln of layoutNodes) {
+        const s = sums.get(ln.label)!;
+        if (s.count < 2) continue;
+        const avgX = s.x / s.count;
+        const avgY = s.y / s.count;
+        ln.vx += (avgX - ln.x) * LABEL_COHESION * cooled;
+        ln.vy += (avgY - ln.y) * LABEL_COHESION * cooled;
       }
     }
 
@@ -162,31 +220,52 @@ export function forceDirectedLayout(
     }
   }
 
-  // Post-process: push apart any nodes that overlap (preserves overall shape)
-  const OVERLAP_DIST = 80; // minimum pixel distance between node centers
-  for (let pass = 0; pass < 15; pass++) {
+  // Post-process: push apart any nodes that overlap (preserves overall shape).
+  // Same spatial-grid trick — `OVERLAP_DIST` is well under `CELL_SIZE`, so any
+  // overlapping pair must share a cell or sit in adjacent cells.
+  const OVERLAP_DIST = 80;
+  const OVERLAP_CELL = OVERLAP_DIST * 2;
+  const overlapOffsets: [number, number][] = [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 1]];
+  for (let pass = 0; pass < 12; pass++) {
     let anyOverlap = false;
-    for (let i = 0; i < layoutNodes.length; i++) {
-      for (let j = i + 1; j < layoutNodes.length; j++) {
-        const a = layoutNodes[i];
-        const b = layoutNodes[j];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < OVERLAP_DIST) {
-          anyOverlap = true;
-          const push = (OVERLAP_DIST - dist) / 2 + 0.5;
-          if (dist > 0.1) {
-            const nx = dx / dist;
-            const ny = dy / dist;
-            a.x -= nx * push;
-            a.y -= ny * push;
-            b.x += nx * push;
-            b.y += ny * push;
-          } else {
-            // Exactly overlapping — nudge horizontally
-            a.x -= push;
-            b.x += push;
+    const ogrid = new Map<string, LayoutNode[]>();
+    for (const node of layoutNodes) {
+      const cx = Math.floor(node.x / OVERLAP_CELL);
+      const cy = Math.floor(node.y / OVERLAP_CELL);
+      const key = cx + "," + cy;
+      const bucket = ogrid.get(key);
+      if (bucket) bucket.push(node);
+      else ogrid.set(key, [node]);
+    }
+    for (const [key, bucket] of ogrid) {
+      const [bxStr, byStr] = key.split(",");
+      const bx = Number(bxStr);
+      const by = Number(byStr);
+      for (const [dx, dy] of overlapOffsets) {
+        const other = dx === 0 && dy === 0 ? bucket : ogrid.get(bx + dx + "," + (by + dy));
+        if (!other) continue;
+        for (let i = 0; i < bucket.length; i++) {
+          const a = bucket[i];
+          const jStart = other === bucket ? i + 1 : 0;
+          for (let j = jStart; j < other.length; j++) {
+            const b = other[j];
+            const ddx = b.x - a.x;
+            const ddy = b.y - a.y;
+            const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+            if (dist >= OVERLAP_DIST) continue;
+            anyOverlap = true;
+            const push = (OVERLAP_DIST - dist) / 2 + 0.5;
+            if (dist > 0.1) {
+              const nx = ddx / dist;
+              const ny = ddy / dist;
+              a.x -= nx * push;
+              a.y -= ny * push;
+              b.x += nx * push;
+              b.y += ny * push;
+            } else {
+              a.x -= push;
+              b.x += push;
+            }
           }
         }
       }

@@ -1,12 +1,27 @@
-//! Admin CLI. Operates against a running kyma catalog.
+//! Kyma CLI — admin + client mode.
 //!
-//! Subcommands:
+//! Client subcommands (talk to a running kyma server):
+//!   connect  <url> [--token TOKEN]   save server URL + bearer token
+//!   status                            show config + probe /health
+//!   query    "<question>" [--json]    stream /v1/agent/ask to stdout
+//!   install-skill [--target DIR]      write SKILL.md for coding agents
+//!
+//! Admin subcommands (talk directly to Postgres):
 //!   create-database <name>
 //!   create-table    --db <name> --name <name> --schema <spec>
-//!                   where <spec> is `col:type[,col:type]...`
-//!                   supported types: int, long, real, bool, string, timestamp, dynamic
 //!   list-tables     --db <name>
+//!   alter-table     --db <name> --table <name> --add-column <spec>
+//!   create-graph    --db <name> --name <name> --nodes <tbl> --edges <tbl>
+//!   list-graphs     --db <name>
+//!   drop-graph      --db <name> --name <name>
 //!   version
+
+mod client;
+mod connector;
+use client::{
+    effective_config, install_target, load_config, probe_health, save_config, stream_agent_ask,
+    write_skill_file, ClientConfig,
+};
 
 use anyhow::{anyhow, Context, Result};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
@@ -15,10 +30,12 @@ use kyma_catalog::PostgresCatalog;
 use kyma_core::catalog::{Catalog, TableConfig};
 use std::sync::Arc;
 
+const SKILL_TEMPLATE: &str = include_str!("skill_template.md");
+
 #[derive(Debug, Parser)]
-#[command(name = "kyma-cli", about = "Administrative CLI for a kyma cluster")]
+#[command(name = "kyma", about = "Kyma CLI — client queries + admin operations")]
 struct Cli {
-    /// Postgres connection URL (catalog).
+    /// Postgres connection URL (admin subcommands only).
     #[arg(
         long,
         env = "KYMA_CATALOG_URL",
@@ -32,9 +49,53 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Create a new database (namespace).
+    // ── client subcommands ────────────────────────────────────────────
+
+    /// Save a connection to a kyma server.
+    Connect {
+        /// Server base URL, e.g. http://localhost:8080
+        url: String,
+        /// Bearer token (omit to authenticate via /v1/auth/login interactively later).
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Show the saved connection + probe the server's /health.
+    Status,
+    /// Stream an agent answer to stdout.
+    Query {
+        /// The question, e.g. "How many 500s in the last hour?"
+        question: String,
+        /// Emit the raw SSE event stream as JSONL instead of plain text.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Install the Kyma skill so coding agents (Claude Code, Cursor, …)
+    /// can discover and use this CLI.
+    InstallSkill {
+        /// Target directory. Default: `$HOME/.kyma/skills/kyma`.
+        #[arg(long)]
+        target: Option<std::path::PathBuf>,
+        /// Also symlink into `$HOME/.claude/skills/kyma` if that dir exists.
+        #[arg(long)]
+        also_link_claude: bool,
+    },
+    /// Manage connectors — add a GitHub/GitLab/Bitbucket repo, list, pause,
+    /// resume, trigger, remove. See `kyma connector --help`.
+    Connector {
+        #[command(subcommand)]
+        op: connector::Op,
+    },
+    /// Inspect ingestion runs — `status` snapshots, `tail` follows.
+    Ingest {
+        #[command(subcommand)]
+        op: connector::IngestOp,
+    },
+
+    // ── admin subcommands ─────────────────────────────────────────────
+
+    /// Create a new database (namespace) — admin, talks to Postgres directly.
     CreateDatabase { name: String },
-    /// Create a new table.
+    /// Create a new table — admin.
     CreateTable {
         #[arg(long)]
         db: String,
@@ -47,12 +108,12 @@ enum Command {
         #[arg(long)]
         retention_days: Option<u32>,
     },
-    /// List tables in a database.
+    /// List tables in a database — admin.
     ListTables {
         #[arg(long)]
         db: String,
     },
-    /// Add a nullable column to an existing table.
+    /// Add a nullable column to an existing table — admin.
     AlterTable {
         #[arg(long)]
         db: String,
@@ -64,27 +125,40 @@ enum Command {
     },
     /// Print the CLI version.
     Version,
-    /// Register a property-graph (binds a node table + edge table).
+    /// Register a property-graph — admin.
     CreateGraph {
-        #[arg(long)] db: String,
-        #[arg(long)] name: String,
-        #[arg(long)] nodes: String,                 // node table
-        #[arg(long)] edges: String,                 // edge table
-        #[arg(long, default_value = "id")] id_col: String,
-        #[arg(long, default_value = "labels")] label_col: String,
-        #[arg(long, default_value = "src")] src_col: String,
-        #[arg(long, default_value = "dst")] dst_col: String,
-        #[arg(long, default_value = "type")] type_col: String,
-        #[arg(long)] realm_col: Option<String>,
+        #[arg(long)]
+        db: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        nodes: String,
+        #[arg(long)]
+        edges: String,
+        #[arg(long, default_value = "id")]
+        id_col: String,
+        #[arg(long, default_value = "labels")]
+        label_col: String,
+        #[arg(long, default_value = "src")]
+        src_col: String,
+        #[arg(long, default_value = "dst")]
+        dst_col: String,
+        #[arg(long, default_value = "type")]
+        type_col: String,
+        #[arg(long)]
+        realm_col: Option<String>,
     },
-    /// List registered graphs in a database.
+    /// List registered graphs in a database — admin.
     ListGraphs {
-        #[arg(long)] db: String,
+        #[arg(long)]
+        db: String,
     },
-    /// Drop a graph registration (leaves the underlying tables intact).
+    /// Drop a graph registration — admin.
     DropGraph {
-        #[arg(long)] db: String,
-        #[arg(long)] name: String,
+        #[arg(long)]
+        db: String,
+        #[arg(long)]
+        name: String,
     },
 }
 
@@ -95,17 +169,30 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        // ── client subcommands ────────────────────────────────────────
+        Command::Connect { url, token } => cmd_connect(url, token).await,
+        Command::Status => cmd_status().await,
+        Command::Query { question, json } => cmd_query(question, json).await,
+        Command::InstallSkill {
+            target,
+            also_link_claude,
+        } => cmd_install_skill(target, also_link_claude).await,
+        Command::Connector { op } => connector::run(op).await,
+        Command::Ingest { op } => connector::run_ingest(op).await,
+
+        // ── admin subcommands ─────────────────────────────────────────
         Command::Version => {
-            println!("kyma-cli {}", env!("CARGO_PKG_VERSION"));
-            return Ok(());
+            println!("kyma {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
         }
         Command::CreateDatabase { name } => {
-            let catalog = connect(&cli.catalog_url).await?;
+            let catalog = connect_catalog(&cli.catalog_url).await?;
             let id = catalog
                 .create_database(&name)
                 .await
                 .with_context(|| format!("creating database {name}"))?;
             println!("created database {name} ({id})");
+            Ok(())
         }
         Command::CreateTable {
             db,
@@ -113,8 +200,7 @@ async fn main() -> Result<()> {
             schema,
             retention_days,
         } => {
-            let catalog = connect(&cli.catalog_url).await?;
-            // We first need the database id.
+            let catalog = connect_catalog(&cli.catalog_url).await?;
             let db_id = find_database_id(&catalog, &db).await?;
             let parsed_schema = parse_schema_spec(&schema)
                 .with_context(|| format!("parsing schema spec: {schema}"))?;
@@ -127,13 +213,14 @@ async fn main() -> Result<()> {
                 .await
                 .with_context(|| format!("creating table {db}.{name}"))?;
             println!("created table {db}.{name} ({id})");
+            Ok(())
         }
         Command::AlterTable {
             db,
             table,
             add_column,
         } => {
-            let catalog = connect(&cli.catalog_url).await?;
+            let catalog = connect_catalog(&cli.catalog_url).await?;
             let t = catalog.lookup_table(&db, &table).await?;
             let (name, ty) = add_column
                 .split_once(':')
@@ -144,9 +231,10 @@ async fn main() -> Result<()> {
             println!(
                 "altered {db}.{table}: added column {name}:{ty} (schema_snapshot={new_schema})"
             );
+            Ok(())
         }
         Command::ListTables { db } => {
-            let catalog = connect(&cli.catalog_url).await?;
+            let catalog = connect_catalog(&cli.catalog_url).await?;
             let tables = catalog.list_tables_in_database(&db).await?;
             if tables.is_empty() {
                 println!("(no tables in database {db})");
@@ -161,14 +249,26 @@ async fn main() -> Result<()> {
                     println!("{}  [{}]", t.name, cols.join(", "));
                 }
             }
+            Ok(())
         }
         Command::CreateGraph {
-            db, name, nodes, edges, id_col, label_col, src_col, dst_col, type_col, realm_col,
+            db,
+            name,
+            nodes,
+            edges,
+            id_col,
+            label_col,
+            src_col,
+            dst_col,
+            type_col,
+            realm_col,
         } => {
             if name == "schema" {
-                anyhow::bail!("'schema' is reserved for the synthetic schema-graph; choose another name");
+                anyhow::bail!(
+                    "'schema' is reserved for the synthetic schema-graph; choose another name"
+                );
             }
-            let cat = connect(&cli.catalog_url).await?;
+            let cat = connect_catalog(&cli.catalog_url).await?;
             let spec = kyma_core::catalog::GraphSpec {
                 node_table: nodes,
                 edge_table: edges,
@@ -180,33 +280,163 @@ async fn main() -> Result<()> {
                 realm_col,
             };
             let reg = cat.create_graph(&db, &name, spec).await?;
-            println!("registered graph '{}' in db '{}' (nodes={}, edges={})", reg.name, db, reg.node_table, reg.edge_table);
+            println!(
+                "registered graph '{}' in db '{}' (nodes={}, edges={})",
+                reg.name, db, reg.node_table, reg.edge_table
+            );
+            Ok(())
         }
         Command::ListGraphs { db } => {
-            let cat = connect(&cli.catalog_url).await?;
+            let cat = connect_catalog(&cli.catalog_url).await?;
             let graphs = cat.list_graphs(&db).await?;
             if graphs.is_empty() {
                 println!("(no graphs registered in '{db}')");
             } else {
                 for g in graphs {
-                    println!("{}\tnodes={}\tedges={}\trealm={}", g.name, g.node_table, g.edge_table, g.realm_col.as_deref().unwrap_or("-"));
+                    println!(
+                        "{}\tnodes={}\tedges={}\trealm={}",
+                        g.name,
+                        g.node_table,
+                        g.edge_table,
+                        g.realm_col.as_deref().unwrap_or("-")
+                    );
                 }
             }
+            Ok(())
         }
         Command::DropGraph { db, name } => {
-            let cat = connect(&cli.catalog_url).await?;
+            let cat = connect_catalog(&cli.catalog_url).await?;
             if cat.drop_graph(&db, &name).await? {
                 println!("dropped graph '{name}' from '{db}'");
             } else {
                 println!("no graph '{name}' in '{db}'");
             }
+            Ok(())
         }
     }
+}
 
+// ── client subcommand implementations ────────────────────────────────────────
+
+async fn cmd_connect(url: String, token: Option<String>) -> Result<()> {
+    let url = url.trim_end_matches('/').to_string();
+    let cfg = ClientConfig {
+        endpoint: url.clone(),
+        token,
+    };
+    save_config(&cfg)?;
+    println!("Saved connection to {url}");
+    let path = client::config_path()?;
+    println!("Config: {}", path.display());
     Ok(())
 }
 
-async fn connect(url: &str) -> Result<Arc<dyn Catalog>> {
+async fn cmd_status() -> Result<()> {
+    match load_config() {
+        Ok(cfg) => {
+            println!("Endpoint:  {}", cfg.endpoint);
+            println!(
+                "Token:     {}",
+                if cfg.token.is_some() {
+                    "configured"
+                } else {
+                    "not set"
+                }
+            );
+            match probe_health(&cfg).await {
+                Ok(body) => println!("Health:    {}", body.trim()),
+                Err(e) => println!("Health:    error — {e}"),
+            }
+        }
+        Err(_) => {
+            println!("No config found. Run `kyma connect <url>` first.");
+        }
+    }
+    Ok(())
+}
+
+async fn cmd_query(question: String, json: bool) -> Result<()> {
+    let cfg = effective_config()?;
+    let mut had_error = false;
+    stream_agent_ask(&cfg, &question, |event, data| {
+        if json {
+            println!(
+                "{}",
+                serde_json::json!({ "event": event, "data": data })
+            );
+            return;
+        }
+        match event {
+            "answer_delta" | "answer_final" => {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                    if let Some(t) = v.get("text").and_then(|t| t.as_str()) {
+                        print!("{}", t);
+                        use std::io::Write;
+                        let _ = std::io::stdout().flush();
+                    }
+                }
+            }
+            "run_error" => {
+                had_error = true;
+                eprintln!("\n[error] {}", data);
+            }
+            "run_finished" => {
+                println!();
+            }
+            _ => {}
+        }
+    })
+    .await?;
+    if had_error {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+async fn cmd_install_skill(
+    target: Option<std::path::PathBuf>,
+    also_link_claude: bool,
+) -> Result<()> {
+    let dir = install_target(target)?;
+    let path = write_skill_file(&dir, SKILL_TEMPLATE)?;
+    println!("Wrote {}", path.display());
+
+    if also_link_claude {
+        #[cfg(unix)]
+        {
+            if let Some(home) = std::env::var_os("HOME") {
+                let claude_skills = std::path::PathBuf::from(home)
+                    .join(".claude")
+                    .join("skills");
+                if claude_skills.is_dir() {
+                    let link = claude_skills.join("kyma");
+                    let _ = std::fs::remove_file(&link);
+                    let _ = std::fs::remove_dir_all(&link);
+                    std::os::unix::fs::symlink(&dir, &link).with_context(|| {
+                        format!("symlink {} -> {}", link.display(), dir.display())
+                    })?;
+                    println!("Linked {} -> {}", link.display(), dir.display());
+                } else {
+                    println!(
+                        "(skipped) {} doesn't exist; pass --also-link-claude later",
+                        claude_skills.display()
+                    );
+                }
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            eprintln!(
+                "note: --also-link-claude only works on Unix; copy the file manually on Windows"
+            );
+        }
+    }
+    Ok(())
+}
+
+// ── admin helpers ─────────────────────────────────────────────────────────────
+
+async fn connect_catalog(url: &str) -> Result<Arc<dyn Catalog>> {
     let c = PostgresCatalog::connect(url)
         .await
         .with_context(|| format!("connecting to catalog {url}"))?;

@@ -1,128 +1,268 @@
 ---
 title: CLI
-description: kyma-cli reference — every subcommand, every flag, the schema-spec syntax, and the one env var that matters.
+description: kyma CLI reference — client commands (connect, status, query, install-skill, connector, ingest) and admin commands (create-database, create-table, ...).
 ---
 
 # CLI
 
-`kyma-cli` is the administrative CLI. It talks straight to the
-Postgres catalog — it does not require a running engine — so you
-can use it from a terminal, a shell script, or a CI step that's
-provisioning a fresh database.
+`kyma` is the binary. It has two modes:
+
+- **Client mode** — talks to a running Kyma server over HTTP. Used for
+  asking the agent questions, managing connectors, and wiring up
+  coding agents.
+- **Admin mode** — talks directly to the Postgres catalog. Used for
+  provisioning databases, tables, and graphs from scripts.
+
+Both modes coexist in the same binary; subcommand selection picks the
+mode.
+
+## Install
+
+```bash
+cargo install --path crates/kyma-cli
+kyma version
+```
+
+Binary name is `kyma` (not `kyma-cli`).
 
 ## Global flags
 
-Every subcommand inherits these.
+| Flag             | Env var              | Default                                                | Used by            |
+| ---------------- | -------------------- | ------------------------------------------------------ | ------------------ |
+| `--catalog-url`  | `KYMA_CATALOG_URL`   | `postgres://kyma:kyma_dev@localhost:5433/kyma`         | Admin subcommands. |
 
-| Flag             | Env var              | Default                                                | Purpose                       |
-| ---------------- | -------------------- | ------------------------------------------------------ | ----------------------------- |
-| `--catalog-url`  | `KYMA_CATALOG_URL`   | `postgres://kyma:kyma_dev@localhost:5433/kyma`         | Postgres connection URL.      |
+Client-mode subcommands read connection info from `~/.kyma/config.json`
+(written by `kyma connect`). Two env vars override the file:
 
-In production setups the env-var form is the one you want — set
-`KYMA_CATALOG_URL` once in your shell and every subsequent
-`kyma-cli` call picks it up.
+| Var               | Effect                                  |
+| ----------------- | --------------------------------------- |
+| `KYMA_SERVER_URL` | Overrides the saved endpoint.           |
+| `KYMA_TOKEN`      | Overrides the saved bearer token.       |
 
-## Subcommands
+---
+
+## Client subcommands
+
+### `kyma connect <url> [--token TOKEN]`
+
+Save a connection to a running Kyma server. Writes
+`~/.kyma/config.json` (mode `0600`).
+
+```bash
+kyma connect http://localhost:8080 --token "$(curl -s -XPOST ... | jq -r .access_token)"
+```
+
+### `kyma status`
+
+Show the saved endpoint, whether a token is configured, and probe
+`/health`.
+
+```bash
+kyma status
+# Endpoint:  http://localhost:8080
+# Token:     configured
+# Health:    {"status":"ok","version":"0.0.1"}
+```
+
+### `kyma query "<question>" [--json]`
+
+Stream `/v1/agent/ask` to stdout. Without `--json`, prints the
+`answer_delta` / `answer_final` text directly. With `--json`, emits
+the raw SSE event stream as JSONL — useful for scripting.
+
+```bash
+kyma query "how many rows in github_nodes?"
+kyma query "any error logs from prod-api in the last 15 minutes?"
+kyma query "list databases" --json | jq -c '.event,.data'
+```
+
+### `kyma install-skill [--target DIR] [--also-link-claude]`
+
+Write a `SKILL.md` that teaches Claude Code / Cursor / Aider / etc.
+how to use the `kyma` CLI as a data tool.
+
+| Flag                  | Effect                                                                  |
+| --------------------- | ----------------------------------------------------------------------- |
+| `--target DIR`        | Where to write `SKILL.md`. Default `~/.kyma/skills/kyma/`.               |
+| `--also-link-claude`  | Symlink `~/.claude/skills/kyma` → the target dir (Unix only).           |
+
+### `kyma connector <op>`
+
+Manage connectors. See [Connectors → GitHub](/connectors/github),
+[GitLab](/connectors/gitlab), [Bitbucket](/connectors/bitbucket) for
+type-specific args.
+
+```bash
+kyma connector list
+kyma connector add github shakedaskayo/kyma --start
+kyma connector add gitlab gitlab-org/gitlab --start
+kyma connector add bitbucket atlassian/python-bitbucket --username me --app-password $BBPW --start
+kyma connector show gh-shakedaskayo-kyma
+kyma connector pause gh-shakedaskayo-kyma
+kyma connector resume gh-shakedaskayo-kyma
+kyma connector trigger gh-shakedaskayo-kyma
+kyma connector remove gh-shakedaskayo-kyma
+```
+
+`<name|id>` is interchangeable — pass either the human-readable name
+or the UUID. `--start` triggers an immediate first run after creating
+the connector and polls until the first tick completes (or 30 s).
+
+#### `add` ingestion knobs
+
+For git sources (github / gitlab / bitbucket), all modules are ON by
+default, including **codebase** (the structural code graph). Disable
+with `--no-<module>`:
+
+```bash
+# Metadata only — skip source parsing.
+kyma connector add github my-org/big-repo --no-codebase --start
+
+# Constrain code parsing to two languages, with a tighter file cap.
+kyma connector add github my-org/big-repo \
+  --languages rust,go \
+  --max-files 1000 \
+  --max-bytes 524288 \
+  --exclude 'vendor/**,**/*_test.go,dist/**' \
+  --start
+```
+
+| Flag                  | What it does                                                | Default                                  |
+| --------------------- | ----------------------------------------------------------- | ---------------------------------------- |
+| `--no-repos`          | Skip the repos / projects module.                           | enabled                                  |
+| `--no-branches`       | Skip the branches module.                                   | enabled                                  |
+| `--no-pulls`          | Skip the pulls / MR module.                                 | enabled                                  |
+| `--no-issues`         | Skip the issues module.                                     | enabled                                  |
+| `--no-contributors`   | Skip the contributors / members module.                     | enabled                                  |
+| `--no-codebase`       | Skip the structural code-graph module.                      | **enabled**                              |
+| `--languages a,b,c`   | Restrict code parsing to these languages.                   | rust, python, typescript, javascript, go |
+| `--max-bytes N`       | Skip files larger than N bytes.                             | 1 MiB                                    |
+| `--max-files N`       | Cap on files fetched + parsed per tick.                     | 300                                      |
+| `--exclude 'a,b,c'`   | Glob patterns to skip.                                      | sensible vendor/generated defaults       |
+| `--max-pages N`       | API pages per module per tick (100 items/page).             | 10                                       |
+| `--schedule-ms N`     | Tick interval in milliseconds.                              | 300 000 (5 min)                          |
+
+Token discovery for `connector add` (in order):
+`--token` → `--credential-id` → `$<KIND>_TOKEN` env → `gh auth token`
+shell-out (github only).
+
+### `kyma ingest <op>`
+
+Inspect ingestion runs across one or all connectors.
+
+```bash
+kyma ingest status                     # all connectors, last-run snapshot
+kyma ingest status --connector gh-…    # one connector
+kyma ingest tail                       # poll forever
+kyma ingest tail --connector gh-… --interval 5
+```
+
+---
+
+## Admin subcommands
+
+These talk directly to the Postgres catalog (no running server
+needed). Set `KYMA_CATALOG_URL` once at the top of your shell.
 
 ### `create-database <name>`
 
-Create a new database (kyma's namespace inside the catalog). Returns
-the database id.
-
 ```bash
-kyma-cli create-database analytics
+kyma create-database analytics
 # created database analytics (a3f1...)
 ```
 
 ### `create-table --db <name> --name <name> --schema <spec> [--retention-days N]`
 
-Create a new table in the named database. The `--schema` argument is
-a column-spec string: comma-separated `name:type` pairs.
+`--schema` is `col:type[, col:type, ...]`.
 
-| Flag                | Required | Notes                                                                |
-| ------------------- | -------- | -------------------------------------------------------------------- |
-| `--db`              | yes      | Target database. Must already exist.                                 |
-| `--name`            | yes      | Table name.                                                          |
-| `--schema`          | yes      | `col:type[, col:type, ...]`.                                         |
-| `--retention-days`  | no       | TTL in days. Extents past TTL are soft-deleted by the retention sweeper. |
-
-Schema-spec types:
-
-| Type         | Arrow logical type                             | Nullable | Notes                                                       |
-| ------------ | ---------------------------------------------- | -------- | ----------------------------------------------------------- |
-| `bool`       | `Boolean`                                      | yes      |                                                             |
-| `int`        | `Int32`                                        | yes      |                                                             |
-| `long`       | `Int64`                                        | yes      |                                                             |
-| `real`       | `Float64`                                      | yes      |                                                             |
-| `string`     | `Utf8`                                         | yes      |                                                             |
-| `timestamp`  | `Timestamp(Nanosecond, None)`                  | yes      | UTC; RFC3339 strings or epoch nanos accepted on ingest.     |
-| `dynamic`    | `Binary`                                       | yes      | Coerced JSON; queryable via path syntax.                    |
-| `vector(N)`  | `FixedSizeList<Float32, N>`                    | **no**   | Null-vector ingest is rejected; all vector columns are non-nullable. |
-
-Example:
+Types: `bool`, `int` (Int32), `long` (Int64), `real` (Float64),
+`string`, `timestamp` (nanoseconds UTC), `dynamic` (JSON in Binary),
+`vector(N)` (FixedSizeList<Float32, N>, non-nullable).
 
 ```bash
-kyma-cli create-table \
-  --db analytics \
-  --name pageviews \
+kyma create-table \
+  --db analytics --name pageviews \
   --schema "_timestamp:timestamp, user_id:string, path:string, ms:int" \
   --retention-days 30
-# created table analytics.pageviews (b0c4...)
 ```
 
 ### `alter-table --db <name> --table <name> --add-column <spec>`
 
-Add a single nullable column to an existing table. `<spec>` is one
-`name:type` pair using the same type set as `create-table` (bool,
-int, long, real, string, timestamp, dynamic).
+Schema only widens; there is no drop / rename / narrow.
 
 ```bash
-kyma-cli alter-table --db analytics --table pageviews \
-  --add-column "referrer:string"
-# altered analytics.pageviews: added column referrer:string (schema_snapshot=4)
+kyma alter-table --db analytics --table pageviews --add-column "referrer:string"
 ```
-
-Schema only widens — there is no `drop-column`, no `rename-column`,
-no type narrowing. See [Schema model](/concepts/schema-model) for
-the rationale.
 
 ### `list-tables --db <name>`
 
-List tables in a database. Each row prints the table name followed by
-its schema as Arrow logical types.
-
 ```bash
-kyma-cli list-tables --db analytics
+kyma list-tables --db analytics
 # pageviews  [_timestamp:Timestamp(Nanosecond, None), user_id:Utf8, path:Utf8, ms:Int32, referrer:Utf8]
 ```
 
-If the database has no tables, prints `(no tables in database <name>)`.
+### `create-graph --db <name> --name <name> --nodes <table> --edges <table>`
+
+Register a property-graph over two existing tables. The default
+column mapping is `id`, `labels`, `src`, `dst`, `type`. Override per
+column with `--id-col`, `--label-col`, etc. `--realm-col` is optional
+and adds a partition dimension.
+
+```bash
+kyma create-graph --db github --name github --nodes github_nodes --edges github_edges
+```
+
+`schema` is a reserved name (used for the synthetic schema-graph) and
+rejected.
+
+### `list-graphs --db <name>` / `drop-graph --db <name> --name <name>`
+
+```bash
+kyma list-graphs --db github
+kyma drop-graph --db github --name old-graph
+```
 
 ### `version`
 
-Print the CLI version (the cargo package version it was built with)
-and exit.
+Prints the package version and exits.
 
-```bash
-kyma-cli version
-# kyma-cli 0.1.0
-```
+---
 
 ## Typical onboarding flow
+
+### Provision-by-script (admin only)
 
 ```bash
 export KYMA_CATALOG_URL=postgres://kyma:kyma_dev@localhost:5433/kyma
 
-kyma-cli create-database analytics
-kyma-cli create-table \
-  --db analytics --name pageviews \
+kyma create-database analytics
+kyma create-table --db analytics --name pageviews \
   --schema "_timestamp:timestamp, user_id:string, path:string, ms:int" \
   --retention-days 30
-kyma-cli list-tables --db analytics
+kyma list-tables --db analytics
 ```
 
-After this, `POST /v1/ingest` against the running engine with
-`X-Database: analytics` and `X-Table: pageviews` will land rows in
-the table you just created. With auto-create on (the default) you
-can also skip this whole step — the first `POST /v1/ingest` provisions
-the database and table on demand.
+After this, `POST /v1/ingest` with `X-Database: analytics` and
+`X-Table: pageviews` lands rows. With auto-create on (the default)
+you can also skip this whole step.
+
+### Connect a coding agent
+
+```bash
+export KYMA_TOKEN=$(curl -s -XPOST http://localhost:8080/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"dev"}' | jq -r .access_token)
+
+kyma connect http://localhost:8080 --token "$KYMA_TOKEN"
+kyma install-skill --also-link-claude
+kyma query "what databases do we have?"
+```
+
+### Ingest a GitHub repo
+
+```bash
+export GITHUB_TOKEN=ghp_xxx     # or have `gh auth status` happy
+kyma create-database github     # one-time
+kyma connector add github shakedaskayo/kyma --start
+kyma ingest status
+```

@@ -1,25 +1,22 @@
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  INTERVAL_PRESETS,
-  type ConnectorKindDef,
-  type KindFormValues,
-} from "./connector-kinds";
+import type { CatalogEntry } from "@/sdk/connectors";
+import { INTERVAL_PRESETS, type KindFormValues } from "./connector-kinds";
 
-/** Inline token-verification state for PAT-auth kinds. */
+/** Inline token-verification state for token-auth kinds. */
 export interface TokenVerify {
   onVerify: () => void;
   isPending: boolean;
   isError: boolean;
-  /** Number of repositories the token can read, when verified. */
+  /** Number of resources the token can read, when verified. */
   repoCount?: number;
   /** True once a successful verification has returned for the current token. */
   verified: boolean;
 }
 
 interface Props {
-  kind: ConnectorKindDef;
+  entry: CatalogEntry;
   values: KindFormValues;
   onChange: (patch: Partial<KindFormValues>) => void;
   advancedOpen: boolean;
@@ -29,7 +26,7 @@ interface Props {
 }
 
 export function ConnectorConfigForm({
-  kind,
+  entry,
   values,
   onChange,
   advancedOpen,
@@ -39,7 +36,7 @@ export function ConnectorConfigForm({
   const setField = (key: string, val: string) =>
     onChange({ fields: { ...values.fields, [key]: val } });
 
-  const tokenKey = kind.resourceTokenField;
+  const tokenKey = entry.resource?.token_field;
   const tokenVal = tokenKey ? values.fields[tokenKey] ?? "" : "";
 
   return (
@@ -51,13 +48,13 @@ export function ConnectorConfigForm({
           id="conn-name"
           value={values.name}
           onChange={(e) => onChange({ name: e.target.value })}
-          placeholder={`My ${kind.label} connector`}
+          placeholder={`My ${entry.label} connector`}
           autoFocus
         />
       </div>
 
-      {/* Schema-driven fields (PAT, etc.) */}
-      {kind.fields.map((f) => (
+      {/* Schema-driven fields (PAT, endpoint, etc.) */}
+      {entry.fields.map((f) => (
         <div key={f.key} className="space-y-1">
           <Label htmlFor={`conn-field-${f.key}`}>
             {f.label}
@@ -90,7 +87,7 @@ export function ConnectorConfigForm({
           {!verify.isPending && verify.verified && (
             <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
               <CheckCircle2 className="h-3.5 w-3.5" />
-              {verify.repoCount ?? 0} repositories accessible
+              {verify.repoCount ?? 0} {(entry.resource?.label ?? "items").toLowerCase()} accessible
             </span>
           )}
           {!verify.isPending && verify.isError && (
@@ -150,7 +147,7 @@ export function ConnectorConfigForm({
                 id="conn-table"
                 value={values.targetTable}
                 onChange={(e) => onChange({ targetTable: e.target.value })}
-                placeholder={kind.defaultTargetTable}
+                placeholder={entry.default_target_table ?? ""}
               />
             </div>
           </div>

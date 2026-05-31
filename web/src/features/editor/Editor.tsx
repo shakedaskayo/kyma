@@ -2,6 +2,7 @@ import MonacoEditor, { type OnMount } from "@monaco-editor/react";
 import { useCallback, useEffect, useRef } from "react";
 import { registerKql, registerKqlCompletions, KQL_LANG_ID, type KqlSchema } from "./kql-language";
 import type { SchemaDoc } from "@/sdk/catalog";
+import { useTheme } from "@/lib/theme";
 
 type Props = {
   value: string;
@@ -13,7 +14,46 @@ type Props = {
   knownValues?: Record<string, string[]>;
 };
 
+/** Monaco theme name used when the app resolves to dark mode. We define it
+ * once (idempotent) so the editor surface matches `hsl(var(--card))` exactly
+ * instead of Monaco's default `#1e1e1e`, which would punch through the dark
+ * slate card the editor sits inside. */
+const KYMA_DARK_THEME = "kyma-dark";
+
+/** Define our dark theme on the monaco singleton. Idempotent; safe to call
+ * from every mount. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ensureKymaDarkTheme(monaco: any) {
+  monaco.editor.defineTheme(KYMA_DARK_THEME, {
+    base: "vs-dark",
+    inherit: true,
+    // Match the app's --card hsl(217.2 32.6% 9%) ≈ #0f172a-ish slate. Subtle
+    // gutter/line shadings so block structure stays legible against the
+    // surrounding panel border.
+    rules: [],
+    colors: {
+      "editor.background": "#0f1626",
+      "editor.foreground": "#e2e8f0",
+      "editorLineNumber.foreground": "#475569",
+      "editorLineNumber.activeForeground": "#94a3b8",
+      "editorCursor.foreground": "#e2e8f0",
+      "editor.lineHighlightBackground": "#1e293b40",
+      "editor.selectionBackground": "#334155aa",
+      "editorIndentGuide.background1": "#1e293b",
+      "editorIndentGuide.activeBackground1": "#334155",
+      "editorGutter.background": "#0f1626",
+      "editorWidget.background": "#0f1626",
+      "editorWidget.border": "#1e293b",
+      "editorSuggestWidget.background": "#0f1626",
+      "editorSuggestWidget.border": "#1e293b",
+      "editorSuggestWidget.selectedBackground": "#1e293b",
+      "editorSuggestWidget.highlightForeground": "#60a5fa",
+    },
+  });
+}
+
 export function Editor({ value, onChange, onRun, schema, database, knownValues }: Props) {
+  const isDark = useTheme((s) => s.resolved === "dark");
   const onRunRef = useRef(onRun);
   useEffect(() => { onRunRef.current = onRun; }, [onRun]);
 
@@ -24,6 +64,7 @@ export function Editor({ value, onChange, onRun, schema, database, knownValues }
 
   const handleMount: OnMount = useCallback((editor, monaco) => {
     registerKql(monaco);
+    ensureKymaDarkTheme(monaco);
     registerKqlCompletions(monaco, (): KqlSchema => {
       const { schema: s, database: db, knownValues: kv } = schemaRef.current;
       const dbDoc = s?.databases.find((d) => d.name === db);
@@ -45,7 +86,7 @@ export function Editor({ value, onChange, onRun, schema, database, knownValues }
     <MonacoEditor
       height="100%"
       language={KQL_LANG_ID}
-      theme="vs"
+      theme={isDark ? KYMA_DARK_THEME : "vs"}
       value={value}
       onChange={(v) => onChange(v ?? "")}
       onMount={handleMount}

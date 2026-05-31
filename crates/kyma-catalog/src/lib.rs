@@ -16,10 +16,12 @@
 
 #![forbid(unsafe_code)]
 
+mod credentials;
 mod error;
 pub mod saved_views;
 mod snapshot;
 
+pub use credentials::PgCredentialStore;
 pub use snapshot::PgSnapshotTxn;
 
 use async_trait::async_trait;

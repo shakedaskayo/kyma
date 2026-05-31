@@ -1,4 +1,5 @@
-//! HTTP handlers for `POST /v1/agent/ask` (SSE) and `GET /v1/agent/runs/:run_id`.
+//! HTTP handlers for `POST /v1/agent/ask` (SSE), `GET /v1/agent/runs/:run_id`,
+//! and the engine-management surface (`GET/PUT /v1/agent/engine`, etc.).
 //!
 //! The ask handler drives an ADK-Rust `Runner` and emits a stream of SSE
 //! frames. Once the stream completes (naturally, on error, or on budget
@@ -26,6 +27,9 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
 
+use super::engine::{
+    build_engine, claude_cli, engine_catalogue, CredentialResolver, EngineConfig, EngineKind,
+};
 use super::runner::{make_runner, model_id, ANON_USER};
 use super::state::AgentState;
 
@@ -40,6 +44,11 @@ pub fn router(state: AgentState) -> axum::Router {
     axum::Router::new()
         .route("/ask", post(ask_handler))
         .route("/runs/:run_id", get(run_lookup_handler))
+        .route("/engines", get(list_engines))
+        .route("/engine", get(get_engine).put(put_engine))
+        .route("/engine/test", post(test_engine))
+        .route("/skills", get(list_skills))
+        .route("/skills/enabled", get(get_enabled_skills).put(put_enabled_skills))
         .with_state(state)
 }
 
@@ -90,10 +99,20 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
         )
             .into_response();
     }
+
+    // Engine-kind branch: the Claude CLI engine owns its own tool loop, OAuth,
+    // skills, and MCPs — adk-rust can't wrap it. Divert here before building
+    // the runner.
+    if let Ok(cfg) = state.engines.get().await {
+        if cfg.kind == EngineKind::ClaudeCli {
+            return ask_via_claude_cli(state.pool.clone(), &question, &cfg).await;
+        }
+    }
+
     let run_id = uuid::Uuid::new_v4();
     let session_id_str = uuid::Uuid::new_v4().to_string();
     let include_thinking = body.include_thinking;
-    let model = model_id();
+    let model = model_id(&state).await;
     let started_at = Utc::now();
     let start = Instant::now();
 
@@ -533,10 +552,389 @@ async fn run_lookup_handler(
     .into_response()
 }
 
+// ---------------------------------------------------------------------------
+// Engine management routes
+// ---------------------------------------------------------------------------
+
+/// `GET /engines` — list available providers + their default models + the active config.
+async fn list_engines(
+    State(state): State<AgentState>,
+) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    let active = state
+        .engines
+        .get()
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Pass the active Ollama host (if configured) so the catalogue's live
+    // `/api/tags` fetch hits the user's actual instance, not the default.
+    let ollama_hint = active.host.as_deref();
+    let catalogue = engine_catalogue(ollama_hint).await;
+    Ok(axum::Json(serde_json::json!({
+        "available": catalogue,
+        "active": active,
+    })))
+}
+
+/// `GET /engine` — the persisted EngineConfig (one global row, v1).
+async fn get_engine(
+    State(state): State<AgentState>,
+) -> Result<axum::Json<EngineConfig>, (axum::http::StatusCode, String)> {
+    state
+        .engines
+        .get()
+        .await
+        .map(axum::Json)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+/// `PUT /engine` — save a new EngineConfig.
+async fn put_engine(
+    State(state): State<AgentState>,
+    axum::Json(cfg): axum::Json<EngineConfig>,
+) -> Result<axum::Json<EngineConfig>, (axum::http::StatusCode, String)> {
+    state
+        .engines
+        .put(&cfg)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(axum::Json(cfg))
+}
+
+/// `POST /engine/test` — dry-run probe against a candidate config without
+/// persisting it. Confirms creds resolve + the provider responds.
+async fn test_engine(
+    State(state): State<AgentState>,
+    axum::Json(cfg): axum::Json<EngineConfig>,
+) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    use adk_rust::futures::StreamExt;
+    use adk_rust::{GenerateContentConfig, LlmRequest};
+
+    // Claude CLI engine: spawn the binary with a 1-token prompt and confirm
+    // it produces *any* stdout + exits 0. Bypasses build_engine entirely
+    // because the CLI doesn't go through adk-rust.
+    if cfg.kind == EngineKind::ClaudeCli {
+        let probe = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            let (mut chunks, wait) = claude_cli::run("ping", Some(&cfg.model), None)
+                .map_err(|e| format!("spawn: {e}"))?;
+            let mut got_output = false;
+            while let Some(chunk) = chunks.recv().await {
+                if matches!(chunk, claude_cli::Chunk::Stdout(_)) {
+                    got_output = true;
+                }
+            }
+            let code = match wait.await {
+                Ok(Ok(c)) => c,
+                Ok(Err(e)) => return Err(format!("io: {e}")),
+                Err(e) => return Err(format!("join: {e}")),
+            };
+            if code != 0 {
+                return Err(format!("claude exited with {code}"));
+            }
+            if !got_output {
+                return Err("claude produced no output".to_string());
+            }
+            Ok::<(), String>(())
+        })
+        .await;
+
+        return match probe {
+            Ok(Ok(())) => Ok(axum::Json(serde_json::json!({
+                "ok": true,
+                "kind": cfg.kind,
+                "model": cfg.model,
+            }))),
+            Ok(Err(msg)) => Err((axum::http::StatusCode::BAD_GATEWAY, msg)),
+            Err(_elapsed) => Err((
+                axum::http::StatusCode::GATEWAY_TIMEOUT,
+                "claude_cli probe timed out after 30s".into(),
+            )),
+        };
+    }
+
+    // adk-rust path for Anthropic / OpenAI / Ollama.
+    let resolver = CredentialResolver::new(state.credentials.clone(), state.tenant);
+    let key = resolver
+        .resolve(&cfg)
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("credential: {e}")))?;
+    let llm = build_engine(&cfg, key)
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("init: {e}")))?;
+
+    let req = LlmRequest {
+        model: cfg.model.clone(),
+        contents: vec![Content::new("user").with_text("ping")],
+        config: Some(GenerateContentConfig {
+            max_output_tokens: Some(1),
+            ..Default::default()
+        }),
+        tools: Default::default(),
+    };
+
+    let probe = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        let mut stream = llm
+            .generate_content(req, false)
+            .await
+            .map_err(|e| format!("provider: {e:?}"))?;
+        while let Some(item) = stream.next().await {
+            item.map_err(|e| format!("stream: {e:?}"))?;
+            break;
+        }
+        Ok::<(), String>(())
+    })
+    .await;
+
+    match probe {
+        Ok(Ok(())) => Ok(axum::Json(serde_json::json!({
+            "ok": true,
+            "kind": cfg.kind,
+            "model": cfg.model,
+        }))),
+        Ok(Err(msg)) => Err((axum::http::StatusCode::BAD_GATEWAY, msg)),
+        Err(_elapsed) => Err((
+            axum::http::StatusCode::GATEWAY_TIMEOUT,
+            "probe timed out after 30s".into(),
+        )),
+    }
+}
+
 // Satisfy dead-code lint: Stream is only used implicitly via Sse::new.
 #[allow(dead_code)]
 fn _type_check<S>(_: S)
 where
     S: Stream<Item = Result<SseEvent, Infallible>>,
 {
+}
+
+// ---------------------------------------------------------------------------
+// Skill management routes
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Serialize)]
+struct SkillRow {
+    name: String,
+    description: String,
+    source: super::skills::SkillSource,
+    path: String,
+    enabled: bool,
+    /// Truncated body preview for the UI tooltip.
+    preview: String,
+}
+
+/// `GET /skills` — list every discovered skill on the host, plus its enabled
+/// state. Discovery is cheap (filesystem walk), so we run it on every request
+/// rather than caching.
+async fn list_skills(
+    State(state): State<AgentState>,
+) -> Result<axum::Json<Vec<SkillRow>>, (axum::http::StatusCode, String)> {
+    let enabled = state
+        .skills
+        .get()
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let enabled_set: std::collections::HashSet<&str> =
+        enabled.iter().map(String::as_str).collect();
+
+    let mut rows: Vec<SkillRow> = super::skills::discover_all()
+        .into_iter()
+        .map(|s| {
+            let preview = preview_body(&s.body);
+            SkillRow {
+                enabled: enabled_set.contains(s.name.as_str()),
+                name: s.name,
+                description: s.description,
+                source: s.source,
+                path: s.path,
+                preview,
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(axum::Json(rows))
+}
+
+/// `GET /skills/enabled` — just the toggled set, for callers that don't need
+/// the full discovery payload.
+async fn get_enabled_skills(
+    State(state): State<AgentState>,
+) -> Result<axum::Json<Vec<String>>, (axum::http::StatusCode, String)> {
+    state
+        .skills
+        .get()
+        .await
+        .map(axum::Json)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct PutEnabledSkillsBody {
+    skills: Vec<String>,
+}
+
+/// `PUT /skills/enabled` — replace the toggled set wholesale.
+async fn put_enabled_skills(
+    State(state): State<AgentState>,
+    axum::Json(body): axum::Json<PutEnabledSkillsBody>,
+) -> Result<axum::Json<Vec<String>>, (axum::http::StatusCode, String)> {
+    state
+        .skills
+        .put(&body.skills)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(axum::Json(body.skills))
+}
+
+fn preview_body(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.chars().count() <= 200 {
+        return trimmed.to_string();
+    }
+    let mut out: String = trimmed.chars().take(200).collect();
+    out.push('…');
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Claude CLI engine — spawns `claude --print` and pipes its stdout through
+// the existing SSE event shape. Bypasses adk-rust entirely.
+// ---------------------------------------------------------------------------
+
+async fn ask_via_claude_cli(pool: PgPool, question: &str, cfg: &EngineConfig) -> Response {
+    let run_id = uuid::Uuid::new_v4();
+    let started_at = Utc::now();
+    let start = Instant::now();
+    let model = format!("claude_cli/{}", cfg.model);
+
+    info!(run_id = %run_id, model = %model, "claude_cli ask starting");
+
+    let (tx, rx) = mpsc::unbounded_channel::<Result<SseEvent, Infallible>>();
+    let _ = tx.send(Ok(SseEvent::default().event("run_started").data(
+        serde_json::to_string(&json!({
+            "run_id": run_id.to_string(),
+            "model": model,
+            "question": question,
+        }))
+        .unwrap_or_default(),
+    )));
+
+    let question_owned = question.to_string();
+    let model_label = cfg.model.clone();
+    tokio::spawn(async move {
+        let mut answer = String::new();
+        let mut errored = false;
+
+        let (mut chunks, wait) = match claude_cli::run(&question_owned, Some(&model_label), None) {
+            Ok(pair) => pair,
+            Err(e) => {
+                let _ = tx.send(Ok(SseEvent::default().event("run_error").data(
+                    serde_json::to_string(&json!({
+                        "code": "spawn_failed",
+                        "message": e.to_string(),
+                    }))
+                    .unwrap_or_default(),
+                )));
+                emit_finished(&tx, run_id, start.elapsed().as_millis() as u64);
+                let _ = persist_run(
+                    &pool,
+                    run_id,
+                    &question_owned,
+                    &model,
+                    started_at,
+                    Utc::now(),
+                    "error",
+                    &Value::Null,
+                    &json!([{ "event": "run_error", "data": { "message": e.to_string() } }]),
+                )
+                .await;
+                return;
+            }
+        };
+
+        while let Some(chunk) = chunks.recv().await {
+            match chunk {
+                claude_cli::Chunk::Stdout(line) => {
+                    if !answer.is_empty() {
+                        answer.push('\n');
+                    }
+                    answer.push_str(&line);
+                    let _ = tx.send(Ok(SseEvent::default().event("answer_delta").data(
+                        serde_json::to_string(&json!({"text": format!("{}\n", line)}))
+                            .unwrap_or_default(),
+                    )));
+                }
+                claude_cli::Chunk::Stderr(line) => {
+                    if !line.is_empty() {
+                        warn!(run_id = %run_id, line = %line, "claude_cli stderr");
+                    }
+                }
+            }
+        }
+
+        let exit_code = match wait.await {
+            Ok(Ok(code)) => code,
+            Ok(Err(e)) => {
+                let _ = tx.send(Ok(SseEvent::default().event("run_error").data(
+                    serde_json::to_string(&json!({
+                        "code": "io",
+                        "message": e.to_string(),
+                    }))
+                    .unwrap_or_default(),
+                )));
+                errored = true;
+                -1
+            }
+            Err(_join_err) => -1,
+        };
+
+        if exit_code != 0 && !errored {
+            let _ = tx.send(Ok(SseEvent::default().event("run_error").data(
+                serde_json::to_string(&json!({
+                    "code": "nonzero_exit",
+                    "exit_code": exit_code,
+                }))
+                .unwrap_or_default(),
+            )));
+            errored = true;
+        }
+
+        if !errored {
+            let _ = tx.send(Ok(SseEvent::default().event("answer_final").data(
+                serde_json::to_string(&json!({"text": answer.clone()}))
+                    .unwrap_or_default(),
+            )));
+        }
+
+        let elapsed_ms = start.elapsed().as_millis() as u64;
+        emit_finished(&tx, run_id, elapsed_ms);
+        let _ = persist_run(
+            &pool,
+            run_id,
+            &question_owned,
+            &model,
+            started_at,
+            Utc::now(),
+            if errored { "error" } else { "ok" },
+            &Value::String(answer.clone()),
+            &json!([{ "event": "answer_final", "data": { "text": answer } }]),
+        )
+        .await;
+    });
+
+    Sse::new(UnboundedReceiverStream::new(rx))
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
+fn emit_finished(
+    tx: &mpsc::UnboundedSender<Result<SseEvent, Infallible>>,
+    run_id: uuid::Uuid,
+    elapsed_ms: u64,
+) {
+    let _ = tx.send(Ok(SseEvent::default().event("run_finished").data(
+        serde_json::to_string(&json!({
+            "run_id": run_id.to_string(),
+            "elapsed_ms": elapsed_ms,
+            "tool_calls": 0,
+        }))
+        .unwrap_or_default(),
+    )));
 }

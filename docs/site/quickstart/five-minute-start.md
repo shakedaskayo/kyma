@@ -108,8 +108,51 @@ range, present columns — that the planner uses to prune.
 executed by DataFusion against the registered tables. Three levels of
 pruning ran before any extent bytes were decoded.
 
+## Step 4: Ask the agent
+
+Open `http://localhost:5173/agent` (the web app, started by
+`pnpm -C web dev`). Pick an engine in `/settings#engine` — Ollama if
+you have it running locally, otherwise Claude Code CLI (auto-uses
+your local OAuth) or paste an Anthropic / OpenAI API key.
+
+Ask:
+
+> what databases do we have, and how many rows in each?
+
+You'll get a streamed answer.
+
+From your terminal:
+
+```bash
+cargo install --path crates/kyma-cli
+kyma connect http://localhost:8080 --token "<bearer-token>"
+kyma query "what databases do we have?"
+```
+
+Add the Kyma skill so Claude Code / Cursor / Aider can ask Kyma:
+
+```bash
+kyma install-skill --also-link-claude
+```
+
+## Step 5: Ingest a GitHub repo
+
+One command stands up a connector that pulls a repo into a property
+graph. The token comes from `$GITHUB_TOKEN`, `$GH_TOKEN`, or `gh auth
+token` (whichever is set first):
+
+```bash
+kyma create-database github
+kyma connector add github shakedaskayo/kyma --start
+```
+
+Now visit `/graph` in the web app — your repo appears as a node-and-
+edge graph (commits, branches, PRs, issues, contributors). See
+[Connectors → GitHub](/connectors/github) for the full surface.
+
 ## Next
 
 - The mental model: [Concepts](/concepts/)
+- The Kyma Agent in depth: [Agent](/agent/)
 - One step deeper: [First real run](/quickstart/first-real-run)
 - Other ingest paths: [Ingest](/ingest/)

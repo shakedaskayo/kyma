@@ -7,6 +7,8 @@ use uuid::Uuid;
 
 use crate::metrics::ConnectorMetrics;
 use crate::secrets::SecretStore;
+use kyma_core::credentials::CredentialStore;
+use kyma_core::tenant::TenantId;
 
 /// How a connector is driven — periodic tick or long-lived lease.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -64,8 +66,15 @@ pub struct ConnectorRun {
 /// connector should not retain it beyond the call.
 pub struct ConnectorCtx {
     pub connector_id: Uuid,
+    /// Tenant the connector belongs to — needed for any tenant-scoped lookup
+    /// the run does (credentials, future cross-table reads, …).
+    pub tenant: TenantId,
     pub http: reqwest::Client,
     pub secrets: Arc<dyn SecretStore>,
+    /// System-wide typed credentials store. Connectors that accept a
+    /// `credential_id` in their config resolve it via this trait — see
+    /// [`crate::credentials_util`] for the convenience helper.
+    pub credentials: Arc<dyn CredentialStore>,
     /// Tick timestamp (bucketed to the schedule grid). Used for the
     /// idempotency key and as a fallback sample timestamp.
     pub scheduled_for: DateTime<Utc>,
@@ -97,6 +106,14 @@ pub struct ConfigError(pub String);
 pub trait Connector: Send + Sync + 'static {
     /// Stable identifier for this connector type (e.g., `"prometheus"`).
     fn type_id(&self) -> &'static str;
+
+    /// Self-describing catalog metadata (label, category, auth mode, config
+    /// fields, brand icon, …) that powers the connectors UI. The default
+    /// returns a minimal entry derived from [`Self::type_id`]; connectors
+    /// should override it so they appear fully described in the catalog.
+    fn catalog(&self) -> crate::catalog::CatalogEntry {
+        crate::catalog::CatalogEntry::minimal(self.type_id())
+    }
 
     /// Called on `POST`/`PATCH /v1/connectors` before the row is persisted.
     fn validate_config(&self, cfg: &serde_json::Value) -> Result<(), ConfigError>;

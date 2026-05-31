@@ -2,9 +2,10 @@ import { useNavigate } from "@tanstack/react-router";
 import { Pause, Play, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deriveStatus, type ConnectorSummary } from "@/sdk/connectors";
-import { kindByType } from "./connector-kinds";
+import { BrandIcon } from "./BrandIcon";
 import {
   useConnector,
+  useConnectorCatalog,
   useDeleteConnector,
   usePauseConnector,
   useResumeConnector,
@@ -34,9 +35,8 @@ export function ConnectorRow({ connector }: { connector: ConnectorSummary }) {
   const pause = usePauseConnector(connector.id);
   const resume = useResumeConnector(connector.id);
   const del = useDeleteConnector();
-
-  const kind = kindByType(connector.type);
-  const Icon = kind?.icon;
+  const { data: catalog } = useConnectorCatalog();
+  const entry = catalog?.find((e) => e.type_id === connector.type);
   const status = detail ? deriveStatus(detail) : connector.enabled ? "idle" : "disabled";
 
   const open = () => navigate({ to: "/connectors/$id", params: { id: connector.id } });
@@ -49,15 +49,15 @@ export function ConnectorRow({ connector }: { connector: ConnectorSummary }) {
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && open()}
       className="group flex items-center gap-4 rounded-lg border bg-background px-4 py-3 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary/80">
-        {Icon ? <Icon className="h-4 w-4" /> : null}
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border bg-background">
+        <BrandIcon brand={entry?.brand ?? ""} size={18} />
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate font-medium text-foreground">{connector.name}</span>
           <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-            {kind?.label ?? connector.type}
+            {entry?.label ?? connector.type}
           </span>
         </div>
         <div className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground">

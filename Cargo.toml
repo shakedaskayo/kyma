@@ -13,6 +13,7 @@ members = [
     "crates/kyma-ingest-kafka",
     "crates/kyma-compaction",
     "crates/kyma-connectors",
+    "crates/kyma-connector-core",
     "crates/kyma-kql",
     "crates/kyma-graph",
     "crates/kyma-plan",
@@ -139,6 +140,7 @@ kyma-graph             = { path = "crates/kyma-graph" }
 kyma-kql               = { path = "crates/kyma-kql" }
 kyma-compaction        = { path = "crates/kyma-compaction" }
 kyma-connectors        = { path = "crates/kyma-connectors" }
+kyma-connector-core    = { path = "crates/kyma-connector-core" }
 kyma-plan              = { path = "crates/kyma-plan" }
 kyma-exec              = { path = "crates/kyma-exec" }
 kyma-server            = { path = "crates/kyma-server" }
@@ -159,6 +161,8 @@ adk-rust = { version = "0.6", default-features = false, features = [
     "agents",
     "models",
     "ollama",
+    "anthropic",
+    "openai",
     "tools",
     "sessions",
     "runner",

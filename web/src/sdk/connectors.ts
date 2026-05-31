@@ -46,6 +46,57 @@ export interface ConnectorUpdate {
   config?: Record<string, unknown>;
 }
 
+// ── Catalog (engine-driven; GET /v1/connectors/catalog) ───────────────────────
+
+/** A config input the wizard renders for a connector kind. */
+export interface CatalogField {
+  key: string;
+  label: string;
+  type: "text" | "secret";
+  required: boolean;
+  placeholder?: string;
+  help?: string;
+}
+
+/** Optional resource-selection step (e.g. picking repositories). */
+export interface CatalogResource {
+  label: string;
+  /** config key the selected resources are written under (e.g. "repos") */
+  config_key: string;
+  /** the secret field whose value unlocks fetching the list (e.g. "token") */
+  token_field: string;
+}
+
+/** Self-describing connector metadata, served by the engine. */
+export interface CatalogEntry {
+  type_id: string;
+  label: string;
+  category: "code" | "knowledge" | "project" | "data" | string;
+  description: string;
+  /** simple-icons slug for the brand mark (e.g. "github") */
+  brand: string;
+  auth_mode: "pat" | "oauth" | "url" | "none" | string;
+  status: "available" | "coming_soon";
+  default_schedule_ms: number;
+  fields: CatalogField[];
+  resource?: CatalogResource;
+  default_target_table?: string;
+  config_defaults?: Record<string, unknown>;
+  graph_name?: string;
+}
+
+interface CatalogEnvelope {
+  items: CatalogEntry[];
+}
+
+export async function getConnectorCatalog(args: BaseArgs): Promise<CatalogEntry[]> {
+  const res = await fetch(`${base(args.endpoint)}/v1/connectors/catalog`, {
+    headers: headers(args.token, args.database),
+  });
+  const body = await handleResponse<CatalogEnvelope>(res);
+  return body.items ?? [];
+}
+
 /** A repository as returned by `POST /v1/connectors/github/repos`. */
 export interface GitHubRepo {
   full_name: string;

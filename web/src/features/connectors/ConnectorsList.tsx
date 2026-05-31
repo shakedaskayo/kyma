@@ -42,14 +42,14 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       </div>
       <h2 className="text-base font-semibold">No connectors yet</h2>
       <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-        Connect a source to continuously ingest knowledge into your context graph.
-        Start with a GitHub repository.
+        Connect a source to continuously ingest knowledge into your context graph —
+        code, docs, issues, and data, all in one place.
       </p>
       <button
         onClick={onAdd}
         className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
       >
-        Add connector
+        Browse connectors
       </button>
     </div>
   );

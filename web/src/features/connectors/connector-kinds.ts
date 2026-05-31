@@ -1,113 +1,83 @@
-import type { ComponentType } from "react";
-import { GitBranch } from "lucide-react";
-import type { CreateConnectorBody } from "@/sdk/connectors";
+import type { CatalogEntry, CreateConnectorBody } from "@/sdk/connectors";
 
-// Declarative connector-kind registry. v1 ships only GitHub (PAT auth), but the
-// wizard, config form, and detail view are all driven from these defs so a new
-// connector (OAuth GitHub, GitLab, Notion, …) slots in by adding one entry —
-// no UI rewiring.
+// Catalog presentation + create helpers. The catalog itself is engine-driven
+// (GET /v1/connectors/catalog → CatalogEntry[]); this module only adds the
+// generic create-body assembly, category ordering, and interval presets, so a
+// new connector needs no change here.
 
-export type AuthMode = "pat" | "oauth";
-
-/** A schema-driven config field rendered by ConnectorConfigForm. */
-export interface KindField {
-  /** key under the connector `config` object */
-  key: string;
-  label: string;
-  /** secret fields render as a password input and are kept out of caches/logs */
-  type: "text" | "secret";
-  placeholder?: string;
-  required?: boolean;
-  help?: string;
-}
-
-/** Inputs the wizard collects before calling `buildCreateBody`. */
+/** Inputs the wizard collects before assembling the create body. */
 export interface KindFormValues {
   name: string;
   scheduleMs: number;
   /** field key → value, e.g. { token: "ghp_…" } */
   fields: Record<string, string>;
-  /** target db/table (advanced); fall back to kind defaults if blank */
+  /** target db/table (advanced); fall back to entry defaults / session db. */
   targetDatabase: string;
   targetTable: string;
   /** resource selection (e.g. selected repos "owner/name") */
   resources: string[];
 }
 
-export interface ConnectorKindDef {
-  id: string;
-  label: string;
-  /** connector `type` sent to the backend */
-  type: string;
-  icon: ComponentType<{ className?: string }>;
-  auth: { mode: AuthMode };
-  /** the secret/config fields collected on the config step */
-  fields: KindField[];
-  /** whether the wizard shows a resource-selection step (repo picker) */
-  resourceStep: boolean;
-  /** the secret field key whose value unlocks the resource step (the PAT) */
-  resourceTokenField?: string;
-  /** default target db is overridden by the session database at build time */
-  defaultTargetTable: string;
-  /** sensible default sync interval (ms) */
-  defaultScheduleMs: number;
-  /** assemble the POST /v1/connectors body */
-  buildCreateBody: (values: KindFormValues, sessionDatabase: string) => CreateConnectorBody;
-  /** the registered graph name for this connector (for the "Open graph" link) */
-  graphNameFor: (detail?: { type: string }) => string;
+/** Ordered category metadata for the catalog grid. */
+export const CATEGORIES: { id: string; label: string }[] = [
+  { id: "code", label: "Code & Repositories" },
+  { id: "knowledge", label: "Knowledge & Docs" },
+  { id: "project", label: "Project & Issues" },
+  { id: "data", label: "Data & Observability" },
+];
+
+export function categoryLabel(id: string): string {
+  return CATEGORIES.find((c) => c.id === id)?.label ?? "Other";
 }
 
-export const githubKind: ConnectorKindDef = {
-  id: "github",
-  label: "GitHub",
-  type: "github",
-  icon: GitBranch,
-  auth: { mode: "pat" },
-  fields: [
-    {
-      key: "token",
-      label: "Personal access token",
-      type: "secret",
-      placeholder: "ghp_…",
-      required: true,
-      help: "A classic or fine-grained PAT with repo read access. Stored encrypted; never shown again.",
-    },
-  ],
-  resourceStep: true,
-  resourceTokenField: "token",
-  defaultTargetTable: "github_nodes",
-  defaultScheduleMs: 5 * 60_000,
-  buildCreateBody: (values, sessionDatabase) => ({
+/** Short label for a connector's auth mode (shown on cards / review). */
+export function authLabel(mode: string): string {
+  switch (mode) {
+    case "pat": return "Token auth";
+    case "oauth": return "OAuth";
+    case "url": return "Endpoint URL";
+    case "none": return "No auth";
+    default: return mode;
+  }
+}
+
+export function blankValues(entry: CatalogEntry): KindFormValues {
+  return {
+    name: "",
+    scheduleMs: entry.default_schedule_ms,
+    fields: {},
+    targetDatabase: "",
+    targetTable: "",
+    resources: [],
+  };
+}
+
+/**
+ * Assemble the `POST /v1/connectors` body generically from a catalog entry:
+ * merge the entry's `config_defaults`, layer the collected field values, and
+ * write the selected resources under the entry's `resource.config_key`.
+ */
+export function buildCreateBody(
+  entry: CatalogEntry,
+  values: KindFormValues,
+  sessionDatabase: string,
+): CreateConnectorBody {
+  const config: Record<string, unknown> = { ...(entry.config_defaults ?? {}) };
+  for (const f of entry.fields) config[f.key] = values.fields[f.key] ?? "";
+  if (entry.resource) config[entry.resource.config_key] = values.resources;
+  return {
     name: values.name.trim(),
-    type: "github",
+    type: entry.type_id,
     target_database: values.targetDatabase.trim() || sessionDatabase,
-    target_table: values.targetTable.trim() || "github_nodes",
+    target_table: values.targetTable.trim() || entry.default_target_table || "",
     schedule_ms: values.scheduleMs,
-    config: {
-      token: values.fields.token ?? "",
-      repos: values.resources,
-      modules: {
-        repos: true,
-        branches: true,
-        pulls: true,
-        issues: true,
-        contributors: true,
-        codebase: true,
-      },
-    },
-  }),
-  graphNameFor: () => "github",
-};
-
-export const CONNECTOR_KINDS: ConnectorKindDef[] = [githubKind];
-
-export function kindByType(type: string): ConnectorKindDef | undefined {
-  return CONNECTOR_KINDS.find((k) => k.type === type);
+    config,
+  };
 }
 
-/** The "Open graph" target for a connector, falling back to the kind default. */
-export function graphNameForType(type: string): string {
-  return kindByType(type)?.graphNameFor({ type }) ?? type;
+/** The "Open graph" target for a connector, falling back to its type. */
+export function graphNameForEntry(entry: CatalogEntry | undefined, type: string): string {
+  return entry?.graph_name ?? type;
 }
 
 // ── Sync interval presets (clamped to the server's [100, 86_400_000] range) ─────
