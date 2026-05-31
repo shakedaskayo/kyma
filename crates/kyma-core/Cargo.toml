@@ -22,3 +22,8 @@ arrow.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true
 futures.workspace = true
+# Credentials encryption (AES-256-GCM) — see crypto.rs.
+aes-gcm = "0.10"
+rand = "0.8"
+sha2 = "0.10"
+base64 = "0.22"
