@@ -4929,6 +4929,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyma-memory"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow-schema",
+ "async-trait",
+ "chrono",
+ "kyma-core",
+ "kyma-embed",
+ "kyma-ingest-core",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "kyma-plan"
 version = "0.0.1"
 dependencies = [
@@ -4968,6 +4988,7 @@ dependencies = [
  "kyma-format-tlm",
  "kyma-graph",
  "kyma-kql",
+ "kyma-memory",
  "kyma-plan",
  "kyma-web-assets",
  "metrics",

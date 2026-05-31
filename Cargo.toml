@@ -23,6 +23,7 @@ members = [
     "crates/kyma-bin",
     "crates/kyma-web-assets",
     "crates/kyma-embed",
+    "crates/kyma-memory",
     "crates/kyma-mcp",
     "web/src-tauri",
 ]
@@ -147,6 +148,7 @@ kyma-server            = { path = "crates/kyma-server" }
 kyma-cli               = { path = "crates/kyma-cli" }
 kyma-web-assets        = { path = "crates/kyma-web-assets" }
 kyma-embed             = { path = "crates/kyma-embed" }
+kyma-memory            = { path = "crates/kyma-memory" }
 kyma-mcp               = { path = "crates/kyma-mcp" }
 
 # Embeddings + vector search

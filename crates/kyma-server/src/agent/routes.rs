@@ -31,6 +31,7 @@ use super::engine::{
     build_engine, claude_cli, engine_catalogue, CredentialResolver, EngineConfig, EngineKind,
 };
 use super::runner::{make_runner, model_id, ANON_USER};
+use super::sessions;
 use super::state::AgentState;
 
 /// Hard cap on tool-call count per run. Above this, the turn is aborted
@@ -40,10 +41,28 @@ const MAX_TOOL_CALLS: u32 = 12;
 /// Wall-clock deadline for the whole SSE exchange.
 const RUN_WALL_CLOCK: Duration = Duration::from_secs(60);
 
+/// Default number of new turns after which a session's rolling summary is
+/// refreshed. Overridable via `KYMA_SESSION_SUMMARY_EVERY`.
+const DEFAULT_SUMMARY_EVERY: i32 = 12;
+
+fn summary_every() -> i32 {
+    std::env::var("KYMA_SESSION_SUMMARY_EVERY")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(DEFAULT_SUMMARY_EVERY)
+}
+
 pub fn router(state: AgentState) -> axum::Router {
     axum::Router::new()
         .route("/ask", post(ask_handler))
         .route("/runs/:run_id", get(run_lookup_handler))
+        .route("/sessions", get(list_sessions_handler))
+        .route(
+            "/sessions/:session_id",
+            get(get_session_handler).delete(delete_session_handler),
+        )
+        .route("/sessions/:session_id/turns", get(get_session_turns_handler))
         .route("/engines", get(list_engines))
         .route("/engine", get(get_engine).put(put_engine))
         .route("/engine/test", post(test_engine))
@@ -60,6 +79,13 @@ struct AskRequest {
     database: Option<String>,
     #[serde(default)]
     include_thinking: bool,
+    /// Optional conversation session. When present, prior turns are replayed
+    /// for context and this turn is appended. A new id is minted when absent.
+    #[serde(default)]
+    session_id: Option<String>,
+    /// Marks the session source (e.g. `"claude_code"` for hook-driven asks).
+    #[serde(default)]
+    source: Option<String>,
 }
 
 /// One recorded SSE frame — we stash both the user-facing event name and
@@ -110,17 +136,47 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
     }
 
     let run_id = uuid::Uuid::new_v4();
-    let session_id_str = uuid::Uuid::new_v4().to_string();
     let include_thinking = body.include_thinking;
     let model = model_id(&state).await;
     let started_at = Utc::now();
     let start = Instant::now();
 
-    info!(run_id = %run_id, question = %question, "agent run starting");
+    // Resolve (or create) the conversation session (A5). Prior turns are
+    // replayed into the runner; this turn is appended below.
+    let source = body.source.as_deref().unwrap_or("kyma");
+    let tenant_uuid = state.tenant.as_uuid();
+    let sctx = sessions::load_or_create(
+        &state.pool,
+        body.session_id.as_deref(),
+        tenant_uuid,
+        ANON_USER,
+        source,
+    )
+    .await;
+    let session_uuid = sctx.session_id;
+    let session_id_str = session_uuid.to_string();
+    let user_turn_index = sctx.next_turn_index;
+    let assistant_turn_index = user_turn_index + 1;
+
+    info!(run_id = %run_id, session_id = %session_uuid, question = %question, "agent run starting");
+
+    // Record the user turn up-front so it survives even if the run errors.
+    sessions::persist_turn(
+        &state.pool,
+        session_uuid,
+        tenant_uuid,
+        user_turn_index,
+        "user",
+        &question,
+        None,
+    )
+    .await;
 
     // Build runner up-front so we can surface init errors via an
     // inline-but-single-event SSE stream (rather than an HTTP 500).
-    let runner = match make_runner(&state, &session_id_str).await {
+    let runner = match make_runner(&state, &session_id_str, &sctx.history, sctx.summary.as_deref())
+        .await
+    {
         Ok(r) => r,
         Err(e) => {
             error!(run_id = %run_id, error = %e, "failed to build agent runner");
@@ -131,10 +187,14 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
             });
             let events = vec![
                 Ok::<_, Infallible>(
-                    SseEvent::default()
-                        .event("run_error")
-                        .data(serde_json::to_string(&payload).unwrap_or_default()),
+                    SseEvent::default().event("session").data(
+                        serde_json::to_string(&json!({ "session_id": session_id_str.clone() }))
+                            .unwrap_or_default(),
+                    ),
                 ),
+                Ok(SseEvent::default()
+                    .event("run_error")
+                    .data(serde_json::to_string(&payload).unwrap_or_default())),
                 Ok(SseEvent::default().event("run_finished").data(
                     serde_json::to_string(&json!({
                         "run_id": run_id.to_string(),
@@ -151,6 +211,8 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
                 run_id,
                 &question,
                 &model,
+                tenant_uuid,
+                Some(session_uuid),
                 started_at,
                 Utc::now(),
                 "error",
@@ -169,12 +231,23 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
     // the SSE events the task produces.
     let (tx, rx) = mpsc::unbounded_channel::<Result<SseEvent, Infallible>>();
     let pool = state.pool.clone();
+    let summary_state = state.clone();
+    let summary_every = summary_every();
 
     tokio::spawn(async move {
         let mut trace: Vec<TraceFrame> = Vec::new();
         let mut tool_calls: u32 = 0;
         let mut last_run_sql: Option<String> = None;
         let mut final_text: String = String::new();
+
+        // Surface the session id first so the client can capture it even if
+        // the run errors mid-stream.
+        emit(
+            &tx,
+            &mut trace,
+            "session",
+            json!({ "session_id": session_id_str.clone() }),
+        );
 
         emit(
             &tx,
@@ -202,8 +275,8 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
                     }),
                 );
                 finish_and_persist(
-                    &pool, &tx, run_id, &question, &model, started_at, start, tool_calls, "error",
-                    &trace,
+                    &pool, &tx, run_id, &question, &model, tenant_uuid, Some(session_uuid),
+                    started_at, start, tool_calls, "error", &trace,
                 )
                 .await;
                 return;
@@ -222,8 +295,8 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
                     }),
                 );
                 finish_and_persist(
-                    &pool, &tx, run_id, &question, &model, started_at, start, tool_calls, "error",
-                    &trace,
+                    &pool, &tx, run_id, &question, &model, tenant_uuid, Some(session_uuid),
+                    started_at, start, tool_calls, "error", &trace,
                 )
                 .await;
                 return;
@@ -375,11 +448,23 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
                     "sql_used": last_run_sql,
                 }),
             );
+            // Record the assistant turn, then refresh the rolling summary.
+            sessions::persist_turn(
+                &pool,
+                session_uuid,
+                tenant_uuid,
+                assistant_turn_index,
+                "assistant",
+                &final_text,
+                None,
+            )
+            .await;
+            sessions::maybe_summarize_detached(summary_state, session_uuid, summary_every);
         }
 
         finish_and_persist(
-            &pool, &tx, run_id, &question, &model, started_at, start, tool_calls, status_str,
-            &trace,
+            &pool, &tx, run_id, &question, &model, tenant_uuid, Some(session_uuid), started_at,
+            start, tool_calls, status_str, &trace,
         )
         .await;
     });
@@ -397,6 +482,8 @@ async fn finish_and_persist(
     run_id: uuid::Uuid,
     question: &str,
     model: &str,
+    tenant: uuid::Uuid,
+    session_id: Option<uuid::Uuid>,
     started_at: chrono::DateTime<Utc>,
     start: Instant,
     tool_calls: u32,
@@ -434,6 +521,8 @@ async fn finish_and_persist(
         run_id,
         question,
         model,
+        tenant,
+        session_id,
         started_at,
         Utc::now(),
         status,
@@ -452,6 +541,8 @@ async fn persist_run(
     run_id: uuid::Uuid,
     question: &str,
     model_id: &str,
+    tenant: uuid::Uuid,
+    session_id: Option<uuid::Uuid>,
     started_at: chrono::DateTime<Utc>,
     finished_at: chrono::DateTime<Utc>,
     status: &str,
@@ -461,17 +552,18 @@ async fn persist_run(
     sqlx::query(
         r#"
         INSERT INTO agent_runs (
-            run_id, question, model_id, auth_subject,
+            run_id, tenant_id, question, model_id, auth_subject,
             session_id, started_at, finished_at, status,
             usage_json, trace_json, replay_cache_hit
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         "#,
     )
     .bind(run_id)
+    .bind(tenant)
     .bind(question)
     .bind(model_id)
     .bind(ANON_USER)
-    .bind(Option::<uuid::Uuid>::None)
+    .bind(session_id)
     .bind(started_at)
     .bind(finished_at)
     .bind(status)
@@ -481,6 +573,182 @@ async fn persist_run(
     .execute(pool)
     .await
     .map(|_| ())
+}
+
+// ---------------------------------------------------------------------------
+// GET/DELETE /v1/agent/sessions* — multi-turn session surface (A5)
+// ---------------------------------------------------------------------------
+
+fn parse_session_id(raw: &str) -> Result<uuid::Uuid, Response> {
+    uuid::Uuid::parse_str(raw).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "invalid session_id (expected uuid)"})),
+        )
+            .into_response()
+    })
+}
+
+async fn list_sessions_handler(State(state): State<AgentState>) -> Response {
+    let rows: Vec<(
+        uuid::Uuid,
+        Option<String>,
+        chrono::DateTime<Utc>,
+        chrono::DateTime<Utc>,
+        String,
+        i64,
+    )> = match sqlx::query_as(
+        r#"
+        SELECT s.session_id, s.title, s.created_at, s.last_active, s.source,
+               COUNT(t.turn_index) AS turn_count
+        FROM agent_sessions s
+        LEFT JOIN agent_session_turns t ON t.session_id = s.session_id
+        GROUP BY s.session_id
+        ORDER BY s.last_active DESC
+        LIMIT 200
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            error!(error = %e, "list sessions failed");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            )
+                .into_response();
+        }
+    };
+    let sessions: Vec<Value> = rows
+        .into_iter()
+        .map(|(id, title, created, last_active, source, turn_count)| {
+            json!({
+                "session_id": id.to_string(),
+                "title": title,
+                "created_at": created,
+                "last_active": last_active,
+                "source": source,
+                "turn_count": turn_count,
+            })
+        })
+        .collect();
+    Json(json!({ "sessions": sessions })).into_response()
+}
+
+async fn get_session_handler(
+    State(state): State<AgentState>,
+    Path(session_id): Path<String>,
+) -> Response {
+    let sid = match parse_session_id(&session_id) {
+        Ok(u) => u,
+        Err(resp) => return resp,
+    };
+    let row: Option<(
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<Utc>,
+        chrono::DateTime<Utc>,
+        String,
+        i32,
+    )> = sqlx::query_as(
+        "SELECT title, rolling_summary, created_at, last_active, source, summary_turn_index \
+         FROM agent_sessions WHERE session_id = $1",
+    )
+    .bind(sid)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+    match row {
+        Some((title, summary, created, last_active, source, summary_idx)) => Json(json!({
+            "session_id": sid.to_string(),
+            "title": title,
+            "rolling_summary": summary,
+            "created_at": created,
+            "last_active": last_active,
+            "source": source,
+            "summary_turn_index": summary_idx,
+        }))
+        .into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "session not found"})),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_session_turns_handler(
+    State(state): State<AgentState>,
+    Path(session_id): Path<String>,
+) -> Response {
+    let sid = match parse_session_id(&session_id) {
+        Ok(u) => u,
+        Err(resp) => return resp,
+    };
+    let rows: Vec<(
+        i32,
+        String,
+        SqlxJson<Value>,
+        Option<uuid::Uuid>,
+        chrono::DateTime<Utc>,
+    )> = sqlx::query_as(
+        "SELECT turn_index, role, content_json, run_id, created_at \
+         FROM agent_session_turns WHERE session_id = $1 ORDER BY turn_index ASC",
+    )
+    .bind(sid)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+    let turns: Vec<Value> = rows
+        .into_iter()
+        .map(|(idx, role, content, run_id, created)| {
+            json!({
+                "turn_index": idx,
+                "role": role,
+                "content": content.0,
+                "run_id": run_id.map(|r| r.to_string()),
+                "created_at": created,
+            })
+        })
+        .collect();
+    Json(json!({ "session_id": sid.to_string(), "turns": turns })).into_response()
+}
+
+async fn delete_session_handler(
+    State(state): State<AgentState>,
+    Path(session_id): Path<String>,
+) -> Response {
+    let sid = match parse_session_id(&session_id) {
+        Ok(u) => u,
+        Err(resp) => return resp,
+    };
+    // Turns cascade via FK ON DELETE CASCADE. `agent_runs.session_id` is a plain
+    // (non-FK) column, so detach it to avoid dangling references.
+    let _ = sqlx::query("UPDATE agent_runs SET session_id = NULL WHERE session_id = $1")
+        .bind(sid)
+        .execute(&state.pool)
+        .await;
+    match sqlx::query("DELETE FROM agent_sessions WHERE session_id = $1")
+        .bind(sid)
+        .execute(&state.pool)
+        .await
+    {
+        Ok(r) if r.rows_affected() > 0 => {
+            Json(json!({"deleted": true, "session_id": sid.to_string()})).into_response()
+        }
+        Ok(_) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "session not found"})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -838,6 +1106,8 @@ async fn ask_via_claude_cli(pool: PgPool, question: &str, cfg: &EngineConfig) ->
                     run_id,
                     &question_owned,
                     &model,
+                    kyma_core::tenant::DEFAULT_TENANT.as_uuid(),
+                    None,
                     started_at,
                     Utc::now(),
                     "error",
@@ -910,9 +1180,11 @@ async fn ask_via_claude_cli(pool: PgPool, question: &str, cfg: &EngineConfig) ->
             run_id,
             &question_owned,
             &model,
+            kyma_core::tenant::DEFAULT_TENANT.as_uuid(),
+            None,
             started_at,
             Utc::now(),
-            if errored { "error" } else { "ok" },
+            if errored { "error" } else { "success" },
             &Value::String(answer.clone()),
             &json!([{ "event": "answer_final", "data": { "text": answer } }]),
         )

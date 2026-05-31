@@ -23,8 +23,8 @@ export default {
       },
       borderRadius: { lg: "var(--radius)", md: "calc(var(--radius) - 2px)", sm: "calc(var(--radius) - 4px)" },
       fontFamily: {
-        sans: ["ui-sans-serif","system-ui","-apple-system","Segoe UI","Roboto","sans-serif"],
-        mono: ["ui-monospace","SFMono-Regular","Menlo","monospace"],
+        sans: ["IBM Plex Sans","ui-sans-serif","system-ui","-apple-system","Segoe UI","Roboto","sans-serif"],
+        mono: ["JetBrains Mono","ui-monospace","SFMono-Regular","Menlo","monospace"],
       },
     },
   },

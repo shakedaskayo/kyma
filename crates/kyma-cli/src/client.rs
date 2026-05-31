@@ -10,6 +10,10 @@ pub(crate) struct ClientConfig {
     pub(crate) endpoint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) token: Option<String>,
+    /// Last conversation session id, set after each `query`. `--continue`
+    /// resumes this session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) last_session_id: Option<String>,
 }
 
 pub(crate) fn config_dir() -> Result<PathBuf> {
@@ -81,13 +85,18 @@ pub(crate) fn http_client() -> reqwest::Client {
 pub(crate) async fn stream_agent_ask(
     cfg: &ClientConfig,
     question: &str,
+    session_id: Option<&str>,
     mut on_event: impl FnMut(&str, &str),
 ) -> Result<()> {
     let url = format!("{}/v1/agent/ask", cfg.endpoint.trim_end_matches('/'));
-    let mut req = http_client().post(url).json(&serde_json::json!({
+    let mut body = serde_json::json!({
         "question": question,
         "include_thinking": false,
-    }));
+    });
+    if let Some(sid) = session_id {
+        body["session_id"] = serde_json::Value::String(sid.to_string());
+    }
+    let mut req = http_client().post(url).json(&body);
     if let Some(t) = &cfg.token {
         req = req.bearer_auth(t);
     }
@@ -132,6 +141,38 @@ fn parse_sse_frame(frame: &str) -> (String, String) {
         }
     }
     (event, data)
+}
+
+/// GET a JSON endpoint with the configured bearer token.
+pub(crate) async fn get_json(cfg: &ClientConfig, path: &str) -> Result<serde_json::Value> {
+    let url = format!("{}{}", cfg.endpoint.trim_end_matches('/'), path);
+    let mut req = http_client().get(url);
+    if let Some(t) = &cfg.token {
+        req = req.bearer_auth(t);
+    }
+    let res = req.send().await.with_context(|| format!("GET {path}"))?;
+    let status = res.status();
+    let text = res.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(anyhow!("server returned {status}: {text}"));
+    }
+    Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
+}
+
+/// DELETE a JSON endpoint with the configured bearer token.
+pub(crate) async fn delete_json(cfg: &ClientConfig, path: &str) -> Result<serde_json::Value> {
+    let url = format!("{}{}", cfg.endpoint.trim_end_matches('/'), path);
+    let mut req = http_client().delete(url);
+    if let Some(t) = &cfg.token {
+        req = req.bearer_auth(t);
+    }
+    let res = req.send().await.with_context(|| format!("DELETE {path}"))?;
+    let status = res.status();
+    let text = res.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(anyhow!("server returned {status}: {text}"));
+    }
+    Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
 }
 
 pub(crate) async fn probe_health(cfg: &ClientConfig) -> Result<String> {

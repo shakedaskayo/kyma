@@ -39,10 +39,27 @@ export interface GraphCanvasProps {
 // back to (database, graph, bare-id) when calling the API.
 const keyOf = (n: { id: string; namespace?: string }) =>
   `${n.namespace ?? ""}::${n.id}`;
+// Resolve an endpoint's namespace independently: a cross-graph edge (e.g. a
+// memory REFERENCES an entity in another graph) carries the target endpoint's
+// namespace in `properties.target_namespace`. Same-graph edges fall back to the
+// edge's own namespace for both endpoints.
 const edgeEndpointKey = (
-  e: { source_id: string; target_id: string; namespace?: string },
+  e: {
+    source_id: string;
+    target_id: string;
+    namespace?: string;
+    properties?: Record<string, unknown>;
+  },
   end: "source_id" | "target_id",
-) => `${e.namespace ?? ""}::${e[end]}`;
+) => {
+  const ns =
+    end === "target_id"
+      ? ((e.properties?.target_namespace as string | undefined) ??
+        e.namespace ??
+        "")
+      : (e.namespace ?? "");
+  return `${ns}::${e[end]}`;
+};
 
 function GraphCanvasInner({
   nodes,

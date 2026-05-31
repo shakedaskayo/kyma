@@ -270,6 +270,150 @@ async fn logout_handler(State(state): State<AuthState>, req: Request) -> Respons
 }
 
 // -------------------------------------------------------------------------
+// First-run setup: signup + status + environment probe
+// -------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct SignupRequest {
+    pub username: String,
+    pub password: String,
+}
+
+/// `POST /v1/auth/signup` — create the FIRST admin user (first-run setup).
+///
+/// Unauthenticated, but only succeeds while no users exist; once setup is
+/// complete it returns 409 so this can't be used to mint extra admins. On
+/// success it issues a token pair (auto-login) so the wizard proceeds signed in.
+async fn signup_handler(State(state): State<AuthState>, Json(body): Json<SignupRequest>) -> Response {
+    let username = body.username.trim().to_string();
+    if username.is_empty() || body.password.len() < 8 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": {"code": "invalid",
+                "message": "username is required and password must be at least 8 characters"}})),
+        )
+            .into_response();
+    }
+    match state.catalog.count_users().await {
+        Ok(0) => {}
+        Ok(_) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({"error": {"code": "already_setup",
+                    "message": "setup is already complete — sign in instead"}})),
+            )
+                .into_response();
+        }
+        Err(e) => return internal_error_response(&e.to_string()),
+    }
+    let phc = match crate::auth::passwords::hash_password(&body.password) {
+        Ok(h) => h,
+        Err(e) => return internal_error_response(&format!("hashing password: {e}")),
+    };
+    if let Err(e) = state.catalog.create_user(&username, &phc, "admin").await {
+        return internal_error_response(&e.to_string());
+    }
+    let session_id = uuid::Uuid::new_v4();
+    match issue_token_pair(state.catalog.as_ref(), session_id, "admin", &username).await {
+        Ok(pair) => (StatusCode::CREATED, Json(pair)).into_response(),
+        Err(e) => internal_error_response(&e),
+    }
+}
+
+/// `GET /v1/auth/status` — unauthenticated. Lets the web app decide between
+/// showing the first-run setup wizard vs. the login screen on load.
+async fn auth_status_handler(State(state): State<AuthState>) -> Response {
+    let users_exist = matches!(state.catalog.count_users().await, Ok(n) if n > 0);
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "users_exist": users_exist,
+            "setup_required": !users_exist,
+        })),
+    )
+        .into_response()
+}
+
+/// `GET /v1/setup/probe` — unauthenticated host capability probe for the setup
+/// wizard's AI-engine step: which engines/keys are available, whether Ollama is
+/// running and `gemma4:latest` is installed, plus a recommended default.
+async fn env_probe_handler() -> Response {
+    let anthropic_key_present =
+        std::env::var("ANTHROPIC_API_KEY").map(|v| !v.is_empty()).unwrap_or(false);
+    let openai_key_present =
+        std::env::var("OPENAI_API_KEY").map(|v| !v.is_empty()).unwrap_or(false);
+    let claude_binary_found = crate::agent::engine::claude_cli::locate_binary().is_some();
+    let (ollama_reachable, ollama_models) = probe_ollama().await;
+    let gemma4_present = ollama_models.iter().any(|m| m.starts_with("gemma4"));
+
+    // On-device gemma4 is the preferred default (private, no key). Fall back to
+    // whatever cloud capability is actually available.
+    let recommend = if gemma4_present {
+        serde_json::json!({"kind": "ollama", "model": "gemma4:latest"})
+    } else if anthropic_key_present {
+        serde_json::json!({"kind": "anthropic", "model": "claude-sonnet-4-6"})
+    } else if claude_binary_found {
+        serde_json::json!({"kind": "claude_cli", "model": "sonnet"})
+    } else if openai_key_present {
+        serde_json::json!({"kind": "openai", "model": "gpt-4o"})
+    } else if ollama_reachable && !ollama_models.is_empty() {
+        serde_json::json!({"kind": "ollama", "model": ollama_models[0]})
+    } else {
+        // Nothing detected — still default to on-device gemma4 and hint a pull.
+        serde_json::json!({"kind": "ollama", "model": "gemma4:latest", "needs_pull": true})
+    };
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "ollama_reachable": ollama_reachable,
+            "ollama_models": ollama_models,
+            "gemma4_present": gemma4_present,
+            "anthropic_key_present": anthropic_key_present,
+            "openai_key_present": openai_key_present,
+            "claude_binary_found": claude_binary_found,
+            "recommend": recommend,
+        })),
+    )
+        .into_response()
+}
+
+/// Probe the local Ollama daemon for installed models. Returns
+/// `(reachable, model_names)`. Short timeout so the wizard stays snappy.
+async fn probe_ollama() -> (bool, Vec<String>) {
+    let host = std::env::var("KYMA_OLLAMA_HOST")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "http://localhost:11434".to_string());
+    let url = format!("{}/api/tags", host.trim_end_matches('/'));
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(1500))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return (false, Vec::new()),
+    };
+    match client.get(&url).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let models = resp
+                .json::<serde_json::Value>()
+                .await
+                .ok()
+                .and_then(|v| v.get("models").cloned())
+                .and_then(|m| m.as_array().cloned())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|m| m.get("name").and_then(|n| n.as_str()).map(String::from))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            (true, models)
+        }
+        _ => (false, Vec::new()),
+    }
+}
+
+// -------------------------------------------------------------------------
 // Router builders
 // -------------------------------------------------------------------------
 
@@ -282,6 +426,9 @@ pub fn auth_login_router(catalog: Arc<dyn Catalog>) -> Router {
     Router::new()
         .route("/v1/auth/login", post(login_handler))
         .route("/v1/auth/refresh", post(refresh_handler))
+        .route("/v1/auth/signup", post(signup_handler))
+        .route("/v1/auth/status", get(auth_status_handler))
+        .route("/v1/setup/probe", get(env_probe_handler))
         .with_state(state)
 }
 

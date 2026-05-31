@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="kyma">
+  <title>kyma</title>
+  <defs>
+    <radialGradient id="kymaCore" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0d1015"/>
+      <stop offset="80%" stop-color="#0d1015"/>
+      <stop offset="100%" stop-color="#11151b"/>
+    </radialGradient>
+    <linearGradient id="kymaRing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7ed957"/>
+      <stop offset="60%" stop-color="#7ed957" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#7ed957" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+  <!-- Outer phosphor ring (the aperture) -->
+  <circle cx="48" cy="48" r="44" fill="none" stroke="url(#kymaRing)" stroke-width="2"/>
+  <!-- Inner core -->
+  <circle cx="48" cy="48" r="36" fill="url(#kymaCore)" stroke="#2a2e36" stroke-width="1"/>
+  <!-- Small green status pulse -->
+  <circle cx="48" cy="48" r="36" fill="none" stroke="#7ed957" stroke-width="0.5" opacity="0.4"/>
+  <!-- Stylized "k" — horizontal stem + two angled arms suggesting fan-in/fan-out -->
+  <g stroke="#e8e6e0" stroke-width="3.5" stroke-linecap="round" fill="none">
+    <line x1="34" y1="32" x2="34" y2="64"/>
+    <line x1="34" y1="48" x2="58" y2="34"/>
+    <line x1="34" y1="48" x2="58" y2="62"/>
+  </g>
+  <!-- Phosphor accent dots at the end of each arm -->
+  <circle cx="58" cy="34" r="2.5" fill="#7ed957"/>
+  <circle cx="58" cy="62" r="2.5" fill="#7ed957"/>
+</svg>

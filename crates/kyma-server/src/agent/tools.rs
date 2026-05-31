@@ -338,7 +338,12 @@ fn is_safe_ident(s: &str) -> bool {
 /// execute `sql`, and return a JSON envelope `{columns, rows, truncated}`
 /// (or `{error}` on failure — never an `Err`, because tool failures should
 /// be surfaced to the model as data rather than abort the run).
-async fn execute_sql(shared: &SharedToolCtx, database: &str, sql: &str, max_rows: usize) -> Value {
+pub(crate) async fn execute_sql(
+    shared: &SharedToolCtx,
+    database: &str,
+    sql: &str,
+    max_rows: usize,
+) -> Value {
     let tables = match shared.catalog.list_tables_in_database(database).await {
         Ok(t) => t,
         Err(e) => {

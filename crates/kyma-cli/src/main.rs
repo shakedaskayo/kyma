@@ -19,8 +19,8 @@
 mod client;
 mod connector;
 use client::{
-    effective_config, install_target, load_config, probe_health, save_config, stream_agent_ask,
-    write_skill_file, ClientConfig,
+    delete_json, effective_config, get_json, install_target, load_config, probe_health,
+    save_config, stream_agent_ask, write_skill_file, ClientConfig,
 };
 
 use anyhow::{anyhow, Context, Result};
@@ -68,6 +68,17 @@ enum Command {
         /// Emit the raw SSE event stream as JSONL instead of plain text.
         #[arg(long)]
         json: bool,
+        /// Resume a specific conversation session by id.
+        #[arg(long)]
+        session: Option<String>,
+        /// Resume the most recent session (the last one `query` used).
+        #[arg(long = "continue")]
+        continue_session: bool,
+    },
+    /// Inspect or manage agent conversation sessions.
+    Sessions {
+        #[command(subcommand)]
+        op: SessionsOp,
     },
     /// Install the Kyma skill so coding agents (Claude Code, Cursor, …)
     /// can discover and use this CLI.
@@ -162,6 +173,18 @@ enum Command {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum SessionsOp {
+    /// List recent conversation sessions.
+    List,
+    /// Show a session's metadata + rolling summary.
+    Show { id: String },
+    /// Print a session's turns in order.
+    Turns { id: String },
+    /// Delete a session and all of its turns.
+    Delete { id: String },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::try_init().ok();
@@ -172,7 +195,13 @@ async fn main() -> Result<()> {
         // ── client subcommands ────────────────────────────────────────
         Command::Connect { url, token } => cmd_connect(url, token).await,
         Command::Status => cmd_status().await,
-        Command::Query { question, json } => cmd_query(question, json).await,
+        Command::Query {
+            question,
+            json,
+            session,
+            continue_session,
+        } => cmd_query(question, json, session, continue_session).await,
+        Command::Sessions { op } => cmd_sessions(op).await,
         Command::InstallSkill {
             target,
             also_link_claude,
@@ -320,9 +349,11 @@ async fn main() -> Result<()> {
 
 async fn cmd_connect(url: String, token: Option<String>) -> Result<()> {
     let url = url.trim_end_matches('/').to_string();
+    // Preserve any existing last_session_id across reconnects.
     let cfg = ClientConfig {
         endpoint: url.clone(),
         token,
+        ..load_config().unwrap_or_default()
     };
     save_config(&cfg)?;
     println!("Saved connection to {url}");
@@ -355,15 +386,33 @@ async fn cmd_status() -> Result<()> {
     Ok(())
 }
 
-async fn cmd_query(question: String, json: bool) -> Result<()> {
+async fn cmd_query(
+    question: String,
+    json: bool,
+    session: Option<String>,
+    continue_session: bool,
+) -> Result<()> {
     let cfg = effective_config()?;
+    // Resolve the session to resume: explicit --session wins, else --continue
+    // reuses the last-used session from the persisted config.
+    let resolved_session = match session {
+        Some(s) => Some(s),
+        None if continue_session => load_config().ok().and_then(|c| c.last_session_id),
+        None => None,
+    };
+
     let mut had_error = false;
-    stream_agent_ask(&cfg, &question, |event, data| {
+    let mut new_session_id: Option<String> = None;
+    stream_agent_ask(&cfg, &question, resolved_session.as_deref(), |event, data| {
+        if event == "session" {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                if let Some(s) = v.get("session_id").and_then(|s| s.as_str()) {
+                    new_session_id = Some(s.to_string());
+                }
+            }
+        }
         if json {
-            println!(
-                "{}",
-                serde_json::json!({ "event": event, "data": data })
-            );
+            println!("{}", serde_json::json!({ "event": event, "data": data }));
             return;
         }
         match event {
@@ -387,8 +436,58 @@ async fn cmd_query(question: String, json: bool) -> Result<()> {
         }
     })
     .await?;
+
+    // Remember the session id so a later `--continue` can resume it.
+    if let Some(sid) = new_session_id {
+        remember_session(&sid);
+    }
     if had_error {
         std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Persist the last-used session id (best-effort).
+fn remember_session(session_id: &str) {
+    let mut cfg = load_config().unwrap_or_default();
+    if cfg.last_session_id.as_deref() != Some(session_id) {
+        cfg.last_session_id = Some(session_id.to_string());
+        let _ = save_config(&cfg);
+    }
+}
+
+async fn cmd_sessions(op: SessionsOp) -> Result<()> {
+    let cfg = effective_config()?;
+    match op {
+        SessionsOp::List => {
+            let v = get_json(&cfg, "/v1/agent/sessions").await?;
+            let empty = vec![];
+            let sessions = v.get("sessions").and_then(|s| s.as_array()).unwrap_or(&empty);
+            if sessions.is_empty() {
+                println!("(no sessions)");
+            } else {
+                for s in sessions {
+                    let id = s.get("session_id").and_then(|x| x.as_str()).unwrap_or("?");
+                    let turns = s.get("turn_count").and_then(|x| x.as_i64()).unwrap_or(0);
+                    let last = s.get("last_active").and_then(|x| x.as_str()).unwrap_or("");
+                    let title = s.get("title").and_then(|x| x.as_str()).unwrap_or("");
+                    let src = s.get("source").and_then(|x| x.as_str()).unwrap_or("");
+                    println!("{id}\tturns={turns}\tsource={src}\tlast_active={last}\t{title}");
+                }
+            }
+        }
+        SessionsOp::Show { id } => {
+            let v = get_json(&cfg, &format!("/v1/agent/sessions/{id}")).await?;
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        }
+        SessionsOp::Turns { id } => {
+            let v = get_json(&cfg, &format!("/v1/agent/sessions/{id}/turns")).await?;
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        }
+        SessionsOp::Delete { id } => {
+            let v = delete_json(&cfg, &format!("/v1/agent/sessions/{id}")).await?;
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        }
     }
     Ok(())
 }
