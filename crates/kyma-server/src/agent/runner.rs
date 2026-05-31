@@ -5,14 +5,21 @@
 //! that the HTTP layer drives via SSE.
 
 use adk_rust::agent::LlmAgentBuilder;
+use adk_rust::futures::StreamExt;
+use adk_rust::identity::{SessionId, UserId};
 use adk_rust::runner::{Runner, RunnerConfig};
-use adk_rust::session::{CreateRequest, InMemorySessionService, SessionService};
-use adk_rust::Agent;
+use adk_rust::session::{CreateRequest, Event, InMemorySessionService, SessionService};
+use adk_rust::{Agent, Content, Part};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::agent::engine::{build_engine, CredentialResolver};
 
+use super::memory_tools::{
+    tool_link_memory_to_entity, tool_list_memories, tool_merge_memories, tool_recall_memory,
+    tool_save_memory, tool_update_memory_importance, tool_update_memory_status,
+};
+use super::sessions::Turn;
 use super::state::AgentState;
 use super::tools::{
     tool_describe_table, tool_explore_schema, tool_find_references_to, tool_graph_traverse,
@@ -22,6 +29,11 @@ use super::tools::{
 /// Application name advertised to the session service. Stable so that
 /// session ids hash consistently across turns (once we add session reuse).
 pub const APP_NAME: &str = "kyma-agent";
+
+/// Stable agent name. The runner filters conversation history by author, so
+/// seeded assistant turns must use this exact name to be replayed (see
+/// [`make_runner`]).
+pub const AGENT_NAME: &str = "kyma-assistant";
 
 /// User id used when the endpoint is hit without an authenticated subject.
 /// Matches the stub `auth_subject` column written into `agent_runs`.
@@ -57,6 +69,11 @@ Efficient workflow:
 3. Once you know the schema, write a KQL pipeline and call `run_kql`. For vector similarity, fall back to `run_sql` with `cosine_distance`.
 4. If a column's shape is unclear, call `sample_rows` for a few example records.
 5. Produce a concise final answer in plain English. Cite the KQL (or SQL) you ran.
+
+MEMORY — you have a persistent memory across sessions:
+- `recall_memory(query)` — call this early when a question may depend on prior context, the user's stated preferences, or past decisions.
+- `save_memory(content, memory_type, …)` — store durable facts/decisions/preferences/learnings the user shares. Link them to entities with `link_memory_to_entity` when they're about a specific repo/service/table.
+- Don't save trivia, transient state, or things already in the data. Prefer recalling before answering over guessing.
 
 Rules:
 - Do NOT fabricate schema. Always verify via a tool before writing a query.
@@ -117,7 +134,7 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
         pool: state.pool.clone(),
     };
 
-    let agent = LlmAgentBuilder::new("kyma-assistant")
+    let agent = LlmAgentBuilder::new(AGENT_NAME)
         .description(
             "Kyma inline data assistant — answers English questions about the user's data.",
         )
@@ -130,7 +147,15 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
         .tool(tool_run_sql(shared.clone()))
         .tool(tool_sample_rows(shared.clone()))
         .tool(tool_find_references_to(shared.clone()))
-        .tool(tool_graph_traverse(shared))
+        .tool(tool_graph_traverse(shared.clone()))
+        // Agentic Memory tools.
+        .tool(tool_save_memory(shared.clone()))
+        .tool(tool_recall_memory(shared.clone()))
+        .tool(tool_list_memories(shared.clone()))
+        .tool(tool_link_memory_to_entity(shared.clone()))
+        .tool(tool_update_memory_status(shared.clone()))
+        .tool(tool_update_memory_importance(shared.clone()))
+        .tool(tool_merge_memories(shared))
         .build()
         .map_err(|e| anyhow::anyhow!("agent build failed: {e:?}"))?;
 
@@ -138,9 +163,15 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
 }
 
 /// Construct a `Runner` and create a fresh in-memory session bound to
-/// `session_id`. Returns the runner + the session id (unchanged) so the
-/// caller can drive `runner.run(...)` next.
-pub async fn make_runner(state: &AgentState, session_id: &str) -> anyhow::Result<Runner> {
+/// `session_id`, seeded with any prior conversation `history` (and an optional
+/// rolling `summary` of older turns) so follow-ups carry context. Returns the
+/// runner so the caller can drive `runner.run(...)` next.
+pub async fn make_runner(
+    state: &AgentState,
+    session_id: &str,
+    history: &[Turn],
+    summary: Option<&str>,
+) -> anyhow::Result<Runner> {
     let agent = build_agent(state).await?;
 
     let sessions: Arc<dyn SessionService> = Arc::new(InMemorySessionService::new());
@@ -153,6 +184,8 @@ pub async fn make_runner(state: &AgentState, session_id: &str) -> anyhow::Result
         })
         .await
         .map_err(|e| anyhow::anyhow!("session create failed: {e:?}"))?;
+
+    seed_history(&sessions, session_id, history, summary).await;
 
     let runner = Runner::new(RunnerConfig {
         app_name: APP_NAME.to_string(),
@@ -171,6 +204,120 @@ pub async fn make_runner(state: &AgentState, session_id: &str) -> anyhow::Result
     .map_err(|e| anyhow::anyhow!("runner build failed: {e:?}"))?;
 
     Ok(runner)
+}
+
+/// Replay prior turns into the in-memory session as ADK events. The runner
+/// builds conversation history from session events, mapping role by
+/// `(author, content.role)`: author `"user"` → user; otherwise → model. So a
+/// user turn uses author `"user"`, and an assistant turn uses author
+/// [`AGENT_NAME`] (matching the live agent) + content role `"model"`, which is
+/// what keeps it in the replayed history.
+async fn seed_history(
+    sessions: &Arc<dyn SessionService>,
+    session_id: &str,
+    history: &[Turn],
+    summary: Option<&str>,
+) {
+    if let Some(s) = summary {
+        let s = s.trim();
+        if !s.is_empty() {
+            let mut ev = Event::new("seed-summary");
+            ev.author = "user".to_string();
+            ev.set_content(
+                Content::new("user")
+                    .with_text(format!("Summary of earlier conversation (for context):\n{s}")),
+            );
+            let _ = sessions.append_event(session_id, ev).await;
+        }
+    }
+    for (i, turn) in history.iter().enumerate() {
+        if turn.text.trim().is_empty() {
+            continue;
+        }
+        let is_assistant = turn.role == "assistant";
+        let mut ev = Event::new(format!("seed-{i}"));
+        ev.author = if is_assistant { AGENT_NAME.to_string() } else { "user".to_string() };
+        let role = if is_assistant { "model" } else { "user" };
+        ev.set_content(Content::new(role).with_text(turn.text.clone()));
+        let _ = sessions.append_event(session_id, ev).await;
+    }
+}
+
+/// Build a minimal, tool-less agent whose only job is to summarize text.
+async fn build_summarizer(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
+    let cfg = state.engines.get().await?;
+    let resolver = CredentialResolver::new(state.credentials.clone(), state.tenant);
+    let key = resolver.resolve(&cfg).await?;
+    let llm = build_engine(&cfg, key)?;
+    let agent = LlmAgentBuilder::new("kyma-summarizer")
+        .description("Summarizes prior conversation for context compression.")
+        .instruction(
+            "You compress conversations. Given a transcript, return a concise summary (3-6 \
+             sentences) that preserves durable facts, decisions, and the user's intent. \
+             Return only the summary text — no preamble, no headings.",
+        )
+        .model(llm)
+        .build()
+        .map_err(|e| anyhow::anyhow!("summarizer build failed: {e:?}"))?;
+    Ok(Arc::new(agent))
+}
+
+/// Run a one-shot summarization of `transcript` with the configured engine and
+/// return the model's final text. Used by the rolling-summary pass.
+pub async fn summarize_conversation(state: &AgentState, transcript: &str) -> anyhow::Result<String> {
+    let agent = build_summarizer(state).await?;
+    let sessions: Arc<dyn SessionService> = Arc::new(InMemorySessionService::new());
+    let sid = uuid::Uuid::new_v4().to_string();
+    sessions
+        .create(CreateRequest {
+            app_name: APP_NAME.to_string(),
+            user_id: ANON_USER.to_string(),
+            session_id: Some(sid.clone()),
+            state: HashMap::new(),
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("summarizer session create failed: {e:?}"))?;
+
+    let runner = Runner::new(RunnerConfig {
+        app_name: APP_NAME.to_string(),
+        agent,
+        session_service: sessions,
+        artifact_service: None,
+        memory_service: None,
+        plugin_manager: None,
+        run_config: None,
+        compaction_config: None,
+        context_cache_config: None,
+        cache_capable: None,
+        request_context: None,
+        cancellation_token: None,
+    })
+    .map_err(|e| anyhow::anyhow!("summarizer runner build failed: {e:?}"))?;
+
+    let user_id = UserId::new(ANON_USER).map_err(|e| anyhow::anyhow!("user_id: {e}"))?;
+    let session_id = SessionId::new(&sid).map_err(|e| anyhow::anyhow!("session_id: {e}"))?;
+    let content = Content::new("user").with_text(transcript.to_string());
+
+    let mut stream = runner
+        .run(user_id, session_id, content)
+        .await
+        .map_err(|e| anyhow::anyhow!("summarizer run: {e:?}"))?;
+
+    let mut out = String::new();
+    while let Some(ev) = stream.next().await {
+        let ev = ev.map_err(|e| anyhow::anyhow!("summarizer event: {e:?}"))?;
+        if ev.llm_response.partial {
+            continue;
+        }
+        for c in ev.llm_response.content.iter() {
+            for part in c.parts.iter() {
+                if let Part::Text { text } = part {
+                    out.push_str(text);
+                }
+            }
+        }
+    }
+    Ok(out.trim().to_string())
 }
 
 /// Effective model id string persisted into `agent_runs.model_id`. Reads the

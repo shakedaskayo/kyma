@@ -116,11 +116,18 @@ export function GraphView() {
   );
   const visEdges = useMemo(() => {
     const visIds = new Set(visNodes.map(keyOf));
-    return edges.filter(
-      (e) =>
-        visIds.has(`${e.namespace ?? ""}::${e.source_id}`) &&
-        visIds.has(`${e.namespace ?? ""}::${e.target_id}`),
-    );
+    return edges.filter((e) => {
+      // Cross-graph edges (e.g. a memory REFERENCES a repo in another graph)
+      // carry the target endpoint's namespace explicitly; fall back to the
+      // edge's own namespace for same-graph edges.
+      const srcNs = e.namespace ?? "";
+      const dstNs =
+        (e.properties?.target_namespace as string | undefined) ?? e.namespace ?? "";
+      return (
+        visIds.has(`${srcNs}::${e.source_id}`) &&
+        visIds.has(`${dstNs}::${e.target_id}`)
+      );
+    });
   }, [edges, visNodes]);
 
   async function handleExpand() {

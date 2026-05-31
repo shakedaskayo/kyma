@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSession } from "@/sdk/session";
 import { login } from "@/sdk/auth";
+import { getSetupStatus } from "@/sdk/setup";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (s: Record<string, unknown>): { next?: string } => ({
@@ -25,6 +26,16 @@ function Login() {
   const [password, setPassword] = useState("");
   const [database, setDatabase] = useState(session.database || "obs");
   const [loading, setLoading] = useState(false);
+
+  // Fresh instance with no users yet → send the operator to first-run setup.
+  useEffect(() => {
+    getSetupStatus(session.endpoint || "http://localhost:8080")
+      .then((s) => {
+        if (s.setup_required) navigate({ to: "/setup" });
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const trimSlash = (s: string) => s.replace(/\/$/, "");
 

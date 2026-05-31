@@ -9,8 +9,10 @@
 //! for the broader design context.
 
 pub mod engine;
+pub mod memory_tools;
 pub mod routes;
 pub mod runner;
+pub mod sessions;
 pub mod skills;
 pub mod state;
 pub mod tools;

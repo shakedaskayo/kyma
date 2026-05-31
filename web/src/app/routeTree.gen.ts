@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './../routes/__root'
+import { Route as SetupRouteImport } from './../routes/setup'
 import { Route as SettingsRouteImport } from './../routes/settings'
 import { Route as LoginRouteImport } from './../routes/login'
 import { Route as AppRouteImport } from './../routes/_app'
@@ -25,6 +26,11 @@ import { Route as AppConnectorsIndexRouteImport } from './../routes/_app.connect
 import { Route as AppDashboardsIdRouteImport } from './../routes/_app.dashboards.$id'
 import { Route as AppConnectorsIdRouteImport } from './../routes/_app.connectors.$id'
 
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -104,6 +110,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRoute
   '/agent': typeof AppAgentRoute
   '/connectors': typeof AppConnectorsRouteWithChildren
   '/credentials': typeof AppCredentialsRoute
@@ -120,6 +127,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRoute
   '/agent': typeof AppAgentRoute
   '/credentials': typeof AppCredentialsRoute
   '/dashboards': typeof AppDashboardsRouteWithChildren
@@ -137,6 +145,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRoute
   '/_app/agent': typeof AppAgentRoute
   '/_app/connectors': typeof AppConnectorsRouteWithChildren
   '/_app/credentials': typeof AppCredentialsRoute
@@ -155,6 +164,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/settings'
+    | '/setup'
     | '/agent'
     | '/connectors'
     | '/credentials'
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/settings'
+    | '/setup'
     | '/agent'
     | '/credentials'
     | '/dashboards'
@@ -187,6 +198,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/login'
     | '/settings'
+    | '/setup'
     | '/_app/agent'
     | '/_app/connectors'
     | '/_app/credentials'
@@ -205,10 +217,18 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
+  SetupRoute: typeof SetupRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -372,6 +392,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
+  SetupRoute: SetupRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
