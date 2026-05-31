@@ -113,6 +113,12 @@ services:
       KYMA_OTLP_DATABASE: default
       KYMA_PATH_PREFIX: kyma
       KYMA_AUTH_TOKENS: ""
+      # Seed an admin user so the web UI sign-in works out of the box (dev only).
+      KYMA_AUTH_BACKEND: session
+      KYMA_ADMIN_USER: admin
+      KYMA_ADMIN_PASSWORD: kyma_dev
+      # base64-encoded 32-byte key for AES-GCM credential encryption (dev only).
+      KYMA_SECRET_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
     ports:
       - "8080:8080"
       - "9090:9090"
