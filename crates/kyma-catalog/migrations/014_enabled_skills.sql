@@ -1,4 +1,4 @@
--- 013_enabled_skills.sql
+-- 014_enabled_skills.sql
 -- Singleton row holding the names of skills the user has toggled on. v1 is
 -- single-tenant; a future per-tenant variant adds (tenant_id) and relaxes
 -- the singleton constraint.
