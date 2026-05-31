@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---------- stage 1: web ----------
-FROM node:20-alpine AS web
+FROM node:24-alpine AS web
 RUN corepack enable && corepack prepare pnpm@9 --activate
 WORKDIR /src
 COPY pnpm-workspace.yaml package.json .npmrc ./
@@ -21,7 +21,12 @@ COPY --from=web /src/web/dist ./web/dist
 # Docker Desktop (which caps memory at ~8 GB on macOS).
 ENV CARGO_PROFILE_RELEASE_LTO=off \
     CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4
-RUN cargo build -p kyma-bin -p kyma-cli --release --features web-ui
+# Both kyma-bin and kyma-cli declare a [[bin]] named "kyma", so building the CLI
+# overwrites target/release/kyma. Build the CLI first, copy it aside as kyma-cli,
+# then build the server so target/release/kyma is the server binary.
+RUN cargo build -p kyma-cli --release \
+ && cp /src/target/release/kyma /src/target/release/kyma-cli \
+ && cargo build -p kyma-bin --release --features web-ui,github
 
 # ---------- stage 3: runtime ----------
 # Use debian:12-slim instead of distroless because kyma dynamically links
