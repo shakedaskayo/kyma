@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft, Check, Database, GitBranch, Table2, Timer } from "lucide-react";
+import { ArrowLeft, Check, Database, Table2, Timer } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -10,49 +10,32 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/sdk/session";
+import type { CatalogEntry } from "@/sdk/connectors";
 import {
-  CONNECTOR_KINDS,
+  authLabel,
+  blankValues,
+  buildCreateBody,
   formatInterval,
-  githubKind,
-  type ConnectorKindDef,
   type KindFormValues,
 } from "./connector-kinds";
-import { KindPicker } from "./KindPicker";
+import { ConnectorCatalog } from "./ConnectorCatalog";
 import { ConnectorConfigForm } from "./ConnectorConfigForm";
 import { RepoPicker } from "./RepoPicker";
+import { BrandIcon } from "./BrandIcon";
 import { useCreateConnector, useGitHubRepos } from "./useConnectors";
 
-type Step = "kind" | "config" | "resources" | "review";
+type Step = "catalog" | "config" | "resources" | "review";
 
-const STEP_LABEL: Record<Step, string> = {
-  kind: "Source",
-  config: "Configure",
-  resources: "Repositories",
-  review: "Review",
-};
-
-function blankValues(kind: ConnectorKindDef): KindFormValues {
-  return {
-    name: "",
-    scheduleMs: kind.defaultScheduleMs,
-    fields: {},
-    targetDatabase: "",
-    targetTable: "",
-    resources: [],
-  };
-}
-
-/** The ordered steps for a given kind (kind-picker shown only with >1 kind). */
-function stepsFor(kind: ConnectorKindDef, multiKind: boolean): Step[] {
-  const s: Step[] = [];
-  if (multiKind) s.push("kind");
-  s.push("config");
-  if (kind.resourceStep) s.push("resources");
+function stepsFor(entry: CatalogEntry | null): Step[] {
+  const s: Step[] = ["catalog", "config"];
+  if (entry?.resource) s.push("resources");
   s.push("review");
   return s;
 }
 
-function Stepper({ steps, current }: { steps: Step[]; current: Step }) {
+function Stepper({ steps, current, resourceLabel }: { steps: Step[]; current: Step; resourceLabel: string }) {
+  const labelFor = (s: Step): string =>
+    s === "catalog" ? "Source" : s === "config" ? "Configure" : s === "resources" ? resourceLabel : "Review";
   const idx = steps.indexOf(current);
   return (
     <ol className="flex items-center gap-1 px-1 pb-1 text-xs">
@@ -72,7 +55,7 @@ function Stepper({ steps, current }: { steps: Step[]; current: Step }) {
               {done ? <Check className="h-3 w-3" /> : i + 1}
             </span>
             <span className={cn(active ? "font-medium text-foreground" : "text-muted-foreground")}>
-              {STEP_LABEL[s]}
+              {labelFor(s)}
             </span>
             {i < steps.length - 1 && <span className="mx-1 h-px w-5 bg-border" />}
           </li>
@@ -115,19 +98,25 @@ export function AddConnectorWizard({
   const create = useCreateConnector();
   const repos = useGitHubRepos();
 
-  // v1 auto-skips the kind step (only GitHub registered).
-  const multiKind = CONNECTOR_KINDS.length > 1;
-  const onlyKind = multiKind ? null : CONNECTOR_KINDS[0] ?? githubKind;
-  const [kind, setKind] = useState<ConnectorKindDef>(onlyKind ?? githubKind);
-  const [step, setStep] = useState<Step>(multiKind ? "kind" : "config");
-  const [values, setValues] = useState<KindFormValues>(() => blankValues(onlyKind ?? githubKind));
+  const [entry, setEntry] = useState<CatalogEntry | null>(null);
+  const [step, setStep] = useState<Step>("catalog");
+  const [values, setValues] = useState<KindFormValues>({
+    name: "",
+    scheduleMs: 5 * 60_000,
+    fields: {},
+    targetDatabase: "",
+    targetTable: "",
+    resources: [],
+  });
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  // The token last submitted for verification — lets us scope the verified/error
-  // state to the *current* token so editing it clears stale feedback.
+  // The token last submitted for verification — scopes verified/error feedback
+  // to the *current* token so editing it clears stale state.
   const [attemptedPat, setAttemptedPat] = useState("");
 
-  const steps = stepsFor(kind, multiKind);
-  const tokenFieldValue = kind.resourceTokenField ? values.fields[kind.resourceTokenField] ?? "" : "";
+  const steps = stepsFor(entry);
+  const tokenField = entry?.resource?.token_field;
+  const tokenFieldValue = tokenField ? values.fields[tokenField] ?? "" : "";
+  const resourceLabel = entry?.resource?.label ?? "Resources";
 
   const verify = () => {
     const pat = tokenFieldValue.trim();
@@ -137,10 +126,9 @@ export function AddConnectorWizard({
   };
 
   const reset = () => {
-    const k = onlyKind ?? githubKind;
-    setKind(k);
-    setStep(multiKind ? "kind" : "config");
-    setValues(blankValues(k));
+    setEntry(null);
+    setStep("catalog");
+    setValues({ name: "", scheduleMs: 5 * 60_000, fields: {}, targetDatabase: "", targetTable: "", resources: [] });
     setAdvancedOpen(false);
     setAttemptedPat("");
     create.reset();
@@ -152,13 +140,20 @@ export function AddConnectorWizard({
     onClose();
   };
 
+  const pickEntry = (e: CatalogEntry) => {
+    setEntry(e);
+    setValues(blankValues(e));
+    setStep("config");
+  };
+
   const update = (patch: Partial<KindFormValues>) => setValues((v) => ({ ...v, ...patch }));
 
   const configValid = useMemo(() => {
+    if (!entry) return false;
     if (!values.name.trim()) return false;
-    return kind.fields.every((f) => !f.required || (values.fields[f.key] ?? "").trim());
-  }, [kind, values]);
-  const resourcesValid = !kind.resourceStep || values.resources.length > 0;
+    return entry.fields.every((f) => !f.required || (values.fields[f.key] ?? "").trim());
+  }, [entry, values]);
+  const resourcesValid = !entry?.resource || values.resources.length > 0;
 
   const prevStep = () => {
     const i = steps.indexOf(step);
@@ -168,7 +163,7 @@ export function AddConnectorWizard({
     const i = steps.indexOf(step);
     if (i >= steps.length - 1) return;
     const target = steps[i + 1];
-    // Fetch the repo list when entering the Repositories step (unless already
+    // Fetch the resource list when entering the resources step (unless already
     // fetched for this token).
     if (target === "resources" && tokenFieldValue.trim() && attemptedPat !== tokenFieldValue.trim()) {
       verify();
@@ -177,7 +172,8 @@ export function AddConnectorWizard({
   };
 
   const handleCreate = () => {
-    const body = kind.buildCreateBody(values, database);
+    if (!entry) return;
+    const body = buildCreateBody(entry, values, database);
     create.mutate(body, {
       onSuccess: (res) => {
         close();
@@ -187,13 +183,11 @@ export function AddConnectorWizard({
   };
 
   const canAdvance =
-    step === "kind" ||
-    (step === "config" && configValid) ||
-    (step === "resources" && resourcesValid);
+    (step === "config" && configValid) || (step === "resources" && resourcesValid);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {steps.indexOf(step) > 0 && (
@@ -206,38 +200,41 @@ export function AddConnectorWizard({
                 <ArrowLeft className="h-4 w-4" />
               </button>
             )}
-            {step === "kind" ? "Add connector" : `Add ${kind.label} connector`}
+            {step === "catalog" || !entry ? (
+              "Add a connector"
+            ) : (
+              <span className="flex items-center gap-2">
+                <BrandIcon brand={entry.brand} size={18} />
+                Add {entry.label}
+              </span>
+            )}
           </DialogTitle>
         </DialogHeader>
 
-        {step !== "kind" && <Stepper steps={steps} current={step} />}
+        {step !== "catalog" && entry && (
+          <Stepper steps={steps} current={step} resourceLabel={resourceLabel} />
+        )}
 
         <div className="py-1">
-          {step === "kind" && (
-            <KindPicker
-              selected={kind.id}
-              onSelect={(k) => {
-                setKind(k);
-                setValues(blankValues(k));
-                setStep("config");
-              }}
-            />
+          {step === "catalog" && (
+            <ConnectorCatalog selectedType={entry?.type_id} onPick={pickEntry} />
           )}
 
-          {step === "config" && (
+          {step === "config" && entry && (
             <ConnectorConfigForm
-              kind={kind}
+              entry={entry}
               values={values}
               onChange={update}
               advancedOpen={advancedOpen}
               onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
               verify={
-                kind.resourceTokenField
+                entry.resource
                   ? {
                       onVerify: verify,
                       isPending: repos.isPending,
                       isError: repos.isError && attemptedPat === tokenFieldValue.trim(),
-                      verified: repos.isSuccess && attemptedPat === tokenFieldValue.trim() && !!attemptedPat,
+                      verified:
+                        repos.isSuccess && attemptedPat === tokenFieldValue.trim() && !!attemptedPat,
                       repoCount: repos.data?.length,
                     }
                   : undefined
@@ -245,7 +242,7 @@ export function AddConnectorWizard({
             />
           )}
 
-          {step === "resources" && (
+          {step === "resources" && entry && (
             <RepoPicker
               repos={repos.data}
               isPending={repos.isPending}
@@ -256,11 +253,11 @@ export function AddConnectorWizard({
             />
           )}
 
-          {step === "review" && (
+          {step === "review" && entry && (
             <div className="divide-y rounded-md border px-3">
-              <ReviewRow icon={<GitBranch className="h-4 w-4" />} label="Source">
-                {kind.label}
-                <span className="ml-1 text-muted-foreground">· PAT auth</span>
+              <ReviewRow icon={<BrandIcon brand={entry.brand} size={16} />} label="Source">
+                {entry.label}
+                <span className="ml-1 text-muted-foreground">· {authLabel(entry.auth_mode)}</span>
               </ReviewRow>
               <ReviewRow icon={<Check className="h-4 w-4" />} label="Name">
                 <span className="font-medium">{values.name.trim() || "—"}</span>
@@ -271,15 +268,18 @@ export function AddConnectorWizard({
               <ReviewRow icon={<Database className="h-4 w-4" />} label="Target database">
                 <span className="font-mono text-xs">{values.targetDatabase.trim() || database}</span>
               </ReviewRow>
-              <ReviewRow icon={<Table2 className="h-4 w-4" />} label="Graph tables">
-                <span className="font-mono text-xs">
-                  {(values.targetTable.trim() || kind.defaultTargetTable).replace(/_nodes$/, "")}_nodes / _edges
-                </span>
-              </ReviewRow>
-              {kind.resourceStep && (
+              {entry.graph_name && (
+                <ReviewRow icon={<Table2 className="h-4 w-4" />} label="Graph tables">
+                  <span className="font-mono text-xs">
+                    {(values.targetTable.trim() || entry.default_target_table || "").replace(/_nodes$/, "")}
+                    _nodes / _edges
+                  </span>
+                </ReviewRow>
+              )}
+              {entry.resource && (
                 <ReviewRow
-                  icon={<GitBranch className="h-4 w-4" />}
-                  label={`Repositories (${values.resources.length})`}
+                  icon={<BrandIcon brand={entry.brand} size={16} monochrome />}
+                  label={`${resourceLabel} (${values.resources.length})`}
                 >
                   <div className="flex flex-wrap gap-1 pt-0.5">
                     {values.resources.slice(0, 8).map((r) => (
@@ -309,7 +309,7 @@ export function AddConnectorWizard({
           <Button variant="outline" onClick={close}>
             Cancel
           </Button>
-          {step !== "review" && step !== "kind" && (
+          {step !== "review" && step !== "catalog" && (
             <Button onClick={nextStep} disabled={!canAdvance}>
               Next
             </Button>

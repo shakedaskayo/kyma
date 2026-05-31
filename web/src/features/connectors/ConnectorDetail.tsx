@@ -14,9 +14,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useGraphStore } from "@/features/graph/graph-store";
 import { useGraphStats } from "@/features/graph/useGraph";
 import { deriveStatus, type ConnectorDetail as Detail } from "@/sdk/connectors";
-import { formatInterval, graphNameForType, kindByType } from "./connector-kinds";
+import { formatInterval, graphNameForEntry } from "./connector-kinds";
+import { BrandIcon } from "./BrandIcon";
 import { StatusBadge } from "./StatusBadge";
 import {
+  useConnectorCatalog,
   useDeleteConnector,
   usePauseConnector,
   useResumeConnector,
@@ -47,17 +49,21 @@ export function ConnectorDetail({
   const pause = usePauseConnector(detail.id);
   const resume = useResumeConnector(detail.id);
   const del = useDeleteConnector();
-
-  const kind = kindByType(detail.type);
-  const Icon = kind?.icon;
+  const { data: catalog } = useConnectorCatalog();
+  const entry = catalog?.find((e) => e.type_id === detail.type);
   const status = deriveStatus(detail);
 
-  const repos = (detail.config?.repos as string[] | undefined) ?? [];
+  const graphName = graphNameForEntry(entry, detail.type);
+  const resourceLabel = entry?.resource?.label ?? "Resources";
+  const resourceKey = entry?.resource?.config_key;
+  const resources =
+    (resourceKey ? (detail.config?.[resourceKey] as string[] | undefined) : undefined) ?? [];
 
   const openGraph = () => {
-    // GraphView reads the active graph from the store — set it, then navigate.
-    const name = graphNameForType(detail.type);
-    useGraphStore.getState().setGraph(name);
+    // GraphView keys focus by a composite `${database}/${graph}` namespace so
+    // the same graph name in different DBs is unambiguous.
+    const key = graphName ? `${detail.target_database}/${graphName}` : "all";
+    useGraphStore.getState().setGraph(key);
     void navigate({ to: "/graph" });
   };
 
@@ -65,8 +71,8 @@ export function ConnectorDetail({
     <div className="mx-auto max-w-3xl space-y-6">
       {/* Header */}
       <div className="flex items-start gap-4">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary/80">
-          {Icon ? <Icon className="h-5 w-5" /> : null}
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border bg-background">
+          <BrandIcon brand={entry?.brand ?? ""} size={22} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -74,7 +80,7 @@ export function ConnectorDetail({
             <StatusBadge status={status} />
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span className="capitalize">{kind?.label ?? detail.type}</span>
+            <span>{entry?.label ?? detail.type}</span>
             <span className="inline-flex items-center gap-1">
               <Database className="h-3 w-3" /> {detail.target_database}
             </span>
@@ -86,9 +92,11 @@ export function ConnectorDetail({
             </span>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={openGraph}>
-          <Network className="mr-1.5 h-3.5 w-3.5" /> Open graph
-        </Button>
+        {entry?.graph_name && (
+          <Button variant="outline" size="sm" onClick={openGraph}>
+            <Network className="mr-1.5 h-3.5 w-3.5" /> Open graph
+          </Button>
+        )}
       </div>
 
       {/* Toolbar */}
@@ -141,19 +149,19 @@ export function ConnectorDetail({
         </div>
       )}
 
-      <SyncStatus detail={detail} />
+      <SyncStatus detail={detail} graphName={entry?.graph_name ?? null} />
 
-      {/* Repositories */}
-      {repos.length > 0 && (
+      {/* Selected resources (e.g. repositories) */}
+      {resources.length > 0 && (
         <Card>
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-sm font-semibold">
-              Repositories ({repos.length})
+              {resourceLabel} ({resources.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-0">
             <div className="flex flex-wrap gap-1.5">
-              {repos.map((r) => (
+              {resources.map((r) => (
                 <span
                   key={r}
                   className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground"
@@ -171,16 +179,25 @@ export function ConnectorDetail({
   );
 }
 
-function SyncStatus({ detail }: { detail: Detail }) {
-  // Show the connector's *graph size* (the meaningful, cumulative number) rather
-  // than last-run rows — which sit at 0 once polling reaches a steady state.
-  const graphName = graphNameForType(detail.type);
-  const { data: gstats } = useGraphStats(graphName);
-  const stats = [
-    { label: "Last sync", value: fmtDate(detail.last_success_at) },
-    { label: "Nodes", value: gstats ? gstats.total_nodes.toLocaleString() : "—" },
-    { label: "Edges", value: gstats ? gstats.total_relationships.toLocaleString() : "—" },
-  ];
+function SyncStatus({ detail, graphName }: { detail: Detail; graphName: string | null }) {
+  // For graph connectors, show the connector's *graph size* (the meaningful,
+  // cumulative number) rather than last-run rows — which sit at 0 once polling
+  // reaches steady state. Non-graph connectors show last-run rows instead.
+  const { data: gstats } = useGraphStats(graphName ?? "");
+  const stats = graphName
+    ? [
+        { label: "Last sync", value: fmtDate(detail.last_success_at) },
+        { label: "Nodes", value: gstats ? gstats.total_nodes.toLocaleString() : "—" },
+        { label: "Edges", value: gstats ? gstats.total_relationships.toLocaleString() : "—" },
+      ]
+    : [
+        { label: "Last sync", value: fmtDate(detail.last_success_at) },
+        {
+          label: "Rows (last run)",
+          value: detail.last_rows_ingested != null ? detail.last_rows_ingested.toLocaleString() : "—",
+        },
+        { label: "Interval", value: formatInterval(detail.schedule_ms) },
+      ];
   return (
     <div className="grid grid-cols-3 gap-3">
       {stats.map((s) => (
