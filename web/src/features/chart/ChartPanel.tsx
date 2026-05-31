@@ -2,6 +2,7 @@ import ReactECharts from "echarts-for-react";
 import { useMemo } from "react";
 import { BarChart3 } from "lucide-react";
 import { autoChartAxes, type Column } from "@/sdk/arrow";
+import { useTheme } from "@/lib/theme";
 
 // ── colour palette ────────────────────────────────────────────────────────────
 const PALETTE = ["#2563eb","#0891b2","#059669","#d97706","#7c3aed","#dc2626","#be185d"];
@@ -48,6 +49,7 @@ function makeTooltipFmt(yName: string) {
 // ── component ─────────────────────────────────────────────────────────────────
 
 export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<string, unknown>[] }) {
+  const isDark = useTheme((s) => s.resolved === "dark");
   const option = useMemo(() => {
     const spec = autoChartAxes(columns);
     if (spec.type === "none" || spec.type === "stat") return null;
@@ -56,7 +58,24 @@ export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<
     const symbol = isSparse ? "circle" : "none";
     const symbolSize = 4;
 
-    const splitLine = { lineStyle: { color: "rgba(128,128,128,0.15)" } };
+    // Theme-aware axis + tooltip + gridline colors. echarts defaults to dark
+    // text on light bg; without these overrides the axis labels disappear and
+    // the tooltip is a white box on a dark canvas.
+    const axisLabelColor = isDark ? "#94a3b8" : "#475569";
+    const axisLineColor = isDark ? "#334155" : "#cbd5e1";
+    const splitLine = {
+      lineStyle: { color: isDark ? "rgba(148,163,184,0.12)" : "rgba(128,128,128,0.15)" },
+    };
+    const tooltipStyle = {
+      backgroundColor: isDark ? "rgba(15,23,42,0.95)" : "rgba(255,255,255,0.95)",
+      borderColor: isDark ? "#1e293b" : "#e2e8f0",
+      textStyle: { color: isDark ? "#e2e8f0" : "#0f172a" },
+    };
+    const axis = {
+      axisLabel: { color: axisLabelColor },
+      axisLine: { lineStyle: { color: axisLineColor } },
+      nameTextStyle: { color: axisLabelColor },
+    };
 
     if (spec.type === "line" || spec.type === "scatter") {
       const data = rows.map((r) => [r[spec.x!], r[spec.y]]);
@@ -70,15 +89,18 @@ export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<
         tooltip: {
           trigger: "axis",
           formatter: makeTooltipFmt(spec.y),
+          ...tooltipStyle,
         },
-        legend: { show: false },
+        legend: { show: false, textStyle: { color: axisLabelColor } },
         grid: { left: 60, right: 20, top: 16, bottom: 40, containLabel: false },
         xAxis: {
           type: spec.type === "line" ? "time" : "value",
           name: spec.x,
-          axisLabel: spec.type === "line" ? { formatter: axisFmt } : {},
+          axisLabel: { ...(spec.type === "line" ? { formatter: axisFmt } : {}), color: axisLabelColor },
+          axisLine: { lineStyle: { color: axisLineColor } },
+          nameTextStyle: { color: axisLabelColor },
         },
-        yAxis: { type: "value", name: spec.y, splitLine },
+        yAxis: { type: "value", name: spec.y, splitLine, ...axis },
         series: [{
           name: spec.y,
           type: spec.type === "line" ? "line" : "scatter",
@@ -97,11 +119,11 @@ export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<
     return {
       color: PALETTE,
       animation: false,
-      tooltip: { trigger: "axis" },
-      legend: { show: false },
+      tooltip: { trigger: "axis", ...tooltipStyle },
+      legend: { show: false, textStyle: { color: axisLabelColor } },
       grid: { left: 60, right: 20, top: 16, bottom: 40, containLabel: false },
-      xAxis: { type: "category", data: x, name: spec.x },
-      yAxis: { type: "value", name: spec.y, splitLine },
+      xAxis: { type: "category", data: x, name: spec.x, ...axis },
+      yAxis: { type: "value", name: spec.y, splitLine, ...axis },
       series: [{
         name: spec.y,
         type: "bar",
@@ -109,7 +131,7 @@ export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<
         itemStyle: { borderRadius: [3, 3, 0, 0] },
       }],
     };
-  }, [columns, rows]);
+  }, [columns, rows, isDark]);
 
   if (!option) {
     const spec = autoChartAxes(columns);

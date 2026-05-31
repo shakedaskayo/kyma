@@ -14,7 +14,7 @@ export function RowFilter({ value, onChange, totalRows, filteredRows }: RowFilte
   const showCount = isFiltering;
 
   return (
-    <div className="flex items-center gap-2 border-b bg-background/80 px-3 py-1.5">
+    <div className="flex items-center gap-2 border-b bg-card px-3 py-1.5">
       <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       <div className="relative flex-1">
         <input

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { Column } from "@/sdk/arrow";
 
 export type TimeRangePreset = "5m" | "15m" | "1h" | "6h" | "24h" | "7d" | "30d" | "custom";
 export type TimeRange = { preset: TimeRangePreset; from?: string; to?: string };
@@ -14,6 +15,14 @@ export type ChartConfig = {
   override?: { type: "line" | "bar" | "scatter" | "stat"; x?: string; y?: string };
 };
 
+/** Materialised result data for a tab — lives in-memory only (excluded from
+ * persistence) so tab switches don't lose the rendered table but a hard
+ * refresh starts from the lightweight `results` summary alone. */
+export type TabData = {
+  columns: Column[];
+  rows: Record<string, unknown>[];
+};
+
 export type Tab = {
   id: string;
   title: string;
@@ -22,6 +31,8 @@ export type Tab = {
   results: ResultsState;
   chart: ChartConfig;
   submittedQuery: string | null;
+  /** Latest streamed result; not persisted to localStorage (large + transient). */
+  data?: TabData;
 };
 
 export function isTabDirty(tab: Tab): boolean {
@@ -37,6 +48,7 @@ type Store = {
   setQuery: (id: string, q: string) => void;
   setTimeRange: (id: string, r: TimeRange) => void;
   setResults: (id: string, r: ResultsState) => void;
+  setData: (id: string, data: TabData | undefined) => void;
   setChart: (id: string, c: ChartConfig) => void;
   markSubmitted: (id: string, query: string) => void;
   resetAll: () => void;
@@ -73,6 +85,9 @@ export const useWorkspace = create<Store>()(
       setResults: (id, results) => set({
         tabs: get().tabs.map((t) => (t.id === id ? { ...t, results } : t)),
       }),
+      setData: (id, data) => set({
+        tabs: get().tabs.map((t) => (t.id === id ? { ...t, data } : t)),
+      }),
       setChart: (id, chart) => set({
         tabs: get().tabs.map((t) => (t.id === id ? { ...t, chart } : t)),
       }),
@@ -81,6 +96,16 @@ export const useWorkspace = create<Store>()(
       }),
       resetAll: () => set({ tabs: [], activeId: null }),
     }),
-    { name: "kyma.workspace" },
+    {
+      name: "kyma.workspace",
+      // Strip the heavy `data` (rows + columns) before writing to localStorage
+      // — it can be hundreds of KB per tab, exceeds quota on big results, and
+      // is cheap to re-derive by clicking Run. Tab switches *within* a session
+      // keep the data because Zustand state survives in memory.
+      partialize: (state) => ({
+        activeId: state.activeId,
+        tabs: state.tabs.map(({ data: _data, ...rest }) => rest),
+      }),
+    },
   ),
 );

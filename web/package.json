@@ -19,6 +19,7 @@
     "@bufbuild/protobuf": "2.11.0",
     "@connectrpc/connect": "2.1.1",
     "@connectrpc/connect-web": "2.1.1",
+    "@icons-pack/react-simple-icons": "^13.13.0",
     "@monaco-editor/react": "4.6.0",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",

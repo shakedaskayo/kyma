@@ -105,6 +105,25 @@ function ExplorePage() {
 
   const active = workspace.tabs.find((t) => t.id === workspace.activeId) ?? workspace.tabs[0];
 
+  // Mirror the active tab's stashed `data` into the local `liveResult`. Without
+  // this, switching tabs or remounting the route leaves a tab whose results
+  // metadata says "50 rows · 14 ms" with an empty Results panel — the header
+  // pill is computed from `results`, the grid renders from `liveResult`.
+  // Re-runs replace `data` and useRunQuery also calls setLiveResult directly,
+  // so the effect doesn't fight the in-flight stream.
+  useEffect(() => {
+    if (!active?.data) {
+      setLiveResult(null);
+      return;
+    }
+    setLiveResult({
+      columns: active.data.columns,
+      rows: active.data.rows,
+      chartPoints: active.data.rows,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.id, active?.data]);
+
   // Once the schema loads, seed the initial tab with a real first-table query
   // (replacing an empty editor or the legacy `otel_logs | take 50` default that
   // doesn't exist in most databases). Runs once — never tramples a real query.
@@ -337,7 +356,7 @@ function ExplorePage() {
         </div>
 
         {/* Editor */}
-        <div className="bg-background border-b" style={{ height: "38%" }}>
+        <div className="bg-card border-b" style={{ height: "38%" }}>
           {active && schema && (
             <Editor
               value={active.query}
@@ -362,7 +381,7 @@ function ExplorePage() {
         {/* Results / Chart area */}
         <div className="flex min-h-0 flex-1 flex-col rounded-b-lg">
           {/* View switcher */}
-          <div className="flex items-center gap-1 border-b bg-background px-3 py-1.5">
+          <div className="flex items-center gap-1 border-b bg-card px-3 py-1.5">
             <button className={tabBtn(view === "grid")} onClick={() => setView("grid")}>
               Results
             </button>
@@ -370,7 +389,7 @@ function ExplorePage() {
               Chart
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-hidden bg-background rounded-b-lg border-x border-b border-muted/30 shadow-sm flex flex-col">
+          <div className="min-h-0 flex-1 overflow-hidden bg-card rounded-b-lg border-x border-b border-muted/30 shadow-sm flex flex-col">
             {active?.results.kind === "idle" && <EmptyState text="Run a query to see results." />}
             {active?.results.kind === "running" && <EmptyState text="Streaming results…" />}
             {active?.results.kind === "error" && (

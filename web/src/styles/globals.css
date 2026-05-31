@@ -8,6 +8,8 @@
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
     --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
@@ -26,8 +28,14 @@
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
+    /* Cards + popovers sit *above* the page in the layer stack. Giving them a
+     * slightly lighter slate than --background (the standard elevated-surface
+     * pattern in dark UIs) keeps borders visible and stops bare panels from
+     * reading as black voids against the muted page background. */
+    --card: 217.2 32.6% 9%;
     --card-foreground: 210 40% 98%;
+    --popover: 217.2 32.6% 9%;
+    --popover-foreground: 210 40% 98%;
     --primary: 217.2 91.2% 59.8%;
     --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 217.2 32.6% 17.5%;
@@ -44,4 +52,53 @@
   }
   * { @apply border-border; }
   body { @apply bg-background text-foreground antialiased; }
+}
+
+/* ── ReactFlow dark-mode overrides ──────────────────────────────────────────
+ * @xyflow/react's bundled CSS defaults to a light palette — the zoom Controls,
+ * the MiniMap chrome, and the edge-label backgrounds are all bright white,
+ * which punches through the dark canvas. Re-paint them with the same shadcn
+ * tokens the rest of the app uses so the chrome blends with the surrounding
+ * surfaces. The selectors are scoped to `.dark`; light mode keeps the
+ * upstream styles untouched.
+ */
+.dark .react-flow__controls {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 4px 12px hsl(0 0% 0% / 0.4);
+}
+.dark .react-flow__controls-button {
+  background: hsl(var(--card));
+  border-bottom: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+  fill: currentColor;
+}
+.dark .react-flow__controls-button:hover {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+.dark .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.dark .react-flow__minimap {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+}
+.dark .react-flow__minimap-mask {
+  fill: hsl(var(--background) / 0.5);
+}
+
+/* Edge labels — the small relationship-type chips along edges. */
+.dark .react-flow__edge-text {
+  fill: hsl(var(--foreground));
+}
+.dark .react-flow__edge-textbg {
+  fill: hsl(var(--card));
+}
+
+/* Attribution / panel chrome — keep aligned with our surfaces. */
+.dark .react-flow__panel {
+  background: transparent;
+  color: hsl(var(--foreground));
 }

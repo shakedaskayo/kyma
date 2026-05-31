@@ -177,7 +177,7 @@ export function ResultsGrid({
   return (
     <div ref={scrollRef} onScroll={handleScroll} className="h-full overflow-auto text-xs">
       <table className="min-w-full border-collapse">
-        <thead className={`sticky top-0 z-10 bg-background transition-shadow ${scrolled ? "shadow-sm" : ""}`}>
+        <thead className={`sticky top-0 z-10 bg-card transition-shadow ${scrolled ? "shadow-sm" : ""}`}>
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id} className="border-b border-muted/60">
               {/* Expand toggle column */}

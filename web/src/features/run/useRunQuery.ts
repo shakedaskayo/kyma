@@ -38,6 +38,9 @@ export function useRunQuery(timestampTables?: Set<string>) {
     const startedAt = performance.now();
     workspace.markSubmitted(tab.id, tab.query);
     workspace.setResults(tab.id, { kind: "running", startedAt: Date.now() });
+    // Clear stashed rows from the previous run so the running-state placeholder
+    // shows instead of stale data flashing back via the tab-data mirror effect.
+    workspace.setData(tab.id, undefined);
 
     const acc: TabResult = { columns: [], rows: [], chartPoints: [] };
     try {
@@ -47,13 +50,26 @@ export function useRunQuery(timestampTables?: Set<string>) {
         if (acc.columns.length === 0) acc.columns = chunk.columns;
         acc.rows.push(...chunk.rows);
         acc.chartPoints.push(...chunk.rows);
-        onBatch({
+        const snap = {
           columns: acc.columns,
           rows: acc.rows.slice(),
           chartPoints: acc.chartPoints.slice(),
-        });
+        };
+        onBatch(snap);
+        // Also stash on the tab itself so navigating away + back rehydrates
+        // the grid without a re-run. Excluded from localStorage persistence
+        // (see workspace-store `partialize`).
+        workspace.setData(tab.id, { columns: snap.columns, rows: snap.rows });
       }
       const durationMs = performance.now() - startedAt;
+      // Persist the final snapshot even when the result is empty — without
+      // this, a 0-row OK query leaves tab.data undefined and the explore
+      // page's mirror effect can't distinguish "haven't loaded data yet"
+      // from "loaded and it was empty", leaving the Results panel blank.
+      workspace.setData(tab.id, { columns: acc.columns, rows: acc.rows });
+      // Last batch may have been a partial slice — call onBatch with the
+      // complete acc so the in-flight liveResult lines up with persisted data.
+      onBatch({ columns: acc.columns, rows: acc.rows, chartPoints: acc.chartPoints });
       workspace.setResults(tab.id, {
         kind: "ok", rowCount: acc.rows.length,
         durationMs, finishedAt: Date.now(),
