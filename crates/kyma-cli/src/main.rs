@@ -17,6 +17,7 @@
 //!   version
 
 mod client;
+mod connector;
 use client::{
     effective_config, install_target, load_config, probe_health, save_config, stream_agent_ask,
     write_skill_file, ClientConfig,
@@ -77,6 +78,17 @@ enum Command {
         /// Also symlink into `$HOME/.claude/skills/kyma` if that dir exists.
         #[arg(long)]
         also_link_claude: bool,
+    },
+    /// Manage connectors — add a GitHub/GitLab/Bitbucket repo, list, pause,
+    /// resume, trigger, remove. See `kyma connector --help`.
+    Connector {
+        #[command(subcommand)]
+        op: connector::Op,
+    },
+    /// Inspect ingestion runs — `status` snapshots, `tail` follows.
+    Ingest {
+        #[command(subcommand)]
+        op: connector::IngestOp,
     },
 
     // ── admin subcommands ─────────────────────────────────────────────
@@ -165,6 +177,8 @@ async fn main() -> Result<()> {
             target,
             also_link_claude,
         } => cmd_install_skill(target, also_link_claude).await,
+        Command::Connector { op } => connector::run(op).await,
+        Command::Ingest { op } => connector::run_ingest(op).await,
 
         // ── admin subcommands ─────────────────────────────────────────
         Command::Version => {
