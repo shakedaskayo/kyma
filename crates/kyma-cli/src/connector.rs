@@ -69,6 +69,19 @@ pub(crate) enum IngestOp {
         #[arg(long, default_value_t = 3)]
         interval: u64,
     },
+    /// Push NDJSON rows from stdin straight into a table (`POST /v1/ingest`,
+    /// auto-create + schema-evolve on). Used by the kyma-memory plugin's hooks.
+    Push {
+        /// Target table (created on first write).
+        #[arg(long)]
+        table: String,
+        /// Target database. Defaults to `default`.
+        #[arg(long)]
+        db: Option<String>,
+        /// Idempotency key — replays with the same key are deduplicated server-side.
+        #[arg(long)]
+        idempotency_key: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -256,6 +269,16 @@ pub(crate) async fn run(op: Op) -> Result<()> {
 }
 
 pub(crate) async fn run_ingest(op: IngestOp) -> Result<()> {
+    // `push` resolves its own config (and is used by hooks), so handle it before
+    // requiring a config the status/tail subcommands need.
+    if let IngestOp::Push {
+        table,
+        db,
+        idempotency_key,
+    } = op
+    {
+        return crate::plugin::ingest_push(table, db, idempotency_key).await;
+    }
     let cfg = client::effective_config()?;
     match op {
         IngestOp::Status { connector } => cmd_ingest_status(&cfg, connector.as_deref()).await,
@@ -263,6 +286,7 @@ pub(crate) async fn run_ingest(op: IngestOp) -> Result<()> {
             connector,
             interval,
         } => cmd_ingest_tail(&cfg, connector.as_deref(), interval).await,
+        IngestOp::Push { .. } => unreachable!("handled above"),
     }
 }
 

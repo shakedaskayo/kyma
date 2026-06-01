@@ -27,16 +27,17 @@ use datafusion::catalog::Session;
 use datafusion::datasource::TableProvider;
 use datafusion::datasource::TableType;
 use datafusion::error::{DataFusionError, Result as DfResult};
+use datafusion::logical_expr::expr::ScalarFunction;
 use datafusion::logical_expr::{BinaryExpr, Expr, Like, Operator, TableProviderFilterPushDown};
 use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::scalar::ScalarValue;
-use kyma_core::catalog::{Catalog, ColumnPrune, ExtentManifest, PrunePredicate, TableRef, TimeRange};
+use kyma_core::catalog::{Catalog, ColumnPrune, PrunePredicate, TableRef, TimeRange};
 use kyma_core::segment_format::{
     BlockPredicate, ColumnId, ExtentReader, OpenExtentInput, ScalarValue as BlockScalar,
     SegmentFormat,
 };
-use kyma_core::types::{ExtentId, NodeId};
+use kyma_core::types::NodeId;
 use std::any::Any;
 use std::sync::Arc;
 use tracing::instrument;
@@ -157,6 +158,7 @@ impl TableProvider for KymaTable {
             .filter(|f| matches!(f.data_type(), DataType::Utf8 | DataType::LargeUtf8))
             .map(|f| f.name().clone())
             .collect();
+        let vector_cols = float_vector_cols(&self.table);
 
         let out = filters
             .iter()
@@ -170,6 +172,9 @@ impl TableProvider for KymaTable {
                     return TableProviderFilterPushDown::Inexact;
                 }
                 if extract_text_search(f, &string_cols).is_some() {
+                    return TableProviderFilterPushDown::Inexact;
+                }
+                if extract_vector_distance(f, &vector_cols).is_some() {
                     return TableProviderFilterPushDown::Inexact;
                 }
                 TableProviderFilterPushDown::Unsupported
@@ -590,6 +595,7 @@ fn build_prune_predicate(table: &TableRef, filters: &[Expr]) -> PrunePredicate {
         .map(|f| f.name().clone())
         .collect();
 
+    let vector_cols = float_vector_cols(table);
     let mut column_predicates: std::collections::HashMap<String, ColumnPrune> =
         std::collections::HashMap::new();
     for f in filters {
@@ -601,6 +607,11 @@ fn build_prune_predicate(table: &TableRef, filters: &[Expr]) -> PrunePredicate {
             // Text-search pruning — only applies if the equality index
             // didn't already claim this column (which would be more
             // specific).
+            column_predicates.entry(col).or_insert(prune);
+            continue;
+        }
+        if let Some((col, prune)) = extract_vector_distance(f, &vector_cols) {
+            // Vector-distance pruning — keyed by the embedding column.
             column_predicates.entry(col).or_insert(prune);
         }
     }
@@ -672,7 +683,9 @@ fn build_block_predicate(table: &TableRef, prune: &PrunePredicate) -> BlockPredi
                     });
                 }
             }
-            ColumnPrune::Between { .. } | ColumnPrune::ContainsTokens(_) => {}
+            ColumnPrune::Between { .. }
+            | ColumnPrune::ContainsTokens(_)
+            | ColumnPrune::VectorDistance { .. } => {}
         }
     }
 
@@ -857,6 +870,84 @@ fn extract_equality(
             }
             Some((col_name, ColumnPrune::InSet(vals)))
         }
+        _ => None,
+    }
+}
+
+/// Names of `FixedSizeList<Float32>` (embedding) columns in a table.
+fn float_vector_cols(table: &TableRef) -> std::collections::HashSet<String> {
+    table
+        .schema
+        .fields()
+        .iter()
+        .filter(|f| {
+            matches!(f.data_type(), DataType::FixedSizeList(inner, _)
+                if matches!(inner.data_type(), DataType::Float32))
+        })
+        .map(|f| f.name().clone())
+        .collect()
+}
+
+/// Extract a vector-ANN filter of the form
+/// `cosine_distance(<vec_col>, make_array(<lits>)) < <lit>` (or `<=`, or the
+/// mirrored `>`/`>=`). Converts to [`ColumnPrune::VectorDistance`] so the
+/// catalog can prune extents by their centroid+radius. Best-effort: any shape
+/// it doesn't recognize returns `None` (recall still runs, just unpruned).
+fn extract_vector_distance(
+    expr: &Expr,
+    vector_cols: &std::collections::HashSet<String>,
+) -> Option<(String, ColumnPrune)> {
+    let Expr::BinaryExpr(BinaryExpr { left, op, right }) = expr else {
+        return None;
+    };
+    let (dist_expr, thresh_expr) = match op {
+        Operator::Lt | Operator::LtEq => (left.as_ref(), right.as_ref()),
+        Operator::Gt | Operator::GtEq => (right.as_ref(), left.as_ref()),
+        _ => return None,
+    };
+    let Expr::ScalarFunction(ScalarFunction { func, args }) = dist_expr else {
+        return None;
+    };
+    if func.name() != "cosine_distance" || args.len() != 2 {
+        return None;
+    }
+    let (col_name, arr_expr) = match (&args[0], &args[1]) {
+        (Expr::Column(c), other) if vector_cols.contains(&c.name) => (c.name.clone(), other),
+        (other, Expr::Column(c)) if vector_cols.contains(&c.name) => (c.name.clone(), other),
+        _ => return None,
+    };
+    let query = decode_make_array(arr_expr)?;
+    let threshold = match thresh_expr {
+        Expr::Literal(s) => scalar_to_f64(s)?,
+        _ => return None,
+    };
+    Some((col_name, ColumnPrune::VectorDistance { query, threshold }))
+}
+
+/// Decode a `make_array(lit, lit, …)` scalar-function call into an f32 vector.
+fn decode_make_array(e: &Expr) -> Option<Vec<f32>> {
+    let Expr::ScalarFunction(ScalarFunction { func, args }) = e else {
+        return None;
+    };
+    if func.name() != "make_array" || args.is_empty() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(args.len());
+    for a in args {
+        let Expr::Literal(s) = a else {
+            return None;
+        };
+        out.push(scalar_to_f64(s)? as f32);
+    }
+    Some(out)
+}
+
+fn scalar_to_f64(s: &ScalarValue) -> Option<f64> {
+    match s {
+        ScalarValue::Float64(Some(v)) => Some(*v),
+        ScalarValue::Float32(Some(v)) => Some(*v as f64),
+        ScalarValue::Int64(Some(v)) => Some(*v as f64),
+        ScalarValue::Int32(Some(v)) => Some(*v as f64),
         _ => None,
     }
 }

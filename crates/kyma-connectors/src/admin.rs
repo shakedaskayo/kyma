@@ -124,7 +124,35 @@ async fn catalog(State(s): State<AdminState>) -> impl IntoResponse {
         let bv = (b.status != "available", b.category.clone(), b.label.clone());
         av.cmp(&bv)
     });
-    (StatusCode::OK, Json(serde_json::json!({ "items": entries }))).into_response()
+    // For OAuth connectors, surface the provider slug + scopes the UI needs to
+    // drive the connect flow (`POST /v1/oauth/{provider}/start`). Injected here
+    // rather than carried on every CatalogEntry so non-OAuth connectors stay
+    // untouched.
+    let items: Vec<serde_json::Value> = entries
+        .into_iter()
+        .map(|e| {
+            let mut v = serde_json::to_value(&e).unwrap_or(serde_json::Value::Null);
+            if e.auth_mode == "oauth" {
+                if let serde_json::Value::Object(ref mut m) = v {
+                    let provider = crate::oauth::provider_for_connector(&e.type_id);
+                    if !provider.is_empty() {
+                        m.insert("oauth_provider".into(), serde_json::Value::String(provider.to_string()));
+                        let scopes = crate::oauth::scopes_for_connector(&e.type_id);
+                        if !scopes.is_empty() {
+                            m.insert(
+                                "oauth_scopes".into(),
+                                serde_json::Value::Array(
+                                    scopes.into_iter().map(serde_json::Value::String).collect(),
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+            v
+        })
+        .collect();
+    (StatusCode::OK, Json(serde_json::json!({ "items": items }))).into_response()
 }
 
 async fn list(

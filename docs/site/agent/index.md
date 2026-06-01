@@ -47,6 +47,10 @@ kyma install-skill --also-link-claude
 
 ## In this section
 
+- **[Agentic Memory](./memory)** — persistent, graph-aware memory for agents:
+  capture → LLM extraction with conflict resolution + bi-temporal validity →
+  near-realtime hybrid recall. The `memory_search` tool, `/v1/agent/memory/query`,
+  and live tuning.
 - **[Engines](./engines)** — provider abstraction, model picker, credential
   resolution order, the `/v1/agent/engine` API.
 - **[Claude Code engine](./claude-cli)** — how the Claude CLI engine

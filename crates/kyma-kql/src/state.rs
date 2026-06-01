@@ -7,7 +7,7 @@
 /// Holds the graph definition recorded by `make-graph` for use by a
 /// following `graph-match` operator.
 #[derive(Debug, Clone)]
-pub struct GraphDef {
+pub(crate) struct GraphDef {
     /// The edge table (the table that was active when `make-graph` ran).
     pub edge_table: String,
     /// The edge column that holds the source node id.
@@ -21,7 +21,7 @@ pub struct GraphDef {
 }
 
 #[derive(Debug, Default)]
-pub struct QueryState {
+pub(crate) struct QueryState {
     pub table: String,
     /// Explicit projections, e.g. "timestamp", "status".
     pub select: Vec<String>,
@@ -52,14 +52,14 @@ pub struct QueryState {
 }
 
 impl QueryState {
-    pub fn new(table: impl Into<String>) -> Self {
+    pub(crate) fn new(table: impl Into<String>) -> Self {
         Self {
             table: table.into(),
             ..Default::default()
         }
     }
 
-    pub fn to_sql(&self) -> String {
+    pub(crate) fn to_sql(&self) -> String {
         let prelude = self.render_cte_prelude();
         // SELECT list.
         let select_clause = if !self.aggregates.is_empty() {

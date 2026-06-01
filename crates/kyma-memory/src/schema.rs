@@ -15,6 +15,12 @@ use arrow_schema::{DataType, Field, Schema, SchemaRef};
 ///
 /// Graph columns: `id` (node id), `labels` (node label), `realm` (namespace).
 /// Everything else surfaces as graph node properties.
+///
+/// Bi-temporal validity (Zep/Graphiti style, invalidate-don't-delete):
+/// `valid_at` is when the fact became true (defaults to `created_at`),
+/// `invalid_at` is when it was superseded/contradicted (NULL = currently valid),
+/// `superseded_by` points at the memory id that replaced it, and `provenance`
+/// is a JSON blob describing how the memory was formed.
 pub fn memory_nodes_schema(dim: i32) -> SchemaRef {
     let item = Arc::new(Field::new("item", DataType::Float32, false));
     Arc::new(Schema::new(vec![
@@ -33,8 +39,17 @@ pub fn memory_nodes_schema(dim: i32) -> SchemaRef {
         Field::new("embedding", DataType::FixedSizeList(item, dim), false),
         Field::new("created_at", DataType::Utf8, true),
         Field::new("updated_at", DataType::Utf8, true),
+        Field::new("valid_at", DataType::Utf8, true),
+        Field::new("invalid_at", DataType::Utf8, true),
+        Field::new("superseded_by", DataType::Utf8, true),
+        Field::new("provenance", DataType::Utf8, true),
     ]))
 }
+
+/// Columns that an older `memory_nodes` table (provisioned before bi-temporal
+/// support) may be missing. Used by the writer to detect schema drift and
+/// re-provision the (regenerable) memory store.
+pub const BITEMPORAL_COLUMNS: &[&str] = &["valid_at", "invalid_at", "superseded_by", "provenance"];
 
 /// Schema for `memory_edges`. Graph columns: `src`, `dst`, `type`, `realm`.
 /// `target_namespace` carries the foreign endpoint's `database/graph` for
@@ -75,6 +90,16 @@ mod tests {
         let s = memory_edges_schema();
         for c in ["id", "src", "dst", "type", "realm", "target_namespace"] {
             assert!(s.field_with_name(c).is_ok(), "missing column {c}");
+        }
+    }
+
+    #[test]
+    fn node_schema_has_bitemporal_columns() {
+        let s = memory_nodes_schema(384);
+        for c in BITEMPORAL_COLUMNS {
+            let f = s.field_with_name(c).unwrap_or_else(|_| panic!("missing column {c}"));
+            assert!(f.is_nullable(), "{c} must be nullable for back-compat");
+            assert_eq!(f.data_type(), &DataType::Utf8);
         }
     }
 }

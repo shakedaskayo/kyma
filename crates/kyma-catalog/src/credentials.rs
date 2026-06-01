@@ -142,11 +142,48 @@ impl PgCredentialStore {
             .await?;
         Ok(())
     }
+
+    /// Re-encrypt and overwrite a credential's secret value in place (same id,
+    /// new `enc_value`). Used by the OAuth2 token-refresh path to persist a
+    /// rotated access/refresh token.
+    pub async fn set_value(
+        &self,
+        tenant: TenantId,
+        id: Uuid,
+        value: &CredentialValue,
+    ) -> Result<()> {
+        let plaintext = serde_json::to_vec(value)?;
+        let enc = self.crypto.encrypt(&plaintext)?;
+        let res = sqlx::query(
+            "UPDATE credentials
+             SET enc_value = $3, kind = $4, updated_at = now()
+             WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(tenant.as_uuid())
+        .bind(id)
+        .bind(&enc)
+        .bind(value.kind())
+        .execute(&self.pool)
+        .await?;
+        if res.rows_affected() == 0 {
+            anyhow::bail!("credential not found: {id}");
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl CredentialStore for PgCredentialStore {
     async fn get(&self, tenant: TenantId, id: Uuid) -> Result<Credential> {
         self.fetch(tenant, id).await
+    }
+
+    async fn update_value(
+        &self,
+        tenant: TenantId,
+        id: Uuid,
+        value: &CredentialValue,
+    ) -> Result<()> {
+        self.set_value(tenant, id, value).await
     }
 }

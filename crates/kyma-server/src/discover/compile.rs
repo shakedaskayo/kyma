@@ -65,11 +65,15 @@ pub fn compile_for_source(
 
     if let Some(tr) = time_range {
         if let Some(col) = &ts_col {
+            // Emit ISO-8601 string literals, NOT raw epoch-millis. `datetime(x)`
+            // compiles to `CAST(x AS TIMESTAMP)`, and a bare integer is read as
+            // epoch *seconds* (×1e9 → nanos), so millisecond magnitudes overflow
+            // i64 and break every timestamped source in the fanout.
             where_parts.push(format!(
-                "{col} >= datetime({from}) and {col} < datetime({to})",
+                "{col} >= datetime(\"{from}\") and {col} < datetime(\"{to}\")",
                 col = col,
-                from = tr.from_ms,
-                to = tr.to_ms,
+                from = ms_to_iso(tr.from_ms),
+                to = ms_to_iso(tr.to_ms),
             ));
         }
     }
@@ -79,12 +83,51 @@ pub fn compile_for_source(
         kql.push_str(" | where ");
         kql.push_str(p);
     }
+    // Drop vector/embedding columns — hundreds of floats per row, useless in a
+    // search preview and a big NDJSON bloat (e.g. memory_nodes.embedding).
+    let drop_cols = vector_columns(source);
+    if !drop_cols.is_empty() {
+        kql.push_str(" | project-away ");
+        kql.push_str(&drop_cols.join(", "));
+    }
     kql.push_str(&format!(" | take {per_source_limit}"));
 
     CompiledSource {
         kql,
         dropped_clauses: dropped,
         has_timestamp,
+    }
+}
+
+/// Render epoch-millis as an RFC3339 UTC string for a KQL `datetime("…")`
+/// literal. Passing the bare integer triggers the seconds×1e9 overflow above.
+fn ms_to_iso(ms: i64) -> String {
+    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms)
+        .map(|dt| dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
+        .unwrap_or_else(|| "1970-01-01T00:00:00.000Z".to_string())
+}
+
+/// Names of vector/embedding columns (fixed-size or variable lists of floats),
+/// which Discover excludes from result rows.
+fn vector_columns(source: &TableRef) -> Vec<String> {
+    source
+        .schema
+        .fields()
+        .iter()
+        .filter(|f| is_vector_type(f.data_type()))
+        .map(|f| f.name().clone())
+        .collect()
+}
+
+fn is_vector_type(dt: &DataType) -> bool {
+    match dt {
+        DataType::FixedSizeList(field, _)
+        | DataType::List(field)
+        | DataType::LargeList(field) => matches!(
+            field.data_type(),
+            DataType::Float16 | DataType::Float32 | DataType::Float64
+        ),
+        _ => false,
     }
 }
 
@@ -390,7 +433,7 @@ mod tests {
         );
         assert_eq!(
             c.kql,
-            "otel_logs | where timestamp >= datetime(1700000000000) and timestamp < datetime(1700000900000) | take 100"
+            "otel_logs | where timestamp >= datetime(\"2023-11-14T22:13:20.000Z\") and timestamp < datetime(\"2023-11-14T22:28:20.000Z\") | take 100"
         );
     }
 
@@ -493,7 +536,7 @@ mod tests {
         );
         assert_eq!(
             c.kql,
-            "events | where event_time >= datetime(1700000000000) and event_time < datetime(1700000900000) | take 100"
+            "events | where event_time >= datetime(\"2023-11-14T22:13:20.000Z\") and event_time < datetime(\"2023-11-14T22:28:20.000Z\") | take 100"
         );
         assert!(c.has_timestamp);
     }

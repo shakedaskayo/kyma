@@ -81,3 +81,24 @@ mostly examples.
 - **Idempotent by design.** REST sends a key, file-drop hashes the
   bytes, Kafka tracks offsets. A replayed input never produces a
   duplicate extent at the catalog boundary.
+
+## The write path, in stages
+
+Every frontend — and every [connector](/connectors/) tick — converges on one
+pipeline:
+
+1. **Coerce.** JSON-shaped input becomes an Arrow `RecordBatch`. Unknown fields
+   evolve the schema; types follow the
+   [coercion rules](/ingest/idempotency-and-coercion).
+2. **Stage.** Batches land in a per-table **staging buffer** instead of becoming
+   one extent each — group-commit amortizes the per-extent cost of small writes.
+3. **Flush.** A table flushes on the first trigger it hits: `KYMA_FLUSH_MAX_ROWS`
+   (8 000), `KYMA_FLUSH_MAX_BYTES` (16 MiB), or `KYMA_FLUSH_MAX_AGE_MS` (50 ms).
+4. **Commit.** The **commit coordinator** collects flushes within a
+   `KYMA_COMMIT_WINDOW_MS` (5 ms) window — up to `KYMA_COMMIT_MAX_EXTENTS` (128) —
+   into a single snapshot, published via a Postgres compare-and-swap. See
+   [Extents and snapshots](/concepts/extents-and-snapshots).
+
+Set `KYMA_STAGING_DISABLED=1` to bypass staging entirely — each ingest request
+then becomes exactly one extent (simpler, higher per-write cost). All staging
+knobs are in the [environment reference](/reference/env#ingest-staging-group-commit).

@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use arrow::json::ArrayWriter;
 use datafusion::error::DataFusionError;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
-use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
+use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use kyma_core::catalog::Catalog;
 use kyma_core::query_frontend::QueryBudget;
@@ -183,9 +183,10 @@ async fn run_source(
     };
 
     // c. Fresh SessionContext bounded by the per-request memory budget.
-    let runtime = match RuntimeEnv::new(RuntimeConfig::new().with_memory_pool(Arc::new(
-        GreedyMemoryPool::new(budget.max_memory_bytes as usize),
-    ))) {
+    let runtime = match RuntimeEnvBuilder::new()
+        .with_memory_pool(Arc::new(GreedyMemoryPool::new(budget.max_memory_bytes as usize)))
+        .build()
+    {
         Ok(r) => Arc::new(r),
         Err(e) => {
             let _ = tx

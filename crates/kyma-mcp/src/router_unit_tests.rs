@@ -60,7 +60,7 @@ async fn initialize_round_trip() {
 }
 
 #[tokio::test]
-async fn tools_list_returns_eight() {
+async fn tools_list_returns_all() {
     let app = build_app().await;
     let resp = jsonrpc(
         app,
@@ -68,7 +68,7 @@ async fn tools_list_returns_eight() {
     )
     .await;
     let tools = resp["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 8);
+    assert_eq!(tools.len(), 13);
 }
 
 #[tokio::test]

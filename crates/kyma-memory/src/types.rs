@@ -1,9 +1,14 @@
 //! Memory domain types.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 /// The kind of a memory. Mirrors agentcy's taxonomy.
+///
+/// `Procedure` captures "how things are done" (conventions, runbooks) and
+/// `Entity` is a lightweight, embeddable node minted for an extracted entity
+/// that is then linked (`RESOLVES_TO`) to the real catalog graph node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryType {
@@ -12,6 +17,8 @@ pub enum MemoryType {
     Preference,
     Learning,
     Summary,
+    Procedure,
+    Entity,
 }
 
 impl MemoryType {
@@ -22,6 +29,8 @@ impl MemoryType {
             MemoryType::Preference => "preference",
             MemoryType::Learning => "learning",
             MemoryType::Summary => "summary",
+            MemoryType::Procedure => "procedure",
+            MemoryType::Entity => "entity",
         }
     }
 
@@ -32,6 +41,8 @@ impl MemoryType {
             "preference" => MemoryType::Preference,
             "learning" => MemoryType::Learning,
             "summary" => MemoryType::Summary,
+            "procedure" => MemoryType::Procedure,
+            "entity" => MemoryType::Entity,
             _ => MemoryType::Fact,
         }
     }
@@ -84,6 +95,10 @@ pub struct CreateMemory {
     pub references: Vec<String>,
     pub source_session_id: Option<Uuid>,
     pub source_run_id: Option<Uuid>,
+    /// When the fact became true (bi-temporal). Defaults to `created_at`.
+    pub valid_at: Option<String>,
+    /// How this memory was formed: `{source, run_id, watermark, extracted_from_ids, confidence}`.
+    pub provenance: Option<Value>,
 }
 
 impl CreateMemory {
@@ -98,6 +113,8 @@ impl CreateMemory {
             references: Vec::new(),
             source_session_id: None,
             source_run_id: None,
+            valid_at: None,
+            provenance: None,
         }
     }
 }
@@ -114,4 +131,9 @@ pub struct RecallFilter {
     pub importance_min: Option<f32>,
     pub since: Option<String>,
     pub until: Option<String>,
+    /// Point-in-time recall: only memories valid at this instant
+    /// (`valid_at <= as_of < invalid_at`). `None` = "now".
+    pub as_of: Option<String>,
+    /// Include superseded/invalidated memories (default false). Used for audit.
+    pub include_invalidated: bool,
 }

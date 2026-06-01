@@ -5,7 +5,7 @@
 //! frames. Once the stream completes (naturally, on error, or on budget
 //! overrun) we insert one row into `agent_runs` with the full trace as JSONB.
 
-use std::convert::Infallible;
+use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
 use adk_rust::futures::StreamExt;
@@ -13,26 +13,25 @@ use adk_rust::identity::{SessionId, UserId};
 use adk_rust::{Content, Part};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Json;
 use chrono::Utc;
-use futures::stream::{self, Stream};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::types::Json as SqlxJson;
 use sqlx::PgPool;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
 
 use super::engine::{
     build_engine, claude_cli, engine_catalogue, CredentialResolver, EngineConfig, EngineKind,
 };
-use super::runner::{make_runner, model_id, ANON_USER};
+use super::memory_retrieve::{retrieve, RetrieveRequest};
+use super::runner::{make_runner, model_id, run_oneshot, ANON_USER};
 use super::sessions;
 use super::state::AgentState;
+use super::tools::SharedToolCtx;
+use super::ui_stream;
 
 /// Hard cap on tool-call count per run. Above this, the turn is aborted
 /// with `run_error{code="tool_loop"}` and persisted as `budget_exceeded`.
@@ -68,7 +67,77 @@ pub fn router(state: AgentState) -> axum::Router {
         .route("/engine/test", post(test_engine))
         .route("/skills", get(list_skills))
         .route("/skills/enabled", get(get_enabled_skills).put(put_enabled_skills))
+        .route("/memory/overview", get(super::memory::overview_handler))
+        .route("/memory/query", post(memory_query_handler))
+        .route(
+            "/memory/settings",
+            get(get_memory_settings).put(put_memory_settings),
+        )
         .with_state(state)
+}
+
+/// `GET /v1/agent/memory/settings` — current tunable memory settings.
+async fn get_memory_settings(State(state): State<AgentState>) -> Json<Value> {
+    let s = super::memory_settings::load(&state.pool, state.tenant).await;
+    Json(serde_json::to_value(s).unwrap_or_else(|_| json!({})))
+}
+
+/// `PUT /v1/agent/memory/settings` — persist tunable memory settings.
+async fn put_memory_settings(
+    State(state): State<AgentState>,
+    Json(body): Json<super::memory_settings::MemorySettings>,
+) -> Response {
+    match super::memory_settings::save(&state.pool, state.tenant, &body).await {
+        Ok(()) => Json(json!({ "ok": true })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// `POST /v1/agent/memory/query` — near-realtime memory recall for external
+/// callers (web UI, Claude Code hooks, coding agents). `mode: "fast"` (default)
+/// runs the LLM-free graph-aware hybrid retrieval; `mode: "agentic"` adds a
+/// short synthesized `brief` over the retrieved context.
+#[derive(Debug, Deserialize)]
+struct MemoryQueryRequest {
+    #[serde(flatten)]
+    retrieve: RetrieveRequest,
+    #[serde(default)]
+    mode: Option<String>,
+}
+
+async fn memory_query_handler(
+    State(state): State<AgentState>,
+    Json(body): Json<MemoryQueryRequest>,
+) -> Json<Value> {
+    let shared = SharedToolCtx {
+        catalog: state.catalog.clone(),
+        format: state.format.clone(),
+        pool: state.pool.clone(),
+    };
+    let result = retrieve(&shared, &body.retrieve).await;
+    let mut out = result.to_json();
+    if body.mode.as_deref() == Some("agentic") && !result.context.is_empty() {
+        let prompt = format!("Question: {}\n\n{}", body.retrieve.query, result.context);
+        if let Ok(brief) = run_oneshot(
+            &state,
+            "kyma-memory-brief",
+            "Answers a question from retrieved memory.",
+            "Answer the question using ONLY the provided memories. Be concise and cite memory \
+             ids. If the memories don't contain the answer, say so plainly.",
+            &prompt,
+        )
+        .await
+        {
+            if let Value::Object(ref mut m) = out {
+                m.insert("brief".into(), Value::String(brief));
+            }
+        }
+    }
+    Json(out)
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,35 +157,195 @@ struct AskRequest {
     source: Option<String>,
 }
 
-/// One recorded SSE frame — we stash both the user-facing event name and
-/// the JSON body so we can persist the full trace into `agent_runs`
-/// after the stream completes.
+/// One recorded logical event — we stash both the event name and the JSON
+/// body so we can persist the full trace into `agent_runs` after the stream
+/// completes. (The persisted format is internal and independent of the wire
+/// protocol the client sees.)
 #[derive(Debug, Clone)]
 struct TraceFrame {
     event: &'static str,
     data: Value,
 }
 
-/// Emit a trace frame both into the SSE sender **and** into the trace vec
-/// that will later be persisted. Parallel tee isolates the two concerns.
-fn emit(
-    tx: &mpsc::UnboundedSender<Result<SseEvent, Infallible>>,
-    trace: &mut Vec<TraceFrame>,
-    event: &'static str,
-    data: Value,
-) {
-    trace.push(TraceFrame {
-        event,
-        data: data.clone(),
-    });
-    let body = serde_json::to_string(&data).unwrap_or_else(|_| "{}".to_string());
-    // Best-effort: if the client has hung up we just keep walking the
-    // stream until the budget fires — the cancellation is cooperative.
-    let _ = tx.send(Ok(SseEvent::default().event(event).data(body)));
+/// Translates the agent's logical events into the AI-SDK **UI Message Stream**
+/// the client consumes, while also recording a [`TraceFrame`] of each event for
+/// persistence. One `Emitter` drives one assistant message: it opens the
+/// message on construction and manages text/reasoning block lifecycles (so the
+/// wire always has matching `*-start`/`*-end` parts) and tool-call/result
+/// pairing by id.
+struct Emitter {
+    ui: ui_stream::UiStream,
+    trace: Vec<TraceFrame>,
+    /// Open text block id, if any.
+    text_id: Option<String>,
+    /// Open reasoning block id, if any.
+    reasoning_id: Option<String>,
+    /// Monotonic counter for unique block ids within the message.
+    block_seq: u64,
+    /// FIFO of synthetic tool-call ids per tool name, so a `tool_result`
+    /// (which carries only the tool name) can be paired with its `tool_call`.
+    tool_ids: HashMap<String, VecDeque<String>>,
+    tool_seq: u64,
+}
+
+impl Emitter {
+    /// Open the assistant message (`start` + `start-step`) and return the emitter.
+    fn new(ui: ui_stream::UiStream, message_id: &str) -> Self {
+        ui.start(message_id);
+        ui.start_step();
+        Self {
+            ui,
+            trace: Vec::new(),
+            text_id: None,
+            reasoning_id: None,
+            block_seq: 0,
+            tool_ids: HashMap::new(),
+            tool_seq: 0,
+        }
+    }
+
+    fn record(&mut self, event: &'static str, data: Value) {
+        self.trace.push(TraceFrame { event, data });
+    }
+
+    fn next_block(&mut self) -> String {
+        let id = format!("blk-{}", self.block_seq);
+        self.block_seq += 1;
+        id
+    }
+
+    fn close_text(&mut self) {
+        if let Some(id) = self.text_id.take() {
+            self.ui.text_end(&id);
+        }
+    }
+    fn close_reasoning(&mut self) {
+        if let Some(id) = self.reasoning_id.take() {
+            self.ui.reasoning_end(&id);
+        }
+    }
+
+    /// Surface the conversation session id so the client can resume.
+    fn session(&mut self, session_id: &str) {
+        self.record("session", json!({ "session_id": session_id }));
+        self.ui.data("session", json!({ "sessionId": session_id }));
+    }
+
+    fn run_started(&mut self, run_id: &str, model: &str, question: &str) {
+        self.record(
+            "run_started",
+            json!({ "run_id": run_id, "model": model, "question": question }),
+        );
+        self.ui.data("model", json!({ "model": model }));
+    }
+
+    fn answer_delta(&mut self, text: &str) {
+        self.record("answer_delta", json!({ "text": text }));
+        self.close_reasoning();
+        let id = match &self.text_id {
+            Some(id) => id.clone(),
+            None => {
+                let id = self.next_block();
+                self.ui.text_start(&id);
+                self.text_id = Some(id.clone());
+                id
+            }
+        };
+        self.ui.text_delta(&id, text);
+    }
+
+    fn thinking_delta(&mut self, text: &str) {
+        self.record("thinking_delta", json!({ "text": text }));
+        self.close_text();
+        let id = match &self.reasoning_id {
+            Some(id) => id.clone(),
+            None => {
+                let id = self.next_block();
+                self.ui.reasoning_start(&id);
+                self.reasoning_id = Some(id.clone());
+                id
+            }
+        };
+        self.ui.reasoning_delta(&id, text);
+    }
+
+    fn tool_call(&mut self, tool: &str, args: Value, call_index: u32) {
+        self.record(
+            "tool_call",
+            json!({ "tool": tool, "args": args, "call_index": call_index }),
+        );
+        self.close_text();
+        self.close_reasoning();
+        let id = format!("call-{}", self.tool_seq);
+        self.tool_seq += 1;
+        self.tool_ids
+            .entry(tool.to_string())
+            .or_default()
+            .push_back(id.clone());
+        self.ui.tool_input_available(&id, tool, args);
+    }
+
+    fn tool_result(&mut self, tool: &str, result: Value) {
+        self.record("tool_result", json!({ "tool": tool, "result": result }));
+        let id = self
+            .tool_ids
+            .get_mut(tool)
+            .and_then(|q| q.pop_front())
+            .unwrap_or_else(|| format!("call-{tool}"));
+        self.ui.tool_output_available(&id, result);
+    }
+
+    /// Final answer bookkeeping. The text itself has already streamed via
+    /// `answer_delta`, so here we only close the block and surface the SQL/KQL
+    /// the run used as data parts.
+    fn answer_final(&mut self, text: &str, sql_used: Option<&str>, kql_used: Option<&str>) {
+        self.record(
+            "answer_final",
+            json!({ "text": text, "kql_used": kql_used, "sql_used": sql_used }),
+        );
+        self.close_text();
+        self.close_reasoning();
+        if let Some(sql) = sql_used {
+            self.ui.data("sql", json!({ "sql": sql }));
+        }
+        if let Some(kql) = kql_used {
+            self.ui.data("kql", json!({ "kql": kql }));
+        }
+    }
+
+    fn run_error(&mut self, code: &str, message: &str) {
+        self.record("run_error", json!({ "code": code, "message": message }));
+        self.ui.error(message);
+    }
+
+    /// Close the message: flush open blocks, emit run metadata, then the
+    /// terminal `finish-step`/`finish`/`[DONE]` parts.
+    fn finish(&mut self, usage: Value) {
+        self.close_text();
+        self.close_reasoning();
+        self.ui.data("usage", usage);
+        self.ui.finish_step();
+        self.ui.finish();
+        self.ui.done();
+    }
+
+    /// Build the JSON trace array persisted into `agent_runs`.
+    fn trace_json(&self) -> Value {
+        Value::Array(
+            self.trace
+                .iter()
+                .map(|f| json!({ "event": f.event, "data": f.data }))
+                .collect(),
+        )
+    }
 }
 
 /// POST /v1/agent/ask — run one agent turn and stream SSE frames.
-async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskRequest>) -> Response {
+async fn ask_handler(
+    State(state): State<AgentState>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<AskRequest>,
+) -> Response {
     let question = body.question.trim().to_string();
     if question.is_empty() {
         return (
@@ -131,7 +360,23 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
     // the runner.
     if let Ok(cfg) = state.engines.get().await {
         if cfg.kind == EngineKind::ClaudeCli {
-            return ask_via_claude_cli(state.pool.clone(), &question, &cfg).await;
+            // `session_id` here is Claude's own session id (echoed back from a
+            // prior turn's `data-session` part), used to `--resume`. The
+            // caller's Authorization header is forwarded so Claude can reach
+            // our own MCP endpoint (`mcp_url`) as the same principal.
+            let auth_header = headers
+                .get(axum::http::header::AUTHORIZATION)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            return ask_via_claude_cli(
+                state.pool.clone(),
+                &question,
+                &cfg,
+                body.session_id.clone(),
+                state.mcp_url.clone(),
+                auth_header,
+            )
+            .await;
         }
     }
 
@@ -172,38 +417,19 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
     )
     .await;
 
-    // Build runner up-front so we can surface init errors via an
-    // inline-but-single-event SSE stream (rather than an HTTP 500).
+    // Build runner up-front so we can surface init errors as a single-message
+    // UI Message Stream (rather than an HTTP 500).
     let runner = match make_runner(&state, &session_id_str, &sctx.history, sctx.summary.as_deref())
         .await
     {
         Ok(r) => r,
         Err(e) => {
             error!(run_id = %run_id, error = %e, "failed to build agent runner");
-            let payload = json!({
-                "run_id": run_id.to_string(),
-                "code": "init_error",
-                "message": e.to_string(),
-            });
-            let events = vec![
-                Ok::<_, Infallible>(
-                    SseEvent::default().event("session").data(
-                        serde_json::to_string(&json!({ "session_id": session_id_str.clone() }))
-                            .unwrap_or_default(),
-                    ),
-                ),
-                Ok(SseEvent::default()
-                    .event("run_error")
-                    .data(serde_json::to_string(&payload).unwrap_or_default())),
-                Ok(SseEvent::default().event("run_finished").data(
-                    serde_json::to_string(&json!({
-                        "run_id": run_id.to_string(),
-                        "elapsed_ms": start.elapsed().as_millis() as u64,
-                        "tool_calls": 0,
-                    }))
-                    .unwrap_or_default(),
-                )),
-            ];
+            let (ui, rx) = ui_stream::channel();
+            let mut em = Emitter::new(ui, &run_id.to_string());
+            em.session(&session_id_str);
+            em.run_error("init_error", &e.to_string());
+            em.finish(json!({ "tool_calls": 0, "elapsed_ms": start.elapsed().as_millis() as u64 }));
             // Best-effort persistence — ignore errors here since the
             // primary surface (SSE) already told the client.
             let _ = persist_run(
@@ -217,66 +443,41 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
                 Utc::now(),
                 "error",
                 &Value::Null,
-                &json!([{ "event": "run_error", "data": payload }]),
+                &em.trace_json(),
             )
             .await;
-            return Sse::new(stream::iter(events))
-                .keep_alive(KeepAlive::default())
-                .into_response();
+            return ui_stream::response(rx);
         }
     };
 
-    // Spawn the driver task. The task owns the runner and the event loop;
-    // the response stream is a `tokio_stream::UnboundedReceiverStream` over
-    // the SSE events the task produces.
-    let (tx, rx) = mpsc::unbounded_channel::<Result<SseEvent, Infallible>>();
+    // Spawn the driver task. The task owns the runner and the event loop and
+    // drives the UI Message Stream through an `Emitter`; the response is a
+    // `tokio_stream::UnboundedReceiverStream` over the parts it produces.
+    let (ui, rx) = ui_stream::channel();
     let pool = state.pool.clone();
     let summary_state = state.clone();
     let summary_every = summary_every();
 
     tokio::spawn(async move {
-        let mut trace: Vec<TraceFrame> = Vec::new();
+        let mut em = Emitter::new(ui, &run_id.to_string());
         let mut tool_calls: u32 = 0;
         let mut last_run_sql: Option<String> = None;
         let mut final_text: String = String::new();
 
         // Surface the session id first so the client can capture it even if
         // the run errors mid-stream.
-        emit(
-            &tx,
-            &mut trace,
-            "session",
-            json!({ "session_id": session_id_str.clone() }),
-        );
-
-        emit(
-            &tx,
-            &mut trace,
-            "run_started",
-            json!({
-                "run_id": run_id.to_string(),
-                "model": model,
-                "question": question,
-            }),
-        );
+        em.session(&session_id_str);
+        em.run_started(&run_id.to_string(), &model, &question);
 
         let content = Content::new("user").with_text(&question);
 
         let user_id = match UserId::new(ANON_USER) {
             Ok(u) => u,
             Err(e) => {
-                emit(
-                    &tx,
-                    &mut trace,
-                    "run_error",
-                    json!({
-                        "code": "internal",
-                        "message": format!("user_id: {e}"),
-                    }),
-                );
+                em.run_error("internal", &format!("user_id: {e}"));
                 finish_and_persist(
-                    &pool, &tx, run_id, &question, &model, tenant_uuid, Some(session_uuid),
-                    started_at, start, tool_calls, "error", &trace,
+                    &pool, &mut em, run_id, &question, &model, tenant_uuid, Some(session_uuid),
+                    started_at, start, tool_calls, "error",
                 )
                 .await;
                 return;
@@ -285,18 +486,10 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
         let session_id = match SessionId::new(&session_id_str) {
             Ok(s) => s,
             Err(e) => {
-                emit(
-                    &tx,
-                    &mut trace,
-                    "run_error",
-                    json!({
-                        "code": "internal",
-                        "message": format!("session_id: {e}"),
-                    }),
-                );
+                em.run_error("internal", &format!("session_id: {e}"));
                 finish_and_persist(
-                    &pool, &tx, run_id, &question, &model, tenant_uuid, Some(session_uuid),
-                    started_at, start, tool_calls, "error", &trace,
+                    &pool, &mut em, run_id, &question, &model, tenant_uuid, Some(session_uuid),
+                    started_at, start, tool_calls, "error",
                 )
                 .await;
                 return;
@@ -328,19 +521,18 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
                 for part in parts_iter {
                     match part {
                         Part::Text { text } => {
-                            if partial {
-                                emit(&tx, &mut trace, "answer_delta", json!({"text": text}));
-                            } else {
-                                // Non-partial Text means we have the
-                                // complete (possibly aggregated) turn
-                                // answer. Stash for `answer_final`.
+                            // Non-partial Text means we have the complete
+                            // (possibly aggregated) turn answer — stash it for
+                            // the session record. Either way it streams as a
+                            // text delta.
+                            if !partial {
                                 final_text.push_str(&text);
-                                emit(&tx, &mut trace, "answer_delta", json!({"text": text}));
                             }
+                            em.answer_delta(&text);
                         }
                         Part::Thinking { thinking, .. } => {
                             if include_thinking {
-                                emit(&tx, &mut trace, "thinking_delta", json!({"text": thinking}));
+                                em.thinking_delta(&thinking);
                             }
                         }
                         Part::FunctionCall { name, args, .. } => {
@@ -350,16 +542,7 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
                                     last_run_sql = Some(s.to_string());
                                 }
                             }
-                            emit(
-                                &tx,
-                                &mut trace,
-                                "tool_call",
-                                json!({
-                                    "tool": name,
-                                    "args": args,
-                                    "call_index": tool_calls,
-                                }),
-                            );
+                            em.tool_call(&name, args, tool_calls);
                             if tool_calls > MAX_TOOL_CALLS {
                                 return Err(format!("tool_loop:{}", tool_calls));
                             }
@@ -367,15 +550,7 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
                         Part::FunctionResponse {
                             function_response, ..
                         } => {
-                            emit(
-                                &tx,
-                                &mut trace,
-                                "tool_result",
-                                json!({
-                                    "tool": function_response.name,
-                                    "result": function_response.response,
-                                }),
-                            );
+                            em.tool_result(&function_response.name, function_response.response);
                         }
                         _ => {}
                     }
@@ -396,58 +571,28 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
         let (status, status_str): (&str, &str) = match outcome {
             Ok(Ok(())) => ("success", "success"),
             Ok(Err(msg)) if msg.starts_with("tool_loop:") => {
-                emit(
-                    &tx,
-                    &mut trace,
-                    "run_error",
-                    json!({
-                        "code": "tool_loop",
-                        "message": msg,
-                    }),
-                );
+                em.run_error("tool_loop", &msg);
                 ("budget_exceeded", "budget_exceeded")
             }
             Ok(Err(msg)) => {
-                emit(
-                    &tx,
-                    &mut trace,
-                    "run_error",
-                    json!({
-                        "code": "runner_error",
-                        "message": msg,
-                    }),
-                );
+                em.run_error("runner_error", &msg);
                 ("error", "error")
             }
             Err(_elapsed) => {
                 warn!(run_id = %run_id, "agent run exceeded 60s wall clock");
-                emit(
-                    &tx,
-                    &mut trace,
-                    "run_error",
-                    json!({
-                        "code": "timeout",
-                        "message": format!(
-                            "agent run exceeded {}s wall clock budget",
-                            RUN_WALL_CLOCK.as_secs()
-                        ),
-                    }),
+                em.run_error(
+                    "timeout",
+                    &format!(
+                        "agent run exceeded {}s wall clock budget",
+                        RUN_WALL_CLOCK.as_secs()
+                    ),
                 );
                 ("budget_exceeded", "budget_exceeded")
             }
         };
 
         if status == "success" {
-            emit(
-                &tx,
-                &mut trace,
-                "answer_final",
-                json!({
-                    "text": final_text,
-                    "kql_used": Value::Null,
-                    "sql_used": last_run_sql,
-                }),
-            );
+            em.answer_final(&final_text, last_run_sql.as_deref(), None);
             // Record the assistant turn, then refresh the rolling summary.
             sessions::persist_turn(
                 &pool,
@@ -463,22 +608,19 @@ async fn ask_handler(State(state): State<AgentState>, Json(body): Json<AskReques
         }
 
         finish_and_persist(
-            &pool, &tx, run_id, &question, &model, tenant_uuid, Some(session_uuid), started_at,
-            start, tool_calls, status_str, &trace,
+            &pool, &mut em, run_id, &question, &model, tenant_uuid, Some(session_uuid), started_at,
+            start, tool_calls, status_str,
         )
         .await;
     });
 
-    let stream = UnboundedReceiverStream::new(rx);
-    Sse::new(stream)
-        .keep_alive(KeepAlive::default())
-        .into_response()
+    ui_stream::response(rx)
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn finish_and_persist(
     pool: &PgPool,
-    tx: &mpsc::UnboundedSender<Result<SseEvent, Infallible>>,
+    em: &mut Emitter,
     run_id: uuid::Uuid,
     question: &str,
     model: &str,
@@ -488,33 +630,17 @@ async fn finish_and_persist(
     start: Instant,
     tool_calls: u32,
     status: &str,
-    trace: &[TraceFrame],
 ) {
     let elapsed_ms = start.elapsed().as_millis() as u64;
-    let finished = json!({
-        "run_id": run_id.to_string(),
-        "usage": {},
-        "elapsed_ms": elapsed_ms,
-        "tool_calls": tool_calls,
-    });
-    let body = serde_json::to_string(&finished).unwrap_or_default();
-    let _ = tx.send(Ok(SseEvent::default().event("run_finished").data(body)));
-
-    let trace_json = Value::Array(
-        trace
-            .iter()
-            .map(|f| {
-                json!({
-                    "event": f.event,
-                    "data": f.data,
-                })
-            })
-            .collect(),
-    );
     let usage_json = json!({
+        "run_id": run_id.to_string(),
         "tool_calls": tool_calls,
         "elapsed_ms": elapsed_ms,
     });
+    // Closes any open blocks and emits the terminal finish/[DONE] parts.
+    em.finish(usage_json.clone());
+
+    let trace_json = em.trace_json();
 
     if let Err(e) = persist_run(
         pool,
@@ -878,25 +1004,27 @@ async fn test_engine(
     use adk_rust::{GenerateContentConfig, LlmRequest};
 
     // Claude CLI engine: spawn the binary with a 1-token prompt and confirm
-    // it produces *any* stdout + exits 0. Bypasses build_engine entirely
-    // because the CLI doesn't go through adk-rust.
+    // it streams *any* text and completes without error. Bypasses build_engine
+    // entirely because the CLI doesn't go through adk-rust.
     if cfg.kind == EngineKind::ClaudeCli {
         let probe = tokio::time::timeout(std::time::Duration::from_secs(30), async {
-            let (mut chunks, wait) = claude_cli::run("ping", Some(&cfg.model), None)
+            let mut rx = claude_cli::run_stream("ping", Some(&cfg.model), None, None, None)
                 .map_err(|e| format!("spawn: {e}"))?;
             let mut got_output = false;
-            while let Some(chunk) = chunks.recv().await {
-                if matches!(chunk, claude_cli::Chunk::Stdout(_)) {
-                    got_output = true;
+            let mut err: Option<String> = None;
+            while let Some(ev) = rx.recv().await {
+                match ev {
+                    claude_cli::ClaudeEvent::TextStart { .. }
+                    | claude_cli::ClaudeEvent::TextDelta { .. } => got_output = true,
+                    claude_cli::ClaudeEvent::Error { message } => err = Some(message),
+                    claude_cli::ClaudeEvent::Result { is_error: true, .. } => {
+                        err.get_or_insert_with(|| "claude reported an error".to_string());
+                    }
+                    _ => {}
                 }
             }
-            let code = match wait.await {
-                Ok(Ok(c)) => c,
-                Ok(Err(e)) => return Err(format!("io: {e}")),
-                Err(e) => return Err(format!("join: {e}")),
-            };
-            if code != 0 {
-                return Err(format!("claude exited with {code}"));
+            if let Some(e) = err {
+                return Err(e);
             }
             if !got_output {
                 return Err("claude produced no output".to_string());
@@ -963,14 +1091,6 @@ async fn test_engine(
             "probe timed out after 30s".into(),
         )),
     }
-}
-
-// Satisfy dead-code lint: Stream is only used implicitly via Sse::new.
-#[allow(dead_code)]
-fn _type_check<S>(_: S)
-where
-    S: Stream<Item = Result<SseEvent, Infallible>>,
-{
 }
 
 // ---------------------------------------------------------------------------
@@ -1062,45 +1182,60 @@ fn preview_body(body: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Claude CLI engine — spawns `claude --print` and pipes its stdout through
-// the existing SSE event shape. Bypasses adk-rust entirely.
+// Claude CLI engine — drives the Claude Code agent loop via the
+// claude-code-agent-sdk and translates its events into the UI Message Stream.
+// Bypasses adk-rust entirely (Claude Code owns its own tool loop). Multi-turn
+// context is preserved by resuming Claude's own session (`--resume`).
 // ---------------------------------------------------------------------------
 
-async fn ask_via_claude_cli(pool: PgPool, question: &str, cfg: &EngineConfig) -> Response {
+async fn ask_via_claude_cli(
+    pool: PgPool,
+    question: &str,
+    cfg: &EngineConfig,
+    resume_session_id: Option<String>,
+    mcp_url: Option<String>,
+    auth_header: Option<String>,
+) -> Response {
     let run_id = uuid::Uuid::new_v4();
     let started_at = Utc::now();
     let start = Instant::now();
     let model = format!("claude_cli/{}", cfg.model);
 
-    info!(run_id = %run_id, model = %model, "claude_cli ask starting");
+    info!(run_id = %run_id, model = %model, resume = ?resume_session_id, mcp = mcp_url.is_some(), "claude_cli ask starting");
 
-    let (tx, rx) = mpsc::unbounded_channel::<Result<SseEvent, Infallible>>();
-    let _ = tx.send(Ok(SseEvent::default().event("run_started").data(
-        serde_json::to_string(&json!({
-            "run_id": run_id.to_string(),
-            "model": model,
-            "question": question,
-        }))
-        .unwrap_or_default(),
-    )));
+    let (ui, rx) = ui_stream::channel();
+    ui.start(&run_id.to_string());
+    ui.start_step();
+    ui.data("model", json!({ "model": model }));
 
     let question_owned = question.to_string();
     let model_label = cfg.model.clone();
     tokio::spawn(async move {
         let mut answer = String::new();
-        let mut errored = false;
+        let mut errored: Option<String> = None;
+        // Claude's own session id, echoed to the client so the next turn can
+        // resume this conversation.
+        let mut claude_session = String::new();
+        let mut total_cost_usd: Option<f64> = None;
+        let mut num_turns: u32 = 0;
 
-        let (mut chunks, wait) = match claude_cli::run(&question_owned, Some(&model_label), None) {
-            Ok(pair) => pair,
+        // Point the agent at our own MCP server so it can query the user's data.
+        let mcp = mcp_url.map(|url| claude_cli::McpConfig { url, auth_header });
+
+        let mut events = match claude_cli::run_stream(
+            &question_owned,
+            Some(&model_label),
+            resume_session_id.as_deref(),
+            None,
+            mcp.as_ref(),
+        ) {
+            Ok(rx) => rx,
             Err(e) => {
-                let _ = tx.send(Ok(SseEvent::default().event("run_error").data(
-                    serde_json::to_string(&json!({
-                        "code": "spawn_failed",
-                        "message": e.to_string(),
-                    }))
-                    .unwrap_or_default(),
-                )));
-                emit_finished(&tx, run_id, start.elapsed().as_millis() as u64);
+                ui.error(&e.to_string());
+                ui.data("usage", json!({ "run_id": run_id.to_string(), "elapsed_ms": start.elapsed().as_millis() as u64 }));
+                ui.finish_step();
+                ui.finish();
+                ui.done();
                 let _ = persist_run(
                     &pool,
                     run_id,
@@ -1119,62 +1254,79 @@ async fn ask_via_claude_cli(pool: PgPool, question: &str, cfg: &EngineConfig) ->
             }
         };
 
-        while let Some(chunk) = chunks.recv().await {
-            match chunk {
-                claude_cli::Chunk::Stdout(line) => {
-                    if !answer.is_empty() {
-                        answer.push('\n');
-                    }
-                    answer.push_str(&line);
-                    let _ = tx.send(Ok(SseEvent::default().event("answer_delta").data(
-                        serde_json::to_string(&json!({"text": format!("{}\n", line)}))
-                            .unwrap_or_default(),
-                    )));
+        while let Some(ev) = events.recv().await {
+            match ev {
+                claude_cli::ClaudeEvent::Init { session_id } => {
+                    claude_session = session_id.clone();
+                    ui.data("session", json!({ "sessionId": session_id }));
                 }
-                claude_cli::Chunk::Stderr(line) => {
-                    if !line.is_empty() {
-                        warn!(run_id = %run_id, line = %line, "claude_cli stderr");
+                claude_cli::ClaudeEvent::TextStart { block_id } => ui.text_start(&block_id),
+                claude_cli::ClaudeEvent::TextDelta { block_id, text } => {
+                    answer.push_str(&text);
+                    ui.text_delta(&block_id, &text);
+                }
+                claude_cli::ClaudeEvent::TextEnd { block_id } => ui.text_end(&block_id),
+                claude_cli::ClaudeEvent::ThinkingStart { block_id } => ui.reasoning_start(&block_id),
+                claude_cli::ClaudeEvent::ThinkingDelta { block_id, text } => {
+                    ui.reasoning_delta(&block_id, &text)
+                }
+                claude_cli::ClaudeEvent::ThinkingEnd { block_id } => ui.reasoning_end(&block_id),
+                claude_cli::ClaudeEvent::ToolUse { id, name, input } => {
+                    ui.tool_input_available(&id, &name, input)
+                }
+                claude_cli::ClaudeEvent::ToolResult {
+                    id,
+                    output,
+                    is_error,
+                } => {
+                    if is_error {
+                        let txt = output
+                            .as_str()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| output.to_string());
+                        ui.tool_output_error(&id, &txt);
+                    } else {
+                        ui.tool_output_available(&id, output);
                     }
+                }
+                claude_cli::ClaudeEvent::Result {
+                    session_id,
+                    total_cost_usd: cost,
+                    num_turns: turns,
+                    is_error,
+                    ..
+                } => {
+                    if claude_session.is_empty() {
+                        claude_session = session_id;
+                    }
+                    total_cost_usd = cost;
+                    num_turns = turns;
+                    if is_error {
+                        errored.get_or_insert_with(|| "claude reported an error".to_string());
+                    }
+                }
+                claude_cli::ClaudeEvent::Error { message } => {
+                    warn!(run_id = %run_id, message = %message, "claude_cli error");
+                    ui.error(&message);
+                    errored = Some(message);
                 }
             }
         }
 
-        let exit_code = match wait.await {
-            Ok(Ok(code)) => code,
-            Ok(Err(e)) => {
-                let _ = tx.send(Ok(SseEvent::default().event("run_error").data(
-                    serde_json::to_string(&json!({
-                        "code": "io",
-                        "message": e.to_string(),
-                    }))
-                    .unwrap_or_default(),
-                )));
-                errored = true;
-                -1
-            }
-            Err(_join_err) => -1,
-        };
+        ui.data(
+            "usage",
+            json!({
+                "run_id": run_id.to_string(),
+                "elapsed_ms": start.elapsed().as_millis() as u64,
+                "total_cost_usd": total_cost_usd,
+                "num_turns": num_turns,
+                "session_id": claude_session,
+            }),
+        );
+        ui.finish_step();
+        ui.finish();
+        ui.done();
 
-        if exit_code != 0 && !errored {
-            let _ = tx.send(Ok(SseEvent::default().event("run_error").data(
-                serde_json::to_string(&json!({
-                    "code": "nonzero_exit",
-                    "exit_code": exit_code,
-                }))
-                .unwrap_or_default(),
-            )));
-            errored = true;
-        }
-
-        if !errored {
-            let _ = tx.send(Ok(SseEvent::default().event("answer_final").data(
-                serde_json::to_string(&json!({"text": answer.clone()}))
-                    .unwrap_or_default(),
-            )));
-        }
-
-        let elapsed_ms = start.elapsed().as_millis() as u64;
-        emit_finished(&tx, run_id, elapsed_ms);
         let _ = persist_run(
             &pool,
             run_id,
@@ -1184,29 +1336,12 @@ async fn ask_via_claude_cli(pool: PgPool, question: &str, cfg: &EngineConfig) ->
             None,
             started_at,
             Utc::now(),
-            if errored { "error" } else { "success" },
+            if errored.is_some() { "error" } else { "success" },
             &Value::String(answer.clone()),
             &json!([{ "event": "answer_final", "data": { "text": answer } }]),
         )
         .await;
     });
 
-    Sse::new(UnboundedReceiverStream::new(rx))
-        .keep_alive(KeepAlive::default())
-        .into_response()
-}
-
-fn emit_finished(
-    tx: &mpsc::UnboundedSender<Result<SseEvent, Infallible>>,
-    run_id: uuid::Uuid,
-    elapsed_ms: u64,
-) {
-    let _ = tx.send(Ok(SseEvent::default().event("run_finished").data(
-        serde_json::to_string(&json!({
-            "run_id": run_id.to_string(),
-            "elapsed_ms": elapsed_ms,
-            "tool_calls": 0,
-        }))
-        .unwrap_or_default(),
-    )));
+    ui_stream::response(rx)
 }

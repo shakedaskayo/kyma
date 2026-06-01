@@ -2,6 +2,7 @@
 
 use kyma_connectors::metrics::ConnectorMetrics;
 use kyma_connectors::prometheus::PromConnector;
+use kyma_connectors::runner::NoopCredentialStore;
 use kyma_connectors::secrets::EnvSecretStore;
 use kyma_connectors::{Connector, ConnectorCtx};
 use serde_json::json;
@@ -35,8 +36,11 @@ async fn spawn_mock(body: &'static str, status: u16) -> String {
 fn ctx() -> ConnectorCtx {
     ConnectorCtx {
         connector_id: uuid::Uuid::new_v4(),
+        tenant: kyma_core::tenant::DEFAULT_TENANT,
         http: reqwest::Client::new(),
         secrets: Arc::new(EnvSecretStore),
+        credentials: Arc::new(NoopCredentialStore),
+        oauth: None,
         scheduled_for: chrono::Utc::now(),
         metrics: ConnectorMetrics {
             connector_id: uuid::Uuid::new_v4(),

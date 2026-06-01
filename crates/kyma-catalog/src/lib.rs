@@ -529,12 +529,13 @@ impl Catalog for PostgresCatalog {
                     predicate_binds.push(serde_json::json!(tokens));
                     arg_index += 1;
                 }
+                ColumnPrune::VectorDistance { .. } => {
+                    // No SQL form — applied as a Rust post-filter below using
+                    // each extent's per-column centroid+radius `vec` stat.
+                }
             }
         }
-        #[allow(unused_assignments)]
-        {
-            arg_index = arg_index; // silence last-increment warning
-        }
+        let _ = arg_index; // the final increment is intentionally unread
         sql.push_str(" ORDER BY min_timestamp DESC NULLS LAST");
 
         let mut q = sqlx::query(&sql)
@@ -573,6 +574,15 @@ impl Catalog for PostgresCatalog {
                 compaction_gen: row.try_get::<i32, _>("compaction_gen").map_err(sql_err)? as u32,
                 created_at: row.try_get("created_at").map_err(sql_err)?,
             });
+        }
+
+        // Vector-ANN post-filter (no SQL form): drop extents whose centroid +
+        // radius lower bound on cosine distance exceeds the threshold. Extents
+        // lacking a `vec` stat are kept (exact-scan fallback) → no false negatives.
+        for (col_name, pred) in &prune.column_predicates {
+            if let ColumnPrune::VectorDistance { query, threshold } = pred {
+                out.retain(|m| keep_extent_by_vector(&m.column_stats, col_name, query, *threshold));
+            }
         }
         Ok(out)
     }
@@ -752,14 +762,19 @@ impl Catalog for PostgresCatalog {
         payload: serde_json::Value,
         priority: i32,
     ) -> Result<Uuid> {
+        // `background_tasks.tenant_id` is NOT NULL (migration 007). Derive it
+        // from the task's table when present; otherwise fall back to the
+        // default tenant (table-less tasks in single-tenant deployments).
         let (id,): (Uuid,) = sqlx::query_as(
-            "INSERT INTO background_tasks (kind, table_id, payload, priority)
-             VALUES ($1, $2, $3, $4) RETURNING id",
+            "INSERT INTO background_tasks (tenant_id, kind, table_id, payload, priority)
+             VALUES (COALESCE((SELECT tenant_id FROM tables WHERE id = $2), $5), $1, $2, $3, $4)
+             RETURNING id",
         )
         .bind(kind)
         .bind(table_id.map(|t| *t.as_uuid()))
         .bind(&payload)
         .bind(priority)
+        .bind(kyma_core::tenant::DEFAULT_TENANT.as_uuid())
         .fetch_one(&self.pool)
         .await
         .map_err(sql_err)?;
@@ -1255,6 +1270,75 @@ impl Catalog for PostgresCatalog {
         Ok(count as u64)
     }
 
+    async fn list_users_in_tenant(
+        &self,
+        tenant: TenantId,
+    ) -> std::result::Result<Vec<User>, CatalogError> {
+        let rows = sqlx::query(
+            "SELECT id, username, role, created_at, updated_at
+             FROM users
+             WHERE tenant_id = $1
+             ORDER BY created_at",
+        )
+        .bind(tenant.as_uuid())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        rows.iter().map(row_to_user).collect()
+    }
+
+    async fn set_user_password_in_tenant(
+        &self,
+        tenant: TenantId,
+        username: &str,
+        password_hash: &str,
+    ) -> std::result::Result<bool, CatalogError> {
+        let res = sqlx::query(
+            "UPDATE users SET password_hash = $3, updated_at = now()
+             WHERE tenant_id = $1 AND username = $2",
+        )
+        .bind(tenant.as_uuid())
+        .bind(username)
+        .bind(password_hash)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(res.rows_affected() > 0)
+    }
+
+    async fn set_user_role_in_tenant(
+        &self,
+        tenant: TenantId,
+        username: &str,
+        role: &str,
+    ) -> std::result::Result<bool, CatalogError> {
+        let res = sqlx::query(
+            "UPDATE users SET role = $3, updated_at = now()
+             WHERE tenant_id = $1 AND username = $2",
+        )
+        .bind(tenant.as_uuid())
+        .bind(username)
+        .bind(role)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(res.rows_affected() > 0)
+    }
+
+    async fn delete_user_in_tenant(
+        &self,
+        tenant: TenantId,
+        username: &str,
+    ) -> std::result::Result<bool, CatalogError> {
+        let res = sqlx::query("DELETE FROM users WHERE tenant_id = $1 AND username = $2")
+            .bind(tenant.as_uuid())
+            .bind(username)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        Ok(res.rows_affected() > 0)
+    }
+
     // --- auth: api tokens ---
 
     async fn insert_api_token_in_tenant(
@@ -1674,9 +1758,6 @@ fn str_to_role(s: &str) -> NodeRole {
     }
 }
 
-#[inline]
-fn column_predicates_todo<T>(_: &T) {}
-
 /// Serialise an Arrow `Schema` into a JSON representation durable in Postgres.
 ///
 /// We use a self-describing shape rather than arrow's own schema-to-ipc
@@ -1735,6 +1816,33 @@ fn arrow_type_to_string(ty: &arrow_schema::DataType) -> String {
             format!("vector({dim})")
         }
         other => format!("arrow:{other:?}"),
+    }
+}
+
+/// Decide whether to keep an extent for a `VectorDistance` prune, reading its
+/// `column_stats.{col}.vec` centroid+radius. Keeps the extent (no false
+/// negatives) whenever the stat is missing/malformed or the query can't be
+/// bounded; otherwise keeps it iff the cosine-distance lower bound < threshold.
+fn keep_extent_by_vector(
+    column_stats: &serde_json::Value,
+    col: &str,
+    query: &[f32],
+    threshold: f64,
+) -> bool {
+    let Some(vec_stat) = column_stats.get(col).and_then(|c| c.get("vec")) else {
+        return true;
+    };
+    let centroid: Vec<f64> = match vec_stat.get("centroid").and_then(|c| c.as_array()) {
+        Some(arr) => arr.iter().filter_map(serde_json::Value::as_f64).collect(),
+        None => return true,
+    };
+    let radius = vec_stat
+        .get("radius")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(f64::INFINITY);
+    match kyma_core::catalog::cosine_distance_lower_bound(query, &centroid, radius) {
+        Some(lb) => lb < threshold,
+        None => true,
     }
 }
 

@@ -119,6 +119,21 @@ services:
       KYMA_ADMIN_PASSWORD: kyma_dev
       # base64-encoded 32-byte key for AES-GCM credential encryption (dev only).
       KYMA_SECRET_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      # OAuth2 connector flow. Set the externally reachable origin so the
+      # provider redirect_uri and the post-auth UI return both resolve. Register
+      # each provider's app with redirect URI
+      # <base>/v1/oauth/<provider>/callback, then fill in the client id/secret to
+      # enable that provider's "Connect" button (users can also bring their own
+      # in the UI). Providers: google, notion, atlassian, slack.
+      KYMA_OAUTH_REDIRECT_BASE: "http://localhost:8080"
+      # KYMA_OAUTH_GOOGLE_CLIENT_ID: ""
+      # KYMA_OAUTH_GOOGLE_CLIENT_SECRET: ""
+      # KYMA_OAUTH_NOTION_CLIENT_ID: ""
+      # KYMA_OAUTH_NOTION_CLIENT_SECRET: ""
+      # KYMA_OAUTH_ATLASSIAN_CLIENT_ID: ""
+      # KYMA_OAUTH_ATLASSIAN_CLIENT_SECRET: ""
+      # KYMA_OAUTH_SLACK_CLIENT_ID: ""
+      # KYMA_OAUTH_SLACK_CLIENT_SECRET: ""
     ports:
       - "8080:8080"
       - "9090:9090"

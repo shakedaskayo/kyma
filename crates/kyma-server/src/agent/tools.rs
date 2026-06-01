@@ -18,7 +18,7 @@ use adk_rust::tool::FunctionTool;
 use adk_rust::{Tool, ToolContext};
 use arrow::json::ArrayWriter;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
-use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
+use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use kyma_core::catalog::Catalog;
 use kyma_core::segment_format::SegmentFormat;
@@ -353,10 +353,10 @@ pub(crate) async fn execute_sql(
     if tables.is_empty() {
         return json!({"error": format!("database `{database}` has no tables or does not exist")});
     }
-    let runtime = match RuntimeEnv::new(
-        RuntimeConfig::new()
-            .with_memory_pool(Arc::new(GreedyMemoryPool::new(TOOL_MEMORY_POOL_BYTES))),
-    ) {
+    let runtime = match RuntimeEnvBuilder::new()
+        .with_memory_pool(Arc::new(GreedyMemoryPool::new(TOOL_MEMORY_POOL_BYTES)))
+        .build()
+    {
         Ok(r) => Arc::new(r),
         Err(e) => return json!({"error": format!("runtime_env: {e}")}),
     };
@@ -577,6 +577,52 @@ struct FindReferencesArgs {
     value: String,
 }
 
+/// Locate every `(database, table, column)` where `value` appears in the
+/// catalog's extent-level distinct-value index (`extents.column_stats`).
+///
+/// Fast: a single indexed Postgres query against the metadata, no columnar
+/// scan. Shared by the `find_references_to` tool and the memory entity
+/// resolver ([`super::memory_resolve`]) so both stay consistent. `database`
+/// `None` searches cluster-wide.
+pub(crate) async fn find_references(
+    pool: &PgPool,
+    database: Option<&str>,
+    value: &str,
+) -> std::result::Result<Vec<(String, String, String)>, String> {
+    // `column_stats` is shaped per-column as
+    //     { "<col>": { "distinct": [values...], "tokens": [...] } }
+    // so the containment test targets `kv.value -> 'distinct'`. For
+    // numeric-looking values we also try a JSON-number cast so ids ingested
+    // as integers still match.
+    let target_str = serde_json::to_string(&vec![value]).unwrap();
+    let target_num = value.parse::<f64>().ok().map(|n| format!("[{n}]"));
+    let sql = r#"
+        SELECT DISTINCT
+            db.name  AS database_name,
+            t.name   AS table_name,
+            kv.key   AS column_name
+        FROM extents e
+        JOIN tables t      ON e.table_id    = t.id
+        JOIN databases db  ON t.database_id = db.id
+        CROSS JOIN LATERAL jsonb_each(e.column_stats) kv
+        WHERE ($1::text IS NULL OR db.name = $1)
+          AND (
+                (kv.value -> 'distinct') @> $2::jsonb
+                OR ($3::text IS NOT NULL
+                    AND (kv.value -> 'distinct') @> $3::jsonb)
+              )
+        ORDER BY db.name, t.name, kv.key
+        LIMIT 200
+    "#;
+    sqlx::query_as(sql)
+        .bind(database)
+        .bind(&target_str)
+        .bind(target_num.as_deref())
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("pg_query: {e}"))
+}
+
 const FIND_REFERENCES_DESC: &str = "Find every (database, table, column) \
 where a given value appears in the catalog's distinct-value index. The \
 relationship-traversal primitive — use when the user asks 'what else \
@@ -596,44 +642,15 @@ pub fn tool_find_references_to(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
-                    // `column_stats` is shaped per-column as
-                    //     { "<col>": { "distinct": [values...], "tokens": [...] } }
-                    // so the containment test targets `kv.value -> 'distinct'`.
-                    // For numeric-looking values we also try a JSON-number cast
-                    // so ids ingested as integers still match.
-                    let target_str = serde_json::to_string(&vec![&parsed.value]).unwrap();
-                    let target_num = parsed
-                        .value
-                        .parse::<f64>()
-                        .ok()
-                        .map(|n| format!("[{n}]"));
-                    let sql = r#"
-                        SELECT DISTINCT
-                            db.name  AS database_name,
-                            t.name   AS table_name,
-                            kv.key   AS column_name
-                        FROM extents e
-                        JOIN tables t      ON e.table_id    = t.id
-                        JOIN databases db  ON t.database_id = db.id
-                        CROSS JOIN LATERAL jsonb_each(e.column_stats) kv
-                        WHERE ($1::text IS NULL OR db.name = $1)
-                          AND (
-                                (kv.value -> 'distinct') @> $2::jsonb
-                                OR ($3::text IS NOT NULL
-                                    AND (kv.value -> 'distinct') @> $3::jsonb)
-                              )
-                        ORDER BY db.name, t.name, kv.key
-                        LIMIT 200
-                    "#;
-                    let rows: Vec<(String, String, String)> = match sqlx::query_as(sql)
-                        .bind(parsed.database.as_deref())
-                        .bind(&target_str)
-                        .bind(target_num.as_deref())
-                        .fetch_all(&shared.pool)
-                        .await
+                    let rows = match find_references(
+                        &shared.pool,
+                        parsed.database.as_deref(),
+                        &parsed.value,
+                    )
+                    .await
                     {
                         Ok(r) => r,
-                        Err(e) => return Ok(json!({"error": format!("pg_query: {e}")})),
+                        Err(e) => return Ok(json!({"error": e})),
                     };
                     let matches: Vec<Value> = rows
                         .into_iter()

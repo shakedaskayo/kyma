@@ -82,6 +82,11 @@ Eight built-in tools, plus a schema RAG layer:
 - **`graph_traverse`** walks the kyma graph layer. Wraps the KQL
   `graph-traverse` operator for multi-hop entity-relationship queries.
 
+Plus the **memory tools** — `memory_search` (graph-aware hybrid recall),
+`save_memory`, `recall_memory`, `list_memories`, `link_memory_to_entity` — that
+give the agent a persistent memory across sessions. See
+[Agentic Memory](/agent/memory) for the full picture.
+
 Schema RAG: every table in the catalog is embedded into the
 `schema_embeddings` pgvector table at create time. When the agent
 needs to find a table, it does a vector search over the embeddings
@@ -147,6 +152,7 @@ approval step is a bad default.
 
 ## Where to go next
 
+- Persistent memory for agents: [Agentic Memory](/agent/memory).
 - Vectors and embedding backends: [Dynamic and vectors](/concepts/dynamic-and-vectors).
 - Calling the endpoint from your code: [Query](/query/).
 - The schema the agent reasons over: [Schema model](/concepts/schema-model).

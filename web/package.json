@@ -16,6 +16,7 @@
     "e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@ai-sdk/react": "^3.0.195",
     "@bufbuild/protobuf": "2.11.0",
     "@connectrpc/connect": "2.1.1",
     "@connectrpc/connect-web": "2.1.1",
@@ -32,6 +33,7 @@
     "@tanstack/react-virtual": "^3.13.24",
     "@tauri-apps/plugin-store": "2.1.0",
     "@xyflow/react": "^12.10.2",
+    "ai": "^6.0.193",
     "apache-arrow": "17.0.0",
     "cmdk": "^1.1.1",
     "echarts": "5.5.0",
@@ -42,6 +44,7 @@
     "react-dom": "18.3.1",
     "react-grid-layout": "1.4.4",
     "sonner": "^2.0.7",
+    "streamdown": "^2.5.0",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

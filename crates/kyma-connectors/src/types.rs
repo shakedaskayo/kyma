@@ -75,6 +75,11 @@ pub struct ConnectorCtx {
     /// `credential_id` in their config resolve it via this trait — see
     /// [`crate::credentials_util`] for the convenience helper.
     pub credentials: Arc<dyn CredentialStore>,
+    /// Run-time OAuth capability (pool + crypto) for connectors that resolve a
+    /// fresh access token via [`crate::oauth::valid_access_token`]. `None` when
+    /// the runner wasn't wired with OAuth (e.g. tests), in which case token
+    /// refresh falls back to operator-env client credentials only.
+    pub oauth: Option<crate::oauth::OAuthRuntime>,
     /// Tick timestamp (bucketed to the schedule grid). Used for the
     /// idempotency key and as a fallback sample timestamp.
     pub scheduled_for: DateTime<Utc>,

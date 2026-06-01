@@ -12,9 +12,11 @@
 
 pub mod admin;
 pub mod client;
+#[cfg(feature = "github")]
 pub mod clone;
 pub mod config;
 pub mod cursor;
+#[cfg(feature = "github")]
 pub mod parse;
 pub mod transform;
 
@@ -22,13 +24,18 @@ pub use admin::github_repos_router;
 
 use async_trait::async_trait;
 use chrono::Utc;
+#[cfg(feature = "github")]
 use std::collections::HashSet;
 
 use crate::types::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
 use client::{GithubClient, StopReason};
 use config::GithubConfig;
 use cursor::Cursor;
-use transform::{FileImports, RawRecord, code_to_graph, resolve_imports, to_graph};
+use transform::{RawRecord, to_graph};
+// Code-graph transform pieces depend on the tree-sitter `parse` module; only
+// compiled with the `github` feature.
+#[cfg(feature = "github")]
+use transform::{FileImports, code_to_graph, resolve_imports};
 
 #[derive(Default, Clone, Debug)]
 pub struct GithubConnector;
@@ -344,6 +351,9 @@ impl Connector for GithubConnector {
         }
 
         // ── Code graph (B2) ───────────────────────────────────────────────────
+        // Tree-sitter–powered; only available with the `github` feature. Without
+        // it, GitHub still ingests all repo metadata — just not the code graph.
+        #[cfg(feature = "github")]
         if config.modules.codebase {
             for repo_slug in &config.repos {
                 let parts: Vec<&str> = repo_slug.splitn(2, '/').collect();
@@ -484,6 +494,7 @@ impl Connector for GithubConnector {
 
 /// Build a `GlobSet` from a list of glob patterns. Errors are silently ignored
 /// (a failed pattern simply doesn't exclude anything).
+#[cfg(feature = "github")]
 fn build_glob_set(patterns: &[String]) -> Option<globset::GlobSet> {
     let mut builder = globset::GlobSetBuilder::new();
     for pat in patterns {
@@ -495,6 +506,7 @@ fn build_glob_set(patterns: &[String]) -> Option<globset::GlobSet> {
 }
 
 /// Return `true` if `path` matches any glob in `set`.
+#[cfg(feature = "github")]
 fn is_excluded(path: &str, set: &Option<globset::GlobSet>) -> bool {
     match set {
         Some(gs) => gs.is_match(path),

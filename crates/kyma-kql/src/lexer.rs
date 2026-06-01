@@ -1,7 +1,7 @@
 //! KQL lexer: raw source → token stream.
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Token {
+pub(crate) enum Token {
     Ident(String), // identifiers AND keywords; parser decides
     Int(i64),
     Float(f64),
@@ -40,7 +40,7 @@ impl std::fmt::Display for LexError {
     }
 }
 
-pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
+pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
     let mut out = Vec::with_capacity(src.len() / 4);
     let mut chars = src.chars().peekable();
     while let Some(&c) = chars.peek() {

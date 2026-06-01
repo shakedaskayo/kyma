@@ -150,11 +150,12 @@ Required query param: `before=<RFC3339>` (e.g.
 
 ## Connectors
 
-The connector admin surface manages periodic / scheduled connectors
-(Prometheus today; Postgres / MySQL / Mongo land with DB-M1+).
+The connector admin surface manages periodic / scheduled connectors. The
+catalog (`GET /v1/connectors/catalog`) is what drives the UI's source picker.
 
 | Method | Path                                  | Min role | Effect                                                                                  |
 | ------ | ------------------------------------- | -------- | --------------------------------------------------------------------------------------- |
+| GET    | `/v1/connectors/catalog`              | Write    | The vendor catalog (available + coming-soon) that powers the Add-connector UI.          |
 | POST   | `/v1/connectors`                      | Write    | Create a connector. Body: `{name, type, target_database, target_table, schedule_ms, config}`. |
 | GET    | `/v1/connectors`                      | Write    | List connectors (id, name, type, enabled).                                              |
 | GET    | `/v1/connectors/{id}`                 | Write    | Read a connector. Secret-shaped fields in `config` are scrubbed to `***`.               |
@@ -167,6 +168,36 @@ The connector admin surface manages periodic / scheduled connectors
 `schedule_ms` must be in the range `[100, 86400000]` (100 ms → 24 h).
 See [Connectors](/connectors/) for the typed config shape per
 connector type.
+
+## Credentials
+
+Typed, encrypted secrets referenced by connectors (and other subsystems) via a
+`credential_id` in their config. List/get return a masked **preview**, never
+plaintext. Requires `KYMA_SECRET_KEY`. See [OAuth connectors](/connectors/oauth).
+
+| Method | Path                     | Min role | Effect                                                                          |
+| ------ | ------------------------ | -------- | ------------------------------------------------------------------------------- |
+| POST   | `/v1/credentials`        | Write    | Create a credential. Body: `{label, value:{kind, …}, metadata?}`. Returns a summary. |
+| GET    | `/v1/credentials`        | Write    | List credentials (label, kind, masked preview, metadata).                       |
+| GET    | `/v1/credentials/{id}`   | Write    | Fetch one credential summary (no plaintext).                                     |
+| DELETE | `/v1/credentials/{id}`   | Write    | Delete a credential.                                                            |
+
+`value.kind` ∈ `pat`, `basic`, `oauth2`, `url`, `aws_creds`, `api_key`,
+`github_app`.
+
+## OAuth
+
+The browser flow that mints `oauth2` credentials for OAuth connectors. The
+callback is **unauthenticated** (a cross-site IdP redirect carries no bearer); the
+single-use `state` token is the trust anchor. See [OAuth connectors](/connectors/oauth).
+
+| Method | Path                                | Min role | Effect                                                                                       |
+| ------ | ----------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
+| POST   | `/v1/oauth/{provider}/start`        | Write    | Begin a flow. Body: `{connector_type, scopes?, label?, client_id?, client_secret?}`. Returns `{authorize_url, state}`. |
+| GET    | `/v1/oauth/{provider}/callback`     | _none_   | IdP redirect target. Exchanges the code, mints the credential, posts the result back to the opener. |
+| GET    | `/v1/oauth/flows/{state}`           | Write    | Poll a flow's `{status, credential_id}` — the fallback when `postMessage` can't reach the UI.  |
+
+`{provider}` ∈ `google`, `notion`, `atlassian`, `slack`.
 
 ## Arrow Flight (gRPC)
 

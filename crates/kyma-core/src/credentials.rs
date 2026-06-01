@@ -151,4 +151,17 @@ impl From<Credential> for CredentialSummary {
 #[async_trait::async_trait]
 pub trait CredentialStore: Send + Sync {
     async fn get(&self, tenant: crate::tenant::TenantId, id: Uuid) -> anyhow::Result<Credential>;
+
+    /// Replace the secret material of an existing credential in place — used
+    /// when an OAuth2 token refresh rotates the access/refresh token so the
+    /// stored credential stays valid. The default errors, so in-memory mocks
+    /// and connectors that never refresh don't need to implement it.
+    async fn update_value(
+        &self,
+        _tenant: crate::tenant::TenantId,
+        _id: Uuid,
+        _value: &CredentialValue,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("this credential store does not support update_value")
+    }
 }

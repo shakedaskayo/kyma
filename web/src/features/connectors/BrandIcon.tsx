@@ -6,14 +6,16 @@ import {
   SiNotion,
   SiConfluence,
   SiGoogledrive,
+  SiGmail,
   SiJira,
   SiLinear,
   SiAsana,
   SiPostgresql,
   SiPrometheus,
 } from "@icons-pack/react-simple-icons";
-import { Database, MessageSquare, Plug } from "lucide-react";
+import { Plug } from "lucide-react";
 import { useTheme } from "@/lib/theme";
+import { AmazonS3Icon, SlackIcon, type VendorIconProps } from "./vendor-icons";
 
 // Brands whose simple-icons "default" color is too dark to read on a dark
 // background (e.g. GitHub's #181717, Notion's near-black). In dark mode we
@@ -40,6 +42,7 @@ const BRAND: Record<string, ComponentType<any>> = {
   notion: SiNotion,
   confluence: SiConfluence,
   googledrive: SiGoogledrive,
+  gmail: SiGmail,
   jira: SiJira,
   linear: SiLinear,
   asana: SiAsana,
@@ -47,12 +50,11 @@ const BRAND: Record<string, ComponentType<any>> = {
   prometheus: SiPrometheus,
 };
 
-// Vendors without a simple-icons mark (Slack and Amazon had their icons removed
-// from simple-icons) map to a sensible lucide glyph instead.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const FALLBACK: Record<string, ComponentType<any>> = {
-  slack: MessageSquare,
-  amazons3: Database,
+// Vendors whose mark was removed from simple-icons (Slack, Amazon S3) use the
+// official logos inlined in `vendor-icons.tsx` instead of a generic glyph.
+const VENDOR: Record<string, ComponentType<VendorIconProps>> = {
+  slack: SlackIcon,
+  amazons3: AmazonS3Icon,
 };
 
 /**
@@ -80,6 +82,9 @@ export function BrandIcon({
         : "default";
     return <Si size={size} color={color} className={className} />;
   }
-  const Fb = FALLBACK[brand] ?? Plug;
-  return <Fb size={size} className={className} />;
+  const Vendor = VENDOR[brand];
+  if (Vendor) {
+    return <Vendor size={size} monochrome={monochrome} className={className} />;
+  }
+  return <Plug size={size} className={className} />;
 }

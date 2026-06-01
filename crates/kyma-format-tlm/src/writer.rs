@@ -8,8 +8,8 @@ use crate::block_stats::{stats_for_batch, BlockStats};
 use crate::{TelemetryFormat, MAGIC_V2};
 use arrow::ipc::writer::FileWriter;
 use arrow_array::{
-    cast::AsArray, Array, Int32Array, Int64Array, RecordBatch, StringArray,
-    TimestampNanosecondArray,
+    cast::AsArray, Array, FixedSizeListArray, Float32Array, Int32Array, Int64Array, RecordBatch,
+    StringArray, TimestampNanosecondArray,
 };
 use arrow_schema::{DataType, Schema, TimeUnit};
 use async_trait::async_trait;
@@ -33,6 +33,11 @@ const DISTINCT_SET_CAP: usize = 1_000;
 /// extent — DataFusion still applies the LIKE filter above the scan, so
 /// correctness is preserved.
 const TOKEN_SET_CAP: usize = 10_000;
+
+/// Max rows retained per vector column to compute the ANN prune radius. Past
+/// this, vector stats for the extent are dropped (recall falls back to an
+/// exact scan of that extent — correct, just unpruned).
+const VEC_ROW_CAP: usize = 50_000;
 
 /// Tokenize a string into lowercased word-level tokens. Splits on any
 /// non-alphanumeric character (ASCII). Keeps tokens ≥ 2 chars — single
@@ -75,6 +80,14 @@ pub struct TelemetryExtentWriter {
     tokens: Vec<Option<HashSet<String>>>,
     /// Which schema columns get indexed (only stringish and integer types).
     indexable_columns: Vec<(usize, IndexableKind)>,
+    /// Per-vector-column ANN accumulation (aligned by `indexable_columns`
+    /// position). `vec_sum` is the running sum of L2-normalized rows
+    /// (centroid = sum/count); `vec_rows` retains the normalized rows for the
+    /// radius (max distance to centroid). Both `None` for non-vector columns
+    /// or once the row cap is hit (vector stats then dropped → exact fallback).
+    vec_sum: Vec<Option<Vec<f64>>>,
+    vec_rows: Vec<Option<Vec<Vec<f32>>>>,
+    vec_count: Vec<u64>,
     /// Per-block min/max stats, one entry per appended batch. Emitted as a
     /// JSON footer after the Arrow IPC body (v2 format).
     block_stats: Vec<BlockStats>,
@@ -85,6 +98,11 @@ enum IndexableKind {
     String,
     Int32,
     Int64,
+    /// A `FixedSizeList<Float32>` embedding column — indexed for ANN extent
+    /// pruning via a per-extent centroid + radius on the unit sphere.
+    Vector {
+        dim: usize,
+    },
 }
 
 impl TelemetryExtentWriter {
@@ -112,6 +130,11 @@ impl TelemetryExtentWriter {
                 DataType::Int64 => {
                     indexable_columns.push((i, IndexableKind::Int64));
                 }
+                DataType::FixedSizeList(inner, dim)
+                    if matches!(inner.data_type(), DataType::Float32) =>
+                {
+                    indexable_columns.push((i, IndexableKind::Vector { dim: *dim as usize }));
+                }
                 _ => {}
             }
         }
@@ -129,6 +152,18 @@ impl TelemetryExtentWriter {
             .iter()
             .map(|(_, k)| matches!(k, IndexableKind::String).then(HashSet::new))
             .collect();
+        let vec_sum = indexable_columns
+            .iter()
+            .map(|(_, k)| match k {
+                IndexableKind::Vector { dim } => Some(vec![0.0f64; *dim]),
+                _ => None,
+            })
+            .collect();
+        let vec_rows = indexable_columns
+            .iter()
+            .map(|(_, k)| matches!(k, IndexableKind::Vector { .. }).then(Vec::new))
+            .collect();
+        let vec_count = vec![0u64; indexable_columns.len()];
 
         Self {
             format,
@@ -144,6 +179,9 @@ impl TelemetryExtentWriter {
             distinct_int,
             tokens,
             indexable_columns,
+            vec_sum,
+            vec_rows,
+            vec_count,
             block_stats: Vec::new(),
         }
     }
@@ -243,6 +281,62 @@ impl TelemetryExtentWriter {
                         set.insert(arr.value(i));
                     }
                 }
+                // Vector columns are handled by `update_vector_stats`.
+                IndexableKind::Vector { .. } => {}
+            }
+        }
+    }
+
+    /// Accumulate L2-normalized embedding rows into each vector column's
+    /// running centroid sum + retained-row set. Normalizing puts everything on
+    /// the unit sphere, where cosine distance = ½·‖·‖² and the centroid+radius
+    /// triangle-inequality bound is valid (cosine itself isn't a metric).
+    fn update_vector_stats(&mut self, batch: &RecordBatch) {
+        for (pos, (col_idx, kind)) in self.indexable_columns.iter().enumerate() {
+            let IndexableKind::Vector { dim } = kind else {
+                continue;
+            };
+            let dim = *dim;
+            // Disabled (cap hit on a prior batch) → nothing to do.
+            if self.vec_sum[pos].is_none() {
+                continue;
+            }
+            let col = batch.column(*col_idx);
+            let Some(arr) = col.as_any().downcast_ref::<FixedSizeListArray>() else {
+                continue;
+            };
+            let Some(floats) = arr.values().as_any().downcast_ref::<Float32Array>() else {
+                continue;
+            };
+            for i in 0..arr.len() {
+                if arr.is_null(i) {
+                    continue;
+                }
+                let start = i * dim;
+                let mut v: Vec<f32> = (0..dim).map(|j| floats.value(start + j)).collect();
+                let norm = v.iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>().sqrt();
+                if norm <= 1e-12 {
+                    continue; // zero vector — can't normalize; skip (keeps bound safe)
+                }
+                for x in v.iter_mut() {
+                    *x = (*x as f64 / norm) as f32;
+                }
+                if let Some(sum) = self.vec_sum[pos].as_mut() {
+                    for (s, x) in sum.iter_mut().zip(v.iter()) {
+                        *s += *x as f64;
+                    }
+                }
+                self.vec_count[pos] += 1;
+                match self.vec_rows[pos].as_mut() {
+                    Some(rows) if rows.len() < VEC_ROW_CAP => rows.push(v),
+                    Some(_) => {
+                        // Cap hit — can't compute an exact radius; drop the
+                        // stat so recall falls back to an exact scan here.
+                        self.vec_rows[pos] = None;
+                        self.vec_sum[pos] = None;
+                    }
+                    None => {}
+                }
             }
         }
     }
@@ -251,6 +345,13 @@ impl TelemetryExtentWriter {
         let mut stats = serde_json::Map::new();
         for (pos, (col_idx, kind)) in self.indexable_columns.iter().enumerate() {
             let name = self.schema.field(*col_idx).name();
+            // Vector columns carry an ANN centroid+radius instead of distinct/tokens.
+            if let IndexableKind::Vector { .. } = kind {
+                if let Some(vec_stat) = self.vector_stat(pos) {
+                    stats.insert(name.clone(), json!({ "vec": vec_stat }));
+                }
+                continue;
+            }
             let distinct: serde_json::Value = match kind {
                 IndexableKind::String => match &self.distinct_string[pos] {
                     Some(set) => {
@@ -268,6 +369,7 @@ impl TelemetryExtentWriter {
                     }
                     None => serde_json::Value::Null,
                 },
+                IndexableKind::Vector { .. } => unreachable!("handled above"),
             };
             // Token set: only for string columns (None for ints).
             let tokens: serde_json::Value = match kind {
@@ -291,6 +393,33 @@ impl TelemetryExtentWriter {
         }
         serde_json::Value::Object(stats)
     }
+
+    /// Compute the per-extent vector stat for column `pos`: the centroid (mean
+    /// of L2-normalized rows) and radius (max distance to centroid). `None`
+    /// when no rows were accumulated or the row cap disabled the stat.
+    fn vector_stat(&self, pos: usize) -> Option<serde_json::Value> {
+        let sum = self.vec_sum[pos].as_ref()?;
+        let rows = self.vec_rows[pos].as_ref()?;
+        let n = self.vec_count[pos];
+        if n == 0 {
+            return None;
+        }
+        let nf = n as f64;
+        let centroid: Vec<f64> = sum.iter().map(|s| s / nf).collect();
+        let mut radius = 0.0f64;
+        for r in rows {
+            let mut d = 0.0f64;
+            for (j, x) in r.iter().enumerate() {
+                let diff = *x as f64 - centroid[j];
+                d += diff * diff;
+            }
+            let d = d.sqrt();
+            if d > radius {
+                radius = d;
+            }
+        }
+        Some(json!({ "centroid": centroid, "radius": radius, "count": n, "metric": "cosine" }))
+    }
 }
 
 #[async_trait]
@@ -307,6 +436,7 @@ impl ExtentWriter for TelemetryExtentWriter {
         self.block_count += 1;
         self.update_ts_bounds(&batch);
         self.update_distinct_sets(&batch);
+        self.update_vector_stats(&batch);
         self.block_stats.push(stats_for_batch(&batch));
         self.ipc.write(&batch).map_err(|e| FormatError::Corrupt {
             path: "<in-memory ipc>".to_string(),

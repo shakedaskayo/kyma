@@ -14,6 +14,9 @@ the same DataFusion engine, and returns the same Arrow result.
 Pick the surface that matches how you're calling kyma — not what the
 data looks like, because that's the same on the other side.
 
+![The Discover search UI querying across sources](/screenshots/discover-search.png)
+*The **Discover** UI — a faceted search across every source at once (here spanning a GitHub connector's `github_nodes`/`github_edges` and the agent's `memory_nodes`), with one click to open the result in the full Query Editor.*
+
 <div class="feature-grid">
 
 <div class="feature-card">

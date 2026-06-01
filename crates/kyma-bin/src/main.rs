@@ -304,6 +304,26 @@ async fn main() -> Result<()> {
     let skills_store = std::sync::Arc::new(
         kyma_server::agent::skills::PgEnabledSkillsStore::new(pg_pool.clone()),
     );
+    // Loopback URL of our own MCP endpoint, handed to the Claude CLI engine so
+    // the agent can query the user's data via `--mcp-config`. Defaults to the
+    // HTTP bind address (mapping a wildcard host to loopback); override with
+    // KYMA_AGENT_MCP_URL=<url>, or KYMA_AGENT_MCP_URL=off to disable.
+    let mcp_url = match std::env::var("KYMA_AGENT_MCP_URL").ok().as_deref() {
+        Some("off") => None,
+        Some(url) if !url.is_empty() => Some(url.to_string()),
+        _ => {
+            let ip = if cli.http_addr.ip().is_unspecified() {
+                "127.0.0.1".to_string()
+            } else {
+                cli.http_addr.ip().to_string()
+            };
+            Some(format!("http://{}:{}/mcp/v1", ip, cli.http_addr.port()))
+        }
+    };
+    if let Some(url) = &mcp_url {
+        info!(url = %url, "agent: Claude CLI engine will reach data tools via MCP");
+    }
+
     let agent_state = kyma_server::agent::AgentState {
         catalog: catalog.clone(),
         format: format.clone(),
@@ -312,6 +332,7 @@ async fn main() -> Result<()> {
         credentials: cred_store.clone(),
         tenant: kyma_core::tenant::DEFAULT_TENANT,
         skills: skills_store,
+        mcp_url,
     };
     let query_router =
         kyma_server::router_with_agent(
@@ -324,7 +345,7 @@ async fn main() -> Result<()> {
                 node_id: Some(lease.node_id),
                 pg_pool: std::sync::Arc::new(pg_pool.clone()),
             },
-            agent_state,
+            agent_state.clone(),
         )
         .layer(axum::middleware::from_fn_with_state(
             AuthLayerState {
@@ -360,8 +381,16 @@ async fn main() -> Result<()> {
     conn_reg.register(Arc::new(kyma_connectors::s3::S3Connector));
     conn_reg.register(Arc::new(kyma_connectors::gitlab::GitlabConnector));
     conn_reg.register(Arc::new(kyma_connectors::bitbucket::BitbucketConnector));
-    #[cfg(feature = "github")]
+    // GitHub registers unconditionally (metadata + repo graph). The deep code
+    // graph inside it is feature-gated; the connector itself is always present.
     conn_reg.register(Arc::new(kyma_connectors::github::GithubConnector));
+    // OAuth2 SaaS connectors (token via the connect flow → encrypted credential).
+    conn_reg.register(Arc::new(kyma_connectors::notion::NotionConnector));
+    conn_reg.register(Arc::new(kyma_connectors::googledrive::GdriveConnector));
+    conn_reg.register(Arc::new(kyma_connectors::gmail::GmailConnector));
+    conn_reg.register(Arc::new(kyma_connectors::slack::SlackConnector));
+    conn_reg.register(Arc::new(kyma_connectors::jira::JiraConnector));
+    conn_reg.register(Arc::new(kyma_connectors::confluence::ConfluenceConnector));
     let conn_registry = Arc::new(conn_reg);
 
     // RowSink: bridges connector JSON rows → arrow coercion → WritePath.
@@ -453,7 +482,6 @@ async fn main() -> Result<()> {
     // Credentials router — reuses the cred_store built above (alongside the
     // AgentState wiring). Kept here so the router-mounting block stays
     // logically together.
-    let _ = &crypto; // silence "unused" if no other consumer wires in later
     let credentials_router = kyma_server::credentials_handler::router(
         kyma_server::credentials_handler::CredentialsState { store: cred_store.clone() },
     )
@@ -465,8 +493,34 @@ async fn main() -> Result<()> {
         require_role_middleware,
     ));
 
+    // OAuth2 connect flow — start/poll are authenticated (Role::Write); the
+    // callback the identity provider redirects to is unauthenticated (it carries
+    // no bearer) and trusts only the single-use `state` token. Client apps come
+    // from operator env (KYMA_OAUTH_<PROVIDER>_CLIENT_ID/_SECRET) or per-tenant
+    // bring-your-own creds; tokens land in the encrypted credentials store.
+    let oauth_redirect_base = std::env::var("KYMA_OAUTH_REDIRECT_BASE")
+        .unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let oauth_ui_return_base = std::env::var("KYMA_OAUTH_UI_RETURN_BASE")
+        .unwrap_or_else(|_| oauth_redirect_base.clone());
+    let oauth_state = kyma_server::OAuthState::new(
+        pg_pool.clone(),
+        cred_store.clone(),
+        crypto.clone(),
+        oauth_redirect_base,
+        oauth_ui_return_base,
+    );
+    let oauth_authed_router = kyma_server::oauth_authed_router(oauth_state.clone()).layer(
+        axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Write,
+            },
+            require_role_middleware,
+        ),
+    );
+    let oauth_callback_router = kyma_server::oauth_callback_router(oauth_state);
+
     // GitHub connector — repos picker endpoint (Role::Write, behind auth).
-    #[cfg(feature = "github")]
     let github_repos_router = {
         let secrets: std::sync::Arc<dyn kyma_connectors::secrets::SecretStore> =
             Arc::new(kyma_connectors::secrets::EnvSecretStore);
@@ -523,9 +577,21 @@ async fn main() -> Result<()> {
                 require_role_middleware,
             ),
         );
+    // Admin user management (/v1/admin/users) — gated at Role::Admin.
+    let admin_users_router =
+        kyma_server::admin_handler::admin_users_router(catalog.clone()).layer(
+            axum::middleware::from_fn_with_state(
+                AuthLayerState {
+                    backend: backend.clone(),
+                    required: Role::Admin,
+                },
+                require_role_middleware,
+            ),
+        );
     let app = ingest_router
         .merge(query_router)
         .merge(mcp_router)
+        .merge(admin_users_router)
         .merge(dashboards_write_router)
         .merge(discover_views_write_router)
         .merge(cleanup_write_router)
@@ -533,10 +599,11 @@ async fn main() -> Result<()> {
         .merge(metrics_router)
         .merge(connector_admin_router)
         .merge(credentials_router)
+        .merge(oauth_authed_router)
+        .merge(oauth_callback_router)
         .merge(auth_login_router)
         .merge(auth_session_router);
 
-    #[cfg(feature = "github")]
     let app = app.merge(github_repos_router);
     #[cfg(feature = "web-ui")]
     let app = app.merge(kyma_server::web_ui::router());
@@ -627,6 +694,42 @@ async fn main() -> Result<()> {
         let _ = rx.recv().await;
     }));
 
+    // Memory consolidation ("dreaming") pipeline — periodically distills new
+    // conversation-firehose activity into durable summary memories and records
+    // each run in `memory_pipeline_runs`. On by default; set
+    // KYMA_MEMORY_CONSOLIDATION=0 to disable.
+    let memory_consolidator_handle = if std::env::var("KYMA_MEMORY_CONSOLIDATION")
+        .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(true)
+    {
+        let mut consolidator = kyma_server::agent::MemoryConsolidator::new(
+            kyma_server::agent::SharedToolCtx {
+                catalog: catalog.clone(),
+                format: format.clone(),
+                pool: pg_pool.clone(),
+            },
+            pg_pool.clone(),
+            kyma_core::tenant::DEFAULT_TENANT,
+        )
+        // Reuse the configured agent engine for LLM extraction + conflict
+        // resolution; falls back to deterministic summaries when the engine is
+        // unset or is the claude_cli kind (which can't run through adk-rust).
+        .with_engine(agent_state.clone());
+        if let Ok(s) = std::env::var("KYMA_MEMORY_CONSOLIDATION_POLL_SECS")
+            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        {
+            consolidator.poll_interval = std::time::Duration::from_secs(s);
+        }
+        let cons_rx = shutdown_tx.subscribe();
+        info!("memory consolidation pipeline enabled");
+        Some(tokio::spawn(consolidator.run(async move {
+            let mut rx = cons_rx;
+            let _ = rx.recv().await;
+        })))
+    } else {
+        None
+    };
+
     // File-drop watcher — polls an object-store prefix for NDJSON files.
     // Disabled by default; set KYMA_FILEDROP_ENABLED=1 to turn on.
     let filedrop_handle = if std::env::var("KYMA_FILEDROP_ENABLED")
@@ -686,7 +789,8 @@ async fn main() -> Result<()> {
             lease.node_id,
         )
         .with_graph_register(graph_register.clone())
-        .with_credentials(cred_store.clone());
+        .with_credentials(cred_store.clone())
+        .with_oauth(pg_pool.clone(), crypto.clone());
         let runner_rx = shutdown_tx.subscribe();
         conn_runner_handles.push(tokio::spawn(async move {
             let mut rx = runner_rx;
@@ -800,6 +904,9 @@ async fn main() -> Result<()> {
         let _ = h.await;
     }
     if let Some(h) = filedrop_handle {
+        let _ = h.await;
+    }
+    if let Some(h) = memory_consolidator_handle {
         let _ = h.await;
     }
     if let Some(h) = kafka_handle {

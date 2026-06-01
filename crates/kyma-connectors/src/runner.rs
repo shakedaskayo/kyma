@@ -53,6 +53,10 @@ pub struct ConnectorRunner {
     /// don't need wiring; callers attach the real store via
     /// [`Self::with_credentials`].
     credentials: Arc<dyn CredentialStore>,
+    /// Run-time OAuth handle (pool + crypto) for token refresh of OAuth
+    /// connectors. Attached via [`Self::with_oauth`]; `None` leaves refresh on
+    /// operator-env client creds only.
+    oauth: Option<crate::oauth::OAuthRuntime>,
     /// NodeId of the already-registered node (supplied by the caller).
     node_id: NodeId,
     pub idle_sleep: Duration,
@@ -82,6 +86,7 @@ impl ConnectorRunner {
             graph_register,
             secrets: Arc::new(secrets),
             credentials,
+            oauth: None,
             node_id,
             idle_sleep: Duration::from_millis(200),
             // 5 min: long enough for a sizeable repo clone or a multi-page
@@ -99,6 +104,18 @@ impl ConnectorRunner {
     /// `credential_id`.
     pub fn with_credentials(mut self, store: Arc<dyn CredentialStore>) -> Self {
         self.credentials = store;
+        self
+    }
+
+    /// Attach the run-time OAuth handle so OAuth connectors can refresh + persist
+    /// expired access tokens (resolving per-tenant bring-your-own client creds
+    /// from `oauth_clients` in addition to operator env).
+    pub fn with_oauth(
+        mut self,
+        pool: sqlx::PgPool,
+        crypto: Arc<kyma_core::crypto::Crypto>,
+    ) -> Self {
+        self.oauth = Some(crate::oauth::OAuthRuntime { pool, crypto });
         self
     }
 
@@ -175,6 +192,7 @@ impl ConnectorRunner {
             http: reqwest::Client::builder().build()?,
             secrets: self.secrets.clone(),
             credentials: self.credentials.clone(),
+            oauth: self.oauth.clone(),
             scheduled_for,
             metrics: metrics.clone(),
         };
@@ -408,8 +426,9 @@ impl ConnectorRunner {
 
 /// Default [`CredentialStore`] used until `with_credentials` is called. Returns
 /// `not found` on every lookup so connectors that genuinely need a credential
-/// fail with a clear error instead of silently using uninitialized state.
-struct NoopCredentialStore;
+/// fail with a clear error instead of silently using uninitialized state. Also
+/// handy in tests that build a [`ConnectorCtx`] for credential-free connectors.
+pub struct NoopCredentialStore;
 #[async_trait::async_trait]
 impl CredentialStore for NoopCredentialStore {
     async fn get(

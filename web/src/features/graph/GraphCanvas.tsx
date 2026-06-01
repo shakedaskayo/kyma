@@ -10,6 +10,7 @@ import {
   BackgroundVariant,
   MarkerType,
   useReactFlow,
+  useNodesState,
   type Node,
   type Edge,
 } from "@xyflow/react";
@@ -150,6 +151,19 @@ function GraphCanvasInner({
     [compositeNodes, positions],
   );
 
+  // React Flow must *own* the node state for it to write back measured node
+  // dimensions (via onNodesChange). Passing a static `nodes` prop without a
+  // change handler leaves every node's `measured` undefined — which silently
+  // breaks the MiniMap: its per-node render guard is `nodeHasDimensions(node)`,
+  // so unmeasured nodes draw zero rects and the minimap shows an empty frame.
+  // Seed from the structural `fnodes` and re-seed whenever structure changes
+  // (new data / layout); hover & selection don't touch `fnodes`, so measured
+  // sizes survive those interactions.
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState(fnodes);
+  useEffect(() => {
+    setRfNodes(fnodes);
+  }, [fnodes, setRfNodes]);
+
   // Edges adapt opacity to the theme so they stay visible in both modes
   // (dark mode swallows light colours; light mode swallows dark ones).
   const edgeStrokeOpacity = isDark ? 0.5 : 0.6;
@@ -218,8 +232,9 @@ function GraphCanvasInner({
   return (
     <CanvasContext.Provider value={contextValue}>
       <ReactFlow
-        nodes={fnodes}
+        nodes={rfNodes}
         edges={fedges}
+        onNodesChange={onNodesChange}
         nodeTypes={nodeTypes}
         fitView
         minZoom={0.05}

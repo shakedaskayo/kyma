@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use kyma_core::catalog::{Catalog, GraphSpec, TableConfig};
+use kyma_core::catalog::{Catalog, GraphSpec, TableConfig, TableRef};
 use kyma_core::segment_format::SegmentFormat;
 use kyma_core::types::DatabaseId;
 use kyma_embed::EmbeddingBackend;
@@ -48,9 +48,12 @@ impl MemoryWriter {
     }
 
     /// Ensure the memory database, both tables, and the `memory` graph
-    /// registration exist. Fast-paths when the node table is already present.
+    /// registration exist. Fast-paths when the node table is already present,
+    /// but first backfills any bi-temporal columns a pre-existing store is
+    /// missing (non-destructive: historical extents null-fill on read).
     pub async fn ensure_provisioned(&self) -> Result<()> {
-        if self.catalog.lookup_table(&self.database, NODE_TABLE).await.is_ok() {
+        if let Ok(tref) = self.catalog.lookup_table(&self.database, NODE_TABLE).await {
+            self.ensure_bitemporal_columns(&tref).await?;
             return Ok(());
         }
         let db_id = self.ensure_database().await?;
@@ -79,6 +82,26 @@ impl MemoryWriter {
             let msg = e.to_string();
             if !(msg.contains("exists") || msg.contains("duplicate")) {
                 return Err(MemoryError::Catalog(msg));
+            }
+        }
+        Ok(())
+    }
+
+    /// Add any bi-temporal columns missing from an already-provisioned
+    /// `memory_nodes` table. Stores created before bi-temporal support keep
+    /// their extents; the new nullable columns read as NULL ("always valid"),
+    /// which the recall validity guard treats correctly. Idempotent.
+    async fn ensure_bitemporal_columns(&self, tref: &TableRef) -> Result<()> {
+        for col in schema::BITEMPORAL_COLUMNS {
+            if tref.schema.field_with_name(col).is_ok() {
+                continue;
+            }
+            if let Err(e) = self.catalog.alter_table_add_column(tref.id, col, "string").await {
+                let msg = e.to_string();
+                // A concurrent writer may have added it first.
+                if !(msg.contains("exists") || msg.contains("duplicate")) {
+                    return Err(MemoryError::Catalog(msg));
+                }
             }
         }
         Ok(())

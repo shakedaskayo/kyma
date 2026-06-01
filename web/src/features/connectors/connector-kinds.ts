@@ -16,6 +16,8 @@ export interface KindFormValues {
   targetTable: string;
   /** resource selection (e.g. selected repos "owner/name") */
   resources: string[];
+  /** stored credential id (OAuth connectors); set by the connect step. */
+  credentialId: string | null;
 }
 
 /** Ordered category metadata for the catalog grid. */
@@ -49,7 +51,13 @@ export function blankValues(entry: CatalogEntry): KindFormValues {
     targetDatabase: "",
     targetTable: "",
     resources: [],
+    credentialId: null,
   };
+}
+
+/** Whether the wizard's auth step for this entry is the OAuth connect flow. */
+export function isOAuth(entry: CatalogEntry): boolean {
+  return entry.auth_mode === "oauth";
 }
 
 /**
@@ -65,6 +73,9 @@ export function buildCreateBody(
   const config: Record<string, unknown> = { ...(entry.config_defaults ?? {}) };
   for (const f of entry.fields) config[f.key] = values.fields[f.key] ?? "";
   if (entry.resource) config[entry.resource.config_key] = values.resources;
+  // Credential-backed (OAuth) connectors resolve a stored credential at run
+  // time — the connector reads `credential_id` from its config.
+  if (values.credentialId) config.credential_id = values.credentialId;
   return {
     name: values.name.trim(),
     type: entry.type_id,

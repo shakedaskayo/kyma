@@ -9,6 +9,12 @@
 //! for the broader design context.
 
 pub mod engine;
+pub mod memory;
+pub mod memory_conflict;
+pub mod memory_extract;
+pub mod memory_resolve;
+pub mod memory_retrieve;
+pub mod memory_settings;
 pub mod memory_tools;
 pub mod routes;
 pub mod runner;
@@ -16,7 +22,13 @@ pub mod sessions;
 pub mod skills;
 pub mod state;
 pub mod tools;
+pub mod ui_stream;
 
+pub use memory::MemoryConsolidator;
+pub use memory_tools::{
+    tool_link_memory_to_entity, tool_list_memories, tool_memory_search, tool_recall_memory,
+    tool_save_memory,
+};
 pub use state::AgentState;
 pub use tools::{
     tool_describe_table, tool_explore_schema, tool_find_references_to, tool_graph_traverse,

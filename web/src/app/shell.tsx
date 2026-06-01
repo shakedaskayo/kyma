@@ -1,11 +1,11 @@
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Settings as SettingsIcon, LayoutDashboard, Sparkles, Network, Plug, KeyRound, LogOut, ChevronDown, Search, Code } from "lucide-react";
+import { Settings as SettingsIcon, LayoutDashboard, Sparkles, Network, Plug, KeyRound, LogOut, ChevronDown, Search, Code, Brain } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/sdk/session";
 import { useHealth } from "@/sdk/reconnect";
 import { useWorkspace } from "@/features/tabs/workspace-store";
 import { ReconnectBanner } from "@/features/reconnect/ReconnectBanner";
-import { DatabaseSwitcher } from "./DatabaseSwitcher";
+import { HeaderDatabaseScope } from "./DatabaseSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
 import { logout } from "@/sdk/auth";
 
@@ -186,7 +186,7 @@ export function Shell() {
     <div className="flex h-screen flex-col bg-background text-foreground">
       <header className="flex h-12 items-center gap-3 border-b px-4 text-sm">
         <div className="font-semibold tracking-tight">kyma</div>
-        <DatabaseSwitcher />
+        <HeaderDatabaseScope />
         <QueryStatusPill />
         <nav className="ml-auto flex items-center gap-1">
           <Link to="/discover" className={btn(active.startsWith("/discover"))}>
@@ -200,6 +200,9 @@ export function Shell() {
           </Link>
           <Link to="/agent" className={btn(active.startsWith("/agent"))}>
             <Sparkles className="h-4 w-4" /> Agent
+          </Link>
+          <Link to="/memory" className={btn(active.startsWith("/memory"))}>
+            <Brain className="h-4 w-4" /> Memory
           </Link>
           <Link to="/graph" className={btn(active.startsWith("/graph"))}>
             <Network className="h-4 w-4" /> Graph

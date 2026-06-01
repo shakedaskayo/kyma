@@ -33,3 +33,5 @@ clap = { version = "4", features = ["derive", "env"] }
 reqwest = { workspace = true, features = ["json"] }
 futures-util = "0.3"
 directories = "5"
+# Hidden interactive password prompts for `kyma user create|passwd`.
+rpassword = "7"

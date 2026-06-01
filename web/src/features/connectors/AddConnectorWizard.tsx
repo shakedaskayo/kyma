@@ -16,13 +16,16 @@ import {
   blankValues,
   buildCreateBody,
   formatInterval,
+  isOAuth,
   type KindFormValues,
 } from "./connector-kinds";
 import { ConnectorCatalog } from "./ConnectorCatalog";
 import { ConnectorConfigForm } from "./ConnectorConfigForm";
+import { ConnectorConnectStep } from "./ConnectorConnectStep";
 import { RepoPicker } from "./RepoPicker";
 import { BrandIcon } from "./BrandIcon";
 import { useCreateConnector, useGitHubRepos } from "./useConnectors";
+import { useCredentials } from "@/features/credentials/useCredentials";
 
 type Step = "catalog" | "config" | "resources" | "review";
 
@@ -33,9 +36,19 @@ function stepsFor(entry: CatalogEntry | null): Step[] {
   return s;
 }
 
-function Stepper({ steps, current, resourceLabel }: { steps: Step[]; current: Step; resourceLabel: string }) {
+function Stepper({
+  steps,
+  current,
+  resourceLabel,
+  configLabel,
+}: {
+  steps: Step[];
+  current: Step;
+  resourceLabel: string;
+  configLabel: string;
+}) {
   const labelFor = (s: Step): string =>
-    s === "catalog" ? "Source" : s === "config" ? "Configure" : s === "resources" ? resourceLabel : "Review";
+    s === "catalog" ? "Source" : s === "config" ? configLabel : s === "resources" ? resourceLabel : "Review";
   const idx = steps.indexOf(current);
   return (
     <ol className="flex items-center gap-1 px-1 pb-1 text-xs">
@@ -97,6 +110,7 @@ export function AddConnectorWizard({
   const { database } = useSession();
   const create = useCreateConnector();
   const repos = useGitHubRepos();
+  const creds = useCredentials();
 
   const [entry, setEntry] = useState<CatalogEntry | null>(null);
   const [step, setStep] = useState<Step>("catalog");
@@ -107,6 +121,7 @@ export function AddConnectorWizard({
     targetDatabase: "",
     targetTable: "",
     resources: [],
+    credentialId: null,
   });
   const [advancedOpen, setAdvancedOpen] = useState(false);
   // The token last submitted for verification — scopes verified/error feedback
@@ -128,7 +143,7 @@ export function AddConnectorWizard({
   const reset = () => {
     setEntry(null);
     setStep("catalog");
-    setValues({ name: "", scheduleMs: 5 * 60_000, fields: {}, targetDatabase: "", targetTable: "", resources: [] });
+    setValues({ name: "", scheduleMs: 5 * 60_000, fields: {}, targetDatabase: "", targetTable: "", resources: [], credentialId: null });
     setAdvancedOpen(false);
     setAttemptedPat("");
     create.reset();
@@ -151,6 +166,8 @@ export function AddConnectorWizard({
   const configValid = useMemo(() => {
     if (!entry) return false;
     if (!values.name.trim()) return false;
+    // OAuth connectors require a connected credential rather than form fields.
+    if (isOAuth(entry)) return Boolean(values.credentialId);
     return entry.fields.every((f) => !f.required || (values.fields[f.key] ?? "").trim());
   }, [entry, values]);
   const resourcesValid = !entry?.resource || values.resources.length > 0;
@@ -212,7 +229,12 @@ export function AddConnectorWizard({
         </DialogHeader>
 
         {step !== "catalog" && entry && (
-          <Stepper steps={steps} current={step} resourceLabel={resourceLabel} />
+          <Stepper
+            steps={steps}
+            current={step}
+            resourceLabel={resourceLabel}
+            configLabel={isOAuth(entry) ? "Connect" : "Configure"}
+          />
         )}
 
         <div className="py-1">
@@ -227,6 +249,16 @@ export function AddConnectorWizard({
               onChange={update}
               advancedOpen={advancedOpen}
               onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
+              authSlot={
+                isOAuth(entry) ? (
+                  <ConnectorConnectStep
+                    entry={entry}
+                    credentialId={values.credentialId}
+                    onConnected={(a) => update({ credentialId: a.credentialId })}
+                    onClear={() => update({ credentialId: null })}
+                  />
+                ) : undefined
+              }
               verify={
                 entry.resource
                   ? {
@@ -259,6 +291,15 @@ export function AddConnectorWizard({
                 {entry.label}
                 <span className="ml-1 text-muted-foreground">· {authLabel(entry.auth_mode)}</span>
               </ReviewRow>
+              {isOAuth(entry) && (
+                <ReviewRow icon={<Check className="h-4 w-4 text-emerald-600" />} label="Account">
+                  Connected
+                  {(() => {
+                    const label = creds.data?.find((c) => c.id === values.credentialId)?.label;
+                    return label ? <span className="text-muted-foreground"> · {label}</span> : null;
+                  })()}
+                </ReviewRow>
+              )}
               <ReviewRow icon={<Check className="h-4 w-4" />} label="Name">
                 <span className="font-medium">{values.name.trim() || "—"}</span>
               </ReviewRow>

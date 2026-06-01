@@ -33,13 +33,12 @@ use arrow_flight::{
     HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaResult, Ticket,
 };
 use datafusion::execution::memory_pool::GreedyMemoryPool;
-use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
+use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use futures::stream::{self, BoxStream, StreamExt};
 use kyma_core::catalog::Catalog;
 use kyma_core::segment_format::SegmentFormat;
 use kyma_exec::KymaTable;
-use std::pin::Pin;
 use std::sync::Arc;
 use tonic::{Request, Response, Status, Streaming};
 use tracing::debug;
@@ -241,11 +240,10 @@ impl FlightService for FlightQueryService {
             )));
         }
         let runtime = Arc::new(
-            RuntimeEnv::new(
-                RuntimeConfig::new()
-                    .with_memory_pool(Arc::new(GreedyMemoryPool::new(4 * 1024 * 1024 * 1024))),
-            )
-            .map_err(|e| Status::internal(format!("runtime: {e}")))?,
+            RuntimeEnvBuilder::new()
+                .with_memory_pool(Arc::new(GreedyMemoryPool::new(4 * 1024 * 1024 * 1024)))
+                .build()
+                .map_err(|e| Status::internal(format!("runtime: {e}")))?,
         );
         let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
         kyma_exec::register_vector_udfs(&ctx);

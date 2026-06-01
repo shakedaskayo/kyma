@@ -48,7 +48,7 @@ impl SchemaSource for CatalogSchemaSource {
 
 use arrow::json::ArrayWriter;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
-use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
+use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use kyma_exec::KymaTable;
 use kyma_graph::{GraphQueryExecutor, JsonRow};
@@ -69,12 +69,11 @@ impl GraphQueryExecutor for QueryEngineExecutor {
             .await
             .map_err(|e| anyhow::anyhow!("list_tables_in_database({database}): {e}"))?;
 
-        let runtime = RuntimeEnv::new(
-            RuntimeConfig::new()
-                .with_memory_pool(Arc::new(GreedyMemoryPool::new(GRAPH_MEMORY_POOL_BYTES))),
-        )
-        .map(Arc::new)
-        .map_err(|e| anyhow::anyhow!("runtime_env: {e}"))?;
+        let runtime = RuntimeEnvBuilder::new()
+            .with_memory_pool(Arc::new(GreedyMemoryPool::new(GRAPH_MEMORY_POOL_BYTES)))
+            .build()
+            .map(Arc::new)
+            .map_err(|e| anyhow::anyhow!("runtime_env: {e}"))?;
 
         let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
         kyma_exec::register_vector_udfs(&ctx);

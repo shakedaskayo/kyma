@@ -34,6 +34,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 sqlx = { workspace = true }
 object_store = { workspace = true }
 base64 = "0.22"
+sha2 = "0.10"
 
 # tree-sitter structural code graph deps — only compiled when the `github`
 # feature is enabled (they bring in C grammar crates which are slow to build).

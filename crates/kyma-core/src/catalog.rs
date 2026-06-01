@@ -109,6 +109,73 @@ pub enum ColumnPrune {
     /// If the extent's token set is `null` (overflowed), we include it
     /// to preserve correctness.
     ContainsTokens(Vec<String>),
+    /// Vector ANN pruning: keep the extent only if its per-extent centroid +
+    /// radius give a cosine-distance lower bound below `threshold`. `query` is
+    /// the raw query embedding (normalized internally). Evaluated as a Rust
+    /// post-filter (no SQL form); extents lacking a `vec` stat are kept
+    /// (exact-scan fallback). See [`cosine_distance_lower_bound`].
+    VectorDistance { query: Vec<f32>, threshold: f64 },
+}
+
+/// Conservative lower bound on cosine distance from `query` to any row in an
+/// extent summarized by `centroid` (mean of L2-normalized rows) + `radius`
+/// (max L2 distance to centroid on the unit sphere).
+///
+/// On the unit sphere, cosine distance = ½‖q̂ − r̂‖², and the L2 triangle
+/// inequality gives `min_r ‖q̂ − r̂‖ ≥ max(0, ‖q̂ − c‖ − radius)`. Hence the
+/// lower bound is `½·max(0, ‖q̂ − c‖ − radius)²` — never an over-estimate, so
+/// pruning by it yields no false negatives. Returns `None` if the query is a
+/// zero vector or the dimensions mismatch (caller should then keep the extent).
+pub fn cosine_distance_lower_bound(query: &[f32], centroid: &[f64], radius: f64) -> Option<f64> {
+    if query.len() != centroid.len() || query.is_empty() {
+        return None;
+    }
+    let norm = query.iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>().sqrt();
+    if norm <= 1e-12 {
+        return None;
+    }
+    let mut dist_sq = 0.0f64;
+    for (q, c) in query.iter().zip(centroid.iter()) {
+        let qn = *q as f64 / norm;
+        let diff = qn - *c;
+        dist_sq += diff * diff;
+    }
+    let dist = dist_sq.sqrt();
+    let d = (dist - radius).max(0.0);
+    Some(0.5 * d * d)
+}
+
+#[cfg(test)]
+mod ann_bound_tests {
+    use super::cosine_distance_lower_bound;
+
+    #[test]
+    fn collapses_to_zero_when_radius_covers_query() {
+        // Centroid coincides with the (normalized) query; any radius ⇒ lb 0.
+        let lb = cosine_distance_lower_bound(&[1.0, 0.0, 0.0], &[1.0, 0.0, 0.0], 0.5).unwrap();
+        assert!(lb <= 1e-9, "expected ~0, got {lb}");
+    }
+
+    #[test]
+    fn max_distance_for_opposite_centroid_tight_radius() {
+        // q̂ = +x, centroid = −x, radius 0 ⇒ ‖q̂−c‖ = 2 ⇒ lb = ½·2² = 2 (cosine max).
+        let lb = cosine_distance_lower_bound(&[1.0, 0.0], &[-1.0, 0.0], 0.0).unwrap();
+        assert!((lb - 2.0).abs() < 1e-9, "got {lb}");
+    }
+
+    #[test]
+    fn query_is_normalized_before_bounding() {
+        // Unnormalized query (length 5) must give the same bound as its unit form.
+        let a = cosine_distance_lower_bound(&[5.0, 0.0], &[-1.0, 0.0], 0.0).unwrap();
+        let b = cosine_distance_lower_bound(&[1.0, 0.0], &[-1.0, 0.0], 0.0).unwrap();
+        assert!((a - b).abs() < 1e-9);
+    }
+
+    #[test]
+    fn unbounded_cases_return_none() {
+        assert!(cosine_distance_lower_bound(&[0.0, 0.0], &[1.0, 0.0], 0.0).is_none());
+        assert!(cosine_distance_lower_bound(&[1.0, 0.0, 0.0], &[1.0, 0.0], 0.0).is_none());
+    }
 }
 
 // -------------------- Snapshot transactions --------------------
@@ -805,6 +872,62 @@ pub trait Catalog: Send + Sync {
         &self,
         tenant: crate::tenant::TenantId,
     ) -> Result<u64, CatalogError>;
+
+    /// List all users in the default tenant (admin user management).
+    async fn list_users(&self) -> Result<Vec<User>, CatalogError> {
+        self.list_users_in_tenant(crate::tenant::DEFAULT_TENANT).await
+    }
+
+    /// Tenant-scoped variant of [`list_users`].
+    async fn list_users_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+    ) -> Result<Vec<User>, CatalogError>;
+
+    /// Replace a user's password hash. Returns `true` if the user existed.
+    async fn set_user_password(
+        &self,
+        username: &str,
+        password_hash: &str,
+    ) -> Result<bool, CatalogError> {
+        self.set_user_password_in_tenant(crate::tenant::DEFAULT_TENANT, username, password_hash)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`set_user_password`].
+    async fn set_user_password_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        username: &str,
+        password_hash: &str,
+    ) -> Result<bool, CatalogError>;
+
+    /// Change a user's role. Returns `true` if the user existed.
+    async fn set_user_role(&self, username: &str, role: &str) -> Result<bool, CatalogError> {
+        self.set_user_role_in_tenant(crate::tenant::DEFAULT_TENANT, username, role)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`set_user_role`].
+    async fn set_user_role_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        username: &str,
+        role: &str,
+    ) -> Result<bool, CatalogError>;
+
+    /// Delete a user. Returns `true` if a user was removed.
+    async fn delete_user(&self, username: &str) -> Result<bool, CatalogError> {
+        self.delete_user_in_tenant(crate::tenant::DEFAULT_TENANT, username)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`delete_user`].
+    async fn delete_user_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        username: &str,
+    ) -> Result<bool, CatalogError>;
 
     // --- auth: api tokens ---
 

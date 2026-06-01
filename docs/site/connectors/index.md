@@ -14,6 +14,9 @@ into the same kyma extents.
 One framework. One reference engine in tree. Three operational-database
 engines on the way, each shipping in its own milestone.
 
+![The Add-connector catalog in the kyma UI](/screenshots/connectors-catalog.png)
+*The **Add connector** catalog — code, knowledge, project, and data sources side by side. Available sources are one click to connect; the grid is engine-driven, so a new connector type appears here automatically.*
+
 <div class="feature-grid">
 
 <div class="feature-card">
@@ -35,6 +38,18 @@ The reference implementation. Scrapes `/metrics` on a schedule,
 parses OpenMetrics, lands one row per sample in the configured
 table. Shipped today; the smallest possible thing that proves the
 framework.
+
+</div>
+
+<div class="feature-card">
+
+### [OAuth connectors](/connectors/oauth)
+
+SaaS sources behind a one-click **Connect** flow — [Notion](/connectors/notion),
+[Google Drive](/connectors/googledrive), [Gmail](/connectors/gmail),
+[Slack](/connectors/slack), [Jira](/connectors/jira),
+[Confluence](/connectors/confluence). OAuth2 authorize → encrypted credential →
+automatic token refresh. Operator-configured apps or bring-your-own.
 
 </div>
 
@@ -122,3 +137,17 @@ as a queryable kyma table. Cross-references the conceptual model at
 - **One health surface.** Per-tick metrics, `last_error`, `last_rows_ingested`
   on the connector row, plus the `kyma_connector_health` view (DB-M0+) for
   the database engines. See [Observability](/concepts/observability).
+
+## What you get: a context graph
+
+Graph connectors (GitHub, GitLab, Notion, Slack, Jira, …) don't just land rows —
+they emit **nodes and edges** that register as a queryable property graph. A
+GitHub connector produces `Repository`, `PullRequest`, `Issue`, `Branch`, and
+`User` nodes linked by `AUTHORED`, `HAS_PULL_REQUEST`, `TARGETS_BRANCH`, and
+more; a Notion connector produces `Page`/`Database`/`User` nodes linked by
+`CONTAINS` and `RELATES_TO`. Every source feeds the same graph, so you can
+traverse from a Slack message to the Jira issue it mentions to the GitHub PR
+that closed it.
+
+![The kyma context graph rendered from connector data](/screenshots/context-graph.png)
+*The **Graph** view rendering a GitHub connector's output — repositories, pull requests, issues, branches, and contributors as a navigable property graph. See [Query → Graph traversals](/query/) and the [graph concepts](/concepts/multi-source-data).*

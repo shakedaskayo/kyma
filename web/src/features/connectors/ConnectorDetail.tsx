@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
@@ -13,13 +14,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useGraphStore } from "@/features/graph/graph-store";
 import { useGraphStats } from "@/features/graph/useGraph";
-import { deriveStatus, type ConnectorDetail as Detail } from "@/sdk/connectors";
+import {
+  deriveStatus,
+  type CatalogEntry,
+  type ConnectorDetail as Detail,
+} from "@/sdk/connectors";
+import { useCredentials } from "@/features/credentials/useCredentials";
 import { formatInterval, graphNameForEntry } from "./connector-kinds";
 import { BrandIcon } from "./BrandIcon";
 import { StatusBadge } from "./StatusBadge";
+import { useOAuthConnect } from "./useOAuthConnect";
 import {
   useConnectorCatalog,
   useDeleteConnector,
+  usePatchConnector,
   usePauseConnector,
   useResumeConnector,
   useTriggerConnector,
@@ -151,6 +159,8 @@ export function ConnectorDetail({
 
       <SyncStatus detail={detail} graphName={entry?.graph_name ?? null} />
 
+      <ConnectorCredentialCard detail={detail} entry={entry} />
+
       {/* Selected resources (e.g. repositories) */}
       {resources.length > 0 && (
         <Card>
@@ -176,6 +186,88 @@ export function ConnectorDetail({
 
       <SyncHistory detail={detail} />
     </div>
+  );
+}
+
+/** Shows the connector's linked credential and, for OAuth connectors, a
+ * Reconnect action that re-runs the connect flow and repoints the connector at
+ * the freshly minted credential. */
+function ConnectorCredentialCard({ detail, entry }: { detail: Detail; entry?: CatalogEntry }) {
+  const credentialId =
+    typeof detail.config?.credential_id === "string"
+      ? (detail.config.credential_id as string)
+      : undefined;
+  const { data: creds } = useCredentials();
+  const patch = usePatchConnector(detail.id);
+  const isOAuthConn = entry?.auth_mode === "oauth";
+  const oauth = useOAuthConnect(entry?.oauth_provider, detail.type);
+
+  // On a successful reconnect, repoint the connector at the new credential.
+  useEffect(() => {
+    if (oauth.phase === "success" && oauth.account) {
+      patch.mutate({ config: { ...detail.config, credential_id: oauth.account.credentialId } });
+      oauth.reset();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [oauth.phase, oauth.account]);
+
+  if (!credentialId && !isOAuthConn) return null;
+  const cred = creds?.find((c) => c.id === credentialId);
+  const connecting = oauth.phase === "starting" || oauth.phase === "awaiting";
+
+  return (
+    <Card>
+      <CardHeader className="p-4 pb-2">
+        <CardTitle className="text-sm font-semibold">Credential</CardTitle>
+      </CardHeader>
+      <CardContent className="p-4 pt-0">
+        {cred ? (
+          <div className="flex items-center gap-3">
+            <BrandIcon brand={entry?.brand ?? ""} size={18} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium">{cred.label}</div>
+              <div className="font-mono text-xs text-muted-foreground">
+                {cred.kind} · {cred.preview}
+              </div>
+            </div>
+            {isOAuthConn && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={connecting}
+                onClick={() => oauth.connect({ scopes: entry?.oauth_scopes })}
+              >
+                {connecting ? "Waiting…" : "Reconnect"}
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <span>{credentialId ? "Linked credential not found." : "No credential linked."}</span>
+            {isOAuthConn && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={connecting}
+                onClick={() => oauth.connect({ scopes: entry?.oauth_scopes })}
+              >
+                {connecting ? "Waiting…" : "Connect"}
+              </Button>
+            )}
+          </div>
+        )}
+        {oauth.phase === "error" && oauth.error && (
+          <p className="mt-2 text-xs text-destructive">{oauth.error}</p>
+        )}
+        {oauth.popupBlocked && oauth.authorizeUrl && (
+          <p className="mt-2 text-xs text-amber-600">
+            <a className="underline" href={oauth.authorizeUrl} target="_blank" rel="noreferrer">
+              Open authorization in a new tab
+            </a>
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

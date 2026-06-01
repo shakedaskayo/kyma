@@ -1,10 +1,12 @@
-//! MCP tool dispatch wrapping the eight agent tool factories.
+//! MCP tool dispatch wrapping the agent query + memory tool factories.
 
 use adk_rust::tool::SimpleToolContext;
 use adk_rust::Tool;
 use kyma_server::agent::{
     tool_describe_table, tool_explore_schema, tool_find_references_to, tool_graph_traverse,
-    tool_list_databases, tool_run_kql, tool_run_sql, tool_sample_rows, SharedToolCtx,
+    tool_link_memory_to_entity, tool_list_databases, tool_list_memories, tool_memory_search,
+    tool_recall_memory, tool_run_kql, tool_run_sql, tool_sample_rows, tool_save_memory,
+    SharedToolCtx,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -19,7 +21,7 @@ pub struct ToolDispatch {
 
 impl ToolDispatch {
     pub fn new(shared: SharedToolCtx) -> Self {
-        let mut map: HashMap<&'static str, Arc<dyn Tool>> = HashMap::with_capacity(8);
+        let mut map: HashMap<&'static str, Arc<dyn Tool>> = HashMap::with_capacity(16);
         map.insert("list_databases", tool_list_databases(shared.clone()));
         map.insert("describe_table", tool_describe_table(shared.clone()));
         map.insert("run_sql", tool_run_sql(shared.clone()));
@@ -27,7 +29,15 @@ impl ToolDispatch {
         map.insert("sample_rows", tool_sample_rows(shared.clone()));
         map.insert("explore_schema", tool_explore_schema(shared.clone()));
         map.insert("find_references_to", tool_find_references_to(shared.clone()));
-        map.insert("graph_traverse", tool_graph_traverse(shared));
+        map.insert("graph_traverse", tool_graph_traverse(shared.clone()));
+        // Agentic Memory tools — let MCP clients (e.g. the Claude Code plugin)
+        // search/recall/save durable memories alongside the query tools.
+        // `memory_search` is the primary graph-aware hybrid recall entry point.
+        map.insert("memory_search", tool_memory_search(shared.clone()));
+        map.insert("recall_memory", tool_recall_memory(shared.clone()));
+        map.insert("save_memory", tool_save_memory(shared.clone()));
+        map.insert("list_memories", tool_list_memories(shared.clone()));
+        map.insert("link_memory_to_entity", tool_link_memory_to_entity(shared));
         Self { by_name: Arc::new(map) }
     }
 

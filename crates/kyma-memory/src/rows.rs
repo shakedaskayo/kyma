@@ -48,6 +48,10 @@ pub fn node_row(id: &Uuid, m: &CreateMemory, embedding: &[f32], now: &str) -> Va
         "embedding": embedding,
         "created_at": now,
         "updated_at": now,
+        "valid_at": m.valid_at.as_deref().unwrap_or(now),
+        "invalid_at": Value::Null,
+        "superseded_by": Value::Null,
+        "provenance": m.provenance.as_ref().map(|p| p.to_string()),
     })
 }
 

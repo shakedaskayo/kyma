@@ -58,7 +58,10 @@ S3-compatible (works with MinIO, AWS S3, R2, GCS via S3 API).
 
 | Name                | Default       | Purpose                                                                                                  |
 | ------------------- | ------------- | -------------------------------------------------------------------------------------------------------- |
-| `KYMA_AUTH_TOKENS`  | _unset_       | Comma-separated `token:role` pairs (e.g. `alice-tok:admin,reader-tok:read`). Empty / unset disables auth. |
+| `KYMA_AUTH_BACKEND` | `env`         | `env` = static `KYMA_AUTH_TOKENS`; `session` = username/password login (`POST /v1/auth/login`) backed by the catalog. |
+| `KYMA_AUTH_TOKENS`  | _unset_       | (env backend) Comma-separated `token:role` pairs (e.g. `alice-tok:admin,reader-tok:read`). Empty / unset disables auth. |
+| `KYMA_ADMIN_USER`   | _unset_       | (session backend) Seed an admin user on first boot if no users exist yet. Requires `KYMA_ADMIN_PASSWORD`. |
+| `KYMA_ADMIN_PASSWORD` | _unset_     | Password for the seeded admin user. Only used when no users exist.                                       |
 
 Roles: `read` ⊆ `write` ⊆ `admin`. A higher role grants everything below it.
 
@@ -116,6 +119,20 @@ Roles: `read` ⊆ `write` ⊆ `admin`. A higher role grants everything below it.
 Per-connector secrets are resolved through the `EnvSecretStore` —
 config values written as `$env:VAR_NAME` resolve to whatever
 `std::env::var("VAR_NAME")` returns at fetch time.
+
+## Credentials & OAuth
+
+The typed credentials store (PATs, OAuth tokens, connection URLs) is encrypted
+at rest; the [OAuth connect flow](/connectors/oauth) needs a public origin and a
+client app per provider.
+
+| Name                          | Default                 | Purpose                                                                                              |
+| ----------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| `KYMA_SECRET_KEY`             | _unset_ (required for credentials) | AES-256-GCM key for the credentials store. Base64 of 32 random bytes (`openssl rand -base64 32`); shorter values are SHA-256 stretched (dev only). |
+| `KYMA_OAUTH_REDIRECT_BASE`    | `http://localhost:8080` | Externally reachable origin. Builds the provider `redirect_uri` (`<base>/v1/oauth/<provider>/callback`). |
+| `KYMA_OAUTH_UI_RETURN_BASE`   | = redirect base         | Where the callback sends the browser back to (the web UI origin).                                    |
+| `KYMA_OAUTH_<PROVIDER>_CLIENT_ID` | _unset_             | Operator client id. `<PROVIDER>` ∈ `GOOGLE`, `NOTION`, `ATLASSIAN`, `SLACK`.                          |
+| `KYMA_OAUTH_<PROVIDER>_CLIENT_SECRET` | _unset_         | Operator client secret. A per-tenant bring-your-own app (set in the UI) takes precedence over these.  |
 
 ## Agent
 

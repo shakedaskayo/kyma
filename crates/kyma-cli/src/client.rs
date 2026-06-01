@@ -175,6 +175,46 @@ pub(crate) async fn delete_json(cfg: &ClientConfig, path: &str) -> Result<serde_
     Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
 }
 
+/// POST a JSON body to an endpoint with the configured bearer token.
+pub(crate) async fn post_json(
+    cfg: &ClientConfig,
+    path: &str,
+    body: serde_json::Value,
+) -> Result<serde_json::Value> {
+    let url = format!("{}{}", cfg.endpoint.trim_end_matches('/'), path);
+    let mut req = http_client().post(url).json(&body);
+    if let Some(t) = &cfg.token {
+        req = req.bearer_auth(t);
+    }
+    let res = req.send().await.with_context(|| format!("POST {path}"))?;
+    let status = res.status();
+    let text = res.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(anyhow!("server returned {status}: {text}"));
+    }
+    Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
+}
+
+/// PATCH a JSON body to an endpoint with the configured bearer token.
+pub(crate) async fn patch_json(
+    cfg: &ClientConfig,
+    path: &str,
+    body: serde_json::Value,
+) -> Result<serde_json::Value> {
+    let url = format!("{}{}", cfg.endpoint.trim_end_matches('/'), path);
+    let mut req = http_client().patch(url).json(&body);
+    if let Some(t) = &cfg.token {
+        req = req.bearer_auth(t);
+    }
+    let res = req.send().await.with_context(|| format!("PATCH {path}"))?;
+    let status = res.status();
+    let text = res.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(anyhow!("server returned {status}: {text}"));
+    }
+    Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
+}
+
 pub(crate) async fn probe_health(cfg: &ClientConfig) -> Result<String> {
     let url = format!("{}/health", cfg.endpoint.trim_end_matches('/'));
     let res = http_client().get(url).send().await.context("GET /health")?;

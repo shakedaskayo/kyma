@@ -1047,3 +1047,20 @@
 @media (max-width: 800px) {
   .kyma-recursive-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Documentation UI screenshots (public/screenshots/*) ─────────────────── */
+.vp-doc img[src*="/screenshots/"] {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--vp-c-divider);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 10px 30px rgba(0, 0, 0, 0.14);
+  margin: 1.1rem 0 0.4rem;
+}
+/* Caption: an emphasized line on its own immediately after a screenshot. */
+.vp-doc img[src*="/screenshots/"] + em {
+  display: block;
+  text-align: center;
+  font-size: 0.85em;
+  color: var(--vp-c-text-2);
+  margin-bottom: 1.2rem;
+}

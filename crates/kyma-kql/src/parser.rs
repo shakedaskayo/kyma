@@ -52,13 +52,6 @@ impl Parser {
     fn peek(&self) -> Option<&Token> {
         self.toks.get(self.pos)
     }
-    fn advance(&mut self) -> Option<&Token> {
-        let t = self.toks.get(self.pos);
-        if t.is_some() {
-            self.pos += 1;
-        }
-        t
-    }
     fn bump(&mut self) -> Result<Token, ParseError> {
         let idx = self.pos;
         let t = self
@@ -1037,12 +1030,6 @@ fn strip_outer_quotes(s: &str) -> String {
         // Non-literal — wrap via concat (`col LIKE concat(x,'%')`).
         s.to_string()
     }
-}
-
-/// For `contains`: we keep the raw literal and let SQL `position` do it.
-/// The helper strips outer quotes only for `LIKE` building.
-fn strip_quotes_for_like(s: &str) -> &str {
-    s
 }
 
 fn implicit_agg_alias(expr: &str) -> String {

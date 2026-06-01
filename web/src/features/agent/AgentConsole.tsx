@@ -1,16 +1,45 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useChat } from "@ai-sdk/react";
+import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { toast } from "sonner";
-import { Database, Send, Sparkles, Square } from "lucide-react";
+import { Copy, Database, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/sdk/session";
-import { runAgent } from "./sse";
-import type { AgentEvent, ChatTurn } from "./types";
-import { MessageCard } from "./MessageCard";
+import {
+  Conversation,
+  ConversationContent,
+} from "@/components/ai-elements/conversation";
+import { Message, MessageContent } from "@/components/ai-elements/message";
+import { Response } from "@/components/ai-elements/response";
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from "@/components/ai-elements/reasoning";
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+  type ToolState,
+} from "@/components/ai-elements/tool";
+import { Loader } from "@/components/ai-elements/loader";
+import {
+  PromptInput,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputToolbar,
+} from "@/components/ai-elements/prompt-input";
+import { createAgentTransport } from "./transport";
 
 /**
- * Full chat panel for `/agent`. State is kept in-memory; navigating away and
- * back resets the transcript (matches the spec — "no persistence between route
- * visits").
+ * Full chat panel for `/agent`. Backed by the AI SDK `useChat` hook talking to
+ * `POST /v1/agent/ask`, which streams the AI-SDK UI Message Stream protocol.
+ * Multi-turn context is preserved by capturing the conversation `session_id`
+ * (surfaced as a `data-session` part) and echoing it back on the next turn.
+ *
+ * State is in-memory; navigating away and back resets the transcript.
  */
 
 const SUGGESTIONS = [
@@ -21,114 +50,69 @@ const SUGGESTIONS = [
 
 export function AgentConsole() {
   const { endpoint, token, database } = useSession();
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
   const [includeThinking, setIncludeThinking] = useState(false);
-  // "idle" | "streaming" | "error" | "done"
-  const [status, setStatus] = useState<"idle" | "streaming" | "error" | "done">("idle");
-  const aborterRef = useRef<AbortController | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when transcript grows, but only when the user
-  // hasn't manually scrolled up (i.e. bottomRef is within ~100px of the
-  // scroll container's bottom edge).
-  const scrollToBottomIfNear = useCallback(() => {
-    const container = scrollRef.current;
-    const bottom = bottomRef.current;
-    if (!container || !bottom) return;
-    const distanceFromBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight;
-    if (distanceFromBottom <= 100) {
-      bottom.scrollIntoView({ block: "end", behavior: "smooth" });
+  // Per-turn request options read at send time (so changing the database or
+  // the thinking toggle mid-conversation is picked up without rebuilding the
+  // transport). `sessionId` is the server's conversation id for `--resume`.
+  const sessionIdRef = useRef<string | null>(null);
+  const optsRef = useRef({ database, includeThinking });
+  optsRef.current = { database, includeThinking };
+
+  const transport = useMemo(
+    () =>
+      createAgentTransport(endpoint, token, () => ({
+        database: optsRef.current.database || undefined,
+        include_thinking: optsRef.current.includeThinking,
+        session_id: sessionIdRef.current ?? undefined,
+      })),
+    [endpoint, token],
+  );
+
+  const { messages, sendMessage, status, stop, error, regenerate } = useChat({
+    transport,
+  });
+
+  // Capture the conversation session id from any `data-session` part so the
+  // next turn resumes the same conversation.
+  useEffect(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const part = messages[i].parts.find((p) => p.type === "data-session");
+      if (part) {
+        const sid = (part as { data?: { sessionId?: string } }).data?.sessionId;
+        if (typeof sid === "string" && sid.length > 0) {
+          sessionIdRef.current = sid;
+        }
+        break;
+      }
     }
-  }, []);
+  }, [messages]);
 
-  useEffect(() => {
-    scrollToBottomIfNear();
-  }, [turns, scrollToBottomIfNear]);
+  const isBusy = status === "submitted" || status === "streaming";
 
-  // Abort any in-flight run when the component unmounts.
-  useEffect(() => {
-    return () => aborterRef.current?.abort();
-  }, []);
-
-  const submit = useCallback(async () => {
+  const submit = (e?: FormEvent<HTMLFormElement>) => {
+    e?.preventDefault();
     const question = input.trim();
-    if (!question || status === "streaming") return;
+    if (!question || isBusy) return;
     if (!endpoint) {
       toast.error("Configure server endpoint in Settings");
       return;
     }
-
-    const turn: ChatTurn = {
-      id: crypto.randomUUID(),
-      question,
-      startedAt: Date.now(),
-      trace: [],
-      answer: "",
-      thinking: "",
-      sqlUsed: null,
-      kqlUsed: null,
-      model: null,
-      elapsedMs: null,
-      toolCalls: null,
-      error: null,
-      done: false,
-    };
-    setTurns((t) => [...t, turn]);
+    sendMessage({ text: question });
     setInput("");
-    setStatus("streaming");
-
-    const update = (fn: (t: ChatTurn) => ChatTurn) =>
-      setTurns((list) => list.map((t) => (t.id === turn.id ? fn(t) : t)));
-
-    const ctl = new AbortController();
-    aborterRef.current = ctl;
-    try {
-      for await (const ev of runAgent(
-        endpoint,
-        token || undefined,
-        { question, database: database || undefined, include_thinking: includeThinking },
-        ctl.signal,
-      )) {
-        update((t) => applyEvent(t, ev));
-        scrollToBottomIfNear();
-      }
-      setStatus("done");
-    } catch (e) {
-      if ((e as Error).name === "AbortError") {
-        update((t) => ({ ...t, done: true, error: t.error ?? "cancelled" }));
-        setStatus("done");
-      } else {
-        const msg = (e as Error).message || "agent request failed";
-        update((t) => ({ ...t, done: true, error: msg }));
-        toast.error(msg);
-        setStatus("error");
-      }
-    } finally {
-      update((t) => ({ ...t, done: true }));
-      aborterRef.current = null;
-    }
-  }, [input, status, endpoint, token, database, includeThinking, scrollToBottomIfNear]);
-
-  const stop = useCallback(() => {
-    aborterRef.current?.abort();
-  }, []);
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      void submit();
-    }
   };
 
-  const isStreaming = status === "streaming";
-
-  // Determine if the last turn has received any answer text yet.
-  // We check turn.answer.length since that's populated by answer_delta / answer_final events.
-  const lastTurn = turns.length > 0 ? turns[turns.length - 1] : null;
-  const lastTurnHasAnswer = lastTurn != null && lastTurn.answer.length > 0;
+  const lastMessage = messages[messages.length - 1];
+  const awaitingFirstToken =
+    isBusy &&
+    (lastMessage?.role !== "assistant" ||
+      !lastMessage.parts.some(
+        (p) =>
+          (p.type === "text" && (p as { text: string }).text.length > 0) ||
+          p.type === "reasoning" ||
+          isToolUIPart(p),
+      ));
 
   return (
     <div className="flex h-full flex-col">
@@ -143,76 +127,172 @@ export function AgentConsole() {
         </span>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-3xl space-y-4 px-4 py-4">
-          {turns.length === 0 && (
+      <Conversation>
+        <ConversationContent>
+          {messages.length === 0 && (
             <EmptyState onSuggest={(s) => setInput(s)} />
           )}
-          {turns.map((turn, i) => {
-            const isLast = i === turns.length - 1;
-            return (
-              <div key={turn.id}>
-                <MessageCard turn={turn} />
-                {isLast && isStreaming && !lastTurnHasAnswer && (
-                  <ThinkingIndicator />
-                )}
-              </div>
-            );
-          })}
-          <div ref={bottomRef} />
-        </div>
-      </div>
+
+          {messages.map((message) => (
+            <MessageView key={message.id} message={message} />
+          ))}
+
+          {awaitingFirstToken && (
+            <div className="flex items-center gap-2 pl-1 text-xs text-muted-foreground">
+              <Loader size={14} />
+              Thinking…
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="flex items-center gap-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              <span className="flex-1">{error?.message ?? "Agent request failed"}</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => regenerate()}
+              >
+                <RotateCcw className="mr-1 h-3.5 w-3.5" /> Retry
+              </Button>
+            </div>
+          )}
+        </ConversationContent>
+      </Conversation>
 
       <div className="border-t bg-background px-4 py-3">
         <div className="mx-auto max-w-3xl">
-          <div className="relative rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring">
-            <textarea
+          <PromptInput onSubmit={submit}>
+            <PromptInputTextarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKeyDown}
               placeholder={`Ask a question about ${database || "your data"}…`}
-              rows={3}
-              disabled={isStreaming}
-              className="w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50"
+              disabled={isBusy}
             />
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none">
-              <input
-                type="checkbox"
-                checked={includeThinking}
-                onChange={(e) => setIncludeThinking(e.target.checked)}
-                disabled={isStreaming}
-                className="h-3.5 w-3.5"
+            <PromptInputToolbar>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none">
+                <input
+                  type="checkbox"
+                  checked={includeThinking}
+                  onChange={(e) => setIncludeThinking(e.target.checked)}
+                  disabled={isBusy}
+                  className="h-3.5 w-3.5"
+                />
+                Include thinking
+              </label>
+              <span className="text-[11px] text-muted-foreground">
+                <kbd className="rounded border bg-muted px-1">↵</kbd> to send ·{" "}
+                <kbd className="rounded border bg-muted px-1">⇧↵</kbd> for newline
+              </span>
+              <PromptInputSubmit
+                status={status}
+                onStop={stop}
+                disabled={!input.trim()}
               />
-              Include thinking
-            </label>
-            <span className="text-[11px] text-muted-foreground">
-              <kbd className="rounded border bg-muted px-1">⌘↵</kbd>{" "}
-              to send &middot;{" "}
-              <kbd className="rounded border bg-muted px-1">⇧↵</kbd>{" "}
-              for newline
-            </span>
-            <div className="ml-auto flex items-center gap-2">
-              {isStreaming ? (
-                <Button type="button" variant="outline" size="sm" onClick={stop}>
-                  <Square className="mr-1 h-3 w-3 fill-current" /> Stop
-                </Button>
-              ) : (
-                <Button
-                  type="submit"
-                  size="sm"
-                  onClick={() => void submit()}
-                  disabled={!input.trim()}>
-                  <Send className="mr-1 h-3.5 w-3.5" /> Send
-                </Button>
-              )}
-            </div>
-          </div>
+            </PromptInputToolbar>
+          </PromptInput>
         </div>
       </div>
     </div>
   );
+}
+
+/** Render one message: a user bubble or an assistant card with its parts. */
+function MessageView({ message }: { message: UIMessage }) {
+  if (message.role === "user") {
+    const text = message.parts
+      .filter((p) => p.type === "text")
+      .map((p) => (p as { text: string }).text)
+      .join("");
+    return (
+      <Message from="user">
+        <MessageContent>
+          <span className="whitespace-pre-wrap">{text}</span>
+        </MessageContent>
+      </Message>
+    );
+  }
+
+  // Assistant: surface SQL/usage data parts in the footer.
+  const sql = findDataPart<{ sql: string }>(message, "data-sql")?.sql;
+  const usage = findDataPart<{ elapsed_ms?: number; total_cost_usd?: number | null }>(
+    message,
+    "data-usage",
+  );
+  const model = findDataPart<{ model: string }>(message, "data-model")?.model;
+
+  return (
+    <Message from="assistant">
+      <MessageContent>
+        {message.parts.map((part, i) => {
+          if (part.type === "reasoning") {
+            const text = (part as { text: string }).text;
+            const streaming = (part as { state?: string }).state === "streaming";
+            if (!text) return null;
+            return (
+              <Reasoning key={i} isStreaming={streaming}>
+                <ReasoningTrigger />
+                <ReasoningContent>{text}</ReasoningContent>
+              </Reasoning>
+            );
+          }
+          if (part.type === "text") {
+            const text = (part as { text: string }).text;
+            if (!text) return null;
+            return <Response key={i}>{text}</Response>;
+          }
+          if (isToolUIPart(part)) {
+            const state = part.state as ToolState;
+            return (
+              <Tool key={i} defaultOpen={state === "output-error"}>
+                <ToolHeader type={getToolName(part)} state={state} />
+                <ToolContent>
+                  <ToolInput input={part.input} />
+                  {(state === "output-available" || state === "output-error") && (
+                    <ToolOutput
+                      output={part.output}
+                      errorText={part.errorText}
+                    />
+                  )}
+                </ToolContent>
+              </Tool>
+            );
+          }
+          return null;
+        })}
+
+        {sql && (
+          <div className="pt-0.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                navigator.clipboard.writeText(sql);
+                toast.success("SQL copied to clipboard");
+              }}
+            >
+              <Copy className="mr-1 h-3.5 w-3.5" /> Copy SQL
+            </Button>
+          </div>
+        )}
+
+        {(usage?.elapsed_ms != null || model) && (
+          <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground">
+            {usage?.elapsed_ms != null && <span>{usage.elapsed_ms}ms</span>}
+            {usage?.total_cost_usd != null && (
+              <span>· ${usage.total_cost_usd.toFixed(4)}</span>
+            )}
+            {model && <span>· {model}</span>}
+          </div>
+        )}
+      </MessageContent>
+    </Message>
+  );
+}
+
+function findDataPart<T>(message: UIMessage, type: string): T | undefined {
+  const part = message.parts.find((p) => p.type === type);
+  return part ? ((part as { data?: T }).data as T) : undefined;
 }
 
 function EmptyState({ onSuggest }: { onSuggest: (s: string) => void }) {
@@ -231,7 +311,7 @@ function EmptyState({ onSuggest }: { onSuggest: (s: string) => void }) {
             key={s}
             type="button"
             onClick={() => onSuggest(s)}
-            className="rounded-md border bg-card px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+            className="rounded-md border bg-card px-3 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             {s}
           </button>
@@ -239,57 +319,4 @@ function EmptyState({ onSuggest }: { onSuggest: (s: string) => void }) {
       </div>
     </div>
   );
-}
-
-function ThinkingIndicator() {
-  return (
-    <div className="flex items-center gap-1.5 py-2 pl-1 text-xs text-muted-foreground">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/70" />
-      <span
-        className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/70"
-        style={{ animationDelay: "150ms" }}
-      />
-      <span
-        className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/70"
-        style={{ animationDelay: "300ms" }}
-      />
-      <span className="ml-1">Thinking…</span>
-    </div>
-  );
-}
-
-/** Apply a single SSE event to an in-flight ChatTurn. Pure function for easy testing. */
-export function applyEvent(t: ChatTurn, ev: AgentEvent): ChatTurn {
-  switch (ev.type) {
-    case "run_started":
-      return { ...t, model: ev.model };
-    case "tool_call":
-      return {
-        ...t,
-        trace: [...t.trace, { kind: "call", tool: ev.tool, args: ev.args, callIndex: ev.call_index }],
-      };
-    case "tool_result":
-      return {
-        ...t,
-        trace: [...t.trace, { kind: "result", tool: ev.tool, result: ev.result }],
-      };
-    case "thinking_delta":
-      return { ...t, thinking: t.thinking + ev.text };
-    case "answer_delta":
-      return { ...t, answer: t.answer + ev.text };
-    case "answer_final":
-      return {
-        ...t,
-        // Prefer the final, authoritative text over accumulated deltas.
-        answer: ev.text || t.answer,
-        sqlUsed: ev.sql_used,
-        kqlUsed: ev.kql_used,
-      };
-    case "run_error":
-      return { ...t, error: `${ev.code}: ${ev.message}`, done: true };
-    case "run_finished":
-      return { ...t, elapsedMs: ev.elapsed_ms, toolCalls: ev.tool_calls, done: true };
-    default:
-      return t;
-  }
 }

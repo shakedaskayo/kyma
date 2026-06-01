@@ -59,20 +59,24 @@ pub fn issue_id(owner: &str, repo: &str, number: i64) -> String {
     format!("issue:{owner}/{repo}#{number}")
 }
 
+#[cfg(feature = "github")]
 pub fn dir_id(owner: &str, repo: &str, path: &str) -> String {
     format!("dir:{owner}/{repo}:{path}")
 }
 
+#[cfg(feature = "github")]
 pub fn file_id(owner: &str, repo: &str, path: &str) -> String {
     format!("file:{owner}/{repo}:{path}")
 }
 
+#[cfg(feature = "github")]
 pub fn module_id(raw: &str) -> String {
     format!("module:{raw}")
 }
 
 /// Deterministic id for a code symbol (function/class). `kind` is `func` or
 /// `class`; `line` disambiguates same-named symbols in one file.
+#[cfg(feature = "github")]
 pub fn symbol_id(owner: &str, repo: &str, path: &str, name: &str, line: usize, kind: &str) -> String {
     format!("{kind}:{owner}/{repo}:{path}#{name}#{line}")
 }
@@ -331,8 +335,13 @@ pub fn to_graph(records: &[RawRecord]) -> (Vec<TableRows>, GraphHint) {
 }
 
 // ── Code graph transform (B2) ─────────────────────────────────────────────────
+// Everything below is gated behind the `github` feature: it depends on the
+// tree-sitter `parse` module (the heavy C grammars). The metadata transform
+// above (repos/branches/PRs/issues/contributors) compiles unconditionally so
+// GitHub is always registered and usable for everything except the code graph.
 
 /// A file path + its extracted imports and symbol definitions.
+#[cfg(feature = "github")]
 pub struct FileImports {
     /// Repo-relative path (e.g. `"src/main.rs"`).
     pub path: String,
@@ -351,6 +360,7 @@ pub struct FileImports {
 }
 
 /// A single resolved/unresolved import from a source file.
+#[cfg(feature = "github")]
 pub struct ImportTarget {
     /// The raw import string as it appears in source.
     pub raw: String,
@@ -371,6 +381,7 @@ pub struct ImportTarget {
 ///
 /// Results are appended to the existing `nodes`/`edges` vecs (callers
 /// typically call `to_graph` first for metadata and then this function).
+#[cfg(feature = "github")]
 pub fn code_to_graph(
     owner: &str,
     repo_name: &str,
@@ -646,6 +657,7 @@ fn build_tables(nodes: Vec<Value>, edges: Vec<Value>) -> (Vec<TableRows>, GraphH
 ///
 /// This is heuristic and best-effort.  Unresolvable imports (external crates,
 /// stdlib, etc.) get `resolved_path = None` and become external `Module` nodes.
+#[cfg(feature = "github")]
 pub fn resolve_imports(
     lang: &str,
     file_path: &str,
@@ -666,6 +678,7 @@ pub fn resolve_imports(
 }
 
 /// Attempt to resolve a single raw import string to a repo path.
+#[cfg(feature = "github")]
 fn try_resolve(
     lang: &str,
     file_path: &str,
@@ -683,6 +696,7 @@ fn try_resolve(
 
 /// Rust: `crate::foo::bar` → `src/foo/bar.rs` or `src/foo/bar/mod.rs`.
 /// `use std::` and other external crates → unresolved.
+#[cfg(feature = "github")]
 fn resolve_rust(raw: &str, all_paths: &std::collections::HashSet<String>) -> Option<String> {
     if !raw.starts_with("crate::") && !raw.starts_with("super::") {
         return None; // external crate
@@ -706,6 +720,7 @@ fn resolve_rust(raw: &str, all_paths: &std::collections::HashSet<String>) -> Opt
 
 /// Python: `from .rel import X` → sibling file; `from pkg import X` →
 /// `pkg/__init__.py` or `pkg.py`.
+#[cfg(feature = "github")]
 fn resolve_python(
     file_path: &str,
     raw: &str,
@@ -750,6 +765,7 @@ fn resolve_python(
 
 /// TypeScript/JavaScript: `./foo` → sibling with any extension, relative to
 /// the importing file's directory.
+#[cfg(feature = "github")]
 fn resolve_ts_js(
     file_path: &str,
     raw: &str,
@@ -795,6 +811,7 @@ fn resolve_ts_js(
 
 /// Go: `"github.com/owner/repo/pkg"` → check if any file at `pkg/*.go` exists
 /// in the repo (module-relative heuristic).
+#[cfg(feature = "github")]
 fn resolve_go(raw: &str, all_paths: &std::collections::HashSet<String>) -> Option<String> {
     // Standard library (no dot in first segment) → unresolved
     if !raw.contains('/') {
@@ -828,6 +845,7 @@ fn resolve_go(raw: &str, all_paths: &std::collections::HashSet<String>) -> Optio
 }
 
 /// Naive path normalizer: remove `.` components and resolve `..`.
+#[cfg(feature = "github")]
 fn normalize_path(path: &str) -> String {
     let mut parts: Vec<&str> = Vec::new();
     for seg in path.split('/') {
@@ -1055,6 +1073,11 @@ mod tests {
     }
 
     // ── Code graph tests (B2) ─────────────────────────────────────────────────
+    // Gated with the `github` feature (depend on the tree-sitter `parse` types
+    // and the feature-gated code-graph transform fns above).
+    #[cfg(feature = "github")]
+    mod code_graph {
+    use super::super::*;
 
     fn make_file_tree() -> Vec<FileImports> {
         use crate::github::parse::{CodeSymbol, RawCall, RawInherit, SymbolKind};
@@ -1426,6 +1449,7 @@ mod tests {
         let resolved = resolve_imports("go", "main.go", &imports, &paths);
         assert_eq!(resolved[0].resolved_path, None);
     }
+    } // mod code_graph
 
     #[test]
     fn refetch_classification() {

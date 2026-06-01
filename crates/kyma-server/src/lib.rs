@@ -16,6 +16,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod admin_handler;
 pub mod agent;
 pub mod auth;
 pub mod auth_handler;
@@ -67,7 +68,7 @@ use axum::{
 };
 use bytes::Bytes;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
-use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
+use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use kyma_core::catalog::Catalog;
 use kyma_core::segment_format::SegmentFormat;
@@ -80,10 +81,24 @@ use tracing::{debug, error, info};
 const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 
 pub use kyma_connectors::admin::AdminState as ConnectorAdminState;
+pub use kyma_connectors::oauth::OAuthState;
 
 /// Build the connector admin router (auth-eligible — caller wraps with middleware).
 pub fn connector_admin_router(state: kyma_connectors::admin::AdminState) -> Router {
     kyma_connectors::admin::router(state)
+}
+
+/// Build the authenticated OAuth router (start + poll) — caller wraps with the
+/// `Role::Write` middleware.
+pub fn oauth_authed_router(state: OAuthState) -> Router {
+    kyma_connectors::oauth::oauth_authed_router(state)
+}
+
+/// Build the **unauthenticated** OAuth callback router — mount alongside the
+/// login route (the IdP redirect carries no bearer; the single-use `state`
+/// token is the trust anchor).
+pub fn oauth_callback_router(state: OAuthState) -> Router {
+    kyma_connectors::oauth::oauth_callback_router(state)
 }
 
 /// Shared HTTP-handler state for the query surface.
@@ -424,9 +439,10 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
     }
 
     // Build a SessionContext whose memory pool is bounded by the budget.
-    let runtime = match RuntimeEnv::new(RuntimeConfig::new().with_memory_pool(Arc::new(
-        GreedyMemoryPool::new(budget.max_memory_bytes as usize),
-    ))) {
+    let runtime = match RuntimeEnvBuilder::new()
+        .with_memory_pool(Arc::new(GreedyMemoryPool::new(budget.max_memory_bytes as usize)))
+        .build()
+    {
         Ok(r) => Arc::new(r),
         Err(e) => {
             return error_response(

@@ -64,16 +64,47 @@ kyma status
 # Health:    {"status":"ok","version":"0.0.1"}
 ```
 
-### `kyma query "<question>" [--json]`
+### `kyma query "<question>" [--json] [--session ID] [--continue]`
 
 Stream `/v1/agent/ask` to stdout. Without `--json`, prints the
 `answer_delta` / `answer_final` text directly. With `--json`, emits
 the raw SSE event stream as JSONL — useful for scripting.
 
+`--session ID` resumes a specific conversation session; `--continue` resumes the
+most recent one `query` used (kyma records the last session id locally), so
+follow-up questions keep context.
+
 ```bash
 kyma query "how many rows in github_nodes?"
 kyma query "any error logs from prod-api in the last 15 minutes?"
+kyma query "and how many of those were 500s?" --continue
 kyma query "list databases" --json | jq -c '.event,.data'
+```
+
+### `kyma sessions <op>`
+
+Inspect or manage the agent's conversation sessions (each `query` turn belongs to
+one). Talks to `/v1/agent/sessions`.
+
+```bash
+kyma sessions list              # recent sessions
+kyma sessions show <id>         # metadata + rolling summary
+kyma sessions turns <id>        # every turn in order
+kyma sessions delete <id>       # delete a session and all its turns
+```
+
+### `kyma user <op>` — requires an admin token
+
+Manage users over HTTP (`/v1/admin/users`). The configured token must have the
+**admin** role. Passwords are read interactively unless `--password-stdin`.
+
+```bash
+kyma user list
+kyma user create alice --role write             # role: read | write | admin (default read)
+kyma user create bot --role read --password-stdin <<<"$PW"
+kyma user passwd alice                          # reset a password
+kyma user set-role alice admin                  # change role
+kyma user delete alice --yes                    # --yes skips the confirm prompt
 ```
 
 ### `kyma install-skill [--target DIR] [--also-link-claude]`
@@ -85,6 +116,38 @@ how to use the `kyma` CLI as a data tool.
 | --------------------- | ----------------------------------------------------------------------- |
 | `--target DIR`        | Where to write `SKILL.md`. Default `~/.kyma/skills/kyma/`.               |
 | `--also-link-claude`  | Symlink `~/.claude/skills/kyma` → the target dir (Unix only).           |
+
+### `kyma install-plugin [--target DIR] [--force]`
+
+Install the [kyma-memory Claude Code plugin](/agent/claude-code-plugin) —
+hooks + a bundled MCP server + slash commands — into
+`~/.claude/skills/kyma-memory/`. Templates your saved server URL + token into
+the plugin's `.mcp.json` so it works immediately. Restart Claude Code, then run
+`/kyma-status`.
+
+| Flag           | Effect                                                              |
+| -------------- | ------------------------------------------------------------------ |
+| `--target DIR` | Install into `DIR` instead of `~/.claude/skills/kyma-memory`.       |
+| `--force`      | Overwrite an existing install without the warning.                 |
+
+### `kyma recall "<text>" [--realm R] [--limit N] [--json]`
+
+Semantic recall from the Agentic Memory layer via the MCP `recall_memory` tool
+(embedding + vector search, no agent turn). Prints a compact ranked list, or the
+raw structured result with `--json`. Used by the plugin to inject context.
+
+```bash
+kyma recall "how do we handle auth tokens?" --realm kyma --limit 8
+```
+
+### `kyma distill [--session ID] [--realm R]`
+
+Read a session transcript on **stdin** and hand it to the kyma agent (which owns
+`save_memory`) to extract durable memories. Used by the plugin's SessionEnd hook.
+
+```bash
+tail -n 600 transcript.jsonl | kyma distill --realm kyma
+```
 
 ### `kyma connector <op>`
 
@@ -146,6 +209,14 @@ Token discovery for `connector add` (in order):
 `--token` → `--credential-id` → `$<KIND>_TOKEN` env → `gh auth token`
 shell-out (github only).
 
+::: tip OAuth connectors
+`connector add` covers the token-auth git sources. The OAuth connectors —
+[Notion](/connectors/notion), [Google Drive](/connectors/googledrive),
+[Gmail](/connectors/gmail), [Slack](/connectors/slack), [Jira](/connectors/jira),
+[Confluence](/connectors/confluence) — authenticate through the browser, so add
+them from the web UI's **Connect** flow. See [OAuth connectors](/connectors/oauth).
+:::
+
 ### `kyma ingest <op>`
 
 Inspect ingestion runs across one or all connectors.
@@ -155,6 +226,17 @@ kyma ingest status                     # all connectors, last-run snapshot
 kyma ingest status --connector gh-…    # one connector
 kyma ingest tail                       # poll forever
 kyma ingest tail --connector gh-… --interval 5
+```
+
+#### `kyma ingest push --table T [--db D] [--idempotency-key K]`
+
+Stream NDJSON from **stdin** straight into a table via `POST /v1/ingest`
+(auto-create + schema-evolve on). This is the firehose transport the
+[kyma-memory plugin](/agent/claude-code-plugin) uses to capture conversation events.
+
+```bash
+printf '%s\n' '{"ts":"2026-05-31T12:00:00Z","kind":"note","text":"hello"}' \
+  | kyma ingest push --table claude_code_events
 ```
 
 ---

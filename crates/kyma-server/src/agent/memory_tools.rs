@@ -13,6 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use super::memory_retrieve::{retrieve, RetrieveRequest};
 use super::tools::{execute_sql, SharedToolCtx};
 
 fn now_rfc3339() -> String {
@@ -145,9 +146,10 @@ struct RecallMemoryArgs {
 }
 
 const RECALL_MEMORY_DESC: &str = "Recall the most relevant stored memories for \
-a query using semantic (vector) search blended with importance. Call this \
-before answering questions that may depend on prior context, preferences, or \
-past decisions. Returns ranked memories with content, type, and score.";
+a query using graph-aware hybrid search (semantic + keyword), expanded over \
+connected memories and resources. Call this before answering questions that \
+may depend on prior context, preferences, or past decisions. Returns ranked \
+memories, connected resources, and a ready-to-use context block.";
 
 pub fn tool_recall_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
     let shared = ctx;
@@ -162,35 +164,96 @@ pub fn tool_recall_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
-                    let writer = match build_writer(&shared).await {
-                        Ok(w) => w,
-                        Err(e) => return Ok(e),
-                    };
-                    // Ensure the memory tables exist so recall returns [] rather
-                    // than an error on a cold store.
-                    if let Err(e) = writer.ensure_provisioned().await {
-                        return Ok(json!({"error": format!("provision: {e}")}));
-                    }
-                    let qvec = match writer.embed_one(&parsed.query).await {
-                        Ok(v) => v,
-                        Err(e) => return Ok(json!({"error": format!("embed: {e}")})),
-                    };
-                    let limit = parsed.limit.unwrap_or(8).clamp(1, 100);
-                    let filter = RecallFilter {
+                    let req = RetrieveRequest {
+                        query: parsed.query,
                         realms: parsed.realms.unwrap_or_default(),
-                        memory_type: parsed.memory_type.as_deref().map(MemoryType::parse),
-                        statuses: Vec::new(),
+                        memory_type: parsed.memory_type,
                         tags: parsed.tags.unwrap_or_default(),
                         importance_min: parsed.importance_min,
-                        since: None,
-                        until: None,
+                        as_of: None,
+                        include_invalidated: false,
+                        limit: parsed.limit,
+                        expand_hops: Some(1),
                     };
-                    let sql = kyma_memory::sql::recall_sql(NODE_TABLE, &qvec, &filter, limit);
-                    Ok(execute_sql(&shared, DEFAULT_DATABASE, &sql, limit).await)
+                    Ok(retrieve(&shared, &req).await.to_json())
                 }
             },
         )
         .with_parameters_schema::<RecallMemoryArgs>()
+        .with_read_only(true)
+        .with_concurrency_safe(true),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// memory_search — the primary "find anything fast" tool for coding agents
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct MemorySearchArgs {
+    /// Natural-language query.
+    query: String,
+    /// Max memories to return (default 8).
+    #[serde(default)]
+    limit: Option<usize>,
+    /// Realms to search (e.g. the current project plus "global"). Empty = all.
+    #[serde(default)]
+    realms: Option<Vec<String>>,
+    /// Restrict to one memory type (fact/decision/preference/learning/procedure/summary/entity).
+    #[serde(default)]
+    memory_type: Option<String>,
+    /// Require these tags (substring match).
+    #[serde(default)]
+    tags: Option<Vec<String>>,
+    /// Minimum importance threshold.
+    #[serde(default)]
+    importance_min: Option<f32>,
+    /// Graph-expansion hops (0–2, default 1): pulls in connected memories and
+    /// linked catalog resources/traces for contextual understanding.
+    #[serde(default)]
+    expand_hops: Option<u8>,
+    /// Point-in-time recall (RFC3339): only memories valid at this instant.
+    #[serde(default)]
+    as_of: Option<String>,
+}
+
+const MEMORY_SEARCH_DESC: &str = "Find anything fast across the agent's memory: \
+hybrid semantic + keyword search, graph-expanded over connected memories, \
+catalog resources, and distributed traces. Returns ranked memories with \
+validity intervals, the connecting graph paths, and a ready-to-use context \
+block. Use this FIRST when a question may depend on prior context, decisions, \
+preferences, or how entities/resources relate. Follow `linked` node ids with \
+graph_traverse for a deeper subgraph.";
+
+pub fn tool_memory_search(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "memory_search",
+            MEMORY_SEARCH_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: MemorySearchArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    let req = RetrieveRequest {
+                        query: parsed.query,
+                        realms: parsed.realms.unwrap_or_default(),
+                        memory_type: parsed.memory_type,
+                        tags: parsed.tags.unwrap_or_default(),
+                        importance_min: parsed.importance_min,
+                        as_of: parsed.as_of,
+                        include_invalidated: false,
+                        limit: parsed.limit,
+                        expand_hops: parsed.expand_hops,
+                    };
+                    Ok(retrieve(&shared, &req).await.to_json())
+                }
+            },
+        )
+        .with_parameters_schema::<MemorySearchArgs>()
         .with_read_only(true)
         .with_concurrency_safe(true),
     )
@@ -257,6 +320,7 @@ pub fn tool_list_memories(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         importance_min: None,
                         since: None,
                         until: None,
+                        ..Default::default()
                     };
                     let sql = kyma_memory::sql::list_sql(NODE_TABLE, &filter, limit, offset);
                     Ok(execute_sql(&shared, DEFAULT_DATABASE, &sql, limit).await)
@@ -347,7 +411,8 @@ pub fn tool_link_memory_to_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
 // ---------------------------------------------------------------------------
 
 /// Fetch the latest version of a memory node as a JSON row, or an error payload.
-async fn fetch_latest_node(
+/// Shared with the conflict-resolution pipeline ([`super::memory_conflict`]).
+pub(crate) async fn fetch_latest_node(
     shared: &SharedToolCtx,
     node_id: &str,
 ) -> std::result::Result<Value, Value> {

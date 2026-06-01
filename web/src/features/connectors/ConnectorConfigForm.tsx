@@ -23,6 +23,8 @@ interface Props {
   onToggleAdvanced: () => void;
   /** Verification controls for the resource-token field (e.g. the PAT). */
   verify?: TokenVerify;
+  /** OAuth connect UI rendered in place of token fields (credential-backed kinds). */
+  authSlot?: React.ReactNode;
 }
 
 export function ConnectorConfigForm({
@@ -32,6 +34,7 @@ export function ConnectorConfigForm({
   advancedOpen,
   onToggleAdvanced,
   verify,
+  authSlot,
 }: Props) {
   const setField = (key: string, val: string) =>
     onChange({ fields: { ...values.fields, [key]: val } });
@@ -52,6 +55,9 @@ export function ConnectorConfigForm({
           autoFocus
         />
       </div>
+
+      {/* OAuth connect flow (credential-backed kinds) in place of token fields. */}
+      {authSlot}
 
       {/* Schema-driven fields (PAT, endpoint, etc.) */}
       {entry.fields.map((f) => (

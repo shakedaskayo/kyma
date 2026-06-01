@@ -25,4 +25,9 @@ pub struct AgentState {
     pub tenant: TenantId,
     /// Enabled-skill names — drives system-prompt injection for non-CLI engines.
     pub skills: Arc<dyn EnabledSkillsStore>,
+    /// Loopback URL of this server's own MCP endpoint (e.g.
+    /// `http://127.0.0.1:8080/mcp/v1`). When set, the Claude CLI engine wires
+    /// it via `--mcp-config` so the agent can query the user's data. `None`
+    /// disables MCP wiring for that engine.
+    pub mcp_url: Option<String>,
 }

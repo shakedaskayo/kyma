@@ -28,6 +28,8 @@ export interface ConnectorDetail {
   last_error: string | null;
   last_rows_ingested: number | null;
   config: Record<string, unknown>;
+  /** Stored credential this connector authenticates with, if any. */
+  credential_id?: string | null;
 }
 
 export interface CreateConnectorBody {
@@ -37,6 +39,8 @@ export interface CreateConnectorBody {
   target_table: string;
   schedule_ms: number;
   config: Record<string, unknown>;
+  /** Stored credential id (OAuth/PAT) the connector resolves at run time. */
+  credential_id?: string | null;
 }
 
 export interface ConnectorUpdate {
@@ -44,6 +48,7 @@ export interface ConnectorUpdate {
   schedule_ms?: number;
   enabled?: boolean;
   config?: Record<string, unknown>;
+  credential_id?: string | null;
 }
 
 // ── Catalog (engine-driven; GET /v1/connectors/catalog) ───────────────────────
@@ -83,6 +88,10 @@ export interface CatalogEntry {
   default_target_table?: string;
   config_defaults?: Record<string, unknown>;
   graph_name?: string;
+  /** OAuth connectors: provider slug to start the connect flow with. */
+  oauth_provider?: string;
+  /** OAuth connectors: default scopes the UI requests. */
+  oauth_scopes?: string[];
 }
 
 interface CatalogEnvelope {
@@ -264,10 +273,15 @@ export async function listGitHubRepos(
 export function deriveStatus(detail: ConnectorDetail): ConnectorStatus {
   if (!detail.enabled) return "disabled";
   if (detail.last_error) return "error";
-  if (detail.last_run_at && detail.last_run_at !== detail.last_success_at && !detail.last_success_at) {
+  // A run is in flight when it started but hasn't recorded a success yet, or
+  // re-ran after the last success (last_run_at strictly newer than last_success_at).
+  if (
+    detail.last_run_at &&
+    (!detail.last_success_at ||
+      new Date(detail.last_run_at) > new Date(detail.last_success_at))
+  ) {
     return "syncing";
   }
   if (detail.last_success_at) return "synced";
-  if (detail.last_run_at) return "syncing";
   return "idle";
 }

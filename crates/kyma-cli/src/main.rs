@@ -4,7 +4,11 @@
 //!   connect  <url> [--token TOKEN]   save server URL + bearer token
 //!   status                            show config + probe /health
 //!   query    "<question>" [--json]    stream /v1/agent/ask to stdout
+//!   recall   "<text>" [--realm R]     semantic memory recall via MCP
+//!   distill  [--realm R]              stdin transcript → durable memories
+//!   ingest   push --table T           stdin NDJSON → POST /v1/ingest
 //!   install-skill [--target DIR]      write SKILL.md for coding agents
+//!   install-plugin [--target DIR]     install the kyma-memory Claude Code plugin
 //!
 //! Admin subcommands (talk directly to Postgres):
 //!   create-database <name>
@@ -18,6 +22,8 @@
 
 mod client;
 mod connector;
+mod plugin;
+mod users;
 use client::{
     delete_json, effective_config, get_json, install_target, load_config, probe_health,
     save_config, stream_agent_ask, write_skill_file, ClientConfig,
@@ -80,6 +86,11 @@ enum Command {
         #[command(subcommand)]
         op: SessionsOp,
     },
+    /// Manage users — list/create/passwd/set-role/delete (admin token required).
+    User {
+        #[command(subcommand)]
+        op: users::UsersOp,
+    },
     /// Install the Kyma skill so coding agents (Claude Code, Cursor, …)
     /// can discover and use this CLI.
     InstallSkill {
@@ -96,10 +107,46 @@ enum Command {
         #[command(subcommand)]
         op: connector::Op,
     },
-    /// Inspect ingestion runs — `status` snapshots, `tail` follows.
+    /// Inspect ingestion runs — `status` snapshots, `tail` follows, `push`
+    /// streams NDJSON from stdin into a table.
     Ingest {
         #[command(subcommand)]
         op: connector::IngestOp,
+    },
+    /// Recall durable memories from Kyma (semantic search via the MCP
+    /// `recall_memory` tool). Used by the kyma-memory plugin to inject context.
+    Recall {
+        /// What to recall.
+        query: String,
+        /// Restrict to a realm (plus `global`). Defaults to all realms.
+        #[arg(long)]
+        realm: Option<String>,
+        /// Max memories to return.
+        #[arg(long, default_value_t = 8)]
+        limit: usize,
+        /// Emit the raw MCP structured result as JSON instead of a ranked list.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Distill a session transcript (stdin) into durable memories via the
+    /// kyma agent. Used by the kyma-memory plugin at session end.
+    Distill {
+        /// Originating Claude Code session id (recorded for provenance).
+        #[arg(long)]
+        session: Option<String>,
+        /// Memory realm to save under. Defaults to `default`.
+        #[arg(long)]
+        realm: Option<String>,
+    },
+    /// Install the kyma-memory Claude Code plugin (hooks + MCP + commands)
+    /// into `~/.claude/skills/kyma-memory`.
+    InstallPlugin {
+        /// Target plugin directory. Default: `$HOME/.claude/skills/kyma-memory`.
+        #[arg(long)]
+        target: Option<std::path::PathBuf>,
+        /// Overwrite an existing install without warning.
+        #[arg(long)]
+        force: bool,
     },
 
     // ── admin subcommands ─────────────────────────────────────────────
@@ -202,12 +249,21 @@ async fn main() -> Result<()> {
             continue_session,
         } => cmd_query(question, json, session, continue_session).await,
         Command::Sessions { op } => cmd_sessions(op).await,
+        Command::User { op } => users::run(op).await,
         Command::InstallSkill {
             target,
             also_link_claude,
         } => cmd_install_skill(target, also_link_claude).await,
         Command::Connector { op } => connector::run(op).await,
         Command::Ingest { op } => connector::run_ingest(op).await,
+        Command::Recall {
+            query,
+            realm,
+            limit,
+            json,
+        } => plugin::recall(query, realm, limit, json).await,
+        Command::Distill { session, realm } => plugin::distill(session, realm).await,
+        Command::InstallPlugin { target, force } => plugin::install_plugin(target, force).await,
 
         // ── admin subcommands ─────────────────────────────────────────
         Command::Version => {

@@ -1,15 +1,86 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useRouterState } from "@tanstack/react-router";
 import { Database, ChevronDown, Check } from "lucide-react";
 import { useSession } from "@/sdk/session";
 import { fetchSchema } from "@/sdk/catalog";
 import { cn } from "@/lib/utils";
 
 /**
+ * Per-route decision of what the header should say about database scope.
+ *
+ *  - "switch": the page actually re-scopes to the active database (sends the
+ *    `x-database` header / keys its react-query by `database`). Show the live,
+ *    interactive switcher.
+ *  - "all": the page is cross-database *by design* (Graph merges every
+ *    (database, graph) pair). Show a read-only chip so the persistent control
+ *    doesn't imply a scope the page ignores; the tooltip explains why.
+ *  - "hidden": the header database is meaningless here — either the page owns
+ *    its own in-page scope control (Discover's ScopePicker) or it isn't about
+ *    databases at all (Credentials, Settings). Render nothing rather than a
+ *    misleading chip.
+ *
+ * This is the fix for the "I picked a database but this page ignores it"
+ * mismatch: the header now reflects each page's real scope.
+ */
+type HeaderScope =
+  | { mode: "switch" }
+  | { mode: "all"; label: string; reason: string }
+  | { mode: "hidden" };
+
+export function headerScopeFor(pathname: string): HeaderScope {
+  if (pathname.startsWith("/graph")) {
+    return {
+      mode: "all",
+      label: "All databases",
+      reason:
+        "Graph spans every database — the unified canvas merges all (database, graph) pairs and isn't constrained by the active database.",
+    };
+  }
+  if (
+    pathname.startsWith("/query") ||
+    pathname.startsWith("/explore") ||
+    pathname.startsWith("/agent") ||
+    pathname.startsWith("/connectors") ||
+    pathname.startsWith("/dashboards")
+  ) {
+    return { mode: "switch" };
+  }
+  // Discover owns its scope in-page (ScopePicker); Credentials/Settings/etc.
+  // aren't database-scoped at all.
+  return { mode: "hidden" };
+}
+
+/**
+ * Header slot that renders the right database-scope affordance for the current
+ * route — the interactive switcher, a read-only "scope" chip, or nothing.
+ */
+export function HeaderDatabaseScope() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const scope = headerScopeFor(pathname);
+
+  if (scope.mode === "hidden") return null;
+  if (scope.mode === "all") {
+    return (
+      <div
+        title={scope.reason}
+        className="flex cursor-default items-center gap-1 rounded-md border border-dashed bg-muted/20 px-2 py-0.5 text-xs text-muted-foreground"
+      >
+        <Database className="h-3.5 w-3.5 opacity-60" />
+        <span className="max-w-[16ch] truncate font-medium">{scope.label}</span>
+      </div>
+    );
+  }
+  return <DatabaseSwitcher />;
+}
+
+/**
  * Header control to view and switch the active database. The database is part
  * of the session and is sent as the `x-database` header on every request, so
- * switching it transparently re-scopes Explore, Graph, Dashboards, etc. — the
- * react-query keys that include `database` refetch automatically.
+ * switching it re-scopes the pages that key off it (Query Editor, Agent,
+ * Connectors, and the per-panel default in Dashboards) — their react-query
+ * keys that include `database` refetch automatically. Pages that don't honor
+ * it (Discover, Graph) get a different affordance via {@link HeaderDatabaseScope}.
  */
 export function DatabaseSwitcher() {
   const { endpoint, token, database } = useSession();

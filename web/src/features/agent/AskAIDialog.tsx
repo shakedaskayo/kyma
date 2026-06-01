@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useChat } from "@ai-sdk/react";
+import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { toast } from "sonner";
 import { Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,8 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useSession } from "@/sdk/session";
-import { runAgent } from "./sse";
-import type { AgentEvent, TraceEntry } from "./types";
+import { createAgentTransport } from "./transport";
 
 type Props = {
   open: boolean;
@@ -25,34 +26,77 @@ type Props = {
 };
 
 /**
- * Compact inline Ask AI dialog used from the Explore page. Shows a live
- * reasoning blip while the agent is running; on `answer_final`, either
- * injects the generated SQL into the editor or surfaces the answer text.
+ * Compact inline Ask AI dialog used from the Explore page. Runs a one-shot
+ * agent turn via `useChat`; shows a live reasoning blip while running, then
+ * either injects the generated SQL (from a `data-sql` part) into the editor or
+ * surfaces the answer text.
  */
 export function AskAIDialog({ open, onOpenChange, onSql, onNoSql }: Props) {
   const { endpoint, token, database } = useSession();
   const [question, setQuestion] = useState("");
-  const [inFlight, setInFlight] = useState(false);
-  const [currentTool, setCurrentTool] = useState<TraceEntry | null>(null);
-  const [toolsRun, setToolsRun] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const aborterRef = useRef<AbortController | null>(null);
+  const pendingRef = useRef(false);
+  const dbRef = useRef(database);
+  dbRef.current = database;
+
+  const transport = useMemo(
+    () =>
+      createAgentTransport(endpoint, token, () => ({
+        database: dbRef.current || undefined,
+      })),
+    [endpoint, token],
+  );
+
+  const {
+    messages,
+    sendMessage,
+    status,
+    stop,
+    setMessages,
+    error: chatError,
+  } = useChat({ transport });
+
+  const inFlight = status === "submitted" || status === "streaming";
 
   // Reset transient state whenever the dialog opens or closes.
   useEffect(() => {
     if (!open) {
-      aborterRef.current?.abort();
-      aborterRef.current = null;
-      setInFlight(false);
-      setCurrentTool(null);
-      setToolsRun(0);
+      stop();
+      pendingRef.current = false;
       setError(null);
     } else {
       setQuestion("");
+      setError(null);
+      setMessages([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const submit = useCallback(async () => {
+  // Finalize once the turn completes: inject SQL or surface the answer.
+  useEffect(() => {
+    if (!pendingRef.current) return;
+    if (status === "ready") {
+      pendingRef.current = false;
+      const assistant = [...messages]
+        .reverse()
+        .find((m) => m.role === "assistant");
+      const sql = assistant ? findDataSql(assistant) : null;
+      const answer = assistant ? assistantText(assistant) : "";
+      if (sql) {
+        onSql(sql);
+      } else {
+        onNoSql(answer || "Agent returned no answer.");
+      }
+      onOpenChange(false);
+    } else if (status === "error") {
+      pendingRef.current = false;
+      const msg = chatError?.message ?? "agent request failed";
+      setError(msg);
+      toast.error(msg);
+    }
+  }, [status, messages, chatError, onSql, onNoSql, onOpenChange]);
+
+  const submit = () => {
     const q = question.trim();
     if (!q || inFlight) return;
     if (!endpoint) {
@@ -60,61 +104,27 @@ export function AskAIDialog({ open, onOpenChange, onSql, onNoSql }: Props) {
       return;
     }
     setError(null);
-    setCurrentTool(null);
-    setToolsRun(0);
-    setInFlight(true);
-    const ctl = new AbortController();
-    aborterRef.current = ctl;
-
-    let sql: string | null = null;
-    let answer = "";
-    try {
-      for await (const ev of runAgent(
-        endpoint,
-        token || undefined,
-        { question: q, database: database || undefined },
-        ctl.signal,
-      )) {
-        applyDialogEvent(ev, (patch) => {
-          if (patch.currentTool !== undefined) setCurrentTool(patch.currentTool);
-          if (patch.incrementToolsRun) setToolsRun((n) => n + 1);
-          if (patch.error) setError(patch.error);
-        });
-        if (ev.type === "answer_final") {
-          sql = ev.sql_used;
-          answer = ev.text;
-        }
-        if (ev.type === "run_error") {
-          throw new Error(`${ev.code}: ${ev.message}`);
-        }
-      }
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") {
-        const msg = (e as Error).message || "agent request failed";
-        setError(msg);
-        toast.error(msg);
-      }
-      setInFlight(false);
-      return;
-    }
-    setInFlight(false);
-    aborterRef.current = null;
-
-    if (sql) {
-      onSql(sql);
-      onOpenChange(false);
-    } else {
-      onNoSql(answer || "Agent returned no answer.");
-      onOpenChange(false);
-    }
-  }, [question, inFlight, endpoint, token, database, onSql, onNoSql, onOpenChange]);
+    setMessages([]);
+    pendingRef.current = true;
+    sendMessage({ text: q });
+  };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      void submit();
+      submit();
     }
   };
+
+  // Live progress blip derived from the in-flight assistant message's tools.
+  const assistant = [...messages].reverse().find((m) => m.role === "assistant");
+  const toolParts = assistant ? assistant.parts.filter(isToolUIPart) : [];
+  const currentToolName = toolParts.length
+    ? getToolName(toolParts[toolParts.length - 1])
+    : null;
+  const toolsRun = toolParts.filter(
+    (p) => p.state === "output-available" || p.state === "output-error",
+  ).length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -145,9 +155,11 @@ export function AskAIDialog({ open, onOpenChange, onSql, onNoSql }: Props) {
             <Loader2 className="mt-0.5 h-3.5 w-3.5 animate-spin text-muted-foreground" />
             <div className="min-w-0 flex-1">
               <div className="font-medium text-foreground">
-                {currentTool?.kind === "call"
-                  ? <>→ <span className="font-mono">{currentTool.tool}</span></>
-                  : "Thinking…"}
+                {currentToolName ? (
+                  <>→ <span className="font-mono">{currentToolName}</span></>
+                ) : (
+                  "Thinking…"
+                )}
               </div>
               <div className="text-muted-foreground">
                 {toolsRun > 0 && `${toolsRun} tool${toolsRun === 1 ? "" : "s"} so far`}
@@ -166,8 +178,12 @@ export function AskAIDialog({ open, onOpenChange, onSql, onNoSql }: Props) {
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={inFlight && !error}>
             Cancel
           </Button>
-          <Button onClick={() => void submit()} disabled={inFlight || !question.trim()}>
-            {inFlight ? <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Running</> : "Ask"}
+          <Button onClick={submit} disabled={inFlight || !question.trim()}>
+            {inFlight ? (
+              <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Running</>
+            ) : (
+              "Ask"
+            )}
           </Button>
         </div>
       </DialogContent>
@@ -175,22 +191,15 @@ export function AskAIDialog({ open, onOpenChange, onSql, onNoSql }: Props) {
   );
 }
 
-type DialogPatch = {
-  currentTool?: TraceEntry | null;
-  incrementToolsRun?: boolean;
-  error?: string;
-};
+function assistantText(message: UIMessage): string {
+  return message.parts
+    .filter((p) => p.type === "text")
+    .map((p) => (p as { text: string }).text)
+    .join("");
+}
 
-function applyDialogEvent(ev: AgentEvent, patch: (p: DialogPatch) => void) {
-  switch (ev.type) {
-    case "tool_call":
-      patch({ currentTool: { kind: "call", tool: ev.tool, args: ev.args, callIndex: ev.call_index } });
-      break;
-    case "tool_result":
-      patch({ currentTool: { kind: "result", tool: ev.tool, result: ev.result }, incrementToolsRun: true });
-      break;
-    case "run_error":
-      patch({ error: `${ev.code}: ${ev.message}` });
-      break;
-  }
+function findDataSql(message: UIMessage): string | null {
+  const part = message.parts.find((p) => p.type === "data-sql");
+  const sql = part ? (part as { data?: { sql?: string } }).data?.sql : undefined;
+  return typeof sql === "string" && sql.length > 0 ? sql : null;
 }

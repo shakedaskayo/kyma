@@ -16,8 +16,8 @@ use std::sync::Arc;
 use crate::agent::engine::{build_engine, CredentialResolver};
 
 use super::memory_tools::{
-    tool_link_memory_to_entity, tool_list_memories, tool_merge_memories, tool_recall_memory,
-    tool_save_memory, tool_update_memory_importance, tool_update_memory_status,
+    tool_link_memory_to_entity, tool_list_memories, tool_memory_search, tool_merge_memories,
+    tool_recall_memory, tool_save_memory, tool_update_memory_importance, tool_update_memory_status,
 };
 use super::sessions::Turn;
 use super::state::AgentState;
@@ -71,7 +71,7 @@ Efficient workflow:
 5. Produce a concise final answer in plain English. Cite the KQL (or SQL) you ran.
 
 MEMORY — you have a persistent memory across sessions:
-- `recall_memory(query)` — call this early when a question may depend on prior context, the user's stated preferences, or past decisions.
+- `memory_search(query)` — the PRIMARY recall tool. Graph-aware hybrid search (semantic + keyword) expanded over connected memories, catalog resources, and traces. Call this early when a question may depend on prior context, preferences, or how entities relate. Returns ranked memories + a `linked` list of connected resources + a ready-to-use context block. Follow `linked` node ids with `graph_traverse` for a deeper subgraph. (`recall_memory` is an alias.)
 - `save_memory(content, memory_type, …)` — store durable facts/decisions/preferences/learnings the user shares. Link them to entities with `link_memory_to_entity` when they're about a specific repo/service/table.
 - Don't save trivia, transient state, or things already in the data. Prefer recalling before answering over guessing.
 
@@ -150,6 +150,7 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
         .tool(tool_graph_traverse(shared.clone()))
         // Agentic Memory tools.
         .tool(tool_save_memory(shared.clone()))
+        .tool(tool_memory_search(shared.clone()))
         .tool(tool_recall_memory(shared.clone()))
         .tool(tool_list_memories(shared.clone()))
         .tool(tool_link_memory_to_entity(shared.clone()))
@@ -243,29 +244,32 @@ async fn seed_history(
     }
 }
 
-/// Build a minimal, tool-less agent whose only job is to summarize text.
-async fn build_summarizer(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
+/// Run a one-shot, tool-less LLM turn with the configured engine: build a
+/// minimal agent carrying `instruction`, feed `input` as the user message, and
+/// return the model's final text. Shared by the rolling-summary pass and the
+/// memory-extraction pipeline (which parses the returned text as JSON).
+///
+/// Errors if the configured engine is `claude_cli` (it doesn't run through
+/// adk-rust) — callers that need a fallback should check the engine kind first.
+pub async fn run_oneshot(
+    state: &AgentState,
+    agent_name: &str,
+    description: &str,
+    instruction: &str,
+    input: &str,
+) -> anyhow::Result<String> {
     let cfg = state.engines.get().await?;
     let resolver = CredentialResolver::new(state.credentials.clone(), state.tenant);
     let key = resolver.resolve(&cfg).await?;
     let llm = build_engine(&cfg, key)?;
-    let agent = LlmAgentBuilder::new("kyma-summarizer")
-        .description("Summarizes prior conversation for context compression.")
-        .instruction(
-            "You compress conversations. Given a transcript, return a concise summary (3-6 \
-             sentences) that preserves durable facts, decisions, and the user's intent. \
-             Return only the summary text — no preamble, no headings.",
-        )
+    let agent = LlmAgentBuilder::new(agent_name)
+        .description(description)
+        .instruction(instruction)
         .model(llm)
         .build()
-        .map_err(|e| anyhow::anyhow!("summarizer build failed: {e:?}"))?;
-    Ok(Arc::new(agent))
-}
+        .map_err(|e| anyhow::anyhow!("oneshot agent build failed: {e:?}"))?;
+    let agent: Arc<dyn Agent> = Arc::new(agent);
 
-/// Run a one-shot summarization of `transcript` with the configured engine and
-/// return the model's final text. Used by the rolling-summary pass.
-pub async fn summarize_conversation(state: &AgentState, transcript: &str) -> anyhow::Result<String> {
-    let agent = build_summarizer(state).await?;
     let sessions: Arc<dyn SessionService> = Arc::new(InMemorySessionService::new());
     let sid = uuid::Uuid::new_v4().to_string();
     sessions
@@ -276,7 +280,7 @@ pub async fn summarize_conversation(state: &AgentState, transcript: &str) -> any
             state: HashMap::new(),
         })
         .await
-        .map_err(|e| anyhow::anyhow!("summarizer session create failed: {e:?}"))?;
+        .map_err(|e| anyhow::anyhow!("oneshot session create failed: {e:?}"))?;
 
     let runner = Runner::new(RunnerConfig {
         app_name: APP_NAME.to_string(),
@@ -292,20 +296,20 @@ pub async fn summarize_conversation(state: &AgentState, transcript: &str) -> any
         request_context: None,
         cancellation_token: None,
     })
-    .map_err(|e| anyhow::anyhow!("summarizer runner build failed: {e:?}"))?;
+    .map_err(|e| anyhow::anyhow!("oneshot runner build failed: {e:?}"))?;
 
     let user_id = UserId::new(ANON_USER).map_err(|e| anyhow::anyhow!("user_id: {e}"))?;
     let session_id = SessionId::new(&sid).map_err(|e| anyhow::anyhow!("session_id: {e}"))?;
-    let content = Content::new("user").with_text(transcript.to_string());
+    let content = Content::new("user").with_text(input.to_string());
 
     let mut stream = runner
         .run(user_id, session_id, content)
         .await
-        .map_err(|e| anyhow::anyhow!("summarizer run: {e:?}"))?;
+        .map_err(|e| anyhow::anyhow!("oneshot run: {e:?}"))?;
 
     let mut out = String::new();
     while let Some(ev) = stream.next().await {
-        let ev = ev.map_err(|e| anyhow::anyhow!("summarizer event: {e:?}"))?;
+        let ev = ev.map_err(|e| anyhow::anyhow!("oneshot event: {e:?}"))?;
         if ev.llm_response.partial {
             continue;
         }
@@ -318,6 +322,21 @@ pub async fn summarize_conversation(state: &AgentState, transcript: &str) -> any
         }
     }
     Ok(out.trim().to_string())
+}
+
+/// Run a one-shot summarization of `transcript` with the configured engine and
+/// return the model's final text. Used by the rolling-summary pass.
+pub async fn summarize_conversation(state: &AgentState, transcript: &str) -> anyhow::Result<String> {
+    run_oneshot(
+        state,
+        "kyma-summarizer",
+        "Summarizes prior conversation for context compression.",
+        "You compress conversations. Given a transcript, return a concise summary (3-6 \
+         sentences) that preserves durable facts, decisions, and the user's intent. \
+         Return only the summary text — no preamble, no headings.",
+        transcript,
+    )
+    .await
 }
 
 /// Effective model id string persisted into `agent_runs.model_id`. Reads the

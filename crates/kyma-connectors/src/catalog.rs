@@ -147,6 +147,8 @@ fn soon(type_id: &str, label: &str, category: &str, brand: &str, auth: &str, des
 pub fn coming_soon() -> Vec<CatalogEntry> {
     vec![
         // Code & repositories
+        soon("github", "GitHub", "code", "github", "pat",
+             "Repositories, branches, pull requests, issues, contributors, and a deep code graph from GitHub."),
         soon("gitlab", "GitLab", "code", "gitlab", "pat",
              "Projects, merge requests, issues, and the code graph from GitLab."),
         soon("bitbucket", "Bitbucket", "code", "bitbucket", "pat",
