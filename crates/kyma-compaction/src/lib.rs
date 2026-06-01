@@ -20,13 +20,13 @@ pub mod retention;
 
 pub use retention::{PhysicalDeleteWorker, RetentionSweeper};
 
-use arrow_array::RecordBatch;
+use arrow_array::{new_null_array, ArrayRef, RecordBatch};
 use chrono::Duration as ChronoDuration;
 use kyma_core::catalog::{
     BackgroundTask, Catalog, ExtentManifest, PrunePredicate, SnapshotSummary, TableRef,
 };
 use kyma_core::errors::{CatalogError, Error, Result};
-use kyma_core::segment_format::{BlockPredicate, ColumnId, OpenExtentInput, SegmentFormat};
+use kyma_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
 use kyma_core::types::{NodeId, TableId};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -38,6 +38,28 @@ use tracing::{debug, error, info, instrument, warn};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompactionPayload {
     pub source_extent_ids: Vec<uuid::Uuid>,
+}
+
+/// Promote a batch read from an extent to `target` by null-filling any columns
+/// added after that extent was written (schema evolution). Columns present in
+/// the source are carried over by name; the rest become typed null arrays.
+/// Mirrors the query scan-path promotion so compaction can merge narrow + wide
+/// extents instead of erroring with "project index out of bounds".
+fn promote_batch(batch: &RecordBatch, target: &arrow_schema::SchemaRef) -> Result<RecordBatch> {
+    let src = batch.schema();
+    if src.fields() == target.fields() {
+        return Ok(batch.clone());
+    }
+    let n = batch.num_rows();
+    let mut cols: Vec<ArrayRef> = Vec::with_capacity(target.fields().len());
+    for f in target.fields() {
+        match src.index_of(f.name()) {
+            Ok(i) => cols.push(batch.column(i).clone()),
+            Err(_) => cols.push(new_null_array(f.data_type(), n)),
+        }
+    }
+    RecordBatch::try_new(target.clone(), cols)
+        .map_err(|e| Error::Execution(format!("compaction schema promote: {e}")))
 }
 
 // ---------------------------------------------------------------------
@@ -174,9 +196,6 @@ impl CompactionWorker {
             .format
             .start_extent(table_ref.schema.clone(), 0)
             .await?;
-        let projection: Vec<ColumnId> = (0..table_ref.schema.fields().len() as u32)
-            .map(ColumnId)
-            .collect();
         let mut merged_rows: u64 = 0;
         let mut input_bytes: u64 = 0;
         for m in &source_manifests {
@@ -193,7 +212,14 @@ impl CompactionWorker {
                 .await?;
             let blocks = reader.pruned_blocks(&BlockPredicate::All).await?;
             for bid in blocks {
-                let batch: RecordBatch = reader.read_block(bid, &projection).await?;
+                // Read the extent's ACTUAL columns (empty projection = all), then
+                // promote (null-fill) to the current table schema. Extents written
+                // before a column was added are narrower; projecting current-schema
+                // indices onto them is out of bounds. Mirrors the query scan-path
+                // promotion so compaction can merge narrow + wide (schema-evolved)
+                // extents instead of failing on them.
+                let raw: RecordBatch = reader.read_block(bid, &[]).await?;
+                let batch = promote_batch(&raw, &table_ref.schema)?;
                 merged_rows += batch.num_rows() as u64;
                 writer.append(batch).await?;
             }
