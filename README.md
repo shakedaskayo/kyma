@@ -9,10 +9,11 @@
 <p align="center"><strong>The context engine for coding agents.</strong></p>
 
 <p align="center">
-  Not just memory — one MCP surface where your agent recalls durable, graph-aware
+  Not just memory — one place your agent recalls durable, graph-aware
   <strong>memory</strong>, queries <strong>live data</strong> (logs, traces, code, connectors)
   in KQL/SQL, and walks the <strong>graph</strong> that links them.<br/>
-  Runs as a <strong>local single binary</strong>. Syncs to your control plane.
+  Connect it via a <strong>Claude Code plugin</strong>, a <strong>CLI</strong>, or <strong>MCP</strong>.
+  Runs as a <strong>local single binary</strong>; syncs to your control plane.
 </p>
 
 <p align="center">
@@ -41,11 +42,14 @@ Your coding agent forgets everything when the session ends — and even mid-sess
 can't see your logs, your traces, the repo graph, or how a decision relates to the
 service it's about. kyma gives it one place to get all of it: **durable memory**,
 **live data**, and the **graph** that ties memories to the real resources they're
-about — over a single MCP server. Recall *plus* live context *plus* relationships.
+about — through a **Claude Code plugin**, a **CLI** any agent shells out to, or **MCP**
+(stdio + HTTP). Recall *plus* live context *plus* relationships, however your agent connects.
 
 It runs as a **single local binary** (embedded catalog + local files — no Postgres, no
-Docker), connects to any agent over stdio in one command, and **syncs memory to a
-hosted control plane** so it's coherent across your machines and your team. Underneath
+Docker), wires into your agent in one command — the plugin even captures each session and
+feeds the right context into every prompt **automatically** (not just on a tool call) — and
+**syncs memory to a hosted control plane** so it's coherent across your machines and team.
+Underneath
 is a real columnar engine (Kusto-style KQL/SQL over Arrow on your object store), so
 "live data" means a decade of logs/traces/connectors answered in milliseconds — not a
 toy key-value store.
@@ -57,20 +61,31 @@ toy key-value store.
 ## Quickstart (local, zero infra)
 
 ```bash
-# 1. Install the single binary (no Postgres, no Docker — embedded SQLite + local files)
+# Install the single binary — no Postgres, no Docker (embedded SQLite + local files)
 cargo install --path crates/kyma-local
+```
 
-# 2. Point your coding agent at it — one command per agent
+**Option A — MCP, any agent (one command):**
+
+```bash
 kyma-local setup claude-code      # or: cursor · windsurf
 ```
 
-That's it. Restart your agent and it has the full toolset over stdio MCP. `setup`
-writes the agent's MCP config to launch `kyma-local mcp`; data lives under `~/.kyma`.
+Restart your agent and it has the full toolset over stdio MCP — `setup` just writes the
+agent's MCP config to launch `kyma-local mcp`. Data lives under `~/.kyma`.
 
-```jsonc
-// what `setup` wrote (.mcp.json) — your agent now speaks to kyma over stdio
-{ "mcpServers": { "kyma": { "type": "stdio", "command": "kyma-local", "args": ["mcp"] } } }
+**Option B — the Claude Code plugin (it remembers, automatically):**
+
+```bash
+cargo install --path crates/kyma-cli   # the `kyma` CLI — the plugin's hooks shell out to it
+kyma connect <kyma-url>                # a kyma server, or a local `kyma-local serve` endpoint
+kyma install-plugin                    # installs hooks + slash commands into ~/.claude
 ```
+
+Now kyma **captures each session and injects the most relevant memories into every
+prompt — no tool call required** — plus `/kyma-recall`, `/kyma-remember`, `/kyma-ask`,
+`/kyma-ingest`. (Cursor / Aider / Continue work the same way via the CLI + a skill — see
+[Connect it however your agent works](#connect-it-however-your-agent-works).)
 
 Prefer a UI? `kyma-local serve` brings up the **same web interface** the hosted server
 runs — Graph Explorer, Memory, and a KQL/SQL workbench — on `http://localhost:7777`,
@@ -81,8 +96,8 @@ ingestion? See **[Two tiers](#two-tiers-local-binary--control-plane)**.
 
 ## What your agent gets
 
-One MCP server (`kyma`), exposed identically over **stdio** (local) and **HTTP** (server) —
-the whole context engine, not just recall:
+The whole context engine — not just recall — reachable however your agent connects
+(plugin slash commands, the CLI, or MCP tools; same capabilities underneath):
 
 | | Tools | What it does |
 |---|---|---|
@@ -94,6 +109,21 @@ the whole context engine, not just recall:
 > Call `memory_search` **first** when a question may depend on prior context, then follow
 > the `linked` resources with `graph_traverse` for a deeper subgraph. The agent grounds
 > answers in what you've actually decided *and* how your systems actually look.
+
+### Connect it however your agent works
+
+MCP is the standard, but it's pull-only. kyma meets your agent where it is — three paths,
+same engine:
+
+- **Claude Code plugin** (`kyma install-plugin`) — **automatic**. Hooks capture each turn
+  and inject the most relevant memories into every prompt with no tool call, plus slash
+  commands (`/kyma-recall`, `/kyma-remember`, `/kyma-ask`, `/kyma-ingest`, `/kyma-status`).
+  The "it just remembers" path.
+- **CLI, for any agent** (`kyma query "…"` · `kyma recall "…"`) — Cursor, Aider, Continue,
+  or any shell-tool agent shells out; **`kyma install-skill`** writes a skill that teaches
+  it *when* to reach for kyma.
+- **MCP** — stdio (`kyma-local setup <agent>`) or HTTP (`/mcp/v1`) for native MCP clients.
+  The full toolset above.
 
 ---
 
