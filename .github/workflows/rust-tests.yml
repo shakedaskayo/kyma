@@ -52,12 +52,15 @@ jobs:
           key: rust-tests-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: rust-tests-${{ runner.os }}-
 
-      # Compile gate for the WHOLE workspace, including every test target. This
-      # is what catches "a refactor changed a signature but a test crate was
-      # never recompiled" breaks. rdkafka (kyma-bin / kyma-ingest-kafka) needs
-      # cmake, which is preinstalled on ubuntu-22.04 runners.
+      # Compile gate for the workspace, including every test target. This is
+      # what catches "a refactor changed a signature but a test crate was never
+      # recompiled" breaks. rdkafka (kyma-bin / kyma-ingest-kafka) needs cmake,
+      # which is preinstalled on ubuntu-22.04 runners. The `app` crate is the
+      # Tauri desktop shell — it needs GTK/webkit system libs and is not part of
+      # the engine/server correctness surface, so it's excluded here (the web
+      # frontend has its own workflow).
       - name: compile all crates + test targets
-        run: cargo test --workspace --locked --no-run
+        run: cargo test --workspace --exclude app --locked --no-run
 
       # Fast, no external dependencies.
       - name: unit suites (no infra)
