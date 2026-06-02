@@ -30,7 +30,7 @@ use super::memory_retrieve::{retrieve, RetrieveRequest};
 use super::runner::{make_runner, model_id, run_oneshot, ANON_USER};
 use super::sessions;
 use super::state::AgentState;
-use super::tools::SharedToolCtx;
+use super::tools::{execute_sql, SharedToolCtx};
 use super::ui_stream;
 
 /// Hard cap on tool-call count per run. Above this, the turn is aborted
@@ -73,7 +73,53 @@ pub fn router(state: AgentState) -> axum::Router {
             "/memory/settings",
             get(get_memory_settings).put(put_memory_settings),
         )
+        .route("/memory/export", get(export_memory_handler))
         .with_state(state)
+}
+
+#[derive(Debug, Deserialize)]
+struct ExportParams {
+    /// Restrict the export to one realm. Omit to export all.
+    #[serde(default)]
+    realm: Option<String>,
+}
+
+/// `GET /v1/agent/memory/export[?realm=]` — full memory snapshot (latest node
+/// versions + edges, including embeddings) as JSON, for backup / portability.
+/// Re-import on another instance via the idempotent `POST /v1/ingest`
+/// (`X-Database: memory`, `X-Table: memory_nodes|memory_edges`, NDJSON).
+async fn export_memory_handler(
+    State(state): State<AgentState>,
+    axum::extract::Query(params): axum::extract::Query<ExportParams>,
+) -> Json<Value> {
+    let shared = SharedToolCtx {
+        catalog: state.catalog.clone(),
+        format: state.format.clone(),
+        pool: state.pool.clone(),
+    };
+    let realm_filter = params
+        .realm
+        .as_deref()
+        .map(|r| format!(" AND realm = '{}'", r.replace('\'', "''")))
+        .unwrap_or_default();
+    let nodes_sql = format!(
+        "WITH latest AS (SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM memory_nodes) \
+         SELECT id, labels, realm, memory_type, title, content, content_preview, tags, importance, status, \
+                source_session_id, source_run_id, embedding, created_at, updated_at, \
+                valid_at, invalid_at, superseded_by, provenance, topic_key \
+         FROM latest WHERE __rn = 1{realm_filter}"
+    );
+    let edges_sql = "SELECT id, src, dst, type, realm, target_namespace, props, created_at FROM memory_edges";
+    let db = kyma_memory::DEFAULT_DATABASE;
+    let nodes = execute_sql(&shared, db, &nodes_sql, 1_000_000).await;
+    let edges = execute_sql(&shared, db, edges_sql, 1_000_000).await;
+    let rows = |v: Value| v.get("rows").cloned().unwrap_or_else(|| json!([]));
+    Json(json!({
+        "memory_nodes": rows(nodes),
+        "memory_edges": rows(edges),
+        "hint": "Re-import via POST /v1/ingest with X-Database: memory and \
+                 X-Table: memory_nodes|memory_edges (NDJSON, one object per line).",
+    }))
 }
 
 /// `GET /v1/agent/memory/settings` — current tunable memory settings.

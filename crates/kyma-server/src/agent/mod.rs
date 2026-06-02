@@ -27,8 +27,8 @@ pub mod ui_stream;
 pub use memory::MemoryConsolidator;
 pub use memory_tools::{
     tool_link_memory_to_entity, tool_list_memories, tool_memory_compare, tool_memory_judge,
-    tool_memory_search, tool_recall_memory, tool_save_memory, tool_update_memory_importance,
-    tool_update_memory_status,
+    tool_memory_search, tool_memory_session_summary, tool_recall_memory, tool_save_memory,
+    tool_update_memory_importance, tool_update_memory_status,
 };
 pub use state::AgentState;
 pub use tools::{

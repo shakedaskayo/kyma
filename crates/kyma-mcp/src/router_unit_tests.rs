@@ -68,7 +68,7 @@ async fn tools_list_returns_all() {
     )
     .await;
     let tools = resp["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 17);
+    assert_eq!(tools.len(), 18);
 }
 
 #[tokio::test]

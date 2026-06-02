@@ -1,9 +1,16 @@
 ---
 title: Agentic Memory
-description: How Kyma gives coding agents a persistent, graph-aware memory — capture, LLM extraction with conflict resolution and bi-temporal validity, and near-realtime hybrid recall over Kyma's own engine.
+description: Kyma is a context engine for coding agents — persistent graph-aware memory (LLM extraction, conflict resolution, bi-temporal validity, near-realtime hybrid recall) over the same engine that serves live data and the graph linking them.
 ---
 
 # Agentic Memory
+
+> **Memory is one half of Kyma's *context engine*.** Through the same MCP server,
+> an agent doesn't only recall stored facts — it queries **live data** (logs,
+> traces, connectors, the catalog) in KQL/SQL and traverses the **graph** that
+> links memories to the real resources they're about. Recall **+** live context
+> **+** relationships, in one place. That's the difference between a memory store
+> and a context engine.
 
 Kyma gives agents a **persistent memory** that survives across sessions and
 machines: durable facts, decisions, preferences, learnings, and procedures —
@@ -125,6 +132,24 @@ Call it **first** when a question may depend on prior context, decisions, or how
 entities relate; then follow `linked` node ids with `graph_traverse` for a
 deeper subgraph.
 
+**Writing & curating.** `save_memory` takes structured `why` / `where` /
+`learned` fields (folded into the body) and an optional **`topic_key`** — a
+stable key (e.g. `architecture/auth-model`) so a later save with the same
+`realm`+`topic_key` **updates the memory in place** instead of duplicating
+(deterministic, no LLM). `update_memory_status` / `update_memory_importance`
+re-weight or archive during housekeeping. `memory_session_summary` records a
+structured end-of-session recap (goal / instructions / discoveries /
+accomplished / next steps / files) for the next session to resume from.
+
+**Resolving conflicts.** When recall surfaces a contradiction, `memory_compare`
+fetches two memories side by side and `memory_judge` records the verdict on the
+graph: `supersedes` invalidates the target (bi-temporal — it drops from default
+recall but stays for audit), `merged` archives it, and
+`conflicts`/`related`/`compatible` write a `RELATES_TO` edge.
+
+**Privacy.** Content wrapped in `<private>…</private>` is stripped at the store
+layer before anything is embedded or persisted.
+
 ### HTTP API
 
 ```bash
@@ -137,6 +162,12 @@ curl -X POST http://localhost:8080/v1/agent/memory/query \
 Response: `{ memories[], linked[], context, brief?, took_ms }`. Filters:
 `realms`, `memory_type`, `tags`, `importance_min`, `as_of`, `include_invalidated`,
 `limit`, `expand_hops`.
+
+**Backup / portability.** `GET /v1/agent/memory/export[?realm=]` returns the
+full snapshot (latest node versions + edges, including embeddings) as JSON.
+Re-import on another instance via the idempotent `POST /v1/ingest`
+(`X-Database: memory`, `X-Table: memory_nodes|memory_edges`, NDJSON) — so a
+machine's memory is portable and re-syncs cleanly.
 
 ### The Memory workspace (web)
 

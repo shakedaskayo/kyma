@@ -5,8 +5,9 @@ use adk_rust::Tool;
 use kyma_server::agent::{
     tool_describe_table, tool_explore_schema, tool_find_references_to, tool_graph_traverse,
     tool_link_memory_to_entity, tool_list_databases, tool_list_memories, tool_memory_compare,
-    tool_memory_judge, tool_memory_search, tool_recall_memory, tool_run_kql, tool_run_sql,
-    tool_sample_rows, tool_save_memory, tool_update_memory_importance, tool_update_memory_status,
+    tool_memory_judge, tool_memory_search, tool_memory_session_summary, tool_recall_memory,
+    tool_run_kql, tool_run_sql, tool_sample_rows, tool_save_memory, tool_update_memory_importance,
+    tool_update_memory_status,
     SharedToolCtx,
 };
 use serde_json::{json, Value};
@@ -22,7 +23,7 @@ pub struct ToolDispatch {
 
 impl ToolDispatch {
     pub fn new(shared: SharedToolCtx) -> Self {
-        let mut map: HashMap<&'static str, Arc<dyn Tool>> = HashMap::with_capacity(18);
+        let mut map: HashMap<&'static str, Arc<dyn Tool>> = HashMap::with_capacity(20);
         map.insert("list_databases", tool_list_databases(shared.clone()));
         map.insert("describe_table", tool_describe_table(shared.clone()));
         map.insert("run_sql", tool_run_sql(shared.clone()));
@@ -44,7 +45,9 @@ impl ToolDispatch {
         map.insert("update_memory_importance", tool_update_memory_importance(shared.clone()));
         // Agent-driven conflict resolution.
         map.insert("memory_compare", tool_memory_compare(shared.clone()));
-        map.insert("memory_judge", tool_memory_judge(shared));
+        map.insert("memory_judge", tool_memory_judge(shared.clone()));
+        // Structured end-of-session capture.
+        map.insert("memory_session_summary", tool_memory_session_summary(shared));
         Self { by_name: Arc::new(map) }
     }
 

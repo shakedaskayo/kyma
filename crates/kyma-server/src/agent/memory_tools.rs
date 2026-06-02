@@ -94,6 +94,25 @@ struct SaveMemoryArgs {
     /// (bumping its revision) instead of creating a duplicate.
     #[serde(default)]
     topic_key: Option<String>,
+    /// Optional structured context, folded into the memory body so it stays
+    /// searchable: why the decision/fact holds, where it applies, and what was
+    /// learned. (engram's What/Why/Where/Learned shape.)
+    #[serde(default)]
+    why: Option<String>,
+    #[serde(default, rename = "where")]
+    where_: Option<String>,
+    #[serde(default)]
+    learned: Option<String>,
+}
+
+/// Append a `Label: value` line to `content` when `val` is non-empty.
+fn append_field(content: &mut String, label: &str, val: &Option<String>) {
+    if let Some(v) = val.as_deref() {
+        let v = v.trim();
+        if !v.is_empty() {
+            content.push_str(&format!("\n{label}: {v}"));
+        }
+    }
 }
 
 const SAVE_MEMORY_DESC: &str = "Persist a durable memory (fact, decision, \
@@ -120,7 +139,11 @@ pub fn tool_save_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(w) => w,
                         Err(e) => return Ok(e),
                     };
-                    let mut cm = CreateMemory::new(parsed.content);
+                    let mut content = parsed.content;
+                    append_field(&mut content, "Why", &parsed.why);
+                    append_field(&mut content, "Where", &parsed.where_);
+                    append_field(&mut content, "Learned", &parsed.learned);
+                    let mut cm = CreateMemory::new(content);
                     cm.title = parsed.title;
                     cm.memory_type = parsed
                         .memory_type
@@ -777,6 +800,85 @@ pub fn tool_memory_judge(ctx: SharedToolCtx) -> Arc<dyn Tool> {
             },
         )
         .with_parameters_schema::<JudgeArgs>()
+        .with_read_only(false),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// memory_session_summary — structured end-of-session capture
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct SessionSummaryArgs {
+    /// What the session worked on.
+    #[serde(default)]
+    goal: Option<String>,
+    /// User preferences / instructions discovered.
+    #[serde(default)]
+    instructions: Option<String>,
+    /// Technical findings / discoveries.
+    #[serde(default)]
+    discoveries: Option<String>,
+    /// What was accomplished.
+    #[serde(default)]
+    accomplished: Option<String>,
+    /// Remaining work / next steps.
+    #[serde(default)]
+    next_steps: Option<String>,
+    /// Relevant files touched.
+    #[serde(default)]
+    files: Option<String>,
+    /// Memory namespace (project). Defaults to "default".
+    #[serde(default)]
+    realm: Option<String>,
+}
+
+const SESSION_SUMMARY_DESC: &str = "Save a structured end-of-session summary \
+(goal, instructions, discoveries, accomplished, next steps, files) as a durable \
+`summary` memory so the next session resumes with context. Call this when \
+wrapping up a work session.";
+
+pub fn tool_memory_session_summary(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "memory_session_summary",
+            SESSION_SUMMARY_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: SessionSummaryArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    let mut content = String::from("Session summary.");
+                    append_field(&mut content, "Goal", &parsed.goal);
+                    append_field(&mut content, "Instructions", &parsed.instructions);
+                    append_field(&mut content, "Discoveries", &parsed.discoveries);
+                    append_field(&mut content, "Accomplished", &parsed.accomplished);
+                    append_field(&mut content, "Next steps", &parsed.next_steps);
+                    append_field(&mut content, "Files", &parsed.files);
+                    if content == "Session summary." {
+                        return Ok(json!({"error": "nothing to summarize — provide at least one field"}));
+                    }
+                    let writer = match build_writer(&shared).await {
+                        Ok(w) => w,
+                        Err(e) => return Ok(e),
+                    };
+                    let mut cm = CreateMemory::new(content);
+                    cm.title = Some("Session summary".to_string());
+                    cm.memory_type = MemoryType::Summary;
+                    cm.realm = parsed.realm.unwrap_or_else(|| DEFAULT_REALM.to_string());
+                    cm.importance = 0.6;
+                    cm.tags = vec!["session-summary".to_string()];
+                    match writer.save(&cm).await {
+                        Ok(id) => Ok(json!({"saved": true, "id": id.to_string(), "node_id": format!("memory:{id}")})),
+                        Err(e) => Ok(json!({"error": format!("session_summary: {e}")})),
+                    }
+                }
+            },
+        )
+        .with_parameters_schema::<SessionSummaryArgs>()
         .with_read_only(false),
     )
 }

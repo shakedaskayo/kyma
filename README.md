@@ -34,6 +34,14 @@ kyma is a ground-up, Rust-based, distributed-ready data engine in the spirit of
 Azure Data Explorer (Kusto) — purpose-built to be the **answer layer** for
 agents that need production awareness across the whole stack.
 
+It's also a **context engine** for coding agents: not just agentic *memory*, but
+one MCP surface where an agent recalls durable memories **and** queries live data
+(logs, traces, connectors, the catalog) in KQL/SQL **and** traverses the graph
+that links them. Memory is graph-aware — hybrid vector+keyword+graph recall,
+bi-temporal validity, LLM extraction with automated conflict resolution,
+deterministic topic-key upsert, and agent-driven conflict tools — and links back
+to the real resources it's about. See **[Agentic Memory](https://www.getkyma.dev/agent/memory)**.
+
 Full docs live at **[getkyma.dev](https://www.getkyma.dev)**.
 
 ![kyma fan-in: your tech stack to kyma to your agents](docs/images/fan-in.svg)
