@@ -26,12 +26,12 @@ Pick one (they compose — the plugin uses both hooks *and* MCP).
 The local single binary needs no Postgres and no Docker (embedded SQLite + local files):
 
 ```bash
-cargo install --path crates/kyma-local
-kyma-local setup claude-code      # or: cursor · windsurf
+cargo install --path crates/kyma-cli
+kyma setup claude-code      # or: cursor · windsurf
 ```
 
-`setup` writes the agent's MCP config to launch `kyma-local mcp` over stdio; data lives
-under `~/.kyma`. Restart the agent and it has the full toolset. `kyma-local setup list`
+`setup` writes the agent's MCP config to launch `kyma mcp` over stdio; data lives
+under `~/.kyma`. Restart the agent and it has the full toolset. `kyma setup list`
 shows the supported agents; `--print` previews the config without writing it; any other
 agent gets a paste-able stdio snippet.
 
@@ -40,11 +40,11 @@ agent gets a paste-able stdio snippet.
 The plugin is the "it just remembers" path: **hooks** capture each session into the
 firehose and inject recalled context into every prompt with no tool call, plus slash
 commands. It shells out to the `kyma` CLI and points at a kyma endpoint (a server, or a
-local `kyma-local serve`):
+local `kyma serve`):
 
 ```bash
 cargo install --path crates/kyma-cli   # the `kyma` CLI — the plugin's hooks use it
-kyma connect <kyma-url>                # a kyma server, or a local `kyma-local serve`
+kyma connect <kyma-url>                # a kyma server, or a local `kyma serve`
 kyma install-plugin                    # installs hooks + slash commands into ~/.claude
 ```
 
@@ -74,8 +74,8 @@ See **[Connect a coding agent (CLI)](./connect-from-cli)** for the full CLI surf
 
 The MCP server exposes the **same toolset** over two transports:
 
-- **stdio** — `kyma-local mcp` (what `setup` wires). Zero infra, local.
-- **HTTP** — `POST /mcp/v1` on any running kyma server (or `kyma-local serve`), bearer-auth.
+- **stdio** — `kyma mcp` (what `setup` wires). Zero infra, local.
+- **HTTP** — `POST /mcp/v1` on any running kyma server (or `kyma serve`), bearer-auth.
 
 Either way an MCP client gets the full context-engine surface — memory
 (`memory_search` · `recall_memory` · `save_memory` · `list_memories`), graph
@@ -89,8 +89,8 @@ resources with `graph_traverse`.
 
 The same context engine runs two ways, and memory stays coherent across them:
 
-- **`kyma-local`** — a single binary per developer: stdio MCP, an optional local web UI
-  (`kyma-local serve`), and on-demand ingest. Zero infra.
+- **`kyma` (local mode)** — one binary per developer: stdio MCP (`kyma mcp`), an optional
+  local web UI (`kyma serve`), and on-demand ingest. Zero infra.
 - **kyma server** — the team control plane: Postgres + object store, scheduled
   **connectors**, background consolidation, the full web app.
 
@@ -98,7 +98,7 @@ Keep a machine in sync with the control plane (push local changes + pull remote 
 incrementally):
 
 ```bash
-KYMA_CLOUD_URL=https://kyma.your-co.dev KYMA_CLOUD_TOKEN=… kyma-local sync
+KYMA_CLOUD_URL=https://kyma.your-co.dev KYMA_CLOUD_TOKEN=… kyma sync
 ```
 
 ## Next

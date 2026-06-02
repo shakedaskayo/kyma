@@ -16,6 +16,8 @@ workspace = true
 [dependencies]
 kyma-core.workspace = true
 kyma-catalog.workspace = true
+# Local-engine commands (mcp/serve/setup/sync) — one `kyma` binary, no separate tool.
+kyma-local.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

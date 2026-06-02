@@ -34,6 +34,7 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use clap::{Parser, Subcommand};
 use kyma_catalog::PostgresCatalog;
 use kyma_core::catalog::{Catalog, TableConfig};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 const SKILL_TEMPLATE: &str = include_str!("skill_template.md");
@@ -185,6 +186,30 @@ enum Command {
         force: bool,
     },
 
+    // ── local engine (zero-infra: embedded SQLite + local files) ──────
+    /// Serve the Model Context Protocol over stdio — what a coding agent spawns.
+    /// Full context-engine toolset over an embedded local catalog (no infra).
+    Mcp,
+    /// Serve the web UI + HTTP API locally (query/catalog/graph/ingest/MCP), zero
+    /// infra. Browse the graph + ingest on demand. Sign in: admin / admin.
+    Serve {
+        /// Listen address.
+        #[arg(long, env = "KYMA_LOCAL_HTTP_ADDR", default_value = "127.0.0.1:7777")]
+        addr: SocketAddr,
+    },
+    /// Wire a coding agent to `kyma mcp` over stdio (claude-code | cursor |
+    /// windsurf | …). One-liner onboarding; `setup list` shows the supported set.
+    Setup {
+        /// Agent key (e.g. claude-code, cursor, windsurf), or `list`.
+        agent: String,
+        /// Print the config instead of writing it.
+        #[arg(long)]
+        print: bool,
+    },
+    /// Sync memory bidirectionally with a control plane (push local changes +
+    /// pull remote ones). Needs KYMA_CLOUD_URL (and usually KYMA_CLOUD_TOKEN).
+    Sync,
+
     // ── admin subcommands ─────────────────────────────────────────────
 
     /// Create a new database (namespace) — admin, talks to Postgres directly.
@@ -270,7 +295,18 @@ enum SessionsOp {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::try_init().ok();
+    // Logs go to STDERR so command output (and the `kyma mcp` stdio protocol
+    // channel) stays clean on stdout. The binary owns the subscriber; the
+    // local-engine library never installs one.
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,sqlx=warn,hyper=warn")),
+        )
+        .with_target(false)
+        .try_init()
+        .ok();
 
     let cli = Cli::parse();
 
@@ -314,6 +350,11 @@ async fn main() -> Result<()> {
         } => plugin::entity(name, kind, realm, prop, link).await,
         Command::Distill { session, realm } => plugin::distill(session, realm).await,
         Command::InstallPlugin { target, force } => plugin::install_plugin(target, force).await,
+        // Local engine — delegate to the kyma-local library (one `kyma` binary).
+        Command::Mcp => kyma_local::run_mcp().await,
+        Command::Serve { addr } => kyma_local::run_serve(addr).await,
+        Command::Setup { agent, print } => kyma_local::run_setup(&agent, print),
+        Command::Sync => kyma_local::run_sync().await,
 
         // ── admin subcommands ─────────────────────────────────────────
         Command::Version => {

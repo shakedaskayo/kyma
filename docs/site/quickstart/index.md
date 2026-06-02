@@ -1,20 +1,37 @@
 ---
 title: Quickstart
-description: From docker compose up to your first KQL query in five minutes. Then a slightly deeper walkthrough, and a one-screen reference card for the rest.
+description: Connect a coding agent to the context engine in one command (local, zero infra), or boot the full engine with docker compose and run your first KQL query.
 ---
 
 # Quickstart
 
-Three pages, in order. The first gets you a running engine and a single
-query. The second goes one step deeper — a real KQL query, the agent
-endpoint, an idea of what's possible. The third is a one-screen
-reference card for when you've forgotten which port is which.
+Two ways to start, depending on what you want first:
+
+- **Connect a coding agent** to the context engine — the fastest path, a local
+  single binary with no infra.
+- **Run the full engine** (Postgres + object store + connectors + web app) with
+  docker compose, and query it in KQL/SQL.
 
 <div class="feature-grid">
 
 <div class="feature-card">
 
-### [Five-minute start](/quickstart/five-minute-start)
+### [Connect your agent](/agent/connect) · local, zero infra
+
+```bash
+cargo install --path crates/kyma-cli
+kyma setup claude-code     # or: cursor · windsurf
+```
+
+Your agent gets durable memory + live data + graph over MCP — embedded SQLite +
+local files, no Postgres, no Docker. Or use the plugin / CLI. **Start here** if
+you're wiring kyma into a coding agent.
+
+</div>
+
+<div class="feature-card">
+
+### [Five-minute start](/quickstart/five-minute-start) · the full engine
 
 `docker compose up`, send one row, query it back. Five minutes from a
 fresh clone to your first KQL result. No language toolchain, no cloud

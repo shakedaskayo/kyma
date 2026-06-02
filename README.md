@@ -62,23 +62,23 @@ toy key-value store.
 
 ```bash
 # Install the single binary — no Postgres, no Docker (embedded SQLite + local files)
-cargo install --path crates/kyma-local
+cargo install --path crates/kyma-cli
 ```
 
 **Option A — MCP, any agent (one command):**
 
 ```bash
-kyma-local setup claude-code      # or: cursor · windsurf
+kyma setup claude-code      # or: cursor · windsurf
 ```
 
 Restart your agent and it has the full toolset over stdio MCP — `setup` just writes the
-agent's MCP config to launch `kyma-local mcp`. Data lives under `~/.kyma`.
+agent's MCP config to launch `kyma mcp`. Data lives under `~/.kyma`.
 
 **Option B — the Claude Code plugin (it remembers, automatically):**
 
 ```bash
 cargo install --path crates/kyma-cli   # the `kyma` CLI — the plugin's hooks shell out to it
-kyma connect <kyma-url>                # a kyma server, or a local `kyma-local serve` endpoint
+kyma connect <kyma-url>                # a kyma server, or a local `kyma serve` endpoint
 kyma install-plugin                    # installs hooks + slash commands into ~/.claude
 ```
 
@@ -87,7 +87,7 @@ prompt — no tool call required** — plus `/kyma-recall`, `/kyma-remember`, `/
 `/kyma-ingest`. (Cursor / Aider / Continue work the same way via the CLI + a skill — see
 [Connect it however your agent works](#connect-it-however-your-agent-works).)
 
-Prefer a UI? `kyma-local serve` brings up the **same web interface** the hosted server
+Prefer a UI? `kyma serve` brings up the **same web interface** the hosted server
 runs — Graph Explorer, Memory, and a KQL/SQL workbench — on `http://localhost:7777`,
 still zero-infra. Want it server-side for a team, with connectors and continuous
 ingestion? See **[Two tiers](#two-tiers-local-binary--control-plane)**.
@@ -122,7 +122,7 @@ same engine:
 - **CLI, for any agent** (`kyma query "…"` · `kyma recall "…"`) — Cursor, Aider, Continue,
   or any shell-tool agent shells out; **`kyma install-skill`** writes a skill that teaches
   it *when* to reach for kyma.
-- **MCP** — stdio (`kyma-local setup <agent>`) or HTTP (`/mcp/v1`) for native MCP clients.
+- **MCP** — stdio (`kyma setup <agent>`) or HTTP (`/mcp/v1`) for native MCP clients.
   The full toolset above.
 
 ---
@@ -168,18 +168,18 @@ See **[Agentic Memory](https://www.getkyma.dev/agent/memory)** for the full desi
 The same context engine, two ways to run it — pick per machine; memory stays coherent
 across both via sync.
 
-| | **`kyma-local`** (single binary) | **kyma server** (control plane) |
+| | **`kyma` (local mode)** | **kyma server** (control plane) |
 |---|---|---|
 | Infra | none — embedded SQLite + local files | Postgres + object store (S3/MinIO) |
 | Use | per-developer, offline, instant | team, always-on, shared |
 | Memory | ✅ save / recall / graph | ✅ + background consolidation ("dreaming") |
 | Live data | ✅ on-demand ingest + query | ✅ + **connectors** (GitHub, Prometheus, …) on a schedule |
-| Web UI | ✅ `kyma-local serve` | ✅ Graph Explorer · Memory · Discover · Agent |
-| Sync | ✅ `kyma-local sync` → control plane | ✅ receives + reconciles |
+| Web UI | ✅ `kyma serve` | ✅ Graph Explorer · Memory · Discover · Agent |
+| Sync | ✅ `kyma sync` → control plane | ✅ receives + reconciles |
 
 ```bash
 # Keep a machine's memory coherent with the team's control plane (push + pull, incremental)
-KYMA_CLOUD_URL=https://kyma.your-co.dev KYMA_CLOUD_TOKEN=… kyma-local sync
+KYMA_CLOUD_URL=https://kyma.your-co.dev KYMA_CLOUD_TOKEN=… kyma sync
 ```
 
 **On-demand ingestion from any agent.** The bundled Claude Code plugin adds
@@ -192,7 +192,7 @@ memory and existing resources — filling the graph without leaving your editor.
 
 ![Kyma's Graph Explorer rendering the cross-database unified graph — every database and every property graph on one canvas, with force/tree/radial/grid layouts, search, namespace filters, and a per-node inspector.](docs/images/graph-explorer.png)
 
-The web app (hosted server, or `kyma-local serve`) has four first-class surfaces:
+The web app (hosted server, or `kyma serve`) has four first-class surfaces:
 
 - **`/graph`** — the cross-database **unified graph**: every property graph from every
   database merged onto one canvas — your repo graph, your services, *and* your memories
@@ -263,7 +263,7 @@ sub-second — not a support ticket.
 
 Two lanes (ingest and query) share a stateless spine: object storage (source of truth) and
 a catalog (Iceberg-style manifests, per-column stats, CAS commits) — Postgres on the
-server, embedded SQLite for `kyma-local`. Five invariants — object storage is the only
+server, embedded SQLite in local mode. Five invariants — object storage is the only
 source of truth, compute is stateless, catalog is externalized, format is pluggable,
 parser is pluggable — are enforced by architectural tests. See
 [`docs/architecture.md`](docs/architecture.md).
@@ -289,8 +289,8 @@ parser is pluggable — are enforced by architectural tests. See
 ## Status
 
 **Pre-alpha.** The design is stable; the surface is not — expect schema churn and API
-breaks. Shipping today: the local single binary (`kyma-local` — stdio MCP, `serve`, `setup`,
-`sync`), the agentic-memory stack (hybrid + graph recall, bi-temporal, A.U.D.N., topic-key
+breaks. Shipping today: local mode in the `kyma` CLI (`mcp` · `serve` · `setup` · `sync` —
+a single binary, zero infra), the agentic-memory stack (hybrid + graph recall, bi-temporal, A.U.D.N., topic-key
 upsert, conflict tools, provenance, export/import), the MCP server (stdio + HTTP), REST/OTLP/
 Kafka/file-drop ingest, scheduled connectors, KQL + SQL over Arrow Flight, the 3-level
 pruning cascade, the web app, compaction/retention/GC, and bidirectional memory sync.
@@ -307,7 +307,7 @@ or the docker-compose dev stack (`docker compose up -d`) for the full server tie
 crates/
   kyma-core/            traits + types; the architectural contract
   kyma-catalog/         Postgres-backed catalog (Iceberg-mirroring metadata)
-  kyma-catalog-sqlite/  embedded SQLite catalog (powers kyma-local)
+  kyma-catalog-sqlite/  embedded SQLite catalog (powers local mode)
   kyma-storage/         object_store wrapper + local-FS auto-select
   kyma-format-tlm/      telemetry storage format (Arrow + stats + token index)
   kyma-ingest-*/        staging/commit write path + REST/OTLP/Kafka/file-drop frontends
@@ -317,8 +317,9 @@ crates/
   kyma-server/          HTTP + Flight gRPC API, agent surface, auth, web UI
   kyma-connectors/      connector framework (GitHub, Prometheus, SaaS, …)
   kyma-compaction/      background compaction, retention, physical GC
-  kyma-local/           the single-binary context engine (mcp · serve · setup · sync)
-  kyma-cli/ kyma-bin/   admin CLI + the server binary
+  kyma-local/           local-engine library behind `kyma` mcp · serve · setup · sync
+  kyma-cli/             the `kyma` CLI — client + admin + local engine (one binary)
+  kyma-bin/             the full server binary (the docker/control-plane tier)
 ```
 
 Full docs at **[getkyma.dev](https://www.getkyma.dev)**.

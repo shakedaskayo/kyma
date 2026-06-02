@@ -1,4 +1,4 @@
-//! `kyma-local setup <agent>` — wire a coding agent to this binary over stdio
+//! `kyma setup <agent>` — wire a coding agent to this binary over stdio
 //! MCP, so it gets the full context-engine toolset (memory + data + graph) with
 //! zero infra. One-liner onboarding, the engram-style `setup <agent>`.
 //!
@@ -35,17 +35,17 @@ fn supported() -> String {
     TARGETS.iter().map(|t| t.key).collect::<Vec<_>>().join(", ")
 }
 
-/// Configure `agent` to use `kyma-local mcp` over stdio. `print` previews the
+/// Configure `agent` to use `kyma mcp` over stdio. `print` previews the
 /// resulting config instead of writing it.
 pub fn run(agent: &str, print: bool) -> Result<()> {
     if agent.eq_ignore_ascii_case("list") {
-        eprintln!("kyma-local setup <agent> — supported: {}", supported());
-        eprintln!("Any other agent: `kyma-local setup <agent> --print` emits a stdio MCP snippet to paste.");
+        eprintln!("kyma setup <agent> — supported: {}", supported());
+        eprintln!("Any other agent: `kyma setup <agent> --print` emits a stdio MCP snippet to paste.");
         return Ok(());
     }
 
     let exe = std::env::current_exe()
-        .context("resolving the kyma-local binary path")?
+        .context("resolving the kyma binary path")?
         .to_string_lossy()
         .to_string();
     // The `kyma` MCP server entry — `<this binary> mcp` over stdio.
@@ -101,7 +101,7 @@ pub fn run(agent: &str, print: bool) -> Result<()> {
     std::fs::write(&path, format!("{pretty}\n"))
         .with_context(|| format!("writing {}", path.display()))?;
     eprintln!("✓ Configured {} → {}", t.label, path.display());
-    eprintln!("  MCP server 'kyma' → {} mcp (stdio)", "kyma-local");
+    eprintln!("  MCP server 'kyma' → {} mcp (stdio)", "kyma");
     eprintln!("  Restart {} to pick it up; then memory + data + graph tools are available.", t.label);
     Ok(())
 }

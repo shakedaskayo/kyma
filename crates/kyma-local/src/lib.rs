@@ -1,24 +1,21 @@
-//! `kyma-local` — the single-binary **context engine** for local machines.
+//! Local-engine library backing the **`kyma`** CLI's `mcp` / `serve` / `setup` /
+//! `sync` commands — the single-binary context engine for local machines.
 //!
-//! One binary, zero infra: an embedded **SQLite catalog** + a **local-filesystem
-//! object store** + the in-process columnar engine. Two ways to use it:
+//! Zero infra: an embedded **SQLite catalog** + a **local-filesystem object
+//! store** + the in-process columnar engine. The `kyma` CLI exposes:
 //!
-//!   - `kyma-local mcp`   — serve the Model Context Protocol over **stdio**.
-//!     A coding agent (Claude Code, Cursor, …) spawns it and gets the full
-//!     toolset: durable graph-aware **memory** *and* live **data/graph** tools.
-//!   - `kyma-local serve` — serve the **same web interface** + HTTP API the
-//!     hosted server exposes (query/KQL/SQL, catalog, graph, ingest, MCP over
-//!     HTTP) on a local port, **zero-auth**. Ingest on demand (e.g. the Claude
-//!     Code plugin slash command POSTing to `/v1/ingest`) and watch the graph
-//!     fill — no Postgres, no MinIO.
-//!
-//! Continuous background ingestion from connectors is the **server** tier (the
-//! full `kyma` binary + Postgres); local mode is on-demand.
+//!   - `kyma mcp`   — serve the Model Context Protocol over **stdio** (what a
+//!     coding agent spawns): durable graph-aware **memory** *and* live data/graph.
+//!   - `kyma serve` — serve the **same web interface** + HTTP API the hosted
+//!     server runs (query/KQL/SQL, catalog, graph, ingest, MCP over HTTP) on a
+//!     local port, zero-auth.
+//!   - `kyma setup <agent>` — wire a coding agent to `kyma mcp` in one command.
+//!   - `kyma sync` — sync memory bidirectionally with a control plane.
 //!
 //! Data lives under `~/.kyma` (override with `KYMA_HOME` / `KYMA_LOCAL_DB` /
 //! `KYMA_LOCAL_DATA`): `catalog.db` (metadata + memory graph) and `data/`
-//! (columnar extents). For `mcp`, **stdout is the protocol channel** — all logs
-//! go to stderr.
+//! (columnar extents). For `mcp`, **stdout is the protocol channel** — logs go
+//! to stderr.
 
 #![forbid(unsafe_code)]
 
@@ -29,7 +26,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
 use kyma_catalog_sqlite::SqliteCatalog;
 use kyma_core::catalog::Catalog;
 use kyma_core::segment_format::SegmentFormat;
@@ -48,45 +44,6 @@ use kyma_server::catalog_handler::SchemaCache;
 use kyma_server::QueryState;
 use kyma_storage::{build_object_store, StorageConfig};
 use tracing::{info, warn};
-
-#[derive(Debug, Parser)]
-#[command(
-    name = "kyma-local",
-    about = "kyma local — single-binary context engine (memory + live data + graph)",
-    version
-)]
-struct Cli {
-    #[command(subcommand)]
-    command: Option<Command>,
-}
-
-#[derive(Debug, Subcommand)]
-enum Command {
-    /// Serve the Model Context Protocol over stdio (default). Point a coding
-    /// agent's MCP config at this command.
-    Mcp,
-    /// Serve the web interface + HTTP API (query/catalog/graph/ingest/MCP) on a
-    /// local port, zero-auth. Ingest on demand; browse the graph in the UI.
-    Serve {
-        /// Listen address.
-        #[arg(long, env = "KYMA_LOCAL_HTTP_ADDR", default_value = "127.0.0.1:7777")]
-        addr: SocketAddr,
-    },
-    /// Sync memory bidirectionally with a control plane (push local changes +
-    /// pull remote ones). Needs KYMA_CLOUD_URL (and usually KYMA_CLOUD_TOKEN).
-    Sync,
-    /// Wire a coding agent to this binary over stdio MCP (claude-code | cursor |
-    /// windsurf | …). One-liner onboarding; `setup list` shows the supported set.
-    Setup {
-        /// Agent key (e.g. claude-code, cursor, windsurf), or `list`.
-        agent: String,
-        /// Print the config instead of writing it.
-        #[arg(long)]
-        print: bool,
-    },
-    /// Print the resolved local paths and exit (diagnostics).
-    Info,
-}
 
 /// Resolved on-disk locations for the local engine.
 struct Paths {
@@ -146,65 +103,28 @@ fn mcp_state(engine: &Engine) -> McpState {
     McpState {
         dispatch: ToolDispatch::new(shared),
         server_info: ServerInfo {
-            name: "kyma-local".into(),
+            name: "kyma".into(),
             version: env!("CARGO_PKG_VERSION").into(),
         },
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let cli = Cli::parse();
-    let paths = resolve_paths();
-
-    if matches!(cli.command, Some(Command::Info)) {
-        eprintln!("kyma-local — single-binary context engine");
-        eprintln!("  catalog : {}", paths.catalog_db);
-        eprintln!("  data    : {}", paths.data_root);
-        eprintln!("  mcp     : kyma-local mcp          (stdio MCP; memory + data + graph)");
-        eprintln!("  serve   : kyma-local serve        (web UI + HTTP API + ingest, zero-auth)");
-        eprintln!("  setup   : kyma-local setup <agent> (wire claude-code/cursor/windsurf to mcp)");
-        eprintln!("  sync    : kyma-local sync          (push/pull memory to KYMA_CLOUD_URL)");
-        return Ok(());
-    }
-
-    match cli.command {
-        Some(Command::Setup { agent, print }) => setup::run(&agent, print),
-        Some(Command::Sync) => run_sync(paths).await,
-        Some(Command::Serve { addr }) => serve_http(paths, addr).await,
-        // Default (no subcommand) and `mcp` both serve stdio MCP.
-        _ => serve_mcp(paths).await,
-    }
-}
-
-async fn run_sync(paths: Paths) -> Result<()> {
-    init_tracing(false);
-    let cloud_url = std::env::var("KYMA_CLOUD_URL").map_err(|_| {
-        anyhow::anyhow!("set KYMA_CLOUD_URL (and usually KYMA_CLOUD_TOKEN) to sync to a control plane")
-    })?;
-    let engine = open_engine(&paths).await?;
-    let cfg = sync::SyncConfig {
-        cloud_url,
-        token: std::env::var("KYMA_CLOUD_TOKEN").ok().filter(|s| !s.is_empty()),
-        realm: std::env::var("KYMA_SYNC_REALM").ok().filter(|s| !s.is_empty()),
-        now: chrono::Utc::now().to_rfc3339(),
-    };
-    sync::run(&engine, cfg).await
-}
-
-async fn serve_mcp(paths: Paths) -> Result<()> {
-    // CRITICAL: logs to stderr — stdout is reserved for the MCP JSON-RPC channel.
-    init_tracing(true);
-    let engine = open_engine(&paths).await?;
+/// `kyma mcp` — serve the Model Context Protocol over stdio.
+///
+/// The caller (the `kyma` binary) must route tracing to **stderr** — stdout is
+/// the JSON-RPC protocol channel.
+pub async fn run_mcp() -> Result<()> {
+    let engine = open_engine(&resolve_paths()).await?;
     let state = mcp_state(&engine);
     info!("serving MCP over stdio (memory + data + graph); stdin/stdout is the protocol channel");
     serve_stdio(state).await.context("stdio MCP loop")?;
     Ok(())
 }
 
-async fn serve_http(paths: Paths, addr: SocketAddr) -> Result<()> {
-    init_tracing(false);
-    let engine = open_engine(&paths).await?;
+/// `kyma serve` — serve the web UI + full HTTP API on `addr`, over the embedded
+/// catalog (zero infra).
+pub async fn run_serve(addr: SocketAddr) -> Result<()> {
+    let engine = open_engine(&resolve_paths()).await?;
 
     // The web UI requires a sign-in. Seed a local user (default `admin`/`admin`,
     // override with KYMA_LOCAL_USER / KYMA_LOCAL_PASSWORD) and authenticate via
@@ -285,7 +205,7 @@ async fn serve_http(paths: Paths, addr: SocketAddr) -> Result<()> {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding {addr}"))?;
-    info!(%addr, "kyma-local serving the web UI + full HTTP API (local, SQLite)");
+    info!(%addr, "kyma serving the web UI + full HTTP API (local, SQLite)");
     info!("  web UI:   http://{addr}/   (sign in: {user} / {password})");
     info!("  ingest:   POST http://{addr}/v1/ingest   (X-Database / X-Table headers)");
     info!("  MCP:      http://{addr}/mcp/v1");
@@ -296,14 +216,35 @@ async fn serve_http(paths: Paths, addr: SocketAddr) -> Result<()> {
     Ok(())
 }
 
-/// Initialize tracing. `to_stderr` keeps stdout clean for the stdio MCP channel.
-fn init_tracing(to_stderr: bool) {
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,sqlx=warn"));
-    let builder = tracing_subscriber::fmt().with_env_filter(filter).with_target(false);
-    if to_stderr {
-        builder.with_writer(std::io::stderr).init();
-    } else {
-        builder.init();
-    }
+/// `kyma sync` — push local memory changes to a control plane and pull remote
+/// ones. Reads `KYMA_CLOUD_URL` / `KYMA_CLOUD_TOKEN` / `KYMA_SYNC_REALM`.
+pub async fn run_sync() -> Result<()> {
+    let cloud_url = std::env::var("KYMA_CLOUD_URL").map_err(|_| {
+        anyhow::anyhow!("set KYMA_CLOUD_URL (and usually KYMA_CLOUD_TOKEN) to sync to a control plane")
+    })?;
+    let engine = open_engine(&resolve_paths()).await?;
+    let cfg = sync::SyncConfig {
+        cloud_url,
+        token: std::env::var("KYMA_CLOUD_TOKEN").ok().filter(|s| !s.is_empty()),
+        realm: std::env::var("KYMA_SYNC_REALM").ok().filter(|s| !s.is_empty()),
+        now: chrono::Utc::now().to_rfc3339(),
+    };
+    sync::run(&engine, cfg).await
+}
+
+/// `kyma setup <agent>` — wire a coding agent to `kyma mcp` over stdio.
+pub fn run_setup(agent: &str, print: bool) -> Result<()> {
+    setup::run(agent, print)
+}
+
+/// Print the resolved local paths (diagnostics).
+pub fn print_info() {
+    let paths = resolve_paths();
+    eprintln!("kyma — local single-binary context engine");
+    eprintln!("  catalog : {}", paths.catalog_db);
+    eprintln!("  data    : {}", paths.data_root);
+    eprintln!("  mcp     : kyma mcp           (stdio MCP; memory + data + graph)");
+    eprintln!("  serve   : kyma serve         (web UI + HTTP API + ingest, zero-auth)");
+    eprintln!("  setup   : kyma setup <agent> (wire claude-code/cursor/windsurf to mcp)");
+    eprintln!("  sync    : kyma sync          (push/pull memory to KYMA_CLOUD_URL)");
 }

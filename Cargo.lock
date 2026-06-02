@@ -4608,6 +4608,7 @@ dependencies = [
  "futures-util",
  "kyma-catalog",
  "kyma-core",
+ "kyma-local",
  "reqwest 0.12.28",
  "rpassword",
  "serde",
@@ -4956,7 +4957,6 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
- "clap",
  "kyma-catalog-sqlite",
  "kyma-core",
  "kyma-format-tlm",
@@ -4970,7 +4970,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

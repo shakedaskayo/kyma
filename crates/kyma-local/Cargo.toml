@@ -4,11 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "kyma local — the single-binary context engine. Embedded SQLite catalog + local-filesystem store + stdio MCP. Zero infra: no Postgres, no MinIO, no HTTP. Connect any coding agent over stdio."
-
-[[bin]]
-name = "kyma-local"
-path = "src/main.rs"
+description = "Local-engine library behind the kyma CLI's mcp/serve/setup/sync commands — embedded SQLite catalog + local-filesystem store + stdio/HTTP MCP, zero infra."
 
 [lints]
 workspace = true
@@ -30,6 +26,4 @@ reqwest.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
 anyhow.workspace = true
-clap = { version = "4", features = ["derive", "env"] }
