@@ -47,7 +47,7 @@ use opentelemetry_proto::tonic::common::v1::{
 };
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 const OTEL_LOGS_TABLE: &str = "otel_logs";
 
