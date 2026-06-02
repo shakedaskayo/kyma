@@ -318,6 +318,21 @@ impl Catalog for SqliteCatalog {
         Ok(DatabaseId::from_uuid(id))
     }
 
+    async fn lookup_database_in_tenant(
+        &self,
+        tenant: TenantId,
+        name: &str,
+    ) -> Result<Option<DatabaseId>> {
+        let id: Option<Uuid> =
+            sqlx::query_scalar("SELECT id FROM databases WHERE tenant_id = ? AND name = ?")
+                .bind(tenant.as_uuid())
+                .bind(name)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(ce)?;
+        Ok(id.map(DatabaseId::from_uuid))
+    }
+
     async fn create_table_in_tenant(
         &self,
         tenant: TenantId,

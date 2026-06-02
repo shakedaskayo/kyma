@@ -13,7 +13,7 @@ async fn list_returns_all_named_tools() {
     let shared = SharedToolCtx {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
-        pool,
+        pool: Some(pool),
     };
     let dispatch = ToolDispatch::new(shared);
     let listed = dispatch.list();
@@ -41,7 +41,7 @@ async fn list_entries_have_inputschema_objects() {
     let shared = SharedToolCtx {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
-        pool,
+        pool: Some(pool),
     };
     let dispatch = ToolDispatch::new(shared);
     for tool in dispatch.list() {

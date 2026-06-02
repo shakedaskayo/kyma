@@ -150,7 +150,13 @@ async fn link_to_catalog(
         if seen_db.len() >= MAX_RESOLVE_LINKS {
             break;
         }
-        let hits = match find_references(&shared.pool, None, value).await {
+        // Cross-graph resolution reads the catalog's column_stats index over
+        // Postgres; in local mode there is no pool, so there is nothing to
+        // resolve against (memories still save + recall over the engine).
+        let Some(pool) = shared.pool.as_ref() else {
+            break;
+        };
+        let hits = match find_references(pool, None, value).await {
             Ok(h) => h,
             Err(_) => continue,
         };

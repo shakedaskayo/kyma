@@ -359,7 +359,7 @@ async fn main() -> Result<()> {
     let mcp_shared = kyma_server::agent::SharedToolCtx {
         catalog: catalog.clone(),
         format: format.clone(),
-        pool: pg_pool.clone(),
+        pool: Some(pg_pool.clone()),
     };
     let mcp_state = kyma_mcp::McpState {
         dispatch: kyma_mcp::ToolDispatch::new(mcp_shared),
@@ -706,7 +706,7 @@ async fn main() -> Result<()> {
             kyma_server::agent::SharedToolCtx {
                 catalog: catalog.clone(),
                 format: format.clone(),
-                pool: pg_pool.clone(),
+                pool: Some(pg_pool.clone()),
             },
             pg_pool.clone(),
             kyma_core::tenant::DEFAULT_TENANT,

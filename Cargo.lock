@@ -4950,6 +4950,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyma-local"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "kyma-catalog-sqlite",
+ "kyma-core",
+ "kyma-format-tlm",
+ "kyma-mcp",
+ "kyma-server",
+ "kyma-storage",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "kyma-mcp"
 version = "0.0.1"
 dependencies = [

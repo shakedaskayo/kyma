@@ -10,7 +10,6 @@ use kyma_core::types::DatabaseId;
 use kyma_embed::EmbeddingBackend;
 use kyma_ingest_core::WritePath;
 use serde_json::Value;
-use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::{MemoryError, Result};
@@ -22,15 +21,16 @@ pub struct MemoryWriter {
     catalog: Arc<dyn Catalog>,
     write: WritePath,
     embed: Arc<dyn EmbeddingBackend>,
-    pool: PgPool,
     database: String,
 }
 
 impl MemoryWriter {
+    /// Build a writer over the catalog + format engine. Backend-agnostic — works
+    /// over the Postgres catalog (server) or the embedded SQLite catalog
+    /// (`kyma local`); no direct DB pool is required.
     pub fn new(
         catalog: Arc<dyn Catalog>,
         format: Arc<dyn SegmentFormat>,
-        pool: PgPool,
         embed: Arc<dyn EmbeddingBackend>,
     ) -> Self {
         let write = WritePath::new(catalog.clone(), format);
@@ -38,7 +38,6 @@ impl MemoryWriter {
             catalog,
             write,
             embed,
-            pool,
             database: crate::DEFAULT_DATABASE.to_string(),
         }
     }
@@ -108,15 +107,16 @@ impl MemoryWriter {
     }
 
     async fn ensure_database(&self) -> Result<DatabaseId> {
-        // No `lookup_database` on the trait yet; resolve via the catalog pool
-        // (same expedient the CLI uses), then create if missing.
-        let row: Option<(uuid::Uuid,)> = sqlx::query_as("SELECT id FROM databases WHERE name = $1")
-            .bind(&self.database)
-            .fetch_optional(&self.pool)
+        // Resolve via the catalog trait (backend-agnostic), then create if
+        // missing. Races (two concurrent first-writes) surface as a unique
+        // violation on create — callers treat "exists" as benign.
+        if let Some(id) = self
+            .catalog
+            .lookup_database(&self.database)
             .await
-            .map_err(|e| MemoryError::Catalog(e.to_string()))?;
-        if let Some((id,)) = row {
-            return Ok(DatabaseId::from_uuid(id));
+            .map_err(|e| MemoryError::Catalog(e.to_string()))?
+        {
+            return Ok(id);
         }
         self.catalog
             .create_database(&self.database)

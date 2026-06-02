@@ -96,6 +96,21 @@ impl Catalog for PostgresCatalog {
         Ok(DatabaseId::from_uuid(row.0))
     }
 
+    async fn lookup_database_in_tenant(
+        &self,
+        tenant: TenantId,
+        name: &str,
+    ) -> Result<Option<DatabaseId>> {
+        let row: Option<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM databases WHERE tenant_id = $1 AND name = $2")
+                .bind(tenant.as_uuid())
+                .bind(name)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(sql_err)?;
+        Ok(row.map(|(id,)| DatabaseId::from_uuid(id)))
+    }
+
     async fn create_table_in_tenant(
         &self,
         tenant: TenantId,

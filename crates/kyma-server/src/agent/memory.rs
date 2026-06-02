@@ -54,7 +54,6 @@ async fn build_writer(shared: &SharedToolCtx) -> anyhow::Result<MemoryWriter> {
     Ok(MemoryWriter::new(
         shared.catalog.clone(),
         shared.format.clone(),
-        shared.pool.clone(),
         embed,
     ))
 }
@@ -63,7 +62,7 @@ fn shared_from(state: &AgentState) -> SharedToolCtx {
     SharedToolCtx {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
-        pool: state.pool.clone(),
+        pool: Some(state.pool.clone()),
     }
 }
 
@@ -324,7 +323,7 @@ impl MemoryConsolidator {
     async fn consolidate(&self, realms: &[Value], ts_filter: &str) -> anyhow::Result<ConsolidateOutcome> {
         let writer = build_writer(&self.shared).await?;
         let _ = writer.ensure_provisioned().await;
-        let settings = memory_settings::load(&self.pool, self.tenant).await;
+        let settings = memory_settings::load(Some(&self.pool), self.tenant).await;
         // LLM extraction only when the user enabled it AND a usable engine exists.
         let engine = if settings.extraction_enabled {
             self.usable_engine().await

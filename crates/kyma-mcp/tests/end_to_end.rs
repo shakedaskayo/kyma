@@ -15,7 +15,7 @@ async fn full_mcp_handshake_against_seeded_server() {
     let shared = SharedToolCtx {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
-        pool,
+        pool: Some(pool),
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),
@@ -77,7 +77,7 @@ async fn rejects_request_without_bearer_token() {
     let shared = SharedToolCtx {
         catalog: state.catalog,
         format: state.format,
-        pool,
+        pool: Some(pool),
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),

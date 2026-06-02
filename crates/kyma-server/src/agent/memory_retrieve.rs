@@ -144,7 +144,7 @@ impl Cand {
 /// degrade to fewer/zero results so callers (HTTP, MCP, hooks) stay simple.
 pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> RetrieveResult {
     let started = Instant::now();
-    let settings = memory_settings::load(&shared.pool, DEFAULT_TENANT).await;
+    let settings = memory_settings::load(shared.pool.as_ref(), DEFAULT_TENANT).await;
     let limit = req.limit.unwrap_or(settings.default_limit).clamp(1, 100);
     let hops = req.expand_hops.unwrap_or(settings.default_expand_hops).min(MAX_HOPS);
 
@@ -380,7 +380,6 @@ async fn build_writer(shared: &SharedToolCtx) -> Option<MemoryWriter> {
     Some(MemoryWriter::new(
         shared.catalog.clone(),
         shared.format.clone(),
-        shared.pool.clone(),
         embed,
     ))
 }

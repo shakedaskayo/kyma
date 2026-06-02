@@ -39,9 +39,13 @@ const TOOL_MEMORY_POOL_BYTES: usize = 256 * 1024 * 1024;
 pub struct SharedToolCtx {
     pub catalog: Arc<dyn Catalog>,
     pub format: Arc<dyn SegmentFormat>,
-    /// Postgres pool — used by graph-style tools (`find_references_to`)
-    /// to query the catalog's extent-level column_stats index directly.
-    pub pool: PgPool,
+    /// Optional Postgres pool — used by graph-style tools (`find_references_to`)
+    /// and to read per-tenant memory settings. `None` in **local single-binary
+    /// mode** (`kyma local`), where there is no Postgres: pool-only tools
+    /// degrade gracefully and memory settings fall back to defaults. The hot
+    /// memory recall/save paths run entirely over the catalog + engine, so they
+    /// work unchanged with `None`.
+    pub pool: Option<PgPool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -642,8 +646,17 @@ pub fn tool_find_references_to(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
+                    // This tool reads the catalog's column_stats index directly
+                    // over Postgres; in local mode there is no pool. Recall +
+                    // graph_traverse cover the same intent over the engine.
+                    let Some(pool) = shared.pool.as_ref() else {
+                        return Ok(json!({
+                            "error": "find_references_to is unavailable in local mode; \
+                                      use memory_search or graph_traverse instead",
+                        }));
+                    };
                     let rows = match find_references(
-                        &shared.pool,
+                        pool,
                         parsed.database.as_deref(),
                         &parsed.value,
                     )

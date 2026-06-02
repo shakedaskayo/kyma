@@ -22,6 +22,7 @@ members = [
     "crates/kyma-server",
     "crates/kyma-cli",
     "crates/kyma-bin",
+    "crates/kyma-local",
     "crates/kyma-web-assets",
     "crates/kyma-embed",
     "crates/kyma-memory",
@@ -133,6 +134,7 @@ kyma-format-tlm        = { path = "crates/kyma-format-tlm" }
 kyma-format-stub-vec   = { path = "crates/kyma-format-stub-vec" }
 kyma-catalog           = { path = "crates/kyma-catalog" }
 kyma-catalog-sqlite    = { path = "crates/kyma-catalog-sqlite" }
+kyma-local             = { path = "crates/kyma-local" }
 kyma-storage           = { path = "crates/kyma-storage" }
 kyma-ingest-core       = { path = "crates/kyma-ingest-core" }
 kyma-ingest-rest       = { path = "crates/kyma-ingest-rest" }

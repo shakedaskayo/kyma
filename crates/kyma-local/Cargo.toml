@@ -1,0 +1,27 @@
+[package]
+name = "kyma-local"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "kyma local — the single-binary context engine. Embedded SQLite catalog + local-filesystem store + stdio MCP. Zero infra: no Postgres, no MinIO, no HTTP. Connect any coding agent over stdio."
+
+[[bin]]
+name = "kyma-local"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+kyma-core.workspace = true
+kyma-catalog-sqlite.workspace = true
+kyma-storage.workspace = true
+kyma-format-tlm.workspace = true
+kyma-server.workspace = true
+kyma-mcp.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+clap = { version = "4", features = ["derive", "env"] }

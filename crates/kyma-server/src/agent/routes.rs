@@ -95,7 +95,7 @@ async fn export_memory_handler(
     let shared = SharedToolCtx {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
-        pool: state.pool.clone(),
+        pool: Some(state.pool.clone()),
     };
     let realm_filter = params
         .realm
@@ -124,7 +124,7 @@ async fn export_memory_handler(
 
 /// `GET /v1/agent/memory/settings` — current tunable memory settings.
 async fn get_memory_settings(State(state): State<AgentState>) -> Json<Value> {
-    let s = super::memory_settings::load(&state.pool, state.tenant).await;
+    let s = super::memory_settings::load(Some(&state.pool), state.tenant).await;
     Json(serde_json::to_value(s).unwrap_or_else(|_| json!({})))
 }
 
@@ -162,7 +162,7 @@ async fn memory_query_handler(
     let shared = SharedToolCtx {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
-        pool: state.pool.clone(),
+        pool: Some(state.pool.clone()),
     };
     let result = retrieve(&shared, &body.retrieve).await;
     let mut out = result.to_json();

@@ -20,10 +20,8 @@ async fn db_free_dispatch() -> (ToolDispatch, ServerInfo) {
     let format = Arc::new(TelemetryFormat::new(store, "local"));
     let catalog: Arc<dyn Catalog> =
         Arc::new(SqliteCatalog::connect_in_memory().await.expect("sqlite catalog"));
-    // Lazy pool: parses the URL but never connects. The methods exercised here
-    // never use it.
-    let pool = sqlx::PgPool::connect_lazy("postgres://localhost/unused").expect("lazy pool");
-    let shared = SharedToolCtx { catalog, format, pool };
+    // Local mode: no Postgres pool at all.
+    let shared = SharedToolCtx { catalog, format, pool: None };
     (
         ToolDispatch::new(shared),
         ServerInfo { name: "kyma".into(), version: "test".into() },

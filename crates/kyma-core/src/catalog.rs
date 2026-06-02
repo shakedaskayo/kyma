@@ -460,6 +460,21 @@ pub trait Catalog: Send + Sync {
         name: &str,
     ) -> Result<DatabaseId>;
 
+    /// Resolve a database's id by name, or `None` if it doesn't exist. Lets
+    /// callers provision-on-demand (look up, then create if missing) without
+    /// reaching into a backend-specific pool.
+    async fn lookup_database(&self, name: &str) -> Result<Option<DatabaseId>> {
+        self.lookup_database_in_tenant(crate::tenant::DEFAULT_TENANT, name)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`lookup_database`].
+    async fn lookup_database_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        name: &str,
+    ) -> Result<Option<DatabaseId>>;
+
     async fn create_table(
         &self,
         database_id: DatabaseId,

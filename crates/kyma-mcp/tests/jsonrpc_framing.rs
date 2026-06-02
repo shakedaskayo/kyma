@@ -14,7 +14,7 @@ async fn build() -> String {
     let shared = SharedToolCtx {
         catalog: state.catalog,
         format: state.format,
-        pool,
+        pool: Some(pool),
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),

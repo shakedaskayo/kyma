@@ -20,7 +20,7 @@ async fn build_app() -> axum::Router {
     let shared = SharedToolCtx {
         catalog: state.catalog,
         format: state.format,
-        pool,
+        pool: Some(pool),
     };
     router(McpState {
         dispatch: ToolDispatch::new(shared),

@@ -38,7 +38,6 @@ async fn build_writer(shared: &SharedToolCtx) -> std::result::Result<MemoryWrite
     Ok(MemoryWriter::new(
         shared.catalog.clone(),
         shared.format.clone(),
-        shared.pool.clone(),
         embed,
     ))
 }

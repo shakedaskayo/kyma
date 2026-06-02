@@ -64,8 +64,13 @@ impl Default for MemorySettings {
 }
 
 /// Load the tenant's settings, falling back to defaults when unset or on any
-/// read/parse error (never fails — recall/ingestion must keep working).
-pub async fn load(pool: &PgPool, tenant: TenantId) -> MemorySettings {
+/// read/parse error (never fails — recall/ingestion must keep working). In
+/// **local mode** there is no Postgres pool (`None`) — settings are the
+/// defaults, which is exactly the desired behavior.
+pub async fn load(pool: Option<&PgPool>, tenant: TenantId) -> MemorySettings {
+    let Some(pool) = pool else {
+        return MemorySettings::default();
+    };
     let row: Option<(serde_json::Value,)> =
         sqlx::query_as("SELECT settings FROM memory_settings WHERE tenant_id = $1")
             .bind(tenant.as_uuid())
