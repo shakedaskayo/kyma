@@ -116,12 +116,13 @@ export default withMermaid(defineConfig({
         collapsed: false,
         items: [
           { text: 'Overview',            link: '/agent/' },
+          { text: 'Connect your agent',  link: '/agent/connect' },
           { text: 'Agentic Memory',      link: '/agent/memory' },
           { text: 'Engines',             link: '/agent/engines' },
           { text: 'Claude Code engine',  link: '/agent/claude-cli' },
           { text: 'Claude Code plugin',  link: '/agent/claude-code-plugin' },
           { text: 'Skills',              link: '/agent/skills' },
-          { text: 'Connect a coding agent', link: '/agent/connect-from-cli' },
+          { text: 'Connect via CLI',     link: '/agent/connect-from-cli' },
         ],
       }],
       '/reference/': [{

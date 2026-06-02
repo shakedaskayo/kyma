@@ -212,16 +212,18 @@ const buildDate = new Date().toISOString().slice(0, 10)
       </a>
 
       <h1 class="kyma-hero-title">kyma</h1>
-      <p class="kyma-tagline">Production knowledge, as a query.</p>
+      <p class="kyma-tagline">The context engine for coding agents.</p>
       <p class="kyma-lede">
-        One engine that turns <strong>everything your org runs on</strong> — logs, traces, metrics,
-        databases, billing exports, deploys, support tickets, anything with a timestamp and a body —
-        into something an agent can answer in milliseconds.
+        Not just memory — one place your agent recalls durable, graph-aware <strong>memory</strong>,
+        queries <strong>live data</strong> (logs, traces, code, every signal your org emits) in KQL/SQL,
+        and walks the <strong>graph</strong> that links them. Connect it via a plugin, a CLI, or MCP —
+        a local single binary that syncs to your control plane.
       </p>
 
       <div class="kyma-cta-row">
         <a href="/quickstart/five-minute-start" class="kyma-cta kyma-cta--primary">Quickstart</a>
-        <a href="/concepts/what-is-kyma" class="kyma-cta">What is kyma?</a>
+        <a href="/agent/connect" class="kyma-cta">Connect your agent</a>
+        <a href="/agent/memory" class="kyma-cta">Memory</a>
         <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener" class="kyma-cta">GitHub</a>
       </div>
 

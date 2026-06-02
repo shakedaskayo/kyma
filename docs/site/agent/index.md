@@ -1,16 +1,21 @@
 ---
-title: The Kyma Agent
-description: A swappable LLM agent that runs over your live Kyma deployment — from the web app or any coding tool that can shell out to `kyma query`.
+title: Agents & the context engine
+description: kyma is a context engine for coding agents — durable graph-aware memory + live data (KQL/SQL) + the graph that links them, over one surface. Connect via a Claude Code plugin, a CLI, or MCP; plus a built-in swappable LLM agent.
 ---
 
-# The Kyma Agent
+# Agents & the context engine
 
-Kyma ships with a built-in **agent** that turns natural-language
-questions into KQL/SQL queries over your live data. It runs inside the
-web app at `/agent` and is also reachable from your terminal via the
-`kyma` CLI — which means any coding tool that can shell out (Claude
-Code, Cursor, Aider, Continue, …) can query your Kyma deployment in
-real time.
+kyma is a **context engine for coding agents**: one place an agent recalls durable,
+graph-aware **memory**, queries **live data** (logs, traces, code, connectors) in KQL/SQL,
+and walks the **graph** that links them — recall *plus* live context *plus* relationships.
+
+**Connect any agent** via a **Claude Code plugin** (automatic capture + recall + slash
+commands), a **CLI** any tool shells out to (`kyma query` / `kyma recall` + a skill), or
+**MCP** (stdio + HTTP). It runs as a local single binary or a server, and syncs memory
+between them. → **[Connect your agent](./connect)**.
+
+kyma also ships a built-in **agent** that turns natural-language questions into KQL/SQL over
+your live data — in the web app at `/agent`, the HTTP `/v1/agent/ask` endpoint, or the CLI.
 
 ## Three things to know
 
@@ -47,6 +52,8 @@ kyma install-skill --also-link-claude
 
 ## In this section
 
+- **[Connect your agent](./connect)** — the three integration paths (plugin · CLI · MCP),
+  the local single binary, and local↔server sync. **Start here.**
 - **[Agentic Memory](./memory)** — persistent, graph-aware memory for agents:
   capture → LLM extraction with conflict resolution + bi-temporal validity →
   near-realtime hybrid recall. The `memory_search` tool, `/v1/agent/memory/query`,
@@ -55,10 +62,12 @@ kyma install-skill --also-link-claude
   resolution order, the `/v1/agent/engine` API.
 - **[Claude Code engine](./claude-cli)** — how the Claude CLI engine
   inherits Keychain OAuth, MCPs, and skills; when to use it.
+- **[Claude Code plugin](./claude-code-plugin)** — hooks that auto-capture each session
+  and inject recall into every prompt, plus `/kyma-*` slash commands.
 - **[Skills](./skills)** — local discovery (`./.skills/`, `~/.kyma/skills/`,
   `~/.skills/`, plus opt-in Claude paths), the `SKILL.md` format, and
   how enabled skills are injected.
-- **[Connect from CLI](./connect-from-cli)** — install `kyma`, install the
+- **[Connect via CLI](./connect-from-cli)** — install `kyma`, install the
   Kyma skill, and wire it into Claude Code / Cursor / Aider.
 
 ## How does this relate to `/v1/agent/ask`?
