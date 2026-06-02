@@ -33,8 +33,9 @@ pub use memory_tools::{
 };
 pub use state::AgentState;
 pub use tools::{
-    tool_describe_table, tool_explore_schema, tool_find_references_to, tool_graph_traverse,
-    tool_list_databases, tool_run_kql, tool_run_sql, tool_sample_rows, SharedToolCtx,
+    execute_sql, tool_describe_table, tool_explore_schema, tool_find_references_to,
+    tool_graph_traverse, tool_list_databases, tool_run_kql, tool_run_sql, tool_sample_rows,
+    SharedToolCtx,
 };
 
 /// Build the `/v1/agent/*` sub-router. Caller typically mounts it under

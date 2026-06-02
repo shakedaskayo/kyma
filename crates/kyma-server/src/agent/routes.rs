@@ -74,7 +74,55 @@ pub fn router(state: AgentState) -> axum::Router {
             get(get_memory_settings).put(put_memory_settings),
         )
         .route("/memory/export", get(export_memory_handler))
+        .route("/memory/changes", get(changes_memory_handler))
+        .route("/memory/import", post(import_memory_handler))
         .with_state(state)
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ImportBody {
+    #[serde(default)]
+    memory_nodes: Vec<Value>,
+    #[serde(default)]
+    memory_edges: Vec<Value>,
+}
+
+/// `POST /v1/agent/memory/import` — apply memory node/edge rows (from another
+/// instance's `export`/`changes`) into this store **via the MemoryWriter**, so
+/// the canonical memory schema (typed `importance`, the embedding vector, …) and
+/// on-demand provisioning are used — unlike generic `/v1/ingest`, which would
+/// infer every column as text. Append-only / latest-wins, so re-applying is safe.
+/// This is the receive side of memory sync.
+async fn import_memory_handler(
+    State(state): State<AgentState>,
+    Json(body): Json<ImportBody>,
+) -> Json<Value> {
+    let embed = match kyma_memory::shared_embedding().await {
+        Ok(e) => e,
+        Err(e) => return Json(json!({ "error": format!("embedding backend: {e}") })),
+    };
+    let writer =
+        kyma_memory::MemoryWriter::new(state.catalog.clone(), state.format.clone(), embed);
+    let mut applied_nodes = 0usize;
+    let mut applied_edges = 0usize;
+    let mut errors: Vec<String> = Vec::new();
+    if !body.memory_nodes.is_empty() {
+        match writer.append_node_rows(body.memory_nodes.clone()).await {
+            Ok(()) => applied_nodes = body.memory_nodes.len(),
+            Err(e) => errors.push(format!("nodes: {e}")),
+        }
+    }
+    if !body.memory_edges.is_empty() {
+        match writer.append_edge_rows(body.memory_edges.clone()).await {
+            Ok(()) => applied_edges = body.memory_edges.len(),
+            Err(e) => errors.push(format!("edges: {e}")),
+        }
+    }
+    Json(json!({
+        "applied_nodes": applied_nodes,
+        "applied_edges": applied_edges,
+        "errors": errors,
+    }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,6 +130,64 @@ struct ExportParams {
     /// Restrict the export to one realm. Omit to export all.
     #[serde(default)]
     realm: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChangesParams {
+    /// Return only memories changed strictly after this RFC3339 timestamp.
+    /// Omit for the full set (epoch). Pass back the response's `until` next time.
+    #[serde(default)]
+    since: Option<String>,
+    /// Restrict to one realm. Omit for all.
+    #[serde(default)]
+    realm: Option<String>,
+}
+
+/// `GET /v1/agent/memory/changes?since=<rfc3339>[&realm=]` — the incremental
+/// pull side of memory sync: latest node versions whose `updated_at` (and edges
+/// whose `created_at`) are strictly after `since`, plus an `until` watermark
+/// (server clock) the caller advances to for the next pull. Same row shape as
+/// export, so the caller re-applies via `POST /v1/ingest` (X-Database: memory).
+async fn changes_memory_handler(
+    State(state): State<AgentState>,
+    axum::extract::Query(params): axum::extract::Query<ChangesParams>,
+) -> Json<Value> {
+    let shared = SharedToolCtx {
+        catalog: state.catalog.clone(),
+        format: state.format.clone(),
+        pool: state.pool.clone(),
+    };
+    let since = params
+        .since
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
+    let since_esc = since.replace('\'', "''");
+    let realm_filter = params
+        .realm
+        .as_deref()
+        .map(|r| format!(" AND realm = '{}'", r.replace('\'', "''")))
+        .unwrap_or_default();
+    let nodes_sql = format!(
+        "WITH latest AS (SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM memory_nodes) \
+         SELECT id, labels, realm, memory_type, title, content, content_preview, tags, importance, status, \
+                source_session_id, source_run_id, embedding, created_at, updated_at, \
+                valid_at, invalid_at, superseded_by, provenance, topic_key \
+         FROM latest WHERE __rn = 1 AND updated_at > '{since_esc}'{realm_filter}"
+    );
+    let edges_sql = format!(
+        "SELECT id, src, dst, type, realm, target_namespace, props, created_at \
+         FROM memory_edges WHERE created_at > '{since_esc}'"
+    );
+    let db = kyma_memory::DEFAULT_DATABASE;
+    let nodes = execute_sql(&shared, db, &nodes_sql, 1_000_000).await;
+    let edges = execute_sql(&shared, db, &edges_sql, 1_000_000).await;
+    let rows = |v: Value| v.get("rows").cloned().unwrap_or_else(|| json!([]));
+    Json(json!({
+        "since": since,
+        "until": Utc::now().to_rfc3339(),
+        "memory_nodes": rows(nodes),
+        "memory_edges": rows(edges),
+    }))
 }
 
 /// `GET /v1/agent/memory/export[?realm=]` — full memory snapshot (latest node
@@ -117,8 +223,9 @@ async fn export_memory_handler(
     Json(json!({
         "memory_nodes": rows(nodes),
         "memory_edges": rows(edges),
-        "hint": "Re-import via POST /v1/ingest with X-Database: memory and \
-                 X-Table: memory_nodes|memory_edges (NDJSON, one object per line).",
+        "hint": "Re-import on another instance via POST /v1/agent/memory/import \
+                 with this same {memory_nodes, memory_edges} body (writes through \
+                 the MemoryWriter, preserving the canonical schema + embeddings).",
     }))
 }
 

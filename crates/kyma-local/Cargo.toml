@@ -21,11 +21,14 @@ kyma-format-tlm.workspace = true
 # web-ui embeds the same web interface the hosted server serves.
 kyma-server = { workspace = true, features = ["web-ui"] }
 kyma-mcp.workspace = true
+kyma-memory.workspace = true
 kyma-ingest-rest.workspace = true
 kyma-ingest-core.workspace = true
 tokio.workspace = true
 axum.workspace = true
+reqwest.workspace = true
 serde_json.workspace = true
+chrono.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true

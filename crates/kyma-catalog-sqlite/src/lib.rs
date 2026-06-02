@@ -102,6 +102,30 @@ impl SqliteCatalog {
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }
+
+    /// Read a sync watermark / state value by key (e.g. memory push/pull
+    /// watermarks). `None` if unset. Backs bidirectional memory sync.
+    pub async fn get_sync_state(&self, key: &str) -> Result<Option<String>, CatalogError> {
+        sqlx::query_scalar("SELECT watermark FROM sync_state WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(ce)
+    }
+
+    /// Upsert a sync watermark / state value by key.
+    pub async fn set_sync_state(&self, key: &str, value: &str) -> Result<(), CatalogError> {
+        sqlx::query(
+            "INSERT INTO sync_state (key, watermark) VALUES (?, ?) \
+             ON CONFLICT (key) DO UPDATE SET watermark = excluded.watermark",
+        )
+        .bind(key)
+        .bind(value)
+        .execute(&self.pool)
+        .await
+        .map_err(ce)?;
+        Ok(())
+    }
 }
 
 /// The embedded schema. Mirrors the Postgres migrations' columns; types are

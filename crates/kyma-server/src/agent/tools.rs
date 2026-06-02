@@ -342,7 +342,7 @@ fn is_safe_ident(s: &str) -> bool {
 /// execute `sql`, and return a JSON envelope `{columns, rows, truncated}`
 /// (or `{error}` on failure — never an `Err`, because tool failures should
 /// be surfaced to the model as data rather than abort the run).
-pub(crate) async fn execute_sql(
+pub async fn execute_sql(
     shared: &SharedToolCtx,
     database: &str,
     sql: &str,

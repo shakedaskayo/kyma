@@ -23,6 +23,7 @@
 #![forbid(unsafe_code)]
 
 mod setup;
+mod sync;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -71,6 +72,9 @@ enum Command {
         #[arg(long, env = "KYMA_LOCAL_HTTP_ADDR", default_value = "127.0.0.1:7777")]
         addr: SocketAddr,
     },
+    /// Sync memory bidirectionally with a control plane (push local changes +
+    /// pull remote ones). Needs KYMA_CLOUD_URL (and usually KYMA_CLOUD_TOKEN).
+    Sync,
     /// Wire a coding agent to this binary over stdio MCP (claude-code | cursor |
     /// windsurf | …). One-liner onboarding; `setup list` shows the supported set.
     Setup {
@@ -103,6 +107,8 @@ fn resolve_paths() -> Paths {
 
 /// The shared local engine: embedded catalog + local-filesystem columnar store.
 struct Engine {
+    /// Concrete handle — for sync watermarks (`sync_state`) beyond the trait.
+    sqlite: Arc<SqliteCatalog>,
     catalog: Arc<dyn Catalog>,
     format: Arc<dyn SegmentFormat>,
 }
@@ -114,11 +120,12 @@ async fn open_engine(paths: &Paths) -> Result<Engine> {
     std::fs::create_dir_all(&paths.data_root)
         .with_context(|| format!("creating data root {}", paths.data_root))?;
 
-    let catalog: Arc<dyn Catalog> = Arc::new(
+    let sqlite = Arc::new(
         SqliteCatalog::connect(&paths.catalog_db)
             .await
             .map_err(|e| anyhow::anyhow!("opening catalog at {}: {e}", paths.catalog_db))?,
     );
+    let catalog: Arc<dyn Catalog> = sqlite.clone();
     info!(catalog = %paths.catalog_db, "embedded catalog ready");
 
     let store = build_object_store(&StorageConfig::Local { root: paths.data_root.clone() })
@@ -126,7 +133,7 @@ async fn open_engine(paths: &Paths) -> Result<Engine> {
     let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store, "kyma-local"));
     info!(data = %paths.data_root, "local object store ready");
 
-    Ok(Engine { catalog, format })
+    Ok(Engine { sqlite, catalog, format })
 }
 
 fn mcp_state(engine: &Engine) -> McpState {
@@ -157,15 +164,32 @@ async fn main() -> Result<()> {
         eprintln!("  mcp     : kyma-local mcp          (stdio MCP; memory + data + graph)");
         eprintln!("  serve   : kyma-local serve        (web UI + HTTP API + ingest, zero-auth)");
         eprintln!("  setup   : kyma-local setup <agent> (wire claude-code/cursor/windsurf to mcp)");
+        eprintln!("  sync    : kyma-local sync          (push/pull memory to KYMA_CLOUD_URL)");
         return Ok(());
     }
 
     match cli.command {
         Some(Command::Setup { agent, print }) => setup::run(&agent, print),
+        Some(Command::Sync) => run_sync(paths).await,
         Some(Command::Serve { addr }) => serve_http(paths, addr).await,
         // Default (no subcommand) and `mcp` both serve stdio MCP.
         _ => serve_mcp(paths).await,
     }
+}
+
+async fn run_sync(paths: Paths) -> Result<()> {
+    init_tracing(false);
+    let cloud_url = std::env::var("KYMA_CLOUD_URL").map_err(|_| {
+        anyhow::anyhow!("set KYMA_CLOUD_URL (and usually KYMA_CLOUD_TOKEN) to sync to a control plane")
+    })?;
+    let engine = open_engine(&paths).await?;
+    let cfg = sync::SyncConfig {
+        cloud_url,
+        token: std::env::var("KYMA_CLOUD_TOKEN").ok().filter(|s| !s.is_empty()),
+        realm: std::env::var("KYMA_SYNC_REALM").ok().filter(|s| !s.is_empty()),
+        now: chrono::Utc::now().to_rfc3339(),
+    };
+    sync::run(&engine, cfg).await
 }
 
 async fn serve_mcp(paths: Paths) -> Result<()> {

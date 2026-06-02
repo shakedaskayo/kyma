@@ -4955,6 +4955,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "axum",
+ "chrono",
  "clap",
  "kyma-catalog-sqlite",
  "kyma-core",
@@ -4962,8 +4963,10 @@ dependencies = [
  "kyma-ingest-core",
  "kyma-ingest-rest",
  "kyma-mcp",
+ "kyma-memory",
  "kyma-server",
  "kyma-storage",
+ "reqwest 0.12.28",
  "serde_json",
  "tokio",
  "tracing",
