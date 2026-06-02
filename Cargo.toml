@@ -5,6 +5,7 @@ members = [
     "crates/kyma-format-tlm",
     "crates/kyma-format-stub-vec",
     "crates/kyma-catalog",
+    "crates/kyma-catalog-sqlite",
     "crates/kyma-storage",
     "crates/kyma-ingest-core",
     "crates/kyma-ingest-rest",
@@ -131,6 +132,7 @@ kyma-core              = { path = "crates/kyma-core" }
 kyma-format-tlm        = { path = "crates/kyma-format-tlm" }
 kyma-format-stub-vec   = { path = "crates/kyma-format-stub-vec" }
 kyma-catalog           = { path = "crates/kyma-catalog" }
+kyma-catalog-sqlite    = { path = "crates/kyma-catalog-sqlite" }
 kyma-storage           = { path = "crates/kyma-storage" }
 kyma-ingest-core       = { path = "crates/kyma-ingest-core" }
 kyma-ingest-rest       = { path = "crates/kyma-ingest-rest" }
