@@ -1,0 +1,78 @@
+name: rust-tests
+
+# Correctness gate for the Rust workspace: a full compile of every crate +
+# test target, the no-infra unit suites, and the Postgres-backed integration
+# suites (testcontainers spins pgvector/pgvector:pg16 per fixture; the kyma-mcp
+# end-to-end pool connects to the `postgres` service below).
+#
+# Complements gauntlet-pr (live scenario tests against a running engine). There
+# is intentionally no `cargo fmt --check` gate — the tree is not rustfmt-clean
+# and enforcing it would be a repo-wide reformat, not a correctness signal.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  # The kyma-mcp end-to-end test opens a raw sqlx pool against this URL (it does
+  # not migrate it — assertions run against the testcontainers catalog). Any
+  # reachable Postgres satisfies it.
+  KYMA_TEST_DATABASE_URL: postgres://kyma:kyma_dev@localhost:5432/kyma
+
+jobs:
+  rust-tests:
+    name: build + unit + integration
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: kyma
+          POSTGRES_PASSWORD: kyma_dev
+          POSTGRES_DB: kyma
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U kyma"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-tests-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: rust-tests-${{ runner.os }}-
+
+      # Compile gate for the WHOLE workspace, including every test target. This
+      # is what catches "a refactor changed a signature but a test crate was
+      # never recompiled" breaks. rdkafka (kyma-bin / kyma-ingest-kafka) needs
+      # cmake, which is preinstalled on ubuntu-22.04 runners.
+      - name: compile all crates + test targets
+        run: cargo test --workspace --locked --no-run
+
+      # Fast, no external dependencies.
+      - name: unit suites (no infra)
+        run: >-
+          cargo test --locked
+          -p kyma-core -p kyma-storage -p kyma-kql
+          -p kyma-memory -p kyma-catalog-sqlite
+
+      # Postgres-backed. testcontainers starts an ephemeral pgvector/pgvector:pg16
+      # per fixture using the runner's Docker daemon — no service wiring needed.
+      - name: catalog integration (testcontainers)
+        run: cargo test --locked -p kyma-catalog
+
+      - name: server integration (testcontainers)
+        run: cargo test --locked -p kyma-server --features "test-support cloud-auth"
+
+      - name: mcp integration (testcontainers + pool)
+        run: cargo test --locked -p kyma-mcp --features "kyma-server/test-support"

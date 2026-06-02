@@ -49,7 +49,12 @@ fn build_app(state: kyma_server::QueryState) -> axum::Router {
     };
 
     let read_router = kyma_server::router(state.clone());
-    let write_router = kyma_server::discover_views_write_router(state.pg_pool.clone());
+    let write_router = kyma_server::discover_views_write_router(
+        state
+            .pg_pool
+            .clone()
+            .expect("test QueryState is always built with a pg_pool"),
+    );
 
     read_router
         .merge(write_router)

@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use adk_rust::futures::StreamExt;
 use adk_rust::identity::{SessionId, UserId};
 use adk_rust::{Content, Part};
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -32,6 +32,7 @@ use super::sessions;
 use super::state::AgentState;
 use super::tools::{execute_sql, SharedToolCtx};
 use super::ui_stream;
+use crate::auth::{Principal, Role};
 
 /// Hard cap on tool-call count per run. Above this, the turn is aborted
 /// with `run_error{code="tool_loop"}` and persisted as `budget_exceeded`.
@@ -95,11 +96,25 @@ struct ImportBody {
 /// This is the receive side of memory sync.
 async fn import_memory_handler(
     State(state): State<AgentState>,
+    Extension(principal): Extension<Principal>,
     Json(body): Json<ImportBody>,
-) -> Json<Value> {
+) -> Response {
+    // Import is a bulk WRITE of memory nodes/edges from another instance. The
+    // surrounding agent router is mounted at `Role::Read`, so gate this one
+    // route at `Role::Write` in-handler — a read-only token must not be able to
+    // push memory into the store.
+    if principal.role < Role::Write {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "memory import requires write role" })),
+        )
+            .into_response();
+    }
     let embed = match kyma_memory::shared_embedding().await {
         Ok(e) => e,
-        Err(e) => return Json(json!({ "error": format!("embedding backend: {e}") })),
+        Err(e) => {
+            return Json(json!({ "error": format!("embedding backend: {e}") })).into_response()
+        }
     };
     let writer =
         kyma_memory::MemoryWriter::new(state.catalog.clone(), state.format.clone(), embed);
@@ -123,6 +138,7 @@ async fn import_memory_handler(
         "applied_edges": applied_edges,
         "errors": errors,
     }))
+    .into_response()
 }
 
 #[derive(Debug, Deserialize)]

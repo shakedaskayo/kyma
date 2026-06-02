@@ -7,14 +7,18 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use kyma_catalog::PostgresCatalog;
 use kyma_core::catalog::{Catalog, TableConfig};
 use std::sync::Arc;
-use testcontainers::runners::AsyncRunner;
+use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 
 async fn setup() -> (PostgresCatalog, testcontainers::ContainerAsync<Postgres>) {
+    // pgvector/pgvector:pg16 ships the `vector` extension that migration 004
+    // creates; the bare postgres image lacks it and migration would fail.
     let container = Postgres::default()
         .with_user("kyma")
         .with_password("kyma_dev")
         .with_db_name("kyma")
+        .with_name("pgvector/pgvector")
+        .with_tag("pg16")
         .start()
         .await
         .expect("failed to start postgres container");

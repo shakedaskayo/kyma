@@ -86,10 +86,20 @@ async fn auth_handler_full_flow() {
         .await
         .unwrap();
     let body: Value = serde_json::from_slice(&body_bytes).unwrap();
-    let token = body["token"].as_str().expect("token in login response").to_owned();
-    assert!(!token.is_empty(), "token must be non-empty");
-    assert_eq!(body["user"]["username"].as_str().unwrap(), "admin");
-    assert_eq!(body["user"]["role"].as_str().unwrap(), "admin");
+    // Login returns an access + refresh token pair (auth_handler::TokenPair); the
+    // access token authenticates ordinary API calls. User identity is asserted via
+    // /me below — the pair carries no user body.
+    let token = body["access_token"]
+        .as_str()
+        .expect("access_token in login response")
+        .to_owned();
+    assert!(!token.is_empty(), "access token must be non-empty");
+    assert!(
+        body["refresh_token"]
+            .as_str()
+            .is_some_and(|t| !t.is_empty()),
+        "refresh token must be present and non-empty"
+    );
 
     // Re-build app for each oneshot call (tower services are consumed).
     let app = build_auth_app(&state);

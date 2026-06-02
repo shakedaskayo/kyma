@@ -14,6 +14,18 @@ use kyma_server::auth::{AuthLayerState, EnvAuthBackend, Role};
 use std::sync::Arc;
 use tower::ServiceExt;
 
+/// Serializes the tests that depend on `KYMA_DISCOVER_MAX_SOURCES`. cargo runs
+/// the tests in this binary on parallel threads sharing one process env, so the
+/// `set_var`/`remove_var` window in `scope_too_large_returns_400` would
+/// otherwise leak the cap=1 into the tests that assume the default cap. Holding
+/// this lock for the duration of each such test makes them mutually exclusive.
+/// Poison-tolerant: a real assertion failure in one test must not mask the rest.
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+    ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Build a router with auth middleware in "disabled" mode — the middleware
 /// will short-circuit to an Admin principal in `DEFAULT_TENANT`. This is the
 /// same trick the auth handler integration tests use to bypass real tokens.
@@ -59,6 +71,7 @@ fn frames(text: &str) -> Vec<serde_json::Value> {
 
 #[tokio::test]
 async fn search_emits_plan_first_done_last() {
+    let _env = env_guard();
     let state = kyma_server::test_support::seeded_state_two_databases().await;
     let body = serde_json::json!({ "query": "", "scope": { "kind": "all" } });
     let (status, text) = post_search(state, body).await;
@@ -80,6 +93,7 @@ async fn search_emits_plan_first_done_last() {
 
 #[tokio::test]
 async fn search_plan_includes_both_seeded_sources() {
+    let _env = env_guard();
     let state = kyma_server::test_support::seeded_state_two_databases().await;
     let body = serde_json::json!({ "query": "", "scope": { "kind": "all" } });
     let (_, text) = post_search(state, body).await;
@@ -102,6 +116,7 @@ async fn search_plan_includes_both_seeded_sources() {
 
 #[tokio::test]
 async fn search_emits_one_source_done_per_source() {
+    let _env = env_guard();
     let state = kyma_server::test_support::seeded_state_two_databases().await;
     let body = serde_json::json!({ "query": "", "scope": { "kind": "all" } });
     let (_, text) = post_search(state, body).await;
@@ -128,6 +143,7 @@ async fn search_emits_one_source_done_per_source() {
 
 #[tokio::test]
 async fn scope_restricted_to_one_db_pattern() {
+    let _env = env_guard();
     let state = kyma_server::test_support::seeded_state_two_databases().await;
     let body = serde_json::json!({
         "query": "",
@@ -153,6 +169,7 @@ async fn scope_restricted_to_one_db_pattern() {
 
 #[tokio::test]
 async fn scope_too_large_returns_400() {
+    let _env = env_guard();
     let state = kyma_server::test_support::seeded_state_two_databases().await;
     // Force the cap below 2 so the two-source fixture trips the limit.
     std::env::set_var("KYMA_DISCOVER_MAX_SOURCES", "1");
