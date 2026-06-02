@@ -55,7 +55,7 @@ async fn full_mcp_handshake_against_seeded_server() {
         .json(&json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}))
         .send().await.unwrap().json().await.unwrap();
     let tools = list["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 13);
+    assert_eq!(tools.len(), 17);
 
     // 4. tools/call list_databases
     let call: Value = client.post(&base).bearer_auth("mcp-token")

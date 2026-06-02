@@ -128,6 +128,10 @@ impl MemoryWriter {
     /// Returns the new memory uuid.
     pub async fn save(&self, m: &CreateMemory) -> Result<Uuid> {
         self.ensure_provisioned().await?;
+        // Strip `<private>…</private>` spans at the store layer (defense in
+        // depth beyond the capture hooks) so secrets are never persisted/embedded.
+        let red = redact_create(m);
+        let m = &red;
         let emb = self.embed_one(&m.content).await?;
         let id = Uuid::new_v4();
         let now = now_rfc3339();
@@ -144,6 +148,19 @@ impl MemoryWriter {
             self.append_rows(EDGE_TABLE, edges).await?;
         }
         Ok(id)
+    }
+
+    /// Upsert a new version of an existing memory `id` (same id → latest-wins),
+    /// re-embedding the redacted content. Used by topic-key upsert so a repeated
+    /// save updates in place instead of creating a duplicate.
+    pub async fn save_as(&self, id: Uuid, m: &CreateMemory) -> Result<()> {
+        self.ensure_provisioned().await?;
+        let red = redact_create(m);
+        let m = &red;
+        let emb = self.embed_one(&m.content).await?;
+        let now = now_rfc3339();
+        let node = rows::node_row(&id, m, &emb, &now);
+        self.append_rows(NODE_TABLE, vec![node]).await
     }
 
     /// Append a single edge linking a memory node to another (possibly
@@ -212,4 +229,66 @@ impl MemoryWriter {
 
 fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339()
+}
+
+/// Return a copy of `m` with `<private>…</private>` spans redacted from its
+/// content and title. Cheap clone on the (low-volume) save path.
+fn redact_create(m: &CreateMemory) -> CreateMemory {
+    let mut out = m.clone();
+    out.content = redact_private(&m.content);
+    out.title = m.title.as_deref().map(redact_private);
+    out
+}
+
+/// Replace every `<private>…</private>` span (case-insensitive tags) with
+/// `[redacted]`. An unclosed `<private>` redacts to end-of-string. ASCII tag
+/// offsets are char boundaries, so the byte slicing stays UTF-8-safe.
+fn redact_private(s: &str) -> String {
+    const OPEN: &str = "<private>";
+    const CLOSE: &str = "</private>";
+    let lower = s.to_ascii_lowercase();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0usize;
+    while i < s.len() {
+        match lower[i..].find(OPEN) {
+            Some(rel) => {
+                let start = i + rel;
+                out.push_str(&s[i..start]);
+                out.push_str("[redacted]");
+                let after = start + OPEN.len();
+                match lower[after..].find(CLOSE) {
+                    Some(crel) => i = after + crel + CLOSE.len(),
+                    None => break, // unclosed → drop the rest
+                }
+            }
+            None => {
+                out.push_str(&s[i..]);
+                break;
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod redact_tests {
+    use super::redact_private;
+
+    #[test]
+    fn strips_private_spans() {
+        assert_eq!(
+            redact_private("token is <private>sk-abc123</private> ok"),
+            "token is [redacted] ok"
+        );
+    }
+
+    #[test]
+    fn unclosed_private_drops_tail() {
+        assert_eq!(redact_private("safe <PRIVATE>secret tail"), "safe [redacted]");
+    }
+
+    #[test]
+    fn no_tags_unchanged() {
+        assert_eq!(redact_private("nothing to redact"), "nothing to redact");
+    }
 }

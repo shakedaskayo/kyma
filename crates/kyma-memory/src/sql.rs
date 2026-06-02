@@ -154,7 +154,7 @@ pub fn latest_node_sql(node_table: &str, node_id: &str) -> String {
            SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM {nt}\n) \
          SELECT id, labels, realm, memory_type, title, content, content_preview, tags, importance, status, \
                 source_session_id, source_run_id, embedding, created_at, updated_at, \
-                valid_at, invalid_at, superseded_by, provenance \
+                valid_at, invalid_at, superseded_by, provenance, topic_key \
          FROM latest WHERE __rn = 1 AND id = {idv}",
         nt = node_table,
         idv = sql_str(node_id),

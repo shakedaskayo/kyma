@@ -4,8 +4,9 @@ use adk_rust::tool::SimpleToolContext;
 use adk_rust::Tool;
 use kyma_server::agent::{
     tool_describe_table, tool_explore_schema, tool_find_references_to, tool_graph_traverse,
-    tool_link_memory_to_entity, tool_list_databases, tool_list_memories, tool_memory_search,
-    tool_recall_memory, tool_run_kql, tool_run_sql, tool_sample_rows, tool_save_memory,
+    tool_link_memory_to_entity, tool_list_databases, tool_list_memories, tool_memory_compare,
+    tool_memory_judge, tool_memory_search, tool_recall_memory, tool_run_kql, tool_run_sql,
+    tool_sample_rows, tool_save_memory, tool_update_memory_importance, tool_update_memory_status,
     SharedToolCtx,
 };
 use serde_json::{json, Value};
@@ -21,7 +22,7 @@ pub struct ToolDispatch {
 
 impl ToolDispatch {
     pub fn new(shared: SharedToolCtx) -> Self {
-        let mut map: HashMap<&'static str, Arc<dyn Tool>> = HashMap::with_capacity(16);
+        let mut map: HashMap<&'static str, Arc<dyn Tool>> = HashMap::with_capacity(18);
         map.insert("list_databases", tool_list_databases(shared.clone()));
         map.insert("describe_table", tool_describe_table(shared.clone()));
         map.insert("run_sql", tool_run_sql(shared.clone()));
@@ -37,7 +38,13 @@ impl ToolDispatch {
         map.insert("recall_memory", tool_recall_memory(shared.clone()));
         map.insert("save_memory", tool_save_memory(shared.clone()));
         map.insert("list_memories", tool_list_memories(shared.clone()));
-        map.insert("link_memory_to_entity", tool_link_memory_to_entity(shared));
+        map.insert("link_memory_to_entity", tool_link_memory_to_entity(shared.clone()));
+        // Curation: re-weight / archive memories during housekeeping.
+        map.insert("update_memory_status", tool_update_memory_status(shared.clone()));
+        map.insert("update_memory_importance", tool_update_memory_importance(shared.clone()));
+        // Agent-driven conflict resolution.
+        map.insert("memory_compare", tool_memory_compare(shared.clone()));
+        map.insert("memory_judge", tool_memory_judge(shared));
         Self { by_name: Arc::new(map) }
     }
 

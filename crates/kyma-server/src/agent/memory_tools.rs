@@ -43,6 +43,26 @@ async fn build_writer(shared: &SharedToolCtx) -> std::result::Result<MemoryWrite
     ))
 }
 
+/// Find the latest memory node id for a `(realm, topic_key)`, if any.
+/// Backs the topic-key upsert path in `save_memory`.
+async fn find_by_topic_key(shared: &SharedToolCtx, realm: &str, topic_key: &str) -> Option<String> {
+    let q = format!(
+        "WITH latest AS (SELECT id, realm, topic_key, \
+           row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS rn FROM {nt}) \
+         SELECT id FROM latest WHERE rn = 1 AND topic_key = {tk} AND realm = {r} LIMIT 1",
+        nt = NODE_TABLE,
+        tk = kyma_memory::sql::sql_str(topic_key),
+        r = kyma_memory::sql::sql_str(realm),
+    );
+    let res = execute_sql(shared, DEFAULT_DATABASE, &q, 1).await;
+    res.get("rows")
+        .and_then(Value::as_array)
+        .and_then(|a| a.first())
+        .and_then(|r| r.get("id"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
 // ---------------------------------------------------------------------------
 // save_memory
 // ---------------------------------------------------------------------------
@@ -69,12 +89,19 @@ struct SaveMemoryArgs {
     /// Graph node ids this memory is about — creates REFERENCES edges.
     #[serde(default)]
     references: Option<Vec<String>>,
+    /// Stable upsert key (e.g. "architecture/auth-model"). When set, a later
+    /// save with the same realm + topic_key UPDATES this memory in place
+    /// (bumping its revision) instead of creating a duplicate.
+    #[serde(default)]
+    topic_key: Option<String>,
 }
 
 const SAVE_MEMORY_DESC: &str = "Persist a durable memory (fact, decision, \
 preference, learning, or summary) so it can be recalled in later sessions. \
 Optionally link it to graph entities it's about via `references` (node ids). \
-Use this when the user states something worth remembering long-term.";
+Pass a stable `topic_key` (e.g. \"architecture/auth-model\") to upsert — a \
+later save with the same realm+topic_key updates the memory in place instead \
+of duplicating. Use this when the user states something worth remembering.";
 
 pub fn tool_save_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
     let shared = ctx;
@@ -104,6 +131,29 @@ pub fn tool_save_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     cm.realm = parsed.realm.unwrap_or_else(|| DEFAULT_REALM.to_string());
                     cm.importance = parsed.importance.unwrap_or(0.5).clamp(0.0, 1.0);
                     cm.references = parsed.references.unwrap_or_default();
+                    cm.topic_key = parsed.topic_key.clone().filter(|s| !s.trim().is_empty());
+
+                    // Topic-key upsert: if a memory with the same (realm, topic_key)
+                    // exists, update it in place (latest-wins) instead of duplicating.
+                    // Provision first so the topic_key column exists for the lookup.
+                    if cm.topic_key.is_some() {
+                        let _ = writer.ensure_provisioned().await;
+                    }
+                    if let Some(tk) = cm.topic_key.as_deref() {
+                        if let Some(existing) = find_by_topic_key(&shared, &cm.realm, tk).await {
+                            let uuid_part = existing.strip_prefix("memory:").unwrap_or(&existing);
+                            if let Ok(u) = uuid::Uuid::parse_str(uuid_part) {
+                                return Ok(match writer.save_as(u, &cm).await {
+                                    Ok(()) => json!({
+                                        "saved": true, "upserted": true,
+                                        "id": u.to_string(), "node_id": existing,
+                                        "topic_key": tk,
+                                    }),
+                                    Err(e) => json!({"error": format!("upsert: {e}")}),
+                                });
+                            }
+                        }
+                    }
                     match writer.save(&cm).await {
                         Ok(id) => Ok(json!({
                             "saved": true,
@@ -589,6 +639,144 @@ pub fn tool_merge_memories(ctx: SharedToolCtx) -> Arc<dyn Tool> {
             },
         )
         .with_parameters_schema::<MergeMemoriesArgs>()
+        .with_read_only(false),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// memory_compare / memory_judge — agent-driven conflict resolution
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct CompareArgs {
+    /// First memory (uuid or `memory:<uuid>`).
+    memory_id: String,
+    /// Second memory to compare against.
+    other_id: String,
+}
+
+const COMPARE_DESC: &str = "Fetch two memories side by side so you can judge \
+their relationship, then record it with `memory_judge`. Returns both full \
+memory rows (content + metadata).";
+
+pub fn tool_memory_compare(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "memory_compare",
+            COMPARE_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: CompareArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    let a = fetch_latest_node(&shared, &node_id_of(&parsed.memory_id)).await;
+                    let b = fetch_latest_node(&shared, &node_id_of(&parsed.other_id)).await;
+                    Ok(json!({
+                        "a": a.ok(),
+                        "b": b.ok(),
+                        "hint": "Decide the relationship, then call memory_judge with a verdict: \
+                                 supersedes | conflicts | related | compatible | merged.",
+                    }))
+                }
+            },
+        )
+        .with_parameters_schema::<CompareArgs>()
+        .with_read_only(true)
+        .with_concurrency_safe(true),
+    )
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct JudgeArgs {
+    /// The memory making the judgment (uuid or `memory:<uuid>`).
+    memory_id: String,
+    /// The other memory the verdict is about.
+    target_id: String,
+    /// One of: supersedes | conflicts | related | compatible | merged.
+    verdict: String,
+    /// Optional short rationale (stored on the edge).
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+const JUDGE_DESC: &str = "Record a conflict/relationship verdict between two \
+memories as a graph edge. `supersedes` invalidates the target (bi-temporal) + \
+writes an INVALIDATES edge; `merged` archives the target + writes MERGED_INTO; \
+`conflicts`/`related`/`compatible` write a RELATES_TO edge (verdict in props). \
+Use after `memory_compare` or when recall surfaces a contradiction.";
+
+pub fn tool_memory_judge(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "memory_judge",
+            JUDGE_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: JudgeArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    let writer = match build_writer(&shared).await {
+                        Ok(w) => w,
+                        Err(e) => return Ok(e),
+                    };
+                    let src = node_id_of(&parsed.memory_id);
+                    let dst = node_id_of(&parsed.target_id);
+                    let verdict = parsed.verdict.trim().to_ascii_lowercase();
+                    let now = now_rfc3339();
+
+                    // Realm follows the target memory when we can read it.
+                    let target_row = fetch_latest_node(&shared, &dst).await.ok();
+                    let realm = target_row
+                        .as_ref()
+                        .and_then(|r| r.get("realm"))
+                        .and_then(Value::as_str)
+                        .unwrap_or(DEFAULT_REALM)
+                        .to_string();
+
+                    match verdict.as_str() {
+                        "supersedes" | "invalidates" => {
+                            let Some(mut row) = target_row else {
+                                return Ok(json!({"error": "target memory not found"}));
+                            };
+                            row["invalid_at"] = json!(now);
+                            row["superseded_by"] = json!(src);
+                            row["updated_at"] = json!(now);
+                            if let Err(e) = writer.append_node_rows(vec![row]).await {
+                                return Ok(json!({"error": format!("invalidate: {e}")}));
+                            }
+                            let _ = writer.link(&src, &dst, "INVALIDATES", &realm, None).await;
+                            Ok(json!({"ok": true, "verdict": "supersedes", "src": src, "dst": dst}))
+                        }
+                        "merged" | "merged_into" => {
+                            if let Some(mut row) = target_row {
+                                row["status"] = json!("archived");
+                                row["updated_at"] = json!(now);
+                                let _ = writer.append_node_rows(vec![row]).await;
+                            }
+                            let _ = writer.link(&dst, &src, "MERGED_INTO", &realm, None).await;
+                            Ok(json!({"ok": true, "verdict": "merged", "into": src, "from": dst}))
+                        }
+                        _ => {
+                            let props = json!({ "verdict": verdict, "reason": parsed.reason });
+                            let edge = kyma_memory::rows::edge_row(
+                                &src, &dst, "RELATES_TO", &realm, None, Some(&props), &now,
+                            );
+                            if let Err(e) = writer.append_edge_rows(vec![edge]).await {
+                                return Ok(json!({"error": format!("relate: {e}")}));
+                            }
+                            Ok(json!({"ok": true, "verdict": verdict, "src": src, "dst": dst}))
+                        }
+                    }
+                }
+            },
+        )
+        .with_parameters_schema::<JudgeArgs>()
         .with_read_only(false),
     )
 }

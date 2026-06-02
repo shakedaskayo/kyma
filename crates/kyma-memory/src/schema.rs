@@ -43,13 +43,17 @@ pub fn memory_nodes_schema(dim: i32) -> SchemaRef {
         Field::new("invalid_at", DataType::Utf8, true),
         Field::new("superseded_by", DataType::Utf8, true),
         Field::new("provenance", DataType::Utf8, true),
+        // Deterministic upsert key: (realm, topic_key) updates in place.
+        Field::new("topic_key", DataType::Utf8, true),
     ]))
 }
 
-/// Columns that an older `memory_nodes` table (provisioned before bi-temporal
-/// support) may be missing. Used by the writer to detect schema drift and
-/// re-provision the (regenerable) memory store.
-pub const BITEMPORAL_COLUMNS: &[&str] = &["valid_at", "invalid_at", "superseded_by", "provenance"];
+/// Columns an older `memory_nodes` table may be missing (added after initial
+/// provisioning: bi-temporal validity + the topic-key upsert key). The writer
+/// detects the drift and backfills them via `alter_table_add_column` (old
+/// extents null-fill on read).
+pub const BITEMPORAL_COLUMNS: &[&str] =
+    &["valid_at", "invalid_at", "superseded_by", "provenance", "topic_key"];
 
 /// Schema for `memory_edges`. Graph columns: `src`, `dst`, `type`, `realm`.
 /// `target_namespace` carries the foreign endpoint's `database/graph` for

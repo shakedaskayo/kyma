@@ -52,6 +52,7 @@ pub fn node_row(id: &Uuid, m: &CreateMemory, embedding: &[f32], now: &str) -> Va
         "invalid_at": Value::Null,
         "superseded_by": Value::Null,
         "provenance": m.provenance.as_ref().map(|p| p.to_string()),
+        "topic_key": m.topic_key,
     })
 }
 

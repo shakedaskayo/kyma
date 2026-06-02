@@ -99,6 +99,10 @@ pub struct CreateMemory {
     pub valid_at: Option<String>,
     /// How this memory was formed: `{source, run_id, watermark, extracted_from_ids, confidence}`.
     pub provenance: Option<Value>,
+    /// Deterministic upsert key (e.g. `architecture/auth-model`). When set, a
+    /// save with the same `(realm, topic_key)` updates the existing memory in
+    /// place instead of creating a new one. `None` = always create.
+    pub topic_key: Option<String>,
 }
 
 impl CreateMemory {
@@ -115,6 +119,7 @@ impl CreateMemory {
             source_run_id: None,
             valid_at: None,
             provenance: None,
+            topic_key: None,
         }
     }
 }
