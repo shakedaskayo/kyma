@@ -4,10 +4,10 @@ use adk_rust::tool::SimpleToolContext;
 use adk_rust::Tool;
 use kyma_server::agent::{
     tool_describe_table, tool_explore_schema, tool_find_references_to, tool_graph_traverse,
-    tool_link_memory_to_entity, tool_list_databases, tool_list_memories, tool_memory_compare,
-    tool_memory_judge, tool_memory_search, tool_memory_session_summary, tool_recall_memory,
-    tool_run_kql, tool_run_sql, tool_sample_rows, tool_save_memory, tool_update_memory_importance,
-    tool_update_memory_status,
+    tool_ingest_entity, tool_link_memory_to_entity, tool_list_databases, tool_list_memories,
+    tool_memory_compare, tool_memory_judge, tool_memory_search, tool_memory_session_summary,
+    tool_recall_memory, tool_run_kql, tool_run_sql, tool_sample_rows, tool_save_memory,
+    tool_update_memory_importance, tool_update_memory_status,
     SharedToolCtx,
 };
 use serde_json::{json, Value};
@@ -40,6 +40,9 @@ impl ToolDispatch {
         map.insert("save_memory", tool_save_memory(shared.clone()));
         map.insert("list_memories", tool_list_memories(shared.clone()));
         map.insert("link_memory_to_entity", tool_link_memory_to_entity(shared.clone()));
+        // Dynamic ingestion: create virtual resources/entities on the graph,
+        // wired to memories + existing catalog (connector) resources.
+        map.insert("ingest_entity", tool_ingest_entity(shared.clone()));
         // Curation: re-weight / archive memories during housekeeping.
         map.insert("update_memory_status", tool_update_memory_status(shared.clone()));
         map.insert("update_memory_importance", tool_update_memory_importance(shared.clone()));

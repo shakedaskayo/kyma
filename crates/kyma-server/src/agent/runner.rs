@@ -16,9 +16,9 @@ use std::sync::Arc;
 use crate::agent::engine::{build_engine, CredentialResolver};
 
 use super::memory_tools::{
-    tool_link_memory_to_entity, tool_list_memories, tool_memory_compare, tool_memory_judge,
-    tool_memory_search, tool_memory_session_summary, tool_merge_memories, tool_recall_memory,
-    tool_save_memory, tool_update_memory_importance, tool_update_memory_status,
+    tool_ingest_entity, tool_link_memory_to_entity, tool_list_memories, tool_memory_compare,
+    tool_memory_judge, tool_memory_search, tool_memory_session_summary, tool_merge_memories,
+    tool_recall_memory, tool_save_memory, tool_update_memory_importance, tool_update_memory_status,
 };
 use super::sessions::Turn;
 use super::state::AgentState;
@@ -155,6 +155,7 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
         .tool(tool_recall_memory(shared.clone()))
         .tool(tool_list_memories(shared.clone()))
         .tool(tool_link_memory_to_entity(shared.clone()))
+        .tool(tool_ingest_entity(shared.clone()))
         .tool(tool_update_memory_status(shared.clone()))
         .tool(tool_update_memory_importance(shared.clone()))
         .tool(tool_merge_memories(shared.clone()))

@@ -37,6 +37,15 @@ The same `kyma` MCP server exposes `explore_schema`, `describe_table`, `run_kql`
 questions about the user's logs, traces, tables, and code/graph — including the
 `claude_code_events` table, which is this plugin's realtime capture of the conversation.
 
+## Enriching the graph
+
+Call `ingest_entity` (MCP server `kyma`) to mint a **virtual resource/entity** — a service,
+repo, table, person, file, config, or concept — and wire it to existing graph nodes
+(`target_namespace` + node id, e.g. a connector-ingested `repo:owner/name`) and to memories
+(`memory:<uuid>`). Discover real node ids first with `find_references_to` / `graph_traverse` /
+`recall_memory`; it's idempotent per `(realm, kind, name)`. The `/kyma-ingest` command guides
+this and also triggers connector pulls.
+
 ## Don't
 
 - Don't invent memories or claim to remember something `recall_memory` didn't return.

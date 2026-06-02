@@ -193,6 +193,186 @@ pub fn tool_save_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
 }
 
 // ---------------------------------------------------------------------------
+// ingest_entity — dynamic virtual resources on the graph
+// ---------------------------------------------------------------------------
+
+/// One edge wiring an entity to another node.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct EntityLink {
+    /// Node id to wire to. For a catalog resource (e.g. a connector-ingested
+    /// repo/service/table) pass its graph node id (e.g. "repo:owner/name") plus
+    /// `target_namespace`. For a memory/entity pass "memory:<uuid>".
+    target_node_id: String,
+    /// Relationship type. Default "RELATES_TO" (e.g. OWNS, DEPENDS_ON, PART_OF).
+    #[serde(default)]
+    relationship_type: Option<String>,
+    /// The target's `database/graph` namespace for cross-graph edges to
+    /// connector resources (e.g. "github"). Omit when the target is a memory.
+    #[serde(default)]
+    target_namespace: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct IngestEntityArgs {
+    /// Entity name / title (e.g. "payments service", "ledger table").
+    name: String,
+    /// Kind: service | repo | table | person | file | config | concept | … —
+    /// folded into the body and the upsert key.
+    #[serde(default)]
+    kind: Option<String>,
+    /// Arbitrary properties (object); folded into the body so the entity stays
+    /// searchable (e.g. {"language":"rust","owner":"team-pay"}).
+    #[serde(default)]
+    properties: Option<Value>,
+    /// Namespace/realm (usually the project). Defaults to "default".
+    #[serde(default)]
+    realm: Option<String>,
+    /// Edges wiring this entity to existing graph nodes / memories / siblings.
+    #[serde(default)]
+    links: Option<Vec<EntityLink>>,
+}
+
+/// Lowercase, hyphenated slug for the entity's stable upsert key.
+fn slug(s: &str) -> String {
+    s.trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+const INGEST_ENTITY_DESC: &str = "Create (or update) a virtual resource/entity on the \
+knowledge graph and wire it to existing graph nodes and memories — enriching the context \
+engine with agent-known entities (a service, repo, table, person, file, config, concept) and \
+their relationships. `links` connect the entity to catalog resources (set `target_namespace`, \
+e.g. \"github\", plus the node id like \"repo:owner/name\") or to memories (\"memory:<uuid>\"). \
+Idempotent on (realm, kind, name): re-ingesting the same entity updates it in place. Discover \
+real node ids to link to first via find_references_to / graph_traverse / recall_memory.";
+
+pub fn tool_ingest_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "ingest_entity",
+            INGEST_ENTITY_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: IngestEntityArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    let name = parsed.name.trim().to_string();
+                    if name.is_empty() {
+                        return Ok(json!({"error": "name is required"}));
+                    }
+                    let writer = match build_writer(&shared).await {
+                        Ok(w) => w,
+                        Err(e) => return Ok(e),
+                    };
+                    let realm = parsed.realm.unwrap_or_else(|| DEFAULT_REALM.to_string());
+                    let kind: Option<String> = parsed
+                        .kind
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string);
+
+                    // Fold kind + properties into the content so the entity is
+                    // recallable by its attributes.
+                    let mut content = name.clone();
+                    if let Some(k) = kind.as_deref() {
+                        content.push_str(&format!("\nKind: {k}"));
+                    }
+                    if let Some(obj) = parsed.properties.as_ref().and_then(Value::as_object) {
+                        for (k, v) in obj {
+                            let vs = match v {
+                                Value::String(s) => s.clone(),
+                                other => other.to_string(),
+                            };
+                            if !vs.trim().is_empty() {
+                                content.push_str(&format!("\n{k}: {vs}"));
+                            }
+                        }
+                    }
+
+                    let mut cm = CreateMemory::new(content);
+                    cm.title = Some(name.clone());
+                    cm.memory_type = MemoryType::Entity;
+                    cm.realm = realm.clone();
+                    cm.importance = 0.5;
+                    let topic_key =
+                        format!("entity/{}/{}", kind.as_deref().unwrap_or("entity"), slug(&name));
+                    cm.topic_key = Some(topic_key.clone());
+
+                    // Upsert by topic key so re-ingesting the same entity updates
+                    // it in place rather than duplicating. Provision first so the
+                    // topic_key column exists for the lookup.
+                    let _ = writer.ensure_provisioned().await;
+                    let existing = find_by_topic_key(&shared, &realm, &topic_key).await;
+                    let (id, upserted) = match existing
+                        .as_deref()
+                        .and_then(|e| uuid::Uuid::parse_str(e.strip_prefix("memory:").unwrap_or(e)).ok())
+                    {
+                        Some(u) => match writer.save_as(u, &cm).await {
+                            Ok(()) => (u, true),
+                            Err(e) => return Ok(json!({"error": format!("upsert: {e}")})),
+                        },
+                        None => match writer.save(&cm).await {
+                            Ok(u) => (u, false),
+                            Err(e) => return Ok(json!({"error": format!("ingest_entity: {e}")})),
+                        },
+                    };
+
+                    // Wire the requested edges. A target with a namespace is a
+                    // cross-graph node id as-is; otherwise it's a memory/entity.
+                    let src = format!("memory:{id}");
+                    let mut linked = 0usize;
+                    let mut link_errors: Vec<String> = Vec::new();
+                    for l in parsed.links.unwrap_or_default() {
+                        let dst = if l.target_namespace.is_some() {
+                            l.target_node_id.clone()
+                        } else {
+                            node_id_of(&l.target_node_id)
+                        };
+                        let rel = l
+                            .relationship_type
+                            .unwrap_or_else(|| "RELATES_TO".to_string());
+                        match writer
+                            .link(&src, &dst, &rel, &realm, l.target_namespace.as_deref())
+                            .await
+                        {
+                            Ok(()) => linked += 1,
+                            Err(e) => link_errors.push(format!("{dst}: {e}")),
+                        }
+                    }
+
+                    let mut out = json!({
+                        "created": true,
+                        "upserted": upserted,
+                        "id": id.to_string(),
+                        "node_id": src,
+                        "kind": kind,
+                        "topic_key": topic_key,
+                        "links": linked,
+                    });
+                    if !link_errors.is_empty() {
+                        out["link_errors"] = json!(link_errors);
+                    }
+                    Ok(out)
+                }
+            },
+        )
+        .with_parameters_schema::<IngestEntityArgs>()
+        .with_read_only(false),
+    )
+}
+
+// ---------------------------------------------------------------------------
 // recall_memory
 // ---------------------------------------------------------------------------
 

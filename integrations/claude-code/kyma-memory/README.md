@@ -52,6 +52,8 @@ claude_code_events
 - `/kyma-recall <query>` — semantic recall from your durable memory.
 - `/kyma-remember [note]` — save a memory, or distill the recent conversation.
 - `/kyma-ask <question>` — ask Kyma about your data (logs/traces/tables/graph) in KQL/SQL.
+- `/kyma-ingest [source | resources]` — pull from a connector on demand, or create virtual
+  graph entities wired to memory and existing resources.
 - `/kyma-status` — connection, capture mode, and this project's event breakdown.
 
 ## Configuration (environment variables)

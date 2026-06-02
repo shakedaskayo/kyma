@@ -116,7 +116,7 @@ back to an exact scan for any extent lacking the stat.
 ### For coding agents — the MCP tool
 
 Agents connected to Kyma's MCP server get `memory_search` (and `save_memory`,
-`recall_memory`, `list_memories`, `link_memory_to_entity`):
+`recall_memory`, `list_memories`, `link_memory_to_entity`, `ingest_entity`):
 
 ```jsonc
 // tools/call memory_search
@@ -146,6 +146,15 @@ fetches two memories side by side and `memory_judge` records the verdict on the
 graph: `supersedes` invalidates the target (bi-temporal — it drops from default
 recall but stays for audit), `merged` archives it, and
 `conflicts`/`related`/`compatible` write a `RELATES_TO` edge.
+
+**Dynamic ingestion.** `ingest_entity` mints a **virtual resource** — a service,
+repo, table, person, file, config, or concept — and wires it to existing graph
+nodes (cross-graph via `target_namespace`, e.g. a connector-ingested
+`repo:owner/name`) and to memories (`memory:<uuid>`). Entities render in the
+unified graph alongside connector resources and are idempotent per
+`(realm, kind, name)`. The Claude Code [`/kyma-ingest`](/agent/claude-code-plugin)
+command drives this — and also triggers on-demand **connector** pulls so an agent
+can fill the graph from GitHub/Prometheus/etc. without leaving the editor.
 
 **Privacy.** Content wrapped in `<private>…</private>` is stripped at the store
 layer before anything is embedded or persisted.
