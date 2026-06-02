@@ -327,7 +327,7 @@ async fn main() -> Result<()> {
     let agent_state = kyma_server::agent::AgentState {
         catalog: catalog.clone(),
         format: format.clone(),
-        pool: pg_pool.clone(),
+        pool: Some(pg_pool.clone()),
         engines: engine_store.clone(),
         credentials: cred_store.clone(),
         tenant: kyma_core::tenant::DEFAULT_TENANT,

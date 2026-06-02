@@ -34,11 +34,17 @@ use kyma_format_tlm::TelemetryFormat;
 use kyma_ingest_core::WritePath;
 use kyma_ingest_rest::IngestState;
 use kyma_mcp::{serve_stdio, McpState, ServerInfo, ToolDispatch};
-use kyma_server::agent::SharedToolCtx;
+use kyma_server::agent::local::{
+    NullCredentialStore, NullEnabledSkillsStore, NullEnginePreferenceStore,
+};
+use kyma_server::agent::{AgentState, SharedToolCtx};
+use kyma_server::auth::{
+    require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role, SessionAuthBackend,
+};
 use kyma_server::catalog_handler::SchemaCache;
 use kyma_server::QueryState;
 use kyma_storage::{build_object_store, StorageConfig};
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -163,6 +169,28 @@ async fn serve_http(paths: Paths, addr: SocketAddr) -> Result<()> {
     init_tracing(false);
     let engine = open_engine(&paths).await?;
 
+    // The web UI requires a sign-in. Seed a local user (default `admin`/`admin`,
+    // override with KYMA_LOCAL_USER / KYMA_LOCAL_PASSWORD) and authenticate via
+    // session tokens stored in the embedded catalog — same machinery as the
+    // server, over SQLite.
+    let user = std::env::var("KYMA_LOCAL_USER").unwrap_or_else(|_| "admin".into());
+    let password = std::env::var("KYMA_LOCAL_PASSWORD").unwrap_or_else(|_| "admin".into());
+    if engine.catalog.count_users().await.unwrap_or(0) == 0 {
+        let phc = kyma_server::auth::passwords::hash_password(&password)
+            .map_err(|e| anyhow::anyhow!("hashing local password: {e}"))?;
+        engine
+            .catalog
+            .create_user(&user, &phc, "admin")
+            .await
+            .context("seeding local user")?;
+        info!(username = %user, "seeded local web-UI user");
+    }
+    let backend: Arc<dyn AuthBackend> = Arc::new(SessionAuthBackend::new(
+        engine.catalog.clone(),
+        EnvAuthBackend::from_env(),
+        true,
+    ));
+
     let query_state = QueryState {
         catalog: engine.catalog.clone(),
         format: engine.format.clone(),
@@ -170,18 +198,49 @@ async fn serve_http(paths: Paths, addr: SocketAddr) -> Result<()> {
         node_id: None,
         pg_pool: None, // local: no Postgres — pool-only surfaces degrade gracefully
     };
+    let agent_state = AgentState {
+        catalog: engine.catalog.clone(),
+        format: engine.format.clone(),
+        pool: None, // local: run/session history not persisted; memory runs over the engine
+        engines: Arc::new(NullEnginePreferenceStore),
+        credentials: Arc::new(NullCredentialStore),
+        tenant: kyma_core::tenant::DEFAULT_TENANT,
+        skills: Arc::new(NullEnabledSkillsStore),
+        mcp_url: None,
+    };
     let write_path = WritePath::new(engine.catalog.clone(), engine.format.clone());
     let ingest_state = IngestState {
         catalog: engine.catalog.clone(),
         write_path,
     };
 
-    // Same web interface + API the hosted server serves — minus auth, minus the
-    // Postgres-only surfaces. Ingest is open so on-demand ingestion (e.g. the
-    // Claude Code plugin) fills the catalog + graph.
-    let app = kyma_server::router(query_state)
-        .merge(kyma_ingest_rest::router(ingest_state))
+    let read_mw = || {
+        axum::middleware::from_fn_with_state(
+            AuthLayerState { backend: backend.clone(), required: Role::Read },
+            require_role_middleware,
+        )
+    };
+    let write_mw = || {
+        axum::middleware::from_fn_with_state(
+            AuthLayerState { backend: backend.clone(), required: Role::Write },
+            require_role_middleware,
+        )
+    };
+
+    // The same web interface + full API the hosted server serves, over the
+    // embedded catalog. Read surfaces (query/catalog/graph/agent/memory/MCP)
+    // require Role::Read; ingest requires Role::Write; login/web/health are open.
+    let read_router = kyma_server::router_with_agent(query_state, agent_state)
         .merge(kyma_mcp::router(mcp_state(&engine)))
+        .layer(read_mw());
+    let ingest_router = kyma_ingest_rest::router(ingest_state).layer(write_mw());
+    let session_router = kyma_server::auth_handler::auth_session_router(engine.catalog.clone())
+        .layer(read_mw());
+
+    let app = read_router
+        .merge(ingest_router)
+        .merge(session_router)
+        .merge(kyma_server::auth_handler::auth_login_router(engine.catalog.clone()))
         .merge(kyma_server::health_router())
         .merge(kyma_server::web_ui::router());
     let app = kyma_server::with_permissive_cors(app);
@@ -189,10 +248,13 @@ async fn serve_http(paths: Paths, addr: SocketAddr) -> Result<()> {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding {addr}"))?;
-    info!(%addr, "kyma-local serving web UI + HTTP API (zero-auth, local)");
-    info!("  web UI:   http://{addr}/");
+    info!(%addr, "kyma-local serving the web UI + full HTTP API (local, SQLite)");
+    info!("  web UI:   http://{addr}/   (sign in: {user} / {password})");
     info!("  ingest:   POST http://{addr}/v1/ingest   (X-Database / X-Table headers)");
     info!("  MCP:      http://{addr}/mcp/v1");
+    if password == "admin" {
+        warn!("using the default local password 'admin' — set KYMA_LOCAL_PASSWORD to change it");
+    }
     axum::serve(listener, app).await.context("http server")?;
     Ok(())
 }

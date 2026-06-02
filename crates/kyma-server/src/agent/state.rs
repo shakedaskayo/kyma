@@ -15,8 +15,11 @@ pub struct AgentState {
     pub catalog: Arc<dyn Catalog>,
     /// Object-store + segment format — passed to KymaTable for inline tool SQL execution.
     pub format: Arc<dyn SegmentFormat>,
-    /// Postgres pool — used to persist `agent_runs` rows on completion.
-    pub pool: PgPool,
+    /// Postgres pool — used to persist `agent_runs`/session rows and read memory
+    /// settings. `None` in **local mode** (`kyma-local serve`): run/session
+    /// history isn't persisted and settings default; memory recall/save and the
+    /// data tools run over the catalog + engine and work unchanged.
+    pub pool: Option<PgPool>,
     /// Persisted engine preference (provider/model/credential/host/extras).
     pub engines: Arc<dyn EnginePreferenceStore>,
     /// Tenant-scoped credential store — used by CredentialResolver.

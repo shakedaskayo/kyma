@@ -42,12 +42,19 @@ pub struct SessionContext {
 /// that id — this lets external callers (e.g. Claude Code hooks) map their own
 /// session id onto a kyma session.
 pub async fn load_or_create(
-    pool: &PgPool,
+    pool: Option<&PgPool>,
     requested: Option<&str>,
     tenant: Uuid,
     auth_subject: &str,
     source: &str,
 ) -> SessionContext {
+    // Local mode (no pool): an ephemeral, in-memory session — not persisted.
+    let Some(pool) = pool else {
+        let sid = requested
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .unwrap_or_else(Uuid::new_v4);
+        return SessionContext { session_id: sid, history: vec![], summary: None, next_turn_index: 0 };
+    };
     if let Some(sid) = requested.and_then(|s| Uuid::parse_str(s).ok()) {
         let touched: Option<(Option<String>, i32)> = sqlx::query_as(
             "UPDATE agent_sessions SET last_active = NOW() \
@@ -105,7 +112,7 @@ pub async fn load_or_create(
 
 /// Persist one conversation turn. Idempotent on `(session_id, turn_index)`.
 pub async fn persist_turn(
-    pool: &PgPool,
+    pool: Option<&PgPool>,
     session_id: Uuid,
     tenant: Uuid,
     turn_index: i32,
@@ -113,6 +120,7 @@ pub async fn persist_turn(
     text: &str,
     run_id: Option<Uuid>,
 ) {
+    let Some(pool) = pool else { return }; // local mode: no persistence
     let _ = sqlx::query(
         "INSERT INTO agent_session_turns (session_id, tenant_id, turn_index, role, content_json, run_id) \
          VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (session_id, turn_index) DO NOTHING",
@@ -140,7 +148,7 @@ pub fn maybe_summarize_detached(state: AgentState, session_id: Uuid, every: i32)
 }
 
 async fn summarize_if_needed(state: &AgentState, session_id: Uuid, every: i32) -> anyhow::Result<()> {
-    let pool = &state.pool;
+    let Some(pool) = state.pool.as_ref() else { return Ok(()) }; // local mode: no summaries
     let (prev_summary, summary_idx): (Option<String>, i32) =
         sqlx::query_as("SELECT rolling_summary, summary_turn_index FROM agent_sessions WHERE session_id = $1")
             .bind(session_id)

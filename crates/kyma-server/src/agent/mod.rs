@@ -9,6 +9,7 @@
 //! for the broader design context.
 
 pub mod engine;
+pub mod local;
 pub mod memory;
 pub mod memory_conflict;
 pub mod memory_extract;

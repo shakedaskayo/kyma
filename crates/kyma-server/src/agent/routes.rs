@@ -95,7 +95,7 @@ async fn export_memory_handler(
     let shared = SharedToolCtx {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
-        pool: Some(state.pool.clone()),
+        pool: state.pool.clone(),
     };
     let realm_filter = params
         .realm
@@ -124,7 +124,7 @@ async fn export_memory_handler(
 
 /// `GET /v1/agent/memory/settings` — current tunable memory settings.
 async fn get_memory_settings(State(state): State<AgentState>) -> Json<Value> {
-    let s = super::memory_settings::load(Some(&state.pool), state.tenant).await;
+    let s = super::memory_settings::load(state.pool.as_ref(), state.tenant).await;
     Json(serde_json::to_value(s).unwrap_or_else(|_| json!({})))
 }
 
@@ -133,7 +133,11 @@ async fn put_memory_settings(
     State(state): State<AgentState>,
     Json(body): Json<super::memory_settings::MemorySettings>,
 ) -> Response {
-    match super::memory_settings::save(&state.pool, state.tenant, &body).await {
+    let Some(pool) = state.pool.as_ref() else {
+        // Local mode: settings aren't persisted; accept and report ok.
+        return Json(json!({ "ok": true, "persisted": false })).into_response();
+    };
+    match super::memory_settings::save(pool, state.tenant, &body).await {
         Ok(()) => Json(json!({ "ok": true })).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -162,7 +166,7 @@ async fn memory_query_handler(
     let shared = SharedToolCtx {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
-        pool: Some(state.pool.clone()),
+        pool: state.pool.clone(),
     };
     let result = retrieve(&shared, &body.retrieve).await;
     let mut out = result.to_json();
@@ -437,7 +441,7 @@ async fn ask_handler(
     let source = body.source.as_deref().unwrap_or("kyma");
     let tenant_uuid = state.tenant.as_uuid();
     let sctx = sessions::load_or_create(
-        &state.pool,
+        state.pool.as_ref(),
         body.session_id.as_deref(),
         tenant_uuid,
         ANON_USER,
@@ -453,7 +457,7 @@ async fn ask_handler(
 
     // Record the user turn up-front so it survives even if the run errors.
     sessions::persist_turn(
-        &state.pool,
+        state.pool.as_ref(),
         session_uuid,
         tenant_uuid,
         user_turn_index,
@@ -479,7 +483,7 @@ async fn ask_handler(
             // Best-effort persistence — ignore errors here since the
             // primary surface (SSE) already told the client.
             let _ = persist_run(
-                &state.pool,
+                state.pool.as_ref(),
                 run_id,
                 &question,
                 &model,
@@ -522,7 +526,7 @@ async fn ask_handler(
             Err(e) => {
                 em.run_error("internal", &format!("user_id: {e}"));
                 finish_and_persist(
-                    &pool, &mut em, run_id, &question, &model, tenant_uuid, Some(session_uuid),
+                    pool.as_ref(), &mut em, run_id, &question, &model, tenant_uuid, Some(session_uuid),
                     started_at, start, tool_calls, "error",
                 )
                 .await;
@@ -534,7 +538,7 @@ async fn ask_handler(
             Err(e) => {
                 em.run_error("internal", &format!("session_id: {e}"));
                 finish_and_persist(
-                    &pool, &mut em, run_id, &question, &model, tenant_uuid, Some(session_uuid),
+                    pool.as_ref(), &mut em, run_id, &question, &model, tenant_uuid, Some(session_uuid),
                     started_at, start, tool_calls, "error",
                 )
                 .await;
@@ -641,7 +645,7 @@ async fn ask_handler(
             em.answer_final(&final_text, last_run_sql.as_deref(), None);
             // Record the assistant turn, then refresh the rolling summary.
             sessions::persist_turn(
-                &pool,
+                pool.as_ref(),
                 session_uuid,
                 tenant_uuid,
                 assistant_turn_index,
@@ -654,7 +658,7 @@ async fn ask_handler(
         }
 
         finish_and_persist(
-            &pool, &mut em, run_id, &question, &model, tenant_uuid, Some(session_uuid), started_at,
+            pool.as_ref(), &mut em, run_id, &question, &model, tenant_uuid, Some(session_uuid), started_at,
             start, tool_calls, status_str,
         )
         .await;
@@ -665,7 +669,7 @@ async fn ask_handler(
 
 #[allow(clippy::too_many_arguments)]
 async fn finish_and_persist(
-    pool: &PgPool,
+    pool: Option<&PgPool>,
     em: &mut Emitter,
     run_id: uuid::Uuid,
     question: &str,
@@ -709,7 +713,7 @@ async fn finish_and_persist(
 
 #[allow(clippy::too_many_arguments)]
 async fn persist_run(
-    pool: &PgPool,
+    pool: Option<&PgPool>,
     run_id: uuid::Uuid,
     question: &str,
     model_id: &str,
@@ -721,6 +725,7 @@ async fn persist_run(
     usage_json: &Value,
     trace_json: &Value,
 ) -> sqlx::Result<()> {
+    let Some(pool) = pool else { return Ok(()) }; // local mode: no run persistence
     sqlx::query(
         r#"
         INSERT INTO agent_runs (
@@ -762,6 +767,9 @@ fn parse_session_id(raw: &str) -> Result<uuid::Uuid, Response> {
 }
 
 async fn list_sessions_handler(State(state): State<AgentState>) -> Response {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(json!({ "sessions": [] })).into_response(); // local: no session history
+    };
     let rows: Vec<(
         uuid::Uuid,
         Option<String>,
@@ -780,7 +788,7 @@ async fn list_sessions_handler(State(state): State<AgentState>) -> Response {
         LIMIT 200
         "#,
     )
-    .fetch_all(&state.pool)
+    .fetch_all(pool)
     .await
     {
         Ok(r) => r,
@@ -817,6 +825,9 @@ async fn get_session_handler(
         Ok(u) => u,
         Err(resp) => return resp,
     };
+    let Some(pool) = state.pool.as_ref() else {
+        return (StatusCode::NOT_FOUND, Json(json!({"error": "session not found"}))).into_response();
+    };
     let row: Option<(
         Option<String>,
         Option<String>,
@@ -829,7 +840,7 @@ async fn get_session_handler(
          FROM agent_sessions WHERE session_id = $1",
     )
     .bind(sid)
-    .fetch_optional(&state.pool)
+    .fetch_optional(pool)
     .await
     .unwrap_or(None);
     match row {
@@ -859,6 +870,9 @@ async fn get_session_turns_handler(
         Ok(u) => u,
         Err(resp) => return resp,
     };
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(json!({ "session_id": sid.to_string(), "turns": [] })).into_response();
+    };
     let rows: Vec<(
         i32,
         String,
@@ -870,7 +884,7 @@ async fn get_session_turns_handler(
          FROM agent_session_turns WHERE session_id = $1 ORDER BY turn_index ASC",
     )
     .bind(sid)
-    .fetch_all(&state.pool)
+    .fetch_all(pool)
     .await
     .unwrap_or_default();
     let turns: Vec<Value> = rows
@@ -896,15 +910,18 @@ async fn delete_session_handler(
         Ok(u) => u,
         Err(resp) => return resp,
     };
+    let Some(pool) = state.pool.as_ref() else {
+        return (StatusCode::NOT_FOUND, Json(json!({"error": "session not found"}))).into_response();
+    };
     // Turns cascade via FK ON DELETE CASCADE. `agent_runs.session_id` is a plain
     // (non-FK) column, so detach it to avoid dangling references.
     let _ = sqlx::query("UPDATE agent_runs SET session_id = NULL WHERE session_id = $1")
         .bind(sid)
-        .execute(&state.pool)
+        .execute(pool)
         .await;
     match sqlx::query("DELETE FROM agent_sessions WHERE session_id = $1")
         .bind(sid)
-        .execute(&state.pool)
+        .execute(pool)
         .await
     {
         Ok(r) if r.rows_affected() > 0 => {
@@ -941,6 +958,9 @@ async fn run_lookup_handler(
                 .into_response();
         }
     };
+    let Some(pool) = state.pool.as_ref() else {
+        return (StatusCode::NOT_FOUND, Json(json!({"error": "run not found"}))).into_response();
+    };
 
     let row: Option<(
         String,
@@ -959,7 +979,7 @@ async fn run_lookup_handler(
         "#,
     )
     .bind(uid)
-    .fetch_optional(&state.pool)
+    .fetch_optional(pool)
     .await
     {
         Ok(r) => r,
@@ -1235,7 +1255,7 @@ fn preview_body(body: &str) -> String {
 // ---------------------------------------------------------------------------
 
 async fn ask_via_claude_cli(
-    pool: PgPool,
+    pool: Option<PgPool>,
     question: &str,
     cfg: &EngineConfig,
     resume_session_id: Option<String>,
@@ -1283,7 +1303,7 @@ async fn ask_via_claude_cli(
                 ui.finish();
                 ui.done();
                 let _ = persist_run(
-                    &pool,
+                    pool.as_ref(),
                     run_id,
                     &question_owned,
                     &model,
@@ -1374,7 +1394,7 @@ async fn ask_via_claude_cli(
         ui.done();
 
         let _ = persist_run(
-            &pool,
+            pool.as_ref(),
             run_id,
             &question_owned,
             &model,

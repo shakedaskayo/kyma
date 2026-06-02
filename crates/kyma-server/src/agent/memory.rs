@@ -62,7 +62,7 @@ fn shared_from(state: &AgentState) -> SharedToolCtx {
     SharedToolCtx {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
-        pool: Some(state.pool.clone()),
+        pool: state.pool.clone(),
     }
 }
 
@@ -73,7 +73,7 @@ pub async fn overview_handler(State(state): State<AgentState>) -> Json<Value> {
     Json(json!({
         "memory": memory_section(&shared).await,
         "firehose": firehose_section(&shared).await,
-        "pipeline_runs": runs_section(&state.pool, state.tenant).await,
+        "pipeline_runs": runs_section(state.pool.as_ref(), state.tenant).await,
     }))
 }
 
@@ -113,7 +113,8 @@ async fn firehose_section(shared: &SharedToolCtx) -> Value {
 }
 
 #[allow(clippy::type_complexity)]
-async fn runs_section(pool: &PgPool, tenant: TenantId) -> Value {
+async fn runs_section(pool: Option<&PgPool>, tenant: TenantId) -> Value {
+    let Some(pool) = pool else { return Value::Array(vec![]) }; // local: no pipeline runs
     let rows = sqlx::query_as::<
         _,
         (

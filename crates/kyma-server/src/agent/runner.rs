@@ -132,7 +132,7 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
     let shared = SharedToolCtx {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
-        pool: Some(state.pool.clone()),
+        pool: state.pool.clone(),
     };
 
     let agent = LlmAgentBuilder::new(AGENT_NAME)
