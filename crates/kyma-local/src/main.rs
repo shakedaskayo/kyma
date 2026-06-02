@@ -22,6 +22,8 @@
 
 #![forbid(unsafe_code)]
 
+mod setup;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -68,6 +70,15 @@ enum Command {
         /// Listen address.
         #[arg(long, env = "KYMA_LOCAL_HTTP_ADDR", default_value = "127.0.0.1:7777")]
         addr: SocketAddr,
+    },
+    /// Wire a coding agent to this binary over stdio MCP (claude-code | cursor |
+    /// windsurf | …). One-liner onboarding; `setup list` shows the supported set.
+    Setup {
+        /// Agent key (e.g. claude-code, cursor, windsurf), or `list`.
+        agent: String,
+        /// Print the config instead of writing it.
+        #[arg(long)]
+        print: bool,
     },
     /// Print the resolved local paths and exit (diagnostics).
     Info,
@@ -143,12 +154,14 @@ async fn main() -> Result<()> {
         eprintln!("kyma-local — single-binary context engine");
         eprintln!("  catalog : {}", paths.catalog_db);
         eprintln!("  data    : {}", paths.data_root);
-        eprintln!("  mcp     : kyma-local mcp     (stdio MCP; memory + data + graph)");
-        eprintln!("  serve   : kyma-local serve   (web UI + HTTP API + ingest, zero-auth)");
+        eprintln!("  mcp     : kyma-local mcp          (stdio MCP; memory + data + graph)");
+        eprintln!("  serve   : kyma-local serve        (web UI + HTTP API + ingest, zero-auth)");
+        eprintln!("  setup   : kyma-local setup <agent> (wire claude-code/cursor/windsurf to mcp)");
         return Ok(());
     }
 
     match cli.command {
+        Some(Command::Setup { agent, print }) => setup::run(&agent, print),
         Some(Command::Serve { addr }) => serve_http(paths, addr).await,
         // Default (no subcommand) and `mcp` both serve stdio MCP.
         _ => serve_mcp(paths).await,
