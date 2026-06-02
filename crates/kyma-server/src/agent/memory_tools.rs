@@ -305,6 +305,14 @@ pub fn tool_ingest_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     cm.memory_type = MemoryType::Entity;
                     cm.realm = realm.clone();
                     cm.importance = 0.5;
+                    // Categorize provenance so housekeeping can tell agent-minted
+                    // ("synthetic") nodes from extracted/connector-derived ones and
+                    // score/relevance-check them accordingly.
+                    cm.provenance = Some(json!({
+                        "source": "synthetic",
+                        "via": "ingest_entity",
+                        "kind": kind,
+                    }));
                     let topic_key =
                         format!("entity/{}/{}", kind.as_deref().unwrap_or("entity"), slug(&name));
                     cm.topic_key = Some(topic_key.clone());

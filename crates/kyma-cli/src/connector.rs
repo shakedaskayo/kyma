@@ -596,7 +596,14 @@ async fn cmd_show(cfg: &ClientConfig, name_or_id: &str) -> Result<()> {
 async fn cmd_simple_op(cfg: &ClientConfig, name_or_id: &str, op: &str) -> Result<()> {
     let id = resolve_id(cfg, name_or_id).await?;
     http_post(cfg, &format!("/v1/connectors/{id}/{op}"), &json!({})).await?;
-    println!("{op}d connector {id}");
+    // Past-tense per op — "{op}d" only reads right for pause/resume.
+    let past = match op {
+        "trigger" => "triggered a run for",
+        "pause" => "paused",
+        "resume" => "resumed",
+        other => other,
+    };
+    println!("{past} connector {id}");
     Ok(())
 }
 

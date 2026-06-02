@@ -84,9 +84,9 @@ async fn memory_section(shared: &SharedToolCtx) -> Value {
         SELECT memory_type, status, realm, count(*) AS n FROM latest WHERE rn = 1 \
         GROUP BY memory_type, status, realm";
     let recent_sql = "WITH latest AS (SELECT id, memory_type, realm, status, importance, \
-        content_preview, created_at, \
+        content_preview, provenance, created_at, \
         row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS rn FROM memory_nodes) \
-        SELECT id, memory_type, realm, status, importance, content_preview, created_at \
+        SELECT id, memory_type, realm, status, importance, content_preview, provenance, created_at \
         FROM latest WHERE rn = 1 ORDER BY created_at DESC LIMIT 12";
     json!({
         "counts": rows_of(&execute_sql(shared, MEMORY_DB, counts_sql, 1000).await),

@@ -40,6 +40,20 @@ export interface GraphCanvasProps {
 // back to (database, graph, bare-id) when calling the API.
 const keyOf = (n: { id: string; namespace?: string }) =>
   `${n.namespace ?? ""}::${n.id}`;
+// Human-friendly caption for a node — prefer a named property, then title /
+// full name / path, falling back to the id tail. Drives both the rendered
+// label and what node search matches, so synthetic entities (whose title is the
+// name) and connector resources are findable by name/title, not just by their
+// type label or raw id.
+const nodeCaption = (n: { id: string; properties: Record<string, unknown> }): string => {
+  const p = n.properties ?? {};
+  for (const key of ["name", "title", "full_name", "path", "label"]) {
+    const v = p[key];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return n.id.split("::").pop() ?? n.id;
+};
+
 // Resolve an endpoint's namespace independently: a cross-graph edge (e.g. a
 // memory REFERENCES an entity in another graph) carries the target endpoint's
 // namespace in `properties.target_namespace`. Same-graph edges fall back to the
@@ -140,10 +154,7 @@ function GraphCanvasInner({
         type: "graphNode",
         position: positions.get(n.id) ?? { x: 0, y: 0 },
         data: {
-          label:
-            typeof n.properties.name === "string"
-              ? n.properties.name
-              : n.id.split("::").pop() ?? n.id,
+          label: nodeCaption(n),
           labels: n.labels,
           color: getLabelColor(n.labels[0] ?? ""),
         },
