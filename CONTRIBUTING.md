@@ -83,4 +83,4 @@ Pre-`v1.0.0` builds (`v0.x`, `v1.0.0-pre.N`, `v1.0.0-rc.N`) are not under the co
 ## License
 
 By contributing, you agree that your contributions will be licensed under the
-Apache License 2.0, the same license as the project.
+MIT License, the same license as the project.

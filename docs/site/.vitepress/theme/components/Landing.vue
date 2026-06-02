@@ -581,7 +581,7 @@ otel_logs
         <span>kyma is an open project by <strong>AgentcyLabs</strong> — a context platform for production-aware agents. <span class="kyma-byline-cta">Visit agentcylabs.com →</span></span>
       </a>
       <p class="kyma-landing-footer-meta">
-        Apache-2.0 licensed · Source on
+        MIT licensed · Source on
         <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener">GitHub</a>
         · Built {{ buildDate }}
       </p>

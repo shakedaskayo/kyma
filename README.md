@@ -19,7 +19,7 @@
 <p align="center">
   <a href="https://www.getkyma.dev"><img alt="Docs" src="https://img.shields.io/badge/docs-getkyma.dev-7ed957?style=flat-square" /></a>
   <a href="https://www.getkyma.dev/agent/memory"><img alt="Context engine" src="https://img.shields.io/badge/context%20engine-memory%20%2B%20data%20%2B%20graph-7c3aed?style=flat-square" /></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" /></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-1.95%2B-orange?style=flat-square" />
   <img alt="Status" src="https://img.shields.io/badge/status-pre--alpha-yellow?style=flat-square" />
 </p>
@@ -328,5 +328,5 @@ Full docs at **[getkyma.dev](https://www.getkyma.dev)**.
 
 ## License & contributing
 
-[Apache-2.0](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md); for security issues follow
+[MIT](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md); for security issues follow
 [SECURITY.md](SECURITY.md) rather than the public tracker.
