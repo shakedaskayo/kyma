@@ -32,3 +32,8 @@ testcontainers = { workspace = true }
 testcontainers-modules = { workspace = true }
 sqlx = { workspace = true }
 reqwest = { workspace = true }
+# DB-free fixtures for the stdio framing test (embedded catalog + in-mem store).
+kyma-catalog-sqlite = { workspace = true }
+kyma-format-tlm = { workspace = true }
+kyma-storage = { workspace = true }
+kyma-core = { workspace = true }

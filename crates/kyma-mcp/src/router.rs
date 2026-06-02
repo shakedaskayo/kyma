@@ -21,12 +21,11 @@ use futures::stream::{self, Stream};
 use serde_json::{json, Value};
 use std::convert::Infallible;
 use std::time::Duration;
-use tracing::debug;
 
-use crate::initialize::{handle_initialize, ServerInfo};
+use crate::dispatch::dispatch_request;
+use crate::initialize::ServerInfo;
 use crate::jsonrpc::{
-    parse_envelope, ErrorCode, ErrorObject, Request as RpcRequest, RequestEnvelope,
-    Response as RpcResponse,
+    parse_envelope, ErrorObject, Request as RpcRequest, RequestEnvelope, Response as RpcResponse,
 };
 use crate::tools::ToolDispatch;
 
@@ -70,66 +69,14 @@ async fn handle_post(State(state): State<McpState>, body: Bytes) -> Response {
 }
 
 /// Dispatch a single JSON-RPC request. Returns `None` for notifications
-/// (id absent) — caller emits HTTP 202.
+/// (id absent) — caller emits HTTP 202. Delegates to the transport-agnostic
+/// [`dispatch_request`] so HTTP and stdio share one protocol implementation.
 async fn dispatch_one(state: &McpState, req: RpcRequest) -> Option<RpcResponse> {
     use tracing::Instrument;
     let span = tracing::info_span!("mcp.dispatch", method = %req.method);
-    dispatch_one_inner(state, req).instrument(span).await
-}
-
-async fn dispatch_one_inner(state: &McpState, req: RpcRequest) -> Option<RpcResponse> {
-    let id = req.id.clone();
-    let result: Result<Value, ErrorObject> = match req.method.as_str() {
-        "initialize" => handle_initialize(req.params.unwrap_or(json!({})), &state.server_info),
-        "notifications/initialized" => return None,
-        "tools/list" => Ok(json!({ "tools": state.dispatch.list() })),
-        "tools/call" => match req.params {
-            Some(p) => {
-                let name = p.get("name").and_then(|v| v.as_str()).map(str::to_owned);
-                let arguments = p.get("arguments").cloned().unwrap_or(json!({}));
-                match name {
-                    Some(n) => {
-                        ::metrics::counter!(
-                            "kyma_mcp_tool_calls_total",
-                            "tool" => n.clone()
-                        )
-                        .increment(1);
-                        let outcome = state.dispatch.call(&n, arguments).await;
-                        let result_label = if outcome.is_ok() { "ok" } else { "error" };
-                        ::metrics::counter!(
-                            "kyma_mcp_tool_results_total",
-                            "tool" => n.clone(),
-                            "result" => result_label
-                        )
-                        .increment(1);
-                        outcome
-                    }
-                    None => Err(ErrorObject::new(
-                        ErrorCode::InvalidParams as i64,
-                        "tools/call requires `name`",
-                    )),
-                }
-            }
-            None => Err(ErrorObject::new(
-                ErrorCode::InvalidParams as i64,
-                "tools/call requires params",
-            )),
-        },
-        other => {
-            debug!(method = %other, "mcp: method not found");
-            Err(ErrorObject::new(
-                ErrorCode::MethodNotFound as i64,
-                format!("method not found: {other}"),
-            ))
-        }
-    };
-    match id {
-        Some(id) => Some(match result {
-            Ok(value) => RpcResponse::success(id, value),
-            Err(err) => RpcResponse::error(id, err),
-        }),
-        None => None, // id-less request is a notification per JSON-RPC 2.0 — no response.
-    }
+    dispatch_request(&state.dispatch, &state.server_info, req)
+        .instrument(span)
+        .await
 }
 
 async fn handle_get_sse(
