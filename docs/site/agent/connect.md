@@ -59,9 +59,14 @@ Any coding tool that can shell out becomes context-aware:
 ```bash
 kyma connect <kyma-url> --token <bearer>
 kyma install-skill --also-link-claude   # writes a SKILL.md that teaches the agent when to use kyma
-kyma query "what error logs from prod-api in the last 15 minutes?"
-kyma recall "how do we run database migrations?"
+kyma recall   "how do we run database migrations?"          # recall before answering
+kyma remember "Prefer KQL over SQL in examples" --type preference   # save durable memory
+kyma query    "what error logs from prod-api in the last 15 minutes?"   # ask live data
+kyma entity   "payments service" --kind service --link "repo:owner/name|github|LIVES_IN"
 ```
+
+The installed skill teaches the agent the full loop — **recall** before answering,
+**remember** what's durable, **query** live data, **enrich** the graph.
 
 See **[Connect a coding agent (CLI)](./connect-from-cli)** for the full CLI surface.
 

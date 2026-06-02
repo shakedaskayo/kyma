@@ -114,6 +114,98 @@ pub(crate) async fn recall(
     Ok(())
 }
 
+// ── remember ───────────────────────────────────────────────────────────────
+
+/// Save a durable memory via the MCP `save_memory` tool. With `topic_key`, a
+/// re-save updates the memory in place instead of duplicating.
+pub(crate) async fn remember(
+    content: String,
+    memory_type: Option<String>,
+    realm: Option<String>,
+    importance: Option<f32>,
+    topic_key: Option<String>,
+) -> Result<()> {
+    let cfg = client::effective_config()?;
+    let mut args = json!({ "content": content });
+    if let Some(t) = memory_type { args["memory_type"] = json!(t); }
+    if let Some(r) = realm { args["realm"] = json!(r); }
+    if let Some(i) = importance { args["importance"] = json!(i); }
+    if let Some(tk) = topic_key { args["topic_key"] = json!(tk); }
+    let result = mcp_call(&cfg, "save_memory", args).await?;
+    if let Some(err) = result.get("error").and_then(Value::as_str) {
+        return Err(anyhow!("{err}"));
+    }
+    let id = result.get("id").and_then(Value::as_str).unwrap_or("?");
+    let verb = if result.get("upserted").and_then(Value::as_bool).unwrap_or(false) {
+        "updated"
+    } else {
+        "saved"
+    };
+    println!("{verb} memory {id}");
+    Ok(())
+}
+
+// ── entity ─────────────────────────────────────────────────────────────────
+
+/// Create or update a virtual graph entity via the MCP `ingest_entity` tool,
+/// wiring it to existing graph nodes / memories. Idempotent per (realm, kind, name).
+pub(crate) async fn entity(
+    name: String,
+    kind: Option<String>,
+    realm: Option<String>,
+    props: Vec<String>,
+    links: Vec<String>,
+) -> Result<()> {
+    let cfg = client::effective_config()?;
+    let mut args = json!({ "name": name });
+    if let Some(k) = kind { args["kind"] = json!(k); }
+    if let Some(r) = realm { args["realm"] = json!(r); }
+    if !props.is_empty() {
+        let mut obj = serde_json::Map::new();
+        for p in &props {
+            if let Some((k, v)) = p.split_once('=') {
+                obj.insert(k.trim().to_string(), json!(v.trim()));
+            }
+        }
+        if !obj.is_empty() {
+            args["properties"] = Value::Object(obj);
+        }
+    }
+    // Each `--link` is `node_id[|namespace[|rel]]`:
+    //   repo:owner/name|github|LIVES_IN   ·   memory:<uuid>||DOCUMENTED_BY
+    if !links.is_empty() {
+        let parsed: Vec<Value> = links
+            .iter()
+            .map(|l| {
+                let mut parts = l.splitn(3, '|');
+                let node = parts.next().unwrap_or("").trim().to_string();
+                let mut o = json!({ "target_node_id": node });
+                if let Some(ns) = parts.next().map(str::trim).filter(|s| !s.is_empty()) {
+                    o["target_namespace"] = json!(ns);
+                }
+                if let Some(rel) = parts.next().map(str::trim).filter(|s| !s.is_empty()) {
+                    o["relationship_type"] = json!(rel);
+                }
+                o
+            })
+            .collect();
+        args["links"] = json!(parsed);
+    }
+    let result = mcp_call(&cfg, "ingest_entity", args).await?;
+    if let Some(err) = result.get("error").and_then(Value::as_str) {
+        return Err(anyhow!("{err}"));
+    }
+    let id = result.get("id").and_then(Value::as_str).unwrap_or("?");
+    let n = result.get("links").and_then(Value::as_u64).unwrap_or(0);
+    let verb = if result.get("upserted").and_then(Value::as_bool).unwrap_or(false) {
+        "updated"
+    } else {
+        "created"
+    };
+    println!("{verb} entity {id} ({n} links)");
+    Ok(())
+}
+
 /// Render one recalled memory row as a single compact line. Tolerant of which
 /// columns the recall SQL projected.
 fn render_memory_line(row: &Value) -> String {

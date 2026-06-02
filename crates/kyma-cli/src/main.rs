@@ -128,6 +128,42 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Save a durable memory to Kyma (recallable later via `kyma recall`).
+    Remember {
+        /// The memory content — a self-contained, durable fact/decision/preference.
+        content: String,
+        /// Type: fact | decision | preference | learning | procedure (default: fact).
+        #[arg(long = "type")]
+        memory_type: Option<String>,
+        /// Realm (namespace). Defaults to the server's default realm.
+        #[arg(long)]
+        realm: Option<String>,
+        /// Importance 0.0–1.0 (higher surfaces first).
+        #[arg(long)]
+        importance: Option<f32>,
+        /// Stable upsert key (e.g. `architecture/auth`) — re-saving updates in place.
+        #[arg(long = "topic-key")]
+        topic_key: Option<String>,
+    },
+    /// Create/update a virtual graph entity (a service/repo/table/person/concept)
+    /// and wire it to memories + existing graph nodes.
+    Entity {
+        /// Entity name, e.g. "payments service".
+        name: String,
+        /// Kind: service | repo | table | person | file | config | concept.
+        #[arg(long)]
+        kind: Option<String>,
+        /// Realm (namespace).
+        #[arg(long)]
+        realm: Option<String>,
+        /// Property `key=value` (repeatable).
+        #[arg(long = "prop")]
+        prop: Vec<String>,
+        /// Link `node_id[|namespace[|rel]]` (repeatable) — e.g.
+        /// `repo:owner/name|github|LIVES_IN` or `memory:<uuid>||DOCUMENTED_BY`.
+        #[arg(long)]
+        link: Vec<String>,
+    },
     /// Distill a session transcript (stdin) into durable memories via the
     /// kyma agent. Used by the kyma-memory plugin at session end.
     Distill {
@@ -262,6 +298,20 @@ async fn main() -> Result<()> {
             limit,
             json,
         } => plugin::recall(query, realm, limit, json).await,
+        Command::Remember {
+            content,
+            memory_type,
+            realm,
+            importance,
+            topic_key,
+        } => plugin::remember(content, memory_type, realm, importance, topic_key).await,
+        Command::Entity {
+            name,
+            kind,
+            realm,
+            prop,
+            link,
+        } => plugin::entity(name, kind, realm, prop, link).await,
         Command::Distill { session, realm } => plugin::distill(session, realm).await,
         Command::InstallPlugin { target, force } => plugin::install_plugin(target, force).await,
 

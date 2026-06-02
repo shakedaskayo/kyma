@@ -1,13 +1,15 @@
 ---
 name: kyma-memory
-description: Use to recall durable context (prior decisions, preferences, conventions, learnings) or to persist new durable memories for this user/project. Recall BEFORE answering questions that may depend on past context; save AFTER the user states something worth remembering long-term. Backed by the Kyma memory layer via the bundled `kyma` MCP server.
+description: Recall durable context (prior decisions, preferences, conventions, learnings) and query the user's live data + knowledge graph; persist new durable memories. Recall BEFORE answering anything that may depend on past context or the user's systems; save AFTER the user states something worth keeping long-term. Backed by the Kyma context engine via the bundled `kyma` MCP server (memory + data + graph tools).
 ---
 
-# Kyma Memory
+# Kyma — the user's context engine
 
-This project is wired to **Kyma**, the user's unified realtime memory layer. The
-`kyma-memory` plugin bundles an MCP server named `kyma` that exposes memory + query
-tools, and hooks that continuously capture this session into Kyma.
+This project is wired to **Kyma**: the user's durable memory **+** live data **+** the
+knowledge graph that links them. The `kyma-memory` plugin bundles an MCP server named
+`kyma` (memory + data + graph tools) and **hooks** that automatically capture each session
+and inject the most relevant memories into every prompt — so recall is already happening;
+use the tools below when you need *more*, or to write.
 
 ## When to recall
 

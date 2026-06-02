@@ -1,43 +1,75 @@
 ---
 name: kyma
-description: Use when the user wants to query their Kyma deployment — logs, traces, tables, schemas, graph relationships, or any data their Kyma server knows about. Streams real-time answers from the agent.
+description: The user's Kyma context engine — durable memory + live data + a knowledge graph — via the `kyma` CLI. RECALL prior decisions/preferences/conventions before answering, REMEMBER durable facts the user states, QUERY their live data (logs, traces, tables, code/graph) in plain English, and ENRICH the graph with entities. Use whenever a request may depend on past context or on the user's actual systems/data.
 ---
 
-# Kyma
+# Kyma — the user's context engine
 
-When the user asks about data in their Kyma deployment — logs, traces, OTel spans, database tables, code/symbol graphs, schemas, or anything else ingested into Kyma — use the `kyma` CLI to query it directly.
+This machine is wired to **Kyma**: the user's durable memory **+** live data **+** the
+knowledge graph that links them, reachable through the `kyma` CLI. Treat it as your
+long-term memory of this user and project, *and* your window into their real systems.
 
-## Prereqs
+**Setup check (once per machine):** run `kyma status`. If it reports "no server
+configured", ask the user to run `kyma connect <their-server-url>`, then continue.
 
-- The `kyma` CLI is on PATH (`which kyma` should resolve).
-- The user has run `kyma connect <url>` at least once, OR `KYMA_SERVER_URL` is set.
+## Recall — before you answer
 
-Run `kyma status` first to verify both. If it errors with "no server configured", ask the user to run `kyma connect <their-server-url>` then retry.
+Whenever a request could depend on prior context — the user's preferences, past
+decisions, project conventions, "how we did X last time", or anything about their
+systems — **recall first** and ground your answer in what comes back:
 
-## Querying
+```bash
+kyma recall "how do we handle database migrations?"
+```
 
-Use `kyma query "<question>"` and pipe stdout. The CLI streams the agent's answer (text), already filtered down from the raw SSE events. Examples:
+It returns ranked, citation-rich context (memories + the resources they link to). Don't
+invent memories or claim to remember something `recall` didn't return.
 
-- `kyma query "How many 500s in the last hour?"`
-- `kyma query "What columns does the orders table have?"`
-- `kyma query "Find every reference to user 'admin' across our data"`
-- `kyma query "Which services talk to the auth-service?"`
+## Remember — after the user states something durable
 
-For structured output (each SSE event as JSONL), use `kyma query --json "..."` and parse the `event:` / `data:` lines.
+When the user makes a decision, states a preference, or teaches a non-obvious,
+load-bearing fact worth keeping across sessions, save it:
 
-## When to use this skill
+```bash
+kyma remember "We deploy by tagging a release, then running make ship" --type procedure
+kyma remember "Prefer KQL over SQL in examples" --type preference --realm global
+```
 
-Reach for `kyma query` ANY time the user is asking about their data — what's in a table, what columns exist, where a value appears, log volumes, error rates, traces for a given request id, code graph relationships, etc. It's faster and more accurate than guessing from prior context, because the agent runs live queries against the user's actual data.
+Types: `fact | decision | preference | learning | procedure`. Use `--topic-key <stable/key>`
+for things that get revised — re-saving with the same key **updates in place** instead of
+duplicating. Save the durable signal, never transient scratch, secrets, or tokens.
+
+## Query — the user's live data
+
+Ask their Kyma deployment anything about their data, in plain English; it streams the answer:
+
+```bash
+kyma query "How many 500s on payments-svc in the last hour?"
+kyma query "What columns does the orders table have?"
+kyma query "Which services call auth-service?"
+```
+
+This runs live queries over the user's *actual* data — far better than guessing from
+context. `kyma query` is **read-only**. Add `--json` for the raw event stream.
+
+## Enrich — add entities to the graph
+
+When you learn how the user's resources relate, record it as a graph entity wired to real
+nodes and memories (idempotent — re-running updates in place):
+
+```bash
+kyma entity "payments service" --kind service --prop owner=team-pay \
+  --link "repo:owner/name|github|LIVES_IN" --link "memory:<uuid>||DOCUMENTED_BY"
+```
 
 ## When NOT to use
 
-Don't use it for:
-- General programming questions (Stack Overflow / docs answer those).
-- Pure file-system or code-edit tasks in the user's repo (use Read/Edit instead).
-- Anything that requires a write — `kyma query` is read-only by design.
+- General programming or documentation questions — answer those directly.
+- Pure file edits in the repo — use your normal file tools.
+- Anything requiring a write to the user's systems — `kyma query` only reads.
 
-## Errors
+## Troubleshooting
 
-- `no server configured` → the user hasn't run `kyma connect …` yet.
-- `unauthorized (401/403)` → the saved token is missing/expired; user runs `kyma connect <url> --token <new-token>`.
-- Probe timeouts → the server is down or the model is loading; retry after `kyma status` reports OK.
+- `no server configured` → the user hasn't run `kyma connect <url>` yet.
+- `401` / `403` → the saved token expired: `kyma connect <url> --token <new-token>`.
+- Probe timeouts → the server is down or a model is loading; retry once `kyma status` is OK.

@@ -140,6 +140,30 @@ raw structured result with `--json`. Used by the plugin to inject context.
 kyma recall "how do we handle auth tokens?" --realm kyma --limit 8
 ```
 
+### `kyma remember "<content>" [--type T] [--realm R] [--importance F] [--topic-key K]`
+
+Save a durable memory via the MCP `save_memory` tool. `--type` is one of
+`fact | decision | preference | learning | procedure` (default `fact`). A stable
+`--topic-key` makes a re-save **update in place** (deterministic upsert, no duplicate).
+
+```bash
+kyma remember "We deploy by tagging a release, then make ship" --type procedure
+kyma remember "Prefer KQL over SQL in examples" --type preference --realm global
+kyma remember "Auth model: short-lived JWT + refresh" --topic-key arch/auth
+```
+
+### `kyma entity "<name>" [--kind K] [--realm R] [--prop k=v]… [--link spec]…`
+
+Create or update a **virtual graph entity** (resource) via the MCP `ingest_entity` tool
+and wire it to memories + existing graph nodes. Idempotent per `(realm, kind, name)`. Each
+`--link` is `node_id[|namespace[|rel]]` — pipe-delimited.
+
+```bash
+kyma entity "payments service" --kind service --prop owner=team-pay \
+  --link "repo:owner/name|github|LIVES_IN" \
+  --link "memory:<uuid>||DOCUMENTED_BY"
+```
+
 ### `kyma distill [--session ID] [--realm R]`
 
 Read a session transcript on **stdin** and hand it to the kyma agent (which owns
