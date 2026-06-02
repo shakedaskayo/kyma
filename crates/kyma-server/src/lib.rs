@@ -112,8 +112,11 @@ pub struct QueryState {
     pub node_id: Option<kyma_core::types::NodeId>,
     /// Catalog Postgres pool. Threaded through so non-`Catalog`-trait
     /// surfaces (saved Discover views, etc.) can run SQL directly without
-    /// having to downcast the `dyn Catalog`.
-    pub pg_pool: Arc<sqlx::PgPool>,
+    /// having to downcast the `dyn Catalog`. `None` in **local mode**
+    /// (`kyma-local serve`): the pool-only surfaces (saved Discover views)
+    /// degrade to empty; query / catalog / graph / discover-search all run
+    /// over the catalog + engine and work unchanged.
+    pub pg_pool: Option<Arc<sqlx::PgPool>>,
 }
 
 /// Build the query router (auth-eligible — caller wraps with middleware).
@@ -133,13 +136,17 @@ pub fn router(state: QueryState) -> Router {
         .with_state(dash_read_state);
 
     // Saved-views list endpoint — read-role; create/update/delete live on
-    // the separate write router so they can require Role::Write.
-    let views_read_state = SavedViewsState {
-        pool: state.pg_pool.clone(),
+    // the separate write router so they can require Role::Write. In local mode
+    // (no pool) saved views are unavailable, so the list is an empty array.
+    let views_read_router = match state.pg_pool.clone() {
+        Some(pool) => Router::new()
+            .route("/v1/explore/views", get(list_views))
+            .with_state(SavedViewsState { pool }),
+        None => Router::new().route(
+            "/v1/explore/views",
+            get(|| async { axum::Json(serde_json::json!([])) }),
+        ),
     };
-    let views_read_router = Router::new()
-        .route("/v1/explore/views", get(list_views))
-        .with_state(views_read_state);
 
     Router::new()
         .route("/v1/query", post(query_handler))

@@ -79,7 +79,7 @@ pub async fn seeded_state_empty() -> QueryState {
         format,
         schema_cache: Arc::new(SchemaCache::default()),
         node_id: None,
-        pg_pool,
+        pg_pool: Some(pg_pool),
     }
 }
 
@@ -152,7 +152,7 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
         format,
         schema_cache: Arc::new(SchemaCache::default()),
         node_id: None,
-        pg_pool,
+        pg_pool: Some(pg_pool),
     }
 }
 

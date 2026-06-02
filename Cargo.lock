@@ -4954,10 +4954,13 @@ name = "kyma-local"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "axum",
  "clap",
  "kyma-catalog-sqlite",
  "kyma-core",
  "kyma-format-tlm",
+ "kyma-ingest-core",
+ "kyma-ingest-rest",
  "kyma-mcp",
  "kyma-server",
  "kyma-storage",

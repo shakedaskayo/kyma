@@ -151,12 +151,20 @@ pub async fn discover_search_handler(
         .get::<crate::auth::Principal>()
         .and_then(|p| p.subject.as_deref());
 
-    let lookup: Option<crate::discover::saved_views_lookup::CatalogSavedViewLookup> = subject_opt
-        .map(|s| crate::discover::saved_views_lookup::CatalogSavedViewLookup {
-            pool: state.pg_pool.clone(),
-            tenant_id: tenant.as_uuid(),
-            owner_subject: s.to_string(),
-        });
+    // Saved-view lookup needs both an authenticated subject and a Postgres
+    // pool. In local mode there is no pool, so named-view scopes fall through
+    // to ViewNotFound (ad-hoc scopes are unaffected).
+    let lookup: Option<crate::discover::saved_views_lookup::CatalogSavedViewLookup> =
+        match (subject_opt, state.pg_pool.clone()) {
+            (Some(s), Some(pool)) => {
+                Some(crate::discover::saved_views_lookup::CatalogSavedViewLookup {
+                    pool,
+                    tenant_id: tenant.as_uuid(),
+                    owner_subject: s.to_string(),
+                })
+            }
+            _ => None,
+        };
 
     let scope_kind = scope_kind_label(&payload.scope).to_string();
     let resolved = match resolve_scope(

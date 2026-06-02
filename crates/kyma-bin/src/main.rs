@@ -343,7 +343,7 @@ async fn main() -> Result<()> {
                     kyma_server::catalog_handler::SchemaCache::from_env(),
                 ),
                 node_id: Some(lease.node_id),
-                pg_pool: std::sync::Arc::new(pg_pool.clone()),
+                pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
             },
             agent_state.clone(),
         )
@@ -620,7 +620,7 @@ async fn main() -> Result<()> {
                     kyma_server::catalog_handler::SchemaCache::from_env(),
                 ),
                 node_id: Some(lease.node_id),
-                pg_pool: std::sync::Arc::new(pg_pool.clone()),
+                pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
             })
             .layer(axum::middleware::from_fn_with_state(
                 AuthLayerState {
