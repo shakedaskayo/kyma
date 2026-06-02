@@ -52,15 +52,20 @@ jobs:
           key: rust-tests-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: rust-tests-${{ runner.os }}-
 
-      # Compile gate for the workspace, including every test target. This is
+      # Compile gate for the workspace, including every test target — this is
       # what catches "a refactor changed a signature but a test crate was never
-      # recompiled" breaks. rdkafka (kyma-bin / kyma-ingest-kafka) needs cmake,
-      # which is preinstalled on ubuntu-22.04 runners. The `app` crate is the
-      # Tauri desktop shell — it needs GTK/webkit system libs and is not part of
-      # the engine/server correctness surface, so it's excluded here (the web
-      # frontend has its own workflow).
-      - name: compile all crates + test targets
-        run: cargo test --workspace --exclude app --locked --no-run
+      # recompiled" breaks (the engine + server + mcp + catalog crates all build
+      # here). Three crates are excluded: they need heavy system libs the bare
+      # runner lacks, and their full build is gated by other workflows:
+      #   - `app` — the Tauri desktop shell (GTK/webkit); the web frontend has
+      #     its own workflow.
+      #   - `kyma-bin` + `kyma-ingest-kafka` — pull rdkafka/librdkafka, whose
+      #     CMake build needs libcurl/SASL/etc. `kyma-bin`'s full build is
+      #     already gated by gauntlet-pr and build-image.
+      - name: compile crates + test targets (engine/server surface)
+        run: >-
+          cargo test --workspace --locked --no-run
+          --exclude app --exclude kyma-bin --exclude kyma-ingest-kafka
 
       # Fast, no external dependencies.
       - name: unit suites (no infra)
