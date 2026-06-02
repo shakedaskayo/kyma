@@ -1,367 +1,273 @@
 <p align="center">
   <a href="https://www.getkyma.dev">
-    <img src="docs/site/public/icons/kyma-mark.svg" alt="kyma" width="128" height="128" />
+    <img src="docs/site/public/icons/kyma-mark.svg" alt="kyma" width="120" height="120" />
   </a>
 </p>
 
 <h1 align="center">kyma</h1>
 
-<p align="center"><strong>Production knowledge, as a query.</strong></p>
+<p align="center"><strong>The context engine for coding agents.</strong></p>
+
+<p align="center">
+  Not just memory — one MCP surface where your agent recalls durable, graph-aware
+  <strong>memory</strong>, queries <strong>live data</strong> (logs, traces, code, connectors)
+  in KQL/SQL, and walks the <strong>graph</strong> that links them.<br/>
+  Runs as a <strong>local single binary</strong>. Syncs to your control plane.
+</p>
 
 <p align="center">
   <a href="https://www.getkyma.dev"><img alt="Docs" src="https://img.shields.io/badge/docs-getkyma.dev-7ed957?style=flat-square" /></a>
+  <a href="https://www.getkyma.dev/agent/memory"><img alt="Context engine" src="https://img.shields.io/badge/context%20engine-memory%20%2B%20data%20%2B%20graph-7c3aed?style=flat-square" /></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" /></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-1.95%2B-orange?style=flat-square" />
   <img alt="Status" src="https://img.shields.io/badge/status-pre--alpha-yellow?style=flat-square" />
 </p>
 
 <p align="center">
-  <a href="https://www.getkyma.dev/quickstart/five-minute-start">Quickstart</a> ·
-  <a href="https://www.getkyma.dev/concepts/">Concepts</a> ·
-  <a href="https://www.getkyma.dev/architecture/architecture">Architecture</a> ·
+  <a href="#quickstart-local-zero-infra">Quickstart</a> ·
+  <a href="#what-your-agent-gets">Tools</a> ·
+  <a href="#two-tiers-local-binary--control-plane">Tiers</a> ·
+  <a href="https://www.getkyma.dev/agent/memory">Memory</a> ·
   <a href="https://www.getkyma.dev/connectors/">Connectors</a> ·
-  <a href="https://www.getkyma.dev/recipes/">Recipes</a>
+  <a href="https://www.getkyma.dev/architecture/architecture">Architecture</a>
 </p>
 
 ---
 
-Point every OTLP emitter in your stack — services, Kubernetes, CI, databases,
-queues, frontend RUM, your agents themselves — at one engine. Then let your
-agents ask it anything, in KQL or SQL, at sub-second latency over a decade of
-history. No dashboards to scrape. No vendor APIs to juggle. No rate limits.
+A **memory store** remembers what you told it. A **context engine** also knows your
+live systems and how everything connects.
 
-kyma is a ground-up, Rust-based, distributed-ready data engine in the spirit of
-Azure Data Explorer (Kusto) — purpose-built to be the **answer layer** for
-agents that need production awareness across the whole stack.
+Your coding agent forgets everything when the session ends — and even mid-session it
+can't see your logs, your traces, the repo graph, or how a decision relates to the
+service it's about. kyma gives it one place to get all of it: **durable memory**,
+**live data**, and the **graph** that ties memories to the real resources they're
+about — over a single MCP server. Recall *plus* live context *plus* relationships.
 
-It's also a **context engine** for coding agents: not just agentic *memory*, but
-one MCP surface where an agent recalls durable memories **and** queries live data
-(logs, traces, connectors, the catalog) in KQL/SQL **and** traverses the graph
-that links them. Memory is graph-aware — hybrid vector+keyword+graph recall,
-bi-temporal validity, LLM extraction with automated conflict resolution,
-deterministic topic-key upsert, and agent-driven conflict tools — and links back
-to the real resources it's about. See **[Agentic Memory](https://www.getkyma.dev/agent/memory)**.
+It runs as a **single local binary** (embedded catalog + local files — no Postgres, no
+Docker), connects to any agent over stdio in one command, and **syncs memory to a
+hosted control plane** so it's coherent across your machines and your team. Underneath
+is a real columnar engine (Kusto-style KQL/SQL over Arrow on your object store), so
+"live data" means a decade of logs/traces/connectors answered in milliseconds — not a
+toy key-value store.
 
-Full docs live at **[getkyma.dev](https://www.getkyma.dev)**.
+![kyma fan-in: your stack and your memory to kyma to your agents](docs/images/fan-in.svg)
 
-![kyma fan-in: your tech stack to kyma to your agents](docs/images/fan-in.svg)
+---
+
+## Quickstart (local, zero infra)
+
+```bash
+# 1. Install the single binary (no Postgres, no Docker — embedded SQLite + local files)
+cargo install --path crates/kyma-local
+
+# 2. Point your coding agent at it — one command per agent
+kyma-local setup claude-code      # or: cursor · windsurf
+```
+
+That's it. Restart your agent and it has the full toolset over stdio MCP. `setup`
+writes the agent's MCP config to launch `kyma-local mcp`; data lives under `~/.kyma`.
+
+```jsonc
+// what `setup` wrote (.mcp.json) — your agent now speaks to kyma over stdio
+{ "mcpServers": { "kyma": { "type": "stdio", "command": "kyma-local", "args": ["mcp"] } } }
+```
+
+Prefer a UI? `kyma-local serve` brings up the **same web interface** the hosted server
+runs — Graph Explorer, Memory, and a KQL/SQL workbench — on `http://localhost:7777`,
+still zero-infra. Want it server-side for a team, with connectors and continuous
+ingestion? See **[Two tiers](#two-tiers-local-binary--control-plane)**.
+
+---
+
+## What your agent gets
+
+One MCP server (`kyma`), exposed identically over **stdio** (local) and **HTTP** (server) —
+the whole context engine, not just recall:
+
+| | Tools | What it does |
+|---|---|---|
+| 🧠 **Memory** | `memory_search` · `recall_memory` · `save_memory` · `list_memories` | Graph-aware hybrid recall (vector + keyword + graph), durable across sessions/machines. |
+| 🕸️ **Graph** | `ingest_entity` · `link_memory_to_entity` · `graph_traverse` · `find_references_to` | Mint **virtual resources** and wire them to memories *and* real resources; walk the graph. |
+| 📊 **Live data** | `run_kql` · `run_sql` · `explore_schema` · `describe_table` · `sample_rows` · `list_databases` | Query logs, traces, connector data, the catalog — in KQL or SQL, sub-second. |
+| 🛠️ **Curation** | `update_memory_status` · `update_memory_importance` · `memory_compare` · `memory_judge` · `memory_session_summary` | Re-weight, archive, resolve conflicts, and record session recaps. |
+
+> Call `memory_search` **first** when a question may depend on prior context, then follow
+> the `linked` resources with `graph_traverse` for a deeper subgraph. The agent grounds
+> answers in what you've actually decided *and* how your systems actually look.
+
+---
+
+## Why the memory is best-in-class
+
+kyma's memory layer synthesizes the strongest open-source patterns — and runs them over
+its own columnar engine, so recall is near-realtime at scale.
+
+- **Graph-aware hybrid retrieval** — semantic (vector `cosine_distance`) **+** keyword
+  fused with Reciprocal Rank Fusion, then expanded 1–2 hops over the memory graph into a
+  contextual subgraph. No LLM on the hot path.
+- **Native columnar ANN** — each extent stores a centroid + radius; recall pushes a
+  distance bound into the scan to prune extents (provably no false negatives).
+- **Bi-temporal knowledge graph** — `valid_at` / `invalid_at`; contradictions are
+  *invalidated, not deleted*, so history and point-in-time recall survive.
+- **LLM extraction + automated A.U.D.N.** — `ADD / UPDATE / NOOP / INVALIDATE` conflict
+  resolution; falls back to deterministic summaries with no engine configured.
+- **Deterministic topic-key upsert** — a stable `topic_key` updates a memory in place
+  (no LLM, no duplicates), complementing the LLM path.
+- **Cross-graph links** — memories resolve to the *real* catalog nodes they're about
+  (a repo, a service, a table, a trace) — the "+ graph" that makes it a context engine.
+- **Provenance categories** — synthetic / extracted / connector-derived, so housekeeping
+  can score and relevance-check by source. **`<private>…</private>`** is stripped before
+  anything is embedded or stored.
+
+|  | memory-only tools | **kyma** |
+|---|---|---|
+| Local single binary, zero infra | ✅ | ✅ |
+| stdio MCP, agent-agnostic `setup <agent>` | ✅ | ✅ |
+| Retrieval | keyword / vector | **vector + keyword + graph + RRF + native ANN** |
+| Temporal model | soft-delete / review | **bi-temporal** + point-in-time |
+| Knowledge graph | pairs / tags | **real edges + cross-graph to live resources** |
+| Live data (logs/traces/SQL/KQL) | ❌ | ✅ **the same engine** |
+| Control-plane sync | varies | ✅ **bidirectional** |
+
+See **[Agentic Memory](https://www.getkyma.dev/agent/memory)** for the full design.
+
+---
+
+## Two tiers: local binary ↔ control plane
+
+The same context engine, two ways to run it — pick per machine; memory stays coherent
+across both via sync.
+
+| | **`kyma-local`** (single binary) | **kyma server** (control plane) |
+|---|---|---|
+| Infra | none — embedded SQLite + local files | Postgres + object store (S3/MinIO) |
+| Use | per-developer, offline, instant | team, always-on, shared |
+| Memory | ✅ save / recall / graph | ✅ + background consolidation ("dreaming") |
+| Live data | ✅ on-demand ingest + query | ✅ + **connectors** (GitHub, Prometheus, …) on a schedule |
+| Web UI | ✅ `kyma-local serve` | ✅ Graph Explorer · Memory · Discover · Agent |
+| Sync | ✅ `kyma-local sync` → control plane | ✅ receives + reconciles |
+
+```bash
+# Keep a machine's memory coherent with the team's control plane (push + pull, incremental)
+KYMA_CLOUD_URL=https://kyma.your-co.dev KYMA_CLOUD_TOKEN=… kyma-local sync
+```
+
+**On-demand ingestion from any agent.** The bundled Claude Code plugin adds
+`/kyma-ingest`: trigger a connector pull, or create virtual graph entities wired to
+memory and existing resources — filling the graph without leaving your editor.
 
 ---
 
 ## See it
 
-![Kyma's Graph Explorer rendering the cross-database unified graph — every database and every property graph on a single canvas, with force/tree/radial/grid layouts, search, namespace filters, and per-node inspector.](docs/images/graph-explorer.png)
+![Kyma's Graph Explorer rendering the cross-database unified graph — every database and every property graph on one canvas, with force/tree/radial/grid layouts, search, namespace filters, and a per-node inspector.](docs/images/graph-explorer.png)
 
-The **Graph Explorer** at `/graph` is one of three first-class
-surfaces in the web app:
+The web app (hosted server, or `kyma-local serve`) has four first-class surfaces:
 
-- **/explore** — KQL/SQL workbench with a streaming results grid,
-  histogram timeline, and per-tab state.
-- **/agent** — the Kyma Agent: pick an LLM provider (Anthropic /
-  OpenAI / Ollama / your local Claude Code OAuth), enable the skills
-  it should use, and ask production questions in English.
-- **/graph** — the cross-database unified graph. Every property
-  graph from every database, merged onto one canvas; the pruning
-  cascade keeps even decade-scale topology queries interactive.
-
----
-
-## Ask Kyma from any coding agent
-
-Kyma ships a CLI that turns it into a tool any coding assistant
-(Claude Code, Cursor, Aider, Continue, …) can shell out to. Three
-commands and your agent can query production:
-
-```bash
-cargo install --path crates/kyma-cli
-kyma connect http://localhost:8080 --token "<bearer>"
-kyma install-skill --also-link-claude
-
-# Then from your terminal — or from inside Claude Code:
-kyma query "any error logs from prod-api in the last 15 minutes?"
-```
-
-The skill teaches the outer agent *when* to shell out; Kyma's own
-agent loop (with engine + tools + skills + pruning) answers in KQL.
-See [docs/site/agent/](docs/site/agent/index.md) for the full surface.
+- **`/graph`** — the cross-database **unified graph**: every property graph from every
+  database merged onto one canvas — your repo graph, your services, *and* your memories
+  + the entities they link to. Force / tree / radial / grid, search, per-node inspector.
+- **`/memory`** — interactive recall with scores, validity intervals, the graph path each
+  result arrived by, connected resources, and live consolidation runs.
+- **`/explore`** — a KQL/SQL workbench with a streaming results grid and histogram timeline.
+- **`/agent`** — pick an LLM (Anthropic / OpenAI / Ollama / your local Claude Code OAuth)
+  and ask production questions in English.
 
 ---
 
-## Connect a GitHub repo in one command
+## Powered by a real engine
 
-The same CLI provisions and triggers connectors. Token is auto-
-discovered from `$GITHUB_TOKEN`, `$GH_TOKEN`, or `gh auth token`:
+Most agent-memory tools sit on SQLite or a vector DB. kyma's "live data" half is a
+ground-up, Rust columnar engine in the spirit of Azure Data Explorer (Kusto) — which is
+what lets an agent ask twenty exploratory questions per prompt without melting a card.
 
-```bash
-kyma create-database github
-kyma connector add github shakedaskayo/kyma --start
-# Created connector gh-shakedaskayo-kyma (github) → id=…
-#   database:      github
-#   credential:    …
-#   schedule:      every 300000ms
-#
-# Triggering first run...
-#   [2026-05-31T09:06:58Z] success — last_success_at=…
-```
+- **Ingests every signal** your stack emits — logs, traces, metrics, tool calls, prompt /
+  response bodies, deploy events, config diffs — via OTLP, REST, Kafka, or file-drop, plus
+  scheduled connectors (GitHub / GitLab / Bitbucket / Prometheus / Postgres / S3 / Notion /
+  Slack / Jira / Confluence / Gmail / Drive).
+- **Stores columnar Arrow** on object storage you own, with per-extent stats + token
+  indices so 99%+ of queries skip 99%+ of data (a three-level pruning cascade).
+- **Answers in KQL, SQL, or PromQL** over Arrow Flight gRPC — exact rows, streamed
+  zero-copy.
+- **Scales from one binary to many nodes** without a rewrite: object storage is the source
+  of truth, compute is stateless, the catalog is externalized.
 
-Two tables (`github_nodes`, `github_edges`) and a property graph
-named `github` are auto-registered. Visit `/graph` to see them.
-GitLab and Bitbucket work the same way — `kyma connector add
-gitlab …` / `kyma connector add bitbucket …`. See
-[docs/site/connectors/github.md](docs/site/connectors/github.md).
-
----
-
-## What kyma is
-
-A single unified data engine that:
-
-- **Ingests every signal** your stack already emits — logs, traces, metrics,
-  spans, tool calls, prompt and response bodies, deploy events, config diffs,
-  audit trails — through one OTLP pipe (plus REST, Kafka, and file-drop for
-  non-OTLP sources).
-- **Stores it as columnar Arrow** on object storage you own (S3 / MinIO / any
-  `object_store`), with per-extent column statistics and token indices that
-  make 99 %+ of queries skip 99 %+ of data.
-- **Answers in KQL, SQL, or PromQL** over Arrow Flight gRPC — exact rows,
-  streamed zero-copy — so an agent can ask twenty exploratory questions per
-  user prompt without melting a credit card.
-- **Scales from one binary to many nodes** without a rewrite: the catalog is
-  externalized from byte one, compute is stateless, object storage is the
-  source of truth. Multi-node read scale-out and cross-region federation
-  layer on as peers of the single-node path — not as replacements for it.
-
-Think of it as the data plane an agent *wishes* existed behind every
-"how's production doing?" question.
-
----
-
-## How it works
-
-![kyma internal architecture — ingest path, shared storage, query path](docs/images/architecture.svg)
-
-Two lanes — ingest and query — share a stateless spine made of object storage
-(source of truth) and a Postgres-backed catalog (Iceberg-style manifests,
-per-column stats, CAS commits). Nothing durable lives on a compute node.
-
-**Ingest** flows left-to-right. OTLP, REST, Kafka, and file-drop frontends
-normalize signals into Arrow RecordBatches. A per-table staging buffer
-group-commits with pipelined flushes so hundreds of concurrent emitters
-produce a small number of fat, well-formed extents instead of a flood of tiny
-ones. The commit coordinator batches multiple extents into a single snapshot,
-drops catalog-CAS conflicts to near-zero, and keeps per-table writes ordered
-without serializing across tables. An ALTER TABLE mid-ingest is handled by
-force-flushing the buffer before appending a new-schema batch — history is
-never rewritten; reads null-fill missing columns.
-
-**Query** is a three-level pruning cascade. A KQL / SQL / PromQL frontend
-parses to a unified logical plan. The planner asks the catalog for candidate
-extents using time-range, equality sets, and token-containment predicates —
-eliminating almost all extents on almost all queries without touching object
-storage. Surviving extents are range-GET'd for their footers, pruned again
-with per-block stats and posting lists, and only then decoded. DataFusion
-executes the resulting plan vectorized on Arrow, streaming results to the
-client over Flight gRPC.
-
-The five invariants that make this distributable without a rewrite — object
-storage is the only source of truth, compute is stateless, catalog is
-externalized, format is pluggable, parser is pluggable — are enforced by
-architectural tests. See [`docs/architecture.md`](docs/architecture.md).
-
----
-
-## An agent's trip through kyma
-
-![one agent question flowing through the pruning cascade](docs/images/agent-query-lifecycle.svg)
-
-The numbers matter. Every order-of-magnitude reduction at a pruning level is
-an order of magnitude of latency, object-storage bandwidth, and dollars the
-agent is *not* paying on its next exploratory query. That's what makes kyma
-agent-shaped: an agent answering one question asks twenty; those twenty need
-to stay cheap.
-
----
-
-## What your agents can ask
-
-These are real KQL queries against kyma today. Drop them into any agent's
-tool-call layer (Flight gRPC or HTTP) and you have a production-aware
-copilot the same afternoon.
-
-### Post-deploy error emergence
-
-> *"What error signatures started appearing after the payments deploy at 14:23?"*
+<details>
+<summary><strong>Real KQL your agent can ask today</strong> (click to expand)</summary>
 
 ```kql
+// "What error signatures started appearing after the payments deploy at 14:23?"
 otel_logs
-| where service.name == "payments-svc"
-| where timestamp between (ago(2h) .. now())
-| where severity_text == "ERROR"
+| where service.name == "payments-svc" and severity_text == "ERROR"
 | summarize first_seen = min(timestamp), n = count() by error_code = tostring(attributes["error.code"])
 | where first_seen > datetime(2026-04-20 14:23)
 | order by n desc
-| take 20
 ```
 
-### Agent-session post-mortem
-
-> *"Why did agent session `sess_a1b2` fail? Walk me from the prompt to the tool call to the downstream DB query."*
-
 ```kql
+// "Walk agent session sess_a1b2 from the prompt to the tool call to the DB query."
 otel_traces
 | where tostring(attributes["session.id"]) == "sess_a1b2"
-| project timestamp,
-          span_name,
-          model = tostring(attributes["llm.model"]),
-          tool  = tostring(attributes["tool.name"]),
-          url   = tostring(attributes["http.url"]),
-          status_code,
-          duration_ms
+| project timestamp, span_name, model = tostring(attributes["llm.model"]),
+          tool = tostring(attributes["tool.name"]), status_code, duration_ms
 | order by timestamp asc
 ```
 
-This query is the point of the whole engine. Vendor telemetry backends
-weren't designed to index `llm.model`, `tool.name`, or whole prompt bodies.
-kyma's `dynamic` column takes them natively — and a token index on
-`tool.args` means "every session that called `send_email` with `draft: true`
-last Tuesday" is sub-second, not a support ticket.
-
-### Blast-radius fan-out during an outage
-
-> *"Which services called billing during the 02:17 spike, ranked by error rate?"*
-
 ```kql
+// "Which services called billing during the 02:17 spike, ranked by error rate?"
 otel_traces
 | where timestamp between (datetime(2026-04-20 02:15) .. datetime(2026-04-20 02:25))
 | where tostring(attributes["peer.service"]) == "billing"
-| summarize calls = count(),
-            errs  = count() * iff(status_code >= 500, 1, 0)
-    by caller = service.name
+| summarize calls = count(), errs = sum(iff(status_code >= 500, 1, 0)) by caller = service.name
 | extend err_rate = errs * 1.0 / calls
 | order by err_rate desc
 ```
 
-### Change surface over the last day
+The `dynamic` column takes `llm.model`, `tool.name`, whole prompt bodies natively; a token
+index makes "every session that called `send_email` with `draft:true` last Tuesday"
+sub-second — not a support ticket.
 
-> *"What changed in the last 24h — new error signatures, new span names, unusual resource attributes?"*
+</details>
 
-```kql
-otel_traces
-| where timestamp > ago(24h)
-| summarize first_seen = min(timestamp), n = count()
-    by span_name, service.name
-| where first_seen > ago(24h)
-| order by first_seen desc
-```
+![kyma internal architecture — ingest path, shared storage, query path](docs/images/architecture.svg)
 
-### Latency regression, narrowed
-
-> *"Which span on `payments-svc` got slower in the last hour versus the previous hour?"*
-
-```kql
-otel_traces
-| where service.name == "payments-svc"
-| where timestamp > ago(2h)
-| extend bucket = iff(timestamp > ago(1h), "now", "prev")
-| summarize p = avg(duration_ms) by span_name, bucket
-| order by span_name asc
-```
-
-### Cost attribution over the quarter
-
-> *"Which tenants burned the most LLM tokens in Q2, by model?"*
-
-```kql
-otel_logs
-| where timestamp between (datetime(2026-04-01) .. datetime(2026-06-30))
-| where span_name == "llm.call"
-| summarize total = sum(toint(attributes["llm.tokens.total"]))
-    by tenant = tostring(attributes["tenant.id"]),
-       model  = tostring(attributes["llm.model"])
-| order by total desc
-| take 50
-```
+Two lanes (ingest and query) share a stateless spine: object storage (source of truth) and
+a catalog (Iceberg-style manifests, per-column stats, CAS commits) — Postgres on the
+server, embedded SQLite for `kyma-local`. Five invariants — object storage is the only
+source of truth, compute is stateless, catalog is externalized, format is pluggable,
+parser is pluggable — are enforced by architectural tests. See
+[`docs/architecture.md`](docs/architecture.md).
 
 ---
 
-## Why this and not $VENDOR
+## Why this, not a memory SaaS or an observability vendor
 
-Why not just send OTLP to Datadog, Honeycomb, or Grafana Cloud and point your
-agent at their API? A few hard reasons:
-
-- **Agents ask in bursts.** One user prompt turns into twenty exploratory
-  queries. Vendor APIs rate-limit per-minute and charge per-query; kyma's
-  Flight gRPC is streaming, Arrow-native, and priced at whatever your object
-  storage costs.
-- **Agent telemetry is high-cardinality.** `session.id`, `tool.name`,
-  `tool.args`, `prompt.hash`, `llm.model` explode vendor indexes and
-  quickly hit ingestion caps. kyma's `dynamic` column takes arbitrary
-  structured attributes with a token index — the agent pivots on any of
-  them without pre-declaring a schema.
-- **Vendor query languages are agent-hostile.** Datadog Query, LogQL, and
-  custom DSLs return charts or screenshots, not rows. An agent needs
-  deterministic, composable results — KQL + Arrow is built for that.
-- **Your data stays yours.** Extents live on your object store. Retention,
-  export, replay, and schema evolution are yours to control, not a vendor
-  config knob.
-- **Agent-specific retention policies.** Keep every error trace 90 days,
-  sample successful traces at 1 %, keep every LLM call with
-  `user_feedback == "bad"` forever — all as first-class catalog policies,
-  not something you reverse-engineer from log router config.
-- **One language across signals.** Join a log line against the trace that
-  emitted it against the metric that alerted on it against the deploy event
-  that preceded them — in one KQL query. No stitching across three vendor
-  products.
-- **Distributed by design, single-node to start.** The catalog lives in a
-  separate process on day one. Moving to multi-node is a deployment change,
-  not a rewrite.
-
-kyma is the difference between *"ask the observability vendor for a chart"*
-and *"give the agent a database and let it think."*
+- **More than memory.** Memory SaaS gives the agent facts; kyma gives it facts **+** the
+  live logs/traces/code those facts are about **+** the graph linking them — one query
+  surface, one MCP server.
+- **Agents ask in bursts.** One prompt → twenty exploratory queries. Vendor APIs
+  rate-limit and charge per query; kyma's Flight gRPC is streaming, Arrow-native, priced
+  at your object-storage cost.
+- **High-cardinality is native.** `session.id`, `tool.args`, `prompt.hash` explode vendor
+  indexes; kyma's `dynamic` column + token index pivots on any of them, no pre-declared
+  schema.
+- **Your data stays yours.** Extents live on your object store; memory lives in your
+  catalog. Local-first, sync opt-in.
 
 ---
 
-## Quick start
+## Status
 
-```bash
-# bring up Postgres (5433) + MinIO (9000 / console 9001)
-docker-compose up -d
+**Pre-alpha.** The design is stable; the surface is not — expect schema churn and API
+breaks. Shipping today: the local single binary (`kyma-local` — stdio MCP, `serve`, `setup`,
+`sync`), the agentic-memory stack (hybrid + graph recall, bi-temporal, A.U.D.N., topic-key
+upsert, conflict tools, provenance, export/import), the MCP server (stdio + HTTP), REST/OTLP/
+Kafka/file-drop ingest, scheduled connectors, KQL + SQL over Arrow Flight, the 3-level
+pruning cascade, the web app, compaction/retention/GC, and bidirectional memory sync.
+Next: PromQL · Flight-SQL · multi-node read scale-out · cross-region federation.
 
-# build and run the engine (HTTP 8080, Flight gRPC 9090)
-cargo run --release -p kyma-bin
-
-# smoke test
-curl -sS http://localhost:8080/health
-curl -sS http://localhost:8080/metrics | head -20
-```
-
-Ingest some rows:
-
-```bash
-curl -sS -X POST http://localhost:8080/v1/ingest \
-  -H "X-Database: obs" \
-  -H "X-Table: otel_logs" \
-  -H "Content-Type: application/x-ndjson" \
-  --data-binary @- <<'EOF'
-{"timestamp":"2026-04-20T14:23:01Z","service.name":"payments-svc","severity_text":"ERROR","message":"card declined","attributes":{"error.code":"CARD_DECLINED"}}
-{"timestamp":"2026-04-20T14:23:04Z","service.name":"payments-svc","severity_text":"ERROR","message":"card declined","attributes":{"error.code":"CARD_DECLINED"}}
-EOF
-```
-
-Query in KQL:
-
-```bash
-curl -sS -X POST http://localhost:8080/v1/query \
-  -H "X-Database: obs" \
-  -H "Content-Type: application/x-kql" \
-  --data-binary 'otel_logs | where severity_text == "ERROR" | summarize n = count() by error_code = tostring(attributes["error.code"])'
-```
-
-Query in SQL (same endpoint, `Content-Type: application/sql`) or in Rust /
-Python / anything else over Arrow Flight on port 9090. The end-to-end test
-suites under [`scripts/`](scripts/) — `e2e-test.sh`, `test-kql.sh`,
-`test-flight.sh`, `load-test.sh`, `chaos-test.sh`, and ten more — are a good
-tour of what the engine can do.
+The fastest front door: the **[local quickstart](#quickstart-local-zero-infra)** above,
+or the docker-compose dev stack (`docker compose up -d`) for the full server tier.
 
 ---
 
@@ -369,66 +275,27 @@ tour of what the engine can do.
 
 ```
 crates/
-  kyma-core/              traits + types; the architectural contract
-  kyma-format-tlm/        telemetry storage format (Arrow + stats + token index)
-  kyma-format-stub-vec/   vector-format stub proving the SegmentFormat boundary
-  kyma-catalog/           Postgres-backed catalog (Iceberg-mirroring metadata)
-  kyma-storage/           object_store wrapper + block cache
-  kyma-ingest-core/       staging buffer, commit coordinator, write path
-  kyma-ingest-rest/       HTTP ingest frontend
-  kyma-ingest-otlp/       OTLP gRPC ingest frontend
-  kyma-ingest-kafka/      Kafka ingest frontend
-  kyma-ingest-filedrop/   object-storage file-drop ingest frontend
-  kyma-kql/               KQL parser + translator
-  kyma-plan/              unified logical plan IR
-  kyma-exec/              DataFusion integration, pushdown extractors
-  kyma-compaction/        background compaction, retention, physical GC
-  kyma-server/            HTTP + Arrow Flight gRPC query API, auth, metrics
-  kyma-cli/               admin CLI
-  kyma-bin/               the binary
+  kyma-core/            traits + types; the architectural contract
+  kyma-catalog/         Postgres-backed catalog (Iceberg-mirroring metadata)
+  kyma-catalog-sqlite/  embedded SQLite catalog (powers kyma-local)
+  kyma-storage/         object_store wrapper + local-FS auto-select
+  kyma-format-tlm/      telemetry storage format (Arrow + stats + token index)
+  kyma-ingest-*/        staging/commit write path + REST/OTLP/Kafka/file-drop frontends
+  kyma-kql/ kyma-plan/ kyma-exec/   KQL → unified plan → DataFusion execution
+  kyma-memory/          agentic memory: schema, writer, hybrid+graph recall
+  kyma-mcp/             MCP server — stdio + HTTP transports, shared dispatch
+  kyma-server/          HTTP + Flight gRPC API, agent surface, auth, web UI
+  kyma-connectors/      connector framework (GitHub, Prometheus, SaaS, …)
+  kyma-compaction/      background compaction, retention, physical GC
+  kyma-local/           the single-binary context engine (mcp · serve · setup · sync)
+  kyma-cli/ kyma-bin/   admin CLI + the server binary
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for the living design
-document and [`docs/benchmarks.md`](docs/benchmarks.md) for honest numbers
-against Elasticsearch / ClickHouse / ADX / InfluxDB 3.0.
+Full docs at **[getkyma.dev](https://www.getkyma.dev)**.
 
 ---
 
-## Roadmap
+## License & contributing
 
-| State      | Capability                                                                                             |
-|------------|--------------------------------------------------------------------------------------------------------|
-| shipping   | REST ingest, staging buffer + commit coordinator, KQL, SQL via DataFusion, Arrow Flight gRPC            |
-| shipping   | 3-level pruning cascade (catalog · extent footer · block/index) — time range, equality, token-contains |
-| shipping   | Postgres catalog with CAS, Iceberg-style manifests, schema evolution (ALTER TABLE ADD COLUMN)           |
-| shipping   | Compaction, retention, soft-delete + physical GC workers                                                |
-| shipping   | Auth (bearer token + roles), metrics (Prometheus), idempotency, query budgets, exponential retry       |
-| in flight  | Custom telemetry format v1 — Gorilla floats, delta-of-delta timestamps, FST term dicts, full inverted  |
-| next       | OTLP gRPC ingest · Kafka ingest · file-drop watcher                                                    |
-| next       | Native MCP server surface so agents connect directly, no glue code                                     |
-| next       | PromQL frontend · Flight-SQL compliance                                                                |
-| later      | Multi-node read scale-out (extent-cache-aware planner)                                                 |
-| later      | Cross-region federation                                                                                |
-| later      | Vector / agent-memory column format (ANN index + metadata join)                                        |
-
-Slice 1 is single-node. The architecture is designed so multi-node,
-multi-cluster, and distributed deployments are a bolt-on, never a rewrite.
-
----
-
-## Status
-
-Pre-alpha. The design is stable; the surface is not. Expect schema churn, API
-breaks, and unfinished ingest frontends. If you want to kick tires, the
-docker-compose dev stack plus the `scripts/` test suite is the front door.
-
----
-
-## License
-
-[Apache License 2.0](LICENSE).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: please follow
-[SECURITY.md](SECURITY.md) rather than the public issue tracker.
+[Apache-2.0](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md); for security issues follow
+[SECURITY.md](SECURITY.md) rather than the public tracker.
