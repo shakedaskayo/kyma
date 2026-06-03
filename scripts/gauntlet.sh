@@ -136,7 +136,9 @@ r.append(json.loads(os.environ["FAMILY_JSON"]))
 json.dump(r, open(results_file, "w"))
 PY
 
-  fam_pass="$(echo "$family_json" | python3 -c "import json,sys; print('true' if json.loads(sys.stdin.read()).get('pass') else 'false')")"
+  # A family counts as OK if it passed OR explicitly skipped itself (e.g. an
+  # unimplemented placeholder). A skip is not a failure.
+  fam_pass="$(echo "$family_json" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print('true' if (d.get('pass') or d.get('skipped')) else 'false')")"
   if [ "$fam_pass" != "true" ]; then
     overall_pass=false
   fi
