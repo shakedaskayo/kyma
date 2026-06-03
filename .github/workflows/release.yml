@@ -60,7 +60,7 @@ jobs:
         with: { version: 9 }
 
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: "pnpm" }
+        with: { node-version: 22, cache: "pnpm" }
 
       # The CLI embeds the web UI (kyma-web-assets) at compile time, so the
       # frontend must be built BEFORE the Rust build.
@@ -103,7 +103,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with: { version: 9 }
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: "pnpm" }
+        with: { node-version: 22, cache: "pnpm" }
       - uses: dtolnay/rust-toolchain@stable
       - name: Linux deps
         if: matrix.os == 'ubuntu-22.04'
