@@ -60,49 +60,59 @@ toy key-value store.
 
 ## Quickstart (local, zero infra)
 
+**One command.** Installs the `kyma` binary, then an interactive wizard starts the
+local server, connects the CLI, and wires your coding agent. No Postgres, no
+Docker — embedded SQLite + local files:
+
 ```bash
-# One-liner: prebuilt `kyma` binary + an interactive setup wizard
-# (start the server · connect the CLI · install the Claude Code plugin).
-# No Postgres, no Docker — embedded SQLite + local files.
 curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
 ```
 
+You're now running. The wizard leaves you with:
+
+- **Web UI + API** → **http://localhost:7777** (Graph Explorer · Memory · KQL/SQL workbench) — sign in `admin` / `admin`
+- **Claude Code plugin** installed → restart Claude Code and run **`/kyma-status`**
+- the **`kyma` CLI** on your `$PATH`
+
+**Try it** — a memory round-trips through the same engine the UI and your agent use:
+
 ```bash
-# Non-interactive (CI / dotfiles) — install only, or wire everything up:
+kyma remember "payments-svc deploys behind the Aurora gateway; error budget is 0.1%."
+kyma recall   "how do we deploy payments and what's the error budget?"
+# → returns the memory, scored by vector + keyword + graph
+```
+
+**Scripted / CI** — skip the prompts:
+
+```bash
+# install the binary only:
 curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash -s -- --yes
+# install + start the server + install the Claude Code plugin:
 curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash -s -- --yes --serve --plugin
+```
 
-# From source (needs a Rust toolchain + pnpm). The CLI embeds the web UI, so
-# build the frontend first. `--from-source` does this for you automatically.
+**Wire any agent over MCP** (zero server, zero auth — stdio):
+
+```bash
+kyma setup claude-code      # or: cursor · windsurf — writes the agent's MCP config to launch `kyma mcp`
+```
+
+Restart the agent and it has the full toolset (memory + data + graph). For Cursor /
+Aider / Continue, `kyma install-skill` teaches the agent *when* to shell out to the
+`kyma` CLI. The **plugin** path above goes further — it **injects the most relevant
+memories into every prompt automatically** (no tool call) plus `/kyma-recall`,
+`/kyma-remember`, `/kyma-ask`, `/kyma-ingest`.
+
+**From source** (Rust toolchain + pnpm; the CLI embeds the web UI, so build it first):
+
+```bash
+git clone https://github.com/shakedaskayo/kyma && cd kyma
 pnpm -C web build && cargo install --path crates/kyma-cli
+# …or let the installer do it: curl -fsSL …/install.sh | bash -s -- --from-source
 ```
 
-**Option A — MCP, any agent (one command):**
-
-```bash
-kyma setup claude-code      # or: cursor · windsurf
-```
-
-Restart your agent and it has the full toolset over stdio MCP — `setup` just writes the
-agent's MCP config to launch `kyma mcp`. Data lives under `~/.kyma`.
-
-**Option B — the Claude Code plugin (it remembers, automatically):**
-
-```bash
-cargo install --path crates/kyma-cli   # the `kyma` CLI — the plugin's hooks shell out to it
-kyma connect <kyma-url>                # a kyma server, or a local `kyma serve` endpoint
-kyma install-plugin                    # installs hooks + slash commands into ~/.claude
-```
-
-Now kyma **captures each session and injects the most relevant memories into every
-prompt — no tool call required** — plus `/kyma-recall`, `/kyma-remember`, `/kyma-ask`,
-`/kyma-ingest`. (Cursor / Aider / Continue work the same way via the CLI + a skill — see
-[Connect it however your agent works](#connect-it-however-your-agent-works).)
-
-Prefer a UI? `kyma serve` brings up the **same web interface** the hosted server
-runs — Graph Explorer, Memory, and a KQL/SQL workbench — on `http://localhost:7777`,
-still zero-infra. Want it server-side for a team, with connectors and continuous
-ingestion? See **[Two tiers](#two-tiers-local-binary--control-plane)**.
+Want it server-side for a team, with connectors and continuous ingestion? See
+**[Two tiers](#two-tiers-local-binary--control-plane)**.
 
 ---
 
