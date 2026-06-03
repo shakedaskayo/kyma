@@ -30,7 +30,7 @@ jobs:
           --health-timeout=3s
           --health-retries=10
       minio:
-        image: bitnami/minio:latest
+        image: bitnamilegacy/minio:2025.7.23-debian-12-r5
         env:
           MINIO_ROOT_USER: kyma_admin
           MINIO_ROOT_PASSWORD: kyma_admin_dev
