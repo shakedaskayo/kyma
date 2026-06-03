@@ -40,6 +40,7 @@ jobs:
       KYMA_CATALOG_URL: postgresql://kyma:kyma_dev@localhost:5432/kyma
       KYMA_S3_ENDPOINT: http://localhost:9000
       KYMA_S3_BUCKET: kyma
+      KYMA_SECRET_KEY: kyma-ci-secret-not-for-production
       KYMA_S3_REGION: us-east-1
       KYMA_S3_ACCESS_KEY_ID: kyma_admin
       KYMA_S3_SECRET_ACCESS_KEY: kyma_admin_dev
