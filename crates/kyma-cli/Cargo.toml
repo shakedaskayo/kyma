@@ -4,7 +4,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Admin CLI: create-table, show-extents, compact, explain."
+repository.workspace = true
+description = "kyma — the context engine for coding agents. A single binary: stdio/HTTP MCP, a zero-infra local web UI + API (serve), memory recall/save, and control-plane sync. Installs as `kyma`."
+homepage = "https://www.getkyma.dev"
+documentation = "https://www.getkyma.dev"
+keywords = ["mcp", "memory", "agent", "context", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "kyma"

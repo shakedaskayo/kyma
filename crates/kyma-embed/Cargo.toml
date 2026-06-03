@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "Text-embedding backends for kyma (local fastembed ONNX by default; Ollama / OpenAI-compatible optional)."
 
 [features]
 default = ["fastembed-backend"]

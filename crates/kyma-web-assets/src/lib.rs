@@ -5,8 +5,10 @@
 
 use include_dir::{include_dir, Dir};
 
-/// The Web UI's `dist/` directory, baked in at compile time.
-pub static DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../web/dist");
+/// The Web UI's built bundle, baked in at compile time. `build.rs` syncs
+/// `../../web/dist` into this crate-local `embedded/` dir so the crate stays
+/// self-contained (and publishable to crates.io).
+pub static DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/embedded");
 
 /// MIME type for a filename, by extension. Falls back to `application/octet-stream`.
 pub fn mime_for(path: &str) -> &'static str {

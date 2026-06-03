@@ -23,7 +23,7 @@ datafusion.workspace = true
 arrow.workspace = true
 arrow-array.workspace = true
 bytes.workspace = true
-kyma-web-assets = { path = "../kyma-web-assets", optional = true }
+kyma-web-assets = { workspace = true, optional = true }
 kyma-format-tlm = { workspace = true, optional = true }
 object_store = { workspace = true, optional = true }
 testcontainers = { workspace = true, optional = true }

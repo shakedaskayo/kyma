@@ -61,8 +61,20 @@ toy key-value store.
 ## Quickstart (local, zero infra)
 
 ```bash
-# Install the single binary — no Postgres, no Docker (embedded SQLite + local files)
-cargo install --path crates/kyma-cli
+# One-liner: prebuilt `kyma` binary + an interactive setup wizard
+# (start the server · connect the CLI · install the Claude Code plugin).
+# No Postgres, no Docker — embedded SQLite + local files.
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
+```
+
+```bash
+# Non-interactive (CI / dotfiles) — install only, or wire everything up:
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash -s -- --yes --serve --plugin
+
+# From source (needs a Rust toolchain + pnpm). The CLI embeds the web UI, so
+# build the frontend first. `--from-source` does this for you automatically.
+pnpm -C web build && cargo install --path crates/kyma-cli
 ```
 
 **Option A — MCP, any agent (one command):**
