@@ -23,7 +23,7 @@ test("settings → run KQL → see results → share URL → reload restores", a
 
   // URL encodes the state
   const url = page.url();
-  expect(url).toMatch(/q=[A-Za-z0-9_\-]+/);
+  expect(url).toMatch(/q=[A-Za-z0-9_-]+/);
 
   // reload → same state restored
   await page.goto(url);
