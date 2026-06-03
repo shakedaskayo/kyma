@@ -74,6 +74,7 @@ Efficient workflow:
 MEMORY — you have a persistent memory across sessions:
 - `memory_search(query)` — the PRIMARY recall tool. Graph-aware hybrid search (semantic + keyword) expanded over connected memories, catalog resources, and traces. Call this early when a question may depend on prior context, preferences, or how entities relate. Returns ranked memories + a `linked` list of connected resources + a ready-to-use context block. Follow `linked` node ids with `graph_traverse` for a deeper subgraph. (`recall_memory` is an alias.)
 - `save_memory(content, memory_type, …)` — store durable facts/decisions/preferences/learnings the user shares. Link them to entities with `link_memory_to_entity` when they're about a specific repo/service/table.
+- `ingest_entity(name, kind, properties, links, type, icon)` — mint a virtual graph entity and wire it to nodes/memories. Prefer a `type` of the form `provider::resource` (e.g. `kubernetes::pod`, `aws::ec2::instance`, `github::repository`, `datadog::monitor`) — it sets the right brand mark AND resource classification. If there's no provider, set `icon` to a gallery name (a brand like github/datadog/kubernetes, or a kind glyph like service/repo/database/person/infra).
 - Don't save trivia, transient state, or things already in the data. Prefer recalling before answering over guessing.
 
 Rules:
@@ -88,12 +89,19 @@ Rules:
 /// skill block is what makes "Settings → Skills" load-bearing — the agent
 /// only sees skills that appear here.
 async fn compose_system_prompt(state: &AgentState) -> String {
+    // Base prompt + the live icon gallery (so agent-minted entities get a
+    // recognisable mark, and external gallery config is reflected here).
+    let base = format!(
+        "{SYSTEM_PROMPT}\nICON GALLERY — when calling `ingest_entity`, pick `icon` from: {}.\n",
+        crate::icon_config::IconGallery::global().catalog_hint(),
+    );
+
     let enabled = match state.skills.get().await {
         Ok(s) => s,
-        Err(_) => return SYSTEM_PROMPT.to_string(),
+        Err(_) => return base,
     };
     if enabled.is_empty() {
-        return SYSTEM_PROMPT.to_string();
+        return base;
     }
     let enabled_set: std::collections::HashSet<&str> =
         enabled.iter().map(String::as_str).collect();
@@ -103,11 +111,11 @@ async fn compose_system_prompt(state: &AgentState) -> String {
         .filter(|s| enabled_set.contains(s.name.as_str()))
         .collect();
     if active.is_empty() {
-        return SYSTEM_PROMPT.to_string();
+        return base;
     }
     active.sort_by(|a, b| a.name.cmp(&b.name));
 
-    let mut out = String::from(SYSTEM_PROMPT);
+    let mut out = base;
     out.push_str("\n\n---\nADDITIONAL SKILLS — the user has enabled these. Use them when they apply.\n");
     for s in active {
         out.push_str(&format!("\n## Skill: {}\n", s.name));

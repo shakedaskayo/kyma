@@ -164,6 +164,14 @@ enum Command {
         /// `repo:owner/name|github|LIVES_IN` or `memory:<uuid>||DOCUMENTED_BY`.
         #[arg(long)]
         link: Vec<String>,
+        /// Icon from the gallery (e.g. github, datadog, kubernetes, service,
+        /// database, person). Omit to auto-derive from type/kind/vendor.
+        #[arg(long)]
+        icon: Option<String>,
+        /// Classification type `provider::resource` (e.g. kubernetes::pod,
+        /// aws::ec2::instance, github::repository, datadog::monitor).
+        #[arg(long = "type")]
+        r#type: Option<String>,
     },
     /// Distill a session transcript (stdin) into durable memories via the
     /// kyma agent. Used by the kyma-memory plugin at session end.
@@ -347,7 +355,9 @@ async fn main() -> Result<()> {
             realm,
             prop,
             link,
-        } => plugin::entity(name, kind, realm, prop, link).await,
+            icon,
+            r#type,
+        } => plugin::entity(name, kind, realm, prop, link, icon, r#type).await,
         Command::Distill { session, realm } => plugin::distill(session, realm).await,
         Command::InstallPlugin { target, force } => plugin::install_plugin(target, force).await,
         // Local engine — delegate to the kyma-local library (one `kyma` binary).

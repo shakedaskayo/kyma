@@ -2,9 +2,12 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { LayoutDashboard, Plus } from "lucide-react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonCard } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +15,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { staggerContainer, listItem, useMotionSafe } from "@/lib/motion";
 import { useSession } from "@/sdk/session";
 import { listDashboards, createDashboard } from "@/sdk/dashboards";
 
@@ -56,6 +60,9 @@ function DashboardsListPage() {
     create();
   };
 
+  const stagger = useMotionSafe(staggerContainer);
+  const item = useMotionSafe(listItem);
+
   function fmtDate(iso: string) {
     const d = new Date(iso);
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -77,22 +84,39 @@ function DashboardsListPage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         {isLoading && (
-          <div className="flex items-center justify-center py-20 text-sm text-muted-foreground animate-pulse">
-            Loading dashboards…
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
           </div>
         )}
 
         {!isLoading && dashboards && dashboards.length === 0 && (
-          <EmptyState onNew={() => setNewOpen(true)} />
+          <EmptyState
+            icon={LayoutDashboard}
+            title="No dashboards yet"
+            description="Create one to compose multiple queries and charts on a single page."
+            action={
+              <Button onClick={() => setNewOpen(true)}>
+                <Plus className="mr-1.5 h-4 w-4" /> Create dashboard
+              </Button>
+            }
+          />
         )}
 
         {!isLoading && dashboards && dashboards.length > 0 && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <motion.div
+            variants={stagger}
+            initial="hidden"
+            animate="show"
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+          >
             {dashboards.map((d) => (
-              <button
+              <motion.button
                 key={d.id}
+                variants={item}
                 onClick={() => navigate({ to: "/dashboards/$id", params: { id: d.id }, search: { edit: undefined } })}
-                className="group rounded-lg border bg-background p-4 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md"
+                className="group rounded-lg border bg-card p-4 text-left shadow-elev-2 transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-elev-3"
               >
                 <div className="flex items-start justify-between gap-2">
                   <LayoutDashboard className="mt-0.5 h-4 w-4 shrink-0 text-primary/70 group-hover:text-primary" />
@@ -109,9 +133,9 @@ function DashboardsListPage() {
                   <span>Updated {fmtDate(d.updated_at)}</span>
                   <span className="rounded-full bg-muted px-2 py-0.5">{d.time_range_preset}</span>
                 </div>
-              </button>
+              </motion.button>
             ))}
-          </div>
+          </motion.div>
         )}
       </div>
 
@@ -157,19 +181,3 @@ function DashboardsListPage() {
   );
 }
 
-function EmptyState({ onNew }: { onNew: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="mb-4 rounded-full bg-primary/10 p-5">
-        <LayoutDashboard className="h-10 w-10 text-primary/70" />
-      </div>
-      <h2 className="text-base font-semibold">No dashboards yet</h2>
-      <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-        Create one to compose multiple queries and charts on a single page.
-      </p>
-      <Button className="mt-4" onClick={onNew}>
-        <Plus className="mr-1.5 h-4 w-4" /> Create dashboard
-      </Button>
-    </div>
-  );
-}

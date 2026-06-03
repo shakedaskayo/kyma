@@ -10,7 +10,12 @@ function RootShell() {
   return (
     <>
       <Outlet />
-      <Toaster richColors position="top-right" theme={resolved} />
+      <Toaster
+        richColors
+        position="top-right"
+        theme={resolved}
+        toastOptions={{ classNames: { toast: "shadow-elev-3 backdrop-blur-md" } }}
+      />
     </>
   );
 }

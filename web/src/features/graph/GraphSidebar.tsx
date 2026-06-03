@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ComponentType } from "react";
 import {
   ChevronDown,
   Layers,
@@ -6,18 +6,23 @@ import {
   X,
   Eye,
   EyeOff,
-  Map as MapIcon,
   Tag as TagIcon,
   ArrowRight,
   ArrowLeft,
   Copy,
   Sparkles,
+  Sun,
+  Waypoints,
+  Spline,
+  Circle as CircleIcon,
+  LayoutGrid,
 } from "lucide-react";
 import {
   getLabelColor,
-  getRelationshipColor,
   type LayoutAlgorithm,
 } from "@/sdk/graph-layout";
+import { getRelationshipFamilyColor } from "./graph-style";
+import { resolveGraphIcon } from "./graph-icons";
 import type { GraphNode, GraphRelationship, GraphStats } from "@/sdk/graph";
 import { useGraphStore } from "./graph-store";
 import type { GraphCoord } from "./useGraph";
@@ -64,8 +69,16 @@ export function GraphSidebar(props: GraphSidebarProps) {
   const setLayout = useGraphStore((s) => s.setLayout);
   const showEdgeLabels = useGraphStore((s) => s.showEdgeLabels);
   const toggleEdgeLabels = useGraphStore((s) => s.toggleEdgeLabels);
-  const showMiniMap = useGraphStore((s) => s.showMiniMap);
-  const setShowMiniMap = useGraphStore((s) => s.setShowMiniMap);
+  const glow = useGraphStore((s) => s.glow);
+  const toggleGlow = useGraphStore((s) => s.toggleGlow);
+  const animatedFlow = useGraphStore((s) => s.animatedFlow);
+  const toggleAnimatedFlow = useGraphStore((s) => s.toggleAnimatedFlow);
+  const curvedEdges = useGraphStore((s) => s.curvedEdges);
+  const toggleCurvedEdges = useGraphStore((s) => s.toggleCurvedEdges);
+  const communityHulls = useGraphStore((s) => s.communityHulls);
+  const toggleCommunityHulls = useGraphStore((s) => s.toggleCommunityHulls);
+  const sizeByDegree = useGraphStore((s) => s.sizeByDegree);
+  const toggleSizeByDegree = useGraphStore((s) => s.toggleSizeByDegree);
   const searchQuery = useGraphStore((s) => s.searchQuery);
   const setSearchQuery = useGraphStore((s) => s.setSearchQuery);
   const hiddenLabels = useGraphStore((s) => s.hiddenLabels);
@@ -212,33 +225,13 @@ export function GraphSidebar(props: GraphSidebarProps) {
             </button>
           ))}
         </div>
-        <div className="mb-2 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={toggleEdgeLabels}
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1 text-[10px] font-medium transition-colors",
-              showEdgeLabels
-                ? "bg-accent text-accent-foreground"
-                : "border text-muted-foreground hover:text-foreground",
-            )}
-            title="Show relationship labels on edges"
-          >
-            <TagIcon className="h-3 w-3" /> Labels
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowMiniMap(!showMiniMap)}
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1 text-[10px] font-medium transition-colors",
-              showMiniMap
-                ? "bg-accent text-accent-foreground"
-                : "border text-muted-foreground hover:text-foreground",
-            )}
-            title="Show minimap"
-          >
-            <MapIcon className="h-3 w-3" /> Minimap
-          </button>
+        <div className="mb-2 grid grid-cols-3 gap-1">
+          <StyleToggle icon={Sun} label="Glow" on={glow} onClick={toggleGlow} title="Glow halos on focus/landmark nodes" />
+          <StyleToggle icon={Waypoints} label="Flow" on={animatedFlow} onClick={toggleAnimatedFlow} title="Animated flow on the focused edges" />
+          <StyleToggle icon={Spline} label="Curve" on={curvedEdges} onClick={toggleCurvedEdges} title="Curve edges" />
+          <StyleToggle icon={LayoutGrid} label="Clusters" on={communityHulls} onClick={toggleCommunityHulls} title="Translucent community hulls" />
+          <StyleToggle icon={CircleIcon} label="Size" on={sizeByDegree} onClick={toggleSizeByDegree} title="Size nodes by degree" />
+          <StyleToggle icon={TagIcon} label="Labels" on={showEdgeLabels} onClick={toggleEdgeLabels} title="Relationship labels on edges" />
         </div>
         <div className="flex items-center justify-between text-[10px] text-muted-foreground">
           <span>
@@ -348,6 +341,7 @@ function SectionLabels({
         {entries.map(([label, count]) => {
           const isHidden = hidden.includes(label);
           const color = getLabelColor(label);
+          const ic = resolveGraphIcon([label], {});
           return (
             <button
               key={label}
@@ -361,7 +355,11 @@ function SectionLabels({
               )}
               title={isHidden ? `Show ${label}` : `Hide ${label}`}
             >
-              <Dot color={color} dim={isHidden} />
+              {ic ? (
+                <ic.Comp size={14} color={color} className={cn("shrink-0", isHidden && "opacity-40")} />
+              ) : (
+                <Dot color={color} dim={isHidden} />
+              )}
               <span className={cn("flex-1 truncate", isHidden && "line-through")}>
                 {label}
               </span>
@@ -393,7 +391,7 @@ function SectionRels({
       </span>
       <div className="space-y-px">
         {entries.map(([rel, count]) => {
-          const color = getRelationshipColor(rel);
+          const color = getRelationshipFamilyColor(rel);
           const isActive = active === rel;
           return (
             <button
@@ -473,7 +471,7 @@ function NodeInspector({
         compositeId,
         name,
         relType: rel.relationship_type,
-        color: getRelationshipColor(rel.relationship_type),
+        color: getRelationshipFamilyColor(rel.relationship_type),
         direction,
         relId: rel.id,
       });
@@ -492,8 +490,8 @@ function NodeInspector({
           <p className="truncate text-sm font-medium" title={displayName}>
             {displayName}
           </p>
-          <p className="mt-0.5 text-[10px] text-muted-foreground">
-            {primaryLabel} · {ns}
+          <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+            {primaryLabel} · {neighbours.length} {neighbours.length === 1 ? "link" : "links"} · {ns}
           </p>
         </div>
         <button
@@ -581,6 +579,37 @@ function NodeInspector({
 }
 
 /* ─── Small visuals ─────────────────────────────────────────────────────── */
+
+function StyleToggle({
+  icon: Icon,
+  label,
+  on,
+  onClick,
+  title,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  on: boolean;
+  onClick: () => void;
+  title: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={on}
+      className={cn(
+        "flex items-center justify-center gap-1 rounded px-1.5 py-1 text-[10px] font-medium transition-colors",
+        on
+          ? "bg-accent text-accent-foreground"
+          : "border text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon className="h-3 w-3" /> {label}
+    </button>
+  );
+}
 
 function Checkbox({ checked, color }: { checked: boolean; color: string }) {
   return (

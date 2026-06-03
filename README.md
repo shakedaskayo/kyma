@@ -35,6 +35,13 @@
 
 ---
 
+<p align="center">
+  <img src="docs/images/graph-explorer.png" alt="Kyma's Graph Explorer — a typed, color-coded knowledge graph with real vendor brand marks: Kubernetes services, Datadog monitors, PagerDuty on-call, Kafka topics, cloud infrastructure, people, concepts, and durable memories, wired by relationship-family edges." width="1000" />
+</p>
+<p align="center"><em>Your services, infra, repos, people — and your agent's memories — as one living, typed knowledge graph.</em></p>
+
+---
+
 A **memory store** remembers what you told it. A **context engine** also knows your
 live systems and how everything connects.
 
@@ -132,6 +139,8 @@ The whole context engine — not just recall — reachable however your agent co
 > the `linked` resources with `graph_traverse` for a deeper subgraph. The agent grounds
 > answers in what you've actually decided *and* how your systems actually look.
 
+![The kyma context loop — agent sessions and your stack feed the memory + knowledge graph; recall, graph traversal and KQL feed every next prompt automatically.](docs/images/context-loop.svg)
+
 ### Connect it however your agent works
 
 MCP is the standard, but it's pull-only. kyma meets your agent where it is — three paths,
@@ -190,6 +199,8 @@ See **[Agentic Memory](https://www.getkyma.dev/agent/memory)** for the full desi
 The same context engine, two ways to run it — pick per machine; memory stays coherent
 across both via sync.
 
+![kyma two tiers — the local single binary and the team control plane, kept coherent with incremental push/pull sync.](docs/images/two-tier.svg)
+
 | | **`kyma` (local mode)** | **kyma server** (control plane) |
 |---|---|---|
 | Infra | none — embedded SQLite + local files | Postgres + object store (S3/MinIO) |
@@ -212,13 +223,23 @@ memory and existing resources — filling the graph without leaving your editor.
 
 ## See it
 
-![Kyma's Graph Explorer rendering the cross-database unified graph — every database and every property graph on one canvas, with force/tree/radial/grid layouts, search, namespace filters, and a per-node inspector.](docs/images/graph-explorer.png)
+A WebGL canvas renders **every property graph from every database on one surface** — your
+repos and services *and* the memories and entities they link to. Nodes are **color-coded by
+type**, sized by connectivity, and carry **classification icons**: real vendor brand marks
+(GitHub, Datadog, Kubernetes, AWS, GCP, Postgres, Redis, Kafka, Slack, PagerDuty, …) plus
+`provider::resource` types like `kubernetes::pod`, `aws::ec2::instance`, and
+`datadog::monitor`. Edges are colored by relationship family, communities are detected and
+shaded, and the focused neighbourhood lights up with animated flow.
+
+![The whole graph at scale — 60+ resources across services, repos, cloud infra, data stores, people, and memories merged onto one canvas, color-coded by type with community clustering and force/tree/radial/grid layouts.](docs/images/graph-explorer-detail.png)
 
 The web app (hosted server, or `kyma serve`) has four first-class surfaces:
 
 - **`/graph`** — the cross-database **unified graph**: every property graph from every
-  database merged onto one canvas — your repo graph, your services, *and* your memories
-  + the entities they link to. Force / tree / radial / grid, search, per-node inspector.
+  database merged onto one canvas — your repo graph, your services, cloud resources, *and*
+  your memories + the entities they link to. Typed, brand-marked, color-coded nodes;
+  force / tree / radial / grid layouts; search, namespace + relationship filters, community
+  clustering, and a per-node inspector with one-hop expansion.
 - **`/memory`** — interactive recall with scores, validity intervals, the graph path each
   result arrived by, connected resources, and live consolidation runs.
 - **`/explore`** — a KQL/SQL workbench with a streaming results grid and histogram timeline.
@@ -243,6 +264,8 @@ what lets an agent ask twenty exploratory questions per prompt without melting a
   zero-copy.
 - **Scales from one binary to many nodes** without a rewrite: object storage is the source
   of truth, compute is stateless, the catalog is externalized.
+
+![Agent query lifecycle — one natural-language question becomes KQL, runs a three-level pruning cascade (15,200 extents → 14 blocks), and streams the answer back over Arrow Flight in ~412 ms.](docs/images/agent-query-lifecycle.svg)
 
 <details>
 <summary><strong>Real KQL your agent can ask today</strong> (click to expand)</summary>

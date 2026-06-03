@@ -1,5 +1,7 @@
 import { KeyRound, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { credentialKindLabel } from "@/sdk/credentials";
 import { useCredentials, useDeleteCredential } from "./useCredentials";
 import { CredentialIcon } from "./CredentialIcon";
@@ -21,11 +23,7 @@ export function CredentialsList({ onAdd }: { onAdd: () => void }) {
   const del = useDeleteCredential();
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20 text-sm text-muted-foreground animate-pulse">
-        Loading credentials…
-      </div>
-    );
+    return <SkeletonRows rows={6} className="mx-auto max-w-3xl py-2" />;
   }
   if (error) {
     return (
@@ -36,16 +34,12 @@ export function CredentialsList({ onAdd }: { onAdd: () => void }) {
   }
   if (!data || data.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="mb-4 rounded-full bg-primary/10 p-5">
-          <KeyRound className="h-10 w-10 text-primary/70" />
-        </div>
-        <h2 className="text-base font-semibold">No credentials yet</h2>
-        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          Store typed secrets once — PATs, basic auth, connection URLs, AWS keys, OAuth tokens — and reference them from connectors and other subsystems by id. Encrypted at rest.
-        </p>
-        <Button className="mt-4" onClick={onAdd}>Add credential</Button>
-      </div>
+      <EmptyState
+        icon={KeyRound}
+        title="No credentials yet"
+        description="Store typed secrets once — PATs, basic auth, connection URLs, AWS keys, OAuth tokens — and reference them from connectors and other subsystems by id. Encrypted at rest."
+        action={<Button onClick={onAdd}>Add credential</Button>}
+      />
     );
   }
   return (
