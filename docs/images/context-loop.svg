@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" role="img" aria-label="kyma context loop — sessions and your stack feed the graph; the graph feeds every next prompt">
+<defs>
+<linearGradient id="brand" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2dd4bf"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>
+<radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#2dd4bf" stop-opacity="0.20"/><stop offset="60%" stop-color="#2dd4bf" stop-opacity="0.05"/><stop offset="100%" stop-color="#2dd4bf" stop-opacity="0"/></radialGradient>
+<radialGradient id="kmCore" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#0d1015"/><stop offset="80%" stop-color="#0d1015"/><stop offset="100%" stop-color="#11151b"/></radialGradient>
+<linearGradient id="kmRing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7ed957"/><stop offset="60%" stop-color="#7ed957" stop-opacity="0.5"/><stop offset="100%" stop-color="#7ed957" stop-opacity="0.15"/></linearGradient>
+<marker id="arrT" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#2dd4bf"/></marker>
+<marker id="arrC" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#38bdf8"/></marker>
+<filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="6"/></filter>
+</defs>
+<rect width="1200" height="560" fill="#0e1217"/>
+<ellipse cx="600.0" cy="300" rx="300" ry="220" fill="url(#glow)"/>
+<text x="600.0" y="44" text-anchor="middle" font-size="24" font-weight="700" fill="#e6edf3">The <tspan fill="url(#brand)">context loop</tspan>.</text>
+<text x="600.0" y="70" text-anchor="middle" font-size="13" fill="#8da2b6">Sessions and your stack feed the graph — the graph feeds every next prompt, automatically.</text>
+<rect x="60" y="200" width="310" height="200" rx="16" fill="#141b24" stroke="#243140"/><rect x="60" y="200" width="310" height="46" rx="16" fill="#2dd4bf" opacity="0.10"/><text x="82" y="229" font-size="15.5" font-weight="700" fill="#e6edf3">Your coding agent</text><text x="348" y="229" text-anchor="end" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#2dd4bf">Claude Code · MCP</text>
+<circle cx="92" cy="268" r="3" fill="#2dd4bf"/><text x="106" y="272" font-size="13" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="#e6edf3">Works exactly as usual</text><circle cx="92" cy="298" r="3" fill="#2dd4bf"/><text x="106" y="302" font-size="13" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="#e6edf3">Plugin captures each session</text><circle cx="92" cy="328" r="3" fill="#2dd4bf"/><text x="106" y="332" font-size="13" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="#e6edf3">Context arrives in every prompt</text>
+<rect x="464" y="134" width="272" height="332" rx="22" fill="#2dd4bf" opacity="0.10" filter="url(#soft)"/>
+<rect x="470" y="140" width="260" height="320" rx="18" fill="#101822" stroke="#2dd4bf" stroke-opacity="0.45"/>
+<g transform="translate(574.0 160) scale(0.5417)">
+<circle cx="48" cy="48" r="44" fill="none" stroke="url(#kmRing)" stroke-width="2"/>
+<circle cx="48" cy="48" r="36" fill="url(#kmCore)" stroke="#2a2e36" stroke-width="1"/>
+<g stroke="#e8e6e0" stroke-width="3.5" stroke-linecap="round" fill="none"><line x1="34" y1="32" x2="34" y2="64"/><line x1="34" y1="48" x2="58" y2="34"/><line x1="34" y1="48" x2="58" y2="62"/></g>
+<circle cx="58" cy="34" r="2.5" fill="#7ed957"/><circle cx="58" cy="62" r="2.5" fill="#7ed957"/></g>
+<text x="600.0" y="238" text-anchor="middle" font-size="22" font-weight="700" fill="url(#brand)">kyma</text>
+<text x="600.0" y="257" text-anchor="middle" font-size="10.5" letter-spacing="1.5" fill="#8da2b6">MEMORY + KNOWLEDGE GRAPH</text>
+<line x1="494" y1="272" x2="706" y2="272" stroke="#243140"/>
+<circle cx="504" cy="294" r="3" fill="#2dd4bf"/><text x="518" y="298" font-size="12.5" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="#e6edf3">Typed entities — k8s · aws · github</text><circle cx="504" cy="320" r="3" fill="#2dd4bf"/><text x="518" y="324" font-size="12.5" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="#e6edf3">Durable memories — facts · decisions</text><circle cx="504" cy="346" r="3" fill="#2dd4bf"/><text x="518" y="350" font-size="12.5" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="#e6edf3">Live data — logs · traces · KQL</text><circle cx="504" cy="372" r="3" fill="#2dd4bf"/><text x="518" y="376" font-size="12.5" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="#e6edf3">Relationships across all of it</text>
+<text x="600.0" y="442" text-anchor="middle" font-size="10.5" font-family="JetBrains Mono, ui-monospace, monospace" fill="#5d6f80">vendor icons · provider::resource types</text>
+<rect x="830" y="200" width="310" height="200" rx="16" fill="#141b24" stroke="#243140"/><rect x="830" y="200" width="310" height="46" rx="16" fill="#38bdf8" opacity="0.10"/><text x="852" y="229" font-size="15.5" font-weight="700" fill="#e6edf3">Your stack</text><text x="1118" y="229" text-anchor="end" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#38bdf8">connectors · OTLP</text>
+<circle cx="862" cy="268" r="3" fill="#38bdf8"/><text x="876" y="272" font-size="13" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="#e6edf3">GitHub · Datadog · K8s · Postgres</text><circle cx="862" cy="298" r="3" fill="#38bdf8"/><text x="876" y="302" font-size="13" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="#e6edf3">Slack · Jira · Notion · S3 · …</text><circle cx="862" cy="328" r="3" fill="#38bdf8"/><text x="876" y="332" font-size="13" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="#e6edf3">Logs, traces, metrics, deploys</text>
+<path d="M 370 240 C 410 200 430 190 470 190" fill="none" stroke="#2dd4bf" stroke-width="2.5" marker-end="url(#arrT)"/>
+<text x="452" y="166" text-anchor="end" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#2dd4bf">save ▸ remember · ingest_entity · distill</text>
+<path d="M 470 415 C 430 415 410 400 372 372" fill="none" stroke="#38bdf8" stroke-width="2.5" marker-end="url(#arrC)"/>
+<text x="240" y="452" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#38bdf8">recall ▸ memory_search · graph_traverse · run_kql</text>
+<text x="240" y="470" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#5d6f80">→ injected into the next prompt, automatically</text>
+<path d="M 830 300 C 790 300 770 300 730 300" fill="none" stroke="#38bdf8" stroke-width="2.5" marker-end="url(#arrC)"/>
+<text x="780" y="288" text-anchor="middle" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#5d6f80">ingest</text>
+</svg>

@@ -13,6 +13,23 @@
 
 use serde_json::{json, Map, Value};
 
+/// `PullRequest` → `pull_request` — for deriving a `type` resource segment from
+/// a node label.
+pub(crate) fn snake_case(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    for (i, c) in s.chars().enumerate() {
+        if c.is_uppercase() {
+            if i > 0 {
+                out.push('_');
+            }
+            out.extend(c.to_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Reshape a rich node JSON object into the canonical row shape. Accepts
 /// `labels` as either a string or an array (uses the first element).
 pub fn normalize_node(v: Value) -> Value {
@@ -35,7 +52,19 @@ pub fn normalize_node(v: Value) -> Value {
         Some(v) => v.to_string(),
         None => String::new(),
     };
-    let extras: Map<String, Value> = obj;
+    let mut extras: Map<String, Value> = obj;
+    // If the connector tagged a `vendor`, derive a classification
+    // `type` ("vendor::resource") from the label so the graph can brand +
+    // classify the node (e.g. vendor "github" + label "PullRequest" →
+    // "github::pull_request").
+    if let Some(Value::String(vendor)) = extras.get("vendor").cloned() {
+        if !extras.contains_key("type") && !labels.is_empty() && !vendor.is_empty() {
+            extras.insert(
+                "type".to_string(),
+                Value::String(format!("{vendor}::{}", snake_case(&labels))),
+            );
+        }
+    }
     json!({
         "id": id,
         "labels": labels,

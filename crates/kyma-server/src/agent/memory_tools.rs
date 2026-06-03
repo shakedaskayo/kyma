@@ -230,6 +230,18 @@ struct IngestEntityArgs {
     /// Edges wiring this entity to existing graph nodes / memories / siblings.
     #[serde(default)]
     links: Option<Vec<EntityLink>>,
+    /// Icon name from the gallery (e.g. "github", "datadog", "kubernetes",
+    /// "service", "database", "person"). Optional — when omitted the server
+    /// derives one from `type`/`kind`/vendor via the icon gallery so the graph
+    /// shows a recognisable mark.
+    #[serde(default)]
+    icon: Option<String>,
+    /// Classification type `provider::resource` (e.g. "kubernetes::pod",
+    /// "aws::ec2::instance", "github::repository", "datadog::monitor"). Drives
+    /// the brand mark + resource classification; prefer this over `kind` for
+    /// vendor/cloud resources.
+    #[serde(default, rename = "type")]
+    entity_type: Option<String>,
 }
 
 /// Lowercase, hyphenated slug for the entity's stable upsert key.
@@ -251,7 +263,14 @@ engine with agent-known entities (a service, repo, table, person, file, config, 
 their relationships. `links` connect the entity to catalog resources (set `target_namespace`, \
 e.g. \"github\", plus the node id like \"repo:owner/name\") or to memories (\"memory:<uuid>\"). \
 Idempotent on (realm, kind, name): re-ingesting the same entity updates it in place. Discover \
-real node ids to link to first via find_references_to / graph_traverse / recall_memory.";
+real node ids to link to first via find_references_to / graph_traverse / recall_memory. Prefer \
+`type` as a `provider::resource` classification (e.g. \"kubernetes::pod\", \"aws::ec2::instance\", \
+\"github::repository\", \"datadog::monitor\") — it sets the brand mark + resource class. Or set \
+`icon` directly to a gallery name — a brand when the entity is \
+vendor-specific (github, gitlab, slack, datadog, kubernetes, docker, grafana, pagerduty, aws, \
+gcp, postgresql, prometheus, sentry, redis, mongodb, snowflake, elastic, terraform) or a kind \
+glyph otherwise (service, repo, database, table, person, file, config, secret, concept, infra, \
+deployment, pod, api, function). If omitted, the server derives one from kind/vendor.";
 
 pub fn tool_ingest_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
     let shared = ctx;
@@ -288,6 +307,17 @@ pub fn tool_ingest_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     if let Some(k) = kind.as_deref() {
                         content.push_str(&format!("\nKind: {k}"));
                     }
+                    // Vendor/source hint (drives brand-icon resolution).
+                    let vendor: Option<String> = parsed
+                        .properties
+                        .as_ref()
+                        .and_then(Value::as_object)
+                        .and_then(|o| {
+                            ["vendor", "source", "brand", "provider", "source_type"]
+                                .iter()
+                                .find_map(|k| o.get(*k).and_then(Value::as_str))
+                                .map(str::to_string)
+                        });
                     if let Some(obj) = parsed.properties.as_ref().and_then(Value::as_object) {
                         for (k, v) in obj {
                             let vs = match v {
@@ -298,6 +328,34 @@ pub fn tool_ingest_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                                 content.push_str(&format!("\n{k}: {vs}"));
                             }
                         }
+                    }
+                    // Classification type `provider::resource` (folded in so
+                    // clients can classify + brand the node).
+                    let entity_type: Option<String> = parsed
+                        .entity_type
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string);
+                    if let Some(t) = entity_type.as_deref() {
+                        content.push_str(&format!("\ntype: {t}"));
+                    }
+
+                    // Resolve the entity's icon: explicit `icon` wins, else from
+                    // the classification type, else from kind/vendor — all via
+                    // the gallery. Folded into the body so every client renders a
+                    // recognisable mark.
+                    let gallery = crate::icon_config::IconGallery::global();
+                    let icon: Option<String> = parsed
+                        .icon
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_lowercase)
+                        .or_else(|| entity_type.as_deref().and_then(|t| gallery.resolve_type(t)))
+                        .or_else(|| gallery.resolve(kind.as_deref(), vendor.as_deref()));
+                    if let Some(ic) = icon.as_deref() {
+                        content.push_str(&format!("\nicon: {ic}"));
                     }
 
                     let mut cm = CreateMemory::new(content);
@@ -312,6 +370,8 @@ pub fn tool_ingest_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         "source": "synthetic",
                         "via": "ingest_entity",
                         "kind": kind,
+                        "type": entity_type.clone(),
+                        "icon": icon.clone(),
                     }));
                     let topic_key =
                         format!("entity/{}/{}", kind.as_deref().unwrap_or("entity"), slug(&name));
@@ -365,6 +425,8 @@ pub fn tool_ingest_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         "id": id.to_string(),
                         "node_id": src,
                         "kind": kind,
+                        "type": entity_type,
+                        "icon": icon,
                         "topic_key": topic_key,
                         "links": linked,
                     });

@@ -155,11 +155,15 @@ pub(crate) async fn entity(
     realm: Option<String>,
     props: Vec<String>,
     links: Vec<String>,
+    icon: Option<String>,
+    entity_type: Option<String>,
 ) -> Result<()> {
     let cfg = client::effective_config()?;
     let mut args = json!({ "name": name });
     if let Some(k) = kind { args["kind"] = json!(k); }
     if let Some(r) = realm { args["realm"] = json!(r); }
+    if let Some(i) = icon { args["icon"] = json!(i); }
+    if let Some(t) = entity_type { args["type"] = json!(t); }
     if !props.is_empty() {
         let mut obj = serde_json::Map::new();
         for p in &props {

@@ -317,15 +317,28 @@ const LABEL_COLORS: Record<string, string> = {
   JsonImport: "#c084fc",
 };
 
-// Generate a stable, visually distinct color from any string
+function hslToHex(h: number, s: number, l: number): string {
+  s /= 100;
+  l /= 100;
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const c = l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return Math.round(255 * c).toString(16).padStart(2, "0");
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+// Generate a stable, visually distinct HEX color from any string. Hex (not hsl)
+// so node-paint helpers (lighten/darken) can do channel math on it. Slightly
+// softened saturation for a more refined, less neon palette on the dark canvas.
 function generateColor(str: string): string {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
   }
-  // Use golden angle for hue distribution, keep saturation/lightness vibrant
   const hue = (Math.abs(hash) * 137.508) % 360;
-  return `hsl(${hue}, 65%, 55%)`;
+  return hslToHex(hue, 58, 60);
 }
 
 export function getLabelColor(label: string): string {

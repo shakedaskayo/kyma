@@ -1,229 +1,100 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" role="img" aria-label="kyma fan-in: one OTLP pipe in, one query language out">
-  <defs>
-    <linearGradient id="engineBg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0"   stop-color="var(--grad-from)"/>
-      <stop offset="1"   stop-color="var(--grad-to)"/>
-    </linearGradient>
-    <linearGradient id="inArrow" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="var(--ing-from)" stop-opacity="0.15"/>
-      <stop offset="1" stop-color="var(--ing-to)"   stop-opacity="1"/>
-    </linearGradient>
-    <linearGradient id="outArrow" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="var(--qry-from)" stop-opacity="1"/>
-      <stop offset="1" stop-color="var(--qry-to)"   stop-opacity="0.15"/>
-    </linearGradient>
-    <marker id="mIn"  viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L12,6 L0,12 Z" fill="var(--ing-to)"/>
-    </marker>
-    <marker id="mOut" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L12,6 L0,12 Z" fill="var(--qry-from)"/>
-    </marker>
-    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
-    </filter>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="4" stdDeviation="10" flood-color="#2563eb" flood-opacity="0.22"/>
-    </filter>
-  </defs>
-  <style>
-    :root {
-      --fg:       #0f172a;
-      --fg-2:     #475569;
-      --muted:    #94a3b8;
-      --card:     #ffffff;
-      --border:   #e2e8f0;
-      --panel:    #f8fafc;
-      --grad-from:#1e40af;
-      --grad-to:  #4338ca;
-      --brand:    #ffffff;
-      --brand-2:  #c7d2fe;
-      --ing:      #0e7490;
-      --ing-from: #a5f3fc;
-      --ing-to:   #0891b2;
-      --qry:      #6d28d9;
-      --qry-from: #6d28d9;
-      --qry-to:   #ddd6fe;
-      --ok:       #047857;
-      --rose:     #be185d;
-      --amber:    #b45309;
-      --emerald:  #047857;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --fg:       #f1f5f9;
-        --fg-2:     #cbd5e1;
-        --muted:    #64748b;
-        --card:     #0b1220;
-        --border:   #1e293b;
-        --panel:    #0f172a;
-        --grad-from:#1e40af;
-        --grad-to:  #4f46e5;
-        --brand:    #e0e7ff;
-        --brand-2:  #a5b4fc;
-        --ing:      #22d3ee;
-        --ing-from: #0e7490;
-        --ing-to:   #22d3ee;
-        --qry:      #a78bfa;
-        --qry-from: #a78bfa;
-        --qry-to:   #4c1d95;
-        --ok:       #34d399;
-        --rose:     #f472b6;
-        --amber:    #fbbf24;
-        --emerald:  #34d399;
-      }
-    }
-
-    .eyebrow  { font: 700 10.5px ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--muted); letter-spacing: 2.2px; }
-    .h1       { font: 800 26px  ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg); letter-spacing: -0.3px; }
-    .sub      { font: 400 13px  ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg-2); }
-    .colHead  { font: 700 10.5px ui-monospace,SFMono-Regular,monospace; fill: var(--muted); letter-spacing: 1.8px; }
-    .boxTitle { font: 600 13px  ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg); }
-    .boxSub   { font: 400 10.5px ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg-2); }
-    .brand    { font: 800 40px  ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--brand); letter-spacing: 2px; }
-    .tagline  { font: 500 12px  ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--brand-2); letter-spacing: 0.3px; }
-    .capLine  { font: 500 11.5px ui-monospace,SFMono-Regular,monospace; fill: var(--brand); opacity: 0.92; }
-    .pillTxt  { font: 700 10.5px ui-monospace,SFMono-Regular,monospace; letter-spacing: 1.4px; }
-    .statNum  { font: 800 16px  ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg); }
-    .statLbl  { font: 500 10.5px ui-sans-serif,system-ui,-apple-system,sans-serif; fill: var(--fg-2); }
-    .rule     { stroke: var(--border); stroke-width: 1; }
-    .card     { fill: var(--card); stroke: var(--border); stroke-width: 1; }
-    .cardIn   { fill: var(--card); stroke: var(--border); stroke-width: 1; }
-    .cardOut  { fill: var(--card); stroke: var(--border); stroke-width: 1; }
-    .flowIn   { stroke: url(#inArrow);  stroke-width: 2;  fill: none; stroke-linecap: round; }
-    .flowOut  { stroke: url(#outArrow); stroke-width: 2;  fill: none; stroke-linecap: round; }
-    .engineDiv{ stroke: rgba(255,255,255,0.2); stroke-width: 1; }
-    .statBar  { fill: var(--panel); stroke: var(--border); stroke-width: 1; }
-  </style>
-
-  <!-- Hero -->
-  <text x="40" y="34" class="eyebrow">KYMA · THE ANSWER LAYER FOR PRODUCTION-AWARE AGENTS</text>
-  <line  x1="40" y1="46" x2="920" y2="46" class="rule"/>
-  <text x="40" y="78" class="h1">One OTLP pipe in. One query language out.</text>
-  <text x="40" y="102" class="sub">Every layer of your stack — services, infra, CI, data, agents — queryable in KQL or SQL at sub-second over a decade of history.</text>
-
-  <!-- Column headers -->
-  <text x="120" y="138" class="colHead" text-anchor="middle">SOURCES</text>
-  <text x="480" y="138" class="colHead" text-anchor="middle">ENGINE</text>
-  <text x="840" y="138" class="colHead" text-anchor="middle">CONSUMERS</text>
-
-  <!-- Sources (6 cards) -->
-  <g filter="url(#softShadow)">
-    <g>
-      <rect x="30" y="152" width="180" height="52" rx="8" class="cardIn"/>
-      <circle cx="48" cy="178" r="5" fill="var(--ing)"/>
-      <text x="64" y="174" class="boxTitle">Microservices</text>
-      <text x="64" y="192" class="boxSub">Go · Node · Python · Rust</text>
-    </g>
-    <g>
-      <rect x="30" y="210" width="180" height="52" rx="8" class="cardIn"/>
-      <circle cx="48" cy="236" r="5" fill="var(--ing)"/>
-      <text x="64" y="232" class="boxTitle">Kubernetes · nodes</text>
-      <text x="64" y="250" class="boxSub">kube-state · cAdvisor · events</text>
-    </g>
-    <g>
-      <rect x="30" y="268" width="180" height="52" rx="8" class="cardIn"/>
-      <circle cx="48" cy="294" r="5" fill="var(--amber)"/>
-      <text x="64" y="290" class="boxTitle">CI / CD pipelines</text>
-      <text x="64" y="308" class="boxSub">builds · deploys · config diffs</text>
-    </g>
-    <g>
-      <rect x="30" y="326" width="180" height="52" rx="8" class="cardIn"/>
-      <circle cx="48" cy="352" r="5" fill="var(--emerald)"/>
-      <text x="64" y="348" class="boxTitle">Databases · queues</text>
-      <text x="64" y="366" class="boxSub">Postgres · Kafka · Redis · S3</text>
-    </g>
-    <g>
-      <rect x="30" y="384" width="180" height="52" rx="8" class="cardIn"/>
-      <circle cx="48" cy="410" r="5" fill="var(--rose)"/>
-      <text x="64" y="406" class="boxTitle">Frontend · mobile</text>
-      <text x="64" y="424" class="boxSub">RUM · crashes · core web vitals</text>
-    </g>
-    <g>
-      <rect x="30" y="442" width="180" height="52" rx="8" class="cardIn"/>
-      <circle cx="48" cy="468" r="5" fill="var(--qry)"/>
-      <text x="64" y="464" class="boxTitle">LLM agents · tools</text>
-      <text x="64" y="482" class="boxSub">prompts · tool calls · sessions</text>
-    </g>
-  </g>
-
-  <!-- Engine card -->
-  <g filter="url(#glow)">
-    <rect x="340" y="152" width="280" height="342" rx="16" fill="url(#engineBg)"/>
-    <text x="480" y="210" class="brand" text-anchor="middle">kyma</text>
-    <text x="480" y="232" class="tagline" text-anchor="middle">unified engine for agent-era observability</text>
-    <line x1="380" y1="254" x2="580" y2="254" class="engineDiv"/>
-    <g class="capLine" text-anchor="middle">
-      <text x="480" y="282">OTLP  ·  REST  ·  Kafka  ·  file-drop</text>
-      <text x="480" y="306">staging buffer  ·  commit coord</text>
-      <text x="480" y="330">Arrow columnar · token index</text>
-      <text x="480" y="354">3-level pruning cascade</text>
-      <text x="480" y="378">KQL  ·  SQL  ·  PromQL</text>
-      <text x="480" y="402">Arrow Flight gRPC  ·  HTTP</text>
-      <text x="480" y="426">Postgres catalog · CAS snapshots</text>
-      <text x="480" y="450">object-store native  ·  S3 / MinIO</text>
-    </g>
-    <g>
-      <rect x="364" y="462" width="232" height="22" rx="11" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.25)" stroke-width="0.8"/>
-      <text x="480" y="478" class="capLine" text-anchor="middle">Rust  ·  single binary  ·  distributed-ready</text>
-    </g>
-  </g>
-
-  <!-- Consumers (4 cards) -->
-  <g filter="url(#softShadow)">
-    <g>
-      <rect x="750" y="160" width="180" height="72" rx="8" class="cardOut"/>
-      <circle cx="768" cy="186" r="5" fill="var(--rose)"/>
-      <text x="784" y="183" class="boxTitle">SRE agent</text>
-      <text x="768" y="206" class="boxSub">incidents · oncall · RCA</text>
-      <text x="768" y="222" class="boxSub">"why is p99 spiking?"</text>
-    </g>
-    <g>
-      <rect x="750" y="242" width="180" height="72" rx="8" class="cardOut"/>
-      <circle cx="768" cy="268" r="5" fill="var(--amber)"/>
-      <text x="784" y="265" class="boxTitle">Platform agent</text>
-      <text x="768" y="288" class="boxSub">capacity · cost · drift</text>
-      <text x="768" y="304" class="boxSub">"who spent the most this week?"</text>
-    </g>
-    <g>
-      <rect x="750" y="324" width="180" height="72" rx="8" class="cardOut"/>
-      <circle cx="768" cy="350" r="5" fill="var(--emerald)"/>
-      <text x="784" y="347" class="boxTitle">Security agent</text>
-      <text x="768" y="370" class="boxSub">audit · anomaly · forensics</text>
-      <text x="768" y="386" class="boxSub">"show me every admin call."</text>
-    </g>
-    <g>
-      <rect x="750" y="406" width="180" height="72" rx="8" class="cardOut"/>
-      <circle cx="768" cy="432" r="5" fill="var(--qry)"/>
-      <text x="784" y="429" class="boxTitle">Dev assistant</text>
-      <text x="768" y="452" class="boxSub">debug · perf · replay</text>
-      <text x="768" y="468" class="boxSub">"walk this agent session."</text>
-    </g>
-  </g>
-
-  <!-- Fan-in arrows: from source right-edge to engine left-edge spread -->
-  <g>
-    <path d="M210,178 C 270,178 285,242 340,260" class="flowIn" marker-end="url(#mIn)"/>
-    <path d="M210,236 C 270,236 285,266 340,280" class="flowIn" marker-end="url(#mIn)"/>
-    <path d="M210,294 C 270,294 285,294 340,300" class="flowIn" marker-end="url(#mIn)"/>
-    <path d="M210,352 C 270,352 285,322 340,320" class="flowIn" marker-end="url(#mIn)"/>
-    <path d="M210,410 C 270,410 285,350 340,340" class="flowIn" marker-end="url(#mIn)"/>
-    <path d="M210,468 C 270,468 285,380 340,360" class="flowIn" marker-end="url(#mIn)"/>
-  </g>
-
-  <!-- Fan-out arrows: from engine right-edge spread to consumer left-edge -->
-  <g>
-    <path d="M620,280 C 680,280 690,196 750,196" class="flowOut" marker-end="url(#mOut)"/>
-    <path d="M620,305 C 680,305 690,278 750,278" class="flowOut" marker-end="url(#mOut)"/>
-    <path d="M620,330 C 680,330 690,360 750,360" class="flowOut" marker-end="url(#mOut)"/>
-    <path d="M620,355 C 680,355 690,442 750,442" class="flowOut" marker-end="url(#mOut)"/>
-  </g>
-
-  <!-- Arrow pills -->
-  <g filter="url(#softShadow)">
-    <rect x="235" y="498" width="90" height="24" rx="12" fill="var(--card)" stroke="var(--ing)" stroke-width="1.4"/>
-    <text x="280" y="514" class="pillTxt" fill="var(--ing)" text-anchor="middle">OTLP  →</text>
-
-    <rect x="610" y="498" width="220" height="24" rx="12" fill="var(--card)" stroke="var(--qry)" stroke-width="1.4"/>
-    <text x="720" y="514" class="pillTxt" fill="var(--qry)" text-anchor="middle">←  KQL  ·  SQL  ·  ARROW FLIGHT</text>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" role="img" aria-label="kyma fan-in — your stack and your team's memory into one context engine, out to every agent">
+<defs>
+<linearGradient id="brand" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2dd4bf"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>
+<linearGradient id="flowIn" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#38bdf8" stop-opacity="0.15"/><stop offset="1" stop-color="#2dd4bf" stop-opacity="0.85"/></linearGradient>
+<linearGradient id="flowOut" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2dd4bf" stop-opacity="0.85"/><stop offset="1" stop-color="#38bdf8" stop-opacity="0.15"/></linearGradient>
+<radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#2dd4bf" stop-opacity="0.22"/><stop offset="60%" stop-color="#2dd4bf" stop-opacity="0.06"/><stop offset="100%" stop-color="#2dd4bf" stop-opacity="0"/></radialGradient>
+<radialGradient id="kmCore" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#0d1015"/><stop offset="80%" stop-color="#0d1015"/><stop offset="100%" stop-color="#11151b"/></radialGradient>
+<linearGradient id="kmRing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7ed957"/><stop offset="60%" stop-color="#7ed957" stop-opacity="0.5"/><stop offset="100%" stop-color="#7ed957" stop-opacity="0.15"/></linearGradient>
+<marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#2dd4bf"/></marker>
+<filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="6"/></filter>
+</defs>
+<rect width="1200" height="660" fill="#0e1217"/>
+<rect width="1200" height="660" fill="url(#glow)"/>
+<ellipse cx="600.0" cy="330.0" rx="240" ry="200" fill="url(#glow)"/>
+<text x="600.0" y="42" text-anchor="middle" font-size="26" font-weight="700" fill="#e6edf3">One pipe in. One context engine. <tspan fill="url(#brand)">Every agent in context.</tspan></text>
+<text x="600.0" y="68" text-anchor="middle" font-size="13.5" fill="#8da2b6">Everything your stack and your team know — unified, queryable, and wired to every coding &amp; ops agent.</text>
+<text x="170" y="104" text-anchor="middle" font-size="11" font-weight="700" letter-spacing="2" fill="#5d6f80">SOURCES</text>
+<text x="600" y="104" text-anchor="middle" font-size="11" font-weight="700" letter-spacing="2" fill="#5d6f80">CONTEXT ENGINE</text>
+<text x="1030" y="104" text-anchor="middle" font-size="11" font-weight="700" letter-spacing="2" fill="#5d6f80">AGENTS</text>
+<rect x="40" y="120" width="262" height="74" rx="13" fill="#141b24" stroke="#243140"/>
+<rect x="52" y="141.0" width="4" height="32" rx="2" fill="#a78bfa"/>
+<text x="68" y="153.0" font-size="15" font-weight="600" fill="#e6edf3">Code &amp; repos</text>
+<text x="68" y="172.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">GitHub · GitLab · Bitbucket</text>
+<rect x="40" y="204" width="262" height="74" rx="13" fill="#141b24" stroke="#243140"/>
+<rect x="52" y="225.0" width="4" height="32" rx="2" fill="#38bdf8"/>
+<text x="68" y="237.0" font-size="15" font-weight="600" fill="#e6edf3">Kubernetes &amp; cloud</text>
+<text x="68" y="256.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">K8s · AWS · GCP</text>
+<rect x="40" y="288" width="262" height="74" rx="13" fill="#141b24" stroke="#243140"/>
+<rect x="52" y="309.0" width="4" height="32" rx="2" fill="#fbbf24"/>
+<text x="68" y="321.0" font-size="15" font-weight="600" fill="#e6edf3">Observability</text>
+<text x="68" y="340.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">Datadog · Prometheus · OTel</text>
+<rect x="40" y="372" width="262" height="74" rx="13" fill="#141b24" stroke="#243140"/>
+<rect x="52" y="393.0" width="4" height="32" rx="2" fill="#34d399"/>
+<text x="68" y="405.0" font-size="15" font-weight="600" fill="#e6edf3">Data &amp; queues</text>
+<text x="68" y="424.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">Postgres · Kafka · Redis</text>
+<rect x="40" y="456" width="262" height="74" rx="13" fill="#141b24" stroke="#243140"/>
+<rect x="52" y="477.0" width="4" height="32" rx="2" fill="#fb7185"/>
+<text x="68" y="489.0" font-size="15" font-weight="600" fill="#e6edf3">Docs &amp; chat</text>
+<text x="68" y="508.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">Slack · Notion · Jira</text>
+<rect x="40" y="540" width="262" height="74" rx="13" fill="#141b24" stroke="#243140"/>
+<rect x="52" y="561.0" width="4" height="32" rx="2" fill="#94a3b8"/>
+<text x="68" y="573.0" font-size="15" font-weight="600" fill="#e6edf3">Apps &amp; signals</text>
+<text x="68" y="592.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">logs · traces · prompts</text>
+<rect x="900" y="154" width="262" height="96" rx="13" fill="#141b24" stroke="#243140"/>
+<rect x="912" y="186.0" width="4" height="32" rx="2" fill="#2dd4bf"/>
+<text x="928" y="198.0" font-size="15" font-weight="600" fill="#e6edf3">Coding agents</text>
+<text x="928" y="217.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">Claude Code · Cursor · MCP</text>
+<rect x="900" y="268" width="262" height="96" rx="13" fill="#141b24" stroke="#243140"/>
+<rect x="912" y="300.0" width="4" height="32" rx="2" fill="#38bdf8"/>
+<text x="928" y="312.0" font-size="15" font-weight="600" fill="#e6edf3">SRE / on-call</text>
+<text x="928" y="331.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">incidents · RCA · runbooks</text>
+<rect x="900" y="382" width="262" height="96" rx="13" fill="#141b24" stroke="#243140"/>
+<rect x="912" y="414.0" width="4" height="32" rx="2" fill="#a78bfa"/>
+<text x="928" y="426.0" font-size="15" font-weight="600" fill="#e6edf3">Security &amp; audit</text>
+<text x="928" y="445.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">access · anomalies · trails</text>
+<rect x="900" y="496" width="262" height="96" rx="13" fill="#141b24" stroke="#243140"/>
+<rect x="912" y="528.0" width="4" height="32" rx="2" fill="#34d399"/>
+<text x="928" y="540.0" font-size="15" font-weight="600" fill="#e6edf3">Product &amp; analytics</text>
+<text x="928" y="559.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">metrics · trends · usage</text>
+<path d="M 302 157.0 C 382.0 157.0 382.0 332.0 462 332.0" fill="none" stroke="#2dd4bf" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 302 157.0 C 382.0 157.0 382.0 332.0 462 332.0" fill="none" stroke="url(#flowIn)" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M 302 241.0 C 382.0 241.0 382.0 332.0 462 332.0" fill="none" stroke="#2dd4bf" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 302 241.0 C 382.0 241.0 382.0 332.0 462 332.0" fill="none" stroke="url(#flowIn)" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M 302 325.0 C 382.0 325.0 382.0 332.0 462 332.0" fill="none" stroke="#2dd4bf" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 302 325.0 C 382.0 325.0 382.0 332.0 462 332.0" fill="none" stroke="url(#flowIn)" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M 302 409.0 C 382.0 409.0 382.0 332.0 462 332.0" fill="none" stroke="#2dd4bf" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 302 409.0 C 382.0 409.0 382.0 332.0 462 332.0" fill="none" stroke="url(#flowIn)" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M 302 493.0 C 382.0 493.0 382.0 332.0 462 332.0" fill="none" stroke="#2dd4bf" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 302 493.0 C 382.0 493.0 382.0 332.0 462 332.0" fill="none" stroke="url(#flowIn)" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M 302 577.0 C 382.0 577.0 382.0 332.0 462 332.0" fill="none" stroke="#2dd4bf" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 302 577.0 C 382.0 577.0 382.0 332.0 462 332.0" fill="none" stroke="url(#flowIn)" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M 738 332.0 C 819.0 332.0 819.0 202.0 900 202.0" fill="none" stroke="#38bdf8" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 738 332.0 C 819.0 332.0 819.0 202.0 900 202.0" fill="none" stroke="url(#flowOut)" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M 738 332.0 C 819.0 332.0 819.0 316.0 900 316.0" fill="none" stroke="#38bdf8" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 738 332.0 C 819.0 332.0 819.0 316.0 900 316.0" fill="none" stroke="url(#flowOut)" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M 738 332.0 C 819.0 332.0 819.0 430.0 900 430.0" fill="none" stroke="#38bdf8" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 738 332.0 C 819.0 332.0 819.0 430.0 900 430.0" fill="none" stroke="url(#flowOut)" stroke-width="2" marker-end="url(#arr)"/>
+<path d="M 738 332.0 C 819.0 332.0 819.0 544.0 900 544.0" fill="none" stroke="#38bdf8" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 738 332.0 C 819.0 332.0 819.0 544.0 900 544.0" fill="none" stroke="url(#flowOut)" stroke-width="2" marker-end="url(#arr)"/>
+<rect x="456" y="200" width="288" height="264" rx="20" fill="#2dd4bf" opacity="0.10" filter="url(#soft)"/>
+<rect x="462" y="206" width="276" height="252" rx="18" fill="#101822" stroke="#2dd4bf" stroke-opacity="0.45"/>
+<g transform="translate(571.0 228) scale(0.6042)">
+<circle cx="48" cy="48" r="44" fill="none" stroke="url(#kmRing)" stroke-width="2"/>
+<circle cx="48" cy="48" r="36" fill="url(#kmCore)" stroke="#2a2e36" stroke-width="1"/>
+<g stroke="#e8e6e0" stroke-width="3.5" stroke-linecap="round" fill="none"><line x1="34" y1="32" x2="34" y2="64"/><line x1="34" y1="48" x2="58" y2="34"/><line x1="34" y1="48" x2="58" y2="62"/></g>
+<circle cx="58" cy="34" r="2.5" fill="#7ed957"/><circle cx="58" cy="62" r="2.5" fill="#7ed957"/>
+</g>
+<text x="600.0" y="314" text-anchor="middle" font-size="26" font-weight="700" fill="url(#brand)">kyma</text>
+<text x="600.0" y="334" text-anchor="middle" font-size="11" letter-spacing="1.5" fill="#8da2b6">CONTEXT ENGINE</text>
+<line x1="490" y1="350" x2="710" y2="350" stroke="#243140"/>
+<circle cx="496" cy="370" r="3" fill="#2dd4bf"/>
+<text x="508" y="374" font-size="13" fill="#e6edf3">Unified knowledge graph</text>
+<circle cx="496" cy="392" r="3" fill="#2dd4bf"/>
+<text x="508" y="396" font-size="13" fill="#e6edf3">Durable agent memory</text>
+<circle cx="496" cy="414" r="3" fill="#2dd4bf"/>
+<text x="508" y="418" font-size="13" fill="#e6edf3">Live columnar data — KQL / SQL</text>
+<circle cx="496" cy="436" r="3" fill="#2dd4bf"/>
+<text x="508" y="440" font-size="13" fill="#e6edf3">One MCP server</text>
+<text x="600.0" y="488" text-anchor="middle" font-size="11.5" font-family="JetBrains Mono, ui-monospace, monospace" fill="#5d6f80"><tspan fill="#2dd4bf">in ▸</tspan> OTLP · REST · Kafka · file-drop      <tspan fill="#38bdf8">out ▸</tspan> KQL · SQL · Arrow Flight · MCP</text>
 </svg>

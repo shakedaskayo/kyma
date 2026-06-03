@@ -2,66 +2,134 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * kyma design tokens — "synapse" teal-cyan, dark-first.
+ *
+ * The whole app reads these HSL CSS variables through Tailwind (`hsl(var(--x))`)
+ * and the shadcn component layer, so retuning them here reskins every surface.
+ * Variable *names* are stable (drop-in); only values change, plus a few new
+ * tokens (--surface, --border-strong, --brand-from/to).
+ * ────────────────────────────────────────────────────────────────────────── */
 @layer base {
   :root {
+    /* Light mode — clean, cool, with a teal-cyan brand accent. */
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 214 32% 14%;
+    --surface: 210 30% 98%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 214 32% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
+    --popover-foreground: 214 32% 14%;
+    --primary: 183 74% 38%;
+    --primary-foreground: 0 0% 100%;
     --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary-foreground: 214 40% 16%;
     --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --muted-foreground: 215 16% 42%;
+    --accent: 185 46% 94%;
+    --accent-foreground: 214 40% 16%;
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 28% 90%;
+    --border-strong: 214 24% 82%;
+    --input: 214 28% 88%;
+    --ring: 199 74% 46%;
+    --brand-from: 182 72% 42%;
+    --brand-to: 199 82% 48%;
+    --radius: 0.625rem;
   }
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    /* Cards + popovers sit *above* the page in the layer stack. Giving them a
-     * slightly lighter slate than --background (the standard elevated-surface
-     * pattern in dark UIs) keeps borders visible and stops bare panels from
-     * reading as black voids against the muted page background. */
-    --card: 217.2 32.6% 9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 217.2 32.6% 9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    /* Dark mode (primary) — deep cool slate substrate; saturated teal/cyan
+     * accent that pops on the near-black graph canvas. Surfaces step up in
+     * lightness (background → surface → card → popover) so elevation reads
+     * without heavy borders. */
+    --background: 213 26% 7%;
+    --foreground: 200 24% 96%;
+    --surface: 213 24% 10%;
+    --card: 213 22% 12%;
+    --card-foreground: 200 24% 96%;
+    --popover: 213 22% 13%;
+    --popover-foreground: 200 24% 96%;
+    --primary: 180 72% 45%;
+    --primary-foreground: 200 45% 8%;
+    --secondary: 213 20% 16%;
+    --secondary-foreground: 200 24% 96%;
+    --muted: 213 18% 17%;
+    --muted-foreground: 214 16% 64%;
+    --accent: 213 22% 16%;
+    --accent-foreground: 200 30% 96%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 213 18% 17%;
+    --border-strong: 213 16% 27%;
+    --input: 213 18% 17%;
+    --ring: 199 74% 53%;
+    --brand-from: 180 80% 52%;
+    --brand-to: 199 85% 60%;
   }
   * { @apply border-border; }
-  body { @apply bg-background text-foreground antialiased; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv05" 1, "ss01" 1;
+  }
 }
 
-/* ── ReactFlow dark-mode overrides ──────────────────────────────────────────
- * @xyflow/react's bundled CSS defaults to a light palette — the zoom Controls,
- * the MiniMap chrome, and the edge-label backgrounds are all bright white,
- * which punches through the dark canvas. Re-paint them with the same shadcn
- * tokens the rest of the app uses so the chrome blends with the surrounding
- * surfaces. The selectors are scoped to `.dark`; light mode keeps the
- * upstream styles untouched.
- */
+/* ── Reusable material/depth utilities ──────────────────────────────────────
+ * Token-aware so they track light/dark automatically. Elevation shadows also
+ * exist as Tailwind `shadow-elev-{1,2,3}` (see tailwind.config.ts); these class
+ * forms are convenient for ad-hoc usage and composition. */
+@layer utilities {
+  .elev-1 { box-shadow: 0 1px 2px hsl(213 40% 3% / 0.40); }
+  .elev-2 { box-shadow: 0 2px 6px hsl(213 40% 3% / 0.30), 0 4px 16px hsl(213 40% 3% / 0.22); }
+  .elev-3 { box-shadow: 0 10px 32px hsl(213 50% 2% / 0.50), 0 2px 8px hsl(213 50% 2% / 0.35); }
+
+  /* Frosted glass for popovers / menus / command palette / dialogs. */
+  .glass {
+    background-color: hsl(var(--popover) / 0.72);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid hsl(var(--border) / 0.85);
+    box-shadow:
+      0 10px 32px hsl(213 50% 2% / 0.45),
+      inset 0 1px 0 hsl(0 0% 100% / 0.05);
+  }
+
+  /* Signature app background — a faint brand glow + a low-contrast dot grid.
+   * Cheap (pure CSS gradients); used on auth/hero surfaces. */
+  .app-bg {
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(60rem 40rem at 12% -10%, hsl(var(--brand-from) / 0.10), transparent 60%),
+      radial-gradient(50rem 36rem at 100% 0%, hsl(var(--brand-to) / 0.07), transparent 55%),
+      radial-gradient(hsl(var(--foreground) / 0.05) 1px, transparent 1px);
+    background-size: auto, auto, 22px 22px;
+    background-attachment: fixed, fixed, fixed;
+  }
+
+  /* Brand gradient text — logo / display accents. */
+  .text-brand {
+    background-image: linear-gradient(
+      100deg,
+      hsl(var(--brand-from)),
+      hsl(var(--brand-to))
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .bg-brand {
+    background-image: linear-gradient(
+      100deg,
+      hsl(var(--brand-from)),
+      hsl(var(--brand-to))
+    );
+  }
+}
+
+/* ── ReactFlow chrome overrides (transitional) ──────────────────────────────
+ * The graph explorer is being rebuilt on a WebGL/canvas renderer; until that
+ * lands these keep the current React Flow controls/minimap/edge-labels aligned
+ * with the new tokens in dark mode. */
 .dark .react-flow__controls {
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
@@ -77,28 +145,26 @@
   background: hsl(var(--accent));
   color: hsl(var(--accent-foreground));
 }
-.dark .react-flow__controls-button svg {
-  fill: currentColor;
-}
-
+.dark .react-flow__controls-button svg { fill: currentColor; }
 .dark .react-flow__minimap {
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
 }
-.dark .react-flow__minimap-mask {
-  fill: hsl(var(--background) / 0.5);
-}
+.dark .react-flow__minimap-mask { fill: hsl(var(--background) / 0.5); }
+.dark .react-flow__edge-text { fill: hsl(var(--foreground)); }
+.dark .react-flow__edge-textbg { fill: hsl(var(--card)); }
+.dark .react-flow__panel { background: transparent; color: hsl(var(--foreground)); }
 
-/* Edge labels — the small relationship-type chips along edges. */
-.dark .react-flow__edge-text {
-  fill: hsl(var(--foreground));
-}
-.dark .react-flow__edge-textbg {
-  fill: hsl(var(--card));
-}
-
-/* Attribution / panel chrome — keep aligned with our surfaces. */
-.dark .react-flow__panel {
-  background: transparent;
-  color: hsl(var(--foreground));
+/* ── Reduced motion ─────────────────────────────────────────────────────────
+ * Honor the OS preference globally: neutralize CSS animations/transitions and
+ * the framer-motion variants collapse to instant via lib/motion.ts. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

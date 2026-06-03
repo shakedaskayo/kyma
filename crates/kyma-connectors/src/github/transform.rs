@@ -127,7 +127,15 @@ pub fn refetch_signature(nodes: &[Value], edges: &[Value]) -> String {
 
 // ── node builders ─────────────────────────────────────────────────────────────
 
-fn make_node(id: &str, label: &str, name: &str, extra: Map<String, Value>) -> Value {
+fn make_node(id: &str, label: &str, name: &str, mut extra: Map<String, Value>) -> Value {
+    // Brand + classify every GitHub node so the graph shows the GitHub mark and
+    // a `github::<resource>` type (e.g. github::pull_request).
+    extra
+        .entry("vendor".to_string())
+        .or_insert_with(|| Value::String("github".to_string()));
+    extra.entry("type".to_string()).or_insert_with(|| {
+        Value::String(format!("github::{}", crate::graph_row::snake_case(label)))
+    });
     json!({
         "id": id,
         "labels": label,

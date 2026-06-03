@@ -13,7 +13,6 @@ import { RowFilter } from "@/features/results-grid/RowFilter";
 import { ChartPanel } from "@/features/chart/ChartPanel";
 import { SchemaBrowser } from "@/features/schema-browser/SchemaBrowser";
 import { TabBar } from "@/features/tabs/TabBar";
-import { CommandPalette } from "@/features/palette/CommandPalette";
 import { HistogramTimeline } from "@/features/histogram/HistogramTimeline";
 import { FieldStats } from "@/features/field-stats/FieldStats";
 import { SavedQueryChips } from "@/features/saved-queries/SavedQueryChips";
@@ -410,7 +409,6 @@ function QueryEditorPage() {
           </div>
         </div>
       </section>
-      <CommandPalette onRun={runActive} />
       <AskAIDialog
         open={askOpen}
         onOpenChange={setAskOpen}

@@ -3,9 +3,7 @@ import { useMemo } from "react";
 import { BarChart3 } from "lucide-react";
 import { autoChartAxes, type Column } from "@/sdk/arrow";
 import { useTheme } from "@/lib/theme";
-
-// ── colour palette ────────────────────────────────────────────────────────────
-const PALETTE = ["#2563eb","#0891b2","#059669","#d97706","#7c3aed","#dc2626","#be185d"];
+import { DATA_PALETTE, chartTheme } from "@/lib/data-palette";
 
 // ── time formatter ────────────────────────────────────────────────────────────
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -58,18 +56,17 @@ export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<
     const symbol = isSparse ? "circle" : "none";
     const symbolSize = 4;
 
-    // Theme-aware axis + tooltip + gridline colors. echarts defaults to dark
-    // text on light bg; without these overrides the axis labels disappear and
-    // the tooltip is a white box on a dark canvas.
-    const axisLabelColor = isDark ? "#94a3b8" : "#475569";
-    const axisLineColor = isDark ? "#334155" : "#cbd5e1";
-    const splitLine = {
-      lineStyle: { color: isDark ? "rgba(148,163,184,0.12)" : "rgba(128,128,128,0.15)" },
-    };
+    // Theme-aware axis + tooltip + gridline colors sourced from the live design
+    // tokens (so charts track the app palette). echarts defaults to dark text on
+    // light bg; without these the axis labels vanish on the dark canvas.
+    const theme = chartTheme(isDark);
+    const axisLabelColor = theme.axis;
+    const axisLineColor = theme.grid;
+    const splitLine = { lineStyle: { color: theme.grid } };
     const tooltipStyle = {
-      backgroundColor: isDark ? "rgba(15,23,42,0.95)" : "rgba(255,255,255,0.95)",
-      borderColor: isDark ? "#1e293b" : "#e2e8f0",
-      textStyle: { color: isDark ? "#e2e8f0" : "#0f172a" },
+      backgroundColor: theme.tooltipBg,
+      borderColor: theme.tooltipBorder,
+      textStyle: { color: theme.tooltipText },
     };
     const axis = {
       axisLabel: { color: axisLabelColor },
@@ -84,7 +81,7 @@ export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<
       const axisFmt = makeAxisFmt(spanMs);
 
       return {
-        color: PALETTE,
+        color: DATA_PALETTE,
         animation: false,
         tooltip: {
           trigger: "axis",
@@ -117,7 +114,7 @@ export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<
     const x = rows.map((r) => r[spec.x!]);
     const y = rows.map((r) => Number(r[spec.y]));
     return {
-      color: PALETTE,
+      color: DATA_PALETTE,
       animation: false,
       tooltip: { trigger: "axis", ...tooltipStyle },
       legend: { show: false, textStyle: { color: axisLabelColor } },

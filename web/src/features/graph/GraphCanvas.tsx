@@ -1,50 +1,65 @@
-import "@xyflow/react/dist/style.css";
-
-import { useEffect, useMemo } from "react";
-import {
-  ReactFlow,
-  ReactFlowProvider,
-  Controls,
-  MiniMap,
-  Background,
-  BackgroundVariant,
-  MarkerType,
-  useReactFlow,
-  useNodesState,
-  type Node,
-  type Edge,
-} from "@xyflow/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ForceGraph2D, {
+  type ForceGraphMethods,
+  type NodeObject,
+  type LinkObject,
+} from "react-force-graph-2d";
+import { Plus, Minus, Maximize2 } from "lucide-react";
 
 import type { GraphNode, GraphRelationship } from "@/sdk/graph";
-import type { LayoutAlgorithm } from "@/sdk/graph-layout";
-import { computeLayout, getLabelColor, getRelationshipColor } from "@/sdk/graph-layout";
-import { GraphNodeView } from "./GraphNodeView";
-import { CanvasContext } from "./canvas-context";
+import { computeLayout, type LayoutAlgorithm } from "@/sdk/graph-layout";
+import {
+  getRelationshipFamilyColor,
+  lighten,
+  darken,
+  alpha,
+  radiusForDegree,
+  LOD,
+} from "./graph-style";
+import { detectCommunities, convexHull, padHull } from "./graph-community";
+import { resolveGraphIcon, resolveNodeColor, getIconImage, type ResolvedIcon } from "./graph-icons";
+import { paletteFor } from "@/lib/data-palette";
 import { useGraphStore } from "./graph-store";
 import { useTheme } from "@/lib/theme";
-
-const nodeTypes = { graphNode: GraphNodeView };
 
 export interface GraphCanvasProps {
   nodes: GraphNode[];
   edges: GraphRelationship[];
   layout: LayoutAlgorithm;
   showEdgeLabels: boolean;
-  showMiniMap: boolean;
   onNodeClick: (id: string) => void;
   onNodeHover: (id: string | null) => void;
+  onNodeDoubleClick?: (id: string) => void;
 }
 
-// Cross-DB node ids collide — composite ids `${namespace}::${id}` keep
-// layout, React Flow nodes, and selection unambiguous. GraphView translates
-// back to (database, graph, bare-id) when calling the API.
-const keyOf = (n: { id: string; namespace?: string }) =>
-  `${n.namespace ?? ""}::${n.id}`;
-// Human-friendly caption for a node — prefer a named property, then title /
-// full name / path, falling back to the id tail. Drives both the rendered
-// label and what node search matches, so synthetic entities (whose title is the
-// name) and connector resources are findable by name/title, not just by their
-// type label or raw id.
+// Cap auto-fit zoom so a sparse graph (or a single node) never balloons to
+// fill the viewport.
+const MAX_FIT_ZOOM = 2.4;
+
+// Trace a rounded-rect path (for label pills) — ctx.roundRect isn't in the TS
+// lib target, so we build it from arcs.
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  const rad = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rad, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rad);
+  ctx.arcTo(x + w, y + h, x, y + h, rad);
+  ctx.arcTo(x, y + h, x, y, rad);
+  ctx.arcTo(x, y, x + w, y, rad);
+  ctx.closePath();
+}
+
+// Cross-DB ids collide — composite `${namespace}::${id}` keeps layout/selection
+// unambiguous. (Ported from the previous React Flow renderer.)
+const keyOf = (n: { id: string; namespace?: string }) => `${n.namespace ?? ""}::${n.id}`;
+
 const nodeCaption = (n: { id: string; properties: Record<string, unknown> }): string => {
   const p = n.properties ?? {};
   for (const key of ["name", "title", "full_name", "path", "label"]) {
@@ -54,235 +69,529 @@ const nodeCaption = (n: { id: string; properties: Record<string, unknown> }): st
   return n.id.split("::").pop() ?? n.id;
 };
 
-// Resolve an endpoint's namespace independently: a cross-graph edge (e.g. a
-// memory REFERENCES an entity in another graph) carries the target endpoint's
-// namespace in `properties.target_namespace`. Same-graph edges fall back to the
-// edge's own namespace for both endpoints.
 const edgeEndpointKey = (
-  e: {
-    source_id: string;
-    target_id: string;
-    namespace?: string;
-    properties?: Record<string, unknown>;
-  },
+  e: { source_id: string; target_id: string; namespace?: string; properties?: Record<string, unknown> },
   end: "source_id" | "target_id",
 ) => {
   const ns =
     end === "target_id"
-      ? ((e.properties?.target_namespace as string | undefined) ??
-        e.namespace ??
-        "")
+      ? ((e.properties?.target_namespace as string | undefined) ?? e.namespace ?? "")
       : (e.namespace ?? "");
   return `${ns}::${e[end]}`;
 };
 
-function GraphCanvasInner({
+type FNode = NodeObject & {
+  id: string;
+  label: string;
+  labels: string[];
+  color: string;
+  deg: number;
+  community: number;
+  landmark: boolean;
+  icon: ResolvedIcon | null;
+};
+type FLink = LinkObject & {
+  relType: string;
+  famColor: string;
+  weight: number;
+};
+
+function useSize<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    if (!ref.current) return;
+    const el = ref.current;
+    const ro = new ResizeObserver(() => {
+      setSize({ width: el.clientWidth, height: el.clientHeight });
+    });
+    ro.observe(el);
+    setSize({ width: el.clientWidth, height: el.clientHeight });
+    return () => ro.disconnect();
+  }, []);
+  return { ref, size };
+}
+
+export function GraphCanvas({
   nodes,
   edges,
   layout,
   showEdgeLabels,
-  showMiniMap,
   onNodeClick,
   onNodeHover,
+  onNodeDoubleClick,
 }: GraphCanvasProps) {
-  const { fitView } = useReactFlow();
+  const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
+  const { ref: containerRef, size } = useSize<HTMLDivElement>();
+  const isDark = useTheme((s) => s.resolved === "dark");
+
+  // Fit the view, then clamp over-zoom — a single/sparse graph would otherwise
+  // zoom so far that one glowing node fills the whole screen.
+  const fitView = useCallback((duration = 400) => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.zoomToFit(duration, 90);
+    window.setTimeout(() => {
+      const z = fg.zoom?.() ?? 1;
+      if (z > MAX_FIT_ZOOM) fg.zoom(MAX_FIT_ZOOM, 220);
+    }, duration + 70);
+  }, []);
+
+  // Repaint once an icon image finishes decoding (the engine may be paused).
+  const requestRefresh = useCallback(() => {
+    (fgRef.current as unknown as { refresh?: () => void } | undefined)?.refresh?.();
+  }, []);
+
+  // Style toggles + interaction state from the store.
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
-  const resolvedTheme = useTheme((s) => s.resolved);
-  const isDark = resolvedTheme === "dark";
+  const hoveredNodeId = useGraphStore((s) => s.hoveredNodeId);
+  const searchQuery = useGraphStore((s) => s.searchQuery);
+  const labelFilter = useGraphStore((s) => s.labelFilter);
+  const relTypeFilter = useGraphStore((s) => s.relTypeFilter);
+  const sizeByDegree = useGraphStore((s) => s.sizeByDegree);
+  const glow = useGraphStore((s) => s.glow);
+  const animatedFlow = useGraphStore((s) => s.animatedFlow);
+  const curvedEdges = useGraphStore((s) => s.curvedEdges);
+  const communityHulls = useGraphStore((s) => s.communityHulls);
 
-  const compositeNodes = useMemo(
-    () => nodes.map((n) => ({ ...n, id: keyOf(n) })),
-    [nodes],
-  );
-  const compositeEdges = useMemo(
-    () =>
-      edges.map((e) => ({
+  // ── Build composite-id graph data (structural; rebuilt only on data change) ──
+  const data = useMemo(() => {
+    const compNodes = nodes.map((n) => ({ ...n, _cid: keyOf(n) }));
+    const idSet = new Set(compNodes.map((n) => n._cid));
+    const compEdges = edges
+      .map((e) => ({
         ...e,
-        id: `${e.namespace ?? ""}::${e.id}`,
-        source_id: edgeEndpointKey(e, "source_id"),
-        target_id: edgeEndpointKey(e, "target_id"),
-      })),
-    [edges],
-  );
+        _src: edgeEndpointKey(e, "source_id"),
+        _dst: edgeEndpointKey(e, "target_id"),
+      }))
+      .filter((e) => idSet.has(e._src) && idSet.has(e._dst));
 
-  // Cheap memo deps — array lengths instead of join'd id strings (the old
-  // approach allocated a ~200KB string per render at 4000 nodes).
-  const nodeCount = compositeNodes.length;
-  const edgeCount = compositeEdges.length;
-
-  const positions = useMemo(
-    () => computeLayout(layout, compositeNodes, compositeEdges, 1400, 900),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [nodeCount, edgeCount, layout],
-  );
-
-  // Per-node neighbour map + per-rel-type adjacency — handed to each node
-  // via context so individual GraphNodeView instances can compute their own
-  // dim/highlight without the parent rebuilding the node array on hover.
-  const neighborsByCompositeId = useMemo(() => {
-    const m = new Map<string, Set<string>>();
-    for (const e of compositeEdges) {
-      let s = m.get(e.source_id);
-      if (!s) m.set(e.source_id, (s = new Set()));
-      s.add(e.target_id);
-      let t = m.get(e.target_id);
-      if (!t) m.set(e.target_id, (t = new Set()));
-      t.add(e.source_id);
+    // Degree centrality.
+    const deg = new Map<string, number>();
+    for (const e of compEdges) {
+      deg.set(e._src, (deg.get(e._src) ?? 0) + 1);
+      deg.set(e._dst, (deg.get(e._dst) ?? 0) + 1);
     }
-    return m;
-  }, [compositeEdges]);
-  const nodesByRelType = useMemo(() => {
-    const m = new Map<string, Set<string>>();
-    for (const e of compositeEdges) {
-      let s = m.get(e.relationship_type);
-      if (!s) m.set(e.relationship_type, (s = new Set()));
-      s.add(e.source_id);
-      s.add(e.target_id);
+    const degVals = [...deg.values()].sort((a, b) => a - b);
+    const capDeg = degVals.length ? degVals[Math.floor(degVals.length * 0.95)] || 1 : 1;
+    const landmarkThreshold = Math.max(4, capDeg * 0.6);
+
+    // Communities (for hull overlays / stable tinting).
+    const community = detectCommunities(
+      compNodes.map((n) => n._cid),
+      compEdges.map((e) => ({ source: e._src, target: e._dst })),
+    );
+
+    // Adjacency for hover highlight.
+    const adj = new Map<string, Set<string>>();
+    for (const e of compEdges) {
+      (adj.get(e._src) ?? adj.set(e._src, new Set()).get(e._src)!).add(e._dst);
+      (adj.get(e._dst) ?? adj.set(e._dst, new Set()).get(e._dst)!).add(e._src);
     }
-    return m;
-  }, [compositeEdges]);
-  const contextValue = useMemo(
-    () => ({ neighborsByCompositeId, nodesByRelType }),
-    [neighborsByCompositeId, nodesByRelType],
-  );
 
-  // Structural-only — never depend on hover/selection here.
-  const fnodes: Node[] = useMemo(
-    () =>
-      compositeNodes.map((n) => ({
-        id: n.id,
-        type: "graphNode",
-        position: positions.get(n.id) ?? { x: 0, y: 0 },
-        data: {
-          label: nodeCaption(n),
-          labels: n.labels,
-          color: getLabelColor(n.labels[0] ?? ""),
-        },
-      })),
-    [compositeNodes, positions],
-  );
-
-  // React Flow must *own* the node state for it to write back measured node
-  // dimensions (via onNodesChange). Passing a static `nodes` prop without a
-  // change handler leaves every node's `measured` undefined — which silently
-  // breaks the MiniMap: its per-node render guard is `nodeHasDimensions(node)`,
-  // so unmeasured nodes draw zero rects and the minimap shows an empty frame.
-  // Seed from the structural `fnodes` and re-seed whenever structure changes
-  // (new data / layout); hover & selection don't touch `fnodes`, so measured
-  // sizes survive those interactions.
-  const [rfNodes, setRfNodes, onNodesChange] = useNodesState(fnodes);
-  useEffect(() => {
-    setRfNodes(fnodes);
-  }, [fnodes, setRfNodes]);
-
-  // Edges adapt opacity to the theme so they stay visible in both modes
-  // (dark mode swallows light colours; light mode swallows dark ones).
-  const edgeStrokeOpacity = isDark ? 0.5 : 0.6;
-  const fedges: Edge[] = useMemo(() => {
-    return compositeEdges.map((r) => {
-      const color = getRelationshipColor(r.relationship_type);
+    const gnodes: FNode[] = compNodes.map((n) => {
+      const d = deg.get(n._cid) ?? 0;
       return {
-        id: r.id,
-        source: r.source_id,
-        target: r.target_id,
-        type: "default",
-        label: showEdgeLabels ? r.relationship_type : undefined,
-        labelShowBg: true,
-        labelBgStyle: { fill: "hsl(var(--background))", fillOpacity: 0.9 },
-        labelBgPadding: [3, 1] as [number, number],
-        labelBgBorderRadius: 3,
-        labelStyle: {
-          fontSize: 8.5,
-          fill: color,
-          fontWeight: 600,
-        },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color,
-          width: 10,
-          height: 10,
-        },
-        style: {
-          stroke: color,
-          strokeWidth: 1.1,
-          strokeOpacity: edgeStrokeOpacity,
-        },
+        id: n._cid,
+        label: nodeCaption(n),
+        labels: n.labels,
+        color: resolveNodeColor(n.labels, n.properties),
+        deg: d,
+        community: community.get(n._cid) ?? 0,
+        landmark: d >= landmarkThreshold,
+        icon: resolveGraphIcon(n.labels, n.properties),
       };
     });
-  }, [compositeEdges, showEdgeLabels, edgeStrokeOpacity]);
+    const glinks: FLink[] = compEdges.map((e) => ({
+      source: e._src,
+      target: e._dst,
+      relType: e.relationship_type,
+      famColor: getRelationshipFamilyColor(e.relationship_type),
+      weight: Math.min(deg.get(e._src) ?? 1, deg.get(e._dst) ?? 1),
+    }));
 
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (selectedNodeId) {
-          fitView({
-            nodes: [{ id: selectedNodeId }],
-            padding: 0.5,
-            maxZoom: 1.6,
-            duration: 360,
-          });
-        } else {
-          fitView({ padding: 0.18, maxZoom: 1.3, duration: 240 });
-        }
-      });
-    });
+    return { nodes: gnodes, links: glinks, capDeg, adj };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeCount, layout, selectedNodeId]);
+  }, [nodes, edges]);
 
-  // Theme-aware paint surface — ReactFlow needs an explicit colour for its
-  // own backdrop, so we resolve it from the CSS variables that already
-  // describe the rest of the app.
-  const dotColor = isDark ? "hsl(217.2 32.6% 17.5%)" : "hsl(214.3 31.8% 91.4%)";
-  const controlsStyle = {
-    background: "hsl(var(--card))",
-    border: "1px solid hsl(var(--border))",
-    borderRadius: 6,
-    boxShadow: "0 4px 12px hsl(var(--foreground) / 0.08)",
-  };
+  // Precompute positions with kyma's tuned layout algorithms for EVERY layout
+  // (including "force" — the organic spread cloud) and pin them. Passing the
+  // full nodes (with `labels`) lets force/tree grouping work. We rely on these
+  // deterministic, well-distributed positions rather than react-force-graph's
+  // default physics, which collapses dense graphs into an unreadable knot.
+  useEffect(() => {
+    const idOf = (e: string | number | { id?: string | number } | undefined) =>
+      (typeof e === "object" ? String(e?.id ?? "") : String(e ?? ""));
+    const pos = computeLayout(
+      layout,
+      data.nodes as unknown as { id: string }[],
+      data.links.map((l) => ({ source_id: idOf(l.source), target_id: idOf(l.target) })),
+      1600,
+      1000,
+    );
+    for (const n of data.nodes) {
+      const p = pos.get(n.id);
+      if (p) {
+        n.x = p.x;
+        n.y = p.y;
+        (n as FNode).fx = p.x;
+        (n as FNode).fy = p.y;
+      }
+    }
+    fgRef.current?.d3ReheatSimulation?.();
+    const t = setTimeout(() => fitView(500), 90);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout, data]);
+
+  // ── Focus highlight: selected/hovered node + its neighbours ──
+  const focusId = selectedNodeId ?? hoveredNodeId;
+  const focusSet = useMemo(() => {
+    if (!focusId) return null;
+    const s = new Set<string>([focusId]);
+    for (const nb of data.adj.get(focusId) ?? []) s.add(nb);
+    return s;
+  }, [focusId, data.adj]);
+
+  const query = searchQuery.trim().toLowerCase();
+  const matchesSearch = useCallback(
+    (n: FNode) => !!query && (n.label.toLowerCase().includes(query) || n.id.toLowerCase().includes(query)),
+    [query],
+  );
+  const isDimmed = useCallback(
+    (n: FNode) => {
+      if (labelFilter) return !n.labels.includes(labelFilter);
+      if (relTypeFilter) return false; // rel filter handled on links
+      if (query) return !matchesSearch(n);
+      if (focusSet) return !focusSet.has(n.id);
+      return false;
+    },
+    [labelFilter, relTypeFilter, query, focusSet, matchesSearch],
+  );
+
+  // Re-emit particles / repaint when focus changes (engine may be paused).
+  useEffect(() => {
+    (fgRef.current as unknown as { refresh?: () => void } | undefined)?.refresh?.();
+  }, [focusId, animatedFlow, glow, curvedEdges, sizeByDegree, communityHulls, query, labelFilter, relTypeFilter, showEdgeLabels]);
+
+  // Gentle reposition on selection: KEEP the current zoom, and only pan when
+  // the node is outside the comfortable central region — no jarring zoom snap
+  // or recenter when you click a node that's already in view.
+  useEffect(() => {
+    if (!selectedNodeId) return;
+    const fg = fgRef.current;
+    if (!fg) return;
+    const n = data.nodes.find((x) => x.id === selectedNodeId) as FNode | undefined;
+    if (!n || n.x == null || n.y == null) return;
+    const w = size.width;
+    const h = size.height;
+    const toScreen = (
+      fg as unknown as {
+        graph2ScreenCoords?: (x: number, y: number) => { x: number; y: number };
+      }
+    ).graph2ScreenCoords;
+    if (toScreen && w && h) {
+      const sc = toScreen(n.x, n.y);
+      // Already comfortably framed → leave the camera exactly where it is.
+      if (Math.abs(sc.x - w / 2) < w * 0.33 && Math.abs(sc.y - h / 2) < h * 0.33) return;
+    }
+    fg.centerAt(n.x, n.y, 600);
+  }, [selectedNodeId, data.nodes, size.width, size.height]);
+
+  // ── Node paint ──
+  const paintNode = useCallback(
+    (node: NodeObject, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      const n = node as FNode;
+      if (n.x == null || n.y == null) return;
+      const selected = n.id === selectedNodeId;
+      const hovered = n.id === hoveredNodeId;
+      const search = matchesSearch(n);
+      const dim = isDimmed(n) && !selected && !hovered;
+      const r = radiusForDegree(n.deg, data.capDeg, sizeByDegree) * (selected ? 1.3 : search ? 1.18 : 1);
+      const screenR = r * globalScale;
+      const g0 = Math.max(globalScale, 0.6);
+
+      ctx.save();
+      ctx.globalAlpha = dim ? 0.1 : 1;
+      ctx.lineJoin = "round";
+
+      // ── Depth: a colored glow on focus/landmark nodes, a soft ambient drop
+      // shadow on resting ones — the field reads calm and dimensional, not flat.
+      const wantGlow = glow && (selected || hovered || search || n.landmark);
+      if (!dim) {
+        if (wantGlow) {
+          ctx.shadowColor = search ? "#f59e0b" : n.color;
+          // Softer glow than before — present but not blooming.
+          const sb = selected ? 11 : hovered ? 8 : search ? 9 : 4;
+          ctx.shadowBlur = sb / g0;
+        } else if (screenR >= 4) {
+          ctx.shadowColor = "rgba(2,6,14,0.5)";
+          ctx.shadowBlur = 3.5 / g0;
+          ctx.shadowOffsetY = 1 / g0;
+        }
+      }
+
+      // ── Orb fill: off-center highlight → base → slightly darker rim, for a
+      // soft spherical read instead of a flat disc.
+      const grad = ctx.createRadialGradient(
+        n.x - r * 0.36, n.y - r * 0.42, r * 0.1,
+        n.x, n.y, r * 1.06,
+      );
+      grad.addColorStop(0, lighten(n.color, 0.45));
+      grad.addColorStop(0.55, n.color);
+      grad.addColorStop(1, darken(n.color, 0.22));
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+
+      // ── Hairline rim — crisp definition against the canvas and neighbours.
+      ctx.lineWidth = 1 / globalScale;
+      ctx.strokeStyle = darken(n.color, 0.42);
+      ctx.stroke();
+
+      // ── Focus ring (selected / search): a thin bright ring offset just
+      // outside the rim.
+      if (selected || search) {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 2.4 / globalScale, 0, 2 * Math.PI);
+        ctx.lineWidth = (selected ? 1.6 : 1.3) / globalScale;
+        ctx.strokeStyle = search ? "#f59e0b" : isDark ? "#e8eef6" : "#0f172a";
+        ctx.stroke();
+      }
+
+      // ── Type / vendor icon, once the node is big enough to read it.
+      //  • Brand marks (github, datadog, k8s, …) are intricate, so they sit on a
+      //    clean white chip in a dark glyph — recognisable instead of a blob.
+      //  • Kind glyphs (service, table, …) draw as a soft white glyph directly
+      //    on the colored orb.
+      // Icons appear only once a node is large enough on screen to read — so
+      // the zoomed-out view stays clean, color-coded orbs.
+      if (n.icon && !dim && screenR >= 7) {
+        if (n.icon.brand) {
+          // Brand mark on a clean white chip, in its TRUE brand color — the
+          // recognisable way to show github / datadog / k8s inside a colored orb.
+          const chipR = r * 0.66;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, chipR, 0, 2 * Math.PI);
+          ctx.fillStyle = "#ffffff";
+          ctx.fill();
+          ctx.lineWidth = 0.75 / globalScale;
+          ctx.strokeStyle = "rgba(15,23,42,0.16)";
+          ctx.stroke();
+          const img = getIconImage(n.icon, "default", requestRefresh);
+          if (img.complete && img.naturalWidth > 0) {
+            const s = chipR * 1.5;
+            ctx.drawImage(img, n.x - s / 2, n.y - s / 2, s, s);
+          }
+        } else {
+          const img = getIconImage(n.icon, "rgba(255,255,255,0.95)", requestRefresh);
+          if (img.complete && img.naturalWidth > 0) {
+            const s = r * 1.3;
+            ctx.shadowColor = "rgba(0,0,0,0.35)";
+            ctx.shadowBlur = 2 / globalScale;
+            ctx.drawImage(img, n.x - s / 2, n.y - s / 2, s, s);
+            ctx.shadowBlur = 0;
+          }
+        }
+      }
+
+      // ── Label: refined type. A soft rounded pill behind emphasized labels for
+      // legibility; plain shadowed text for the rest.
+      const showLabel =
+        !dim &&
+        (globalScale >= LOD.labelAll ||
+          ((selected || hovered || search || n.landmark) && globalScale >= LOD.labelLandmark));
+      if (showLabel) {
+        const fontSize = Math.min(13, Math.max(9, 11 / globalScale + 2));
+        ctx.font = `${selected ? 600 : 500} ${fontSize}px "IBM Plex Sans", ui-sans-serif, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        const label = n.label.length > 30 ? n.label.slice(0, 29) + "…" : n.label;
+        const ly = n.y + r + 4 / globalScale;
+        if (selected || hovered || search) {
+          const tw = ctx.measureText(label).width;
+          const padX = 5 / globalScale;
+          const padY = 2.4 / globalScale;
+          const w = tw + padX * 2;
+          const h = fontSize + padY * 2;
+          ctx.fillStyle = isDark ? "rgba(13,18,26,0.74)" : "rgba(255,255,255,0.86)";
+          roundRectPath(ctx, n.x - w / 2, ly - padY, w, h, 4 / globalScale);
+          ctx.fill();
+          ctx.fillStyle = search
+            ? "#f59e0b"
+            : selected
+              ? (isDark ? "#f8fafc" : "#0f172a")
+              : (isDark ? "#e2e8f0" : "#0f172a");
+          ctx.fillText(label, n.x, ly);
+        } else {
+          ctx.fillStyle = isDark ? "rgba(203,213,225,0.92)" : "rgba(30,41,59,0.92)";
+          ctx.shadowColor = isDark ? "rgba(0,0,0,0.85)" : "rgba(255,255,255,0.9)";
+          ctx.shadowBlur = 3;
+          ctx.fillText(label, n.x, ly);
+          ctx.shadowBlur = 0;
+        }
+      }
+      ctx.restore();
+    },
+    [selectedNodeId, hoveredNodeId, matchesSearch, isDimmed, sizeByDegree, glow, isDark, data.capDeg, requestRefresh],
+  );
+
+  // Pointer hit area sized to the node.
+  const paintPointer = useCallback(
+    (node: NodeObject, color: string, ctx: CanvasRenderingContext2D) => {
+      const n = node as FNode;
+      if (n.x == null || n.y == null) return;
+      const r = radiusForDegree(n.deg, data.capDeg, sizeByDegree) + 2;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
+      ctx.fill();
+    },
+    [data.capDeg, sizeByDegree],
+  );
+
+  // ── Link styling ──
+  const linkColor = useCallback(
+    (link: LinkObject) => {
+      const l = link as FLink;
+      if (relTypeFilter && l.relType !== relTypeFilter) return alpha(l.famColor, 0.04);
+      if (focusSet) {
+        const s = typeof l.source === "object" ? (l.source as FNode).id : (l.source as string);
+        const t = typeof l.target === "object" ? (l.target as FNode).id : (l.target as string);
+        const incident = s === focusId || t === focusId;
+        return incident ? alpha(l.famColor, 0.95) : alpha(l.famColor, 0.05);
+      }
+      return alpha(l.famColor, isDark ? 0.38 : 0.5);
+    },
+    [relTypeFilter, focusSet, focusId, isDark],
+  );
+
+  const linkWidth = useCallback(
+    (link: LinkObject) => {
+      const l = link as FLink;
+      const base = 0.6 + Math.min(l.weight, 8) * 0.18;
+      if (focusSet) {
+        const s = typeof l.source === "object" ? (l.source as FNode).id : (l.source as string);
+        const t = typeof l.target === "object" ? (l.target as FNode).id : (l.target as string);
+        return s === focusId || t === focusId ? base + 0.8 : base * 0.6;
+      }
+      return base;
+    },
+    [focusSet, focusId],
+  );
+
+  const linkParticles = useCallback(
+    (link: LinkObject) => {
+      if (!animatedFlow || !focusSet) return 0;
+      const l = link as FLink;
+      const s = typeof l.source === "object" ? (l.source as FNode).id : (l.source as string);
+      const t = typeof l.target === "object" ? (l.target as FNode).id : (l.target as string);
+      return s === focusId || t === focusId ? 3 : 0;
+    },
+    [animatedFlow, focusSet, focusId],
+  );
+
+  // ── Community hull overlay (drawn beneath nodes each frame) ──
+  const onRenderFramePre = useCallback(
+    (ctx: CanvasRenderingContext2D, globalScale: number) => {
+      if (!communityHulls) return;
+      const groups = new Map<number, FNode[]>();
+      for (const n of data.nodes as FNode[]) {
+        if (n.x == null || n.y == null) continue;
+        (groups.get(n.community) ?? groups.set(n.community, []).get(n.community)!).push(n);
+      }
+      for (const [cid, members] of groups) {
+        if (members.length < 4) continue;
+        const hull = padHull(
+          convexHull(members.map((m) => ({ x: m.x!, y: m.y! }))),
+          22,
+        );
+        if (hull.length < 3) continue;
+        const color = paletteFor(cid);
+        ctx.beginPath();
+        ctx.moveTo(hull[0].x, hull[0].y);
+        for (let i = 1; i < hull.length; i++) ctx.lineTo(hull[i].x, hull[i].y);
+        ctx.closePath();
+        ctx.fillStyle = alpha(color, 0.06);
+        ctx.fill();
+        ctx.lineWidth = 1.5 / globalScale;
+        ctx.strokeStyle = alpha(color, 0.22);
+        ctx.stroke();
+      }
+    },
+    [communityHulls, data.nodes],
+  );
+
+  const bg = isDark ? "rgba(0,0,0,0)" : "rgba(0,0,0,0)";
 
   return (
-    <CanvasContext.Provider value={contextValue}>
-      <ReactFlow
-        nodes={rfNodes}
-        edges={fedges}
-        onNodesChange={onNodesChange}
-        nodeTypes={nodeTypes}
-        fitView
-        minZoom={0.05}
-        maxZoom={4}
-        proOptions={{ hideAttribution: true }}
-        style={{ background: "hsl(var(--background))" }}
-        defaultEdgeOptions={{ type: "default" }}
-        onNodeClick={(_, n) => onNodeClick(n.id)}
-        onNodeMouseEnter={(_, n) => onNodeHover(n.id)}
-        onNodeMouseLeave={() => onNodeHover(null)}
-        onPaneClick={() => onNodeClick("")}
-      >
-        <Controls showInteractive={false} style={controlsStyle} />
-        {showMiniMap && (
-          <MiniMap
-            pannable
-            zoomable
-            nodeColor={(n) => (n.data as { color?: string }).color ?? "#94a3b8"}
-            maskColor={isDark ? "rgba(0,0,0,0.55)" : "rgba(15,23,42,0.08)"}
-            style={controlsStyle}
-          />
-        )}
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={28}
-          size={1}
-          color={dotColor}
-        />
-      </ReactFlow>
-    </CanvasContext.Provider>
+    <div ref={containerRef} className="absolute inset-0">
+      <ForceGraph2D
+        ref={fgRef as never}
+        width={size.width || undefined}
+        height={size.height || undefined}
+        graphData={{ nodes: data.nodes, links: data.links } as never}
+        backgroundColor={bg}
+        nodeRelSize={4}
+        nodeCanvasObject={paintNode}
+        nodePointerAreaPaint={paintPointer}
+        linkColor={linkColor}
+        linkWidth={linkWidth}
+        linkCurvature={curvedEdges ? 0.18 : 0}
+        linkDirectionalParticles={linkParticles}
+        linkDirectionalParticleWidth={2}
+        linkDirectionalParticleSpeed={0.006}
+        linkDirectionalParticleColor={(l) => (l as FLink).famColor}
+        linkLabel={showEdgeLabels ? (l) => (l as FLink).relType : undefined}
+        onRenderFramePre={onRenderFramePre}
+        cooldownTicks={0}
+        minZoom={0.06}
+        maxZoom={8}
+        onEngineStop={() => fitView(400)}
+        onNodeClick={(n) => onNodeClick((n as FNode).id)}
+        onNodeHover={(n) => onNodeHover(n ? (n as FNode).id : null)}
+        onNodeDragEnd={(n) => {
+          (n as FNode).fx = n.x;
+          (n as FNode).fy = n.y;
+        }}
+        onBackgroundClick={() => onNodeClick("")}
+        onNodeRightClick={(n) => onNodeDoubleClick?.((n as FNode).id)}
+        autoPauseRedraw={false}
+      />
+      <CanvasControls
+        onZoomIn={() => fgRef.current?.zoom((fgRef.current?.zoom() ?? 1) * 1.4, 250)}
+        onZoomOut={() => fgRef.current?.zoom((fgRef.current?.zoom() ?? 1) / 1.4, 250)}
+        onFit={() => fitView(400)}
+      />
+    </div>
   );
 }
 
-export function GraphCanvas(props: GraphCanvasProps) {
+function CanvasControls({
+  onZoomIn,
+  onZoomOut,
+  onFit,
+}: {
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onFit: () => void;
+}) {
+  const btn =
+    "flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
   return (
-    <ReactFlowProvider>
-      <GraphCanvasInner {...props} />
-    </ReactFlowProvider>
+    <div className="glass absolute bottom-4 left-4 flex flex-col overflow-hidden rounded-lg">
+      <button type="button" className={btn} onClick={onZoomIn} title="Zoom in" aria-label="Zoom in">
+        <Plus className="h-4 w-4" />
+      </button>
+      <button type="button" className={`${btn} border-y border-border/60`} onClick={onFit} title="Fit to view" aria-label="Fit to view">
+        <Maximize2 className="h-3.5 w-3.5" />
+      </button>
+      <button type="button" className={btn} onClick={onZoomOut} title="Zoom out" aria-label="Zoom out">
+        <Minus className="h-4 w-4" />
+      </button>
+    </div>
   );
 }

@@ -28,6 +28,7 @@ pub mod discover;
 pub mod graph_handler;
 pub mod flight;
 mod health;
+pub mod icon_config;
 pub mod metrics;
 
 #[cfg(feature = "web-ui")]

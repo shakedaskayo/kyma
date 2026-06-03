@@ -27,6 +27,25 @@ type GraphStore = {
   searchQuery: string;
   /** Whether the MiniMap overlay is rendered (auto-hidden on big graphs). */
   showMiniMap: boolean;
+
+  // ── visual style toggles (WebGL renderer) ────────────────────────────────
+  /** Size nodes by degree centrality. */
+  sizeByDegree: boolean;
+  /** Glow halo on focus / landmark nodes. */
+  glow: boolean;
+  /** Animated directional particles along focus-subset edges. */
+  animatedFlow: boolean;
+  /** Curve edges instead of straight lines. */
+  curvedEdges: boolean;
+  /** Draw translucent convex-hull blobs behind detected communities. */
+  communityHulls: boolean;
+  /**
+   * Overview mode: on large graphs, render only landmark nodes (+ expanded /
+   * focused neighbourhoods) instead of the full hairball. Auto-relevant only
+   * above a node threshold handled in the view.
+   */
+  overview: boolean;
+
   setGraph(name: string): void;
   setLayout(layout: LayoutAlgorithm): void;
   selectNode(id: string | null): void;
@@ -40,6 +59,12 @@ type GraphStore = {
   toggleEdgeLabels(): void;
   setSearchQuery(q: string): void;
   setShowMiniMap(v: boolean): void;
+  toggleSizeByDegree(): void;
+  toggleGlow(): void;
+  toggleAnimatedFlow(): void;
+  toggleCurvedEdges(): void;
+  toggleCommunityHulls(): void;
+  setOverview(v: boolean): void;
   reset(): void;
 };
 
@@ -55,6 +80,12 @@ const initial = {
   showEdgeLabels: false,
   searchQuery: "",
   showMiniMap: true,
+  sizeByDegree: true,
+  glow: true,
+  animatedFlow: true,
+  curvedEdges: true,
+  communityHulls: true,
+  overview: true,
 };
 
 export const useGraphStore = create<GraphStore>()((set) => ({
@@ -85,5 +116,11 @@ export const useGraphStore = create<GraphStore>()((set) => ({
   toggleEdgeLabels: () => set((s) => ({ showEdgeLabels: !s.showEdgeLabels })),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setShowMiniMap: (v) => set({ showMiniMap: v }),
+  toggleSizeByDegree: () => set((s) => ({ sizeByDegree: !s.sizeByDegree })),
+  toggleGlow: () => set((s) => ({ glow: !s.glow })),
+  toggleAnimatedFlow: () => set((s) => ({ animatedFlow: !s.animatedFlow })),
+  toggleCurvedEdges: () => set((s) => ({ curvedEdges: !s.curvedEdges })),
+  toggleCommunityHulls: () => set((s) => ({ communityHulls: !s.communityHulls })),
+  setOverview: (v) => set({ overview: v }),
   reset: () => set({ ...initial }),
 }));

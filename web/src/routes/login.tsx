@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSession } from "@/sdk/session";
 import { login } from "@/sdk/auth";
 import { getSetupStatus } from "@/sdk/setup";
@@ -72,13 +71,31 @@ function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-sm">
-        <Card>
-          <CardHeader>
-            <CardTitle>Sign in to kyma</CardTitle>
-          </CardHeader>
-          <CardContent>
+    <div className="app-bg flex min-h-screen items-center justify-center p-4">
+      <div className="grid w-full max-w-4xl items-center gap-10 lg:grid-cols-2 lg:gap-16">
+        {/* Hero (large screens) */}
+        <div className="hidden flex-col justify-center lg:flex">
+          <div className="flex items-center gap-2.5">
+            <img src="/icons/kyma-mark.svg" alt="kyma" className="h-10 w-10" />
+            <span className="text-2xl font-semibold tracking-tight">kyma</span>
+          </div>
+          <h1 className="mt-7 text-3xl font-semibold tracking-tight text-foreground">
+            Your data, as a living knowledge graph.
+          </h1>
+          <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
+            Query, explore, and let agents reason over a unified memory graph spanning
+            every connected source.
+          </p>
+        </div>
+
+        {/* Sign-in card */}
+        <div className="mx-auto w-full max-w-sm">
+          <div className="glass rounded-xl p-6 shadow-elev-3">
+            <div className="mb-5 flex items-center gap-2 lg:hidden">
+              <img src="/icons/kyma-mark.svg" alt="kyma" className="h-8 w-8" />
+              <span className="text-lg font-semibold tracking-tight">kyma</span>
+            </div>
+            <h2 className="mb-4 text-lg font-semibold tracking-tight">Sign in</h2>
             <form onSubmit={handleSignIn} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="endpoint">Server URL</Label>
@@ -126,8 +143,8 @@ function Login() {
                 </Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

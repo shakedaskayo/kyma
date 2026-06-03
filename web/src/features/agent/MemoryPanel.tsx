@@ -29,8 +29,10 @@ function shortTime(iso: string): string {
   });
 }
 
+// Aligned with the shared data palette (cyan-led "synapse" set) so memory
+// chips read as part of the same system as charts / graph / badges.
 const KIND_COLOR: Record<string, string> = {
-  user_prompt: "bg-blue-500",
+  user_prompt: "bg-sky-500",
   assistant_turn: "bg-violet-500",
   tool_use: "bg-amber-500",
   session_start: "bg-emerald-500",
