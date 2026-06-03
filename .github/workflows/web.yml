@@ -24,8 +24,10 @@ jobs:
     needs: [check]
     # Heavy full-stack Playwright suite (builds the Docker stack). Advisory so
     # it never blocks `web`; the wait below is bounded so a bad stack can't hang
-    # the job for hours (the old `until` loop had no timeout).
+    # the job for hours (the old `until` loop had no timeout). The job-level
+    # timeout caps the whole thing (incl. the docker build) at 50m.
     continue-on-error: true
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
