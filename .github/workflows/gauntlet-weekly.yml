@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 360
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: kyma
           POSTGRES_PASSWORD: kyma_dev
