@@ -22,6 +22,10 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     needs: [check]
+    # Heavy full-stack Playwright suite (builds the Docker stack). Advisory so
+    # it never blocks `web`; the wait below is bounded so a bad stack can't hang
+    # the job for hours (the old `until` loop had no timeout).
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -32,8 +36,15 @@ jobs:
       - run: pnpm -C web exec playwright install --with-deps chromium
       - name: Start stack
         run: docker compose up -d --build
-      - name: Wait for kyma
-        run: until curl -sS http://localhost:8080/health; do sleep 2; done
+      - name: Wait for kyma (bounded; dump engine logs on timeout)
+        run: |
+          for i in $(seq 1 90); do
+            curl -fsS http://localhost:8080/health >/dev/null && { echo "kyma healthy"; exit 0; }
+            sleep 2
+          done
+          echo "kyma did not become healthy in ~3m; engine logs:" >&2
+          docker compose logs kyma || true
+          exit 1
       - env: { KYMA_E2E_TOKEN: "" }
         run: pnpm -C web e2e
       - if: always()
