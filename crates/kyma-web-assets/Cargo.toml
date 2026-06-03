@@ -1,10 +1,15 @@
 [package]
-name    = "kyma-web-assets"
-version = "0.1.0"
-edition = "2021"
+name              = "kyma-web-assets"
+version.workspace = true
+edition           = "2021"
+license.workspace = true
+repository.workspace = true
+description = "Embedded kyma web UI: the built dist/ bundle baked into the server binary at compile time."
+# The UI lives in `embedded/` (synced from ../../web/dist by build.rs) so the
+# crate is self-contained — `../../web/dist` escapes the package root and would
+# break `cargo publish`. `include` forces the (gitignored) built assets into the
+# published .crate.
+include = ["src/**/*", "build.rs", "embedded/**/*"]
 
 [dependencies]
 include_dir = "0.7"
-
-[build-dependencies]
-# empty — build.rs runs unconditionally, no deps

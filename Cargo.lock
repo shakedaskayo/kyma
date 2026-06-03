@@ -5002,7 +5002,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-memory"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "arrow-schema",
@@ -5111,7 +5111,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-web-assets"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "include_dir",
 ]

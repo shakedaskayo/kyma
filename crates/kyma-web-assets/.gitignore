@@ -1,0 +1,3 @@
+# Built UI, synced from ../../web/dist by build.rs. Force-included into the
+# published .crate via the `include` list in Cargo.toml.
+embedded/

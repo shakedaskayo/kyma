@@ -1,7 +1,10 @@
 [package]
 name = "kyma-memory"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
+license.workspace = true
+repository.workspace = true
+description = "kyma agentic memory: bi-temporal knowledge graph with hybrid (vector + keyword + graph) recall."
 
 [dependencies]
 kyma-core = { workspace = true }
