@@ -144,6 +144,87 @@ fn index_entries(actions: &[FileAction]) -> Vec<super::cc_curate::IndexEntry> {
         .unwrap_or_default()
 }
 
+#[test]
+fn parses_curation_decisions_tolerantly() {
+    use super::cc_curate::{parse_curation_decision, CurationOp};
+
+    let d = parse_curation_decision(
+        r#"{"op": "ARCHIVE", "reason": "obsolete since the rewrite"}"#,
+    );
+    assert_eq!(d.op, CurationOp::Archive);
+    assert_eq!(d.reason.as_deref(), Some("obsolete since the rewrite"));
+
+    // Fenced + lowercase + refreshed description.
+    let d = parse_curation_decision(
+        "```json\n{\"op\": \"refresh\", \"refreshed_description\": \"clearer one-liner\"}\n```",
+    );
+    assert_eq!(d.op, CurationOp::Refresh);
+    assert_eq!(d.refreshed_description.as_deref(), Some("clearer one-liner"));
+
+    // Garbage degrades to the safe default: KEEP.
+    let d = parse_curation_decision("I think we should probably keep it?");
+    assert_eq!(d.op, CurationOp::Keep);
+    let d = parse_curation_decision(r#"{"op": "DELETE EVERYTHING"}"#);
+    assert_eq!(d.op, CurationOp::Keep);
+}
+
+#[test]
+fn cosine_similarity_behaves() {
+    use super::cc_curate::cosine;
+    assert!((cosine(&[1.0, 0.0], &[1.0, 0.0]) - 1.0).abs() < 1e-9);
+    assert!(cosine(&[1.0, 0.0], &[0.0, 1.0]).abs() < 1e-9);
+    assert_eq!(cosine(&[0.0, 0.0], &[1.0, 0.0]), 0.0, "zero vector is not NaN");
+}
+
+#[test]
+fn staleness_respects_age_and_review_stamps() {
+    use super::cc_curate::is_stale;
+    let now = "2026-06-05T00:00:00+00:00";
+    let old = "2026-01-01T00:00:00+00:00"; // ~155 days
+    let fresh = "2026-06-01T00:00:00+00:00";
+    assert!(is_stale(old, None, now, 90));
+    assert!(!is_stale(fresh, None, now, 90));
+    assert!(
+        !is_stale(old, Some(fresh), now, 90),
+        "recently reviewed → not re-questioned"
+    );
+    assert!(is_stale(old, Some(old), now, 90), "stale review re-questions");
+}
+
+#[tokio::test]
+async fn llm_pass_without_engine_is_a_clean_noop() {
+    use super::cc_curate::{llm_curation_pass, LlmCurationConfig};
+    let (_tmp, writer, shared) = engine().await;
+    seed(
+        &writer,
+        "proj",
+        "Old note",
+        "Quite old.",
+        MemoryType::Fact,
+        0.7,
+        Some("claude-md:-tmp-proj/old-note"),
+        Some(json!({"source": "claude-code-file", "cc_file": "old-note.md"})),
+    )
+    .await;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut actions = Vec::new();
+    let mut outcome = super::cc_curate::CurationOutcome::default();
+    llm_curation_pass(
+        &shared,
+        &writer,
+        None,
+        &input(&now),
+        &LlmCurationConfig::default(),
+        &mut actions,
+        &mut outcome,
+    )
+    .await
+    .expect("noop");
+    assert!(actions.is_empty());
+    assert_eq!(outcome.llm_reviewed, 0);
+}
+
 #[tokio::test]
 async fn promotes_top_memories_capped_ordered_and_idempotent() {
     let (_tmp, writer, shared) = engine().await;

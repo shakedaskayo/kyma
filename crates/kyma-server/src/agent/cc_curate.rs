@@ -70,6 +70,8 @@ pub struct CurationOutcome {
     pub merged: usize,
     /// Entries in the managed index region.
     pub index_entries: usize,
+    /// Memories reviewed by the LLM pass this run.
+    pub llm_reviewed: usize,
 }
 
 /// Tuning knobs, resolved from `KYMA_CC_*` env by callers that want env
@@ -121,6 +123,380 @@ pub struct CurationInput<'a> {
     pub path_slug: &'a str,
     /// Pass timestamp (RFC3339) — injected for determinism.
     pub now: &'a str,
+}
+
+// ── LLM curation pass (gated on a usable engine) ────────────────────────────
+
+/// What the model decided for one reviewed memory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CurationOp {
+    Keep,
+    Archive,
+    Refresh,
+}
+
+/// Parsed LLM curation verdict for one stale-candidate memory.
+#[derive(Debug, Clone)]
+pub struct CurationDecision {
+    pub op: CurationOp,
+    /// Rewritten one-line description (for `Refresh`).
+    pub refreshed_description: Option<String>,
+    pub reason: Option<String>,
+}
+
+/// Knobs for the LLM pass.
+#[derive(Debug, Clone)]
+pub struct LlmCurationConfig {
+    /// A memory must be at least this old (and unreviewed for as long)
+    /// before it is questioned.
+    pub stale_days: i64,
+    /// Cosine-similarity band where duplication is plausible but not
+    /// certain — the model decides. At/above the top of the band the
+    /// deterministic pass would have merged already (exact dups).
+    pub dup_band: (f64, f64),
+}
+
+impl Default for LlmCurationConfig {
+    fn default() -> Self {
+        LlmCurationConfig {
+            stale_days: 90,
+            dup_band: (0.90, 0.97),
+        }
+    }
+}
+
+const CURATION_SYSTEM: &str = r#"You curate an AI agent's long-term memory for relevance. Given one MEMORY (with its age and type), decide whether it still earns a slot in the agent's always-loaded context. Return STRICT JSON:
+{ "op": "KEEP | ARCHIVE | REFRESH", "refreshed_description": "rewritten one-line description (for REFRESH)", "reason": "one short sentence" }
+
+Choose:
+- KEEP: still accurate and useful as written.
+- ARCHIVE: stale, no longer relevant, or clearly superseded. Archiving is reversible — but prefer KEEP when uncertain.
+- REFRESH: still relevant but the description reads outdated — supply refreshed_description.
+
+Output ONLY the JSON object."#;
+
+#[derive(Debug, serde::Deserialize)]
+struct RawCuration {
+    #[serde(default)]
+    op: String,
+    #[serde(default)]
+    refreshed_description: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+/// Parse a curation verdict, tolerantly. Anything unparseable degrades to
+/// `Keep` — the safe default for an autonomous archiver.
+pub fn parse_curation_decision(text: &str) -> CurationDecision {
+    let keep = CurationDecision {
+        op: CurationOp::Keep,
+        refreshed_description: None,
+        reason: None,
+    };
+    let Some(cleaned) = super::memory_extract::extract_json_object(text) else {
+        return keep;
+    };
+    let Ok(raw) = serde_json::from_str::<RawCuration>(&cleaned) else {
+        return keep;
+    };
+    let op = match raw.op.trim().to_ascii_uppercase().as_str() {
+        "ARCHIVE" => CurationOp::Archive,
+        "REFRESH" => CurationOp::Refresh,
+        _ => CurationOp::Keep,
+    };
+    CurationDecision {
+        op,
+        refreshed_description: raw.refreshed_description.filter(|s| !s.trim().is_empty()),
+        reason: raw.reason.filter(|s| !s.trim().is_empty()),
+    }
+}
+
+/// Cosine similarity of two equal-length vectors (0.0 for zero vectors).
+pub(crate) fn cosine(a: &[f32], b: &[f32]) -> f64 {
+    let dot: f64 = a.iter().zip(b).map(|(x, y)| f64::from(*x) * f64::from(*y)).sum();
+    let norm = |v: &[f32]| v.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
+    let (na, nb) = (norm(a), norm(b));
+    if na == 0.0 || nb == 0.0 {
+        return 0.0;
+    }
+    dot / (na * nb)
+}
+
+/// Old enough to question, and not recently reviewed.
+pub(crate) fn is_stale(
+    updated_at: &str,
+    reviewed_at: Option<&str>,
+    now: &str,
+    stale_days: i64,
+) -> bool {
+    let parse = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok();
+    let Some(now_t) = parse(now) else {
+        return false;
+    };
+    let cutoff = now_t - chrono::Duration::days(stale_days);
+    if !parse(updated_at).is_some_and(|t| t < cutoff) {
+        return false;
+    }
+    match reviewed_at.and_then(|s| parse(s)) {
+        Some(reviewed) => reviewed < cutoff,
+        None => true,
+    }
+}
+
+/// The LLM curation pass: stale review (KEEP/ARCHIVE/REFRESH) and
+/// near-duplicate adjudication over the band the deterministic pass cannot
+/// decide. Runs only when a usable engine is configured (local default:
+/// none → clean no-op).
+pub async fn llm_curation_pass(
+    shared: &SharedToolCtx,
+    writer: &MemoryWriter,
+    engine: Option<&super::AgentState>,
+    input: &CurationInput<'_>,
+    cfg: &LlmCurationConfig,
+    actions: &mut Vec<FileAction>,
+    outcome: &mut CurationOutcome,
+) -> anyhow::Result<()> {
+    let Some(state) = engine else {
+        return Ok(());
+    };
+    // Mirror the consolidator's gate: a configured engine that adk-rust can
+    // drive (ClaudeCli is CLI-spawned, not usable for these turns).
+    let usable = matches!(
+        state.engines.get().await,
+        Ok(cfg) if cfg.kind != super::engine::EngineKind::ClaudeCli
+    );
+    if !usable {
+        return Ok(());
+    }
+
+    let nodes = realm_nodes(shared, input.realm).await;
+    let file_prefix = format!("{}{}/", kyma_ccmem::TOPIC_KEY_PREFIX, input.path_slug);
+    let managed_file = |n: &Node| -> Option<String> {
+        n.prov_str("cc_file")
+            .or_else(|| n.prov_str("cc_promoted_file"))
+            .map(str::to_string)
+    };
+
+    // ── Stale review: one verdict per long-unreviewed managed memory. ──
+    let candidates: Vec<&Node> = nodes
+        .iter()
+        .filter(|n| {
+            !n.dead()
+                && !n.prov_flag("cc_user_owned")
+                && (n.topic_key.starts_with(&file_prefix)
+                    || n.prov_str("cc_promoted_file").is_some())
+                && is_stale(
+                    &n.updated_at,
+                    n.prov_str("cc_reviewed_at"),
+                    input.now,
+                    cfg.stale_days,
+                )
+        })
+        .collect();
+    for n in candidates {
+        let item = format!(
+            "MEMORY (type={}, title={:?}, last_updated={}):\n{}",
+            n.memory_type, n.title, n.updated_at, n.content
+        );
+        let Ok(text) = super::runner::run_oneshot(
+            state,
+            "kyma-memory-curator",
+            "Reviews stale memories: KEEP / ARCHIVE / REFRESH.",
+            CURATION_SYSTEM,
+            &item,
+        )
+        .await
+        else {
+            continue; // engine hiccup: skip, never block the pass
+        };
+        let d = parse_curation_decision(&text);
+        outcome.llm_reviewed += 1;
+        match d.op {
+            CurationOp::Keep => {
+                stamp(writer, shared, &n.id, input.now, |p| {
+                    p.insert("cc_reviewed_at".into(), serde_json::json!(input.now));
+                })
+                .await?;
+            }
+            CurationOp::Archive => {
+                if let Some(file) = managed_file(n) {
+                    actions.push(FileAction::ArchiveFile {
+                        file,
+                        reason: d
+                            .reason
+                            .clone()
+                            .unwrap_or_else(|| "stale (llm review)".to_string()),
+                        node_id: Some(n.id.clone()),
+                    });
+                    outcome.archived_files += 1;
+                }
+                archive_stale(writer, shared, n, d.reason.as_deref(), input.now).await?;
+            }
+            CurationOp::Refresh => {
+                if let Some(desc) = d.refreshed_description {
+                    refresh_title(writer, shared, &n.id, &desc, input.now).await?;
+                } else {
+                    stamp(writer, shared, &n.id, input.now, |p| {
+                        p.insert("cc_reviewed_at".into(), serde_json::json!(input.now));
+                    })
+                    .await?;
+                }
+            }
+        }
+    }
+
+    // ── Near-duplicate adjudication over the uncertainty band. ──
+    let live: Vec<&Node> = nodes
+        .iter()
+        .filter(|n| n.topic_key.starts_with(&file_prefix) && !n.dead())
+        .collect();
+    if live.len() < 2 {
+        return Ok(());
+    }
+    let mut vecs: Vec<Vec<f32>> = Vec::with_capacity(live.len());
+    for n in &live {
+        match writer.embed_one(&n.content).await {
+            Ok(v) => vecs.push(v),
+            Err(_) => return Ok(()), // no embedding backend → skip the band
+        }
+    }
+    for i in 0..live.len() {
+        for j in (i + 1)..live.len() {
+            let sim = cosine(&vecs[i], &vecs[j]);
+            if sim < cfg.dup_band.0 || sim >= cfg.dup_band.1 {
+                continue;
+            }
+            // Pair already adjudicated as distinct?
+            let (a, b) = if live[i].id <= live[j].id {
+                (live[i], live[j])
+            } else {
+                (live[j], live[i])
+            };
+            let seen = a
+                .prov
+                .get("cc_dup_distinct")
+                .and_then(Value::as_array)
+                .is_some_and(|arr| arr.iter().any(|v| v.as_str() == Some(b.id.as_str())));
+            if seen {
+                continue;
+            }
+            let Ok(d) = super::memory_extract::decide_conflict(
+                state,
+                &a.content,
+                &[(b.id.clone(), b.content.clone())],
+            )
+            .await
+            else {
+                continue;
+            };
+            outcome.llm_reviewed += 1;
+            use super::memory_extract::ConflictOp;
+            if matches!(d.op, ConflictOp::Noop | ConflictOp::Update) {
+                // Same knowledge: lower importance loses, exactly like the
+                // deterministic exact-dup merge.
+                let (winner, loser) = if a.importance >= b.importance { (a, b) } else { (b, a) };
+                archive_as_duplicate(writer, shared, loser, winner, input.now).await?;
+                writer
+                    .link(
+                        &loser.id,
+                        &winner.id,
+                        kyma_memory::EDGE_MERGED_INTO,
+                        input.realm,
+                        None,
+                    )
+                    .await
+                    .map_err(|e| anyhow::anyhow!("merge edge: {e}"))?;
+                if let Some(file) = loser.prov_str("cc_file") {
+                    actions.push(FileAction::ArchiveFile {
+                        file: file.to_string(),
+                        reason: format!("duplicate of {}", winner.display_title()),
+                        node_id: Some(loser.id.clone()),
+                    });
+                    outcome.archived_files += 1;
+                }
+                outcome.merged += 1;
+            } else {
+                // Distinct: remember the verdict so the pair is asked once.
+                let b_id = b.id.clone();
+                stamp(writer, shared, &a.id, input.now, move |p| {
+                    let list = p
+                        .entry("cc_dup_distinct")
+                        .or_insert_with(|| serde_json::json!([]));
+                    if let Some(arr) = list.as_array_mut() {
+                        arr.push(serde_json::json!(b_id));
+                    }
+                })
+                .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Archive a managed memory the LLM judged stale (same-pass DB mirror).
+async fn archive_stale(
+    writer: &MemoryWriter,
+    shared: &SharedToolCtx,
+    node: &Node,
+    reason: Option<&str>,
+    now: &str,
+) -> anyhow::Result<()> {
+    let Some(mut row) = fetch_full_row(shared, &node.id).await else {
+        return Ok(());
+    };
+    let mut prov = node.prov.clone();
+    if let Some(obj) = prov.as_object_mut() {
+        obj.insert(
+            "cc_archived_reason".into(),
+            serde_json::json!(reason.unwrap_or("stale (llm review)")),
+        );
+        obj.insert("cc_file_archived".into(), serde_json::json!(true));
+        obj.insert("cc_archived_at".into(), serde_json::json!(now));
+        obj.remove("cc_promoted_file");
+        obj.remove("cc_content_hash");
+    }
+    if let Some(obj) = row.as_object_mut() {
+        obj.insert("status".into(), serde_json::json!("archived"));
+        obj.insert("invalid_at".into(), serde_json::json!(now));
+        obj.insert("updated_at".into(), serde_json::json!(now));
+        obj.insert("provenance".into(), serde_json::json!(prov.to_string()));
+    }
+    writer
+        .append_node_rows(vec![row])
+        .await
+        .map_err(|e| anyhow::anyhow!("archiving stale {}: {e}", node.id))
+}
+
+/// Apply a refreshed description: new title + cleared content-hash stamp so
+/// the promoted file re-renders on the next deterministic pass.
+async fn refresh_title(
+    writer: &MemoryWriter,
+    shared: &SharedToolCtx,
+    node_id: &str,
+    new_title: &str,
+    now: &str,
+) -> anyhow::Result<()> {
+    let Some(mut row) = fetch_full_row(shared, node_id).await else {
+        return Ok(());
+    };
+    let mut prov = row
+        .get("provenance")
+        .and_then(Value::as_str)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let Some(obj) = prov.as_object_mut() {
+        obj.insert("cc_reviewed_at".into(), serde_json::json!(now));
+        obj.remove("cc_content_hash"); // force a file re-render next pass
+    }
+    if let Some(obj) = row.as_object_mut() {
+        obj.insert("title".into(), serde_json::json!(new_title));
+        obj.insert("updated_at".into(), serde_json::json!(now));
+        obj.insert("provenance".into(), serde_json::json!(prov.to_string()));
+    }
+    writer
+        .append_node_rows(vec![row])
+        .await
+        .map_err(|e| anyhow::anyhow!("refreshing {node_id}: {e}"))
 }
 
 /// A node's latest version, parsed out of the row JSON.
