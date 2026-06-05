@@ -4,8 +4,15 @@
 //! populate a [`QueryState`], then ask it to emit SQL. Trades a tiny loss
 //! of compositionality for dramatically less code.
 
+use std::collections::HashMap;
+
 use crate::lexer::{tokenize, Token};
 use crate::state::QueryState;
+
+/// Table → ordered column names. Used to compute the outer-by-name column
+/// superset for `union`. Insertion order of the `Vec<String>` is the table's
+/// schema order and is preserved in the union projection.
+pub type SchemaMap = HashMap<String, Vec<String>>;
 
 #[derive(Debug, Clone)]
 pub struct ParseError(pub String);
@@ -22,10 +29,25 @@ impl From<crate::lexer::LexError> for ParseError {
     }
 }
 
-/// Public entry point.
+/// Public entry point. Compiles a KQL pipeline to SQL with no schema context.
+///
+/// Sufficient for every non-`union` query. The `union` operator needs the
+/// column names of each operand table to compute the outer-by-name superset,
+/// so a schema-less `union` errors clearly (mentioning "schema"); use
+/// [`kql_to_sql_with_schemas`] for that.
 pub fn kql_to_sql(src: &str) -> Result<String, ParseError> {
+    kql_to_sql_with_schemas(src, &HashMap::new())
+}
+
+/// Schema-aware entry point. Identical to [`kql_to_sql`] for every query
+/// except `union`, where `schemas` supplies the per-table column lists used
+/// to compute the outer-by-name column superset and null-fill the branches.
+///
+/// Non-`union` queries never touch `schemas`, so they produce byte-identical
+/// SQL through either entry point.
+pub fn kql_to_sql_with_schemas(src: &str, schemas: &SchemaMap) -> Result<String, ParseError> {
     let toks = tokenize(src)?;
-    let mut p = Parser::new(toks);
+    let mut p = Parser::new(toks, schemas);
     p.parse_query()?;
     Ok(p.state.to_sql())
 }
@@ -34,18 +56,22 @@ pub fn kql_to_sql(src: &str) -> Result<String, ParseError> {
 // Parser
 // ---------------------------------------------------------------------
 
-struct Parser {
+struct Parser<'s> {
     toks: Vec<Token>,
     pos: usize,
     state: QueryState,
+    /// Borrowed table → column schema map for `union` superset computation.
+    /// Empty for the schema-less [`kql_to_sql`] path.
+    schemas: &'s SchemaMap,
 }
 
-impl Parser {
-    fn new(toks: Vec<Token>) -> Self {
+impl<'s> Parser<'s> {
+    fn new(toks: Vec<Token>, schemas: &'s SchemaMap) -> Self {
         Self {
             toks,
             pos: 0,
             state: QueryState::default(),
+            schemas,
         }
     }
 
@@ -115,12 +141,21 @@ impl Parser {
     // Top-level
     // -----------------------------------------------------------------
     fn parse_query(&mut self) -> Result<(), ParseError> {
-        // Table name is the first identifier.
-        let table = match self.bump()? {
-            Token::Ident(s) => s,
-            other => return Err(ParseError(format!("expected table name, got {other:?}"))),
-        };
-        self.state = QueryState::new(table);
+        // `union` is only valid as the leading construct. It builds the
+        // initial QueryState itself (a `_u` CTE over the per-branch SELECTs)
+        // and leaves the active table set to `_u` so trailing pipe ops below
+        // scope the union result.
+        if matches!(self.peek(), Some(Token::Ident(s)) if s == "union") {
+            self.pos += 1;
+            self.parse_union()?;
+        } else {
+            // Table name is the first identifier.
+            let table = match self.bump()? {
+                Token::Ident(s) => s,
+                other => return Err(ParseError(format!("expected table name, got {other:?}"))),
+            };
+            self.state = QueryState::new(table);
+        }
 
         while self.eat(&Token::Pipe) {
             self.parse_operator()?;
@@ -132,6 +167,213 @@ impl Parser {
             )));
         }
         Ok(())
+    }
+
+    // -----------------------------------------------------------------
+    // union — leading-only, outer-by-name (ADX default) + withsource
+    // -----------------------------------------------------------------
+    //
+    // Syntax: `union [withsource=Ident] operand (, operand)* [| ops...]`
+    // where `operand` is a bare table ident or a parenthesized sub-pipeline
+    // `( <full kql pipeline> )`.
+    //
+    // Lowering (outer-by-name): compute the column superset across operand
+    // ROOT tables (first-seen order); each branch SELECTs `col` when it owns
+    // that column else `NULL AS col`, plus `'table' AS <srcCol>` when
+    // `withsource` is given (the source column is projected FIRST so it is
+    // part of the result schema and trailing ops can reference it). The
+    // branches are combined with `UNION ALL` inside a `_u` CTE and trailing
+    // pipe ops scope `_u` via the normal QueryState machinery.
+    //
+    // v1 limitations (documented, accepted): positional union is rejected
+    // (DataFusion 44 only supports positional UNION ALL, so we emit explicit
+    // per-branch projections); a branch's output schema is taken to be its
+    // ROOT table's schema, so a `project` inside a parenthesized branch does
+    // NOT reshape the null-fill superset (the engine will surface a column
+    // mismatch if the branch truly diverges); no `kind=`, no wildcards.
+    fn parse_union(&mut self) -> Result<(), ParseError> {
+        // Optional `withsource=Ident`.
+        let with_source: Option<String> = if self.eat_ident_eq("withsource") {
+            self.expect(&Token::Assign, "`=` after withsource")?;
+            Some(self.expect_ident()?)
+        } else {
+            None
+        };
+
+        // Parse comma-separated operands until a pipe or EOF.
+        let mut operands: Vec<UnionOperand> = Vec::new();
+        loop {
+            operands.push(self.parse_union_operand()?);
+            if !self.eat(&Token::Comma) {
+                break;
+            }
+        }
+        if operands.is_empty() {
+            return Err(ParseError("union requires at least one operand".into()));
+        }
+
+        // Outer-by-name column superset: each operand's ROOT-table columns,
+        // in first-seen order across operands, deduped.
+        let mut superset: Vec<String> = Vec::new();
+        for op in &operands {
+            let cols = self.schemas.get(&op.root_table).ok_or_else(|| {
+                if self.schemas.is_empty() {
+                    ParseError(format!(
+                        "union requires schema context: no schema available for table `{}`",
+                        op.root_table
+                    ))
+                } else {
+                    ParseError(format!(
+                        "union: unknown table `{}` (not in schema)",
+                        op.root_table
+                    ))
+                }
+            })?;
+            for c in cols {
+                if !superset.contains(c) {
+                    superset.push(c.clone());
+                }
+            }
+        }
+
+        // I1: withsource column must not collide with any superset column.
+        if let Some(src_col) = &with_source {
+            if superset.contains(src_col) {
+                return Err(ParseError(format!(
+                    "withsource column `{src_col}` collides with a column of the union operands"
+                )));
+            }
+        }
+
+        // Build one branch SELECT per operand projecting the superset with
+        // null-fill, plus the optional source column FIRST.
+        let mut branches: Vec<String> = Vec::with_capacity(operands.len());
+        for (i, op) in operands.iter().enumerate() {
+            let branch_cols: std::collections::HashSet<&String> = self
+                .schemas
+                .get(&op.root_table)
+                .map(|v| v.iter().collect())
+                .unwrap_or_default();
+
+            let mut proj: Vec<String> = Vec::new();
+            if let Some(src_col) = &with_source {
+                // SQL string literal for the table name, then `AS srcCol`.
+                proj.push(format!(
+                    "'{}' AS {}",
+                    op.root_table.replace('\'', "''"),
+                    quote_ident(src_col)
+                ));
+            }
+            for col in &superset {
+                if branch_cols.contains(col) {
+                    proj.push(quote_ident(col));
+                } else {
+                    proj.push(format!("NULL AS {}", quote_ident(col)));
+                }
+            }
+            let projection = proj.join(", ");
+
+            // A bare table reads directly; a parenthesized sub-pipeline wraps
+            // its compiled SQL so the superset projection runs over the
+            // branch's output. The branch output schema is its root table's
+            // schema (v1 rule documented above).
+            let branch = match &op.from {
+                UnionFrom::Table(t) => format!("SELECT {projection} FROM {t}"),
+                UnionFrom::SubQuery(sub_sql) => {
+                    format!("SELECT {projection} FROM ({sub_sql}) _b{i}")
+                }
+            };
+            branches.push(branch);
+        }
+
+        // Assemble: `WITH _u AS (b0 UNION ALL b1 ...) SELECT ... FROM _u`.
+        // Trailing pipe ops accumulate onto this QueryState (table = `_u`).
+        let union_body = branches.join(" UNION ALL ");
+        self.state = QueryState::new("_u");
+        self.state
+            .ctes
+            .push(("_u".to_string(), union_body, false));
+        Ok(())
+    }
+
+    /// Parse one union operand: a bare table ident or a parenthesized
+    /// sub-pipeline. Returns the operand's compiled FROM-source and the root
+    /// table that determines its schema for the superset computation.
+    fn parse_union_operand(&mut self) -> Result<UnionOperand, ParseError> {
+        if self.eat(&Token::LParen) {
+            // Slice out the sub-pipeline tokens up to the matching `)`,
+            // respecting nesting, then compile them with a fresh sub-parser
+            // that shares the same schema map (recursion via parse_query).
+            let start = self.pos;
+            let mut depth = 1usize;
+            while depth > 0 {
+                match self.peek() {
+                    Some(Token::LParen) => depth += 1,
+                    Some(Token::RParen) => depth -= 1,
+                    None => {
+                        return Err(ParseError(
+                            "unterminated `(` in union operand".into(),
+                        ))
+                    }
+                    _ => {}
+                }
+                if depth == 0 {
+                    break;
+                }
+                self.pos += 1;
+            }
+            let inner_toks = self.toks[start..self.pos].to_vec();
+            // Consume the closing `)`.
+            self.expect(&Token::RParen, "`)` to close union operand")?;
+            if inner_toks.is_empty() {
+                return Err(ParseError("empty `()` union operand".into()));
+            }
+
+            // C1: Detect nested union before recursing — the sub-pipeline
+            // starts with the `union` keyword if its first token is that ident.
+            if matches!(inner_toks.first(), Some(Token::Ident(s)) if s == "union") {
+                return Err(ParseError("nested union is not supported".into()));
+            }
+
+            // Fix 4: Reject schema-reshaping operators in branch pipelines at
+            // parse time. Inspect token pairs: any Pipe immediately followed
+            // by a reshaping operator keyword is rejected.
+            const RESHAPING_OPS: &[&str] = &[
+                "project",
+                "project-away",
+                "summarize",
+                "count",
+                "distinct",
+                "extend",
+                "graph-traverse",
+                "graph-shortest-path",
+                "make-graph",
+                "graph-match",
+            ];
+            for window in inner_toks.windows(2) {
+                if let [Token::Pipe, Token::Ident(op)] = window {
+                    if RESHAPING_OPS.contains(&op.as_str()) {
+                        return Err(ParseError(format!(
+                            "union branch reshapes its schema (`{op}`); v1 union branches may only filter/sort/take"
+                        )));
+                    }
+                }
+            }
+
+            let mut sub = Parser::new(inner_toks, self.schemas);
+            sub.parse_query()?;
+            let root_table = sub.state.root_table().to_string();
+            Ok(UnionOperand {
+                root_table,
+                from: UnionFrom::SubQuery(sub.state.to_sql()),
+            })
+        } else {
+            let table = self.expect_ident()?;
+            Ok(UnionOperand {
+                root_table: table.clone(),
+                from: UnionFrom::Table(table),
+            })
+        }
     }
 
     fn parse_operator(&mut self) -> Result<(), ParseError> {
@@ -941,6 +1183,23 @@ enum GraphDirection {
     Both,
 }
 
+/// A single `union` operand: where the branch reads from plus the root table
+/// that determines its column schema for the outer-by-name superset.
+struct UnionOperand {
+    /// Table whose columns define this branch's contribution to the superset.
+    root_table: String,
+    from: UnionFrom,
+}
+
+/// The FROM-source of a union branch.
+enum UnionFrom {
+    /// Bare table reference; the branch reads it directly.
+    Table(String),
+    /// A parenthesized sub-pipeline already compiled to SQL; the superset
+    /// projection wraps it as `SELECT … FROM (<sql>) _bN`.
+    SubQuery(String),
+}
+
 /// The recursive-step SELECT list: which edge-column to pick up as the
 /// next-hop node, plus depth+1. Forward traversal follows src→dst, backward
 /// follows dst→src, both produces the endpoint that isn't the current node.
@@ -972,16 +1231,40 @@ fn build_recursive_step_with_src(
     }
 }
 
+/// SQL reserved words that must be double-quoted even when they look like
+/// plain identifiers (all alphanumeric). Subset covering what schema column
+/// names are most likely to collide with.
+const SQL_RESERVED: &[&str] = &[
+    "all", "and", "any", "array", "as", "asc", "asymmetric", "authorization",
+    "between", "both", "by", "case", "cast", "check", "collate", "column",
+    "constraint", "create", "cross", "current", "current_date", "current_role",
+    "current_time", "current_timestamp", "current_user", "default",
+    "deferrable", "deferred", "delete", "desc", "distinct", "do", "else",
+    "end", "except", "exists", "false", "fetch", "for", "foreign", "from",
+    "full", "grant", "group", "having", "in", "initially", "inner", "intersect",
+    "into", "is", "join", "leading", "left", "like", "limit", "localtime",
+    "localtimestamp", "natural", "not", "null", "offset", "on", "only", "or",
+    "order", "outer", "overlaps", "placing", "primary", "references", "right",
+    "select", "session_user", "similar", "some", "symmetric", "table", "then",
+    "to", "trailing", "true", "union", "unique", "user", "using", "variadic",
+    "verbose", "when", "where", "window", "with",
+];
+
 /// Quote an identifier for SQL safely. We use double quotes (ANSI SQL).
+/// Identifiers that are syntactically simple (all alphanumeric / underscore,
+/// not starting with a digit) are still quoted when they collide with SQL
+/// reserved words so that column names like `from` or `select` produce
+/// valid SQL.
 fn quote_ident(name: &str) -> String {
-    // Pass through simple bare identifiers.
-    if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    // A name that needs quoting for structural reasons (spaces, specials, etc.)
+    let structurally_simple = name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         && name
             .chars()
             .next()
             .map(|c| !c.is_ascii_digit())
-            .unwrap_or(false)
-    {
+            .unwrap_or(false);
+
+    if structurally_simple && !SQL_RESERVED.contains(&name.to_lowercase().as_str()) {
         name.to_string()
     } else {
         format!("\"{}\"", name.replace('"', "\"\""))
@@ -1055,6 +1338,165 @@ mod tests {
 
     fn must(src: &str) -> String {
         kql_to_sql(src).expect("parse")
+    }
+
+    fn schemas(
+        pairs: &[(&str, &[&str])],
+    ) -> std::collections::HashMap<String, Vec<String>> {
+        pairs
+            .iter()
+            .map(|(t, cols)| {
+                (
+                    t.to_string(),
+                    cols.iter().map(|c| c.to_string()).collect(),
+                )
+            })
+            .collect()
+    }
+    fn must_with(
+        src: &str,
+        s: &std::collections::HashMap<String, Vec<String>>,
+    ) -> String {
+        kql_to_sql_with_schemas(src, s).expect("parse")
+    }
+
+    #[test]
+    fn union_two_tables_outer_by_name() {
+        let s = schemas(&[("a", &["ts", "msg"]), ("b", &["ts", "code"])]);
+        let sql = must_with("union a, b", &s);
+        // Column superset in first-seen order: ts, msg, code.
+        assert!(sql.contains(r#"SELECT ts, msg, NULL AS code FROM a"#), "{sql}");
+        assert!(sql.contains(r#"SELECT ts, NULL AS msg, code FROM b"#), "{sql}");
+        assert!(sql.to_uppercase().contains("UNION ALL"), "{sql}");
+    }
+
+    #[test]
+    fn union_with_source_column() {
+        let s = schemas(&[("a", &["x"]), ("b", &["x"])]);
+        let sql = must_with(r#"union withsource=src a, b"#, &s);
+        assert!(sql.contains(r#"'a' AS src"#), "{sql}");
+        assert!(sql.contains(r#"'b' AS src"#), "{sql}");
+    }
+
+    #[test]
+    fn union_parenthesized_pipeline_operand() {
+        let s = schemas(&[("a", &["ts", "msg"]), ("b", &["ts", "msg"])]);
+        let sql = must_with(r#"union a, (b | where msg contains "x") | take 10"#, &s);
+        assert!(sql.contains("LIKE"), "{sql}");
+        assert!(sql.to_uppercase().contains("LIMIT 10"), "{sql}");
+    }
+
+    #[test]
+    fn union_trailing_ops_apply_to_union() {
+        let s = schemas(&[("a", &["ts"]), ("b", &["ts"])]);
+        let sql = must_with(
+            r#"union a, b | where ts > datetime("2026-01-01T00:00:00Z") | take 5"#,
+            &s,
+        );
+        // WHERE must scope the union result, not a single branch.
+        let upper = sql.to_uppercase();
+        let union_pos = upper.find("UNION ALL").unwrap();
+        let where_pos = upper.rfind("WHERE").unwrap();
+        assert!(
+            where_pos > union_pos,
+            "trailing where must be outside the union: {sql}"
+        );
+    }
+
+    #[test]
+    fn union_unknown_table_errors() {
+        let s = schemas(&[("a", &["x"])]);
+        let e = kql_to_sql_with_schemas("union a, nope", &s).unwrap_err();
+        assert!(e.to_string().contains("nope"), "{e}");
+    }
+
+    #[test]
+    fn union_without_schemas_errors_clearly() {
+        let e = kql_to_sql("union a, b").unwrap_err();
+        assert!(e.to_string().contains("schema"), "{e}");
+    }
+
+    #[test]
+    fn non_union_queries_unaffected_by_schema_api() {
+        let s = schemas(&[("t", &["x"])]);
+        assert_eq!(must_with("t | take 5", &s), kql_to_sql("t | take 5").unwrap());
+    }
+
+    #[test]
+    fn both_apis_byte_identical_for_non_union() {
+        // The binding constraint: every non-union query compiles byte-for-byte
+        // identically through kql_to_sql and kql_to_sql_with_schemas.
+        let s = std::collections::HashMap::new();
+        for q in [
+            "t",
+            "t | where status >= 500 | project timestamp, status",
+            "t | summarize count(), avg(latency) by status | sort by status desc | take 10",
+            r#"e | graph-traverse source "a" from src to dst max-hops 2"#,
+            r#"edges | make-graph caller --> callee with services on id | graph-match (a)-[e:CALLS]->(b) project a.name"#,
+        ] {
+            assert_eq!(
+                kql_to_sql(q).unwrap(),
+                kql_to_sql_with_schemas(q, &s).unwrap(),
+                "mismatch for: {q}"
+            );
+        }
+    }
+
+    // --- Additional contract-sharpening tests ---
+
+    #[test]
+    fn union_single_operand() {
+        // A single-operand union is degenerate but must still compile: one
+        // branch, no UNION ALL keyword needed, superset = that table's cols.
+        let s = schemas(&[("a", &["ts", "msg"])]);
+        let sql = must_with("union a", &s);
+        assert!(sql.contains("SELECT ts, msg FROM a"), "{sql}");
+        assert!(sql.to_uppercase().contains(" FROM _U"), "{sql}");
+    }
+
+    #[test]
+    fn union_trailing_sort_and_take() {
+        let s = schemas(&[("a", &["ts"]), ("b", &["ts"])]);
+        let sql = must_with("union a, b | sort by ts desc | take 5", &s);
+        let upper = sql.to_uppercase();
+        let union_pos = upper.find("UNION ALL").unwrap();
+        let order_pos = upper.rfind("ORDER BY").unwrap();
+        assert!(order_pos > union_pos, "sort must scope the union: {sql}");
+        assert!(upper.contains("ORDER BY TS DESC"), "{sql}");
+        assert!(upper.contains("LIMIT 5"), "{sql}");
+    }
+
+    #[test]
+    fn union_withsource_trailing_where_on_source() {
+        // The withsource column participates in the result schema so a
+        // trailing where over it scopes the union output.
+        let s = schemas(&[("a", &["x"]), ("b", &["x"])]);
+        let sql = must_with(r#"union withsource=src a, b | where src == "a""#, &s);
+        let upper = sql.to_uppercase();
+        let union_pos = upper.find("UNION ALL").unwrap();
+        let where_pos = upper.rfind("WHERE").unwrap();
+        assert!(where_pos > union_pos, "where on src must be outside union: {sql}");
+        assert!(sql.contains("(src = 'a')"), "{sql}");
+    }
+
+    #[test]
+    fn union_withsource_column_is_first_in_projection() {
+        // withsource column FIRST so it's part of the result schema.
+        let s = schemas(&[("a", &["x"]), ("b", &["y"])]);
+        let sql = must_with("union withsource=src a, b", &s);
+        // Branch for `a`: src first, then superset x, NULL AS y.
+        assert!(sql.contains("SELECT 'a' AS src, x, NULL AS y FROM a"), "{sql}");
+        assert!(sql.contains("SELECT 'b' AS src, NULL AS x, y FROM b"), "{sql}");
+    }
+
+    #[test]
+    fn union_parenthesized_operand_wraps_subquery() {
+        // A parenthesized operand compiles its sub-pipeline and the superset
+        // projection wraps it: SELECT <proj> FROM (<branch sql>) _bN.
+        let s = schemas(&[("a", &["ts", "msg"]), ("b", &["ts", "msg"])]);
+        let sql = must_with(r#"union (a | where msg contains "x"), b"#, &s);
+        assert!(sql.contains(") _b0"), "expected subquery wrapper alias: {sql}");
+        assert!(sql.contains("LIKE '%x%'"), "{sql}");
     }
 
     #[test]
@@ -1286,4 +1728,112 @@ mod tests {
             "expected path_src in CTE, got: {sql}"
         );
     }
+
+    // ------------------------------------------------------------------
+    // C1 — nested union rejected cleanly
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn union_nested_errors_with_clear_message() {
+        // `union a, (union b, c)` must error with "nested union", not leak
+        // internal names like `_u`.
+        let s = schemas(&[("a", &["ts"]), ("b", &["ts"]), ("c", &["ts"])]);
+        let err = kql_to_sql_with_schemas("union a, (union b, c)", &s).unwrap_err();
+        assert!(
+            err.to_string().contains("nested union"),
+            "expected 'nested union' in error, got: {err}"
+        );
+        assert!(
+            !err.to_string().contains("_u"),
+            "internal CTE name `_u` must not leak into error: {err}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // I1 — withsource collision rejected at parse time
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn union_withsource_collision_errors() {
+        // `ts` exists in both operand schemas → collision with withsource=ts.
+        let s = schemas(&[("a", &["ts", "msg"]), ("b", &["ts"])]);
+        let err = kql_to_sql_with_schemas("union withsource=ts a, b", &s).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("withsource") && msg.contains("ts") && msg.contains("collides"),
+            "expected withsource collision error, got: {msg}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // I2 — superset columns routed through quote_ident
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn union_superset_reserved_word_column_quoted() {
+        // A column named `from` (SQL reserved word) must appear double-quoted
+        // in the emitted SQL via quote_ident.
+        let s = schemas(&[("a", &["from", "ts"]), ("b", &["ts"])]);
+        let sql = kql_to_sql_with_schemas("union a, b", &s).expect("parse");
+        // quote_ident("from") → `"from"` because `from` is SQL-reserved.
+        assert!(
+            sql.contains(r#""from""#),
+            "expected `\"from\"` (quoted reserved word) in SQL, got: {sql}"
+        );
+        // The null-fill branch for b must also be quoted.
+        assert!(
+            sql.contains(r#"NULL AS "from""#),
+            "expected `NULL AS \"from\"` in SQL, got: {sql}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Fix 4 — schema-reshaping branch ops rejected at parse time
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn union_branch_with_project_errors() {
+        let s = schemas(&[("a", &["x"]), ("b", &["x"])]);
+        let err = kql_to_sql_with_schemas("union a, (b | project x)", &s).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("project"),
+            "error must name the offending operator, got: {msg}"
+        );
+        assert!(
+            msg.contains("reshapes"),
+            "error must mention schema reshaping, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn union_branch_with_extend_errors() {
+        let s = schemas(&[("a", &["x"]), ("b", &["x"])]);
+        let err = kql_to_sql_with_schemas("union a, (b | extend y=1)", &s).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("extend"),
+            "error must name `extend`, got: {msg}"
+        );
+        assert!(
+            msg.contains("reshapes"),
+            "expected reshape message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn union_branch_filter_and_take_still_allowed() {
+        // `where` + `take` are not schema-reshaping → must compile fine.
+        let s = schemas(&[("a", &["x"]), ("b", &["x"])]);
+        let sql = must_with("union a, (b | where x > 1 | take 3)", &s);
+        assert!(
+            sql.to_uppercase().contains("WHERE"),
+            "filter branch should compile, got: {sql}"
+        );
+        assert!(
+            sql.to_uppercase().contains("LIMIT 3"),
+            "take inside branch should compile, got: {sql}"
+        );
+    }
 }
+

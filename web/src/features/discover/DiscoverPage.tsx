@@ -15,6 +15,7 @@ import { SavedViewsMenu } from "./SavedViewsMenu";
 import { useDiscoverSearch, resolveTimeRange } from "./useDiscoverSearch";
 import { parseSearch, serializePills } from "./discoverGrammar";
 import { compileToKql } from "./compileToKql";
+import type { ExportSource } from "./compileToKql";
 import { stringColumnsOf } from "./columns";
 import { mergeSources } from "./stream";
 import type { Pill } from "./types";
@@ -70,51 +71,72 @@ export function DiscoverPage({ tabId }: Props) {
       // Grammar errors are surfaced in the QueryBar; export without filters.
     }
 
-    // Pick the target source: selectedSource if present in results, else first
-    // visible source with a timestamp column, else first source in results.
-    let chosenSourceState: import("./types").SourceState | null = null;
-    if (results.sources.size > 0) {
-      const selectedState =
-        st.selectedSource ? results.sources.get(st.selectedSource) ?? null : null;
-      if (selectedState) {
-        chosenSourceState = selectedState;
-      } else {
-        // First visible source with a timestamp column
-        const visible = st.visibleSources ?? Array.from(results.sources.keys());
-        for (const key of visible) {
-          const s = results.sources.get(key);
-          if (s && s.timestampColumn !== null) {
-            chosenSourceState = s;
-            break;
-          }
-        }
-        // Fall back to the first source
-        if (!chosenSourceState) {
-          const first = results.sources.values().next().value;
-          if (first) chosenSourceState = first;
-        }
-      }
+    // Collect the candidate sources: visible sources honoring visibleSources,
+    // or selectedSource alone if one is selected.
+    const allKeys = Array.from(results.sources.keys());
+    const visibleKeys = st.visibleSources ?? allKeys;
+
+    // If a specific source is selected, that is the anchor database; otherwise
+    // take all visible sources.
+    let candidateKeys: string[];
+    if (st.selectedSource && results.sources.has(st.selectedSource)) {
+      candidateKeys = [st.selectedSource];
+    } else {
+      candidateKeys = visibleKeys.filter((k) => results.sources.has(k));
     }
 
-    const kql = chosenSourceState
-      ? compileToKql(
-          {
-            key: chosenSourceState.source,
-            timestampColumn: chosenSourceState.timestampColumn,
-            stringColumns: stringColumnsOf(chosenSourceState.rows, chosenSourceState.timestampColumn),
-          },
-          pills,
-          tr,
-        )
-      : "";
-    const chosenSource = chosenSourceState
-      ? { key: chosenSourceState.source, timestampColumn: chosenSourceState.timestampColumn }
-      : null;
-
-    if (chosenSource && results.sources.size > 1) {
-      toast.info(`Opened ${chosenSource.key} — the Query Editor runs one source at a time`);
+    if (candidateKeys.length === 0) {
+      newTab({
+        kind: "query",
+        state: {
+          title: "from discover",
+          query: "",
+          timeRange: st.timeRange,
+          results: { kind: "idle" },
+          chart: {},
+          submittedQuery: null,
+        },
+      });
+      return;
     }
 
+    // Group by db prefix (the part before the first ".").
+    // /v1/query is scoped to ONE database (X-Database header); union operands
+    // must all be tables in the same database.
+    const dbOf = (key: string) => {
+      const dot = key.indexOf(".");
+      return dot >= 0 ? key.slice(0, dot) : "";
+    };
+
+    // The target db is the db of the first candidate (or selectedSource's db).
+    const targetDb = dbOf(candidateKeys[0]);
+    const inDb = candidateKeys.filter((k) => dbOf(k) === targetDb);
+    const dropped = candidateKeys.filter((k) => dbOf(k) !== targetDb);
+
+    const exportSources: ExportSource[] = inDb.map((key) => {
+      const s = results.sources.get(key)!;
+      return {
+        key: s.source,
+        timestampColumn: s.timestampColumn,
+        stringColumns: stringColumnsOf(s.rows, s.timestampColumn),
+      };
+    });
+
+    const kql = compileToKql(exportSources, pills, tr);
+
+    // Notify about dropped cross-db sources.
+    if (dropped.length > 0) {
+      toast.info(
+        `Exported ${inDb.length} source${inDb.length !== 1 ? "s" : ""} from ${targetDb || "(default)"} — ${dropped.length} from other database${dropped.length !== 1 ? "s" : ""} skipped (cross-database union isn't supported yet)`,
+      );
+    }
+
+    // NOTE: The Query Editor executes against the session's current database
+    // (useSession().database, sent as the X-Database header). If targetDb
+    // differs from the session's current database the query may 404.
+    // QueryTabState has no database field and we don't want to mutate the
+    // global session here — this is a known v1 gap. The user can switch
+    // databases via the DatabaseSwitcher before running the exported query.
     newTab({
       kind: "query",
       state: {

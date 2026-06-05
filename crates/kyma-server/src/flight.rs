@@ -214,19 +214,8 @@ impl FlightService for FlightQueryService {
 
         debug!(db = %ticket.database, lang = %ticket.language, sql_len = ticket.query.len(), "flight do_get");
 
-        // Translate to SQL if needed.
-        let sql = match ticket.language.as_str() {
-            "kql" => kyma_kql::kql_to_sql(&ticket.query)
-                .map_err(|e| Status::invalid_argument(format!("KQL parse: {e}")))?,
-            "sql" => ticket.query,
-            other => {
-                return Err(Status::invalid_argument(format!(
-                    "unknown language `{other}`; use `sql` or `kql`"
-                )))
-            }
-        };
-
-        // Build a one-shot SessionContext with a budget the same way HTTP does.
+        // Load tables first so KQL `union` has schema context for the
+        // column-superset computation.
         let tables = self
             .state
             .catalog
@@ -239,6 +228,23 @@ impl FlightService for FlightQueryService {
                 ticket.database
             )));
         }
+
+        // Translate to SQL if needed.
+        let sql = match ticket.language.as_str() {
+            "kql" => {
+                let schemas = crate::build_schema_map(&tables);
+                kyma_kql::kql_to_sql_with_schemas(&ticket.query, &schemas)
+                    .map_err(|e| Status::invalid_argument(format!("KQL parse: {e}")))?
+            }
+            "sql" => ticket.query,
+            other => {
+                return Err(Status::invalid_argument(format!(
+                    "unknown language `{other}`; use `sql` or `kql`"
+                )))
+            }
+        };
+
+        // Build a one-shot SessionContext with a budget the same way HTTP does.
         let runtime = Arc::new(
             RuntimeEnvBuilder::new()
                 .with_memory_pool(Arc::new(GreedyMemoryPool::new(4 * 1024 * 1024 * 1024)))

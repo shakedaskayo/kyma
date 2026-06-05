@@ -126,27 +126,12 @@ pub async fn ensure_table(
 /// path stays a single SQL query; falls back to a `list_databases` scan for
 /// other catalog backends.
 async fn find_database_id(catalog: &dyn Catalog, name: &str) -> Option<DatabaseId> {
-    use std::any::Any;
-    let any_ref: &dyn Any = catalog.as_ref_any();
-    if let Some(pg) = any_ref.downcast_ref::<kyma_catalog::PostgresCatalog>() {
-        let row: Option<(uuid::Uuid,)> =
-            sqlx::query_as("SELECT id FROM databases WHERE name = $1")
-                .bind(name)
-                .fetch_optional(pg.pool())
-                .await
-                .ok()
-                .flatten();
-        return row.map(|(id,)| DatabaseId::from_uuid(id));
-    }
-    // Best-effort fallback for non-Postgres catalog backends.
-    let names = catalog.list_databases().await.ok()?;
-    if !names.iter().any(|n| n == name) {
-        return None;
-    }
-    // No public `lookup_database_id` in the trait; we can't recover the ID
-    // here. Return None and let the caller create_database fall through to
-    // the conflict path.
-    None
+    // Use the catalog-trait's `lookup_database` which is implemented correctly
+    // by every backend (Postgres, SQLite, …). The old code used a Postgres-only
+    // downcast and a broken non-Postgres fallback that always returned `None`
+    // even when the database existed — causing the second-table ingest for the
+    // same database to fail on non-Postgres backends.
+    catalog.lookup_database(name).await.ok().flatten()
 }
 
 /// Inspect the JSON records to find property names that aren't yet in the

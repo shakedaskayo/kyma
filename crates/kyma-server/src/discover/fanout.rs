@@ -169,6 +169,7 @@ async fn run_source(
         .await;
 
     // b. Compile KQL → SQL.
+    // compile_for_source never emits union — the schema-less API suffices.
     let sql = match kyma_kql::kql_to_sql(&compiled.kql) {
         Ok(s) => s,
         Err(e) => {
