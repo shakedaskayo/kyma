@@ -158,6 +158,7 @@ kyma-web-assets        = { path = "crates/kyma-web-assets",      version = "0.0.
 kyma-embed             = { path = "crates/kyma-embed",           version = "0.0.2" }
 kyma-memory            = { path = "crates/kyma-memory",          version = "0.0.2" }
 kyma-mcp               = { path = "crates/kyma-mcp",             version = "0.0.2" }
+kyma-ccmem             = { path = "crates/kyma-ccmem",           version = "0.0.2" }
 
 # Embeddings + vector search
 fastembed = "4"

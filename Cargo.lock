@@ -4967,10 +4967,13 @@ name = "kyma-local"
 version = "0.0.2"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "chrono",
  "kyma-catalog-sqlite",
+ "kyma-ccmem",
  "kyma-core",
+ "kyma-embed",
  "kyma-format-tlm",
  "kyma-ingest-core",
  "kyma-ingest-rest",
@@ -4980,8 +4983,10 @@ dependencies = [
  "kyma-storage",
  "reqwest 0.12.28",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

@@ -19,8 +19,12 @@
 
 #![forbid(unsafe_code)]
 
+mod cc_sync;
 mod setup;
 mod sync;
+
+#[cfg(test)]
+mod cc_sync_unit_tests;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
