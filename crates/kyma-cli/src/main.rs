@@ -238,6 +238,13 @@ enum Command {
         #[arg(long)]
         project: Option<std::path::PathBuf>,
     },
+    /// Manage the optional background sync worker — an OS user service
+    /// (launchd on macOS, systemd --user on Linux) running `kyma sync --watch`
+    /// so memory stays synced with no terminal or session open.
+    Worker {
+        #[command(subcommand)]
+        action: WorkerAction,
+    },
 
     // ── admin subcommands ─────────────────────────────────────────────
 
@@ -324,6 +331,26 @@ enum Command {
         #[arg(long)]
         name: String,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum WorkerAction {
+    /// Install + start the background sync worker (user service).
+    Install {
+        /// Poll interval in seconds (default 30; sets KYMA_CC_SYNC_POLL_SECS).
+        #[arg(long)]
+        interval: Option<u64>,
+        /// Only the Claude Code file phase.
+        #[arg(long)]
+        cc_only: bool,
+        /// Only the control-plane push/pull.
+        #[arg(long)]
+        cloud_only: bool,
+    },
+    /// Stop + remove the background sync worker.
+    Uninstall,
+    /// Show whether the worker is installed/running and where it logs.
+    Status,
 }
 
 #[derive(Debug, Subcommand)]
@@ -420,6 +447,18 @@ async fn main() -> Result<()> {
             })
             .await
         }
+        Command::Worker { action } => match action {
+            WorkerAction::Install { interval, cc_only, cloud_only } => {
+                kyma_local::worker::install(&kyma_local::worker::WorkerOptions {
+                    interval_secs: interval,
+                    cc_only,
+                    cloud_only,
+                    kyma_home: None, // resolved by install()
+                })
+            }
+            WorkerAction::Uninstall => kyma_local::worker::uninstall(),
+            WorkerAction::Status => kyma_local::worker::status(),
+        },
 
         // ── admin subcommands ─────────────────────────────────────────
         Command::Version => {

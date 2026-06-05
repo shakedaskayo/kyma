@@ -24,6 +24,10 @@ mod cc_sync;
 mod cc_writeback;
 mod setup;
 mod sync;
+pub mod worker;
+
+#[cfg(test)]
+mod worker_unit_tests;
 
 #[cfg(test)]
 mod cc_pipeline_unit_tests;
@@ -422,4 +426,5 @@ pub fn print_info() {
     eprintln!("  setup   : kyma setup <agent> (wire claude-code/cursor/windsurf to mcp)");
     eprintln!("  sync    : kyma sync          (Claude Code file memory + KYMA_CLOUD_URL push/pull)");
     eprintln!("            --watch --dry-run --cc-only --cloud-only --project <path>");
+    eprintln!("  worker  : kyma worker install|uninstall|status (background sync as an OS user service)");
 }

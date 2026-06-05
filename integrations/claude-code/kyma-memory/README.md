@@ -72,6 +72,16 @@ Writeback is atomic (temp+rename), lock-guarded, defers while a session is
 active, and audit-logs every action to `~/.kyma/cc-curation.log`. Try
 `kyma sync --cc-only --dry-run` to see the plan without writing.
 
+Want it running with no session or terminal at all? Install the optional
+background worker — an OS user service (launchd on macOS, systemd `--user`
+on Linux) running the same sync loop:
+
+```bash
+kyma worker install            # or: --interval 60 --cc-only
+kyma worker status             # installed? running? where it logs
+kyma worker uninstall          # fully reversible
+```
+
 ## Slash commands
 
 - `/kyma-recall <query>` — semantic recall from your durable memory.

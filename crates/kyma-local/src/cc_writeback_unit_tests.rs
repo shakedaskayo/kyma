@@ -256,14 +256,46 @@ fn empty_index_with_no_markers_writes_nothing() {
 }
 
 #[test]
+fn index_drops_entries_for_missing_files() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let mem = tmp.path().join("memory");
+    // Only one of the two indexed files exists on disk (the user deleted the
+    // other promoted file by hand — respect that).
+    let (content, _) = promoted_file("kyma-real", "Exists.\n");
+    write(&mem.join("kyma-real.md"), &content);
+    let actions = vec![FileAction::SetIndex {
+        entries: vec![
+            IndexEntry {
+                title: "Real".to_string(),
+                file: "kyma-real.md".to_string(),
+                hook: "exists".to_string(),
+            },
+            IndexEntry {
+                title: "Ghost".to_string(),
+                file: "kyma-ghost.md".to_string(),
+                hook: "deleted by user".to_string(),
+            },
+        ],
+    }];
+    apply_actions(&mem, None, &actions, &WritebackConfig::default(), NOW).expect("apply");
+    let idx = read(&mem.join("MEMORY.md"));
+    assert!(idx.contains("kyma-real.md"));
+    assert!(!idx.contains("kyma-ghost.md"), "no dead links in the index");
+}
+
+#[test]
 fn index_defers_to_user_entries() {
     let tmp = tempfile::tempdir().expect("tmp");
     let mem = tmp.path().join("memory");
-    // The user already lists kyma-auth.md themselves.
+    // The user already lists kyma-auth.md themselves; both files exist.
     write(
         &mem.join("MEMORY.md"),
         "# Memory index\n\n- [My own pointer](kyma-auth.md) — user's words\n",
     );
+    let (auth, _) = promoted_file("kyma-auth", "Auth.\n");
+    write(&mem.join("kyma-auth.md"), &auth);
+    let (other, _) = promoted_file("kyma-other", "Other.\n");
+    write(&mem.join("kyma-other.md"), &other);
     let actions = vec![FileAction::SetIndex {
         entries: vec![
             IndexEntry {

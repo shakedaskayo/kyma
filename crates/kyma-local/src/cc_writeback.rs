@@ -131,6 +131,11 @@ pub(crate) fn apply_actions(
                 let managed: Vec<kyma_ccmem::index::ManagedEntry> = entries
                     .iter()
                     .filter(|e| !user_files.contains(&e.file))
+                    // No dead links: an indexed file the user deleted by hand
+                    // stays gone. (Writes precede SetIndex in a plan, so
+                    // freshly promoted files exist by now; in dry-run they
+                    // don't, and nothing is written anyway.)
+                    .filter(|e| cfg.dry_run || memory_dir.join(&e.file).is_file())
                     .map(|e| kyma_ccmem::index::ManagedEntry {
                         title: e.title.clone(),
                         file: e.file.clone(),
