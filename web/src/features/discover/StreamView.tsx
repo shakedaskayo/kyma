@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useCallback, useEffect } from "react";
+import { useMemo, useState, useRef, useCallback } from "react";
 import { partitionColumns, formatCell } from "./columns";
 import { pickMessageField, summarizeRow } from "./rowSummary";
 import type { StreamRow } from "./stream";
@@ -67,16 +67,6 @@ export function StreamView({ rows, sources, columns, onOpenRow }: Props) {
     }
   }, [rows]);
 
-  // Keep frozen snapshot's length in sync when rows prop changes while frozen
-  // (needed so bufferedCount works correctly)
-  const prevRowsLenRef = useRef(rows.length);
-  useEffect(() => {
-    if (frozenRows !== null && rows.length !== prevRowsLenRef.current) {
-      // rows changed while frozen — frozenLenRef already captured the len at freeze time
-    }
-    prevRowsLenRef.current = rows.length;
-  }, [rows.length, frozenRows]);
-
   const jumpToTop = useCallback(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = 0;
@@ -108,7 +98,7 @@ export function StreamView({ rows, sources, columns, onOpenRow }: Props) {
     ts == null ? "—" : new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   return (
-    <div className="relative text-xs font-mono" ref={scrollRef} onScroll={handleScroll}>
+    <div className="relative h-full overflow-auto text-xs font-mono" ref={scrollRef} onScroll={handleScroll}>
       {/* Sticky "new events" pill shown while frozen and new rows have arrived */}
       {pendingCount > 0 && (
         <div className="sticky top-0 z-10 flex justify-center pointer-events-none">

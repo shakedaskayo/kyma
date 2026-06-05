@@ -44,12 +44,20 @@ export function useDiscoverSearch(args: Args) {
 
   const { endpoint, token } = useSession();
 
+  // argsRef lets startLive read the latest args without being in its dep array
+  const argsRef = useRef(args);
+  argsRef.current = args;
+
   const argsKey = JSON.stringify({
     scope: args.scope,
     search: args.search,
     timeRange: args.timeRange,
     perSourceLimit: args.perSourceLimit ?? 500,
   });
+
+  // Tracks the argsKey that was last sent via update() or on session creation,
+  // so the update-effect does not double-fire on the initial live start.
+  const lastSentKeyRef = useRef<string | null>(null);
 
   // ── one-shot POST path ────────────────────────────────────────────────────
   const run = useCallback(async () => {
@@ -93,6 +101,8 @@ export function useDiscoverSearch(args: Args) {
   }, [argsKey]);
 
   // ── live WebSocket path ───────────────────────────────────────────────────
+  // Session lifetime is tied to (enabled, live, endpoint, token) only.
+  // Args changes are handled by the update-effect below — do NOT add argsKey here.
   const startLive = useCallback(() => {
     // Tear down any previous session or abort
     abortRef.current?.abort();
@@ -108,12 +118,23 @@ export function useDiscoverSearch(args: Args) {
     };
     setResults(acc);
 
+    // Read latest args via ref — no dep on argsKey
+    const currentArgs = argsRef.current;
     const body = {
-      query: args.search,
-      scope: args.scope,
-      time_range: resolveTimeRange(args.timeRange),
-      per_source_limit: args.perSourceLimit ?? 500,
+      query: currentArgs.search,
+      scope: currentArgs.scope,
+      time_range: resolveTimeRange(currentArgs.timeRange),
+      per_source_limit: currentArgs.perSourceLimit ?? 500,
     };
+
+    // Record the key that was used to start this session so the update-effect
+    // can skip its first fire (which would otherwise double-send subscribe).
+    lastSentKeyRef.current = JSON.stringify({
+      scope: currentArgs.scope,
+      search: currentArgs.search,
+      timeRange: currentArgs.timeRange,
+      perSourceLimit: currentArgs.perSourceLimit ?? 500,
+    });
 
     const session = new LiveSession({
       endpoint,
@@ -128,7 +149,7 @@ export function useDiscoverSearch(args: Args) {
       },
     });
     liveSessionRef.current = session;
-  }, [endpoint, token, argsKey]);
+  }, [endpoint, token]);
 
   // ── effect: run or startLive based on the `live` flag ────────────────────
   useEffect(() => {
@@ -154,6 +175,10 @@ export function useDiscoverSearch(args: Args) {
   // in-place rather than reconnecting.
   useEffect(() => {
     if (!args.enabled || !args.live || !liveSessionRef.current) return;
+    // Skip if argsKey hasn't changed from what startLive already sent — this
+    // prevents a double update() on the initial session creation.
+    if (lastSentKeyRef.current === argsKey) return;
+    lastSentKeyRef.current = argsKey;
     liveSessionRef.current.update({
       query: args.search,
       scope: args.scope,

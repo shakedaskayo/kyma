@@ -21,6 +21,7 @@ export function formatSummary(args: {
 
 type StatusDotProps = { liveStatus: LiveStatus | null };
 
+// TODO: stale-heartbeat (>45s) indicator — spec §Live UX, deferred
 function StatusDot({ liveStatus }: StatusDotProps) {
   if (!liveStatus || liveStatus === "closed") return null;
 

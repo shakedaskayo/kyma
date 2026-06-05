@@ -85,22 +85,12 @@ export function DiscoverPage({ tabId }: Props) {
   // When live is active, editing query + Enter sends session.update via
   // changing the submitted state — the hook's argsKey change triggers update().
   const handleRun = () => {
-    if (st.live) {
-      // In live mode, submitting also updates the submitted text so argsKey
-      // changes, which causes the hook's update effect to fire.
-      setSubmitted(st.search);
-    } else {
-      setSubmitted(st.search);
-    }
+    setSubmitted(st.search);
   };
 
   const toggleLive = () => {
     const next = !st.live;
     patchDiscover(tabId, { live: next });
-    if (!next) {
-      // Turning off live: cancel the session and trigger a fresh one-shot run
-      cancel();
-    }
   };
 
   return (
@@ -171,13 +161,15 @@ export function DiscoverPage({ tabId }: Props) {
           />
         </aside>
 
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 min-h-0 flex flex-col">
           {tableSrc ? (
-            <SourceTableView
-              src={tableSrc}
-              onBack={() => patchDiscover(tabId, { viewMode: "stream" })}
-              onOpenRow={(row) => setOpenRow({ source: tableSrc.source, row })}
-            />
+            <div className="flex-1 min-h-0 overflow-auto">
+              <SourceTableView
+                src={tableSrc}
+                onBack={() => patchDiscover(tabId, { viewMode: "stream" })}
+                onOpenRow={(row) => setOpenRow({ source: tableSrc.source, row })}
+              />
+            </div>
           ) : (
             <>
               <Histogram
@@ -192,32 +184,35 @@ export function DiscoverPage({ tabId }: Props) {
                   <span className="font-semibold">{results.topError.code}</span>: {results.topError.message}
                 </div>
               )}
-              <StreamView
-                rows={streamRows}
-                sources={results.sources}
-                columns={st.columns}
-                onOpenRow={(source, row) => setOpenRow({ source, row })}
-              />
-              {results.status === "done" && results.sources.size === 0 && (
-                <div className="p-6 text-center text-sm text-muted-foreground space-y-2">
-                  <div>No data sources match this scope.</div>
-                  {st.scope.kind === "all" ? (
-                    <div>
-                      Internal sources (agent memory) are hidden by default.{" "}
-                      <button
-                        type="button"
-                        className="underline underline-offset-2 hover:text-foreground"
-                        onClick={() =>
-                          patchDiscover(tabId, { scope: { kind: "sources", sources: ["memory.*"] } })
-                        }
-                      >
-                        Search internal sources
-                      </button>
-                    </div>
-                  ) : (
-                    <div>Try widening with the Scope picker.</div>
-                  )}
+              {results.status === "done" && results.sources.size === 0 ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="p-6 text-center text-sm text-muted-foreground space-y-2">
+                    <div>No data sources match this scope.</div>
+                    {st.scope.kind === "all" ? (
+                      <div>
+                        Internal sources (agent memory) are hidden by default.{" "}
+                        <button
+                          type="button"
+                          className="underline underline-offset-2 hover:text-foreground"
+                          onClick={() =>
+                            patchDiscover(tabId, { scope: { kind: "sources", sources: ["memory.*"] } })
+                          }
+                        >
+                          Search internal sources
+                        </button>
+                      </div>
+                    ) : (
+                      <div>Try widening with the Scope picker.</div>
+                    )}
+                  </div>
                 </div>
+              ) : (
+                <StreamView
+                  rows={streamRows}
+                  sources={results.sources}
+                  columns={st.columns}
+                  onOpenRow={(source, row) => setOpenRow({ source, row })}
+                />
               )}
             </>
           )}
