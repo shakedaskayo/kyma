@@ -138,11 +138,13 @@ export function useUnifiedGraph(
       },
       namespaceCounts,
     };
-    // The merge depends on the queries' `data` references — react-query
-    // returns stable references for unchanged data, so this only rebuilds
-    // when a new namespace lands.
+    // The merge depends on the queries' data — but a spread deps array
+    // (`...queries.map(...)`) changes SIZE as coords load, which React
+    // forbids (deps arrays must be constant-length). Collapse the per-query
+    // freshness into one stable scalar instead: react-query bumps
+    // `dataUpdatedAt` exactly when a query's data reference changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords, ...queries.map((q) => q.data)]);
+  }, [coords, queries.map((q) => q.dataUpdatedAt ?? 0).join(",")]);
 
   const settled = queries.reduce(
     (n, q) => n + (q.isSuccess || q.isError ? 1 : 0),
