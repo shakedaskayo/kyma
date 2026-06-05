@@ -19,7 +19,8 @@ use crate::Engine;
 use kyma_memory::MemoryWriter;
 use kyma_server::agent::{execute_sql, SharedToolCtx};
 
-const NODE_COLS: &str = "id, labels, realm, memory_type, title, content, content_preview, tags, \
+pub(crate) const NODE_COLS: &str =
+    "id, labels, realm, memory_type, title, content, content_preview, tags, \
     importance, status, source_session_id, source_run_id, embedding, created_at, updated_at, \
     valid_at, invalid_at, superseded_by, provenance, topic_key";
 const EDGE_COLS: &str = "id, src, dst, type, realm, target_namespace, props, created_at";

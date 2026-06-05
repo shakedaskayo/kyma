@@ -261,7 +261,7 @@ fn parse_decision(text: &str) -> anyhow::Result<ConflictDecision> {
 
 /// Strip code fences and isolate the first balanced top-level JSON object.
 /// Returns `None` if no `{...}` is present.
-fn extract_json_object(text: &str) -> Option<String> {
+pub(crate) fn extract_json_object(text: &str) -> Option<String> {
     let t = text.trim();
     // Drop a leading ```json / ``` fence and any trailing fence.
     let t = t.strip_prefix("```json").or_else(|| t.strip_prefix("```")).unwrap_or(t);

@@ -28,6 +28,7 @@ members = [
     "crates/kyma-memory",
     "crates/kyma-mcp",
     "crates/kyma-queue",
+    "crates/kyma-ccmem",
     "web/src-tauri",
 ]
 
@@ -159,6 +160,7 @@ kyma-embed             = { path = "crates/kyma-embed",           version = "0.0.
 kyma-memory            = { path = "crates/kyma-memory",          version = "0.0.4" }
 kyma-mcp               = { path = "crates/kyma-mcp",             version = "0.0.4" }
 kyma-queue             = { path = "crates/kyma-queue",           version = "0.0.4" }
+kyma-ccmem             = { path = "crates/kyma-ccmem",           version = "0.0.4" }
 
 # Embeddings + vector search
 fastembed = "4"

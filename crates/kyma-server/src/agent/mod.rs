@@ -8,10 +8,14 @@
 //! See `docs/superpowers/specs/2026-04-21-nl-query-agent-and-vectors-design.md`
 //! for the broader design context.
 
+pub mod cc_curate;
 pub mod engine;
 pub mod identity;
 pub mod local;
 pub mod memory;
+
+#[cfg(test)]
+mod cc_curate_unit_tests;
 pub mod memory_conflict;
 pub mod memory_extract;
 pub mod memory_resolve;

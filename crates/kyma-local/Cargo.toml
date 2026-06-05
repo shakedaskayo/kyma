@@ -18,6 +18,7 @@ kyma-format-tlm.workspace = true
 kyma-server = { workspace = true, features = ["web-ui"] }
 kyma-mcp.workspace = true
 kyma-memory.workspace = true
+kyma-ccmem.workspace = true
 kyma-ingest-rest.workspace = true
 kyma-ingest-core.workspace = true
 tokio.workspace = true
@@ -27,3 +28,9 @@ serde_json.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+kyma-embed.workspace = true
+async-trait.workspace = true
+tempfile = "3"
