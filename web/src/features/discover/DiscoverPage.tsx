@@ -121,6 +121,7 @@ export function DiscoverPage({ tabId }: Props) {
             }}
             selected={st.selectedSource}
             onSelect={(src) => patchDiscover(tabId, { selectedSource: src })}
+            onOpenTable={(src) => patchDiscover(tabId, { viewMode: { table: src } })}
           />
           <FieldsRail source={selected} onAddPill={addPill} />
         </aside>
