@@ -47,6 +47,32 @@ export function partitionColumns(rows: Record<string, unknown>[]): {
   return { shown, hiddenVectors };
 }
 
+/** Return the names of columns whose every non-null sampled value is a plain
+ * string (non-vector). Optionally exclude `timestampColumn` from the result —
+ * timestamp values are strings but substring-matching them is noise. */
+export function stringColumnsOf(
+  rows: Record<string, unknown>[],
+  timestampColumn?: string | null,
+): string[] {
+  const sample = rows.slice(0, SAMPLE_ROWS);
+  if (sample.length === 0) return [];
+
+  const seen = new Set<string>();
+  for (const r of sample) for (const k of Object.keys(r)) seen.add(k);
+
+  const result: string[] = [];
+  for (const col of seen) {
+    if (timestampColumn && col === timestampColumn) continue;
+    const nonNull = sample.map((r) => r[col]).filter((v) => v != null);
+    if (nonNull.length === 0) continue; // all-null column — skip
+    // Must be all strings and none of them vector-like
+    if (nonNull.every((v) => typeof v === "string" && !isNumericVector(v))) {
+      result.push(col);
+    }
+  }
+  return result;
+}
+
 /** Render a cell value as a short string — objects become JSON, very long
  * values are truncated with an ellipsis. */
 export function formatCell(v: unknown): string {

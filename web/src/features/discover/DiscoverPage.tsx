@@ -15,8 +15,10 @@ import { SavedViewsMenu } from "./SavedViewsMenu";
 import { useDiscoverSearch, resolveTimeRange } from "./useDiscoverSearch";
 import { parseSearch, serializePills } from "./discoverGrammar";
 import { compileToKql } from "./compileToKql";
+import { stringColumnsOf } from "./columns";
 import { mergeSources } from "./stream";
 import type { Pill } from "./types";
+import { toast } from "sonner";
 
 type Props = { tabId: string };
 
@@ -60,7 +62,6 @@ export function DiscoverPage({ tabId }: Props) {
   const pillToText = (p: Pill) => serializePills([p]);
 
   const openInQueryEditor = () => {
-    const sources = Array.from(results.sources.keys());
     const tr = resolveTimeRange(st.timeRange);
     let pills: Pill[] = [];
     try {
@@ -68,7 +69,52 @@ export function DiscoverPage({ tabId }: Props) {
     } catch {
       // Grammar errors are surfaced in the QueryBar; export without filters.
     }
-    const kql = compileToKql(sources, pills, tr);
+
+    // Pick the target source: selectedSource if present in results, else first
+    // visible source with a timestamp column, else first source in results.
+    let chosenSourceState: import("./types").SourceState | null = null;
+    if (results.sources.size > 0) {
+      const selectedState =
+        st.selectedSource ? results.sources.get(st.selectedSource) ?? null : null;
+      if (selectedState) {
+        chosenSourceState = selectedState;
+      } else {
+        // First visible source with a timestamp column
+        const visible = st.visibleSources ?? Array.from(results.sources.keys());
+        for (const key of visible) {
+          const s = results.sources.get(key);
+          if (s && s.timestampColumn !== null) {
+            chosenSourceState = s;
+            break;
+          }
+        }
+        // Fall back to the first source
+        if (!chosenSourceState) {
+          const first = results.sources.values().next().value;
+          if (first) chosenSourceState = first;
+        }
+      }
+    }
+
+    const kql = chosenSourceState
+      ? compileToKql(
+          {
+            key: chosenSourceState.source,
+            timestampColumn: chosenSourceState.timestampColumn,
+            stringColumns: stringColumnsOf(chosenSourceState.rows, chosenSourceState.timestampColumn),
+          },
+          pills,
+          tr,
+        )
+      : "";
+    const chosenSource = chosenSourceState
+      ? { key: chosenSourceState.source, timestampColumn: chosenSourceState.timestampColumn }
+      : null;
+
+    if (chosenSource && results.sources.size > 1) {
+      toast.info(`Opened ${chosenSource.key} — the Query Editor runs one source at a time`);
+    }
+
     newTab({
       kind: "query",
       state: {
