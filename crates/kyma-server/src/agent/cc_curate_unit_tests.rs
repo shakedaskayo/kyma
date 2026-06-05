@@ -173,7 +173,10 @@ fn cosine_similarity_behaves() {
     use super::cc_curate::cosine;
     assert!((cosine(&[1.0, 0.0], &[1.0, 0.0]) - 1.0).abs() < 1e-9);
     assert!(cosine(&[1.0, 0.0], &[0.0, 1.0]).abs() < 1e-9);
-    assert_eq!(cosine(&[0.0, 0.0], &[1.0, 0.0]), 0.0, "zero vector is not NaN");
+    assert!(
+        cosine(&[0.0, 0.0], &[1.0, 0.0]).abs() < 1e-12,
+        "zero vector is not NaN"
+    );
 }
 
 #[test]

@@ -234,10 +234,10 @@ pub(crate) fn is_stale(
         return false;
     };
     let cutoff = now_t - chrono::Duration::days(stale_days);
-    if !parse(updated_at).is_some_and(|t| t < cutoff) {
+    if parse(updated_at).is_none_or(|t| t >= cutoff) {
         return false;
     }
-    match reviewed_at.and_then(|s| parse(s)) {
+    match reviewed_at.and_then(parse) {
         Some(reviewed) => reviewed < cutoff,
         None => true,
     }
@@ -345,16 +345,32 @@ pub async fn llm_curation_pass(
         }
     }
 
-    // ── Near-duplicate adjudication over the uncertainty band. ──
     let live: Vec<&Node> = nodes
         .iter()
         .filter(|n| n.topic_key.starts_with(&file_prefix) && !n.dead())
         .collect();
+    adjudicate_near_dups(shared, writer, state, input, cfg, &live, actions, outcome).await
+}
+
+/// Near-duplicate adjudication over the uncertainty band: the model decides
+/// merge vs distinct for cosine-similar file-born pairs.
+#[allow(clippy::too_many_arguments)]
+async fn adjudicate_near_dups(
+    shared: &SharedToolCtx,
+    writer: &MemoryWriter,
+    state: &super::AgentState,
+    input: &CurationInput<'_>,
+    cfg: &LlmCurationConfig,
+    live: &[&Node],
+    actions: &mut Vec<FileAction>,
+    outcome: &mut CurationOutcome,
+) -> anyhow::Result<()> {
+    use super::memory_extract::ConflictOp;
     if live.len() < 2 {
         return Ok(());
     }
     let mut vecs: Vec<Vec<f32>> = Vec::with_capacity(live.len());
-    for n in &live {
+    for n in live {
         match writer.embed_one(&n.content).await {
             Ok(v) => vecs.push(v),
             Err(_) => return Ok(()), // no embedding backend → skip the band
@@ -390,7 +406,6 @@ pub async fn llm_curation_pass(
                 continue;
             };
             outcome.llm_reviewed += 1;
-            use super::memory_extract::ConflictOp;
             if matches!(d.op, ConflictOp::Noop | ConflictOp::Update) {
                 // Same knowledge: lower importance loses, exactly like the
                 // deterministic exact-dup merge.
