@@ -3,7 +3,9 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use super::cc_curate::{plan_curation, CurationConfig, CurationInput, FileAction};
+use super::cc_curate::{
+    commit_guard_stamps, plan_curation, CurationConfig, CurationInput, FileAction, GuardStamp,
+};
 use super::{execute_sql, SharedToolCtx};
 use kyma_core::catalog::Catalog;
 use kyma_core::segment_format::SegmentFormat;
@@ -120,6 +122,19 @@ fn input(now: &str) -> CurationInput<'_> {
     }
 }
 
+/// Simulate a fully successful apply: commit every guard stamp.
+async fn commit_all(
+    shared: &SharedToolCtx,
+    writer: &MemoryWriter,
+    actions: &[FileAction],
+    stamps: &[GuardStamp],
+    now: &str,
+) {
+    commit_guard_stamps(shared, writer, stamps, &vec![true; actions.len()], now)
+        .await
+        .expect("commit stamps");
+}
+
 fn writes(actions: &[FileAction]) -> Vec<&FileAction> {
     actions
         .iter()
@@ -212,6 +227,7 @@ async fn llm_pass_without_engine_is_a_clean_noop() {
 
     let now = chrono::Utc::now().to_rfc3339();
     let mut actions = Vec::new();
+    let mut stamps = Vec::new();
     let mut outcome = super::cc_curate::CurationOutcome::default();
     llm_curation_pass(
         &shared,
@@ -220,11 +236,13 @@ async fn llm_pass_without_engine_is_a_clean_noop() {
         &input(&now),
         &LlmCurationConfig::default(),
         &mut actions,
+        &mut stamps,
         &mut outcome,
     )
     .await
     .expect("noop");
     assert!(actions.is_empty());
+    assert!(stamps.is_empty());
     assert_eq!(outcome.llm_reviewed, 0);
 }
 
@@ -281,7 +299,7 @@ async fn promotes_top_memories_capped_ordered_and_idempotent() {
         promote_max: 2,
         ..CurationConfig::default()
     };
-    let (actions, outcome) = plan_curation(&shared, &writer, &input(&now), &cfg)
+    let (actions, stamps, outcome) = plan_curation(&shared, &writer, &input(&now), &cfg)
         .await
         .expect("plan");
 
@@ -321,9 +339,10 @@ async fn promotes_top_memories_capped_ordered_and_idempotent() {
     assert_eq!(idx[1].file, "kyma-prefer-nextest.md");
     assert_eq!(outcome.index_entries, 2);
 
-    // Second pass: nothing changed → no rewrites, same index, no churn.
+    // Apply succeeds → stamps commit; second pass: no rewrites, no churn.
+    commit_all(&shared, &writer, &actions, &stamps, &now).await;
     let now2 = chrono::Utc::now().to_rfc3339();
-    let (actions2, outcome2) = plan_curation(&shared, &writer, &input(&now2), &cfg)
+    let (actions2, _, outcome2) = plan_curation(&shared, &writer, &input(&now2), &cfg)
         .await
         .expect("plan 2");
     assert!(writes(&actions2).is_empty(), "idempotent: no rewrites");
@@ -351,14 +370,14 @@ async fn dry_run_plans_without_stamping_the_store() {
         dry_run: true,
         ..CurationConfig::default()
     };
-    let (actions, _) = plan_curation(&shared, &writer, &input(&now), &cfg)
+    let (actions, _stamps, _) = plan_curation(&shared, &writer, &input(&now), &cfg)
         .await
         .expect("plan");
     assert_eq!(writes(&actions).len(), 1);
 
     // A second dry-run plan must emit the same writes — nothing was stamped.
     let now2 = chrono::Utc::now().to_rfc3339();
-    let (actions2, _) = plan_curation(&shared, &writer, &input(&now2), &cfg)
+    let (actions2, _, _) = plan_curation(&shared, &writer, &input(&now2), &cfg)
         .await
         .expect("plan 2");
     assert_eq!(
@@ -401,7 +420,7 @@ async fn excludes_file_born_and_user_owned_from_promotion() {
     .await;
 
     let now = chrono::Utc::now().to_rfc3339();
-    let (actions, _) = plan_curation(
+    let (actions, _stamps, _) = plan_curation(
         &shared,
         &writer,
         &input(&now),
@@ -455,7 +474,7 @@ async fn superseded_file_born_archives_its_file_once() {
 
     let now = chrono::Utc::now().to_rfc3339();
     let cfg = CurationConfig::default();
-    let (actions, outcome) = plan_curation(&shared, &writer, &input(&now), &cfg)
+    let (actions, stamps, outcome) = plan_curation(&shared, &writer, &input(&now), &cfg)
         .await
         .expect("plan");
     let arch = archives(&actions);
@@ -466,9 +485,10 @@ async fn superseded_file_born_archives_its_file_once() {
     assert_eq!(file, "old-note.md");
     assert_eq!(outcome.archived_files, 1);
 
-    // Stamped: the next pass does not re-emit the archive action.
+    // Once the archive lands (stamps commit), the next pass is quiet.
+    commit_all(&shared, &writer, &actions, &stamps, &now).await;
     let now2 = chrono::Utc::now().to_rfc3339();
-    let (actions2, _) = plan_curation(&shared, &writer, &input(&now2), &cfg)
+    let (actions2, _, _) = plan_curation(&shared, &writer, &input(&now2), &cfg)
         .await
         .expect("plan 2");
     assert!(archives(&actions2).is_empty(), "archive emitted exactly once");
@@ -501,7 +521,7 @@ async fn exact_duplicate_file_born_memories_merge() {
     .await;
 
     let now = chrono::Utc::now().to_rfc3339();
-    let (actions, outcome) = plan_curation(
+    let (actions, _stamps, outcome) = plan_curation(
         &shared,
         &writer,
         &input(&now),
@@ -557,7 +577,7 @@ async fn demoted_promotion_is_archived_and_unstamped() {
 
     let now = chrono::Utc::now().to_rfc3339();
     let cfg = CurationConfig::default();
-    let (actions, _) = plan_curation(&shared, &writer, &input(&now), &cfg)
+    let (actions, stamps, _) = plan_curation(&shared, &writer, &input(&now), &cfg)
         .await
         .expect("plan");
     let arch = archives(&actions);
@@ -569,9 +589,11 @@ async fn demoted_promotion_is_archived_and_unstamped() {
     assert!(reason.contains("demoted"));
     assert!(index_entries(&actions).is_empty());
 
-    // Unstamped → next pass is quiet.
+    // Once the archive lands (stamps commit, clearing the promotion stamp),
+    // the next pass is quiet.
+    commit_all(&shared, &writer, &actions, &stamps, &now).await;
     let now2 = chrono::Utc::now().to_rfc3339();
-    let (actions2, _) = plan_curation(&shared, &writer, &input(&now2), &cfg)
+    let (actions2, _, _) = plan_curation(&shared, &writer, &input(&now2), &cfg)
         .await
         .expect("plan 2");
     assert!(archives(&actions2).is_empty());

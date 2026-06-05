@@ -62,6 +62,11 @@ pub(crate) struct ApplyReport {
     pub skipped_locked: bool,
     /// Pass deferred: a Claude Code session for this project is active.
     pub skipped_quiet: bool,
+    /// Per-action: did the action's end state land on disk? Drives which
+    /// guard stamps the pipeline commits — deferred/refused/dry actions stay
+    /// unstamped so the next plan re-emits them. "Already there" (identical
+    /// file, already-missing archive target) counts as applied.
+    pub applied: Vec<bool>,
 }
 
 /// Apply a curation plan to `memory_dir`. `project_path` is the project's
@@ -73,7 +78,10 @@ pub(crate) fn apply_actions(
     cfg: &WritebackConfig,
     now: &str,
 ) -> Result<ApplyReport> {
-    let mut report = ApplyReport::default();
+    let mut report = ApplyReport {
+        applied: vec![false; actions.len()],
+        ..ApplyReport::default()
+    };
 
     if session_active(cfg, project_path) {
         report.skipped_quiet = true;
@@ -93,16 +101,19 @@ pub(crate) fn apply_actions(
         }
     };
 
-    for action in actions {
+    for (i, action) in actions.iter().enumerate() {
         match action {
             FileAction::WriteMemoryFile { file, content, .. } => {
                 let target = memory_dir.join(file);
                 match write_guard(&target) {
                     WriteVerdict::UserOwned => report.skipped_user_edited += 1,
-                    WriteVerdict::Unchanged(existing) if existing == *content => {}
+                    WriteVerdict::Unchanged(existing) if existing == *content => {
+                        report.applied[i] = true; // end state already on disk
+                    }
                     _ => {
                         if !cfg.dry_run {
                             atomic_write(&target, content)?;
+                            report.applied[i] = true;
                         }
                         report.written += 1;
                     }
@@ -111,14 +122,19 @@ pub(crate) fn apply_actions(
             FileAction::ArchiveFile { file, reason, .. } => {
                 let src = memory_dir.join(file);
                 if !src.is_file() {
-                    continue; // already gone (deleted, or archived earlier)
+                    // Already gone (deleted, or archived earlier) — that IS
+                    // the end state.
+                    report.applied[i] = true;
+                    continue;
                 }
                 if !cfg.dry_run {
                     archive_file(memory_dir, &src, reason, now)?;
+                    report.applied[i] = true;
                 }
                 report.archived += 1;
             }
             FileAction::SetIndex { entries } => {
+                report.applied[i] = true; // no guard stamps reference the index
                 let path = memory_dir.join(kyma_ccmem::MEMORY_INDEX_FILE);
                 let raw = std::fs::read_to_string(&path).ok();
                 let mut idx = raw.as_deref().map_or_else(

@@ -119,6 +119,53 @@ impl CurationConfig {
     }
 }
 
+/// A deferred "this file action has been handled" stamp.
+///
+/// Plans must not record apply-state at plan time: the applier can defer
+/// (quiet window, lock) or fail, and a pre-committed stamp would make every
+/// later plan skip the action forever — a silently lost promotion/archive.
+/// The pipeline commits these only for actions the applier confirms applied;
+/// until then each pass re-plans the action (superseded-propagation and
+/// demotion are the natural retry loops).
+#[derive(Debug, Clone)]
+pub struct GuardStamp {
+    /// Index into the plan's actions this stamp is contingent on.
+    pub action: usize,
+    pub node_id: String,
+    /// Provenance keys to set.
+    pub set: Vec<(String, Value)>,
+    /// Provenance keys to remove.
+    pub remove: Vec<String>,
+}
+
+/// Commit the guard stamps whose actions actually applied. Returns how many
+/// were committed.
+pub async fn commit_guard_stamps(
+    shared: &SharedToolCtx,
+    writer: &MemoryWriter,
+    stamps: &[GuardStamp],
+    applied: &[bool],
+    now: &str,
+) -> anyhow::Result<usize> {
+    let mut committed = 0;
+    for s in stamps {
+        if !applied.get(s.action).copied().unwrap_or(false) {
+            continue;
+        }
+        stamp(writer, shared, &s.node_id, now, |p| {
+            for (k, v) in &s.set {
+                p.insert(k.clone(), v.clone());
+            }
+            for k in &s.remove {
+                p.remove(k.as_str());
+            }
+        })
+        .await?;
+        committed += 1;
+    }
+    Ok(committed)
+}
+
 /// What to curate: one project realm.
 #[derive(Debug, Clone)]
 pub struct CurationInput<'a> {
@@ -276,6 +323,7 @@ pub(crate) fn is_stale(
 /// near-duplicate adjudication over the band the deterministic pass cannot
 /// decide. Runs only when a usable engine is configured (local default:
 /// none → clean no-op).
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub async fn llm_curation_pass(
     shared: &SharedToolCtx,
     writer: &MemoryWriter,
@@ -283,6 +331,7 @@ pub async fn llm_curation_pass(
     input: &CurationInput<'_>,
     cfg: &LlmCurationConfig,
     actions: &mut Vec<FileAction>,
+    stamps: &mut Vec<GuardStamp>,
     outcome: &mut CurationOutcome,
 ) -> anyhow::Result<()> {
     let Some(state) = engine else {
@@ -359,8 +408,20 @@ pub async fn llm_curation_pass(
                             .unwrap_or_else(|| "stale (llm review)".to_string()),
                         node_id: Some(n.id.clone()),
                     });
+                    stamps.push(GuardStamp {
+                        action: actions.len() - 1,
+                        node_id: n.id.clone(),
+                        set: vec![("cc_file_archived".to_string(), serde_json::json!(true))],
+                        remove: vec![
+                            "cc_promoted_file".to_string(),
+                            "cc_content_hash".to_string(),
+                        ],
+                    });
                     outcome.archived_files += 1;
                 }
+                // The node archive itself is knowledge — commits now; the
+                // file-handled guard above commits only once the file lands
+                // (superseded-propagation / demotion re-emit until then).
                 if !cfg.dry_run {
                     archive_stale(writer, shared, n, d.reason.as_deref(), input.now).await?;
                 }
@@ -383,7 +444,7 @@ pub async fn llm_curation_pass(
         .iter()
         .filter(|n| n.topic_key.starts_with(&file_prefix) && !n.dead())
         .collect();
-    adjudicate_near_dups(shared, writer, state, input, cfg, &live, actions, outcome).await
+    adjudicate_near_dups(shared, writer, state, input, cfg, &live, actions, stamps, outcome).await
 }
 
 /// Near-duplicate adjudication over the uncertainty band: the model decides
@@ -397,6 +458,7 @@ async fn adjudicate_near_dups(
     cfg: &LlmCurationConfig,
     live: &[&Node],
     actions: &mut Vec<FileAction>,
+    stamps: &mut Vec<GuardStamp>,
     outcome: &mut CurationOutcome,
 ) -> anyhow::Result<()> {
     use super::memory_extract::ConflictOp;
@@ -463,6 +525,12 @@ async fn adjudicate_near_dups(
                         reason: format!("duplicate of {}", winner.display_title()),
                         node_id: Some(loser.id.clone()),
                     });
+                    stamps.push(GuardStamp {
+                        action: actions.len() - 1,
+                        node_id: loser.id.clone(),
+                        set: vec![("cc_file_archived".to_string(), serde_json::json!(true))],
+                        remove: vec![],
+                    });
                     outcome.archived_files += 1;
                 }
                 outcome.merged += 1;
@@ -495,16 +563,16 @@ async fn archive_stale(
     let Some(mut row) = fetch_full_row(shared, &node.id).await else {
         return Ok(());
     };
+    // NOTE: the file-handled guard (`cc_file_archived`, promotion-stamp
+    // clears) is committed post-apply via GuardStamp — a deferred archive
+    // re-emits through the superseded/demotion retry loops.
     let mut prov = node.prov.clone();
     if let Some(obj) = prov.as_object_mut() {
         obj.insert(
             "cc_archived_reason".into(),
             serde_json::json!(reason.unwrap_or("stale (llm review)")),
         );
-        obj.insert("cc_file_archived".into(), serde_json::json!(true));
         obj.insert("cc_archived_at".into(), serde_json::json!(now));
-        obj.remove("cc_promoted_file");
-        obj.remove("cc_content_hash");
     }
     if let Some(obj) = row.as_object_mut() {
         obj.insert("status".into(), serde_json::json!("archived"));
@@ -611,16 +679,19 @@ const ALL_COLS: &str = "id, labels, realm, memory_type, title, content, content_
     importance, status, source_session_id, source_run_id, embedding, created_at, updated_at, \
     valid_at, invalid_at, superseded_by, provenance, topic_key";
 
-/// Plan one curation pass for a realm. Returns the file actions for the
-/// applier plus outcome counters. DB-side effects (promotion stamps,
-/// duplicate merges, archive marks) are applied here, in the same pass.
+/// Plan one curation pass for a realm: file actions for the applier,
+/// guard stamps for the pipeline to commit post-apply, and outcome
+/// counters. Knowledge-level DB effects (duplicate merges, archive rows)
+/// commit here; file-handled guards commit only after their action lands.
+#[allow(clippy::too_many_lines)]
 pub async fn plan_curation(
     shared: &SharedToolCtx,
     writer: &MemoryWriter,
     input: &CurationInput<'_>,
     cfg: &CurationConfig,
-) -> anyhow::Result<(Vec<FileAction>, CurationOutcome)> {
+) -> anyhow::Result<(Vec<FileAction>, Vec<GuardStamp>, CurationOutcome)> {
     let mut actions: Vec<FileAction> = Vec::new();
+    let mut stamps: Vec<GuardStamp> = Vec::new();
     let mut outcome = CurationOutcome::default();
     let nodes = realm_nodes(shared, input.realm).await;
     let file_prefix = format!("{}{}/", kyma_ccmem::TOPIC_KEY_PREFIX, input.path_slug);
@@ -641,13 +712,13 @@ pub async fn plan_curation(
             reason: "superseded in kyma".to_string(),
             node_id: Some(n.id.clone()),
         });
+        stamps.push(GuardStamp {
+            action: actions.len() - 1,
+            node_id: n.id.clone(),
+            set: vec![("cc_file_archived".to_string(), serde_json::json!(true))],
+            remove: vec![],
+        });
         outcome.archived_files += 1;
-        if !cfg.dry_run {
-            stamp(writer, shared, &n.id, input.now, |p| {
-                p.insert("cc_file_archived".into(), serde_json::json!(true));
-            })
-            .await?;
-        }
     }
 
     // ── Exact-duplicate merge among live file-born memories.
@@ -693,6 +764,12 @@ pub async fn plan_curation(
                         reason: format!("duplicate of {}", winner.display_title()),
                         node_id: Some(loser.id.clone()),
                     });
+                    stamps.push(GuardStamp {
+                        action: actions.len() - 1,
+                        node_id: loser.id.clone(),
+                        set: vec![("cc_file_archived".to_string(), serde_json::json!(true))],
+                        remove: vec![],
+                    });
                     outcome.archived_files += 1;
                 }
                 outcome.merged += 1;
@@ -703,22 +780,22 @@ pub async fn plan_curation(
     // ── Promotion: high-value kyma memories become native files + the
     //    managed MEMORY.md region.
     if cfg.promote {
-        promote(shared, writer, input, cfg, &nodes, &mut actions, &mut outcome).await?;
+        promote(shared, input, cfg, &nodes, &mut actions, &mut stamps, &mut outcome).await;
     }
 
-    Ok((actions, outcome))
+    Ok((actions, stamps, outcome))
 }
 
 #[allow(clippy::too_many_lines)]
 async fn promote(
     shared: &SharedToolCtx,
-    writer: &MemoryWriter,
     input: &CurationInput<'_>,
     cfg: &CurationConfig,
     nodes: &[Node],
     actions: &mut Vec<FileAction>,
+    stamps: &mut Vec<GuardStamp>,
     outcome: &mut CurationOutcome,
-) -> anyhow::Result<()> {
+) {
     let floor = f64::from(cfg.promote_min_importance);
     let is_file_born = |n: &Node| n.topic_key.starts_with(kyma_ccmem::TOPIC_KEY_PREFIX);
     let never_promotes =
@@ -792,7 +869,7 @@ async fn promote(
     }
     selected.sort_by(|a, b| score(b).total_cmp(&score(a)).then_with(|| a.id.cmp(&b.id)));
 
-    // Apply demotions: archive file + clear the stamp so this happens once.
+    // Apply demotions: archive file + clear the stamp once that lands.
     for (n, reason) in demoted {
         if let Some(file) = n.prov_str("cc_promoted_file").map(str::to_string) {
             actions.push(FileAction::ArchiveFile {
@@ -800,14 +877,13 @@ async fn promote(
                 reason: reason.to_string(),
                 node_id: Some(n.id.clone()),
             });
+            stamps.push(GuardStamp {
+                action: actions.len() - 1,
+                node_id: n.id.clone(),
+                set: vec![],
+                remove: vec!["cc_promoted_file".to_string(), "cc_content_hash".to_string()],
+            });
             outcome.archived_files += 1;
-        }
-        if !cfg.dry_run {
-            stamp(writer, shared, &n.id, input.now, |p| {
-                p.remove("cc_promoted_file");
-                p.remove("cc_content_hash");
-            })
-            .await?;
         }
     }
 
@@ -857,14 +933,16 @@ async fn promote(
                 node_id: n.id.clone(),
                 content_hash: hash.clone(),
             });
-            if !cfg.dry_run {
-                stamp(writer, shared, &n.id, input.now, |p| {
-                    p.insert("cc_promoted_file".into(), serde_json::json!(file));
-                    p.insert("cc_content_hash".into(), serde_json::json!(hash));
-                    p.insert("cc_promoted_at".into(), serde_json::json!(input.now));
-                })
-                .await?;
-            }
+            stamps.push(GuardStamp {
+                action: actions.len() - 1,
+                node_id: n.id.clone(),
+                set: vec![
+                    ("cc_promoted_file".to_string(), serde_json::json!(file)),
+                    ("cc_content_hash".to_string(), serde_json::json!(hash)),
+                    ("cc_promoted_at".to_string(), serde_json::json!(input.now)),
+                ],
+                remove: vec![],
+            });
         }
         entries.push(IndexEntry {
             title: title.clone(),
@@ -886,7 +964,6 @@ async fn promote(
 
     outcome.index_entries = entries.len();
     actions.push(FileAction::SetIndex { entries });
-    Ok(())
 }
 
 /// Reverse of the ingest mapping: kyma memory type → Claude Code
@@ -1096,10 +1173,12 @@ async fn archive_as_duplicate(
     let Some(mut row) = fetch_full_row(shared, &loser.id).await else {
         return Ok(());
     };
+    // NOTE: `cc_file_archived` is deliberately NOT set here — that guard is
+    // committed post-apply (GuardStamp), so a deferred file archive re-emits
+    // via superseded-propagation instead of orphaning the file.
     let mut prov = loser.prov.clone();
     if let Some(obj) = prov.as_object_mut() {
         obj.insert("cc_archived_reason".into(), serde_json::json!("duplicate"));
-        obj.insert("cc_file_archived".into(), serde_json::json!(true));
         obj.insert("cc_archived_at".into(), serde_json::json!(now));
     }
     if let Some(obj) = row.as_object_mut() {

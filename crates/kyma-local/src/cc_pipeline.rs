@@ -10,8 +10,8 @@
 use anyhow::Result;
 use kyma_memory::MemoryWriter;
 use kyma_server::agent::cc_curate::{
-    llm_curation_pass, plan_curation, CurationConfig, CurationInput, CurationOutcome,
-    LlmCurationConfig,
+    commit_guard_stamps, llm_curation_pass, plan_curation, CurationConfig, CurationInput,
+    CurationOutcome, LlmCurationConfig,
 };
 use kyma_server::agent::{AgentState, SharedToolCtx};
 
@@ -72,7 +72,7 @@ pub(crate) async fn run_pass(
                 path_slug: &p.slug,
                 now: &now,
             };
-            let (mut actions, mut outcome) =
+            let (mut actions, mut stamps, mut outcome) =
                 plan_curation(&shared, writer, &input, &promote_cfg).await?;
             llm_curation_pass(
                 &shared,
@@ -81,6 +81,7 @@ pub(crate) async fn run_pass(
                 &input,
                 &llm_cfg,
                 &mut actions,
+                &mut stamps,
                 &mut outcome,
             )
             .await?;
@@ -91,6 +92,11 @@ pub(crate) async fn run_pass(
                 &opts.writeback,
                 &now,
             )?;
+            // Guard stamps commit only for actions that landed — deferred or
+            // refused actions re-plan next pass instead of being orphaned.
+            if !opts.writeback.dry_run {
+                commit_guard_stamps(&shared, writer, &stamps, &applied.applied, &now).await?;
+            }
             curated.push(CuratedProject {
                 realm: p.realm.clone(),
                 outcome,

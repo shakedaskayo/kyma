@@ -375,4 +375,24 @@ async fn kyma_authored_files_skip_then_update_on_user_edit() {
     let prov: Value =
         serde_json::from_str(got[0]["provenance"].as_str().expect("prov str")).expect("prov json");
     assert_eq!(prov["cc_user_owned"], true);
+
+    // The pull-back happens exactly once: an unchanged user-owned file is
+    // skipped on subsequent scans (per-path hash state), not re-ingested
+    // forever (its in-file stamp will never match again by design).
+    let versions_before = rows(
+        &shared,
+        &format!("SELECT updated_at FROM memory_nodes WHERE id = 'memory:{id}'"),
+    )
+    .await
+    .len();
+    let report = run_once(&engine, &writer, &opts).await.expect("sync 3");
+    assert_eq!(report.projects[0].user_edited, 0, "no repeat pull-back");
+    assert_eq!(report.projects[0].skipped, 1);
+    let versions_after = rows(
+        &shared,
+        &format!("SELECT updated_at FROM memory_nodes WHERE id = 'memory:{id}'"),
+    )
+    .await
+    .len();
+    assert_eq!(versions_before, versions_after, "no new node version");
 }

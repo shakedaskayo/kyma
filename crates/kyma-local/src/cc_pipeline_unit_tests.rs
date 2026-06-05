@@ -123,6 +123,70 @@ async fn full_pass_ingests_promotes_and_reindexes() {
 }
 
 #[tokio::test]
+async fn quiet_deferral_replans_until_writeback_lands() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let (engine, writer) = engine_at(tmp.path()).await;
+    let projects = tmp.path().join("projects");
+    let mem = projects.join("-tmp-proj").join("memory");
+    write(
+        &mem.join("note.md"),
+        "---\nname: note\nmetadata:\n  type: project\n---\n\nA note.\n",
+    );
+    let claude_json = tmp.path().join("claude.json");
+    write(&claude_json, r#"{"projects": {"/tmp/proj": {}}}"#);
+
+    let mut cm = CreateMemory::new("Promote me when the session ends.");
+    cm.title = Some("Deferred Promotion".to_string());
+    cm.memory_type = MemoryType::Decision;
+    cm.realm = "proj".to_string();
+    cm.importance = 0.9;
+    writer.save(&cm).await.expect("seed");
+
+    // An active Claude Code session for the project defers writeback.
+    let sessions = tmp.path().join("sessions");
+    #[allow(clippy::cast_possible_truncation)]
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("epoch")
+        .as_millis() as i64;
+    write(
+        &sessions.join("live.json"),
+        &format!(r#"{{"pid":1,"cwd":"/tmp/proj","updatedAt":{now_ms},"status":"busy"}}"#),
+    );
+
+    let opts = CcPipelineOptions {
+        sync: CcSyncOptions {
+            projects_dir: projects.clone(),
+            claude_json: Some(claude_json),
+            project: None,
+        },
+        curate: true,
+        promote_cfg: CurationConfig::default(),
+        llm_cfg: LlmCurationConfig::default(),
+        writeback: WritebackConfig {
+            sessions_dir: Some(sessions.clone()),
+            ..WritebackConfig::default()
+        },
+    };
+
+    let report = run_pass(&engine, &writer, None, &opts).await.expect("pass 1");
+    assert!(report.curated[0].applied.skipped_quiet);
+    let promoted = mem.join("kyma-deferred-promotion.md");
+    assert!(!promoted.exists(), "deferred: nothing written mid-session");
+
+    // Session ends → the next pass must still want to write the file
+    // (a deferred apply must not have burned the promotion stamp).
+    std::fs::remove_file(sessions.join("live.json")).expect("rm session");
+    let report = run_pass(&engine, &writer, None, &opts).await.expect("pass 2");
+    assert_eq!(report.curated[0].applied.written, 1);
+    assert!(promoted.exists(), "promotion lands once the session is over");
+
+    // And then it reaches steady state.
+    let report = run_pass(&engine, &writer, None, &opts).await.expect("pass 3");
+    assert_eq!(report.curated[0].applied.written, 0);
+}
+
+#[tokio::test]
 async fn curate_disabled_only_ingests() {
     let tmp = tempfile::tempdir().expect("tmp");
     let (engine, writer) = engine_at(tmp.path()).await;

@@ -209,6 +209,20 @@ async fn sync_project(
         let hash_key = format!("ccsync:hash:{}", path.display());
 
         if parsed.is_kyma_authored() {
+            // Scan state first: this exact content was already processed
+            // (e.g. a user edit pulled back on a previous pass — the in-file
+            // stamp never matches again by design, so it can't be the skip
+            // signal here).
+            if engine.sqlite.get_sync_state(&hash_key).await?.as_deref() == Some(h.as_str()) {
+                report.skipped += 1;
+                manifest.push(json!({
+                    "file": file_name,
+                    "name": name,
+                    "kyma": true,
+                    "node_id": parsed.front.kyma_memory_id,
+                }));
+                continue;
+            }
             if parsed.front.content_hash.as_deref() == Some(h.as_str()) {
                 // Our own promotion, untouched — never re-ingest (loop guard).
                 report.skipped += 1;
