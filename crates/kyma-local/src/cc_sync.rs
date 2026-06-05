@@ -27,10 +27,11 @@ use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use crate::sync::NODE_COLS;
 use crate::Engine;
 use kyma_ccmem::frontmatter::MemoryFile;
-use kyma_ccmem::{frontmatter, hash, slug};
-use kyma_memory::{CreateMemory, MemoryType, MemoryWriter};
+use kyma_ccmem::{frontmatter, hash, slug, wikilink};
+use kyma_memory::{rows::edge_row, CreateMemory, MemoryType, MemoryWriter};
 use kyma_server::agent::{execute_sql, SharedToolCtx};
 
 /// Importance assigned to file-born memories: Claude Code deliberately chose
@@ -61,6 +62,22 @@ pub(crate) struct ProjectSyncReport {
     pub skipped: usize,
     /// kyma-authored files the user edited — pulled back as node updates.
     pub user_edited: usize,
+    /// `RELATES_TO` edges appended for resolved `[[wikilinks]]`.
+    pub edges_added: usize,
+    /// Nodes archived because their file disappeared from disk.
+    pub archived: usize,
+}
+
+/// What one scanned (non-kyma) file contributed — input to the wikilink
+/// edge pass and the deletion manifest.
+struct ScanEntry {
+    name: String,
+    topic_key: String,
+    /// Set when this run wrote the node (save/save_as); looked up lazily
+    /// otherwise.
+    node_id: Option<String>,
+    wikilinks: Vec<String>,
+    changed: bool,
 }
 
 /// Outcome of one full scan.
@@ -150,7 +167,17 @@ async fn sync_project(
         .collect();
     files.sort();
 
+    let manifest_key = format!("ccsync:manifest:{slug}");
+    let old_manifest: Vec<Value> = engine
+        .sqlite
+        .get_sync_state(&manifest_key)
+        .await?
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default();
+
     let mut manifest: Vec<Value> = Vec::new();
+    let mut entries: Vec<ScanEntry> = Vec::new();
     let now = chrono::Utc::now().to_rfc3339();
 
     for path in files {
@@ -176,16 +203,16 @@ async fn sync_project(
         let hash_key = format!("ccsync:hash:{}", path.display());
 
         if parsed.is_kyma_authored() {
-            manifest.push(json!({
-                "file": file_name,
-                "name": name,
-                "kyma": true,
-                "node_id": parsed.front.kyma_memory_id,
-            }));
             if parsed.front.content_hash.as_deref() == Some(h.as_str()) {
                 // Our own promotion, untouched — never re-ingest (loop guard).
                 report.skipped += 1;
                 engine.sqlite.set_sync_state(&hash_key, &h).await?;
+                manifest.push(json!({
+                    "file": file_name,
+                    "name": name,
+                    "kyma": true,
+                    "node_id": parsed.front.kyma_memory_id,
+                }));
                 continue;
             }
             // The user edited a kyma-promoted file: the file wins. Pull the
@@ -200,22 +227,35 @@ async fn sync_project(
                 apply_user_edit(writer, &shared, uuid, &parsed, &realm, &h, &now).await?;
                 report.user_edited += 1;
                 engine.sqlite.set_sync_state(&hash_key, &h).await?;
+                manifest.push(json!({
+                    "file": file_name,
+                    "name": name,
+                    "kyma": true,
+                    "node_id": parsed.front.kyma_memory_id,
+                }));
                 continue;
             }
             // No back-pointer — fall through and treat as a regular file.
         }
 
+        let tk = kyma_ccmem::topic_key(&slug, &name);
         if engine.sqlite.get_sync_state(&hash_key).await?.as_deref() == Some(h.as_str()) {
             report.skipped += 1;
             manifest.push(json!({
                 "file": file_name,
                 "name": name,
-                "topic_key": kyma_ccmem::topic_key(&slug, &name),
+                "topic_key": tk,
             }));
+            entries.push(ScanEntry {
+                name,
+                topic_key: tk,
+                node_id: None,
+                wikilinks: wikilink::extract(&parsed.body),
+                changed: false,
+            });
             continue;
         }
 
-        let tk = kyma_ccmem::topic_key(&slug, &name);
         let (memory_type, tags) = map_cc_type(parsed.front.cc_type.as_deref());
         let mut cm = CreateMemory::new(parsed.body.clone());
         cm.title = Some(
@@ -245,20 +285,22 @@ async fn sync_project(
             "ingested_at": now,
         }));
 
-        if let Some(existing) = node_id_by_topic_key(&shared, &tk).await {
+        let node_id = if let Some(existing) = node_id_by_topic_key(&shared, &tk).await {
             let uuid_part = existing.strip_prefix("memory:").unwrap_or(&existing);
-            if let Ok(u) = Uuid::parse_str(uuid_part) {
-                writer
-                    .save_as(u, &cm)
-                    .await
-                    .with_context(|| format!("upserting {}", path.display()))?;
-            }
-        } else {
+            let u = Uuid::parse_str(uuid_part)
+                .with_context(|| format!("bad node id {existing} for {tk}"))?;
             writer
+                .save_as(u, &cm)
+                .await
+                .with_context(|| format!("upserting {}", path.display()))?;
+            existing
+        } else {
+            let u = writer
                 .save(&cm)
                 .await
                 .with_context(|| format!("saving {}", path.display()))?;
-        }
+            format!("memory:{u}")
+        };
         report.upserted += 1;
         engine.sqlite.set_sync_state(&hash_key, &h).await?;
         manifest.push(json!({
@@ -266,16 +308,185 @@ async fn sync_project(
             "name": name,
             "topic_key": tk,
         }));
+        entries.push(ScanEntry {
+            name,
+            topic_key: tk,
+            node_id: Some(node_id),
+            wikilinks: wikilink::extract(&parsed.body),
+            changed: true,
+        });
     }
+
+    report.edges_added = link_wikilinks(writer, &shared, &entries, &realm, &now).await?;
+    report.archived =
+        archive_deleted(engine, writer, &shared, &old_manifest, &manifest, &memory_dir, &now)
+            .await?;
 
     engine
         .sqlite
-        .set_sync_state(
-            &format!("ccsync:manifest:{slug}"),
-            &Value::Array(manifest).to_string(),
-        )
+        .set_sync_state(&manifest_key, &Value::Array(manifest).to_string())
         .await?;
     Ok(report)
+}
+
+/// Append `RELATES_TO` edges for `[[wikilinks]]` between this project's
+/// memories. Only links touching a file that changed this run are
+/// (re-)emitted — unchanged files' edges already exist (deterministic ids).
+async fn link_wikilinks(
+    writer: &MemoryWriter,
+    shared: &SharedToolCtx,
+    entries: &[ScanEntry],
+    realm: &str,
+    now: &str,
+) -> Result<usize> {
+    use std::collections::{HashMap, HashSet};
+
+    let changed: HashSet<&str> = entries
+        .iter()
+        .filter(|e| e.changed)
+        .map(|e| e.name.as_str())
+        .collect();
+    let by_name: HashMap<&str, &ScanEntry> =
+        entries.iter().map(|e| (e.name.as_str(), e)).collect();
+
+    // (src, dst) name pairs worth emitting this run.
+    let mut pairs: Vec<(&str, &str)> = Vec::new();
+    for e in entries {
+        for target in &e.wikilinks {
+            if target == &e.name || !by_name.contains_key(target.as_str()) {
+                continue; // self-links and unresolved targets are dropped
+            }
+            if e.changed || changed.contains(target.as_str()) {
+                pairs.push((e.name.as_str(), target.as_str()));
+            }
+        }
+    }
+    if pairs.is_empty() {
+        return Ok(0);
+    }
+
+    // Resolve node ids (lazily for unchanged endpoints).
+    let mut ids: HashMap<&str, String> = HashMap::new();
+    for name in pairs.iter().flat_map(|(a, b)| [*a, *b]) {
+        if ids.contains_key(name) {
+            continue;
+        }
+        let entry = by_name[name];
+        let id = match &entry.node_id {
+            Some(id) => Some(id.clone()),
+            None => node_id_by_topic_key(shared, &entry.topic_key).await,
+        };
+        if let Some(id) = id {
+            ids.insert(name, id);
+        }
+    }
+
+    let props = json!({"via": "cc-wikilink"});
+    let rows: Vec<Value> = pairs
+        .iter()
+        .filter_map(|(src, dst)| match (ids.get(src), ids.get(dst)) {
+            (Some(s), Some(d)) => Some(edge_row(
+                s,
+                d,
+                kyma_memory::EDGE_RELATES_TO,
+                realm,
+                None,
+                Some(&props),
+                now,
+            )),
+            _ => None,
+        })
+        .collect();
+    let n = rows.len();
+    if n > 0 {
+        writer.append_edge_rows(rows).await?;
+    }
+    Ok(n)
+}
+
+/// Archive nodes whose files disappeared: every topic key present in the
+/// previous manifest but absent from this scan gets its node's latest
+/// version re-appended with `status: archived` + `invalid_at`. Renames are
+/// naturally exempt (same topic key, new file). The file's hash state is
+/// reset so a reappearing file re-ingests (and thereby un-archives).
+async fn archive_deleted(
+    engine: &Engine,
+    writer: &MemoryWriter,
+    shared: &SharedToolCtx,
+    old_manifest: &[Value],
+    new_manifest: &[Value],
+    memory_dir: &Path,
+    now: &str,
+) -> Result<usize> {
+    use std::collections::HashSet;
+
+    let live: HashSet<&str> = new_manifest
+        .iter()
+        .filter_map(|e| e.get("topic_key").and_then(Value::as_str))
+        .collect();
+    let mut archived = 0;
+    for old in old_manifest {
+        let Some(tk) = old.get("topic_key").and_then(Value::as_str) else {
+            continue; // kyma-authored entries: writeback owns their lifecycle
+        };
+        if live.contains(tk) {
+            continue;
+        }
+        if archive_node(writer, shared, tk, now).await? {
+            archived += 1;
+        }
+        if let Some(f) = old.get("file").and_then(Value::as_str) {
+            let key = format!("ccsync:hash:{}", memory_dir.join(f).display());
+            engine.sqlite.set_sync_state(&key, "").await?;
+        }
+    }
+    Ok(archived)
+}
+
+/// Append an archived version of the node carrying `topic_key`. Returns
+/// false when there is nothing to do (no node, or already archived).
+async fn archive_node(
+    writer: &MemoryWriter,
+    shared: &SharedToolCtx,
+    topic_key: &str,
+    now: &str,
+) -> Result<bool> {
+    let q = format!(
+        "WITH latest AS (SELECT *, \
+           row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS rn FROM {nt}) \
+         SELECT {NODE_COLS} FROM latest WHERE rn = 1 AND topic_key = {tk} LIMIT 1",
+        nt = kyma_memory::NODE_TABLE,
+        tk = kyma_memory::sql::sql_str(topic_key),
+    );
+    let res = execute_sql(shared, kyma_memory::DEFAULT_DATABASE, &q, 1).await;
+    let Some(mut row) = res
+        .get("rows")
+        .and_then(Value::as_array)
+        .and_then(|a| a.first())
+        .cloned()
+    else {
+        return Ok(false);
+    };
+    if row.get("status").and_then(Value::as_str) == Some("archived") {
+        return Ok(false);
+    }
+    let mut prov = row
+        .get("provenance")
+        .and_then(Value::as_str)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .unwrap_or_else(|| json!({}));
+    if let Some(obj) = prov.as_object_mut() {
+        obj.insert("cc_archived_reason".into(), json!("file_deleted"));
+        obj.insert("cc_archived_at".into(), json!(now));
+    }
+    if let Some(obj) = row.as_object_mut() {
+        obj.insert("status".into(), json!("archived"));
+        obj.insert("invalid_at".into(), json!(now));
+        obj.insert("updated_at".into(), json!(now));
+        obj.insert("provenance".into(), json!(prov.to_string()));
+    }
+    writer.append_node_rows(vec![row]).await?;
+    Ok(true)
 }
 
 /// Pull a user edit of a kyma-promoted file back into its node, preserving

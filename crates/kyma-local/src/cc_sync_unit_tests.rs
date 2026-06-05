@@ -156,6 +156,161 @@ async fn ingests_upserts_and_skips() {
 }
 
 #[tokio::test]
+async fn wikilinks_become_relates_to_edges() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let (engine, writer, shared) = engine_at(tmp.path()).await;
+
+    let projects = tmp.path().join("projects");
+    let mem = projects.join("-tmp-proj").join("memory");
+    write(
+        &mem.join("auth-model.md"),
+        "---\nname: auth-model\ndescription: Auth\nmetadata:\n  type: project\n---\n\nTokens. See [[build-notes]] and [[ghost]] and [[auth-model]].\n",
+    );
+    write(
+        &mem.join("build-notes.md"),
+        "---\nname: build-notes\ndescription: Build\nmetadata:\n  type: user\n---\n\nNextest.\n",
+    );
+    let claude_json = tmp.path().join("claude.json");
+    write(&claude_json, r#"{"projects": {"/tmp/proj": {}}}"#);
+    let opts = CcSyncOptions {
+        projects_dir: projects.clone(),
+        claude_json: Some(claude_json),
+        project: None,
+    };
+
+    let report = run_once(&engine, &writer, &opts).await.expect("sync 1");
+    assert_eq!(report.projects[0].edges_added, 1, "one resolved wikilink");
+
+    let edges = rows(
+        &shared,
+        "SELECT DISTINCT id, src, dst, type FROM memory_edges WHERE type = 'RELATES_TO'",
+    )
+    .await;
+    assert_eq!(edges.len(), 1, "ghost + self links must not create edges");
+    let src_node = rows(
+        &shared,
+        "SELECT DISTINCT id FROM memory_nodes WHERE topic_key = 'claude-md:-tmp-proj/auth-model'",
+    )
+    .await;
+    let dst_node = rows(
+        &shared,
+        "SELECT DISTINCT id FROM memory_nodes WHERE topic_key = 'claude-md:-tmp-proj/build-notes'",
+    )
+    .await;
+    assert_eq!(edges[0]["src"], src_node[0]["id"]);
+    assert_eq!(edges[0]["dst"], dst_node[0]["id"]);
+
+    // Re-run unchanged: no new edge ids.
+    let report = run_once(&engine, &writer, &opts).await.expect("sync 2");
+    assert_eq!(report.projects[0].edges_added, 0);
+    let edges = rows(
+        &shared,
+        "SELECT DISTINCT id FROM memory_edges WHERE type = 'RELATES_TO'",
+    )
+    .await;
+    assert_eq!(edges.len(), 1);
+}
+
+#[tokio::test]
+async fn deleted_file_archives_node_and_reappearance_restores_it() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let (engine, writer, shared) = engine_at(tmp.path()).await;
+
+    let projects = tmp.path().join("projects");
+    let mem = projects.join("-tmp-proj").join("memory");
+    let auth = "---\nname: auth-model\ndescription: Auth\nmetadata:\n  type: project\n---\n\nTokens.\n";
+    write(&mem.join("auth-model.md"), auth);
+    write(
+        &mem.join("build-notes.md"),
+        "---\nname: build-notes\ndescription: Build\nmetadata:\n  type: user\n---\n\nNextest.\n",
+    );
+    let claude_json = tmp.path().join("claude.json");
+    write(&claude_json, r#"{"projects": {"/tmp/proj": {}}}"#);
+    let opts = CcSyncOptions {
+        projects_dir: projects.clone(),
+        claude_json: Some(claude_json),
+        project: None,
+    };
+
+    run_once(&engine, &writer, &opts).await.expect("sync 1");
+    std::fs::remove_file(mem.join("auth-model.md")).expect("rm");
+    let report = run_once(&engine, &writer, &opts).await.expect("sync 2");
+    assert_eq!(report.projects[0].archived, 1);
+
+    let got = rows(
+        &shared,
+        &format!("{LATEST} SELECT status, invalid_at FROM latest WHERE rn = 1 AND topic_key = 'claude-md:-tmp-proj/auth-model'"),
+    )
+    .await;
+    assert_eq!(got[0]["status"], "archived");
+    assert!(got[0]["invalid_at"].as_str().is_some_and(|s| !s.is_empty()));
+    // The surviving file is untouched.
+    let got = rows(
+        &shared,
+        &format!("{LATEST} SELECT status FROM latest WHERE rn = 1 AND topic_key = 'claude-md:-tmp-proj/build-notes'"),
+    )
+    .await;
+    assert_eq!(got[0]["status"], "active");
+
+    // Idempotent: nothing more to archive on the next pass.
+    let report = run_once(&engine, &writer, &opts).await.expect("sync 3");
+    assert_eq!(report.projects[0].archived, 0);
+
+    // The file comes back → the same node is restored, not duplicated.
+    write(&mem.join("auth-model.md"), auth);
+    let report = run_once(&engine, &writer, &opts).await.expect("sync 4");
+    assert_eq!(report.projects[0].upserted, 1);
+    let ids = rows(
+        &shared,
+        "SELECT DISTINCT id FROM memory_nodes WHERE topic_key = 'claude-md:-tmp-proj/auth-model'",
+    )
+    .await;
+    assert_eq!(ids.len(), 1, "reappearance must reuse the node");
+    let got = rows(
+        &shared,
+        &format!("{LATEST} SELECT status FROM latest WHERE rn = 1 AND topic_key = 'claude-md:-tmp-proj/auth-model'"),
+    )
+    .await;
+    assert_eq!(got[0]["status"], "active");
+}
+
+#[tokio::test]
+async fn rename_with_stable_name_keeps_the_node() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let (engine, writer, shared) = engine_at(tmp.path()).await;
+
+    let projects = tmp.path().join("projects");
+    let mem = projects.join("-tmp-proj").join("memory");
+    let auth = "---\nname: auth-model\ndescription: Auth\nmetadata:\n  type: project\n---\n\nTokens.\n";
+    write(&mem.join("auth-model.md"), auth);
+    let claude_json = tmp.path().join("claude.json");
+    write(&claude_json, r#"{"projects": {"/tmp/proj": {}}}"#);
+    let opts = CcSyncOptions {
+        projects_dir: projects.clone(),
+        claude_json: Some(claude_json),
+        project: None,
+    };
+
+    run_once(&engine, &writer, &opts).await.expect("sync 1");
+    std::fs::rename(mem.join("auth-model.md"), mem.join("renamed.md")).expect("mv");
+    let report = run_once(&engine, &writer, &opts).await.expect("sync 2");
+    assert_eq!(report.projects[0].archived, 0, "rename is not a deletion");
+
+    let ids = rows(
+        &shared,
+        "SELECT DISTINCT id FROM memory_nodes WHERE topic_key = 'claude-md:-tmp-proj/auth-model'",
+    )
+    .await;
+    assert_eq!(ids.len(), 1, "rename must not mint a second node");
+    let got = rows(
+        &shared,
+        &format!("{LATEST} SELECT status FROM latest WHERE rn = 1 AND topic_key = 'claude-md:-tmp-proj/auth-model'"),
+    )
+    .await;
+    assert_eq!(got[0]["status"], "active");
+}
+
+#[tokio::test]
 async fn kyma_authored_files_skip_then_update_on_user_edit() {
     let tmp = tempfile::tempdir().expect("tmp");
     let (engine, writer, shared) = engine_at(tmp.path()).await;
