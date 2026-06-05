@@ -260,17 +260,18 @@ pub fn tool_run_kql(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
-                    // Compile KQL → SQL; surface parse errors to the model so
-                    // it can self-correct the syntax.
-                    let sql = match kyma_kql::kql_to_sql(&parsed.kql) {
+                    // Compile KQL → SQL with full schema context so that
+                    // `union` can compute the column superset; surface parse
+                    // errors to the model so it can self-correct the syntax.
+                    let sql = match kql_to_sql_for_database(
+                        &shared,
+                        &parsed.database,
+                        &parsed.kql,
+                    )
+                    .await
+                    {
                         Ok(s) => s,
-                        Err(e) => {
-                            return Ok(json!({
-                                "error": format!("kql_parse: {e}"),
-                                "hint": "Check pipe syntax; operators are '|'-separated, \
-                                    strings are double-quoted, comparisons use '=='.",
-                            }));
-                        }
+                        Err(e) => return Ok(e),
                     };
                     let mut out =
                         execute_sql(&shared, &parsed.database, &sql, parsed.max_rows).await;
@@ -358,6 +359,32 @@ fn is_safe_ident(s: &str) -> bool {
     !s.is_empty()
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+}
+
+/// Compile a KQL query to SQL, using the catalog-backed schema of `database`
+/// so that `union` and other schema-aware operators work correctly.
+///
+/// Returns `Err(json)` on catalog errors or KQL parse errors so the caller
+/// can return the error JSON directly to the model.
+async fn kql_to_sql_for_database(
+    shared: &SharedToolCtx,
+    database: &str,
+    kql: &str,
+) -> Result<String, Value> {
+    let tables = shared
+        .catalog
+        .list_tables_in_database(database)
+        .await
+        .map_err(|e| json!({"error": format!("list_tables_in_database({database}): {e}")}))?;
+    let schemas: kyma_kql::SchemaMap = tables
+        .iter()
+        .map(|t| {
+            let cols = t.schema.fields().iter().map(|f| f.name().clone()).collect();
+            (t.name.clone(), cols)
+        })
+        .collect();
+    kyma_kql::kql_to_sql_with_schemas(kql, &schemas)
+        .map_err(|e| json!({"error": format!("kql_parse: {e}"), "hint": "Check pipe syntax; operators are '|'-separated, strings are double-quoted, comparisons use '=='."}))
 }
 
 /// Build a fresh [`SessionContext`], register every table in `database`,
@@ -791,13 +818,20 @@ pub fn tool_graph_traverse(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         hops,
                         dir,
                     );
-                    let sql = match kyma_kql::kql_to_sql(&kql) {
+                    let sql = match kql_to_sql_for_database(
+                        &shared,
+                        &parsed.database,
+                        &kql,
+                    )
+                    .await
+                    {
                         Ok(s) => s,
                         Err(e) => {
-                            return Ok(json!({
-                                "error": format!("kql_compile: {e}"),
-                                "kql": kql,
-                            }));
+                            let mut err = e;
+                            if let Value::Object(ref mut m) = err {
+                                m.insert("kql".into(), Value::String(kql));
+                            }
+                            return Ok(err);
                         }
                     };
                     let mut out = execute_sql(&shared, &parsed.database, &sql, 1000).await;

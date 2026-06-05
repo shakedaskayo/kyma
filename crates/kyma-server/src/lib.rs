@@ -72,7 +72,7 @@ use bytes::Bytes;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
-use kyma_core::catalog::Catalog;
+use kyma_core::catalog::{Catalog, TableRef};
 use kyma_core::segment_format::SegmentFormat;
 use kyma_exec::KymaTable;
 use serde::Serialize;
@@ -350,6 +350,21 @@ pub(crate) fn extract_request_id(headers: &HeaderMap) -> String {
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
 }
 
+/// Build a [`kyma_kql::SchemaMap`] from a slice of [`TableRef`]s.
+///
+/// Each entry maps the table name to its column names in schema order.
+/// This is passed to [`kyma_kql::kql_to_sql_with_schemas`] so that KQL
+/// `union` can compute the column superset for outer-by-name semantics.
+pub(crate) fn build_schema_map(tables: &[TableRef]) -> kyma_kql::SchemaMap {
+    tables
+        .iter()
+        .map(|t| {
+            let cols = t.schema.fields().iter().map(|f| f.name().clone()).collect();
+            (t.name.clone(), cols)
+        })
+        .collect()
+}
+
 async fn query_handler(State(state): State<QueryState>, req: Request) -> Response {
     let start = std::time::Instant::now();
     let (parts, body) = req.into_parts();
@@ -393,39 +408,13 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         );
     }
 
-    // Content-Type routing between SQL and KQL frontends.
-    let content_type = headers
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/sql");
-    let (language, sql) = if content_type.starts_with("application/x-kql") {
-        match kyma_kql::kql_to_sql(&raw) {
-            Ok(s) => ("kql", s),
-            Err(e) => {
-                return error_response(
-                    StatusCode::BAD_REQUEST,
-                    "kql_parse_error",
-                    &format!("KQL parse: {e}"),
-                    &request_id,
-                );
-            }
-        }
-    } else {
-        ("sql", raw)
-    };
-
     // Resolve query budget: headers override, else defaults.
     let budget = resolve_query_budget(headers);
-
-    debug!(request_id = %request_id, database = %database, language, sql = %sql,
-        budget_memory = budget.max_memory_bytes,
-        budget_wall_ms = budget.max_wall_clock.as_millis() as u64,
-        "query received");
-    ::metrics::counter!("kyma_query_frontend_total", "lang" => language.to_string()).increment(1);
 
     // 1. Load every table in the database and register them in a fresh
     //    DataFusion SessionContext. This costs one catalog round-trip per
     //    query in phase A; SessionContext-level caching lands later.
+    //    Tables are listed first so KQL `union` can receive the full schema map.
     let tables = match state.catalog.list_tables_in_database(&database).await {
         Ok(t) => t,
         Err(e) => {
@@ -446,6 +435,36 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
             &request_id,
         );
     }
+
+    // Content-Type routing between SQL and KQL frontends.
+    // Build the schema map from the registered tables so `union` can compute
+    // the column superset.
+    let content_type = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/sql");
+    let (language, sql) = if content_type.starts_with("application/x-kql") {
+        let schemas = build_schema_map(&tables);
+        match kyma_kql::kql_to_sql_with_schemas(&raw, &schemas) {
+            Ok(s) => ("kql", s),
+            Err(e) => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "kql_parse_error",
+                    &format!("KQL parse: {e}"),
+                    &request_id,
+                );
+            }
+        }
+    } else {
+        ("sql", raw)
+    };
+
+    debug!(request_id = %request_id, database = %database, language, sql = %sql,
+        budget_memory = budget.max_memory_bytes,
+        budget_wall_ms = budget.max_wall_clock.as_millis() as u64,
+        "query received");
+    ::metrics::counter!("kyma_query_frontend_total", "lang" => language.to_string()).increment(1);
 
     // Build a SessionContext whose memory pool is bounded by the budget.
     let runtime = match RuntimeEnvBuilder::new()
