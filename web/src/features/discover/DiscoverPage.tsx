@@ -151,12 +151,31 @@ export function DiscoverPage({ tabId }: Props) {
               <SourceSection
                 key={s.source}
                 src={s}
+                timeRangeActive={resolveTimeRange(st.timeRange) != null}
                 onOpenRow={(row) => setOpenRow({ source: s.source, row })}
               />
             ))}
           {results.status === "done" && results.sources.size === 0 && (
-            <div className="p-6 text-center text-sm text-muted-foreground">
-              No sources match this scope. Try widening with the Scope picker.
+            <div className="p-6 text-center text-sm text-muted-foreground space-y-2">
+              <div>No data sources match this scope.</div>
+              {st.scope.kind === "all" ? (
+                <div>
+                  Internal sources (agent memory) are hidden by default.{" "}
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 hover:text-foreground"
+                    onClick={() =>
+                      patchDiscover(tabId, {
+                        scope: { kind: "sources", sources: ["memory.*"] },
+                      })
+                    }
+                  >
+                    Search internal sources
+                  </button>
+                </div>
+              ) : (
+                <div>Try widening with the Scope picker.</div>
+              )}
             </div>
           )}
         </main>

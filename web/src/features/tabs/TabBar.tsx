@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { Plus, X, Search, Code } from "lucide-react";
 import { useWorkspace, isTabDirty, type Tab } from "./workspace-store";
 
@@ -14,13 +15,26 @@ function tabTitle(t: Tab): string {
 
 export function TabBar() {
   const { tabs, activeId, setActive, closeTab, newTab } = useWorkspace();
+  const navigate = useNavigate();
+
+  // Tabs span two routes (query ↔ discover). Activating a tab must also move
+  // to the route that renders its kind, or the click appears to do nothing.
+  const activate = (t: Tab) => {
+    setActive(t.id);
+    if (t.kind === "query") {
+      void navigate({ to: "/query", search: { q: undefined } });
+    } else {
+      void navigate({ to: "/discover" });
+    }
+  };
+
   return (
     <div className="flex items-center gap-1 border-b bg-background px-2 py-1 text-xs">
       {tabs.map((t) => {
         const Icon = t.kind === "discover" ? Search : Code;
         return (
           <button key={t.id}
-            onClick={() => setActive(t.id)}
+            onClick={() => activate(t)}
             className={`flex items-center gap-1 rounded px-2 py-1 ${t.id === activeId ? "bg-accent text-accent-foreground" : "hover:bg-accent/40 text-muted-foreground"}`}>
             {isTabDirty(t) && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
             <Icon className="h-3 w-3 opacity-70" />
@@ -30,7 +44,14 @@ export function TabBar() {
           </button>
         );
       })}
-      <button className="rounded p-1 hover:bg-accent/40" onClick={() => newTab({ kind: "query" })} title="New tab (⌘T)">
+      <button
+        className="rounded p-1 hover:bg-accent/40"
+        onClick={() => {
+          newTab({ kind: "query" });
+          void navigate({ to: "/query", search: { q: undefined } });
+        }}
+        title="New tab (⌘T)"
+      >
         <Plus className="h-3.5 w-3.5" />
       </button>
     </div>
