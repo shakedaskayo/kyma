@@ -114,4 +114,23 @@ describe("applyFrame", () => {
     const s = applyFrame(empty(), { type: "done", elapsed_ms: 1 });
     expect(s.status).toBe("done");
   });
+
+  it("live frame after plan sets status to live", () => {
+    let s = applyFrame(empty(), {
+      type: "plan",
+      sources: [{ source: "a.b", has_timestamp: true }],
+    });
+    s = applyFrame(s, { type: "live" });
+    expect(s.status).toBe("live");
+  });
+
+  it("heartbeat frame is a no-op", () => {
+    let s = applyFrame(empty(), {
+      type: "plan",
+      sources: [{ source: "a.b", has_timestamp: false }],
+    });
+    const beforeStatus = s.status;
+    s = applyFrame(s, { type: "heartbeat" });
+    expect(s.status).toBe(beforeStatus);
+  });
 });

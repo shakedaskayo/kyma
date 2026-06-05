@@ -8,7 +8,9 @@ export type Frame =
   | { type: "histogram"; source: string; buckets: { t: string; n: number }[] }
   | { type: "source_done"; source: string; total: number; capped: boolean; dropped_clauses: unknown[] }
   | { type: "error"; source?: string; code: string; message: string }
-  | { type: "done"; elapsed_ms: number };
+  | { type: "done"; elapsed_ms: number }
+  | { type: "live" }
+  | { type: "heartbeat" };
 
 export type Scope =
   | { kind: "all" }

@@ -120,5 +120,12 @@ export function applyFrame(
       next.finishedAt = Date.now();
       return next;
     }
+    case "live": {
+      next.status = "live";
+      return next;
+    }
+    case "heartbeat": {
+      return next;
+    }
   }
 }
