@@ -94,7 +94,7 @@ tonic-web = "0.12"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "stream"] }
 
 # Networking
-axum = { version = "0.7", features = ["macros", "http2"] }
+axum = { version = "0.7", features = ["macros", "http2", "ws"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip", "request-id", "util"] }
 hyper = "1"
