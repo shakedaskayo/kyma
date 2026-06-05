@@ -19,3 +19,15 @@ test("formatSummary while running says searching", () => {
   const s = formatSummary({ sourcesSearched: 2, windowLabel: "last 1h", eventCount: 10, finishedAt: null, status: "running" });
   expect(s).toMatch(/searching/i);
 });
+
+test("formatSummary status live renders · live instead of as of", () => {
+  const s = formatSummary({
+    sourcesSearched: 3,
+    windowLabel: "last 1h",
+    eventCount: 42,
+    finishedAt: Date.parse("2026-06-05T12:04:31Z"),
+    status: "live",
+  });
+  expect(s).toMatch(/· live$/);
+  expect(s).not.toMatch(/as of/);
+});

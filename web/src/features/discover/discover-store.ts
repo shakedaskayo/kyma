@@ -23,6 +23,8 @@ export type DiscoverTabState = {
   columns: string[];
   /** stream = unified timeline; table = plain table of one source. */
   viewMode: "stream" | { table: SourceKey };
+  /** When true, a LiveSession WebSocket is used instead of one-shot POST. */
+  live: boolean;
   results: DiscoverResultsState;
 };
 
@@ -34,6 +36,7 @@ export const initialDiscoverTabState = (): DiscoverTabState => ({
   selectedSource: null,
   columns: [],
   viewMode: "stream",
+  live: false,
   results: { status: "idle", sources: new Map() },
 });
 

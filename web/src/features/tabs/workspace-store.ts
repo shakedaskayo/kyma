@@ -100,6 +100,16 @@ export function migrateWorkspace(persisted: unknown, fromVersion: number): unkno
       };
     });
   }
+  if (fromVersion < 4) {
+    p.state.tabs = (p.state.tabs as Array<Record<string, unknown>>).map((t) => {
+      if (t.kind !== "discover") return t;
+      const st = t.state as Record<string, unknown>;
+      return {
+        ...t,
+        state: { ...st, live: st.live ?? false },
+      };
+    });
+  }
   return persisted;
 }
 
@@ -248,7 +258,7 @@ export const useWorkspace = create<Store>()(
     }),
     {
       name: "kyma.workspace",
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() =>
         typeof window !== "undefined" && window.localStorage
           ? window.localStorage

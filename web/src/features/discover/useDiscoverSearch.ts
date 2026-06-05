@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { searchDiscover, type SearchRequest } from "../../sdk/discover";
+import { LiveSession, type LiveStatus } from "../../sdk/discover-live";
+import { useSession } from "../../sdk/session";
 import { applyFrame } from "./discover-store";
 import type { DiscoverResultsState, Scope } from "./types";
 import type { TimeRange } from "../tabs/workspace-store";
@@ -10,6 +12,7 @@ type Args = {
   timeRange: TimeRange;
   perSourceLimit?: number;
   enabled: boolean;
+  live?: boolean;
 };
 
 const PRESET_MINUTES: Record<string, number> = {
@@ -17,7 +20,7 @@ const PRESET_MINUTES: Record<string, number> = {
   "24h": 1440, "7d": 10080, "30d": 43200,
 };
 
-function resolveTimeRange(t: TimeRange): { from: string; to: string } | null {
+export function resolveTimeRange(t: TimeRange): { from: string; to: string } | null {
   if (t.preset === "custom" && t.from && t.to) return { from: t.from, to: t.to };
   const minutes = PRESET_MINUTES[t.preset];
   if (minutes == null) return null;
@@ -35,7 +38,11 @@ const emptyResults = (): DiscoverResultsState => ({
 
 export function useDiscoverSearch(args: Args) {
   const [results, setResults] = useState<DiscoverResultsState>(emptyResults);
+  const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const liveSessionRef = useRef<LiveSession | null>(null);
+
+  const { endpoint, token } = useSession();
 
   const argsKey = JSON.stringify({
     scope: args.scope,
@@ -44,6 +51,7 @@ export function useDiscoverSearch(args: Args) {
     perSourceLimit: args.perSourceLimit ?? 500,
   });
 
+  // ── one-shot POST path ────────────────────────────────────────────────────
   const run = useCallback(async () => {
     abortRef.current?.abort();
     const ac = new AbortController();
@@ -84,14 +92,84 @@ export function useDiscoverSearch(args: Args) {
     }
   }, [argsKey]);
 
+  // ── live WebSocket path ───────────────────────────────────────────────────
+  const startLive = useCallback(() => {
+    // Tear down any previous session or abort
+    abortRef.current?.abort();
+    if (liveSessionRef.current) {
+      liveSessionRef.current.close();
+      liveSessionRef.current = null;
+    }
+
+    let acc: DiscoverResultsState = {
+      status: "running",
+      sources: new Map(),
+      startedAt: Date.now(),
+    };
+    setResults(acc);
+
+    const body = {
+      query: args.search,
+      scope: args.scope,
+      time_range: resolveTimeRange(args.timeRange),
+      per_source_limit: args.perSourceLimit ?? 500,
+    };
+
+    const session = new LiveSession({
+      endpoint,
+      token,
+      body,
+      onFrame: (frame) => {
+        acc = applyFrame(acc, frame);
+        setResults(acc);
+      },
+      onStatus: (s) => {
+        setLiveStatus(s);
+      },
+    });
+    liveSessionRef.current = session;
+  }, [endpoint, token, argsKey]);
+
+  // ── effect: run or startLive based on the `live` flag ────────────────────
   useEffect(() => {
-    if (args.enabled) void run();
+    if (!args.enabled) return;
+
+    if (args.live) {
+      startLive();
+    } else {
+      void run();
+    }
+
     return () => {
       abortRef.current?.abort();
+      if (liveSessionRef.current) {
+        liveSessionRef.current.close();
+        liveSessionRef.current = null;
+      }
+      setLiveStatus(null);
     };
-  }, [args.enabled, run]);
+  }, [args.enabled, args.live, args.live ? startLive : run]);
 
-  const cancel = useCallback(() => abortRef.current?.abort(), []);
+  // When args change while live (e.g. query edit + Enter), update the session
+  // in-place rather than reconnecting.
+  useEffect(() => {
+    if (!args.enabled || !args.live || !liveSessionRef.current) return;
+    liveSessionRef.current.update({
+      query: args.search,
+      scope: args.scope,
+      time_range: resolveTimeRange(args.timeRange),
+      per_source_limit: args.perSourceLimit ?? 500,
+    });
+  }, [argsKey]);
 
-  return { results, rerun: run, cancel };
+  const cancel = useCallback(() => {
+    abortRef.current?.abort();
+    if (liveSessionRef.current) {
+      liveSessionRef.current.close();
+      liveSessionRef.current = null;
+    }
+    setLiveStatus(null);
+  }, []);
+
+  return { results, rerun: run, cancel, liveStatus };
 }
