@@ -14,6 +14,18 @@ KYMA_CC_DB="${KYMA_CC_DB:-default}"               # firehose target database
 KYMA_CC_TABLE="${KYMA_CC_TABLE:-claude_code_events}"
 KYMA_CC_RECALL_LIMIT="${KYMA_CC_RECALL_LIMIT:-5}"
 KYMA_CC_MAXLEN="${KYMA_CC_MAXLEN:-4000}"          # max bytes of any captured text field
+KYMA_CC_FILE_SYNC="${KYMA_CC_FILE_SYNC:-1}"       # 1 = sync ~/.claude/projects/*/memory files
+# The file phase honors more env knobs (read by `kyma sync`, not these hooks):
+#   KYMA_CC_CURATE=1                  curation + writeback (archive/promote/index)
+#   KYMA_CC_PROMOTE=1                 promote high-value memories to native files
+#   KYMA_CC_PROMOTE_MAX=15            hard cap on managed MEMORY.md entries
+#   KYMA_CC_PROMOTE_MIN_IMPORTANCE=0.6
+#   KYMA_CC_STALE_DAYS=90             LLM stale-review age gate (days)
+#   KYMA_CC_DUP_COSINE=0.97           exact-dup merge threshold
+#   KYMA_CC_QUIET_WINDOW=300          skip writeback if a session was active (s)
+#   KYMA_CC_SYNC_POLL_SECS=30         --watch poll interval
+#   KYMA_CC_SYNC_ON_MCP=1             opportunistic sync at `kyma mcp` startup
+#   KYMA_CC_HOME=~/.claude            Claude Code home override
 
 have() { command -v "$1" >/dev/null 2>&1; }
 

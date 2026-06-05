@@ -47,6 +47,31 @@ claude_code_events
 | order by events desc
 ```
 
+## File-memory sync (Claude Code's `memory/` dirs)
+
+Claude Code keeps its own file-based memory per project
+(`~/.claude/projects/<slug>/memory/`: a `MEMORY.md` index + one `.md` per
+memory). Kyma syncs with it in both directions — automatically, at session
+start/end and at `kyma mcp` startup (plus `kyma sync --watch` for a resident
+loop):
+
+- **Ingest** (files are source of truth): every memory file is embedded and
+  upserted into kyma's memory graph (`[[wikilinks]]` become edges); edits
+  become new versions, deletions archive the node, renames are tracked.
+- **Promote**: high-value kyma memories (importance ≥ 0.6, capped at 15
+  index entries with hysteresis) are written back as native `kyma-*.md`
+  files Claude Code loads — frontmatter-stamped so they never re-ingest.
+- **Curate**: superseded/duplicate/stale files are *archived* to
+  `memory/archive/` with a tombstone (never deleted); `MEMORY.md` gets a
+  surgical `<!-- BEGIN/END kyma-managed -->` region — your own entries are
+  never touched, and files you list yourself are never double-indexed.
+- **Your edits win**: hand-edit a kyma-promoted file and kyma pulls the edit
+  back into the store and stops rewriting that file.
+
+Writeback is atomic (temp+rename), lock-guarded, defers while a session is
+active, and audit-logs every action to `~/.kyma/cc-curation.log`. Try
+`kyma sync --cc-only --dry-run` to see the plan without writing.
+
 ## Slash commands
 
 - `/kyma-recall <query>` — semantic recall from your durable memory.
@@ -70,6 +95,17 @@ All optional — sensible defaults make it work with zero config.
 | `KYMA_CC_RECALL_LIMIT` | `5` | memories injected per recall |
 | `KYMA_CC_MAXLEN` | `4000` | max bytes of any captured text field |
 | `KYMA_CC_NO_REDACT` | unset | set to `1` to disable secret redaction (not recommended) |
+| `KYMA_CC_FILE_SYNC` | `1` | sync Claude Code's `memory/` file dirs |
+| `KYMA_CC_CURATE` | `1` | curation + writeback (archive/promote/index) |
+| `KYMA_CC_PROMOTE` | `1` | promote high-value kyma memories to native files |
+| `KYMA_CC_PROMOTE_MAX` | `15` | hard cap on kyma-managed `MEMORY.md` entries |
+| `KYMA_CC_PROMOTE_MIN_IMPORTANCE` | `0.6` | promotion importance floor |
+| `KYMA_CC_STALE_DAYS` | `90` | LLM stale-review age gate (needs a usable engine) |
+| `KYMA_CC_DUP_COSINE` | `0.97` | duplicate-merge similarity threshold |
+| `KYMA_CC_QUIET_WINDOW` | `300` | seconds a project session blocks writeback |
+| `KYMA_CC_SYNC_POLL_SECS` | `30` | `kyma sync --watch` poll interval |
+| `KYMA_CC_SYNC_ON_MCP` | `1` | opportunistic file sync at `kyma mcp` startup |
+| `KYMA_CC_HOME` | `~/.claude` | Claude Code home override |
 
 ## Privacy
 

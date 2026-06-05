@@ -21,6 +21,13 @@ evt="$(jq -nc --arg ts "$(now_ts)" --arg sid "$sid" --arg realm "$realm" --arg r
   '{ts:$ts,session_id:$sid,realm:$realm,kind:"session_end",reason:$reason}' 2>/dev/null)"
 [ -n "$evt" ] && kyma_emit "$evt"
 
+# Claude Code file-memory sync: ingest any memory files this session wrote,
+# then curate (promote high-value memories into native files + MEMORY.md).
+# Detached and fail-open; the session just ended, so writeback can proceed.
+if [ "$KYMA_CC_FILE_SYNC" = "1" ]; then
+  ( kyma sync --cc-only >/dev/null 2>&1 & ) >/dev/null 2>&1
+fi
+
 [ -n "$tp" ] && [ -f "$tp" ] || exit 0
 
 # Feed a bounded transcript tail to `kyma distill`, fully detached.

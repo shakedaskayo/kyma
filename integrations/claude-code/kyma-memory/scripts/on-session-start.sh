@@ -21,7 +21,14 @@ evt="$(jq -nc \
   2>/dev/null)"
 [ -n "$evt" ] && kyma_emit "$evt"
 
-# 2) recall recap → stdout becomes additional session context
+# 2) Claude Code file-memory sync: pick up memory files edited since the
+#    last session (detached; curation defers to the quiet window while this
+#    session is live, so this is effectively ingest-only). Fail-open.
+if [ "$KYMA_CC_FILE_SYNC" = "1" ] && have kyma; then
+  ( kyma sync --cc-only >/dev/null 2>&1 & ) >/dev/null 2>&1
+fi
+
+# 3) recall recap → stdout becomes additional session context
 [ "$KYMA_CC_AUTO_RECALL" = "1" ] || exit 0
 have kyma || exit 0
 recap="$(kyma recall "open threads, recent decisions, preferences and conventions for the $realm project" \
