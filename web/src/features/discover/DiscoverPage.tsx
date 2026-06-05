@@ -123,7 +123,20 @@ export function DiscoverPage({ tabId }: Props) {
             onSelect={(src) => patchDiscover(tabId, { selectedSource: src })}
             onOpenTable={(src) => patchDiscover(tabId, { viewMode: { table: src } })}
           />
-          <FieldsRail source={selected} onAddPill={addPill} />
+          <FieldsRail
+            source={selected}
+            columns={st.columns ?? []}
+            onToggleColumn={(f) =>
+              patchDiscover(tabId, {
+                columns: st.columns.includes(f)
+                  ? st.columns.filter((c) => c !== f)
+                  : [...st.columns, f],
+              })
+            }
+            onInsertFilter={(text) =>
+              patchDiscover(tabId, { search: (st.search.trim() ? st.search.trim() + " " : "") + text })
+            }
+          />
         </aside>
 
         <main className="flex-1 overflow-auto">
