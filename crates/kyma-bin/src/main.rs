@@ -255,7 +255,6 @@ async fn main() -> Result<()> {
         .map(|v| v != "1" && v != "true")
         .unwrap_or(true);
     let ingest_events = IngestEvents::new(256);
-    // TODO(Task 4): pass `ingest_events.clone()` to the live-tail router when mounting it.
     let write_path: WritePath = if use_staging {
         // Start the commit coordinator so flushes get group-commit squared.
         let coordinator = CommitCoordinator::spawn(catalog.clone(), CoordinatorConfig::from_env());
@@ -276,8 +275,6 @@ async fn main() -> Result<()> {
         info!("ingest staging: disabled (KYMA_STAGING_DISABLED=1)");
         WritePath::new(catalog.clone(), format.clone()).with_events(ingest_events.clone())
     };
-    // Keep ingest_events in scope; it will be consumed by Task 4's router mount.
-    let _ = &ingest_events;
     let ingest_router = kyma_ingest_rest::router(IngestState {
         catalog: catalog.clone(),
         write_path: write_path.clone(),
@@ -376,14 +373,16 @@ async fn main() -> Result<()> {
         mcp_url,
         memory: memory.clone(),
     };
+    // Build the SchemaCache once and share it across the query router, live
+    // router, and flight router via Arc::clone — they all serve the same node
+    // and benefit from a shared schema-doc TTL window.
+    let schema_cache = std::sync::Arc::new(kyma_server::catalog_handler::SchemaCache::from_env());
     let query_router =
         kyma_server::router_with_agent(
             QueryState {
                 catalog: catalog.clone(),
                 format: format.clone(),
-                schema_cache: std::sync::Arc::new(
-                    kyma_server::catalog_handler::SchemaCache::from_env(),
-                ),
+                schema_cache: schema_cache.clone(),
                 node_id: Some(lease.node_id),
                 pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
             },
@@ -636,6 +635,19 @@ async fn main() -> Result<()> {
             require_role_middleware,
         ),
     );
+    // Live-tail WebSocket — mounted WITHOUT auth middleware; the session
+    // authenticates via its first message (browsers can't send WS headers).
+    let live_router = kyma_server::discover::live::explore_live_router(
+        QueryState {
+            catalog: catalog.clone(),
+            format: format.clone(),
+            schema_cache: schema_cache.clone(),
+            node_id: Some(lease.node_id),
+            pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
+        },
+        backend.clone(),
+        Some(ingest_events),
+    );
     let app = ingest_router
         .merge(query_router)
         .merge(mcp_router)
@@ -651,7 +663,8 @@ async fn main() -> Result<()> {
         .merge(oauth_authed_router)
         .merge(oauth_callback_router)
         .merge(auth_login_router)
-        .merge(auth_session_router);
+        .merge(auth_session_router)
+        .merge(live_router);
 
     let app = app.merge(github_repos_router);
     #[cfg(feature = "web-ui")]
@@ -665,9 +678,7 @@ async fn main() -> Result<()> {
             kyma_server::flight_web_router(kyma_server::QueryState {
                 catalog: catalog.clone(),
                 format: format.clone(),
-                schema_cache: std::sync::Arc::new(
-                    kyma_server::catalog_handler::SchemaCache::from_env(),
-                ),
+                schema_cache: schema_cache.clone(),
                 node_id: Some(lease.node_id),
                 pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
             })

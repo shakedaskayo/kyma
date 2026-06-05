@@ -228,40 +228,28 @@ pub async fn run_mcp() -> Result<()> {
     Ok(())
 }
 
-/// `kyma serve` — serve the web UI + full HTTP API on `addr`, over the embedded
-/// catalog (zero infra).
-pub async fn run_serve(addr: SocketAddr) -> Result<()> {
-    kyma_server::agent::identity::set_source("local-serve");
-    let engine = open_engine(&resolve_paths()).await?;
-    let memq = spawn_local_memory_queue(&engine).await;
-    let memory = memq.as_ref().map(|m| m.queue.clone());
-
-    // The web UI requires a sign-in. Seed a local user (default `admin`/`admin`,
-    // override with KYMA_LOCAL_USER / KYMA_LOCAL_PASSWORD) and authenticate via
-    // session tokens stored in the embedded catalog — same machinery as the
-    // server, over SQLite.
-    let user = std::env::var("KYMA_LOCAL_USER").unwrap_or_else(|_| "admin".into());
-    let password = std::env::var("KYMA_LOCAL_PASSWORD").unwrap_or_else(|_| "admin".into());
-    if engine.catalog.count_users().await.unwrap_or(0) == 0 {
-        let phc = kyma_server::auth::passwords::hash_password(&password)
-            .map_err(|e| anyhow::anyhow!("hashing local password: {e}"))?;
-        engine
-            .catalog
-            .create_user(&user, &phc, "admin")
-            .await
-            .context("seeding local user")?;
-        info!(username = %user, "seeded local web-UI user");
-    }
-    let backend: Arc<dyn AuthBackend> = Arc::new(SessionAuthBackend::new(
-        engine.catalog.clone(),
-        EnvAuthBackend::from_env(),
-        true,
-    ));
-
+/// Assemble the complete local-mode axum router from already-opened engine
+/// components.
+///
+/// Exposed for integration tests and for embedding the local server in other
+/// contexts — the returned `Router` is the exact same application that
+/// `run_serve` binds and serves. `run_serve` calls this function and then
+/// performs the socket-binding, signal handling, and background-worker
+/// lifecycle that are not part of router construction.
+///
+/// Also returns the `AgentState` so the caller can start optional background
+/// workers (e.g. the `KYMA_CC_WATCH` watcher) that hold a reference to it.
+pub fn build_local_app(
+    catalog: Arc<dyn kyma_core::catalog::Catalog>,
+    format: Arc<dyn kyma_core::segment_format::SegmentFormat>,
+    backend: Arc<dyn AuthBackend>,
+    memory: Option<kyma_memory::MemoryQueue>,
+) -> (axum::Router, AgentState) {
+    let schema_cache = Arc::new(SchemaCache::from_env());
     let query_state = QueryState {
-        catalog: engine.catalog.clone(),
-        format: engine.format.clone(),
-        schema_cache: Arc::new(SchemaCache::from_env()),
+        catalog: catalog.clone(),
+        format: format.clone(),
+        schema_cache: schema_cache.clone(),
         node_id: None,
         pg_pool: None, // local: no Postgres — pool-only surfaces degrade gracefully
     };
@@ -274,31 +262,27 @@ pub async fn run_serve(addr: SocketAddr) -> Result<()> {
         format!("{base}/.kyma")
     });
     let agent_state = AgentState {
-        catalog: engine.catalog.clone(),
-        format: engine.format.clone(),
+        catalog: catalog.clone(),
+        format: format.clone(),
         pool: None, // local: run/session history not persisted; memory runs over the engine
-        engines: Arc::new(FileEnginePreferenceStore::new(format!(
+        engines: Arc::new(FileEnginePreferenceStore::new(std::format!(
             "{kyma_home}/agent-engine.json"
         ))),
         credentials: Arc::new(NullCredentialStore),
         tenant: kyma_core::tenant::DEFAULT_TENANT,
-        skills: Arc::new(FileEnabledSkillsStore::new(format!(
+        skills: Arc::new(FileEnabledSkillsStore::new(std::format!(
             "{kyma_home}/agent-skills.json"
         ))),
         mcp_url: None,
         memory: memory.clone(),
     };
     let ingest_events = IngestEvents::new(256);
-    // TODO(Task 4): pass `ingest_events.clone()` to the live-tail router when mounting it.
-    let write_path = WritePath::new(engine.catalog.clone(), engine.format.clone())
+    let write_path = WritePath::new(catalog.clone(), format.clone())
         .with_events(ingest_events.clone());
     let ingest_state = IngestState {
-        catalog: engine.catalog.clone(),
+        catalog: catalog.clone(),
         write_path,
     };
-    // Keep ingest_events in scope; it will be consumed by Task 4's router mount.
-    let _ = &ingest_events;
-
     let read_mw = || {
         axum::middleware::from_fn_with_state(
             AuthLayerState {
@@ -335,9 +319,30 @@ pub async fn run_serve(addr: SocketAddr) -> Result<()> {
     // Control-plane-only surfaces (connectors, credentials, OAuth, saved-view
     // writes) are NOT mounted — /v1/capabilities tells clients so, and the
     // SPA fallback 404s unknown /v1/* paths instead of serving HTML.
-    // (agent_state is cloned: the KYMA_CC_WATCH watcher below keeps one.)
+    // (agent_state is cloned: the KYMA_CC_WATCH watcher in run_serve keeps one.)
+    // Build a second QueryState for the live router sharing the same schema_cache.
+    let query_state_for_live = QueryState {
+        catalog: catalog.clone(),
+        format: format.clone(),
+        schema_cache,
+        node_id: None,
+        pg_pool: None,
+    };
+    // Build McpState from the same catalog + format the rest of the app uses.
+    let mcp = McpState {
+        dispatch: ToolDispatch::new(SharedToolCtx {
+            catalog: catalog.clone(),
+            format: format.clone(),
+            pool: None,
+            memory: memory.clone(),
+        }),
+        server_info: ServerInfo {
+            name: "kyma".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+        },
+    };
     let read_router = kyma_server::router_with_agent(query_state, agent_state.clone())
-        .merge(kyma_mcp::router(mcp_state(&engine, memory.clone())))
+        .merge(kyma_mcp::router(mcp))
         .merge(kyma_server::capabilities::router(
             kyma_server::capabilities::Capabilities::LOCAL,
         ))
@@ -345,25 +350,66 @@ pub async fn run_serve(addr: SocketAddr) -> Result<()> {
     let ingest_router = kyma_ingest_rest::router(ingest_state).layer(write_mw());
     // Dashboards + table cleanup write over the Catalog trait — fully
     // supported by the embedded SQLite catalog (the web UI needs them).
-    let local_write_router = kyma_server::dashboards_write_router(engine.catalog.clone())
-        .merge(kyma_server::cleanup_write_router(engine.catalog.clone()))
+    let local_write_router = kyma_server::dashboards_write_router(catalog.clone())
+        .merge(kyma_server::cleanup_write_router(catalog.clone()))
         .layer(write_mw());
     let admin_users_router =
-        kyma_server::admin_handler::admin_users_router(engine.catalog.clone()).layer(admin_mw());
+        kyma_server::admin_handler::admin_users_router(catalog.clone()).layer(admin_mw());
     let session_router =
-        kyma_server::auth_handler::auth_session_router(engine.catalog.clone()).layer(read_mw());
+        kyma_server::auth_handler::auth_session_router(catalog.clone()).layer(read_mw());
 
+    // Live-tail WebSocket — mounted WITHOUT auth middleware; the session
+    // authenticates via its first message (browsers can't send WS headers).
+    let live_router = kyma_server::discover::live::explore_live_router(
+        query_state_for_live,
+        backend.clone(),
+        Some(ingest_events),
+    );
     let app = read_router
         .merge(ingest_router)
         .merge(local_write_router)
         .merge(admin_users_router)
         .merge(session_router)
-        .merge(kyma_server::auth_handler::auth_login_router(
-            engine.catalog.clone(),
-        ))
+        .merge(kyma_server::auth_handler::auth_login_router(catalog.clone()))
         .merge(kyma_server::health_router())
+        .merge(live_router)
         .merge(kyma_server::web_ui::router());
     let app = kyma_server::with_permissive_cors(app);
+    (app, agent_state)
+}
+
+/// `kyma serve` — serve the web UI + full HTTP API on `addr`, over the embedded
+/// catalog (zero infra).
+pub async fn run_serve(addr: SocketAddr) -> Result<()> {
+    kyma_server::agent::identity::set_source("local-serve");
+    let engine = open_engine(&resolve_paths()).await?;
+    let memq = spawn_local_memory_queue(&engine).await;
+    let memory = memq.as_ref().map(|m| m.queue.clone());
+
+    // The web UI requires a sign-in. Seed a local user (default `admin`/`admin`,
+    // override with KYMA_LOCAL_USER / KYMA_LOCAL_PASSWORD) and authenticate via
+    // session tokens stored in the embedded catalog — same machinery as the
+    // server, over SQLite.
+    let user = std::env::var("KYMA_LOCAL_USER").unwrap_or_else(|_| "admin".into());
+    let password = std::env::var("KYMA_LOCAL_PASSWORD").unwrap_or_else(|_| "admin".into());
+    if engine.catalog.count_users().await.unwrap_or(0) == 0 {
+        let phc = kyma_server::auth::passwords::hash_password(&password)
+            .map_err(|e| anyhow::anyhow!("hashing local password: {e}"))?;
+        engine
+            .catalog
+            .create_user(&user, &phc, "admin")
+            .await
+            .context("seeding local user")?;
+        info!(username = %user, "seeded local web-UI user");
+    }
+    let backend: Arc<dyn AuthBackend> = Arc::new(SessionAuthBackend::new(
+        engine.catalog.clone(),
+        EnvAuthBackend::from_env(),
+        true,
+    ));
+
+    let (app, agent_state) =
+        build_local_app(engine.catalog.clone(), engine.format.clone(), backend, memory);
 
     // Optional resident watcher: keep Claude Code file memory synced while
     // the local server runs (opt-in: KYMA_CC_WATCH=1).

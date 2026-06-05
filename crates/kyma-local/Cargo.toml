@@ -34,3 +34,5 @@ uuid.workspace = true
 kyma-embed.workspace = true
 async-trait.workspace = true
 tempfile = "3"
+tower.workspace = true
+object_store.workspace = true
