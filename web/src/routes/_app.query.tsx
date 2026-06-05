@@ -1,4 +1,4 @@
-import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useSearch, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { encodeQueryState, decodeQueryState } from "@/lib/url-state";
 import { useQuery } from "@tanstack/react-query";
@@ -168,16 +168,24 @@ function QueryEditorPage() {
   );
 
   // Sync URL whenever the active tab's query or time range changes.
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   useEffect(() => {
     if (!active) return;
+    // Only sync while we're actually on /query. During a navigation away,
+    // `navigate`'s identity changes and re-fires this effect one last time
+    // while the page is still mounted — without this guard it yanks the
+    // in-flight navigation back to /query (the "can't leave the Query
+    // Editor" bug).
+    if (!pathname.startsWith("/query") && !pathname.startsWith("/explore")) return;
     const encoded = encodeQueryState({
       query: active.state.query,
       preset: active.state.timeRange.preset,
       from: active.state.timeRange.from,
       to: active.state.timeRange.to,
     });
+    if (encoded === q) return; // already in the URL — don't churn history
     navigate({ to: "/query", search: { q: encoded }, replace: true });
-  }, [active, navigate]);
+  }, [active, navigate, pathname, q]);
 
   const status = active?.state.results.kind ?? "idle";
 
