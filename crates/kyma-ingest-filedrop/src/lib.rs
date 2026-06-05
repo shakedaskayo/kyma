@@ -284,7 +284,7 @@ impl FiledropWatcher {
         //    `replayed: true` without writing another extent.
         let ack = self
             .write_path
-            .ingest_with_idempotency(&table_ref, batches, Some(&idem_key))
+            .ingest_with_idempotency(&database, &table_ref, batches, Some(&idem_key))
             .await?;
 
         ::metrics::counter!("kyma_filedrop_objects_processed_total",

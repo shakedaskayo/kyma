@@ -23,7 +23,7 @@ export type SourceState = {
 };
 
 export type DiscoverResultsState = {
-  status: "idle" | "running" | "done" | "error";
+  status: "idle" | "running" | "done" | "error" | "live";
   sources: Map<SourceKey, SourceState>;
   startedAt?: number;
   finishedAt?: number;

@@ -244,7 +244,7 @@ impl LogsService for OtlpLogsService {
         // Route through the same WritePath that REST ingest uses.
         let ack = self
             .write_path
-            .ingest(&table_ref, vec![batch])
+            .ingest(&self.database, &table_ref, vec![batch])
             .await
             .map_err(|e| Status::internal(format!("ingest: {e}")))?;
 

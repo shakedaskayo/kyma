@@ -22,6 +22,7 @@ test("newTab defaults to discover kind", () => {
   expect(t.state.columns).toEqual([]);
   expect(t.state.viewMode).toBe("stream");
   expect(t.state.timeRange.preset).toBe("1h");
+  expect(t.state.live).toBe(false);
 });
 
 test("newTab with kind: query produces a query tab", () => {
@@ -163,6 +164,7 @@ function discoverTab(id: string, search = ""): Tab {
       selectedSource: null,
       columns: [],
       viewMode: "stream",
+      live: false,
       results: { status: "idle", sources: new Map() },
     },
   };
@@ -260,6 +262,34 @@ test("migrateWorkspace is a no-op for v3", () => {
   };
   const migrated = migrateWorkspace(v3, 3);
   expect(migrated).toBe(v3);
+});
+
+test("migrateWorkspace v3→v4 defaults live: false on discover tabs that lack it", () => {
+  const v3 = {
+    state: {
+      tabs: [
+        {
+          id: "d",
+          kind: "discover",
+          state: { scope: { kind: "all" }, search: "q", columns: [], viewMode: "stream" },
+        },
+        {
+          id: "q",
+          kind: "query",
+          state: { title: "q", query: "t | take 1", timeRange: { preset: "1h" }, results: { kind: "idle" }, chart: {}, submittedQuery: null },
+        },
+      ],
+      activeId: "d",
+    },
+  };
+  const migrated = migrateWorkspace(v3, 3) as {
+    state: { tabs: Array<{ id: string; kind: string; state: Record<string, unknown> }> };
+  };
+  const discoverTab = migrated.state.tabs.find((t) => t.id === "d")!;
+  const queryTab = migrated.state.tabs.find((t) => t.id === "q")!;
+  expect(discoverTab.state.live).toBe(false);
+  // query tabs are not touched
+  expect(queryTab.state.live).toBeUndefined();
 });
 
 test("migrateWorkspace v2→v3 folds discover pills into the search text", () => {

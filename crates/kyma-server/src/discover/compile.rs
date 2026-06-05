@@ -36,6 +36,7 @@ pub enum DropReason {
     TypeMismatch,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimeRange {
     pub from_ms: i64,
     pub to_ms: i64,

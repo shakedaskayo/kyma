@@ -17,6 +17,8 @@ export type Capabilities = {
   oauth: boolean;
   saved_views: boolean;
   users_admin: boolean;
+  /** Live-tail WebSocket (`GET /v1/explore/live`). */
+  explore_live: boolean;
 };
 
 export const FULL_CAPABILITIES: Capabilities = {
@@ -26,6 +28,7 @@ export const FULL_CAPABILITIES: Capabilities = {
   oauth: true,
   saved_views: true,
   users_admin: true,
+  explore_live: true,
 };
 
 export async function fetchCapabilities(): Promise<Capabilities> {

@@ -24,8 +24,8 @@ use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use kyma_core::segment_format::SegmentFormat;
 use kyma_format_tlm::TelemetryFormat;
 use kyma_ingest_core::{
-    ensure_table, evolve_schema_for_records, spawn_idempotency_cleanup, CommitCoordinator,
-    CoordinatorConfig, StagingBuffer, StagingConfig, WritePath,
+    ensure_table, events::IngestEvents, evolve_schema_for_records, spawn_idempotency_cleanup,
+    CommitCoordinator, CoordinatorConfig, StagingBuffer, StagingConfig, WritePath,
 };
 use kyma_ingest_filedrop::{FiledropConfig, FiledropWatcher};
 use kyma_ingest_kafka::{KafkaConsumerConfig, KafkaConsumerWorker};
@@ -254,6 +254,7 @@ async fn main() -> Result<()> {
     let use_staging = std::env::var("KYMA_STAGING_DISABLED")
         .map(|v| v != "1" && v != "true")
         .unwrap_or(true);
+    let ingest_events = IngestEvents::new(256);
     let write_path: WritePath = if use_staging {
         // Start the commit coordinator so flushes get group-commit squared.
         let coordinator = CommitCoordinator::spawn(catalog.clone(), CoordinatorConfig::from_env());
@@ -269,9 +270,10 @@ async fn main() -> Result<()> {
         }));
         info!("ingest staging: group-commit enabled");
         WritePath::with_staging(catalog.clone(), format.clone(), staging)
+            .with_events(ingest_events.clone())
     } else {
         info!("ingest staging: disabled (KYMA_STAGING_DISABLED=1)");
-        WritePath::new(catalog.clone(), format.clone())
+        WritePath::new(catalog.clone(), format.clone()).with_events(ingest_events.clone())
     };
     let ingest_router = kyma_ingest_rest::router(IngestState {
         catalog: catalog.clone(),
@@ -371,14 +373,16 @@ async fn main() -> Result<()> {
         mcp_url,
         memory: memory.clone(),
     };
+    // Build the SchemaCache once and share it across the query router, live
+    // router, and flight router via Arc::clone — they all serve the same node
+    // and benefit from a shared schema-doc TTL window.
+    let schema_cache = std::sync::Arc::new(kyma_server::catalog_handler::SchemaCache::from_env());
     let query_router =
         kyma_server::router_with_agent(
             QueryState {
                 catalog: catalog.clone(),
                 format: format.clone(),
-                schema_cache: std::sync::Arc::new(
-                    kyma_server::catalog_handler::SchemaCache::from_env(),
-                ),
+                schema_cache: schema_cache.clone(),
                 node_id: Some(lease.node_id),
                 pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
             },
@@ -461,7 +465,7 @@ async fn main() -> Result<()> {
                         kyma_connectors::arrow_coerce::rows_to_batches(&table.schema, rows)
                             .map_err(|e| anyhow::anyhow!("arrow coerce: {e}"))?;
                     write_path
-                        .ingest_with_idempotency(&table, batches, idem.as_deref())
+                        .ingest_with_idempotency(&db, &table, batches, idem.as_deref())
                         .await
                         .map_err(|e| anyhow::anyhow!("ingest: {e}"))?;
                     Ok(())
@@ -631,6 +635,19 @@ async fn main() -> Result<()> {
             require_role_middleware,
         ),
     );
+    // Live-tail WebSocket — mounted WITHOUT auth middleware; the session
+    // authenticates via its first message (browsers can't send WS headers).
+    let live_router = kyma_server::discover::live::explore_live_router(
+        QueryState {
+            catalog: catalog.clone(),
+            format: format.clone(),
+            schema_cache: schema_cache.clone(),
+            node_id: Some(lease.node_id),
+            pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
+        },
+        backend.clone(),
+        Some(ingest_events),
+    );
     let app = ingest_router
         .merge(query_router)
         .merge(mcp_router)
@@ -646,7 +663,8 @@ async fn main() -> Result<()> {
         .merge(oauth_authed_router)
         .merge(oauth_callback_router)
         .merge(auth_login_router)
-        .merge(auth_session_router);
+        .merge(auth_session_router)
+        .merge(live_router);
 
     let app = app.merge(github_repos_router);
     #[cfg(feature = "web-ui")]
@@ -660,9 +678,7 @@ async fn main() -> Result<()> {
             kyma_server::flight_web_router(kyma_server::QueryState {
                 catalog: catalog.clone(),
                 format: format.clone(),
-                schema_cache: std::sync::Arc::new(
-                    kyma_server::catalog_handler::SchemaCache::from_env(),
-                ),
+                schema_cache: schema_cache.clone(),
                 node_id: Some(lease.node_id),
                 pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
             })

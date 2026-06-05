@@ -39,6 +39,8 @@ pub enum Frame {
     Done {
         elapsed_ms: u64,
     },
+    Live,
+    Heartbeat,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -140,5 +142,13 @@ mod tests {
         assert_eq!(v["type"], "source_done");
         assert_eq!(v["capped"], true);
         assert_eq!(v["dropped_clauses"][0]["reason"], "unknown_field");
+    }
+
+    #[test]
+    fn live_and_heartbeat_frames_serialize() {
+        let v: serde_json::Value = serde_json::from_str(frame_to_line(&Frame::Live).trim()).unwrap();
+        assert_eq!(v["type"], "live");
+        let v: serde_json::Value = serde_json::from_str(frame_to_line(&Frame::Heartbeat).trim()).unwrap();
+        assert_eq!(v["type"], "heartbeat");
     }
 }

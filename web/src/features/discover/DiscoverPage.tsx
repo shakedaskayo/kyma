@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useWorkspace } from "../tabs/workspace-store";
-import type { TimeRange } from "../tabs/workspace-store";
 import { TimeRangePicker } from "@/features/time-range/TimeRangePicker";
 import { ScopePicker } from "./ScopePicker";
 import { QueryBar } from "./QueryBar";
@@ -13,7 +12,7 @@ import { SourceTableView } from "./SourceTableView";
 import { SummaryLine } from "./SummaryLine";
 import { RowDetailDrawer } from "./RowDetailDrawer";
 import { SavedViewsMenu } from "./SavedViewsMenu";
-import { useDiscoverSearch } from "./useDiscoverSearch";
+import { useDiscoverSearch, resolveTimeRange } from "./useDiscoverSearch";
 import { parseSearch, serializePills } from "./discoverGrammar";
 import { compileToKql } from "./compileToKql";
 import { mergeSources } from "./stream";
@@ -21,25 +20,10 @@ import type { Pill } from "./types";
 
 type Props = { tabId: string };
 
-const PRESET_MINUTES: Record<string, number> = {
-  "5m": 5, "15m": 15, "1h": 60, "6h": 360,
-  "24h": 1440, "7d": 10080, "30d": 43200,
-};
 const PRESET_LABEL: Record<string, string> = {
   "5m": "last 5m", "15m": "last 15m", "1h": "last 1h", "6h": "last 6h",
   "24h": "last 24h", "7d": "last 7d", "30d": "last 30d", custom: "custom range",
 };
-
-function resolveTimeRange(t: TimeRange): { from: string; to: string } | null {
-  if (t.preset === "custom" && t.from && t.to) return { from: t.from, to: t.to };
-  const minutes = PRESET_MINUTES[t.preset];
-  if (minutes == null) return null;
-  const now = Date.now();
-  return {
-    from: new Date(now - minutes * 60_000).toISOString(),
-    to: new Date(now).toISOString(),
-  };
-}
 
 export function DiscoverPage({ tabId }: Props) {
   const tab = useWorkspace((s) => s.tabs.find((t) => t.id === tabId));
@@ -53,11 +37,12 @@ export function DiscoverPage({ tabId }: Props) {
   const st = isDiscover ? tab.state : null;
   const [submitted, setSubmitted] = useState(() => st?.search ?? "");
 
-  const { results, cancel } = useDiscoverSearch({
+  const { results, cancel, liveStatus } = useDiscoverSearch({
     search: submitted,
     scope: st?.scope ?? { kind: "all" },
     timeRange: st?.timeRange ?? { preset: "1h" },
     enabled: Boolean(isDiscover),
+    live: st?.live ?? false,
   });
 
   if (!tab || tab.kind !== "discover" || !st) return null;
@@ -97,6 +82,17 @@ export function DiscoverPage({ tabId }: Props) {
     });
   };
 
+  // When live is active, editing query + Enter sends session.update via
+  // changing the submitted state — the hook's argsKey change triggers update().
+  const handleRun = () => {
+    setSubmitted(st.search);
+  };
+
+  const toggleLive = () => {
+    const next = !st.live;
+    patchDiscover(tabId, { live: next });
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Top bar */}
@@ -105,11 +101,23 @@ export function DiscoverPage({ tabId }: Props) {
         <QueryBar
           value={st.search}
           onChange={(v) => patchDiscover(tabId, { search: v })}
-          onRun={() => setSubmitted(st.search)}
+          onRun={handleRun}
           onCancel={cancel}
           running={results.status === "running"}
         />
         <TimeRangePicker value={st.timeRange} onChange={(tr) => patchDiscover(tabId, { timeRange: tr })} />
+
+        {/* Live toggle */}
+        <Button
+          variant={st.live ? "default" : "ghost"}
+          size="sm"
+          onClick={toggleLive}
+          className={st.live ? "text-red-500 border-red-500/50" : "text-muted-foreground"}
+          title={st.live ? "Live mode on — click to stop" : "Start live mode"}
+        >
+          {st.live ? "🔴 Live" : "Live"}
+        </Button>
+
         <SavedViewsMenu currentScope={st.scope} />
         <Button variant="ghost" size="sm" onClick={openInQueryEditor}>
           Open in Query Editor
@@ -122,6 +130,7 @@ export function DiscoverPage({ tabId }: Props) {
         eventCount={streamRows.length}
         finishedAt={results.finishedAt ?? null}
         status={results.status}
+        liveStatus={liveStatus}
       />
 
       <div className="flex flex-1 min-h-0">
@@ -152,13 +161,15 @@ export function DiscoverPage({ tabId }: Props) {
           />
         </aside>
 
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 min-h-0 flex flex-col">
           {tableSrc ? (
-            <SourceTableView
-              src={tableSrc}
-              onBack={() => patchDiscover(tabId, { viewMode: "stream" })}
-              onOpenRow={(row) => setOpenRow({ source: tableSrc.source, row })}
-            />
+            <div className="flex-1 min-h-0 overflow-auto">
+              <SourceTableView
+                src={tableSrc}
+                onBack={() => patchDiscover(tabId, { viewMode: "stream" })}
+                onOpenRow={(row) => setOpenRow({ source: tableSrc.source, row })}
+              />
+            </div>
           ) : (
             <>
               <Histogram
@@ -173,32 +184,35 @@ export function DiscoverPage({ tabId }: Props) {
                   <span className="font-semibold">{results.topError.code}</span>: {results.topError.message}
                 </div>
               )}
-              <StreamView
-                rows={streamRows}
-                sources={results.sources}
-                columns={st.columns}
-                onOpenRow={(source, row) => setOpenRow({ source, row })}
-              />
-              {results.status === "done" && results.sources.size === 0 && (
-                <div className="p-6 text-center text-sm text-muted-foreground space-y-2">
-                  <div>No data sources match this scope.</div>
-                  {st.scope.kind === "all" ? (
-                    <div>
-                      Internal sources (agent memory) are hidden by default.{" "}
-                      <button
-                        type="button"
-                        className="underline underline-offset-2 hover:text-foreground"
-                        onClick={() =>
-                          patchDiscover(tabId, { scope: { kind: "sources", sources: ["memory.*"] } })
-                        }
-                      >
-                        Search internal sources
-                      </button>
-                    </div>
-                  ) : (
-                    <div>Try widening with the Scope picker.</div>
-                  )}
+              {results.status === "done" && results.sources.size === 0 ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="p-6 text-center text-sm text-muted-foreground space-y-2">
+                    <div>No data sources match this scope.</div>
+                    {st.scope.kind === "all" ? (
+                      <div>
+                        Internal sources (agent memory) are hidden by default.{" "}
+                        <button
+                          type="button"
+                          className="underline underline-offset-2 hover:text-foreground"
+                          onClick={() =>
+                            patchDiscover(tabId, { scope: { kind: "sources", sources: ["memory.*"] } })
+                          }
+                        >
+                          Search internal sources
+                        </button>
+                      </div>
+                    ) : (
+                      <div>Try widening with the Scope picker.</div>
+                    )}
+                  </div>
                 </div>
+              ) : (
+                <StreamView
+                  rows={streamRows}
+                  sources={results.sources}
+                  columns={st.columns}
+                  onOpenRow={(source, row) => setOpenRow({ source, row })}
+                />
               )}
             </>
           )}

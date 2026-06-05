@@ -43,7 +43,7 @@ pub struct SearchRequest {
     pub histogram: Option<HistogramBody>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct TimeRangeBody {
     pub from: String,
     pub to: String,
@@ -320,7 +320,7 @@ fn scope_kind_label(s: &Scope) -> &'static str {
 /// Parse a `{from, to}` RFC-3339 pair into a millis range. Rejects ranges
 /// where `to <= from` so downstream compile logic can assume a positive
 /// window.
-fn parse_time_range(tr: &TimeRangeBody) -> Result<TimeRange, String> {
+pub(crate) fn parse_time_range(tr: &TimeRangeBody) -> Result<TimeRange, String> {
     let from = chrono::DateTime::parse_from_rfc3339(&tr.from)
         .map_err(|e| format!("from: {e}"))?
         .timestamp_millis();

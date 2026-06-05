@@ -20,6 +20,8 @@ pub struct Capabilities {
     /// Saved Discover views (write side is Postgres-backed today).
     pub saved_views: bool,
     pub users_admin: bool,
+    /// Live-tail WebSocket (`GET /v1/explore/live`).
+    pub explore_live: bool,
 }
 
 impl Capabilities {
@@ -31,6 +33,7 @@ impl Capabilities {
         oauth: true,
         saved_views: true,
         users_admin: true,
+        explore_live: true,
     };
     /// Local single binary — memory + data + graph + dashboards; connector
     /// and credential management live on the control plane.
@@ -41,10 +44,24 @@ impl Capabilities {
         oauth: false,
         saved_views: false,
         users_admin: true,
+        explore_live: true,
     };
 }
 
 /// Build the capabilities router — caller wraps with auth middleware.
 pub fn router(caps: Capabilities) -> Router {
     Router::new().route("/v1/capabilities", get(move || async move { Json(caps) }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capabilities_serialize_explore_live() {
+        let json = serde_json::to_value(Capabilities::SERVER).unwrap();
+        assert_eq!(json["explore_live"], true);
+        let json = serde_json::to_value(Capabilities::LOCAL).unwrap();
+        assert_eq!(json["explore_live"], true);
+    }
 }

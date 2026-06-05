@@ -217,7 +217,7 @@ async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Respo
 
     match state
         .write_path
-        .ingest_with_idempotency(&table_ref, batches, idempotency_key.as_deref())
+        .ingest_with_idempotency(&database, &table_ref, batches, idempotency_key.as_deref())
         .await
     {
         Ok(ack) => {

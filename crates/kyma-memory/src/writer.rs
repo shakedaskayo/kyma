@@ -295,7 +295,7 @@ impl MemoryWriter {
         let batches = kyma_ingest_core::parse_ndjson(&buf, tref.schema.clone())
             .map_err(|e| MemoryError::Ingest(e.to_string()))?;
         self.write
-            .ingest_with_idempotency(&tref, batches, key)
+            .ingest_with_idempotency(&self.database, &tref, batches, key)
             .await
             .map_err(|e| MemoryError::Write(e.to_string()))?;
         Ok(())
