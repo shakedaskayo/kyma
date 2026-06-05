@@ -44,6 +44,7 @@ pub async fn run(engine: &Engine, cfg: SyncConfig) -> Result<()> {
         catalog: engine.catalog.clone(),
         format: engine.format.clone(),
         pool: None,
+        memory: None,
     };
     let realm_sql = cfg
         .realm
@@ -62,13 +63,11 @@ pub async fn run(engine: &Engine, cfg: SyncConfig) -> Result<()> {
         "WITH latest AS (SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM memory_nodes) \
          SELECT {NODE_COLS} FROM latest WHERE __rn = 1 AND updated_at > '{push_esc}'{realm_sql}"
     );
-    let edges_sql = format!(
-        "SELECT {EDGE_COLS} FROM memory_edges WHERE created_at > '{push_esc}'{realm_sql}"
-    );
+    let edges_sql =
+        format!("SELECT {EDGE_COLS} FROM memory_edges WHERE created_at > '{push_esc}'{realm_sql}");
     let local_nodes = sql_rows(&shared, &nodes_sql).await;
     let local_edges = sql_rows(&shared, &edges_sql).await;
-    let (pushed_n, pushed_e) =
-        push(&client, &base, &cfg, &local_nodes, &local_edges).await?;
+    let (pushed_n, pushed_e) = push(&client, &base, &cfg, &local_nodes, &local_edges).await?;
     // Advance the push watermark even when nothing changed, so the window moves.
     engine.sqlite.set_sync_state(PUSH_WM_KEY, &cfg.now).await?;
 

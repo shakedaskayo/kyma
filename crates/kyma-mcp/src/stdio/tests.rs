@@ -18,13 +18,24 @@ use std::sync::Arc;
 async fn db_free_dispatch() -> (ToolDispatch, ServerInfo) {
     let store = build_object_store(&StorageConfig::Memory).unwrap();
     let format = Arc::new(TelemetryFormat::new(store, "local"));
-    let catalog: Arc<dyn Catalog> =
-        Arc::new(SqliteCatalog::connect_in_memory().await.expect("sqlite catalog"));
+    let catalog: Arc<dyn Catalog> = Arc::new(
+        SqliteCatalog::connect_in_memory()
+            .await
+            .expect("sqlite catalog"),
+    );
     // Local mode: no Postgres pool at all.
-    let shared = SharedToolCtx { catalog, format, pool: None };
+    let shared = SharedToolCtx {
+        catalog,
+        format,
+        pool: None,
+        memory: None,
+    };
     (
         ToolDispatch::new(shared),
-        ServerInfo { name: "kyma".into(), version: "test".into() },
+        ServerInfo {
+            name: "kyma".into(),
+            version: "test".into(),
+        },
     )
 }
 
@@ -64,11 +75,18 @@ async fn initialize_then_tools_list_over_stdio() {
     let tools = out[1]["result"]["tools"].as_array().expect("tools array");
     let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     // The full context-engine toolset is exposed over stdio (query + memory).
-    assert!(names.contains(&"memory_search"), "memory_search present: {names:?}");
+    assert!(
+        names.contains(&"memory_search"),
+        "memory_search present: {names:?}"
+    );
     assert!(names.contains(&"save_memory"));
     assert!(names.contains(&"run_kql"));
     assert!(names.contains(&"graph_traverse"));
-    assert!(tools.len() >= 15, "expected the full toolset, got {}", tools.len());
+    assert!(
+        tools.len() >= 15,
+        "expected the full toolset, got {}",
+        tools.len()
+    );
 }
 
 #[tokio::test]

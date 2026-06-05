@@ -10,6 +10,8 @@ pub enum MemoryError {
     Write(String),
     #[error("ingest: {0}")]
     Ingest(String),
+    #[error("queue: {0}")]
+    Queue(String),
 }
 
 pub type Result<T> = std::result::Result<T, MemoryError>;

@@ -20,12 +20,28 @@ pub struct ServerInfo {
 struct InitializeParams {
     #[serde(rename = "protocolVersion")]
     protocol_version: String,
+    /// The connecting client's advertised identity (e.g. claude-code).
+    #[serde(rename = "clientInfo", default)]
+    client_info: Option<ClientInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClientInfo {
+    name: String,
+    #[serde(default)]
+    version: String,
 }
 
 pub fn handle_initialize(params: Value, server: &ServerInfo) -> Result<Value, ErrorObject> {
     let parsed: InitializeParams = serde_json::from_value(params).map_err(|e| {
         ErrorObject::new(ErrorCode::InvalidParams as i64, format!("initialize: {e}"))
     })?;
+
+    // Record who is connecting — stamped into the provenance of every memory
+    // this client writes (see `kyma_server::agent::identity`).
+    if let Some(ci) = &parsed.client_info {
+        kyma_server::agent::identity::record_client(&ci.name, &ci.version);
+    }
 
     // Echo client's version if matched, otherwise advertise our own.
     let echoed = if parsed.protocol_version == PROTOCOL_VERSION {

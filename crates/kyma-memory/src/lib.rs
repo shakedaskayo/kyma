@@ -11,6 +11,7 @@
 
 pub mod embed;
 pub mod error;
+pub mod ingest;
 pub mod rows;
 pub mod schema;
 pub mod sql;
@@ -19,8 +20,9 @@ mod writer;
 
 pub use embed::{build_embedding_backend, shared_embedding};
 pub use error::{MemoryError, Result};
+pub use ingest::{spawn_memory_queue, MemoryIngestConfig, MemoryOp, MemoryQueue};
 pub use types::{CreateMemory, MemoryStatus, MemoryType, RecallFilter};
-pub use writer::MemoryWriter;
+pub use writer::{redact_create, MemoryWriter};
 
 /// Dedicated database that holds the memory tables.
 pub const DEFAULT_DATABASE: &str = "memory";

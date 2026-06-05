@@ -17,6 +17,7 @@ use crate::types::CreateMemory;
 use crate::{rows, schema, EDGE_TABLE, GRAPH_NAME, NODE_TABLE};
 
 /// Writes memory data and provisions the memory database/tables/graph on demand.
+#[derive(Clone)]
 pub struct MemoryWriter {
     catalog: Arc<dyn Catalog>,
     write: WritePath,
@@ -60,11 +61,21 @@ impl MemoryWriter {
         // Races (two concurrent first-writes) surface as "already exists" — ignore.
         let _ = self
             .catalog
-            .create_table(db_id, NODE_TABLE, schema::memory_nodes_schema(dim), TableConfig::default())
+            .create_table(
+                db_id,
+                NODE_TABLE,
+                schema::memory_nodes_schema(dim),
+                TableConfig::default(),
+            )
             .await;
         let _ = self
             .catalog
-            .create_table(db_id, EDGE_TABLE, schema::memory_edges_schema(), TableConfig::default())
+            .create_table(
+                db_id,
+                EDGE_TABLE,
+                schema::memory_edges_schema(),
+                TableConfig::default(),
+            )
             .await;
 
         let spec = GraphSpec {
@@ -77,7 +88,11 @@ impl MemoryWriter {
             type_col: "type".into(),
             realm_col: Some("realm".into()),
         };
-        if let Err(e) = self.catalog.create_graph(&self.database, GRAPH_NAME, spec).await {
+        if let Err(e) = self
+            .catalog
+            .create_graph(&self.database, GRAPH_NAME, spec)
+            .await
+        {
             let msg = e.to_string();
             if !(msg.contains("exists") || msg.contains("duplicate")) {
                 return Err(MemoryError::Catalog(msg));
@@ -95,7 +110,11 @@ impl MemoryWriter {
             if tref.schema.field_with_name(col).is_ok() {
                 continue;
             }
-            if let Err(e) = self.catalog.alter_table_add_column(tref.id, col, "string").await {
+            if let Err(e) = self
+                .catalog
+                .alter_table_add_column(tref.id, col, "string")
+                .await
+            {
                 let msg = e.to_string();
                 // A concurrent writer may have added it first.
                 if !(msg.contains("exists") || msg.contains("duplicate")) {
@@ -175,7 +194,15 @@ impl MemoryWriter {
     ) -> Result<()> {
         self.ensure_provisioned().await?;
         let now = now_rfc3339();
-        let edge = rows::edge_row(src_node_id, dst_node_id, rel_type, realm, target_namespace, None, &now);
+        let edge = rows::edge_row(
+            src_node_id,
+            dst_node_id,
+            rel_type,
+            realm,
+            target_namespace,
+            None,
+            &now,
+        );
         self.append_rows(EDGE_TABLE, vec![edge]).await
     }
 
@@ -191,19 +218,67 @@ impl MemoryWriter {
         self.append_rows(EDGE_TABLE, edge_rows).await
     }
 
+    /// [`Self::append_node_rows`] with an ingest idempotency key, so a crash
+    /// replay of the same batch is deduped instead of double-applied. Skips
+    /// the per-call provisioning — batch callers provision once per flush.
+    pub async fn append_node_rows_keyed(
+        &self,
+        node_rows: Vec<Value>,
+        key: Option<&str>,
+    ) -> Result<()> {
+        self.append_rows_keyed(NODE_TABLE, node_rows, key).await
+    }
+
+    /// [`Self::append_edge_rows`] with an ingest idempotency key (see
+    /// [`Self::append_node_rows_keyed`]).
+    pub async fn append_edge_rows_keyed(
+        &self,
+        edge_rows: Vec<Value>,
+        key: Option<&str>,
+    ) -> Result<()> {
+        self.append_rows_keyed(EDGE_TABLE, edge_rows, key).await
+    }
+
     /// Embed a single text, returning its vector.
     pub async fn embed_one(&self, text: &str) -> Result<Vec<f32>> {
-        let out = self
-            .embed
-            .embed(&[text.to_string()])
-            .await
-            .map_err(|e| MemoryError::Embed(e.to_string()))?;
+        let out = self.embed_batch(&[text.to_string()]).await?;
         out.into_iter()
             .next()
             .ok_or_else(|| MemoryError::Embed("backend returned no vector".into()))
     }
 
+    /// Embed many texts in one backend call. Order of outputs matches inputs —
+    /// this is the batching point that turns N queued saves into a single
+    /// embedding round-trip.
+    pub async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let out = self
+            .embed
+            .embed(texts)
+            .await
+            .map_err(|e| MemoryError::Embed(e.to_string()))?;
+        if out.len() != texts.len() {
+            return Err(MemoryError::Embed(format!(
+                "backend returned {} vectors for {} texts",
+                out.len(),
+                texts.len()
+            )));
+        }
+        Ok(out)
+    }
+
     async fn append_rows(&self, table: &str, json_rows: Vec<Value>) -> Result<()> {
+        self.append_rows_keyed(table, json_rows, None).await
+    }
+
+    async fn append_rows_keyed(
+        &self,
+        table: &str,
+        json_rows: Vec<Value>,
+        key: Option<&str>,
+    ) -> Result<()> {
         if json_rows.is_empty() {
             return Ok(());
         }
@@ -220,7 +295,7 @@ impl MemoryWriter {
         let batches = kyma_ingest_core::parse_ndjson(&buf, tref.schema.clone())
             .map_err(|e| MemoryError::Ingest(e.to_string()))?;
         self.write
-            .ingest(&tref, batches)
+            .ingest_with_idempotency(&tref, batches, key)
             .await
             .map_err(|e| MemoryError::Write(e.to_string()))?;
         Ok(())
@@ -233,7 +308,11 @@ fn now_rfc3339() -> String {
 
 /// Return a copy of `m` with `<private>…</private>` spans redacted from its
 /// content and title. Cheap clone on the (low-volume) save path.
-fn redact_create(m: &CreateMemory) -> CreateMemory {
+///
+/// Public so the async enqueue path can redact *before* a memory is persisted
+/// to the durable job store — secrets must never reach any store, including
+/// the queue.
+pub fn redact_create(m: &CreateMemory) -> CreateMemory {
     let mut out = m.clone();
     out.content = redact_private(&m.content);
     out.title = m.title.as_deref().map(redact_private);
@@ -284,7 +363,10 @@ mod redact_tests {
 
     #[test]
     fn unclosed_private_drops_tail() {
-        assert_eq!(redact_private("safe <PRIVATE>secret tail"), "safe [redacted]");
+        assert_eq!(
+            redact_private("safe <PRIVATE>secret tail"),
+            "safe [redacted]"
+        );
     }
 
     #[test]

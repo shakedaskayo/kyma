@@ -19,10 +19,10 @@ use kyma_connectors::registry::ConnectorRegistry;
 use kyma_connectors::runner::ConnectorRunner;
 use kyma_connectors::scheduler::ConnectorScheduler;
 use kyma_connectors::secrets::EnvSecretStore;
+use kyma_core::catalog::GraphSpec;
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use kyma_core::segment_format::SegmentFormat;
 use kyma_format_tlm::TelemetryFormat;
-use kyma_core::catalog::GraphSpec;
 use kyma_ingest_core::{
     ensure_table, evolve_schema_for_records, spawn_idempotency_cleanup, CommitCoordinator,
     CoordinatorConfig, StagingBuffer, StagingConfig, WritePath,
@@ -132,10 +132,14 @@ async fn main() -> Result<()> {
                 }
             }
             (Some(_), None) => {
-                warn!("KYMA_ADMIN_USER is set but KYMA_ADMIN_PASSWORD is not — skipping admin seed");
+                warn!(
+                    "KYMA_ADMIN_USER is set but KYMA_ADMIN_PASSWORD is not — skipping admin seed"
+                );
             }
             (None, Some(_)) => {
-                warn!("KYMA_ADMIN_PASSWORD is set but KYMA_ADMIN_USER is not — skipping admin seed");
+                warn!(
+                    "KYMA_ADMIN_PASSWORD is set but KYMA_ADMIN_USER is not — skipping admin seed"
+                );
             }
             (None, None) => {
                 // Neither set — no seeding requested, this is fine.
@@ -193,10 +197,7 @@ async fn main() -> Result<()> {
         .context("counting users for backend selection")?
         > 0;
 
-    let backend: Arc<dyn AuthBackend> = match std::env::var("KYMA_AUTH_BACKEND")
-        .ok()
-        .as_deref()
-    {
+    let backend: Arc<dyn AuthBackend> = match std::env::var("KYMA_AUTH_BACKEND").ok().as_deref() {
         #[cfg(feature = "cloud-auth")]
         Some("db") => {
             use kyma_server::auth::DbAuthBackend;
@@ -224,9 +225,7 @@ async fn main() -> Result<()> {
             ))
         }
         Some(other) if !other.is_empty() => {
-            warn!(
-                "KYMA_AUTH_BACKEND={other:?} unrecognized; using SessionAuthBackend."
-            );
+            warn!("KYMA_AUTH_BACKEND={other:?} unrecognized; using SessionAuthBackend.");
             Arc::new(kyma_server::auth::SessionAuthBackend::new(
                 catalog.clone(),
                 EnvAuthBackend::from_env(),
@@ -301,9 +300,9 @@ async fn main() -> Result<()> {
         kyma_server::agent::engine::PgEnginePreferenceStore::new(pg_pool.clone()),
     );
 
-    let skills_store = std::sync::Arc::new(
-        kyma_server::agent::skills::PgEnabledSkillsStore::new(pg_pool.clone()),
-    );
+    let skills_store = std::sync::Arc::new(kyma_server::agent::skills::PgEnabledSkillsStore::new(
+        pg_pool.clone(),
+    ));
     // Loopback URL of our own MCP endpoint, handed to the Claude CLI engine so
     // the agent can query the user's data via `--mcp-config`. Defaults to the
     // HTTP bind address (mapping a wildcard host to loopback); override with
@@ -324,6 +323,43 @@ async fn main() -> Result<()> {
         info!(url = %url, "agent: Claude CLI engine will reach data tools via MCP");
     }
 
+    // Async memory ingest queue — memory write tools ack immediately and a
+    // background worker lands batched embeds + group commits. Durable by
+    // default on the server: pending saves ride the catalog's background-task
+    // store and replay after a crash. KYMA_MEMORY_ASYNC=0 restores fully
+    // synchronous writes.
+    kyma_server::agent::identity::set_source("server");
+    let memory_async = std::env::var("KYMA_MEMORY_ASYNC")
+        .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(true);
+    let memory_queue = if memory_async {
+        match kyma_memory::shared_embedding().await {
+            Ok(embed) => {
+                let cfg = kyma_memory::MemoryIngestConfig::from_env(true);
+                let mut mem_rx = shutdown_tx.subscribe();
+                let (q, handle) = kyma_memory::spawn_memory_queue(
+                    catalog.clone(),
+                    format.clone(),
+                    embed,
+                    cfg,
+                    async move {
+                        let _ = mem_rx.recv().await;
+                    },
+                );
+                info!("async memory ingest queue started (durable, batched)");
+                Some((q, handle))
+            }
+            Err(e) => {
+                warn!(error = %e, "embedding backend unavailable; memory writes stay synchronous");
+                None
+            }
+        }
+    } else {
+        info!("KYMA_MEMORY_ASYNC=0 — memory writes are synchronous");
+        None
+    };
+    let memory = memory_queue.as_ref().map(|(q, _)| q.clone());
+
     let agent_state = kyma_server::agent::AgentState {
         catalog: catalog.clone(),
         format: format.clone(),
@@ -333,6 +369,7 @@ async fn main() -> Result<()> {
         tenant: kyma_core::tenant::DEFAULT_TENANT,
         skills: skills_store,
         mcp_url,
+        memory: memory.clone(),
     };
     let query_router =
         kyma_server::router_with_agent(
@@ -360,6 +397,7 @@ async fn main() -> Result<()> {
         catalog: catalog.clone(),
         format: format.clone(),
         pool: Some(pg_pool.clone()),
+        memory: memory.clone(),
     };
     let mcp_state = kyma_mcp::McpState {
         dispatch: kyma_mcp::ToolDispatch::new(mcp_shared),
@@ -368,12 +406,13 @@ async fn main() -> Result<()> {
             version: env!("CARGO_PKG_VERSION").into(),
         },
     };
-    let mcp_router = kyma_mcp::router(mcp_state).layer(
-        axum::middleware::from_fn_with_state(
-            AuthLayerState { backend: backend.clone(), required: Role::Read },
-            require_role_middleware,
-        ),
-    );
+    let mcp_router = kyma_mcp::router(mcp_state).layer(axum::middleware::from_fn_with_state(
+        AuthLayerState {
+            backend: backend.clone(),
+            required: Role::Read,
+        },
+        require_role_middleware,
+    ));
     // Connector registry + row-sink.
     let mut conn_reg = ConnectorRegistry::new();
     conn_reg.register(Arc::new(PromConnector));
@@ -435,34 +474,30 @@ async fn main() -> Result<()> {
     // property-graph binding in the catalog after multi-table ingest.
     let graph_register: kyma_connectors::runner::GraphRegisterFn = {
         let catalog_for_graph = catalog.clone();
-        Arc::new(
-            move |db: String, hint: kyma_connectors::GraphHint| {
-                let catalog = catalog_for_graph.clone();
-                Box::pin(async move {
-                    let spec = GraphSpec::with_defaults(
-                        hint.node_table.clone(),
-                        hint.edge_table.clone(),
-                    );
-                    match catalog.create_graph(&db, &hint.graph_name, spec).await {
-                        Ok(_) => {}
-                        Err(e) => {
-                            // Swallow "already exists" — the graph was registered
-                            // on a previous tick; nothing to do.
-                            let msg = e.to_string();
-                            if msg.contains("already exists")
-                                || msg.contains("duplicate")
-                                || msg.contains("23505")
-                            {
-                                // idempotent — ignore
-                            } else {
-                                return Err(anyhow::anyhow!("create_graph: {msg}"));
-                            }
+        Arc::new(move |db: String, hint: kyma_connectors::GraphHint| {
+            let catalog = catalog_for_graph.clone();
+            Box::pin(async move {
+                let spec =
+                    GraphSpec::with_defaults(hint.node_table.clone(), hint.edge_table.clone());
+                match catalog.create_graph(&db, &hint.graph_name, spec).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        // Swallow "already exists" — the graph was registered
+                        // on a previous tick; nothing to do.
+                        let msg = e.to_string();
+                        if msg.contains("already exists")
+                            || msg.contains("duplicate")
+                            || msg.contains("23505")
+                        {
+                            // idempotent — ignore
+                        } else {
+                            return Err(anyhow::anyhow!("create_graph: {msg}"));
                         }
                     }
-                    Ok(())
-                })
-            },
-        )
+                }
+                Ok(())
+            })
+        })
     };
 
     let health_router = kyma_server::health_router();
@@ -483,7 +518,9 @@ async fn main() -> Result<()> {
     // AgentState wiring). Kept here so the router-mounting block stays
     // logically together.
     let credentials_router = kyma_server::credentials_handler::router(
-        kyma_server::credentials_handler::CredentialsState { store: cred_store.clone() },
+        kyma_server::credentials_handler::CredentialsState {
+            store: cred_store.clone(),
+        },
     )
     .layer(axum::middleware::from_fn_with_state(
         AuthLayerState {
@@ -500,8 +537,8 @@ async fn main() -> Result<()> {
     // bring-your-own creds; tokens land in the encrypted credentials store.
     let oauth_redirect_base = std::env::var("KYMA_OAUTH_REDIRECT_BASE")
         .unwrap_or_else(|_| "http://localhost:8080".to_string());
-    let oauth_ui_return_base = std::env::var("KYMA_OAUTH_UI_RETURN_BASE")
-        .unwrap_or_else(|_| oauth_redirect_base.clone());
+    let oauth_ui_return_base =
+        std::env::var("KYMA_OAUTH_UI_RETURN_BASE").unwrap_or_else(|_| oauth_redirect_base.clone());
     let oauth_state = kyma_server::OAuthState::new(
         pg_pool.clone(),
         cred_store.clone(),
@@ -534,27 +571,26 @@ async fn main() -> Result<()> {
             ),
         )
     };
-    let dashboards_write_router =
-        kyma_server::dashboards_write_router(catalog.clone()).layer(
-            axum::middleware::from_fn_with_state(
-                AuthLayerState {
-                    backend: backend.clone(),
-                    required: Role::Write,
-                },
-                require_role_middleware,
-            ),
-        );
+    let dashboards_write_router = kyma_server::dashboards_write_router(catalog.clone()).layer(
+        axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Write,
+            },
+            require_role_middleware,
+        ),
+    );
     // Saved-views CRUD (write side) — list endpoint is on the read router.
-    let discover_views_write_router =
-        kyma_server::discover_views_write_router(std::sync::Arc::new(pg_pool.clone())).layer(
-            axum::middleware::from_fn_with_state(
-                AuthLayerState {
-                    backend: backend.clone(),
-                    required: Role::Write,
-                },
-                require_role_middleware,
-            ),
-        );
+    let discover_views_write_router = kyma_server::discover_views_write_router(
+        std::sync::Arc::new(pg_pool.clone()),
+    )
+    .layer(axum::middleware::from_fn_with_state(
+        AuthLayerState {
+            backend: backend.clone(),
+            required: Role::Write,
+        },
+        require_role_middleware,
+    ));
     let cleanup_write_router = kyma_server::cleanup_write_router(catalog.clone()).layer(
         axum::middleware::from_fn_with_state(
             AuthLayerState {
@@ -565,29 +601,25 @@ async fn main() -> Result<()> {
         ),
     );
     // Auth routes: login is unauthenticated; me/logout are authenticated.
-    let auth_login_router =
-        kyma_server::auth_handler::auth_login_router(catalog.clone());
-    let auth_session_router =
-        kyma_server::auth_handler::auth_session_router(catalog.clone()).layer(
-            axum::middleware::from_fn_with_state(
-                AuthLayerState {
-                    backend: backend.clone(),
-                    required: Role::Read,
-                },
-                require_role_middleware,
-            ),
-        );
+    let auth_login_router = kyma_server::auth_handler::auth_login_router(catalog.clone());
+    let auth_session_router = kyma_server::auth_handler::auth_session_router(catalog.clone())
+        .layer(axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Read,
+            },
+            require_role_middleware,
+        ));
     // Admin user management (/v1/admin/users) — gated at Role::Admin.
-    let admin_users_router =
-        kyma_server::admin_handler::admin_users_router(catalog.clone()).layer(
-            axum::middleware::from_fn_with_state(
-                AuthLayerState {
-                    backend: backend.clone(),
-                    required: Role::Admin,
-                },
-                require_role_middleware,
-            ),
-        );
+    let admin_users_router = kyma_server::admin_handler::admin_users_router(catalog.clone()).layer(
+        axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Admin,
+            },
+            require_role_middleware,
+        ),
+    );
     let app = ingest_router
         .merge(query_router)
         .merge(mcp_router)
@@ -707,6 +739,7 @@ async fn main() -> Result<()> {
                 catalog: catalog.clone(),
                 format: format.clone(),
                 pool: Some(pg_pool.clone()),
+                memory: memory.clone(),
             },
             pg_pool.clone(),
             kyma_core::tenant::DEFAULT_TENANT,
@@ -889,6 +922,15 @@ async fn main() -> Result<()> {
         error!(error = %e, "http server terminated with error");
     }
 
+    // Land queued memory writes first — explicit saves must commit before the
+    // process winds down (the worker's shutdown pass also drains, but this is
+    // the earlier, bounded hook).
+    if let Some((q, _)) = &memory_queue {
+        info!("draining memory ingest queue");
+        let _ = q.drain(std::time::Duration::from_secs(30)).await;
+        info!("memory ingest queue drained");
+    }
+
     // Explicitly drain the staging buffer now that HTTP is no longer accepting
     // new ingest requests. This ensures partially-flushed batches are committed
     // before we wind down background workers. The staging timer also drains on
@@ -921,6 +963,9 @@ async fn main() -> Result<()> {
     let _ = gc_handle.await;
     let _ = conn_sched_handle.await;
     let _ = idem_cleanup_handle.await;
+    if let Some((_, h)) = memory_queue {
+        let _ = h.await;
+    }
     for h in conn_runner_handles {
         let _ = h.await;
     }

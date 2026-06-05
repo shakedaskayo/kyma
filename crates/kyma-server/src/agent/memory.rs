@@ -63,6 +63,7 @@ fn shared_from(state: &AgentState) -> SharedToolCtx {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
+        memory: state.memory.clone(),
     }
 }
 
@@ -97,7 +98,8 @@ async fn memory_section(shared: &SharedToolCtx) -> Value {
 async fn firehose_section(shared: &SharedToolCtx) -> Value {
     let by_kind =
         "SELECT kind, count(*) AS n FROM claude_code_events GROUP BY kind ORDER BY n DESC";
-    let timeline = "SELECT date_bin(INTERVAL '1 hour', ts, TIMESTAMP '1970-01-01 00:00:00') AS bucket, \
+    let timeline =
+        "SELECT date_bin(INTERVAL '1 hour', ts, TIMESTAMP '1970-01-01 00:00:00') AS bucket, \
         count(*) AS n FROM claude_code_events GROUP BY bucket ORDER BY bucket";
     let sessions = "SELECT session_id, max(realm) AS realm, count(*) AS events, \
         min(ts) AS first_seen, max(ts) AS last_seen FROM claude_code_events \
@@ -114,7 +116,9 @@ async fn firehose_section(shared: &SharedToolCtx) -> Value {
 
 #[allow(clippy::type_complexity)]
 async fn runs_section(pool: Option<&PgPool>, tenant: TenantId) -> Value {
-    let Some(pool) = pool else { return Value::Array(vec![]) }; // local: no pipeline runs
+    let Some(pool) = pool else {
+        return Value::Array(vec![]);
+    }; // local: no pipeline runs
     let rows = sqlx::query_as::<
         _,
         (
@@ -321,7 +325,11 @@ impl MemoryConsolidator {
         Ok(())
     }
 
-    async fn consolidate(&self, realms: &[Value], ts_filter: &str) -> anyhow::Result<ConsolidateOutcome> {
+    async fn consolidate(
+        &self,
+        realms: &[Value],
+        ts_filter: &str,
+    ) -> anyhow::Result<ConsolidateOutcome> {
         let writer = build_writer(&self.shared).await?;
         let _ = writer.ensure_provisioned().await;
         let settings = memory_settings::load(Some(&self.pool), self.tenant).await;
@@ -332,7 +340,12 @@ impl MemoryConsolidator {
             None
         };
         let mut out = ConsolidateOutcome {
-            mode: if engine.is_some() { "extraction" } else { "deterministic" }.to_string(),
+            mode: if engine.is_some() {
+                "extraction"
+            } else {
+                "deterministic"
+            }
+            .to_string(),
             ..Default::default()
         };
         for r in realms {
@@ -501,10 +514,11 @@ impl MemoryConsolidator {
             "SELECT DISTINCT tool_name FROM claude_code_events {realm_clause} \
              AND tool_name IS NOT NULL AND tool_name <> '' LIMIT 12"
         );
-        let tools: Vec<String> = rows_of(&execute_sql(&self.shared, FIREHOSE_DB, &tools_sql, 12).await)
-            .iter()
-            .filter_map(|r| r.get("tool_name").and_then(Value::as_str).map(String::from))
-            .collect();
+        let tools: Vec<String> =
+            rows_of(&execute_sql(&self.shared, FIREHOSE_DB, &tools_sql, 12).await)
+                .iter()
+                .filter_map(|r| r.get("tool_name").and_then(Value::as_str).map(String::from))
+                .collect();
         let prompts_sql = format!(
             "SELECT text FROM claude_code_events {realm_clause} AND kind = 'user_prompt' \
              AND text IS NOT NULL AND text <> '' ORDER BY ts DESC LIMIT 3"

@@ -14,18 +14,34 @@ async fn list_returns_all_named_tools() {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: Some(pool),
+        memory: None,
     };
     let dispatch = ToolDispatch::new(shared);
     let listed = dispatch.list();
     let names: Vec<_> = listed.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names.len(), 19);
+    assert_eq!(names.len(), 21);
     for expected in [
-        "list_databases", "describe_table", "run_sql", "run_kql",
-        "sample_rows", "explore_schema", "find_references_to", "graph_traverse",
-        "memory_search", "recall_memory", "save_memory", "list_memories",
-        "link_memory_to_entity", "ingest_entity", "update_memory_status",
-        "update_memory_importance", "memory_compare", "memory_judge",
+        "list_databases",
+        "describe_table",
+        "run_sql",
+        "run_kql",
+        "sample_rows",
+        "explore_schema",
+        "find_references_to",
+        "graph_traverse",
+        "memory_search",
+        "recall_memory",
+        "save_memory",
+        "list_memories",
+        "link_memory_to_entity",
+        "ingest_entity",
+        "update_memory_status",
+        "update_memory_importance",
+        "memory_compare",
+        "memory_judge",
         "memory_session_summary",
+        "save_memories",
+        "flush_memory",
     ] {
         assert!(names.contains(&expected), "missing tool: {expected}");
     }
@@ -43,6 +59,7 @@ async fn list_entries_have_inputschema_objects() {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: Some(pool),
+        memory: None,
     };
     let dispatch = ToolDispatch::new(shared);
     for tool in dispatch.list() {

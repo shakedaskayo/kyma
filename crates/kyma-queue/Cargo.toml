@@ -1,29 +1,23 @@
 [package]
-name = "kyma-memory"
+name = "kyma-queue"
 version.workspace = true
 edition = "2021"
 license.workspace = true
 repository.workspace = true
-description = "kyma agentic memory: bi-temporal knowledge graph with hybrid (vector + keyword + graph) recall."
+description = "kyma internal queueing + worker coordination: batched in-memory or catalog-durable job queues with flush barriers."
 
 [dependencies]
 kyma-core = { workspace = true }
-kyma-ingest-core = { workspace = true }
-kyma-embed = { workspace = true }
-kyma-queue = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-arrow-schema = { workspace = true }
-sqlx = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+metrics = { workspace = true }
+fastrand = { workspace = true }
 
 [dev-dependencies]
 kyma-catalog-sqlite = { workspace = true }
-kyma-format-tlm = { workspace = true }
-kyma-storage = { workspace = true }

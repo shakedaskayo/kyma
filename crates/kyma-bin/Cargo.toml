@@ -26,6 +26,7 @@ kyma-ingest-filedrop.workspace = true
 kyma-ingest-otlp.workspace = true
 kyma-ingest-kafka.workspace = true
 kyma-mcp.workspace = true
+kyma-memory.workspace = true
 kyma-plan.workspace = true
 kyma-kql.workspace = true
 kyma-exec.workspace = true

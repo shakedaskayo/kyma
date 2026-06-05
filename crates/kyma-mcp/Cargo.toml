@@ -35,5 +35,11 @@ reqwest = { workspace = true }
 # DB-free fixtures for the stdio framing test (embedded catalog + in-mem store).
 kyma-catalog-sqlite = { workspace = true }
 kyma-format-tlm = { workspace = true }
+# Async-memory e2e: real queue over the embedded catalog + a mock embedder.
+kyma-memory = { workspace = true }
+kyma-queue = { workspace = true }
+kyma-embed = { workspace = true }
 kyma-storage = { workspace = true }
 kyma-core = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true }
