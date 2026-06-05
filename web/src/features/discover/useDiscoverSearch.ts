@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { searchDiscover, type SearchRequest } from "../../sdk/discover";
 import { applyFrame } from "./discover-store";
-import { serializePills } from "./discoverGrammar";
-import type { DiscoverResultsState, Pill, Scope } from "./types";
+import type { DiscoverResultsState, Scope } from "./types";
 import type { TimeRange } from "../tabs/workspace-store";
 
 type Args = {
+  search: string;
   scope: Scope;
-  pills: Pill[];
   timeRange: TimeRange;
   perSourceLimit?: number;
   enabled: boolean;
@@ -40,7 +39,7 @@ export function useDiscoverSearch(args: Args) {
 
   const argsKey = JSON.stringify({
     scope: args.scope,
-    pills: args.pills,
+    search: args.search,
     timeRange: args.timeRange,
     perSourceLimit: args.perSourceLimit ?? 500,
   });
@@ -58,7 +57,7 @@ export function useDiscoverSearch(args: Args) {
     setResults(acc);
 
     const req: SearchRequest = {
-      query: serializePills(args.pills),
+      query: args.search,
       scope: args.scope,
       time_range: resolveTimeRange(args.timeRange),
       per_source_limit: args.perSourceLimit ?? 500,

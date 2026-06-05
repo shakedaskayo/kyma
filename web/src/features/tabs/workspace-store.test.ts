@@ -19,7 +19,8 @@ test("newTab defaults to discover kind", () => {
   if (t.kind !== "discover") throw new Error("type narrowing");
   expect(t.state.scope.kind).toBe("all");
   expect(t.state.search).toBe("");
-  expect(t.state.pills).toEqual([]);
+  expect(t.state.columns).toEqual([]);
+  expect(t.state.viewMode).toBe("stream");
   expect(t.state.timeRange.preset).toBe("1h");
 });
 
@@ -157,10 +158,11 @@ function discoverTab(id: string, search = ""): Tab {
     state: {
       scope: { kind: "all" },
       search,
-      pills: [],
       timeRange: { preset: "1h" },
       visibleSources: null,
       selectedSource: null,
+      columns: [],
+      viewMode: "stream",
       results: { status: "idle", sources: new Map() },
     },
   };
@@ -213,7 +215,7 @@ test("findMatchingQueryTab returns undefined when query or range differ", () => 
   expect(findMatchingQueryTab(tabs, "t2 | take 50", { preset: "6h" })).toBeUndefined();
 });
 
-test("migrateWorkspace is a no-op for v2", () => {
+test("migrateWorkspace v2→v3 applies defaults to a discover tab with no pills", () => {
   const v2 = {
     state: {
       tabs: [
@@ -222,6 +224,74 @@ test("migrateWorkspace is a no-op for v2", () => {
       activeId: "x",
     },
   };
-  const migrated = migrateWorkspace(v2, 2);
-  expect(migrated).toBe(v2);
+  const migrated = migrateWorkspace(v2, 2) as {
+    state: { tabs: Array<{ state: Record<string, unknown> }> };
+  };
+  const st = migrated.state.tabs[0].state;
+  expect(st.pills).toBeUndefined();
+  expect(st.columns).toEqual([]);
+  expect(st.viewMode).toBe("stream");
+  expect(st.search).toBe("");
+});
+
+test("migrateWorkspace keeps a typed-but-unsubmitted v2 search", () => {
+  const v2 = {
+    state: {
+      tabs: [
+        { id: "x", kind: "discover", state: { scope: { kind: "all" }, search: "draft only", pills: [] } },
+      ],
+      activeId: "x",
+    },
+  };
+  const migrated = migrateWorkspace(v2, 2) as {
+    state: { tabs: Array<{ state: Record<string, unknown> }> };
+  };
+  expect(migrated.state.tabs[0].state.search).toBe("draft only");
+});
+
+test("migrateWorkspace is a no-op for v3", () => {
+  const v3 = {
+    state: {
+      tabs: [
+        { id: "x", kind: "discover", state: { scope: { kind: "all" }, search: "q", columns: [], viewMode: "stream" } },
+      ],
+      activeId: "x",
+    },
+  };
+  const migrated = migrateWorkspace(v3, 3);
+  expect(migrated).toBe(v3);
+});
+
+test("migrateWorkspace v2→v3 folds discover pills into the search text", () => {
+  const v2 = {
+    state: {
+      tabs: [
+        {
+          id: "d",
+          kind: "discover",
+          state: {
+            scope: { kind: "all" },
+            search: "draft text",
+            pills: [
+              { kind: "substring", value: "auth" },
+              { kind: "eq", field: "service", value: "payments" },
+            ],
+            timeRange: { preset: "1h" },
+            visibleSources: null,
+            selectedSource: null,
+            results: { status: "idle", sources: new Map() },
+          },
+        },
+      ],
+      activeId: "d",
+    },
+  };
+  const m = migrateWorkspace(v2, 2) as {
+    state: { tabs: Array<{ state: { search: string; pills?: unknown; columns: string[]; viewMode: string } }> };
+  };
+  const st = m.state.tabs[0].state;
+  expect(st.search).toBe("auth service:payments draft text");
+  expect(st.pills).toBeUndefined();
+  expect(st.columns).toEqual([]);
+  expect(st.viewMode).toBe("stream");
 });

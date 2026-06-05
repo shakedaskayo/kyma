@@ -5,7 +5,6 @@ import type { TimeRange } from "../tabs/workspace-store";
 import { TimeRangePicker } from "@/features/time-range/TimeRangePicker";
 import { ScopePicker } from "./ScopePicker";
 import { SearchBar } from "./SearchBar";
-import { FilterPills } from "./FilterPills";
 import { SourcesRail } from "./SourcesRail";
 import { FieldsRail } from "./FieldsRail";
 import { Histogram } from "./Histogram";
@@ -13,7 +12,7 @@ import { SourceSection } from "./SourceSection";
 import { RowDetailDrawer } from "./RowDetailDrawer";
 import { SavedViewsMenu } from "./SavedViewsMenu";
 import { useDiscoverSearch } from "./useDiscoverSearch";
-import { parseSearch } from "./discoverGrammar";
+import { parseSearch, serializePills } from "./discoverGrammar";
 import { compileToKql } from "./compileToKql";
 import type { Pill } from "./types";
 
@@ -48,8 +47,8 @@ export function DiscoverPage({ tabId }: Props) {
   const st = isDiscover ? tab.state : null;
 
   const { results, cancel } = useDiscoverSearch({
+    search: st?.search ?? "",
     scope: st?.scope ?? { kind: "all" },
-    pills: st?.pills ?? [],
     timeRange: st?.timeRange ?? { preset: "1h" },
     enabled: Boolean(isDiscover),
   });
@@ -58,29 +57,18 @@ export function DiscoverPage({ tabId }: Props) {
 
   const selected = st.selectedSource ? results.sources.get(st.selectedSource) ?? null : null;
 
-  const submit = () => {
-    if (!st.search.trim()) return;
-    try {
-      const fresh = parseSearch(st.search);
-      patchDiscover(tabId, { pills: [...st.pills, ...fresh], search: "" });
-    } catch (e) {
-      // Surface grammar error inline; v2 will render a friendlier hint.
-      console.warn("grammar error", e);
-    }
-  };
-
-  const removePill = (idx: number) => {
-    patchDiscover(tabId, { pills: st.pills.filter((_, i) => i !== idx) });
-  };
+  const submit = () => {};
 
   const addPill = (p: Pill) => {
-    patchDiscover(tabId, { pills: [...st.pills, p] });
+    patchDiscover(tabId, { search: (st.search.trim() ? st.search.trim() + " " : "") + serializePills([p]) });
   };
 
   const openInQueryEditor = () => {
     const sources = Array.from(results.sources.keys());
     const tr = resolveTimeRange(st.timeRange);
-    const kql = compileToKql(sources, st.pills, tr);
+    let pills: Pill[] = [];
+    try { pills = parseSearch(st.search); } catch { /* surfaced elsewhere */ }
+    const kql = compileToKql(sources, pills, tr);
     newTab({
       kind: "query",
       state: {
@@ -119,7 +107,6 @@ export function DiscoverPage({ tabId }: Props) {
             Open in Query Editor
           </Button>
         </div>
-        <FilterPills pills={st.pills} onRemove={removePill} />
       </div>
 
       <div className="flex flex-1 min-h-0">

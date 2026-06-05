@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { DiscoverTabState } from "../discover/discover-store";
 import { initialDiscoverTabState } from "../discover/discover-store";
+import { serializePills } from "../discover/discoverGrammar";
+import type { Pill } from "../discover/types";
 
 // Defensive storage: tests run under jsdom but the persist middleware may grab
 // `localStorage` before jsdom finishes wiring it. Wrap with a no-op fallback so
@@ -53,7 +55,7 @@ export function isTabDirty(t: Tab): boolean {
 
 const DEFAULT_RANGE: TimeRange = { preset: "1h" };
 
-// Exported so tests can verify the v1→v2 transformation as a pure function
+// Exported so tests can verify the v1→v2/v3 transformation as a pure function
 // without touching real localStorage / persist middleware machinery.
 export function migrateWorkspace(persisted: unknown, fromVersion: number): unknown {
   const p = persisted as { state?: { tabs?: unknown[] } } | null;
@@ -79,6 +81,25 @@ export function migrateWorkspace(persisted: unknown, fromVersion: number): unkno
       };
     });
   }
+  if (fromVersion < 3) {
+    p.state.tabs = (p.state.tabs as Array<Record<string, unknown>>).map((t) => {
+      if (t.kind !== "discover") return t;
+      const st = t.state as {
+        pills?: unknown[];
+        search?: string;
+        columns?: string[];
+      } & Record<string, unknown>;
+      const pillText = Array.isArray(st.pills) && st.pills.length > 0
+        ? serializePills(st.pills as Pill[])
+        : "";
+      const search = [pillText, st.search ?? ""].filter(Boolean).join(" ").trim();
+      const { pills: _pills, ...rest } = st;
+      return {
+        ...t,
+        state: { ...rest, search, columns: st.columns ?? [], viewMode: "stream" },
+      };
+    });
+  }
   return persisted;
 }
 
@@ -93,8 +114,8 @@ function tabIdentity(t: Tab): string {
     const { query, timeRange } = t.state;
     return `q|${query}|${timeRange.preset}|${timeRange.from ?? ""}|${timeRange.to ?? ""}`;
   }
-  const { scope, pills, search } = t.state;
-  return `d|${search}|${JSON.stringify(scope)}|${JSON.stringify(pills)}`;
+  const { scope, search } = t.state;
+  return `d|${search}|${JSON.stringify(scope)}`;
 }
 
 // Collapse tabs whose content is identical, keeping the first occurrence.
@@ -227,7 +248,7 @@ export const useWorkspace = create<Store>()(
     }),
     {
       name: "kyma.workspace",
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() =>
         typeof window !== "undefined" && window.localStorage
           ? window.localStorage
