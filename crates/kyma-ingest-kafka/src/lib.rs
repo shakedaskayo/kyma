@@ -291,7 +291,7 @@ impl KafkaConsumerWorker {
             }
         };
 
-        match self.write_path.ingest(&table_ref, batches).await {
+        match self.write_path.ingest(&mapping.database, &table_ref, batches).await {
             Ok(ack) => {
                 info!(
                     topic,

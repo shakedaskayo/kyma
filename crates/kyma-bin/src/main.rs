@@ -24,8 +24,8 @@ use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use kyma_core::segment_format::SegmentFormat;
 use kyma_format_tlm::TelemetryFormat;
 use kyma_ingest_core::{
-    ensure_table, evolve_schema_for_records, spawn_idempotency_cleanup, CommitCoordinator,
-    CoordinatorConfig, StagingBuffer, StagingConfig, WritePath,
+    ensure_table, events::IngestEvents, evolve_schema_for_records, spawn_idempotency_cleanup,
+    CommitCoordinator, CoordinatorConfig, StagingBuffer, StagingConfig, WritePath,
 };
 use kyma_ingest_filedrop::{FiledropConfig, FiledropWatcher};
 use kyma_ingest_kafka::{KafkaConsumerConfig, KafkaConsumerWorker};
@@ -254,6 +254,8 @@ async fn main() -> Result<()> {
     let use_staging = std::env::var("KYMA_STAGING_DISABLED")
         .map(|v| v != "1" && v != "true")
         .unwrap_or(true);
+    let ingest_events = IngestEvents::new(256);
+    // TODO(Task 4): pass `ingest_events.clone()` to the live-tail router when mounting it.
     let write_path: WritePath = if use_staging {
         // Start the commit coordinator so flushes get group-commit squared.
         let coordinator = CommitCoordinator::spawn(catalog.clone(), CoordinatorConfig::from_env());
@@ -269,10 +271,13 @@ async fn main() -> Result<()> {
         }));
         info!("ingest staging: group-commit enabled");
         WritePath::with_staging(catalog.clone(), format.clone(), staging)
+            .with_events(ingest_events.clone())
     } else {
         info!("ingest staging: disabled (KYMA_STAGING_DISABLED=1)");
-        WritePath::new(catalog.clone(), format.clone())
+        WritePath::new(catalog.clone(), format.clone()).with_events(ingest_events.clone())
     };
+    // Keep ingest_events in scope; it will be consumed by Task 4's router mount.
+    let _ = &ingest_events;
     let ingest_router = kyma_ingest_rest::router(IngestState {
         catalog: catalog.clone(),
         write_path: write_path.clone(),
@@ -461,7 +466,7 @@ async fn main() -> Result<()> {
                         kyma_connectors::arrow_coerce::rows_to_batches(&table.schema, rows)
                             .map_err(|e| anyhow::anyhow!("arrow coerce: {e}"))?;
                     write_path
-                        .ingest_with_idempotency(&table, batches, idem.as_deref())
+                        .ingest_with_idempotency(&db, &table, batches, idem.as_deref())
                         .await
                         .map_err(|e| anyhow::anyhow!("ingest: {e}"))?;
                     Ok(())

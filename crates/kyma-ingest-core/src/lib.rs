@@ -25,6 +25,7 @@
 pub mod commit_coordinator;
 pub mod ensure;
 pub mod event_time;
+pub mod events;
 pub mod ndjson;
 pub mod staging;
 pub use commit_coordinator::{CommitCoordinator, CoordinatorConfig};
@@ -33,6 +34,7 @@ pub use ensure::{
 };
 pub use ndjson::{parse_ndjson, NdjsonError};
 pub use staging::{FlushOutcome, StagingBuffer, StagingConfig};
+pub use events::{IngestEvents, RowsAppended};
 
 use chrono::{DateTime, Utc};
 use kyma_core::catalog::{Catalog, ExtentManifest, IngestLedgerEntry, SnapshotSummary, TableRef};
@@ -65,6 +67,7 @@ pub struct WritePath {
     catalog: Arc<dyn Catalog>,
     format: Arc<dyn SegmentFormat>,
     staging: Option<StagingBuffer>,
+    events: Option<IngestEvents>,
 }
 
 impl std::fmt::Debug for WritePath {
@@ -81,6 +84,7 @@ impl WritePath {
             catalog,
             format,
             staging: None,
+            events: None,
         }
     }
 
@@ -94,7 +98,16 @@ impl WritePath {
             catalog,
             format,
             staging: Some(staging),
+            events: None,
         }
+    }
+
+    /// Attach a rows-appended event bus. After every successful commit,
+    /// `RowsAppended` is published so live-tail sessions can be notified.
+    /// Lossy — slow consumers drop events and fall back to timer scans.
+    pub fn with_events(mut self, events: IngestEvents) -> Self {
+        self.events = Some(events);
+        self
     }
 
     /// Drain any partially-full staging buffer. Call on shutdown, after the
@@ -115,10 +128,12 @@ impl WritePath {
     #[instrument(skip(self, batches), fields(table = %table.name, batch_count = batches.len()))]
     pub async fn ingest(
         &self,
+        database: &str,
         table: &TableRef,
         batches: Vec<arrow_array::RecordBatch>,
     ) -> Result<IngestAck> {
-        self.ingest_with_idempotency(table, batches, None).await
+        self.ingest_with_idempotency(database, table, batches, None)
+            .await
     }
 
     /// Ingest variant that checks + records an idempotency key.
@@ -129,9 +144,13 @@ impl WritePath {
     /// - Phase-A race window: if two requests with the same key arrive
     ///   concurrently, both may ingest once; the ledger INSERT-ON-CONFLICT
     ///   ensures only one record wins. Tighter atomicity lands with M2.
+    ///
+    /// `database` is required here (and not carried by `TableRef`) so that the
+    /// rows-appended event bus can include the database name for routing.
     #[instrument(skip(self, batches), fields(table = %table.name, batch_count = batches.len(), idempotent = idempotency_key.is_some()))]
     pub async fn ingest_with_idempotency(
         &self,
+        database: &str,
         table: &TableRef,
         batches: Vec<arrow_array::RecordBatch>,
         idempotency_key: Option<&str>,
@@ -173,10 +192,13 @@ impl WritePath {
             });
         }
 
-        // Group-commit fast path: hand off to the staging buffer and wait
-        // for the shared flush to complete. Every concurrent caller whose
-        // batch landed in the same flush returns the same snapshot_id.
-        if let Some(staging) = &self.staging {
+        // Perform the actual commit: either via the group-commit staging buffer
+        // or directly. Both paths resolve to an `IngestAck` before the single
+        // publish site below.
+        let ack = if let Some(staging) = &self.staging {
+            // Group-commit fast path: hand off to the staging buffer and wait
+            // for the shared flush to complete. Every concurrent caller whose
+            // batch landed in the same flush returns the same snapshot_id.
             let outcome = staging
                 .submit(table, table.schema.clone(), batches.clone())
                 .await?;
@@ -206,76 +228,91 @@ impl WritePath {
                     .record_idempotency(key, entry, chrono::Duration::hours(24))
                     .await?;
             }
-            return Ok(ack);
-        }
+            ack
+        } else {
+            // 1. Write the extent to object storage (idempotent-ish — if we fail
+            //    before commit, the object becomes garbage; M3's GC reaps it).
+            let extent_target_bytes = table
+                .config
+                .extent_target_bytes
+                .unwrap_or(1024 * 1024 * 1024);
+            let mut writer = self
+                .format
+                .start_extent(table.schema.clone(), extent_target_bytes)
+                .await?;
+            let mut rows_ingested: u64 = 0;
+            for batch in batches {
+                rows_ingested += batch.num_rows() as u64;
+                writer.append(batch).await?;
+            }
+            let result: ExtentWriteResult = writer.finish().await?;
 
-        // 1. Write the extent to object storage (idempotent-ish — if we fail
-        //    before commit, the object becomes garbage; M3's GC reaps it).
-        let extent_target_bytes = table
-            .config
-            .extent_target_bytes
-            .unwrap_or(1024 * 1024 * 1024);
-        let mut writer = self
-            .format
-            .start_extent(table.schema.clone(), extent_target_bytes)
-            .await?;
-        let mut rows_ingested: u64 = 0;
-        for batch in batches {
-            rows_ingested += batch.num_rows() as u64;
-            writer.append(batch).await?;
-        }
-        let result: ExtentWriteResult = writer.finish().await?;
+            // 2. Commit the new extent into a fresh snapshot. On CAS conflict,
+            //    re-read the current snapshot and retry — bounded attempts.
+            let snapshot_id = self
+                .commit_with_retry(
+                    table.id,
+                    &table_result_to_manifest(table, &result),
+                    &table_label,
+                )
+                .await?;
 
-        // 2. Commit the new extent into a fresh snapshot. On CAS conflict,
-        //    re-read the current snapshot and retry — bounded attempts.
-        let snapshot_id = self
-            .commit_with_retry(
-                table.id,
-                &table_result_to_manifest(table, &result),
-                &table_label,
-            )
-            .await?;
+            metrics::counter!("kyma_ingest_rows_total", "table" => table_label.clone())
+                .increment(rows_ingested);
+            metrics::counter!("kyma_ingest_bytes_total", "table" => table_label.clone())
+                .increment(result.byte_size);
+            metrics::histogram!("kyma_ingest_duration_seconds", "table" => table_label.clone())
+                .record(start.elapsed().as_secs_f64());
 
-        metrics::counter!("kyma_ingest_rows_total", "table" => table_label.clone())
-            .increment(rows_ingested);
-        metrics::counter!("kyma_ingest_bytes_total", "table" => table_label.clone())
-            .increment(result.byte_size);
-        metrics::histogram!("kyma_ingest_duration_seconds", "table" => table_label.clone())
-            .record(start.elapsed().as_secs_f64());
+            // Record the idempotency key after successful commit.
+            if let Some(key) = idempotency_key {
+                let entry = IngestLedgerEntry {
+                    table_id: table.id,
+                    snapshot_id,
+                    rows_ingested,
+                    bytes_written: result.byte_size,
+                    applied_at: Utc::now(),
+                };
+                let recorded = self
+                    .catalog
+                    .record_idempotency(key, entry, chrono::Duration::hours(24))
+                    .await?;
+                if recorded.is_none() {
+                    tracing::warn!(
+                        idempotency_key = %key,
+                        "idempotency race: a concurrent request won the ledger insert; both ingests committed extents (accept minor duplicate)"
+                    );
+                    metrics::counter!(
+                        "kyma_ingest_idempotency_races_total",
+                        "table" => table_label
+                    )
+                    .increment(1);
+                }
+            }
 
-        // Record the idempotency key after successful commit.
-        if let Some(key) = idempotency_key {
-            let entry = IngestLedgerEntry {
-                table_id: table.id,
+            IngestAck {
                 snapshot_id,
+                extent_count: 1,
                 rows_ingested,
                 bytes_written: result.byte_size,
-                applied_at: Utc::now(),
-            };
-            let recorded = self
-                .catalog
-                .record_idempotency(key, entry, chrono::Duration::hours(24))
-                .await?;
-            if recorded.is_none() {
-                tracing::warn!(
-                    idempotency_key = %key,
-                    "idempotency race: a concurrent request won the ledger insert; both ingests committed extents (accept minor duplicate)"
-                );
-                metrics::counter!(
-                    "kyma_ingest_idempotency_races_total",
-                    "table" => table_label
-                )
-                .increment(1);
+                replayed: false,
+            }
+        };
+
+        // Single publish site: after commit in all modes (staging group-commit,
+        // direct, and coordinator via staging). Lossy — slow subscribers drop.
+        // Replays must not re-publish: only emit RowsAppended for fresh ingests.
+        if let Some(events) = &self.events {
+            if ack.rows_ingested > 0 && !ack.replayed {
+                events.publish(RowsAppended {
+                    database: database.to_string(),
+                    table: table.name.clone(),
+                    rows: ack.rows_ingested,
+                });
             }
         }
 
-        Ok(IngestAck {
-            snapshot_id,
-            extent_count: 1,
-            rows_ingested,
-            bytes_written: result.byte_size,
-            replayed: false,
-        })
+        Ok(ack)
     }
 
     #[instrument(skip(self, manifest, table_label))]

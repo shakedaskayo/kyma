@@ -46,6 +46,7 @@ use kyma_catalog_sqlite::SqliteCatalog;
 use kyma_core::catalog::Catalog;
 use kyma_core::segment_format::SegmentFormat;
 use kyma_format_tlm::TelemetryFormat;
+use kyma_ingest_core::events::IngestEvents;
 use kyma_ingest_core::WritePath;
 use kyma_ingest_rest::IngestState;
 use kyma_mcp::{serve_stdio, McpState, ServerInfo, ToolDispatch};
@@ -287,11 +288,16 @@ pub async fn run_serve(addr: SocketAddr) -> Result<()> {
         mcp_url: None,
         memory: memory.clone(),
     };
-    let write_path = WritePath::new(engine.catalog.clone(), engine.format.clone());
+    let ingest_events = IngestEvents::new(256);
+    // TODO(Task 4): pass `ingest_events.clone()` to the live-tail router when mounting it.
+    let write_path = WritePath::new(engine.catalog.clone(), engine.format.clone())
+        .with_events(ingest_events.clone());
     let ingest_state = IngestState {
         catalog: engine.catalog.clone(),
         write_path,
     };
+    // Keep ingest_events in scope; it will be consumed by Task 4's router mount.
+    let _ = &ingest_events;
 
     let read_mw = || {
         axum::middleware::from_fn_with_state(
