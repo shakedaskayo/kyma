@@ -84,6 +84,9 @@ pub struct CurationConfig {
     pub promote_max: usize,
     /// Importance floor for promotion.
     pub promote_min_importance: f32,
+    /// Plan only: emit actions but skip every DB mutation (stamps, merges),
+    /// so a later real pass replans identically.
+    pub dry_run: bool,
 }
 
 impl Default for CurationConfig {
@@ -92,6 +95,7 @@ impl Default for CurationConfig {
             promote: true,
             promote_max: 15,
             promote_min_importance: 0.6,
+            dry_run: false,
         }
     }
 }
@@ -110,6 +114,7 @@ impl CurationConfig {
             promote_min_importance: get("KYMA_CC_PROMOTE_MIN_IMPORTANCE")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(d.promote_min_importance),
+            dry_run: false,
         }
     }
 }
@@ -154,6 +159,8 @@ pub struct LlmCurationConfig {
     /// certain — the model decides. At/above the top of the band the
     /// deterministic pass would have merged already (exact dups).
     pub dup_band: (f64, f64),
+    /// Plan only: skip every DB mutation.
+    pub dry_run: bool,
 }
 
 impl Default for LlmCurationConfig {
@@ -161,6 +168,7 @@ impl Default for LlmCurationConfig {
         LlmCurationConfig {
             stale_days: 90,
             dup_band: (0.90, 0.97),
+            dry_run: false,
         }
     }
 }
@@ -181,6 +189,7 @@ impl LlmCurationConfig {
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(d.dup_band.1),
             ),
+            dry_run: false,
         }
     }
 }
@@ -333,10 +342,12 @@ pub async fn llm_curation_pass(
         outcome.llm_reviewed += 1;
         match d.op {
             CurationOp::Keep => {
-                stamp(writer, shared, &n.id, input.now, |p| {
-                    p.insert("cc_reviewed_at".into(), serde_json::json!(input.now));
-                })
-                .await?;
+                if !cfg.dry_run {
+                    stamp(writer, shared, &n.id, input.now, |p| {
+                        p.insert("cc_reviewed_at".into(), serde_json::json!(input.now));
+                    })
+                    .await?;
+                }
             }
             CurationOp::Archive => {
                 if let Some(file) = managed_file(n) {
@@ -350,10 +361,13 @@ pub async fn llm_curation_pass(
                     });
                     outcome.archived_files += 1;
                 }
-                archive_stale(writer, shared, n, d.reason.as_deref(), input.now).await?;
+                if !cfg.dry_run {
+                    archive_stale(writer, shared, n, d.reason.as_deref(), input.now).await?;
+                }
             }
             CurationOp::Refresh => {
-                if let Some(desc) = d.refreshed_description {
+                if cfg.dry_run {
+                } else if let Some(desc) = d.refreshed_description {
                     refresh_title(writer, shared, &n.id, &desc, input.now).await?;
                 } else {
                     stamp(writer, shared, &n.id, input.now, |p| {
@@ -430,17 +444,19 @@ async fn adjudicate_near_dups(
                 // Same knowledge: lower importance loses, exactly like the
                 // deterministic exact-dup merge.
                 let (winner, loser) = if a.importance >= b.importance { (a, b) } else { (b, a) };
-                archive_as_duplicate(writer, shared, loser, winner, input.now).await?;
-                writer
-                    .link(
-                        &loser.id,
-                        &winner.id,
-                        kyma_memory::EDGE_MERGED_INTO,
-                        input.realm,
-                        None,
-                    )
-                    .await
-                    .map_err(|e| anyhow::anyhow!("merge edge: {e}"))?;
+                if !cfg.dry_run {
+                    archive_as_duplicate(writer, shared, loser, winner, input.now).await?;
+                    writer
+                        .link(
+                            &loser.id,
+                            &winner.id,
+                            kyma_memory::EDGE_MERGED_INTO,
+                            input.realm,
+                            None,
+                        )
+                        .await
+                        .map_err(|e| anyhow::anyhow!("merge edge: {e}"))?;
+                }
                 if let Some(file) = loser.prov_str("cc_file") {
                     actions.push(FileAction::ArchiveFile {
                         file: file.to_string(),
@@ -450,7 +466,7 @@ async fn adjudicate_near_dups(
                     outcome.archived_files += 1;
                 }
                 outcome.merged += 1;
-            } else {
+            } else if !cfg.dry_run {
                 // Distinct: remember the verdict so the pair is asked once.
                 let b_id = b.id.clone();
                 stamp(writer, shared, &a.id, input.now, move |p| {
@@ -626,10 +642,12 @@ pub async fn plan_curation(
             node_id: Some(n.id.clone()),
         });
         outcome.archived_files += 1;
-        stamp(writer, shared, &n.id, input.now, |p| {
-            p.insert("cc_file_archived".into(), serde_json::json!(true));
-        })
-        .await?;
+        if !cfg.dry_run {
+            stamp(writer, shared, &n.id, input.now, |p| {
+                p.insert("cc_file_archived".into(), serde_json::json!(true));
+            })
+            .await?;
+        }
     }
 
     // ── Exact-duplicate merge among live file-born memories.
@@ -656,17 +674,19 @@ pub async fn plan_curation(
             });
             let winner = group[0];
             for loser in &group[1..] {
-                archive_as_duplicate(writer, shared, loser, winner, input.now).await?;
-                writer
-                    .link(
-                        &loser.id,
-                        &winner.id,
-                        kyma_memory::EDGE_MERGED_INTO,
-                        input.realm,
-                        None,
-                    )
-                    .await
-                    .map_err(|e| anyhow::anyhow!("merge edge: {e}"))?;
+                if !cfg.dry_run {
+                    archive_as_duplicate(writer, shared, loser, winner, input.now).await?;
+                    writer
+                        .link(
+                            &loser.id,
+                            &winner.id,
+                            kyma_memory::EDGE_MERGED_INTO,
+                            input.realm,
+                            None,
+                        )
+                        .await
+                        .map_err(|e| anyhow::anyhow!("merge edge: {e}"))?;
+                }
                 if let Some(file) = loser.prov_str("cc_file") {
                     actions.push(FileAction::ArchiveFile {
                         file: file.to_string(),
@@ -782,11 +802,13 @@ async fn promote(
             });
             outcome.archived_files += 1;
         }
-        stamp(writer, shared, &n.id, input.now, |p| {
-            p.remove("cc_promoted_file");
-            p.remove("cc_content_hash");
-        })
-        .await?;
+        if !cfg.dry_run {
+            stamp(writer, shared, &n.id, input.now, |p| {
+                p.remove("cc_promoted_file");
+                p.remove("cc_content_hash");
+            })
+            .await?;
+        }
     }
 
     // Related wikilinks: direct edges between selected memories.
@@ -835,12 +857,14 @@ async fn promote(
                 node_id: n.id.clone(),
                 content_hash: hash.clone(),
             });
-            stamp(writer, shared, &n.id, input.now, |p| {
-                p.insert("cc_promoted_file".into(), serde_json::json!(file));
-                p.insert("cc_content_hash".into(), serde_json::json!(hash));
-                p.insert("cc_promoted_at".into(), serde_json::json!(input.now));
-            })
-            .await?;
+            if !cfg.dry_run {
+                stamp(writer, shared, &n.id, input.now, |p| {
+                    p.insert("cc_promoted_file".into(), serde_json::json!(file));
+                    p.insert("cc_content_hash".into(), serde_json::json!(hash));
+                    p.insert("cc_promoted_at".into(), serde_json::json!(input.now));
+                })
+                .await?;
+            }
         }
         entries.push(IndexEntry {
             title: title.clone(),

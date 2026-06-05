@@ -59,6 +59,13 @@ pub(crate) async fn run_pass(
             pool: None,
         };
         let now = chrono::Utc::now().to_rfc3339();
+        // Dry-run is decided once (writeback) and forced onto the planners,
+        // so a dry pass leaves no stamps behind and a later real pass
+        // replans identically.
+        let mut promote_cfg = opts.promote_cfg.clone();
+        promote_cfg.dry_run |= opts.writeback.dry_run;
+        let mut llm_cfg = opts.llm_cfg.clone();
+        llm_cfg.dry_run |= opts.writeback.dry_run;
         for p in &sync.projects {
             let input = CurationInput {
                 realm: &p.realm,
@@ -66,13 +73,13 @@ pub(crate) async fn run_pass(
                 now: &now,
             };
             let (mut actions, mut outcome) =
-                plan_curation(&shared, writer, &input, &opts.promote_cfg).await?;
+                plan_curation(&shared, writer, &input, &promote_cfg).await?;
             llm_curation_pass(
                 &shared,
                 writer,
                 agent,
                 &input,
-                &opts.llm_cfg,
+                &llm_cfg,
                 &mut actions,
                 &mut outcome,
             )

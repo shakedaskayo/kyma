@@ -234,6 +234,28 @@ fn dry_run_touches_nothing_but_audits() {
 }
 
 #[test]
+fn empty_index_with_no_markers_writes_nothing() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let mem = tmp.path().join("memory");
+    let original = "# Memory index\n\n- [Mine](mine.md) — untouched\n";
+    write(&mem.join("MEMORY.md"), original);
+
+    // Nothing to manage → MEMORY.md must stay byte-identical (no empty
+    // marker block littered into every project).
+    let actions = vec![FileAction::SetIndex { entries: vec![] }];
+    let report =
+        apply_actions(&mem, None, &actions, &WritebackConfig::default(), NOW).expect("apply");
+    assert!(!report.index_updated);
+    assert_eq!(read(&mem.join("MEMORY.md")), original);
+
+    // And a project with no MEMORY.md at all doesn't get one invented.
+    let mem2 = tmp.path().join("memory2");
+    std::fs::create_dir_all(&mem2).expect("mkdir");
+    apply_actions(&mem2, None, &actions, &WritebackConfig::default(), NOW).expect("apply 2");
+    assert!(!mem2.join("MEMORY.md").exists());
+}
+
+#[test]
 fn index_defers_to_user_entries() {
     let tmp = tempfile::tempdir().expect("tmp");
     let mem = tmp.path().join("memory");

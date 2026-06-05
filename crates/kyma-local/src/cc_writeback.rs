@@ -128,17 +128,24 @@ pub(crate) fn apply_actions(
                 // Defer to the user: a file they list themselves is not
                 // double-listed in the managed region.
                 let user_files = idx.user_files();
-                idx.set_managed(
-                    entries
-                        .iter()
-                        .filter(|e| !user_files.contains(&e.file))
-                        .map(|e| kyma_ccmem::index::ManagedEntry {
-                            title: e.title.clone(),
-                            file: e.file.clone(),
-                            hook: e.hook.clone(),
-                        })
-                        .collect(),
-                );
+                let managed: Vec<kyma_ccmem::index::ManagedEntry> = entries
+                    .iter()
+                    .filter(|e| !user_files.contains(&e.file))
+                    .map(|e| kyma_ccmem::index::ManagedEntry {
+                        title: e.title.clone(),
+                        file: e.file.clone(),
+                        hook: e.hook.clone(),
+                    })
+                    .collect();
+                // Nothing to manage and no markers yet → leave the file
+                // alone (don't litter empty marker blocks everywhere).
+                let has_markers = raw
+                    .as_deref()
+                    .is_some_and(|r| r.contains(kyma_ccmem::MANAGED_BEGIN));
+                if managed.is_empty() && !has_markers {
+                    continue;
+                }
+                idx.set_managed(managed);
                 let rendered = idx.render();
                 if Some(rendered.as_str()) != raw.as_deref() {
                     if !cfg.dry_run {

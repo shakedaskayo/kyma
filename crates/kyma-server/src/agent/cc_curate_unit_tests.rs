@@ -332,6 +332,43 @@ async fn promotes_top_memories_capped_ordered_and_idempotent() {
 }
 
 #[tokio::test]
+async fn dry_run_plans_without_stamping_the_store() {
+    let (_tmp, writer, shared) = engine().await;
+    seed(
+        &writer,
+        "proj",
+        "Big Decision",
+        "We chose X.",
+        MemoryType::Decision,
+        0.9,
+        None,
+        None,
+    )
+    .await;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let cfg = CurationConfig {
+        dry_run: true,
+        ..CurationConfig::default()
+    };
+    let (actions, _) = plan_curation(&shared, &writer, &input(&now), &cfg)
+        .await
+        .expect("plan");
+    assert_eq!(writes(&actions).len(), 1);
+
+    // A second dry-run plan must emit the same writes — nothing was stamped.
+    let now2 = chrono::Utc::now().to_rfc3339();
+    let (actions2, _) = plan_curation(&shared, &writer, &input(&now2), &cfg)
+        .await
+        .expect("plan 2");
+    assert_eq!(
+        writes(&actions2).len(),
+        1,
+        "dry run must not persist promotion stamps"
+    );
+}
+
+#[tokio::test]
 async fn excludes_file_born_and_user_owned_from_promotion() {
     let (_tmp, writer, shared) = engine().await;
     // File-born memory (came from a Claude Code file) — never promoted back.
