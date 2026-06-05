@@ -37,6 +37,14 @@ test("fresh local mode: every page renders, no fetch/parse errors", async ({ pag
 
   await signIn(page);
 
+  // Brand assets ship in the embedded bundle: the sidebar logo must actually
+  // render (the server used to answer /icons/* with the SPA's HTML).
+  const logo = page.locator('img[src="/icons/kyma-mark.svg"]').first();
+  await expect(logo).toBeVisible({ timeout: 10_000 });
+  await expect
+    .poll(async () => logo.evaluate((el: HTMLImageElement) => el.naturalWidth))
+    .toBeGreaterThan(0);
+
   // Explore / Discover / Graph / Memory / Agent — supported locally.
   await page.goto("/discover");
   await expect(page.getByText(/discover|no data|sources/i).first()).toBeVisible({ timeout: 10_000 });
