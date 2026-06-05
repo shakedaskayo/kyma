@@ -11,6 +11,8 @@
 # Non-determinism handling:
 #   - JSON error responses: "request_id" field is stripped before hashing
 #     (it is a per-request UUID and changes every call).
+#   - JSON top-level semver "version" fields are stripped (/health reports
+#     the build version, which changes on every release bump).
 #   - Prometheus /metrics responses: numeric values on metric lines are
 #     normalised to "0" so the hash reflects metric *shape* (which counters
 #     exist) rather than their ever-changing values.
@@ -63,6 +65,12 @@ try:
             return [strip_request_id(i) for i in o]
         return o
     obj = strip_request_id(obj)
+    # /health embeds the build version — per-release metadata, not contract.
+    # Strip it (top level only, semver-shaped only) so a version bump doesn't
+    # diverge every fixture.
+    if isinstance(obj, dict) and isinstance(obj.get('version'), str) \
+            and re.fullmatch(r'v?\d+\.\d+\.\d+([.-].*)?', obj['version']):
+        obj = {k: v for k, v in obj.items() if k != 'version'}
     norm = json.dumps(obj, sort_keys=True, separators=(',', ':'))
 except Exception:
     # Not JSON — treat as Prometheus text format (or plain text).
