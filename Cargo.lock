@@ -4596,6 +4596,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyma-ccmem"
+version = "0.0.2"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_yaml",
+]
+
+[[package]]
 name = "kyma-cli"
 version = "0.0.2"
 dependencies = [

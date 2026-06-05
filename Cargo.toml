@@ -27,6 +27,7 @@ members = [
     "crates/kyma-embed",
     "crates/kyma-memory",
     "crates/kyma-mcp",
+    "crates/kyma-ccmem",
     "web/src-tauri",
 ]
 

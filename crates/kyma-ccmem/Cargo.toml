@@ -1,0 +1,16 @@
+[package]
+name = "kyma-ccmem"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Claude Code memory-file format: frontmatter, MEMORY.md index, wikilinks, path slugs, content hashing — the pure library behind kyma's Claude Code file-memory sync."
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_yaml = "0.9"
+blake3 = "1"
