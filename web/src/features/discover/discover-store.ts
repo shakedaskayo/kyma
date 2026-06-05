@@ -5,7 +5,6 @@
 import type {
   DiscoverResultsState,
   Frame,
-  Pill,
   Scope,
   SourceKey,
   SourceState,
@@ -14,21 +13,27 @@ import type { TimeRange } from "../tabs/workspace-store";
 
 export type DiscoverTabState = {
   scope: Scope;
+  /** The persistent query bar text — the single source of truth. Sent
+   * verbatim as `query`; the backend parses the grammar. */
   search: string;
-  pills: Pill[];
   timeRange: TimeRange;
   visibleSources: SourceKey[] | null; // null = all in plan
   selectedSource: SourceKey | null;   // drives the Fields rail
+  /** Explicit columns toggled on from the fields rail. */
+  columns: string[];
+  /** stream = unified timeline; table = plain table of one source. */
+  viewMode: "stream" | { table: SourceKey };
   results: DiscoverResultsState;
 };
 
 export const initialDiscoverTabState = (): DiscoverTabState => ({
   scope: { kind: "all" },
   search: "",
-  pills: [],
   timeRange: { preset: "1h" },
   visibleSources: null,
   selectedSource: null,
+  columns: [],
+  viewMode: "stream",
   results: { status: "idle", sources: new Map() },
 });
 
@@ -50,6 +55,7 @@ export function applyFrame(
           {
             source: s.source,
             hasTimestamp: s.has_timestamp,
+            timestampColumn: s.timestamp_column ?? null,
             progress: "pending",
             rows: [],
             total: 0,

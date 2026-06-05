@@ -4,17 +4,19 @@ import { useWorkspace } from "../tabs/workspace-store";
 import type { TimeRange } from "../tabs/workspace-store";
 import { TimeRangePicker } from "@/features/time-range/TimeRangePicker";
 import { ScopePicker } from "./ScopePicker";
-import { SearchBar } from "./SearchBar";
-import { FilterPills } from "./FilterPills";
+import { QueryBar } from "./QueryBar";
 import { SourcesRail } from "./SourcesRail";
 import { FieldsRail } from "./FieldsRail";
 import { Histogram } from "./Histogram";
-import { SourceSection } from "./SourceSection";
+import { StreamView } from "./StreamView";
+import { SourceTableView } from "./SourceTableView";
+import { SummaryLine } from "./SummaryLine";
 import { RowDetailDrawer } from "./RowDetailDrawer";
 import { SavedViewsMenu } from "./SavedViewsMenu";
 import { useDiscoverSearch } from "./useDiscoverSearch";
-import { parseSearch } from "./discoverGrammar";
+import { parseSearch, serializePills } from "./discoverGrammar";
 import { compileToKql } from "./compileToKql";
+import { mergeSources } from "./stream";
 import type { Pill } from "./types";
 
 type Props = { tabId: string };
@@ -22,6 +24,10 @@ type Props = { tabId: string };
 const PRESET_MINUTES: Record<string, number> = {
   "5m": 5, "15m": 15, "1h": 60, "6h": 360,
   "24h": 1440, "7d": 10080, "30d": 43200,
+};
+const PRESET_LABEL: Record<string, string> = {
+  "5m": "last 5m", "15m": "last 15m", "1h": "last 1h", "6h": "last 6h",
+  "24h": "last 24h", "7d": "last 7d", "30d": "last 30d", custom: "custom range",
 };
 
 function resolveTimeRange(t: TimeRange): { from: string; to: string } | null {
@@ -41,15 +47,15 @@ export function DiscoverPage({ tabId }: Props) {
   const newTab = useWorkspace((s) => s.newTab);
 
   const [openRow, setOpenRow] = useState<{ source: string; row: Record<string, unknown> } | null>(null);
-
-  // Always call hooks unconditionally — derive enable flag from kind so the
-  // early-return below doesn't break the hook order.
+  // The search submitted to the backend — typing edits `search` freely; Run
+  // (or auto-run on scope/time change) snapshots it here.
   const isDiscover = tab?.kind === "discover";
   const st = isDiscover ? tab.state : null;
+  const [submitted, setSubmitted] = useState(() => st?.search ?? "");
 
   const { results, cancel } = useDiscoverSearch({
+    search: submitted,
     scope: st?.scope ?? { kind: "all" },
-    pills: st?.pills ?? [],
     timeRange: st?.timeRange ?? { preset: "1h" },
     enabled: Boolean(isDiscover),
   });
@@ -57,30 +63,27 @@ export function DiscoverPage({ tabId }: Props) {
   if (!tab || tab.kind !== "discover" || !st) return null;
 
   const selected = st.selectedSource ? results.sources.get(st.selectedSource) ?? null : null;
+  const streamRows = mergeSources(Array.from(results.sources.values()), st.visibleSources);
+  const tableSrc =
+    typeof st.viewMode === "object" ? results.sources.get(st.viewMode.table) ?? null : null;
 
-  const submit = () => {
-    if (!st.search.trim()) return;
-    try {
-      const fresh = parseSearch(st.search);
-      patchDiscover(tabId, { pills: [...st.pills, ...fresh], search: "" });
-    } catch (e) {
-      // Surface grammar error inline; v2 will render a friendlier hint.
-      console.warn("grammar error", e);
-    }
+  const insertFilter = (text: string) => {
+    const next = st.search.trim() ? `${st.search.trim()} ${text}` : text;
+    patchDiscover(tabId, { search: next });
   };
 
-  const removePill = (idx: number) => {
-    patchDiscover(tabId, { pills: st.pills.filter((_, i) => i !== idx) });
-  };
-
-  const addPill = (p: Pill) => {
-    patchDiscover(tabId, { pills: [...st.pills, p] });
-  };
+  const pillToText = (p: Pill) => serializePills([p]);
 
   const openInQueryEditor = () => {
     const sources = Array.from(results.sources.keys());
     const tr = resolveTimeRange(st.timeRange);
-    const kql = compileToKql(sources, st.pills, tr);
+    let pills: Pill[] = [];
+    try {
+      pills = parseSearch(st.search);
+    } catch {
+      // Grammar errors are surfaced in the QueryBar; export without filters.
+    }
+    const kql = compileToKql(sources, pills, tr);
     newTab({
       kind: "query",
       state: {
@@ -97,30 +100,29 @@ export function DiscoverPage({ tabId }: Props) {
   return (
     <div className="flex flex-col h-full">
       {/* Top bar */}
-      <div className="flex flex-col gap-2 p-3 border-b">
-        <div className="flex items-center gap-2">
-          <ScopePicker
-            value={st.scope}
-            onChange={(scope) => patchDiscover(tabId, { scope })}
-          />
-          <SearchBar
-            value={st.search}
-            onChange={(v) => patchDiscover(tabId, { search: v })}
-            onSubmit={submit}
-            onCancel={cancel}
-            running={results.status === "running"}
-          />
-          <TimeRangePicker
-            value={st.timeRange}
-            onChange={(tr) => patchDiscover(tabId, { timeRange: tr })}
-          />
-          <SavedViewsMenu currentScope={st.scope} />
-          <Button variant="ghost" size="sm" onClick={openInQueryEditor}>
-            Open in Query Editor
-          </Button>
-        </div>
-        <FilterPills pills={st.pills} onRemove={removePill} />
+      <div className="flex items-center gap-2 p-3 border-b">
+        <ScopePicker value={st.scope} onChange={(scope) => patchDiscover(tabId, { scope })} />
+        <QueryBar
+          value={st.search}
+          onChange={(v) => patchDiscover(tabId, { search: v })}
+          onRun={() => setSubmitted(st.search)}
+          onCancel={cancel}
+          running={results.status === "running"}
+        />
+        <TimeRangePicker value={st.timeRange} onChange={(tr) => patchDiscover(tabId, { timeRange: tr })} />
+        <SavedViewsMenu currentScope={st.scope} />
+        <Button variant="ghost" size="sm" onClick={openInQueryEditor}>
+          Open in Query Editor
+        </Button>
       </div>
+
+      <SummaryLine
+        sourcesSearched={results.sources.size}
+        windowLabel={PRESET_LABEL[st.timeRange.preset] ?? "all time"}
+        eventCount={streamRows.length}
+        finishedAt={results.finishedAt ?? null}
+        status={results.status}
+      />
 
       <div className="flex flex-1 min-h-0">
         <aside className="w-60 border-r overflow-auto">
@@ -134,49 +136,71 @@ export function DiscoverPage({ tabId }: Props) {
             }}
             selected={st.selectedSource}
             onSelect={(src) => patchDiscover(tabId, { selectedSource: src })}
+            onOpenTable={(src) => patchDiscover(tabId, { viewMode: { table: src } })}
           />
-          <FieldsRail source={selected} onAddPill={addPill} />
+          <FieldsRail
+            source={selected}
+            columns={st.columns}
+            onToggleColumn={(f) =>
+              patchDiscover(tabId, {
+                columns: st.columns.includes(f)
+                  ? st.columns.filter((c) => c !== f)
+                  : [...st.columns, f],
+              })
+            }
+            onInsertFilter={insertFilter}
+          />
         </aside>
 
         <main className="flex-1 overflow-auto">
-          <Histogram results={results} />
-          {results.topError && (
-            <div className="p-3 m-3 border border-destructive rounded text-sm text-destructive">
-              <span className="font-semibold">{results.topError.code}</span>: {results.topError.message}
-            </div>
-          )}
-          {Array.from(results.sources.values())
-            .filter((s) => st.visibleSources == null || st.visibleSources.includes(s.source))
-            .map((s) => (
-              <SourceSection
-                key={s.source}
-                src={s}
-                timeRangeActive={resolveTimeRange(st.timeRange) != null}
-                onOpenRow={(row) => setOpenRow({ source: s.source, row })}
+          {tableSrc ? (
+            <SourceTableView
+              src={tableSrc}
+              onBack={() => patchDiscover(tabId, { viewMode: "stream" })}
+              onOpenRow={(row) => setOpenRow({ source: tableSrc.source, row })}
+            />
+          ) : (
+            <>
+              <Histogram
+                results={results}
+                rangeTo={resolveTimeRange(st.timeRange)?.to ?? null}
+                onZoom={(from, to) =>
+                  patchDiscover(tabId, { timeRange: { preset: "custom", from, to } })
+                }
               />
-            ))}
-          {results.status === "done" && results.sources.size === 0 && (
-            <div className="p-6 text-center text-sm text-muted-foreground space-y-2">
-              <div>No data sources match this scope.</div>
-              {st.scope.kind === "all" ? (
-                <div>
-                  Internal sources (agent memory) are hidden by default.{" "}
-                  <button
-                    type="button"
-                    className="underline underline-offset-2 hover:text-foreground"
-                    onClick={() =>
-                      patchDiscover(tabId, {
-                        scope: { kind: "sources", sources: ["memory.*"] },
-                      })
-                    }
-                  >
-                    Search internal sources
-                  </button>
+              {results.topError && (
+                <div className="p-3 m-3 border border-destructive rounded text-sm text-destructive">
+                  <span className="font-semibold">{results.topError.code}</span>: {results.topError.message}
                 </div>
-              ) : (
-                <div>Try widening with the Scope picker.</div>
               )}
-            </div>
+              <StreamView
+                rows={streamRows}
+                sources={results.sources}
+                columns={st.columns}
+                onOpenRow={(source, row) => setOpenRow({ source, row })}
+              />
+              {results.status === "done" && results.sources.size === 0 && (
+                <div className="p-6 text-center text-sm text-muted-foreground space-y-2">
+                  <div>No data sources match this scope.</div>
+                  {st.scope.kind === "all" ? (
+                    <div>
+                      Internal sources (agent memory) are hidden by default.{" "}
+                      <button
+                        type="button"
+                        className="underline underline-offset-2 hover:text-foreground"
+                        onClick={() =>
+                          patchDiscover(tabId, { scope: { kind: "sources", sources: ["memory.*"] } })
+                        }
+                      >
+                        Search internal sources
+                      </button>
+                    </div>
+                  ) : (
+                    <div>Try widening with the Scope picker.</div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </main>
       </div>
@@ -185,7 +209,7 @@ export function DiscoverPage({ tabId }: Props) {
         source={openRow?.source ?? null}
         row={openRow?.row ?? null}
         onClose={() => setOpenRow(null)}
-        onAddPill={(p) => { addPill(p); setOpenRow(null); }}
+        onAddPill={(p) => { insertFilter(pillToText(p)); setOpenRow(null); }}
       />
     </div>
   );

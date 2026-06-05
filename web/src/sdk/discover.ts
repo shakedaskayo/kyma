@@ -1,7 +1,8 @@
 import { authFetch } from "./auth-fetch";
 
 export type Frame =
-  | { type: "plan"; sources: { source: string; has_timestamp: boolean }[] }
+  // '?' tolerates old servers that omit the field; null = source has no timestamp column
+  | { type: "plan"; sources: { source: string; has_timestamp: boolean; timestamp_column?: string | null }[] }
   | { type: "source_progress"; source: string; state: "running" }
   | { type: "rows"; source: string; rows: Record<string, unknown>[] }
   | { type: "histogram"; source: string; buckets: { t: string; n: number }[] }

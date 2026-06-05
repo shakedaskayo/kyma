@@ -40,7 +40,8 @@ function DiscoverRoute() {
     <div className="flex h-full flex-col">
       <TabBar />
       <div className="flex-1 min-h-0">
-        <DiscoverPage tabId={shown.id} />
+        {/* key remounts per tab so per-tab state (submitted query, open row) never bleeds across tabs */}
+        <DiscoverPage key={shown.id} tabId={shown.id} />
       </div>
     </div>
   );

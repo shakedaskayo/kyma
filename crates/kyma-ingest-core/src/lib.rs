@@ -24,6 +24,7 @@
 
 pub mod commit_coordinator;
 pub mod ensure;
+pub mod event_time;
 pub mod ndjson;
 pub mod staging;
 pub use commit_coordinator::{CommitCoordinator, CoordinatorConfig};

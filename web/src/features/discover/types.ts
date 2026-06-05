@@ -12,6 +12,7 @@ export type SourceKey = string; // "db.table"
 export type SourceState = {
   source: SourceKey;
   hasTimestamp: boolean;
+  timestampColumn: string | null;
   progress: "pending" | "running" | "done" | "error";
   rows: Record<string, unknown>[];
   total: number;
