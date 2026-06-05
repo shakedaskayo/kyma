@@ -20,6 +20,7 @@ pub struct CompiledSource {
     pub kql: String,
     pub dropped_clauses: Vec<DroppedClause>,
     pub has_timestamp: bool,
+    pub timestamp_column: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,6 +97,7 @@ pub fn compile_for_source(
         kql,
         dropped_clauses: dropped,
         has_timestamp,
+        timestamp_column: ts_col,
     }
 }
 
@@ -284,6 +286,7 @@ mod tests {
         assert_eq!(c.kql, "otel_logs | take 500");
         assert!(c.dropped_clauses.is_empty());
         assert!(c.has_timestamp);
+        assert_eq!(c.timestamp_column, Some("timestamp".to_string()));
     }
 
     #[test]
@@ -451,6 +454,7 @@ mod tests {
         );
         assert_eq!(c.kql, "metrics | take 100");
         assert!(!c.has_timestamp);
+        assert_eq!(c.timestamp_column, None);
     }
 
     #[test]
@@ -539,5 +543,6 @@ mod tests {
             "events | where event_time >= datetime(\"2023-11-14T22:13:20.000Z\") and event_time < datetime(\"2023-11-14T22:28:20.000Z\") | take 100"
         );
         assert!(c.has_timestamp);
+        assert_eq!(c.timestamp_column, Some("event_time".to_string()));
     }
 }

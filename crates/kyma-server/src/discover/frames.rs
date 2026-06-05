@@ -45,6 +45,9 @@ pub enum Frame {
 pub struct PlanSource {
     pub source: String, // "db.table"
     pub has_timestamp: bool,
+    /// Name of the timestamp-typed column used for time filtering/sorting,
+    /// when one exists. Additive — older clients ignore it.
+    pub timestamp_column: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -76,10 +79,12 @@ mod tests {
                 PlanSource {
                     source: "prod.otel_logs".into(),
                     has_timestamp: true,
+                    timestamp_column: Some("timestamp".into()),
                 },
                 PlanSource {
                     source: "prod.metrics".into(),
                     has_timestamp: false,
+                    timestamp_column: None,
                 },
             ],
         };
@@ -89,6 +94,8 @@ mod tests {
         assert_eq!(v["type"], "plan");
         assert_eq!(v["sources"][0]["source"], "prod.otel_logs");
         assert_eq!(v["sources"][0]["has_timestamp"], true);
+        assert_eq!(v["sources"][0]["timestamp_column"], "timestamp");
+        assert!(v["sources"][1]["timestamp_column"].is_null());
     }
 
     #[test]

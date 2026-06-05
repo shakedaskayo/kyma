@@ -16,6 +16,15 @@ describe("applyFrame", () => {
     expect(s.status).toBe("running");
     expect(s.sources.get("a.b")?.progress).toBe("pending");
     expect(s.sources.get("a.b")?.hasTimestamp).toBe(true);
+    expect(s.sources.get("a.b")?.timestampColumn).toBe(null);
+  });
+
+  it("plan preserves timestamp_column when present", () => {
+    const s = applyFrame(empty(), {
+      type: "plan",
+      sources: [{ source: "a.b", has_timestamp: true, timestamp_column: "ts" }],
+    });
+    expect(s.sources.get("a.b")?.timestampColumn).toBe("ts");
   });
 
   it("source_progress flips to running", () => {

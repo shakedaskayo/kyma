@@ -83,6 +83,7 @@ async fn run_inner(input: FanoutInput, tx: mpsc::Sender<Frame>) {
         .map(|(src, c)| PlanSource {
             source: format!("{}.{}", src.db, src.table.name),
             has_timestamp: c.has_timestamp,
+            timestamp_column: c.timestamp_column.clone(),
         })
         .collect();
 

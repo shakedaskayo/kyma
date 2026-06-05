@@ -50,6 +50,7 @@ export function applyFrame(
           {
             source: s.source,
             hasTimestamp: s.has_timestamp,
+            timestampColumn: s.timestamp_column ?? null,
             progress: "pending",
             rows: [],
             total: 0,
