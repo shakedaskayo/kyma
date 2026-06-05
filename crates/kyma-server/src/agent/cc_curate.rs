@@ -165,6 +165,26 @@ impl Default for LlmCurationConfig {
     }
 }
 
+impl LlmCurationConfig {
+    /// Resolve from `KYMA_CC_STALE_DAYS` / `KYMA_CC_DUP_COSINE`.
+    pub fn from_env() -> Self {
+        let d = LlmCurationConfig::default();
+        LlmCurationConfig {
+            stale_days: std::env::var("KYMA_CC_STALE_DAYS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(d.stale_days),
+            dup_band: (
+                d.dup_band.0,
+                std::env::var("KYMA_CC_DUP_COSINE")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(d.dup_band.1),
+            ),
+        }
+    }
+}
+
 const CURATION_SYSTEM: &str = r#"You curate an AI agent's long-term memory for relevance. Given one MEMORY (with its age and type), decide whether it still earns a slot in the agent's always-loaded context. Return STRICT JSON:
 { "op": "KEEP | ARCHIVE | REFRESH", "refreshed_description": "rewritten one-line description (for REFRESH)", "reason": "one short sentence" }
 

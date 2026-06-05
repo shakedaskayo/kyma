@@ -215,9 +215,29 @@ enum Command {
         #[arg(long)]
         print: bool,
     },
-    /// Sync memory bidirectionally with a control plane (push local changes +
-    /// pull remote ones). Needs KYMA_CLOUD_URL (and usually KYMA_CLOUD_TOKEN).
-    Sync,
+    /// Sync memory with Claude Code's file memory (~/.claude/projects/*/memory,
+    /// always) and bidirectionally with a control plane (when KYMA_CLOUD_URL is
+    /// set). The file phase ingests + embeds Claude Code memory files, promotes
+    /// high-value kyma memories back as native files, and curates MEMORY.md.
+    Sync {
+        /// Keep running, re-syncing on an interval (KYMA_CC_SYNC_POLL_SECS,
+        /// default 30s).
+        #[arg(long)]
+        watch: bool,
+        /// Plan + audit-log Claude Code file changes without writing them
+        /// (ingestion into the local store still runs).
+        #[arg(long)]
+        dry_run: bool,
+        /// Only the local Claude Code file phase (skip the control plane).
+        #[arg(long)]
+        cc_only: bool,
+        /// Only the control-plane push/pull (skip Claude Code files).
+        #[arg(long)]
+        cloud_only: bool,
+        /// Limit the file phase to one project path.
+        #[arg(long)]
+        project: Option<std::path::PathBuf>,
+    },
 
     // ── admin subcommands ─────────────────────────────────────────────
 
@@ -390,7 +410,16 @@ async fn main() -> Result<()> {
             kyma_local::run_serve(addr).await
         }
         Command::Setup { agent, print } => kyma_local::run_setup(&agent, print),
-        Command::Sync => kyma_local::run_sync().await,
+        Command::Sync { watch, dry_run, cc_only, cloud_only, project } => {
+            kyma_local::run_sync(kyma_local::SyncOptions {
+                watch,
+                dry_run,
+                cc_only,
+                cloud_only,
+                project,
+            })
+            .await
+        }
 
         // ── admin subcommands ─────────────────────────────────────────
         Command::Version => {

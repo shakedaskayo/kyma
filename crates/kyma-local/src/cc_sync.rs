@@ -55,6 +55,10 @@ pub(crate) struct CcSyncOptions {
 pub(crate) struct ProjectSyncReport {
     pub slug: String,
     pub realm: String,
+    /// The Claude Code project dir (`~/.claude/projects/<slug>`).
+    pub dir: PathBuf,
+    /// Resolved absolute project path, when known.
+    pub project_path: Option<PathBuf>,
     /// Files ingested or re-ingested (created or new version).
     pub upserted: usize,
     /// Files unchanged since the last scan (hash hit) or kyma-authored and
@@ -142,7 +146,7 @@ async fn sync_project(
         .and_then(|n| n.to_str())
         .unwrap_or_default()
         .to_string();
-    let realm = resolve_realm(slug_dir, &slug, known_paths);
+    let (realm, project_path) = resolve_realm(slug_dir, &slug, known_paths);
     let shared = SharedToolCtx {
         catalog: engine.catalog.clone(),
         format: engine.format.clone(),
@@ -151,6 +155,8 @@ async fn sync_project(
     let mut report = ProjectSyncReport {
         slug: slug.clone(),
         realm: realm.clone(),
+        dir: slug_dir.to_path_buf(),
+        project_path,
         ..ProjectSyncReport::default()
     };
 
@@ -570,15 +576,19 @@ fn map_cc_type(cc: Option<&str>) -> (MemoryType, Vec<String>) {
 
 /// The realm for a project dir: basename of the resolved project path
 /// (matching the plugin hooks), falling back to the transcript `cwd`, then
-/// to the slug itself.
-fn resolve_realm(slug_dir: &Path, dir_slug: &str, known_paths: &[String]) -> String {
+/// to the slug itself. Also returns the resolved project path when known.
+fn resolve_realm(
+    slug_dir: &Path,
+    dir_slug: &str,
+    known_paths: &[String],
+) -> (String, Option<PathBuf>) {
     if let Some(p) = slug::resolve_project_path(dir_slug, known_paths) {
-        return slug::realm_for_path(&p);
+        return (slug::realm_for_path(&p), Some(p));
     }
     if let Some(cwd) = transcript_cwd(slug_dir) {
-        return slug::realm_for_path(&cwd);
+        return (slug::realm_for_path(&cwd), Some(cwd));
     }
-    dir_slug.to_string()
+    (dir_slug.to_string(), None)
 }
 
 /// Read the `cwd` recorded in the first line of any session transcript in
