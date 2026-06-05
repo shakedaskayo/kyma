@@ -23,6 +23,7 @@
 mod client;
 mod connector;
 mod plugin;
+mod update;
 mod users;
 use client::{
     delete_json, effective_config, get_json, install_target, load_config, probe_health,
@@ -252,6 +253,22 @@ enum Command {
     },
     /// Print the CLI version.
     Version,
+    /// Self-update to the latest GitHub release (binary + embedded web UI),
+    /// then restart the local server so the new UI is live immediately.
+    Update {
+        /// Only check whether a newer release exists; don't install.
+        #[arg(long)]
+        check: bool,
+        /// Install a specific release tag (e.g. v0.0.3) instead of the latest.
+        #[arg(long)]
+        version: Option<String>,
+        /// Reinstall even if this version is already current.
+        #[arg(long)]
+        force: bool,
+        /// Don't restart a running local `kyma serve` after updating.
+        #[arg(long)]
+        no_restart: bool,
+    },
     /// Register a property-graph — admin.
     CreateGraph {
         #[arg(long)]
@@ -321,7 +338,11 @@ async fn main() -> Result<()> {
     match cli.command {
         // ── client subcommands ────────────────────────────────────────
         Command::Connect { url, token } => cmd_connect(url, token).await,
-        Command::Status => cmd_status().await,
+        Command::Status => {
+            let result = cmd_status().await;
+            update::maybe_notify_update().await;
+            result
+        }
         Command::Query {
             question,
             json,
@@ -362,15 +383,27 @@ async fn main() -> Result<()> {
         Command::InstallPlugin { target, force } => plugin::install_plugin(target, force).await,
         // Local engine — delegate to the kyma-local library (one `kyma` binary).
         Command::Mcp => kyma_local::run_mcp().await,
-        Command::Serve { addr } => kyma_local::run_serve(addr).await,
+        Command::Serve { addr } => {
+            // Fire-and-forget staleness nudge; serve runs until killed so it
+            // prints (to stderr) once the throttled check resolves.
+            tokio::spawn(update::maybe_notify_update());
+            kyma_local::run_serve(addr).await
+        }
         Command::Setup { agent, print } => kyma_local::run_setup(&agent, print),
         Command::Sync => kyma_local::run_sync().await,
 
         // ── admin subcommands ─────────────────────────────────────────
         Command::Version => {
             println!("kyma {}", env!("CARGO_PKG_VERSION"));
+            update::maybe_notify_update().await;
             Ok(())
         }
+        Command::Update {
+            check,
+            version,
+            force,
+            no_restart,
+        } => update::run(check, version, force, no_restart).await,
         Command::CreateDatabase { name } => {
             let catalog = connect_catalog(&cli.catalog_url).await?;
             let id = catalog
