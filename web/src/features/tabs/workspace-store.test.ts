@@ -1,5 +1,12 @@
 import { beforeEach, expect, test } from "vitest";
-import { useWorkspace, isTabDirty, migrateWorkspace } from "./workspace-store";
+import {
+  useWorkspace,
+  isTabDirty,
+  migrateWorkspace,
+  dedupeTabs,
+  findMatchingQueryTab,
+  type Tab,
+} from "./workspace-store";
 
 beforeEach(() => {
   useWorkspace.getState().resetAll();
@@ -124,6 +131,86 @@ test("migrateWorkspace converts v1 flat tabs to v2 query tabs", () => {
   const t1 = migrated.state.tabs.find((t) => t.id === "legacy-2")!;
   expect(t0.state.query).toBe("table1 | take 10");
   expect(t1.state.submittedQuery).toBe("table2 | take 5");
+});
+
+// --- dedupeTabs -------------------------------------------------------------
+
+function queryTab(id: string, query: string, preset = "1h"): Tab {
+  return {
+    id,
+    kind: "query",
+    state: {
+      title: `query ${id}`,
+      query,
+      timeRange: { preset: preset as "1h" },
+      results: { kind: "idle" },
+      chart: {},
+      submittedQuery: null,
+    },
+  };
+}
+
+function discoverTab(id: string, search = ""): Tab {
+  return {
+    id,
+    kind: "discover",
+    state: {
+      scope: { kind: "all" },
+      search,
+      pills: [],
+      timeRange: { preset: "1h" },
+      visibleSources: null,
+      selectedSource: null,
+      results: { status: "idle", sources: new Map() },
+    },
+  };
+}
+
+test("dedupeTabs collapses query tabs with identical query + time range", () => {
+  const tabs = [queryTab("a", "t1 | take 50"), queryTab("b", "t1 | take 50"), queryTab("c", "t2 | count")];
+  const out = dedupeTabs(tabs, "c");
+  expect(out.tabs.map((t) => t.id)).toEqual(["a", "c"]);
+  expect(out.activeId).toBe("c");
+});
+
+test("dedupeTabs keeps query tabs that differ in query or time range", () => {
+  const tabs = [queryTab("a", "t1 | take 50", "1h"), queryTab("b", "t1 | take 50", "6h"), queryTab("c", "t1 | count")];
+  const out = dedupeTabs(tabs, "a");
+  expect(out.tabs.map((t) => t.id)).toEqual(["a", "b", "c"]);
+});
+
+test("dedupeTabs remaps activeId when the active tab is a pruned duplicate", () => {
+  const tabs = [queryTab("a", "t1 | take 50"), queryTab("b", "t1 | take 50")];
+  const out = dedupeTabs(tabs, "b");
+  expect(out.tabs.map((t) => t.id)).toEqual(["a"]);
+  expect(out.activeId).toBe("a");
+});
+
+test("dedupeTabs collapses duplicate idle discover tabs", () => {
+  const tabs = [discoverTab("d1"), discoverTab("d2"), discoverTab("d3", "auth")];
+  const out = dedupeTabs(tabs, "d2");
+  expect(out.tabs.map((t) => t.id)).toEqual(["d1", "d3"]);
+  expect(out.activeId).toBe("d1");
+});
+
+test("dedupeTabs leaves a null activeId alone", () => {
+  const out = dedupeTabs([queryTab("a", "x")], null);
+  expect(out.activeId).toBe(null);
+  expect(out.tabs.length).toBe(1);
+});
+
+// --- findMatchingQueryTab ----------------------------------------------------
+
+test("findMatchingQueryTab finds a query tab with the same query and range", () => {
+  const tabs = [discoverTab("d"), queryTab("a", "t1 | take 50", "6h")];
+  const hit = findMatchingQueryTab(tabs, "t1 | take 50", { preset: "6h" });
+  expect(hit?.id).toBe("a");
+});
+
+test("findMatchingQueryTab returns undefined when query or range differ", () => {
+  const tabs = [queryTab("a", "t1 | take 50", "6h")];
+  expect(findMatchingQueryTab(tabs, "t1 | take 50", { preset: "1h" })).toBeUndefined();
+  expect(findMatchingQueryTab(tabs, "t2 | take 50", { preset: "6h" })).toBeUndefined();
 });
 
 test("migrateWorkspace is a no-op for v2", () => {

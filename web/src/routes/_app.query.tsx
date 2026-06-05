@@ -20,7 +20,7 @@ import { SmartSearchBar } from "@/features/search/SmartSearchBar";
 import { extractLeadingTable } from "@/features/search/parseSearch";
 import type { SearchSchema } from "@/features/search/parseSearch";
 import { downloadBlob } from "@/lib/download";
-import { useWorkspace } from "@/features/tabs/workspace-store";
+import { useWorkspace, findMatchingQueryTab } from "@/features/tabs/workspace-store";
 import { useWorkspaceShortcuts } from "@/lib/shortcuts";
 import { useSession } from "@/sdk/session";
 import { fetchSchema } from "@/sdk/catalog";
@@ -98,18 +98,30 @@ function QueryEditorPage() {
     if (q) {
       const decoded = decodeQueryState(q);
       if (decoded) {
-        workspace.newTab({
-          kind: "query",
-          state: {
-            query: decoded.query,
-            timeRange: { preset: decoded.preset, from: decoded.from, to: decoded.to },
-          },
-        });
+        // Reuse an existing tab showing this exact state — the URL is synced
+        // from the editor on every change, so each reload arrives with a `?q=`
+        // that matches a persisted tab. Spawning unconditionally here used to
+        // pile up a duplicate tab per page load.
+        const timeRange = { preset: decoded.preset, from: decoded.from, to: decoded.to };
+        const existing = findMatchingQueryTab(workspace.tabs, decoded.query, timeRange);
+        if (existing) {
+          workspace.setActive(existing.id);
+        } else {
+          workspace.newTab({ kind: "query", state: { query: decoded.query, timeRange } });
+        }
       } else if (!hasAnyQueryTab) {
         workspace.newTab({ kind: "query" });
       }
     } else if (!hasAnyQueryTab) {
       workspace.newTab({ kind: "query" });
+    } else {
+      // No deep link, query tabs exist — make sure one is actually active so
+      // arriving from /discover doesn't render a dead editor.
+      const activeTab = workspace.tabs.find((t) => t.id === workspace.activeId);
+      if (activeTab?.kind !== "query") {
+        const first = workspace.tabs.find((t) => t.kind === "query");
+        if (first) workspace.setActive(first.id);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

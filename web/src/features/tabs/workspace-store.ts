@@ -82,6 +82,60 @@ export function migrateWorkspace(persisted: unknown, fromVersion: number): unkno
   return persisted;
 }
 
+function sameTimeRange(a: TimeRange, b: TimeRange): boolean {
+  return a.preset === b.preset && (a.from ?? "") === (b.from ?? "") && (a.to ?? "") === (b.to ?? "");
+}
+
+// Stable identity for "this tab shows the same thing as that one". Titles and
+// transient results are deliberately excluded.
+function tabIdentity(t: Tab): string {
+  if (t.kind === "query") {
+    const { query, timeRange } = t.state;
+    return `q|${query}|${timeRange.preset}|${timeRange.from ?? ""}|${timeRange.to ?? ""}`;
+  }
+  const { scope, pills, search } = t.state;
+  return `d|${search}|${JSON.stringify(scope)}|${JSON.stringify(pills)}`;
+}
+
+// Collapse tabs whose content is identical, keeping the first occurrence.
+// Heals workspaces that accumulated duplicates (every reload of a `?q=` deep
+// link used to spawn a fresh tab). Remaps `activeId` onto the surviving
+// duplicate so the user stays "on" the same content.
+export function dedupeTabs(
+  tabs: Tab[],
+  activeId: string | null,
+): { tabs: Tab[]; activeId: string | null } {
+  const keptByIdentity = new Map<string, Tab>();
+  const kept: Tab[] = [];
+  for (const t of tabs) {
+    const key = tabIdentity(t);
+    if (!keptByIdentity.has(key)) {
+      keptByIdentity.set(key, t);
+      kept.push(t);
+    }
+  }
+  if (kept.length === tabs.length) return { tabs, activeId };
+  let nextActive = activeId;
+  if (activeId && !kept.some((t) => t.id === activeId)) {
+    const pruned = tabs.find((t) => t.id === activeId);
+    nextActive = pruned ? keptByIdentity.get(tabIdentity(pruned))?.id ?? null : null;
+  }
+  return { tabs: kept, activeId: nextActive };
+}
+
+// Find an existing query tab showing exactly this query + time range — used
+// by the `?q=` deep-link bootstrap to reuse instead of spawning a new tab.
+export function findMatchingQueryTab(
+  tabs: Tab[],
+  query: string,
+  timeRange: TimeRange,
+): QueryTab | undefined {
+  return tabs.find(
+    (t): t is QueryTab =>
+      t.kind === "query" && t.state.query === query && sameTimeRange(t.state.timeRange, timeRange),
+  );
+}
+
 function defaultQueryState(idx: number): QueryTabState {
   return {
     title: `query ${idx}`,
@@ -203,6 +257,10 @@ export const useWorkspace = create<Store>()(
             t.state.results = { status: "idle", sources: new Map() };
           }
         }
+        // Heal duplicate tabs accumulated by older deep-link bootstrapping.
+        const deduped = dedupeTabs(s.tabs, s.activeId);
+        s.tabs = deduped.tabs;
+        s.activeId = deduped.activeId;
       },
     },
   ),

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useWorkspace } from "@/features/tabs/workspace-store";
 import { DiscoverPage } from "@/features/discover/DiscoverPage";
 import { TabBar } from "@/features/tabs/TabBar";
@@ -14,24 +14,33 @@ function DiscoverRoute() {
   const newTab = useWorkspace((s) => s.newTab);
   const setActive = useWorkspace((s) => s.setActive);
 
+  // Render the active discover tab, falling back to the first one so closing
+  // a tab (which may hand `activeId` to a query tab) never blanks the page.
+  const activeTab = tabs.find((t) => t.id === activeId);
+  const shown =
+    activeTab?.kind === "discover" ? activeTab : tabs.find((t) => t.kind === "discover");
+
+  // Bootstrap once per mount: ensure a discover tab exists and is active.
+  // Ref-guarded so StrictMode's double effect can't create duplicates, and
+  // run-once so it never fights TabBar clicks (which navigate between routes).
+  const booted = useRef(false);
   useEffect(() => {
-    const active = tabs.find((t) => t.id === activeId);
-    if (active && active.kind === "discover") return;
-    const firstDiscover = tabs.find((t) => t.kind === "discover");
-    if (firstDiscover) {
-      setActive(firstDiscover.id);
+    if (booted.current) return;
+    booted.current = true;
+    if (shown) {
+      if (shown.id !== activeId) setActive(shown.id);
     } else {
       newTab({ kind: "discover" });
     }
-  }, [tabs, activeId, newTab, setActive]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const active = tabs.find((t) => t.id === activeId);
-  if (!active || active.kind !== "discover") return null;
+  if (!shown || shown.kind !== "discover") return null;
   return (
     <div className="flex h-full flex-col">
       <TabBar />
       <div className="flex-1 min-h-0">
-        <DiscoverPage tabId={active.id} />
+        <DiscoverPage tabId={shown.id} />
       </div>
     </div>
   );
