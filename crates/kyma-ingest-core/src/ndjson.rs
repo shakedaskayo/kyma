@@ -49,6 +49,10 @@ pub enum NdjsonError {
 ///
 /// All other columns delegate to arrow-json's built-in reader.
 pub fn parse_ndjson(bytes: &[u8], schema: SchemaRef) -> Result<Vec<RecordBatch>, NdjsonError> {
+    // Populate the `at` column from timestamp aliases before parsing so that
+    // time-range filters and the Discover UI can order rows correctly.
+    let coerced = crate::event_time::populate_at_column(bytes, &schema);
+    let bytes: &[u8] = coerced.as_ref();
     // Identify columns that arrow-json cannot handle natively.
     let mut vector_cols: Vec<(usize, String, i32)> = Vec::new();
     let mut binary_cols: Vec<(usize, String)> = Vec::new();
@@ -272,5 +276,65 @@ mod binary_column_tests {
             .downcast_ref::<BinaryArray>()
             .expect("BinaryArray");
         assert!(bin.is_null(0));
+    }
+}
+
+#[cfg(test)]
+mod event_time_integration_tests {
+    use super::*;
+    use arrow_array::{Array, TimestampNanosecondArray};
+    use arrow_schema::{Field, Schema, TimeUnit};
+    use chrono::DateTime;
+    use std::sync::Arc;
+
+    /// The default table schema used by auto-created tables (mirrors `default_table_schema()`).
+    fn make_default_schema() -> SchemaRef {
+        Arc::new(Schema::new(vec![
+            Field::new(
+                "at",
+                DataType::Timestamp(TimeUnit::Nanosecond, None),
+                true,
+            ),
+            Field::new("label", DataType::Utf8, true),
+            Field::new("body", DataType::Utf8, true),
+            Field::new("props", DataType::Binary, true),
+        ]))
+    }
+
+    /// A record that carries only `"timestamp"` (no explicit `"at"`) should
+    /// produce a non-null `at` column whose value equals the expected instant.
+    #[test]
+    fn parse_ndjson_populates_at_from_timestamp_string() {
+        let schema = make_default_schema();
+        let ts = "2026-06-05T10:00:00Z";
+        let ndjson = format!(
+            "{{\"timestamp\":\"{}\",\"body\":\"hello world\"}}\n",
+            ts
+        );
+        let batches = parse_ndjson(ndjson.as_bytes(), schema).expect("parse ok");
+        assert_eq!(batches.len(), 1);
+        let batch = &batches[0];
+        assert_eq!(batch.num_rows(), 1);
+
+        let at_col = batch
+            .column_by_name("at")
+            .expect("at column present");
+        let at_arr = at_col
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .expect("at column is TimestampNanosecondArray");
+
+        assert!(!at_arr.is_null(0), "at should be non-null after timestamp injection");
+
+        // Verify the value matches the expected instant.
+        let expected_nanos = DateTime::parse_from_rfc3339(ts)
+            .expect("valid rfc3339")
+            .timestamp_nanos_opt()
+            .expect("in range");
+        assert_eq!(
+            at_arr.value(0),
+            expected_nanos,
+            "at nanoseconds should equal the timestamp instant"
+        );
     }
 }
