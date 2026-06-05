@@ -88,6 +88,22 @@ export function installAuthFetch(): void {
     const { endpoint } = useSession.getState();
     const url = urlOf(input);
     const isKymaApi = Boolean(endpoint) && url.startsWith(endpoint) && !isAuthEndpoint(url);
+
+    // Older kyma servers (≤0.0.2) routed unknown /v1/* paths into the SPA
+    // fallback — HTML with a 200. Surface that as the JSON 404 it really is
+    // so SDKs fail with a clear error instead of choking on "<!doctype…".
+    if (
+      isKymaApi &&
+      res.ok &&
+      url.includes("/v1/") &&
+      (res.headers.get("content-type") ?? "").includes("text/html")
+    ) {
+      return new Response(
+        JSON.stringify({ error: "endpoint not available on this server" }),
+        { status: 404, headers: { "content-type": "application/json" } },
+      );
+    }
+
     if (res.status !== 401 || !isKymaApi) return res;
 
     const refreshed = await refreshOnce();

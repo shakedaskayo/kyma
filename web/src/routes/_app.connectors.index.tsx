@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConnectorsList } from "@/features/connectors/ConnectorsList";
 import { AddConnectorWizard } from "@/features/connectors/AddConnectorWizard";
+import { ControlPlaneGate, useCapability } from "@/features/capabilities/ControlPlaneGate";
 
 export const Route = createFileRoute("/_app/connectors/")({
   component: ConnectorsListPage,
@@ -12,6 +13,7 @@ export const Route = createFileRoute("/_app/connectors/")({
 function ConnectorsListPage() {
   const navigate = useNavigate();
   const [addOpen, setAddOpen] = useState(false);
+  const supported = useCapability("connectors");
 
   return (
     <div className="flex h-full flex-col bg-muted/20">
@@ -23,14 +25,18 @@ function ConnectorsListPage() {
             Continuously ingest knowledge from your sources into the context graph.
           </p>
         </div>
-        <Button onClick={() => setAddOpen(true)}>
-          <Plus className="mr-1.5 h-4 w-4" /> Add connector
-        </Button>
+        {supported && (
+          <Button onClick={() => setAddOpen(true)}>
+            <Plus className="mr-1.5 h-4 w-4" /> Add connector
+          </Button>
+        )}
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        <ConnectorsList onAdd={() => setAddOpen(true)} />
+        <ControlPlaneGate feature="connectors" title="Connectors">
+          <ConnectorsList onAdd={() => setAddOpen(true)} />
+        </ControlPlaneGate>
       </div>
 
       <AddConnectorWizard

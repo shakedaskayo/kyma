@@ -34,7 +34,7 @@ use kyma_ingest_core::WritePath;
 use kyma_ingest_rest::IngestState;
 use kyma_mcp::{serve_stdio, McpState, ServerInfo, ToolDispatch};
 use kyma_server::agent::local::{
-    NullCredentialStore, NullEnabledSkillsStore, NullEnginePreferenceStore,
+    FileEnabledSkillsStore, FileEnginePreferenceStore, NullCredentialStore,
 };
 use kyma_server::agent::{AgentState, SharedToolCtx};
 use kyma_server::auth::{
@@ -236,14 +236,26 @@ pub async fn run_serve(addr: SocketAddr) -> Result<()> {
         node_id: None,
         pg_pool: None, // local: no Postgres — pool-only surfaces degrade gracefully
     };
+    // Engine preference + enabled skills persist to JSON under ~/.kyma so
+    // Settings → Agent engine works locally and survives restarts. Engine
+    // auth auto-detects env vars / ~/.claude/.credentials.json — the Postgres
+    // credential store stays a control-plane feature.
+    let kyma_home = std::env::var("KYMA_HOME").unwrap_or_else(|_| {
+        let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        format!("{base}/.kyma")
+    });
     let agent_state = AgentState {
         catalog: engine.catalog.clone(),
         format: engine.format.clone(),
         pool: None, // local: run/session history not persisted; memory runs over the engine
-        engines: Arc::new(NullEnginePreferenceStore),
+        engines: Arc::new(FileEnginePreferenceStore::new(format!(
+            "{kyma_home}/agent-engine.json"
+        ))),
         credentials: Arc::new(NullCredentialStore),
         tenant: kyma_core::tenant::DEFAULT_TENANT,
-        skills: Arc::new(NullEnabledSkillsStore),
+        skills: Arc::new(FileEnabledSkillsStore::new(format!(
+            "{kyma_home}/agent-skills.json"
+        ))),
         mcp_url: None,
         memory: memory.clone(),
     };
@@ -272,18 +284,44 @@ pub async fn run_serve(addr: SocketAddr) -> Result<()> {
         )
     };
 
+    let admin_mw = || {
+        axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Admin,
+            },
+            require_role_middleware,
+        )
+    };
+
     // The same web interface + full API the hosted server serves, over the
     // embedded catalog. Read surfaces (query/catalog/graph/agent/memory/MCP)
-    // require Role::Read; ingest requires Role::Write; login/web/health are open.
+    // require Role::Read; ingest + dashboard/cleanup writes require
+    // Role::Write; user admin requires Role::Admin; login/web/health are open.
+    // Control-plane-only surfaces (connectors, credentials, OAuth, saved-view
+    // writes) are NOT mounted — /v1/capabilities tells clients so, and the
+    // SPA fallback 404s unknown /v1/* paths instead of serving HTML.
     let read_router = kyma_server::router_with_agent(query_state, agent_state)
         .merge(kyma_mcp::router(mcp_state(&engine, memory.clone())))
+        .merge(kyma_server::capabilities::router(
+            kyma_server::capabilities::Capabilities::LOCAL,
+        ))
         .layer(read_mw());
     let ingest_router = kyma_ingest_rest::router(ingest_state).layer(write_mw());
+    // Dashboards + table cleanup write over the Catalog trait — fully
+    // supported by the embedded SQLite catalog (the web UI needs them).
+    let local_write_router = kyma_server::dashboards_write_router(engine.catalog.clone())
+        .merge(kyma_server::cleanup_write_router(engine.catalog.clone()))
+        .layer(write_mw());
+    let admin_users_router =
+        kyma_server::admin_handler::admin_users_router(engine.catalog.clone()).layer(admin_mw());
     let session_router =
         kyma_server::auth_handler::auth_session_router(engine.catalog.clone()).layer(read_mw());
 
     let app = read_router
         .merge(ingest_router)
+        .merge(local_write_router)
+        .merge(admin_users_router)
         .merge(session_router)
         .merge(kyma_server::auth_handler::auth_login_router(
             engine.catalog.clone(),

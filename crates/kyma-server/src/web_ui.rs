@@ -38,9 +38,29 @@ async fn serve_asset(uri: Uri) -> Response {
     }
 }
 
-/// Unknown paths (not `/v1/*`, `/flight/*`, `/health`, `/metrics`) fall back
-/// to `index.html` so client-side routing works on reload / deep-link.
-async fn serve_spa_fallback() -> Response {
+/// Unknown paths fall back to `index.html` so client-side routing works on
+/// reload / deep-link — EXCEPT API prefixes. An API route that isn't mounted
+/// on this deployment (e.g. control-plane-only surfaces in local mode) must
+/// be a real JSON 404, not a 200 with HTML: clients expecting JSON would
+/// choke on the body and the missing route would be invisible.
+async fn serve_spa_fallback(uri: Uri) -> Response {
+    let p = uri.path();
+    let is_api = p.starts_with("/v1/")
+        || p.starts_with("/flight")
+        || p.starts_with("/mcp")
+        || p == "/metrics"
+        || p == "/health";
+    if is_api {
+        return (
+            StatusCode::NOT_FOUND,
+            [(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            )],
+            format!(r#"{{"error":"endpoint not available on this server","path":{p:?}}}"#),
+        )
+            .into_response();
+    }
     match DIST.get_file("index.html") {
         Some(f) => html_response(f.contents()),
         None => (StatusCode::NOT_FOUND, "index.html missing").into_response(),

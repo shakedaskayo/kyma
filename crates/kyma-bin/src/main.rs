@@ -600,6 +600,17 @@ async fn main() -> Result<()> {
             require_role_middleware,
         ),
     );
+    // Feature discovery — everything is on in server mode (Role::Read).
+    let capabilities_router = kyma_server::capabilities::router(
+        kyma_server::capabilities::Capabilities::SERVER,
+    )
+    .layer(axum::middleware::from_fn_with_state(
+        AuthLayerState {
+            backend: backend.clone(),
+            required: Role::Read,
+        },
+        require_role_middleware,
+    ));
     // Auth routes: login is unauthenticated; me/logout are authenticated.
     let auth_login_router = kyma_server::auth_handler::auth_login_router(catalog.clone());
     let auth_session_router = kyma_server::auth_handler::auth_session_router(catalog.clone())
@@ -623,6 +634,7 @@ async fn main() -> Result<()> {
     let app = ingest_router
         .merge(query_router)
         .merge(mcp_router)
+        .merge(capabilities_router)
         .merge(admin_users_router)
         .merge(dashboards_write_router)
         .merge(discover_views_write_router)
