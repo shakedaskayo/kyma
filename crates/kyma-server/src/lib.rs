@@ -27,6 +27,7 @@ pub mod dashboards_handler;
 pub mod discover;
 pub mod graph_handler;
 pub mod flight;
+pub mod capabilities;
 mod health;
 pub mod icon_config;
 pub mod metrics;

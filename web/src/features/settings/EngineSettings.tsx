@@ -15,6 +15,7 @@ import {
   type EngineKind,
 } from "@/sdk/agent-engine";
 import { listCredentials } from "@/sdk/credentials";
+import { useCapability } from "@/features/capabilities/ControlPlaneGate";
 
 /**
  * Settings → Agent Engine card.
@@ -35,10 +36,13 @@ export function EngineSettings() {
     queryFn: () => listEngines({ endpoint, token }),
     enabled,
   });
+  // Stored credentials are a control-plane feature; local mode auto-detects
+  // keys from env / ~/.claude/.credentials.json instead, so skip the query.
+  const hasCredStore = useCapability("credentials");
   const creds = useQuery({
     queryKey: ["credentials", endpoint],
     queryFn: () => listCredentials({ endpoint, token }),
-    enabled,
+    enabled: enabled && hasCredStore,
   });
 
   const [kind, setKind] = useState<EngineKind>("ollama");
@@ -146,7 +150,7 @@ export function EngineSettings() {
           </div>
         </div>
 
-        {provider?.needs_key && (
+        {provider?.needs_key && hasCredStore && (
           <div className="space-y-1.5">
             <Label htmlFor="engine-credential">
               Credential{" "}

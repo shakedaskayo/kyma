@@ -9,6 +9,7 @@ import {
   KeyRound,
   Sparkles,
   Brain,
+  Cloud,
   Settings as SettingsIcon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -17,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useUI } from "@/lib/ui-store";
 import { SimpleTooltip } from "@/components/ui/tooltip";
+import { useCapabilities, type Capabilities } from "@/sdk/capabilities";
 
 interface NavItem {
   to: string;
@@ -24,6 +26,9 @@ interface NavItem {
   icon: LucideIcon;
   /** Search params required by the destination route, if any. */
   search?: Record<string, unknown>;
+  /** Capability flag this surface needs; a cloud badge marks it when the
+   * connected server (e.g. local mode) doesn't have it. */
+  requires?: keyof Omit<Capabilities, "mode">;
 }
 
 interface NavGroup {
@@ -44,8 +49,8 @@ const GROUPS: NavGroup[] = [
     label: "Build",
     items: [
       { to: "/dashboards", label: "Dashboards", icon: LayoutDashboard },
-      { to: "/connectors", label: "Connectors", icon: Plug },
-      { to: "/credentials", label: "Credentials", icon: KeyRound },
+      { to: "/connectors", label: "Connectors", icon: Plug, requires: "connectors" },
+      { to: "/credentials", label: "Credentials", icon: KeyRound, requires: "credentials" },
     ],
   },
   {
@@ -67,6 +72,8 @@ function NavLinkRow({
   collapsed: boolean;
 }) {
   const Icon = item.icon;
+  const caps = useCapabilities();
+  const cloudOnly = item.requires ? !caps[item.requires] : false;
   const row = (
     <Link
       to={item.to}
@@ -89,10 +96,15 @@ function NavLinkRow({
       )}
       <Icon className={cn("h-[1.05rem] w-[1.05rem] shrink-0", active && "text-primary")} />
       {!collapsed && <span className="truncate">{item.label}</span>}
+      {!collapsed && cloudOnly && (
+        <SimpleTooltip label="Runs on the kyma control plane" side="right">
+          <Cloud className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+        </SimpleTooltip>
+      )}
     </Link>
   );
   return collapsed ? (
-    <SimpleTooltip label={item.label} side="right">
+    <SimpleTooltip label={cloudOnly ? `${item.label} — control plane` : item.label} side="right">
       {row}
     </SimpleTooltip>
   ) : (

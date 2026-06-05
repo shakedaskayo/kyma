@@ -1196,11 +1196,22 @@ async fn run_lookup_handler(
 async fn list_engines(
     State(state): State<AgentState>,
 ) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let active = state
-        .engines
-        .get()
-        .await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Nothing persisted yet (fresh install) is a normal state, not an error —
+    // return the provider catalogue with a default-shaped `active` so the
+    // settings UI can render the form and save a first config.
+    let (active, configured) = match state.engines.get().await {
+        Ok(a) => (a, true),
+        Err(_) => (
+            EngineConfig {
+                kind: EngineKind::Ollama,
+                model: String::new(),
+                credential_id: None,
+                host: None,
+                extras: serde_json::Value::Null,
+            },
+            false,
+        ),
+    };
     // Pass the active Ollama host (if configured) so the catalogue's live
     // `/api/tags` fetch hits the user's actual instance, not the default.
     let ollama_hint = active.host.as_deref();
@@ -1208,6 +1219,7 @@ async fn list_engines(
     Ok(axum::Json(serde_json::json!({
         "available": catalogue,
         "active": active,
+        "configured": configured,
     })))
 }
 
