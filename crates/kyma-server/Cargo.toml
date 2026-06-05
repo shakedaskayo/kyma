@@ -19,6 +19,7 @@ kyma-kql.workspace = true
 kyma-catalog.workspace = true
 kyma-connectors.workspace = true
 kyma-memory.workspace = true
+kyma-ccmem.workspace = true
 datafusion.workspace = true
 arrow.workspace = true
 arrow-array.workspace = true
@@ -77,6 +78,11 @@ chrono.workspace = true
 uuid.workspace = true
 kyma-catalog.workspace = true
 tempfile = "3"
+# Embedded-engine fixtures for the cc_curate unit tests (no Postgres).
+kyma-catalog-sqlite.workspace = true
+kyma-format-tlm.workspace = true
+kyma-storage.workspace = true
+kyma-embed.workspace = true
 
 [features]
 default = []
