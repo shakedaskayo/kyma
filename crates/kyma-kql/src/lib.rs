@@ -22,6 +22,9 @@
 //! - Operators: `where`, `project`, `project-away`, `extend`, `summarize ...
 //!   by ...`, `take`, `limit`, `sort by`, `order by`, `top N by`, `count`,
 //!   `distinct`.
+//! - `union` (leading-only): `union [withsource=Col] A, (B | …), … | ops`
+//!   with ADX-default outer-by-name semantics (column superset, null-fill).
+//!   Needs schema context — use [`kql_to_sql_with_schemas`].
 //! - Expressions: literals (int, float, string, bool, duration, datetime),
 //!   column refs, arithmetic `+ - * / %`, comparison `== != < > <= >=`,
 //!   logical `and or not`, string `contains`/`startswith`/`endswith`/`has`.
@@ -49,4 +52,4 @@ mod lexer;
 mod parser;
 mod state;
 
-pub use parser::{kql_to_sql, ParseError};
+pub use parser::{kql_to_sql, kql_to_sql_with_schemas, ParseError, SchemaMap};

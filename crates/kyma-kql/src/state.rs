@@ -23,6 +23,11 @@ pub(crate) struct GraphDef {
 #[derive(Debug, Default)]
 pub(crate) struct QueryState {
     pub table: String,
+    /// The original root table this pipeline reads from. Unlike `table`,
+    /// which graph operators reassign to a CTE name (`_gt_result`, …), this
+    /// is set once at construction and never changes. `union` uses it to
+    /// determine a sub-pipeline branch's schema for the column superset.
+    pub root: String,
     /// Explicit projections, e.g. "timestamp", "status".
     pub select: Vec<String>,
     /// Columns to *exclude* (project-away). Can't be combined with `select`.
@@ -53,10 +58,18 @@ pub(crate) struct QueryState {
 
 impl QueryState {
     pub(crate) fn new(table: impl Into<String>) -> Self {
+        let table = table.into();
         Self {
-            table: table.into(),
+            root: table.clone(),
+            table,
             ..Default::default()
         }
+    }
+
+    /// The original root table (the table named at the head of the pipeline),
+    /// independent of any CTE reassignment of `table` by graph operators.
+    pub(crate) fn root_table(&self) -> &str {
+        &self.root
     }
 
     pub(crate) fn to_sql(&self) -> String {
