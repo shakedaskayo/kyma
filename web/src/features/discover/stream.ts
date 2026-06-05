@@ -14,6 +14,15 @@ export type StreamRow = {
   row: Record<string, unknown>;
 };
 
+// Backend timestamp columns arrive as zone-less strings (Arrow NaiveDateTime,
+// e.g. "2026-06-05T11:19:28" or "2026-06-05 08:43:20.123456") whose instants
+// are UTC. Date.parse treats zone-less input as LOCAL time, so anchor them to
+// UTC explicitly. Zoned strings (Z or ±hh:mm) pass through untouched.
+const ZONELESS = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?$/;
+function parseTimestamp(raw: string): number {
+  return ZONELESS.test(raw) ? Date.parse(`${raw.replace(" ", "T")}Z`) : Date.parse(raw);
+}
+
 export function mergeSources(
   sources: SourceState[],
   visible?: SourceKey[] | null,
@@ -28,7 +37,7 @@ export function mergeSources(
         typeof raw === "number"
           ? raw // epoch millis pass through; Date.parse(String(number)) would NaN
           : typeof raw === "string"
-            ? Date.parse(raw)
+            ? parseTimestamp(raw)
             : NaN;
       out.push({ ts: Number.isNaN(parsed) ? null : parsed, source: s.source, row });
     }

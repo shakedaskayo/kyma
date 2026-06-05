@@ -75,3 +75,15 @@ test("mergeSources handles Arrow NaiveDateTime format (no T, no Z)", () => {
   expect(out).toHaveLength(1);
   expect(out[0].ts).not.toBeNull();
 });
+
+test("mergeSources treats zone-less timestamps as UTC", () => {
+  const a = src({ rows: [{ timestamp: "2026-06-05T11:19:28" }] });
+  const out = mergeSources([a]);
+  expect(out[0].ts).toBe(Date.parse("2026-06-05T11:19:28Z"));
+});
+
+test("mergeSources treats Arrow space-separated timestamps as UTC", () => {
+  const a = src({ rows: [{ timestamp: "2024-06-05 08:43:20.123456" }] });
+  const out = mergeSources([a]);
+  expect(out[0].ts).toBe(Date.parse("2024-06-05T08:43:20.123Z"));
+});
