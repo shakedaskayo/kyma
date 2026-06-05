@@ -2,6 +2,7 @@ import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Settings as SettingsIcon, LogOut, ChevronDown, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 import { useSession } from "@/sdk/session";
 import { useHealth } from "@/sdk/reconnect";
 import { useWorkspace } from "@/features/tabs/workspace-store";
@@ -133,6 +134,20 @@ export function Shell() {
     if (!endpoint) return;
     return startHealth(endpoint);
   }, [endpoint, startHealth]);
+
+  // The UI ships embedded in the server binary; when /health starts reporting
+  // a new version mid-session (kyma update / reinstall restarted the server),
+  // this tab's loaded assets are stale — nudge for a reload.
+  const serverUpdated = useHealth((s) => s.updated);
+  useEffect(() => {
+    if (!serverUpdated) return;
+    toast.info("kyma was updated", {
+      id: "kyma-server-updated",
+      description: "The server is running a new version — reload to get the latest UI.",
+      duration: Infinity,
+      action: { label: "Reload", onClick: () => window.location.reload() },
+    });
+  }, [serverUpdated]);
 
   return (
     <TooltipProvider delayDuration={250}>

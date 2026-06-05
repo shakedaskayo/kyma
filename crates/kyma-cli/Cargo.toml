@@ -40,5 +40,9 @@ clap = { version = "4", features = ["derive", "env"] }
 reqwest = { workspace = true, features = ["json"] }
 futures-util = "0.3"
 directories = "5"
+# `kyma update` self-update: unpack release tarballs + verify checksums.
+flate2 = "1"
+tar = "0.4"
+sha2 = "0.10"
 # Hidden interactive password prompts for `kyma user create|passwd`.
 rpassword = "7"

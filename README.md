@@ -118,6 +118,16 @@ pnpm -C web build && cargo install --path crates/kyma-cli
 # …or let the installer do it: curl -fsSL …/install.sh | bash -s -- --from-source
 ```
 
+**Stay current** — the web UI ships inside the binary, so updating one updates both:
+
+```bash
+kyma update          # grab the latest release + restart the local server on the new UI
+kyma update --check  # just tell me if I'm behind
+```
+
+`kyma version` / `kyma serve` also nudge (once a day, `KYMA_NO_UPDATE_CHECK=1` to opt out)
+when a newer release exists.
+
 Want it server-side for a team, with connectors and continuous ingestion? See
 **[Two tiers](#two-tiers-local-binary--control-plane)**.
 

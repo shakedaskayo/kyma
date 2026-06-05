@@ -197,13 +197,55 @@ ensure_on_path() {
 }
 
 # ── end-to-end wiring ────────────────────────────────────────────────────────
+server_version() {  # /health version of whatever is listening on :PORT
+  curl -fsS "http://127.0.0.1:${PORT}/health" 2>/dev/null \
+    | sed -n 's/.*"version":"\([^"]*\)".*/\1/p'
+}
+
+stop_stale_server() {  # the web UI is embedded in the binary → old process = old UI
+  local pid="" i
+  [ -f "$HOME/.kyma/serve.pid" ] && pid=$(cat "$HOME/.kyma/serve.pid" 2>/dev/null)
+  if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+    pid=""
+    if have lsof; then
+      pid=$(lsof -ti "tcp:${PORT}" 2>/dev/null | head -1)
+      # Only kill it if it really is a kyma process.
+      [ -n "$pid" ] && { ps -p "$pid" -o comm= 2>/dev/null | grep -q kyma || pid=""; }
+    fi
+  fi
+  if [ -z "$pid" ]; then
+    warn "Couldn't find the old server's pid — restart it yourself to load the new web UI."
+    return 1
+  fi
+  kill "$pid" 2>/dev/null
+  for i in $(seq 1 20); do
+    kill -0 "$pid" 2>/dev/null || { rm -f "$HOME/.kyma/serve.pid"; return 0; }
+    sleep 0.5
+  done
+  warn "Old server (pid $pid) didn't exit; restart it yourself to load the new web UI."
+  return 1
+}
+
 start_serve() {
   [ -z "$TOKEN" ] && TOKEN="kyma-local-$(rand_hex)"
   mkdir -p "$HOME/.kyma"
   local log="$HOME/.kyma/serve.log"
+  local need_start=1
   if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
-    info "A server is already listening on :${PORT}"
-  else
+    # A server is up — but if it predates the binary we just installed, it is
+    # still serving the OLD embedded web UI. Restart it on a version mismatch.
+    local new_ver running_ver
+    new_ver=$(kyma version 2>/dev/null | awk '{print $2}')
+    running_ver=$(server_version)
+    if [ -n "$new_ver" ] && [ "$running_ver" = "$new_ver" ]; then
+      info "A server is already listening on :${PORT} (v${running_ver})"
+      need_start=0
+    else
+      warn "Server on :${PORT} is running v${running_ver:-unknown}; you just installed v${new_ver} — restarting it."
+      stop_stale_server || need_start=0   # couldn't stop it → don't double-bind the port
+    fi
+  fi
+  if [ "$need_start" = "1" ]; then
     info "Starting kyma serve on http://127.0.0.1:${PORT} …"
     KYMA_AUTH_TOKENS="${TOKEN}:admin" nohup "$(command -v kyma)" serve \
       --addr "127.0.0.1:${PORT}" >"$log" 2>&1 &
@@ -283,5 +325,6 @@ else
   say "  Wire an agent: ${bold}kyma setup claude-code${rst}   (stdio MCP, zero infra)"
   say "  Or the plugin: ${bold}kyma connect <url> && kyma install-plugin${rst}"
 fi
+say "  Update:   ${bold}kyma update${rst}   (new binary + web UI, restarts the local server)"
 say "  Docs:     https://www.getkyma.dev"
 say ""
