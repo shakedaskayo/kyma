@@ -2,10 +2,12 @@
 
 use kyma_mcp::{router, McpState, ServerInfo, ToolDispatch};
 use kyma_server::agent::SharedToolCtx;
-use kyma_server::auth::{require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role};
-use std::sync::Arc;
+use kyma_server::auth::{
+    require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role,
+};
 use kyma_server::test_support::seeded_state_with_obs_otel_logs;
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 #[tokio::test]
 async fn full_mcp_handshake_against_seeded_server() {
@@ -16,56 +18,92 @@ async fn full_mcp_handshake_against_seeded_server() {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: Some(pool),
+        memory: None,
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),
-        server_info: ServerInfo { name: "kyma".into(), version: "test".into() },
+        server_info: ServerInfo {
+            name: "kyma".into(),
+            version: "test".into(),
+        },
     };
     let backend: Arc<dyn AuthBackend> = Arc::new(EnvAuthBackend::from_str("mcp-token:read"));
     let app = router(mcp_state).layer(axum::middleware::from_fn_with_state(
-        AuthLayerState { backend, required: Role::Read },
+        AuthLayerState {
+            backend,
+            required: Role::Read,
+        },
         require_role_middleware,
     ));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, app).await.ok(); });
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.ok();
+    });
 
     let client = reqwest::Client::new();
     let base = format!("http://{addr}/mcp/v1");
 
     // 1. initialize
-    let init: Value = client.post(&base).bearer_auth("mcp-token")
+    let init: Value = client
+        .post(&base)
+        .bearer_auth("mcp-token")
         .json(&json!({
             "jsonrpc":"2.0","id":1,"method":"initialize",
             "params":{"protocolVersion":"2025-03-26","capabilities":{},
                       "clientInfo":{"name":"test","version":"0"}}
         }))
-        .send().await.unwrap().json().await.unwrap();
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     assert_eq!(init["result"]["protocolVersion"], "2025-03-26");
 
     // 2. notifications/initialized
-    let resp = client.post(&base).bearer_auth("mcp-token")
+    let resp = client
+        .post(&base)
+        .bearer_auth("mcp-token")
         .json(&json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), reqwest::StatusCode::ACCEPTED);
 
     // 3. tools/list
-    let list: Value = client.post(&base).bearer_auth("mcp-token")
+    let list: Value = client
+        .post(&base)
+        .bearer_auth("mcp-token")
         .json(&json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}))
-        .send().await.unwrap().json().await.unwrap();
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     let tools = list["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 19);
+    assert_eq!(tools.len(), 21);
 
     // 4. tools/call list_databases
-    let call: Value = client.post(&base).bearer_auth("mcp-token")
+    let call: Value = client
+        .post(&base)
+        .bearer_auth("mcp-token")
         .json(&json!({
             "jsonrpc":"2.0","id":3,"method":"tools/call",
             "params":{"name":"list_databases","arguments":{}}
         }))
-        .send().await.unwrap().json().await.unwrap();
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     assert_eq!(call["result"]["isError"], false);
-    let dbs = call["result"]["structuredContent"]["databases"].as_array().unwrap();
+    let dbs = call["result"]["structuredContent"]["databases"]
+        .as_array()
+        .unwrap();
     assert!(dbs.iter().any(|v| v.as_str() == Some("obs")));
 }
 
@@ -78,24 +116,35 @@ async fn rejects_request_without_bearer_token() {
         catalog: state.catalog,
         format: state.format,
         pool: Some(pool),
+        memory: None,
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),
-        server_info: ServerInfo { name: "kyma".into(), version: "test".into() },
+        server_info: ServerInfo {
+            name: "kyma".into(),
+            version: "test".into(),
+        },
     };
     let backend: Arc<dyn AuthBackend> = Arc::new(EnvAuthBackend::from_str("mcp-token:read"));
     let app = router(mcp_state).layer(axum::middleware::from_fn_with_state(
-        AuthLayerState { backend, required: Role::Read },
+        AuthLayerState {
+            backend,
+            required: Role::Read,
+        },
         require_role_middleware,
     ));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, app).await.ok(); });
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.ok();
+    });
 
     let resp = reqwest::Client::new()
         .post(&format!("http://{addr}/mcp/v1"))
         .json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
 }

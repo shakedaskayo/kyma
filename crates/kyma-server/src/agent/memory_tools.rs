@@ -29,6 +29,14 @@ fn node_id_of(s: &str) -> String {
     }
 }
 
+/// The realm a fetched node row belongs to (queue partition for mutations).
+fn row_realm(row: &Value) -> String {
+    row.get("realm")
+        .and_then(Value::as_str)
+        .unwrap_or(DEFAULT_REALM)
+        .to_string()
+}
+
 /// Build a [`MemoryWriter`] from the shared tool context + the process-wide
 /// embedding backend. Returns a JSON error payload on failure.
 async fn build_writer(shared: &SharedToolCtx) -> std::result::Result<MemoryWriter, Value> {
@@ -102,6 +110,80 @@ struct SaveMemoryArgs {
     where_: Option<String>,
     #[serde(default)]
     learned: Option<String>,
+    /// Wait for the memory to be fully committed before returning. Default
+    /// false: the save is acked immediately and batched in the background.
+    #[serde(default)]
+    sync: Option<bool>,
+}
+
+/// Fold a [`SaveMemoryArgs`] into the [`CreateMemory`] the writer/queue takes.
+fn create_from_save_args(parsed: SaveMemoryArgs) -> CreateMemory {
+    let mut content = parsed.content;
+    append_field(&mut content, "Why", &parsed.why);
+    append_field(&mut content, "Where", &parsed.where_);
+    append_field(&mut content, "Learned", &parsed.learned);
+    let mut cm = CreateMemory::new(content);
+    cm.title = parsed.title;
+    cm.memory_type = parsed
+        .memory_type
+        .as_deref()
+        .map(MemoryType::parse)
+        .unwrap_or_default();
+    cm.tags = parsed.tags.unwrap_or_default();
+    cm.realm = parsed.realm.unwrap_or_else(|| DEFAULT_REALM.to_string());
+    cm.importance = parsed.importance.unwrap_or(0.5).clamp(0.0, 1.0);
+    cm.references = parsed.references.unwrap_or_default();
+    cm.topic_key = parsed.topic_key.filter(|s| !s.trim().is_empty());
+    // Stamp who is writing (host / transport / MCP client) into provenance.
+    super::identity::stamp_provenance(&mut cm);
+    cm
+}
+
+/// Resolve the topic-key upsert target for `cm`, if any. Issues a realm
+/// barrier first when the async queue is active so the lookup observes
+/// in-flight same-key saves (keeps latest-wins correct under batching).
+async fn resolve_upsert_target(shared: &SharedToolCtx, cm: &CreateMemory) -> Option<uuid::Uuid> {
+    let tk = cm.topic_key.as_deref()?;
+    shared.memory_barrier(std::slice::from_ref(&cm.realm)).await;
+    let existing = find_by_topic_key(shared, &cm.realm, tk).await?;
+    let uuid_part = existing.strip_prefix("memory:").unwrap_or(&existing);
+    uuid::Uuid::parse_str(uuid_part).ok()
+}
+
+/// Try the async enqueue path for a save. Returns the response payload on
+/// success; `None` means "use the synchronous path" (sync requested, no queue,
+/// or the queue refused — backpressure/shutdown).
+async fn try_queue_save(
+    shared: &SharedToolCtx,
+    cm: &CreateMemory,
+    upsert: Option<uuid::Uuid>,
+) -> Option<Value> {
+    let q = shared.memory.as_ref()?;
+    let res = match upsert {
+        Some(u) => q.submit_save_as(u, cm, true).await.map(|()| u),
+        None => q.submit_create(cm, true).await,
+    };
+    match res {
+        Ok(id) => {
+            let mut out = json!({
+                "saved": true,
+                "queued": true,
+                "id": id.to_string(),
+                "node_id": format!("memory:{id}"),
+            });
+            if upsert.is_some() {
+                out["upserted"] = json!(true);
+                if let Some(tk) = cm.topic_key.as_deref() {
+                    out["topic_key"] = json!(tk);
+                }
+            }
+            Some(out)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "memory queue rejected save; falling back to synchronous path");
+            None
+        }
+    }
 }
 
 /// Append a `Label: value` line to `content` when `val` is non-empty.
@@ -134,27 +216,24 @@ pub fn tool_save_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
+                    let sync = parsed.sync.unwrap_or(false);
+                    let cm = create_from_save_args(parsed);
+
+                    // Async-by-default: resolve the upsert target (behind a
+                    // realm barrier), enqueue, and return the final id
+                    // immediately. Falls back to the synchronous path on
+                    // `sync: true` or queue refusal.
+                    if !sync && shared.memory.is_some() {
+                        let upsert = resolve_upsert_target(&shared, &cm).await;
+                        if let Some(out) = try_queue_save(&shared, &cm, upsert).await {
+                            return Ok(out);
+                        }
+                    }
+
                     let writer = match build_writer(&shared).await {
                         Ok(w) => w,
                         Err(e) => return Ok(e),
                     };
-                    let mut content = parsed.content;
-                    append_field(&mut content, "Why", &parsed.why);
-                    append_field(&mut content, "Where", &parsed.where_);
-                    append_field(&mut content, "Learned", &parsed.learned);
-                    let mut cm = CreateMemory::new(content);
-                    cm.title = parsed.title;
-                    cm.memory_type = parsed
-                        .memory_type
-                        .as_deref()
-                        .map(MemoryType::parse)
-                        .unwrap_or_default();
-                    cm.tags = parsed.tags.unwrap_or_default();
-                    cm.realm = parsed.realm.unwrap_or_else(|| DEFAULT_REALM.to_string());
-                    cm.importance = parsed.importance.unwrap_or(0.5).clamp(0.0, 1.0);
-                    cm.references = parsed.references.unwrap_or_default();
-                    cm.topic_key = parsed.topic_key.clone().filter(|s| !s.trim().is_empty());
-
                     // Topic-key upsert: if a memory with the same (realm, topic_key)
                     // exists, update it in place (latest-wins) instead of duplicating.
                     // Provision first so the topic_key column exists for the lookup.
@@ -242,6 +321,10 @@ struct IngestEntityArgs {
     /// vendor/cloud resources.
     #[serde(default, rename = "type")]
     entity_type: Option<String>,
+    /// Wait for the entity + links to be fully committed before returning.
+    /// Default false: queued and batched in the background.
+    #[serde(default)]
+    sync: Option<bool>,
 }
 
 /// Lowercase, hyphenated slug for the entity's stable upsert key.
@@ -289,11 +372,10 @@ pub fn tool_ingest_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     if name.is_empty() {
                         return Ok(json!({"error": "name is required"}));
                     }
-                    let writer = match build_writer(&shared).await {
-                        Ok(w) => w,
-                        Err(e) => return Ok(e),
-                    };
-                    let realm = parsed.realm.unwrap_or_else(|| DEFAULT_REALM.to_string());
+                    let realm = parsed
+                        .realm
+                        .clone()
+                        .unwrap_or_else(|| DEFAULT_REALM.to_string());
                     let kind: Option<String> = parsed
                         .kind
                         .as_deref()
@@ -373,19 +455,76 @@ pub fn tool_ingest_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         "type": entity_type.clone(),
                         "icon": icon.clone(),
                     }));
-                    let topic_key =
-                        format!("entity/{}/{}", kind.as_deref().unwrap_or("entity"), slug(&name));
+                    super::identity::stamp_provenance(&mut cm);
+                    let topic_key = format!(
+                        "entity/{}/{}",
+                        kind.as_deref().unwrap_or("entity"),
+                        slug(&name)
+                    );
                     cm.topic_key = Some(topic_key.clone());
 
+                    // Async-by-default: enqueue the entity + its links. FIFO +
+                    // node-before-edge ordering makes linking to the
+                    // just-queued entity safe within the same flush.
+                    let sync = parsed.sync.unwrap_or(false);
+                    if !sync && shared.memory.is_some() {
+                        let upsert = resolve_upsert_target(&shared, &cm).await;
+                        if let Some(mut out) = try_queue_save(&shared, &cm, upsert).await {
+                            let q = shared.memory.as_ref().expect("queue checked above");
+                            let id = out["id"].as_str().unwrap_or_default().to_string();
+                            let src = format!("memory:{id}");
+                            let now = now_rfc3339();
+                            let mut linked = 0usize;
+                            let mut link_errors: Vec<String> = Vec::new();
+                            for l in parsed.links.clone().unwrap_or_default() {
+                                let dst = if l.target_namespace.is_some() {
+                                    l.target_node_id.clone()
+                                } else {
+                                    node_id_of(&l.target_node_id)
+                                };
+                                let rel = l
+                                    .relationship_type
+                                    .unwrap_or_else(|| "RELATES_TO".to_string());
+                                let edge = kyma_memory::rows::edge_row(
+                                    &src,
+                                    &dst,
+                                    &rel,
+                                    &realm,
+                                    l.target_namespace.as_deref(),
+                                    None,
+                                    &now,
+                                );
+                                match q.submit_edge_row(&realm, edge, true).await {
+                                    Ok(()) => linked += 1,
+                                    Err(e) => link_errors.push(format!("{dst}: {e}")),
+                                }
+                            }
+                            out["created"] = json!(true);
+                            out["upserted"] = json!(upsert.is_some());
+                            out["kind"] = json!(kind);
+                            out["type"] = json!(entity_type);
+                            out["icon"] = json!(icon);
+                            out["topic_key"] = json!(topic_key);
+                            out["links"] = json!(linked);
+                            if !link_errors.is_empty() {
+                                out["link_errors"] = json!(link_errors);
+                            }
+                            return Ok(out);
+                        }
+                    }
+
+                    let writer = match build_writer(&shared).await {
+                        Ok(w) => w,
+                        Err(e) => return Ok(e),
+                    };
                     // Upsert by topic key so re-ingesting the same entity updates
                     // it in place rather than duplicating. Provision first so the
                     // topic_key column exists for the lookup.
                     let _ = writer.ensure_provisioned().await;
                     let existing = find_by_topic_key(&shared, &realm, &topic_key).await;
-                    let (id, upserted) = match existing
-                        .as_deref()
-                        .and_then(|e| uuid::Uuid::parse_str(e.strip_prefix("memory:").unwrap_or(e)).ok())
-                    {
+                    let (id, upserted) = match existing.as_deref().and_then(|e| {
+                        uuid::Uuid::parse_str(e.strip_prefix("memory:").unwrap_or(e)).ok()
+                    }) {
                         Some(u) => match writer.save_as(u, &cm).await {
                             Ok(()) => (u, true),
                             Err(e) => return Ok(json!({"error": format!("upsert: {e}")})),
@@ -497,6 +636,9 @@ pub fn tool_recall_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         limit: parsed.limit,
                         expand_hops: Some(1),
                     };
+                    // Read-your-own-writes: land queued writes for the target
+                    // realms first (bounded; no-op when nothing is pending).
+                    shared.memory_barrier(&req.realms).await;
                     Ok(retrieve(&shared, &req).await.to_json())
                 }
             },
@@ -571,6 +713,9 @@ pub fn tool_memory_search(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         limit: parsed.limit,
                         expand_hops: parsed.expand_hops,
                     };
+                    // Read-your-own-writes: land queued writes for the target
+                    // realms first (bounded; no-op when nothing is pending).
+                    shared.memory_barrier(&req.realms).await;
                     Ok(retrieve(&shared, &req).await.to_json())
                 }
             },
@@ -644,6 +789,8 @@ pub fn tool_list_memories(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         until: None,
                         ..Default::default()
                     };
+                    // Read-your-own-writes for the listed realm(s).
+                    shared.memory_barrier(&filter.realms).await;
                     let sql = kyma_memory::sql::list_sql(NODE_TABLE, &filter, limit, offset);
                     Ok(execute_sql(&shared, DEFAULT_DATABASE, &sql, limit).await)
                 }
@@ -693,15 +840,42 @@ pub fn tool_link_memory_to_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
-                    let writer = match build_writer(&shared).await {
-                        Ok(w) => w,
-                        Err(e) => return Ok(e),
-                    };
                     let src = node_id_of(&parsed.memory_id);
                     let rel = parsed
                         .relationship_type
                         .unwrap_or_else(|| "REFERENCES".to_string());
                     let realm = parsed.realm.unwrap_or_else(|| DEFAULT_REALM.to_string());
+
+                    // Async-by-default: queue the edge. FIFO + node-before-edge
+                    // makes linking a just-queued memory safe.
+                    if let Some(q) = shared.memory.as_ref() {
+                        let edge = kyma_memory::rows::edge_row(
+                            &src,
+                            &parsed.target_node_id,
+                            &rel,
+                            &realm,
+                            parsed.target_namespace.as_deref(),
+                            None,
+                            &now_rfc3339(),
+                        );
+                        match q.submit_edge_row(&realm, edge, true).await {
+                            Ok(()) => {
+                                return Ok(json!({
+                                    "linked": true,
+                                    "queued": true,
+                                    "src": src,
+                                    "dst": parsed.target_node_id,
+                                    "type": rel,
+                                }))
+                            }
+                            Err(e) => tracing::warn!(error = %e, "memory queue rejected link; falling back to synchronous path"),
+                        }
+                    }
+
+                    let writer = match build_writer(&shared).await {
+                        Ok(w) => w,
+                        Err(e) => return Ok(e),
+                    };
                     match writer
                         .link(
                             &src,
@@ -738,6 +912,10 @@ pub(crate) async fn fetch_latest_node(
     shared: &SharedToolCtx,
     node_id: &str,
 ) -> std::result::Result<Value, Value> {
+    // Read-modify-write correctness: a mutation must observe the queued
+    // writes that precede it (the realm is unknown until the row is read, so
+    // barrier across all realms — these are rare curation paths).
+    shared.memory_barrier(&[]).await;
     let sql = kyma_memory::sql::latest_node_sql(NODE_TABLE, node_id);
     let res = execute_sql(shared, DEFAULT_DATABASE, &sql, 1).await;
     if let Some(err) = res.get("error") {
@@ -782,17 +960,29 @@ pub fn tool_update_memory_status(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Some(s) => s,
                         None => return Ok(json!({"error": "status must be active|background|archived"})),
                     };
-                    let writer = match build_writer(&shared).await {
-                        Ok(w) => w,
-                        Err(e) => return Ok(e),
-                    };
                     let node_id = node_id_of(&parsed.memory_id);
+                    // fetch_latest_node barriers internally, so this
+                    // read-modify-write sees queued versions of the memory.
                     let mut row = match fetch_latest_node(&shared, &node_id).await {
                         Ok(r) => r,
                         Err(e) => return Ok(e),
                     };
                     row["status"] = json!(status.as_str());
                     row["updated_at"] = json!(now_rfc3339());
+                    let realm = row_realm(&row);
+
+                    if let Some(q) = shared.memory.as_ref() {
+                        match q.submit_node_row(&realm, row.clone(), true).await {
+                            Ok(()) => {
+                                return Ok(json!({"ok": true, "queued": true, "memory_id": node_id, "status": status.as_str()}))
+                            }
+                            Err(e) => tracing::warn!(error = %e, "memory queue rejected update; falling back to synchronous path"),
+                        }
+                    }
+                    let writer = match build_writer(&shared).await {
+                        Ok(w) => w,
+                        Err(e) => return Ok(e),
+                    };
                     match writer.append_node_rows(vec![row]).await {
                         Ok(()) => Ok(json!({"ok": true, "memory_id": node_id, "status": status.as_str()})),
                         Err(e) => Ok(json!({"error": format!("update_status: {e}")})),
@@ -830,17 +1020,28 @@ pub fn tool_update_memory_importance(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
                     let importance = parsed.importance.clamp(0.0, 1.0) as f64;
-                    let writer = match build_writer(&shared).await {
-                        Ok(w) => w,
-                        Err(e) => return Ok(e),
-                    };
                     let node_id = node_id_of(&parsed.memory_id);
+                    // fetch_latest_node barriers internally (read-modify-write).
                     let mut row = match fetch_latest_node(&shared, &node_id).await {
                         Ok(r) => r,
                         Err(e) => return Ok(e),
                     };
                     row["importance"] = json!(importance);
                     row["updated_at"] = json!(now_rfc3339());
+                    let realm = row_realm(&row);
+
+                    if let Some(q) = shared.memory.as_ref() {
+                        match q.submit_node_row(&realm, row.clone(), true).await {
+                            Ok(()) => {
+                                return Ok(json!({"ok": true, "queued": true, "memory_id": node_id, "importance": importance}))
+                            }
+                            Err(e) => tracing::warn!(error = %e, "memory queue rejected update; falling back to synchronous path"),
+                        }
+                    }
+                    let writer = match build_writer(&shared).await {
+                        Ok(w) => w,
+                        Err(e) => return Ok(e),
+                    };
                     match writer.append_node_rows(vec![row]).await {
                         Ok(()) => Ok(json!({"ok": true, "memory_id": node_id, "importance": importance})),
                         Err(e) => Ok(json!({"error": format!("update_importance: {e}")})),
@@ -882,9 +1083,16 @@ pub fn tool_merge_memories(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
-                    let writer = match build_writer(&shared).await {
-                        Ok(w) => w,
-                        Err(e) => return Ok(e),
+                    // Async path needs no writer (and no embedding backend);
+                    // build one lazily only when the queue is absent.
+                    let q = shared.memory.clone();
+                    let writer = if q.is_none() {
+                        match build_writer(&shared).await {
+                            Ok(w) => Some(w),
+                            Err(e) => return Ok(e),
+                        }
+                    } else {
+                        None
                     };
                     let into = node_id_of(&parsed.into_id);
                     let now = now_rfc3339();
@@ -894,19 +1102,48 @@ pub fn tool_merge_memories(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         if from_id == into {
                             continue;
                         }
-                        // Archive the source (new version).
+                        // Archive the source (new version). fetch_latest_node
+                        // barriers internally so queued versions are observed.
                         if let Ok(mut row) = fetch_latest_node(&shared, &from_id).await {
                             row["status"] = json!("archived");
                             row["updated_at"] = json!(now);
-                            let _ = writer.append_node_rows(vec![row]).await;
+                            let realm = row_realm(&row);
+                            match (&q, &writer) {
+                                (Some(q), _) => {
+                                    let _ = q.submit_node_row(&realm, row, true).await;
+                                }
+                                (None, Some(w)) => {
+                                    let _ = w.append_node_rows(vec![row]).await;
+                                }
+                                (None, None) => unreachable!("writer built when queue is absent"),
+                            }
                         }
                         // Record the merge edge.
-                        let _ = writer
-                            .link(&from_id, &into, "MERGED_INTO", DEFAULT_REALM, None)
-                            .await;
+                        let edge = kyma_memory::rows::edge_row(
+                            &from_id,
+                            &into,
+                            "MERGED_INTO",
+                            DEFAULT_REALM,
+                            None,
+                            None,
+                            &now,
+                        );
+                        match (&q, &writer) {
+                            (Some(q), _) => {
+                                let _ = q.submit_edge_row(DEFAULT_REALM, edge, true).await;
+                            }
+                            (None, Some(w)) => {
+                                let _ = w.append_edge_rows(vec![edge]).await;
+                            }
+                            (None, None) => unreachable!("writer built when queue is absent"),
+                        }
                         merged.push(from_id);
                     }
-                    Ok(json!({"ok": true, "into": into, "merged": merged}))
+                    let mut out = json!({"ok": true, "into": into, "merged": merged});
+                    if q.is_some() {
+                        out["queued"] = json!(true);
+                    }
+                    Ok(out)
                 }
             },
         )
@@ -993,9 +1230,48 @@ pub fn tool_memory_judge(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
-                    let writer = match build_writer(&shared).await {
-                        Ok(w) => w,
-                        Err(e) => return Ok(e),
+                    let q = shared.memory.clone();
+                    let writer = if q.is_none() {
+                        match build_writer(&shared).await {
+                            Ok(w) => Some(w),
+                            Err(e) => return Ok(e),
+                        }
+                    } else {
+                        None
+                    };
+                    // Land a node row through the queue when present, else the writer.
+                    let put_node = |row: Value| {
+                        let q = q.clone();
+                        let writer = writer.clone();
+                        async move {
+                            let realm = row_realm(&row);
+                            match (&q, &writer) {
+                                (Some(q), _) => q
+                                    .submit_node_row(&realm, row, true)
+                                    .await
+                                    .map_err(|e| e.to_string()),
+                                (None, Some(w)) => {
+                                    w.append_node_rows(vec![row]).await.map_err(|e| e.to_string())
+                                }
+                                (None, None) => unreachable!("writer built when queue is absent"),
+                            }
+                        }
+                    };
+                    let put_edge = |edge: Value, realm: String| {
+                        let q = q.clone();
+                        let writer = writer.clone();
+                        async move {
+                            match (&q, &writer) {
+                                (Some(q), _) => q
+                                    .submit_edge_row(&realm, edge, true)
+                                    .await
+                                    .map_err(|e| e.to_string()),
+                                (None, Some(w)) => {
+                                    w.append_edge_rows(vec![edge]).await.map_err(|e| e.to_string())
+                                }
+                                (None, None) => unreachable!("writer built when queue is absent"),
+                            }
+                        }
                     };
                     let src = node_id_of(&parsed.memory_id);
                     let dst = node_id_of(&parsed.target_id);
@@ -1003,6 +1279,7 @@ pub fn tool_memory_judge(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     let now = now_rfc3339();
 
                     // Realm follows the target memory when we can read it.
+                    // (fetch_latest_node barriers internally.)
                     let target_row = fetch_latest_node(&shared, &dst).await.ok();
                     let realm = target_row
                         .as_ref()
@@ -1010,6 +1287,7 @@ pub fn tool_memory_judge(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         .and_then(Value::as_str)
                         .unwrap_or(DEFAULT_REALM)
                         .to_string();
+                    let queued = q.is_some();
 
                     match verdict.as_str() {
                         "supersedes" | "invalidates" => {
@@ -1019,30 +1297,36 @@ pub fn tool_memory_judge(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                             row["invalid_at"] = json!(now);
                             row["superseded_by"] = json!(src);
                             row["updated_at"] = json!(now);
-                            if let Err(e) = writer.append_node_rows(vec![row]).await {
+                            if let Err(e) = put_node(row).await {
                                 return Ok(json!({"error": format!("invalidate: {e}")}));
                             }
-                            let _ = writer.link(&src, &dst, "INVALIDATES", &realm, None).await;
-                            Ok(json!({"ok": true, "verdict": "supersedes", "src": src, "dst": dst}))
+                            let edge = kyma_memory::rows::edge_row(
+                                &src, &dst, "INVALIDATES", &realm, None, None, &now,
+                            );
+                            let _ = put_edge(edge, realm.clone()).await;
+                            Ok(json!({"ok": true, "queued": queued, "verdict": "supersedes", "src": src, "dst": dst}))
                         }
                         "merged" | "merged_into" => {
                             if let Some(mut row) = target_row {
                                 row["status"] = json!("archived");
                                 row["updated_at"] = json!(now);
-                                let _ = writer.append_node_rows(vec![row]).await;
+                                let _ = put_node(row).await;
                             }
-                            let _ = writer.link(&dst, &src, "MERGED_INTO", &realm, None).await;
-                            Ok(json!({"ok": true, "verdict": "merged", "into": src, "from": dst}))
+                            let edge = kyma_memory::rows::edge_row(
+                                &dst, &src, "MERGED_INTO", &realm, None, None, &now,
+                            );
+                            let _ = put_edge(edge, realm.clone()).await;
+                            Ok(json!({"ok": true, "queued": queued, "verdict": "merged", "into": src, "from": dst}))
                         }
                         _ => {
                             let props = json!({ "verdict": verdict, "reason": parsed.reason });
                             let edge = kyma_memory::rows::edge_row(
                                 &src, &dst, "RELATES_TO", &realm, None, Some(&props), &now,
                             );
-                            if let Err(e) = writer.append_edge_rows(vec![edge]).await {
+                            if let Err(e) = put_edge(edge, realm.clone()).await {
                                 return Ok(json!({"error": format!("relate: {e}")}));
                             }
-                            Ok(json!({"ok": true, "verdict": verdict, "src": src, "dst": dst}))
+                            Ok(json!({"ok": true, "queued": queued, "verdict": verdict, "src": src, "dst": dst}))
                         }
                     }
                 }
@@ -1110,16 +1394,23 @@ pub fn tool_memory_session_summary(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     if content == "Session summary." {
                         return Ok(json!({"error": "nothing to summarize — provide at least one field"}));
                     }
-                    let writer = match build_writer(&shared).await {
-                        Ok(w) => w,
-                        Err(e) => return Ok(e),
-                    };
                     let mut cm = CreateMemory::new(content);
                     cm.title = Some("Session summary".to_string());
                     cm.memory_type = MemoryType::Summary;
                     cm.realm = parsed.realm.unwrap_or_else(|| DEFAULT_REALM.to_string());
                     cm.importance = 0.6;
                     cm.tags = vec!["session-summary".to_string()];
+                    super::identity::stamp_provenance(&mut cm);
+
+                    // Async-by-default — a session summary never has a
+                    // topic_key, so no upsert lookup is needed.
+                    if let Some(out) = try_queue_save(&shared, &cm, None).await {
+                        return Ok(out);
+                    }
+                    let writer = match build_writer(&shared).await {
+                        Ok(w) => w,
+                        Err(e) => return Ok(e),
+                    };
                     match writer.save(&cm).await {
                         Ok(id) => Ok(json!({"saved": true, "id": id.to_string(), "node_id": format!("memory:{id}")})),
                         Err(e) => Ok(json!({"error": format!("session_summary: {e}")})),
@@ -1129,5 +1420,168 @@ pub fn tool_memory_session_summary(ctx: SharedToolCtx) -> Arc<dyn Tool> {
         )
         .with_parameters_schema::<SessionSummaryArgs>()
         .with_read_only(false),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// save_memories — explicit bulk save (one batch, one response)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct SaveMemoriesArgs {
+    /// The memories to save. Each entry takes the same shape as `save_memory`.
+    memories: Vec<SaveMemoryArgs>,
+    /// Wait for all memories to be fully committed before returning. Default
+    /// false: the batch is queued (one embedding call + one commit per table).
+    #[serde(default)]
+    sync: Option<bool>,
+}
+
+const SAVE_MEMORIES_DESC: &str = "Persist MANY durable memories in one call — \
+much faster than repeated save_memory: the batch shares one embedding \
+round-trip and one storage commit. Use whenever you have two or more \
+facts/decisions/learnings to remember at once. Entries take the same shape as \
+save_memory (content, title, memory_type, tags, realm, importance, \
+references, topic_key). Returns the ids in input order.";
+
+pub fn tool_save_memories(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "save_memories",
+            SAVE_MEMORIES_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: SaveMemoriesArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    if parsed.memories.is_empty() {
+                        return Ok(json!({"error": "memories is empty"}));
+                    }
+                    let sync = parsed.sync.unwrap_or(false);
+                    let items: Vec<CreateMemory> = parsed
+                        .memories
+                        .into_iter()
+                        .map(create_from_save_args)
+                        .collect();
+
+                    let mut ids: Vec<Value> = Vec::with_capacity(items.len());
+                    let mut errors: Vec<String> = Vec::new();
+                    let use_queue = !sync && shared.memory.is_some();
+                    // The whole loop enqueues within one linger window, so the
+                    // worker lands it as one batch: one embed call, one node
+                    // commit, one edge commit.
+                    let writer = if use_queue {
+                        None
+                    } else {
+                        match build_writer(&shared).await {
+                            Ok(w) => Some(w),
+                            Err(e) => return Ok(e),
+                        }
+                    };
+                    for (i, cm) in items.iter().enumerate() {
+                        if use_queue {
+                            let upsert = resolve_upsert_target(&shared, cm).await;
+                            match try_queue_save(&shared, cm, upsert).await {
+                                Some(out) => ids.push(out["id"].clone()),
+                                None => {
+                                    errors.push(format!("#{i}: queue rejected"));
+                                    ids.push(Value::Null);
+                                }
+                            }
+                            continue;
+                        }
+                        let w = writer.as_ref().expect("writer built for sync path");
+                        if cm.topic_key.is_some() {
+                            let _ = w.ensure_provisioned().await;
+                        }
+                        let upsert =
+                            match cm.topic_key.as_deref() {
+                                Some(tk) => find_by_topic_key(&shared, &cm.realm, tk)
+                                    .await
+                                    .and_then(|e| {
+                                        uuid::Uuid::parse_str(
+                                            e.strip_prefix("memory:").unwrap_or(&e),
+                                        )
+                                        .ok()
+                                    }),
+                                None => None,
+                            };
+                        let res = match upsert {
+                            Some(u) => w.save_as(u, cm).await.map(|()| u),
+                            None => w.save(cm).await,
+                        };
+                        match res {
+                            Ok(id) => ids.push(json!(id.to_string())),
+                            Err(e) => {
+                                errors.push(format!("#{i}: {e}"));
+                                ids.push(Value::Null);
+                            }
+                        }
+                    }
+                    let mut out = json!({
+                        "saved": errors.is_empty(),
+                        "count": ids.iter().filter(|v| !v.is_null()).count(),
+                        "ids": ids,
+                    });
+                    if use_queue {
+                        out["queued"] = json!(true);
+                    }
+                    if !errors.is_empty() {
+                        out["errors"] = json!(errors);
+                    }
+                    Ok(out)
+                }
+            },
+        )
+        .with_parameters_schema::<SaveMemoriesArgs>()
+        .with_read_only(false),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// flush_memory — explicit barrier for callers that need a commit checkpoint
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct FlushMemoryArgs {
+    /// Realms to flush. Empty/omitted = everything pending.
+    #[serde(default)]
+    realms: Option<Vec<String>>,
+}
+
+const FLUSH_MEMORY_DESC: &str = "Wait until queued memory writes are fully \
+committed (bounded). Saves are queued + batched in the background by default; \
+recall/search already flush their target realms automatically — call this only \
+when you need an explicit durability checkpoint (e.g. right before the session \
+ends).";
+
+pub fn tool_flush_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "flush_memory",
+            FLUSH_MEMORY_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: FlushMemoryArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    let realms = parsed.realms.unwrap_or_default();
+                    let flushed = match shared.memory.as_ref() {
+                        Some(q) => q.barrier(&realms).await,
+                        None => true, // synchronous mode: writes are always committed
+                    };
+                    Ok(json!({"flushed": flushed}))
+                }
+            },
+        )
+        .with_parameters_schema::<FlushMemoryArgs>()
+        .with_read_only(true)
+        .with_concurrency_safe(true),
     )
 }

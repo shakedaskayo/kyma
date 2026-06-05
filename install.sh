@@ -12,7 +12,9 @@
 #
 # Flags:
 #   --version VERSION   Release tag to install (default: latest)
-#   --dir DIR           Install dir for the binary (default: /usr/local/bin)
+#   --dir DIR           Install dir for the binary. Default: /usr/local/bin if
+#                       already writable, else ~/.local/bin — NO sudo needed;
+#                       sudo is only used if you explicitly pick a root-owned dir.
 #   --from-source       Build from a git clone instead of a prebuilt binary
 #   --src-dir DIR       Where to clone for --source builds (default: ~/kyma)
 #   --serve             Start `kyma serve` (local web UI + API) after install
@@ -24,7 +26,8 @@
 #   --yes, -y           Assume defaults; no prompts
 #   --help, -h          Show this help
 #
-# Env: KYMA_INSTALL_DIR, KYMA_SRC_DIR, KYMA_PORT, GITHUB_TOKEN (private/rate-limit)
+# Env: KYMA_INSTALL_DIR, KYMA_SRC_DIR, KYMA_PORT, GITHUB_TOKEN (private/rate-limit),
+#      KYMA_NO_MODIFY_PATH=1 (don't touch shell rc files)
 #
 # Note: we deliberately do NOT use `set -e` — the interactive wizard relies on
 # `[ … ] && …` tests whose "false" result is normal control flow. Must-succeed
@@ -33,7 +36,7 @@ set -uo pipefail
 
 REPO="shakedaskayo/kyma"
 RAW_BASE="https://raw.githubusercontent.com/${REPO}/main"
-INSTALL_DIR="${KYMA_INSTALL_DIR:-/usr/local/bin}"
+INSTALL_DIR="${KYMA_INSTALL_DIR:-}"   # empty → resolved after flags (no-sudo default)
 SRC_DIR="${KYMA_SRC_DIR:-$HOME/kyma}"
 PORT="${KYMA_PORT:-7777}"
 VERSION=""
@@ -100,6 +103,53 @@ AUTH_HEADER=""
 [ -n "${GITHUB_TOKEN:-}" ] && AUTH_HEADER="Authorization: token ${GITHUB_TOKEN}"
 curl_gh() { if [ -n "$AUTH_HEADER" ]; then curl -H "$AUTH_HEADER" "$@"; else curl "$@"; fi; }
 
+# ── install dir (no sudo by default) ────────────────────────────────────────
+# kyma needs NO root: the binary runs as your user and all data lives in
+# ~/.kyma. sudo only ever comes into play if you explicitly choose a
+# root-owned dir (--dir /usr/local/bin or the interactive system-wide option).
+resolve_install_dir() {
+  [ -n "$INSTALL_DIR" ] && return   # --dir / KYMA_INSTALL_DIR: explicit choice
+  # Already-writable /usr/local/bin (Intel-Mac Homebrew, root, custom): use it.
+  if [ -d /usr/local/bin ] && [ -w /usr/local/bin ]; then
+    INSTALL_DIR=/usr/local/bin
+    return
+  fi
+  local user_dir="$HOME/.local/bin"
+  if [ "$INTERACTIVE" = "1" ]; then
+    if ask "Install to ${user_dir} (no sudo)? ${dim}('n' → /usr/local/bin via sudo)${rst}" "Y"; then
+      INSTALL_DIR="$user_dir"
+    else
+      INSTALL_DIR=/usr/local/bin
+    fi
+  else
+    INSTALL_DIR="$user_dir"
+  fi
+}
+
+# Make INSTALL_DIR reachable in future shells (current shell is handled by
+# ensure_on_path). Appends one guarded line to the shell rc; opt out with
+# KYMA_NO_MODIFY_PATH=1.
+persist_path() {
+  case ":$PATH:" in *":$INSTALL_DIR:"*) return ;; esac
+  local line rc
+  line="export PATH=\"$INSTALL_DIR:\$PATH\""
+  if [ -n "${KYMA_NO_MODIFY_PATH:-}" ]; then
+    warn "$INSTALL_DIR is not on your PATH — add it yourself: $line"
+    return
+  fi
+  case "${SHELL:-}" in
+    */zsh)  rc="$HOME/.zshrc" ;;
+    */bash) rc="$HOME/.bashrc" ;;
+    */fish) warn "$INSTALL_DIR is not on your PATH — run: fish_add_path $INSTALL_DIR"; return ;;
+    *)      rc="$HOME/.profile" ;;
+  esac
+  if [ "$INTERACTIVE" = "1" ]; then
+    ask "Add ${INSTALL_DIR} to PATH in ${rc}?" "Y" || { say "  Add it yourself: $line"; return; }
+  fi
+  grep -qsF "$INSTALL_DIR" "$rc" 2>/dev/null || printf '\n# kyma\n%s\n' "$line" >> "$rc"
+  info "Added $INSTALL_DIR to PATH in $rc — restart your shell (or: source $rc)"
+}
+
 # ── platform + version ──────────────────────────────────────────────────────
 detect_platform() {
   local os arch
@@ -153,7 +203,10 @@ install_binary() {
   "$tmp/kyma" --help >/dev/null 2>&1 || die "Downloaded binary won't run — wrong platform?"
   mkdir -p "$INSTALL_DIR" 2>/dev/null || true
   if [ -w "$INSTALL_DIR" ]; then mv "$tmp/kyma" "$INSTALL_DIR/kyma"
-  else warn "Need sudo to write ${INSTALL_DIR}"; sudo mv "$tmp/kyma" "$INSTALL_DIR/kyma"; fi
+  else
+    warn "Need sudo to write ${INSTALL_DIR} (a system dir — use --dir ~/.local/bin for a sudo-free install)"
+    sudo mv "$tmp/kyma" "$INSTALL_DIR/kyma"
+  fi
   chmod +x "$INSTALL_DIR/kyma"
   return 0
 }
@@ -279,12 +332,22 @@ say "${bold}kyma${rst} — the context engine for coding agents"
 say "${dim}https://github.com/${REPO}${rst}"
 say ""
 
+resolve_install_dir
 if [ "$FROM_SOURCE" = "1" ]; then
   install_source
 else
   install_binary || { warn "Falling back to a source build."; install_source; }
 fi
+# persist first: ensure_on_path mutates this process's PATH, which would make
+# the "already on PATH" check a false positive for future shells.
+persist_path
 ensure_on_path
+# A leftover copy elsewhere (e.g. an old sudo install in /usr/local/bin) can
+# shadow the fresh one depending on PATH order — surface it.
+resolved="$(command -v kyma 2>/dev/null || true)"
+if [ "$FROM_SOURCE" = "0" ] && [ -n "$resolved" ] && [ "$resolved" != "$INSTALL_DIR/kyma" ]; then
+  warn "Another kyma is on your PATH at ${resolved} — the new install is ${INSTALL_DIR}/kyma."
+fi
 info "Installed: $(command -v kyma)  ($(kyma version 2>/dev/null || echo kyma))"
 say ""
 

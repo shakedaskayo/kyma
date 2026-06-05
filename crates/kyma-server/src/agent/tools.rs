@@ -46,6 +46,28 @@ pub struct SharedToolCtx {
     /// memory recall/save paths run entirely over the catalog + engine, so they
     /// work unchanged with `None`.
     pub pool: Option<PgPool>,
+    /// Async memory ingest queue. `Some` ⇒ memory write tools enqueue and
+    /// return immediately (batched embedding + bulk commits land in the
+    /// background); read tools issue a realm-scoped flush barrier first so
+    /// read-your-own-writes holds. `None` ⇒ the original synchronous write
+    /// path (tests, `kyma sync`, `KYMA_MEMORY_ASYNC=0`).
+    pub memory: Option<kyma_memory::MemoryQueue>,
+}
+
+impl SharedToolCtx {
+    /// Realm-scoped flush barrier for read paths: waits (bounded) until every
+    /// memory op queued to `realms` before this call has been attempted.
+    /// Empty slice = all realms. No-op without a queue or when idle.
+    pub async fn memory_barrier(&self, realms: &[String]) {
+        if let Some(q) = &self.memory {
+            if !q.barrier(realms).await {
+                tracing::warn!(
+                    ?realms,
+                    "memory flush barrier timed out; read may miss just-queued writes"
+                );
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -667,9 +689,11 @@ pub fn tool_find_references_to(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     };
                     let matches: Vec<Value> = rows
                         .into_iter()
-                        .map(|(db, tbl, col)| json!({
-                            "database": db, "table": tbl, "column": col,
-                        }))
+                        .map(|(db, tbl, col)| {
+                            json!({
+                                "database": db, "table": tbl, "column": col,
+                            })
+                        })
                         .collect();
                     Ok(json!({
                         "value": parsed.value,

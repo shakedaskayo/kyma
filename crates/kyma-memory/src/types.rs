@@ -83,7 +83,10 @@ impl MemoryStatus {
 }
 
 /// Input to [`crate::MemoryWriter::save`].
-#[derive(Debug, Clone)]
+///
+/// Serializable so queued saves can be persisted to the durable job store
+/// (`kyma-queue`) and replayed after a crash.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateMemory {
     pub content: String,
     pub title: Option<String>,

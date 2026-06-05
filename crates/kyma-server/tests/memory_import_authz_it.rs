@@ -17,7 +17,9 @@ use kyma_server::agent::local::{
     NullCredentialStore, NullEnabledSkillsStore, NullEnginePreferenceStore,
 };
 use kyma_server::agent::AgentState;
-use kyma_server::auth::{require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role};
+use kyma_server::auth::{
+    require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role,
+};
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -33,9 +35,11 @@ fn agent_app(state: &kyma_server::QueryState) -> axum::Router {
         tenant: DEFAULT_TENANT,
         skills: Arc::new(NullEnabledSkillsStore),
         mcp_url: None,
+        memory: None,
     };
-    let backend: Arc<dyn AuthBackend> =
-        Arc::new(EnvAuthBackend::from_str("read-token:read,write-token:write"));
+    let backend: Arc<dyn AuthBackend> = Arc::new(EnvAuthBackend::from_str(
+        "read-token:read,write-token:write",
+    ));
     kyma_server::agent::router(agent_state).layer(axum::middleware::from_fn_with_state(
         AuthLayerState {
             backend,

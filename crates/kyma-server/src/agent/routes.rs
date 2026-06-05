@@ -62,12 +62,18 @@ pub fn router(state: AgentState) -> axum::Router {
             "/sessions/:session_id",
             get(get_session_handler).delete(delete_session_handler),
         )
-        .route("/sessions/:session_id/turns", get(get_session_turns_handler))
+        .route(
+            "/sessions/:session_id/turns",
+            get(get_session_turns_handler),
+        )
         .route("/engines", get(list_engines))
         .route("/engine", get(get_engine).put(put_engine))
         .route("/engine/test", post(test_engine))
         .route("/skills", get(list_skills))
-        .route("/skills/enabled", get(get_enabled_skills).put(put_enabled_skills))
+        .route(
+            "/skills/enabled",
+            get(get_enabled_skills).put(put_enabled_skills),
+        )
         .route("/memory/overview", get(super::memory::overview_handler))
         .route("/memory/query", post(memory_query_handler))
         .route(
@@ -116,8 +122,7 @@ async fn import_memory_handler(
             return Json(json!({ "error": format!("embedding backend: {e}") })).into_response()
         }
     };
-    let writer =
-        kyma_memory::MemoryWriter::new(state.catalog.clone(), state.format.clone(), embed);
+    let writer = kyma_memory::MemoryWriter::new(state.catalog.clone(), state.format.clone(), embed);
     let mut applied_nodes = 0usize;
     let mut applied_edges = 0usize;
     let mut errors: Vec<String> = Vec::new();
@@ -172,6 +177,7 @@ async fn changes_memory_handler(
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
+        memory: state.memory.clone(),
     };
     let since = params
         .since
@@ -218,6 +224,7 @@ async fn export_memory_handler(
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
+        memory: state.memory.clone(),
     };
     let realm_filter = params
         .realm
@@ -231,7 +238,8 @@ async fn export_memory_handler(
                 valid_at, invalid_at, superseded_by, provenance, topic_key \
          FROM latest WHERE __rn = 1{realm_filter}"
     );
-    let edges_sql = "SELECT id, src, dst, type, realm, target_namespace, props, created_at FROM memory_edges";
+    let edges_sql =
+        "SELECT id, src, dst, type, realm, target_namespace, props, created_at FROM memory_edges";
     let db = kyma_memory::DEFAULT_DATABASE;
     let nodes = execute_sql(&shared, db, &nodes_sql, 1_000_000).await;
     let edges = execute_sql(&shared, db, edges_sql, 1_000_000).await;
@@ -290,6 +298,7 @@ async fn memory_query_handler(
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
+        memory: state.memory.clone(),
     };
     let result = retrieve(&shared, &body.retrieve).await;
     let mut out = result.to_json();
@@ -592,8 +601,13 @@ async fn ask_handler(
 
     // Build runner up-front so we can surface init errors as a single-message
     // UI Message Stream (rather than an HTTP 500).
-    let runner = match make_runner(&state, &session_id_str, &sctx.history, sctx.summary.as_deref())
-        .await
+    let runner = match make_runner(
+        &state,
+        &session_id_str,
+        &sctx.history,
+        sctx.summary.as_deref(),
+    )
+    .await
     {
         Ok(r) => r,
         Err(e) => {
@@ -649,8 +663,17 @@ async fn ask_handler(
             Err(e) => {
                 em.run_error("internal", &format!("user_id: {e}"));
                 finish_and_persist(
-                    pool.as_ref(), &mut em, run_id, &question, &model, tenant_uuid, Some(session_uuid),
-                    started_at, start, tool_calls, "error",
+                    pool.as_ref(),
+                    &mut em,
+                    run_id,
+                    &question,
+                    &model,
+                    tenant_uuid,
+                    Some(session_uuid),
+                    started_at,
+                    start,
+                    tool_calls,
+                    "error",
                 )
                 .await;
                 return;
@@ -661,8 +684,17 @@ async fn ask_handler(
             Err(e) => {
                 em.run_error("internal", &format!("session_id: {e}"));
                 finish_and_persist(
-                    pool.as_ref(), &mut em, run_id, &question, &model, tenant_uuid, Some(session_uuid),
-                    started_at, start, tool_calls, "error",
+                    pool.as_ref(),
+                    &mut em,
+                    run_id,
+                    &question,
+                    &model,
+                    tenant_uuid,
+                    Some(session_uuid),
+                    started_at,
+                    start,
+                    tool_calls,
+                    "error",
                 )
                 .await;
                 return;
@@ -781,8 +813,17 @@ async fn ask_handler(
         }
 
         finish_and_persist(
-            pool.as_ref(), &mut em, run_id, &question, &model, tenant_uuid, Some(session_uuid), started_at,
-            start, tool_calls, status_str,
+            pool.as_ref(),
+            &mut em,
+            run_id,
+            &question,
+            &model,
+            tenant_uuid,
+            Some(session_uuid),
+            started_at,
+            start,
+            tool_calls,
+            status_str,
         )
         .await;
     });
@@ -949,7 +990,11 @@ async fn get_session_handler(
         Err(resp) => return resp,
     };
     let Some(pool) = state.pool.as_ref() else {
-        return (StatusCode::NOT_FOUND, Json(json!({"error": "session not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "session not found"})),
+        )
+            .into_response();
     };
     let row: Option<(
         Option<String>,
@@ -1034,7 +1079,11 @@ async fn delete_session_handler(
         Err(resp) => return resp,
     };
     let Some(pool) = state.pool.as_ref() else {
-        return (StatusCode::NOT_FOUND, Json(json!({"error": "session not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "session not found"})),
+        )
+            .into_response();
     };
     // Turns cascade via FK ON DELETE CASCADE. `agent_runs.session_id` is a plain
     // (non-FK) column, so detach it to avoid dangling references.
@@ -1082,7 +1131,11 @@ async fn run_lookup_handler(
         }
     };
     let Some(pool) = state.pool.as_ref() else {
-        return (StatusCode::NOT_FOUND, Json(json!({"error": "run not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "run not found"})),
+        )
+            .into_response();
     };
 
     let row: Option<(
@@ -1143,11 +1196,22 @@ async fn run_lookup_handler(
 async fn list_engines(
     State(state): State<AgentState>,
 ) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let active = state
-        .engines
-        .get()
-        .await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Nothing persisted yet (fresh install) is a normal state, not an error —
+    // return the provider catalogue with a default-shaped `active` so the
+    // settings UI can render the form and save a first config.
+    let (active, configured) = match state.engines.get().await {
+        Ok(a) => (a, true),
+        Err(_) => (
+            EngineConfig {
+                kind: EngineKind::Ollama,
+                model: String::new(),
+                credential_id: None,
+                host: None,
+                extras: serde_json::Value::Null,
+            },
+            false,
+        ),
+    };
     // Pass the active Ollama host (if configured) so the catalogue's live
     // `/api/tags` fetch hits the user's actual instance, not the default.
     let ollama_hint = active.host.as_deref();
@@ -1155,6 +1219,7 @@ async fn list_engines(
     Ok(axum::Json(serde_json::json!({
         "available": catalogue,
         "active": active,
+        "configured": configured,
     })))
 }
 
@@ -1238,10 +1303,12 @@ async fn test_engine(
 
     // adk-rust path for Anthropic / OpenAI / Ollama.
     let resolver = CredentialResolver::new(state.credentials.clone(), state.tenant);
-    let key = resolver
-        .resolve(&cfg)
-        .await
-        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("credential: {e}")))?;
+    let key = resolver.resolve(&cfg).await.map_err(|e| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("credential: {e}"),
+        )
+    })?;
     let llm = build_engine(&cfg, key)
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("init: {e}")))?;
 
@@ -1308,8 +1375,7 @@ async fn list_skills(
         .get()
         .await
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let enabled_set: std::collections::HashSet<&str> =
-        enabled.iter().map(String::as_str).collect();
+    let enabled_set: std::collections::HashSet<&str> = enabled.iter().map(String::as_str).collect();
 
     let mut rows: Vec<SkillRow> = super::skills::discover_all()
         .into_iter()
@@ -1455,7 +1521,9 @@ async fn ask_via_claude_cli(
                     ui.text_delta(&block_id, &text);
                 }
                 claude_cli::ClaudeEvent::TextEnd { block_id } => ui.text_end(&block_id),
-                claude_cli::ClaudeEvent::ThinkingStart { block_id } => ui.reasoning_start(&block_id),
+                claude_cli::ClaudeEvent::ThinkingStart { block_id } => {
+                    ui.reasoning_start(&block_id)
+                }
                 claude_cli::ClaudeEvent::ThinkingDelta { block_id, text } => {
                     ui.reasoning_delta(&block_id, &text)
                 }
@@ -1525,7 +1593,11 @@ async fn ask_via_claude_cli(
             None,
             started_at,
             Utc::now(),
-            if errored.is_some() { "error" } else { "success" },
+            if errored.is_some() {
+                "error"
+            } else {
+                "success"
+            },
             &Value::String(answer.clone()),
             &json!([{ "event": "answer_final", "data": { "text": answer } }]),
         )

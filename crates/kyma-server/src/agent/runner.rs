@@ -16,9 +16,10 @@ use std::sync::Arc;
 use crate::agent::engine::{build_engine, CredentialResolver};
 
 use super::memory_tools::{
-    tool_ingest_entity, tool_link_memory_to_entity, tool_list_memories, tool_memory_compare,
-    tool_memory_judge, tool_memory_search, tool_memory_session_summary, tool_merge_memories,
-    tool_recall_memory, tool_save_memory, tool_update_memory_importance, tool_update_memory_status,
+    tool_flush_memory, tool_ingest_entity, tool_link_memory_to_entity, tool_list_memories,
+    tool_memory_compare, tool_memory_judge, tool_memory_search, tool_memory_session_summary,
+    tool_merge_memories, tool_recall_memory, tool_save_memories, tool_save_memory,
+    tool_update_memory_importance, tool_update_memory_status,
 };
 use super::sessions::Turn;
 use super::state::AgentState;
@@ -103,8 +104,7 @@ async fn compose_system_prompt(state: &AgentState) -> String {
     if enabled.is_empty() {
         return base;
     }
-    let enabled_set: std::collections::HashSet<&str> =
-        enabled.iter().map(String::as_str).collect();
+    let enabled_set: std::collections::HashSet<&str> = enabled.iter().map(String::as_str).collect();
     let discovered = crate::agent::skills::discover_all();
     let mut active: Vec<_> = discovered
         .into_iter()
@@ -116,7 +116,9 @@ async fn compose_system_prompt(state: &AgentState) -> String {
     active.sort_by(|a, b| a.name.cmp(&b.name));
 
     let mut out = base;
-    out.push_str("\n\n---\nADDITIONAL SKILLS — the user has enabled these. Use them when they apply.\n");
+    out.push_str(
+        "\n\n---\nADDITIONAL SKILLS — the user has enabled these. Use them when they apply.\n",
+    );
     for s in active {
         out.push_str(&format!("\n## Skill: {}\n", s.name));
         if !s.description.is_empty() {
@@ -141,6 +143,7 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
+        memory: state.memory.clone(),
     };
 
     let agent = LlmAgentBuilder::new(AGENT_NAME)
@@ -159,6 +162,8 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
         .tool(tool_graph_traverse(shared.clone()))
         // Agentic Memory tools.
         .tool(tool_save_memory(shared.clone()))
+        .tool(tool_save_memories(shared.clone()))
+        .tool(tool_flush_memory(shared.clone()))
         .tool(tool_memory_search(shared.clone()))
         .tool(tool_recall_memory(shared.clone()))
         .tool(tool_list_memories(shared.clone()))
@@ -237,10 +242,9 @@ async fn seed_history(
         if !s.is_empty() {
             let mut ev = Event::new("seed-summary");
             ev.author = "user".to_string();
-            ev.set_content(
-                Content::new("user")
-                    .with_text(format!("Summary of earlier conversation (for context):\n{s}")),
-            );
+            ev.set_content(Content::new("user").with_text(format!(
+                "Summary of earlier conversation (for context):\n{s}"
+            )));
             let _ = sessions.append_event(session_id, ev).await;
         }
     }
@@ -250,7 +254,11 @@ async fn seed_history(
         }
         let is_assistant = turn.role == "assistant";
         let mut ev = Event::new(format!("seed-{i}"));
-        ev.author = if is_assistant { AGENT_NAME.to_string() } else { "user".to_string() };
+        ev.author = if is_assistant {
+            AGENT_NAME.to_string()
+        } else {
+            "user".to_string()
+        };
         let role = if is_assistant { "model" } else { "user" };
         ev.set_content(Content::new(role).with_text(turn.text.clone()));
         let _ = sessions.append_event(session_id, ev).await;
@@ -339,7 +347,10 @@ pub async fn run_oneshot(
 
 /// Run a one-shot summarization of `transcript` with the configured engine and
 /// return the model's final text. Used by the rolling-summary pass.
-pub async fn summarize_conversation(state: &AgentState, transcript: &str) -> anyhow::Result<String> {
+pub async fn summarize_conversation(
+    state: &AgentState,
+    transcript: &str,
+) -> anyhow::Result<String> {
     run_oneshot(
         state,
         "kyma-summarizer",

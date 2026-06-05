@@ -33,4 +33,7 @@ pub struct AgentState {
     /// it via `--mcp-config` so the agent can query the user's data. `None`
     /// disables MCP wiring for that engine.
     pub mcp_url: Option<String>,
+    /// Async memory ingest queue — flows into every [`super::SharedToolCtx`]
+    /// built from this state. `None` ⇒ synchronous memory writes.
+    pub memory: Option<kyma_memory::MemoryQueue>,
 }

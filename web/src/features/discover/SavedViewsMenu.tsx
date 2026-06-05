@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createSavedView } from "@/sdk/discover";
+import { useCapability } from "@/features/capabilities/ControlPlaneGate";
 import type { Scope } from "./types";
 
 type Props = { currentScope: Scope; onSaved?: (id: string) => void };
@@ -18,6 +19,7 @@ export function SavedViewsMenu({ currentScope, onSaved }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const qc = useQueryClient();
+  const supported = useCapability("saved_views");
 
   const canSave = currentScope.kind === "sources" && currentScope.sources.length > 0;
 
@@ -35,6 +37,10 @@ export function SavedViewsMenu({ currentScope, onSaved }: Props) {
       onSaved?.(v.id);
     },
   });
+
+  // Saved views are stored on the control plane; hide the affordance entirely
+  // when the connected server (local mode) doesn't have them.
+  if (!supported) return null;
 
   return (
     <>

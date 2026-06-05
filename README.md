@@ -69,7 +69,8 @@ toy key-value store.
 
 **One command.** Installs the `kyma` binary, then an interactive wizard starts the
 local server, connects the CLI, and wires your coding agent. No Postgres, no
-Docker — embedded SQLite + local files:
+Docker, **no sudo** — embedded SQLite + local files, installed to `~/.local/bin`
+(pass `--dir /usr/local/bin` if you want it system-wide):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
