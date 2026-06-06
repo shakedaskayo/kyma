@@ -23,6 +23,8 @@
 #   --no-plugin         Don't install the plugin (skip the prompt)
 #   --port PORT         Port for `kyma serve` (default: 7777)
 #   --token TOKEN       Static API token to use (default: generated)
+#   --prod-deploy       After install, launch `kyma deploy init` (AWS+Supabase
+#                       production wizard) instead of the local-dev flow
 #   --yes, -y           Assume defaults; no prompts
 #   --help, -h          Show this help
 #
@@ -43,6 +45,7 @@ VERSION=""
 TOKEN=""
 FROM_SOURCE=0
 ASSUME_YES=0
+PROD_DEPLOY=0
 DO_SERVE=""     # "", 1, or 0
 DO_PLUGIN=""    # "", 1, or 0
 
@@ -54,7 +57,7 @@ warn() { printf '%s!%s %s\n' "$ylw" "$rst" "$*" >&2; }
 err()  { printf '%s✗ %s%s\n' "$red" "$*" "$rst" >&2; }
 die()  { err "$*"; exit 1; }
 
-usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 # ── parse args ────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -69,6 +72,7 @@ while [[ $# -gt 0 ]]; do
     --no-serve)   DO_SERVE=0; shift ;;
     --plugin)     DO_PLUGIN=1; shift ;;
     --no-plugin)  DO_PLUGIN=0; shift ;;
+    --prod-deploy) PROD_DEPLOY=1; shift ;;
     --yes|-y)     ASSUME_YES=1; shift ;;
     --help|-h)    usage ;;
     *) die "Unknown option: $1 (try --help)" ;;
@@ -350,6 +354,14 @@ if [ "$FROM_SOURCE" = "0" ] && [ -n "$resolved" ] && [ "$resolved" != "$INSTALL_
 fi
 info "Installed: $(command -v kyma)  ($(kyma version 2>/dev/null || echo kyma))"
 say ""
+
+# ── production deployment hand-off ────────────────────────────────────────
+# --prod-deploy: skip the local-dev flow entirely; the deploy wizard owns
+# all prompts from here (AWS Fargate + S3 + Supabase, Terraform/Pulumi).
+if [ "$PROD_DEPLOY" = "1" ]; then
+  info "Launching the production deployment wizard…"
+  exec kyma deploy init
+fi
 
 # Decide serve / plugin (flags > prompt > non-interactive default of NO).
 if [ -z "$DO_PLUGIN" ]; then
