@@ -135,3 +135,6 @@ required-features = ["test-support"]
 [[test]]
 name = "discover_saved_views_it"
 required-features = ["test-support"]
+
+[[test]]
+name = "oidc_backend_it"

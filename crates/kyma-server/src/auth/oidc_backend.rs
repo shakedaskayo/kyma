@@ -69,6 +69,10 @@ pub struct OidcAuthBackend {
     http: reqwest::Client,
     /// issuer -> cached JWKS
     jwks: RwLock<HashMap<String, CachedJwks>>,
+    /// Minimum time between forced JWKS refreshes for an unknown kid.
+    /// Defaults to [`JWKS_MIN_REFRESH`]. Override via [`Self::with_min_refresh`]
+    /// in tests to bypass the 30-second throttle.
+    min_refresh: Duration,
 }
 
 const JWKS_TTL: Duration = Duration::from_secs(3600);
@@ -82,7 +86,18 @@ impl OidcAuthBackend {
             inner,
             http: reqwest::Client::new(),
             jwks: RwLock::new(HashMap::new()),
+            min_refresh: JWKS_MIN_REFRESH,
         }
+    }
+
+    /// Override the minimum time between forced JWKS refreshes.
+    ///
+    /// Intended for integration tests that need to exercise key rotation without
+    /// waiting 30 seconds. Pass `Duration::ZERO` to disable throttling entirely.
+    #[doc(hidden)]
+    pub fn with_min_refresh(mut self, d: Duration) -> Self {
+        self.min_refresh = d;
+        self
     }
 
     /// Returns true if the string looks like a three-segment base64url JWT.
@@ -131,7 +146,7 @@ impl OidcAuthBackend {
                 // Rate-limit forced refreshes.
                 if force {
                     if let Some(last) = cached.last_refresh_attempt {
-                        if last.elapsed() < JWKS_MIN_REFRESH {
+                        if last.elapsed() < self.min_refresh {
                             // Return stale rather than hammering the IdP.
                             return Ok(cached.set.clone());
                         }
