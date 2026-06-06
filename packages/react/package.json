@@ -7,11 +7,11 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./graph": { "types": "./dist/graph.d.ts", "import": "./dist/graph.js" },
-    "./query": { "types": "./dist/query.d.ts", "import": "./dist/query.js" },
-    "./discover": { "types": "./dist/discover.d.ts", "import": "./dist/discover.js" },
-    "./dashboards": { "types": "./dist/dashboards.d.ts", "import": "./dist/dashboards.js" },
-    "./agent": { "types": "./dist/agent.d.ts", "import": "./dist/agent.js" },
+    "./graph": { "types": "./dist/graph/index.d.ts", "import": "./dist/graph.js" },
+    "./query": { "types": "./dist/query/index.d.ts", "import": "./dist/query.js" },
+    "./discover": { "types": "./dist/discover/index.d.ts", "import": "./dist/discover.js" },
+    "./dashboards": { "types": "./dist/dashboards/index.d.ts", "import": "./dist/dashboards.js" },
+    "./agent": { "types": "./dist/agent/index.d.ts", "import": "./dist/agent.js" },
     "./styles.css": "./dist/style.css"
   },
   "files": ["dist"],
@@ -22,7 +22,9 @@
     "dev": "vite build --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
   },
   "peerDependencies": { "react": ">=18", "react-dom": ">=18" },
   "dependencies": {
