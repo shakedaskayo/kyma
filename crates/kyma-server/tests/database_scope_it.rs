@@ -144,6 +144,64 @@ async fn query_handler_rejects_unscoped_database() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// /v1/graph/schema — the synthetic schema graph spans all databases and must
+// be filtered by the principal's scope (metadata-leak guard).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn schema_graph_excludes_unscoped_databases() {
+    // Seeded state has an "obs" database with tables; token is scoped to
+    // "allowed_db" only — nothing from "obs" may appear in the schema graph.
+    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+    let req = auth_header(Request::builder().uri("/v1/graph/schema/overview"))
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = one(state, req).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert!(
+        !body.contains("obs"),
+        "schema graph leaked unscoped database metadata: {body}"
+    );
+}
+
+#[tokio::test]
+async fn schema_graph_includes_scoped_database() {
+    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+    // The schema graph only renders databases that have tables — give
+    // allowed_db one so it produces nodes.
+    let db_id = state
+        .catalog
+        .create_database("allowed_db")
+        .await
+        .expect("create allowed_db");
+    let schema = std::sync::Arc::new(arrow_schema::Schema::new(vec![arrow_schema::Field::new(
+        "id",
+        arrow_schema::DataType::Utf8,
+        false,
+    )]));
+    state
+        .catalog
+        .create_table(
+            db_id,
+            "events",
+            schema,
+            kyma_core::catalog::TableConfig::default(),
+        )
+        .await
+        .expect("create_table events");
+    let req = auth_header(Request::builder().uri("/v1/graph/schema/overview"))
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = one(state, req).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert!(
+        body.contains("allowed_db"),
+        "schema graph should include the scoped database: {body}"
+    );
+    assert!(!body.contains("\"obs\""), "obs must stay filtered: {body}");
+}
+
 #[tokio::test]
 async fn query_handler_allows_scoped_database() {
     // Token is scoped to "allowed_db". The database exists (we create it).

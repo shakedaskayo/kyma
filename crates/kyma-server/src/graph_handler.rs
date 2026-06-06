@@ -9,21 +9,33 @@ use kyma_core::catalog::Catalog;
 use kyma_graph::{ColumnDef, SchemaSource};
 
 /// Adapts the full [`Catalog`] down to the narrow [`SchemaSource`] the
-/// schema-graph needs.
+/// schema-graph needs. When `allowed` is `Some`, only those databases are
+/// visible — this is how per-database token scope applies to the synthetic
+/// schema graph (mirrors `catalog_handler::filter_schema_by_principal`).
 pub struct CatalogSchemaSource {
     catalog: Arc<dyn Catalog>,
+    allowed: Option<Vec<String>>,
 }
 
 impl CatalogSchemaSource {
     pub fn new(catalog: Arc<dyn Catalog>) -> Self {
-        Self { catalog }
+        Self { catalog, allowed: None }
+    }
+
+    /// Restrict visible databases to `allowed` (None = unrestricted).
+    pub fn with_allowed(catalog: Arc<dyn Catalog>, allowed: Option<Vec<String>>) -> Self {
+        Self { catalog, allowed }
     }
 }
 
 #[async_trait]
 impl SchemaSource for CatalogSchemaSource {
     async fn databases(&self) -> anyhow::Result<Vec<String>> {
-        Ok(self.catalog.list_databases().await.map_err(anyhow::Error::from)?)
+        let mut dbs = self.catalog.list_databases().await.map_err(anyhow::Error::from)?;
+        if let Some(allowed) = &self.allowed {
+            dbs.retain(|d| allowed.iter().any(|a| a == d));
+        }
+        Ok(dbs)
     }
     async fn tables(&self, database: &str) -> anyhow::Result<Vec<String>> {
         Ok(self.catalog.list_tables(database).await.map_err(anyhow::Error::from)?)
@@ -225,10 +237,14 @@ async fn resolve(
     state: &QueryState,
     graph: &str,
     database: &str,
+    allowed_databases: Option<Vec<String>>,
 ) -> Result<ResolvedProvider, Response> {
     if graph == SCHEMA_GRAPH {
+        // The schema graph spans all databases — apply the principal's
+        // per-database scope so scoped tokens can't enumerate metadata of
+        // databases outside their allow-list.
         return Ok(ResolvedProvider::Schema(SchemaGraphProvider::new(Arc::new(
-            CatalogSchemaSource::new(state.catalog.clone()),
+            CatalogSchemaSource::with_allowed(state.catalog.clone(), allowed_databases),
         ))));
     }
     match state.catalog.get_graph(database, graph).await {
@@ -393,7 +409,8 @@ async fn overview(
     if let Err(r) = enforce_scope(principal.as_deref(), &db) {
         return r;
     }
-    let p = match resolve(&state, &graph, &db).await {
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -414,7 +431,8 @@ async fn stats(
     if let Err(r) = enforce_scope(principal.as_deref(), &db) {
         return r;
     }
-    let p = match resolve(&state, &graph, &db).await {
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -434,7 +452,8 @@ async fn schema(
     if let Err(r) = enforce_scope(principal.as_deref(), &db) {
         return r;
     }
-    let p = match resolve(&state, &graph, &db).await {
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -454,7 +473,8 @@ async fn node(
     if let Err(r) = enforce_scope(principal.as_deref(), &db) {
         return r;
     }
-    let p = match resolve(&state, &graph, &db).await {
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -480,7 +500,8 @@ async fn subgraph(
     if let Err(r) = enforce_scope(principal.as_deref(), &db) {
         return r;
     }
-    let p = match resolve(&state, &graph, &db).await {
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -501,7 +522,8 @@ async fn search(
     if let Err(r) = enforce_scope(principal.as_deref(), &db) {
         return r;
     }
-    let p = match resolve(&state, &graph, &db).await {
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -525,7 +547,8 @@ async fn neighbors(
     if let Err(r) = enforce_scope(principal.as_deref(), &db) {
         return r;
     }
-    let p = match resolve(&state, &graph, &db).await {
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };

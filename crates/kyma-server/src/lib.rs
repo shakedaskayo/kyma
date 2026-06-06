@@ -323,6 +323,32 @@ pub async fn database_scope_middleware(
     next.run(req).await
 }
 
+/// Axum middleware that rejects database-scoped principals on the Arrow
+/// Flight surface (`/flight/*`). Flight tickets address databases internally
+/// and bypass the per-handler scope checks, so until scope enforcement exists
+/// inside the Flight service itself we fail closed: tokens carrying an
+/// `allowed_databases` restriction get 403; unrestricted principals (and
+/// auth-disabled deployments, whose synthesized Admin principal has
+/// `allowed_databases: None`) are unaffected.
+pub async fn flight_scope_guard_middleware(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if let Some(principal) = req.extensions().get::<crate::auth::Principal>() {
+        if principal.allowed_databases.is_some() {
+            let request_id = extract_request_id(req.headers());
+            return error_response(
+                axum::http::StatusCode::FORBIDDEN,
+                "forbidden",
+                "database-scoped tokens cannot use the Flight interface yet",
+                &request_id,
+            );
+        }
+    }
+
+    next.run(req).await
+}
+
 #[cfg(test)]
 mod cors_tests {
     use super::*;
@@ -397,6 +423,77 @@ mod cors_tests {
             "expected no ACAO header for disallowed origin, got: {:?}",
             acao
         );
+    }
+}
+
+#[cfg(test)]
+mod flight_scope_guard_tests {
+    use super::*;
+    use crate::auth::{Principal, Role};
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    fn principal(allowed: Option<Vec<&str>>) -> Principal {
+        Principal {
+            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            role: Role::Admin,
+            subject: None,
+            allowed_databases: allowed
+                .map(|v| v.into_iter().map(String::from).collect()),
+        }
+    }
+
+    /// Builds a guarded route with an injected principal (None = no auth ran,
+    /// e.g. auth-disabled deployments before the middleware synthesizes one).
+    fn app(p: Option<Principal>) -> Router {
+        let inject = axum::middleware::from_fn(
+            move |mut req: axum::extract::Request, next: axum::middleware::Next| {
+                let p = p.clone();
+                async move {
+                    if let Some(p) = p {
+                        req.extensions_mut().insert(p);
+                    }
+                    next.run(req).await
+                }
+            },
+        );
+        Router::new()
+            .route("/flight/x", axum::routing::post(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(flight_scope_guard_middleware))
+            .layer(inject)
+    }
+
+    async fn status_of(app: Router) -> StatusCode {
+        app.oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/flight/x")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+        .status()
+    }
+
+    #[tokio::test]
+    async fn scoped_principal_is_rejected() {
+        let s = status_of(app(Some(principal(Some(vec!["staging"]))))).await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn unrestricted_principal_passes() {
+        let s = status_of(app(Some(principal(None)))).await;
+        assert_eq!(s, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn missing_principal_passes() {
+        // No Principal extension (auth fully disabled) — guard is a no-op.
+        let s = status_of(app(None)).await;
+        assert_eq!(s, StatusCode::OK);
     }
 }
 

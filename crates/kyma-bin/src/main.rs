@@ -703,6 +703,13 @@ async fn main() -> Result<()> {
                 node_id: Some(lease.node_id),
                 pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
             })
+            // Fail closed: database-scoped tokens cannot use Flight (tickets
+            // address databases internally, bypassing per-handler scope
+            // checks). Layered before auth so it runs AFTER auth populates
+            // the Principal extension (axum layers run outermost-last-added).
+            .layer(axum::middleware::from_fn(
+                kyma_server::flight_scope_guard_middleware,
+            ))
             .layer(axum::middleware::from_fn_with_state(
                 AuthLayerState {
                     backend: backend.clone(),
