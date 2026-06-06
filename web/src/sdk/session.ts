@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 import type { AuthUser } from "./auth";
 
+export type AuthProvider = "password" | "supabase";
+
 export type SessionState = {
   endpoint: string;
   /** The short-lived access token sent as the API bearer. */
@@ -10,13 +12,27 @@ export type SessionState = {
   refreshToken: string;
   /** ISO timestamp when the access token expires (informational). */
   accessExpiresAt: string;
+  /** Which login flow produced this session (drives 401 recovery). */
+  provider: AuthProvider;
+  /** Supabase project URL + anon key (supabase provider only) — persisted so
+   *  the client can be recreated after a page reload. */
+  supabaseUrl: string;
+  supabaseAnonKey: string;
   database: string;
   user: AuthUser | null;
   set: (
     p: Partial<
       Pick<
         SessionState,
-        "endpoint" | "token" | "refreshToken" | "accessExpiresAt" | "database" | "user"
+        | "endpoint"
+        | "token"
+        | "refreshToken"
+        | "accessExpiresAt"
+        | "provider"
+        | "supabaseUrl"
+        | "supabaseAnonKey"
+        | "database"
+        | "user"
       >
     >,
   ) => void;
@@ -57,6 +73,9 @@ export const useSession = create<SessionState>()(
       token: "",
       refreshToken: "",
       accessExpiresAt: "",
+      provider: "password" as AuthProvider,
+      supabaseUrl: "",
+      supabaseAnonKey: "",
       database: "obs",
       user: null,
       set: (p) => set(p),
@@ -66,6 +85,9 @@ export const useSession = create<SessionState>()(
           token: "",
           refreshToken: "",
           accessExpiresAt: "",
+          provider: "password",
+          supabaseUrl: "",
+          supabaseAnonKey: "",
           database: "obs",
           user: null,
         }),

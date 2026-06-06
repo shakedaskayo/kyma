@@ -79,7 +79,10 @@ function UserMenu() {
 
   const handleLogout = async () => {
     setLoggingOut(true);
-    if (session.token) {
+    if (session.provider === "supabase") {
+      const { supabaseSignOut } = await import("@/sdk/supabase");
+      await supabaseSignOut();
+    } else if (session.token) {
       await logout({ endpoint: session.endpoint, token: session.token }).catch(() => {});
     }
     session.reset();
