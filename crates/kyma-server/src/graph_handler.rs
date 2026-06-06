@@ -121,7 +121,7 @@ impl GraphQueryExecutor for QueryEngineExecutor {
 // ---------------------------------------------------------------------------
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -333,11 +333,36 @@ fn db_from_headers(headers: &axum::http::HeaderMap) -> String {
         .to_string()
 }
 
+/// Enforce per-database token scope. Returns `Err(Response)` on violation.
+/// When `db` is empty (no x-database header), there is nothing to enforce.
+fn enforce_scope(
+    principal: Option<&crate::auth::Principal>,
+    db: &str,
+) -> Result<(), Response> {
+    if db.is_empty() {
+        return Ok(());
+    }
+    if let Some(p) = principal {
+        if let Err((status, msg)) = crate::auth::check_database_scope(p, db) {
+            return Err((
+                status,
+                Json(serde_json::json!({"error": {"code": "forbidden", "message": msg}})),
+            )
+                .into_response());
+        }
+    }
+    Ok(())
+}
+
 async fn list_graphs(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let db = db_from_headers(&headers);
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
     let mut refs = vec![GraphRef {
         name: SCHEMA_GRAPH.into(),
         kind: "schema".into(),
@@ -359,11 +384,15 @@ async fn list_graphs(
 
 async fn overview(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path(graph): Path<String>,
     Query(q): Query<OverviewQuery>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let db = db_from_headers(&headers);
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
     let p = match resolve(&state, &graph, &db).await {
         Ok(p) => p,
         Err(r) => return r,
@@ -376,11 +405,15 @@ async fn overview(
 
 async fn stats(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path(graph): Path<String>,
     Query(q): Query<RealmQuery>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let db = db_from_headers(&headers);
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
     let p = match resolve(&state, &graph, &db).await {
         Ok(p) => p,
         Err(r) => return r,
@@ -393,10 +426,14 @@ async fn stats(
 
 async fn schema(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path(graph): Path<String>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let db = db_from_headers(&headers);
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
     let p = match resolve(&state, &graph, &db).await {
         Ok(p) => p,
         Err(r) => return r,
@@ -409,10 +446,14 @@ async fn schema(
 
 async fn node(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path((graph, id)): Path<(String, String)>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let db = db_from_headers(&headers);
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
     let p = match resolve(&state, &graph, &db).await {
         Ok(p) => p,
         Err(r) => return r,
@@ -430,11 +471,15 @@ async fn node(
 
 async fn subgraph(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path((graph, id)): Path<(String, String)>,
     Query(q): Query<SubgraphQuery>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let db = db_from_headers(&headers);
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
     let p = match resolve(&state, &graph, &db).await {
         Ok(p) => p,
         Err(r) => return r,
@@ -447,11 +492,15 @@ async fn subgraph(
 
 async fn search(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path(graph): Path<String>,
     headers: axum::http::HeaderMap,
     Json(body): Json<SearchBody>,
 ) -> Response {
     let db = db_from_headers(&headers);
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
     let p = match resolve(&state, &graph, &db).await {
         Ok(p) => p,
         Err(r) => return r,
@@ -467,11 +516,15 @@ async fn search(
 
 async fn neighbors(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path(graph): Path<String>,
     headers: axum::http::HeaderMap,
     Json(body): Json<NeighborsBody>,
 ) -> Response {
     let db = db_from_headers(&headers);
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
     let p = match resolve(&state, &graph, &db).await {
         Ok(p) => p,
         Err(r) => return r,
