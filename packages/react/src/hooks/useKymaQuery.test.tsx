@@ -6,7 +6,7 @@
  * consumes normally inside the jsdom environment (TextDecoder / ReadableStream
  * both available there).
  */
-import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderHook, cleanup, waitFor, act } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import React from "react";

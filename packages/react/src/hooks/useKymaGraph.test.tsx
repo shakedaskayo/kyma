@@ -6,7 +6,7 @@
  *   - Headers({ "content-type": "application/json" }) on responses where the
  *     transport's html-guard checks content-type.
  */
-import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderHook, cleanup, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import React from "react";

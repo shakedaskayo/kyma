@@ -6,6 +6,33 @@ export type { KymaContextValue } from "./provider/context";
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
 export { useKymaCapabilities } from "./hooks/useKymaCapabilities";
+export { useKymaGraph } from "./hooks/useKymaGraph";
+export type { UseKymaGraphArgs, UseKymaGraphResult } from "./hooks/useKymaGraph";
+export { useKymaQuery } from "./hooks/useKymaQuery";
+export type { KymaQueryArgs, UseKymaQueryResult } from "./hooks/useKymaQuery";
+export { useKymaDiscover } from "./hooks/useKymaDiscover";
+export type { UseKymaDiscoverResult } from "./hooks/useKymaDiscover";
+export { useKymaDashboards } from "./hooks/useKymaDashboards";
+export type { UseKymaDashboardsResult } from "./hooks/useKymaDashboards";
+export { useKymaAgent } from "./hooks/useKymaAgent";
+export type { AgentMessage, AgentStatus, UseKymaAgentArgs, UseKymaAgentResult } from "./hooks/useKymaAgent";
+
+// ── Re-exported types from @kyma-ai/client ────────────────────────────────────
+// Commonly-needed types so consumers don't need to also import @kyma-ai/client.
+export type {
+  GraphNode,
+  GraphRelationship,
+  GraphStats,
+  GraphPayload,
+  SearchHits,
+  Capabilities,
+  Dashboard,
+  DashboardWithPanels,
+  DashboardPanel,
+  Frame,
+  Column,
+  ColKind,
+} from "@kyma-ai/client";
 
 // ── Internal UI primitives ────────────────────────────────────────────────────
 export { KymaErrorBoundary } from "./internal/KymaErrorBoundary";
