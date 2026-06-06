@@ -188,10 +188,12 @@ export function useKymaAgent(args?: UseKymaAgentArgs): UseKymaAgentResult {
         });
       } catch (err) {
         if ((err as DOMException)?.name === "AbortError") {
-          setStatus("idle");
+          // Only the still-current run may flip status — a rapid second
+          // send() aborts this one while its own stream is in flight.
+          if (abortRef.current === ac) setStatus("idle");
           return;
         }
-        setStatus("error");
+        if (abortRef.current === ac) setStatus("error");
         throw err;
       }
 
@@ -255,10 +257,12 @@ export function useKymaAgent(args?: UseKymaAgentArgs): UseKymaAgentResult {
         }
       } catch (err) {
         if ((err as DOMException)?.name === "AbortError") {
-          setStatus("idle");
+          // Only the still-current run may flip status — a rapid second
+          // send() aborts this one while its own stream is in flight.
+          if (abortRef.current === ac) setStatus("idle");
           return;
         }
-        setStatus("error");
+        if (abortRef.current === ac) setStatus("error");
         throw err;
       }
     },

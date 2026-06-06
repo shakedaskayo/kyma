@@ -216,6 +216,47 @@ describe("useKymaAgent", () => {
     expect(parsed.session_id).toBe("sess-abc");
   });
 
+  it("rapid double send(): aborted first run cannot flip status while second streams", async () => {
+    const qc = makeQC();
+    // First call: hangs until aborted. Second call: a never-ending stream so
+    // status must still be "streaming" when the first run's AbortError lands.
+    let call = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+        call += 1;
+        if (call === 1) {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError")),
+            );
+          });
+        }
+        // Open stream that never closes — keeps run 2 in "streaming".
+        const body = new ReadableStream<Uint8Array>({ start() {} });
+        return Promise.resolve(
+          new Response(body, {
+            status: 200,
+            headers: new Headers({ "content-type": "text/event-stream" }),
+          }),
+        );
+      }),
+    );
+    const { result } = renderHook(() => useKymaAgent(), { wrapper: wrapper(qc) });
+
+    act(() => {
+      void result.current.send("first");
+    });
+    act(() => {
+      void result.current.send("second"); // aborts run 1
+    });
+
+    await waitFor(() => expect(result.current.status).toBe("streaming"));
+    // Give run 1's AbortError catch a chance to (incorrectly) flip status.
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(result.current.status).toBe("streaming");
+  });
+
   it("error status when fetch returns non-OK", async () => {
     const qc = makeQC();
     vi.stubGlobal(
