@@ -50,7 +50,7 @@ S3-compatible (works with MinIO, AWS S3, R2, GCS via S3 API).
 | `KYMA_S3_REGION`              | `us-east-1`   | Region passed to the S3 client.                                                        |
 | `KYMA_S3_BUCKET`              | `kyma`        | Bucket name.                                                                           |
 | `KYMA_S3_ACCESS_KEY_ID`       | _unset_       | Access key. Falls back to the AWS credential chain when unset.                         |
-| `KYMA_S3_SECRET_ACCESS_KEY`   | _unset_       | Secret key.                                                                            |
+| `KYMA_S3_SECRET_ACCESS_KEY`   | _unset_       | Secret key. When both key vars are unset, the standard AWS provider chain applies (ECS/Fargate task role, web identity, `AWS_*` env, IMDS) — keyless IAM-role deployments set only bucket + region. |
 | `KYMA_S3_PATH_STYLE`          | `true`        | Path-style addressing (vs. virtual-hosted). Set `false` for virtual-host style.        |
 | `KYMA_S3_ALLOW_HTTP`          | `true`        | Allow plain HTTP (for local MinIO). Set `false` to require TLS.                        |
 
@@ -58,12 +58,30 @@ S3-compatible (works with MinIO, AWS S3, R2, GCS via S3 API).
 
 | Name                | Default       | Purpose                                                                                                  |
 | ------------------- | ------------- | -------------------------------------------------------------------------------------------------------- |
-| `KYMA_AUTH_BACKEND` | `env`         | `env` = static `KYMA_AUTH_TOKENS`; `session` = username/password login (`POST /v1/auth/login`) backed by the catalog. |
+| `KYMA_AUTH_BACKEND` | `env`         | `env` = static `KYMA_AUTH_TOKENS`; `session` = username/password login (`POST /v1/auth/login`) backed by the catalog; `supabase` = Supabase Auth JWTs (see below). |
 | `KYMA_AUTH_TOKENS`  | _unset_       | (env backend) Comma-separated `token:role` pairs (e.g. `alice-tok:admin,reader-tok:read`). Empty / unset disables auth. |
 | `KYMA_ADMIN_USER`   | _unset_       | (session backend) Seed an admin user on first boot if no users exist yet. Requires `KYMA_ADMIN_PASSWORD`. |
 | `KYMA_ADMIN_PASSWORD` | _unset_     | Password for the seeded admin user. Only used when no users exist.                                       |
 
 Roles: `read` ⊆ `write` ⊆ `admin`. A higher role grants everything below it.
+
+### Supabase Auth (`KYMA_AUTH_BACKEND=supabase`)
+
+Validates Supabase-issued JWTs (project JWKS by default, with `kid`-rotation
+refetch) and JIT-provisions kyma users from them. Opaque tokens (static keys,
+kyma session/API tokens) still authenticate through the session backend, so
+CLI/MCP/CI clients keep working. Used by the [production deployment](/deploy/).
+
+| Name                          | Default         | Purpose                                                                                          |
+| ----------------------------- | --------------- | ------------------------------------------------------------------------------------------------ |
+| `KYMA_SUPABASE_URL`           | _required_      | Project base URL, e.g. `https://<ref>.supabase.co`. JWKS is fetched under it.                    |
+| `KYMA_SUPABASE_ANON_KEY`      | _unset_         | Publishable anon key, served to the web login page via `GET /v1/auth/config`.                    |
+| `KYMA_SUPABASE_JWT_SECRET`    | _unset_         | Legacy HS256 shared secret. Unset → asymmetric JWKS validation (preferred).                      |
+| `KYMA_SUPABASE_JWT_AUD`       | `authenticated` | Expected `aud` claim.                                                                            |
+| `KYMA_SUPABASE_PROVIDERS`     | _unset_         | OAuth buttons to render on the login page (e.g. `google,github`); enable them in Supabase too.   |
+| `KYMA_ADMIN_EMAILS`           | _unset_         | Comma-separated emails granted the kyma `admin` role on sign-in.                                  |
+| `KYMA_ALLOWED_EMAIL_DOMAINS`  | _unset_         | When set, only these email domains may sign in — guards projects with open signup.               |
+| `KYMA_SUPABASE_DEFAULT_ROLE`  | `read`          | Role for users matching neither the admin list nor an `app_metadata.role` claim.                 |
 
 ## Ingest staging (group commit)
 

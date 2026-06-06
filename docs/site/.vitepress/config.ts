@@ -42,6 +42,7 @@ export default withMermaid(defineConfig({
       { text: 'Ingest', link: '/ingest/' },
       { text: 'Query', link: '/query/' },
       { text: 'Connectors', link: '/connectors/' },
+      { text: 'Deploy', link: '/deploy/' },
       { text: 'Agent', link: '/agent/' },
       { text: 'Reference', link: '/reference/' },
       { text: 'Architecture', link: '/architecture/' },
@@ -125,6 +126,16 @@ export default withMermaid(defineConfig({
           { text: 'Connect via CLI',     link: '/agent/connect-from-cli' },
         ],
       }],
+      '/deploy/': [{
+        text: 'Production deployment',
+        items: [
+          { text: 'Overview',            link: '/deploy/' },
+          { text: 'kyma deploy (CLI)',   link: '/deploy/cli' },
+          { text: 'Terraform',           link: '/deploy/terraform' },
+          { text: 'Pulumi',              link: '/deploy/pulumi' },
+        ],
+      }],
+
       '/reference/': [{
         text: 'Reference',
         items: [

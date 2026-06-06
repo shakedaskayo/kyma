@@ -1,0 +1,15 @@
+# Terraform working files — state lives with the user (or their S3 backend),
+# never in the repo.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+crash.log
+
+# Pulumi local artifacts
+**/node_modules/
+Pulumi.*.yaml
+!Pulumi.yaml
+sdks/

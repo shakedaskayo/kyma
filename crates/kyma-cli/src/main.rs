@@ -22,6 +22,7 @@
 
 mod client;
 mod connector;
+mod deploy;
 mod plugin;
 mod update;
 mod users;
@@ -39,6 +40,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 const SKILL_TEMPLATE: &str = include_str!("skill_template.md");
+/// `kyma-deploy` skill — production deployment runbook for coding agents.
+const DEPLOY_SKILL: &str =
+    include_str!("../../../integrations/claude-code/kyma-deploy/SKILL.md");
 
 #[derive(Debug, Parser)]
 #[command(name = "kyma", about = "Kyma CLI — client queries + admin operations")]
@@ -96,18 +100,28 @@ enum Command {
     /// Install the Kyma skill so coding agents (Claude Code, Cursor, …)
     /// can discover and use this CLI.
     InstallSkill {
-        /// Target directory. Default: `$HOME/.kyma/skills/kyma`.
+        /// Target directory. Default: `$HOME/.kyma/skills/<skill>`.
         #[arg(long)]
         target: Option<std::path::PathBuf>,
-        /// Also symlink into `$HOME/.claude/skills/kyma` if that dir exists.
+        /// Also symlink into `$HOME/.claude/skills/<skill>` if that dir exists.
         #[arg(long)]
         also_link_claude: bool,
+        /// Which skill(s): the kyma CLI skill, the production-deployment
+        /// skill, or both.
+        #[arg(long, value_enum, default_value = "kyma")]
+        which: SkillWhich,
     },
     /// Manage connectors — add a GitHub/GitLab/Bitbucket repo, list, pause,
     /// resume, trigger, remove. See `kyma connector --help`.
     Connector {
         #[command(subcommand)]
         op: connector::Op,
+    },
+    /// Deploy kyma to production (AWS Fargate + S3 + Supabase) or run a
+    /// Supabase-backed local test drive. See `kyma deploy --help`.
+    Deploy {
+        #[command(subcommand)]
+        op: deploy::Op,
     },
     /// Inspect ingestion runs — `status` snapshots, `tail` follows, `push`
     /// streams NDJSON from stdin into a table.
@@ -401,8 +415,10 @@ async fn main() -> Result<()> {
         Command::InstallSkill {
             target,
             also_link_claude,
-        } => cmd_install_skill(target, also_link_claude).await,
+            which,
+        } => cmd_install_skill(target, also_link_claude, which).await,
         Command::Connector { op } => connector::run(op).await,
+        Command::Deploy { op } => deploy::run(op).await,
         Command::Ingest { op } => connector::run_ingest(op).await,
         Command::Recall {
             query,
@@ -750,12 +766,53 @@ async fn cmd_sessions(op: SessionsOp) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum SkillWhich {
+    /// The `kyma` CLI skill (recall/remember/query).
+    Kyma,
+    /// The `kyma-deploy` production-deployment skill.
+    Deploy,
+    /// Both skills.
+    All,
+}
+
 async fn cmd_install_skill(
     target: Option<std::path::PathBuf>,
     also_link_claude: bool,
+    which: SkillWhich,
 ) -> Result<()> {
-    let dir = install_target(target)?;
-    let path = write_skill_file(&dir, SKILL_TEMPLATE)?;
+    let skills: &[(&str, &str)] = match which {
+        SkillWhich::Kyma => &[("kyma", SKILL_TEMPLATE)],
+        SkillWhich::Deploy => &[("kyma-deploy", DEPLOY_SKILL)],
+        SkillWhich::All => &[("kyma", SKILL_TEMPLATE), ("kyma-deploy", DEPLOY_SKILL)],
+    };
+    if target.is_some() && skills.len() > 1 {
+        anyhow::bail!("--target only works with a single skill (drop --which all)");
+    }
+    for (slug, body) in skills {
+        install_one_skill(slug, body, target.clone(), also_link_claude)?;
+    }
+    Ok(())
+}
+
+fn install_one_skill(
+    slug: &str,
+    body: &str,
+    target: Option<std::path::PathBuf>,
+    also_link_claude: bool,
+) -> Result<()> {
+    let dir = match target {
+        Some(p) => {
+            std::fs::create_dir_all(&p).with_context(|| format!("mkdir {}", p.display()))?;
+            p
+        }
+        None => {
+            let d = client::config_dir()?.join("skills").join(slug);
+            std::fs::create_dir_all(&d).with_context(|| format!("mkdir {}", d.display()))?;
+            d
+        }
+    };
+    let path = write_skill_file(&dir, body)?;
     println!("Wrote {}", path.display());
 
     if also_link_claude {
@@ -766,7 +823,7 @@ async fn cmd_install_skill(
                     .join(".claude")
                     .join("skills");
                 if claude_skills.is_dir() {
-                    let link = claude_skills.join("kyma");
+                    let link = claude_skills.join(slug);
                     let _ = std::fs::remove_file(&link);
                     let _ = std::fs::remove_dir_all(&link);
                     std::os::unix::fs::symlink(&dir, &link).with_context(|| {

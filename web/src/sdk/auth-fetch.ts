@@ -26,11 +26,23 @@ function urlOf(input: RequestInfo | URL): string {
   return input.url;
 }
 
-/** Exchange the refresh token for a new pair. Deduped across concurrent 401s. */
+/**
+ * Refresh the session's access token. Deduped across concurrent 401s.
+ * Supabase sessions refresh through supabase-js (which owns the refresh
+ * token); password sessions exchange kyma's refresh token at /v1/auth/refresh.
+ */
 function refreshOnce(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
-    const { endpoint, refreshToken } = useSession.getState();
+    const { endpoint, refreshToken, provider } = useSession.getState();
+    if (provider === "supabase") {
+      try {
+        const { refreshSupabaseToken } = await import("./supabase");
+        return (await refreshSupabaseToken()) !== null;
+      } catch {
+        return false;
+      }
+    }
     if (!endpoint || !refreshToken) return false;
     try {
       const pair = await refresh({ endpoint, refreshToken });

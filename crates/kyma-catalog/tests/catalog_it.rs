@@ -397,3 +397,45 @@ async fn list_extents_honors_time_range() {
         .unwrap();
     assert_eq!(listed.len(), 1, "only hour-3 extent should match");
 }
+
+// ------------------------------------------------------------------
+// External-identity (JIT) user provisioning — Supabase auth backend contract
+// ------------------------------------------------------------------
+
+#[tokio::test]
+async fn upsert_external_user_creates_then_refreshes() {
+    let fx = fixture().await;
+    let tenant = kyma_core::tenant::DEFAULT_TENANT;
+
+    let u1 = fx
+        .catalog
+        .upsert_external_user_in_tenant(tenant, "supabase", "sub-123", "alice@example.com", "read")
+        .await
+        .unwrap();
+    assert_eq!(u1.username, "alice@example.com");
+    assert_eq!(u1.role, "read");
+
+    // Same identity, new email + elevated role: updates in place.
+    let u2 = fx
+        .catalog
+        .upsert_external_user_in_tenant(tenant, "supabase", "sub-123", "alice@corp.com", "admin")
+        .await
+        .unwrap();
+    assert_eq!(u2.id, u1.id, "same external identity → same user row");
+    assert_eq!(u2.username, "alice@corp.com");
+    assert_eq!(u2.role, "admin");
+    assert_eq!(fx.catalog.count_users().await.unwrap(), 1);
+
+    // Different subject → different user; password users are unaffected.
+    fx.catalog
+        .create_user("admin", "$argon2id$fake", "admin")
+        .await
+        .unwrap();
+    let u3 = fx
+        .catalog
+        .upsert_external_user_in_tenant(tenant, "supabase", "sub-456", "bob@example.com", "read")
+        .await
+        .unwrap();
+    assert_ne!(u3.id, u1.id);
+    assert_eq!(fx.catalog.count_users().await.unwrap(), 3);
+}

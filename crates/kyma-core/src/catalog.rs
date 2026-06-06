@@ -371,6 +371,21 @@ pub struct RefreshClaim {
     pub session_id: uuid::Uuid,
 }
 
+/// An `api_tokens` row for the token-management surface. The raw token is
+/// unrecoverable (only its SHA-256 is stored); `token_hash` doubles as the
+/// row identifier for revocation.
+#[derive(Debug, Clone)]
+pub struct ApiTokenInfo {
+    pub token_hash: Vec<u8>,
+    pub role: String,
+    pub subject: Option<String>,
+    pub kind: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub revoked: bool,
+}
+
 // -------------------- Graphs --------------------
 
 /// A registered property-graph: binds a node table + edge table in a database,
@@ -944,6 +959,42 @@ pub trait Catalog: Send + Sync {
         username: &str,
     ) -> Result<bool, CatalogError>;
 
+    // --- auth: external identities (JIT provisioning) ---
+
+    /// JIT-provision (or refresh) a user authenticated by an external
+    /// identity provider (e.g. Supabase Auth). Keyed by
+    /// `(auth_provider, external_id)`: creates the user on first sight,
+    /// else updates `username` + `role` in place (role is declarative —
+    /// re-resolved by the auth backend on every login). External users get
+    /// a sentinel password hash that can never verify, so they cannot
+    /// password-login.
+    async fn upsert_external_user(
+        &self,
+        provider: &str,
+        external_id: &str,
+        username: &str,
+        role: &str,
+    ) -> Result<User, CatalogError> {
+        self.upsert_external_user_in_tenant(
+            crate::tenant::DEFAULT_TENANT,
+            provider,
+            external_id,
+            username,
+            role,
+        )
+        .await
+    }
+
+    /// Tenant-scoped variant of [`upsert_external_user`].
+    async fn upsert_external_user_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        provider: &str,
+        external_id: &str,
+        username: &str,
+        role: &str,
+    ) -> Result<User, CatalogError>;
+
     // --- auth: api tokens ---
 
     /// Insert an API token row (tenant-scoped).
@@ -990,6 +1041,20 @@ pub trait Catalog: Send + Sync {
     /// (i.e. it was previously active), `false` if it was already revoked or
     /// not found.
     async fn revoke_api_token(&self, token_hash: &[u8]) -> Result<bool, CatalogError>;
+
+    /// List API tokens of `kind` (e.g. `'api'`) in the default tenant,
+    /// newest first. Includes revoked/expired rows — callers filter.
+    async fn list_api_tokens(&self, kind: &str) -> Result<Vec<ApiTokenInfo>, CatalogError> {
+        self.list_api_tokens_in_tenant(crate::tenant::DEFAULT_TENANT, kind)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`list_api_tokens`].
+    async fn list_api_tokens_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        kind: &str,
+    ) -> Result<Vec<ApiTokenInfo>, CatalogError>;
 
     /// Insert a session token (an `access` or `refresh` token) tagged with a
     /// `session_id` so the whole login session can be rotated and revoked
