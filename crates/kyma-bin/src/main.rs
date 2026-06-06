@@ -242,6 +242,23 @@ async fn main() -> Result<()> {
         }
         _ => Arc::new(EnvAuthBackend::from_env()),
     };
+    // Optionally wrap with OIDC validation. When KYMA_OIDC_ISSUERS is set,
+    // JWTs are validated against the listed issuers; non-JWT tokens fall
+    // through to the inner backend. When unset, OIDC is disabled and the
+    // inner backend handles all auth.
+    let backend: Arc<dyn AuthBackend> =
+        match kyma_server::auth::OidcConfig::from_env() {
+            Some(cfg) => {
+                tracing::info!(
+                    issuers = ?cfg.issuers,
+                    audience = %cfg.audience,
+                    "OIDC auth enabled"
+                );
+                Arc::new(kyma_server::auth::OidcAuthBackend::new(cfg, backend))
+            }
+            None => backend,
+        };
+
     if backend.enabled() {
         info!("auth: bearer-token protection enabled on /v1/ingest (write) + /v1/query (read)");
     } else {
@@ -279,6 +296,10 @@ async fn main() -> Result<()> {
         catalog: catalog.clone(),
         write_path: write_path.clone(),
     })
+    // Database scope check runs after auth middleware injects Principal.
+    .layer(axum::middleware::from_fn(
+        kyma_server::database_scope_middleware,
+    ))
     .layer(axum::middleware::from_fn_with_state(
         AuthLayerState {
             backend: backend.clone(),
@@ -939,7 +960,7 @@ async fn main() -> Result<()> {
     //    Apply dev CORS to the outermost router so browsers on a separate
     //    origin (e.g. `localhost:5173`) can reach the API. Production
     //    deploys should replace this with a config-driven allow-list.
-    let app = kyma_server::with_permissive_cors(app);
+    let app = kyma_server::with_configured_cors(app);
     let listener = tokio::net::TcpListener::bind(cli.http_addr)
         .await
         .with_context(|| format!("binding {}", cli.http_addr))?;

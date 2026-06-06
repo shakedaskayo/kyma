@@ -187,6 +187,9 @@ importers:
       '@icons-pack/react-simple-icons':
         specifier: ^13.13.0
         version: 13.13.0(react@18.3.1)
+      '@kyma-ai/client':
+        specifier: workspace:*
+        version: link:../packages/client
       '@monaco-editor/react':
         specifier: 4.6.0
         version: 4.6.0(monaco-editor@0.52.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)

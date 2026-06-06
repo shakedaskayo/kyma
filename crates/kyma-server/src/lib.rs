@@ -270,6 +270,136 @@ pub fn with_permissive_cors(r: Router) -> Router {
     r.layer(cors)
 }
 
+/// CORS for production: explicit origin allow-list from
+/// `KYMA_CORS_ALLOWED_ORIGINS` (comma-separated). Falls back to the
+/// permissive mirror behavior when unset (dev default).
+pub fn with_configured_cors(r: Router) -> Router {
+    use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+    let origins = std::env::var("KYMA_CORS_ALLOWED_ORIGINS").ok().map(|v| {
+        v.split(',')
+            .filter_map(|s| s.trim().parse::<axum::http::HeaderValue>().ok())
+            .collect::<Vec<_>>()
+    });
+    let cors = match origins {
+        Some(list) if !list.is_empty() => CorsLayer::new()
+            .allow_origin(AllowOrigin::list(list))
+            .allow_methods(Any)
+            .allow_headers(Any)
+            .expose_headers(Any),
+        _ => {
+            tracing::warn!("KYMA_CORS_ALLOWED_ORIGINS unset — using permissive CORS (dev only)");
+            return with_permissive_cors(r);
+        }
+    };
+    r.layer(cors)
+}
+
+/// Axum middleware that enforces per-database token scope for handlers that
+/// resolve their target database from the `x-database` request header.
+///
+/// This is applied as a layer over routers in separate crates (e.g.
+/// `kyma-ingest-rest`) that cannot take a `kyma-server` dependency.
+/// The `Principal` is already inserted into request extensions by
+/// `require_role_middleware` before this middleware runs.
+pub async fn database_scope_middleware(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    // Resolve the database the same way the underlying handler will.
+    let database = req
+        .headers()
+        .get("x-database")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("default")
+        .to_owned();
+
+    if let Some(principal) = req.extensions().get::<crate::auth::Principal>() {
+        if let Err((status, msg)) = crate::auth::check_database_scope(principal, &database) {
+            let request_id = extract_request_id(req.headers());
+            return error_response(status, "forbidden", &msg, &request_id);
+        }
+    }
+
+    next.run(req).await
+}
+
+#[cfg(test)]
+mod cors_tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    fn make_app(origins_env: &str) -> Router {
+        // Temporarily set the env var, build the router, then clear it.
+        // Tests calling this are serialized via the CORS_TEST_MUTEX.
+        std::env::set_var("KYMA_CORS_ALLOWED_ORIGINS", origins_env);
+        let r = Router::new().route("/ping", axum::routing::get(|| async { "pong" }));
+        let app = with_configured_cors(r);
+        std::env::remove_var("KYMA_CORS_ALLOWED_ORIGINS");
+        app
+    }
+
+    // Serialise env-var mutation across all cors_tests.
+    static CORS_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[tokio::test]
+    async fn allowed_origin_gets_acao_header() {
+        let _guard = CORS_TEST_MUTEX.lock().unwrap();
+        let app = make_app("http://allowed.example.com, http://other.example.com");
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri("/ping")
+                    .header("origin", "http://allowed.example.com")
+                    .header("access-control-request-method", "GET")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let acao = res
+            .headers()
+            .get("access-control-allow-origin")
+            .and_then(|v| v.to_str().ok());
+        assert_eq!(
+            acao,
+            Some("http://allowed.example.com"),
+            "expected ACAO header for allowed origin"
+        );
+    }
+
+    #[tokio::test]
+    async fn disallowed_origin_gets_no_acao_header() {
+        let _guard = CORS_TEST_MUTEX.lock().unwrap();
+        let app = make_app("http://allowed.example.com");
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri("/ping")
+                    .header("origin", "http://evil.example.com")
+                    .header("access-control-request-method", "GET")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // tower-http CORS layer simply omits the ACAO header for disallowed origins.
+        let acao = res.headers().get("access-control-allow-origin");
+        assert!(
+            acao.is_none(),
+            "expected no ACAO header for disallowed origin, got: {:?}",
+            acao
+        );
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct ErrorBody<'a> {
     error: ErrorDetail<'a>,
@@ -375,6 +505,13 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         .and_then(|v| v.to_str().ok())
         .unwrap_or("default")
         .to_owned();
+
+    // Enforce per-database token scope if the principal is scoped.
+    if let Some(principal) = parts.extensions.get::<crate::auth::Principal>() {
+        if let Err((status, msg)) = crate::auth::check_database_scope(principal, &database) {
+            return error_response(status, "forbidden", &msg, &request_id);
+        }
+    }
 
     let body_bytes: Bytes = match axum::body::to_bytes(body, 16 * 1024 * 1024).await {
         Ok(b) => b,
