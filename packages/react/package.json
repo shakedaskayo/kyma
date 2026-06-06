@@ -6,16 +6,38 @@
   "type": "module",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./graph": { "types": "./dist/graph/index.d.ts", "import": "./dist/graph.js" },
-    "./query": { "types": "./dist/query/index.d.ts", "import": "./dist/query.js" },
-    "./discover": { "types": "./dist/discover/index.d.ts", "import": "./dist/discover.js" },
-    "./dashboards": { "types": "./dist/dashboards/index.d.ts", "import": "./dist/dashboards.js" },
-    "./agent": { "types": "./dist/agent/index.d.ts", "import": "./dist/agent.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./graph": {
+      "types": "./dist/graph/index.d.ts",
+      "import": "./dist/graph.js"
+    },
+    "./query": {
+      "types": "./dist/query/index.d.ts",
+      "import": "./dist/query.js"
+    },
+    "./discover": {
+      "types": "./dist/discover/index.d.ts",
+      "import": "./dist/discover.js"
+    },
+    "./dashboards": {
+      "types": "./dist/dashboards/index.d.ts",
+      "import": "./dist/dashboards.js"
+    },
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "import": "./dist/agent.js"
+    },
     "./styles.css": "./dist/style.css"
   },
-  "files": ["dist"],
-  "sideEffects": ["**/*.css"],
+  "files": [
+    "dist"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
   "scripts": {
     "build": "vite build && pnpm run build:css",
     "build:css": "tailwindcss -i src/styles/base.css -o dist/style.css --minify",
@@ -26,8 +48,12 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
   },
-  "peerDependencies": { "react": ">=18", "react-dom": ">=18" },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
   "dependencies": {
+    "@icons-pack/react-simple-icons": "^13.13.0",
     "@kyma-ai/client": "workspace:*",
     "@monaco-editor/react": "4.6.0",
     "@radix-ui/react-collapsible": "^1.1.12",

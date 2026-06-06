@@ -1,0 +1,158 @@
+/**
+ * Per-instance graph store — created fresh for each mounted KymaGraph.
+ *
+ * Uses `createStore` from `zustand/vanilla` (NOT the module-level `create`)
+ * so two mounted KymaGraph instances never share selection/layout state.
+ * The store is provided via GraphStoreContext inside KymaGraph and consumed
+ * via `useGraphStore`.
+ */
+import { createStore } from "zustand/vanilla";
+import { useStore } from "zustand";
+import { createContext, useContext } from "react";
+import type { LayoutAlgorithm } from "@kyma-ai/client";
+
+// ── State shape ───────────────────────────────────────────────────────────────
+
+export type GraphStoreState = {
+  /**
+   * Selected namespace: "all" = unified union of every graph across every
+   * database, or a composite `${database}/${graph}` key to focus a single
+   * graph.
+   */
+  graph: string;
+  layout: LayoutAlgorithm;
+  /**
+   * Composite id `${namespace}::${id}` of the focused node. Node ids collide
+   * across databases, so selection is namespace-qualified.
+   */
+  selectedNodeId: string | null;
+  hoveredNodeId: string | null;
+  labelFilter: string | null;
+  relTypeFilter: string | null;
+  /** Node-type labels hidden from the canvas. */
+  hiddenLabels: string[];
+  /** Composite `${database}/${graph}` keys hidden from the unified canvas. */
+  hiddenNamespaces: string[];
+  showEdgeLabels: boolean;
+  /** Free-text query for the search box. Empty string = no search. */
+  searchQuery: string;
+  /** Whether the MiniMap overlay is rendered. */
+  showMiniMap: boolean;
+
+  // ── visual style toggles (WebGL renderer) ────────────────────────────────
+  sizeByDegree: boolean;
+  glow: boolean;
+  animatedFlow: boolean;
+  curvedEdges: boolean;
+  communityHulls: boolean;
+  /**
+   * Overview mode: on large graphs, render only landmark nodes
+   * (+ expanded / focused neighbourhoods) instead of the full hairball.
+   */
+  overview: boolean;
+
+  setGraph(name: string): void;
+  setLayout(layout: LayoutAlgorithm): void;
+  selectNode(id: string | null): void;
+  hoverNode(id: string | null): void;
+  setLabelFilter(label: string | null): void;
+  setRelTypeFilter(rel: string | null): void;
+  toggleHiddenLabel(label: string): void;
+  setHiddenLabels(labels: string[]): void;
+  toggleHiddenNamespace(ns: string): void;
+  setHiddenNamespaces(list: string[]): void;
+  toggleEdgeLabels(): void;
+  setSearchQuery(q: string): void;
+  setShowMiniMap(v: boolean): void;
+  toggleSizeByDegree(): void;
+  toggleGlow(): void;
+  toggleAnimatedFlow(): void;
+  toggleCurvedEdges(): void;
+  toggleCommunityHulls(): void;
+  setOverview(v: boolean): void;
+  reset(): void;
+};
+
+// ── Initial state ─────────────────────────────────────────────────────────────
+
+export const initialGraphState = {
+  graph: "all",
+  layout: "force" as LayoutAlgorithm,
+  selectedNodeId: null,
+  hoveredNodeId: null,
+  labelFilter: null,
+  relTypeFilter: null,
+  hiddenLabels: [] as string[],
+  hiddenNamespaces: [] as string[],
+  showEdgeLabels: false,
+  searchQuery: "",
+  showMiniMap: true,
+  sizeByDegree: true,
+  glow: true,
+  animatedFlow: true,
+  curvedEdges: true,
+  communityHulls: true,
+  overview: true,
+};
+
+// ── Factory ───────────────────────────────────────────────────────────────────
+
+export type GraphStore = ReturnType<typeof createGraphStore>;
+
+/**
+ * Create a fresh, independent graph store. Each KymaGraph instance calls this
+ * once (via useRef) so they never share state.
+ */
+export function createGraphStore(overrides?: Partial<typeof initialGraphState>) {
+  const initial = { ...initialGraphState, ...overrides };
+  return createStore<GraphStoreState>()((set) => ({
+    ...initial,
+    setGraph: (name) =>
+      set({ graph: name, selectedNodeId: null, labelFilter: null, relTypeFilter: null, hiddenLabels: [] }),
+    setLayout: (layout) => set({ layout }),
+    selectNode: (id) => set({ selectedNodeId: id }),
+    hoverNode: (id) => set({ hoveredNodeId: id }),
+    setLabelFilter: (label) => set({ labelFilter: label, relTypeFilter: null }),
+    setRelTypeFilter: (rel) => set({ relTypeFilter: rel, labelFilter: null }),
+    toggleHiddenLabel: (label) =>
+      set((s) => ({
+        hiddenLabels: s.hiddenLabels.includes(label)
+          ? s.hiddenLabels.filter((l) => l !== label)
+          : [...s.hiddenLabels, label],
+      })),
+    setHiddenLabels: (labels) => set({ hiddenLabels: labels }),
+    toggleHiddenNamespace: (ns) =>
+      set((s) => ({
+        hiddenNamespaces: s.hiddenNamespaces.includes(ns)
+          ? s.hiddenNamespaces.filter((n) => n !== ns)
+          : [...s.hiddenNamespaces, ns],
+      })),
+    setHiddenNamespaces: (list) => set({ hiddenNamespaces: list }),
+    toggleEdgeLabels: () => set((s) => ({ showEdgeLabels: !s.showEdgeLabels })),
+    setSearchQuery: (q) => set({ searchQuery: q }),
+    setShowMiniMap: (v) => set({ showMiniMap: v }),
+    toggleSizeByDegree: () => set((s) => ({ sizeByDegree: !s.sizeByDegree })),
+    toggleGlow: () => set((s) => ({ glow: !s.glow })),
+    toggleAnimatedFlow: () => set((s) => ({ animatedFlow: !s.animatedFlow })),
+    toggleCurvedEdges: () => set((s) => ({ curvedEdges: !s.curvedEdges })),
+    toggleCommunityHulls: () => set((s) => ({ communityHulls: !s.communityHulls })),
+    setOverview: (v) => set({ overview: v }),
+    reset: () => set({ ...initial }),
+  }));
+}
+
+// ── Context ───────────────────────────────────────────────────────────────────
+
+export const GraphStoreContext = createContext<GraphStore | null>(null);
+
+/**
+ * Hook to read from the nearest GraphStoreContext. Throws if used outside a
+ * GraphStoreProvider (i.e. outside a KymaGraph).
+ */
+export function useGraphStore<T>(selector: (s: GraphStoreState) => T): T {
+  const store = useContext(GraphStoreContext);
+  if (!store) {
+    throw new Error("useGraphStore must be used inside <KymaGraph>");
+  }
+  return useStore(store, selector);
+}
