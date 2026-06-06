@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and fill in. Secrets (supabase_db_password) are
+# better passed via env: export TF_VAR_supabase_db_password=...
+
+project_name    = "kyma"
+aws_region      = "us-east-1"
+supabase_org_id = "your-org-id" # https://supabase.com/dashboard/org → settings
+supabase_region = "us-east-1"
+
+# Who gets the kyma admin role when signing in via Supabase Auth.
+admin_emails = ["you@company.com"]
+
+# Lock sign-in to your team's email domain(s). Strongly recommended —
+# without it anyone who can register in your Supabase project gets read access.
+allowed_email_domains = ["company.com"]
+
+# OAuth providers to show on the login page (enable them in Supabase first).
+oauth_providers = [] # e.g. ["google", "github"]
+
+# Custom domain + automated TLS (recommended for production).
+# domain          = "kyma.company.com"
+# route53_zone_id = "Z0123456789ABC"
+
+# Engine image — pin a released version.
+image_tag = "latest"
