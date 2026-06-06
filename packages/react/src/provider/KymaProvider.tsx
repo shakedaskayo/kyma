@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createKymaClient, type KymaAuth } from "@kyma-ai/client";
-import { KymaContext } from "./context";
+import { KymaContext, isDarkTheme } from "./context";
 import { themeToCssVars, type KymaTheme } from "../theme/tokens";
 import { kymaDark } from "../theme/presets";
 
@@ -52,7 +52,13 @@ export function KymaProvider(props: KymaProviderProps) {
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
 
   const value = useMemo(
-    () => ({ client, theme: resolvedTheme as Required<KymaTheme>, portalContainer, onError }),
+    () => ({
+      client,
+      theme: resolvedTheme as Required<KymaTheme>,
+      isDark: isDarkTheme(resolvedTheme as Required<KymaTheme>),
+      portalContainer,
+      onError,
+    }),
     [client, resolvedTheme, portalContainer, onError],
   );
 

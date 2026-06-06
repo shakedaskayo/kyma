@@ -16,33 +16,64 @@ import { useKymaClient } from "../provider/context";
 export interface UseKymaGraphArgs {
   /** Graphs to merge; omit to load all graphs of the default database. */
   graphs?: Array<{ database?: string; graph: string }>;
+  /**
+   * "all-databases": discover every (database, graph) across the deployment
+   * via catalog schema → listGraphs fan-out. Equivalent to web's
+   * useAllDatabaseGraphs(). When set, `graphs` is ignored.
+   */
+  discover?: "all-databases";
   realm?: string;
   limit?: number;
+}
+
+/** A (database, graph) coordinate — mirrors the web's GraphCoord shape. */
+export interface GraphCoord {
+  database: string;
+  graph: string;
+  kind?: string;
+}
+
+/** Composite namespace key: `${database}/${graph}`. */
+export function graphKey(database: string, graph: string): string {
+  return `${database}/${graph}`;
+}
+
+/** Per-namespace fetch progress — surfaces granular load state to the UI. */
+export interface GraphProgress {
+  total: number;
+  settled: number;
+  hasAny: boolean;
 }
 
 export interface UseKymaGraphResult {
   nodes: GraphNode[];
   edges: GraphRelationship[];
   stats: GraphStats | null;
+  /** Node count contributed by each namespace (db/graph composite key). */
+  namespaceCounts: Record<string, number>;
+  /** Resolved graph coordinates — used by GraphSidebar namespace picker. */
+  coords: GraphCoord[];
+  /** Granular fetch progress across all (database, graph) pairs. */
+  progress: GraphProgress;
   isLoading: boolean;
+  isError: boolean;
   error: unknown;
-  expandNode: (nodeId: string) => Promise<void>;
+  /**
+   * expandNode — fetches neighbors of a node by its composite id
+   * (`namespace::nodeId` or plain node id if namespace is already stripped).
+   */
+  expandNode: (compositeId: string) => Promise<void>;
   searchNodes: (text: string) => Promise<SearchHits>;
   refetch: () => void;
 }
 
-// ── Internal ──────────────────────────────────────────────────────────────────
-
-/** Composite namespace key — same as web's graphKey(). */
-function graphKey(database: string, graph: string): string {
-  return `${database}/${graph}`;
-}
+// ── Implementation ────────────────────────────────────────────────────────────
 
 /**
- * The hook has two phases:
- * 1. If `graphs` is provided: skip the listing step and go straight to loading.
- * 2. If `graphs` is omitted: first call listGraphs() to discover all graphs for
- *    the client's default database, then load each one.
+ * The hook operates in three discovery modes:
+ * 1. `discover: "all-databases"` — catalog schema → listGraphs fan-out across all DBs.
+ * 2. `graphs` provided — use those coords directly.
+ * 3. Neither — list graphs from the default database only.
  */
 export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
   const client = useKymaClient();
@@ -51,52 +82,69 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
   const realm = args?.realm;
   const limit = args?.limit ?? 800;
 
-  // ── Phase 1: discover graphs when args.graphs is omitted ──────────────────
-  const needsDiscovery = !args?.graphs;
+  const discoverAll = args?.discover === "all-databases";
+  const explicitGraphs = args?.graphs;
+  // "simple discovery" = list graphs for the default database only
+  const needsSimpleDiscovery = !explicitGraphs && !discoverAll;
 
-  const discoveryQuery = useQuery({
+  // ── Phase 1a: simple discovery (default database only) ───────────────────
+  const simpleDiscoveryQuery = useQuery({
     queryKey: ["kyma", endpoint, database, "graph", "__list"],
     queryFn: async () => {
       const refs = await client.graph.listGraphs();
-      return refs.map((r) => ({ database, graph: r.name }));
+      return refs.map((r): GraphCoord => ({ database, graph: r.name, kind: r.kind }));
     },
-    enabled: needsDiscovery,
+    enabled: needsSimpleDiscovery,
     staleTime: 5 * 60_000,
   });
 
-  // Resolved coords: either the explicitly provided graphs, or discovered ones.
-  const resolvedCoords: Array<{ database: string; graph: string }> = useMemo(() => {
-    if (args?.graphs) {
-      return args.graphs.map((g) => ({
-        database: g.database ?? database,
-        graph: g.graph,
-      }));
+  // ── Phase 1b: all-databases discovery ────────────────────────────────────
+  const allDbDiscoveryQuery = useQuery({
+    queryKey: ["kyma", endpoint, "__all-databases", "graph", "__list"],
+    queryFn: async () => {
+      const schema = await client.catalog.fetchSchema();
+      const dbNames = schema.databases.map((d: { name: string }) => d.name);
+      const lists = await Promise.all(
+        dbNames.map((db: string) =>
+          client
+            .withDatabase(db)
+            .graph.listGraphs()
+            .then((gs) => gs.map((g): GraphCoord => ({ database: db, graph: g.name, kind: g.kind })))
+            .catch((): GraphCoord[] => []),
+        ),
+      );
+      return lists.flat();
+    },
+    enabled: discoverAll,
+    staleTime: 5 * 60_000,
+  });
+
+  // ── Resolved coordinates ──────────────────────────────────────────────────
+  const resolvedCoords: GraphCoord[] = useMemo(() => {
+    if (discoverAll) return allDbDiscoveryQuery.data ?? [];
+    if (explicitGraphs) {
+      return explicitGraphs.map((g) => ({ database: g.database ?? database, graph: g.graph }));
     }
-    return discoveryQuery.data ?? [];
-  }, [args?.graphs, database, discoveryQuery.data]);
+    return simpleDiscoveryQuery.data ?? [];
+  }, [discoverAll, explicitGraphs, database, allDbDiscoveryQuery.data, simpleDiscoveryQuery.data]);
 
   // ── Phase 2: load each graph in parallel ──────────────────────────────────
   const queries = useQueries({
     queries: resolvedCoords.map(({ database: db, graph }) => ({
       queryKey: ["kyma", endpoint, db, "graph", graph, realm ?? null, limit] as const,
-      queryFn: () =>
-        client.withDatabase(db).graph.getOverview({ graph, realm, limit }),
+      queryFn: () => client.withDatabase(db).graph.getOverview({ graph, realm, limit }),
       staleTime: 30_000,
       enabled: resolvedCoords.length > 0,
     })),
   });
 
   // ── Merge ─────────────────────────────────────────────────────────────────
-  // Extra local state: nodes/edges appended via expandNode. We keep these
-  // separate from the query cache so they survive re-renders without
-  // triggering a refetch.
   const [expanded, setExpanded] = useState<{
     nodes: GraphNode[];
     edges: GraphRelationship[];
   }>({ nodes: [], edges: [] });
 
-  // Track which nodes have already been expanded (avoid duplicates).
-  const expandedNodeIds = useRef(new Set<string>());
+  const expandedCompositeIds = useRef(new Set<string>());
 
   const merged = useMemo(() => {
     let touched = false;
@@ -106,6 +154,7 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
     const seenEdges = new Set<string>();
     const label_counts: Record<string, number> = {};
     const relationship_type_counts: Record<string, number> = {};
+    const namespaceCounts: Record<string, number> = {};
 
     resolvedCoords.forEach((coord, i) => {
       const payload = queries[i]?.data;
@@ -117,6 +166,7 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
         if (seenNodes.has(k)) continue;
         seenNodes.add(k);
         nodes.push({ ...n, namespace: ns, database: coord.database });
+        namespaceCounts[ns] = (namespaceCounts[ns] ?? 0) + 1;
         const label = n.labels[0] ?? "Node";
         label_counts[label] = (label_counts[label] ?? 0) + 1;
       }
@@ -130,18 +180,21 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
       }
     });
 
-    // Append expanded nodes/edges (deduplicated by id).
+    // Append expanded nodes/edges (deduplicated by composite key).
     for (const n of expanded.nodes) {
-      if (!seenNodes.has(n.id)) {
-        seenNodes.add(n.id);
+      const k = `${n.namespace ?? ""}::${n.id}`;
+      if (!seenNodes.has(k)) {
+        seenNodes.add(k);
         nodes.push(n);
         const label = n.labels[0] ?? "Node";
         label_counts[label] = (label_counts[label] ?? 0) + 1;
+        if (n.namespace) namespaceCounts[n.namespace] = (namespaceCounts[n.namespace] ?? 0) + 1;
       }
     }
     for (const e of expanded.edges) {
-      if (!seenEdges.has(e.id)) {
-        seenEdges.add(e.id);
+      const k = `${e.namespace ?? ""}::${e.id}`;
+      if (!seenEdges.has(k)) {
+        seenEdges.add(k);
         edges.push(e);
         relationship_type_counts[e.relationship_type] =
           (relationship_type_counts[e.relationship_type] ?? 0) + 1;
@@ -159,6 +212,7 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
         label_counts,
         relationship_type_counts,
       } as GraphStats,
+      namespaceCounts,
     };
     // Stable collapse of per-query freshness — see web's useUnifiedGraph for rationale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -166,44 +220,60 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
 
   // ── Loading / error state ─────────────────────────────────────────────────
   const settled = queries.reduce((n, q) => n + (q.isSuccess || q.isError ? 1 : 0), 0);
-  const firstError =
-    queries.find((q) => q.isError)?.error ??
-    (discoveryQuery.isError ? discoveryQuery.error : null);
+
+  const discoveryLoading =
+    (needsSimpleDiscovery && simpleDiscoveryQuery.isLoading) ||
+    (discoverAll && allDbDiscoveryQuery.isLoading);
+
+  const discoveryError =
+    simpleDiscoveryQuery.isError
+      ? simpleDiscoveryQuery.error
+      : allDbDiscoveryQuery.isError
+        ? allDbDiscoveryQuery.error
+        : null;
+
+  const firstQueryError = queries.find((q) => q.isError)?.error ?? null;
+  const firstError = firstQueryError ?? discoveryError;
 
   const isLoading =
-    (needsDiscovery && discoveryQuery.isLoading) ||
+    discoveryLoading ||
     (resolvedCoords.length > 0 && !merged && settled < resolvedCoords.length);
+
+  const isError =
+    !isLoading && merged === null && (Boolean(firstError) || (settled === resolvedCoords.length && resolvedCoords.length > 0));
 
   // ── Imperative helpers ────────────────────────────────────────────────────
   const queryClient = useQueryClient();
 
   /**
-   * expandNode — fetches neighbors of a node, then fetches any new node objects
-   * returned in `new_node_ids`, and appends both to the local expanded set.
-   *
-   * Determines the (database, graph) by looking at the merged node's database
-   * tag and finding the first matching coord for that database. Falls back to
-   * the first coord if none match.
+   * expandNode — accepts a composite id (`namespace::nodeId`) as used in the
+   * graph canvas, strips the namespace prefix, and expands neighbours.
+   * The compositeId format is `${database}/${graph}::${nodeId}`.
    */
   const expandNode = useCallback(
-    async (nodeId: string) => {
-      if (expandedNodeIds.current.has(nodeId)) return;
-      expandedNodeIds.current.add(nodeId);
+    async (compositeId: string) => {
+      if (expandedCompositeIds.current.has(compositeId)) return;
+      expandedCompositeIds.current.add(compositeId);
 
-      // Determine which (database, graph) this node lives in.
-      const mergedNode = merged?.nodes.find((n) => n.id === nodeId);
+      // Parse composite id — look for a matching node in the merged set first.
+      const mergedNode = merged?.nodes.find(
+        (n) => `${n.namespace ?? ""}::${n.id}` === compositeId,
+      );
       const nodeDb = mergedNode?.database ?? resolvedCoords[0]?.database ?? database;
-      const nodeNs = mergedNode?.namespace ?? resolvedCoords[0] ? graphKey(nodeDb, resolvedCoords[0]?.graph ?? "") : "";
+      const nodeNs = mergedNode?.namespace ?? (resolvedCoords[0] ? graphKey(nodeDb, resolvedCoords[0].graph) : "");
+      // Bare node id (strip namespace prefix if present).
+      const nodeId = mergedNode?.id ?? compositeId.split("::").pop() ?? compositeId;
+
       const graphName =
-        resolvedCoords.find((c) => c.database === nodeDb)?.graph ??
-        resolvedCoords[0]?.graph ?? "";
+        nodeNs
+          ? nodeNs.slice(nodeDb.length + 1) // strip "${db}/" prefix from namespace
+          : (resolvedCoords.find((c) => c.database === nodeDb)?.graph ?? resolvedCoords[0]?.graph ?? "");
 
       try {
         const expansion = await client
           .withDatabase(nodeDb)
           .graph.expandNeighbors({ graph: graphName, nodeIds: [nodeId] });
 
-        // Fetch node objects for any new node ids returned by the expansion.
         const newNodes = await Promise.all(
           expansion.new_node_ids.map((id) =>
             client
@@ -227,8 +297,7 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
           ],
         }));
       } catch (err) {
-        // Remove from expanded set on failure so it can be retried.
-        expandedNodeIds.current.delete(nodeId);
+        expandedCompositeIds.current.delete(compositeId);
         throw err;
       }
     },
@@ -236,10 +305,7 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
   );
 
   /**
-   * searchNodes — calls the graph search endpoint across all loaded graphs.
-   * When multiple graphs are loaded, searches the first graph only (most
-   * common single-graph case); callers that need multi-graph search should
-   * call client.graph.searchNodes() directly with explicit graph names.
+   * searchNodes — searches the first loaded graph (most common case).
    */
   const searchNodes = useCallback(
     async (text: string): Promise<SearchHits> => {
@@ -258,18 +324,31 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
         queryKey: ["kyma", endpoint, coord.database, "graph", coord.graph],
       });
     }
-    if (needsDiscovery) {
+    if (needsSimpleDiscovery) {
       void queryClient.invalidateQueries({
         queryKey: ["kyma", endpoint, database, "graph", "__list"],
       });
     }
-  }, [queryClient, endpoint, database, resolvedCoords, needsDiscovery]);
+    if (discoverAll) {
+      void queryClient.invalidateQueries({
+        queryKey: ["kyma", endpoint, "__all-databases", "graph", "__list"],
+      });
+    }
+  }, [queryClient, endpoint, database, resolvedCoords, needsSimpleDiscovery, discoverAll]);
 
   return {
     nodes: merged?.nodes ?? [],
     edges: merged?.edges ?? [],
     stats: merged?.stats ?? null,
+    namespaceCounts: merged?.namespaceCounts ?? {},
+    coords: resolvedCoords,
+    progress: {
+      total: resolvedCoords.length,
+      settled,
+      hasAny: merged !== null,
+    },
     isLoading,
+    isError,
     error: firstError ?? null,
     expandNode,
     searchNodes,
