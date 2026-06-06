@@ -65,6 +65,7 @@ sha2 = "0.10"
 argon2 = "0.5"
 rand = "0.8"
 base64 = "0.22"
+jsonwebtoken.workspace = true
 claude-code-agent-sdk = "0.1.39"
 
 [dev-dependencies]
@@ -84,6 +85,9 @@ kyma-catalog-sqlite.workspace = true
 kyma-format-tlm.workspace = true
 kyma-storage.workspace = true
 kyma-embed.workspace = true
+# RSA keypair generation for OidcAuthBackend unit tests.
+rsa = { version = "0.9", features = ["pem"] }
+rand = "0.8"
 
 [features]
 default = []

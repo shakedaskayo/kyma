@@ -162,6 +162,9 @@ kyma-mcp               = { path = "crates/kyma-mcp",             version = "0.0.
 kyma-queue             = { path = "crates/kyma-queue",           version = "0.0.4" }
 kyma-ccmem             = { path = "crates/kyma-ccmem",           version = "0.0.4" }
 
+# Auth
+jsonwebtoken = "9"
+
 # Embeddings + vector search
 fastembed = "4"
 pgvector = { version = "0.4", features = ["sqlx", "serde"] }
