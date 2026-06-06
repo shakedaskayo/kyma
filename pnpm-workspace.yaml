@@ -2,6 +2,8 @@ packages:
   - "web"
   - "web/src-tauri"
   - "docs/site"
+  - "packages/*"
+  - "examples/*"
 allowBuilds:
   '@bufbuild/buf': true
   esbuild: true

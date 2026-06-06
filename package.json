@@ -6,7 +6,10 @@
     "build": "pnpm -C web build",
     "test": "pnpm -C web test",
     "typecheck": "pnpm -C web typecheck",
-    "lint": "pnpm -C web lint"
+    "lint": "pnpm -C web lint",
+    "build:packages": "pnpm --filter @kyma-ai/client build && pnpm --filter @kyma-ai/react build",
+    "test:packages": "pnpm --filter @kyma-ai/client test && pnpm --filter @kyma-ai/react test",
+    "typecheck:all": "pnpm -r --filter './packages/*' --filter './web' --filter './examples/*' typecheck"
   },
   "engines": { "node": ">=20", "pnpm": ">=9" }
 }
