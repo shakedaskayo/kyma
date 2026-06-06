@@ -11,5 +11,11 @@
     "test:packages": "pnpm --filter @kyma-ai/client test && pnpm --filter @kyma-ai/react test",
     "typecheck:all": "pnpm -r --filter './packages/*' --filter './web' --filter './examples/*' typecheck"
   },
-  "engines": { "node": ">=20", "pnpm": ">=9" }
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.0"
+  }
 }
