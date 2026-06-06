@@ -90,6 +90,24 @@ impl OidcAuthBackend {
         token.split('.').count() == 3
     }
 
+    /// Returns an error if `url` uses http:// with a non-loopback host.
+    fn require_https_for_non_loopback(url: &str) -> Result<(), AuthError> {
+        // Only enforce on http:// URLs.
+        if !url.starts_with("http://") {
+            return Ok(());
+        }
+        // Extract the host portion from http://host[:port]/...
+        let rest = &url["http://".len()..];
+        let host = rest.split('/').next().unwrap_or("").split(':').next().unwrap_or("");
+        let loopback = matches!(host, "localhost" | "127.0.0.1" | "::1");
+        if loopback {
+            return Ok(());
+        }
+        Err(AuthError::Backend(format!(
+            "oidc issuer must use https (got http for non-loopback host: {host})"
+        )))
+    }
+
     /// Fetch and cache the JWKS for `issuer`.
     ///
     /// If `force` is true, a refresh is attempted even if the TTL has not
@@ -99,6 +117,9 @@ impl OidcAuthBackend {
         issuer: &str,
         force: bool,
     ) -> Result<JwkSet, AuthError> {
+        // Enforce HTTPS for non-loopback issuers before any network call.
+        Self::require_https_for_non_loopback(issuer)?;
+
         // --- fast path: read lock ---
         {
             let guard = self.jwks.read().await;
@@ -136,6 +157,9 @@ impl OidcAuthBackend {
             .and_then(|v| v.as_str())
             .ok_or_else(|| AuthError::Backend("OIDC discovery missing jwks_uri".into()))?
             .to_owned();
+
+        // Also enforce HTTPS for the jwks_uri from the discovery document.
+        Self::require_https_for_non_loopback(&jwks_uri)?;
 
         let set: JwkSet = self
             .http
@@ -175,16 +199,20 @@ impl OidcAuthBackend {
         let payload: serde_json::Value =
             serde_json::from_slice(&payload_bytes).map_err(|_| AuthError::UnknownToken)?;
 
-        let iss = payload
+        let raw_iss = payload
             .get("iss")
             .and_then(|v| v.as_str())
             .ok_or(AuthError::UnknownToken)?;
 
-        // iss must be in our trusted set.
-        let iss = iss.trim_end_matches('/').to_owned();
-        if !self.cfg.issuers.iter().any(|i| *i == iss) {
+        // Normalize for the allowlist check (strip trailing slash), but keep
+        // the raw value to use in set_issuer so jsonwebtoken's literal
+        // comparison matches what the token actually carries.
+        let normalized_iss = raw_iss.trim_end_matches('/').to_owned();
+        if !self.cfg.issuers.iter().any(|i| *i == normalized_iss) {
             return Err(AuthError::UnknownToken);
         }
+        // The JWKS cache is keyed by normalized issuer.
+        let iss = normalized_iss;
 
         // Step 3: find the signing key in the JWKS, refreshing once if kid is
         // unknown.
@@ -212,7 +240,12 @@ impl OidcAuthBackend {
 
         let mut validation = Validation::new(alg);
         validation.set_audience(&[&self.cfg.audience]);
-        validation.set_issuer(&[&iss]);
+        // Use the token's literal (un-normalized) iss so that an Auth0-style
+        // trailing slash in the token doesn't cause a spurious mismatch.
+        // The security boundary is the allowlist check above (normalized).
+        validation.set_issuer(&[raw_iss]);
+        // jsonwebtoken defaults validate_nbf=false; we enforce it.
+        validation.validate_nbf = true;
 
         let token_data =
             decode::<serde_json::Value>(token, &decoding_key, &validation)
@@ -516,6 +549,170 @@ mod tests {
         let token = encode(&header, &claims, &encoding_key(&priv_key)).unwrap();
         let p = backend.authenticate(&token).await.unwrap();
         assert!(p.allowed_databases.is_none(), "should be unrestricted");
+    }
+
+    // -----------------------------------------------------------------------
+    // Fix 1: nbf validation
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn rejects_not_yet_valid() {
+        let priv_key = make_rsa_key();
+        let issuer = "https://test.example.com";
+        let cfg = make_cfg(issuer);
+        let backend = OidcAuthBackend::new(cfg, stub_inner(false));
+        backend
+            .inject_jwks(issuer, rsa_jwk_set(&priv_key, "test-key-1"))
+            .await;
+
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("test-key-1".into());
+
+        let claims = serde_json::json!({
+            "iss": issuer,
+            "aud": "kyma",
+            "exp": now_secs() + 7200,
+            "nbf": now_secs() + 3600, // not valid yet
+            "sub": "future-user",
+        });
+
+        let token = encode(&header, &claims, &encoding_key(&priv_key)).unwrap();
+        let err = backend.authenticate(&token).await.unwrap_err();
+        assert!(
+            matches!(err, AuthError::UnknownToken),
+            "expected UnknownToken for nbf in future, got {err:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Fix 2: Issuer trailing-slash interop
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn accepts_issuer_with_trailing_slash_in_token() {
+        // Config has no trailing slash; token iss has trailing slash.
+        let priv_key = make_rsa_key();
+        let issuer_config = "https://issuer.test";
+        let issuer_token = "https://issuer.test/"; // trailing slash in token
+        let cfg = make_cfg(issuer_config);
+        let backend = OidcAuthBackend::new(cfg, stub_inner(false));
+        // Cache under the normalized (no slash) key because from_env / make_cfg normalizes.
+        backend
+            .inject_jwks(issuer_config, rsa_jwk_set(&priv_key, "key-1"))
+            .await;
+
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("key-1".into());
+
+        let claims = serde_json::json!({
+            "iss": issuer_token,
+            "aud": "kyma",
+            "exp": now_secs() + 3600,
+            "sub": "slash-user",
+        });
+
+        let token = encode(&header, &claims, &encoding_key(&priv_key)).unwrap();
+        let p = backend.authenticate(&token).await.unwrap();
+        assert_eq!(p.subject, Some("slash-user".into()));
+    }
+
+    #[tokio::test]
+    async fn accepts_trailing_slash_in_config() {
+        // Regression guard: even if config had trailing slash (from_env strips it),
+        // token without slash must still be accepted.
+        let priv_key = make_rsa_key();
+        // Build OidcConfig manually with already-stripped issuer (mirrors from_env behavior).
+        let issuer_config = "https://issuer.test";
+        let issuer_token = "https://issuer.test"; // no trailing slash
+        let cfg = make_cfg(issuer_config);
+        let backend = OidcAuthBackend::new(cfg, stub_inner(false));
+        backend
+            .inject_jwks(issuer_config, rsa_jwk_set(&priv_key, "key-2"))
+            .await;
+
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("key-2".into());
+
+        let claims = serde_json::json!({
+            "iss": issuer_token,
+            "aud": "kyma",
+            "exp": now_secs() + 3600,
+            "sub": "noslash-user",
+        });
+
+        let token = encode(&header, &claims, &encoding_key(&priv_key)).unwrap();
+        let p = backend.authenticate(&token).await.unwrap();
+        assert_eq!(p.subject, Some("noslash-user".into()));
+    }
+
+    // -----------------------------------------------------------------------
+    // Fix 3: HTTPS enforcement for non-loopback JWKS
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn rejects_http_issuer_for_non_loopback() {
+        // http:// with a non-loopback host must fail before any network call.
+        let priv_key = make_rsa_key();
+        let issuer = "http://idp.example.com";
+        let cfg = make_cfg(issuer);
+        let backend = OidcAuthBackend::new(cfg, stub_inner(false));
+        // Do NOT inject JWKS — the scheme check should fire before any fetch.
+        backend
+            .inject_jwks(issuer, rsa_jwk_set(&priv_key, "key-1"))
+            .await;
+
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("key-1".into());
+
+        let claims = serde_json::json!({
+            "iss": issuer,
+            "aud": "kyma",
+            "exp": now_secs() + 3600,
+            "sub": "http-user",
+        });
+
+        let token = encode(&header, &claims, &encoding_key(&priv_key)).unwrap();
+        let err = backend.authenticate(&token).await.unwrap_err();
+        assert!(
+            matches!(err, AuthError::Backend(ref msg) if msg.contains("https")),
+            "expected Backend error mentioning https, got {err:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Fix 4: Bad-signature test
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn rejects_bad_signature() {
+        // Sign token with key_a but serve JwkSet with key_b under the same kid.
+        let key_a = make_rsa_key();
+        let key_b = make_rsa_key();
+        let issuer = "https://test.example.com";
+        let cfg = make_cfg(issuer);
+        let backend = OidcAuthBackend::new(cfg, stub_inner(false));
+        // Inject key_b's public key under kid "shared-kid"
+        backend
+            .inject_jwks(issuer, rsa_jwk_set(&key_b, "shared-kid"))
+            .await;
+
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("shared-kid".into());
+
+        let claims = serde_json::json!({
+            "iss": issuer,
+            "aud": "kyma",
+            "exp": now_secs() + 3600,
+            "sub": "bad-sig-user",
+        });
+
+        // Sign with key_a — JWKS has key_b → signature mismatch
+        let token = encode(&header, &claims, &encoding_key(&key_a)).unwrap();
+        let err = backend.authenticate(&token).await.unwrap_err();
+        assert!(
+            matches!(err, AuthError::UnknownToken),
+            "expected UnknownToken for bad signature, got {err:?}"
+        );
     }
 
     #[tokio::test]
