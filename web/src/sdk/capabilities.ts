@@ -1,0 +1,28 @@
+// Web-side capabilities hook. Framework-agnostic fetchCapabilities lives in
+// @kyma-ai/client; this file adds the React/react-query wrapper and re-exports
+// the types that web components import.
+
+import { useQuery } from "@tanstack/react-query";
+import { fetchCapabilities, FULL_CAPABILITIES } from "@kyma-ai/client";
+import { useSession } from "./session";
+import { transportFor } from "./compat";
+
+// Re-export types so ControlPlaneGate and Sidebar imports remain unchanged.
+export type { Capabilities } from "@kyma-ai/client";
+export { FULL_CAPABILITIES } from "@kyma-ai/client";
+
+/** The connected server's capabilities; optimistic (full) until loaded. */
+export function useCapabilities() {
+  const endpoint = useSession((s) => s.endpoint);
+  const token = useSession((s) => s.token);
+
+  const { data } = useQuery({
+    queryKey: ["capabilities", endpoint],
+    queryFn: () => fetchCapabilities(transportFor({ endpoint, token })),
+    enabled: Boolean(endpoint && token),
+    staleTime: Infinity,
+    retry: false,
+  });
+
+  return data ?? FULL_CAPABILITIES;
+}
