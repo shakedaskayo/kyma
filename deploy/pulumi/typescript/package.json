@@ -1,0 +1,13 @@
+{
+  "name": "kyma-deploy",
+  "private": true,
+  "main": "index.ts",
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5.5"
+  },
+  "dependencies": {
+    "@pulumi/kymaengine": "file:sdks/kymaengine",
+    "@pulumi/pulumi": "^3.150.0"
+  }
+}
