@@ -431,13 +431,19 @@ async fn main() -> Result<()> {
             version: env!("CARGO_PKG_VERSION").into(),
         },
     };
-    let mcp_router = kyma_mcp::router(mcp_state).layer(axum::middleware::from_fn_with_state(
-        AuthLayerState {
-            backend: backend.clone(),
-            required: Role::Read,
-        },
-        require_role_middleware,
-    ));
+    let mcp_router = kyma_mcp::router(mcp_state)
+        // Fail closed: MCP tools (execute_sql etc.) address databases
+        // internally — same policy as /v1/agent/* and /flight/*.
+        .layer(axum::middleware::from_fn(
+            kyma_server::scoped_token_guard_middleware,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Read,
+            },
+            require_role_middleware,
+        ));
     // Connector registry + row-sink.
     let mut conn_reg = ConnectorRegistry::new();
     conn_reg.register(Arc::new(PromConnector));
@@ -708,7 +714,7 @@ async fn main() -> Result<()> {
             // checks). Layered before auth so it runs AFTER auth populates
             // the Principal extension (axum layers run outermost-last-added).
             .layer(axum::middleware::from_fn(
-                kyma_server::flight_scope_guard_middleware,
+                kyma_server::scoped_token_guard_middleware,
             ))
             .layer(axum::middleware::from_fn_with_state(
                 AuthLayerState {

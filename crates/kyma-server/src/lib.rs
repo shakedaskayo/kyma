@@ -249,8 +249,18 @@ pub fn health_router() -> Router {
 /// Variant of [`router`] that additionally nests the inline agent surface
 /// under `/v1/agent`. Called by `kyma-bin` once the `PgPool` (needed for
 /// `agent_runs` persistence) is available.
+///
+/// The agent surface is guarded against database-scoped tokens (fail closed):
+/// the agent's tool loop lets the model address any database (`execute_sql`
+/// takes a database argument), bypassing per-handler scope checks. Until the
+/// tool context enforces `allowed_databases`, scoped tokens get 403 here —
+/// same policy as the Flight surface.
 pub fn router_with_agent(state: QueryState, agent_state: agent::AgentState) -> Router {
-    router(state).nest("/v1/agent", agent::router(agent_state))
+    router(state).nest(
+        "/v1/agent",
+        agent::router(agent_state)
+            .layer(axum::middleware::from_fn(scoped_token_guard_middleware)),
+    )
 }
 
 /// Wrap any router with a permissive dev CORS layer so a browser dev-server
@@ -272,25 +282,32 @@ pub fn with_permissive_cors(r: Router) -> Router {
 
 /// CORS for production: explicit origin allow-list from
 /// `KYMA_CORS_ALLOWED_ORIGINS` (comma-separated). Falls back to the
-/// permissive mirror behavior when unset (dev default).
+/// permissive mirror behavior when UNSET (dev default). When the variable is
+/// set but contains no valid origins (typo, bad syntax), we fail CLOSED with
+/// an empty allow-list — a misconfigured production deployment must not
+/// silently become world-readable.
 pub fn with_configured_cors(r: Router) -> Router {
     use tower_http::cors::{AllowOrigin, Any, CorsLayer};
-    let origins = std::env::var("KYMA_CORS_ALLOWED_ORIGINS").ok().map(|v| {
-        v.split(',')
-            .filter_map(|s| s.trim().parse::<axum::http::HeaderValue>().ok())
-            .collect::<Vec<_>>()
-    });
-    let cors = match origins {
-        Some(list) if !list.is_empty() => CorsLayer::new()
-            .allow_origin(AllowOrigin::list(list))
-            .allow_methods(Any)
-            .allow_headers(Any)
-            .expose_headers(Any),
-        _ => {
-            tracing::warn!("KYMA_CORS_ALLOWED_ORIGINS unset — using permissive CORS (dev only)");
-            return with_permissive_cors(r);
-        }
+    let Some(raw) = std::env::var("KYMA_CORS_ALLOWED_ORIGINS").ok() else {
+        tracing::warn!("KYMA_CORS_ALLOWED_ORIGINS unset — using permissive CORS (dev only)");
+        return with_permissive_cors(r);
     };
+    let origins: Vec<axum::http::HeaderValue> = raw
+        .split(',')
+        .filter_map(|s| s.trim().parse::<axum::http::HeaderValue>().ok())
+        .collect();
+    if origins.is_empty() {
+        tracing::error!(
+            value = %raw,
+            "KYMA_CORS_ALLOWED_ORIGINS set but contains no valid origins — \
+             failing closed (no cross-origin requests allowed)"
+        );
+    }
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods(Any)
+        .allow_headers(Any)
+        .expose_headers(Any);
     r.layer(cors)
 }
 
@@ -323,14 +340,16 @@ pub async fn database_scope_middleware(
     next.run(req).await
 }
 
-/// Axum middleware that rejects database-scoped principals on the Arrow
-/// Flight surface (`/flight/*`). Flight tickets address databases internally
-/// and bypass the per-handler scope checks, so until scope enforcement exists
-/// inside the Flight service itself we fail closed: tokens carrying an
-/// `allowed_databases` restriction get 403; unrestricted principals (and
-/// auth-disabled deployments, whose synthesized Admin principal has
+/// Axum middleware that rejects database-scoped principals on surfaces that
+/// can address databases internally, bypassing per-handler scope checks:
+/// Arrow Flight (`/flight/*` — tickets name databases), the agent
+/// (`/v1/agent/*` — the model's tool loop picks databases), and MCP
+/// (`/mcp` — same tool dispatch). Until scope enforcement exists inside
+/// those services we fail closed: tokens carrying an `allowed_databases`
+/// restriction get 403; unrestricted principals (and auth-disabled
+/// deployments, whose synthesized Admin principal has
 /// `allowed_databases: None`) are unaffected.
-pub async fn flight_scope_guard_middleware(
+pub async fn scoped_token_guard_middleware(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
@@ -340,7 +359,7 @@ pub async fn flight_scope_guard_middleware(
             return error_response(
                 axum::http::StatusCode::FORBIDDEN,
                 "forbidden",
-                "database-scoped tokens cannot use the Flight interface yet",
+                "database-scoped tokens cannot use this interface yet",
                 &request_id,
             );
         }
@@ -424,10 +443,38 @@ mod cors_tests {
             acao
         );
     }
+
+    #[tokio::test]
+    async fn set_but_invalid_origins_fail_closed_not_permissive() {
+        let _guard = CORS_TEST_MUTEX.lock().unwrap();
+        // A value with only invalid header values (newline is illegal) must
+        // NOT fall back to permissive mirroring — no origin gets ACAO.
+        let app = make_app("\n");
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri("/ping")
+                    .header("origin", "http://anything.example.com")
+                    .header("access-control-request-method", "GET")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let acao = res.headers().get("access-control-allow-origin");
+        assert!(
+            acao.is_none(),
+            "misconfigured allow-list must fail closed, got ACAO: {:?}",
+            acao
+        );
+    }
 }
 
 #[cfg(test)]
-mod flight_scope_guard_tests {
+mod scoped_token_guard_tests {
     use super::*;
     use crate::auth::{Principal, Role};
     use axum::body::Body;
@@ -460,7 +507,7 @@ mod flight_scope_guard_tests {
         );
         Router::new()
             .route("/flight/x", axum::routing::post(|| async { "ok" }))
-            .layer(axum::middleware::from_fn(flight_scope_guard_middleware))
+            .layer(axum::middleware::from_fn(scoped_token_guard_middleware))
             .layer(inject)
     }
 
