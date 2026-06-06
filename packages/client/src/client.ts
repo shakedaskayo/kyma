@@ -35,7 +35,6 @@ const QUERY_FNS = ["runQuery"] as const satisfies readonly (keyof typeof query)[
 
 const DISCOVER_FNS = [
   "searchDiscover",
-  "parseNdjsonStream",
   "listSavedViews",
   "createSavedView",
   "deleteSavedView",
