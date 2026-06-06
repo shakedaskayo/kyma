@@ -1354,6 +1354,39 @@ impl Catalog for PostgresCatalog {
         Ok(res.rows_affected() > 0)
     }
 
+    // --- auth: external identities (JIT provisioning) ---
+
+    async fn upsert_external_user_in_tenant(
+        &self,
+        tenant: TenantId,
+        provider: &str,
+        external_id: &str,
+        username: &str,
+        role: &str,
+    ) -> std::result::Result<User, CatalogError> {
+        // '!external' is deliberately not a valid PHC string: password
+        // verification can never succeed for JIT-provisioned users.
+        let row = sqlx::query(
+            "INSERT INTO users (tenant_id, username, password_hash, role, auth_provider, external_id)
+             VALUES ($1, $2, '!external', $3, $4, $5)
+             ON CONFLICT (tenant_id, auth_provider, external_id)
+               WHERE auth_provider IS NOT NULL AND external_id IS NOT NULL
+             DO UPDATE SET username = EXCLUDED.username,
+                           role = EXCLUDED.role,
+                           updated_at = now()
+             RETURNING id, username, role, created_at, updated_at",
+        )
+        .bind(tenant.as_uuid())
+        .bind(username)
+        .bind(role)
+        .bind(provider)
+        .bind(external_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        row_to_user(&row)
+    }
+
     // --- auth: api tokens ---
 
     async fn insert_api_token_in_tenant(

@@ -944,6 +944,42 @@ pub trait Catalog: Send + Sync {
         username: &str,
     ) -> Result<bool, CatalogError>;
 
+    // --- auth: external identities (JIT provisioning) ---
+
+    /// JIT-provision (or refresh) a user authenticated by an external
+    /// identity provider (e.g. Supabase Auth). Keyed by
+    /// `(auth_provider, external_id)`: creates the user on first sight,
+    /// else updates `username` + `role` in place (role is declarative —
+    /// re-resolved by the auth backend on every login). External users get
+    /// a sentinel password hash that can never verify, so they cannot
+    /// password-login.
+    async fn upsert_external_user(
+        &self,
+        provider: &str,
+        external_id: &str,
+        username: &str,
+        role: &str,
+    ) -> Result<User, CatalogError> {
+        self.upsert_external_user_in_tenant(
+            crate::tenant::DEFAULT_TENANT,
+            provider,
+            external_id,
+            username,
+            role,
+        )
+        .await
+    }
+
+    /// Tenant-scoped variant of [`upsert_external_user`].
+    async fn upsert_external_user_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        provider: &str,
+        external_id: &str,
+        username: &str,
+        role: &str,
+    ) -> Result<User, CatalogError>;
+
     // --- auth: api tokens ---
 
     /// Insert an API token row (tenant-scoped).

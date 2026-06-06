@@ -91,6 +91,16 @@ impl SqliteCatalog {
     }
 
     async fn from_pool(pool: SqlitePool) -> Result<Self> {
+        // Additive upgrades for catalogs created before these columns existed,
+        // applied *before* SCHEMA so its partial index can build. Failures are
+        // "duplicate column name" (already upgraded) or "no such table"
+        // (fresh DB — SCHEMA creates the full shape) — both safe to ignore.
+        for ddl in [
+            "ALTER TABLE users ADD COLUMN external_id TEXT",
+            "ALTER TABLE users ADD COLUMN auth_provider TEXT",
+        ] {
+            let _ = sqlx::query(ddl).execute(&pool).await;
+        }
         sqlx::raw_sql(SCHEMA)
             .execute(&pool)
             .await
@@ -283,8 +293,14 @@ CREATE TABLE IF NOT EXISTS users (
     role          TEXT NOT NULL,
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL,
+    external_id   TEXT,
+    auth_provider TEXT,
     UNIQUE (tenant_id, username)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_external_identity_idx
+    ON users (tenant_id, auth_provider, external_id)
+    WHERE auth_provider IS NOT NULL AND external_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS api_tokens (
     token_hash   BLOB PRIMARY KEY,
@@ -1595,6 +1611,54 @@ impl Catalog for SqliteCatalog {
             .await
             .map_err(ce)?;
         Ok(res.rows_affected() > 0)
+    }
+
+    // -------------- auth: external identities (JIT provisioning) --------------
+
+    async fn upsert_external_user_in_tenant(
+        &self,
+        tenant: TenantId,
+        provider: &str,
+        external_id: &str,
+        username: &str,
+        role: &str,
+    ) -> Result<User, CatalogError> {
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        // '!external' is deliberately not a valid PHC string: password
+        // verification can never succeed for JIT-provisioned users.
+        sqlx::query(
+            "INSERT INTO users (id, tenant_id, username, password_hash, role, created_at, updated_at, auth_provider, external_id)
+             VALUES (?,?,?,'!external',?,?,?,?,?)
+             ON CONFLICT (tenant_id, auth_provider, external_id)
+               WHERE auth_provider IS NOT NULL AND external_id IS NOT NULL
+             DO UPDATE SET username = excluded.username,
+                           role = excluded.role,
+                           updated_at = excluded.updated_at",
+        )
+        .bind(id)
+        .bind(tenant.as_uuid())
+        .bind(username)
+        .bind(role)
+        .bind(now)
+        .bind(now)
+        .bind(provider)
+        .bind(external_id)
+        .execute(&self.pool)
+        .await
+        .map_err(ce)?;
+        // Read back: covers both the freshly-created and refreshed paths.
+        let row = sqlx::query(
+            "SELECT id, username, role, created_at, updated_at
+             FROM users WHERE tenant_id = ? AND auth_provider = ? AND external_id = ?",
+        )
+        .bind(tenant.as_uuid())
+        .bind(provider)
+        .bind(external_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(ce)?;
+        row_to_user(&row)
     }
 
     // ------------------------- auth: api tokens -------------------------
