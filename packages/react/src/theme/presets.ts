@@ -66,7 +66,8 @@ export const kymaDark: KymaTheme = {
   brandFrom: "180 80% 52%",
   brandTo: "199 85% 60%",
   // ── Shape / typography ─────────────────────────────────────────────────
-  radius: "0.5rem",
+  // globals.css only sets --radius in :root; dark inherits it unchanged.
+  radius: "0.625rem",
   fontSans: "ui-sans-serif, system-ui, sans-serif",
   fontMono: "ui-monospace, SFMono-Regular, Menlo, monospace",
 };
