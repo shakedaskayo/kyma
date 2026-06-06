@@ -1,4 +1,4 @@
-import { authFetch } from "./auth-fetch";
+import type { KymaTransport } from "./transport";
 
 export type Frame =
   // '?' tolerates old servers that omit the field; null = source has no timestamp column
@@ -32,10 +32,11 @@ export class DiscoverError extends Error {
 }
 
 export async function* searchDiscover(
+  t: KymaTransport,
   req: SearchRequest,
   signal?: AbortSignal,
 ): AsyncGenerator<Frame, void, unknown> {
-  const resp = await authFetch("/v1/explore/search", {
+  const resp = await t.request("/v1/explore/search", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(req),
@@ -86,14 +87,14 @@ export type SavedView = {
   updated_at: string;
 };
 
-export async function listSavedViews(): Promise<SavedView[]> {
-  const r = await authFetch("/v1/explore/views");
+export async function listSavedViews(t: KymaTransport): Promise<SavedView[]> {
+  const r = await t.request("/v1/explore/views");
   if (!r.ok) throw new DiscoverError("list_failed", await r.text(), r.status);
   return r.json();
 }
 
-export async function createSavedView(name: string, sources: string[]): Promise<SavedView> {
-  const r = await authFetch("/v1/explore/views", {
+export async function createSavedView(t: KymaTransport, name: string, sources: string[]): Promise<SavedView> {
+  const r = await t.request("/v1/explore/views", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ name, sources }),
@@ -102,7 +103,7 @@ export async function createSavedView(name: string, sources: string[]): Promise<
   return r.json();
 }
 
-export async function deleteSavedView(id: string): Promise<void> {
-  const r = await authFetch(`/v1/explore/views/${id}`, { method: "DELETE" });
+export async function deleteSavedView(t: KymaTransport, id: string): Promise<void> {
+  const r = await t.request(`/v1/explore/views/${id}`, { method: "DELETE" });
   if (!r.ok && r.status !== 204) throw new DiscoverError("delete_failed", await r.text(), r.status);
 }

@@ -1,6 +1,8 @@
 // Typed client for the kyma connectors layer (`/v1/connectors/*`). JSON in/out.
-// Mirrors the per-module fetch-helper convention used by `sdk/graph.ts` /
-// `sdk/dashboards.ts`. Adds `handleEmpty` for the 204/202 mutation responses.
+// Adds `handleEmpty` for the 204/202 mutation responses.
+
+import type { KymaTransport } from "./transport";
+import { errorFromResponse } from "./errors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -98,11 +100,8 @@ interface CatalogEnvelope {
   items: CatalogEntry[];
 }
 
-export async function getConnectorCatalog(args: BaseArgs): Promise<CatalogEntry[]> {
-  const res = await fetch(`${base(args.endpoint)}/v1/connectors/catalog`, {
-    headers: headers(args.token, args.database),
-  });
-  const body = await handleResponse<CatalogEnvelope>(res);
+export async function getConnectorCatalog(t: KymaTransport): Promise<CatalogEntry[]> {
+  const body = await handleResponse<CatalogEnvelope>(await t.request("/v1/connectors/catalog"));
   return body.items ?? [];
 }
 
@@ -130,39 +129,14 @@ export const SCHEDULE_MS_MAX = 86_400_000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-type BaseArgs = { endpoint: string; token: string; database?: string };
-
-function headers(token: string, database?: string): Record<string, string> {
-  const h: Record<string, string> = {
-    authorization: `Bearer ${token}`,
-    "content-type": "application/json",
-  };
-  if (database) h["x-database"] = database;
-  return h;
-}
-
-function base(endpoint: string): string {
-  return endpoint.replace(/\/$/, "");
-}
-
 async function handleResponse<T>(res: Response): Promise<T> {
-  if (res.status === 401 || res.status === 403) throw new Error(`unauthorized (${res.status})`);
-  if (res.status === 404) throw new Error("not found");
-  if (!res.ok) {
-    const snippet = await res.text().then((t) => t.slice(0, 200)).catch(() => "");
-    throw new Error(`request failed: ${res.status}${snippet ? ` — ${snippet}` : ""}`);
-  }
+  if (!res.ok) throw await errorFromResponse(res);
   return res.json() as Promise<T>;
 }
 
 /** For 204 (DELETE/PATCH/pause/resume) and 202 (trigger) — no body to parse. */
 async function handleEmpty(res: Response): Promise<void> {
-  if (res.status === 401 || res.status === 403) throw new Error(`unauthorized (${res.status})`);
-  if (res.status === 404) throw new Error("not found");
-  if (!res.ok) {
-    const snippet = await res.text().then((t) => t.slice(0, 200)).catch(() => "");
-    throw new Error(`request failed: ${res.status}${snippet ? ` — ${snippet}` : ""}`);
-  }
+  if (!res.ok) throw await errorFromResponse(res);
 }
 
 // ── API functions ─────────────────────────────────────────────────────────────
@@ -171,75 +145,58 @@ interface ListEnvelope {
   items: ConnectorSummary[];
 }
 
-export async function listConnectors(args: BaseArgs): Promise<ConnectorSummary[]> {
-  const res = await fetch(`${base(args.endpoint)}/v1/connectors`, {
-    headers: headers(args.token, args.database),
-  });
-  const body = await handleResponse<ListEnvelope>(res);
+export async function listConnectors(t: KymaTransport): Promise<ConnectorSummary[]> {
+  const body = await handleResponse<ListEnvelope>(await t.request("/v1/connectors"));
   return body.items ?? [];
 }
 
 export async function getConnector(
-  args: BaseArgs & { id: string },
+  t: KymaTransport,
+  args: { id: string },
 ): Promise<ConnectorDetail> {
-  const res = await fetch(`${base(args.endpoint)}/v1/connectors/${args.id}`, {
-    headers: headers(args.token, args.database),
-  });
-  return handleResponse<ConnectorDetail>(res);
+  return handleResponse<ConnectorDetail>(await t.request(`/v1/connectors/${args.id}`));
 }
 
 export async function createConnector(
-  args: BaseArgs & { body: CreateConnectorBody },
+  t: KymaTransport,
+  args: { body: CreateConnectorBody },
 ): Promise<{ id: string }> {
-  const res = await fetch(`${base(args.endpoint)}/v1/connectors`, {
-    method: "POST",
-    headers: headers(args.token, args.database),
-    body: JSON.stringify(args.body),
-  });
-  return handleResponse<{ id: string }>(res);
+  return handleResponse<{ id: string }>(
+    await t.request("/v1/connectors", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(args.body),
+    }),
+  );
 }
 
 export async function patchConnector(
-  args: BaseArgs & { id: string; patch: ConnectorUpdate },
+  t: KymaTransport,
+  args: { id: string; patch: ConnectorUpdate },
 ): Promise<void> {
-  const res = await fetch(`${base(args.endpoint)}/v1/connectors/${args.id}`, {
-    method: "PATCH",
-    headers: headers(args.token, args.database),
-    body: JSON.stringify(args.patch),
-  });
-  return handleEmpty(res);
+  return handleEmpty(
+    await t.request(`/v1/connectors/${args.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(args.patch),
+    }),
+  );
 }
 
-export async function deleteConnector(args: BaseArgs & { id: string }): Promise<void> {
-  const res = await fetch(`${base(args.endpoint)}/v1/connectors/${args.id}`, {
-    method: "DELETE",
-    headers: headers(args.token, args.database),
-  });
-  return handleEmpty(res);
+export async function deleteConnector(t: KymaTransport, args: { id: string }): Promise<void> {
+  return handleEmpty(await t.request(`/v1/connectors/${args.id}`, { method: "DELETE" }));
 }
 
-export async function pauseConnector(args: BaseArgs & { id: string }): Promise<void> {
-  const res = await fetch(`${base(args.endpoint)}/v1/connectors/${args.id}/pause`, {
-    method: "POST",
-    headers: headers(args.token, args.database),
-  });
-  return handleEmpty(res);
+export async function pauseConnector(t: KymaTransport, args: { id: string }): Promise<void> {
+  return handleEmpty(await t.request(`/v1/connectors/${args.id}/pause`, { method: "POST" }));
 }
 
-export async function resumeConnector(args: BaseArgs & { id: string }): Promise<void> {
-  const res = await fetch(`${base(args.endpoint)}/v1/connectors/${args.id}/resume`, {
-    method: "POST",
-    headers: headers(args.token, args.database),
-  });
-  return handleEmpty(res);
+export async function resumeConnector(t: KymaTransport, args: { id: string }): Promise<void> {
+  return handleEmpty(await t.request(`/v1/connectors/${args.id}/resume`, { method: "POST" }));
 }
 
-export async function triggerConnector(args: BaseArgs & { id: string }): Promise<void> {
-  const res = await fetch(`${base(args.endpoint)}/v1/connectors/${args.id}/trigger`, {
-    method: "POST",
-    headers: headers(args.token, args.database),
-  });
-  return handleEmpty(res);
+export async function triggerConnector(t: KymaTransport, args: { id: string }): Promise<void> {
+  return handleEmpty(await t.request(`/v1/connectors/${args.id}/trigger`, { method: "POST" }));
 }
 
 interface ReposEnvelope {
@@ -252,14 +209,16 @@ interface ReposEnvelope {
  * travels in the request body (never a query string, never a cache key).
  */
 export async function listGitHubRepos(
-  args: BaseArgs & { pat: string },
+  t: KymaTransport,
+  args: { pat: string },
 ): Promise<GitHubRepo[]> {
-  const res = await fetch(`${base(args.endpoint)}/v1/connectors/github/repos`, {
-    method: "POST",
-    headers: headers(args.token, args.database),
-    body: JSON.stringify({ token: args.pat }),
-  });
-  const body = await handleResponse<ReposEnvelope>(res);
+  const body = await handleResponse<ReposEnvelope>(
+    await t.request("/v1/connectors/github/repos", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: args.pat }),
+    }),
+  );
   return body.repos ?? [];
 }
 

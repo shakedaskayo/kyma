@@ -1,5 +1,7 @@
 // Typed client for the kyma credentials store (`/v1/credentials/*`).
-// Mirrors the per-module fetch-helper convention used by `sdk/connectors.ts`.
+
+import type { KymaTransport } from "./transport";
+import { errorFromResponse } from "./errors";
 
 // ── Types (must match crates/kyma-core/src/credentials.rs) ────────────────────
 
@@ -41,33 +43,9 @@ export interface CreateCredentialBody {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-type BaseArgs = { endpoint: string; token: string };
-
-function headers(token: string): Record<string, string> {
-  return { authorization: `Bearer ${token}`, "content-type": "application/json" };
-}
-
-function base(endpoint: string): string {
-  return endpoint.replace(/\/$/, "");
-}
-
 async function handleResponse<T>(res: Response): Promise<T> {
-  if (res.status === 401 || res.status === 403) throw new Error(`unauthorized (${res.status})`);
-  if (res.status === 404) throw new Error("not found");
-  if (!res.ok) {
-    const snippet = await res.text().then((t) => t.slice(0, 200)).catch(() => "");
-    throw new Error(`request failed: ${res.status}${snippet ? ` — ${snippet}` : ""}`);
-  }
+  if (!res.ok) throw await errorFromResponse(res);
   return res.json() as Promise<T>;
-}
-
-async function handleEmpty(res: Response): Promise<void> {
-  if (res.status === 401 || res.status === 403) throw new Error(`unauthorized (${res.status})`);
-  if (res.status === 404) throw new Error("not found");
-  if (!res.ok) {
-    const snippet = await res.text().then((t) => t.slice(0, 200)).catch(() => "");
-    throw new Error(`request failed: ${res.status}${snippet ? ` — ${snippet}` : ""}`);
-  }
 }
 
 interface ListEnvelope {
@@ -76,38 +54,34 @@ interface ListEnvelope {
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
-export async function listCredentials(args: BaseArgs): Promise<CredentialSummary[]> {
-  const res = await fetch(`${base(args.endpoint)}/v1/credentials`, { headers: headers(args.token) });
-  const body = await handleResponse<ListEnvelope>(res);
+export async function listCredentials(t: KymaTransport): Promise<CredentialSummary[]> {
+  const body = await handleResponse<ListEnvelope>(await t.request("/v1/credentials"));
   return body.items ?? [];
 }
 
 export async function createCredential(
-  args: BaseArgs & { body: CreateCredentialBody },
+  t: KymaTransport,
+  args: { body: CreateCredentialBody },
 ): Promise<CredentialSummary> {
-  const res = await fetch(`${base(args.endpoint)}/v1/credentials`, {
-    method: "POST",
-    headers: headers(args.token),
-    body: JSON.stringify(args.body),
-  });
-  return handleResponse<CredentialSummary>(res);
+  return handleResponse<CredentialSummary>(
+    await t.request("/v1/credentials", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(args.body),
+    }),
+  );
 }
 
 export async function getCredential(
-  args: BaseArgs & { id: string },
+  t: KymaTransport,
+  args: { id: string },
 ): Promise<CredentialSummary> {
-  const res = await fetch(`${base(args.endpoint)}/v1/credentials/${args.id}`, {
-    headers: headers(args.token),
-  });
-  return handleResponse<CredentialSummary>(res);
+  return handleResponse<CredentialSummary>(await t.request(`/v1/credentials/${args.id}`));
 }
 
-export async function deleteCredential(args: BaseArgs & { id: string }): Promise<void> {
-  const res = await fetch(`${base(args.endpoint)}/v1/credentials/${args.id}`, {
-    method: "DELETE",
-    headers: headers(args.token),
-  });
-  return handleEmpty(res);
+export async function deleteCredential(t: KymaTransport, args: { id: string }): Promise<void> {
+  const res = await t.request(`/v1/credentials/${args.id}`, { method: "DELETE" });
+  if (!res.ok) throw await errorFromResponse(res);
 }
 
 // ── Presentation metadata ─────────────────────────────────────────────────────

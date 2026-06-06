@@ -40,7 +40,7 @@ export const useHealth = create<State>((set, get) => ({
       }
     };
     tick();
-    const id = window.setInterval(tick, 30_000);
+    const id = globalThis.setInterval(tick, 30_000);
     return () => { clearInterval(id); };
   },
 }));

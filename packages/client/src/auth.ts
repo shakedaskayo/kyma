@@ -1,6 +1,9 @@
 // Typed client for kyma auth endpoints (`/v1/auth/*`).
-// `login` is unauthenticated (no Authorization header).
-// `me` and `logout` require a Bearer token.
+// `login` and `refresh` are unauthenticated — they use plain fetch + endpoint.
+// `me` and `logout` require a Bearer token and use KymaTransport.
+
+import type { KymaTransport } from "./transport";
+import { errorFromResponse } from "./errors";
 
 export interface AuthUser {
   username: string;
@@ -20,14 +23,7 @@ function base(endpoint: string): string {
   return endpoint.replace(/\/$/, "");
 }
 
-function bearerHeaders(token: string): Record<string, string> {
-  return {
-    authorization: `Bearer ${token}`,
-    "content-type": "application/json",
-  };
-}
-
-async function handleResponse<T>(res: Response): Promise<T> {
+async function handleUnauthResponse<T>(res: Response): Promise<T> {
   if (res.status === 401 || res.status === 403) {
     // Try to extract a server-provided error message.
     const body = await res.json().catch(() => null) as { error?: { message?: string } } | null;
@@ -51,12 +47,12 @@ export async function login(args: {
   username: string;
   password: string;
 }): Promise<TokenPair> {
-  const res = await fetch(`${base(args.endpoint)}/v1/auth/login`, {
+  const res = await globalThis.fetch(`${base(args.endpoint)}/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ username: args.username, password: args.password }),
   });
-  return handleResponse<TokenPair>(res);
+  return handleUnauthResponse<TokenPair>(res);
 }
 
 /**
@@ -67,32 +63,28 @@ export async function refresh(args: {
   endpoint: string;
   refreshToken: string;
 }): Promise<TokenPair> {
-  const res = await fetch(`${base(args.endpoint)}/v1/auth/refresh`, {
+  const res = await globalThis.fetch(`${base(args.endpoint)}/v1/auth/refresh`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ refresh_token: args.refreshToken }),
   });
-  return handleResponse<TokenPair>(res);
+  return handleUnauthResponse<TokenPair>(res);
 }
 
 /**
  * GET /v1/auth/me — requires Bearer token.
  */
-export async function me(args: { endpoint: string; token: string }): Promise<AuthUser> {
-  const res = await fetch(`${base(args.endpoint)}/v1/auth/me`, {
-    headers: bearerHeaders(args.token),
-  });
-  return handleResponse<AuthUser>(res);
+export async function me(t: KymaTransport): Promise<AuthUser> {
+  const res = await t.request("/v1/auth/me");
+  if (!res.ok) throw await errorFromResponse(res);
+  return res.json() as Promise<AuthUser>;
 }
 
 /**
  * POST /v1/auth/logout — requires Bearer token. Returns void (204).
  */
-export async function logout(args: { endpoint: string; token: string }): Promise<void> {
-  const res = await fetch(`${base(args.endpoint)}/v1/auth/logout`, {
-    method: "POST",
-    headers: bearerHeaders(args.token),
-  });
+export async function logout(t: KymaTransport): Promise<void> {
+  const res = await t.request("/v1/auth/logout", { method: "POST" });
   if (res.status === 204) return;
-  await handleResponse<void>(res);
+  if (!res.ok) throw await errorFromResponse(res);
 }

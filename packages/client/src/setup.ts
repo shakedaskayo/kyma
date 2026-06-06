@@ -1,7 +1,11 @@
 // Typed client for the first-run setup surface (`/v1/auth/status`,
-// `/v1/auth/signup`, `/v1/setup/probe`). All unauthenticated — these power the
-// onboarding wizard before any user/token exists.
+// `/v1/auth/signup`, `/v1/setup/probe`). The first three functions are
+// unauthenticated — they power the onboarding wizard before any user/token
+// exists, so they take `endpoint: string` and use plain fetch.
+// `ingestSample` requires a Bearer token and uses a KymaTransport.
 
+import type { KymaTransport } from "./transport";
+import { errorFromResponse } from "./errors";
 import type { TokenPair } from "./auth";
 
 function base(endpoint: string): string {
@@ -29,27 +33,27 @@ export interface SetupProbe {
   recommend: EngineRecommendation;
 }
 
-/** GET /v1/auth/status — does this instance still need first-run setup? */
+/** GET /v1/auth/status — does this instance still need first-run setup? Unauthenticated. */
 export async function getSetupStatus(endpoint: string): Promise<SetupStatus> {
-  const res = await fetch(`${base(endpoint)}/v1/auth/status`);
+  const res = await globalThis.fetch(`${base(endpoint)}/v1/auth/status`);
   if (!res.ok) throw new Error(`setup status: ${res.status}`);
   return res.json();
 }
 
-/** GET /v1/setup/probe — host capabilities for the AI-engine step. */
+/** GET /v1/setup/probe — host capabilities for the AI-engine step. Unauthenticated. */
 export async function getSetupProbe(endpoint: string): Promise<SetupProbe> {
-  const res = await fetch(`${base(endpoint)}/v1/setup/probe`);
+  const res = await globalThis.fetch(`${base(endpoint)}/v1/setup/probe`);
   if (!res.ok) throw new Error(`setup probe: ${res.status}`);
   return res.json();
 }
 
-/** POST /v1/auth/signup — create the first admin (auto-login). */
+/** POST /v1/auth/signup — create the first admin (auto-login). Unauthenticated. */
 export async function signup(args: {
   endpoint: string;
   username: string;
   password: string;
 }): Promise<TokenPair> {
-  const res = await fetch(`${base(args.endpoint)}/v1/auth/signup`, {
+  const res = await globalThis.fetch(`${base(args.endpoint)}/v1/auth/signup`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ username: args.username, password: args.password }),
@@ -64,12 +68,10 @@ export async function signup(args: {
 }
 
 /** Ingest a small sample telemetry dataset so the instance is immediately useful. */
-export async function ingestSample(args: {
-  endpoint: string;
-  token: string;
-  database: string;
-  table: string;
-}): Promise<void> {
+export async function ingestSample(
+  t: KymaTransport,
+  args: { database: string; table: string },
+): Promise<void> {
   const now = Date.now();
   const services = ["payments-svc", "auth-svc", "orders-svc", "search-svc"];
   const levels = ["INFO", "INFO", "INFO", "WARN", "ERROR"];
@@ -96,18 +98,14 @@ export async function ingestSample(args: {
       }),
     );
   }
-  const res = await fetch(`${base(args.endpoint)}/v1/ingest`, {
+  const res = await t.request("/v1/ingest", {
     method: "POST",
     headers: {
-      authorization: `Bearer ${args.token}`,
-      "x-database": args.database,
       "x-table": args.table,
       "content-type": "application/x-ndjson",
     },
     body: lines.join("\n"),
+    database: args.database,
   });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`sample ingest failed: ${res.status}${t ? ` — ${t.slice(0, 160)}` : ""}`);
-  }
+  if (!res.ok) throw await errorFromResponse(res);
 }

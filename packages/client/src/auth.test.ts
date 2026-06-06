@@ -1,11 +1,16 @@
 import { beforeEach, expect, test, vi } from "vitest";
 import { login, me, logout, refresh } from "./auth";
+import { createTransport } from "./transport";
 
 const mockFetch = vi.fn();
 beforeEach(() => {
   vi.stubGlobal("fetch", mockFetch);
   mockFetch.mockReset();
 });
+
+function makeTransport(fetchMock: typeof fetch) {
+  return createTransport({ endpoint: "http://localhost:8080", auth: { token: "session-token-abc" }, fetch: fetchMock });
+}
 
 function ok(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -93,32 +98,32 @@ test("login strips trailing slash from endpoint", async () => {
 
 test("me GETs /v1/auth/me with Authorization: Bearer header", async () => {
   mockFetch.mockResolvedValue(ok({ username: "admin", role: "admin" }));
-  const user = await me({ endpoint, token });
+  const user = await me(makeTransport(mockFetch));
 
   const [url, init] = mockFetch.mock.calls[0];
   expect(url).toBe("http://localhost:8080/v1/auth/me");
-  expect(init.headers["authorization"]).toBe(`Bearer ${token}`);
+  expect(init.headers.get("authorization")).toBe(`Bearer ${token}`);
   expect(user.username).toBe("admin");
 });
 
 test("me throws on 401", async () => {
   mockFetch.mockResolvedValue(new Response("no", { status: 401 }));
-  await expect(me({ endpoint, token })).rejects.toThrow(/unauthorized/i);
+  await expect(me(makeTransport(mockFetch))).rejects.toThrow(/unauthorized|token rejected/i);
 });
 
 // ── logout ────────────────────────────────────────────────────────────────────
 
 test("logout POSTs to /v1/auth/logout with Authorization: Bearer header", async () => {
   mockFetch.mockResolvedValue(new Response(null, { status: 204 }));
-  await logout({ endpoint, token });
+  await logout(makeTransport(mockFetch));
 
   const [url, init] = mockFetch.mock.calls[0];
   expect(url).toBe("http://localhost:8080/v1/auth/logout");
   expect(init.method).toBe("POST");
-  expect(init.headers["authorization"]).toBe(`Bearer ${token}`);
+  expect(init.headers.get("authorization")).toBe(`Bearer ${token}`);
 });
 
 test("logout resolves on 204", async () => {
   mockFetch.mockResolvedValue(new Response(null, { status: 204 }));
-  await expect(logout({ endpoint, token })).resolves.toBeUndefined();
+  await expect(logout(makeTransport(mockFetch))).resolves.toBeUndefined();
 });

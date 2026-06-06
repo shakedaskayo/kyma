@@ -1,8 +1,13 @@
 import { beforeEach, expect, test, vi } from "vitest";
 import { fetchSchema, type SchemaDoc } from "./catalog";
+import { createTransport } from "./transport";
 
 const mockFetch = vi.fn();
-beforeEach(() => { vi.stubGlobal("fetch", mockFetch); mockFetch.mockReset(); });
+beforeEach(() => { mockFetch.mockReset(); });
+
+function makeTransport(fetchMock: typeof fetch, endpoint = "http://localhost:8080") {
+  return createTransport({ endpoint, auth: { token: "t" }, fetch: fetchMock });
+}
 
 test("fetches and returns the schema tree", async () => {
   const doc: SchemaDoc = {
@@ -12,15 +17,14 @@ test("fetches and returns the schema tree", async () => {
   mockFetch.mockResolvedValue(new Response(JSON.stringify(doc), {
     status: 200, headers: { "content-type": "application/json" },
   }));
-  const got = await fetchSchema({ endpoint: "http://localhost:8080", token: "t" });
+  const got = await fetchSchema(makeTransport(mockFetch));
   expect(got).toEqual(doc);
-  expect(mockFetch).toHaveBeenCalledWith(
-    "http://localhost:8080/v1/catalog/schema",
-    expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer t" }) }),
-  );
+  const [url, init] = mockFetch.mock.calls[0];
+  expect(url).toBe("http://localhost:8080/v1/catalog/schema");
+  expect(init.headers.get("authorization")).toBe("Bearer t");
 });
 
 test("throws Unauthorized on 401", async () => {
   mockFetch.mockResolvedValue(new Response("nope", { status: 401 }));
-  await expect(fetchSchema({ endpoint: "http://x", token: "t" })).rejects.toThrow(/unauthorized/i);
+  await expect(fetchSchema(makeTransport(mockFetch, "http://x"))).rejects.toThrow(/unauthorized|token rejected/i);
 });

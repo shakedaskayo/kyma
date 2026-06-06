@@ -9,13 +9,12 @@
 // the same data with one less protocol in the mix. Flight remains the
 // server-to-server and agent-SDK path on :9090.
 
+import type { KymaTransport } from "./transport";
 import type { Column, ColKind } from "./arrow";
 export type { Column, ColKind };
 export type ResultChunk = { columns: Column[]; rows: Record<string, unknown>[] };
 
 export type QueryArgs = {
-  endpoint: string;
-  token: string;
   database: string;
   query: string;
   language: "kql" | "sql";
@@ -30,23 +29,19 @@ export function encodeTicket(t: { database: string; query: string; language: str
 
 const CHUNK_ROWS = 500;
 
-export async function* runQuery(args: QueryArgs): AsyncGenerator<ResultChunk, void, void> {
-  const base = args.endpoint.replace(/\/$/, "");
-  const url = `${base}/v1/query`;
-
-  const headers: Record<string, string> = {
+export async function* runQuery(transport: KymaTransport, args: QueryArgs): AsyncGenerator<ResultChunk, void, void> {
+  const extraHeaders: Record<string, string> = {
     "content-type": args.language === "sql" ? "application/sql" : "application/x-kql",
-    "authorization": `Bearer ${args.token}`,
-    "x-database": args.database,
   };
-  if (args.walMs)    headers["x-kyma-max-wall-clock-ms"] = String(args.walMs);
-  if (args.memBytes) headers["x-kyma-max-memory-bytes"]  = String(args.memBytes);
+  if (args.walMs)    extraHeaders["x-kyma-max-wall-clock-ms"] = String(args.walMs);
+  if (args.memBytes) extraHeaders["x-kyma-max-memory-bytes"]  = String(args.memBytes);
 
-  const res = await fetch(url, {
+  const res = await transport.request("/v1/query", {
     method: "POST",
-    headers,
+    headers: extraHeaders,
     body: args.query,
     signal: args.signal,
+    database: args.database,
   });
 
   if (!res.ok) {

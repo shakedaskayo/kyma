@@ -8,12 +8,16 @@ import {
   type Dashboard,
   type DashboardWithPanels,
 } from "./dashboards";
+import { createTransport } from "./transport";
 
 const mockFetch = vi.fn();
 beforeEach(() => {
-  vi.stubGlobal("fetch", mockFetch);
   mockFetch.mockReset();
 });
+
+function makeTransport(fetchMock: typeof fetch) {
+  return createTransport({ endpoint: "http://localhost:7070", auth: { token: "tok" }, fetch: fetchMock });
+}
 
 const BASE_DASHBOARD: Dashboard = {
   id: "d1",
@@ -39,19 +43,16 @@ test("listDashboards fetches and returns array", async () => {
       headers: { "content-type": "application/json" },
     }),
   );
-  const result = await listDashboards({ endpoint: "http://localhost:7070", token: "tok" });
+  const result = await listDashboards(makeTransport(mockFetch));
   expect(result).toEqual([BASE_DASHBOARD]);
-  expect(mockFetch).toHaveBeenCalledWith(
-    "http://localhost:7070/v1/dashboards",
-    expect.objectContaining({
-      headers: expect.objectContaining({ authorization: "Bearer tok" }),
-    }),
-  );
+  const [url, init] = mockFetch.mock.calls[0];
+  expect(url).toBe("http://localhost:7070/v1/dashboards");
+  expect(init.headers.get("authorization")).toBe("Bearer tok");
 });
 
 test("listDashboards throws unauthorized on 401", async () => {
   mockFetch.mockResolvedValue(new Response("nope", { status: 401 }));
-  await expect(listDashboards({ endpoint: "http://x", token: "t" })).rejects.toThrow(/unauthorized/i);
+  await expect(listDashboards(makeTransport(mockFetch))).rejects.toThrow(/unauthorized|token rejected/i);
 });
 
 // ── getDashboard ───────────────────────────────────────────────────────────
@@ -63,17 +64,15 @@ test("getDashboard fetches by id", async () => {
       headers: { "content-type": "application/json" },
     }),
   );
-  const result = await getDashboard({ endpoint: "http://localhost:7070", token: "tok", id: "d1" });
+  const result = await getDashboard(makeTransport(mockFetch), { id: "d1" });
   expect(result).toEqual(DASHBOARD_WITH_PANELS);
-  expect(mockFetch).toHaveBeenCalledWith(
-    "http://localhost:7070/v1/dashboards/d1",
-    expect.any(Object),
-  );
+  const [url] = mockFetch.mock.calls[0];
+  expect(url).toBe("http://localhost:7070/v1/dashboards/d1");
 });
 
 test("getDashboard throws not found on 404", async () => {
   mockFetch.mockResolvedValue(new Response("not found", { status: 404 }));
-  await expect(getDashboard({ endpoint: "http://x", token: "t", id: "missing" })).rejects.toThrow(
+  await expect(getDashboard(makeTransport(mockFetch), { id: "missing" })).rejects.toThrow(
     /not found/i,
   );
 });
@@ -87,16 +86,12 @@ test("createDashboard POSTs and returns DashboardWithPanels", async () => {
       headers: { "content-type": "application/json" },
     }),
   );
-  const result = await createDashboard({
-    endpoint: "http://localhost:7070",
-    token: "tok",
-    body: { name: "My Dashboard" },
-  });
+  const result = await createDashboard(makeTransport(mockFetch), { body: { name: "My Dashboard" } });
   expect(result).toEqual(DASHBOARD_WITH_PANELS);
-  const call = mockFetch.mock.calls[0];
-  expect(call[0]).toBe("http://localhost:7070/v1/dashboards");
-  expect(call[1].method).toBe("POST");
-  expect(JSON.parse(call[1].body as string)).toEqual({ name: "My Dashboard" });
+  const [url, init] = mockFetch.mock.calls[0];
+  expect(url).toBe("http://localhost:7070/v1/dashboards");
+  expect(init.method).toBe("POST");
+  expect(JSON.parse(init.body as string)).toEqual({ name: "My Dashboard" });
 });
 
 // ── updateDashboard ────────────────────────────────────────────────────────
@@ -109,16 +104,11 @@ test("updateDashboard PATCHes by id", async () => {
       headers: { "content-type": "application/json" },
     }),
   );
-  const result = await updateDashboard({
-    endpoint: "http://localhost:7070",
-    token: "tok",
-    id: "d1",
-    patch: { name: "Renamed" },
-  });
+  const result = await updateDashboard(makeTransport(mockFetch), { id: "d1", patch: { name: "Renamed" } });
   expect(result.name).toBe("Renamed");
-  const call = mockFetch.mock.calls[0];
-  expect(call[0]).toBe("http://localhost:7070/v1/dashboards/d1");
-  expect(call[1].method).toBe("PATCH");
+  const [url, init] = mockFetch.mock.calls[0];
+  expect(url).toBe("http://localhost:7070/v1/dashboards/d1");
+  expect(init.method).toBe("PATCH");
 });
 
 // ── deleteDashboard ────────────────────────────────────────────────────────
@@ -126,17 +116,16 @@ test("updateDashboard PATCHes by id", async () => {
 test("deleteDashboard sends DELETE and resolves void", async () => {
   mockFetch.mockResolvedValue(new Response(null, { status: 204 }));
   await expect(
-    deleteDashboard({ endpoint: "http://localhost:7070", token: "tok", id: "d1" }),
+    deleteDashboard(makeTransport(mockFetch), { id: "d1" }),
   ).resolves.toBeUndefined();
-  expect(mockFetch).toHaveBeenCalledWith(
-    "http://localhost:7070/v1/dashboards/d1",
-    expect.objectContaining({ method: "DELETE" }),
-  );
+  const [url, init] = mockFetch.mock.calls[0];
+  expect(url).toBe("http://localhost:7070/v1/dashboards/d1");
+  expect(init.method).toBe("DELETE");
 });
 
 test("deleteDashboard throws unauthorized on 401", async () => {
   mockFetch.mockResolvedValue(new Response("nope", { status: 401 }));
-  await expect(deleteDashboard({ endpoint: "http://x", token: "t", id: "d1" })).rejects.toThrow(
-    /unauthorized/i,
+  await expect(deleteDashboard(makeTransport(mockFetch), { id: "d1" })).rejects.toThrow(
+    /unauthorized|token rejected/i,
   );
 });

@@ -1,7 +1,13 @@
 import { beforeEach, expect, test, vi } from "vitest";
 import { encodeTicket, runQuery } from "./query";
+import { createTransport } from "./transport";
 
-beforeEach(() => { vi.unstubAllGlobals(); });
+const mockFetch = vi.fn();
+beforeEach(() => { mockFetch.mockReset(); });
+
+function makeTransport(fetchMock: typeof fetch) {
+  return createTransport({ endpoint: "http://localhost:7070", auth: { token: "t" }, fetch: fetchMock });
+}
 
 test("encodeTicket serializes database+query+language as JSON", () => {
   const bytes = encodeTicket({ database: "obs", query: "otel_logs | take 1", language: "kql" });
@@ -15,14 +21,13 @@ test("runQuery parses NDJSON and infers column kinds", async () => {
     JSON.stringify({ timestamp: "2026-04-21T10:00:00", n: 1, label: "a" }),
     JSON.stringify({ timestamp: "2026-04-21T10:01:00", n: 2, label: "b" }),
   ].join("\n");
-  const mockFetch = vi.fn().mockResolvedValue(new Response(ndjson, {
+  mockFetch.mockResolvedValue(new Response(ndjson, {
     status: 200, headers: { "content-type": "application/x-ndjson" },
   }));
-  vi.stubGlobal("fetch", mockFetch);
 
   const chunks: { columns: unknown; rows: unknown[] }[] = [];
-  for await (const c of runQuery({
-    endpoint: "http://localhost:7070", token: "t", database: "default",
+  for await (const c of runQuery(makeTransport(mockFetch), {
+    database: "default",
     query: "ev | take 2", language: "kql",
   })) chunks.push(c);
 
@@ -37,27 +42,20 @@ test("runQuery parses NDJSON and infers column kinds", async () => {
     { name: "n", kind: "numeric" },
     { name: "label", kind: "string" },
   ]);
-  expect(mockFetch).toHaveBeenCalledWith(
-    "http://localhost:7070/v1/query",
-    expect.objectContaining({
-      method: "POST",
-      headers: expect.objectContaining({
-        "content-type": "application/x-kql",
-        "x-database": "default",
-        "authorization": "Bearer t",
-      }),
-      body: "ev | take 2",
-    }),
-  );
+  const [url, init] = mockFetch.mock.calls[0];
+  expect(url).toBe("http://localhost:7070/v1/query");
+  expect(init.method).toBe("POST");
+  expect(init.headers.get("content-type")).toBe("application/x-kql");
+  expect(init.headers.get("x-database")).toBe("default");
+  expect(init.headers.get("authorization")).toBe("Bearer t");
+  expect(init.body).toBe("ev | take 2");
 });
 
 test("runQuery throws with the body on non-OK status", async () => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("parse error near 'wat'", {
-    status: 400,
-  })));
+  mockFetch.mockResolvedValue(new Response("parse error near 'wat'", { status: 400 }));
   await expect((async () => {
-    for await (const _ of runQuery({
-      endpoint: "http://x", token: "t", database: "default",
+    for await (const _ of runQuery(makeTransport(mockFetch), {
+      database: "default",
       query: "wat", language: "kql",
     })) { void _; }
   })()).rejects.toThrow(/query failed \(400\): parse error/);

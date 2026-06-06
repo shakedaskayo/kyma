@@ -1,6 +1,9 @@
 //! Typed client for `GET /v1/agent/memory/overview` — powers the Agent-tab
 //! Memory ingestion panel (firehose activity, memory store, pipeline runs).
 
+import type { KymaTransport } from "./transport";
+import { errorFromResponse } from "./errors";
+
 export type Row = Record<string, unknown>;
 
 export interface PipelineRun {
@@ -25,24 +28,13 @@ export interface MemoryOverview {
   pipeline_runs: PipelineRun[];
 }
 
-type Args = { endpoint: string; token: string };
-
-function base(endpoint: string) {
-  return endpoint.replace(/\/$/, "");
+async function handleResponse<T>(res: Response): Promise<T> {
+  if (!res.ok) throw await errorFromResponse(res);
+  return res.json() as Promise<T>;
 }
 
-export async function fetchMemoryOverview(a: Args): Promise<MemoryOverview> {
-  const res = await fetch(`${base(a.endpoint)}/v1/agent/memory/overview`, {
-    headers: {
-      authorization: `Bearer ${a.token}`,
-      "content-type": "application/json",
-    },
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`memory overview: ${res.status}${t ? ` — ${t}` : ""}`);
-  }
-  return res.json();
+export async function fetchMemoryOverview(t: KymaTransport): Promise<MemoryOverview> {
+  return handleResponse<MemoryOverview>(await t.request("/v1/agent/memory/overview"));
 }
 
 // ── graph-aware hybrid recall (POST /v1/agent/memory/query) ──────────────────
@@ -92,22 +84,16 @@ export interface MemoryQueryRequest {
 }
 
 export async function queryMemory(
-  a: Args,
+  t: KymaTransport,
   req: MemoryQueryRequest,
 ): Promise<MemoryQueryResult> {
-  const res = await fetch(`${base(a.endpoint)}/v1/agent/memory/query`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${a.token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(req),
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`memory query: ${res.status}${t ? ` — ${t}` : ""}`);
-  }
-  return res.json();
+  return handleResponse<MemoryQueryResult>(
+    await t.request("/v1/agent/memory/query", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(req),
+    }),
+  );
 }
 
 // ── tunable settings (GET/PUT /v1/agent/memory/settings) ─────────────────────
@@ -130,34 +116,18 @@ export interface MemorySettings {
   rrf_k: number;
 }
 
-export async function getMemorySettings(a: Args): Promise<MemorySettings> {
-  const res = await fetch(`${base(a.endpoint)}/v1/agent/memory/settings`, {
-    headers: {
-      authorization: `Bearer ${a.token}`,
-      "content-type": "application/json",
-    },
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`memory settings: ${res.status}${t ? ` — ${t}` : ""}`);
-  }
-  return res.json();
+export async function getMemorySettings(t: KymaTransport): Promise<MemorySettings> {
+  return handleResponse<MemorySettings>(await t.request("/v1/agent/memory/settings"));
 }
 
 export async function putMemorySettings(
-  a: Args,
+  t: KymaTransport,
   s: MemorySettings,
 ): Promise<void> {
-  const res = await fetch(`${base(a.endpoint)}/v1/agent/memory/settings`, {
+  const res = await t.request("/v1/agent/memory/settings", {
     method: "PUT",
-    headers: {
-      authorization: `Bearer ${a.token}`,
-      "content-type": "application/json",
-    },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(s),
   });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`memory settings: ${res.status}${t ? ` — ${t}` : ""}`);
-  }
+  if (!res.ok) throw await errorFromResponse(res);
 }
