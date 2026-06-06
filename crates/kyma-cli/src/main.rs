@@ -22,6 +22,7 @@
 
 mod client;
 mod connector;
+mod deploy;
 mod plugin;
 mod update;
 mod users;
@@ -108,6 +109,12 @@ enum Command {
     Connector {
         #[command(subcommand)]
         op: connector::Op,
+    },
+    /// Deploy kyma to production (AWS Fargate + S3 + Supabase) or run a
+    /// Supabase-backed local test drive. See `kyma deploy --help`.
+    Deploy {
+        #[command(subcommand)]
+        op: deploy::Op,
     },
     /// Inspect ingestion runs — `status` snapshots, `tail` follows, `push`
     /// streams NDJSON from stdin into a table.
@@ -403,6 +410,7 @@ async fn main() -> Result<()> {
             also_link_claude,
         } => cmd_install_skill(target, also_link_claude).await,
         Command::Connector { op } => connector::run(op).await,
+        Command::Deploy { op } => deploy::run(op).await,
         Command::Ingest { op } => connector::run_ingest(op).await,
         Command::Recall {
             query,

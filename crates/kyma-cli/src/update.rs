@@ -21,6 +21,12 @@ const CHECK_TTL_SECS: u64 = 24 * 60 * 60;
 
 // ── GitHub release lookup ───────────────────────────────────────────────────
 
+/// Public wrapper: the latest GitHub release tag (e.g. "v0.1.0").
+/// Used by `kyma deploy` to pin the engine image to the release train.
+pub(crate) async fn latest_release_tag() -> Result<String> {
+    fetch_latest_tag().await
+}
+
 async fn fetch_latest_tag() -> Result<String> {
     let mut req = http_client()
         .get(format!("https://api.github.com/repos/{REPO}/releases/latest"))
