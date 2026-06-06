@@ -5,6 +5,7 @@
     "dev": "pnpm -C web dev",
     "build": "pnpm -C web build",
     "test": "pnpm -C web test",
+    "test:scripts": "node --test scripts/ky-prefix.test.mjs",
     "typecheck": "pnpm -C web typecheck",
     "lint": "pnpm -C web lint",
     "build:packages": "pnpm --filter @kyma-ai/client build && pnpm --filter @kyma-ai/react build",
