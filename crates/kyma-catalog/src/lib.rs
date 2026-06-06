@@ -1482,6 +1482,40 @@ impl Catalog for PostgresCatalog {
         Ok(res.rows_affected() > 0)
     }
 
+    async fn list_api_tokens_in_tenant(
+        &self,
+        tenant: TenantId,
+        kind: &str,
+    ) -> std::result::Result<Vec<kyma_core::catalog::ApiTokenInfo>, CatalogError> {
+        use sqlx::Row as _;
+        let rows = sqlx::query(
+            "SELECT token_hash, scopes, subject, kind, created_at, last_used_at,
+                    expires_at, (revoked_at IS NOT NULL) AS revoked
+             FROM api_tokens
+             WHERE tenant_id = $1 AND kind = $2
+             ORDER BY created_at DESC",
+        )
+        .bind(tenant.as_uuid())
+        .bind(kind)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        rows.iter()
+            .map(|row| {
+                Ok(kyma_core::catalog::ApiTokenInfo {
+                    token_hash: row.try_get("token_hash").map_err(sql_err)?,
+                    role: row.try_get("scopes").map_err(sql_err)?,
+                    subject: row.try_get("subject").map_err(sql_err)?,
+                    kind: row.try_get("kind").map_err(sql_err)?,
+                    created_at: row.try_get("created_at").map_err(sql_err)?,
+                    last_used_at: row.try_get("last_used_at").map_err(sql_err)?,
+                    expires_at: row.try_get("expires_at").map_err(sql_err)?,
+                    revoked: row.try_get("revoked").map_err(sql_err)?,
+                })
+            })
+            .collect()
+    }
+
     async fn insert_session_token(
         &self,
         token_hash: &[u8],

@@ -1730,6 +1730,39 @@ impl Catalog for SqliteCatalog {
         Ok(res.rows_affected() > 0)
     }
 
+    async fn list_api_tokens_in_tenant(
+        &self,
+        tenant: TenantId,
+        kind: &str,
+    ) -> Result<Vec<kyma_core::catalog::ApiTokenInfo>, CatalogError> {
+        let rows = sqlx::query(
+            "SELECT token_hash, scopes, subject, kind, created_at, last_used_at,
+                    expires_at, revoked
+             FROM api_tokens
+             WHERE tenant_id = ? AND kind = ?
+             ORDER BY created_at DESC",
+        )
+        .bind(tenant.as_uuid())
+        .bind(kind)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(ce)?;
+        rows.iter()
+            .map(|row| {
+                Ok(kyma_core::catalog::ApiTokenInfo {
+                    token_hash: row.try_get("token_hash").map_err(ce)?,
+                    role: row.try_get("scopes").map_err(ce)?,
+                    subject: row.try_get("subject").map_err(ce)?,
+                    kind: row.try_get("kind").map_err(ce)?,
+                    created_at: row.try_get("created_at").map_err(ce)?,
+                    last_used_at: row.try_get("last_used_at").map_err(ce)?,
+                    expires_at: row.try_get("expires_at").map_err(ce)?,
+                    revoked: row.try_get::<i64, _>("revoked").map_err(ce)? != 0,
+                })
+            })
+            .collect()
+    }
+
     async fn insert_session_token(
         &self,
         token_hash: &[u8],

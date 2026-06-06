@@ -59,6 +59,7 @@ uninlined_format_args = "allow"
 [workspace.dependencies]
 # Core async + error plumbing
 tokio = { version = "1", features = ["full"] }
+jsonwebtoken = "9"
 async-trait = "0.1"
 anyhow = "1"
 thiserror = "2"
