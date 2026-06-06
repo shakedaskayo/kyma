@@ -1,4 +1,4 @@
-import { KymaAuthError } from "./errors";
+import { errorFromResponse } from "./errors";
 
 export type GetToken = (opts?: { reason: "initial" | "expired" }) => Promise<string>;
 export type KymaAuth = { token: string } | { getToken: GetToken };
@@ -24,6 +24,34 @@ export interface KymaTransport {
   request(path: string, opts?: RequestOpts): Promise<Response>;
 }
 
+/**
+ * Decode the `exp` claim from a JWT payload. Returns the expiry in seconds
+ * since epoch, or null if the token is not a JWT or cannot be decoded.
+ * Never throws.
+ */
+function jwtExpiry(token: string): number | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    // base64url → base64 → decode
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), "=");
+    const payload = JSON.parse(atob(padded)) as { exp?: unknown };
+    return typeof payload.exp === "number" ? payload.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Returns true when a getToken-based JWT should be proactively refreshed. */
+function shouldProactiveRefresh(tok: string | null): boolean {
+  if (!tok) return false;
+  const exp = jwtExpiry(tok);
+  if (exp === null) return false;
+  // Refresh if expiry is within 60 seconds of now (or already past)
+  return exp - Math.floor(Date.now() / 1000) < 60;
+}
+
 export function createTransport(cfg: TransportConfig): KymaTransport {
   const base = cfg.endpoint.replace(/\/$/, "");
   const fetchImpl = cfg.fetch ?? globalThis.fetch.bind(globalThis);
@@ -47,6 +75,10 @@ export function createTransport(cfg: TransportConfig): KymaTransport {
   }
 
   async function token(): Promise<string> {
+    // Fix 2: proactive JWT refresh when token is near expiry (getToken auth only)
+    if ("getToken" in cfg.auth && shouldProactiveRefresh(cachedToken)) {
+      return mint("expired");
+    }
     if (cachedToken) return cachedToken;
     return mint("initial");
   }
@@ -73,15 +105,29 @@ export function createTransport(cfg: TransportConfig): KymaTransport {
     endpoint: base,
     database: cfg.database,
     async request(path, opts = {}) {
-      const res = await doFetch(path, opts, await token());
+      // Fix 2: capture the token actually used for this request
+      const used = await token();
+      const res = await doFetch(path, opts, used);
       if (res.status !== 401) return res;
+
+      // Fix 3: static token — use errorFromResponse to preserve requestId
       if (!("getToken" in cfg.auth)) {
-        throw new KymaAuthError(401, "kyma request failed: 401 — token rejected");
+        throw await errorFromResponse(res);
       }
-      const fresh = await mint("expired");
+
+      // Fix 1: staggered-401 guard — if cachedToken was refreshed by a concurrent
+      // request while we were in-flight, reuse that fresh token without a new mint
+      let fresh: string;
+      if (cachedToken && cachedToken !== used) {
+        fresh = cachedToken;
+      } else {
+        fresh = await mint("expired");
+      }
+
       const retry = await doFetch(path, opts, fresh);
       if (retry.status === 401) {
-        throw new KymaAuthError(401, "kyma request failed: 401 — token rejected after refresh");
+        // Fix 3: preserve requestId from retry response
+        throw await errorFromResponse(retry);
       }
       return retry;
     },

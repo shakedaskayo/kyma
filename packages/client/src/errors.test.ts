@@ -24,4 +24,23 @@ describe("errorFromResponse", () => {
     const err = await errorFromResponse(new Response("x".repeat(500), { status: 500 }));
     expect(err.message.length).toBeLessThan(300);
   });
+
+  // Fix 4: code field on KymaApiError
+  it("populates code from JSON body code field", async () => {
+    const res = new Response(JSON.stringify({ error: "x", code: "SCOPE_DENIED" }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+    const err = await errorFromResponse(res);
+    expect(err.code).toBe("SCOPE_DENIED");
+  });
+
+  it("code is undefined when not in response body", async () => {
+    const res = new Response(JSON.stringify({ error: "bad query" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+    const err = await errorFromResponse(res);
+    expect(err.code).toBeUndefined();
+  });
 });
