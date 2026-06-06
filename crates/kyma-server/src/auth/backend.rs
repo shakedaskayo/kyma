@@ -35,6 +35,9 @@ pub struct Principal {
     pub tenant: TenantId,
     pub role: Role,
     pub subject: Option<String>,
+    /// Databases this principal may touch. `None` = unrestricted (the default
+    /// for all pre-existing backends; only OIDC claims populate this).
+    pub allowed_databases: Option<Vec<String>>,
 }
 
 #[derive(Debug, thiserror::Error)]

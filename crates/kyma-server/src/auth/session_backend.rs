@@ -83,6 +83,7 @@ impl AuthBackend for SessionAuthBackend {
                 tenant: tp.tenant,
                 role: Role::parse(&tp.role).unwrap_or(Role::Read),
                 subject: tp.subject,
+                allowed_databases: None,
             }),
             None => Err(AuthError::UnknownToken),
         }

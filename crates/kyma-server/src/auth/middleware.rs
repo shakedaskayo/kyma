@@ -31,6 +31,7 @@ pub async fn require_role_middleware(
             tenant: kyma_core::tenant::DEFAULT_TENANT,
             role: Role::Admin,
             subject: None,
+            allowed_databases: None,
         });
         req.extensions_mut()
             .insert(kyma_core::tenant::DEFAULT_TENANT);

@@ -100,6 +100,7 @@ impl AuthBackend for DbAuthBackend {
             tenant: TenantId::from_uuid(tenant_uuid),
             role,
             subject,
+            allowed_databases: None,
         })
     }
 }
