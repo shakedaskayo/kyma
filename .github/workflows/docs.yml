@@ -1,0 +1,69 @@
+name: docs
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/site/**"
+      - "docs/architecture.md"
+      - "docs/benchmarks.md"
+      - "docs/images/**"
+      - ".github/workflows/docs.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".npmrc"
+  pull_request:
+    paths:
+      - "docs/site/**"
+      - "docs/architecture.md"
+      - "docs/benchmarks.md"
+      - "docs/images/**"
+      - ".github/workflows/docs.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".npmrc"
+  workflow_dispatch:
+
+# configure-pages (build) and deploy-pages (deploy) both need the Pages scopes;
+# fork-PR tokens are auto-downgraded to read-only regardless.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: "pnpm" }
+      - run: pnpm install --frozen-lockfile
+      # prebuild sync (architecture/benchmarks) + diagram check run via npm hooks.
+      - run: pnpm -C docs/site build
+      - uses: actions/configure-pages@v5
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        with:
+          path: docs/site/.vitepress/dist
+
+  deploy:
+    # PRs and non-main refs get the build check only — deploys happen from main
+    # (push or manual dispatch).
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [build]
+    runs-on: ubuntu-latest
+    # One Pages deploy at a time; let in-flight deploys finish.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

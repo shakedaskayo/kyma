@@ -40,7 +40,7 @@ export function ControlPlaneGate({
         }
         action={
           <Button variant="outline" size="sm" asChild>
-            <a href="https://www.getkyma.dev" target="_blank" rel="noreferrer">
+            <a href="https://shakedaskayo.github.io/kyma/" target="_blank" rel="noreferrer">
               <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Two-tier setup docs
             </a>
           </Button>

@@ -38,7 +38,7 @@ export const Route = createFileRoute("/setup")({
   component: Setup,
 });
 
-// ── Kyma brand tokens (from getkyma.dev) ───────────────────────────────────
+// ── Kyma brand tokens (from the kyma docs site) ────────────────────────────
 const GREEN = "#7ed957"; // phosphor accent
 const inputCls =
   "h-11 rounded-lg border-[#dfdfd6]/12 bg-[#111317] text-[#e8e6e0] placeholder:text-[#dfdfd6]/30 " +
@@ -804,7 +804,7 @@ function CopyRow({ text, prefix = "$ " }: { text: string; prefix?: string }) {
   );
 }
 
-/** The real kyma mark — phosphor-ring aperture (from getkyma.dev). */
+/** The real kyma mark — phosphor-ring aperture (from the kyma docs site). */
 function KymaMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 96 96" role="img" aria-label="kyma" className={className}>

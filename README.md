@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://www.getkyma.dev">
+  <a href="https://shakedaskayo.github.io/kyma/">
     <img src="docs/site/public/icons/kyma-mark.svg" alt="kyma" width="120" height="120" />
   </a>
 </p>
@@ -17,8 +17,8 @@
 </p>
 
 <p align="center">
-  <a href="https://www.getkyma.dev"><img alt="Docs" src="https://img.shields.io/badge/docs-getkyma.dev-7ed957?style=flat-square" /></a>
-  <a href="https://www.getkyma.dev/agent/memory"><img alt="Context engine" src="https://img.shields.io/badge/context%20engine-memory%20%2B%20data%20%2B%20graph-7c3aed?style=flat-square" /></a>
+  <a href="https://shakedaskayo.github.io/kyma/"><img alt="Docs" src="https://img.shields.io/badge/docs-github%20pages-7ed957?style=flat-square" /></a>
+  <a href="https://shakedaskayo.github.io/kyma/agent/memory"><img alt="Context engine" src="https://img.shields.io/badge/context%20engine-memory%20%2B%20data%20%2B%20graph-7c3aed?style=flat-square" /></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-1.95%2B-orange?style=flat-square" />
   <img alt="Status" src="https://img.shields.io/badge/status-pre--alpha-yellow?style=flat-square" />
@@ -28,9 +28,9 @@
   <a href="#quickstart-local-zero-infra">Quickstart</a> ·
   <a href="#what-your-agent-gets">Tools</a> ·
   <a href="#two-tiers-local-binary--control-plane">Tiers</a> ·
-  <a href="https://www.getkyma.dev/agent/memory">Memory</a> ·
-  <a href="https://www.getkyma.dev/connectors/">Connectors</a> ·
-  <a href="https://www.getkyma.dev/architecture/architecture">Architecture</a>
+  <a href="https://shakedaskayo.github.io/kyma/agent/memory">Memory</a> ·
+  <a href="https://shakedaskayo.github.io/kyma/connectors/">Connectors</a> ·
+  <a href="https://shakedaskayo.github.io/kyma/architecture/architecture">Architecture</a>
 </p>
 
 ---
@@ -206,7 +206,7 @@ its own columnar engine, so recall is near-realtime at scale.
 | Live data (logs/traces/SQL/KQL) | ❌ | ✅ **the same engine** |
 | Control-plane sync | varies | ✅ **bidirectional** |
 
-See **[Agentic Memory](https://www.getkyma.dev/agent/memory)** for the full design.
+See **[Agentic Memory](https://shakedaskayo.github.io/kyma/agent/memory)** for the full design.
 
 ---
 
@@ -385,7 +385,7 @@ crates/
   kyma-bin/             the full server binary (the docker/control-plane tier)
 ```
 
-Full docs at **[getkyma.dev](https://www.getkyma.dev)**.
+Full docs at **[the kyma docs site](https://shakedaskayo.github.io/kyma/)**.
 
 ---
 
