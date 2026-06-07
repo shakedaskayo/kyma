@@ -8,7 +8,7 @@ import type {
   Scope,
   SourceKey,
   SourceState,
-} from "./types";
+} from "@kyma-ai/react/discover";
 import type { TimeRange } from "../tabs/workspace-store";
 
 export type DiscoverTabState = {
