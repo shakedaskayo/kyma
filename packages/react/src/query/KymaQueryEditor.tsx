@@ -1,0 +1,404 @@
+/**
+ * KymaQueryEditor — self-contained embedded query surface.
+ *
+ * Composes KqlEditor/Monaco SQL, SchemaBrowser, ResultsGrid, ChartPanel, and
+ * TimeRangePicker into a single embeddable component backed by useKymaQuery.
+ *
+ * Schema is loaded via React Query (key ["kyma", endpoint, database, "schema"])
+ * and passed to the editor for completions and to SchemaBrowser for browsing.
+ *
+ * Time-range injection: when language="kql" and showTimeRange=true, the time
+ * filter is spliced into the query immediately before execution using
+ * prependTimeFilter() from time-range.ts — the editor's display text is never
+ * mutated (the user always sees the raw query).
+ *
+ * SQL mode: uses Monaco's built-in "sql" language and sends content-type
+ * application/sql. Time-range injection is skipped in SQL mode (no standard
+ * syntax; the user writes their own WHERE clause).
+ *
+ * Omitted props (wired to nothing, not surfaced):
+ *   - knownValues: not computed from the embedded results path (would require
+ *     post-execute column scan across potentially many rows — omitted to keep
+ *     the component simple; KqlEditor's schema completions still work).
+ */
+
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Play, Square } from "lucide-react";
+import { autoChartAxes } from "@kyma-ai/client";
+import type { Column, SchemaDoc } from "@kyma-ai/client";
+
+import { KymaErrorBoundary } from "../internal/KymaErrorBoundary";
+import { Button } from "../internal/ui/button";
+import { useKymaClient, useKymaContext } from "../provider/context";
+import { useKymaQuery } from "../hooks/useKymaQuery";
+import { KqlEditor } from "./editor/KqlEditor";
+import { SchemaBrowser } from "./schema/SchemaBrowser";
+import { ResultsGrid } from "./results/ResultsGrid";
+import { RowFilter } from "./results/RowFilter";
+import { ChartPanel } from "./chart/ChartPanel";
+import { TimeRangePicker } from "./time-range/TimeRangePicker";
+import { prependTimeFilter } from "./time-range/time-range";
+import type { TimeRange } from "./time-range/time-range-types";
+
+// ── Public types ──────────────────────────────────────────────────────────────
+
+export type { TimeRange };
+
+export interface KymaQueryEditorProps {
+  /** Query language. Default "kql". SQL mode skips KQL niceties + time injection. */
+  language?: "kql" | "sql";
+  /** Initial query text (uncontrolled — prop changes after mount are ignored). */
+  defaultQuery?: string;
+  /** Show the schema browser panel. Default true. */
+  showSchemaBrowser?: boolean;
+  /** Show the results grid below the editor. Default true. */
+  showResults?: boolean;
+  /** Show the chart panel below results when the result shape is plottable. Default true. */
+  showChart?: boolean;
+  /** Show the TimeRangePicker in the toolbar. Default true. */
+  showTimeRange?: boolean;
+  /**
+   * Initial/re-applies time range when the prop changes.
+   * Only applies in kql mode. Default preset "1h".
+   */
+  timeRange?: TimeRange;
+  /** When true: editor is read-only and the Run button is hidden. Default false. */
+  readOnly?: boolean;
+  /**
+   * Override the database used for execution and schema loading.
+   * Falls back to the endpoint's default database when omitted.
+   */
+  database?: string;
+  /** Optional className for the outermost container div. */
+  className?: string;
+  /** Optional inline styles for the outermost container div. */
+  style?: React.CSSProperties;
+  /** Override the error boundary fallback. */
+  fallback?: React.ReactNode;
+  /** Called after each successful execute with the resulting columns + rows. */
+  onResults?: (r: { columns: Column[]; rows: Record<string, unknown>[] }) => void;
+  /** Called whenever the query text changes. */
+  onQueryChange?: (q: string) => void;
+}
+
+// ── Inner implementation (wrapped by error boundary below) ────────────────────
+
+function KymaQueryEditorInner({
+  language = "kql",
+  defaultQuery = "",
+  showSchemaBrowser = true,
+  showResults = true,
+  showChart = true,
+  showTimeRange = true,
+  timeRange: timeRangeProp,
+  readOnly = false,
+  database: databaseProp,
+  className,
+  style,
+  onResults,
+  onQueryChange,
+}: Omit<KymaQueryEditorProps, "fallback">) {
+  const client = useKymaClient();
+  const { } = useKymaContext(); // asserts provider is present
+
+  // Use the scoped client when a database override is provided.
+  const scopedClient = databaseProp ? client.withDatabase(databaseProp) : client;
+  const endpoint = scopedClient.transport.endpoint;
+  // Effective database: the prop override, or the transport's own default (may
+  // be undefined if never set — we fall back to empty string for KqlEditor which
+  // needs a string).
+  const effectiveDatabase: string = databaseProp ?? (scopedClient.transport.database ?? "");
+
+  // ── Query state ───────────────────────────────────────────────────────────────
+
+  const [query, setQuery] = useState(defaultQuery);
+  const [timeRange, setTimeRange] = useState<TimeRange>(
+    timeRangeProp ?? { preset: "1h" },
+  );
+  const [rowFilter, setRowFilter] = useState("");
+
+  // Sync time range prop changes (controlled-ish).
+  const prevTimeRangePropRef = useRef(timeRangeProp);
+  useEffect(() => {
+    if (timeRangeProp && timeRangeProp !== prevTimeRangePropRef.current) {
+      setTimeRange(timeRangeProp);
+      prevTimeRangePropRef.current = timeRangeProp;
+    }
+  }, [timeRangeProp]);
+
+  // ── Schema ────────────────────────────────────────────────────────────────────
+
+  const { data: schema } = useQuery<SchemaDoc>({
+    queryKey: ["kyma", endpoint, effectiveDatabase, "schema"],
+    queryFn: () => scopedClient.catalog.fetchSchema(),
+    staleTime: 5 * 60_000,
+    enabled: true,
+  });
+
+  // ── Execution ─────────────────────────────────────────────────────────────────
+
+  const { columns, rows, isRunning, execute, cancel } = useKymaQuery();
+
+  // Track whether we have had a successful run
+  const hasResults = columns.length > 0 && rows.length > 0;
+
+  // Check chart plottability
+  const chartSpec = hasResults ? autoChartAxes(columns) : null;
+  const isPlottable = chartSpec !== null && chartSpec.type !== "none";
+
+  const handleRun = useCallback(async () => {
+    if (readOnly || isRunning) return;
+    let effectiveQuery = query;
+    // Inject time filter for KQL only
+    if (language === "kql" && showTimeRange) {
+      effectiveQuery = prependTimeFilter(query, timeRange);
+    }
+    try {
+      await execute({
+        database: effectiveDatabase,
+        query: effectiveQuery,
+        language,
+      });
+    } catch {
+      // errors are surfaced via the hook's `.error` field; re-throw is swallowed
+    }
+  }, [readOnly, isRunning, query, language, showTimeRange, timeRange, execute, effectiveDatabase]);
+
+  const handleQueryChange = useCallback(
+    (v: string) => {
+      setQuery(v);
+      onQueryChange?.(v);
+    },
+    [onQueryChange],
+  );
+
+  const handleInsert = useCallback(
+    (text: string) => {
+      setQuery((prev) => {
+        const sep = prev.endsWith("\n") || !prev ? "" : " ";
+        return `${prev}${sep}${text}`;
+      });
+    },
+    [],
+  );
+
+  const handleReplaceAndRun = useCallback(
+    (kql: string) => {
+      setQuery(kql);
+      onQueryChange?.(kql);
+      // Execute immediately (bypass the read-only guard since this is
+      // an internal quick action — the browser panel's SchemaBrowser
+      // only renders when showSchemaBrowser=true; readOnly hides that path)
+      void execute({
+        database: effectiveDatabase,
+        query: kql,
+        language: "kql",
+      });
+    },
+    [execute, effectiveDatabase, onQueryChange],
+  );
+
+  // Fire onResults after each successful run
+  const prevColumnsRef = useRef(columns);
+  const prevRowsRef = useRef(rows);
+  useEffect(() => {
+    if (
+      !isRunning &&
+      (columns !== prevColumnsRef.current || rows !== prevRowsRef.current) &&
+      columns.length > 0
+    ) {
+      onResults?.({ columns, rows });
+      prevColumnsRef.current = columns;
+      prevRowsRef.current = rows;
+    }
+  }, [isRunning, columns, rows, onResults]);
+
+  // ── Layout ────────────────────────────────────────────────────────────────────
+
+  return (
+    <div
+      className={`kyma-query-editor flex h-full flex-col overflow-hidden bg-background text-foreground ${className ?? ""}`}
+      style={style}
+    >
+      {/* ── Toolbar ── */}
+      <div className="flex shrink-0 items-center gap-2 border-b bg-background px-3 py-1.5">
+        {showTimeRange && language === "kql" && (
+          <TimeRangePicker value={timeRange} onChange={setTimeRange} />
+        )}
+        {!readOnly && (
+          isRunning ? (
+            <Button size="sm" variant="destructive" onClick={cancel} data-testid="cancel-btn">
+              <Square className="mr-1 h-3.5 w-3.5" /> Cancel
+            </Button>
+          ) : (
+            <Button size="sm" onClick={handleRun} data-testid="run-btn">
+              <Play className="mr-1 h-3.5 w-3.5" /> Run
+              <kbd className="ml-2 rounded bg-primary-foreground/20 px-1 py-0.5 text-[10px] text-primary-foreground/80">
+                ⌘↵
+              </kbd>
+            </Button>
+          )
+        )}
+      </div>
+
+      {/* ── Main row: schema browser + editor ── */}
+      <div className="flex min-h-0 flex-1 overflow-hidden" style={{ maxHeight: "40%" }}>
+        {showSchemaBrowser && (
+          <aside className="w-56 shrink-0 overflow-hidden border-r bg-background">
+            <SchemaBrowser
+              schema={schema}
+              onInsert={handleInsert}
+              onReplaceAndRun={readOnly ? undefined : handleReplaceAndRun}
+            />
+          </aside>
+        )}
+        <div className="min-w-0 flex-1 overflow-hidden">
+          {language === "kql" ? (
+            <KqlEditor
+              value={query}
+              onChange={handleQueryChange}
+              onRun={handleRun}
+              schema={schema}
+              database={effectiveDatabase}
+            />
+          ) : (
+            <SqlEditor value={query} onChange={handleQueryChange} onRun={handleRun} readOnly={readOnly} />
+          )}
+        </div>
+      </div>
+
+      {/* ── Results area ── */}
+      {showResults && (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t">
+          {!hasResults && !isRunning && (
+            <div className="flex h-full items-center justify-center p-6 text-xs text-muted-foreground">
+              {columns.length === 0 ? "Run a query to see results." : "0 rows returned."}
+            </div>
+          )}
+          {isRunning && (
+            <div className="flex h-full items-center justify-center p-6 text-xs text-muted-foreground">
+              Streaming results…
+            </div>
+          )}
+          {hasResults && (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <RowFilter
+                value={rowFilter}
+                onChange={setRowFilter}
+                totalRows={rows.length}
+                filteredRows={
+                  rowFilter.trim()
+                    ? rows.filter((row) =>
+                        columns.some((col) => {
+                          const v = row[col.name];
+                          if (v == null) return false;
+                          return String(v).toLowerCase().includes(rowFilter.trim().toLowerCase());
+                        }),
+                      ).length
+                    : rows.length
+                }
+              />
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <ResultsGrid columns={columns} rows={rows} filter={rowFilter} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Chart panel ── */}
+      {showChart && isPlottable && hasResults && (
+        <div className="h-48 shrink-0 border-t">
+          <ChartPanel columns={columns} rows={rows} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Minimal SQL editor (no Monaco KQL registration, plain sql language) ───────
+
+function SqlEditor({
+  value,
+  onChange,
+  onRun,
+  readOnly,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onRun: () => void;
+  readOnly?: boolean;
+}) {
+  // Dynamic import to avoid bundling @monaco-editor/react at top level when
+  // only KQL is needed; in practice the KqlEditor already imports it, so this
+  // is the same chunk.
+  const [MonacoEditor, setMonacoEditor] = React.useState<React.ComponentType<{
+    height: string;
+    language: string;
+    value: string;
+    onChange: (v: string | undefined) => void;
+    onMount: (editor: { addCommand: (key: number, fn: () => void) => void }, monaco: { KeyMod: { CtrlCmd: number }; KeyCode: { Enter: number } }) => void;
+    options: Record<string, unknown>;
+    theme: string;
+  }> | null>(null);
+
+  const { isDark } = useKymaContext();
+
+  useEffect(() => {
+    import("@monaco-editor/react").then((mod) => {
+      setMonacoEditor(() => mod.default as typeof MonacoEditor);
+    });
+  }, []);
+
+  const onRunRef = useRef(onRun);
+  useEffect(() => { onRunRef.current = onRun; }, [onRun]);
+
+  const handleMount = useCallback((editor: { addCommand: (key: number, fn: () => void) => void }, monaco: { KeyMod: { CtrlCmd: number }; KeyCode: { Enter: number } }) => {
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => onRunRef.current());
+  }, []);
+
+  if (!MonacoEditor) {
+    return (
+      <textarea
+        className="h-full w-full resize-none bg-transparent p-3 font-mono text-xs text-foreground focus:outline-none"
+        value={value}
+        readOnly={readOnly}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="SELECT …"
+      />
+    );
+  }
+
+  return (
+    <MonacoEditor
+      height="100%"
+      language="sql"
+      theme={isDark ? "vs-dark" : "vs"}
+      value={value}
+      onChange={(v) => onChange(v ?? "")}
+      onMount={handleMount}
+      options={{
+        minimap: { enabled: false },
+        lineNumbers: "on",
+        scrollBeyondLastLine: false,
+        fontSize: 13,
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        tabSize: 2,
+        automaticLayout: true,
+        wordWrap: "on",
+        readOnly: readOnly ?? false,
+      }}
+    />
+  );
+}
+
+// ── Public wrapper (adds error boundary) ─────────────────────────────────────
+
+export function KymaQueryEditor({ fallback, ...rest }: KymaQueryEditorProps): JSX.Element {
+  return (
+    <KymaErrorBoundary fallback={fallback}>
+      <KymaQueryEditorInner {...rest} />
+    </KymaErrorBoundary>
+  );
+}

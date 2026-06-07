@@ -1,8 +1,9 @@
-// ── Internal query sub-components ────────────────────────────────────────────
-// These are not yet part of the public package surface. They are exported here
-// so the upcoming KymaQueryEditor wrapper (Task 5.4) can import from a single
-// barrel rather than referencing deep internal paths.
+// ── Public surface: KymaQueryEditor ──────────────────────────────────────────
+export { KymaQueryEditor } from "./KymaQueryEditor";
+export type { KymaQueryEditorProps } from "./KymaQueryEditor";
+export type { TimeRange } from "./time-range/time-range-types";
 
+// ── Secondary public surface: sub-components ──────────────────────────────────
 export { KqlEditor } from "./editor/KqlEditor";
 export type { KqlEditorProps, KqlSchema } from "./editor/KqlEditor";
 
