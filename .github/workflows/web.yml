@@ -1,10 +1,12 @@
 name: web
 on:
   pull_request:
-    paths: ["web/**", ".github/workflows/web.yml", "pnpm-workspace.yaml"]
+    # web now imports the @kyma-ai/* workspace packages, so changes under
+    # packages/ must re-run the web checks too.
+    paths: ["web/**", "packages/**", ".github/workflows/web.yml", "pnpm-workspace.yaml"]
   push:
     branches: [main]
-    paths: ["web/**", ".github/workflows/web.yml"]
+    paths: ["web/**", "packages/**", ".github/workflows/web.yml"]
   # e2e is on-demand only (see the job's `if`) — run it from the Actions tab.
   workflow_dispatch:
 jobs:
@@ -17,6 +19,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: "pnpm" }
       - run: pnpm install --frozen-lockfile
+      # web imports @kyma-ai/client + @kyma-ai/react via their built dist/ —
+      # build the packages before typechecking/building the app.
+      - run: pnpm build:packages
       - run: pnpm -C web typecheck
       - run: pnpm -C web lint
       - run: pnpm -C web test
