@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
 import {
-  Brain,
   Clock,
   CornerDownLeft,
   Link2,
@@ -8,6 +7,7 @@ import {
   Sparkles,
   Workflow,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { useSession } from "@/sdk/session";
 import {
   queryMemory,
@@ -16,36 +16,19 @@ import {
 } from "@/sdk/memory";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useReducedMotion } from "@/lib/motion";
+import { cn } from "@/lib/utils";
+import { MEMORY_TYPES, typeStyle } from "@/features/memory/lib";
 
 /**
  * Memory search workspace — drives the graph-aware hybrid recall API
  * (`POST /v1/agent/memory/query`): hybrid semantic + keyword candidates, RRF
  * fusion, 1–2 hop graph expansion, blended scoring. Shows ranked memories with
  * validity intervals, the connecting graph path, connected resources/traces,
- * and an optional synthesized answer.
+ * and an optional synthesized answer. Lives under the shared Memory header.
  */
 
-const TYPES = [
-  "fact",
-  "decision",
-  "preference",
-  "learning",
-  "procedure",
-  "summary",
-  "entity",
-] as const;
-
-// Tailwind accent classes per memory type (dot + soft badge).
-const TYPE_STYLE: Record<string, { dot: string; badge: string }> = {
-  fact: { dot: "bg-blue-500", badge: "bg-blue-500/15 text-blue-400" },
-  decision: { dot: "bg-violet-500", badge: "bg-violet-500/15 text-violet-400" },
-  preference: { dot: "bg-amber-500", badge: "bg-amber-500/15 text-amber-400" },
-  learning: { dot: "bg-emerald-500", badge: "bg-emerald-500/15 text-emerald-400" },
-  procedure: { dot: "bg-cyan-500", badge: "bg-cyan-500/15 text-cyan-400" },
-  summary: { dot: "bg-slate-500", badge: "bg-slate-500/15 text-slate-400" },
-  entity: { dot: "bg-rose-500", badge: "bg-rose-500/15 text-rose-400" },
-};
-const typeStyle = (t: string) => TYPE_STYLE[t] ?? TYPE_STYLE.summary;
+const TYPES = MEMORY_TYPES;
 
 const EXAMPLES = [
   "what did we decide about embeddings?",
@@ -62,6 +45,7 @@ function shortTime(iso: string | null): string {
 
 export function MemorySearch() {
   const { endpoint, token } = useSession();
+  const reduce = useReducedMotion();
   const [q, setQ] = useState("");
   const [agentic, setAgentic] = useState(false);
   const [hops, setHops] = useState(1);
@@ -105,19 +89,11 @@ export function MemorySearch() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Search hero */}
-      <div className="border-b bg-card/40">
-        <div className="mx-auto w-full max-w-3xl px-6 py-5">
-          <div className="flex items-center gap-2">
-            <Brain className="h-5 w-5 text-primary" />
-            <h1 className="text-base font-semibold tracking-tight">Memory search</h1>
-            <span className="text-xs text-muted-foreground">
-              hybrid semantic + keyword, graph-expanded
-            </span>
-          </div>
-
-          <div className="relative mt-3">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      {/* Search bar + filters */}
+      <div className="border-b border-border/60 bg-surface/40">
+        <div className="mx-auto w-full max-w-3xl px-6 py-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -127,14 +103,15 @@ export function MemorySearch() {
                   void run();
                 }
               }}
+              aria-label="Search memories"
               placeholder="Search memories — decisions, conventions, what an entity relates to…"
-              className="h-11 w-full rounded-lg border bg-background pl-9 pr-28 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              className="h-12 w-full rounded-xl border border-border/70 bg-card/60 pl-10 pr-28 text-sm shadow-elev-1 outline-none transition-shadow focus-visible:border-violet-400/40 focus-visible:ring-2 focus-visible:ring-violet-400/30"
             />
             <Button
               size="sm"
               onClick={() => void run()}
               disabled={loading || !q.trim()}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2"
+              className="absolute right-2 top-1/2 -translate-y-1/2"
             >
               {loading ? "Searching…" : "Search"}
               {!loading && <CornerDownLeft className="h-3.5 w-3.5 opacity-70" />}
@@ -142,13 +119,13 @@ export function MemorySearch() {
           </div>
 
           {/* Filters */}
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
             <Pill active={!type} onClick={() => setType("")}>
               All types
             </Pill>
             {TYPES.map((t) => (
               <Pill key={t} active={type === t} onClick={() => setType(type === t ? "" : t)}>
-                <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${typeStyle(t).dot}`} />
+                <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", typeStyle(t).dot)} />
                 {t}
               </Pill>
             ))}
@@ -193,17 +170,19 @@ export function MemorySearch() {
               </div>
 
               {res.brief && (
-                <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-4">
-                  <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-primary">
+                <div className="mb-4 rounded-xl border border-violet-400/25 bg-violet-500/[0.06] p-4">
+                  <div className="mb-1.5 flex items-center gap-1.5 text-2xs font-medium uppercase tracking-[0.14em] text-violet-300">
                     <Sparkles className="h-3.5 w-3.5" /> Synthesized answer
                   </div>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{res.brief}</p>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+                    {res.brief}
+                  </p>
                 </div>
               )}
 
               <div className="space-y-2.5">
-                {res.memories.map((m) => (
-                  <MemoryCard key={m.id} m={m} rel={m.score / maxScore} />
+                {res.memories.map((m, i) => (
+                  <MemoryCard key={m.id} m={m} rel={m.score / maxScore} index={i} reduce={Boolean(reduce)} />
                 ))}
               </div>
 
@@ -214,8 +193,8 @@ export function MemorySearch() {
               )}
 
               {res.linked.length > 0 && (
-                <div className="mt-5 rounded-lg border bg-card p-4">
-                  <div className="mb-2.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <div className="mt-5 rounded-xl border border-border/60 bg-card/40 p-4">
+                  <div className="mb-2.5 flex items-center gap-1.5 text-2xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                     <Link2 className="h-3.5 w-3.5" /> Connected resources &amp; traces
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -223,9 +202,9 @@ export function MemorySearch() {
                       <span
                         key={`${l.node_id}-${i}`}
                         title={`${l.target_namespace ?? ""} · ${l.edge_type} · hop ${l.depth}`}
-                        className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 font-mono text-[11px]"
+                        className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-background/60 px-2 py-1 font-mono text-[11px]"
                       >
-                        <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-teal-400" />
                         {l.node_id}
                       </span>
                     ))}
@@ -240,18 +219,31 @@ export function MemorySearch() {
   );
 }
 
-function MemoryCard({ m, rel }: { m: RetrievedMemory; rel: number }) {
+function MemoryCard({
+  m,
+  rel,
+  index,
+  reduce,
+}: {
+  m: RetrievedMemory;
+  rel: number;
+  index: number;
+  reduce: boolean;
+}) {
   const st = typeStyle(m.memory_type);
   const invalid = !!m.invalid_at;
   return (
-    <div className="group rounded-lg border bg-card p-4 transition-colors hover:border-foreground/20 hover:bg-accent/30">
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1], delay: Math.min(index * 0.03, 0.24) }}
+      className="group rounded-xl border border-border/60 bg-card/40 p-4 transition-colors hover:border-border-strong/70 hover:bg-card/70"
+    >
       <div className="mb-1.5 flex items-center gap-2">
-        <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${st.badge}`}>
+        <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-medium", st.chip)}>
           {m.memory_type}
         </span>
-        {m.realm && (
-          <span className="text-[11px] text-muted-foreground">{m.realm}</span>
-        )}
+        {m.realm && <span className="text-[11px] text-muted-foreground">{m.realm}</span>}
         {m.via?.type && (
           <Badge variant="secondary" className="gap-1 text-[10px]">
             <Workflow className="h-3 w-3" /> via {m.via.type}
@@ -259,12 +251,12 @@ function MemoryCard({ m, rel }: { m: RetrievedMemory; rel: number }) {
           </Badge>
         )}
         <span className="ml-auto flex items-center gap-1.5">
-          <span className="font-mono text-[11px] text-muted-foreground">
+          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
             {m.score.toFixed(2)}
           </span>
           <span className="h-1.5 w-12 overflow-hidden rounded-full bg-muted">
             <span
-              className="block h-full rounded-full bg-primary/70"
+              className="block h-full rounded-full bg-violet-400/80"
               style={{ width: `${Math.max(6, Math.round(rel * 100))}%` }}
             />
           </span>
@@ -276,13 +268,13 @@ function MemoryCard({ m, rel }: { m: RetrievedMemory; rel: number }) {
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
         {invalid ? (
-          <span className="flex items-center gap-1 text-amber-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> invalidated{" "}
+          <span className="flex items-center gap-1 text-amber-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" /> invalidated{" "}
             {shortTime(m.invalid_at)}
           </span>
         ) : (
-          <span className="flex items-center gap-1 text-emerald-500/90">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> valid
+          <span className="flex items-center gap-1 text-emerald-400/90">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> valid
             {m.valid_at ? ` since ${shortTime(m.valid_at)}` : ""}
           </span>
         )}
@@ -291,18 +283,18 @@ function MemoryCard({ m, rel }: { m: RetrievedMemory; rel: number }) {
         {m.graph_proximity > 0 && <span>graph {m.graph_proximity.toFixed(2)}</span>}
         <span className="ml-auto font-mono opacity-50">{m.id.replace("memory:", "")}</span>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
 function EmptyState({ onPick }: { onPick: (ex: string) => void }) {
   return (
     <div className="flex flex-col items-center gap-4 py-16 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
-        <Brain className="h-7 w-7 text-primary" />
+      <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/10 ring-1 ring-inset ring-violet-400/20">
+        <Search className="h-6 w-6 text-violet-300" />
       </div>
       <div className="max-w-md space-y-1.5">
-        <h2 className="text-base font-semibold">Search your agent&apos;s memory</h2>
+        <h2 className="text-base font-semibold">Recall anything the engine remembers</h2>
         <p className="text-sm text-muted-foreground">
           Hybrid semantic + keyword recall, graph-expanded over connected memories,
           catalog resources, and traces — ranked and near-realtime.
@@ -314,7 +306,7 @@ function EmptyState({ onPick }: { onPick: (ex: string) => void }) {
             key={ex}
             type="button"
             onClick={() => onPick(ex)}
-            className="rounded-full border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
+            className="rounded-full border border-border/60 bg-card/50 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border-strong/70 hover:text-foreground"
           >
             {ex}
           </button>
@@ -337,11 +329,12 @@ function Pill({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 transition-colors ${
+      className={cn(
+        "inline-flex items-center rounded-full border px-2.5 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
-          ? "border-primary/40 bg-primary/15 text-foreground"
-          : "bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
-      }`}
+          ? "border-violet-400/40 bg-violet-500/12 text-foreground"
+          : "border-border/60 bg-background/50 text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
     >
       {children}
     </button>
@@ -358,17 +351,18 @@ function Segmented({
   options: number[];
 }) {
   return (
-    <div className="inline-flex overflow-hidden rounded-full border">
+    <div className="inline-flex overflow-hidden rounded-full border border-border/60">
       {options.map((o) => (
         <button
           key={o}
           type="button"
           onClick={() => onChange(o)}
-          className={`px-2.5 py-1 transition-colors ${
+          className={cn(
+            "px-2.5 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             value === o
-              ? "bg-primary/15 text-foreground"
-              : "bg-background text-muted-foreground hover:bg-accent"
-          }`}
+              ? "bg-violet-500/12 text-foreground"
+              : "bg-background/50 text-muted-foreground hover:bg-accent",
+          )}
         >
           {o}
         </button>

@@ -69,9 +69,9 @@ export function RunDetail({ runId }: { runId: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="border-b bg-background/60 px-4 py-3">
-        <div className="flex items-center gap-2">
+      {/* Sticky run header */}
+      <div className="sticky top-0 z-10 border-b border-border/60 bg-background/85 px-4 py-3 backdrop-blur-md">
+        <div className="mx-auto flex max-w-3xl items-center gap-2">
           <Button variant="ghost" size="icon" asChild className="h-8 w-8">
             <Link to="/memory/dreaming">
               <ArrowLeft className="h-4 w-4" />
@@ -128,7 +128,12 @@ export function RunDetail({ runId }: { runId: string }) {
             <Section title="Outcome">
               <StatGrid stats={run.stats} />
               {run.stats.summary && (
-                <p className="mt-3 text-sm text-muted-foreground">{run.stats.summary}</p>
+                <div className="mt-3 rounded-lg border-l-2 border-l-violet-400/70 bg-violet-500/[0.05] py-2.5 pl-3.5 pr-3">
+                  <div className="mb-1 flex items-center gap-1.5 text-2xs font-medium uppercase tracking-[0.14em] text-violet-300">
+                    <Sparkles className="h-3.5 w-3.5" /> Summary
+                  </div>
+                  <p className="text-sm leading-relaxed text-foreground/85">{run.stats.summary}</p>
+                </div>
               )}
             </Section>
           )}
@@ -194,8 +199,8 @@ function StatGrid({ stats }: { stats: RunStats }) {
           <div
             key={key}
             className={cn(
-              "rounded-lg border bg-card p-3 shadow-elev-1",
-              value > 0 ? "" : "opacity-60",
+              "rounded-xl border border-border/60 bg-card/40 p-3 shadow-elev-1",
+              value > 0 ? "" : "opacity-50",
             )}
           >
             <div className="flex items-center gap-1.5 text-2xs text-muted-foreground">
