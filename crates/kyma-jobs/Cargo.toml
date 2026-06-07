@@ -1,0 +1,31 @@
+[package]
+name = "kyma-jobs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "kyma worker/job fabric: executor trait, queue front-ends, and the worker run loop shared by the embedded worker and remote daemons."
+
+[lints]
+workspace = true
+
+[dependencies]
+kyma-core = { workspace = true }
+kyma-catalog = { workspace = true }
+kyma-connectors = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+testcontainers = { workspace = true }
+testcontainers-modules = { workspace = true }
+sqlx = { workspace = true }

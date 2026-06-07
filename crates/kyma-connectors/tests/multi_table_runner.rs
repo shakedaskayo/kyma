@@ -32,7 +32,6 @@ use kyma_catalog::PostgresCatalog;
 use kyma_connectors::catalog_sql;
 use kyma_connectors::registry::ConnectorRegistry;
 use kyma_connectors::runner::{ConnectorRunner, GraphRegisterFn, RowSink};
-use kyma_connectors::scheduler::ConnectorScheduler;
 use kyma_connectors::secrets::EnvSecretStore;
 use kyma_connectors::{
     ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
@@ -172,7 +171,7 @@ async fn multi_table_distinct_idempotency_keys() {
     let mut reg = ConnectorRegistry::new();
     reg.register(Arc::new(TwoTableConn));
 
-    let _conn_id = catalog_sql::create_connector_direct(
+    let conn_id = catalog_sql::create_connector_direct(
         catalog.pool(),
         DEFAULT_TENANT,
         "two_table_test",
@@ -187,8 +186,12 @@ async fn multi_table_distinct_idempotency_keys() {
     .await
     .unwrap();
 
-    let sched = ConnectorScheduler::new(catalog.clone());
-    sched.tick_once().await.unwrap();
+    // Enqueue directly on the legacy background_tasks harness this test
+    // drives; the production scheduler now enqueues fabric `connector_sync`
+    // jobs (covered by kyma-jobs' integration test).
+    catalog_sql::enqueue_tick(catalog.pool(), DEFAULT_TENANT, conn_id, 1_000)
+        .await
+        .unwrap();
 
     let lease = catalog
         .register_node(NodeInfo {
@@ -277,7 +280,7 @@ async fn legacy_rows_path_unchanged() {
     let mut reg = ConnectorRegistry::new();
     reg.register(Arc::new(LegacyConn));
 
-    catalog_sql::create_connector_direct(
+    let conn_id = catalog_sql::create_connector_direct(
         catalog.pool(),
         DEFAULT_TENANT,
         "legacy_test",
@@ -291,8 +294,11 @@ async fn legacy_rows_path_unchanged() {
     .await
     .unwrap();
 
-    let sched = ConnectorScheduler::new(catalog.clone());
-    sched.tick_once().await.unwrap();
+    // Direct enqueue on the legacy background_tasks harness (see note in the
+    // multi-table test above).
+    catalog_sql::enqueue_tick(catalog.pool(), DEFAULT_TENANT, conn_id, 1_000)
+        .await
+        .unwrap();
 
     let lease = catalog
         .register_node(NodeInfo {

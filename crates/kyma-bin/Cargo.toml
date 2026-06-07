@@ -16,6 +16,8 @@ workspace = true
 [dependencies]
 kyma-core.workspace = true
 kyma-catalog.workspace = true
+kyma-jobs.workspace = true
+hostname = "0.4"
 kyma-storage.workspace = true
 kyma-format-tlm.workspace = true
 kyma-compaction.workspace = true

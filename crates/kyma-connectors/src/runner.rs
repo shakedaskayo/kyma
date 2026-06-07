@@ -41,6 +41,302 @@ pub type GraphRegisterFn = Arc<
     dyn Fn(String, GraphHint) -> BoxFuture<'static, Result<(), anyhow::Error>> + Send + Sync,
 >;
 
+/// Connector-table operations the tick body performs (row + cursor + status).
+/// In-server execution implements this with direct SQL ([`PgConnectorControl`]);
+/// remote fabric workers implement it over the control-plane HTTP API.
+#[async_trait::async_trait]
+pub trait ConnectorControl: Send + Sync {
+    async fn load_connector(
+        &self,
+        tenant: TenantId,
+        id: Uuid,
+    ) -> anyhow::Result<Option<catalog_sql::ConnectorRow>>;
+    async fn load_cursor(
+        &self,
+        tenant: TenantId,
+        id: Uuid,
+    ) -> anyhow::Result<Option<serde_json::Value>>;
+    async fn upsert_cursor(
+        &self,
+        tenant: TenantId,
+        id: Uuid,
+        cursor: &serde_json::Value,
+    ) -> anyhow::Result<()>;
+    async fn mark_run_success(&self, tenant: TenantId, id: Uuid, rows: i64) -> anyhow::Result<()>;
+    async fn mark_run_failure(&self, tenant: TenantId, id: Uuid, msg: &str) -> anyhow::Result<()>;
+    async fn disable_connector(&self, tenant: TenantId, id: Uuid, msg: &str) -> anyhow::Result<()>;
+}
+
+/// Direct-SQL [`ConnectorControl`] for in-server execution.
+pub struct PgConnectorControl {
+    pool: sqlx::PgPool,
+}
+
+impl PgConnectorControl {
+    pub fn new(pool: sqlx::PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait::async_trait]
+impl ConnectorControl for PgConnectorControl {
+    async fn load_connector(
+        &self,
+        tenant: TenantId,
+        id: Uuid,
+    ) -> anyhow::Result<Option<catalog_sql::ConnectorRow>> {
+        Ok(catalog_sql::load_connector(&self.pool, tenant, id).await?)
+    }
+    async fn load_cursor(
+        &self,
+        tenant: TenantId,
+        id: Uuid,
+    ) -> anyhow::Result<Option<serde_json::Value>> {
+        Ok(catalog_sql::load_cursor(&self.pool, tenant, id).await?)
+    }
+    async fn upsert_cursor(
+        &self,
+        tenant: TenantId,
+        id: Uuid,
+        cursor: &serde_json::Value,
+    ) -> anyhow::Result<()> {
+        Ok(catalog_sql::upsert_cursor(&self.pool, tenant, id, cursor).await?)
+    }
+    async fn mark_run_success(&self, tenant: TenantId, id: Uuid, rows: i64) -> anyhow::Result<()> {
+        Ok(catalog_sql::mark_run_success(&self.pool, tenant, id, rows).await?)
+    }
+    async fn mark_run_failure(&self, tenant: TenantId, id: Uuid, msg: &str) -> anyhow::Result<()> {
+        Ok(catalog_sql::mark_run_failure(&self.pool, tenant, id, msg).await?)
+    }
+    async fn disable_connector(&self, tenant: TenantId, id: Uuid, msg: &str) -> anyhow::Result<()> {
+        Ok(catalog_sql::disable_connector(&self.pool, tenant, id, msg).await?)
+    }
+}
+
+/// Everything one connector tick needs, independent of which queue delivered
+/// it (background_tasks via [`ConnectorRunner`], or a fabric `connector_sync`
+/// job via kyma-jobs' executor).
+#[derive(Clone)]
+pub struct ConnectorTickDeps {
+    pub control: Arc<dyn ConnectorControl>,
+    pub registry: Arc<ConnectorRegistry>,
+    pub sink: RowSink,
+    pub graph_register: GraphRegisterFn,
+    pub secrets: Arc<dyn SecretStore>,
+    pub credentials: Arc<dyn CredentialStore>,
+    pub oauth: Option<crate::oauth::OAuthRuntime>,
+}
+
+/// Terminal state of one tick, mapped by the queue front-end onto its own
+/// complete/fail semantics (background_tasks today, fabric jobs on the new
+/// path).
+pub enum TickOutcome {
+    /// Run succeeded; rows ingested.
+    Ok { rows: u64 },
+    /// Nothing to do (connector disabled or row missing) — treat as done.
+    Skipped(&'static str),
+    /// Retryable failure — the queue should retry within its attempt budget.
+    Transient(String),
+    /// Non-retryable failure — recorded on the connector; do not retry.
+    Permanent(String),
+    /// Broken configuration — the connector was disabled; do not retry.
+    Config(String),
+}
+
+/// Run a single connector tick: load row + cursor, execute the connector,
+/// sink rows (per-table idempotency keys), register graphs, persist the
+/// cursor, and record run status on the connector row. Queue bookkeeping
+/// (claim/complete/fail) is the caller's job.
+pub async fn run_connector_tick(
+    deps: &ConnectorTickDeps,
+    tenant: TenantId,
+    connector_id: Uuid,
+    scheduled_for_ms: i64,
+) -> anyhow::Result<TickOutcome> {
+    let scheduled_for = chrono::DateTime::<Utc>::from_timestamp_millis(scheduled_for_ms)
+        .ok_or_else(|| anyhow::anyhow!("bad scheduled_for"))?;
+
+    let conn = match deps.control.load_connector(tenant, connector_id).await? {
+        Some(c) if c.enabled => c,
+        Some(_) => {
+            debug!(connector_id = %connector_id, "skipping disabled connector");
+            return Ok(TickOutcome::Skipped("disabled"));
+        }
+        None => {
+            warn!(connector_id = %connector_id, "connector row missing");
+            return Ok(TickOutcome::Skipped("missing"));
+        }
+    };
+
+    let impl_arc = deps
+        .registry
+        .lookup(&conn.type_id)
+        .ok_or_else(|| anyhow::anyhow!("no registered impl for type {}", conn.type_id))?;
+
+    let cursor = deps.control.load_cursor(tenant, connector_id).await?;
+    let metrics = ConnectorMetrics {
+        connector_id,
+        type_id: impl_arc.type_id(),
+    };
+    let ctx = ConnectorCtx {
+        connector_id,
+        tenant,
+        http: reqwest::Client::builder().build()?,
+        secrets: deps.secrets.clone(),
+        credentials: deps.credentials.clone(),
+        oauth: deps.oauth.clone(),
+        scheduled_for,
+        metrics: metrics.clone(),
+    };
+
+    let t0 = std::time::Instant::now();
+    let outcome = impl_arc
+        .run_once(&ctx, &conn.config_jsonb, cursor.as_ref())
+        .await;
+
+    match outcome {
+        Ok(ConnectorRun {
+            rows,
+            new_cursor,
+            tables,
+            graph,
+        }) => {
+            // ---- Legacy single-table path (run.rows) ----
+            let legacy_rows = rows.len() as u64;
+            if !rows.is_empty() {
+                let idem = format!(
+                    "connector:{}:{}",
+                    connector_id,
+                    scheduled_for_ms * 1_000_000
+                );
+                // Sink → WritePath. A failure here (table missing, schema
+                // mismatch, object-store down, CAS exhaustion) is Transient so
+                // the queue retries within its attempt budget.
+                if let Err(e) = (deps.sink)(
+                    conn.target_database.clone(),
+                    conn.target_table.clone(),
+                    rows,
+                    Some(idem),
+                )
+                .await
+                {
+                    let msg = format!("sink: {e}");
+                    warn!(connector_id = %connector_id, error = %msg, "sink failed");
+                    deps.control
+                        .mark_run_failure(tenant, connector_id, &msg)
+                        .await?;
+                    metrics.record_error("sink");
+                    metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
+                    return Ok(TickOutcome::Transient(msg));
+                }
+            }
+
+            // ---- Multi-table path (run.tables) ----
+            // Each table gets its own idempotency key so tables within the
+            // same tick don't deduplicate each other (the critical
+            // per-table-key invariant).
+            let mut multi_rows: u64 = 0;
+            for table_rows in tables {
+                let table_name = table_rows.table;
+                let idem = format!(
+                    "connector:{}:{}:{}",
+                    connector_id,
+                    table_name,
+                    scheduled_for_ms * 1_000_000
+                );
+                let n = table_rows.rows.len() as u64;
+                if let Err(e) = (deps.sink)(
+                    conn.target_database.clone(),
+                    table_name.clone(),
+                    table_rows.rows,
+                    Some(idem),
+                )
+                .await
+                {
+                    let msg = format!("sink({table_name}): {e}");
+                    warn!(connector_id = %connector_id, table = %table_name, error = %msg, "multi-table sink failed");
+                    deps.control
+                        .mark_run_failure(tenant, connector_id, &msg)
+                        .await?;
+                    metrics.record_error("sink");
+                    metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
+                    return Ok(TickOutcome::Transient(msg));
+                }
+                multi_rows += n;
+            }
+
+            // ---- Graph auto-registration ----
+            if let Some(hint) = graph {
+                if let Err(e) = (deps.graph_register)(conn.target_database.clone(), hint).await {
+                    let msg = format!("graph_register: {e}");
+                    warn!(connector_id = %connector_id, error = %msg, "graph registration failed");
+                    deps.control
+                        .mark_run_failure(tenant, connector_id, &msg)
+                        .await?;
+                    metrics.record_error("graph_register");
+                    metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
+                    return Ok(TickOutcome::Transient(msg));
+                }
+            }
+
+            let n_rows = legacy_rows + multi_rows;
+            if let Some(c) = new_cursor {
+                if let Err(e) = deps.control.upsert_cursor(tenant, connector_id, &c).await {
+                    let msg = format!("cursor upsert: {e}");
+                    warn!(connector_id = %connector_id, error = %msg, "cursor upsert failed");
+                    deps.control
+                        .mark_run_failure(tenant, connector_id, &msg)
+                        .await?;
+                    metrics.record_error("cursor");
+                    metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
+                    return Ok(TickOutcome::Transient(msg));
+                }
+            }
+            if let Err(e) = deps
+                .control
+                .mark_run_success(tenant, connector_id, n_rows as i64)
+                .await
+            {
+                error!(connector_id = %connector_id, error = %e, "mark_run_success failed");
+                // Fall through — the run itself succeeded; only the status
+                // update failed.
+            }
+            metrics.record_rows(n_rows);
+            metrics.record_tick(TickResult::Ok, t0.elapsed().as_secs_f64());
+            metrics.set_last_success(Utc::now());
+            info!(connector_id = %connector_id, rows = n_rows, "tick ok");
+            Ok(TickOutcome::Ok { rows: n_rows })
+        }
+        Err(ConnectorError::Transient(msg)) => {
+            warn!(connector_id = %connector_id, error = %msg, "transient");
+            deps.control
+                .mark_run_failure(tenant, connector_id, &msg)
+                .await?;
+            metrics.record_error("transient");
+            metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
+            Ok(TickOutcome::Transient(msg))
+        }
+        Err(ConnectorError::Permanent(msg)) => {
+            warn!(connector_id = %connector_id, error = %msg, "permanent");
+            deps.control
+                .mark_run_failure(tenant, connector_id, &msg)
+                .await?;
+            metrics.record_error("permanent");
+            metrics.record_tick(TickResult::Permanent, t0.elapsed().as_secs_f64());
+            Ok(TickOutcome::Permanent(msg))
+        }
+        Err(ConnectorError::Config(msg)) => {
+            error!(connector_id = %connector_id, error = %msg, "config");
+            deps.control
+                .disable_connector(tenant, connector_id, &msg)
+                .await?;
+            metrics.record_error("config");
+            metrics.record_tick(TickResult::Config, t0.elapsed().as_secs_f64());
+            Ok(TickOutcome::Config(msg))
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ConnectorRunner {
     catalog: Arc<PostgresCatalog>,
@@ -125,6 +421,19 @@ impl ConnectorRunner {
         self
     }
 
+    /// Bundle this runner's wiring into the queue-independent tick deps.
+    pub fn tick_deps(&self) -> ConnectorTickDeps {
+        ConnectorTickDeps {
+            control: Arc::new(PgConnectorControl::new(self.catalog.pool().clone())),
+            registry: self.registry.clone(),
+            sink: self.sink.clone(),
+            graph_register: self.graph_register.clone(),
+            secrets: self.secrets.clone(),
+            credentials: self.credentials.clone(),
+            oauth: self.oauth.clone(),
+        }
+    }
+
     pub async fn claim_and_run_one(&self) -> Result<bool, anyhow::Error> {
         let node_id = self.node_id;
 
@@ -148,8 +457,6 @@ impl ConnectorRunner {
             .and_then(|v| v.as_str())
             .and_then(|s| s.parse::<i64>().ok())
             .ok_or_else(|| anyhow::anyhow!("task missing scheduled_for"))?;
-        let scheduled_for = chrono::DateTime::<Utc>::from_timestamp_millis(scheduled_for_ms)
-            .ok_or_else(|| anyhow::anyhow!("bad scheduled_for"))?;
         // tenant_id was stamped into the task payload by the scheduler. Older
         // pre-tenancy enqueues didn't carry one — fall back to DEFAULT_TENANT
         // (the all-zero UUID used by self-hosted deployments).
@@ -160,220 +467,21 @@ impl ConnectorRunner {
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_TENANT);
 
-        let conn = match catalog_sql::load_connector(self.catalog.pool(), tenant, connector_id)
-            .await?
-        {
-            Some(c) if c.enabled => c,
-            Some(_) => {
-                debug!(connector_id = %connector_id, "skipping disabled connector");
+        let deps = self.tick_deps();
+        match run_connector_tick(&deps, tenant, connector_id, scheduled_for_ms).await? {
+            TickOutcome::Ok { .. } | TickOutcome::Skipped(_) => {
                 self.catalog.complete_task(task.id).await?;
-                return Ok(true);
             }
-            None => {
-                warn!(connector_id = %connector_id, "connector row missing; completing task");
-                self.catalog.complete_task(task.id).await?;
-                return Ok(true);
-            }
-        };
-
-        let impl_arc = self
-            .registry
-            .lookup(&conn.type_id)
-            .ok_or_else(|| anyhow::anyhow!("no registered impl for type {}", conn.type_id))?;
-
-        let cursor = catalog_sql::load_cursor(self.catalog.pool(), tenant, connector_id).await?;
-        let metrics = ConnectorMetrics {
-            connector_id,
-            type_id: impl_arc.type_id(),
-        };
-        let ctx = ConnectorCtx {
-            connector_id,
-            tenant,
-            http: reqwest::Client::builder().build()?,
-            secrets: self.secrets.clone(),
-            credentials: self.credentials.clone(),
-            oauth: self.oauth.clone(),
-            scheduled_for,
-            metrics: metrics.clone(),
-        };
-
-        let t0 = std::time::Instant::now();
-        let outcome = impl_arc
-            .run_once(&ctx, &conn.config_jsonb, cursor.as_ref())
-            .await;
-
-        match outcome {
-            Ok(ConnectorRun {
-                rows,
-                new_cursor,
-                tables,
-                graph,
-            }) => {
-                // ---- Legacy single-table path (run.rows) ----
-                let legacy_rows = rows.len() as u64;
-                if !rows.is_empty() {
-                    let idem = format!(
-                        "connector:{}:{}",
-                        connector_id,
-                        scheduled_for_ms * 1_000_000
-                    );
-                    // Sink → WritePath. A failure here (table missing, schema
-                    // mismatch, object-store down, CAS exhaustion) is treated as
-                    // Transient so background_tasks retries within the attempt
-                    // budget instead of orphaning the claimed task.
-                    if let Err(e) = (self.sink)(
-                        conn.target_database.clone(),
-                        conn.target_table.clone(),
-                        rows,
-                        Some(idem),
-                    )
-                    .await
-                    {
-                        let msg = format!("sink: {e}");
-                        warn!(connector_id = %connector_id, error = %msg, "sink failed");
-                        catalog_sql::mark_run_failure(
-                            self.catalog.pool(),
-                            tenant,
-                            connector_id,
-                            &msg,
-                        )
-                        .await?;
-                        self.catalog.fail_task(task.id, &msg).await?;
-                        metrics.record_error("sink");
-                        metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
-                        return Ok(true);
-                    }
-                }
-
-                // ---- Multi-table path (run.tables) ----
-                // Each table gets its own idempotency key so tables within the
-                // same tick don't deduplicate each other (the critical
-                // per-table-key invariant).
-                let mut multi_rows: u64 = 0;
-                for table_rows in tables {
-                    let table_name = table_rows.table;
-                    let idem = format!(
-                        "connector:{}:{}:{}",
-                        connector_id,
-                        table_name,
-                        scheduled_for_ms * 1_000_000
-                    );
-                    let n = table_rows.rows.len() as u64;
-                    if let Err(e) = (self.sink)(
-                        conn.target_database.clone(),
-                        table_name.clone(),
-                        table_rows.rows,
-                        Some(idem),
-                    )
-                    .await
-                    {
-                        let msg = format!("sink({table_name}): {e}");
-                        warn!(connector_id = %connector_id, table = %table_name, error = %msg, "multi-table sink failed");
-                        catalog_sql::mark_run_failure(
-                            self.catalog.pool(),
-                            tenant,
-                            connector_id,
-                            &msg,
-                        )
-                        .await?;
-                        self.catalog.fail_task(task.id, &msg).await?;
-                        metrics.record_error("sink");
-                        metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
-                        return Ok(true);
-                    }
-                    multi_rows += n;
-                }
-
-                // ---- Graph auto-registration ----
-                if let Some(hint) = graph {
-                    if let Err(e) =
-                        (self.graph_register)(conn.target_database.clone(), hint).await
-                    {
-                        let msg = format!("graph_register: {e}");
-                        warn!(connector_id = %connector_id, error = %msg, "graph registration failed");
-                        catalog_sql::mark_run_failure(
-                            self.catalog.pool(),
-                            tenant,
-                            connector_id,
-                            &msg,
-                        )
-                        .await?;
-                        self.catalog.fail_task(task.id, &msg).await?;
-                        metrics.record_error("graph_register");
-                        metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
-                        return Ok(true);
-                    }
-                }
-
-                let n_rows = legacy_rows + multi_rows;
-                if let Some(c) = new_cursor {
-                    if let Err(e) =
-                        catalog_sql::upsert_cursor(self.catalog.pool(), tenant, connector_id, &c)
-                            .await
-                    {
-                        let msg = format!("cursor upsert: {e}");
-                        warn!(connector_id = %connector_id, error = %msg, "cursor upsert failed");
-                        catalog_sql::mark_run_failure(
-                            self.catalog.pool(),
-                            tenant,
-                            connector_id,
-                            &msg,
-                        )
-                        .await?;
-                        self.catalog.fail_task(task.id, &msg).await?;
-                        metrics.record_error("cursor");
-                        metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
-                        return Ok(true);
-                    }
-                }
-                if let Err(e) = catalog_sql::mark_run_success(
-                    self.catalog.pool(),
-                    tenant,
-                    connector_id,
-                    n_rows as i64,
-                )
-                .await
-                {
-                    error!(connector_id = %connector_id, error = %e, "mark_run_success failed");
-                    // Fall through — still attempt to complete the task so it
-                    // doesn't orphan. The run itself succeeded; only the status
-                    // update failed.
-                }
-                self.catalog.complete_task(task.id).await?;
-                metrics.record_rows(n_rows);
-                metrics.record_tick(TickResult::Ok, t0.elapsed().as_secs_f64());
-                metrics.set_last_success(Utc::now());
-                info!(connector_id = %connector_id, rows = n_rows, "tick ok");
-                Ok(true)
-            }
-            Err(ConnectorError::Transient(msg)) => {
-                warn!(connector_id = %connector_id, error = %msg, "transient");
-                catalog_sql::mark_run_failure(self.catalog.pool(), tenant, connector_id, &msg)
-                    .await?;
+            // Retryable: background_tasks re-queues within the attempt budget.
+            TickOutcome::Transient(msg) => {
                 self.catalog.fail_task(task.id, &msg).await?;
-                metrics.record_error("transient");
-                metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
-                Ok(true)
             }
-            Err(ConnectorError::Permanent(msg)) => {
-                warn!(connector_id = %connector_id, error = %msg, "permanent");
-                catalog_sql::mark_run_failure(self.catalog.pool(), tenant, connector_id, &msg)
-                    .await?;
+            // Non-retryable outcomes recorded on the connector; the task is done.
+            TickOutcome::Permanent(_) | TickOutcome::Config(_) => {
                 self.catalog.complete_task(task.id).await?;
-                metrics.record_error("permanent");
-                metrics.record_tick(TickResult::Permanent, t0.elapsed().as_secs_f64());
-                Ok(true)
-            }
-            Err(ConnectorError::Config(msg)) => {
-                error!(connector_id = %connector_id, error = %msg, "config");
-                catalog_sql::disable_connector(self.catalog.pool(), tenant, connector_id, &msg)
-                    .await?;
-                self.catalog.complete_task(task.id).await?;
-                metrics.record_error("config");
-                metrics.record_tick(TickResult::Config, t0.elapsed().as_secs_f64());
-                Ok(true)
             }
         }
+        Ok(true)
     }
 
     /// Recover abandoned claims from previous engine processes — any

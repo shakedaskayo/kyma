@@ -15,6 +15,7 @@ members = [
     "crates/kyma-compaction",
     "crates/kyma-connectors",
     "crates/kyma-connector-core",
+    "crates/kyma-jobs",
     "crates/kyma-kql",
     "crates/kyma-graph",
     "crates/kyma-plan",
@@ -152,6 +153,7 @@ kyma-kql               = { path = "crates/kyma-kql",             version = "0.0.
 kyma-compaction        = { path = "crates/kyma-compaction",      version = "0.0.5" }
 kyma-connectors        = { path = "crates/kyma-connectors",      version = "0.0.5" }
 kyma-connector-core    = { path = "crates/kyma-connector-core",  version = "0.0.5" }
+kyma-jobs              = { path = "crates/kyma-jobs",            version = "0.0.5" }
 kyma-plan              = { path = "crates/kyma-plan",            version = "0.0.5" }
 kyma-exec              = { path = "crates/kyma-exec",            version = "0.0.5" }
 kyma-server            = { path = "crates/kyma-server",          version = "0.0.5" }

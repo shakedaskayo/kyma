@@ -260,3 +260,35 @@ pub async fn enqueue_tick(
     .await?;
     Ok(res.rows_affected())
 }
+
+/// Enqueue a `connector_sync` job on the worker fabric (`jobs` table) with
+/// the bucketed `scheduled_for` — the fabric successor of [`enqueue_tick`].
+/// Race-safe via the partial unique index `jobs_connector_sync_uniq`
+/// (ON CONFLICT DO NOTHING → `Ok(0)` on duplicates).
+pub async fn enqueue_connector_sync(
+    pool: &PgPool,
+    tenant: TenantId,
+    connector_id: Uuid,
+    scheduled_for_ms: i64,
+) -> Result<u64, sqlx::Error> {
+    // tenant_id lives both on the row (NOT NULL column) and in the JSON
+    // payload so the executor can recover it without a second SELECT.
+    let res = sqlx::query(
+        "INSERT INTO jobs (tenant_id, kind, payload, priority, req_capabilities)
+         VALUES ($1,
+                 'connector_sync',
+                 jsonb_build_object(
+                     'tenant_id', $1::text,
+                     'connector_id', $2::text,
+                     'scheduled_for', $3::text),
+                 0,
+                 ARRAY['connector'])
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(tenant.as_uuid())
+    .bind(connector_id)
+    .bind(scheduled_for_ms)
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected())
+}
