@@ -13,68 +13,47 @@ export type {
 } from "@kyma-ai/client";
 export { SCHEDULE_MS_MIN, SCHEDULE_MS_MAX, deriveStatus } from "@kyma-ai/client";
 
-import {
-  getConnectorCatalog as _getConnectorCatalog,
-  listConnectors as _listConnectors,
-  getConnector as _getConnector,
-  createConnector as _createConnector,
-  patchConnector as _patchConnector,
-  deleteConnector as _deleteConnector,
-  pauseConnector as _pauseConnector,
-  resumeConnector as _resumeConnector,
-  triggerConnector as _triggerConnector,
-  listGitHubRepos as _listGitHubRepos,
-  type CreateConnectorBody,
-  type ConnectorUpdate,
-} from "@kyma-ai/client";
-import { transportFor } from "./compat";
+import type { CreateConnectorBody, ConnectorUpdate } from "@kyma-ai/client";
+import { sessionClient } from "./client";
 
 type Base = { endpoint: string; token: string; database?: string };
 
-export function getConnectorCatalog(args: Base) {
-  return _getConnectorCatalog(transportFor(args));
+export function getConnectorCatalog(_args: Base) {
+  return sessionClient().connectors.getConnectorCatalog();
 }
 
-export function listConnectors(args: Base) {
-  return _listConnectors(transportFor(args));
+export function listConnectors(_args: Base) {
+  return sessionClient().connectors.listConnectors();
 }
 
 export function getConnector(args: Base & { id: string }) {
-  const { endpoint, token, database, id } = args;
-  return _getConnector(transportFor({ endpoint, token, database }), { id });
+  return sessionClient().connectors.getConnector({ id: args.id });
 }
 
 export function createConnector(args: Base & { body: CreateConnectorBody }) {
-  const { endpoint, token, database, body } = args;
-  return _createConnector(transportFor({ endpoint, token, database }), { body });
+  return sessionClient().connectors.createConnector({ body: args.body });
 }
 
 export function patchConnector(args: Base & { id: string; patch: ConnectorUpdate }) {
-  const { endpoint, token, database, id, patch } = args;
-  return _patchConnector(transportFor({ endpoint, token, database }), { id, patch });
+  return sessionClient().connectors.patchConnector({ id: args.id, patch: args.patch });
 }
 
 export function deleteConnector(args: Base & { id: string }) {
-  const { endpoint, token, database, id } = args;
-  return _deleteConnector(transportFor({ endpoint, token, database }), { id });
+  return sessionClient().connectors.deleteConnector({ id: args.id });
 }
 
 export function pauseConnector(args: Base & { id: string }) {
-  const { endpoint, token, database, id } = args;
-  return _pauseConnector(transportFor({ endpoint, token, database }), { id });
+  return sessionClient().connectors.pauseConnector({ id: args.id });
 }
 
 export function resumeConnector(args: Base & { id: string }) {
-  const { endpoint, token, database, id } = args;
-  return _resumeConnector(transportFor({ endpoint, token, database }), { id });
+  return sessionClient().connectors.resumeConnector({ id: args.id });
 }
 
 export function triggerConnector(args: Base & { id: string }) {
-  const { endpoint, token, database, id } = args;
-  return _triggerConnector(transportFor({ endpoint, token, database }), { id });
+  return sessionClient().connectors.triggerConnector({ id: args.id });
 }
 
 export function listGitHubRepos(args: Base & { pat: string }) {
-  const { endpoint, token, database, pat } = args;
-  return _listGitHubRepos(transportFor({ endpoint, token, database }), { pat });
+  return sessionClient().connectors.listGitHubRepos({ pat: args.pat });
 }

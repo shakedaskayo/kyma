@@ -1,6 +1,4 @@
 // Shim: backwards-compatible wrappers around @kyma-ai/client memory functions.
-// Old API: fetchMemoryOverview(a), queryMemory(a, req), getMemorySettings(a),
-//          putMemorySettings(a, s)
 
 export type {
   Row,
@@ -13,30 +11,23 @@ export type {
   MemorySettings,
 } from "@kyma-ai/client";
 
-import {
-  fetchMemoryOverview as _fetchMemoryOverview,
-  queryMemory as _queryMemory,
-  getMemorySettings as _getMemorySettings,
-  putMemorySettings as _putMemorySettings,
-  type MemoryQueryRequest,
-  type MemorySettings,
-} from "@kyma-ai/client";
-import { transportFor } from "./compat";
+import type { MemoryQueryRequest, MemorySettings } from "@kyma-ai/client";
+import { sessionClient } from "./client";
 
 type Args = { endpoint: string; token: string; database?: string };
 
-export function fetchMemoryOverview(a: Args) {
-  return _fetchMemoryOverview(transportFor(a));
+export function fetchMemoryOverview(_a: Args) {
+  return sessionClient().memory.fetchMemoryOverview();
 }
 
-export function queryMemory(a: Args, req: MemoryQueryRequest) {
-  return _queryMemory(transportFor(a), req);
+export function queryMemory(_a: Args, req: MemoryQueryRequest) {
+  return sessionClient().memory.queryMemory(req);
 }
 
-export function getMemorySettings(a: Args) {
-  return _getMemorySettings(transportFor(a));
+export function getMemorySettings(_a: Args) {
+  return sessionClient().memory.getMemorySettings();
 }
 
-export function putMemorySettings(a: Args, s: MemorySettings) {
-  return _putMemorySettings(transportFor(a), s);
+export function putMemorySettings(_a: Args, s: MemorySettings) {
+  return sessionClient().memory.putMemorySettings(s);
 }

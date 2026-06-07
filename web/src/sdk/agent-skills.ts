@@ -1,20 +1,15 @@
 // Shim: backwards-compatible wrappers around @kyma-ai/client agent-skills functions.
-// Old API: listSkills(a), putEnabledSkills(a, skills)
 
 export type { SkillSource, SkillRow } from "@kyma-ai/client";
 
-import {
-  listSkills as _listSkills,
-  putEnabledSkills as _putEnabledSkills,
-} from "@kyma-ai/client";
-import { transportFor } from "./compat";
+import { sessionClient } from "./client";
 
 type Args = { endpoint: string; token: string; database?: string };
 
-export function listSkills(a: Args) {
-  return _listSkills(transportFor(a));
+export function listSkills(_a: Args) {
+  return sessionClient().agent.listSkills();
 }
 
-export function putEnabledSkills(a: Args, skills: string[]) {
-  return _putEnabledSkills(transportFor(a), skills);
+export function putEnabledSkills(_a: Args, skills: string[]) {
+  return sessionClient().agent.putEnabledSkills(skills);
 }

@@ -5,7 +5,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchCapabilities, FULL_CAPABILITIES } from "@kyma-ai/client";
 import { useSession } from "./session";
-import { transportFor } from "./compat";
+import { sessionClient } from "./client";
 
 // Re-export types so ControlPlaneGate and Sidebar imports remain unchanged.
 export type { Capabilities } from "@kyma-ai/client";
@@ -18,7 +18,7 @@ export function useCapabilities() {
 
   const { data } = useQuery({
     queryKey: ["capabilities", endpoint],
-    queryFn: () => fetchCapabilities(transportFor({ endpoint, token })),
+    queryFn: () => fetchCapabilities(sessionClient().transport),
     enabled: Boolean(endpoint && token),
     staleTime: Infinity,
     retry: false,

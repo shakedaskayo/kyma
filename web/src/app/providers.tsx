@@ -4,6 +4,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { KymaProvider, kymaDark, kymaLight } from "@kyma-ai/react";
 import { router } from "./router";
 import { useSession } from "@/sdk/session";
+import { sessionGetToken } from "@/sdk/client";
 import { useTheme } from "@/lib/theme";
 
 const queryClient = new QueryClient({
@@ -34,7 +35,7 @@ function KymaProviderBridge({ children }: { children: React.ReactNode }) {
     <KymaProvider
       key={`${endpoint}|${database}`}
       endpoint={endpoint}
-      auth={{ getToken: async () => useSession.getState().token }}
+      auth={{ getToken: sessionGetToken }}
       database={database}
       theme={theme}
       queryClient={queryClient}

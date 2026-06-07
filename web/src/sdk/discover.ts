@@ -1,6 +1,5 @@
 // Shim: backwards-compatible wrappers around @kyma-ai/client discover functions.
-// In the old web/src/sdk, many functions used authFetch internally (no session args).
-// We replicate that by reading session state at call time via useSession.getState().
+// All session calls delegate to sessionClient() — no one-shot transports.
 
 export type {
   Frame,
@@ -10,39 +9,27 @@ export type {
 } from "@kyma-ai/client";
 export { DiscoverError, parseNdjsonStream } from "@kyma-ai/client";
 
-import {
-  searchDiscover as _searchDiscover,
-  listSavedViews as _listSavedViews,
-  createSavedView as _createSavedView,
-  deleteSavedView as _deleteSavedView,
-  type SearchRequest,
-} from "@kyma-ai/client";
-import { useSession } from "./session";
-import { transportFor } from "./compat";
+import type { SearchRequest } from "@kyma-ai/client";
+import { sessionClient } from "./client";
 
-// ── Session-implicit functions (old API used authFetch, no args) ─────────────
-
-function sessionTransport() {
-  const { endpoint, token, database } = useSession.getState();
-  return transportFor({ endpoint, token, database });
-}
+// ── Session-implicit functions ────────────────────────────────────────────────
 
 // Old signature: searchDiscover(req, signal?)
 export function searchDiscover(req: SearchRequest, signal?: AbortSignal) {
-  return _searchDiscover(sessionTransport(), req, signal);
+  return sessionClient().discover.searchDiscover(req, signal);
 }
 
 // Old signature: listSavedViews() — no args
 export function listSavedViews() {
-  return _listSavedViews(sessionTransport());
+  return sessionClient().discover.listSavedViews();
 }
 
-// Old signature: createSavedView(name, sources) — no session args
+// Old signature: createSavedView(name, sources)
 export function createSavedView(name: string, sources: string[]) {
-  return _createSavedView(sessionTransport(), name, sources);
+  return sessionClient().discover.createSavedView(name, sources);
 }
 
-// Old signature: deleteSavedView(id) — no session args
+// Old signature: deleteSavedView(id)
 export function deleteSavedView(id: string) {
-  return _deleteSavedView(sessionTransport(), id);
+  return sessionClient().discover.deleteSavedView(id);
 }

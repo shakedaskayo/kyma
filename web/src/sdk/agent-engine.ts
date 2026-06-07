@@ -1,5 +1,4 @@
 // Shim: backwards-compatible wrappers around @kyma-ai/client agent-engine functions.
-// Old API: listEngines(a), putEngine(a, cfg), testEngine(a, cfg)
 
 export type {
   EngineKind,
@@ -9,24 +8,19 @@ export type {
   TestEngineResult,
 } from "@kyma-ai/client";
 
-import {
-  listEngines as _listEngines,
-  putEngine as _putEngine,
-  testEngine as _testEngine,
-  type EngineConfig,
-} from "@kyma-ai/client";
-import { transportFor } from "./compat";
+import type { EngineConfig } from "@kyma-ai/client";
+import { sessionClient } from "./client";
 
 type Args = { endpoint: string; token: string; database?: string };
 
-export function listEngines(a: Args) {
-  return _listEngines(transportFor(a));
+export function listEngines(_a: Args) {
+  return sessionClient().agent.listEngines();
 }
 
-export function putEngine(a: Args, cfg: EngineConfig) {
-  return _putEngine(transportFor(a), cfg);
+export function putEngine(_a: Args, cfg: EngineConfig) {
+  return sessionClient().agent.putEngine(cfg);
 }
 
-export function testEngine(a: Args, cfg: EngineConfig) {
-  return _testEngine(transportFor(a), cfg);
+export function testEngine(_a: Args, cfg: EngineConfig) {
+  return sessionClient().agent.testEngine(cfg);
 }
