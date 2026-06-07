@@ -259,6 +259,13 @@ enum Command {
         #[command(subcommand)]
         action: WorkerAction,
     },
+    /// Manage the local server as an OS user service (launchd on macOS,
+    /// systemd --user on Linux): starts at login, restarts on crash —
+    /// `kyma serve` that stays up. See `kyma service --help`.
+    Service {
+        #[command(subcommand)]
+        action: ServiceAction,
+    },
 
     // ── admin subcommands ─────────────────────────────────────────────
 
@@ -364,6 +371,24 @@ enum WorkerAction {
     /// Stop + remove the background sync worker.
     Uninstall,
     /// Show whether the worker is installed/running and where it logs.
+    Status,
+}
+
+#[derive(Debug, Subcommand)]
+enum ServiceAction {
+    /// Install + start the server service (web UI + API + workers).
+    Install {
+        /// Listen address.
+        #[arg(long, default_value = "127.0.0.1:7777")]
+        addr: String,
+        /// Static admin token (KYMA_AUTH_TOKENS=<token>:admin in the service
+        /// env). Omit for the auth-disabled local default.
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Stop + remove the server service.
+    Uninstall,
+    /// Show whether the server service is installed/running and where it logs.
     Status,
 }
 
@@ -474,6 +499,18 @@ async fn main() -> Result<()> {
             }
             WorkerAction::Uninstall => kyma_local::worker::uninstall(),
             WorkerAction::Status => kyma_local::worker::status(),
+        },
+        Command::Service { action } => match action {
+            ServiceAction::Install { addr, token } => {
+                kyma_local::server_service::install(&kyma_local::server_service::ServerOptions {
+                    addr,
+                    token,
+                    kyma_home: None,
+                })
+                .map(|_| ())
+            }
+            ServiceAction::Uninstall => kyma_local::server_service::uninstall(),
+            ServiceAction::Status => kyma_local::server_service::status(),
         },
 
         // ── admin subcommands ─────────────────────────────────────────

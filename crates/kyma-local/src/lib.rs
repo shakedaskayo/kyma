@@ -24,8 +24,11 @@ mod cc_sync;
 mod cc_writeback;
 mod setup;
 mod sync;
+pub mod server_service;
 pub mod worker;
 
+#[cfg(test)]
+mod server_service_unit_tests;
 #[cfg(test)]
 mod worker_unit_tests;
 

@@ -260,6 +260,9 @@ server_version() {  # /health version of whatever is listening on :PORT
 }
 
 stop_stale_server() {  # the web UI is embedded in the binary → old process = old UI
+  # Service-managed? Tear the supervision down first or launchd/systemd
+  # instantly respawns whatever we kill below.
+  kyma service uninstall >/dev/null 2>&1 || true
   local pid="" i
   [ -f "$HOME/.kyma/serve.pid" ] && pid=$(cat "$HOME/.kyma/serve.pid" 2>/dev/null)
   if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
@@ -285,35 +288,53 @@ stop_stale_server() {  # the web UI is embedded in the binary → old process = 
 
 start_serve() {
   [ -z "$TOKEN" ] && TOKEN="kyma-local-$(rand_hex)"
-  mkdir -p "$HOME/.kyma"
-  local log="$HOME/.kyma/serve.log"
+  mkdir -p "$HOME/.kyma/logs"
+  local log="$HOME/.kyma/logs/server.log"
   local need_start=1
+  # The service files written by `kyma service install` — their presence
+  # means the server is supervised (starts at login, restarts on crash).
+  local service_file=""
+  case "$(uname -s)" in
+    Darwin) service_file="$HOME/Library/LaunchAgents/dev.getkyma.kyma-server.plist" ;;
+    Linux)  service_file="$HOME/.config/systemd/user/kyma-server.service" ;;
+  esac
   if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
     # A server is up — but if it predates the binary we just installed, it is
     # still serving the OLD embedded web UI. Restart it on a version mismatch.
+    # An up-to-date but UNSUPERVISED server (old nohup installs) is migrated
+    # to the service so it stops disappearing on reboot.
     local new_ver running_ver
     new_ver=$(kyma version 2>/dev/null | awk '{print $2}')
     running_ver=$(server_version)
-    if [ -n "$new_ver" ] && [ "$running_ver" = "$new_ver" ]; then
-      info "A server is already listening on :${PORT} (v${running_ver})"
+    if [ -n "$new_ver" ] && [ "$running_ver" = "$new_ver" ] && [ -n "$service_file" ] && [ -f "$service_file" ]; then
+      info "A supervised server is already running on :${PORT} (v${running_ver})"
       need_start=0
     else
-      warn "Server on :${PORT} is running v${running_ver:-unknown}; you just installed v${new_ver} — restarting it."
+      if [ "$running_ver" != "$new_ver" ]; then
+        warn "Server on :${PORT} is running v${running_ver:-unknown}; you just installed v${new_ver} — restarting it."
+      else
+        info "Server on :${PORT} isn't supervised yet — migrating it to a background service."
+      fi
       stop_stale_server || need_start=0   # couldn't stop it → don't double-bind the port
     fi
   fi
   if [ "$need_start" = "1" ]; then
-    info "Starting kyma serve on http://127.0.0.1:${PORT} …"
-    KYMA_AUTH_TOKENS="${TOKEN}:admin" nohup "$(command -v kyma)" serve \
-      --addr "127.0.0.1:${PORT}" >"$log" 2>&1 &
-    echo $! >"$HOME/.kyma/serve.pid"
+    info "Installing the kyma server as a background service (starts at login, restarts on crash)…"
+    if kyma service install --addr "127.0.0.1:${PORT}" --token "$TOKEN" >/dev/null 2>&1; then
+      :
+    else
+      warn "Service install failed — starting a plain background process instead."
+      KYMA_AUTH_TOKENS="${TOKEN}:admin" nohup "$(command -v kyma)" serve \
+        --addr "127.0.0.1:${PORT}" >"$log" 2>&1 &
+      echo $! >"$HOME/.kyma/serve.pid"
+    fi
     local ok=0 i
     for i in $(seq 1 60); do
       curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 && { ok=1; break; }
       sleep 1
     done
     [ "$ok" = "1" ] || { warn "Server didn't become healthy; see $log"; return 1; }
-    info "Server healthy (logs: $log)"
+    info "Server healthy and supervised (logs: $log; manage with: kyma service status|uninstall)"
   fi
   info "Connecting the CLI (kyma connect)…"
   kyma connect "http://127.0.0.1:${PORT}" --token "$TOKEN" >/dev/null
@@ -391,9 +412,9 @@ fi
 say ""
 say "${grn}${bold}kyma is installed.${rst}"
 if [ "$SERVED" = "1" ]; then
-  say "  Web UI:   ${bold}http://127.0.0.1:${PORT}/${rst}   (sign in: admin / admin)"
-  say "  Stop it:  kill \$(cat ~/.kyma/serve.pid)"
-  say "  Restart:  KYMA_AUTH_TOKENS=\"${TOKEN}:admin\" kyma serve --addr 127.0.0.1:${PORT}"
+  say "  Web UI:   ${bold}http://127.0.0.1:${PORT}/${rst}   (first visit creates your admin user)"
+  say "  Service:  runs in the background — starts at login, restarts on crash"
+  say "            kyma service status | uninstall"
   [ "$DO_PLUGIN" = "1" ] && say "  Plugin:   restart Claude Code, then run ${bold}/kyma-status${rst}"
 else
   say "  Start it: ${bold}kyma serve${rst}   →  http://127.0.0.1:7777/  (admin / admin)"
