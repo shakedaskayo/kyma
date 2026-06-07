@@ -56,6 +56,7 @@
     "@icons-pack/react-simple-icons": "^13.13.0",
     "@kyma-ai/client": "workspace:*",
     "@monaco-editor/react": "4.6.0",
+    "monaco-editor": "0.52.0",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",

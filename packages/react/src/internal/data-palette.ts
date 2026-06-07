@@ -40,3 +40,40 @@ export function paletteFor(index: number): string {
 export function colorForKey(key: string): string {
   return DATA_PALETTE[hashIndex(key)];
 }
+
+/**
+ * Read a CSS custom property as a usable color. The SDK emits tokens as raw
+ * HSL triples (e.g. "213 18% 17%"); we wrap them in hsl(). Falls back to the
+ * given value when DOM is unavailable (tests/SSR).
+ */
+export function readToken(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return raw ? `hsl(${raw})` : fallback;
+}
+
+export interface ChartTheme {
+  palette: readonly string[];
+  axis: string;
+  grid: string;
+  text: string;
+  tooltipBg: string;
+  tooltipBorder: string;
+  tooltipText: string;
+}
+
+/**
+ * Theme colors for ECharts. Maps Kyma CSS custom properties so charts track
+ * the embedded SDK palette automatically. `isDark` only drives fallbacks.
+ */
+export function chartTheme(isDark: boolean): ChartTheme {
+  return {
+    palette: DATA_PALETTE,
+    axis: readToken("--kyma-muted-foreground", isDark ? "hsl(214 16% 64%)" : "hsl(215 16% 42%)"),
+    grid: readToken("--kyma-border", isDark ? "hsl(213 18% 17%)" : "hsl(214 28% 90%)"),
+    text: readToken("--kyma-foreground", isDark ? "hsl(200 24% 96%)" : "hsl(214 32% 14%)"),
+    tooltipBg: readToken("--kyma-popover", isDark ? "hsl(213 22% 13%)" : "hsl(0 0% 100%)"),
+    tooltipBorder: readToken("--kyma-border", isDark ? "hsl(213 18% 17%)" : "hsl(214 28% 90%)"),
+    tooltipText: readToken("--kyma-foreground", isDark ? "hsl(200 24% 96%)" : "hsl(214 32% 14%)"),
+  };
+}
