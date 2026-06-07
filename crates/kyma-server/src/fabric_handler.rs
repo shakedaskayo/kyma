@@ -126,6 +126,7 @@ pub fn worker_router(state: FabricState) -> Router {
         .route("/v1/workers/register", post(register))
         .route("/v1/workers/heartbeat", post(heartbeat))
         .route("/v1/jobs/claim", post(claim))
+        .route("/v1/jobs/self", post(enqueue_self))
         .route("/v1/jobs/:id/progress", post(job_progress))
         .route("/v1/jobs/:id/complete", post(job_complete))
         .route("/v1/jobs/:id/fail", post(job_fail))
@@ -249,6 +250,54 @@ async fn claim(
     }
     drop(permit);
     (StatusCode::OK, Json(json!({ "jobs": jobs }))).into_response()
+}
+
+#[derive(Deserialize)]
+struct SelfEnqueueReq {
+    kind: String,
+    #[serde(default)]
+    payload: Json_,
+    #[serde(default)]
+    priority: i32,
+}
+
+/// Worker self-enqueue: a node schedules work only IT can perform (e.g.
+/// `source_sync` over its local files). Always pinned to the caller — a
+/// worker token cannot enqueue work for other workers or unpinned kinds.
+async fn enqueue_self(
+    Extension(auth): Extension<WorkerAuth>,
+    State(s): State<FabricState>,
+    Json(req): Json<SelfEnqueueReq>,
+) -> impl IntoResponse {
+    let payload = if req.payload.is_null() {
+        json!({})
+    } else {
+        req.payload
+    };
+    match s
+        .store
+        .enqueue_job(
+            auth.tenant,
+            &EnqueueJob {
+                kind: req.kind,
+                payload,
+                priority: req.priority,
+                affinity_worker_id: Some(auth.worker_id),
+                req_capabilities: vec![],
+                label_selector: json!({}),
+                max_attempts: 3,
+            },
+        )
+        .await
+    {
+        Ok(Some(id)) => (StatusCode::CREATED, Json(json!({ "job_id": id }))).into_response(),
+        Ok(None) => (
+            StatusCode::OK,
+            Json(json!({ "job_id": Json_::Null, "deduped": true })),
+        )
+            .into_response(),
+        Err(e) => internal(e),
+    }
 }
 
 async fn job_progress(

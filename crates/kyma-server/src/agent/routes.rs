@@ -83,6 +83,18 @@ pub fn router(state: AgentState) -> axum::Router {
         .route("/memory/export", get(export_memory_handler))
         .route("/memory/changes", get(changes_memory_handler))
         .route("/memory/import", post(import_memory_handler))
+        .route(
+            "/memory/dreaming/runs",
+            get(super::dreaming::list_runs_handler),
+        )
+        .route(
+            "/memory/dreaming/runs/:id",
+            get(super::dreaming::get_run_handler),
+        )
+        .route(
+            "/memory/dreaming/run",
+            post(super::dreaming::trigger_run_handler),
+        )
         .with_state(state)
 }
 
@@ -876,7 +888,7 @@ async fn finish_and_persist(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn persist_run(
+pub(crate) async fn persist_run(
     pool: Option<&PgPool>,
     run_id: uuid::Uuid,
     question: &str,
@@ -1475,7 +1487,11 @@ async fn ask_via_claude_cli(
         let mut num_turns: u32 = 0;
 
         // Point the agent at our own MCP server so it can query the user's data.
-        let mcp = mcp_url.map(|url| claude_cli::McpConfig { url, auth_header });
+        let mcp = mcp_url.map(|url| claude_cli::McpConfig {
+            url,
+            auth_header,
+            strict: false,
+        });
 
         let mut events = match claude_cli::run_stream(
             &question_owned,

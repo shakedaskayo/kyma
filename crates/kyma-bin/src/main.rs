@@ -418,8 +418,20 @@ async fn main() -> Result<()> {
         pool: Some(pg_pool.clone()),
         memory: memory.clone(),
     };
+    // Read-only connector access over MCP: lets MCP-driven agents (notably
+    // Claude CLI dreaming runs) fill memory gaps from configured sources.
+    // Budget here is generous server-lifetime hygiene; per-run budgets are
+    // enforced on the adk path and by wall-clock on the CLI path.
+    let mcp_connector_ctx = kyma_server::agent::connector_tools::ConnectorToolCtx {
+        pool: Some(pg_pool.clone()),
+        credentials: cred_store.clone(),
+        tenant: kyma_core::tenant::DEFAULT_TENANT,
+        budget: Arc::new(
+            kyma_server::agent::connector_tools::ConnectorReadBudget::new(10_000, u64::MAX),
+        ),
+    };
     let mcp_state = kyma_mcp::McpState {
-        dispatch: kyma_mcp::ToolDispatch::new(mcp_shared),
+        dispatch: kyma_mcp::ToolDispatch::new(mcp_shared).with_connector_tools(mcp_connector_ctx),
         server_info: kyma_mcp::ServerInfo {
             name: "kyma".into(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -886,10 +898,15 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(300);
-    let embedded_caps: Vec<String> = ["connector", "dreaming", "llm"]
+    let mut embedded_caps: Vec<String> = ["connector", "dreaming", "llm"]
         .iter()
         .map(|s| s.to_string())
         .collect();
+    // Advertise the Claude CLI when the binary is present — dreaming jobs
+    // running on the ClaudeCli engine require it.
+    if kyma_server::agent::engine::claude_cli::locate_binary().is_some() {
+        embedded_caps.push("claude-cli".to_string());
+    }
     let embedded_host = hostname::get()
         .ok()
         .and_then(|h| h.into_string().ok())
@@ -929,6 +946,10 @@ async fn main() -> Result<()> {
     exec_registry.register(Arc::new(
         kyma_jobs::connector_sync::ConnectorSyncExecutor::new(tick_deps),
     ));
+    exec_registry.register(Arc::new(DreamingExecutor {
+        state: agent_state.clone(),
+        worker_id: embedded_worker_id,
+    }));
     let mut fabric_runner_handles = Vec::with_capacity(n_fabric_workers);
     for _ in 0..n_fabric_workers {
         let queue = Arc::new(kyma_jobs::PgQueue::new(
@@ -993,6 +1014,18 @@ async fn main() -> Result<()> {
         worker_id = %embedded_worker_id,
         "connector scheduler + embedded fabric worker started"
     );
+
+    // Dreaming scheduler — enqueues agentic memory-housekeeping jobs on the
+    // fabric when enabled in memory settings (OFF by default).
+    let dreaming_sched = kyma_server::agent::dreaming::DreamingScheduler::new(
+        agent_state.clone(),
+        fabric_store.clone(),
+    );
+    let dreaming_sched_rx = shutdown_tx.subscribe();
+    let dreaming_sched_handle = tokio::spawn(dreaming_sched.run(async move {
+        let mut rx = dreaming_sched_rx;
+        let _ = rx.recv().await;
+    }));
 
     // Idempotency ledger cleanup — runs every hour, deletes entries older
     // than 25 hours (1-hour grace beyond the 24-hour TTL).
@@ -1125,6 +1158,7 @@ async fn main() -> Result<()> {
         let _ = h.await;
     }
     let _ = fabric_housekeeping.await;
+    let _ = dreaming_sched_handle.await;
     // Mark the embedded worker offline so discovery doesn't show a ghost.
     if let Err(e) = fabric_store
         .set_worker_status(embedded_worker_id, kyma_core::fabric::WorkerStatus::Offline)
@@ -1159,5 +1193,54 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => info!("ctrl-c received; shutting down"),
         _ = terminate => info!("SIGTERM received; shutting down"),
+    }
+}
+
+/// Embedded-worker executor for `dreaming` jobs: bridges the fabric's
+/// [`kyma_jobs::JobExecutor`] contract onto
+/// [`kyma_server::agent::dreaming::run_dreaming`], which owns the agent run
+/// and all persistence (run row, session, trace). Lives here because kyma-bin
+/// is the one place that holds both the fabric runtime and the AgentState.
+struct DreamingExecutor {
+    state: kyma_server::agent::AgentState,
+    worker_id: uuid::Uuid,
+}
+
+#[async_trait::async_trait]
+impl kyma_jobs::JobExecutor for DreamingExecutor {
+    fn kind(&self) -> &'static str {
+        kyma_core::fabric::JOB_DREAMING
+    }
+
+    async fn run(
+        &self,
+        ctx: &kyma_jobs::JobCtx,
+        job: &kyma_core::fabric::ClaimedJob,
+    ) -> Result<serde_json::Value, kyma_jobs::JobError> {
+        let mut req: kyma_server::agent::dreaming::DreamingRequest =
+            serde_json::from_value(job.payload.clone())
+                .map_err(|e| kyma_jobs::JobError::Config(format!("dreaming payload: {e}")))?;
+        req.job_id = Some(job.id);
+        req.worker_id = Some(self.worker_id);
+
+        // Bridge the executor's live snapshots onto the job's progress JSONB.
+        let sink = ctx.progress.clone();
+        let progress: kyma_server::agent::dreaming::ProgressFn =
+            std::sync::Arc::new(move |snapshot| {
+                let sink = sink.clone();
+                Box::pin(async move { sink.push(snapshot).await })
+            });
+
+        let (run_id, outcome) =
+            kyma_server::agent::dreaming::run_dreaming(&self.state, progress, req)
+                .await
+                // LLM runs are not retried (max_attempts=1) — any failure here
+                // is terminal for the job; the run row carries the detail.
+                .map_err(|e| kyma_jobs::JobError::Permanent(e.to_string()))?;
+        let _ = ctx.queue.link_dreaming_run(job.id, run_id).await;
+        Ok(serde_json::json!({
+            "run_id": run_id,
+            "stats": outcome,
+        }))
     }
 }

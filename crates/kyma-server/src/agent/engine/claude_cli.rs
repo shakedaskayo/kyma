@@ -97,6 +97,11 @@ pub struct McpConfig {
     /// Full `Authorization` header value to present (e.g. `"Bearer …"`), or
     /// `None` when the server runs with auth disabled.
     pub auth_header: Option<String>,
+    /// Pass `--strict-mcp-config` so ONLY this MCP server is loaded — the
+    /// user's own MCP servers/plugins are ignored. Headless background runs
+    /// (dreaming) set this so they can't accidentally reach other systems;
+    /// interactive asks leave it off (the user's setup is a feature there).
+    pub strict: bool,
 }
 
 /// Appended to the system prompt when the Kyma MCP server is wired, so the
@@ -138,6 +143,19 @@ pub fn run_stream(
     cwd: Option<&std::path::Path>,
     mcp: Option<&McpConfig>,
 ) -> anyhow::Result<mpsc::UnboundedReceiver<ClaudeEvent>> {
+    run_stream_with_pid(question, model, resume_session_id, cwd, mcp).map(|(rx, _)| rx)
+}
+
+/// [`run_stream`] variant that also returns the child's OS pid so callers
+/// enforcing a wall-clock budget (the dreaming executor) can kill a runaway
+/// agent. `None` when the pid isn't observable.
+pub fn run_stream_with_pid(
+    question: &str,
+    model: Option<&str>,
+    resume_session_id: Option<&str>,
+    cwd: Option<&std::path::Path>,
+    mcp: Option<&McpConfig>,
+) -> anyhow::Result<(mpsc::UnboundedReceiver<ClaudeEvent>, Option<u32>)> {
     let binary = locate_binary()
         .ok_or_else(|| anyhow::anyhow!("`claude` not found on PATH — install Claude Code"))?;
 
@@ -166,6 +184,11 @@ pub fn run_stream(
         Some(cfg) => match write_mcp_config(cfg) {
             Ok(path) => {
                 cmd.arg("--mcp-config").arg(&path);
+                if cfg.strict {
+                    // Only OUR MCP server — ignore the user's configured
+                    // servers/plugins entirely (headless background runs).
+                    cmd.arg("--strict-mcp-config");
+                }
                 // Auto-approve every `kyma` MCP tool (no interactive prompt in
                 // --print mode); other tools stay default-denied.
                 cmd.arg("--allowedTools").arg("mcp__kyma");
@@ -189,6 +212,7 @@ pub fn run_stream(
     cmd.stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| anyhow::anyhow!("spawn `claude`: {e}"))?;
+    let child_pid = child.id();
     let stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("no stdout"))?;
     let stderr = child.stderr.take().ok_or_else(|| anyhow::anyhow!("no stderr"))?;
 
@@ -344,7 +368,7 @@ pub fn run_stream(
         }
     });
 
-    Ok(rx)
+    Ok((rx, child_pid))
 }
 
 /// Translate one raw Anthropic streaming event (the `event` field of a
@@ -599,6 +623,7 @@ mod tests {
         let cfg = McpConfig {
             url: "http://127.0.0.1:8080/mcp/v1".into(),
             auth_header: Some("Bearer secret-token".into()),
+            strict: false,
         };
         let path = write_mcp_config(&cfg).expect("write config");
         let body = std::fs::read_to_string(&path).expect("read config");
@@ -625,6 +650,7 @@ mod tests {
         let cfg = McpConfig {
             url: "http://127.0.0.1:8080/mcp/v1".into(),
             auth_header: None,
+            strict: false,
         };
         let path = write_mcp_config(&cfg).expect("write config");
         let v: Value =

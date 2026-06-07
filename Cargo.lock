@@ -4592,6 +4592,7 @@ dependencies = [
  "tonic-web",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -5038,6 +5039,7 @@ dependencies = [
  "kyma-format-tlm",
  "kyma-ingest-core",
  "kyma-ingest-rest",
+ "kyma-jobs",
  "kyma-mcp",
  "kyma-memory",
  "kyma-server",

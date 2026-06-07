@@ -9,6 +9,8 @@
 //! for the broader design context.
 
 pub mod cc_curate;
+pub mod connector_tools;
+pub mod dreaming;
 pub mod engine;
 pub mod identity;
 pub mod local;
