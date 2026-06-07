@@ -49,6 +49,11 @@ jobs:
           publish: pnpm changeset publish
           title: "chore: release @kyma-ai packages"
           commit: "chore: release @kyma-ai packages"
+          # npm + CHANGELOG.md are the record for SDK versions. GitHub releases
+          # for @kyma-ai/* tags would steal the repo's "latest" release slot
+          # from CLI releases (vX.Y.Z), breaking install.sh's prebuilt-binary
+          # resolution and forcing every install into a source build.
+          createGithubReleases: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
