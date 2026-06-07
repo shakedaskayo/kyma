@@ -36,7 +36,7 @@
 ---
 
 <p align="center">
-  <img src="docs/images/graph-explorer.png" alt="Kyma's Graph Explorer — a typed, color-coded knowledge graph with real vendor brand marks: Kubernetes services, Datadog monitors, PagerDuty on-call, Kafka topics, cloud infrastructure, people, concepts, and durable memories, wired by relationship-family edges." width="1000" />
+  <img src="docs/images/graph-explorer.png" alt="Kyma's Context Graph — one canvas merging the deterministic code graph (functions, files, modules from connected repos), durable memories, logical entities, and live agent activity, clustered and wired by relationship-family edges." width="1000" />
 </p>
 <p align="center"><em>Your services, infra, repos, people — and your agent's memories — as one living, typed knowledge graph.</em></p>
 
@@ -247,7 +247,9 @@ type**, sized by connectivity, and carry **classification icons**: real vendor b
 `datadog::monitor`. Edges are colored by relationship family, communities are detected and
 shaded, and the focused neighbourhood lights up with animated flow.
 
-![The whole graph at scale — 60+ resources across services, repos, cloud infra, data stores, people, and memories merged onto one canvas, color-coded by type with community clustering and force/tree/radial/grid layouts.](docs/images/graph-explorer-detail.png)
+![Zooming from the whole context graph down to individual functions — the deterministic code graph (CodeFunction/CodeFile/Module nodes from a connected repo) merged with memories and entities on one canvas.](docs/images/graph-zoom.gif)
+
+![Function-level detail — every node is a real function, file, or module from the connected repository, wired to the memories and entities that reference it.](docs/images/graph-explorer-detail.png)
 
 The web app (hosted server, or `kyma serve`) has four first-class surfaces:
 
