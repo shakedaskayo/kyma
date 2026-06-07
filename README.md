@@ -36,7 +36,7 @@
 ---
 
 <p align="center">
-  <img src="docs/images/graph-explorer.png" alt="Kyma's Context Graph — one canvas merging the deterministic code graph (functions, files, modules from connected repos), durable memories, logical entities, and live agent activity, clustered and wired by relationship-family edges." width="1000" />
+  <img src="docs/images/graph-tour.gif" alt="Kyma's Context Graph — one canvas merging the deterministic code graph (functions, files, modules from connected repos), durable memories, logical entities, and live agent activity, clustered and wired by relationship-family edges." width="1000" />
 </p>
 <p align="center"><em>Your services, infra, repos, people — and your agent's memories — as one living, typed knowledge graph.</em></p>
 
@@ -247,7 +247,7 @@ type**, sized by connectivity, and carry **classification icons**: real vendor b
 `datadog::monitor`. Edges are colored by relationship family, communities are detected and
 shaded, and the focused neighbourhood lights up with animated flow.
 
-![Zooming from the whole context graph down to individual functions — the deterministic code graph (CodeFunction/CodeFile/Module nodes from a connected repo) merged with memories and entities on one canvas.](docs/images/graph-zoom.gif)
+![The whole context graph at rest — 800+ nodes: the deterministic code graph from a connected repo, durable memories, and logical entities merged on one canvas with community hulls.](docs/images/graph-explorer.png)
 
 ![Function-level detail — every node is a real function, file, or module from the connected repository, wired to the memories and entities that reference it.](docs/images/graph-explorer-detail.png)
 
