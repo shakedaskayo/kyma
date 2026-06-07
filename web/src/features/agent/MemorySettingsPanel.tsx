@@ -122,11 +122,13 @@ export function MemorySettingsPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-2 border-b px-4 py-2 text-sm">
-        <SlidersHorizontal className="h-4 w-4 text-primary" />
-        <h1 className="font-semibold tracking-tight">Memory settings</h1>
+      <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-border/60 bg-surface/50 px-6 py-2.5 text-sm backdrop-blur-md">
+        <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-2xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+          Tune the pipeline &amp; recall
+        </span>
         <div className="ml-auto flex items-center gap-2">
-          {status && <span className="text-xs text-emerald-500">{status}</span>}
+          {status && <span className="text-xs text-emerald-400">{status}</span>}
           {error && <span className="text-xs text-destructive">{error}</span>}
           <button
             type="button"
@@ -134,7 +136,7 @@ export function MemorySettingsPanel() {
               setS({ ...DEFAULTS });
               setStatus("Reset to defaults (unsaved)");
             }}
-            className="flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-accent"
+            className="flex items-center gap-1 rounded-md border border-border/60 px-2.5 py-1 text-xs transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <RotateCcw className="h-3 w-3" /> Defaults
           </button>
@@ -142,7 +144,7 @@ export function MemorySettingsPanel() {
             type="button"
             onClick={() => void save()}
             disabled={saving}
-            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Save className="h-3.5 w-3.5" /> Save
           </button>
@@ -266,13 +268,13 @@ export function MemorySettingsPanel() {
 
 function Section({ icon, title, desc, children }: { icon: React.ReactNode; title: string; desc: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border">
-      <div className="flex items-center gap-2 border-b px-3 py-2">
-        <span className="text-primary">{icon}</span>
+    <div className="overflow-hidden rounded-xl border border-border/60 bg-card/40 shadow-elev-1">
+      <div className="flex items-center gap-2 border-b border-border/50 px-4 py-2.5">
+        <span className="text-primary/80">{icon}</span>
         <span className="text-sm font-medium">{title}</span>
         <span className="text-xs text-muted-foreground">— {desc}</span>
       </div>
-      <div className="divide-y">{children}</div>
+      <div className="divide-y divide-border/40">{children}</div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Activity, Brain, Clock } from "lucide-react";
 import { useSession } from "@/sdk/session";
 import { fetchMemoryOverview, type MemoryOverview, type Row } from "@/sdk/memory";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { kindStyle, typeStyle } from "@/features/memory/lib";
 
 /**
  * The memory firehose / activity view, LIFTED from the old MemoryPanel
@@ -26,13 +27,7 @@ function shortTime(iso: string): string {
   });
 }
 
-const KIND_COLOR: Record<string, string> = {
-  user_prompt: "bg-sky-500",
-  assistant_turn: "bg-violet-500",
-  tool_use: "bg-amber-500",
-  session_start: "bg-emerald-500",
-  session_end: "bg-rose-500",
-};
+const kindColor = (k: string): string => kindStyle(k).dot;
 
 export function ActivityView() {
   const { endpoint, token } = useSession();
@@ -90,11 +85,11 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border bg-card">
-      <div className="flex items-center gap-2 border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
-        {icon} {title}
+    <section className="rounded-xl border border-border/60 bg-card/40 shadow-elev-1">
+      <div className="flex items-center gap-2 border-b border-border/50 px-4 py-2.5 text-2xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        <span className="text-primary/80">{icon}</span> {title}
       </div>
-      <div className="space-y-3 p-3">{children}</div>
+      <div className="space-y-3 p-4">{children}</div>
     </section>
   );
 }
@@ -113,7 +108,7 @@ function KindBars({ rows }: { rows: Row[] }) {
             <span className="w-28 shrink-0 text-muted-foreground">{kind}</span>
             <div className="h-3 flex-1 rounded bg-muted">
               <div
-                className={`h-3 rounded ${KIND_COLOR[kind] ?? "bg-primary"}`}
+                className={`h-3 rounded ${kindColor(kind)}`}
                 style={{ width: `${(n / max) * 100}%` }}
               />
             </div>
@@ -185,7 +180,7 @@ function EventFeed({ rows }: { rows: Row[] }) {
         const text = str(r.text) || (r.tool_name ? `tool: ${str(r.tool_name)}` : "");
         return (
           <div key={i} className="flex items-start gap-2 text-xs">
-            <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${KIND_COLOR[kind] ?? "bg-primary"}`} />
+            <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${kindColor(kind)}`} />
             <span className="w-24 shrink-0 text-muted-foreground">{kind}</span>
             <span className="flex-1 truncate" title={text}>
               {text}
@@ -212,8 +207,13 @@ function MemoryCounts({ rows }: { rows: Row[] }) {
   return (
     <div className="flex flex-wrap gap-2">
       {entries.map(([t, n]) => (
-        <span key={t} className="rounded-full border bg-muted/40 px-2 py-0.5 text-xs">
-          <span className="font-medium">{n}</span> <span className="text-muted-foreground">{t}</span>
+        <span
+          key={t}
+          className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/50 px-2.5 py-0.5 text-xs"
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${typeStyle(t).dot}`} />
+          <span className="font-medium tabular-nums">{n}</span>{" "}
+          <span className="text-muted-foreground">{t}</span>
         </span>
       ))}
     </div>

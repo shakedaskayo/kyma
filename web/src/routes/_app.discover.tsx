@@ -5,6 +5,7 @@ import { KymaDiscover } from "@kyma-ai/react/discover";
 import type { Scope, TimeRange as KymaTimeRange } from "@kyma-ai/react/discover";
 import { TabBar } from "@/features/tabs/TabBar";
 import { SavedViewsMenu } from "@/features/discover/SavedViewsMenu";
+import { initialDiscoverTabState } from "@/features/discover/discover-store";
 
 export const Route = createFileRoute("/_app/discover")({
   component: DiscoverRoute,
@@ -38,7 +39,10 @@ function DiscoverRoute() {
 
   if (!shown || shown.kind !== "discover") return null;
 
-  const st = shown.state;
+  // Defensive: a tab persisted by an older workspace schema can lack `state`
+  // (stale localStorage) — fall back to a fresh discover state instead of
+  // crashing the route on `st.search`.
+  const st = shown.state ?? initialDiscoverTabState();
 
   const handleExportKql = (kql: string) => {
     newTab({

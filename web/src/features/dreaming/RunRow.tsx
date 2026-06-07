@@ -38,9 +38,9 @@ export function RunRow({ run }: { run: Run }) {
       to="/memory/dreaming/$runId"
       params={{ runId: run.id }}
       className={cn(
-        "block rounded-lg border bg-card px-3 py-2.5 shadow-elev-1 transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-border-strong hover:shadow-elev-2",
-        running && "border-l-2 border-l-violet-500 bg-violet-500/[0.04]",
-        run.status === "error" && "border-rose-500/40",
+        "block rounded-xl border border-border/60 bg-card/40 px-3.5 py-2.5 shadow-elev-1 transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-border-strong hover:bg-card/70 hover:shadow-elev-2",
+        running && "bg-violet-500/[0.05]",
+        run.status === "error" && "border-rose-500/30",
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
