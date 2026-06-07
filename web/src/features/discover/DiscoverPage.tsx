@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { useWorkspace } from "../tabs/workspace-store";
 import { TimeRangePicker } from "@/features/time-range/TimeRangePicker";
@@ -31,7 +32,8 @@ const PRESET_LABEL: Record<string, string> = {
 export function DiscoverPage({ tabId }: Props) {
   const tab = useWorkspace((s) => s.tabs.find((t) => t.id === tabId));
   const patchDiscover = useWorkspace((s) => s.patchDiscover);
-  const newTab = useWorkspace((s) => s.newTab);
+  const openExportTab = useWorkspace((s) => s.openExportTab);
+  const navigate = useNavigate();
 
   const [openRow, setOpenRow] = useState<{ source: string; row: Record<string, unknown> } | null>(null);
   // The search submitted to the backend — typing edits `search` freely; Run
@@ -86,17 +88,8 @@ export function DiscoverPage({ tabId }: Props) {
     }
 
     if (candidateKeys.length === 0) {
-      newTab({
-        kind: "query",
-        state: {
-          title: "from discover",
-          query: "",
-          timeRange: st.timeRange,
-          results: { kind: "idle" },
-          chart: {},
-          submittedQuery: null,
-        },
-      });
+      openExportTab({ query: "", timeRange: st.timeRange });
+      void navigate({ to: "/query", search: { q: undefined } });
       return;
     }
 
@@ -137,17 +130,10 @@ export function DiscoverPage({ tabId }: Props) {
     // QueryTabState has no database field and we don't want to mutate the
     // global session here — this is a known v1 gap. The user can switch
     // databases via the DatabaseSwitcher before running the exported query.
-    newTab({
-      kind: "query",
-      state: {
-        title: "from discover",
-        query: kql,
-        timeRange: st.timeRange,
-        results: { kind: "idle" },
-        chart: {},
-        submittedQuery: null,
-      },
-    });
+    openExportTab({ query: kql, timeRange: st.timeRange });
+    // Actually take the user there — activating the tab alone leaves the
+    // Discover route showing its own (first) discover tab.
+    void navigate({ to: "/query", search: { q: undefined } });
   };
 
   // When live is active, editing query + Enter sends session.update via
