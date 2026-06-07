@@ -484,5 +484,5 @@ else
   say "  Or the plugin: ${bold}kyma connect <url> && kyma install-plugin${rst}"
 fi
 say "  Update:   ${bold}kyma update${rst}   (new binary + web UI, restarts the local server)"
-say "  Docs:     https://www.getkyma.dev"
+say "  Docs:     https://shakedaskayo.github.io/kyma/"
 say ""
