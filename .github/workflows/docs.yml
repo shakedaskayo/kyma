@@ -25,8 +25,12 @@ on:
       - ".npmrc"
   workflow_dispatch:
 
+# configure-pages (build) and deploy-pages (deploy) both need the Pages scopes;
+# fork-PR tokens are auto-downgraded to read-only regardless.
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 jobs:
   build:
@@ -53,9 +57,6 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: [build]
     runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
     # One Pages deploy at a time; let in-flight deploys finish.
     concurrency:
       group: pages
