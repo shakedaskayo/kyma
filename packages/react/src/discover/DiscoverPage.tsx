@@ -51,11 +51,25 @@ export type DiscoverPageProps = {
    * string. The consumer decides what to do with it (e.g. open a query editor).
    */
   onExportKql?: (kql: string) => void;
+  /**
+   * Called when the user opens a row detail drawer. Receives the row data and
+   * the source key. Added to support the KymaDiscover onRowOpen callback.
+   */
+  onRowOpen?: (row: Record<string, unknown>, source: string) => void;
+  /**
+   * Called on every search text change. Useful for external state persistence
+   * (e.g. the web route persisting query per tab).
+   */
+  onSearchChange?: (search: string) => void;
 };
 
 // ── Internal component (reads from DiscoverStore) ─────────────────────────────
 
-function DiscoverInner({ onExportKql }: { onExportKql?: (kql: string) => void }) {
+function DiscoverInner({ onExportKql, onRowOpen, onSearchChange }: {
+  onExportKql?: (kql: string) => void;
+  onRowOpen?: (row: Record<string, unknown>, source: string) => void;
+  onSearchChange?: (search: string) => void;
+}) {
   const search = useDiscoverStore((s) => s.search);
   const scope = useDiscoverStore((s) => s.scope);
   const timeRange = useDiscoverStore((s) => s.timeRange);
@@ -65,7 +79,8 @@ function DiscoverInner({ onExportKql }: { onExportKql?: (kql: string) => void })
   const viewMode = useDiscoverStore((s) => s.viewMode);
   const submitted = useDiscoverStore((s) => s.submitted);
 
-  const setSearch = useDiscoverStore((s) => s.setSearch);
+  const _setSearch = useDiscoverStore((s) => s.setSearch);
+  const setSearch = (v: string) => { _setSearch(v); onSearchChange?.(v); };
   const setScope = useDiscoverStore((s) => s.setScope);
   const setTimeRange = useDiscoverStore((s) => s.setTimeRange);
   const toggleVisible = useDiscoverStore((s) => s.toggleVisible);
@@ -75,6 +90,11 @@ function DiscoverInner({ onExportKql }: { onExportKql?: (kql: string) => void })
   const submit = useDiscoverStore((s) => s.submit);
 
   const [openRow, setOpenRow] = useState<{ source: string; row: Record<string, unknown> } | null>(null);
+
+  const handleOpenRow = (source: string, row: Record<string, unknown>) => {
+    setOpenRow({ source, row });
+    onRowOpen?.(row, source);
+  };
 
   const { results, cancel } = useDiscoverSearch({
     search: submitted,
@@ -199,7 +219,7 @@ function DiscoverInner({ onExportKql }: { onExportKql?: (kql: string) => void })
               <SourceTableView
                 src={tableSrc}
                 onBack={() => setViewMode("stream")}
-                onOpenRow={(row) => setOpenRow({ source: tableSrc.source, row })}
+                onOpenRow={(row) => handleOpenRow(tableSrc.source, row)}
               />
             </div>
           ) : (
@@ -239,7 +259,7 @@ function DiscoverInner({ onExportKql }: { onExportKql?: (kql: string) => void })
                   rows={streamRows}
                   sources={results.sources}
                   columns={columns}
-                  onOpenRow={(source, row) => setOpenRow({ source, row })}
+                  onOpenRow={(source, row) => handleOpenRow(source, row)}
                 />
               )}
             </>
@@ -264,6 +284,8 @@ export function DiscoverPage({
   initialScope,
   initialTimeRange,
   onExportKql,
+  onRowOpen,
+  onSearchChange,
 }: DiscoverPageProps) {
   const storeRef = useRef<ReturnType<typeof createDiscoverStore> | null>(null);
   if (!storeRef.current) {
@@ -276,7 +298,11 @@ export function DiscoverPage({
 
   return (
     <DiscoverStoreContext.Provider value={storeRef.current}>
-      <DiscoverInner onExportKql={onExportKql} />
+      <DiscoverInner
+        onExportKql={onExportKql}
+        onRowOpen={onRowOpen}
+        onSearchChange={onSearchChange}
+      />
     </DiscoverStoreContext.Provider>
   );
 }

@@ -1,9 +1,13 @@
-// ── Public surface: DiscoverPage (internal orchestrator for KymaDiscover) ─────
+// ── Primary public component ──────────────────────────────────────────────────
+export { KymaDiscover } from "./KymaDiscover";
+export type { KymaDiscoverProps } from "./KymaDiscover";
+
+// ── Internal orchestrator (exported for advanced composition) ─────────────────
 export { DiscoverPage } from "./DiscoverPage";
 export type { DiscoverPageProps } from "./DiscoverPage";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-export type { Pill, Scope, SourceKey, SourceState, DiscoverResultsState } from "./types";
+export type { Pill, Scope, Frame, SourceKey, SourceState, DiscoverResultsState } from "./types";
 export type { TimeRange } from "../query/time-range/time-range-types";
 
 // ── Utility re-exports (used by wrapper step) ─────────────────────────────────
