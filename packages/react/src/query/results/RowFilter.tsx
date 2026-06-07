@@ -24,10 +24,10 @@ export function RowFilter({ value, onChange, totalRows, filteredRows }: RowFilte
           onChange={(e) => onChange(e.target.value)}
           placeholder="Filter rows…"
           className={[
-            "w-full rounded border-0 bg-transparent py-0.5 text-xs",
-            "placeholder:text-muted-foreground/50",
-            "focus-visible:outline-none",
-            "text-foreground",
+            "ky-w-full ky-rounded ky-border-0 ky-bg-transparent ky-py-0.5 ky-text-xs",
+            "placeholder:ky-text-muted-foreground/50",
+            "focus-visible:ky-outline-none",
+            "ky-text-foreground",
           ].join(" ")}
           onKeyDown={(e) => {
             if (e.key === "Escape") {

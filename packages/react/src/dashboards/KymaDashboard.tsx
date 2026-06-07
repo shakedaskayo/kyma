@@ -10,14 +10,11 @@
  *   - Router navigation → onEditChange prop (no tanstack-router dependency)
  *   - Toast (sonner) → dropped; save result is surfaced via onSaveSuccess/onSaveError
  *   - useSession.getState() Zustand calls → useKymaClient() client object
- *   - database prop: wires into panel queries via panel.database_name; the
- *     top-level `database` prop overrides the client default at render time
- *     by passing it down to panels. client.withDatabase() is NOT used here
- *     because it would require a context override or a new child provider —
- *     instead, if database prop is set, it is stored in panel.database_name
- *     for new panels. Existing panels use their stored database_name.
- *     (Full withDatabase threading would require wrapping the entire tree in
- *     a scoped KymaProvider — documented below for callers who need it.)
+ *   - database prop: scoped client via client.withDatabase(database). The outer
+ *     KymaDashboard wrapper overrides KymaContext.client so ALL child hooks
+ *     (useKymaDashboards/getDashboard, usePanelQuery, AddPanelModal schema fetch)
+ *     automatically use x-database: <database>. New panels also receive
+ *     database_name seeded from the prop so their stored database is correct.
  *
  * Auto-refresh: ticks every refresh_interval_seconds, invalidates the React
  * Query dashboard detail cache (same key used by useKymaDashboards).
@@ -36,7 +33,7 @@ import GridLayout, { type Layout } from "react-grid-layout";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Eye, Pencil, RefreshCw, Save } from "lucide-react";
 import type { DashboardWithPanels, DashboardPanel } from "@kyma-ai/client";
-import { useKymaClient } from "../provider/context";
+import { useKymaClient, useKymaContext, KymaContext } from "../provider/context";
 import { useKymaDashboards } from "../hooks/useKymaDashboards";
 import { Button } from "../internal/ui/button";
 import { PanelCard } from "./PanelCard";
@@ -61,10 +58,12 @@ export interface KymaDashboardProps {
    */
   timeRange?: TimeRange;
   /**
-   * Override the default database for new panels added in editable mode.
-   * NOTE: existing panels use their stored database_name. To fully scope all
-   * panel queries to a specific database, wrap KymaDashboard in a child
-   * KymaProvider created via `new KymaClient({ endpoint, auth, database })`.
+   * Override the default Kyma database for ALL panel queries and dashboard
+   * loads. When set, KymaDashboard calls client.withDatabase(database) to
+   * create a scoped client view and overrides the KymaContext for all child
+   * components, so every request (dashboard load, panel query, schema fetch)
+   * carries x-database: <database>. New panels are also pre-seeded with
+   * this database_name so their stored value matches.
    */
   database?: string;
   /** Additional CSS class on the root element. */
@@ -156,11 +155,22 @@ function TimeRangeSelect({
 
 // ── KymaDashboard ─────────────────────────────────────────────────────────────
 
-export function KymaDashboard({
+/** Public entry point — wraps inner in a scoped client context when database is set. */
+export function KymaDashboard({ database, ...rest }: KymaDashboardProps) {
+  const ctx = useKymaContext();
+  const scopedCtx = database ? { ...ctx, client: ctx.client.withDatabase(database) } : ctx;
+  return (
+    <KymaContext.Provider value={scopedCtx}>
+      <KymaDashboardInner database={database} {...rest} />
+    </KymaContext.Provider>
+  );
+}
+
+function KymaDashboardInner({
   dashboardId,
   editable: editableProp = false,
   timeRange: timeRangeProp,
-  database: _database,
+  database,
   className,
   style,
   fallback,
@@ -528,6 +538,7 @@ export function KymaDashboard({
           }}
           onSave={editingPanel ? handleEditPanel : handleAddPanel}
           initial={editingPanel}
+          defaultDatabase={database}
         />
       )}
     </div>

@@ -75,7 +75,7 @@ function CellValue({ value, kind, isFirst }: { value: unknown; kind: ColKind; is
   if (kind === "numeric") {
     return <span className="ky-font-mono ky-tabular-nums">{truncated}</span>;
   }
-  return <span className={str !== truncated ? "cursor-help" : ""} title={str !== truncated ? str : undefined}>{truncated}</span>;
+  return <span className={str !== truncated ? "ky-cursor-help" : ""} title={str !== truncated ? str : undefined}>{truncated}</span>;
 }
 
 // ── component ─────────────────────────────────────────────────────────────────

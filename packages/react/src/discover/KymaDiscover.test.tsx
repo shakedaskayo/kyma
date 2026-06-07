@@ -145,6 +145,33 @@ describe("KymaDiscover", () => {
     await waitFor(() => expect(onSearchChange).toHaveBeenCalledWith("error"));
   });
 
+  // ── database prop wires x-database header ─────────────────────────────────
+
+  it("database prop sends x-database header on /v1/explore/search", async () => {
+    const qc = makeQC();
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(frameStream([])),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<KymaDiscover database="staging" />, { wrapper: wrapper(qc) });
+
+    // Wait for the search to be called
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    // Find the call to /v1/explore/search
+    const call = (fetchMock.mock.calls as unknown as [string, RequestInit][]).find(
+      ([url]) => typeof url === "string" && url.includes("/v1/explore/search"),
+    );
+    expect(call).toBeTruthy();
+    const [, init] = call!;
+    const headers =
+      init?.headers instanceof Headers
+        ? Object.fromEntries((init.headers as Headers).entries())
+        : (init?.headers as Record<string, string> | undefined) ?? {};
+    expect(headers["x-database"]).toBe("staging");
+  });
+
   // ── Two instances are isolated ────────────────────────────────────────────────
 
   it("two mounted instances have independent search state", async () => {

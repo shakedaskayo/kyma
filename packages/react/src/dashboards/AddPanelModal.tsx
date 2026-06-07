@@ -37,6 +37,8 @@ interface Props {
   onClose: () => void;
   onSave: (draft: PanelDraft) => void;
   initial?: DashboardPanel | null;
+  /** Default database_name for new panels (from KymaDashboard.database prop). */
+  defaultDatabase?: string;
 }
 
 const DEFAULT_DRAFT: PanelDraft = {
@@ -81,7 +83,7 @@ function Label({ htmlFor, children }: { htmlFor?: string; children: React.ReactN
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function AddPanelModal({ open, onClose, onSave, initial }: Props) {
+export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase }: Props) {
   const client = useKymaClient();
   const endpoint = client.transport.endpoint;
   const database = client.transport.database ?? "default";
@@ -100,7 +102,7 @@ export function AddPanelModal({ open, onClose, onSave, initial }: Props) {
           grid_h: initial.grid_h,
           display_order: initial.display_order,
         }
-      : DEFAULT_DRAFT,
+      : { ...DEFAULT_DRAFT, database_name: defaultDatabase ?? null },
   );
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -123,7 +125,7 @@ export function AddPanelModal({ open, onClose, onSave, initial }: Props) {
     if (!draft.title.trim()) return;
     onSave(draft);
     onClose();
-    setDraft(DEFAULT_DRAFT);
+    setDraft({ ...DEFAULT_DRAFT, database_name: defaultDatabase ?? null });
     setPreview(null);
   };
 

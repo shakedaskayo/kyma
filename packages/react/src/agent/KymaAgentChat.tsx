@@ -48,19 +48,19 @@ export function KymaAgentChat({
   className,
   style,
   fallback,
-  onMessage: _onMessage,
+  onMessage,
 }: KymaAgentChatProps) {
-  // _onMessage: wired in a future step when AgentConsole exposes a stable
-  // "message completed" event — the useChat hook fires onFinish per turn,
-  // but the message text must be extracted from the messages array after
-  // the turn completes. Deferred to keep this PR focused on the render path.
   return (
     <KymaErrorBoundary fallback={fallback}>
       <div
         className={className}
         style={{ height: "100%", width: "100%", ...style }}
       >
-        <AgentConsole database={database} placeholder={placeholder} />
+        <AgentConsole
+          database={database}
+          placeholder={placeholder}
+          onAssistantMessage={onMessage}
+        />
       </div>
     </KymaErrorBoundary>
   );

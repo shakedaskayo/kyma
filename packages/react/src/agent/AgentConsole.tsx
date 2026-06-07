@@ -40,6 +40,11 @@ export interface AgentConsoleProps {
   placeholder?: string;
   /** Extra CSS class for the container. */
   className?: string;
+  /**
+   * Called when an assistant message finishes streaming.
+   * Fires once per completed turn with the full assembled text.
+   */
+  onAssistantMessage?: (m: { role: string; text: string }) => void;
 }
 
 const SUGGESTIONS = [
@@ -57,7 +62,7 @@ const SUGGESTIONS = [
  * (surfaced as a `data-session` part) and echoing it on the next turn.
  * State is in-memory; unmounting resets the transcript.
  */
-export function AgentConsole({ database, placeholder, className }: AgentConsoleProps) {
+export function AgentConsole({ database, placeholder, className, onAssistantMessage }: AgentConsoleProps) {
   const client = useKymaClient();
   const [input, setInput] = useState("");
   const [includeThinking, setIncludeThinking] = useState(false);
@@ -77,8 +82,19 @@ export function AgentConsole({ database, placeholder, className }: AgentConsoleP
     [client],
   );
 
+  const onAssistantMessageRef = useRef(onAssistantMessage);
+  onAssistantMessageRef.current = onAssistantMessage;
+
   const { messages, sendMessage, status, stop, error, regenerate } = useChat({
     transport,
+    onFinish: ({ message }) => {
+      if (message.role !== "assistant") return;
+      const text = message.parts
+        .filter((p) => p.type === "text")
+        .map((p) => (p as { text: string }).text)
+        .join("");
+      onAssistantMessageRef.current?.({ role: "assistant", text });
+    },
   });
 
   useEffect(() => {

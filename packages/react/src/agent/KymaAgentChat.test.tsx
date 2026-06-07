@@ -29,6 +29,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  _sseCounter = 0;
 });
 
 function makeQC() {
@@ -50,13 +51,16 @@ function provider(children: React.ReactNode) {
   );
 }
 
+let _sseCounter = 0;
+
 /** Build an SSE Response carrying UI Message Stream frames. */
 function sseResponse(parts: object[]): Response {
+  const messageId = `msg-${++_sseCounter}`;
   const enc = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
     start(ctrl) {
       const frames = [
-        { type: "start", messageId: "msg-1" },
+        { type: "start", messageId },
         ...parts,
         { type: "finish" },
       ];
@@ -176,13 +180,45 @@ describe("KymaAgentChat", () => {
     expect(headers["authorization"]).toBe("Bearer test-token");
   });
 
-  it("onMessage fires when assistant message completes", async () => {
-    // onMessage is stored for future wiring; prop accepted without error.
-    stubFetch(vi.fn().mockReturnValue(new Promise(() => {})));
+  it("onMessage fires once with assembled text when assistant turn completes", async () => {
+    const fetchMock = vi.fn().mockReturnValue(
+      Promise.resolve(
+        sseResponse([
+          { type: "text-start", id: "t1" },
+          { type: "text-delta", id: "t1", delta: "Hello " },
+          { type: "text-delta", id: "t1", delta: "world!" },
+          { type: "text-end", id: "t1" },
+        ]),
+      ),
+    );
+    stubFetch(fetchMock);
+
     const onMessage = vi.fn();
     render(provider(<KymaAgentChat onMessage={onMessage} />));
-    // No throw = prop accepted
-    expect(screen.getByRole("textbox")).toBeTruthy();
+
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "ping" } });
+    fireEvent.submit(textarea.closest("form")!);
+
+    // Wait for the assistant reply to render
+    await waitFor(
+      () => {
+        expect(screen.getByText(/Hello.*world/s)).toBeTruthy();
+      },
+      { timeout: 5000 },
+    );
+
+    // onMessage should have been called exactly once with the complete text
+    await waitFor(
+      () => {
+        expect(onMessage).toHaveBeenCalledOnce();
+      },
+      { timeout: 5000 },
+    );
+    const [msg] = onMessage.mock.calls[0] as [{ role: string; text: string }];
+    expect(msg.role).toBe("assistant");
+    expect(msg.text).toContain("Hello");
+    expect(msg.text).toContain("world!");
   });
 
   it("renders custom fallback via error boundary", () => {

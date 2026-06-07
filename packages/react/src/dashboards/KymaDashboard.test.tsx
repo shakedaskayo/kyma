@@ -244,6 +244,91 @@ describe("KymaDashboard", () => {
     expect(editBtns.length).toBe(2); // one per panel
   });
 
+  it("5b. database prop sends x-database header on dashboard load (GET /v1/dashboards/:id)", async () => {
+    const fetchMock = makeFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
+    const qc = makeQC();
+
+    render(
+      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }} queryClient={qc}>
+        <KymaDashboard dashboardId="dash-1" database="staging" />
+      </KymaProvider>,
+    );
+
+    // Wait for the dashboard to load
+    await waitFor(() => {
+      expect(screen.getByText("Test Dashboard")).toBeTruthy();
+    });
+
+    expect(fetchMock).toHaveBeenCalled();
+
+    // The dashboard GET request should carry x-database: staging
+    const dashboardCall = (fetchMock.mock.calls as [string, RequestInit][]).find(([url]) =>
+      url.includes("/v1/dashboards/"),
+    );
+    expect(dashboardCall).toBeTruthy();
+    const [, init] = dashboardCall!;
+    const headers =
+      init?.headers instanceof Headers
+        ? Object.fromEntries((init.headers as Headers).entries())
+        : (init?.headers as Record<string, string> | undefined) ?? {};
+    expect(headers["x-database"]).toBe("staging");
+  });
+
+  it("5c. database prop seeds new-panel default database_name in AddPanelModal", async () => {
+    const schemaFixture = {
+      databases: [{ name: "mydb", tables: [] }],
+    };
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/v1/dashboards/")) return makeDashboardResponse(DASHBOARD_FIXTURE);
+      if (url.includes("/v1/dashboards")) {
+        return Promise.resolve(
+          new Response(JSON.stringify([DASHBOARD_FIXTURE]), {
+            status: 200,
+            headers: new Headers({ "content-type": "application/json" }),
+          }),
+        );
+      }
+      if (url.includes("/v1/query")) return makeNdjsonResponse(QUERY_ROWS);
+      if (url.includes("/v1/catalog")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(schemaFixture), {
+            status: 200,
+            headers: new Headers({ "content-type": "application/json" }),
+          }),
+        );
+      }
+      return Promise.resolve(new Response("", { status: 404 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const qc = makeQC();
+
+    render(
+      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }} queryClient={qc}>
+        <KymaDashboard dashboardId="dash-1" editable database="mydb" />
+      </KymaProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Dashboard")).toBeTruthy();
+    });
+
+    // Open the add panel modal
+    const addBtn = screen.getByTestId("add-panel-btn");
+    addBtn.click();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dialog-content")).toBeTruthy();
+    });
+
+    // Wait for schema to load and "mydb" option to appear in the select
+    await waitFor(() => {
+      const dbSelect = document.querySelector("#panel-db") as HTMLSelectElement | null;
+      // The select should default to "mydb" (seeded from KymaDashboard.database prop)
+      expect(dbSelect?.value).toBe("mydb");
+    });
+  });
+
   it("5. fallback rendered while loading", async () => {
     // Delay the dashboard response so we can observe the fallback
     vi.stubGlobal(
