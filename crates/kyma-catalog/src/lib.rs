@@ -1354,6 +1354,39 @@ impl Catalog for PostgresCatalog {
         Ok(res.rows_affected() > 0)
     }
 
+    // --- auth: external identities (JIT provisioning) ---
+
+    async fn upsert_external_user_in_tenant(
+        &self,
+        tenant: TenantId,
+        provider: &str,
+        external_id: &str,
+        username: &str,
+        role: &str,
+    ) -> std::result::Result<User, CatalogError> {
+        // '!external' is deliberately not a valid PHC string: password
+        // verification can never succeed for JIT-provisioned users.
+        let row = sqlx::query(
+            "INSERT INTO users (tenant_id, username, password_hash, role, auth_provider, external_id)
+             VALUES ($1, $2, '!external', $3, $4, $5)
+             ON CONFLICT (tenant_id, auth_provider, external_id)
+               WHERE auth_provider IS NOT NULL AND external_id IS NOT NULL
+             DO UPDATE SET username = EXCLUDED.username,
+                           role = EXCLUDED.role,
+                           updated_at = now()
+             RETURNING id, username, role, created_at, updated_at",
+        )
+        .bind(tenant.as_uuid())
+        .bind(username)
+        .bind(role)
+        .bind(provider)
+        .bind(external_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        row_to_user(&row)
+    }
+
     // --- auth: api tokens ---
 
     async fn insert_api_token_in_tenant(
@@ -1447,6 +1480,40 @@ impl Catalog for PostgresCatalog {
         .await
         .map_err(|e| CatalogError::Sql(e.to_string()))?;
         Ok(res.rows_affected() > 0)
+    }
+
+    async fn list_api_tokens_in_tenant(
+        &self,
+        tenant: TenantId,
+        kind: &str,
+    ) -> std::result::Result<Vec<kyma_core::catalog::ApiTokenInfo>, CatalogError> {
+        use sqlx::Row as _;
+        let rows = sqlx::query(
+            "SELECT token_hash, scopes, subject, kind, created_at, last_used_at,
+                    expires_at, (revoked_at IS NOT NULL) AS revoked
+             FROM api_tokens
+             WHERE tenant_id = $1 AND kind = $2
+             ORDER BY created_at DESC",
+        )
+        .bind(tenant.as_uuid())
+        .bind(kind)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        rows.iter()
+            .map(|row| {
+                Ok(kyma_core::catalog::ApiTokenInfo {
+                    token_hash: row.try_get("token_hash").map_err(sql_err)?,
+                    role: row.try_get("scopes").map_err(sql_err)?,
+                    subject: row.try_get("subject").map_err(sql_err)?,
+                    kind: row.try_get("kind").map_err(sql_err)?,
+                    created_at: row.try_get("created_at").map_err(sql_err)?,
+                    last_used_at: row.try_get("last_used_at").map_err(sql_err)?,
+                    expires_at: row.try_get("expires_at").map_err(sql_err)?,
+                    revoked: row.try_get("revoked").map_err(sql_err)?,
+                })
+            })
+            .collect()
     }
 
     async fn insert_session_token(

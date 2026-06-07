@@ -325,3 +325,89 @@ test("migrateWorkspace v2→v3 folds discover pills into the search text", () =>
   expect(st.columns).toEqual([]);
   expect(st.viewMode).toBe("stream");
 });
+
+// ── discover → query-editor export tab reuse ────────────────────────────────
+
+test("openExportTab creates a 'from discover' tab when none exists", () => {
+  const id = useWorkspace.getState().openExportTab({
+    query: "events | take 50",
+    timeRange: { preset: "1h" },
+  });
+  const t = useWorkspace.getState().tabs.find((x) => x.id === id)!;
+  expect(t.kind).toBe("query");
+  if (t.kind !== "query") throw new Error("type narrowing");
+  expect(t.state.title).toBe("from discover");
+  expect(t.state.query).toBe("events | take 50");
+  expect(useWorkspace.getState().activeId).toBe(id);
+});
+
+test("openExportTab reuses a pristine export tab instead of piling up", () => {
+  const ws = useWorkspace.getState();
+  const first = ws.openExportTab({
+    query: 'events | where timestamp >= datetime("2026-06-01T09:00:00Z") | take 500',
+    timeRange: { preset: "1h" },
+  });
+  // Next export bakes different time bounds — the query text always differs.
+  const second = useWorkspace.getState().openExportTab({
+    query: 'events | where timestamp >= datetime("2026-06-07T12:00:00Z") | take 500',
+    timeRange: { preset: "6h" },
+  });
+  expect(second).toBe(first);
+  const tabs = useWorkspace.getState().tabs;
+  expect(tabs.filter((t) => t.kind === "query")).toHaveLength(1);
+  const t = tabs.find((x) => x.id === first)!;
+  if (t.kind !== "query") throw new Error("type narrowing");
+  expect(t.state.query).toContain("2026-06-07T12:00:00Z");
+  expect(t.state.timeRange.preset).toBe("6h");
+  expect(t.state.results).toEqual({ kind: "idle" });
+  expect(t.state.submittedQuery).toBeNull();
+  expect(useWorkspace.getState().activeId).toBe(first);
+});
+
+test("openExportTab never clobbers an export tab the user edited", () => {
+  const ws = useWorkspace.getState();
+  const first = ws.openExportTab({ query: "events | take 1", timeRange: { preset: "1h" } });
+  // The user ran it, then edited the query — that's their work now.
+  useWorkspace.getState().updateQuery(first, {
+    submittedQuery: "events | take 1",
+    query: "events | where severity == 'ERROR' | take 1",
+  });
+  const second = useWorkspace.getState().openExportTab({
+    query: "events | take 2",
+    timeRange: { preset: "1h" },
+  });
+  expect(second).not.toBe(first);
+  const tabs = useWorkspace.getState().tabs;
+  expect(tabs.filter((t) => t.kind === "query")).toHaveLength(2);
+  const kept = tabs.find((x) => x.id === first)!;
+  if (kept.kind !== "query") throw new Error("type narrowing");
+  expect(kept.state.query).toContain("severity == 'ERROR'");
+});
+
+test("dedupeTabs collapses stale pristine exports to the newest", () => {
+  const exportTab = (id: string, query: string, dirty = false): Tab => ({
+    id,
+    kind: "query",
+    state: {
+      title: "from discover",
+      query,
+      timeRange: { preset: "1h" },
+      results: { kind: "idle" },
+      chart: {},
+      submittedQuery: dirty ? "something else the user ran" : null,
+    },
+  });
+  const tabs: Tab[] = [
+    exportTab("a", "events | datetime(A) | take 500"),
+    exportTab("b", "events | datetime(B) | take 500", true), // edited → user work
+    exportTab("c", "events | datetime(C) | take 500"),
+    exportTab("d", "events | datetime(D) | take 500"),
+  ];
+  const { tabs: out, activeId } = dedupeTabs(tabs, "a");
+  const ids = out.map((t) => t.id);
+  expect(ids).toContain("d"); // newest pristine export survives
+  expect(ids).toContain("b"); // dirty export is user work — kept
+  expect(ids).not.toContain("a");
+  expect(ids).not.toContain("c");
+  expect(activeId).toBe("d"); // active pointer follows the survivor
+});

@@ -17,8 +17,16 @@ export async function sessionGetToken(opts?: { reason?: string }): Promise<strin
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
     const s = useSession.getState();
-    if (!s.endpoint || !s.refreshToken) throw new KymaAuthError(401, "no session");
     try {
+      // Supabase sessions refresh through supabase-js (which owns the refresh
+      // token); password sessions exchange kyma's refresh token directly.
+      if (s.provider === "supabase") {
+        const { refreshSupabaseToken } = await import("./supabase");
+        const tok = await refreshSupabaseToken();
+        if (!tok) throw new KymaAuthError(401, "supabase refresh failed");
+        return tok;
+      }
+      if (!s.endpoint || !s.refreshToken) throw new KymaAuthError(401, "no session");
       const pair = await refresh({ endpoint: s.endpoint, refreshToken: s.refreshToken });
       useSession.getState().set({
         token: pair.access_token,

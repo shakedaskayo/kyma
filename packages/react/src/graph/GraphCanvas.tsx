@@ -551,14 +551,14 @@ export function GraphCanvas({
         minZoom={0.06}
         maxZoom={8}
         onEngineStop={() => fitView(400)}
-        onNodeClick={(n) => onNodeClick((n as FNode).id)}
-        onNodeHover={(n) => onNodeHover(n ? (n as FNode).id : null)}
-        onNodeDragEnd={(n) => {
-          (n as FNode).fx = n.x;
-          (n as FNode).fy = n.y;
+        onNodeClick={(n: FNode) => onNodeClick(n.id)}
+        onNodeHover={(n: FNode | null) => onNodeHover(n ? n.id : null)}
+        onNodeDragEnd={(n: FNode) => {
+          n.fx = n.x;
+          n.fy = n.y;
         }}
         onBackgroundClick={() => onNodeClick("")}
-        onNodeRightClick={(n) => onNodeDoubleClick?.((n as FNode).id)}
+        onNodeRightClick={(n: FNode) => onNodeDoubleClick?.(n.id)}
         autoPauseRedraw={false}
       />
       <CanvasControls

@@ -7,6 +7,7 @@ pub mod oidc_backend;
 pub mod passwords;
 pub mod scope;
 pub mod session_backend;
+pub mod supabase_backend;
 
 #[cfg(feature = "cloud-auth")]
 mod db_backend;
@@ -17,6 +18,7 @@ pub use middleware::{require_role_middleware, AuthLayerState};
 pub use oidc_backend::{OidcAuthBackend, OidcConfig};
 pub use scope::check_database_scope;
 pub use session_backend::{hash_token, SessionAuthBackend};
+pub use supabase_backend::{SupabaseAuthBackend, SupabaseAuthConfig};
 
 #[cfg(feature = "cloud-auth")]
 pub use db_backend::DbAuthBackend;

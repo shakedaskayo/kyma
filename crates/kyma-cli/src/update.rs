@@ -21,6 +21,12 @@ const CHECK_TTL_SECS: u64 = 24 * 60 * 60;
 
 // ── GitHub release lookup ───────────────────────────────────────────────────
 
+/// Public wrapper: the latest GitHub release tag (e.g. "v0.1.0").
+/// Used by `kyma deploy` to pin the engine image to the release train.
+pub(crate) async fn latest_release_tag() -> Result<String> {
+    fetch_latest_tag().await
+}
+
 async fn fetch_latest_tag() -> Result<String> {
     let mut req = http_client()
         .get(format!("https://api.github.com/repos/{REPO}/releases/latest"))
@@ -211,6 +217,19 @@ async fn restart_stale_server(fresh: &str) -> Result<()> {
         return Ok(()); // nothing running — nothing to restart
     };
     if running == fresh {
+        return Ok(());
+    }
+
+    // Service-managed server (the default since install.sh switched to
+    // `kyma service install`): a kick reloads the swapped binary. Killing the
+    // pid instead would just make launchd/systemd respawn the OLD process
+    // image's restart loop semantics — go through the supervisor.
+    if let Some(ok) = kyma_local::server_service::restart_if_installed() {
+        if ok {
+            eprintln!("▸ restarted the supervised server (v{running} → v{fresh})");
+            return Ok(());
+        }
+        eprintln!("! couldn't restart the server service — run: kyma service status");
         return Ok(());
     }
 

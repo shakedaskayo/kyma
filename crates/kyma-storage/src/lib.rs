@@ -54,7 +54,17 @@ pub fn build_object_store(config: &StorageConfig) -> Result<Arc<dyn ObjectStore>
             path_style,
             allow_http,
         } => {
-            let mut builder = AmazonS3Builder::new()
+            // No static keys → start from the environment so the standard AWS
+            // credential chain applies (ECS/Fargate task role via
+            // `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, web identity, `AWS_*`
+            // vars, IMDS). `AmazonS3Builder::new()` would silently skip the
+            // task-role provider, breaking keyless deployments.
+            let base = if access_key_id.is_none() && secret_access_key.is_none() {
+                AmazonS3Builder::from_env()
+            } else {
+                AmazonS3Builder::new()
+            };
+            let mut builder = base
                 .with_bucket_name(bucket)
                 .with_region(region)
                 .with_virtual_hosted_style_request(!*path_style)
@@ -121,6 +131,11 @@ fn any_s3_env_set() -> bool {
 /// - `KYMA_S3_ACCESS_KEY_ID`
 /// - `KYMA_S3_SECRET_ACCESS_KEY`
 /// - `KYMA_S3_PATH_STYLE` (default: `true`)
+///
+/// When both `KYMA_S3_ACCESS_KEY_ID` and `KYMA_S3_SECRET_ACCESS_KEY` are
+/// unset, credentials come from the standard AWS provider chain (ECS/Fargate
+/// task role, web identity, `AWS_*` env vars, IMDS) — set only
+/// `KYMA_S3_BUCKET`/`KYMA_S3_REGION` for keyless IAM-role deployments.
 pub fn config_from_env() -> StorageConfig {
     let local_mode = std::env::var("KYMA_LOCAL_MODE")
         .map(|v| v == "true" || v == "1")
@@ -145,6 +160,72 @@ pub fn config_from_env() -> StorageConfig {
         allow_http: std::env::var("KYMA_S3_ALLOW_HTTP")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(true),
+    }
+}
+
+#[cfg(test)]
+mod s3_credential_chain_tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    /// With no static keys in the config, credentials must come from the
+    /// standard AWS provider chain (task role / web identity / `AWS_*` env) —
+    /// the Fargate task-role path. Observable: the S3 request arriving at the
+    /// endpoint is signed with the `AWS_ACCESS_KEY_ID` from the environment.
+    #[test]
+    fn s3_without_static_keys_uses_aws_env_credential_chain() {
+        std::env::set_var("AWS_ACCESS_KEY_ID", "env-chain-key");
+        std::env::set_var("AWS_SECRET_ACCESS_KEY", "env-chain-secret");
+
+        // One-shot HTTP server capturing the raw request.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            if let Ok((mut sock, _)) = listener.accept() {
+                let mut buf = [0u8; 8192];
+                let n = sock.read(&mut buf).unwrap_or(0);
+                let _ = sock.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n");
+                let _ = tx.send(String::from_utf8_lossy(&buf[..n]).to_string());
+            }
+        });
+
+        let cfg = StorageConfig::S3Compatible {
+            endpoint: Some(format!("http://{addr}")),
+            region: "us-east-1".to_string(),
+            bucket: "kyma-test".to_string(),
+            access_key_id: None,
+            secret_access_key: None,
+            path_style: true,
+            allow_http: true,
+        };
+        let store = build_object_store(&cfg).expect("S3 store builds without static keys");
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        // The GET result is irrelevant (empty 200 won't parse as an object);
+        // we only care which credentials signed the request. Bound the wait so
+        // a misrouted credential lookup (e.g. IMDS) can't hang the test.
+        let _ = rt.block_on(async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                store.get(&object_store::path::Path::from("probe")),
+            )
+            .await
+        });
+
+        let req = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap_or_default();
+        assert!(
+            req.contains("env-chain-key"),
+            "request should be signed with env-chain credentials, got:\n{req}"
+        );
+
+        std::env::remove_var("AWS_ACCESS_KEY_ID");
+        std::env::remove_var("AWS_SECRET_ACCESS_KEY");
     }
 }
 

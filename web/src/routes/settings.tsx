@@ -2,9 +2,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/sdk/session";
-import { User2, Plug, Cpu, Sparkles, Terminal, Palette } from "lucide-react";
+import { User2, Plug, Cpu, Sparkles, Terminal, Palette, KeyRound } from "lucide-react";
 
 import { AccountSettings } from "@/features/settings/AccountSettings";
+import { ApiTokensSettings } from "@/features/settings/ApiTokensSettings";
 import { ConnectionSettings } from "@/features/settings/ConnectionSettings";
 import { EngineSettings } from "@/features/settings/EngineSettings";
 import { SkillsSettings } from "@/features/settings/SkillsSettings";
@@ -18,7 +19,14 @@ export const Route = createFileRoute("/settings")({
   component: Settings,
 });
 
-type SectionId = "account" | "connection" | "engine" | "skills" | "connect-agent" | "appearance";
+type SectionId =
+  | "account"
+  | "connection"
+  | "api-tokens"
+  | "engine"
+  | "skills"
+  | "connect-agent"
+  | "appearance";
 
 interface Section {
   id: SectionId;
@@ -44,6 +52,14 @@ const SECTIONS: Section[] = [
     description: "Server URL, default database, API token",
     icon: Plug,
     component: ConnectionSettings,
+  },
+  {
+    id: "api-tokens",
+    label: "API tokens",
+    description: "Long-lived tokens for the CLI, MCP clients, and CI",
+    icon: KeyRound,
+    component: ApiTokensSettings,
+    requiresLogin: true,
   },
   {
     id: "engine",

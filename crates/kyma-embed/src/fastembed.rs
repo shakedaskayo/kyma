@@ -34,7 +34,16 @@ impl FastembedBackend {
     pub async fn new(model_id: &str, model_path: Option<&str>) -> Result<Self, EmbedError> {
         let em = pick_model(model_id)?;
         let dimension = em_dimension(&em);
-        let mut opts = InitOptions::new(em);
+        // First run downloads the ONNX model (tens of MB) — without a notice
+        // it reads as a hang. Say so up front and let fastembed render its
+        // progress bar when a human is watching.
+        let interactive = std::io::IsTerminal::is_terminal(&std::io::stderr());
+        if !model_cached(model_path) {
+            eprintln!(
+                "downloading the embedding model ({model_id}, one-time, ~30–130 MB)…"
+            );
+        }
+        let mut opts = InitOptions::new(em).with_show_download_progress(interactive);
         if let Some(path) = model_path {
             opts = opts.with_cache_dir(path.into());
         }
@@ -83,6 +92,18 @@ impl EmbeddingBackend for FastembedBackend {
         .await
         .map_err(|e| EmbedError::Internal(e.to_string()))?
     }
+}
+
+/// Whether the model cache already exists (mirrors fastembed's resolution:
+/// explicit path → `FASTEMBED_CACHE_PATH` → `.fastembed_cache` in the cwd).
+/// Existence of a non-empty cache dir is a good-enough "no download coming"
+/// signal — the goal is only to avoid a misleading silent first run.
+fn model_cached(model_path: Option<&str>) -> bool {
+    let dir = model_path
+        .map(String::from)
+        .or_else(|| std::env::var("FASTEMBED_CACHE_PATH").ok())
+        .unwrap_or_else(|| ".fastembed_cache".to_string());
+    std::fs::read_dir(dir).map(|mut d| d.next().is_some()).unwrap_or(false)
 }
 
 fn pick_model(id: &str) -> Result<EmbeddingModel, EmbedError> {

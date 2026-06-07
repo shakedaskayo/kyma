@@ -1,0 +1,3 @@
+name: kyma-deploy
+runtime: nodejs
+description: kyma engine on AWS Fargate + S3 + Supabase (wraps deploy/terraform via the terraform-module bridge)

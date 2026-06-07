@@ -188,9 +188,11 @@ async fn main() -> Result<()> {
     //
     //    Backend selection order:
     //    1. KYMA_AUTH_BACKEND=db  → DbAuthBackend (cloud-auth feature, cloud only)
-    //    2. KYMA_AUTH_BACKEND=session OR users_exist → SessionAuthBackend
+    //    2. KYMA_AUTH_BACKEND=supabase → SupabaseAuthBackend (Supabase JWTs +
+    //       JIT user provisioning, wrapping SessionAuthBackend for opaque tokens)
+    //    3. KYMA_AUTH_BACKEND=session OR users_exist → SessionAuthBackend
     //       (session tokens + env static tokens in one backend)
-    //    3. Otherwise → EnvAuthBackend (static KYMA_AUTH_TOKENS only)
+    //    4. Otherwise → EnvAuthBackend (static KYMA_AUTH_TOKENS only)
     let users_exist = catalog
         .count_users()
         .await
@@ -215,6 +217,20 @@ async fn main() -> Result<()> {
                 EnvAuthBackend::from_env(),
                 users_exist,
             ))
+        }
+        Some("supabase") => {
+            use kyma_server::auth::{SupabaseAuthBackend, SupabaseAuthConfig};
+            let config = SupabaseAuthConfig::from_env().context(
+                "KYMA_AUTH_BACKEND=supabase requires KYMA_SUPABASE_URL \
+                 (e.g. https://<ref>.supabase.co)",
+            )?;
+            info!(url = %config.url, "auth: using supabase backend (JWT + JIT users)");
+            let inner = kyma_server::auth::SessionAuthBackend::new(
+                catalog.clone(),
+                EnvAuthBackend::from_env(),
+                users_exist,
+            );
+            Arc::new(SupabaseAuthBackend::new(config, catalog.clone(), inner))
         }
         Some("session") => {
             info!("auth: using session backend (KYMA_AUTH_BACKEND=session)");
@@ -696,6 +712,12 @@ async fn main() -> Result<()> {
     let app = app.merge(github_repos_router);
     #[cfg(feature = "web-ui")]
     let app = app.merge(kyma_server::web_ui::router());
+    // Re-assert the SPA fallback on the final app, un-layered: merging
+    // auth-layered routers can leave the inherited fallback wrapped by the
+    // auth middleware, which would 401 the login page and every asset the
+    // moment auth is enabled (supabase/session backends).
+    #[cfg(feature = "web-ui")]
+    let app = app.fallback(kyma_server::web_ui::serve_spa_fallback);
 
     // Expose Flight over gRPC-web at /flight/* so browsers can query via Arrow Flight.
     // Auth is enforced the same way as /v1/* (Bearer token, Role::Read required).

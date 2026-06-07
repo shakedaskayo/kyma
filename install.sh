@@ -23,6 +23,11 @@
 #   --no-plugin         Don't install the plugin (skip the prompt)
 #   --port PORT         Port for `kyma serve` (default: 7777)
 #   --token TOKEN       Static API token to use (default: generated)
+#   --prod-deploy       After install, launch `kyma deploy init` (AWS+Supabase
+#                       production wizard) instead of the local-dev flow
+#   --uninstall         Remove kyma: server service, sync worker, plugin, skills,
+#                       binary. Keeps your data (~/.kyma) unless --purge is given
+#   --purge             With --uninstall: also delete ~/.kyma (memories, config)
 #   --yes, -y           Assume defaults; no prompts
 #   --help, -h          Show this help
 #
@@ -43,6 +48,9 @@ VERSION=""
 TOKEN=""
 FROM_SOURCE=0
 ASSUME_YES=0
+PROD_DEPLOY=0
+DO_UNINSTALL=0
+DO_PURGE=0
 DO_SERVE=""     # "", 1, or 0
 DO_PLUGIN=""    # "", 1, or 0
 
@@ -54,7 +62,7 @@ warn() { printf '%s!%s %s\n' "$ylw" "$rst" "$*" >&2; }
 err()  { printf '%s✗ %s%s\n' "$red" "$*" "$rst" >&2; }
 die()  { err "$*"; exit 1; }
 
-usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 # ── parse args ────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -69,6 +77,9 @@ while [[ $# -gt 0 ]]; do
     --no-serve)   DO_SERVE=0; shift ;;
     --plugin)     DO_PLUGIN=1; shift ;;
     --no-plugin)  DO_PLUGIN=0; shift ;;
+    --prod-deploy) PROD_DEPLOY=1; shift ;;
+    --uninstall)  DO_UNINSTALL=1; shift ;;
+    --purge)      DO_PURGE=1; shift ;;
     --yes|-y)     ASSUME_YES=1; shift ;;
     --help|-h)    usage ;;
     *) die "Unknown option: $1 (try --help)" ;;
@@ -256,6 +267,9 @@ server_version() {  # /health version of whatever is listening on :PORT
 }
 
 stop_stale_server() {  # the web UI is embedded in the binary → old process = old UI
+  # Service-managed? Tear the supervision down first or launchd/systemd
+  # instantly respawns whatever we kill below.
+  kyma service uninstall >/dev/null 2>&1 || true
   local pid="" i
   [ -f "$HOME/.kyma/serve.pid" ] && pid=$(cat "$HOME/.kyma/serve.pid" 2>/dev/null)
   if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
@@ -281,35 +295,53 @@ stop_stale_server() {  # the web UI is embedded in the binary → old process = 
 
 start_serve() {
   [ -z "$TOKEN" ] && TOKEN="kyma-local-$(rand_hex)"
-  mkdir -p "$HOME/.kyma"
-  local log="$HOME/.kyma/serve.log"
+  mkdir -p "$HOME/.kyma/logs"
+  local log="$HOME/.kyma/logs/server.log"
   local need_start=1
+  # The service files written by `kyma service install` — their presence
+  # means the server is supervised (starts at login, restarts on crash).
+  local service_file=""
+  case "$(uname -s)" in
+    Darwin) service_file="$HOME/Library/LaunchAgents/dev.getkyma.kyma-server.plist" ;;
+    Linux)  service_file="$HOME/.config/systemd/user/kyma-server.service" ;;
+  esac
   if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
     # A server is up — but if it predates the binary we just installed, it is
     # still serving the OLD embedded web UI. Restart it on a version mismatch.
+    # An up-to-date but UNSUPERVISED server (old nohup installs) is migrated
+    # to the service so it stops disappearing on reboot.
     local new_ver running_ver
     new_ver=$(kyma version 2>/dev/null | awk '{print $2}')
     running_ver=$(server_version)
-    if [ -n "$new_ver" ] && [ "$running_ver" = "$new_ver" ]; then
-      info "A server is already listening on :${PORT} (v${running_ver})"
+    if [ -n "$new_ver" ] && [ "$running_ver" = "$new_ver" ] && [ -n "$service_file" ] && [ -f "$service_file" ]; then
+      info "A supervised server is already running on :${PORT} (v${running_ver})"
       need_start=0
     else
-      warn "Server on :${PORT} is running v${running_ver:-unknown}; you just installed v${new_ver} — restarting it."
+      if [ "$running_ver" != "$new_ver" ]; then
+        warn "Server on :${PORT} is running v${running_ver:-unknown}; you just installed v${new_ver} — restarting it."
+      else
+        info "Server on :${PORT} isn't supervised yet — migrating it to a background service."
+      fi
       stop_stale_server || need_start=0   # couldn't stop it → don't double-bind the port
     fi
   fi
   if [ "$need_start" = "1" ]; then
-    info "Starting kyma serve on http://127.0.0.1:${PORT} …"
-    KYMA_AUTH_TOKENS="${TOKEN}:admin" nohup "$(command -v kyma)" serve \
-      --addr "127.0.0.1:${PORT}" >"$log" 2>&1 &
-    echo $! >"$HOME/.kyma/serve.pid"
+    info "Installing the kyma server as a background service (starts at login, restarts on crash)…"
+    if kyma service install --addr "127.0.0.1:${PORT}" --token "$TOKEN" >/dev/null 2>&1; then
+      :
+    else
+      warn "Service install failed — starting a plain background process instead."
+      KYMA_AUTH_TOKENS="${TOKEN}:admin" nohup "$(command -v kyma)" serve \
+        --addr "127.0.0.1:${PORT}" >"$log" 2>&1 &
+      echo $! >"$HOME/.kyma/serve.pid"
+    fi
     local ok=0 i
     for i in $(seq 1 60); do
       curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 && { ok=1; break; }
       sleep 1
     done
     [ "$ok" = "1" ] || { warn "Server didn't become healthy; see $log"; return 1; }
-    info "Server healthy (logs: $log)"
+    info "Server healthy and supervised (logs: $log; manage with: kyma service status|uninstall)"
   fi
   info "Connecting the CLI (kyma connect)…"
   kyma connect "http://127.0.0.1:${PORT}" --token "$TOKEN" >/dev/null
@@ -326,11 +358,58 @@ run_smoke_test() {
   fi
 }
 
+uninstall_kyma() {
+  say ""
+  say "${bold}Removing kyma…${rst}"
+  local bin
+  bin="$(command -v kyma 2>/dev/null || true)"
+  if [ -n "$bin" ]; then
+    # Stop supervised processes first so nothing respawns mid-removal.
+    "$bin" service uninstall >/dev/null 2>&1 || true
+    "$bin" worker uninstall  >/dev/null 2>&1 || true
+  fi
+  # Old nohup-era server, if any.
+  if [ -f "$HOME/.kyma/serve.pid" ]; then
+    kill "$(cat "$HOME/.kyma/serve.pid")" 2>/dev/null || true
+    rm -f "$HOME/.kyma/serve.pid"
+  fi
+  # Claude Code plugin + standalone skills.
+  rm -rf "$HOME/.claude/skills/kyma-memory" "$HOME/.claude/skills/kyma" \
+         "$HOME/.claude/skills/kyma-deploy" "$HOME/.kyma/skills" 2>/dev/null || true
+  info "Service, worker, and agent plugin removed"
+  # The binary (every default location + whatever is on PATH).
+  local p
+  for p in "$bin" "/usr/local/bin/kyma" "$HOME/.local/bin/kyma"; do
+    [ -n "$p" ] && [ -f "$p" ] && { rm -f "$p" 2>/dev/null || sudo rm -f "$p"; info "Removed $p"; }
+  done
+  # The guarded PATH block (a "# kyma" marker line + its export line),
+  # removed pairwise — never a ranged delete that could overshoot.
+  local rc
+  for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.profile"; do
+    [ -f "$rc" ] && grep -qxF '# kyma' "$rc" || continue
+    awk 'prev_marker && /^export PATH=/ { prev_marker=0; next }
+         { if (prev_marker) print "# kyma" }
+         /^# kyma$/ { prev_marker=1; next }
+         { prev_marker=0; print }' "$rc" > "$rc.kyma-tmp" \
+      && mv "$rc.kyma-tmp" "$rc" && info "Removed PATH entry from $rc"
+  done
+  if [ "$DO_PURGE" = "1" ]; then
+    rm -rf "$HOME/.kyma"
+    info "Purged ~/.kyma (memories, config, logs)"
+  else
+    say "  Your data is untouched: ${bold}~/.kyma${rst}  (pass --purge to delete it)"
+  fi
+  say "${grn}${bold}kyma removed.${rst}"
+  exit 0
+}
+
 # ── run ──────────────────────────────────────────────────────────────────────
 say ""
 say "${bold}kyma${rst} — the context engine for coding agents"
 say "${dim}https://github.com/${REPO}${rst}"
 say ""
+
+[ "$DO_UNINSTALL" = "1" ] && uninstall_kyma
 
 resolve_install_dir
 if [ "$FROM_SOURCE" = "1" ]; then
@@ -351,6 +430,14 @@ fi
 info "Installed: $(command -v kyma)  ($(kyma version 2>/dev/null || echo kyma))"
 say ""
 
+# ── production deployment hand-off ────────────────────────────────────────
+# --prod-deploy: skip the local-dev flow entirely; the deploy wizard owns
+# all prompts from here (AWS Fargate + S3 + Supabase, Terraform/Pulumi).
+if [ "$PROD_DEPLOY" = "1" ]; then
+  info "Launching the production deployment wizard…"
+  exec kyma deploy init
+fi
+
 # Decide serve / plugin (flags > prompt > non-interactive default of NO).
 if [ -z "$DO_PLUGIN" ]; then
   if ask "Install the Claude Code memory plugin (hooks + MCP + slash commands)?" "Y"; then DO_PLUGIN=1; else DO_PLUGIN=0; fi
@@ -364,6 +451,14 @@ fi
 if [ "$INTERACTIVE" = "1" ] && [ "$DO_SERVE" = "1" ]; then
   PORT="$(prompt "Port for the server?" "$PORT")"
 fi
+
+# One-line plan so the wizard's answers are visible before anything runs.
+plan="install ${bold}kyma$(kyma version 2>/dev/null | awk '{printf " %s", $2}')${rst} → ${INSTALL_DIR}"
+[ "$DO_SERVE" = "1" ] && plan="$plan, run a supervised server on :${PORT}"
+[ "$DO_PLUGIN" = "1" ] && plan="$plan, wire the Claude Code plugin"
+say ""
+say "Plan: $plan"
+say ""
 
 SERVED=0
 if [ "$DO_SERVE" = "1" ]; then
@@ -379,9 +474,9 @@ fi
 say ""
 say "${grn}${bold}kyma is installed.${rst}"
 if [ "$SERVED" = "1" ]; then
-  say "  Web UI:   ${bold}http://127.0.0.1:${PORT}/${rst}   (sign in: admin / admin)"
-  say "  Stop it:  kill \$(cat ~/.kyma/serve.pid)"
-  say "  Restart:  KYMA_AUTH_TOKENS=\"${TOKEN}:admin\" kyma serve --addr 127.0.0.1:${PORT}"
+  say "  Web UI:   ${bold}http://127.0.0.1:${PORT}/${rst}   (first visit creates your admin user)"
+  say "  Service:  runs in the background — starts at login, restarts on crash"
+  say "            kyma service status | uninstall"
   [ "$DO_PLUGIN" = "1" ] && say "  Plugin:   restart Claude Code, then run ${bold}/kyma-status${rst}"
 else
   say "  Start it: ${bold}kyma serve${rst}   →  http://127.0.0.1:7777/  (admin / admin)"

@@ -270,6 +270,143 @@ async fn logout_handler(State(state): State<AuthState>, req: Request) -> Respons
 }
 
 // -------------------------------------------------------------------------
+// API tokens (long-lived, for CLI / MCP / CI — the non-browser auth story)
+// -------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTokenRequest {
+    /// Display label, surfaced as `name` in listings.
+    pub name: Option<String>,
+    /// Requested role — silently capped at the caller's own role.
+    pub role: Option<String>,
+    /// Optional expiry in days (default: no expiry).
+    pub expires_days: Option<i64>,
+}
+
+/// `POST /v1/auth/tokens` — mint a long-lived API token (`kind='api'`).
+///
+/// The raw token is returned exactly once; only its SHA-256 is stored. The
+/// granted role is `min(requested, caller's role)` so nobody escalates via
+/// token minting.
+async fn create_api_token_handler(
+    State(state): State<AuthState>,
+    Extension(principal): Extension<Principal>,
+    Json(body): Json<CreateTokenRequest>,
+) -> Response {
+    use crate::auth::Role;
+    let requested = body
+        .role
+        .as_deref()
+        .and_then(Role::parse)
+        .unwrap_or(principal.role);
+    let granted = requested.min(principal.role);
+    let role_str = format!("{granted:?}").to_lowercase();
+
+    let name = body
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .or_else(|| principal.subject.clone());
+    let expires_at = body.expires_days.map(|d| Utc::now() + Duration::days(d));
+
+    let (raw, hash) = mint_token();
+    if let Err(e) = state
+        .catalog
+        .insert_api_token(&hash, &role_str, name.as_deref(), "api", expires_at)
+        .await
+    {
+        return internal_error_response(&e.to_string());
+    }
+    (
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "token": raw,
+            "id": hex::encode(&hash),
+            "name": name,
+            "role": role_str,
+            "expires_at": expires_at,
+        })),
+    )
+        .into_response()
+}
+
+/// `GET /v1/auth/tokens` — list API tokens (`kind='api'`). Raw tokens are
+/// unrecoverable; `id` is the hex of the stored hash, usable with DELETE.
+async fn list_api_tokens_handler(State(state): State<AuthState>) -> Response {
+    match state.catalog.list_api_tokens("api").await {
+        Ok(tokens) => {
+            let items: Vec<_> = tokens
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "id": hex::encode(&t.token_hash),
+                        "name": t.subject,
+                        "role": t.role,
+                        "created_at": t.created_at,
+                        "last_used_at": t.last_used_at,
+                        "expires_at": t.expires_at,
+                        "revoked": t.revoked,
+                    })
+                })
+                .collect();
+            (StatusCode::OK, Json(serde_json::json!({ "tokens": items }))).into_response()
+        }
+        Err(e) => internal_error_response(&e.to_string()),
+    }
+}
+
+/// `DELETE /v1/auth/tokens/{id}` — revoke an API token by its hash hex.
+async fn revoke_api_token_handler(
+    State(state): State<AuthState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    let Ok(hash) = hex::decode(&id) else {
+        return (StatusCode::BAD_REQUEST, "invalid token id").into_response();
+    };
+    match state.catalog.revoke_api_token(&hash).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => internal_error_response(&e.to_string()),
+    }
+}
+
+// -------------------------------------------------------------------------
+// Runtime auth discovery for the SPA
+// -------------------------------------------------------------------------
+
+/// `GET /v1/auth/config` — unauthenticated. Tells the web app which login
+/// flow to render: kyma's password form, or Supabase (with the runtime
+/// project URL + anon key, so one build works against any deployment).
+async fn auth_config_handler() -> Response {
+    let supabase_mode = std::env::var("KYMA_AUTH_BACKEND")
+        .map(|v| v == "supabase")
+        .unwrap_or(false);
+    let body = match (
+        supabase_mode,
+        std::env::var("KYMA_SUPABASE_URL").ok().filter(|s| !s.is_empty()),
+    ) {
+        (true, Some(url)) => {
+            let providers: Vec<String> = std::env::var("KYMA_SUPABASE_PROVIDERS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect();
+            serde_json::json!({
+                "provider": "supabase",
+                "supabase_url": url.trim_end_matches('/'),
+                "supabase_anon_key": std::env::var("KYMA_SUPABASE_ANON_KEY").ok(),
+                "oauth_providers": providers,
+            })
+        }
+        _ => serde_json::json!({ "provider": "password" }),
+    };
+    (StatusCode::OK, Json(body)).into_response()
+}
+
+// -------------------------------------------------------------------------
 // First-run setup: signup + status + environment probe
 // -------------------------------------------------------------------------
 
@@ -428,6 +565,7 @@ pub fn auth_login_router(catalog: Arc<dyn Catalog>) -> Router {
         .route("/v1/auth/refresh", post(refresh_handler))
         .route("/v1/auth/signup", post(signup_handler))
         .route("/v1/auth/status", get(auth_status_handler))
+        .route("/v1/auth/config", get(auth_config_handler))
         .route("/v1/setup/probe", get(env_probe_handler))
         .with_state(state)
 }
@@ -443,5 +581,13 @@ pub fn auth_session_router(catalog: Arc<dyn Catalog>) -> Router {
     Router::new()
         .route("/v1/auth/me", get(me_handler))
         .route("/v1/auth/logout", post(logout_handler))
+        .route(
+            "/v1/auth/tokens",
+            get(list_api_tokens_handler).post(create_api_token_handler),
+        )
+        .route(
+            "/v1/auth/tokens/:id",
+            axum::routing::delete(revoke_api_token_handler),
+        )
         .with_state(state)
 }
