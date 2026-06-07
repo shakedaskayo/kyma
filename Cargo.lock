@@ -4545,7 +4545,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-bin"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4583,7 +4583,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-catalog"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "arrow-schema",
@@ -4606,7 +4606,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-catalog-sqlite"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arrow-schema",
  "async-trait",
@@ -4622,7 +4622,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-ccmem"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "blake3",
  "serde",
@@ -4631,7 +4631,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-cli"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "arrow-schema",
@@ -4662,7 +4662,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-compaction"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -4686,7 +4686,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-connector-core"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "kyma-connectors",
  "kyma-core",
@@ -4694,7 +4694,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-connectors"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "arrow",
@@ -4735,7 +4735,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-core"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -4757,7 +4757,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-embed"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4775,7 +4775,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-exec"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -4801,7 +4801,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-format-stub-vec"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -4814,7 +4814,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-format-tlm"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -4841,7 +4841,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-graph"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4852,7 +4852,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-ingest-core"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -4879,7 +4879,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-ingest-filedrop"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -4902,7 +4902,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-ingest-kafka"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -4926,7 +4926,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-ingest-otlp"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -4952,7 +4952,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-ingest-rest"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -4977,7 +4977,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-kql"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4991,7 +4991,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-local"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5020,7 +5020,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-mcp"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "adk-rust",
  "async-trait",
@@ -5051,7 +5051,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-memory"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "arrow-schema",
@@ -5075,7 +5075,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-plan"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "arrow-schema",
  "async-trait",
@@ -5088,7 +5088,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-queue"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5106,7 +5106,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-server"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "adk-rust",
  "anyhow",
@@ -5175,7 +5175,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-storage"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "async-trait",
  "bytes",
@@ -5190,7 +5190,7 @@ dependencies = [
 
 [[package]]
 name = "kyma-web-assets"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "include_dir",
 ]
