@@ -80,7 +80,28 @@ export type WorkerStatus = "online" | "draining" | "offline";
 export interface WorkerPresence {
   session_id: string;
   realm: string;
+  /** Coding-agent kind this session belongs to (e.g. "claude-code"). */
+  agent?: string;
   last_activity: string;
+}
+
+/** One detected coding agent in a node's source inventory. */
+export interface AgentSource {
+  kind: string; // e.g. "claude-code"
+  name: string; // e.g. "Claude Code"
+  roots: string[];
+  realms: string[];
+}
+
+/**
+ * A node's source inventory. The generic shape is `{ agents: AgentSource[] }`;
+ * a legacy `claude_code` compat key may also be present on older nodes.
+ */
+export interface WorkerSources {
+  agents?: AgentSource[];
+  // back-compat: older nodes emit sources.claude_code = { roots, realms }.
+  claude_code?: { roots: string[]; realms: string[] };
+  [key: string]: unknown;
 }
 
 export interface Worker {
@@ -90,13 +111,30 @@ export interface Worker {
   kind: WorkerKind;
   capabilities: string[];
   labels: Record<string, unknown>;
-  sources: Record<string, unknown>;
+  sources: WorkerSources;
   status: WorkerStatus;
   max_concurrent: number;
   version: string;
   presence: WorkerPresence[];
   last_heartbeat: string | null;
   created_at: string;
+}
+
+/** Read a node's detected agents, falling back to the legacy compat key. */
+export function workerAgents(sources: WorkerSources | undefined): AgentSource[] {
+  if (!sources) return [];
+  if (Array.isArray(sources.agents)) return sources.agents;
+  if (sources.claude_code) {
+    return [
+      {
+        kind: "claude-code",
+        name: "Claude Code",
+        roots: sources.claude_code.roots ?? [],
+        realms: sources.claude_code.realms ?? [],
+      },
+    ];
+  }
+  return [];
 }
 
 interface WorkersEnvelope {

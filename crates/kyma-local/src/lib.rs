@@ -19,6 +19,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod agent_sources;
 mod cc_pipeline;
 mod cc_sync;
 mod cc_writeback;

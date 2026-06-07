@@ -87,6 +87,10 @@ pub struct PresenceSession {
     pub session_id: String,
     #[serde(default)]
     pub realm: Option<String>,
+    /// The coding-agent kind this session belongs to (e.g. `"claude-code"`).
+    /// `None` on older nodes that predate per-agent presence (wire-compatible).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
     pub last_activity: DateTime<Utc>,
 }
 

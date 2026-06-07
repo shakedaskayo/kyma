@@ -273,9 +273,10 @@ Scope: {scope}.
 
 PHASE 1 — REVIEW recent raw material:
 - Survey recent memories with memory_search / list_memories (scope above).
-- Survey new raw activity: run_kql/run_sql over the `claude_code_events` firehose in the \
-`default` database (recent sessions, what the user worked on) and any synced Claude Code \
-memory files already in the memory store.
+- Survey new raw activity: run_kql/run_sql over the coding-agent activity firehose \
+(`claude_code_events` table — events streamed from the connected coding agents) in the \
+`default` database (recent sessions, what the user worked on) and any memory files synced \
+from your nodes' coding agents that are already in the memory store.
 "
     );
     if gap_fill {

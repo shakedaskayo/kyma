@@ -1,14 +1,18 @@
 //! The kyma node daemon (`kyma worker run`) — a fabric worker on any compute.
 //!
 //! A node is more than a job executor: on a developer machine it OWNS local
-//! sources (Claude Code memory files, transcripts) that only it can read. The
-//! daemon therefore:
+//! sources (a coding agent's memory files / transcripts — Claude Code, Cursor,
+//! Windsurf, Codex, …) that only it can read. The daemon therefore:
 //! 1. registers with the control plane (worker token) and heartbeats with
 //!    presence (active local coding-agent sessions) + its source inventory,
 //! 2. self-enqueues `source_sync` jobs pinned to itself (only the node sees
-//!    its local file state) and executes them via the existing sync pipeline,
+//!    its local file state) and executes them via the per-agent sync pipeline,
 //! 3. long-polls `POST /v1/jobs/claim` for any other kinds the operator
 //!    explicitly accepts (`--accept`).
+//!
+//! Which agents are present is decided by the detector registry in
+//! [`crate::agent_sources`] — a cheap fs probe per agent. Adding an agent is
+//! one registry entry; only Claude Code has a working ingestion pipeline today.
 //!
 //! Low-impact by default: a dev-laptop daemon accepts ONLY `source_sync`
 //! (one concurrent job). Heavy kinds (dreaming, connector syncs) run on the
@@ -16,13 +20,14 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use kyma_core::fabric::{ClaimedJob, Heartbeat, PresenceSession, WorkerRegistration};
+use kyma_core::fabric::{ClaimedJob, Heartbeat, WorkerRegistration};
 use kyma_jobs::{ExecutorRegistry, JobCtx, JobError, JobExecutor, JobQueue, JobRunner};
 use serde_json::{json, Value};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
+
+use crate::agent_sources;
 
 #[derive(Debug, Clone)]
 pub struct NodeConfig {
@@ -179,84 +184,13 @@ impl JobQueue for RemoteQueue {
     }
 }
 
-// ── local sources + presence ─────────────────────────────────────────────────
-
-fn claude_projects_root() -> Option<PathBuf> {
-    dirs_home().map(|h| h.join(".claude").join("projects"))
-}
-
-fn dirs_home() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
-}
-
-/// Source inventory: which Claude Code project realms live on this node.
-fn discover_sources() -> Value {
-    let Some(root) = claude_projects_root() else {
-        return json!({});
-    };
-    let mut realms: Vec<String> = vec![];
-    if let Ok(entries) = std::fs::read_dir(&root) {
-        for e in entries.flatten() {
-            if e.path().is_dir() {
-                if let Some(name) = e.file_name().to_str() {
-                    realms.push(name.to_string());
-                }
-            }
-        }
-    }
-    realms.sort();
-    json!({
-        "claude_code": {
-            "roots": [root.to_string_lossy()],
-            "realms": realms,
-        }
-    })
-}
-
-/// Presence: coding-agent sessions active on this machine, inferred from
-/// transcript files (`<session>.jsonl`) modified within the last 10 minutes.
-fn discover_presence() -> Vec<PresenceSession> {
-    let Some(root) = claude_projects_root() else {
-        return vec![];
-    };
-    let cutoff = std::time::SystemTime::now() - Duration::from_secs(600);
-    let mut out = vec![];
-    let Ok(projects) = std::fs::read_dir(&root) else {
-        return vec![];
-    };
-    for proj in projects.flatten() {
-        let realm = proj.file_name().to_string_lossy().to_string();
-        let Ok(files) = std::fs::read_dir(proj.path()) else {
-            continue;
-        };
-        for f in files.flatten() {
-            let path = f.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-                continue;
-            }
-            let Ok(meta) = f.metadata() else { continue };
-            let Ok(modified) = meta.modified() else { continue };
-            if modified >= cutoff {
-                out.push(PresenceSession {
-                    session_id: path
-                        .file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_default(),
-                    realm: Some(realm.clone()),
-                    last_activity: chrono::DateTime::from(modified),
-                });
-            }
-        }
-    }
-    out.truncate(16);
-    out
-}
-
 // ── source_sync executor ─────────────────────────────────────────────────────
 
-/// Runs one local sync pass (Claude Code files → engine/control plane) via
-/// the existing `run_sync` machinery. Registered only on node daemons —
-/// the server's embedded worker has no local sources.
+/// Runs one local sync pass (a coding agent's files → engine/control plane).
+/// The job payload's `source` field selects the agent kind; `claude-code`
+/// drives the existing `run_sync` machinery, other detected kinds are accepted
+/// but no-op until their ingest pipeline lands. Registered only on node
+/// daemons — the server's embedded worker has no local sources.
 pub struct SourceSyncExecutor;
 
 #[async_trait]
@@ -265,20 +199,43 @@ impl JobExecutor for SourceSyncExecutor {
         kyma_core::fabric::JOB_SOURCE_SYNC
     }
 
-    async fn run(&self, ctx: &JobCtx, _job: &ClaimedJob) -> Result<Value, JobError> {
-        ctx.progress
-            .push(json!({ "current_phase": "syncing local sources" }))
-            .await;
-        crate::run_sync(crate::SyncOptions {
-            watch: false,
-            dry_run: false,
-            cc_only: false,
-            cloud_only: false,
-            project: None,
-        })
-        .await
-        .map_err(|e| JobError::Transient(e.to_string()))?;
-        Ok(json!({ "synced": true }))
+    async fn run(&self, ctx: &JobCtx, job: &ClaimedJob) -> Result<Value, JobError> {
+        // Default to claude-code for back-compat with older payloads.
+        let source = job
+            .payload
+            .get("source")
+            .and_then(|v| v.as_str())
+            .unwrap_or("claude-code")
+            // tolerate the legacy underscore spelling.
+            .replace('_', "-");
+
+        match source.as_str() {
+            "claude-code" => {
+                ctx.progress
+                    .push(json!({ "current_phase": "syncing Claude Code sources" }))
+                    .await;
+                crate::run_sync(crate::SyncOptions {
+                    watch: false,
+                    dry_run: false,
+                    cc_only: false,
+                    cloud_only: false,
+                    project: None,
+                })
+                .await
+                .map_err(|e| JobError::Transient(e.to_string()))?;
+                Ok(json!({ "synced": true, "source": "claude-code" }))
+            }
+            other => {
+                // The seam for future ingest pipelines: the agent is detected
+                // and its source_sync job is accepted, but there's no pipeline
+                // for it yet, so it cleanly no-ops.
+                tracing::info!(source = %other, "ingestion for {other} not yet implemented — skipping");
+                ctx.progress
+                    .push(json!({ "current_phase": format!("skipping {other} (no ingest pipeline)") }))
+                    .await;
+                Ok(json!({ "skipped": other }))
+            }
+        }
     }
 }
 
@@ -289,20 +246,30 @@ pub async fn run_node(cfg: NodeConfig) -> Result<()> {
     let hostname = hostname_string();
     let queue = Arc::new(RemoteQueue::new(&cfg));
 
+    // Capabilities: the generic `sources` capability when this node accepts
+    // source_sync, plus a per-kind `source:<kind>` for each detected agent
+    // (e.g. source:claude-code). Other accepted kinds pass through verbatim.
+    let detected = agent_sources::detect_all();
+    let mut capabilities: Vec<String> = vec![];
+    for k in &cfg.accept {
+        match k.as_str() {
+            "source_sync" => {
+                capabilities.push("sources".to_string());
+                for a in &detected {
+                    capabilities.push(agent_sources::capability_for(a.kind));
+                }
+            }
+            other => capabilities.push(other.to_string()),
+        }
+    }
+
     let reg = WorkerRegistration {
         name: cfg.name.clone().unwrap_or_else(|| format!("node@{hostname}")),
         kind: kyma_core::fabric::WorkerKind::Daemon,
         hostname: Some(hostname.clone()),
-        capabilities: cfg
-            .accept
-            .iter()
-            .map(|k| match k.as_str() {
-                "source_sync" => "source:claude_code".to_string(),
-                other => other.to_string(),
-            })
-            .collect(),
+        capabilities,
         labels: json!({}),
-        sources: discover_sources(),
+        sources: agent_sources::discover_sources(),
         max_concurrent: cfg.max_concurrent as i32,
         version: Some(env!("CARGO_PKG_VERSION").to_string()),
     };
@@ -322,8 +289,8 @@ pub async fn run_node(cfg: NodeConfig) -> Result<()> {
             tick.tick().await;
             let hb = Heartbeat {
                 current_jobs: vec![],
-                presence: discover_presence(),
-                sources: Some(discover_sources()),
+                presence: agent_sources::discover_presence(),
+                sources: Some(agent_sources::discover_sources()),
             };
             if let Err(e) = hb_queue.heartbeat(&hb).await {
                 eprintln!("heartbeat failed (continuing): {e}");
@@ -347,14 +314,26 @@ pub async fn run_node(cfg: NodeConfig) -> Result<()> {
         let mut tick = tokio::time::interval(Duration::from_secs(poll.max(15)));
         loop {
             tick.tick().await;
-            if let Err(e) = enq_queue
-                .enqueue_self(&json!({
-                    "kind": "source_sync",
-                    "payload": { "source": "claude_code" },
-                }))
-                .await
-            {
-                eprintln!("source_sync enqueue failed (continuing): {e}");
+            // One source_sync per detected agent kind (deduped server-side by
+            // jobs_source_sync_uniq while one is in flight). If no agent is
+            // detected, fall back to claude-code so a freshly-installed node
+            // still tries the default pipeline.
+            let detected = agent_sources::detect_all();
+            let kinds: Vec<String> = if detected.is_empty() {
+                vec!["claude-code".to_string()]
+            } else {
+                detected.iter().map(|a| a.kind.to_string()).collect()
+            };
+            for kind in kinds {
+                if let Err(e) = enq_queue
+                    .enqueue_self(&json!({
+                        "kind": "source_sync",
+                        "payload": { "source": kind },
+                    }))
+                    .await
+                {
+                    eprintln!("source_sync enqueue failed for {kind} (continuing): {e}");
+                }
             }
         }
     });
