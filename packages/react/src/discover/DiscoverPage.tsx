@@ -61,14 +61,26 @@ export type DiscoverPageProps = {
    * (e.g. the web route persisting query per tab).
    */
   onSearchChange?: (search: string) => void;
+  /**
+   * Called when the user changes the scope. Additive — enables external
+   * persistence of scope state (e.g. the web route persisting per tab).
+   */
+  onScopeChange?: (scope: Scope) => void;
+  /**
+   * Called when the user changes the time range. Additive — enables external
+   * persistence of time-range state (e.g. the web route persisting per tab).
+   */
+  onTimeRangeChange?: (timeRange: TimeRange) => void;
 };
 
 // ── Internal component (reads from DiscoverStore) ─────────────────────────────
 
-function DiscoverInner({ onExportKql, onRowOpen, onSearchChange }: {
+function DiscoverInner({ onExportKql, onRowOpen, onSearchChange, onScopeChange, onTimeRangeChange }: {
   onExportKql?: (kql: string) => void;
   onRowOpen?: (row: Record<string, unknown>, source: string) => void;
   onSearchChange?: (search: string) => void;
+  onScopeChange?: (scope: Scope) => void;
+  onTimeRangeChange?: (timeRange: TimeRange) => void;
 }) {
   const search = useDiscoverStore((s) => s.search);
   const scope = useDiscoverStore((s) => s.scope);
@@ -81,8 +93,10 @@ function DiscoverInner({ onExportKql, onRowOpen, onSearchChange }: {
 
   const _setSearch = useDiscoverStore((s) => s.setSearch);
   const setSearch = (v: string) => { _setSearch(v); onSearchChange?.(v); };
-  const setScope = useDiscoverStore((s) => s.setScope);
-  const setTimeRange = useDiscoverStore((s) => s.setTimeRange);
+  const _setScope = useDiscoverStore((s) => s.setScope);
+  const setScope = (s: Scope) => { _setScope(s); onScopeChange?.(s); };
+  const _setTimeRange = useDiscoverStore((s) => s.setTimeRange);
+  const setTimeRange = (tr: TimeRange) => { _setTimeRange(tr); onTimeRangeChange?.(tr); };
   const toggleVisible = useDiscoverStore((s) => s.toggleVisible);
   const setSelected = useDiscoverStore((s) => s.setSelected);
   const toggleColumn = useDiscoverStore((s) => s.toggleColumn);
@@ -286,6 +300,8 @@ export function DiscoverPage({
   onExportKql,
   onRowOpen,
   onSearchChange,
+  onScopeChange,
+  onTimeRangeChange,
 }: DiscoverPageProps) {
   const storeRef = useRef<ReturnType<typeof createDiscoverStore> | null>(null);
   if (!storeRef.current) {
@@ -302,6 +318,8 @@ export function DiscoverPage({
         onExportKql={onExportKql}
         onRowOpen={onRowOpen}
         onSearchChange={onSearchChange}
+        onScopeChange={onScopeChange}
+        onTimeRangeChange={onTimeRangeChange}
       />
     </DiscoverStoreContext.Provider>
   );

@@ -61,6 +61,16 @@ export interface KymaDiscoverProps {
    * Useful for consumers that want to persist query state externally.
    */
   onSearchChange?: (search: string) => void;
+  /**
+   * Called when the user changes the scope.
+   * Useful for consumers that want to persist scope state externally.
+   */
+  onScopeChange?: (scope: Scope) => void;
+  /**
+   * Called when the user changes the time range.
+   * Useful for consumers that want to persist time range state externally.
+   */
+  onTimeRangeChange?: (timeRange: TimeRange) => void;
 }
 
 export function KymaDiscover({
@@ -74,6 +84,8 @@ export function KymaDiscover({
   onRowOpen,
   onExportKql,
   onSearchChange,
+  onScopeChange,
+  onTimeRangeChange,
 }: KymaDiscoverProps) {
   return (
     <KymaErrorBoundary fallback={fallback}>
@@ -88,6 +100,8 @@ export function KymaDiscover({
           onExportKql={onExportKql}
           onRowOpen={onRowOpen}
           onSearchChange={onSearchChange}
+          onScopeChange={onScopeChange}
+          onTimeRangeChange={onTimeRangeChange}
         />
       </div>
     </KymaErrorBoundary>
