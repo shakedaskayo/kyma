@@ -22,6 +22,8 @@ export type Capabilities = {
   users_admin: boolean;
   /** Live-tail WebSocket (`GET /v1/explore/live`). */
   explore_live: boolean;
+  /** Inline agent surface (`POST /v1/agent/ask` + sessions/skills/memory). */
+  agent: boolean;
 };
 
 export const FULL_CAPABILITIES: Capabilities = {
@@ -32,6 +34,7 @@ export const FULL_CAPABILITIES: Capabilities = {
   saved_views: true,
   users_admin: true,
   explore_live: true,
+  agent: true,
 };
 
 export async function fetchCapabilities(t: KymaTransport): Promise<Capabilities> {

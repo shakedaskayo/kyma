@@ -84,6 +84,28 @@ function stubFetch(fetchImpl: typeof fetch) {
   vi.stubGlobal("fetch", fetchImpl);
 }
 
+/** URL-aware stub: serves capabilities JSON to the gate, fresh SSE per ask. */
+function agentFetch(parts: object[]): ReturnType<typeof vi.fn> {
+  return vi.fn().mockImplementation((url: string) => {
+    if (String(url).includes("/v1/capabilities")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ mode: "server", agent: true }), {
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+        }),
+      );
+    }
+    return Promise.resolve(sseResponse(parts));
+  });
+}
+
+/** The /v1/agent/ask calls recorded by an agentFetch stub. */
+function askCalls(fetchMock: ReturnType<typeof vi.fn>): [string, RequestInit][] {
+  return (fetchMock.mock.calls as [string, RequestInit][]).filter(([u]) =>
+    String(u).includes("/v1/agent/ask"),
+  );
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("KymaAgentChat", () => {
@@ -116,17 +138,13 @@ describe("KymaAgentChat", () => {
   });
 
   it("sends user message and streams assistant reply", async () => {
-    const fetchMock = vi.fn().mockReturnValue(
-      Promise.resolve(
-        sseResponse([
-          { type: "text-start", id: "t1" },
-          { type: "text-delta", id: "t1", delta: "Hello " },
-          { type: "text-delta", id: "t1", delta: "from Kyma!" },
-          { type: "text-end", id: "t1" },
-        ]),
-      ),
-    );
-    stubFetch(fetchMock);
+    const fetchMock = agentFetch([
+      { type: "text-start", id: "t1" },
+      { type: "text-delta", id: "t1", delta: "Hello " },
+      { type: "text-delta", id: "t1", delta: "from Kyma!" },
+      { type: "text-end", id: "t1" },
+    ]);
+    stubFetch(fetchMock as unknown as typeof fetch);
 
     render(provider(<KymaAgentChat />));
 
@@ -150,19 +168,16 @@ describe("KymaAgentChat", () => {
       { timeout: 5000 },
     );
 
-    // Verify fetch was called with the right body shape
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/v1/agent/ask");
-    const body = JSON.parse(init.body as string);
+    // Verify the ask call carried the right body shape
+    const asks = askCalls(fetchMock);
+    expect(asks).toHaveLength(1);
+    const body = JSON.parse(asks[0][1].body as string);
     expect(body.question).toBe("What tables exist?");
   });
 
   it("includes Authorization header (auth delegation via client transport)", async () => {
-    const fetchMock = vi.fn().mockReturnValue(
-      Promise.resolve(sseResponse([])),
-    );
-    stubFetch(fetchMock);
+    const fetchMock = agentFetch([]);
+    stubFetch(fetchMock as unknown as typeof fetch);
 
     render(provider(<KymaAgentChat />));
 
@@ -170,9 +185,9 @@ describe("KymaAgentChat", () => {
     fireEvent.change(textarea, { target: { value: "hello" } });
     fireEvent.submit(textarea.closest("form")!);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(askCalls(fetchMock)).toHaveLength(1));
 
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [, init] = askCalls(fetchMock)[0];
     const headers =
       init.headers instanceof Headers
         ? Object.fromEntries(init.headers.entries())
@@ -181,17 +196,13 @@ describe("KymaAgentChat", () => {
   });
 
   it("onMessage fires once with assembled text when assistant turn completes", async () => {
-    const fetchMock = vi.fn().mockReturnValue(
-      Promise.resolve(
-        sseResponse([
-          { type: "text-start", id: "t1" },
-          { type: "text-delta", id: "t1", delta: "Hello " },
-          { type: "text-delta", id: "t1", delta: "world!" },
-          { type: "text-end", id: "t1" },
-        ]),
-      ),
-    );
-    stubFetch(fetchMock);
+    const fetchMock = agentFetch([
+      { type: "text-start", id: "t1" },
+      { type: "text-delta", id: "t1", delta: "Hello " },
+      { type: "text-delta", id: "t1", delta: "world!" },
+      { type: "text-end", id: "t1" },
+    ]);
+    stubFetch(fetchMock as unknown as typeof fetch);
 
     const onMessage = vi.fn();
     render(provider(<KymaAgentChat onMessage={onMessage} />));
@@ -241,10 +252,8 @@ describe("KymaAgentChat", () => {
   });
 
   it("database prop overrides the header database", async () => {
-    const fetchMock = vi.fn().mockReturnValue(
-      Promise.resolve(sseResponse([])),
-    );
-    stubFetch(fetchMock);
+    const fetchMock = agentFetch([]);
+    stubFetch(fetchMock as unknown as typeof fetch);
 
     render(provider(<KymaAgentChat database="mydb" />));
 
@@ -252,8 +261,8 @@ describe("KymaAgentChat", () => {
     fireEvent.change(textarea, { target: { value: "query" } });
     fireEvent.submit(textarea.closest("form")!);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    await waitFor(() => expect(askCalls(fetchMock)).toHaveLength(1));
+    const [, init] = askCalls(fetchMock)[0];
     const body = JSON.parse(init.body as string);
     expect(body.database).toBe("mydb");
   });
@@ -264,7 +273,15 @@ describe("KymaAgentChat", () => {
 
     const fetchMock = vi
       .fn()
-      .mockImplementation((_url: string, init: RequestInit) => {
+      .mockImplementation((url: string, init: RequestInit) => {
+        if (String(url).includes("/v1/capabilities")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ mode: "server", agent: true }), {
+              status: 200,
+              headers: new Headers({ "content-type": "application/json" }),
+            }),
+          );
+        }
         call++;
         if (call === 1) {
           return Promise.resolve(

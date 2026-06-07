@@ -1,11 +1,11 @@
 /**
  * KymaAgentChat — public embeddable agent chat component.
  *
- * Wraps AgentConsole in a KymaErrorBoundary. No CapabilityGate is applied:
- * the Capabilities type has no flag that maps cleanly to the agent surface
- * (the agent endpoint exists independently of connectors/credentials/etc.).
- * The component renders unconditionally and the underlying transport will
- * surface a clear error if `/v1/agent/ask` is absent on the target server.
+ * Wraps AgentConsole in a KymaErrorBoundary + CapabilityGate on the `agent`
+ * capability flag: servers without the inline agent surface render a
+ * "not available on this server" card instead of 404-ing (the gate fails
+ * OPEN while capabilities load — servers predating the flag report it via
+ * FULL_CAPABILITIES defaulting).
  *
  * Props deliberately omitted:
  *   - systemContext: the AskRequest body shape has no `system_context` field
@@ -16,6 +16,7 @@
  */
 import type { ReactNode, CSSProperties } from "react";
 import { KymaErrorBoundary } from "../internal/KymaErrorBoundary";
+import { CapabilityGate } from "../internal/CapabilityGate";
 import { AgentConsole } from "./AgentConsole";
 
 export interface KymaAgentChatProps {
@@ -56,11 +57,13 @@ export function KymaAgentChat({
         className={className}
         style={{ height: "100%", width: "100%", ...style }}
       >
-        <AgentConsole
-          database={database}
-          placeholder={placeholder}
-          onAssistantMessage={onMessage}
-        />
+        <CapabilityGate capability="agent">
+          <AgentConsole
+            database={database}
+            placeholder={placeholder}
+            onAssistantMessage={onMessage}
+          />
+        </CapabilityGate>
       </div>
     </KymaErrorBoundary>
   );
