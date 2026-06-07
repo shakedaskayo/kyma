@@ -180,10 +180,15 @@ detect_platform() {
 resolve_version() {
   [ -n "$VERSION" ] && { printf '%s' "$VERSION"; return; }
   local v
+  # Only CLI releases (vX.Y.Z) carry binaries — the repo also cuts npm-package
+  # releases (@kyma-ai/*) that must never win "latest" here.
   v=$(curl_gh -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
       | grep '"tag_name"' | head -1 | cut -d'"' -f4 || true)
-  [ -z "$v" ] && v=$(curl_gh -fsSL "https://api.github.com/repos/${REPO}/releases" 2>/dev/null \
-      | grep '"tag_name"' | head -1 | cut -d'"' -f4 || true)
+  case "$v" in
+    v[0-9]*) ;;
+    *) v=$(curl_gh -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" 2>/dev/null \
+        | grep '"tag_name"' | cut -d'"' -f4 | grep '^v[0-9]' | head -1 || true) ;;
+  esac
   printf '%s' "$v"
 }
 
