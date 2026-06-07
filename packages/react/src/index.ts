@@ -40,9 +40,11 @@ export type { KymaErrorBoundaryProps } from "./internal/KymaErrorBoundary";
 export { CapabilityGate } from "./internal/CapabilityGate";
 export type { CapabilityGateProps } from "./internal/CapabilityGate";
 
-// ── Dashboards ────────────────────────────────────────────────────────────────
-export { KymaDashboard } from "./dashboards/KymaDashboard";
-export type { KymaDashboardProps } from "./dashboards/KymaDashboard";
+// View components are NOT re-exported from the root on purpose: each lives on
+// its own subpath (`@kyma-ai/react/graph`, `/query`, `/discover`, `/dashboards`,
+// `/agent`) so a consumer importing only the provider/hooks never pulls a
+// view's heavy dependency (echarts, monaco, force-graph, ai-sdk) into their
+// static graph. Dashboard types that hooks return are re-exported above.
 
 // ── Themes ────────────────────────────────────────────────────────────────────
 export { kymaDark, kymaLight } from "./theme/presets";

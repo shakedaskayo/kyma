@@ -92,7 +92,7 @@ importers:
         specifier: ^13.13.0
         version: 13.13.0(react@18.3.1)
       '@kyma-ai/client':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../client
       '@monaco-editor/react':
         specifier: 4.6.0
@@ -103,21 +103,9 @@ importers:
       '@radix-ui/react-dialog':
         specifier: ^1.1.15
         version: 1.1.15(@types/react-dom@18.3.0)(@types/react@18.3.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-dropdown-menu':
-        specifier: ^2.1.16
-        version: 2.1.16(@types/react-dom@18.3.0)(@types/react@18.3.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-label':
-        specifier: ^2.1.8
-        version: 2.1.8(@types/react-dom@18.3.0)(@types/react@18.3.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@radix-ui/react-scroll-area':
-        specifier: ^1.2.10
-        version: 1.2.10(@types/react-dom@18.3.0)(@types/react@18.3.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@radix-ui/react-slot':
         specifier: ^1.2.4
         version: 1.2.4(@types/react@18.3.3)(react@18.3.1)
-      '@radix-ui/react-tooltip':
-        specifier: ^1.2.8
-        version: 1.2.8(@types/react-dom@18.3.0)(@types/react@18.3.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tanstack/react-query':
         specifier: ^5.99.2
         version: 5.99.2(react@18.3.1)
@@ -130,9 +118,6 @@ importers:
       ai:
         specifier: ^6.0.193
         version: 6.0.193(zod@3.25.76)
-      apache-arrow:
-        specifier: 17.0.0
-        version: 17.0.0
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

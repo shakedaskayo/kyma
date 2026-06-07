@@ -3,7 +3,15 @@ import react from "@vitejs/plugin-react";
 import dts from "vite-plugin-dts";
 
 export default defineConfig({
-  plugins: [react(), dts({ rollupTypes: false })],
+  plugins: [
+    react(),
+    // Don't emit declarations for tests, stories, or fixtures — they'd ship
+    // to npm under dist/ otherwise (files: ["dist"]).
+    dts({
+      rollupTypes: false,
+      exclude: ["**/*.test.*", "**/*.stories.*", "**/__fixtures__/**", ".storybook/**"],
+    }),
+  ],
   build: {
     lib: {
       entry: {
