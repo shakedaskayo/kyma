@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Embeddable React components for the Kyma context engine — Graph, Discover, Query, Dashboards, Agent",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shakedaskayo/kyma.git",
+    "directory": "packages/react"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "types": "./dist/index.d.ts",
   "exports": {

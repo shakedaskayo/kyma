@@ -1,0 +1,56 @@
+name: packages
+
+# CI gate for @kyma-ai/client and @kyma-ai/react.
+# Runs on every PR and push to main that touches package sources.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "examples/embed-demo/**"
+      - ".changeset/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/packages.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "examples/embed-demo/**"
+      - ".changeset/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+
+jobs:
+  packages:
+    name: build + test + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build:packages
+
+      - name: Test packages
+        run: pnpm test:packages
+
+      - name: Typecheck all
+        run: pnpm typecheck:all
+
+      - name: Build embed-demo (host-app integration smoke test)
+        run: pnpm --filter kyma-embed-demo build
+
+      - name: Build Storybook
+        run: pnpm --filter @kyma-ai/react build-storybook

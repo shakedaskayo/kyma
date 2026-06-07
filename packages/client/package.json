@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Framework-agnostic TypeScript client for the Kyma context engine API",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shakedaskayo/kyma.git",
+    "directory": "packages/client"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
