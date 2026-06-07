@@ -7,6 +7,9 @@ export default withMermaid(defineConfig({
   description: 'Production knowledge, as a query.',
   cleanUrls: true,
 
+  // Served from GitHub Pages at shakedaskayo.github.io/kyma/.
+  base: '/kyma/',
+
   // `README.md` is operator-facing notes on the docs site itself, not part of
   // the published surface. Sibling of `index.md`, so without exclusion it
   // would otherwise be picked up as a routable page.
@@ -16,21 +19,22 @@ export default withMermaid(defineConfig({
   ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?/],
 
   sitemap: {
-    hostname: 'https://getkyma.dev',
+    // Must include the base — VitePress sitemap URLs are page paths without it.
+    hostname: 'https://shakedaskayo.github.io/kyma/',
   },
 
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/icons/kyma-mark.svg' }],
-    ['link', { rel: 'canonical', href: 'https://getkyma.dev/' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/kyma/icons/kyma-mark.svg' }],
+    ['link', { rel: 'canonical', href: 'https://shakedaskayo.github.io/kyma/' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:title', content: 'kyma — production knowledge, as a query' }],
     ['meta', { property: 'og:description', content: 'A unified columnar query engine for every signal your stack emits. Logs, traces, metrics, plus first-class federation to Postgres, MySQL, MongoDB. Sub-second latency over a decade of history.' }],
-    ['meta', { property: 'og:url', content: 'https://getkyma.dev/' }],
-    ['meta', { property: 'og:image', content: 'https://getkyma.dev/icons/kyma-mark.svg' }],
+    ['meta', { property: 'og:url', content: 'https://shakedaskayo.github.io/kyma/' }],
+    ['meta', { property: 'og:image', content: 'https://shakedaskayo.github.io/kyma/icons/kyma-mark.svg' }],
     ['meta', { name: 'twitter:card', content: 'summary' }],
     ['meta', { name: 'twitter:title', content: 'kyma — production knowledge, as a query' }],
     ['meta', { name: 'twitter:description', content: 'One columnar query engine for every signal your stack emits. By AgentcyLabs.' }],
-    ['meta', { name: 'twitter:image', content: 'https://getkyma.dev/icons/kyma-mark.svg' }],
+    ['meta', { name: 'twitter:image', content: 'https://shakedaskayo.github.io/kyma/icons/kyma-mark.svg' }],
   ],
 
   themeConfig: {
@@ -190,7 +194,7 @@ export default withMermaid(defineConfig({
       provider: 'local',
     },
     footer: {
-      message: 'An open project by <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link"><img src="/icons/brand/agentcy.svg" alt="" width="12" height="12" class="kyma-footer-mark"/> AgentcyLabs</a> · MIT licensed.',
+      message: 'An open project by <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link"><img src="/kyma/icons/brand/agentcy.svg" alt="" width="12" height="12" class="kyma-footer-mark"/> AgentcyLabs</a> · MIT licensed.',
       copyright: 'Copyright © 2026 AgentcyLabs · <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link">agentcylabs.com</a> · <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener" class="kyma-footer-link">GitHub</a>',
     },
   },
