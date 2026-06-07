@@ -13,8 +13,9 @@ intelligence layer on top.
 
 A run works in phases:
 
-1. **Review** — surveys recent memories and the conversation firehose
-   (`claude_code_events`) plus memory files synced from your nodes.
+1. **Review** — surveys recent memories and the coding-agent activity
+   firehose (the `claude_code_events` table — events streamed from the coding
+   agents connected to your nodes) plus memory files synced from those agents.
 2. **Gap-fill** — when a memory references something with missing context,
    the agent uses `list_connectors` + `connector_read` to fetch fresh,
    read-only context from your sources (a GitHub README/file/issue, a

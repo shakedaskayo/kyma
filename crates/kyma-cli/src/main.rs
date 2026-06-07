@@ -394,8 +394,10 @@ enum WorkerAction {
     Create {
         #[arg(long)]
         name: String,
-        /// Capabilities to advertise (comma-separated).
-        #[arg(long, value_delimiter = ',', default_value = "source:claude_code")]
+        /// Capabilities to advertise (comma-separated). Default: `sources`
+        /// (this node owns local coding-agent sources). The running daemon also
+        /// advertises a per-agent `source:<kind>` for each detected agent.
+        #[arg(long, value_delimiter = ',', default_value = "sources")]
         capabilities: Vec<String>,
     },
     /// List registered workers (node discovery).

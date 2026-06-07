@@ -6,10 +6,19 @@ workers. Locally you get this for free: the server runs an *embedded worker*
 in-process. In production you can register additional workers on any compute.
 
 A worker on a developer machine is more than compute: it is a **node of the
-distributed context engine**. It owns local sources (Claude Code memory
-files, transcripts) only it can read, reports *presence* (which coding-agent
-sessions are active there), and syncs that raw material into the shared
-engine — so memories captured on one machine are recallable from every other.
+distributed context engine**. It owns local sources — a coding agent's memory
+files and transcripts — that only it can read, reports *presence* (which
+coding-agent sessions are active there), and syncs that raw material into the
+shared engine, so memories captured on one machine are recallable from every
+other.
+
+Kyma is engine-agnostic: a small **detector registry** decides which coding
+agents live on a node. Each detector is a cheap filesystem probe that reports
+the agent's roots, realms, and active sessions; detectors that find nothing
+report nothing. Claude Code (`~/.claude/projects`) ships with a full ingestion
+pipeline today; Cursor, Windsurf, and Codex are detected (so they show up in
+node inventory and capabilities) ahead of their pipelines landing. Adding an
+agent is one entry in the registry — see `kyma-local::agent_sources`.
 
 ## Quick start
 
@@ -27,9 +36,11 @@ kyma worker run --server https://kyma.example.com --token kyw_…
 ```
 
 By default the daemon is **low-impact**: it accepts only `source_sync` jobs
-(reading the machine's own Claude Code files), self-scheduled and pinned to
-itself. One job at a time; a 30s heartbeat carries presence + its source
-inventory.
+(reading the machine's own coding-agent files — one per detected agent),
+self-scheduled and pinned to itself. One job at a time; a 30s heartbeat carries
+presence + its source inventory. The daemon advertises the generic `sources`
+capability plus a per-agent `source:<kind>` (e.g. `source:claude-code`) for
+each agent it detects.
 
 See every node, its sources, presence, and liveness:
 
@@ -49,7 +60,7 @@ kyma worker revoke <worker_id>
 |---|---|---|
 | `connector_sync` | Scheduled connector ingestion | Embedded worker (any `connector`-capable worker) |
 | `dreaming` | Agentic memory housekeeping | Embedded worker (capability-routed) |
-| `source_sync` | A node's local Claude Code files → the engine | Pinned to the owning node |
+| `source_sync` | A node's local coding-agent files → the engine (one per detected agent) | Pinned to the owning node |
 
 Remote execution of `dreaming` and `connector_sync` on daemons is a planned
 follow-up (the claim/lease surface already supports it).

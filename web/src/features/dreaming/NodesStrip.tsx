@@ -6,6 +6,7 @@ import { SimpleTooltip } from "@/components/ui/tooltip";
 import { relTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { Worker, WorkerStatus } from "@/sdk/dreaming";
+import { workerAgents } from "@/sdk/dreaming";
 import { useWorkers } from "./useDreaming";
 
 const STATUS_TONE: Record<WorkerStatus, StatusTone> = {
@@ -60,6 +61,9 @@ function NodeCard({ worker }: { worker: Worker }) {
   const caps = worker.capabilities ?? [];
   const shown = caps.slice(0, 3);
   const overflow = caps.length - shown.length;
+  // Detected coding agents this node owns as local sources (new `agents`
+  // array, with a fallback to the legacy claude_code compat key).
+  const agents = workerAgents(worker.sources);
 
   return (
     <div className="flex w-56 shrink-0 flex-col gap-1.5 rounded-lg border bg-card p-3 shadow-elev-1">
@@ -95,6 +99,18 @@ function NodeCard({ worker }: { worker: Worker }) {
             </SimpleTooltip>
           )}
         </div>
+      )}
+
+      {agents.length > 0 && (
+        <SimpleTooltip
+          label={agents
+            .map((a) => `${a.name}${a.realms.length ? ` · ${a.realms.length} realms` : ""}`)
+            .join(", ")}
+        >
+          <div className="truncate text-[10px] text-muted-foreground">
+            sources: {agents.map((a) => a.name).join(", ")}
+          </div>
+        </SimpleTooltip>
       )}
 
       <div className="mt-auto flex items-center justify-between text-[10px] text-muted-foreground">
