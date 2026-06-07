@@ -1,6 +1,6 @@
 {
   "name": "@kyma-ai/client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Framework-agnostic TypeScript client for the Kyma context engine API",
   "license": "Apache-2.0",
   "repository": {
@@ -16,9 +16,14 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "vite build",
@@ -27,7 +32,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": { "apache-arrow": "17.0.0" },
+  "dependencies": {
+    "apache-arrow": "17.0.0"
+  },
   "devDependencies": {
     "typescript": "5.5.4",
     "vite": "5.4.0",

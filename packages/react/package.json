@@ -1,6 +1,6 @@
 {
   "name": "@kyma-ai/react",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Embeddable React components for the Kyma context engine — Graph, Discover, Query, Dashboards, Agent",
   "license": "Apache-2.0",
   "repository": {
