@@ -19,7 +19,7 @@ export function formatSummary(args: {
 
 export function SummaryLine(props: Parameters<typeof formatSummary>[0]) {
   return (
-    <div className="ky-px-3 ky-py-1 ky-text-xs ky-text-muted-foreground ky-border-b flex ky-items-center ky-gap-1">
+    <div className="ky-px-3 ky-py-1 ky-text-xs ky-text-muted-foreground ky-border-b ky-flex ky-items-center ky-gap-1">
       {formatSummary(props)}
     </div>
   );
