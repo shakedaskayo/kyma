@@ -1,0 +1,83 @@
+import type { Dashboard, DashboardWithPanels } from "@kyma-ai/client";
+
+export const DASHBOARDS_FIXTURE: Dashboard[] = [
+  {
+    id: "d1",
+    name: "Service Health",
+    description: "Real-time service health overview",
+    time_range_preset: "last_1h",
+    refresh_interval_seconds: 30,
+    created_at: "2026-01-15T09:00:00Z",
+    updated_at: "2026-05-20T14:30:00Z",
+  },
+  {
+    id: "d2",
+    name: "Error Analysis",
+    description: "Error rates and patterns",
+    time_range_preset: "last_24h",
+    refresh_interval_seconds: 60,
+    created_at: "2026-02-01T11:00:00Z",
+    updated_at: "2026-06-01T08:00:00Z",
+  },
+];
+
+export const DASHBOARD_WITH_PANELS_FIXTURE: DashboardWithPanels = {
+  ...DASHBOARDS_FIXTURE[0],
+  panels: [
+    {
+      id: "p1",
+      dashboard_id: "d1",
+      title: "Error Rate",
+      panel_type: "chart",
+      query: "events | where level == 'error' | summarize count() by bin(ts, 5m)",
+      database_name: "production",
+      config: {},
+      grid_x: 0, grid_y: 0, grid_w: 6, grid_h: 4,
+      display_order: 0,
+    },
+    {
+      id: "p2",
+      dashboard_id: "d1",
+      title: "Request Volume",
+      panel_type: "chart",
+      query: "events | summarize count() by service, bin(ts, 5m)",
+      database_name: "production",
+      config: {},
+      grid_x: 6, grid_y: 0, grid_w: 6, grid_h: 4,
+      display_order: 1,
+    },
+    {
+      id: "p3",
+      dashboard_id: "d1",
+      title: "Total Events",
+      panel_type: "stat",
+      query: "events | count",
+      database_name: "production",
+      config: { unit: "events" },
+      grid_x: 0, grid_y: 4, grid_w: 3, grid_h: 3,
+      display_order: 2,
+    },
+    {
+      id: "p4",
+      dashboard_id: "d1",
+      title: "Service Overview",
+      panel_type: "markdown",
+      query: "",
+      database_name: "production",
+      config: { content: "## Service Health\n\nThis dashboard tracks **real-time** service health metrics including:\n- Error rates by service\n- Request volumes\n- P99 latencies" },
+      grid_x: 3, grid_y: 4, grid_w: 9, grid_h: 3,
+      display_order: 3,
+    },
+    {
+      id: "p5",
+      dashboard_id: "d1",
+      title: "Recent Errors",
+      panel_type: "table",
+      query: "events | where level == 'error' | take 20",
+      database_name: "production",
+      config: {},
+      grid_x: 0, grid_y: 7, grid_w: 12, grid_h: 5,
+      display_order: 4,
+    },
+  ],
+};
