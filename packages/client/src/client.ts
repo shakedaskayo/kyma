@@ -15,6 +15,35 @@ import * as auth from "./auth";
 import * as setup from "./setup";
 import * as oauth from "./oauth";
 
+// ── Bind-coverage type guard ─────────────────────────────────────────────────
+// TransportFirstKeys<M> resolves to the union of keys in M whose value is a
+// function whose first parameter extends KymaTransport. This lets us write
+// compile-time assertions that every transport-first export appears in its
+// *_FNS list — a forgotten entry produces a type error at build time.
+//
+// AssertSameKeys<A, B> is "never" when the two string unions differ.
+// Usage: `type _Assert = AssertSameKeys<typeof MY_FNS[number], TransportFirstKeys<typeof myMod>>`
+// If A ⊄ B or B ⊄ A the conditional resolves to `never`, and the `type`
+// declaration itself won't error — but we pass it through `void` in an
+// immediately-unused variable so the compiler flags the never.
+
+type TransportFirstKeys<M> = {
+  [K in keyof M]: M[K] extends (t: KymaTransport, ...args: never[]) => unknown ? K : never;
+}[keyof M] &
+  string;
+
+// AssertSameKeys<A, B> resolves to `true` when the string unions are identical.
+// When they differ it resolves to a descriptive tuple — used by Expect<T extends true>
+// to produce a TS2344 error that names the offending keys.
+type AssertSameKeys<A extends string, B extends string> =
+  [A] extends [B]
+    ? ([B] extends [A] ? true : ["FNS list is MISSING transport-first keys:", Exclude<B, A>])
+    : ["FNS list has EXTRA keys not in module:", Exclude<A, B>];
+
+// Expect<T extends true> — used to surface AssertSameKeys failures as compiler errors.
+// noUnusedLocals is satisfied because the type aliases appear in a `declare const`.
+type Expect<T extends true> = T extends true ? true : never;
+
 // ── Curated bind lists ──────────────────────────────────────────────────────
 // Each array names the transport-first exported functions in its module.
 // Pure helpers (no transport arg) are intentionally absent — they remain
@@ -106,6 +135,29 @@ const OAUTH_FNS = [
   "startOAuth",
   "getOAuthFlowStatus",
 ] as const satisfies readonly (keyof typeof oauth)[];
+
+// ── Bind-coverage assertions ─────────────────────────────────────────────────
+// Each Expect<AssertSameKeys<...>> asserts that a *_FNS list covers EXACTLY the
+// transport-first exports of its module (no more, no fewer).
+// When the sets differ the compiler emits TS2344 naming the missing/extra keys.
+// `declare const` avoids runtime cost and noUnusedLocals errors.
+
+declare const _bindGuard: [
+  Expect<AssertSameKeys<typeof GRAPH_FNS[number],         TransportFirstKeys<typeof graph>>>,
+  Expect<AssertSameKeys<typeof QUERY_FNS[number],         TransportFirstKeys<typeof query>>>,
+  Expect<AssertSameKeys<typeof DISCOVER_FNS[number],      TransportFirstKeys<typeof discover>>>,
+  Expect<AssertSameKeys<typeof DASHBOARDS_FNS[number],    TransportFirstKeys<typeof dashboards>>>,
+  Expect<AssertSameKeys<typeof CATALOG_FNS[number],       TransportFirstKeys<typeof catalog>>>,
+  Expect<AssertSameKeys<typeof CAPABILITIES_FNS[number],  TransportFirstKeys<typeof capabilities>>>,
+  Expect<AssertSameKeys<typeof AGENT_ENGINE_FNS[number],  TransportFirstKeys<typeof agentEngine>>>,
+  Expect<AssertSameKeys<typeof AGENT_SKILLS_FNS[number],  TransportFirstKeys<typeof agentSkills>>>,
+  Expect<AssertSameKeys<typeof MEMORY_FNS[number],        TransportFirstKeys<typeof memory>>>,
+  Expect<AssertSameKeys<typeof CONNECTORS_FNS[number],    TransportFirstKeys<typeof connectors>>>,
+  Expect<AssertSameKeys<typeof CREDENTIALS_FNS[number],   TransportFirstKeys<typeof credentials>>>,
+  Expect<AssertSameKeys<typeof AUTH_FNS[number],          TransportFirstKeys<typeof auth>>>,
+  Expect<AssertSameKeys<typeof SETUP_FNS[number],         TransportFirstKeys<typeof setup>>>,
+  Expect<AssertSameKeys<typeof OAUTH_FNS[number],         TransportFirstKeys<typeof oauth>>>,
+];
 
 // ── bind helper ─────────────────────────────────────────────────────────────
 

@@ -20,4 +20,3 @@ export * from "./setup";
 export * from "./auth";
 export * from "./oauth";
 export * from "./graph-layout";
-export * from "./reconnect";

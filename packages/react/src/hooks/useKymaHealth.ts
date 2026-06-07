@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-type State = {
+type HealthState = {
   online: boolean;
   /** Server version reported by /health; null until the first successful probe. */
   version: string | null;
@@ -12,7 +12,15 @@ type State = {
   start: (endpoint: string) => () => void;
 };
 
-export const useHealth = create<State>((set, get) => ({
+/**
+ * Zustand store that polls /health every 30 seconds and tracks:
+ * - `online`: whether the last probe succeeded
+ * - `version`: server version reported by /health
+ * - `updated`: whether the version changed mid-session (server restarted)
+ *
+ * Call `start(endpoint)` to begin polling; the returned callback stops it.
+ */
+export const useKymaHealth = create<HealthState>((set, get) => ({
   online: true,
   version: null,
   updated: false,

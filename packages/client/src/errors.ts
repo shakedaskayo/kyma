@@ -8,23 +8,18 @@ export class KymaApiError extends Error {
   readonly status: number;
   readonly requestId?: string;
   readonly code?: string;
-  constructor(status: number, message: string, opts?: KymaApiErrorOpts | string) {
+  constructor(status: number, message: string, opts?: KymaApiErrorOpts) {
     super(message);
     this.name = "KymaApiError";
     this.status = status;
-    if (typeof opts === "string") {
-      // Legacy: constructor(status, message, requestId)
-      this.requestId = opts;
-    } else {
-      this.requestId = opts?.requestId;
-      this.code = opts?.code;
-    }
+    this.requestId = opts?.requestId;
+    this.code = opts?.code;
   }
 }
 
 /** 401/403 — token invalid, expired beyond refresh, or insufficient scope. */
 export class KymaAuthError extends KymaApiError {
-  constructor(status: number, message: string, opts?: KymaApiErrorOpts | string) {
+  constructor(status: number, message: string, opts?: KymaApiErrorOpts) {
     super(status, message, opts);
     this.name = "KymaAuthError";
   }

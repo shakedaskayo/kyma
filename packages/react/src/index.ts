@@ -16,6 +16,7 @@ export { useKymaDashboards } from "./hooks/useKymaDashboards";
 export type { UseKymaDashboardsResult } from "./hooks/useKymaDashboards";
 export { useKymaAgent } from "./hooks/useKymaAgent";
 export type { AgentMessage, AgentStatus, UseKymaAgentArgs, UseKymaAgentResult } from "./hooks/useKymaAgent";
+export { useKymaHealth } from "./hooks/useKymaHealth";
 
 // ── Re-exported types from @kyma-ai/client ────────────────────────────────────
 // Commonly-needed types so consumers don't need to also import @kyma-ai/client.
