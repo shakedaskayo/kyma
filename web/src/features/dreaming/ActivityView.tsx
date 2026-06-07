@@ -170,7 +170,7 @@ function EventFeed({ rows }: { rows: Row[] }) {
   if (rows.length === 0)
     return (
       <p className="text-xs text-muted-foreground">
-        No events yet — start a Claude Code session with the kyma-memory plugin.
+        No events yet — connect a coding agent (e.g. via the kyma memory plugin) to start streaming activity.
       </p>
     );
   return (

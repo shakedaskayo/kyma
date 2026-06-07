@@ -132,7 +132,7 @@ function PulseEmpty({ connected }: { connected: boolean }) {
         {connected ? "Listening for activity" : "Connecting…"}
       </p>
       <p className="max-w-[18rem] text-2xs leading-relaxed text-muted-foreground">
-        Firehose events from Claude Code sessions will stream in here as they arrive.
+        Activity from connected coding agents will stream in here as it arrives.
       </p>
     </div>
   );
