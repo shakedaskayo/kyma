@@ -40,6 +40,10 @@ export type { KymaErrorBoundaryProps } from "./internal/KymaErrorBoundary";
 export { CapabilityGate } from "./internal/CapabilityGate";
 export type { CapabilityGateProps } from "./internal/CapabilityGate";
 
+// ── Dashboards ────────────────────────────────────────────────────────────────
+export { KymaDashboard } from "./dashboards/KymaDashboard";
+export type { KymaDashboardProps } from "./dashboards/KymaDashboard";
+
 // ── Themes ────────────────────────────────────────────────────────────────────
 export { kymaDark, kymaLight } from "./theme/presets";
 export { themeToCssVars } from "./theme/tokens";
