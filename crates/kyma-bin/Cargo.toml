@@ -51,7 +51,7 @@ clap = { version = "4", features = ["derive", "env"] }
 chrono.workspace = true
 
 [features]
-default = []
+default = ["github"]
 web-ui  = ["kyma-server/web-ui"]
 cloud-auth = ["kyma-server/cloud-auth"]
 github = ["kyma-connectors/github"]
