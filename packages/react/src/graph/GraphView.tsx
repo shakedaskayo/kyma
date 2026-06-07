@@ -180,25 +180,25 @@ export function GraphView({
     : "radial-gradient(120% 100% at 50% -10%, hsl(210 36% 99%), hsl(210 30% 96%) 100%)";
 
   return (
-    <div className="flex h-full w-full bg-background">
-      <div className="relative flex-1 overflow-hidden">
+    <div className="ky-flex ky-h-full ky-w-full ky-bg-background">
+      <div className="ky-relative ky-flex-1 ky-overflow-hidden">
         {/* Galaxy substrate (behind the transparent canvas) */}
-        <div className="pointer-events-none absolute inset-0" style={{ background: galaxyBg }} />
+        <div className="ky-pointer-events-none ky-absolute ky-inset-0" style={{ background: galaxyBg }} />
 
         {unified.isLoading && !unified.progress.hasAny && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground">
+          <div className="ky-absolute ky-inset-0 ky-z-10 ky-flex ky-items-center ky-justify-center ky-text-sm ky-text-muted-foreground">
             Loading graph…
           </div>
         )}
         {unified.isError && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-destructive">
+          <div className="ky-absolute ky-inset-0 ky-z-10 ky-flex ky-items-center ky-justify-center ky-text-sm ky-text-destructive">
             Failed to load graph: {(unified.error as Error)?.message}
           </div>
         )}
         {!unified.isLoading && !unified.isError && nodes.length === 0 && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-            <Network className="h-8 w-8" />
-            <div className="text-sm">
+          <div className="ky-absolute ky-inset-0 ky-z-10 ky-flex ky-flex-col ky-items-center ky-justify-center ky-gap-2 ky-text-muted-foreground">
+            <Network className="ky-h-8 ky-w-8" />
+            <div className="ky-text-sm">
               No graph data yet — ingest some tables or connect a source to see the graph.
             </div>
           </div>
@@ -223,7 +223,7 @@ export function GraphView({
 
         {/* Vignette to draw the eye to the centre */}
         <div
-          className="pointer-events-none absolute inset-0"
+          className="ky-pointer-events-none ky-absolute ky-inset-0"
           style={{
             background: isDark
               ? "radial-gradient(125% 125% at 50% 50%, transparent 55%, rgba(0,0,0,0.38) 100%)"
@@ -233,11 +233,11 @@ export function GraphView({
 
         {/* Overview hint */}
         {overviewActive && (
-          <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2">
+          <div className="ky-absolute ky-left-1/2 ky-top-3 ky-z-10 -ky-translate-x-1/2">
             <button
               type="button"
               onClick={() => setOverview(false)}
-              className="glass rounded-full px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              className="ky-glass ky-rounded-full ky-px-3 ky-py-1 ky-text-xs ky-text-muted-foreground ky-transition-colors hover:ky-text-foreground"
               title="Show every node (may be dense)"
             >
               Overview · showing {visNodes.length.toLocaleString()} of{" "}

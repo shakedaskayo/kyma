@@ -110,17 +110,17 @@ export function GraphSidebar(props: GraphSidebarProps) {
   const noNamespaceHidden = hiddenNamespaces.length === 0;
 
   return (
-    <aside className="flex h-full w-80 flex-col border-l bg-card text-card-foreground">
+    <aside className="ky-flex ky-h-full ky-w-80 ky-flex-col ky-border-l ky-bg-card ky-text-card-foreground">
       {/* Focus picker */}
-      <div className="shrink-0 border-b p-3">
-        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <div className="ky-shrink-0 ky-border-b ky-p-3">
+        <label className="ky-mb-1.5 ky-block ky-text-[10px] ky-font-semibold ky-uppercase ky-tracking-wider ky-text-muted-foreground">
           Focus
         </label>
-        <div className="relative">
+        <div className="ky-relative">
           <select
             value={graph}
             onChange={(e) => setGraph(e.target.value)}
-            className="w-full appearance-none rounded-md border bg-background px-3 py-2 pr-8 text-xs outline-none transition-colors focus:border-primary"
+            className="ky-w-full ky-appearance-none ky-rounded-md ky-border ky-bg-background ky-px-3 ky-py-2 ky-pr-8 ky-text-xs ky-outline-none ky-transition-colors focus:ky-border-primary"
             title="Graph namespace"
           >
             <option value="all">All databases & graphs</option>
@@ -134,35 +134,35 @@ export function GraphSidebar(props: GraphSidebarProps) {
               );
             })}
           </select>
-          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <ChevronDown className="ky-pointer-events-none ky-absolute ky-right-2 ky-top-1/2 ky-h-3.5 ky-w-3.5 -ky-translate-y-1/2 ky-text-muted-foreground" />
         </div>
       </div>
 
       {/* Search */}
-      <div className="shrink-0 border-b p-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+      <div className="ky-shrink-0 ky-border-b ky-p-3">
+        <div className="ky-relative">
+          <Search className="ky-pointer-events-none ky-absolute ky-left-2.5 ky-top-1/2 ky-h-3.5 ky-w-3.5 -ky-translate-y-1/2 ky-text-muted-foreground" />
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search nodes…"
-            className="w-full rounded-md border bg-background py-2 pl-8 pr-7 text-xs outline-none transition-colors placeholder:text-muted-foreground focus:border-primary"
+            className="ky-w-full ky-rounded-md ky-border ky-bg-background ky-py-2 ky-pl-8 ky-pr-7 ky-text-xs ky-outline-none ky-transition-colors placeholder:ky-text-muted-foreground focus:ky-border-primary"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery("")}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="ky-absolute ky-right-1.5 ky-top-1/2 -ky-translate-y-1/2 ky-rounded ky-p-0.5 ky-text-muted-foreground hover:ky-bg-muted hover:ky-text-foreground"
               title="Clear search"
             >
-              <X className="h-3 w-3" />
+              <X className="ky-h-3 ky-w-3" />
             </button>
           )}
         </div>
       </div>
 
       {/* Inspector / Legend scroll area */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="ky-min-h-0 ky-flex-1 ky-overflow-y-auto">
         {props.selectedNode ? (
           <NodeInspector
             node={props.selectedNode}
@@ -172,13 +172,13 @@ export function GraphSidebar(props: GraphSidebarProps) {
             onExpand={props.onExpand}
           />
         ) : (
-          <div className="flex flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground">
-            <Sparkles className="h-5 w-5" />
-            <p className="text-xs">Click a node to inspect it</p>
+          <div className="ky-flex ky-flex-col ky-items-center ky-justify-center ky-gap-2 ky-p-6 ky-text-center ky-text-muted-foreground">
+            <Sparkles className="ky-h-5 ky-w-5" />
+            <p className="ky-text-xs">Click a node to inspect it</p>
           </div>
         )}
 
-        <div className="space-y-4 border-t p-3">
+        <div className="ky-space-y-4 ky-border-t ky-p-3">
           {showNamespaceFilter && (
             <SectionGraphs
               entries={namespaceEntries}
@@ -207,25 +207,25 @@ export function GraphSidebar(props: GraphSidebarProps) {
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 border-t bg-muted/30 p-3">
-        <div className="mb-2 flex items-center gap-1">
+      <div className="ky-shrink-0 ky-border-t ky-bg-muted/30 ky-p-3">
+        <div className="ky-mb-2 ky-flex ky-items-center ky-gap-1">
           {LAYOUTS.map((l) => (
             <button
               key={l.value}
               type="button"
               onClick={() => setLayout(l.value)}
               className={cn(
-                "flex-1 rounded px-2 py-1 text-[10px] font-medium transition-colors",
+                "ky-flex-1 ky-rounded ky-px-2 ky-py-1 ky-text-[10px] ky-font-medium ky-transition-colors",
                 layout === l.value
-                  ? "bg-primary text-primary-foreground"
-                  : "border border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+                  ? "ky-bg-primary ky-text-primary-foreground"
+                  : "ky-border ky-border-transparent ky-text-muted-foreground hover:ky-border-border hover:ky-text-foreground",
               )}
             >
               {l.label}
             </button>
           ))}
         </div>
-        <div className="mb-2 grid grid-cols-3 gap-1">
+        <div className="ky-mb-2 ky-grid ky-grid-cols-3 ky-gap-1">
           <StyleToggle icon={Sun} label="Glow" on={glow} onClick={toggleGlow} title="Glow halos on focus/landmark nodes" />
           <StyleToggle icon={Waypoints} label="Flow" on={animatedFlow} onClick={toggleAnimatedFlow} title="Animated flow on the focused edges" />
           <StyleToggle icon={Spline} label="Curve" on={curvedEdges} onClick={toggleCurvedEdges} title="Curve edges" />
@@ -233,7 +233,7 @@ export function GraphSidebar(props: GraphSidebarProps) {
           <StyleToggle icon={CircleIcon} label="Size" on={sizeByDegree} onClick={toggleSizeByDegree} title="Size nodes by degree" />
           <StyleToggle icon={TagIcon} label="Labels" on={showEdgeLabels} onClick={toggleEdgeLabels} title="Relationship labels on edges" />
         </div>
-        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <div className="ky-flex ky-items-center ky-justify-between ky-text-[10px] ky-text-muted-foreground">
           <span>
             {props.visibleNodes === props.totalNodes
               ? `${props.totalNodes.toLocaleString()} nodes`
@@ -242,7 +242,7 @@ export function GraphSidebar(props: GraphSidebarProps) {
             {props.visibleEdges.toLocaleString()} edges
           </span>
           {props.loadingText && (
-            <span className="font-mono text-amber-500 dark:text-amber-300">
+            <span className="ky-font-mono ky-text-amber-500 dark:ky-text-amber-300">
               {props.loadingText}
             </span>
           )}
@@ -272,20 +272,20 @@ function SectionGraphs({
   if (entries.length === 0) return null;
   return (
     <div>
-      <div className="mb-1.5 flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          <Layers className="h-3 w-3" /> Graphs
+      <div className="ky-mb-1.5 ky-flex ky-items-center ky-justify-between">
+        <span className="ky-flex ky-items-center ky-gap-1.5 ky-text-[10px] ky-font-semibold ky-uppercase ky-tracking-wider ky-text-muted-foreground">
+          <Layers className="ky-h-3 ky-w-3" /> Graphs
         </span>
         <button
           type="button"
           onClick={noneHidden ? onSelectNone : onSelectAll}
-          className="text-[10px] font-medium text-primary transition-opacity hover:opacity-80"
+          className="ky-text-[10px] ky-font-medium ky-text-primary ky-transition-opacity hover:ky-opacity-80"
           title={noneHidden ? "Hide all" : "Show all"}
         >
           {noneHidden ? "Hide all" : "Show all"}
         </button>
       </div>
-      <div className="space-y-px">
+      <div className="ky-space-y-px">
         {entries.map(([ns, count]) => {
           const isHidden = hidden.includes(ns);
           const color = getLabelColor(ns);
@@ -295,24 +295,24 @@ function SectionGraphs({
               type="button"
               onClick={() => onToggle(ns)}
               className={cn(
-                "group flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors",
+                "ky-group ky-flex ky-w-full ky-items-center ky-gap-2 ky-rounded ky-px-1.5 ky-py-1 ky-text-left ky-text-xs ky-transition-colors",
                 isHidden
-                  ? "text-muted-foreground/60"
-                  : "hover:bg-accent/60 hover:text-accent-foreground",
+                  ? "ky-text-muted-foreground/60"
+                  : "hover:ky-bg-accent/60 hover:ky-text-accent-foreground",
               )}
               title={isHidden ? `Show ${ns}` : `Hide ${ns}`}
             >
               <Checkbox checked={!isHidden} color={color} />
-              <span className={cn("flex-1 truncate", isHidden && "line-through")}>
+              <span className={cn("ky-flex-1 ky-truncate", isHidden && "ky-line-through")}>
                 {ns}
               </span>
-              <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+              <span className="ky-font-mono ky-text-[10px] ky-tabular-nums ky-text-muted-foreground">
                 {count.toLocaleString()}
               </span>
               {isHidden ? (
-                <EyeOff className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+                <EyeOff className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground/70" />
               ) : (
-                <Eye className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" />
+                <Eye className="ky-h-3 ky-w-3 ky-shrink-0 ky-opacity-0 ky-transition-opacity group-hover:ky-opacity-50" />
               )}
             </button>
           );
@@ -334,10 +334,10 @@ function SectionLabels({
   if (entries.length === 0) return null;
   return (
     <div>
-      <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <span className="ky-mb-1.5 ky-block ky-text-[10px] ky-font-semibold ky-uppercase ky-tracking-wider ky-text-muted-foreground">
         Node types
       </span>
-      <div className="space-y-px">
+      <div className="ky-space-y-px">
         {entries.map(([label, count]) => {
           const isHidden = hidden.includes(label);
           const color = getLabelColor(label);
@@ -348,22 +348,22 @@ function SectionLabels({
               type="button"
               onClick={() => onToggle(label)}
               className={cn(
-                "group flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors",
+                "ky-group ky-flex ky-w-full ky-items-center ky-gap-2 ky-rounded ky-px-1.5 ky-py-1 ky-text-left ky-text-xs ky-transition-colors",
                 isHidden
-                  ? "text-muted-foreground/60"
-                  : "hover:bg-accent/60 hover:text-accent-foreground",
+                  ? "ky-text-muted-foreground/60"
+                  : "hover:ky-bg-accent/60 hover:ky-text-accent-foreground",
               )}
               title={isHidden ? `Show ${label}` : `Hide ${label}`}
             >
               {ic ? (
-                <ic.Comp size={14} color={color} className={cn("shrink-0", isHidden && "opacity-40")} />
+                <ic.Comp size={14} color={color} className={cn("ky-shrink-0", isHidden && "ky-opacity-40")} />
               ) : (
                 <Dot color={color} dim={isHidden} />
               )}
-              <span className={cn("flex-1 truncate", isHidden && "line-through")}>
+              <span className={cn("ky-flex-1 ky-truncate", isHidden && "ky-line-through")}>
                 {label}
               </span>
-              <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+              <span className="ky-font-mono ky-text-[10px] ky-tabular-nums ky-text-muted-foreground">
                 {count.toLocaleString()}
               </span>
             </button>
@@ -386,10 +386,10 @@ function SectionRels({
   if (entries.length === 0) return null;
   return (
     <div>
-      <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <span className="ky-mb-1.5 ky-block ky-text-[10px] ky-font-semibold ky-uppercase ky-tracking-wider ky-text-muted-foreground">
         Relationships
       </span>
-      <div className="space-y-px">
+      <div className="ky-space-y-px">
         {entries.map(([rel, count]) => {
           const color = getRelationshipFamilyColor(rel);
           const isActive = active === rel;
@@ -399,18 +399,18 @@ function SectionRels({
               type="button"
               onClick={() => onSetActive(rel)}
               className={cn(
-                "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors",
+                "ky-flex ky-w-full ky-items-center ky-gap-2 ky-rounded ky-px-1.5 ky-py-1 ky-text-left ky-text-xs ky-transition-colors",
                 isActive
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                  ? "ky-bg-accent ky-text-accent-foreground"
+                  : "ky-text-muted-foreground hover:ky-bg-accent/60 hover:ky-text-foreground",
               )}
             >
               <span
-                className="h-[3px] w-3.5 shrink-0 rounded-full"
+                className="ky-h-[3px] ky-w-3.5 ky-shrink-0 ky-rounded-full"
                 style={{ backgroundColor: color }}
               />
-              <span className="flex-1 truncate">{rel}</span>
-              <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+              <span className="ky-flex-1 ky-truncate">{rel}</span>
+              <span className="ky-font-mono ky-text-[10px] ky-tabular-nums ky-text-muted-foreground">
                 {count.toLocaleString()}
               </span>
             </button>
@@ -480,44 +480,44 @@ function NodeInspector({
   }, [edges, ns, node.id, nodesByCompositeId]);
 
   return (
-    <div className="p-4">
-      <div className="mb-3 flex items-start gap-2">
+    <div className="ky-p-4">
+      <div className="ky-mb-3 ky-flex ky-items-start ky-gap-2">
         <div
-          className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full"
+          className="ky-mt-0.5 ky-h-2.5 ky-w-2.5 ky-shrink-0 ky-rounded-full"
           style={{ backgroundColor: dotColor }}
         />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium" title={displayName}>
+        <div className="ky-min-w-0 ky-flex-1">
+          <p className="ky-truncate ky-text-sm ky-font-medium" title={displayName}>
             {displayName}
           </p>
-          <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+          <p className="ky-mt-0.5 ky-truncate ky-text-[10px] ky-text-muted-foreground">
             {primaryLabel} · {neighbours.length} {neighbours.length === 1 ? "link" : "links"} · {ns}
           </p>
         </div>
         <button
           type="button"
           onClick={() => onSelectComposite(null)}
-          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="ky-rounded ky-p-1 ky-text-muted-foreground ky-transition-colors hover:ky-bg-muted hover:ky-text-foreground"
           aria-label="Close inspector"
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="ky-h-3.5 ky-w-3.5" />
         </button>
       </div>
 
       <button
         type="button"
         onClick={onExpand}
-        className="mb-3 w-full rounded-md border bg-background py-1.5 text-[11px] font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+        className="ky-mb-3 ky-w-full ky-rounded-md ky-border ky-bg-background ky-py-1.5 ky-text-[11px] ky-font-medium ky-transition-colors hover:ky-bg-accent hover:ky-text-accent-foreground"
       >
         Expand neighbours
       </button>
 
       {/* Properties */}
-      <div className="mb-3">
-        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <div className="ky-mb-3">
+        <p className="ky-mb-1 ky-text-[10px] ky-font-semibold ky-uppercase ky-tracking-wider ky-text-muted-foreground">
           Properties
         </p>
-        <div className="space-y-1.5">
+        <div className="ky-space-y-1.5">
           {Object.entries(node.properties)
             .filter(([key]) => key !== "name")
             .map(([key, value]) => {
@@ -527,15 +527,15 @@ function NodeInspector({
                 strValue.length > 90 ? strValue.slice(0, 90) + "…" : strValue;
               return (
                 <div key={key}>
-                  <p className="text-[10px] text-muted-foreground">{key}</p>
+                  <p className="ky-text-[10px] ky-text-muted-foreground">{key}</p>
                   <button
                     type="button"
                     onClick={() => navigator.clipboard.writeText(strValue)}
-                    className="group break-all text-left text-[11px] transition-colors hover:text-primary"
+                    className="ky-group ky-break-all ky-text-left ky-text-[11px] ky-transition-colors hover:ky-text-primary"
                     title="Copy"
                   >
                     {display}
-                    <Copy className="ml-1 inline h-2.5 w-2.5 opacity-0 group-hover:opacity-60" />
+                    <Copy className="ky-ml-1 ky-inline ky-h-2.5 ky-w-2.5 ky-opacity-0 group-hover:ky-opacity-60" />
                   </button>
                 </div>
               );
@@ -546,27 +546,27 @@ function NodeInspector({
       {/* Neighbours */}
       {neighbours.length > 0 && (
         <div>
-          <p className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <p className="ky-mb-1 ky-flex ky-items-center ky-justify-between ky-text-[10px] ky-font-semibold ky-uppercase ky-tracking-wider ky-text-muted-foreground">
             <span>Neighbours</span>
-            <span className="font-mono">{neighbours.length}</span>
+            <span className="ky-font-mono">{neighbours.length}</span>
           </p>
-          <div className="space-y-px">
+          <div className="ky-space-y-px">
             {neighbours.map((n) => (
               <button
                 key={n.relId}
                 type="button"
                 onClick={() => onSelectComposite(n.compositeId)}
-                className="flex w-full items-center gap-2 rounded border-l-2 px-2 py-1 text-left text-[11px] transition-colors hover:bg-accent/60"
+                className="ky-flex ky-w-full ky-items-center ky-gap-2 ky-rounded ky-border-l-2 ky-px-2 ky-py-1 ky-text-left ky-text-[11px] ky-transition-colors hover:ky-bg-accent/60"
                 style={{ borderColor: n.color }}
                 title={n.relType}
               >
                 {n.direction === "out" ? (
-                  <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <ArrowRight className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground" />
                 ) : (
-                  <ArrowLeft className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <ArrowLeft className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground" />
                 )}
-                <span className="truncate">{n.name}</span>
-                <span className="ml-auto truncate font-mono text-[9.5px] text-muted-foreground">
+                <span className="ky-truncate">{n.name}</span>
+                <span className="ky-ml-auto ky-truncate ky-font-mono ky-text-[9.5px] ky-text-muted-foreground">
                   {n.relType}
                 </span>
               </button>
@@ -600,13 +600,13 @@ function StyleToggle({
       title={title}
       aria-pressed={on}
       className={cn(
-        "flex items-center justify-center gap-1 rounded px-1.5 py-1 text-[10px] font-medium transition-colors",
+        "ky-flex ky-items-center ky-justify-center ky-gap-1 ky-rounded ky-px-1.5 ky-py-1 ky-text-[10px] ky-font-medium ky-transition-colors",
         on
-          ? "bg-accent text-accent-foreground"
-          : "border text-muted-foreground hover:text-foreground",
+          ? "ky-bg-accent ky-text-accent-foreground"
+          : "ky-border ky-text-muted-foreground hover:ky-text-foreground",
       )}
     >
-      <Icon className="h-3 w-3" /> {label}
+      <Icon className="ky-h-3 ky-w-3" /> {label}
     </button>
   );
 }
@@ -615,7 +615,7 @@ function Checkbox({ checked, color }: { checked: boolean; color: string }) {
   return (
     <span
       aria-hidden
-      className="relative inline-block h-3 w-3 shrink-0 rounded-[3px] border transition-colors"
+      className="ky-relative ky-inline-block ky-h-3 ky-w-3 ky-shrink-0 ky-rounded-[3px] ky-border ky-transition-colors"
       style={{
         background: checked ? color : "transparent",
         borderColor: checked ? color : "hsl(var(--border))",
@@ -623,7 +623,7 @@ function Checkbox({ checked, color }: { checked: boolean; color: string }) {
     >
       {checked && (
         <span
-          className="absolute"
+          className="ky-absolute"
           style={{
             left: 2.5,
             top: 0,
@@ -643,7 +643,7 @@ function Dot({ color, dim }: { color: string; dim: boolean }) {
   return (
     <span
       aria-hidden
-      className="h-2.5 w-2.5 shrink-0 rounded-full transition-opacity"
+      className="ky-h-2.5 ky-w-2.5 ky-shrink-0 ky-rounded-full ky-transition-opacity"
       style={{ backgroundColor: color, opacity: dim ? 0.3 : 1 }}
     />
   );
