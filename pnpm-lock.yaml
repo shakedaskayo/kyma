@@ -30,6 +30,37 @@ importers:
         specifier: ^3.5.30
         version: 3.5.33(typescript@5.9.3)
 
+  examples/embed-demo:
+    dependencies:
+      '@kyma-ai/client':
+        specifier: workspace:*
+        version: link:../../packages/client
+      '@kyma-ai/react':
+        specifier: workspace:*
+        version: link:../../packages/react
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: 18.3.1
+        version: 18.3.1(react@18.3.1)
+    devDependencies:
+      '@types/react':
+        specifier: 18.3.3
+        version: 18.3.3
+      '@types/react-dom':
+        specifier: 18.3.0
+        version: 18.3.0
+      '@vitejs/plugin-react':
+        specifier: 4.3.1
+        version: 4.3.1(vite@5.4.0(@types/node@20.19.39))
+      typescript:
+        specifier: 5.5.4
+        version: 5.5.4
+      vite:
+        specifier: 5.4.0
+        version: 5.4.0(@types/node@20.19.39)
+
   packages/client:
     dependencies:
       apache-arrow:

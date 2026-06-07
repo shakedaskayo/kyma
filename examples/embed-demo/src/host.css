@@ -1,0 +1,412 @@
+/* ── Host-app styles ──────────────────────────────────────────────────────────
+ *
+ * This is deliberately minimal and neutral — the goal is to prove that the
+ * Kyma SDK components are isolated from host styles (no CSS leak in or out).
+ *
+ * We intentionally do NOT set box-sizing: content-box or other adversarial
+ * overrides — the demo should model real-world embedding conditions, not
+ * contrived stress tests.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  color: #1a1a2e;
+  background: #f8f9fc;
+}
+
+/* ── App shell ─────────────────────────────────────────────────────────────── */
+
+.demo-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 100vh;
+}
+
+.demo-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+}
+
+.demo-topbar-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+  margin-right: 8px;
+}
+
+.demo-input {
+  font-size: 13px;
+  padding: 5px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #0f172a;
+  outline: none;
+  min-width: 200px;
+}
+
+.demo-input:focus {
+  border-color: #22c3c3;
+  box-shadow: 0 0 0 2px rgba(34, 195, 195, 0.15);
+}
+
+.demo-btn {
+  font-size: 13px;
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: 1px solid #22c3c3;
+  background: #22c3c3;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.demo-btn:hover {
+  background: #18a8a8;
+  border-color: #18a8a8;
+}
+
+.demo-btn-secondary {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.demo-btn-secondary:hover {
+  background: #f1f5f9;
+}
+
+.demo-select {
+  font-size: 13px;
+  padding: 5px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #0f172a;
+  cursor: pointer;
+  outline: none;
+}
+
+.demo-select:focus {
+  border-color: #22c3c3;
+}
+
+.demo-label {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.demo-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Tab nav ───────────────────────────────────────────────────────────────── */
+
+.demo-nav {
+  display: flex;
+  gap: 2px;
+  padding: 8px 16px 0;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.demo-nav-btn {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 16px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 4px 4px 0 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.demo-nav-btn:hover {
+  color: #0f172a;
+  background: #f1f5f9;
+}
+
+.demo-nav-btn.active {
+  color: #0ea5e9;
+  border-bottom-color: #0ea5e9;
+  background: transparent;
+}
+
+/* ── Main content area ─────────────────────────────────────────────────────── */
+
+.demo-main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.demo-view {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+  min-height: 0;
+}
+
+.demo-full-height {
+  height: 100%;
+}
+
+/* ── Side panel (JSON detail) ──────────────────────────────────────────────── */
+
+.demo-side-panel {
+  width: 320px;
+  border-left: 1px solid #e2e8f0;
+  background: #ffffff;
+  overflow: auto;
+  padding: 12px;
+  flex-shrink: 0;
+}
+
+.demo-side-panel h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 10px 0;
+}
+
+.demo-side-panel pre {
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px;
+  margin: 0;
+  color: #334155;
+}
+
+/* ── Unconnected instructions ──────────────────────────────────────────────── */
+
+.demo-instructions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  color: #64748b;
+  text-align: center;
+  padding: 40px;
+}
+
+.demo-instructions h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+}
+
+.demo-instructions p {
+  font-size: 14px;
+  max-width: 500px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.demo-instructions code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* ── Result badge ──────────────────────────────────────────────────────────── */
+
+.demo-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: #dcfce7;
+  color: #166534;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+/* ── Headless demo ─────────────────────────────────────────────────────────── */
+
+.demo-headless {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 900px;
+}
+
+.demo-headless h2 {
+  font-size: 17px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+
+.demo-headless p {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+}
+
+.demo-headless-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px 20px;
+}
+
+.demo-headless-card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 10px 0;
+}
+
+.demo-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.demo-stat-cell {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+}
+
+.demo-stat-cell .stat-val {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0ea5e9;
+}
+
+.demo-stat-cell .stat-key {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.demo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.demo-table th,
+.demo-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.demo-table th {
+  font-weight: 600;
+  color: #64748b;
+  background: #f8fafc;
+}
+
+.demo-table tr:last-child td {
+  border-bottom: none;
+}
+
+.demo-query-input {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.demo-query-input input {
+  flex: 1;
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #f8fafc;
+  color: #0f172a;
+  outline: none;
+}
+
+.demo-query-input input:focus {
+  border-color: #22c3c3;
+}
+
+.demo-error {
+  font-size: 12px;
+  color: #dc2626;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.demo-loading {
+  font-size: 13px;
+  color: #64748b;
+  padding: 8px 0;
+}
+
+/* ── Dashboard picker ──────────────────────────────────────────────────────── */
+
+.demo-dashboard-toolbar {
+  padding: 10px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.demo-dashboard-view {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+/* ── Message log ───────────────────────────────────────────────────────────── */
+
+.demo-message-log {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #0f172a;
+  color: #a3e635;
+  border-radius: 6px;
+  padding: 8px 12px;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
