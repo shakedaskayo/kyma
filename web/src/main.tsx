@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "./styles/globals.css";
 import "react-grid-layout/css/styles.css";
+import "@kyma-ai/react/styles.css";
 import { Providers } from "./app/providers";
 import { installAuthFetch } from "./sdk/auth-fetch";
 

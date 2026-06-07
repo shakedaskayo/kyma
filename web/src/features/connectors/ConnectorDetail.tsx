@@ -12,8 +12,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useGraphStore } from "@/features/graph/graph-store";
-import { useGraphStats } from "@/features/graph/useGraph";
+import { useQuery } from "@tanstack/react-query";
+import { useSession } from "@/sdk/session";
+import { getStats } from "@/sdk/graph";
 import {
   deriveStatus,
   type CatalogEntry,
@@ -68,11 +69,13 @@ export function ConnectorDetail({
     (resourceKey ? (detail.config?.[resourceKey] as string[] | undefined) : undefined) ?? [];
 
   const openGraph = () => {
-    // GraphView keys focus by a composite `${database}/${graph}` namespace so
-    // the same graph name in different DBs is unambiguous.
-    const key = graphName ? `${detail.target_database}/${graphName}` : "all";
-    useGraphStore.getState().setGraph(key);
-    void navigate({ to: "/graph" });
+    // Pass the composite `${database}/${graph}` key as a URL search param so
+    // the graph route can seed focusQuery on mount (one-way URL → graph focus).
+    if (graphName) {
+      void navigate({ to: "/graph", search: { graph: `${detail.target_database}/${graphName}` } });
+    } else {
+      void navigate({ to: "/graph" });
+    }
   };
 
   return (
@@ -275,7 +278,12 @@ function SyncStatus({ detail, graphName }: { detail: Detail; graphName: string |
   // For graph connectors, show the connector's *graph size* (the meaningful,
   // cumulative number) rather than last-run rows — which sit at 0 once polling
   // reaches steady state. Non-graph connectors show last-run rows instead.
-  const { data: gstats } = useGraphStats(graphName ?? "");
+  const { endpoint, token, database } = useSession();
+  const { data: gstats } = useQuery({
+    queryKey: ["graph", "stats", endpoint, database, graphName],
+    queryFn: () => getStats({ endpoint, token, database, graph: graphName! }),
+    enabled: Boolean(endpoint && graphName),
+  });
   const stats = graphName
     ? [
         { label: "Last sync", value: fmtDate(detail.last_success_at) },
