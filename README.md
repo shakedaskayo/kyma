@@ -78,7 +78,8 @@ curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh |
 
 You're now running. The wizard leaves you with:
 
-- **Web UI + API** → **http://localhost:7777** (Graph Explorer · Memory · KQL/SQL workbench) — sign in `admin` / `admin`
+- **Web UI + API** → **http://localhost:7777** (Graph Explorer · Memory · KQL/SQL workbench) — your first visit creates the admin user
+- the server runs as a **background service** (starts at login, restarts on crash) — `kyma service status`
 - **Claude Code plugin** installed → restart Claude Code and run **`/kyma-status`**
 - the **`kyma` CLI** on your `$PATH`
 
@@ -89,6 +90,10 @@ kyma remember "payments-svc deploys behind the Aurora gateway; error budget is 0
 kyma recall   "how do we deploy payments and what's the error budget?"
 # → returns the memory, scored by vector + keyword + graph
 ```
+
+> **Windows**: install inside [WSL2](https://learn.microsoft.com/windows/wsl/install) — the same one-liner works in the WSL shell. Native Windows support is tracked but not there yet.
+>
+> **Uninstall**: `curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash -s -- --uninstall` (add `--purge` to also delete `~/.kyma`).
 
 **Scripted / CI** — skip the prompts:
 
