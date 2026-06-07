@@ -685,6 +685,12 @@ async fn main() -> Result<()> {
     let app = app.merge(github_repos_router);
     #[cfg(feature = "web-ui")]
     let app = app.merge(kyma_server::web_ui::router());
+    // Re-assert the SPA fallback on the final app, un-layered: merging
+    // auth-layered routers can leave the inherited fallback wrapped by the
+    // auth middleware, which would 401 the login page and every asset the
+    // moment auth is enabled (supabase/session backends).
+    #[cfg(feature = "web-ui")]
+    let app = app.fallback(kyma_server::web_ui::serve_spa_fallback);
 
     // Expose Flight over gRPC-web at /flight/* so browsers can query via Arrow Flight.
     // Auth is enforced the same way as /v1/* (Bearer token, Role::Read required).

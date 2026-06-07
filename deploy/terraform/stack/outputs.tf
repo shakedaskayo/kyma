@@ -25,8 +25,8 @@ output "admin_password" {
 }
 
 output "bucket_name" {
-  value       = module.storage.bucket_name
-  description = "S3 bucket holding kyma's columnar extents."
+  value       = var.storage_backend == "s3" ? module.storage[0].bucket_name : "${var.storage_bucket} (Supabase Storage)"
+  description = "Bucket holding kyma's columnar extents."
 }
 
 output "supabase_project_ref" {

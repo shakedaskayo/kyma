@@ -27,7 +27,7 @@ mod plugin;
 mod update;
 mod users;
 use client::{
-    delete_json, effective_config, get_json, install_target, load_config, probe_health,
+    delete_json, effective_config, get_json, load_config, probe_health,
     save_config, stream_agent_ask, write_skill_file, ClientConfig,
 };
 

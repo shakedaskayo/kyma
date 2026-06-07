@@ -60,6 +60,16 @@ waits while you create it at your DNS provider. With no domain at all, the
 stack exposes plain HTTP on the ALB DNS name — fine for a test drive,
 not for production (OAuth redirects want HTTPS).
 
+### Extents storage
+
+`storage_backend = "supabase"` (default) keeps the columnar extents in
+**Supabase Storage** via its S3-compatible endpoint — everything stateful
+lives in one Supabase project. Supabase has no API to mint S3 access keys,
+so that path has one manual step (dashboard → Storage → S3 access keys);
+`kyma deploy up` opens the page and waits for the paste. Set
+`storage_backend = "s3"` for a native AWS bucket — fully automated and
+keyless (Fargate task role), lowest latency from the engine.
+
 ### Sign-in policy
 
 - `admin_emails` — Supabase-authenticated emails that get the kyma admin role.

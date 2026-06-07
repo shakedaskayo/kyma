@@ -67,16 +67,18 @@ function Login() {
     return () => clearTimeout(t);
   }, [endpoint]);
 
-  // Fresh instance with no users yet → send the operator to first-run setup
-  // (password mode only; supabase mode provisions users on first login).
+  // Fresh instance with no users yet → send the operator to first-run setup.
+  // Password mode only: supabase deployments JIT-provision users on first
+  // sign-in, so an empty users table is the NORMAL state, not "needs setup".
   useEffect(() => {
+    if (!authConfig || authConfig.provider !== "password") return;
     getSetupStatus(trimSlash(endpoint) || "http://localhost:8080")
       .then((s) => {
         if (s.setup_required) navigate({ to: "/setup" });
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authConfig]);
 
   /** Persist Supabase config into the session store so getSupabase() can
    *  build the client (and survive the OAuth redirect round-trip). */

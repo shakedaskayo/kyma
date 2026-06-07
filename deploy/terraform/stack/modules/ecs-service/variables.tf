@@ -45,7 +45,8 @@ variable "target_group" {
 
 variable "s3_bucket_arn" {
   type        = string
-  description = "Extent bucket ARN (task-role S3 policy)."
+  description = "Extent bucket ARN (task-role S3 policy). Empty = no native bucket (Supabase Storage backend)."
+  default     = ""
 }
 
 variable "ssm_param_arns" {

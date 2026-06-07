@@ -48,7 +48,7 @@ async fn serve_asset(uri: Uri) -> Response {
 /// 2. API prefixes get a real JSON 404, not a 200 with HTML: clients
 ///    expecting JSON would choke on the body and the missing route (e.g.
 ///    control-plane-only surfaces in local mode) would be invisible.
-async fn serve_spa_fallback(uri: Uri) -> Response {
+pub async fn serve_spa_fallback(uri: Uri) -> Response {
     let p = uri.path();
     let raw = p.trim_start_matches('/');
     if !raw.is_empty() {
