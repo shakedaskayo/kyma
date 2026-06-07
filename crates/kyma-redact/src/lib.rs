@@ -211,6 +211,28 @@ impl SecretGuard {
         }
     }
 
+    /// Byte ranges of every detection hit (known values + patterns) in
+    /// `text`, unmerged and in no particular order. Used by
+    /// [`StreamScrubber`] to avoid cutting the emission boundary through a
+    /// match.
+    pub fn find_spans(&self, text: &str) -> Vec<std::ops::Range<usize>> {
+        let mut spans = Vec::new();
+        {
+            let k = self.known.read().expect("SecretGuard lock poisoned");
+            if let Some(ac) = &k.ac {
+                for m in ac.find_iter(text) {
+                    spans.push(m.start()..m.end());
+                }
+            }
+        }
+        for p in &self.patterns {
+            for m in p.re.find_iter(text) {
+                spans.push(m.start()..m.end());
+            }
+        }
+        spans
+    }
+
     fn redact_known(&self, text: &str, findings: &mut Vec<Finding>) -> String {
         let k = self.known.read().expect("SecretGuard lock poisoned");
         let Some(ac) = &k.ac else {
@@ -285,19 +307,47 @@ impl StreamScrubber {
     /// emitted; only the holdback tail remains buffered raw. This ensures
     /// that a secret split across several small deltas is still caught: the
     /// full token assembles in the holdback window before it is ever scanned.
+    ///
+    /// The cut is **match-aware**: before draining, the full raw buffer is
+    /// scanned with [`SecretGuard::find_spans`]. If any detected span crosses
+    /// the provisional cut point, the cut is pulled back to the start of that
+    /// span so no secret is ever bisected at the drain boundary. If pulling
+    /// the cut back reaches zero (the entire buffer is one big match, or a
+    /// match starts at byte 0), an empty string is returned and the whole
+    /// buffer is held until either the match resolves or [`finish`](Self::finish)
+    /// is called.
     pub fn push(&mut self, delta: &str) -> String {
         self.buf.push_str(delta);
         if self.buf.len() <= STREAM_HOLDBACK_BYTES {
             return String::new();
         }
-        // Find the char boundary at which we split: emit everything before it,
-        // hold the tail for the next push.
+        // Provisional cut: advance to a char boundary going forward.
         let mut cut = self.buf.len() - STREAM_HOLDBACK_BYTES;
         while !self.buf.is_char_boundary(cut) {
             cut += 1;
         }
+        // Pull cut back past any span that would be bisected.
+        let spans = self.guard.find_spans(&self.buf);
+        for span in &spans {
+            if span.start < cut && span.end > cut {
+                // This match crosses the cut — pull the cut back to span.start.
+                if span.start < cut {
+                    cut = span.start;
+                }
+            }
+        }
+        // Snap the (possibly retracted) cut back to a valid char boundary
+        // going downward.
+        while cut > 0 && !self.buf.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        if cut == 0 {
+            // The whole buffer must be held (a match starts at byte 0 or
+            // covers the entire holdback window).
+            return String::new();
+        }
         let prefix: String = self.buf.drain(..cut).collect();
-        // Redact the emitted prefix, then re-prepend what we're emitting.
+        // Redact the emitted prefix.
         // The tail (self.buf) stays raw so a cross-delta secret assembles.
         let (red, mut f) = self.guard.redact_text(&prefix);
         self.findings.append(&mut f);
@@ -485,5 +535,23 @@ mod tests {
         let first = s.push(&text);
         let rest = s.finish();
         assert_eq!(format!("{first}{rest}"), text);
+    }
+
+    #[test]
+    fn stream_scrubber_no_leak_when_text_follows_secret() {
+        let g = Arc::new(guard());
+        let mut s = StreamScrubber::new(g);
+        let pat = "github_pat_11A22PAOI0QD7qilOFoYIK_9beaDlLnkO4GA0eKKSGdG7YDYM6vGgs";
+        let mut out = String::new();
+        out.push_str(&s.push(&format!("answer start {pat} then ")));
+        for _ in 0..20 {
+            out.push_str(&s.push("more clean text follows here. "));
+        }
+        out.push_str(&s.finish());
+        assert!(!out.contains("github_pat_11A22"), "leaked head: {out}");
+        assert!(!out.contains("9beaDlLnkO4GA0e"), "leaked tail: {out}");
+        assert!(out.contains("[REDACTED:github-pat]"));
+        assert!(out.ends_with("more clean text follows here. "));
+        assert_eq!(s.take_findings().len(), 1);
     }
 }
