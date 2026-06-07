@@ -16,8 +16,8 @@ const queryClient = new QueryClient({
  *
  * - When endpoint is empty (logged out) we render children without KymaProvider
  *   so login/setup routes continue to work without a KymaClient.
- * - getToken reads the live Zustand store at call time so token rotation by
- *   installAuthFetch stays effective without recreating the client.
+ * - getToken delegates to sessionGetToken which handles single-flight refresh
+ *   and dead-session redirect — the transport layer owns auth end to end.
  * - Provider is re-keyed on endpoint+database change so the KymaClient is
  *   recreated when the user switches servers or databases.
  */
