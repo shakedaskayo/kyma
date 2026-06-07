@@ -1,6 +1,6 @@
 # kyma docs site
 
-The VitePress site at https://docs.kyma.<your-domain>.
+The VitePress site at https://shakedaskayo.github.io/kyma/.
 
 ## Local development
 
@@ -29,47 +29,31 @@ The build runs three checks before VitePress starts:
 
 ## Production deployment
 
-`docs/site/Dockerfile` + `docs/site/railway.toml` describe a self-contained Railway service. The build context is the **repo root** because the Dockerfile pulls `docs/architecture.md` and `docs/benchmarks.md` from one directory above the site.
+The site deploys to **GitHub Pages** at https://shakedaskayo.github.io/kyma/ via
+`.github/workflows/docs.yml`, using the official Pages Actions flow
+(`upload-pages-artifact` → `deploy-pages`). There is no `gh-pages` branch and no
+build output in git.
 
-### One-time Railway setup (operator action required)
+**Prerequisite (one-time):** the repo must have Pages enabled with source
+"GitHub Actions" (Settings → Pages → Build and deployment → Source, or
+`gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow`). The
+workflow handles everything after that.
 
-1. Create a **separate Railway project** named `kyma-docs` (not part of the engine's project).
-2. Add a service → connect to the kyma GitHub repo on branch `main`.
-3. Service settings:
-   - **Root directory:** `/` (repo root — needed because the Dockerfile copies from one level above `docs/site/`).
-   - **Watch paths / config-as-code:** point at `docs/site/railway.toml`. Railway picks up `[build]`, `[deploy]`, and `watchPatterns` from there.
-4. Add a custom domain on the service: `docs.kyma.<your-domain>`. Railway provisions HTTPS automatically via Let's Encrypt.
-5. First deploy: trigger from the dashboard or push a commit; Railway builds from the Dockerfile and serves the static output.
-
-### What the build does (Dockerfile)
-
-- **Builder stage** (`node:22-alpine`):
-  1. Activates pnpm 9.15.4 via `corepack`.
-  2. Copies the workspace root manifests (`package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.npmrc`).
-  3. Copies workspace member manifests so pnpm can resolve the graph; non-Node members (`web/src-tauri`) get a placeholder directory.
-  4. Runs `pnpm install --frozen-lockfile --filter kyma-docs...` — installs only the docs-site dependency tree.
-  5. Copies the architecture/benchmarks markdown, the images directory, and the docs site source.
-  6. Runs `pnpm --filter kyma-docs run build`. The pre-build sync runs first, then VitePress emits static HTML to `.vitepress/dist`.
-- **Runner stage** (`node:22-alpine`):
-  1. Installs `serve@14`.
-  2. Copies only the static `dist/` output (no source, no node_modules) under a non-root user.
-  3. Listens on `$PORT` (Railway-injected; defaults to 3000 for local `docker run`).
-  4. Health-checks `GET /` every 30 s.
-
-### Local Docker smoke
-
-```bash
-# From the repo root.
-docker build -f docs/site/Dockerfile -t kyma-docs .
-docker run --rm -p 3000:3000 kyma-docs
-# Visit http://localhost:3000
-```
-
-The image is small — a few MB beyond the Node alpine base. Static-site simple.
-
-### Updating in production
-
-The deployment is git-driven. Push to `main`; Railway picks up the change via `watchPatterns` and rebuilds. The watched paths cover everything that affects the rendered site (page content, theme, build scripts, deps). Code changes in `crates/` don't trigger a docs rebuild — and shouldn't.
+- **Triggers:** push to `main` touching `docs/site/**`, `docs/architecture.md`,
+  `docs/benchmarks.md`, `docs/images/**`, the workflow file, or the workspace
+  manifests (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc`).
+  PRs touching the same paths get a build-only check (no deploy).
+  Manual deploy: Actions tab → `docs` → Run workflow.
+- **Build job:** `pnpm install --frozen-lockfile`, then `pnpm -C docs/site build`
+  (the prebuild sync and diagram check run via npm hooks), then uploads
+  `docs/site/.vitepress/dist` as the Pages artifact.
+- **Deploy job:** `actions/deploy-pages` into the `github-pages` environment —
+  deploy history and the live URL are on the repo's Environments page.
+- **Base path:** the site is served under `/kyma/`, set via `base` in
+  `.vitepress/config.ts`. Markdown links/images and `themeConfig` assets are
+  auto-prefixed by VitePress; raw `<a href>` / `<img src>` in theme components
+  must go through `withBase()` (see `Landing.vue`), and `head` entries need the
+  literal `/kyma/` prefix.
 
 ## Sections
 
