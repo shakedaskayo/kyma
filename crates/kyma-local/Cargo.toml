@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 kyma-core.workspace = true
+kyma-jobs.workspace = true
 kyma-catalog-sqlite.workspace = true
 kyma-storage.workspace = true
 kyma-format-tlm.workspace = true
@@ -28,6 +29,7 @@ serde_json.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
+async-trait.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

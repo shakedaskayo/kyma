@@ -41,6 +41,53 @@ pub struct MemorySettings {
     pub half_life_days: f64,
     /// Reciprocal-rank-fusion constant `1/(rrf_k + rank)`.
     pub rrf_k: f64,
+
+    // ── dreaming ────────────────────────────────────────────────────────────
+    /// Scheduled agentic memory housekeeping (OFF by default).
+    pub dreaming: DreamingSettings,
+}
+
+/// Knobs for the scheduled dreaming pipeline — an autonomous agent run that
+/// housekeeps the memory store (importance, relationships, dedup, archival)
+/// and fills gaps with read-only connector access. `#[serde(default)]` keeps
+/// older settings rows loading.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DreamingSettings {
+    /// Master switch — dreaming never runs unless explicitly enabled.
+    pub enabled: bool,
+    /// Seconds between scheduled runs (default daily).
+    pub interval_secs: u64,
+    /// `full` | `housekeeping_only` | `sources`.
+    pub mode: String,
+    /// Realms in scope; empty = all realms.
+    pub realm_scope: Vec<String>,
+    /// Agent-loop budget: max tool calls per run (adk engines).
+    pub max_tool_calls: u32,
+    /// Wall-clock budget per run, seconds (all engines).
+    pub wall_clock_secs: u64,
+    /// Gap-fill budget: max connector_read calls per run.
+    pub connector_read_budget: u32,
+    /// Gap-fill budget: max bytes fetched across all connector reads.
+    pub connector_read_max_bytes: u64,
+    /// Cap on memory mutations (save/merge/archive/judge/…) per run.
+    pub mutation_cap: u32,
+}
+
+impl Default for DreamingSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            interval_secs: 86_400,
+            mode: "full".into(),
+            realm_scope: vec![],
+            max_tool_calls: 100,
+            wall_clock_secs: 600,
+            connector_read_budget: 25,
+            connector_read_max_bytes: 4 * 1024 * 1024,
+            mutation_cap: 60,
+        }
+    }
 }
 
 impl Default for MemorySettings {
@@ -59,6 +106,7 @@ impl Default for MemorySettings {
             w_recency: kyma_memory::W_RECENCY,
             half_life_days: kyma_memory::HALF_LIFE_DAYS,
             rrf_k: kyma_memory::RRF_K,
+            dreaming: DreamingSettings::default(),
         }
     }
 }

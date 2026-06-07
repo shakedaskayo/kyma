@@ -24,6 +24,7 @@ mod cc_sync;
 mod cc_writeback;
 mod setup;
 mod sync;
+pub mod node;
 pub mod server_service;
 pub mod worker;
 

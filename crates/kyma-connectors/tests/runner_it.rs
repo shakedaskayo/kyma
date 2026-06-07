@@ -5,7 +5,6 @@ use kyma_catalog::PostgresCatalog;
 use kyma_connectors::catalog_sql;
 use kyma_connectors::registry::ConnectorRegistry;
 use kyma_connectors::runner::ConnectorRunner;
-use kyma_connectors::scheduler::ConnectorScheduler;
 use kyma_connectors::secrets::EnvSecretStore;
 use kyma_connectors::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
@@ -80,8 +79,12 @@ async fn runner_claims_and_updates_cursor() {
     .await
     .unwrap();
 
-    let sched = ConnectorScheduler::new(catalog.clone());
-    sched.tick_once().await.unwrap();
+    // Enqueue directly on the legacy background_tasks harness this test
+    // drives; the production scheduler now enqueues fabric `connector_sync`
+    // jobs (covered by kyma-jobs' integration test).
+    catalog_sql::enqueue_tick(catalog.pool(), DEFAULT_TENANT, id, 1_000)
+        .await
+        .unwrap();
 
     // Register a node so we have a NodeId to hand to the runner.
     let lease = catalog

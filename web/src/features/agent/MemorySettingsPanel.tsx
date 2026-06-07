@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Brain, RotateCcw, Save, Search, SlidersHorizontal } from "lucide-react";
+import { Brain, Moon, RotateCcw, Save, Search, SlidersHorizontal } from "lucide-react";
 import { useSession } from "@/sdk/session";
 import {
   getMemorySettings,
   putMemorySettings,
+  type DreamingSettings,
   type MemorySettings,
 } from "@/sdk/memory";
 
@@ -12,6 +13,18 @@ import {
  * ranking at runtime (persisted via PUT /v1/agent/memory/settings; read by the
  * consolidator and the recall orchestrator). No redeploy needed.
  */
+
+const DREAMING_DEFAULTS: DreamingSettings = {
+  enabled: false,
+  interval_secs: 21_600, // 6h
+  mode: "full",
+  realm_scope: [],
+  max_tool_calls: 40,
+  wall_clock_secs: 300,
+  connector_read_budget: 20,
+  connector_read_max_bytes: 1_000_000,
+  mutation_cap: 100,
+};
 
 const DEFAULTS: MemorySettings = {
   extraction_enabled: true,
@@ -27,7 +40,22 @@ const DEFAULTS: MemorySettings = {
   w_recency: 0.3,
   half_life_days: 30,
   rrf_k: 60,
+  dreaming: DREAMING_DEFAULTS,
 };
+
+// Interval presets (1h / 6h / 12h / 24h) ↔ interval_secs.
+const INTERVAL_PRESETS: { label: string; secs: number }[] = [
+  { label: "1h", secs: 3_600 },
+  { label: "6h", secs: 21_600 },
+  { label: "12h", secs: 43_200 },
+  { label: "24h", secs: 86_400 },
+];
+
+const DREAMING_MODES: { value: DreamingSettings["mode"]; label: string }[] = [
+  { value: "full", label: "Full" },
+  { value: "housekeeping_only", label: "Housekeeping only" },
+  { value: "sources", label: "Sources" },
+];
 
 const WEIGHTS: { key: keyof MemorySettings; label: string; hint: string }[] = [
   { key: "w_rrf", label: "RRF fusion", hint: "Weight of reciprocal-rank fusion across the vector + keyword lists." },
@@ -49,7 +77,9 @@ export function MemorySettingsPanel() {
     if (!endpoint || !token) return;
     getMemorySettings({ endpoint, token })
       .then((d) => {
-        setS(d);
+        // Defensively backfill the dreaming block so the form (and the
+        // whole-object PUT) never drops it if an older server omits it.
+        setS({ ...d, dreaming: { ...DREAMING_DEFAULTS, ...(d.dreaming ?? {}) } });
         setError(null);
       })
       .catch((e) => setError((e as Error).message));
@@ -59,6 +89,14 @@ export function MemorySettingsPanel() {
     setS((cur) => (cur ? { ...cur, [k]: v } : cur));
     setStatus(null);
   }, []);
+
+  const setDreaming = useCallback(
+    <K extends keyof DreamingSettings>(k: K, v: DreamingSettings[K]) => {
+      setS((cur) => (cur ? { ...cur, dreaming: { ...cur.dreaming, [k]: v } } : cur));
+      setStatus(null);
+    },
+    [],
+  );
 
   const save = useCallback(async () => {
     if (!endpoint || !token || !s) return;
@@ -113,6 +151,70 @@ export function MemorySettingsPanel() {
 
       <div className="flex-1 overflow-auto">
         <div className="mx-auto max-w-3xl space-y-4 px-4 py-4">
+          {/* Dreaming */}
+          <Section
+            icon={<Moon className="h-4 w-4" />}
+            title="Dreaming"
+            desc="Autonomous consolidation — the agent distills, merges, and links memories on a schedule."
+          >
+            <Toggle
+              label="Enable dreaming"
+              hint="When on, a background agent run consolidates memory at the configured interval."
+              value={s.dreaming.enabled}
+              onChange={(v) => setDreaming("enabled", v)}
+            />
+            <StringSelectRow
+              label="Mode"
+              hint="Full = distill + housekeep + read sources. Housekeeping only = merge/archive/rescore. Sources = pull connector reads."
+              value={s.dreaming.mode}
+              options={DREAMING_MODES}
+              onChange={(v) => setDreaming("mode", v as DreamingSettings["mode"])}
+            />
+            <StringSelectRow
+              label="Interval"
+              hint="How often a scheduled dreaming run fires."
+              value={String(s.dreaming.interval_secs)}
+              options={INTERVAL_PRESETS.map((p) => ({ value: String(p.secs), label: p.label }))}
+              onChange={(v) => setDreaming("interval_secs", Number(v))}
+            />
+            <NumberRow
+              label="Max tool calls"
+              hint="Hard cap on agent tool calls per run."
+              value={s.dreaming.max_tool_calls}
+              min={1}
+              max={1000}
+              step={1}
+              onChange={(v) => setDreaming("max_tool_calls", v)}
+            />
+            <NumberRow
+              label="Wall-clock budget (s)"
+              hint="Maximum seconds a single run may take before it is stopped."
+              value={s.dreaming.wall_clock_secs}
+              min={10}
+              max={3600}
+              step={10}
+              onChange={(v) => setDreaming("wall_clock_secs", v)}
+            />
+            <NumberRow
+              label="Mutation cap"
+              hint="Maximum number of memory writes/merges/archives a run may perform."
+              value={s.dreaming.mutation_cap}
+              min={1}
+              max={10000}
+              step={1}
+              onChange={(v) => setDreaming("mutation_cap", v)}
+            />
+            <NumberRow
+              label="Connector read budget"
+              hint="Maximum connector reads per run (sources/full mode)."
+              value={s.dreaming.connector_read_budget}
+              min={0}
+              max={1000}
+              step={1}
+              onChange={(v) => setDreaming("connector_read_budget", v)}
+            />
+          </Section>
+
           {/* Ingestion */}
           <Section icon={<Brain className="h-4 w-4" />} title="Ingestion" desc="How conversation/connector activity becomes memory.">
             <Toggle
@@ -235,6 +337,24 @@ function SelectRow({ label, hint, value, options, onChange }: { label: string; h
           {options.map((o) => (
             <option key={o} value={o}>
               {o}
+            </option>
+          ))}
+        </select>
+      }
+    />
+  );
+}
+
+function StringSelectRow({ label, hint, value, options, onChange }: { label: string; hint: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) {
+  return (
+    <Row
+      label={label}
+      hint={hint}
+      control={
+        <select value={value} onChange={(e) => onChange(e.target.value)} className="rounded border bg-background px-2 py-1 text-sm">
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
             </option>
           ))}
         </select>

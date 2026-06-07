@@ -9,6 +9,7 @@ export type {
   MemoryQueryResult,
   MemoryQueryRequest,
   MemorySettings,
+  DreamingSettings,
 } from "@kyma-ai/client";
 
 import type { MemoryQueryRequest, MemorySettings } from "@kyma-ai/client";

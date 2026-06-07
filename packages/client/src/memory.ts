@@ -98,6 +98,19 @@ export async function queryMemory(
 
 // ── tunable settings (GET/PUT /v1/agent/memory/settings) ─────────────────────
 
+/** The autonomous "dreaming" consolidation block of the memory settings. */
+export interface DreamingSettings {
+  enabled: boolean;
+  interval_secs: number;
+  mode: "full" | "housekeeping_only" | "sources";
+  realm_scope: string[];
+  max_tool_calls: number;
+  wall_clock_secs: number;
+  connector_read_budget: number;
+  connector_read_max_bytes: number;
+  mutation_cap: number;
+}
+
 export interface MemorySettings {
   // ingestion
   extraction_enabled: boolean;
@@ -114,6 +127,8 @@ export interface MemorySettings {
   w_recency: number;
   half_life_days: number;
   rrf_k: number;
+  // dreaming (scheduled agentic housekeeping)
+  dreaming: DreamingSettings;
 }
 
 export async function getMemorySettings(t: KymaTransport): Promise<MemorySettings> {
