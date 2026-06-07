@@ -5105,6 +5105,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyma-redact"
+version = "0.0.4"
+dependencies = [
+ "aho-corasick",
+ "regex",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "kyma-server"
 version = "0.0.4"
 dependencies = [

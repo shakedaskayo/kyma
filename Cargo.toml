@@ -28,6 +28,7 @@ members = [
     "crates/kyma-memory",
     "crates/kyma-mcp",
     "crates/kyma-queue",
+    "crates/kyma-redact",
     "crates/kyma-ccmem",
     "web/src-tauri",
 ]
@@ -105,6 +106,10 @@ simd-json = "0.14"
 # Parser
 chumsky = "0.10"
 
+# Secret detection / redaction
+regex = "1"
+aho-corasick = "1"
+
 # Indices + compression
 fst = "0.4"
 zstd = "0.13"
@@ -161,6 +166,7 @@ kyma-embed             = { path = "crates/kyma-embed",           version = "0.0.
 kyma-memory            = { path = "crates/kyma-memory",          version = "0.0.4" }
 kyma-mcp               = { path = "crates/kyma-mcp",             version = "0.0.4" }
 kyma-queue             = { path = "crates/kyma-queue",           version = "0.0.4" }
+kyma-redact            = { path = "crates/kyma-redact",          version = "0.0.4" }
 kyma-ccmem             = { path = "crates/kyma-ccmem",           version = "0.0.4" }
 
 # Embeddings + vector search
