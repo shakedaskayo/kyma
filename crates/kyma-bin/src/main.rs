@@ -408,6 +408,10 @@ async fn main() -> Result<()> {
         skills: skills_store,
         mcp_url,
         memory: memory.clone(),
+        // Server mode: dreaming persists to Postgres + the worker fabric, not
+        // the degraded local store. Settings live in the `memory_settings` row.
+        local_dreaming: None,
+        memory_settings_path: None,
     };
     // Build the SchemaCache once and share it across the query router, live
     // router, and flight router via Arc::clone — they all serve the same node

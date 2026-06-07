@@ -35,6 +35,7 @@ use kyma_core::tenant::TenantId;
 use super::connector_tools::{
     tool_connector_read, tool_list_connectors, ConnectorReadBudget, ConnectorToolCtx,
 };
+use super::dreaming_local::LocalDreamingStore;
 use super::engine::{claude_cli, EngineKind};
 use super::memory_settings::{self, DreamingSettings};
 use super::routes::persist_run;
@@ -341,70 +342,254 @@ RULES:
     p
 }
 
-// ── run record (memory_pipeline_runs, kind='dreaming') ──────────────────────
+// ── persistence behind a trait (PG fabric path vs local degraded path) ──────
 
-#[allow(clippy::too_many_arguments)]
-async fn insert_run_row(
-    pool: &sqlx::PgPool,
-    run_id: Uuid,
-    tenant: TenantId,
-    req: &DreamingRequest,
-    mode: &str,
-    engine: &str,
-    model: &str,
-    session_id: Uuid,
-    agent_run_id: Uuid,
-) -> anyhow::Result<()> {
-    sqlx::query(
-        "INSERT INTO memory_pipeline_runs \
-         (id, tenant_id, kind, status, started_at, mode, trigger, job_id, worker_id, \
-          session_id, agent_run_id, engine, model) \
-         VALUES ($1, $2, 'dreaming', 'running', $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-    )
-    .bind(run_id)
-    .bind(tenant.as_uuid())
-    .bind(Utc::now())
-    .bind(mode)
-    .bind(req.trigger.as_str())
-    .bind(req.job_id)
-    .bind(req.worker_id)
-    .bind(session_id)
-    .bind(agent_run_id)
-    .bind(engine)
-    .bind(model)
-    .execute(pool)
-    .await?;
-    Ok(())
+/// Immutable per-run identity passed to the recorder. The run/agent_run/session
+/// ids are minted once by [`run_dreaming`]; the recorder decides where (if
+/// anywhere) they are durably stored.
+#[derive(Clone, Copy)]
+pub struct RunIds {
+    pub run_id: Uuid,
+    pub agent_run_id: Uuid,
+    pub session_id: Uuid,
 }
 
-async fn finalize_run_row(
-    pool: &sqlx::PgPool,
-    run_id: Uuid,
-    status: &str,
-    error: Option<&str>,
-    outcome: &DreamingOutcome,
-    progress: Value,
-) {
-    let stats = serde_json::to_value(outcome).unwrap_or_default();
-    let _ = sqlx::query(
-        "UPDATE memory_pipeline_runs SET status=$2, finished_at=$3, error=$4, \
-         memories_written=$5, stats_json=$6, progress_json=$7 WHERE id=$1",
-    )
-    .bind(run_id)
-    .bind(status)
-    .bind(Utc::now())
-    .bind(error)
-    .bind(outcome.memories_created as i64)
-    .bind(stats)
-    .bind(progress)
-    .execute(pool)
-    .await;
+/// The final, fully-built records a run produces. The recorder writes them
+/// wherever it persists (Postgres rows; the local store + SQLite).
+pub struct FinalizedRun<'a> {
+    pub ids: RunIds,
+    /// `success` | `error` (memory_pipeline_runs status).
+    pub status: &'a str,
+    pub error: Option<&'a str>,
+    /// `success` | `budget_exceeded` | `error` (agent_runs status).
+    pub agent_status: &'a str,
+    pub outcome: &'a DreamingOutcome,
+    pub usage: &'a Value,
+    /// The agent_runs conversation trace.
+    pub trace: &'a Value,
+    /// The final progress snapshot.
+    pub progress: Value,
+    pub prompt_user: &'a str,
+    pub engine: &'a str,
+    pub model: &'a str,
+    pub started_at: chrono::DateTime<Utc>,
+}
+
+/// Abstracts the persistence side-effects of a dreaming run. Two impls:
+/// [`PgRecorder`] (the worker-fabric path — Postgres rows, byte-identical to
+/// the original) and [`LocalRecorder`] (degraded local mode — an in-memory ring
+/// + SQLite, no Postgres). The agent-loop internals (adk / Claude CLI paths,
+/// budgets, activity feed, prompt) are SHARED across both.
+#[adk_rust::async_trait]
+pub trait DreamingRecorder: Send + Sync {
+    /// Record the start of the run (status `running`). Errors abort the run.
+    async fn insert_run(
+        &self,
+        ids: RunIds,
+        req: &DreamingRequest,
+        mode: &str,
+        engine: &str,
+        model: &str,
+        prompt_user: &str,
+    ) -> anyhow::Result<()>;
+
+    /// Record the terminal state: agent_runs trace + assistant turn +
+    /// memory_pipeline_runs finalize (or the local-store equivalents).
+    async fn finalize_run(&self, fin: FinalizedRun<'_>);
+}
+
+// ── Postgres / worker-fabric recorder (unchanged behavior) ──────────────────
+
+/// The original Postgres persistence path, factored behind the trait. Drives
+/// `agent_sessions`/`agent_session_turns`/`agent_runs`/`memory_pipeline_runs`
+/// exactly as before — the server-mode behavior must remain byte-identical.
+pub struct PgRecorder {
+    pool: sqlx::PgPool,
+    tenant: TenantId,
+    next_turn_index: i32,
+}
+
+#[adk_rust::async_trait]
+impl DreamingRecorder for PgRecorder {
+    async fn insert_run(
+        &self,
+        ids: RunIds,
+        req: &DreamingRequest,
+        mode: &str,
+        engine: &str,
+        model: &str,
+        prompt_user: &str,
+    ) -> anyhow::Result<()> {
+        let tenant_uuid = self.tenant.as_uuid();
+        // Title the conversation session the UI drills into.
+        let title = format!("Dreaming · {}", Utc::now().format("%b %e %H:%M"));
+        let _ = sqlx::query("UPDATE agent_sessions SET title = $2 WHERE session_id = $1")
+            .bind(ids.session_id)
+            .bind(&title)
+            .execute(&self.pool)
+            .await;
+        sqlx::query(
+            "INSERT INTO memory_pipeline_runs \
+             (id, tenant_id, kind, status, started_at, mode, trigger, job_id, worker_id, \
+              session_id, agent_run_id, engine, model) \
+             VALUES ($1, $2, 'dreaming', 'running', $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+        )
+        .bind(ids.run_id)
+        .bind(tenant_uuid)
+        .bind(Utc::now())
+        .bind(mode)
+        .bind(req.trigger.as_str())
+        .bind(req.job_id)
+        .bind(req.worker_id)
+        .bind(ids.session_id)
+        .bind(ids.agent_run_id)
+        .bind(engine)
+        .bind(model)
+        .execute(&self.pool)
+        .await?;
+        // run_id stays NULL here: agent_session_turns.run_id FKs agent_runs, and
+        // that row is only inserted after the run completes (persist_run below).
+        sessions::persist_turn(
+            Some(&self.pool),
+            ids.session_id,
+            tenant_uuid,
+            self.next_turn_index,
+            "user",
+            prompt_user,
+            None,
+        )
+        .await;
+        Ok(())
+    }
+
+    async fn finalize_run(&self, fin: FinalizedRun<'_>) {
+        let tenant_uuid = self.tenant.as_uuid();
+        if let Err(e) = persist_run(
+            Some(&self.pool),
+            fin.ids.agent_run_id,
+            fin.prompt_user,
+            &format!("{}/{}", fin.engine, fin.model),
+            tenant_uuid,
+            Some(fin.ids.session_id),
+            fin.started_at,
+            Utc::now(),
+            fin.agent_status,
+            fin.usage,
+            fin.trace,
+        )
+        .await
+        {
+            warn!(run_id = %fin.ids.run_id, error = %e, "failed to persist dreaming agent_runs row");
+        }
+        // Assistant summary turn — after persist_run so its run_id FK resolves.
+        if !fin.outcome.summary.is_empty() {
+            sessions::persist_turn(
+                Some(&self.pool),
+                fin.ids.session_id,
+                tenant_uuid,
+                self.next_turn_index + 1,
+                "assistant",
+                &fin.outcome.summary,
+                Some(fin.ids.agent_run_id),
+            )
+            .await;
+        }
+        // memory_pipeline_runs finalize.
+        let stats = serde_json::to_value(fin.outcome).unwrap_or_default();
+        let _ = sqlx::query(
+            "UPDATE memory_pipeline_runs SET status=$2, finished_at=$3, error=$4, \
+             memories_written=$5, stats_json=$6, progress_json=$7 WHERE id=$1",
+        )
+        .bind(fin.ids.run_id)
+        .bind(fin.status)
+        .bind(Utc::now())
+        .bind(fin.error)
+        .bind(fin.outcome.memories_created as i64)
+        .bind(stats)
+        .bind(fin.progress)
+        .execute(&self.pool)
+        .await;
+    }
+}
+
+// ── local degraded-mode recorder (in-memory ring + SQLite) ──────────────────
+
+/// Degraded local-mode persistence: writes the same Run JSON shape the HTTP
+/// layer serves into a [`LocalDreamingStore`] (in-memory ring + the embedded
+/// SQLite catalog). No Postgres, no sessions, no worker fabric.
+pub struct LocalRecorder {
+    store: Arc<LocalDreamingStore>,
+}
+
+impl LocalRecorder {
+    pub fn new(store: Arc<LocalDreamingStore>) -> Self {
+        Self { store }
+    }
+
+}
+
+#[adk_rust::async_trait]
+impl DreamingRecorder for LocalRecorder {
+    async fn insert_run(
+        &self,
+        ids: RunIds,
+        req: &DreamingRequest,
+        mode: &str,
+        engine: &str,
+        model: &str,
+        _prompt_user: &str,
+    ) -> anyhow::Result<()> {
+        // The full initial Run JSON (mirrors `run_row_json`). `finalize_run`
+        // merges terminal fields onto this, preserving mode/trigger/started_at.
+        let run = json!({
+            "id": ids.run_id.to_string(),
+            "kind": "dreaming",
+            "status": "running",
+            "mode": mode,
+            "trigger": req.trigger.as_str(),
+            "engine": engine,
+            "model": model,
+            "worker_id": Value::Null,
+            "started_at": Utc::now().to_rfc3339(),
+            "finished_at": Value::Null,
+            "events_scanned": 0,
+            "memories_written": 0,
+            "error": Value::Null,
+            "job_id": Value::Null,
+            "session_id": ids.session_id.to_string(),
+            "agent_run_id": ids.agent_run_id.to_string(),
+            "stats": Value::Null,
+            "progress": json!({
+                "current_phase": "starting", "activity": [],
+                "thinking": Value::Null, "counters": {}
+            }),
+        });
+        self.store.start_run(ids.run_id, ids.agent_run_id, run);
+        Ok(())
+    }
+
+    async fn finalize_run(&self, fin: FinalizedRun<'_>) {
+        // Only the fields that change at the end — merged onto the running entry
+        // so mode/trigger/started_at (set at insert) are preserved.
+        let finished = json!({
+            "status": fin.status,
+            "finished_at": Utc::now().to_rfc3339(),
+            "memories_written": fin.outcome.memories_created,
+            "error": fin.error,
+            "stats": serde_json::to_value(fin.outcome).unwrap_or(Value::Null),
+            "progress": fin.progress.clone(),
+        });
+        self.store
+            .finalize_run(fin.ids.run_id, finished, fin.trace.clone())
+            .await;
+    }
 }
 
 // ── the executor ─────────────────────────────────────────────────────────────
 
-/// Run one dreaming job to completion. Returns the run id + outcome; all
-/// persistence (run row, session, agent_runs trace) happens inside.
+/// Entry point for the worker-fabric path: builds a [`PgRecorder`] (minting +
+/// titling the conversation session) and delegates to [`run_dreaming`]. Keeps
+/// the worker executor calling exactly one function, as before.
 pub async fn run_dreaming(
     state: &AgentState,
     progress: ProgressFn,
@@ -413,50 +598,51 @@ pub async fn run_dreaming(
     let Some(pool) = state.pool.clone() else {
         anyhow::bail!("dreaming requires Postgres (no pool in local mode)");
     };
-    let settings = memory_settings::load(Some(&pool), state.tenant).await.dreaming;
-    let mode = req
-        .mode
-        .clone()
-        .unwrap_or_else(|| settings.mode.clone());
+    let tenant_uuid = state.tenant.as_uuid();
+    // Mint the conversation session the UI drills into.
+    let sctx =
+        sessions::load_or_create(Some(&pool), None, tenant_uuid, "dreaming", "dreaming").await;
+    let ids = RunIds {
+        run_id: Uuid::new_v4(),
+        agent_run_id: Uuid::new_v4(),
+        session_id: sctx.session_id,
+    };
+    let recorder = PgRecorder {
+        pool,
+        tenant: state.tenant,
+        next_turn_index: sctx.next_turn_index,
+    };
+    run_dreaming_with(state, &recorder, ids, progress, req).await
+}
+
+/// Run one dreaming job to completion against a [`DreamingRecorder`]. The
+/// agent-loop internals (adk / Claude CLI, budgets, activity feed, prompt) are
+/// shared; only persistence varies by recorder.
+pub async fn run_dreaming_with(
+    state: &AgentState,
+    recorder: &dyn DreamingRecorder,
+    ids: RunIds,
+    progress: ProgressFn,
+    req: DreamingRequest,
+) -> anyhow::Result<(Uuid, DreamingOutcome)> {
+    let settings = memory_settings::load_for(state).await.dreaming;
+    let mode = req.mode.clone().unwrap_or_else(|| settings.mode.clone());
     let engine_cfg = state.engines.get().await?;
     let engine = engine_cfg.kind.as_str().to_string();
     let model = engine_cfg.model.clone();
 
-    let run_id = Uuid::new_v4();
-    let agent_run_id = Uuid::new_v4();
-    let tenant_uuid = state.tenant.as_uuid();
-
-    // Mint the conversation session the UI drills into.
-    let sctx = sessions::load_or_create(Some(&pool), None, tenant_uuid, "dreaming", "dreaming").await;
-    let session_uuid = sctx.session_id;
-    let title = format!("Dreaming · {}", Utc::now().format("%b %e %H:%M"));
-    let _ = sqlx::query("UPDATE agent_sessions SET title = $2 WHERE session_id = $1")
-        .bind(session_uuid)
-        .bind(&title)
-        .execute(&pool)
-        .await;
-
-    insert_run_row(
-        &pool, run_id, state.tenant, &req, &mode, &engine, &model, session_uuid, agent_run_id,
-    )
-    .await?;
+    let run_id = ids.run_id;
+    let agent_run_id = ids.agent_run_id;
+    let session_uuid = ids.session_id;
 
     let prompt_user = match (&req.focus, mode.as_str()) {
         (Some(f), _) => format!("Dreaming run ({mode}) — focus: {f}"),
         (None, m) => format!("Dreaming run ({m})"),
     };
-    // run_id stays NULL here: agent_session_turns.run_id FKs agent_runs, and
-    // that row is only inserted after the run completes (persist_run below).
-    sessions::persist_turn(
-        Some(&pool),
-        session_uuid,
-        tenant_uuid,
-        sctx.next_turn_index,
-        "user",
-        &prompt_user,
-        None,
-    )
-    .await;
+
+    recorder
+        .insert_run(ids, &req, &mode, &engine, &model, &prompt_user)
+        .await?;
 
     let mut activity = Activity::new(progress);
     activity.phase("reviewing").await;
@@ -465,7 +651,8 @@ pub async fn run_dreaming(
     let started_at = Utc::now();
     let start = Instant::now();
     let wall_clock = Duration::from_secs(settings.wall_clock_secs.max(30));
-    let system_prompt = dreaming_prompt(&mode, req.focus.as_deref(), &settings.realm_scope, &settings);
+    let system_prompt =
+        dreaming_prompt(&mode, req.focus.as_deref(), &settings.realm_scope, &settings);
 
     let mut outcome = DreamingOutcome::default();
     let mut trace: Vec<Value> = Vec::new();
@@ -507,6 +694,7 @@ pub async fn run_dreaming(
 
     let usage = json!({
         "run_id": agent_run_id.to_string(),
+        "mode": mode,
         "tool_calls": outcome.tool_calls,
         "elapsed_ms": start.elapsed().as_millis() as u64,
     });
@@ -515,38 +703,24 @@ pub async fn run_dreaming(
         Err(m) if m.starts_with("tool_loop") || m.starts_with("timeout") => "budget_exceeded",
         Err(_) => "error",
     };
-    if let Err(e) = persist_run(
-        Some(&pool),
-        agent_run_id,
-        &prompt_user,
-        &format!("{engine}/{model}"),
-        tenant_uuid,
-        Some(session_uuid),
-        started_at,
-        Utc::now(),
-        agent_status,
-        &usage,
-        &Value::Array(trace),
-    )
-    .await
-    {
-        warn!(run_id = %run_id, error = %e, "failed to persist dreaming agent_runs row");
-    }
-    // Assistant summary turn — after persist_run so its run_id FK resolves.
-    if !outcome.summary.is_empty() {
-        sessions::persist_turn(
-            Some(&pool),
-            session_uuid,
-            tenant_uuid,
-            sctx.next_turn_index + 1,
-            "assistant",
-            &outcome.summary,
-            Some(agent_run_id),
-        )
-        .await;
-    }
 
-    finalize_run_row(&pool, run_id, status, error.as_deref(), &outcome, activity.snapshot()).await;
+    recorder
+        .finalize_run(FinalizedRun {
+            ids,
+            status,
+            error: error.as_deref(),
+            agent_status,
+            outcome: &outcome,
+            usage: &usage,
+            trace: &Value::Array(trace),
+            progress: activity.snapshot(),
+            prompt_user: &prompt_user,
+            engine: &engine,
+            model: &model,
+            started_at,
+        })
+        .await;
+
     info!(
         run_id = %run_id,
         status,
@@ -1039,6 +1213,121 @@ impl DreamingScheduler {
     }
 }
 
+// ── local degraded-mode inline execution + scheduler ─────────────────────────
+
+/// Spawn one dreaming run inline as a tokio task (local degraded mode). Builds
+/// a [`LocalRecorder`] over the store and a [`ProgressFn`] that pushes live
+/// snapshots onto the running entry. Releases the store's in-flight guard when
+/// the run ends (success or panic). The caller MUST have already acquired the
+/// guard via [`LocalDreamingStore::try_acquire`].
+pub fn spawn_local_run(
+    state: AgentState,
+    store: Arc<LocalDreamingStore>,
+    mode: Option<String>,
+    focus: Option<String>,
+    trigger: Trigger,
+) {
+    let ids = RunIds {
+        run_id: Uuid::new_v4(),
+        agent_run_id: Uuid::new_v4(),
+        session_id: Uuid::new_v4(),
+    };
+    let progress_store = store.clone();
+    let run_id = ids.run_id;
+    let progress: ProgressFn = Arc::new(move |snapshot: Value| {
+        let s = progress_store.clone();
+        Box::pin(async move {
+            s.set_progress(run_id, snapshot);
+        })
+    });
+    tokio::spawn(async move {
+        let recorder = LocalRecorder::new(store.clone());
+        let req = DreamingRequest {
+            trigger,
+            mode,
+            focus,
+            job_id: None,
+            worker_id: None,
+        };
+        // Guard against a panic in the run leaving the in-flight flag stuck.
+        let result =
+            run_dreaming_with(&state, &recorder, ids, progress, req).await;
+        store.release();
+        match result {
+            Ok((rid, outcome)) => info!(
+                run_id = %rid,
+                tool_calls = outcome.tool_calls,
+                created = outcome.memories_created,
+                "local dreaming run finished"
+            ),
+            Err(e) => warn!(error = %e, "local dreaming run failed to start"),
+        }
+    });
+}
+
+/// In-process interval scheduler for local degraded mode. When dreaming is
+/// enabled in the local memory settings, kicks off an inline run every
+/// `interval_secs` (deduped by the store's in-flight guard). OFF by default —
+/// only runs when `dreaming.enabled` is set in `${KYMA_HOME}/memory-settings.json`.
+pub struct LocalDreamingScheduler {
+    state: AgentState,
+    store: Arc<LocalDreamingStore>,
+    pub poll: Duration,
+}
+
+impl LocalDreamingScheduler {
+    pub fn new(state: AgentState, store: Arc<LocalDreamingStore>) -> Self {
+        Self {
+            state,
+            store,
+            poll: Duration::from_secs(60),
+        }
+    }
+
+    async fn tick_once(&self) {
+        let settings = memory_settings::load_for(&self.state).await.dreaming;
+        if !settings.enabled {
+            return;
+        }
+        // Due when no run started within the interval. The latest run is the
+        // first item the store lists.
+        if let Some(latest) = self.store.list_runs(1, 0).into_iter().next() {
+            if let Some(started) = latest
+                .get("started_at")
+                .and_then(|v| v.as_str())
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            {
+                let elapsed = Utc::now().signed_duration_since(started.with_timezone(&Utc));
+                if elapsed.num_seconds() < settings.interval_secs as i64 {
+                    return;
+                }
+            }
+        }
+        if self.store.try_acquire() {
+            info!("local dreaming scheduler: starting scheduled run");
+            spawn_local_run(
+                self.state.clone(),
+                self.store.clone(),
+                None,
+                None,
+                Trigger::Scheduled,
+            );
+        }
+    }
+
+    pub async fn run(self, shutdown: impl std::future::Future<Output = ()>) {
+        info!("local dreaming scheduler starting (runs only when enabled in memory settings)");
+        tokio::pin!(shutdown);
+        loop {
+            tokio::select! {
+                biased;
+                () = &mut shutdown => { info!("local dreaming scheduler shutdown"); return; }
+                _ = tokio::time::sleep(self.poll) => self.tick_once().await,
+            }
+        }
+    }
+}
+
 // ── HTTP handlers (mounted under /v1/agent/memory/dreaming) ──────────────────
 
 use axum::extract::{Path as AxumPath, Query, State};
@@ -1094,6 +1383,13 @@ pub async fn list_runs_handler(
     State(state): State<AgentState>,
     Query(q): Query<RunsQuery>,
 ) -> impl IntoResponse {
+    // Local degraded mode: serve from the in-memory ring + SQLite-backed store.
+    if let Some(store) = state.local_dreaming.as_ref() {
+        let limit = q.limit.clamp(1, 200) as usize;
+        let offset = q.offset.max(0) as usize;
+        let items = store.list_runs(limit, offset);
+        return (StatusCode::OK, Json(json!({ "items": items }))).into_response();
+    }
     let Some(pool) = state.pool.as_ref() else {
         return (StatusCode::OK, Json(json!({ "items": [] }))).into_response();
     };
@@ -1126,6 +1422,16 @@ pub async fn get_run_handler(
     State(state): State<AgentState>,
     AxumPath(id): AxumPath<Uuid>,
 ) -> impl IntoResponse {
+    // Local degraded mode: serve from the store (live progress for a running
+    // run is kept fresh on the running entry via set_progress).
+    if let Some(store) = state.local_dreaming.as_ref() {
+        return match store.get_run(id) {
+            Some(run) => (StatusCode::OK, Json(run)).into_response(),
+            None => {
+                (StatusCode::NOT_FOUND, Json(json!({"error": "no such run"}))).into_response()
+            }
+        };
+    }
     let Some(pool) = state.pool.as_ref() else {
         return (StatusCode::NOT_FOUND, Json(json!({"error": "no runs in local mode"})))
             .into_response();
@@ -1164,7 +1470,7 @@ pub async fn get_run_handler(
     }
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 pub struct TriggerBody {
     #[serde(default)]
     pub mode: Option<String>,
@@ -1178,6 +1484,22 @@ pub async fn trigger_run_handler(
     State(state): State<AgentState>,
     body: Option<Json<TriggerBody>>,
 ) -> impl IntoResponse {
+    let body0 = body.as_ref().map(|Json(b)| b.clone()).unwrap_or_default();
+    // Local degraded mode: run inline as a tokio task in this process. One run
+    // in flight at a time — the store's atomic guard dedupes concurrent runs.
+    if let Some(store) = state.local_dreaming.clone() {
+        if !store.try_acquire() {
+            return (
+                StatusCode::OK,
+                Json(json!({ "job_id": Value::Null, "deduped": true,
+                              "detail": "a dreaming run is already in flight" })),
+            )
+                .into_response();
+        }
+        let job_id = Uuid::new_v4(); // synthetic id so the UI gets a 202 it can toast
+        spawn_local_run(state.clone(), store, body0.mode, body0.focus, Trigger::Manual);
+        return (StatusCode::ACCEPTED, Json(json!({ "job_id": job_id }))).into_response();
+    }
     let Some(pool) = state.pool.clone() else {
         return (
             StatusCode::BAD_REQUEST,

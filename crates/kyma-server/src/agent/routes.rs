@@ -265,29 +265,42 @@ async fn export_memory_handler(
     }))
 }
 
-/// `GET /v1/agent/memory/settings` — current tunable memory settings.
+/// `GET /v1/agent/memory/settings` — current tunable memory settings. Reads the
+/// Postgres row in server mode, or the local JSON file in local mode.
 async fn get_memory_settings(State(state): State<AgentState>) -> Json<Value> {
-    let s = super::memory_settings::load(state.pool.as_ref(), state.tenant).await;
+    let s = super::memory_settings::load_for(&state).await;
     Json(serde_json::to_value(s).unwrap_or_else(|_| json!({})))
 }
 
-/// `PUT /v1/agent/memory/settings` — persist tunable memory settings.
+/// `PUT /v1/agent/memory/settings` — persist tunable memory settings. Server
+/// mode writes the Postgres row; local mode writes the JSON file under
+/// `${KYMA_HOME}`.
 async fn put_memory_settings(
     State(state): State<AgentState>,
     Json(body): Json<super::memory_settings::MemorySettings>,
 ) -> Response {
-    let Some(pool) = state.pool.as_ref() else {
-        // Local mode: settings aren't persisted; accept and report ok.
-        return Json(json!({ "ok": true, "persisted": false })).into_response();
-    };
-    match super::memory_settings::save(pool, state.tenant, &body).await {
-        Ok(()) => Json(json!({ "ok": true })).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
-        )
-            .into_response(),
+    if let Some(pool) = state.pool.as_ref() {
+        return match super::memory_settings::save(pool, state.tenant, &body).await {
+            Ok(()) => Json(json!({ "ok": true })).into_response(),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response(),
+        };
     }
+    // Local mode: persist to the settings file so dreaming knobs survive restarts.
+    if let Some(path) = state.memory_settings_path.as_ref() {
+        return match super::memory_settings::save_local(path, &body).await {
+            Ok(()) => Json(json!({ "ok": true, "persisted": true })).into_response(),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response(),
+        };
+    }
+    Json(json!({ "ok": true, "persisted": false })).into_response()
 }
 
 /// `POST /v1/agent/memory/query` — near-realtime memory recall for external
@@ -1142,6 +1155,36 @@ async fn run_lookup_handler(
                 .into_response();
         }
     };
+    // Local degraded mode: serve the dreaming agent-run trace from the store.
+    // The conversation drilldown (`/v1/agent/runs/:agent_run_id`) reads the
+    // trace recorded inline by the dreaming run.
+    if let Some(store) = state.local_dreaming.as_ref() {
+        return match store.get_agent_run(uid) {
+            Some((run, trace)) => {
+                let started = run.get("started_at").cloned().unwrap_or(Value::Null);
+                let finished = run.get("finished_at").cloned().unwrap_or(Value::Null);
+                let model = run.get("model").cloned().unwrap_or(Value::Null);
+                let status = run.get("status").cloned().unwrap_or(Value::Null);
+                Json(json!({
+                    "run_id": run_id,
+                    "question": run.get("mode").and_then(|m| m.as_str())
+                        .map(|m| format!("Dreaming run ({m})")).unwrap_or_else(|| "Dreaming run".into()),
+                    "model_id": model,
+                    "status": status,
+                    "started_at": started,
+                    "finished_at": finished,
+                    "usage": run.get("stats").cloned().unwrap_or(Value::Null),
+                    "trace": trace,
+                }))
+                .into_response()
+            }
+            None => (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "run not found", "run_id": run_id})),
+            )
+                .into_response(),
+        };
+    }
     let Some(pool) = state.pool.as_ref() else {
         return (
             StatusCode::NOT_FOUND,

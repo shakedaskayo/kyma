@@ -244,11 +244,14 @@ pub async fn run_mcp() -> Result<()> {
 ///
 /// Also returns the `AgentState` so the caller can start optional background
 /// workers (e.g. the `KYMA_CC_WATCH` watcher) that hold a reference to it.
+#[allow(clippy::too_many_arguments)]
 pub fn build_local_app(
     catalog: Arc<dyn kyma_core::catalog::Catalog>,
     format: Arc<dyn kyma_core::segment_format::SegmentFormat>,
     backend: Arc<dyn AuthBackend>,
     memory: Option<kyma_memory::MemoryQueue>,
+    local_dreaming: Option<Arc<kyma_server::agent::dreaming_local::LocalDreamingStore>>,
+    mcp_url: Option<String>,
 ) -> (axum::Router, AgentState) {
     let schema_cache = Arc::new(SchemaCache::from_env());
     let query_state = QueryState {
@@ -278,8 +281,17 @@ pub fn build_local_app(
         skills: Arc::new(FileEnabledSkillsStore::new(std::format!(
             "{kyma_home}/agent-skills.json"
         ))),
-        mcp_url: None,
+        // Loopback to this serve's own MCP endpoint so the ClaudeCli engine can
+        // reach the local memory + data tools during dreaming/ask. `None` keeps
+        // MCP wiring disabled (adk engines query the engine directly).
+        mcp_url,
         memory: memory.clone(),
+        // Degraded local-mode dreaming: inline execution + in-memory ring + SQLite.
+        local_dreaming,
+        // Local memory settings persist to a JSON file under ${KYMA_HOME}.
+        memory_settings_path: Some(std::path::PathBuf::from(std::format!(
+            "{kyma_home}/memory-settings.json"
+        ))),
     };
     let ingest_events = IngestEvents::new(256);
     let write_path = WritePath::new(catalog.clone(), format.clone())
@@ -370,11 +382,15 @@ pub fn build_local_app(
         backend.clone(),
         Some(ingest_events),
     );
+    // /v1/workers stub (empty registry) so the dreaming UI's NodesStrip renders
+    // its empty state. Behind read auth like the rest of the API surface.
+    let workers_router = kyma_server::local_workers_router().layer(read_mw());
     let app = read_router
         .merge(ingest_router)
         .merge(local_write_router)
         .merge(admin_users_router)
         .merge(session_router)
+        .merge(workers_router)
         .merge(kyma_server::auth_handler::auth_login_router(catalog.clone()))
         .merge(kyma_server::health_router())
         .merge(live_router)
@@ -413,8 +429,56 @@ pub async fn run_serve(addr: SocketAddr) -> Result<()> {
         true,
     ));
 
-    let (app, agent_state) =
-        build_local_app(engine.catalog.clone(), engine.format.clone(), backend, memory);
+    // Degraded local-mode dreaming state: in-memory ring hydrated from the
+    // embedded SQLite catalog. Inline runs + the dreaming HTTP handlers read it.
+    let local_dreaming =
+        Some(kyma_server::agent::dreaming_local::LocalDreamingStore::new(engine.catalog.clone()).await);
+    // Loopback URL for this serve's own MCP endpoint, so the ClaudeCli engine
+    // can reach the local memory/data tools during a dreaming run. When bound
+    // to all interfaces (0.0.0.0 / ::), dial 127.0.0.1 instead — the unspecified
+    // address isn't connectable as a destination.
+    let mcp_host = if addr.ip().is_unspecified() {
+        format!("127.0.0.1:{}", addr.port())
+    } else {
+        addr.to_string()
+    };
+    let mcp_url = Some(format!("http://{mcp_host}/mcp/v1"));
+
+    // Local serve always seeds a user, so the auth backend is "enabled" and the
+    // MCP endpoint requires a bearer. The dreaming ClaudeCli path reads
+    // KYMA_INTERNAL_BEARER for that header. If a static admin token is
+    // configured via KYMA_AUTH_TOKENS and KYMA_INTERNAL_BEARER isn't already
+    // set, derive it so dreaming-over-ClaudeCli works out of the box.
+    if std::env::var("KYMA_INTERNAL_BEARER").is_err() {
+        if let Some(tok) = first_admin_token() {
+            // SAFETY: set before any worker thread reads it; single-threaded here.
+            std::env::set_var("KYMA_INTERNAL_BEARER", tok);
+        }
+    }
+
+    let (app, agent_state) = build_local_app(
+        engine.catalog.clone(),
+        engine.format.clone(),
+        backend,
+        memory,
+        local_dreaming.clone(),
+        mcp_url,
+    );
+
+    // Optional in-process dreaming scheduler — only fires when dreaming is
+    // enabled in ${KYMA_HOME}/memory-settings.json (OFF by default). Runs inline
+    // in this process; no worker fabric.
+    if let Some(store) = local_dreaming {
+        let scheduler =
+            kyma_server::agent::dreaming::LocalDreamingScheduler::new(agent_state.clone(), store);
+        tokio::spawn(async move {
+            scheduler
+                .run(async {
+                    let _ = tokio::signal::ctrl_c().await;
+                })
+                .await;
+        });
+    }
 
     // Optional resident watcher: keep Claude Code file memory synced while
     // the local server runs (opt-in: KYMA_CC_WATCH=1).
@@ -478,6 +542,17 @@ pub struct SyncOptions {
 
 fn env_flag(key: &str, default: bool) -> bool {
     std::env::var(key).map_or(default, |v| v != "0")
+}
+
+/// First `admin`-role token from `KYMA_AUTH_TOKENS` (`tok:role,…`), if any.
+/// Used to derive `KYMA_INTERNAL_BEARER` so the dreaming ClaudeCli path can
+/// reach the auth-protected loopback MCP endpoint.
+fn first_admin_token() -> Option<String> {
+    let raw = std::env::var("KYMA_AUTH_TOKENS").ok()?;
+    raw.split(',').find_map(|pair| {
+        let (tok, role) = pair.trim().split_once(':')?;
+        (role.trim() == "admin" && !tok.trim().is_empty()).then(|| tok.trim().to_string())
+    })
 }
 
 fn env_secs(key: &str, default: u64) -> std::time::Duration {

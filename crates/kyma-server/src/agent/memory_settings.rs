@@ -132,6 +132,37 @@ pub async fn load(pool: Option<&PgPool>, tenant: TenantId) -> MemorySettings {
     }
 }
 
+/// Load settings the right way for this state: from the Postgres row in server
+/// mode, or from the local JSON file (`memory_settings_path`) in local mode.
+/// Never fails — falls back to defaults.
+pub async fn load_for(state: &super::state::AgentState) -> MemorySettings {
+    if let Some(pool) = state.pool.as_ref() {
+        return load(Some(pool), state.tenant).await;
+    }
+    if let Some(path) = state.memory_settings_path.as_ref() {
+        return load_local(path).await;
+    }
+    MemorySettings::default()
+}
+
+/// Load settings from a local JSON file. Missing/unparseable ⇒ defaults.
+pub async fn load_local(path: &std::path::Path) -> MemorySettings {
+    match tokio::fs::read_to_string(path).await {
+        Ok(raw) => serde_json::from_str(&raw).unwrap_or_default(),
+        Err(_) => MemorySettings::default(),
+    }
+}
+
+/// Persist settings to a local JSON file (local mode's stand-in for the
+/// Postgres `memory_settings` row).
+pub async fn save_local(path: &std::path::Path, s: &MemorySettings) -> anyhow::Result<()> {
+    if let Some(dir) = path.parent() {
+        tokio::fs::create_dir_all(dir).await?;
+    }
+    tokio::fs::write(path, serde_json::to_string_pretty(s)?).await?;
+    Ok(())
+}
+
 /// Upsert the tenant's settings.
 pub async fn save(pool: &PgPool, tenant: TenantId, s: &MemorySettings) -> anyhow::Result<()> {
     let json = serde_json::to_value(s)?;
@@ -145,4 +176,30 @@ pub async fn save(pool: &PgPool, tenant: TenantId, s: &MemorySettings) -> anyhow
     .execute(pool)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn local_settings_file_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested").join("memory-settings.json");
+        // Missing file ⇒ defaults.
+        let d = load_local(&path).await;
+        assert!(!d.dreaming.enabled);
+
+        // Round-trip a customized dreaming block.
+        let mut s = MemorySettings::default();
+        s.dreaming.enabled = true;
+        s.dreaming.wall_clock_secs = 180;
+        s.dreaming.mutation_cap = 6;
+        save_local(&path, &s).await.unwrap();
+
+        let loaded = load_local(&path).await;
+        assert!(loaded.dreaming.enabled);
+        assert_eq!(loaded.dreaming.wall_clock_secs, 180);
+        assert_eq!(loaded.dreaming.mutation_cap, 6);
+    }
 }

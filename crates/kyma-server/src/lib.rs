@@ -247,6 +247,19 @@ pub fn health_router() -> Router {
     Router::new().route("/health", get(health::health))
 }
 
+/// Local-mode stub for `GET /v1/workers`. The worker registry is a
+/// control-plane (Postgres-backed) surface not mounted in single-binary local
+/// mode, but the web UI's NodesStrip calls `/v1/workers` unconditionally. Serve
+/// an empty `{items: []}` (200) so it renders its empty state instead of
+/// hitting the SPA's 404 fallback. Dreaming in local mode runs inline in the
+/// serve process — there are no separate worker nodes to report.
+pub fn local_workers_router() -> Router {
+    Router::new().route(
+        "/v1/workers",
+        get(|| async { axum::Json(serde_json::json!({ "items": [] })) }),
+    )
+}
+
 /// Variant of [`router`] that additionally nests the inline agent surface
 /// under `/v1/agent`. Called by `kyma-bin` once the `PgPool` (needed for
 /// `agent_runs` persistence) is available.

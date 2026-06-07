@@ -36,4 +36,14 @@ pub struct AgentState {
     /// Async memory ingest queue — flows into every [`super::SharedToolCtx`]
     /// built from this state. `None` ⇒ synchronous memory writes.
     pub memory: Option<kyma_memory::MemoryQueue>,
+    /// Degraded local-mode dreaming state (in-memory ring + SQLite). `Some` only
+    /// in `kyma serve` (single-binary local mode); `None` in the worker-fabric
+    /// server, where dreaming runs persist to Postgres. When set, the dreaming
+    /// HTTP handlers serve from this store and runs execute inline.
+    pub local_dreaming: Option<std::sync::Arc<super::dreaming_local::LocalDreamingStore>>,
+    /// Path to the local memory-settings JSON file (`${KYMA_HOME}/memory-settings.json`).
+    /// `Some` only in local mode — settings GET/PUT read/write this file there.
+    /// `None` in server mode, where settings live in the Postgres `memory_settings`
+    /// row.
+    pub memory_settings_path: Option<std::path::PathBuf>,
 }
