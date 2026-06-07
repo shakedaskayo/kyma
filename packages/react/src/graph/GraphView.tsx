@@ -38,9 +38,24 @@ export interface GraphViewProps {
   discover?: "all-databases";
   realm?: string;
   limit?: number;
+  /** When false, the sidebar (legend, controls, inspector) is hidden. Default true. */
+  showSidebar?: boolean;
+  /**
+   * Fires with the RESOLVED selected node whenever the selection changes
+   * (null on deselect). This is the public-callback bridge for KymaGraph —
+   * the full GraphNode lives in this component's node map, not in the store.
+   */
+  onSelectedNodeChange?: (node: GraphNode | null) => void;
 }
 
-export function GraphView({ graphs, discover, realm, limit }: GraphViewProps) {
+export function GraphView({
+  graphs,
+  discover,
+  realm,
+  limit,
+  showSidebar = true,
+  onSelectedNodeChange,
+}: GraphViewProps) {
   const graph = useGraphStore((s) => s.graph);
   const setGraph = useGraphStore((s) => s.setGraph);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
@@ -148,6 +163,12 @@ export function GraphView({ graphs, discover, realm, limit }: GraphViewProps) {
 
   const selectedNode = selectedNodeId ? nodesByCompositeId.get(selectedNodeId) ?? null : null;
 
+  // Public-callback bridge: surface the resolved node (not just its id).
+  useEffect(() => {
+    onSelectedNodeChange?.(selectedNode ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedNode]);
+
   const loadingText =
     unified.progress.total > 0 && unified.progress.settled < unified.progress.total
       ? `Loading ${unified.progress.settled}/${unified.progress.total}`
@@ -226,21 +247,23 @@ export function GraphView({ graphs, discover, realm, limit }: GraphViewProps) {
         )}
       </div>
 
-      <GraphSidebar
-        coords={coords}
-        namespaceCounts={unified.namespaceCounts}
-        stats={unified.stats ?? undefined}
-        visibleNodes={visNodes.length}
-        visibleEdges={visEdges.length}
-        totalNodes={nodes.length}
-        totalEdges={edges.length}
-        loadingText={loadingText}
-        selectedNode={selectedNode}
-        nodesByCompositeId={nodesByCompositeId}
-        edges={edges}
-        onSelectComposite={selectNode}
-        onExpand={() => selectedNodeId && void expandNode(selectedNodeId)}
-      />
+      {showSidebar && (
+        <GraphSidebar
+          coords={coords}
+          namespaceCounts={unified.namespaceCounts}
+          stats={unified.stats ?? undefined}
+          visibleNodes={visNodes.length}
+          visibleEdges={visEdges.length}
+          totalNodes={nodes.length}
+          totalEdges={edges.length}
+          loadingText={loadingText}
+          selectedNode={selectedNode}
+          nodesByCompositeId={nodesByCompositeId}
+          edges={edges}
+          onSelectComposite={selectNode}
+          onExpand={() => selectedNodeId && void expandNode(selectedNodeId)}
+        />
+      )}
     </div>
   );
 }
