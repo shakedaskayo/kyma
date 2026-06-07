@@ -37,17 +37,17 @@ function truncate(s: string, maxLen = 120): string {
 // ── type badge ────────────────────────────────────────────────────────────────
 
 const KIND_BADGE: Record<ColKind, { cls: string; label: string }> = {
-  time:    { cls: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",                  label: "time" },
-  numeric: { cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",  label: "num"  },
-  string:  { cls: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",             label: "str"  },
-  bool:    { cls: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",      label: "bool" },
-  other:   { cls: "bg-slate-50 text-slate-500 dark:bg-slate-800/50 dark:text-slate-400",           label: "·"    },
+  time:    { cls: "ky-bg-sky-100 ky-text-sky-700 dark:ky-bg-sky-900/40 dark:ky-text-sky-300",                  label: "time" },
+  numeric: { cls: "ky-bg-emerald-100 ky-text-emerald-700 dark:ky-bg-emerald-900/40 dark:ky-text-emerald-300",  label: "num"  },
+  string:  { cls: "ky-bg-slate-100 ky-text-slate-600 dark:ky-bg-slate-800 dark:ky-text-slate-300",             label: "str"  },
+  bool:    { cls: "ky-bg-violet-100 ky-text-violet-700 dark:ky-bg-violet-900/40 dark:ky-text-violet-300",      label: "bool" },
+  other:   { cls: "ky-bg-slate-50 ky-text-slate-500 dark:ky-bg-slate-800/50 dark:ky-text-slate-400",           label: "·"    },
 };
 
 function TypeBadge({ kind }: { kind: ColKind }) {
   const { cls, label } = KIND_BADGE[kind];
   return (
-    <span className={`ml-1.5 inline-block rounded-full px-1.5 py-0 text-[9px] font-normal leading-4 ${cls}`}>
+    <span className={`ky-ml-1.5 ky-inline-block ky-rounded-full ky-px-1.5 ky-py-0 ky-text-[9px] ky-font-normal ky-leading-4 ${cls}`}>
       {label}
     </span>
   );
@@ -57,11 +57,11 @@ function TypeBadge({ kind }: { kind: ColKind }) {
 
 function CellValue({ value, kind, isFirst }: { value: unknown; kind: ColKind; isFirst?: boolean }) {
   if (value === null || value === undefined) {
-    return <span className="italic text-muted-foreground/60">null</span>;
+    return <span className="ky-italic ky-text-muted-foreground/60">null</span>;
   }
   if (kind === "time" && typeof value === "string" && ISO_RE.test(value)) {
     return (
-      <span title={value} className="font-mono tabular-nums text-slate-600 dark:text-slate-300">
+      <span title={value} className="ky-font-mono ky-tabular-nums ky-text-slate-600 dark:ky-text-slate-300">
         {fmtIso(value)}
       </span>
     );
@@ -70,10 +70,10 @@ function CellValue({ value, kind, isFirst }: { value: unknown; kind: ColKind; is
   const truncated = str.length > 120 ? truncate(str) : str;
 
   if (isFirst) {
-    return <span className="font-semibold text-foreground">{truncated}</span>;
+    return <span className="ky-font-semibold ky-text-foreground">{truncated}</span>;
   }
   if (kind === "numeric") {
-    return <span className="font-mono tabular-nums">{truncated}</span>;
+    return <span className="ky-font-mono ky-tabular-nums">{truncated}</span>;
   }
   return <span className={str !== truncated ? "cursor-help" : ""} title={str !== truncated ? str : undefined}>{truncated}</span>;
 }
@@ -122,7 +122,7 @@ export function ResultsGrid({
       columns.map((c, ci) => ({
         accessorKey: c.name,
         header: () => (
-          <span className="inline-flex items-center">
+          <span className="ky-inline-flex ky-items-center">
             {c.name}
             <TypeBadge kind={c.kind} />
           </span>
@@ -182,17 +182,17 @@ export function ResultsGrid({
   };
 
   return (
-    <div ref={scrollRef} onScroll={handleScroll} className="h-full overflow-auto text-xs">
-      <table className="min-w-full border-collapse">
-        <thead className={`sticky top-0 z-10 bg-card transition-shadow ${scrolled ? "shadow-sm" : ""}`}>
+    <div ref={scrollRef} onScroll={handleScroll} className="ky-h-full ky-overflow-auto ky-text-xs">
+      <table className="ky-min-w-full ky-border-collapse">
+        <thead className={`ky-sticky ky-top-0 ky-z-10 ky-bg-card ky-transition-shadow ${scrolled ? "ky-shadow-sm" : ""}`}>
           {table.getHeaderGroups().map((hg) => (
-            <tr key={hg.id} className="border-b border-muted/60">
+            <tr key={hg.id} className="ky-border-b ky-border-muted/60">
               {/* Expand toggle column */}
-              <th style={{ width: EXPAND_COL_WIDTH, minWidth: EXPAND_COL_WIDTH }} className="px-1" />
+              <th style={{ width: EXPAND_COL_WIDTH, minWidth: EXPAND_COL_WIDTH }} className="ky-px-1" />
               {hg.headers.map((h, hi) => (
                 <th
                   key={h.id}
-                  className={`cursor-pointer whitespace-nowrap px-3 py-1 text-left text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-accent/40 transition-colors ${hi === 0 ? "font-bold" : ""}`}
+                  className={`ky-cursor-pointer ky-whitespace-nowrap ky-px-3 ky-py-1 ky-text-left ky-text-[11px] ky-font-semibold ky-text-slate-600 dark:ky-text-slate-300 hover:ky-bg-accent/40 ky-transition-colors ${hi === 0 ? "ky-font-bold" : ""}`}
                   onClick={h.column.getToggleSortingHandler()}
                 >
                   {flexRender(h.column.columnDef.header, h.getContext())}
@@ -222,8 +222,8 @@ export function ResultsGrid({
                     height: vi.size,
                   }}
                 >
-                  <td colSpan={colCount} className="px-0 py-0">
-                    <pre className="bg-muted/40 p-3 text-xs font-mono whitespace-pre overflow-x-auto border-b border-muted/50 leading-relaxed text-slate-700 dark:text-slate-300">
+                  <td colSpan={colCount} className="ky-px-0 ky-py-0">
+                    <pre className="ky-bg-muted/40 ky-p-3 ky-text-xs ky-font-mono ky-whitespace-pre ky-overflow-x-auto ky-border-b ky-border-muted/50 ky-leading-relaxed ky-text-slate-700 dark:ky-text-slate-300">
                       {JSON.stringify(filteredRows[dataIndex], null, 2)}
                     </pre>
                   </td>
@@ -243,22 +243,22 @@ export function ResultsGrid({
                   transform: `translateY(${vi.start}px)`,
                   height: vi.size,
                 }}
-                className={`border-b border-muted/50 hover:bg-accent/20 transition-colors cursor-pointer ${isExpanded ? "bg-accent/10" : ""}`}
+                className={`ky-border-b ky-border-muted/50 hover:ky-bg-accent/20 ky-transition-colors ky-cursor-pointer ${isExpanded ? "ky-bg-accent/10" : ""}`}
                 onClick={() => toggleRow(dataIndex)}
               >
                 {/* Expand chevron cell */}
                 <td
                   style={{ width: EXPAND_COL_WIDTH, minWidth: EXPAND_COL_WIDTH }}
-                  className="px-1 text-muted-foreground"
+                  className="ky-px-1 ky-text-muted-foreground"
                   onClick={(e) => { e.stopPropagation(); toggleRow(dataIndex); }}
                 >
                   <ChevronRight
-                    className="h-3 w-3 transition-transform"
+                    className="ky-h-3 ky-w-3 ky-transition-transform"
                     style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}
                   />
                 </td>
                 {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-3 py-0 leading-[25px] truncate max-w-xs">
+                  <td key={cell.id} className="ky-px-3 ky-py-0 ky-leading-[25px] ky-truncate ky-max-w-xs">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}

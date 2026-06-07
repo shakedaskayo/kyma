@@ -137,17 +137,17 @@ export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<
     if (spec.type === "stat") {
       const v = rows.at(-1)?.[spec.y];
       return (
-        <div className="flex h-full flex-col items-center justify-center">
-          <div className="text-sm text-muted-foreground">{spec.y}</div>
-          <div className="text-5xl font-bold tabular-nums">{String(v ?? "—")}</div>
+        <div className="ky-flex ky-h-full ky-flex-col ky-items-center ky-justify-center">
+          <div className="ky-text-sm ky-text-muted-foreground">{spec.y}</div>
+          <div className="ky-text-5xl ky-font-bold ky-tabular-nums">{String(v ?? "—")}</div>
         </div>
       );
     }
     // "none" state
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 rounded border border-border/40 bg-muted/20 p-6">
-        <BarChart3 className="h-8 w-8 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">No auto-chart for this shape.</p>
+      <div className="ky-flex ky-h-full ky-flex-col ky-items-center ky-justify-center ky-gap-3 ky-rounded ky-border ky-border-border/40 ky-bg-muted/20 ky-p-6">
+        <BarChart3 className="ky-h-8 ky-w-8 ky-text-muted-foreground" />
+        <p className="ky-text-sm ky-text-muted-foreground">No auto-chart for this shape.</p>
       </div>
     );
   }

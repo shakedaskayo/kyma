@@ -218,23 +218,23 @@ function KymaQueryEditorInner({
 
   return (
     <div
-      className={`kyma-query-editor flex h-full flex-col overflow-hidden bg-background text-foreground ${className ?? ""}`}
+      className={`ky-kyma-query-editor ky-flex ky-h-full ky-flex-col ky-overflow-hidden ky-bg-background ky-text-foreground ${className ?? ""}`}
       style={style}
     >
       {/* ── Toolbar ── */}
-      <div className="flex shrink-0 items-center gap-2 border-b bg-background px-3 py-1.5">
+      <div className="ky-flex ky-shrink-0 ky-items-center ky-gap-2 ky-border-b ky-bg-background ky-px-3 ky-py-1.5">
         {showTimeRange && language === "kql" && (
           <TimeRangePicker value={timeRange} onChange={setTimeRange} />
         )}
         {!readOnly && (
           isRunning ? (
             <Button size="sm" variant="destructive" onClick={cancel} data-testid="cancel-btn">
-              <Square className="mr-1 h-3.5 w-3.5" /> Cancel
+              <Square className="ky-mr-1 ky-h-3.5 ky-w-3.5" /> Cancel
             </Button>
           ) : (
             <Button size="sm" onClick={handleRun} data-testid="run-btn">
-              <Play className="mr-1 h-3.5 w-3.5" /> Run
-              <kbd className="ml-2 rounded bg-primary-foreground/20 px-1 py-0.5 text-[10px] text-primary-foreground/80">
+              <Play className="ky-mr-1 ky-h-3.5 ky-w-3.5" /> Run
+              <kbd className="ky-ml-2 ky-rounded ky-bg-primary-foreground/20 ky-px-1 ky-py-0.5 ky-text-[10px] ky-text-primary-foreground/80">
                 ⌘↵
               </kbd>
             </Button>
@@ -243,9 +243,9 @@ function KymaQueryEditorInner({
       </div>
 
       {/* ── Main row: schema browser + editor ── */}
-      <div className="flex min-h-0 flex-1 overflow-hidden" style={{ maxHeight: "40%" }}>
+      <div className="ky-flex ky-min-h-0 ky-flex-1 ky-overflow-hidden" style={{ maxHeight: "40%" }}>
         {showSchemaBrowser && (
-          <aside className="w-56 shrink-0 overflow-hidden border-r bg-background">
+          <aside className="ky-w-56 ky-shrink-0 ky-overflow-hidden ky-border-r ky-bg-background">
             <SchemaBrowser
               schema={schema}
               onInsert={handleInsert}
@@ -253,7 +253,7 @@ function KymaQueryEditorInner({
             />
           </aside>
         )}
-        <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="ky-min-w-0 ky-flex-1 ky-overflow-hidden">
           {language === "kql" ? (
             <KqlEditor
               value={query}
@@ -270,19 +270,19 @@ function KymaQueryEditorInner({
 
       {/* ── Results area ── */}
       {showResults && (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t">
+        <div className="ky-flex ky-min-h-0 ky-flex-1 ky-flex-col ky-overflow-hidden ky-border-t">
           {!hasResults && !isRunning && (
-            <div className="flex h-full items-center justify-center p-6 text-xs text-muted-foreground">
+            <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-p-6 ky-text-xs ky-text-muted-foreground">
               {columns.length === 0 ? "Run a query to see results." : "0 rows returned."}
             </div>
           )}
           {isRunning && (
-            <div className="flex h-full items-center justify-center p-6 text-xs text-muted-foreground">
+            <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-p-6 ky-text-xs ky-text-muted-foreground">
               Streaming results…
             </div>
           )}
           {hasResults && (
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div className="ky-flex ky-min-h-0 ky-flex-1 ky-flex-col">
               <RowFilter
                 value={rowFilter}
                 onChange={setRowFilter}
@@ -299,7 +299,7 @@ function KymaQueryEditorInner({
                     : rows.length
                 }
               />
-              <div className="min-h-0 flex-1 overflow-hidden">
+              <div className="ky-min-h-0 ky-flex-1 ky-overflow-hidden">
                 <ResultsGrid columns={columns} rows={rows} filter={rowFilter} />
               </div>
             </div>
@@ -309,7 +309,7 @@ function KymaQueryEditorInner({
 
       {/* ── Chart panel ── */}
       {showChart && isPlottable && hasResults && (
-        <div className="h-48 shrink-0 border-t">
+        <div className="ky-h-48 ky-shrink-0 ky-border-t">
           <ChartPanel columns={columns} rows={rows} />
         </div>
       )}
@@ -361,7 +361,7 @@ function SqlEditor({
   if (!MonacoEditor) {
     return (
       <textarea
-        className="h-full w-full resize-none bg-transparent p-3 font-mono text-xs text-foreground focus:outline-none"
+        className="ky-h-full ky-w-full ky-resize-none ky-bg-transparent ky-p-3 ky-font-mono ky-text-xs ky-text-foreground focus:ky-outline-none"
         value={value}
         readOnly={readOnly}
         onChange={(e) => onChange(e.target.value)}

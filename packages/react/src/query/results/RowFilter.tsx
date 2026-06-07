@@ -14,9 +14,9 @@ export function RowFilter({ value, onChange, totalRows, filteredRows }: RowFilte
   const showCount = isFiltering;
 
   return (
-    <div className="flex items-center gap-2 border-b bg-card px-3 py-1.5">
-      <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <div className="relative flex-1">
+    <div className="ky-flex ky-items-center ky-gap-2 ky-border-b ky-bg-card ky-px-3 ky-py-1.5">
+      <Search className="ky-h-3.5 ky-w-3.5 ky-shrink-0 ky-text-muted-foreground" />
+      <div className="ky-relative ky-flex-1">
         <input
           ref={inputRef}
           type="text"
@@ -39,16 +39,16 @@ export function RowFilter({ value, onChange, totalRows, filteredRows }: RowFilte
         {value && (
           <button
             onClick={() => { onChange(""); inputRef.current?.focus(); }}
-            className="absolute right-0 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+            className="ky-absolute ky-right-0 ky-top-1/2 -ky-translate-y-1/2 ky-rounded ky-p-0.5 ky-text-muted-foreground hover:ky-text-foreground ky-transition-colors"
             tabIndex={-1}
             aria-label="Clear filter"
           >
-            <X className="h-3 w-3" />
+            <X className="ky-h-3 ky-w-3" />
           </button>
         )}
       </div>
       {showCount && (
-        <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">
+        <span className="ky-shrink-0 ky-tabular-nums ky-text-[10px] ky-text-muted-foreground">
           {filteredRows.toLocaleString()} of {totalRows.toLocaleString()}
         </span>
       )}

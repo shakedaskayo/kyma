@@ -21,14 +21,14 @@ export type { SchemaDoc };
 function iconForType(t: string): React.ReactNode {
   const lo = t.toLowerCase();
   if (/time|date|timestamp/.test(lo))
-    return <Calendar className="h-3 w-3 shrink-0 text-muted-foreground" />;
+    return <Calendar className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground" />;
   if (/int|long|real|double|float|decimal|numeric/.test(lo))
-    return <Hash className="h-3 w-3 shrink-0 text-muted-foreground" />;
+    return <Hash className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground" />;
   if (/string|varchar|text|utf/.test(lo))
-    return <Type className="h-3 w-3 shrink-0 text-muted-foreground" />;
+    return <Type className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground" />;
   if (/bool/.test(lo))
-    return <ToggleLeft className="h-3 w-3 shrink-0 text-muted-foreground" />;
-  return <Columns3 className="h-3 w-3 shrink-0 text-muted-foreground" />;
+    return <ToggleLeft className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground" />;
+  return <Columns3 className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground" />;
 }
 
 // ── filter helpers ────────────────────────────────────────────────────────────
@@ -72,24 +72,24 @@ export type SchemaBrowserProps = {
 export function SchemaBrowser({ schema, onInsert, onReplaceAndRun }: SchemaBrowserProps) {
   const [filter, setFilter] = useState("");
 
-  if (!schema) return <div className="p-3 text-xs text-muted-foreground">Loading schema…</div>;
+  if (!schema) return <div className="ky-p-3 ky-text-xs ky-text-muted-foreground">Loading schema…</div>;
 
   const visibleDbs = schema.databases.filter((db) => dbVisible(db, filter));
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="shrink-0 border-b px-2 py-1.5">
+    <div className="ky-flex ky-h-full ky-flex-col ky-overflow-hidden">
+      <div className="ky-shrink-0 ky-border-b ky-px-2 ky-py-1.5">
         <input
           type="search"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter tables + columns…"
-          className="h-7 w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          className="ky-h-7 ky-w-full ky-rounded-md ky-border ky-border-input ky-bg-background ky-px-2 ky-py-1 ky-text-xs ky-text-foreground placeholder:ky-text-muted-foreground focus:ky-outline-none focus:ky-ring-1 focus:ky-ring-ring"
         />
       </div>
-      <div className="flex-1 overflow-auto p-2 text-xs">
+      <div className="ky-flex-1 ky-overflow-auto ky-p-2 ky-text-xs">
         {visibleDbs.length === 0
-          ? <div className="p-2 text-muted-foreground">No matches.</div>
+          ? <div className="ky-p-2 ky-text-muted-foreground">No matches.</div>
           : visibleDbs.map((db) => (
             <DatabaseNode
               key={db.name}
@@ -117,16 +117,16 @@ function DatabaseNode({
 
   return (
     <div>
-      <button className="flex w-full items-center gap-1 rounded px-1 py-0.5 hover:bg-accent/50" onClick={() => setOpen(!open)}>
-        <ChevronRight className={`h-3 w-3 transition ${open ? "rotate-90" : ""}`} />
-        <Database className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="font-medium">{db.name}</span>
-        <span className="ml-auto text-[10px] text-muted-foreground">
+      <button className="ky-flex ky-w-full ky-items-center ky-gap-1 ky-rounded ky-px-1 ky-py-0.5 hover:ky-bg-accent/50" onClick={() => setOpen(!open)}>
+        <ChevronRight className={`ky-h-3 ky-w-3 ky-transition ${open ? "ky-rotate-90" : ""}`} />
+        <Database className="ky-h-3.5 ky-w-3.5 ky-text-muted-foreground" />
+        <span className="ky-font-medium">{db.name}</span>
+        <span className="ky-ml-auto ky-text-[10px] ky-text-muted-foreground">
           {db.tables.length} tables
         </span>
       </button>
       {open && (
-        <div className="ml-3 border-l pl-1">
+        <div className="ky-ml-3 ky-border-l ky-pl-1">
           {visibleTables.map((t) => (
             <TableNode
               key={t.name}
@@ -164,51 +164,51 @@ function TableNode({
   };
 
   return (
-    <div className="group/table">
-      <div className="flex items-center gap-1">
+    <div className="ky-group/table">
+      <div className="ky-flex ky-items-center ky-gap-1">
         <button
-          className="flex flex-1 items-center gap-1 rounded px-1 py-0.5 hover:bg-accent/50"
+          className="ky-flex ky-flex-1 ky-items-center ky-gap-1 ky-rounded ky-px-1 ky-py-0.5 hover:ky-bg-accent/50"
           onClick={() => setOpen(!open)}
           onDoubleClick={() => onInsert(table.name)}
           title="Click to expand; double-click to paste name">
-          <ChevronRight className={`h-3 w-3 transition ${shouldOpen ? "rotate-90" : ""}`} />
-          <Table2 className="h-3.5 w-3.5 text-muted-foreground" />
+          <ChevronRight className={`ky-h-3 ky-w-3 ky-transition ${shouldOpen ? "ky-rotate-90" : ""}`} />
+          <Table2 className="ky-h-3.5 ky-w-3.5 ky-text-muted-foreground" />
           <span>{table.name}</span>
-          <span className="ml-auto text-[10px] text-muted-foreground">
+          <span className="ky-ml-auto ky-text-[10px] ky-text-muted-foreground">
             {table.columns.length}c
           </span>
         </button>
         {onReplaceAndRun && (
-          <div className="flex opacity-0 transition group-hover/table:opacity-100">
+          <div className="ky-flex ky-opacity-0 ky-transition group-hover/table:ky-opacity-100">
             <IconBtn
               title={`Preview 50 rows of ${table.name}`}
               onClick={(e) => quickAction(e, `${table.name} | take 50`)}>
-              <Eye className="h-3 w-3" />
+              <Eye className="ky-h-3 ky-w-3" />
             </IconBtn>
             <IconBtn
               title={`Count rows in ${table.name}`}
               onClick={(e) => quickAction(e, `${table.name} | count`)}>
-              <Sigma className="h-3 w-3" />
+              <Sigma className="ky-h-3 ky-w-3" />
             </IconBtn>
             <IconBtn
               title={`Describe ${table.name} schema + sample values`}
               onClick={(e) =>
                 quickAction(e, `${table.name} | take 5 | project *`)
               }>
-              <FileText className="h-3 w-3" />
+              <FileText className="ky-h-3 ky-w-3" />
             </IconBtn>
           </div>
         )}
       </div>
       {shouldOpen && (
-        <div className="ml-3 border-l pl-1 text-[11px]">
+        <div className="ky-ml-3 ky-border-l ky-pl-1 ky-text-[11px]">
           {visibleCols.map((c) => (
             <button key={c.name}
-              className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-accent/50"
+              className="ky-flex ky-w-full ky-items-center ky-gap-1 ky-rounded ky-px-1 ky-py-0.5 ky-text-left hover:ky-bg-accent/50"
               onClick={() => onInsert(c.name)}>
               {iconForType(c.type)}
               <span>{c.name}</span>
-              <span className="ml-auto text-muted-foreground">{c.type}</span>
+              <span className="ky-ml-auto ky-text-muted-foreground">{c.type}</span>
             </button>
           ))}
         </div>
@@ -231,7 +231,7 @@ function IconBtn({
       type="button"
       title={title}
       onClick={onClick}
-      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+      className="ky-rounded ky-p-1 ky-text-muted-foreground hover:ky-bg-accent hover:ky-text-foreground">
       {children}
     </button>
   );
