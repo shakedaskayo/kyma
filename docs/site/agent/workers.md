@@ -1,74 +1,72 @@
 # Workers & nodes
 
-kyma's background work — connector syncs, dreaming runs, local source syncs —
-rides a **worker fabric**: jobs in the control plane, claimed under leases by
-workers. Locally you get this for free: the server runs an *embedded worker*
-in-process. In production you can register additional workers on any compute.
+## Run a node
 
-A worker on a developer machine is more than compute: it is a **node of the
-distributed context engine**. It owns local sources — a coding agent's memory
-files and transcripts — that only it can read, reports *presence* (which
-coding-agent sessions are active there), and syncs that raw material into the
-shared engine, so memories captured on one machine are recallable from every
-other.
-
-Kyma is engine-agnostic: a small **detector registry** decides which coding
-agents live on a node. Each detector is a cheap filesystem probe that reports
-the agent's roots, realms, and active sessions; detectors that find nothing
-report nothing. Claude Code (`~/.claude/projects`) ships with a full ingestion
-pipeline today; Cursor, Windsurf, and Codex are detected (so they show up in
-node inventory and capabilities) ahead of their pipelines landing. Adding an
-agent is one entry in the registry — see `kyma-local::agent_sources`.
-
-## Quick start
-
-Mint a worker identity on the control plane (admin):
+**Prerequisites:** a worker identity from the control plane (see [Register a worker](#register-a-worker)).
 
 ```bash
+kyma worker run \
+  --server https://kyma.example.com \
+  --token  kyw_…
+```
+
+Environment variables are accepted in place of flags:
+
+| Flag | Env fallback | Required |
+|---|---|---|
+| `--server` | `KYMA_SERVER_URL` | Yes |
+| `--token` | `KYMA_WORKER_TOKEN` | Yes |
+| `--name` | — | No (inherits registered name) |
+| `--accept <kinds>` | — | No (default: `source_sync`) |
+| `--max-concurrent <n>` | — | No |
+
+Set `KYMA_WORKER_INSECURE=1` to allow plain `http://` to non-local control planes (not recommended in production). See [worker-daemon env vars](/reference/env#worker-daemon--node).
+
+Once running, the daemon sends a heartbeat every 30 s. The heartbeat carries **presence** (which coding-agent sessions are active on this machine) and a **source inventory** (which agents were detected). It then claims and runs `source_sync` jobs for each detected agent.
+
+## Register a worker
+
+These commands require admin credentials on the control plane.
+
+```bash
+# Create a new worker identity — prints worker_id + token (shown once)
 kyma worker create --name laptop-rosa
-# → worker_id + a kyw_… token (shown once)
-```
 
-Run the node daemon on that machine:
+# List all registered workers with status, capabilities, and liveness
+kyma worker list
 
-```bash
-kyma worker run --server https://kyma.example.com --token kyw_…
-```
-
-By default the daemon is **low-impact**: it accepts only `source_sync` jobs
-(reading the machine's own coding-agent files — one per detected agent),
-self-scheduled and pinned to itself. One job at a time; a 30s heartbeat carries
-presence + its source inventory. The daemon advertises the generic `sources`
-capability plus a per-agent `source:<kind>` (e.g. `source:claude-code`) for
-each agent it detects.
-
-See every node, its sources, presence, and liveness:
-
-```bash
-kyma worker list            # or GET /v1/workers, or the Nodes strip in the UI
-```
-
-Revoke a node's token:
-
-```bash
+# Revoke a node's token (outstanding jobs are re-queued on next sweep)
 kyma worker revoke <worker_id>
 ```
 
+The token prefix is `kyw_`. Tokens are stored as SHA-256 hashes server-side; there is no way to recover a lost token — revoke and re-create. See [worker-fabric HTTP endpoints](/reference/api#worker-fabric) for the raw API surface.
+
+## What a node does
+
+A worker on a developer machine is more than compute — it is a **node of the distributed context engine**. It:
+
+1. Detects which coding agents are installed via a small **detector registry** (filesystem probes). Each probe reports the agent's roots, realms, and active sessions. Probes that find nothing report nothing.
+2. Reports *presence* — which agent sessions are active — on every heartbeat.
+3. Runs `source_sync` jobs: reads local coding-agent files and pushes them into the shared engine so memories from this machine are recallable everywhere.
+
+Kyma is engine-agnostic. Claude Code (`~/.claude/projects`) ships with a full ingestion pipeline today. Cursor, Windsurf, and Codex are detected and appear in node inventory and capabilities; their ingestion pipelines are queued. Adding a new agent is one entry in the detector registry — see [coding agents](/agent/coding-agents).
+
 ## Job kinds
 
-| Kind | What | Where it runs |
+| Kind | What runs | Where it runs |
 |---|---|---|
-| `connector_sync` | Scheduled connector ingestion | Embedded worker (any `connector`-capable worker) |
+| `source_sync` | Reads local coding-agent files → pushes to engine (one job per detected agent) | Pinned to the owning node |
+| `connector_sync` | Scheduled connector ingestion | Embedded worker (or any `connector`-capable worker) |
 | `dreaming` | Agentic memory housekeeping | Embedded worker (capability-routed) |
-| `source_sync` | A node's local coding-agent files → the engine (one per detected agent) | Pinned to the owning node |
 
-Remote execution of `dreaming` and `connector_sync` on daemons is a planned
-follow-up (the claim/lease surface already supports it).
+Default `--accept` is `source_sync`. Pass `--accept dreaming,source_sync` to widen what a node will claim.
 
-## Security notes
+**Locally you get this for free:** the server runs an embedded worker in-process, so `connector_sync` and `dreaming` jobs never need an external daemon unless you want to offload them.
 
-- Worker tokens (`kyw_…`) are 256-bit secrets stored as SHA-256 hashes; the
-  daemon refuses plain `http://` to non-local control planes unless
-  `KYMA_WORKER_INSECURE=1`.
-- Dead workers release their jobs via lease expiry; the control plane sweeps
-  stale leases and marks silent workers offline.
+**Roadmap (deferred):** remote execution of `dreaming` and `connector_sync` on external daemons — the claim/lease surface already supports it; executor dispatch is the follow-up. See [Dreaming](/agent/dreaming) for the current in-process dreaming model.
+
+## Security
+
+- Worker tokens (`kyw_…`) are 256-bit secrets, stored as SHA-256 hashes; the plain token is shown once at creation time.
+- The daemon refuses plain `http://` to non-local control planes unless `KYMA_WORKER_INSECURE=1`.
+- Dead workers release their jobs via lease expiry; the control plane sweeps stale leases and marks silent workers offline (configurable via [`KYMA_FABRIC_OFFLINE_SECS`](/reference/env#worker-fabric)).
