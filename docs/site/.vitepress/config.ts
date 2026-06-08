@@ -92,6 +92,7 @@ export default withMermaid(defineConfig({
           { text: 'PromQL',                    link: '/query/promql' },
           { text: 'Arrow Flight',              link: '/query/arrow-flight' },
           { text: 'Agent endpoint',            link: '/query/agent-endpoint' },
+          { text: 'Graph',                     link: '/query/graph' },
           { text: 'Pruning and performance',   link: '/query/pruning-and-performance' },
         ],
       }],
