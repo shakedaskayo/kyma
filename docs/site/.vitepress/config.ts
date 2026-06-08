@@ -4,8 +4,11 @@ import attrs from 'markdown-it-attrs'
 
 export default withMermaid(defineConfig({
   title: 'kyma',
-  description: 'Production knowledge, as a query.',
+  description: 'The context engine for coding agents — durable graph-aware memory, live data in KQL/SQL, and the graph that links them. One local binary, zero infra.',
   cleanUrls: true,
+
+  // Light is the default; the dark-mode toggle still works and persists per-visitor.
+  appearance: { initialValue: 'light' },
 
   // Served from GitHub Pages at shakedaskayo.github.io/kyma/.
   base: '/kyma/',
@@ -55,6 +58,7 @@ export default withMermaid(defineConfig({
     ],
     sidebar: {
       '/quickstart/':    [{ text: 'Quickstart',    items: [
+        { text: 'Give your agent memory', link: '/quickstart/give-your-agent-memory' },
         { text: 'Five-minute start',   link: '/quickstart/five-minute-start' },
         { text: 'First real run',      link: '/quickstart/first-real-run' },
         { text: 'Concepts cheatsheet', link: '/quickstart/concepts-cheatsheet' },
@@ -63,12 +67,15 @@ export default withMermaid(defineConfig({
         text: 'Concepts',
         items: [
           { text: 'What kyma is',          link: '/concepts/what-is-kyma' },
+          { text: 'How kyma works',        link: '/concepts/how-kyma-works' },
           { text: 'The five invariants',   link: '/concepts/the-five-invariants' },
           { text: 'The pruning cascade',   link: '/concepts/the-pruning-cascade' },
           { text: 'Extents and snapshots', link: '/concepts/extents-and-snapshots' },
           { text: 'Schema model',          link: '/concepts/schema-model' },
           { text: 'Dynamic and vectors',   link: '/concepts/dynamic-and-vectors' },
           { text: 'The agent loop',        link: '/concepts/the-agent-loop' },
+          { text: 'Local & cluster mode',  link: '/concepts/local-and-cluster-mode' },
+          { text: 'Sync',                  link: '/concepts/sync' },
           { text: 'Multi-source data',     link: '/concepts/multi-source-data' },
           { text: 'Retention and compaction', link: '/concepts/retention-and-compaction' },
           { text: 'Observability',         link: '/concepts/observability' },
