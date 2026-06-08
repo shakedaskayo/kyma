@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 use crate::artifacts::ArtifactStore;
 use crate::github::client::GithubClient;
 use crate::github::config::WorkflowOpts;
+use crate::github::transform;
 use crate::types::ConnectorError;
 use kyma_catalog::artifacts::ArtifactRecord;
 use kyma_core::tenant::TenantId;
@@ -28,6 +29,11 @@ pub const JOB_LOGS_TABLE: &str = "github_job_logs";
 pub struct CaptureResult {
     /// `github_job_logs` pointer rows.
     pub rows: Vec<Value>,
+    /// CI graph nodes (WorkflowRun / Job / LogFile) for `github_nodes`.
+    pub nodes: Vec<Value>,
+    /// CI graph edges (HAS_RUN / RUN_CONTAINS_JOB / JOB_HAS_LOG / RUN_ON_BRANCH)
+    /// for `github_edges`.
+    pub edges: Vec<Value>,
     /// Newest run `created_at` processed — advances the cursor watermark.
     pub newest_created: Option<DateTime<Utc>>,
 }
@@ -63,6 +69,8 @@ pub async fn capture_job_logs(
 
     let guard = kyma_redact::global();
     let mut rows: Vec<Value> = Vec::new();
+    let mut nodes: Vec<Value> = Vec::new();
+    let mut edges: Vec<Value> = Vec::new();
     let mut newest: Option<DateTime<Utc>> = since;
     let mut processed = 0usize;
 
@@ -93,12 +101,25 @@ pub async fn capture_job_logs(
         let workflow_name = run["name"].as_str().unwrap_or("").to_string();
         let created_at = run["created_at"].as_str().unwrap_or("").to_string();
 
+        // WorkflowRun node + HAS_RUN / RUN_ON_BRANCH edges (once per run).
+        let (run_node, run_edges) = transform::workflow_run_rows(owner, repo, run);
+        nodes.push(run_node);
+        edges.extend(run_edges);
+
         let (jobs, _) = gh.list_run_jobs(owner, repo, run_id, opts.max_pages).await?;
         for job in &jobs {
             let job_id = job["id"].as_i64().unwrap_or(0);
             if job_id == 0 {
                 continue;
             }
+            let job_name = job["name"].as_str().unwrap_or("").to_string();
+
+            // Job node + RUN_CONTAINS_JOB edge — emitted regardless of whether
+            // the log is available.
+            let (job_node, job_edge) = transform::job_rows(owner, repo, run_id, job);
+            nodes.push(job_node);
+            edges.push(job_edge);
+
             // Fetch the raw log; failures (e.g. 404 expired logs) skip this
             // job's log rather than failing the whole tick.
             let raw = match gh.fetch_job_log_text(owner, repo, job_id).await {
@@ -150,6 +171,20 @@ pub async fn capture_job_logs(
                 }
             }
 
+            // LogFile node + JOB_HAS_LOG edge (carries the object_path handle).
+            let (log_node, log_edge) = transform::log_file_rows(
+                owner,
+                repo,
+                job_id,
+                &job_name,
+                &object_path,
+                &sha,
+                size_bytes,
+                truncated,
+            );
+            nodes.push(log_node);
+            edges.push(log_edge);
+
             rows.push(json!({
                 "run_id": run_id,
                 "job_id": job_id,
@@ -171,6 +206,8 @@ pub async fn capture_job_logs(
 
     Ok(CaptureResult {
         rows,
+        nodes,
+        edges,
         newest_created: newest,
     })
 }
@@ -282,5 +319,29 @@ mod tests {
             "redaction marker expected; got:\n{text}"
         );
         assert!(text.contains("build failed"), "non-secret content preserved");
+
+        // ── CI graph subgraph (E2) ──
+        // 1 run + 1 job + 1 log = 3 nodes; HAS_RUN + RUN_CONTAINS_JOB +
+        // JOB_HAS_LOG = 3 edges (no RUN_ON_BRANCH — the mock run has no branch).
+        let label = |n: &Value| n["labels"].as_str().unwrap_or("").to_string();
+        let id = |n: &Value| n["id"].as_str().unwrap_or("").to_string();
+        assert_eq!(res.nodes.len(), 3, "run+job+log nodes");
+        assert!(res.nodes.iter().any(|n| label(n) == "WorkflowRun" && id(n) == "run:acme/app#100"));
+        assert!(res.nodes.iter().any(|n| label(n) == "Job" && id(n) == "job:acme/app#900"));
+        let log_node = res
+            .nodes
+            .iter()
+            .find(|n| label(n) == "LogFile" && id(n) == "log:acme/app#900")
+            .expect("LogFile node");
+        assert!(
+            log_node["props"].as_str().unwrap().contains(&job_log_key(tenant, "acme", "app", 100, 900)),
+            "LogFile node carries the object_path retrieval handle"
+        );
+
+        let etype = |e: &Value| e["type"].as_str().unwrap_or("").to_string();
+        let etypes: Vec<String> = res.edges.iter().map(etype).collect();
+        assert!(etypes.contains(&"HAS_RUN".to_string()));
+        assert!(etypes.contains(&"RUN_CONTAINS_JOB".to_string()));
+        assert!(etypes.contains(&"JOB_HAS_LOG".to_string()));
     }
 }

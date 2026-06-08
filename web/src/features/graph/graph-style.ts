@@ -19,6 +19,10 @@ export type RelFamily =
 /** Coarse family for a raw relationship type — collapses 50+ types into ~6. */
 export function relationshipFamily(type: string): RelFamily {
   const t = (type ?? "").toUpperCase();
+  // CI / GitHub Actions spine (E2): repo→run→job→log is structural; the
+  // run→branch link is membership.
+  if (/^(HAS_RUN|RUN_CONTAINS_JOB|JOB_HAS_LOG)$/.test(t)) return "structural";
+  if (t === "RUN_ON_BRANCH") return "membership";
   if (/CONTAIN|^HAS_|OWNS|EXPOSE/.test(t)) return "structural";
   if (/DEPEND|USE|RUN[S_]|CONNECT|INDEX|CONSTRAIN|PROVIDE/.test(t)) return "dependency";
   if (/REFERENCE|RELATED|LINK|POINTS?_TO/.test(t)) return "reference";

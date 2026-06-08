@@ -498,6 +498,10 @@ impl Connector for GithubConnector {
                 {
                     Ok(res) => {
                         job_log_rows.extend(res.rows);
+                        // Merge CI nodes/edges (WorkflowRun/Job/LogFile) into the
+                        // github graph tables.
+                        nodes.extend(res.nodes);
+                        edges.extend(res.edges);
                         if let Some(newest) = res.newest_created {
                             cur.update_workflows_cursor(repo_slug, newest);
                         }
