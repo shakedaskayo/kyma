@@ -832,6 +832,38 @@ async fn main() -> Result<()> {
         None
     };
 
+    // CI failure-correlation ("dreaming") pipeline — scans the github_job_logs
+    // failure signal for recurring failures and writes durable incident
+    // memories. On by default; set KYMA_CI_CORRELATE=0 to disable.
+    let ci_correlate_handle = if std::env::var("KYMA_CI_CORRELATE")
+        .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(true)
+    {
+        let mut correlator = kyma_server::agent::CiCorrelator::new(
+            kyma_server::agent::SharedToolCtx {
+                catalog: catalog.clone(),
+                format: format.clone(),
+                pool: Some(pg_pool.clone()),
+                memory: memory.clone(),
+            },
+            pg_pool.clone(),
+            kyma_core::tenant::DEFAULT_TENANT,
+        );
+        if let Ok(s) = std::env::var("KYMA_CI_CORRELATE_POLL_SECS")
+            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        {
+            correlator.poll_interval = std::time::Duration::from_secs(s);
+        }
+        let ci_rx = shutdown_tx.subscribe();
+        info!("ci-correlate pipeline enabled");
+        Some(tokio::spawn(correlator.run(async move {
+            let mut rx = ci_rx;
+            let _ = rx.recv().await;
+        })))
+    } else {
+        None
+    };
+
     // File-drop watcher — polls an object-store prefix for NDJSON files.
     // Disabled by default; set KYMA_FILEDROP_ENABLED=1 to turn on.
     let filedrop_handle = if std::env::var("KYMA_FILEDROP_ENABLED")
@@ -1027,6 +1059,9 @@ async fn main() -> Result<()> {
         let _ = h.await;
     }
     if let Some(h) = memory_consolidator_handle {
+        let _ = h.await;
+    }
+    if let Some(h) = ci_correlate_handle {
         let _ = h.await;
     }
     if let Some(h) = kafka_handle {

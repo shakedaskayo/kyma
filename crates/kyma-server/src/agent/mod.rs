@@ -9,6 +9,7 @@
 //! for the broader design context.
 
 pub mod cc_curate;
+pub mod ci_correlate;
 pub mod engine;
 pub mod identity;
 pub mod local;
@@ -30,6 +31,7 @@ pub mod state;
 pub mod tools;
 pub mod ui_stream;
 
+pub use ci_correlate::CiCorrelator;
 pub use memory::MemoryConsolidator;
 pub use memory_tools::{
     tool_flush_memory, tool_ingest_entity, tool_link_memory_to_entity, tool_list_memories,
