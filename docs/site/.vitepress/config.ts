@@ -33,7 +33,7 @@ export default withMermaid(defineConfig({
     ['meta', { property: 'og:image', content: 'https://shakedaskayo.github.io/kyma/icons/kyma-mark.svg' }],
     ['meta', { name: 'twitter:card', content: 'summary' }],
     ['meta', { name: 'twitter:title', content: 'kyma — production knowledge, as a query' }],
-    ['meta', { name: 'twitter:description', content: 'One columnar query engine for every signal your stack emits. By AgentcyLabs.' }],
+    ['meta', { name: 'twitter:description', content: 'One columnar query engine for every signal your stack emits.' }],
     ['meta', { name: 'twitter:image', content: 'https://shakedaskayo.github.io/kyma/icons/kyma-mark.svg' }],
   ],
 
@@ -197,8 +197,8 @@ export default withMermaid(defineConfig({
       provider: 'local',
     },
     footer: {
-      message: 'An open project by <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link"><img src="/kyma/icons/brand/agentcy.svg" alt="" width="12" height="12" class="kyma-footer-mark"/> AgentcyLabs</a> · MIT licensed.',
-      copyright: 'Copyright © 2026 AgentcyLabs · <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link">agentcylabs.com</a> · <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener" class="kyma-footer-link">GitHub</a>',
+      message: 'An open-source project · MIT licensed.',
+      copyright: 'Copyright © 2026 the kyma authors · <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener" class="kyma-footer-link">GitHub</a>',
     },
   },
 

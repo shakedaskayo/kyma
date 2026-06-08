@@ -182,48 +182,6 @@
   border-radius: 3px;
 }
 
-/* ---------------- AgentcyLabs byline (hero + landing footer) ------------- */
-.kyma-byline {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-family: var(--kyma-font-mono);
-  font-size: 0.78rem;
-  letter-spacing: 0.02em;
-  color: var(--kyma-fg-soft);
-  text-decoration: none;
-  margin-bottom: 1.25rem;
-  padding: 0.35rem 0.7rem;
-  border: 1px solid var(--kyma-rule-soft);
-  border-radius: 999px;
-  background: var(--kyma-bg-soft);
-  transition: border-color 0.15s ease, color 0.15s ease;
-}
-.kyma-byline:hover {
-  border-color: var(--kyma-accent);
-  color: var(--kyma-fg);
-}
-.kyma-byline strong {
-  color: var(--kyma-fg);
-  font-weight: 600;
-}
-.kyma-byline img {
-  display: block;
-  flex-shrink: 0;
-}
-
-.kyma-byline--footer {
-  font-size: 0.85rem;
-  margin-bottom: 0.5rem;
-  padding: 0.6rem 1rem;
-  background: var(--kyma-bg-soft);
-}
-.kyma-byline--footer .kyma-byline-cta {
-  color: var(--kyma-accent);
-  margin-left: 0.25rem;
-  white-space: nowrap;
-}
-
 .kyma-landing-footer {
   margin-top: 4rem;
   padding-top: 2rem;
@@ -245,8 +203,7 @@
 }
 
 /* Doc-page footer — slim, two lines (message + copyright). VitePress
-   already styles the container; we only need to polish links + the
-   inline AgentcyLabs mark. */
+   already styles the container; we only need to polish the links. */
 .VPFooter .kyma-footer-link {
   color: var(--kyma-link);
   text-decoration: none;
@@ -254,11 +211,6 @@
 }
 .VPFooter .kyma-footer-link:hover {
   text-decoration: underline;
-}
-.VPFooter .kyma-footer-mark {
-  display: inline-block;
-  vertical-align: -0.15em;
-  margin-right: 0.15em;
 }
 
 /* ============================================================================
@@ -307,10 +259,6 @@
   position: relative;
   text-align: center;
   margin-bottom: 5rem;
-}
-
-.kyma-hero--orbit .kyma-byline {
-  margin: 0 auto 1.5rem;
 }
 
 .kyma-hero-title {

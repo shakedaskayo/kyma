@@ -207,11 +207,6 @@ const buildDate = new Date().toISOString().slice(0, 10)
 
     <!-- ════════════════════════════════════ HERO ════════════════════════════════════ -->
     <section class="kyma-hero kyma-hero--orbit">
-      <a class="kyma-byline" href="https://agentcylabs.com" target="_blank" rel="noopener">
-        <img :src="withBase('/icons/brand/agentcy.svg')" alt="" width="14" height="14" aria-hidden="true" />
-        <span>An open project by <strong>AgentcyLabs</strong></span>
-      </a>
-
       <h1 class="kyma-hero-title">kyma</h1>
       <p class="kyma-tagline">The context engine for coding agents.</p>
       <p class="kyma-lede">
@@ -385,8 +380,7 @@ const buildDate = new Date().toISOString().slice(0, 10)
           Rows and columns describe events. <strong>Graphs</strong> describe how those events
           relate. kyma carries a native graph layer over the same Arrow storage —
           millions of entities, hundreds of millions of relationships, queried in
-          milliseconds. The same engine that's already proving it on the
-          <a href="https://agentcylabs.com" target="_blank" rel="noopener">Agentcy platform</a>.
+          milliseconds.
         </p>
         <ul class="kyma-graph-bullets">
           <li><strong>Entities + relationships as native types.</strong> Customers, deploys, services, alerts, agent runs — all linked, all queryable.</li>
@@ -577,10 +571,6 @@ otel_logs
 
     <!-- ════════════════════════════════════ FOOTER ═════════════════════════════════ -->
     <footer class="kyma-landing-footer">
-      <a class="kyma-byline kyma-byline--footer" href="https://agentcylabs.com" target="_blank" rel="noopener">
-        <img :src="withBase('/icons/brand/agentcy.svg')" alt="" width="16" height="16" aria-hidden="true" />
-        <span>kyma is an open project by <strong>AgentcyLabs</strong> — a context platform for production-aware agents. <span class="kyma-byline-cta">Visit agentcylabs.com →</span></span>
-      </a>
       <p class="kyma-landing-footer-meta">
         MIT licensed · Source on
         <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener">GitHub</a>
