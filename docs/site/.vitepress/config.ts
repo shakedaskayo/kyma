@@ -150,6 +150,7 @@ export default withMermaid(defineConfig({
         items: [
           { text: 'HTTP API',         link: '/reference/api' },
           { text: 'CLI',              link: '/reference/cli' },
+          { text: 'MCP',              link: '/reference/mcp' },
           { text: 'Environment vars', link: '/reference/env' },
           { text: 'KQL functions',    link: '/reference/kql-functions' },
           { text: 'Schema mappings',  link: '/reference/schema-mappings' },
