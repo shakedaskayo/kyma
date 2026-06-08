@@ -12,7 +12,8 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use kyma_catalog::PostgresCatalog;
 use kyma_compaction::{
-    CompactionScheduler, CompactionWorker, PhysicalDeleteWorker, RetentionSweeper,
+    ArtifactRetentionWorker, CompactionScheduler, CompactionWorker, PhysicalDeleteWorker,
+    RetentionSweeper,
 };
 use kyma_connectors::prometheus::PromConnector;
 use kyma_connectors::registry::ConnectorRegistry;
@@ -770,6 +771,26 @@ async fn main() -> Result<()> {
         let _ = rx.recv().await;
     }));
 
+    // Artifact-retention worker — sweeps expired object-store artifacts (CI job
+    // logs, contributed files, fs-watch snapshots) that live outside the
+    // columnar extents, on the same soft-delete + grace pattern.
+    let mut artifact_gc = ArtifactRetentionWorker::new(catalog.clone(), store.clone());
+    if let Ok(s) = std::env::var("KYMA_ARTIFACT_GC_POLL_SECS")
+        .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+    {
+        artifact_gc.poll_interval = std::time::Duration::from_secs(s);
+    }
+    if let Ok(s) = std::env::var("KYMA_ARTIFACT_GC_GRACE_SECS")
+        .and_then(|v| v.parse::<i64>().map_err(|_| std::env::VarError::NotPresent))
+    {
+        artifact_gc.grace_period = chrono::Duration::seconds(s);
+    }
+    let artifact_gc_rx = shutdown_tx.subscribe();
+    let artifact_gc_handle = tokio::spawn(artifact_gc.run(async move {
+        let mut rx = artifact_gc_rx;
+        let _ = rx.recv().await;
+    }));
+
     // Memory consolidation ("dreaming") pipeline — periodically distills new
     // conversation-firehose activity into durable summary memories and records
     // each run in `memory_pipeline_runs`. On by default; set
@@ -1014,6 +1035,7 @@ async fn main() -> Result<()> {
     let _ = scheduler_handle.await;
     let _ = retention_handle.await;
     let _ = gc_handle.await;
+    let _ = artifact_gc_handle.await;
     let _ = conn_sched_handle.await;
     let _ = idem_cleanup_handle.await;
     if let Some((_, h)) = memory_queue {
