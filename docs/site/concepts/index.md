@@ -10,9 +10,11 @@ load-bearing decision in the engine traces back to one of those
 opinions. The pages below are the mental model — read in order if
 you're starting; read by topic if you're deep on one.
 
-If you only have time for two, start with
+New here? [**How kyma works**](/concepts/how-kyma-works) is the whole system on one
+page — the memory → data → graph loop, the runtime modes, and how the pieces fit.
+For the engine internals specifically, start with
 [**The five invariants**](/concepts/the-five-invariants) and
-[**The pruning cascade**](/concepts/the-pruning-cascade). Everything
+[**The pruning cascade**](/concepts/the-pruning-cascade); everything
 else is an instance of those two ideas.
 
 <div class="feature-grid">
@@ -24,6 +26,16 @@ else is an instance of those two ideas.
 The ten-minute version of the value prop. What the engine ingests, how
 it stores, how it answers, who it's for, and — explicitly — what it
 isn't.
+
+</div>
+
+<div class="feature-card">
+
+### [How kyma works](/concepts/how-kyma-works)
+
+The whole system on one page — the memory → data → graph loop, how your
+agent connects, the engine underneath, continuous ingestion, dreaming,
+the runtime modes, and sync.
 
 </div>
 
@@ -85,6 +97,25 @@ The two non-relational column types. CBOR-encoded `dynamic` with token
 `/v1/agent/ask`. Natural-language question in, Server-Sent Events out.
 Schema RAG via pgvector keeps the agent's mental model accurate as
 schemas evolve. Read-only by design.
+
+</div>
+
+<div class="feature-card">
+
+### [Local & cluster mode](/concepts/local-and-cluster-mode)
+
+The same engine from a zero-infra laptop binary to a team control plane
+to a read-scale cluster of stateless nodes. What runs where, and when to
+reach for each.
+
+</div>
+
+<div class="feature-card">
+
+### [Sync](/concepts/sync)
+
+Bidirectional, incremental memory sync — local ↔ control plane, plus a
+Claude Code file-memory phase. Work offline; converge when you reconnect.
 
 </div>
 
