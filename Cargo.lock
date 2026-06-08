@@ -4711,6 +4711,7 @@ dependencies = [
  "kyma-catalog",
  "kyma-core",
  "kyma-ingest-core",
+ "kyma-redact",
  "kyma-storage",
  "metrics",
  "object_store",

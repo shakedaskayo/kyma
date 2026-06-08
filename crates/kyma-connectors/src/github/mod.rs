@@ -16,6 +16,7 @@ pub mod client;
 pub mod clone;
 pub mod config;
 pub mod cursor;
+pub mod joblogs;
 #[cfg(feature = "github")]
 pub mod parse;
 pub mod transform;
@@ -469,8 +470,52 @@ impl Connector for GithubConnector {
             }
         }
 
+        // ── GitHub Actions job logs (E1) ──────────────────────────────────────
+        // Opt-in. Captures full job logs, redacts secrets, stores each as an
+        // object-store artifact, and emits a `github_job_logs` pointer row.
+        let mut job_log_rows: Vec<serde_json::Value> = Vec::new();
+        if config.modules.job_logs {
+            // Register the resolved PAT as a known secret so the connector's own
+            // token can never surface in a stored log, pattern or not.
+            kyma_redact::global().register_value("github-token", &gh.token);
+            for repo_slug in &config.repos {
+                let parts: Vec<&str> = repo_slug.splitn(2, '/').collect();
+                if parts.len() != 2 {
+                    continue;
+                }
+                let (owner, name) = (parts[0], parts[1]);
+                let repo_cur = cur.for_repo(repo_slug);
+                match joblogs::capture_job_logs(
+                    &gh,
+                    ctx.artifacts.as_ref(),
+                    ctx.tenant,
+                    owner,
+                    name,
+                    repo_cur.workflows_since,
+                    &config.workflows,
+                )
+                .await
+                {
+                    Ok(res) => {
+                        job_log_rows.extend(res.rows);
+                        if let Some(newest) = res.newest_created {
+                            cur.update_workflows_cursor(repo_slug, newest);
+                        }
+                    }
+                    Err(ConnectorError::Transient(e)) => {
+                        return Err(ConnectorError::Transient(format!(
+                            "job_logs {repo_slug}: {e}"
+                        )));
+                    }
+                    Err(e) => {
+                        tracing::warn!(repo = %repo_slug, error = %e, "job log capture failed; skipping");
+                    }
+                }
+            }
+        }
+
         // ── Reassemble final TableRows ────────────────────────────────────────
-        let tables = vec![
+        let mut tables = vec![
             crate::types::TableRows {
                 table: transform::NODE_TABLE.to_string(),
                 rows: nodes,
@@ -480,6 +525,12 @@ impl Connector for GithubConnector {
                 rows: edges,
             },
         ];
+        if !job_log_rows.is_empty() {
+            tables.push(crate::types::TableRows {
+                table: joblogs::JOB_LOGS_TABLE.to_string(),
+                rows: job_log_rows,
+            });
+        }
 
         Ok(ConnectorRun {
             rows: vec![],

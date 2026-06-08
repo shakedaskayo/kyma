@@ -14,6 +14,7 @@ workspace = true
 kyma-core = { workspace = true }
 kyma-catalog = { workspace = true }
 kyma-storage = { workspace = true }
+kyma-redact = { workspace = true }
 kyma-ingest-core = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true }
