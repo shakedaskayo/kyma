@@ -168,15 +168,23 @@ curl -X POST http://localhost:8080/v1/agent/memory/query \
   -d '{ "query": "what did we decide about embeddings?", "expand_hops": 1 }'
 ```
 
-Response: `{ memories[], linked[], context, brief?, took_ms }`. Filters:
-`realms`, `memory_type`, `tags`, `importance_min`, `as_of`, `include_invalidated`,
-`limit`, `expand_hops`.
+`mode: "fast"` (default) returns the no-LLM hybrid recall; `mode: "agentic"`
+adds an LLM-synthesized `brief` over the retrieved context. Response:
+`{ memories[], linked[], context, brief?, took_ms }`. Filters: `realms`,
+`memory_type`, `tags`, `importance_min`, `as_of`, `include_invalidated`,
+`limit`, `expand_hops` — full request shape in the [API reference](/reference/api).
 
-**Backup / portability.** `GET /v1/agent/memory/export[?realm=]` returns the
-full snapshot (latest node versions + edges, including embeddings) as JSON.
-Re-import on another instance via the idempotent `POST /v1/ingest`
-(`X-Database: memory`, `X-Table: memory_nodes|memory_edges`, NDJSON) — so a
-machine's memory is portable and re-syncs cleanly.
+**Backup, portability, sync.** Three endpoints (see [API reference](/reference/api)):
+
+| Endpoint | Use |
+| --- | --- |
+| `GET /v1/agent/memory/export[?realm=]` | Full snapshot — latest node versions + edges, with embeddings. |
+| `POST /v1/agent/memory/import` | Idempotent re-import of an export onto another instance. |
+| `GET /v1/agent/memory/changes?since=<rfc3339>` | Only nodes/edges changed since a timestamp. |
+
+To replicate memory between a local engine and a control plane, poll
+`changes?since=<last_sync>` and apply the delta via `import` — the building
+block for keeping two stores in step.
 
 ### The Memory workspace (web)
 
@@ -209,12 +217,46 @@ Every knob is editable from **Memory → Settings** (or
 | `half_life_days` | Recency decay half-life. |
 | `rrf_k` | Reciprocal-rank-fusion constant. |
 
+Defaults (server mode persists to Postgres; local mode to a JSON file):
+
+```jsonc
+{
+  "extraction_enabled": true, "min_events": 1,
+  "default_limit": 8, "default_expand_hops": 1, "ann_threshold": 0.0,
+  "w_rrf": 1.0, "w_semantic": 0.6, "w_keyword": 0.3,
+  "w_graph": 0.5, "w_importance": 0.4, "w_recency": 0.3,
+  "half_life_days": 30.0, "rrf_k": 60.0,
+  "dreaming": { "enabled": false, "interval_secs": 86400, "mode": "full" }
+}
+```
+
 ```bash
 curl http://localhost:8080/v1/agent/memory/settings            # read
 curl -X PUT http://localhost:8080/v1/agent/memory/settings \
   -H 'content-type: application/json' \
-  -d '{ "extraction_enabled": true, "w_graph": 0.7, "ann_threshold": 0.0, ... }'
+  -d '{ "w_graph": 0.7 }'                                       # patch one knob
 ```
+
+The recall blend: candidates from semantic + keyword search are fused by
+Reciprocal Rank Fusion (`1/(rrf_k + rank)`), graph-expanded, then scored with
+the `w_*` weights; recency decays as `exp(-ln2 · age_days / half_life_days)`.
+
+### Dreaming knobs
+
+`dreaming` is **off by default**. When enabled it runs scheduled housekeeping —
+see [Dreaming](/agent/dreaming) for what each run does. Knobs:
+
+| Knob | Default | Controls |
+| --- | --- | --- |
+| `enabled` | `false` | Master switch for scheduled runs. |
+| `interval_secs` | `86400` | Seconds between runs (daily). |
+| `mode` | `"full"` | `full` · `housekeeping_only` · `sources`. |
+| `realm_scope` | `[]` | Realms in scope; empty = all. |
+| `max_tool_calls` | `100` | Agent-loop budget per run. |
+| `wall_clock_secs` | `600` | Hard wall-clock cap per run. |
+| `connector_read_budget` | `25` | Max `connector_read` calls per run (gap-fill). |
+| `connector_read_max_bytes` | `4194304` | Max bytes fetched per run (4 MiB). |
+| `mutation_cap` | `60` | Max memory mutations per run. |
 
 ## Engine & embeddings
 
