@@ -86,6 +86,27 @@ impl ArtifactRetentionWorker {
         let now = Utc::now();
         let mut stats = ArtifactSweepStats::default();
 
+        // Pass 0: (re)stamp `expires_at` from each tenant's retention settings so
+        // newly-written artifacts (expires_at = NULL) become sweepable. Idempotent
+        // and best-effort — a stamping failure must not block the GC.
+        match pg.retention_tenants().await {
+            Ok(tenants) => {
+                for t in tenants {
+                    match pg.load_retention_settings(t).await {
+                        Ok(settings) => {
+                            if let Err(e) = pg.restamp_artifact_expiry(t, &settings).await {
+                                warn!(tenant = %t.as_uuid(), error = %e, "artifact expiry restamp failed");
+                            }
+                        }
+                        Err(e) => {
+                            warn!(tenant = %t.as_uuid(), error = %e, "load retention settings failed")
+                        }
+                    }
+                }
+            }
+            Err(e) => warn!(error = %e, "listing retention tenants failed"),
+        }
+
         // Pass 1: soft-delete expired artifacts.
         let swept = pg.soft_delete_expired_artifacts(now).await?;
         stats.soft_deleted = swept.len();

@@ -80,6 +80,10 @@ pub fn router(state: AgentState) -> axum::Router {
             "/memory/settings",
             get(get_memory_settings).put(put_memory_settings),
         )
+        .route(
+            "/retention/settings",
+            get(get_retention_settings).put(put_retention_settings),
+        )
         .route("/memory/export", get(export_memory_handler))
         .route("/memory/changes", get(changes_memory_handler))
         .route("/memory/import", post(import_memory_handler))
@@ -276,6 +280,78 @@ async fn put_memory_settings(
         )
             .into_response(),
     }
+}
+
+/// `GET /v1/agent/retention/settings` — current data-retention settings
+/// (global / per-source / per-table / per-artifact-class day-counts).
+async fn get_retention_settings(State(state): State<AgentState>) -> Response {
+    let Some(pg) = state
+        .catalog
+        .as_ref_any()
+        .downcast_ref::<kyma_catalog::PostgresCatalog>()
+    else {
+        // Local mode: no Postgres, settings default to retain-forever.
+        return Json(kyma_core::retention::RetentionSettings::default()).into_response();
+    };
+    match pg.load_retention_settings(state.tenant).await {
+        Ok(s) => Json(s).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// `PUT /v1/agent/retention/settings` — persist settings, then apply: stamp
+/// `artifacts.expires_at` (so the retention worker sweeps them) and reconcile
+/// explicit per-table overrides into `tables.config.retention_days`.
+async fn put_retention_settings(
+    State(state): State<AgentState>,
+    Json(body): Json<kyma_core::retention::RetentionSettings>,
+) -> Response {
+    // A day-count of 0 would mean "expire immediately" — almost always a
+    // foot-gun. Retain-forever is expressed by omitting the key (or null global).
+    let has_zero = body.global_default_days == Some(0)
+        || body.per_source_days.values().any(|&d| d == 0)
+        || body.per_table_days.values().any(|&d| d == 0)
+        || body.per_artifact_class_days.values().any(|&d| d == 0);
+    if has_zero {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "retention days must be >= 1; omit a key (or null global_default_days) to retain forever",
+            })),
+        )
+            .into_response();
+    }
+
+    let Some(pg) = state
+        .catalog
+        .as_ref_any()
+        .downcast_ref::<kyma_catalog::PostgresCatalog>()
+    else {
+        return Json(json!({ "ok": true, "persisted": false })).into_response();
+    };
+
+    if let Err(e) = pg.save_retention_settings(state.tenant, &body).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response();
+    }
+    // Apply immediately so the change is visible without waiting for a worker
+    // tick. Both are idempotent; failures here are non-fatal (the worker
+    // re-stamps artifacts on its next pass anyway).
+    let stamped = pg
+        .restamp_artifact_expiry(state.tenant, &body)
+        .await
+        .unwrap_or(0);
+    if let Err(e) = pg.reconcile_table_retention(state.tenant, &body).await {
+        tracing::warn!(error = %e, "reconcile_table_retention failed");
+    }
+    Json(json!({ "ok": true, "artifacts_restamped": stamped })).into_response()
 }
 
 /// `POST /v1/agent/memory/query` — near-realtime memory recall for external

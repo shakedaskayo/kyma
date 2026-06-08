@@ -19,6 +19,7 @@
 pub mod artifacts;
 mod credentials;
 mod error;
+pub mod retention_settings;
 pub mod saved_views;
 mod snapshot;
 
