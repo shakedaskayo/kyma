@@ -27,7 +27,7 @@ arrow-array.workspace = true
 bytes.workspace = true
 kyma-web-assets = { workspace = true, optional = true }
 kyma-format-tlm = { workspace = true, optional = true }
-object_store = { workspace = true, optional = true }
+object_store = { workspace = true }
 testcontainers = { workspace = true, optional = true }
 testcontainers-modules = { workspace = true, optional = true }
 tonic-web = { workspace = true, optional = true }
@@ -94,7 +94,6 @@ cloud-auth = []
 web-ui  = ["dep:kyma-web-assets", "dep:tonic-web", "dep:http-body-util"]
 test-support = [
     "dep:kyma-format-tlm",
-    "dep:object_store",
     "dep:testcontainers",
     "dep:testcontainers-modules",
 ]

@@ -848,3 +848,140 @@ pub fn tool_graph_traverse(ctx: SharedToolCtx) -> Arc<dyn Tool> {
         .with_concurrency_safe(true),
     )
 }
+
+// ---------------------------------------------------------------------------
+// Tool: retrieve_artifact — fetch a byte window of a stored log/file blob
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct RetrieveArtifactArgs {
+    /// Object-store path of the artifact, e.g. the `object_path` from a
+    /// `github_job_logs` row or a `LogFile` graph node. Must start with
+    /// `artifacts/`.
+    object_path: String,
+    /// Byte offset to start reading from. Default 0.
+    #[serde(default)]
+    offset: u64,
+    /// Max bytes to return (server-capped at 4 MiB). Default 65536. Page large
+    /// logs by advancing `offset` until `eof` is true.
+    limit: Option<u64>,
+}
+
+const RETRIEVE_ARTIFACT_DESC: &str = "Fetch a byte window of a stored artifact \
+(a full CI job log, contributed file, or fs-watch snapshot) from the object \
+store by its object_path. Discover the path first via run_kql/run_sql over \
+github_job_logs (column object_path) or a LogFile graph node. Returns a slice \
+of `content` plus `eof`; page large logs by advancing `offset`. Bytes are \
+already secret-redacted at ingest.";
+
+const ARTIFACT_DEFAULT_LIMIT: u64 = 64 * 1024;
+const ARTIFACT_MAX_LIMIT: u64 = 4 * 1024 * 1024;
+
+pub fn tool_retrieve_artifact(store: Arc<dyn object_store::ObjectStore>) -> Arc<dyn Tool> {
+    Arc::new(
+        FunctionTool::new(
+            "retrieve_artifact",
+            RETRIEVE_ARTIFACT_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let store = store.clone();
+                async move {
+                    let parsed: RetrieveArtifactArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    // Defense-in-depth: only the artifact namespace is readable —
+                    // never extent segments or arbitrary object keys.
+                    if !parsed.object_path.starts_with("artifacts/") {
+                        return Ok(json!({"error": "object_path must start with 'artifacts/'"}));
+                    }
+                    let limit = parsed.limit.unwrap_or(ARTIFACT_DEFAULT_LIMIT).min(ARTIFACT_MAX_LIMIT) as usize;
+                    let offset = parsed.offset as usize;
+                    let path = object_store::path::Path::from(parsed.object_path.as_str());
+                    let size = match store.head(&path).await {
+                        Ok(meta) => meta.size,
+                        Err(object_store::Error::NotFound { .. }) => {
+                            return Ok(json!({"error": "artifact not found", "object_path": parsed.object_path}));
+                        }
+                        Err(e) => return Ok(json!({"error": format!("head: {e}")})),
+                    };
+                    let content = if offset >= size {
+                        String::new()
+                    } else {
+                        let end = offset.saturating_add(limit).min(size);
+                        match store.get_range(&path, offset..end).await {
+                            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                            Err(e) => return Ok(json!({"error": format!("read: {e}")})),
+                        }
+                    };
+                    Ok(json!({
+                        "object_path": parsed.object_path,
+                        "size_bytes": size,
+                        "offset": offset,
+                        "returned_bytes": content.len(),
+                        "eof": offset.saturating_add(content.len()) >= size,
+                        "content": content,
+                    }))
+                }
+            },
+        )
+        .with_parameters_schema::<RetrieveArtifactArgs>()
+        .with_read_only(true)
+        .with_concurrency_safe(true),
+    )
+}
+
+#[cfg(test)]
+mod retrieve_artifact_tests {
+    use super::*;
+    use adk_rust::tool::SimpleToolContext;
+    use object_store::memory::InMemory;
+    use object_store::path::Path as ObjPath;
+
+    #[tokio::test]
+    async fn reads_window_guards_prefix_and_handles_missing() {
+        let store: Arc<dyn object_store::ObjectStore> = Arc::new(InMemory::new());
+        store
+            .put(&ObjPath::from("artifacts/t/x.log"), b"0123456789".to_vec().into())
+            .await
+            .unwrap();
+        let tool = tool_retrieve_artifact(store);
+        let ctx = Arc::new(SimpleToolContext::new("test"));
+
+        // Byte-window read.
+        let out = tool
+            .execute(
+                ctx.clone(),
+                json!({"object_path": "artifacts/t/x.log", "offset": 2, "limit": 3}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(out["content"], "234");
+        assert_eq!(out["eof"], false);
+        assert_eq!(out["size_bytes"], 10);
+
+        // Reading to the end reports eof.
+        let tail = tool
+            .execute(
+                ctx.clone(),
+                json!({"object_path": "artifacts/t/x.log", "offset": 8}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(tail["content"], "89");
+        assert_eq!(tail["eof"], true);
+
+        // Prefix guard: only the artifact namespace is readable.
+        let bad = tool
+            .execute(ctx.clone(), json!({"object_path": "extents/secret-segment"}))
+            .await
+            .unwrap();
+        assert!(bad["error"].as_str().unwrap().contains("artifacts/"));
+
+        // Missing artifact.
+        let missing = tool
+            .execute(ctx, json!({"object_path": "artifacts/t/nope.log"}))
+            .await
+            .unwrap();
+        assert!(missing["error"].as_str().unwrap().contains("not found"));
+    }
+}

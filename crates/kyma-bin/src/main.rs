@@ -405,6 +405,10 @@ async fn main() -> Result<()> {
             },
             agent_state.clone(),
         )
+        .merge(kyma_server::artifacts_handler::artifacts_router(
+            catalog.clone(),
+            store.clone(),
+        ))
         .layer(axum::middleware::from_fn_with_state(
             AuthLayerState {
                 backend: backend.clone(),
@@ -421,7 +425,7 @@ async fn main() -> Result<()> {
         memory: memory.clone(),
     };
     let mcp_state = kyma_mcp::McpState {
-        dispatch: kyma_mcp::ToolDispatch::new(mcp_shared),
+        dispatch: kyma_mcp::ToolDispatch::new(mcp_shared).with_artifact_store(store.clone()),
         server_info: kyma_mcp::ServerInfo {
             name: "kyma".into(),
             version: env!("CARGO_PKG_VERSION").into(),
