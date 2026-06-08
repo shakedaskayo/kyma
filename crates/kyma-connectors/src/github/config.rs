@@ -21,6 +21,11 @@ pub struct Modules {
     /// tree-sitter grammar crates).
     #[serde(default = "bool_true")]
     pub codebase: bool,
+    /// Enable GitHub Actions ingestion: workflow runs, jobs, and full job logs
+    /// (redacted, stored as object-store artifacts). Opt-in (off by default) —
+    /// log capture is comparatively expensive.
+    #[serde(default)]
+    pub job_logs: bool,
 }
 
 impl Default for Modules {
@@ -32,6 +37,7 @@ impl Default for Modules {
             issues: true,
             contributors: true,
             codebase: true,
+            job_logs: false,
         }
     }
 }
@@ -72,6 +78,42 @@ fn default_exclude_globs() -> Vec<String> {
         "**/target/**".into(),
         "**/dist/**".into(),
     ]
+}
+
+// ── WorkflowOpts defaults ───────────────────────────────────────────────────
+
+fn default_max_runs_per_tick() -> usize {
+    50
+}
+
+fn default_job_log_max_bytes() -> usize {
+    5 * 1_048_576 // 5 MiB
+}
+
+/// Options controlling GitHub Actions ingestion (workflow runs / jobs / logs).
+/// Active only when `modules.job_logs` is enabled.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WorkflowOpts {
+    /// Maximum workflow runs to process per tick (most-recent first). Default 50.
+    #[serde(default = "default_max_runs_per_tick")]
+    pub max_runs_per_tick: usize,
+    /// Skip (and mark truncated) a job log larger than this many bytes.
+    /// Default 5 MiB.
+    #[serde(default = "default_job_log_max_bytes")]
+    pub job_log_max_bytes: usize,
+    /// Maximum API pages per runs/jobs list. Default 10.
+    #[serde(default = "default_max_pages")]
+    pub max_pages: usize,
+}
+
+impl Default for WorkflowOpts {
+    fn default() -> Self {
+        Self {
+            max_runs_per_tick: default_max_runs_per_tick(),
+            job_log_max_bytes: default_job_log_max_bytes(),
+            max_pages: default_max_pages(),
+        }
+    }
 }
 
 /// Options controlling how source code is fetched and parsed.
@@ -132,6 +174,9 @@ pub struct GithubConfig {
     /// Options for the structural code-graph module.
     #[serde(default)]
     pub code: CodeOpts,
+    /// Options for the GitHub Actions module (active when `modules.job_logs`).
+    #[serde(default)]
+    pub workflows: WorkflowOpts,
 }
 
 impl GithubConfig {
@@ -219,6 +264,39 @@ mod tests {
         assert!(cfg.modules.issues);
         assert!(cfg.modules.contributors);
         assert!(cfg.modules.codebase);
+    }
+
+    #[test]
+    fn job_logs_module_defaults_off_and_can_be_enabled() {
+        let cfg: GithubConfig = serde_json::from_value(valid_json()).unwrap();
+        assert!(!cfg.modules.job_logs, "job_logs must be opt-in (off by default)");
+
+        let v = serde_json::json!({
+            "token": "tok",
+            "repos": ["a/b"],
+            "modules": { "job_logs": true }
+        });
+        let cfg: GithubConfig = serde_json::from_value(v).unwrap();
+        assert!(cfg.modules.job_logs);
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn workflow_opts_defaults_and_custom() {
+        let cfg: GithubConfig = serde_json::from_value(valid_json()).unwrap();
+        assert_eq!(cfg.workflows.max_runs_per_tick, 50);
+        assert_eq!(cfg.workflows.job_log_max_bytes, 5 * 1_048_576);
+        assert_eq!(cfg.workflows.max_pages, 10);
+
+        let v = serde_json::json!({
+            "token": "t",
+            "repos": ["a/b"],
+            "workflows": { "max_runs_per_tick": 5, "job_log_max_bytes": 1024, "max_pages": 2 }
+        });
+        let cfg: GithubConfig = serde_json::from_value(v).unwrap();
+        assert_eq!(cfg.workflows.max_runs_per_tick, 5);
+        assert_eq!(cfg.workflows.job_log_max_bytes, 1024);
+        assert_eq!(cfg.workflows.max_pages, 2);
     }
 
     #[test]
