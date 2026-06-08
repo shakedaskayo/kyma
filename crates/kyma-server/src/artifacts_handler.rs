@@ -65,30 +65,12 @@ async fn get_artifact(
         }
     };
 
-    let limit = q.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
     let offset = q.offset as usize;
+    let limit = q.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
     let path = ObjPath::from(rec.object_path.as_str());
-
-    // Clamp the window to the object size so a past-end request returns a short
-    // slice rather than erroring.
-    let size = match state.store.head(&path).await {
-        Ok(meta) => meta.size,
-        Err(object_store::Error::NotFound { .. }) => {
-            return (StatusCode::NOT_FOUND, "artifact blob missing").into_response()
-        }
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("head: {e}")).into_response(),
-    };
-
-    let content = if offset >= size {
-        String::new()
-    } else {
-        let end = offset.saturating_add(limit).min(size);
-        match state.store.get_range(&path, offset..end).await {
-            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-            Err(e) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR, format!("read: {e}")).into_response()
-            }
-        }
+    let (size, content) = match read_window(&state.store, &path, offset, limit).await {
+        Ok(v) => v,
+        Err(resp) => return resp,
     };
 
     Json(serde_json::json!({
@@ -106,11 +88,87 @@ async fn get_artifact(
     .into_response()
 }
 
+#[derive(Debug, Deserialize)]
+struct PathQuery {
+    /// Full object-store key, e.g. a `LogFile` node's `object_path`.
+    path: String,
+    #[serde(default)]
+    offset: u64,
+    limit: Option<u64>,
+}
+
+/// `GET /v1/artifacts/by-path?path=&offset=&limit=` — fetch by object key.
+///
+/// The graph's `LogFile` nodes carry an `object_path` (not the artifact id), so
+/// the UI fetches by path. Tenant isolation is enforced by the key prefix: every
+/// artifact key embeds its tenant uuid, so a caller can only read
+/// `artifacts/<their-tenant>/…`.
+async fn get_artifact_by_path(
+    State(state): State<ArtifactsState>,
+    Extension(principal): Extension<Principal>,
+    Query(q): Query<PathQuery>,
+) -> Response {
+    let prefix = format!("artifacts/{}/", principal.tenant.as_uuid());
+    if !q.path.starts_with(&prefix) {
+        return (
+            StatusCode::FORBIDDEN,
+            "path is not in your tenant's artifact namespace",
+        )
+            .into_response();
+    }
+    let offset = q.offset as usize;
+    let limit = q.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+    let path = ObjPath::from(q.path.as_str());
+    let (size, content) = match read_window(&state.store, &path, offset, limit).await {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    Json(serde_json::json!({
+        "object_path": q.path,
+        "size_bytes": size,
+        "offset": offset,
+        "returned_bytes": content.len(),
+        "eof": offset.saturating_add(content.len()) >= size,
+        "content": content,
+    }))
+    .into_response()
+}
+
+/// Read a clamped byte window of `path`, returning `(total_size, content)` or an
+/// error response. A past-end offset yields an empty slice rather than erroring.
+async fn read_window(
+    store: &Arc<dyn ObjectStore>,
+    path: &ObjPath,
+    offset: usize,
+    limit: usize,
+) -> Result<(usize, String), Response> {
+    let size = match store.head(path).await {
+        Ok(meta) => meta.size,
+        Err(object_store::Error::NotFound { .. }) => {
+            return Err((StatusCode::NOT_FOUND, "artifact blob missing").into_response())
+        }
+        Err(e) => {
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("head: {e}")).into_response())
+        }
+    };
+    if offset >= size {
+        return Ok((size, String::new()));
+    }
+    let end = offset.saturating_add(limit).min(size);
+    match store.get_range(path, offset..end).await {
+        Ok(bytes) => Ok((size, String::from_utf8_lossy(&bytes).into_owned())),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("read: {e}")).into_response()),
+    }
+}
+
 /// Build the artifact-retrieval router. Mount behind `require_role_middleware`
 /// (read role) alongside the query router; the auth middleware injects the
 /// [`Principal`] this handler scopes by.
 pub fn artifacts_router(catalog: Arc<dyn Catalog>, store: Arc<dyn ObjectStore>) -> Router {
     Router::new()
+        // Static `by-path` is registered first; matchit prioritises it over the
+        // `:id` param so it never collides.
+        .route("/v1/artifacts/by-path", get(get_artifact_by_path))
         .route("/v1/artifacts/:id", get(get_artifact))
         .with_state(ArtifactsState { catalog, store })
 }

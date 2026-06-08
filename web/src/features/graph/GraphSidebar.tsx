@@ -1,4 +1,4 @@
-import { useMemo, type ComponentType } from "react";
+import { useMemo, useState, type ComponentType } from "react";
 import {
   ChevronDown,
   Layers,
@@ -16,7 +16,10 @@ import {
   Spline,
   Circle as CircleIcon,
   LayoutGrid,
+  ScrollText,
 } from "lucide-react";
+import { useSession } from "@/sdk/session";
+import { fetchArtifactByPath, type ArtifactWindow } from "@/sdk/retention";
 import {
   getLabelColor,
   type LayoutAlgorithm,
@@ -423,6 +426,82 @@ function SectionRels({
 
 /* ─── Inspector ─────────────────────────────────────────────────────────── */
 
+/** Pull an artifact `object_path` from a node's properties (direct key, or a
+ *  connector-packed `props` JSON blob). */
+function objectPathOf(props: Record<string, unknown>): string | null {
+  const direct = props.object_path;
+  if (typeof direct === "string" && direct) return direct;
+  const blob = props.props;
+  if (typeof blob === "string" && blob.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(blob) as Record<string, unknown>;
+      if (typeof parsed.object_path === "string") return parsed.object_path;
+    } catch {
+      /* not JSON — ignore */
+    }
+  }
+  return null;
+}
+
+/** Inline viewer for a stored log artifact — fetches a redacted byte window
+ *  from the object store (by path) and pages with "Load more". */
+function LogFileViewer({ path }: { path: string }) {
+  const { endpoint, token } = useSession();
+  const [win, setWin] = useState<ArtifactWindow | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async (offset: number) => {
+    if (!endpoint || !token) return;
+    setLoading(true);
+    try {
+      const w = await fetchArtifactByPath({ endpoint, token }, path, { offset, limit: 65536 });
+      setWin((prev) => (prev && offset > 0 ? { ...w, content: prev.content + w.content } : w));
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mb-3">
+      {!win ? (
+        <button
+          type="button"
+          onClick={() => void load(0)}
+          disabled={loading}
+          className="flex w-full items-center justify-center gap-1.5 rounded-md border bg-background py-1.5 text-[11px] font-medium transition-colors hover:bg-accent disabled:opacity-50"
+        >
+          <ScrollText className="h-3.5 w-3.5" /> {loading ? "Loading…" : "View log"}
+        </button>
+      ) : (
+        <div className="rounded-md border">
+          <div className="flex items-center gap-2 border-b px-2 py-1 text-[10px] text-muted-foreground">
+            <ScrollText className="h-3 w-3" /> log
+            <span className="ml-auto font-mono">{win.size_bytes.toLocaleString()} B</span>
+          </div>
+          <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all p-2 text-[10px] leading-snug">
+            {win.content || "(empty)"}
+          </pre>
+          {!win.eof && (
+            <button
+              type="button"
+              onClick={() => void load(win.offset + win.returned_bytes)}
+              disabled={loading}
+              className="w-full border-t py-1 text-[10px] text-muted-foreground transition-colors hover:bg-accent disabled:opacity-50"
+            >
+              {loading ? "Loading…" : "Load more"}
+            </button>
+          )}
+        </div>
+      )}
+      {error && <p className="mt-1 text-[10px] text-destructive">{error}</p>}
+    </div>
+  );
+}
+
 function NodeInspector({
   node,
   edges,
@@ -440,6 +519,13 @@ function NodeInspector({
   const displayName = (node.properties.name as string | undefined) ?? node.id;
   const primaryLabel = node.labels[0] ?? "Node";
   const dotColor = getLabelColor(primaryLabel);
+
+  // LogFile nodes (CI job logs, etc.) carry an `object_path` — let the operator
+  // fetch the redacted blob inline from the object store.
+  const logPath = useMemo(() => {
+    if (!node.labels.some((l) => l.toLowerCase() === "logfile")) return null;
+    return objectPathOf(node.properties);
+  }, [node]);
 
   const neighbours = useMemo(() => {
     const out: {
@@ -511,6 +597,8 @@ function NodeInspector({
       >
         Expand neighbours
       </button>
+
+      {logPath && <LogFileViewer path={logPath} />}
 
       {/* Properties */}
       <div className="mb-3">

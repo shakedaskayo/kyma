@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/sdk/session";
-import { User2, Plug, Cpu, Sparkles, Terminal, Palette, KeyRound } from "lucide-react";
+import { User2, Plug, Cpu, Sparkles, Terminal, Palette, KeyRound, Clock } from "lucide-react";
 
 import { AccountSettings } from "@/features/settings/AccountSettings";
 import { ApiTokensSettings } from "@/features/settings/ApiTokensSettings";
@@ -11,6 +11,7 @@ import { EngineSettings } from "@/features/settings/EngineSettings";
 import { SkillsSettings } from "@/features/settings/SkillsSettings";
 import { ConnectAgentSettings } from "@/features/settings/ConnectAgentSettings";
 import { AppearanceSettings } from "@/features/settings/AppearanceSettings";
+import { RetentionSettings } from "@/features/settings/RetentionSettings";
 
 export const Route = createFileRoute("/settings")({
   validateSearch: (s: Record<string, unknown>) => ({
@@ -26,6 +27,7 @@ type SectionId =
   | "engine"
   | "skills"
   | "connect-agent"
+  | "retention"
   | "appearance";
 
 interface Section {
@@ -81,6 +83,13 @@ const SECTIONS: Section[] = [
     description: "Install the CLI so coding agents (Claude Code, …) can query this server",
     icon: Terminal,
     component: ConnectAgentSettings,
+  },
+  {
+    id: "retention",
+    label: "Retention",
+    description: "How long ingested data + artifacts are kept",
+    icon: Clock,
+    component: RetentionSettings,
   },
   {
     id: "appearance",
