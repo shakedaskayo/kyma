@@ -18,12 +18,7 @@ This recipe gets you to a healthy table on the first commit.
 
 ## The schema
 
-You're creating a table from scratch. Think about what queries you'll
-run before defining columns. The default auto-create path
-([REST / NDJSON](/ingest/rest-ndjson)) will infer types, but inference
-is conservative — explicit beats implicit when you know what you want.
-
-For this recipe, the data is GitHub Actions workflow runs. The shape
+For this recipe the data is GitHub Actions workflow runs. The shape
 you'd query: "which workflows are failing on which repos in the last
 hour?" That implies four typed columns and one `dynamic` overflow:
 
@@ -44,16 +39,13 @@ kyma-cli create-table \
   --schema "_timestamp:timestamp,repo:string,workflow:string,conclusion:string,attributes:dynamic"
 ```
 
-The deliberate choices:
-
-- **`_timestamp` is mandatory.** Every query you write will bound on it.
-- **String columns for predicates only.** `repo`, `workflow`,
-  `conclusion` — anything you'd put in a `WHERE` clause. The string-
-  column token index makes equality and `contains` cheap.
-- **Everything else in `dynamic`.** Branch names, run URLs, actor
-  handles. You can read them in `project`; you usually won't filter on
-  them. If you start filtering on a path frequently, [promote it to a
-  typed column](/concepts/dynamic-and-vectors).
+> **Why this shape?** `_timestamp` is required — no time column means no
+> stage-1 pruning. Typed `string` columns go on anything you filter with
+> `==` or `contains`; everything else goes in `dynamic` where you can
+> still `project` it. If you start filtering a `dynamic` path constantly,
+> [promote it to a typed column](/concepts/dynamic-and-vectors). The
+> auto-create path ([REST / NDJSON](/ingest/rest-ndjson)) infers types,
+> but explicit beats implicit when you know what you want.
 
 ## Sending the data
 
