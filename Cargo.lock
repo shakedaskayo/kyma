@@ -4661,6 +4661,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyma-codeparse"
+version = "0.0.4"
+dependencies = [
+ "tree-sitter",
+ "tree-sitter-go",
+ "tree-sitter-javascript",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+]
+
+[[package]]
 name = "kyma-compaction"
 version = "0.0.4"
 dependencies = [
@@ -4712,6 +4724,7 @@ dependencies = [
  "futures",
  "globset",
  "kyma-catalog",
+ "kyma-codeparse",
  "kyma-core",
  "kyma-ingest-core",
  "kyma-redact",
@@ -4729,12 +4742,6 @@ dependencies = [
  "tokio",
  "tower 0.5.3",
  "tracing",
- "tree-sitter",
- "tree-sitter-go",
- "tree-sitter-javascript",
- "tree-sitter-python",
- "tree-sitter-rust",
- "tree-sitter-typescript",
  "uuid",
  "wiremock",
 ]
