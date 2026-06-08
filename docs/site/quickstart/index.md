@@ -50,4 +50,4 @@ kyma grows in three steps — each one is the same engine and the same graph, do
 - The mental model, end to end: [How kyma works](/concepts/how-kyma-works) · [Concepts](/concepts/).
 - More ways to get data in: [Ingest](/ingest/) · [Connectors](/connectors/).
 - More ways to ask questions: [Query](/query/).
-- Worked examples: [Recipes](/recipes/).
+- What it's for: [Use cases](/use-cases/).

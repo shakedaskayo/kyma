@@ -559,9 +559,9 @@ otel_logs
           <h3>Architecture</h3>
           <p>The five invariants and how they hold the engine together.</p>
         </a>
-        <a class="kyma-section-card" :href="withBase('/recipes/')">
-          <h3>Recipes</h3>
-          <p>Worked examples — copy, paste, adapt.</p>
+        <a class="kyma-section-card" :href="withBase('/use-cases/')">
+          <h3>Use cases</h3>
+          <p>What it's for — memory, live data, and the graph, doing real work.</p>
         </a>
         <a class="kyma-section-card" :href="withBase('/reference/')">
           <h3>Reference</h3>

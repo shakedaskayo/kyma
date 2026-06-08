@@ -54,7 +54,7 @@ export default withMermaid(defineConfig({
       { text: 'Embed', link: '/embed/' },
       { text: 'Reference', link: '/reference/' },
       { text: 'Architecture', link: '/architecture/' },
-      { text: 'Recipes', link: '/recipes/' },
+      { text: 'Use cases', link: '/use-cases/' },
     ],
     sidebar: {
       '/quickstart/':    [{ text: 'Quickstart',    items: [
@@ -187,13 +187,13 @@ export default withMermaid(defineConfig({
           { text: 'Versioning & release',  link: '/embed/versioning' },
         ],
       }],
-      '/recipes/': [{
-        text: 'Recipes',
+      '/use-cases/': [{
+        text: 'Use cases',
         items: [
-          { text: 'Debug a prod incident',     link: '/recipes/debug-prod-incident' },
-          { text: 'Triage an alert spike',     link: '/recipes/triage-alert-spike' },
-          { text: 'Agent watching a table',    link: '/recipes/agent-watching-a-table' },
-          { text: 'Ingest something custom',   link: '/recipes/ingest-something-custom' },
+          { text: 'Overview',                        link: '/use-cases/' },
+          { text: 'Remember across sessions',        link: '/use-cases/remember-across-sessions' },
+          { text: 'Debug from your editor',          link: '/use-cases/debug-from-your-editor' },
+          { text: 'Ask your stack in English',       link: '/use-cases/ask-your-stack' },
         ],
       }],
     },
