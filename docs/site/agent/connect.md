@@ -26,7 +26,7 @@ Pick one (they compose — the plugin uses both hooks *and* MCP).
 The local single binary needs no Postgres and no Docker (embedded SQLite + local files):
 
 ```bash
-cargo install --path crates/kyma-cli
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
 kyma setup claude-code      # or: cursor · windsurf
 ```
 
@@ -43,7 +43,7 @@ commands. It shells out to the `kyma` CLI and points at a kyma endpoint (a serve
 local `kyma serve`):
 
 ```bash
-cargo install --path crates/kyma-cli   # the `kyma` CLI — the plugin's hooks use it
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash   # the `kyma` CLI — the plugin's hooks use it
 kyma connect <kyma-url>                # a kyma server, or a local `kyma serve`
 kyma install-plugin                    # installs hooks + slash commands into ~/.claude
 ```

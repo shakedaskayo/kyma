@@ -19,7 +19,7 @@ Two ways to start, depending on what you want first:
 ### [Connect your agent](/agent/connect) · local, zero infra
 
 ```bash
-cargo install --path crates/kyma-cli
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
 kyma setup claude-code     # or: cursor · windsurf
 ```
 

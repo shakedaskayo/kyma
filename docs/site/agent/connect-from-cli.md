@@ -23,14 +23,17 @@ don't want to copy a token by hand.
 ## 1 — Install
 
 ```bash
-# From a checkout of the kyma repo:
-cargo install --path crates/kyma-cli
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
 
 # Verify:
 kyma version
 ```
 
-Requires Rust ≥ 1.74. The binary is named `kyma`, not `kyma-cli`.
+The installer downloads the prebuilt binary to `~/.local/bin` (or `/usr/local/bin`).
+Binary name is `kyma` (not `kyma-cli`).
+
+From source (contributors): `cargo install --path crates/kyma-cli` inside a checkout,
+or `… | bash -s -- --from-source`.
 
 ## 2 — Connect
 

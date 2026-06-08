@@ -22,11 +22,15 @@ mode.
 ## Install
 
 ```bash
-cargo install --path crates/kyma-cli
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
 kyma version
 ```
 
+The installer downloads the prebuilt binary to `~/.local/bin` (or `/usr/local/bin`).
 Binary name is `kyma` (not `kyma-cli`).
+
+From source (contributors): inside a checkout, run `cargo install --path crates/kyma-cli`,
+or use `… | bash -s -- --from-source`.
 
 ## Global flags
 

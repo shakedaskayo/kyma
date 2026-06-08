@@ -124,7 +124,7 @@ You'll get a streamed answer.
 From your terminal:
 
 ```bash
-cargo install --path crates/kyma-cli
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
 kyma connect http://localhost:8080 --token "<bearer-token>"
 kyma query "what databases do we have?"
 ```
