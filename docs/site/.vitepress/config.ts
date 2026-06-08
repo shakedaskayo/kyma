@@ -92,6 +92,7 @@ export default withMermaid(defineConfig({
           { text: 'PromQL',                    link: '/query/promql' },
           { text: 'Arrow Flight',              link: '/query/arrow-flight' },
           { text: 'Agent endpoint',            link: '/query/agent-endpoint' },
+          { text: 'Graph',                     link: '/query/graph' },
           { text: 'Pruning and performance',   link: '/query/pruning-and-performance' },
         ],
       }],
@@ -123,6 +124,8 @@ export default withMermaid(defineConfig({
         items: [
           { text: 'Overview',            link: '/agent/' },
           { text: 'Connect your agent',  link: '/agent/connect' },
+          { text: 'Connect via CLI',     link: '/agent/connect-from-cli' },
+          { text: 'Coding agents',       link: '/agent/coding-agents' },
           { text: 'Agentic Memory',      link: '/agent/memory' },
           { text: 'Dreaming',            link: '/agent/dreaming' },
           { text: 'Workers & nodes',     link: '/agent/workers' },
@@ -130,7 +133,6 @@ export default withMermaid(defineConfig({
           { text: 'Claude Code engine',  link: '/agent/claude-cli' },
           { text: 'Claude Code plugin',  link: '/agent/claude-code-plugin' },
           { text: 'Skills',              link: '/agent/skills' },
-          { text: 'Connect via CLI',     link: '/agent/connect-from-cli' },
         ],
       }],
       '/deploy/': [{
@@ -148,6 +150,7 @@ export default withMermaid(defineConfig({
         items: [
           { text: 'HTTP API',         link: '/reference/api' },
           { text: 'CLI',              link: '/reference/cli' },
+          { text: 'MCP',              link: '/reference/mcp' },
           { text: 'Environment vars', link: '/reference/env' },
           { text: 'KQL functions',    link: '/reference/kql-functions' },
           { text: 'Schema mappings',  link: '/reference/schema-mappings' },

@@ -1,29 +1,36 @@
 ---
 title: CLI
-description: kyma CLI reference — client commands (connect, status, query, install-skill, connector, ingest) and admin commands (create-database, create-table, ...).
+description: kyma CLI reference — local engine (mcp, serve, setup, sync, worker, service), client commands (connect, status, query, sessions, install-skill, connector, ingest, recall, remember, entity, distill, deploy), and admin commands (create-database, create-table, ...).
 ---
 
 # CLI
 
-`kyma` is the binary. It has two modes:
+`kyma` is the binary. It has three mode groups:
 
+- **Local engine** — runs an embedded context engine (SQLite catalog +
+  local object store, zero infra). Includes `kyma mcp`, `kyma serve`,
+  `kyma setup`, `kyma sync`, `kyma worker`, `kyma service`.
 - **Client mode** — talks to a running Kyma server over HTTP. Used for
-  asking the agent questions, managing connectors, and wiring up
-  coding agents.
+  asking the agent questions, managing connectors, and wiring up coding
+  agents.
 - **Admin mode** — talks directly to the Postgres catalog. Used for
   provisioning databases, tables, and graphs from scripts.
 
-Both modes coexist in the same binary; subcommand selection picks the
+All modes coexist in the same binary; subcommand selection picks the
 mode.
 
 ## Install
 
 ```bash
-cargo install --path crates/kyma-cli
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
 kyma version
 ```
 
+The installer downloads the prebuilt binary to `~/.local/bin` (or `/usr/local/bin`).
 Binary name is `kyma` (not `kyma-cli`).
+
+From source (contributors): inside a checkout, run `cargo install --path crates/kyma-cli`,
+or use `… | bash -s -- --from-source`.
 
 ## Global flags
 
@@ -38,6 +45,157 @@ Client-mode subcommands read connection info from `~/.kyma/config.json`
 | ----------------- | --------------------------------------- |
 | `KYMA_SERVER_URL` | Overrides the saved endpoint.           |
 | `KYMA_TOKEN`      | Overrides the saved bearer token.       |
+
+---
+
+## Local engine subcommands
+
+These run the embedded context engine — no Postgres or S3 required.
+Data lives under `~/.kyma/` by default (override with `KYMA_HOME`).
+
+### `kyma mcp`
+
+Serve the Model Context Protocol over **stdio** — what a coding agent
+spawns automatically via the MCP config written by `kyma setup`. Starts
+the embedded engine, runs an initial Claude Code file-memory sync, then
+serves the full context-engine toolset (memory + data + graph) over the
+MCP protocol.
+
+```bash
+kyma mcp   # run directly to test; agents invoke this as the MCP server command
+```
+
+No flags. The agent connects via stdin/stdout. See the
+[MCP reference](/reference/mcp) for the full tool list.
+
+### `kyma serve [--addr ADDR]`
+
+Serve the web UI + HTTP API locally (query / catalog / graph / ingest /
+MCP). Browse the graph and ingest on demand. Sign-in defaults:
+`admin` / `admin`.
+
+| Flag     | Env var               | Default             |
+| -------- | --------------------- | ------------------- |
+| `--addr` | `KYMA_LOCAL_HTTP_ADDR` | `127.0.0.1:7777`   |
+
+```bash
+kyma serve
+kyma serve --addr 0.0.0.0:8888
+```
+
+### `kyma setup <agent|list> [--print]`
+
+Wire a coding agent to `kyma mcp` over stdio with a one-liner. Writes
+(merging, never clobbering other servers) the agent's MCP config file.
+
+Usage: `kyma setup <agent>` where `<agent>` is one of:
+
+| Agent key      | Config file written                         | Scope          |
+| -------------- | ------------------------------------------- | -------------- |
+| `claude-code`  | `.mcp.json`                                 | project (cwd)  |
+| `cursor`       | `.cursor/mcp.json`                          | project (cwd)  |
+| `windsurf`     | `~/.codeium/windsurf/mcp_config.json`       | global (home)  |
+
+`kyma setup list` prints the supported agent keys. Any unknown agent
+key emits a generic stdio MCP snippet to paste manually.
+
+`--print` previews the resulting config without writing it.
+
+```bash
+kyma setup claude-code        # write .mcp.json in the current project
+kyma setup cursor --print     # preview only
+kyma setup list               # show supported agents
+```
+
+### `kyma sync [--watch] [--dry-run] [--cc-only] [--cloud-only] [--project PATH]`
+
+Sync memory with Claude Code's file memory (`~/.claude/projects/*/memory`,
+always present) and bidirectionally with a control plane (when
+`KYMA_CLOUD_URL` is set).
+
+The file phase ingests + embeds Claude Code memory files, promotes
+high-value kyma memories back as native files, and curates `MEMORY.md`.
+
+| Flag            | Purpose                                                                 |
+| --------------- | ----------------------------------------------------------------------- |
+| `--watch`       | Keep running, re-syncing on an interval (`KYMA_CC_SYNC_POLL_SECS`, default 30s). |
+| `--dry-run`     | Plan + audit-log Claude Code file changes without writing them. Ingestion into the local store still runs. |
+| `--cc-only`     | Only the Claude Code file phase (skip the control plane).               |
+| `--cloud-only`  | Only the control-plane push/pull (skip Claude Code files).              |
+| `--project PATH` | Limit the file phase to one project path.                              |
+
+```bash
+kyma sync                       # one-shot sync
+kyma sync --watch               # background loop
+kyma sync --dry-run             # preview file changes
+```
+
+### `kyma worker <action>`
+
+**Two distinct worlds under one subcommand:**
+
+#### Background sync service (`install | uninstall | status`)
+
+Manage an OS user service (launchd on macOS, systemd --user on Linux)
+running `kyma sync --watch` so memory stays synced with no terminal open.
+
+```bash
+kyma worker install [--interval SECS] [--cc-only] [--cloud-only]
+kyma worker uninstall
+kyma worker status
+```
+
+| Flag           | Purpose                                        |
+| -------------- | ---------------------------------------------- |
+| `--interval N` | Poll interval in seconds (default 30; sets `KYMA_CC_SYNC_POLL_SECS`). |
+| `--cc-only`    | Only Claude Code file phase.                   |
+| `--cloud-only` | Only control-plane push/pull.                  |
+
+#### Fabric node daemon + admin (`run | create | list | revoke`)
+
+Register this machine as a worker node with the control plane, pull
+and run jobs (connector syncs, dreaming tasks, etc.).
+
+```bash
+# Start the node daemon
+kyma worker run --server <URL> --token <TOKEN> \
+  [--accept source_sync,dreaming] [--max-concurrent 2] [--name my-box]
+
+# Admin: mint a new worker identity
+kyma worker create --name my-box [--capabilities sources,dreaming]
+
+# Admin: list registered nodes
+kyma worker list
+
+# Admin: revoke a node
+kyma worker revoke <worker-id>
+```
+
+`kyma worker run` flags:
+
+| Flag               | Env var              | Default           | Purpose                                          |
+| ------------------ | -------------------- | ----------------- | ------------------------------------------------ |
+| `--server URL`     | `KYMA_SERVER_URL`    | _required_        | Control-plane URL.                               |
+| `--token TOKEN`    | `KYMA_WORKER_TOKEN`  | _required_        | Worker auth token from `kyma worker create`.     |
+| `--accept LIST`    | —                    | `source_sync`     | Comma-separated job kinds this node accepts.     |
+| `--max-concurrent N` | —                  | `1`               | Max jobs running in parallel.                    |
+| `--name NAME`      | —                    | `node@<hostname>` | Friendly node name shown in `kyma worker list`.  |
+
+### `kyma service <action>`
+
+Manage the local Kyma server (`kyma serve`) as an OS user service (launchd
+on macOS, systemd --user on Linux): starts at login, restarts on crash.
+
+```bash
+kyma service install [--addr ADDR] [--token TOKEN]
+kyma service uninstall
+kyma service status
+```
+
+| Flag       | Purpose                                                                   |
+| ---------- | ------------------------------------------------------------------------- |
+| `--addr`   | Listen address (default `127.0.0.1:7777`).                               |
+| `--token`  | Static admin token (`KYMA_AUTH_TOKENS=<token>:admin` in the service env). |
 
 ---
 
@@ -107,15 +265,16 @@ kyma user set-role alice admin                  # change role
 kyma user delete alice --yes                    # --yes skips the confirm prompt
 ```
 
-### `kyma install-skill [--target DIR] [--also-link-claude]`
+### `kyma install-skill [--target DIR] [--also-link-claude] [--which kyma|deploy|all]`
 
 Write a `SKILL.md` that teaches Claude Code / Cursor / Aider / etc.
 how to use the `kyma` CLI as a data tool.
 
 | Flag                  | Effect                                                                  |
 | --------------------- | ----------------------------------------------------------------------- |
-| `--target DIR`        | Where to write `SKILL.md`. Default `~/.kyma/skills/kyma/`.               |
+| `--target DIR`        | Where to write `SKILL.md`. Default `~/.kyma/skills/<skill>/`.           |
 | `--also-link-claude`  | Symlink `~/.claude/skills/kyma` → the target dir (Unix only).           |
+| `--which`             | `kyma` (default) — the data/query skill; `deploy` — the production-deployment runbook; `all` — both. |
 
 ### `kyma install-plugin [--target DIR] [--force]`
 
@@ -261,6 +420,71 @@ Stream NDJSON from **stdin** straight into a table via `POST /v1/ingest`
 ```bash
 printf '%s\n' '{"ts":"2026-05-31T12:00:00Z","kind":"note","text":"hello"}' \
   | kyma ingest push --table claude_code_events
+```
+
+### `kyma deploy <op>`
+
+One-command production (and local test-drive) deployment. Manages a
+workspace under `~/.kyma/deploy/<name>/` containing the materialized
+IaC templates and a `deploy.json` state file.
+
+Targets:
+
+| Target  | What it provisions                                          |
+| ------- | ----------------------------------------------------------- |
+| `aws`   | ECS Fargate engine + S3 extents + Supabase (catalog + Auth) via embedded Terraform / Pulumi. |
+| `local` | Supabase project via Management API + a local Docker container (test drive). |
+
+#### `kyma deploy init [--name NAME] [--target aws|local] [--tool terraform|pulumi] [flags]`
+
+Interactive wizard: collect credentials + settings, materialize the
+IaC workspace. Supabase access-token resolution order:
+1. `SUPABASE_ACCESS_TOKEN` env var
+2. `~/.supabase/access-token` (Supabase CLI login)
+3. Browser OAuth (when `KYMA_SUPABASE_OAUTH_CLIENT_ID` is set)
+4. Guided manual paste
+
+| Flag              | Default      | Purpose                                                     |
+| ----------------- | ------------ | ----------------------------------------------------------- |
+| `--name NAME`     | `prod`       | Workspace name (`~/.kyma/deploy/<name>/`).                  |
+| `--target`        | `aws`        | `aws` or `local`.                                           |
+| `--tool`          | `terraform`  | IaC tool for the aws target: `terraform` or `pulumi`.       |
+| `--region`        | `us-east-1`  | AWS region.                                                 |
+| `--supabase-org`  | _interactive_ | Supabase organization id (skips the interactive picker).   |
+| `--domain`        | _unset_      | Custom domain for the engine (aws target).                  |
+| `--admin-email`   | _interactive_ | Email(s) granted the kyma admin role (comma-separated).    |
+| `--yes`           | off          | Answer prompts with defaults (requires `--supabase-org` + a token source). |
+| `--print-only`    | off          | Render the workspace + print the planned commands, run nothing. |
+| `--force`         | off          | Overwrite an existing workspace's rendered config.          |
+
+#### `kyma deploy up [--name NAME] [--auto-approve]`
+
+Provision: `terraform apply` / `pulumi up` (aws) or `docker run` (local).
+
+#### `kyma deploy status [--name NAME]`
+
+Show deployment outputs and probe the engine's `/health`.
+
+#### `kyma deploy destroy [--name NAME] [--yes]`
+
+Tear everything down (terraform destroy / docker rm + Supabase project delete).
+
+### `kyma update [--check] [--version TAG] [--force] [--no-restart]`
+
+Self-update to the latest GitHub release (binary + embedded web UI),
+then restart the local server so the new UI is live immediately.
+
+| Flag           | Purpose                                                          |
+| -------------- | ---------------------------------------------------------------- |
+| `--check`      | Only check whether a newer release exists; don't install.        |
+| `--version TAG` | Install a specific release tag (e.g. `v0.0.3`).                |
+| `--force`      | Reinstall even if this version is already current.              |
+| `--no-restart` | Don't restart a running `kyma serve` after updating.            |
+
+```bash
+kyma update --check          # is there a newer version?
+kyma update                  # update + restart local server
+kyma update --version v0.0.3 # pin a version
 ```
 
 ---

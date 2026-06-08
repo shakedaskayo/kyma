@@ -113,8 +113,16 @@ NDJSON), `404` (table not found with `X-Auto-Create: false`),
 `POST /v1/agent/ask` body:
 
 ```json
-{ "question": "...", "database": "default", "include_thinking": false }
+{
+  "question": "...",
+  "database": "default",
+  "include_thinking": false,
+  "session_id": "<uuid>",
+  "source": "kyma"
+}
 ```
+
+Pass `session_id` (a uuid returned in a prior turn's `data-session` SSE part) to continue a conversation. `source` is a free-form label stored on the session row (`"claude_code"`, `"kyma"`, etc.).
 
 The SSE response carries seven event names: `run_started`,
 `thinking_delta` (only when `include_thinking: true`),
@@ -125,6 +133,133 @@ event payload reference.
 
 Run wall-clock cap: 60 s. Per-run tool-call cap: 12. Both surface as
 `run_error` codes (`timeout` and `tool_loop`) before the stream ends.
+
+## Agent sessions
+
+Multi-turn conversation history (A5). Each `POST /v1/agent/ask` call that
+includes a `session_id` appends to an existing session; omitting it mints
+a new session uuid, returned in the SSE event `session` as `{"sessionId": "<uuid>"}` in the JSON payload.
+
+| Method | Path                                    | Min role | Effect                                                            |
+| ------ | --------------------------------------- | -------- | ----------------------------------------------------------------- |
+| GET    | `/v1/agent/sessions`                    | Read     | List sessions, newest first (max 200). Returns `{sessions:[…]}`. |
+| GET    | `/v1/agent/sessions/{session_id}`       | Read     | Fetch session metadata (title, rolling_summary, source, turn count). |
+| GET    | `/v1/agent/sessions/{session_id}/turns` | Read     | Full turn log ordered by `turn_index`. Returns `{turns:[…]}`.    |
+| DELETE | `/v1/agent/sessions/{session_id}`       | Read     | Delete session + cascade turns; detaches linked runs.             |
+
+Session list item shape: `{session_id, title, created_at, last_active, source, turn_count}`.
+
+Turn item shape: `{turn_index, role, content, run_id, created_at}`.
+
+`{session_id}` must be a uuid; non-uuid values return `400`. Missing sessions return `404`.
+
+## Engine config
+
+One global engine preference row drives all agent runs. See
+[Agent engines](/agent/engines) for provider setup and model selection.
+
+| Method | Path                     | Min role | Content-Type       | Effect                                                                  |
+| ------ | ------------------------ | -------- | ------------------ | ----------------------------------------------------------------------- |
+| GET    | `/v1/agent/engines`      | Read     | —                  | Available providers + their model menus, plus the active config.        |
+| GET    | `/v1/agent/engine`       | Read     | —                  | The persisted `EngineConfig` (one row per installation).                |
+| PUT    | `/v1/agent/engine`       | Read     | `application/json` | Persist a new `EngineConfig`. Echoes the saved value.                   |
+| POST   | `/v1/agent/engine/test`  | Read     | `application/json` | Probe a candidate config without persisting. Returns `{ok, kind, model}` or `502/504`. |
+
+`EngineConfig` JSON shape:
+
+```json
+{
+  "kind": "anthropic",
+  "model": "claude-opus-4-7",
+  "credential_id": "<uuid or null>",
+  "host": "<url or null>",
+  "extras": {}
+}
+```
+
+`kind` ∈ `anthropic`, `openai`, `ollama`, `claude_cli`.
+`host` is only relevant for `ollama` (the Ollama base URL).
+`credential_id` references an encrypted credential from `/v1/credentials`.
+The test endpoint fires a single-token probe (30 s timeout); the real
+engine+credentials are used for Anthropic/OpenAI/Ollama; the `claude` CLI
+binary is probed directly for the `claude_cli` kind.
+
+## Agent skills
+
+| Method | Path                         | Min role | Effect                                                                     |
+| ------ | ---------------------------- | -------- | -------------------------------------------------------------------------- |
+| GET    | `/v1/agent/skills`           | Read     | List all discovered skills on the host with metadata and enabled state.    |
+| GET    | `/v1/agent/skills/enabled`   | Read     | The toggled set — just the names.                                          |
+| PUT    | `/v1/agent/skills/enabled`   | Read     | Replace the toggled set. Body: `{skills: ["name", …]}`.                   |
+
+## Memory
+
+The memory surface stores and retrieves durable agent memories. See
+[Agent memory](/agent/memory) for knob meanings and the memory model.
+
+| Method | Path                              | Min role | Effect                                                                        |
+| ------ | --------------------------------- | -------- | ----------------------------------------------------------------------------- |
+| POST   | `/v1/agent/memory/query`          | Read     | Hybrid recall — semantic + keyword + graph expansion.                         |
+| GET    | `/v1/agent/memory/overview`       | Read     | Aggregate stats: memory count, firehose rows, recent pipeline runs.           |
+| GET    | `/v1/agent/memory/settings`       | Read     | Current tunable settings (consolidation knobs, dreaming schedule).            |
+| PUT    | `/v1/agent/memory/settings`       | Read     | Persist tunable settings.                                                     |
+| GET    | `/v1/agent/memory/export`         | Read     | Full snapshot (`{memory_nodes, memory_edges}`) for backup or portability.    |
+| POST   | `/v1/agent/memory/import`         | Write    | Bulk-apply node/edge rows from another instance's export/changes response.    |
+| GET    | `/v1/agent/memory/changes`        | Read     | Incremental sync: nodes/edges updated strictly after `?since=<RFC3339>`.     |
+
+`POST /v1/agent/memory/query` body:
+
+```json
+{
+  "query": "payments latency investigation",
+  "realms": [],
+  "memory_type": null,
+  "tags": [],
+  "importance_min": null,
+  "as_of": null,
+  "include_invalidated": false,
+  "limit": null,
+  "expand_hops": null,
+  "mode": "fast"
+}
+```
+
+`mode` is `"fast"` (default, LLM-free graph-aware hybrid retrieval) or
+`"agentic"` (adds a short synthesized `brief` from the retrieved context).
+All fields except `query` are optional.
+
+`GET /v1/agent/memory/changes` query params: `since=<RFC3339>` (omit for full
+epoch), `realm=<name>`. The response includes a `until` watermark to advance
+on the next poll.
+
+`POST /v1/agent/memory/import` requires `Role::Write` even though the agent
+router is otherwise mounted at `Role::Read`. Body: `{memory_nodes:[…], memory_edges:[…]}`.
+
+## Dreaming
+
+On-demand and scheduled agentic memory consolidation runs. See
+[Dreaming](/agent/dreaming) for the full pipeline description.
+
+| Method | Path                                  | Min role | Effect                                                                               |
+| ------ | ------------------------------------- | -------- | ------------------------------------------------------------------------------------ |
+| POST   | `/v1/agent/memory/dreaming/run`       | Read     | Enqueue a manual dreaming run. `202` when queued; `200 {deduped:true}` when one is already in flight. |
+| GET    | `/v1/agent/memory/dreaming/runs`      | Read     | List runs, newest first. Filters: `kind=`, `limit=` (max 200), `offset=`.           |
+| GET    | `/v1/agent/memory/dreaming/runs/{id}` | Read     | Fetch one run including live `progress` JSONB for in-flight runs.                   |
+
+`POST /v1/agent/memory/dreaming/run` optional body:
+
+```json
+{ "mode": null, "focus": null }
+```
+
+`mode` and `focus` are optional strings passed to the dreaming engine.
+Response on success: `202 {job_id: "<uuid>"}`.
+Response when already in flight: `200 {job_id: null, deduped: true, detail: "…"}`.
+
+Run item shape includes: `id`, `kind`, `status`, `mode`, `trigger`,
+`engine`, `model`, `started_at`, `finished_at`, `events_scanned`,
+`memories_written`, `error`, `job_id`, `session_id`, `agent_run_id`,
+`worker_id`, `stats`, `progress`.
 
 ## Dashboards
 
@@ -198,6 +333,121 @@ single-use `state` token is the trust anchor. See [OAuth connectors](/connectors
 | GET    | `/v1/oauth/flows/{state}`           | Write    | Poll a flow's `{status, credential_id}` — the fallback when `postMessage` can't reach the UI.  |
 
 `{provider}` ∈ `google`, `notion`, `atlassian`, `slack`.
+
+## Worker fabric
+
+The distributed compute fabric that runs connector syncs, dreaming jobs, and
+arbitrary scheduled work. See [Workers](/agent/workers) for daemon setup and
+job lifecycle details.
+
+Two auth surfaces — worker-facing endpoints authenticate with a worker token
+(`Authorization: Bearer kyw_…`); operator endpoints use the regular bearer
+token.
+
+### Worker-facing (Authorization: Bearer kyw\_…)
+
+| Method | Path                          | Effect                                                                                              |
+| ------ | ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| POST   | `/v1/workers/register`        | Register or re-register this worker. Returns `{worker_id, heartbeat_interval_secs:30, lease_secs}`. |
+| POST   | `/v1/workers/heartbeat`       | Touch liveness. Returns `{status, drain, recommended_poll_ms:1000}`.                               |
+| POST   | `/v1/jobs/claim`              | Claim up to `max` jobs matching `kinds`. Long-polls up to `wait_ms` (capped at 25 000 ms).        |
+| POST   | `/v1/jobs/self`               | Enqueue a job pinned to this worker (e.g. a local-file source sync).                               |
+| POST   | `/v1/jobs/{id}/progress`      | Snapshot partial progress JSON for a held job.                                                      |
+| POST   | `/v1/jobs/{id}/complete`      | Mark a job done and supply a result payload.                                                        |
+| POST   | `/v1/jobs/{id}/fail`          | Mark a job failed with an error string.                                                             |
+| POST   | `/v1/jobs/{id}/lease`         | Extend the job lease (10–3 600 s). Call before the lease expires to avoid a reclaim.               |
+
+Claim / lease lifecycle: `POST /v1/jobs/claim` atomically assigns jobs and starts their lease
+(`KYMA_FABRIC_LEASE_SECS`, default 300 s). The worker must call `/v1/jobs/{id}/lease` before
+the lease expires to retain ownership; otherwise the job is re-queued. `/progress` accepts any
+JSON snapshot and stores it on the job row for operator visibility. `complete` and `fail` both
+return `204`; `409` means the lease was lost.
+
+`POST /v1/jobs/claim` body:
+
+```json
+{ "kinds": ["connector_sync"], "max": 1, "wait_ms": 5000 }
+```
+
+### Operator (regular bearer, Role::Write)
+
+| Method | Path                  | Min role | Effect                                                                                            |
+| ------ | --------------------- | -------- | ------------------------------------------------------------------------------------------------- |
+| POST   | `/v1/workers`         | Write    | Create a worker identity and mint its token. Body: `{name, capabilities?, labels?}`. Returns `{worker_id, token}` — token shown once. |
+| GET    | `/v1/workers`         | Write    | List all registered workers.                                                                      |
+| DELETE | `/v1/workers/{id}`    | Write    | Revoke a worker (soft-delete; outstanding jobs are re-queued on next sweep).                     |
+| POST   | `/v1/jobs`            | Write    | Enqueue a job manually. Body is an `EnqueueJob` struct.                                          |
+| GET    | `/v1/jobs`            | Write    | List jobs. Query params: `kind=`, `status=`, `limit=` (max 500, default 50).                     |
+| GET    | `/v1/jobs/{id}`       | Write    | Fetch a single job with payload and progress.                                                     |
+
+## Graph
+
+Read-only property-graph surface. The built-in `schema` graph renders the
+catalog (databases → tables → inferred column references) as a property
+graph. Additional stored graphs are registered via the catalog and addressed
+by name with an `X-Database` header. For graph KQL queries, see the
+[Graph guide](/query/graph).
+
+All graph routes accept an optional `X-Database` header that selects the
+database context for stored-graph resolution and per-database token scope
+enforcement.
+
+| Method | Path                                    | Min role | Effect                                                                        |
+| ------ | --------------------------------------- | -------- | ----------------------------------------------------------------------------- |
+| GET    | `/v1/graph`                             | Read     | List available graphs (`name`, `kind`, `description`). Include `X-Database` to show stored graphs in that database. |
+| GET    | `/v1/graph/{graph}/overview`            | Read     | Nodes + edges for the graph. Query params: `realm=`, `limit=` (default 800). |
+| GET    | `/v1/graph/{graph}/stats`               | Read     | Node/edge counts. Query param: `realm=`.                                      |
+| GET    | `/v1/graph/{graph}/schema`              | Read     | Label vocabulary and edge-type vocabulary.                                    |
+| GET    | `/v1/graph/{graph}/nodes/{id}`          | Read     | Fetch one node by id. `404` when absent.                                      |
+| GET    | `/v1/graph/{graph}/nodes/{id}/subgraph` | Read     | Ego subgraph around a node. Query param: `depth=` (default 2).                |
+| POST   | `/v1/graph/{graph}/neighbors`           | Read     | Expand one or more nodes one hop.                                             |
+| POST   | `/v1/graph/{graph}/search`              | Read     | Full-text + label search over the graph.                                      |
+
+`{graph}` is `"schema"` for the built-in schema graph, or the registered
+name of a stored graph.
+
+`POST /v1/graph/{graph}/neighbors` body:
+
+```json
+{
+  "node_ids": ["default::orders"],
+  "direction": "both",
+  "only_internal": false,
+  "limit": 200
+}
+```
+
+`direction` ∈ `"forward"`, `"backward"`, `"both"` (default).
+
+`POST /v1/graph/{graph}/search` body:
+
+```json
+{
+  "text": "payments",
+  "labels": [],
+  "realm": null,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+## MCP over HTTP
+
+The Model Context Protocol surface exposes kyma's query and memory tools as
+JSON-RPC 2.0 methods so any MCP-capable agent can interact with the engine.
+
+| Method | Path       | Min role | Content-Type       | Effect                                       |
+| ------ | ---------- | -------- | ------------------ | -------------------------------------------- |
+| POST   | `/mcp/v1`  | Read     | `application/json` | JSON-RPC 2.0 channel (Streamable HTTP MCP).  |
+| GET    | `/mcp/v1`  | Read     | —                  | SSE upgrade for streaming MCP sessions.      |
+
+Auth is the same bearer token as `/v1/*` (`Role::Read`). Scoped tokens
+(per-database) are blocked at the middleware level because MCP tools address
+databases internally.
+
+For a stdio alternative, `kyma mcp` (the CLI subcommand) exposes the same
+tools without an HTTP server. See the [MCP reference](/reference/mcp) for
+tool names, input schemas, and capability negotiation.
 
 ## Arrow Flight (gRPC)
 

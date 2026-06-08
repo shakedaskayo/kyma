@@ -17,7 +17,7 @@ share the same engine:
 | --- | --- | --- |
 | **Claude Code plugin** | Claude Code | **Automatic** — captures each turn and injects the most relevant memories into *every* prompt; plus slash commands. |
 | **CLI + skill** | Cursor, Aider, Continue, any shell-tool agent | The agent shells out to `kyma query` / `kyma recall`; a skill teaches it *when*. |
-| **MCP** | Any MCP client (Claude Code, Cursor, Windsurf, …) | The full 19-tool surface over stdio or HTTP. |
+| **MCP** | Any MCP client (Claude Code, Cursor, Windsurf, …) | The full tool surface over stdio or HTTP. |
 
 Pick one (they compose — the plugin uses both hooks *and* MCP).
 
@@ -26,7 +26,7 @@ Pick one (they compose — the plugin uses both hooks *and* MCP).
 The local single binary needs no Postgres and no Docker (embedded SQLite + local files):
 
 ```bash
-cargo install --path crates/kyma-cli
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
 kyma setup claude-code      # or: cursor · windsurf
 ```
 
@@ -43,7 +43,7 @@ commands. It shells out to the `kyma` CLI and points at a kyma endpoint (a serve
 local `kyma serve`):
 
 ```bash
-cargo install --path crates/kyma-cli   # the `kyma` CLI — the plugin's hooks use it
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash   # the `kyma` CLI — the plugin's hooks use it
 kyma connect <kyma-url>                # a kyma server, or a local `kyma serve`
 kyma install-plugin                    # installs hooks + slash commands into ~/.claude
 ```
