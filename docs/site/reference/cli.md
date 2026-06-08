@@ -65,8 +65,8 @@ MCP protocol.
 kyma mcp   # run directly to test; agents invoke this as the MCP server command
 ```
 
-No flags. The agent connects via stdin/stdout. See /reference/mcp for the
-full tool list.
+No flags. The agent connects via stdin/stdout. See the
+[MCP reference](/reference/mcp) for the full tool list.
 
 ### `kyma serve [--addr ADDR]`
 

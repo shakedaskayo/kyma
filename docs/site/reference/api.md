@@ -170,7 +170,7 @@ One global engine preference row drives all agent runs. See
 ```json
 {
   "kind": "anthropic",
-  "model": "claude-opus-4-5",
+  "model": "claude-opus-4-7",
   "credential_id": "<uuid or null>",
   "host": "<url or null>",
   "extras": {}

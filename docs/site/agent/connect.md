@@ -17,7 +17,7 @@ share the same engine:
 | --- | --- | --- |
 | **Claude Code plugin** | Claude Code | **Automatic** — captures each turn and injects the most relevant memories into *every* prompt; plus slash commands. |
 | **CLI + skill** | Cursor, Aider, Continue, any shell-tool agent | The agent shells out to `kyma query` / `kyma recall`; a skill teaches it *when*. |
-| **MCP** | Any MCP client (Claude Code, Cursor, Windsurf, …) | The full 19-tool surface over stdio or HTTP. |
+| **MCP** | Any MCP client (Claude Code, Cursor, Windsurf, …) | The full tool surface over stdio or HTTP. |
 
 Pick one (they compose — the plugin uses both hooks *and* MCP).
 

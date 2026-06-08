@@ -114,9 +114,8 @@ node.
 ### [Observability](/concepts/observability)
 
 How to tell what kyma is doing. Prometheus `/metrics`, the agent run
-trace, `/v1/connectors/:id/status`, the queryable
-`kyma_connector_health` table, and `pushdown_summary` — the trust
-mechanism for federation.
+trace, connector run state (`GET /v1/connectors/:id`), and
+`pushdown_summary` — the trust mechanism for federation.
 
 </div>
 

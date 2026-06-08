@@ -12,7 +12,7 @@ kyma exposes four distinct observability surfaces, each aimed at a different aud
 | Prometheus metrics | `GET /metrics` | Operators, alerting systems |
 | Agent run replay | `GET /v1/agent/runs/:run_id` | Engineers debugging a wrong answer |
 | Dreaming run history | `GET /v1/agent/memory/dreaming/runs` | Engineers reviewing background memory synthesis |
-| Connector status | `GET /v1/connectors/:id/status` | Operators of multi-source deployments |
+| Connector status | `GET /v1/connectors/:id` | Operators of multi-source deployments |
 | `pushdown_summary` | Response body on every federated query | Anyone whose federated query was unexpectedly slow |
 
 Structured logs (`tracing` crate) and request-ID correlation round out the picture.
@@ -208,75 +208,44 @@ background synthesis produced an unexpected result.
 
 ## Connector status
 
-For each connector (federation, sync, or both):
+List connectors, or fetch one by id for its last-run state:
 
 ```bash
-curl http://localhost:8080/v1/connectors/<id>/status
+curl http://localhost:8080/v1/connectors           # all connectors
+curl http://localhost:8080/v1/connectors/<id>       # one, with last-run fields
 ```
+
+The per-connector response carries the run state (secrets scrubbed):
 
 ```json
 {
   "id": "01H...",
+  "name": "prod-postgres",
   "type": "postgres",
-  "mode": "both",
-  "source": {
-    "reachable": true,
-    "version": "PostgreSQL 16.2",
-    "last_health_check": "2026-05-03T14:22:00Z"
-  },
-  "federation": {
-    "status": "healthy",
-    "pool_in_use": 2,
-    "pool_max": 10,
-    "p50_query_ms": 14,
-    "p99_query_ms": 230,
-    "queries_total_5m": 1240,
-    "errors_5m": 0,
-    "last_error": null
-  },
-  "sync": {
-    "status": "streaming",
-    "phase": "streaming",
-    "lag_seconds": 4,
-    "last_event_at": "2026-05-03T14:21:56Z",
-    "events_per_sec": 1200,
-    "rows_synced": 5240000,
-    "schema_drift": [],
-    "last_error": null
-  }
+  "target_database": "pg_prod",
+  "target_table": null,
+  "schedule_ms": 60000,
+  "enabled": true,
+  "disabled_reason": null,
+  "last_run_at": "2026-05-03T14:21:56Z",
+  "last_success_at": "2026-05-03T14:21:56Z",
+  "last_error": null,
+  "last_rows_ingested": 5240
 }
 ```
 
-### kyma_connector_health table
+| Field | Watch for |
+| ----- | --------- |
+| `last_success_at` | Stale relative to `schedule_ms` — the connector has stopped making progress. |
+| `last_error` | Non-null on a connector that should be healthy. |
+| `enabled` / `disabled_reason` | A connector auto-disabled after repeated failures. |
+| `last_rows_ingested` | Persistently `0` for a source you expect to change. |
 
-The same data is exposed as the `kyma_connector_health` built-in table so you can query it like
-any other data, chart it on dashboards, or set up alerts as KQL rules.
-
-Key fields:
-
-| Field | Meaning | Bad value |
-| ----- | ------- | --------- |
-| `lag_seconds` | Seconds the sync cursor is behind the source. Same as `kyma_connector_cursor_age_seconds`. | > your RPO target |
-| `schema_drift` | Array of detected column / type changes not yet reconciled. | Non-empty — connector will skip affected columns until resolved |
-| `errors_5m` | Hard errors in the last 5 minutes (federation path). | Any non-zero, especially if rising |
-| `last_error` | Most recent error message. | Non-null for a connector that should be healthy |
-| `pool_in_use` | Federation connection pool utilization. | Close to `pool_max` — federation queries will queue |
-
-**Example KQL — connectors falling behind on sync:**
-```kql
-kyma_connector_health
-| where mode != "federation"
-| where lag_seconds > 30
-| project name, table, lag_seconds, last_event_at, last_error
-```
-
-**Example KQL — federation pool pressure:**
-```kql
-kyma_connector_health
-| where mode != "sync"
-| where pool_in_use * 1.0 / pool_max > 0.8
-| project name, pool_in_use, pool_max, p99_query_ms
-```
+For time-series health (alerting, dashboards), use the Prometheus connector
+metrics above — `kyma_connector_cursor_age_seconds` (sync lag),
+`kyma_connector_last_success_timestamp_seconds`, and `kyma_connector_errors_total`
+are the operational signals. Full endpoint list in the
+[API reference](/reference/api).
 
 ---
 
