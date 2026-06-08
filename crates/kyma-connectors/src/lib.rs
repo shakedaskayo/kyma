@@ -4,6 +4,7 @@
 //! See `docs/superpowers/specs/2026-04-20-connectors-design.md`.
 
 pub mod admin;
+pub mod artifacts;
 pub mod arrow_coerce;
 pub mod bitbucket;
 pub mod catalog;

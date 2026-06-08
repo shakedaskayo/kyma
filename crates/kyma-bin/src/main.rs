@@ -856,6 +856,14 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(4);
+    // Shared object-store artifact capability for connectors that persist
+    // full-file blobs (e.g. GitHub Actions job logs). Writes the redacted blob
+    // and registers its catalog tracking row in one call.
+    let artifact_store: std::sync::Arc<dyn kyma_connectors::artifacts::ArtifactStore> =
+        std::sync::Arc::new(kyma_connectors::artifacts::ObjectArtifactStore::new(
+            store.clone(),
+            pg_catalog.clone(),
+        ));
     let mut conn_runner_handles = Vec::with_capacity(n_conn_workers);
     for _ in 0..n_conn_workers {
         let runner = ConnectorRunner::new(
@@ -867,7 +875,8 @@ async fn main() -> Result<()> {
         )
         .with_graph_register(graph_register.clone())
         .with_credentials(cred_store.clone())
-        .with_oauth(pg_pool.clone(), crypto.clone());
+        .with_oauth(pg_pool.clone(), crypto.clone())
+        .with_artifacts(artifact_store.clone());
         let runner_rx = shutdown_tx.subscribe();
         conn_runner_handles.push(tokio::spawn(async move {
             let mut rx = runner_rx;

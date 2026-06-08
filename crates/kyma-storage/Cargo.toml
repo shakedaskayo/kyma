@@ -19,3 +19,4 @@ object_store.workspace = true
 bytes.workspace = true
 futures.workspace = true
 uuid.workspace = true
+sha2 = "0.10"

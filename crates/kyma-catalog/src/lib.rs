@@ -16,6 +16,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod artifacts;
 mod credentials;
 mod error;
 pub mod saved_views;
