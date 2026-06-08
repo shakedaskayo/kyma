@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 use crate::artifacts::ArtifactStore;
 use crate::github::client::GithubClient;
 use crate::github::config::WorkflowOpts;
+use crate::github::failure;
 use crate::github::transform;
 use crate::types::ConnectorError;
 use kyma_catalog::artifacts::ArtifactRecord;
@@ -132,6 +133,12 @@ pub async fn capture_job_logs(
 
             // Redact BEFORE storing — the raw text is never persisted.
             let (redacted, _findings) = guard.redact_text(&raw);
+
+            // Characterise a failure from the full redacted log (E4a) — the
+            // signal the correlation pipeline (E4b) reads off these rows.
+            let conclusion = job["conclusion"].as_str().unwrap_or("");
+            let fsig = failure::extract_failure_signature(&redacted, conclusion);
+
             let max = opts.job_log_max_bytes;
             let truncated = redacted.len() > max;
             let stored_str: &str = if truncated {
@@ -193,7 +200,12 @@ pub async fn capture_job_logs(
                 "workflow_name": workflow_name,
                 "job_name": job["name"].as_str().unwrap_or(""),
                 "status": job["status"].as_str().unwrap_or(""),
-                "conclusion": job["conclusion"].as_str().unwrap_or(""),
+                "conclusion": conclusion,
+                "failed": fsig.failed,
+                "failure_kind": fsig.kind,
+                "failure_signature": fsig.signature,
+                "error_count": fsig.error_count as i64,
+                "failure_sample": fsig.sample,
                 "object_path": object_path,
                 "sha256": sha,
                 "size_bytes": size_bytes,
@@ -298,6 +310,14 @@ mod tests {
         assert_eq!(res.rows[0]["run_id"], 100);
         assert_eq!(res.rows[0]["job_id"], 900);
         assert_eq!(res.rows[0]["conclusion"], "failure");
+        // Failure signature extracted (E4a): the failed conclusion + "build
+        // failed" log line yield a non-empty signature.
+        assert_eq!(res.rows[0]["failed"], true);
+        assert!(
+            res.rows[0]["failure_signature"].as_str().unwrap().contains("build failed"),
+            "expected a failure signature, got: {}",
+            res.rows[0]["failure_signature"]
+        );
         assert!(res.newest_created.is_some());
         assert_eq!(
             res.rows[0]["object_path"],

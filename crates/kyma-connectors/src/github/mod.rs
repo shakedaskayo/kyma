@@ -16,6 +16,7 @@ pub mod client;
 pub mod clone;
 pub mod config;
 pub mod cursor;
+pub mod failure;
 pub mod joblogs;
 #[cfg(feature = "github")]
 pub mod parse;
