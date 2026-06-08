@@ -13,9 +13,9 @@ Three first-class paths, any combination:
 
 - **MCP** — the universal backbone. `kyma setup <agent>` writes a stdio `kyma mcp`
   entry for any known agent; the HTTP transport (`/mcp/v1`) works for any MCP-capable
-  client. The full 19-tool surface — memory, graph, live data, curation — is available to
-  every agent this way. See [Connect your agent](/agent/connect) and the reference
-  page for MCP (`/reference/mcp`).
+  client. The full tool surface — memory, graph, live data, curation — is available to
+  every agent this way. See [Connect your agent](/agent/connect) and the
+  [MCP reference](/reference/mcp).
 - **CLI + skill** — any agent that can shell out. `kyma install-skill` writes a `SKILL.md`
   that teaches the agent when to call `kyma recall` / `kyma remember` / `kyma query`. See
   [Connect via CLI](/agent/connect-from-cli).

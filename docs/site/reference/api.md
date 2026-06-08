@@ -385,8 +385,8 @@ return `204`; `409` means the lease was lost.
 Read-only property-graph surface. The built-in `schema` graph renders the
 catalog (databases → tables → inferred column references) as a property
 graph. Additional stored graphs are registered via the catalog and addressed
-by name with an `X-Database` header. For graph KQL queries, see the Graph
-guide (/query/graph).
+by name with an `X-Database` header. For graph KQL queries, see the
+[Graph guide](/query/graph).
 
 All graph routes accept an optional `X-Database` header that selects the
 database context for stored-graph resolution and per-database token scope
@@ -446,7 +446,7 @@ Auth is the same bearer token as `/v1/*` (`Role::Read`). Scoped tokens
 databases internally.
 
 For a stdio alternative, `kyma mcp` (the CLI subcommand) exposes the same
-tools without an HTTP server. See the MCP reference (/reference/mcp) for
+tools without an HTTP server. See the [MCP reference](/reference/mcp) for
 tool names, input schemas, and capability negotiation.
 
 ## Arrow Flight (gRPC)
