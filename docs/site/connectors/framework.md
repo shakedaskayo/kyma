@@ -123,9 +123,9 @@ is redacted to `***` unless it's an unresolved `$env:` reference, which
 is returned verbatim.
 
 DB-M0 extends `POST /v1/connectors` with `mode`, `connection`, `scope`,
-and `sync` fields, plus `GET /v1/connectors/:id/status`,
-`/events`, `/test-connection`, and a scoped pause
-(`?scope=sync|federation|all`).
+and `sync` fields. The `GET /v1/connectors/:id` detail endpoint, and
+`POST /v1/connectors/:id/pause`, `/resume`, and `/trigger`, work the
+same way for all connector types including the DB engines.
 
 ## Secrets by reference
 

@@ -173,7 +173,7 @@ runs at its source; DataFusion joins the streams.
 | Document depth exceeds `flatten_depth`                   | Subtree lands in `dynamic` for that field. Reads via dynamic accessors. |
 | Decimal128 overflow under default mode                   | Routed to `string` with warning. Set `scope.decimal128_mode` to fix.   |
 | UTF-8 decode fails on `String` field                     | Field becomes `dynamic` with raw bytes base64'd; warning.             |
-| Pool exhausted                                           | `503 pool_exhausted`; visible in `GET /v1/connectors/:id/status`.     |
+| Pool exhausted                                           | `503 pool_exhausted`; surfaced via `last_error` on `GET /v1/connectors/:id`. |
 
 ## Where to go next
 

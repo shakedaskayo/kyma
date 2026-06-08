@@ -162,7 +162,7 @@ without a PK can't dedupe replays or build tombstones correctly. Use
 | Source DDL adds an unrepresentable type    | Field routes to `dynamic`; warning in `last_error`. Sync continues.        |
 | Source DDL drops a column                  | Column null-fills going forward. Existing data preserved.                  |
 | Source PK changes                          | Connector disabled, `disabled_reason="pk_changed"`. Manual resync.         |
-| Pool exhausted                             | `503 pool_exhausted`; visible in `GET /v1/connectors/:id/status`.          |
+| Pool exhausted                             | `503 pool_exhausted`; surfaced via `last_error` on `GET /v1/connectors/:id`. |
 | Pushdown produced incorrect SQL (bug)      | Source SQL parse error; `5xx pushdown_failed`; logs SQL + residual. CI property tests gate this. |
 
 ## Where to go next
