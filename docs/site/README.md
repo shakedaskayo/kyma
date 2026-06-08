@@ -64,5 +64,5 @@ workflow handles everything after that.
 - **Connectors** — the framework, Prometheus reference, plus design pages for Postgres / MySQL / MongoDB (DB-M1/M2/M3).
 - **Reference** — HTTP API, CLI, env vars, KQL functions, schema mappings.
 - **Architecture** — the synced architecture overview and benchmarks, plus the slice roadmap and storage format.
-- **Recipes** — worked examples that run as written.
+- **Use cases** — what kyma is for, along the memory → data → graph spine, with deep walkthroughs.
 
