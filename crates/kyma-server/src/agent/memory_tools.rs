@@ -39,7 +39,7 @@ fn row_realm(row: &Value) -> String {
 
 /// Build a [`MemoryWriter`] from the shared tool context + the process-wide
 /// embedding backend. Returns a JSON error payload on failure.
-async fn build_writer(shared: &SharedToolCtx) -> std::result::Result<MemoryWriter, Value> {
+pub(crate) async fn build_writer(shared: &SharedToolCtx) -> std::result::Result<MemoryWriter, Value> {
     let embed = kyma_memory::shared_embedding()
         .await
         .map_err(|e| json!({"error": format!("embedding backend: {e}")}))?;

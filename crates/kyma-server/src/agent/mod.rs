@@ -24,6 +24,7 @@ pub mod memory;
 mod cc_curate_unit_tests;
 pub mod memory_conflict;
 pub mod memory_extract;
+pub mod memory_gate;
 pub mod memory_policy;
 pub mod memory_queue_store;
 pub mod memory_resolve;
