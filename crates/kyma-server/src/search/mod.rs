@@ -13,10 +13,10 @@
 //! source is skipped rather than failing the whole request.
 
 pub mod types;
+pub mod unified;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
-use std::time::Instant;
 
 use arrow::json::ArrayWriter;
 use arrow_schema::DataType;
@@ -28,22 +28,22 @@ use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use kyma_exec::KymaTable;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::discover::compile::{compile_for_source, TimeRange};
 use crate::discover::grammar::Clause;
-use crate::discover::scope::{resolve as resolve_scope, ResolvedSource, Scope};
+use crate::discover::scope::ResolvedSource;
 use crate::QueryState;
 
 /// Reciprocal-rank-fusion constant in `1 / (RRF_K + rank)`.
 const RRF_K: f64 = 60.0;
 const PER_LEG_K: usize = 50;
+/// Default/clamp bounds for `limit`, applied by `unified::unified_search`
+/// (referenced from the child `unified` module).
 const DEFAULT_LIMIT: usize = 50;
 const MAX_LIMIT: usize = 500;
-const DEFAULT_MAX_SOURCES: usize = 200;
 const MAX_BODY_BYTES: usize = 256 * 1024;
 
 /// Per-source DataFusion memory pool. Each leg only materializes the top
@@ -57,7 +57,7 @@ const PER_SOURCE_MEM_BUDGET: usize = 64 * 1024 * 1024;
 /// DataFusion context + memory pool, so peak search memory is bounded by
 /// `permits × PER_SOURCE_MEM_BUDGET` regardless of how many requests arrive at
 /// once or how broadly each fans out (a single "all" scope can resolve to
-/// `DEFAULT_MAX_SOURCES` sources). Without this, simultaneous broad searches
+/// `unified::DEFAULT_MAX_SOURCES` sources). Without this, simultaneous broad searches
 /// spin up unbounded contexts and can OOM/wedge the server — the legs still all
 /// run, they just queue for a slot instead of all allocating at once.
 fn source_search_limiter() -> &'static Semaphore {
@@ -70,35 +70,14 @@ fn source_search_limiter() -> &'static Semaphore {
     })
 }
 
-#[derive(Debug, Deserialize)]
-pub struct SearchBody {
-    #[serde(default)]
-    pub query: String,
-    pub scope: Scope,
-    #[serde(default)]
-    pub time_range: Option<crate::discover::handler::TimeRangeBody>,
-    #[serde(default)]
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SearchHit {
-    /// `db.table` the row came from.
-    pub source: String,
-    /// Fused RRF score (higher = more relevant).
-    pub score: f64,
-    pub row: Value,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SearchResponse {
-    pub hits: Vec<SearchHit>,
-    pub sources_searched: usize,
-    pub elapsed_ms: u64,
-}
-
+/// `POST /v1/search` — routes through the shared [`unified::unified_search`]
+/// substrate. The request parses into a [`unified::UnifiedSearchRequest`]; the
+/// legacy data body (`{ "query", "scope", "time_range?", "limit?" }`) is a
+/// subset of it and parses unchanged (defaulting to `mode: "data"`). For
+/// `mode == "data"` the serialized response is byte-compatible with the legacy
+/// `{ "hits": [{ "source", "score", "row" }], "sources_searched", "elapsed_ms" }`
+/// shape — see `unified.rs`'s backward-compat note.
 pub async fn search_handler(State(state): State<QueryState>, req: Request<Body>) -> Response {
-    let start = Instant::now();
     let (parts, body) = req.into_parts();
     let request_id = crate::extract_request_id(&parts.headers);
 
@@ -113,7 +92,7 @@ pub async fn search_handler(State(state): State<QueryState>, req: Request<Body>)
             )
         }
     };
-    let payload: SearchBody = match serde_json::from_slice(&body_bytes) {
+    let payload: unified::UnifiedSearchRequest = match serde_json::from_slice(&body_bytes) {
         Ok(p) => p,
         Err(e) => {
             return crate::error_response(
@@ -125,98 +104,12 @@ pub async fn search_handler(State(state): State<QueryState>, req: Request<Body>)
         }
     };
 
-    let limit = payload.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let time_range = match payload.time_range.as_ref() {
-        None => None,
-        Some(tr) => match crate::discover::handler::parse_time_range(tr) {
-            Ok(t) => Some(t),
-            Err(msg) => {
-                return crate::error_response(
-                    StatusCode::BAD_REQUEST,
-                    "bad_time_range",
-                    &msg,
-                    &request_id,
-                )
-            }
-        },
-    };
-
-    // Principal → tenant + RBAC db filter (mirrors discover/query handlers).
     let principal = parts.extensions.get::<crate::auth::Principal>();
-    let tenant = principal
-        .map(|p| p.tenant)
-        .unwrap_or(kyma_core::tenant::DEFAULT_TENANT);
+    let ctx = unified::SearchCtx::from_query_state(&state, principal);
 
-    let max_sources = std::env::var("KYMA_DISCOVER_MAX_SOURCES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_MAX_SOURCES);
-
-    let mut sources = match resolve_scope(&payload.scope, tenant, state.catalog.clone(), None, max_sources).await {
-        Ok(s) => s,
-        Err(e) => {
-            return crate::error_response(
-                StatusCode::BAD_REQUEST,
-                "scope_error",
-                &format!("{e}"),
-                &request_id,
-            )
-        }
-    };
-    if let Some(principal) = principal {
-        if let Some(allowed) = &principal.allowed_databases {
-            sources.retain(|s| allowed.iter().any(|a| a == &s.db));
-        }
-    }
-
-    // Embed the query once (process-shared model). Lexical-only if unavailable.
-    let qvec: Option<Vec<f32>> = if payload.query.trim().is_empty() {
-        None
-    } else {
-        match kyma_memory::shared_embedding().await {
-            Ok(embedder) => embedder
-                .embed(std::slice::from_ref(&payload.query))
-                .await
-                .ok()
-                .and_then(|mut v| v.drain(..).next()),
-            Err(_) => None,
-        }
-    };
-
-    let sources_searched = sources.len();
-
-    // Fan out per source.
-    let mut set: JoinSet<Vec<(String, f64, Value)>> = JoinSet::new();
-    for src in sources {
-        let catalog = state.catalog.clone();
-        let format = state.format.clone();
-        let node_id = state.node_id;
-        let query = payload.query.clone();
-        let qv = qvec.clone();
-        let tr = time_range;
-        set.spawn(async move {
-            search_one_source(src, &query, qv.as_deref(), tr, catalog, format, node_id).await
-        });
-    }
-
-    let mut hits: Vec<(String, f64, Value)> = Vec::new();
-    while let Some(joined) = set.join_next().await {
-        if let Ok(rows) = joined {
-            hits.extend(rows);
-        }
-    }
-
-    // Global ranking by fused score.
-    hits.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    hits.truncate(limit);
-
-    let resp = SearchResponse {
-        hits: hits
-            .into_iter()
-            .map(|(source, score, row)| SearchHit { source, score, row })
-            .collect(),
-        sources_searched,
-        elapsed_ms: start.elapsed().as_millis() as u64,
+    let resp = match unified::unified_search(&ctx, payload, &request_id).await {
+        Ok(r) => r,
+        Err(err_response) => return err_response,
     };
 
     let body = match serde_json::to_vec(&resp) {
@@ -240,6 +133,50 @@ pub async fn search_handler(State(state): State<QueryState>, req: Request<Body>)
         h.insert("x-request-id", rid);
     }
     out
+}
+
+/// Data-mode fan-out core, shared by the legacy `search_handler` and the
+/// unified `unified_search` dispatcher.
+///
+/// Fans out per resolved source (each leg gated on the process-wide
+/// `source_search_limiter` + bounded memory pool inside `search_one_source`),
+/// collects all `(source_key, score, row)` tuples, ranks globally by fused RRF
+/// score, and truncates to `limit`. A failing source is skipped (its join task
+/// yields an empty vec) rather than failing the whole search.
+pub(crate) async fn search_data(
+    sources: Vec<ResolvedSource>,
+    query: &str,
+    qvec: Option<Vec<f32>>,
+    time_range: Option<TimeRange>,
+    limit: usize,
+    catalog: Arc<dyn kyma_core::catalog::Catalog>,
+    format: Arc<dyn kyma_core::segment_format::SegmentFormat>,
+    node_id: Option<kyma_core::types::NodeId>,
+) -> Vec<(String, f64, Value)> {
+    // Fan out per source.
+    let mut set: JoinSet<Vec<(String, f64, Value)>> = JoinSet::new();
+    for src in sources {
+        let catalog = catalog.clone();
+        let format = format.clone();
+        let query = query.to_string();
+        let qv = qvec.clone();
+        let tr = time_range;
+        set.spawn(async move {
+            search_one_source(src, &query, qv.as_deref(), tr, catalog, format, node_id).await
+        });
+    }
+
+    let mut hits: Vec<(String, f64, Value)> = Vec::new();
+    while let Some(joined) = set.join_next().await {
+        if let Ok(rows) = joined {
+            hits.extend(rows);
+        }
+    }
+
+    // Global ranking by fused score.
+    hits.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    hits.truncate(limit);
+    hits
 }
 
 /// Run both legs for one source, RRF-fuse, return `(source_key, score, row)`.
