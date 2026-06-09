@@ -64,7 +64,10 @@ pub struct DreamingSettings {
     pub realm_scope: Vec<String>,
     /// Agent-loop budget: max tool calls per run (adk engines).
     pub max_tool_calls: u32,
-    /// Wall-clock budget per run, seconds (all engines).
+    /// Wall-clock budget per run, seconds (all engines). Agentic dreaming runs
+    /// (tool loops + LLM calls + connector reads) routinely need far longer than
+    /// a typical request, so this defaults generously (1h); the `max_tool_calls`
+    /// / `mutation_cap` / connector budgets are the real per-run guardrails.
     pub wall_clock_secs: u64,
     /// Gap-fill budget: max connector_read calls per run.
     pub connector_read_budget: u32,
@@ -82,7 +85,7 @@ impl Default for DreamingSettings {
             mode: "full".into(),
             realm_scope: vec![],
             max_tool_calls: 100,
-            wall_clock_secs: 600,
+            wall_clock_secs: 3_600,
             connector_read_budget: 25,
             connector_read_max_bytes: 4 * 1024 * 1024,
             mutation_cap: 60,
