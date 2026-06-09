@@ -1,4 +1,4 @@
-import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { KymaExplore } from "@kyma-ai/react/explore";
 import { TabBar } from "@/features/tabs/TabBar";
@@ -23,6 +23,7 @@ export const Route = createFileRoute("/_app/explore")({
 function ExplorePage() {
   const queryScope = useSession((s) => s.queryScope);
   const workspace = useWorkspace();
+  const navigate = useNavigate();
   const { q } = useSearch({ from: "/_app/explore" });
 
   const active =
@@ -65,6 +66,7 @@ function ExplorePage() {
             database={queryScope}
             className="h-full"
             onQueryChange={onText}
+            onViewInGraph={(nodeId) => navigate({ to: "/graph", search: { focus: nodeId } })}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">

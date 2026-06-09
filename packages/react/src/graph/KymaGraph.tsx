@@ -48,6 +48,9 @@ export interface KymaGraphProps {
   sidebar?: boolean;
   /** Initial search/focus query seeded into the store on first render. */
   focusQuery?: string;
+  /** Deep-link target node id (raw or composite `ns::id`) to center + highlight
+   *  once it loads. Changing it re-focuses. */
+  focusNodeId?: string;
   /** Override the realm passed to the graph data layer. */
   realm?: string;
   /** Extra CSS class for the container div. */
@@ -85,6 +88,7 @@ export function KymaGraph(props: KymaGraphProps): JSX.Element {
     toolbar = true,
     sidebar = true,
     focusQuery,
+    focusNodeId,
     realm,
     className,
     style,
@@ -137,6 +141,7 @@ export function KymaGraph(props: KymaGraphProps): JSX.Element {
             discover={discover}
             realm={realm}
             showSidebar={showSidebar}
+            focusNodeId={focusNodeId}
             onSelectedNodeChange={
               onNodeClick || onSelectionChange ? handleSelectedNodeChange : undefined
             }

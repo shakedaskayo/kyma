@@ -27,6 +27,9 @@ export type GraphStoreState = {
    */
   selectedNodeId: string | null;
   hoveredNodeId: string | null;
+  /** Bumped each time a deep-link focus is requested, so the canvas re-centers
+   *  + zooms even when the same node is already selected. */
+  focusSeq: number;
   labelFilter: string | null;
   relTypeFilter: string | null;
   /** Node-type labels hidden from the canvas. */
@@ -54,6 +57,8 @@ export type GraphStoreState = {
   setGraph(name: string): void;
   setLayout(layout: LayoutAlgorithm): void;
   selectNode(id: string | null): void;
+  /** Select a node AND request the canvas to center + zoom to it (deep-link focus). */
+  focusNode(id: string | null): void;
   hoverNode(id: string | null): void;
   setLabelFilter(label: string | null): void;
   setRelTypeFilter(rel: string | null): void;
@@ -80,6 +85,7 @@ export const initialGraphState = {
   layout: "force" as LayoutAlgorithm,
   selectedNodeId: null,
   hoveredNodeId: null,
+  focusSeq: 0,
   labelFilter: null,
   relTypeFilter: null,
   hiddenLabels: [] as string[],
@@ -111,6 +117,7 @@ export function createGraphStore(overrides?: Partial<typeof initialGraphState>) 
       set({ graph: name, selectedNodeId: null, labelFilter: null, relTypeFilter: null, hiddenLabels: [] }),
     setLayout: (layout) => set({ layout }),
     selectNode: (id) => set({ selectedNodeId: id }),
+    focusNode: (id) => set((s) => ({ selectedNodeId: id, focusSeq: s.focusSeq + 1 })),
     hoverNode: (id) => set({ hoveredNodeId: id }),
     setLabelFilter: (label) => set({ labelFilter: label, relTypeFilter: null }),
     setRelTypeFilter: (rel) => set({ relTypeFilter: rel, labelFilter: null }),

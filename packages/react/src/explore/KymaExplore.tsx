@@ -16,7 +16,7 @@
 
 import React, { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Play, Square, Search as SearchIcon, Code2 } from "lucide-react";
+import { Play, Square, Search as SearchIcon, Code2, Network } from "lucide-react";
 import { autoChartAxes } from "@kyma-ai/client";
 import type { Column, HybridSearchHit, SchemaDoc } from "@kyma-ai/client";
 
@@ -61,6 +61,12 @@ export interface KymaExploreProps {
   style?: React.CSSProperties;
   fallback?: React.ReactNode;
   onQueryChange?: (q: string) => void;
+  /**
+   * Called when the user clicks "View in graph" on a result that is a graph
+   * entity (a row from a `*_nodes` / file-candidate table with an `id`). The
+   * consumer deep-links to the graph page focused on that node.
+   */
+  onViewInGraph?: (nodeId: string, db: string) => void;
 }
 
 function KymaExploreInner({
@@ -70,6 +76,7 @@ function KymaExploreInner({
   className,
   style,
   onQueryChange,
+  onViewInGraph,
 }: Omit<KymaExploreProps, "fallback">) {
   const client = useKymaClient();
   const endpoint = client.transport.endpoint;
@@ -228,6 +235,7 @@ function KymaExploreInner({
             void search.run({ query: inputRef.current, scope, time_range: { from, to }, limit: 100 });
           }}
           onOpenRow={(source, row) => setOpenRow({ source, row })}
+          onViewInGraph={onViewInGraph}
         />
       )}
 
@@ -413,6 +421,7 @@ function SearchResults(props: {
   onAddFilter: (field: string, value: string) => void;
   onZoom: (from: string, to: string) => void;
   onOpenRow: (source: string, row: Record<string, unknown>) => void;
+  onViewInGraph?: (nodeId: string, db: string) => void;
 }) {
   const { hits, cols, isRunning, error, ran } = props;
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -555,6 +564,23 @@ function SearchResults(props: {
                             >
                               Open detail
                             </button>
+                            {(() => {
+                              const g = graphEntityRef(h.source, h.row);
+                              if (!g || !props.onViewInGraph) return null;
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    props.onViewInGraph!(g.id, g.db);
+                                  }}
+                                  className="ky-inline-flex ky-items-center ky-gap-1 ky-rounded ky-border ky-border-primary/40 ky-px-1.5 ky-py-0.5 ky-text-[10px] ky-text-primary hover:ky-bg-primary/10"
+                                  title="Open this entity in the graph"
+                                >
+                                  <Network className="ky-h-3 ky-w-3" /> View in graph
+                                </button>
+                              );
+                            })()}
                           </div>
                           <dl className="ky-grid ky-grid-cols-[minmax(8rem,12rem)_1fr] ky-gap-x-3 ky-gap-y-0.5 ky-font-mono ky-text-[11px]">
                             {Object.entries(h.row)
@@ -676,6 +702,18 @@ function EmptyState() {
       </div>
     </div>
   );
+}
+
+/** If a hit is a graph entity (a `*_nodes` / file-candidate row with an id),
+ *  return its `{db, id}` so the caller can deep-link to the graph. */
+function graphEntityRef(source: string, row: Record<string, unknown>): { db: string; id: string } | null {
+  const dot = source.indexOf(".");
+  const db = dot >= 0 ? source.slice(0, dot) : source;
+  const table = dot >= 0 ? source.slice(dot + 1) : source;
+  const isNodeTable = table.endsWith("_nodes") || table === "memory_nodes" || table === "file_candidates";
+  const id = row["id"];
+  if (isNodeTable && typeof id === "string" && id) return { db, id };
+  return null;
 }
 
 function formatErr(err: unknown): string {
