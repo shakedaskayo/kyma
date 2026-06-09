@@ -37,14 +37,14 @@ export type HybridSearchRequest = {
   as_of?: string;
   /** Include invalidated (soft-deleted) memory records. Defaults to false. */
   include_invalidated?: boolean;
+  /** Memory mode: hops to graph-expand from matching memories (0 = none; default per-tenant setting). */
+  expand_hops?: number;
 
   // graph-mode filters
   /** Name of the property graph to search (server uses the default graph if omitted). */
   graph?: string;
   /** Restrict graph search to nodes/edges with these labels. */
   labels?: string[];
-  /** Number of hops to expand from matching nodes (0 = node-only, default 1). */
-  expand_hops?: number;
 };
 
 export interface HybridSearchHit {
@@ -52,7 +52,8 @@ export interface HybridSearchHit {
   source: string;
   /** Fused RRF score (higher = more relevant). */
   score: number;
-  row: Record<string, unknown>;
+  /** The row data (data mode). Absent for memory/graph hits. */
+  row?: Record<string, unknown>;
 
   // ── unified-envelope additions (present in memory/graph modes) ─────────────
   /** Entity kind: "memory", "node", "edge", etc. Absent in data mode. */

@@ -64,8 +64,8 @@ pub struct SearchCtx {
     pub catalog: Arc<dyn kyma_core::catalog::Catalog>,
     pub format: Arc<dyn kyma_core::segment_format::SegmentFormat>,
     pub node_id: Option<kyma_core::types::NodeId>,
-    /// Catalog Postgres pool (`None` in local mode). Threaded through for the
-    /// memory/graph arms (next tasks); the data arm does not need it.
+    /// Catalog Postgres pool (`None` in local mode). Used by the memory/graph
+    /// arms; the data arm does not need it.
     pub pool: Option<Arc<sqlx::PgPool>>,
     pub tenant: kyma_core::tenant::TenantId,
     /// Allowed-database RBAC filter, if the principal is scoped. `None` means
@@ -95,9 +95,9 @@ impl SearchCtx {
 }
 
 /// A unified search request. `query`/`scope`/`limit`/`time_range` drive the data
-/// arm; the remaining fields are memory/graph passthrough for the next tasks.
-/// Every field is `#[serde(default)]` so the legacy `{ "query", "scope", ... }`
-/// body parses unchanged.
+/// arm; the remaining fields are memory/graph passthrough. Every field is
+/// `#[serde(default)]` so the legacy `{ "query", "scope", ... }` body parses
+/// unchanged.
 #[derive(Debug, Default, Deserialize)]
 pub struct UnifiedSearchRequest {
     #[serde(default)]
@@ -111,7 +111,7 @@ pub struct UnifiedSearchRequest {
     #[serde(default)]
     pub time_range: Option<TimeRangeBody>,
 
-    // ── memory/graph passthrough (consumed by tasks 3/4) ──
+    // ── memory/graph passthrough ──
     #[serde(default)]
     pub realms: Option<Vec<String>>,
     #[serde(default)]
