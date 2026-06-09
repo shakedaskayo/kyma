@@ -130,6 +130,7 @@ const KIND_ICONS: Record<string, Icon> = {
   workflow: Workflow,
   job: SquareTerminal,
   logfile: ScrollText,
+  artifact: Package,
 };
 
 const BRAND_ICONS: Record<string, Icon> = {
@@ -370,6 +371,7 @@ const KIND_COLOR: Record<string, string> = {
   workflow: "#fb923c",
   job: "#f97316", // deeper orange — a job within a run
   logfile: "#94a3b8", // slate — a log artifact (like a file)
+  artifact: "#a78bfa", // violet — generic stored artifact
 };
 
 /** Resolve a node's fill color: per-kind for entities, label color otherwise. */

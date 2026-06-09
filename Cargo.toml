@@ -28,6 +28,7 @@ members = [
     "crates/kyma-web-assets",
     "crates/kyma-embed",
     "crates/kyma-memory",
+    "crates/kyma-artifact-graph",
     "crates/kyma-mcp",
     "crates/kyma-queue",
     "crates/kyma-redact",
@@ -167,6 +168,7 @@ kyma-cli               = { path = "crates/kyma-cli",             version = "0.0.
 kyma-web-assets        = { path = "crates/kyma-web-assets",      version = "0.0.7" }
 kyma-embed             = { path = "crates/kyma-embed",           version = "0.0.7" }
 kyma-memory            = { path = "crates/kyma-memory",          version = "0.0.7" }
+kyma-artifact-graph    = { path = "crates/kyma-artifact-graph",  version = "0.0.7" }
 kyma-mcp               = { path = "crates/kyma-mcp",             version = "0.0.7" }
 kyma-queue             = { path = "crates/kyma-queue",           version = "0.0.7" }
 kyma-redact            = { path = "crates/kyma-redact",          version = "0.0.7" }

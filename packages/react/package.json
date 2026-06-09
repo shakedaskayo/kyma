@@ -30,6 +30,10 @@
       "types": "./dist/discover/index.d.ts",
       "import": "./dist/discover.js"
     },
+    "./explore": {
+      "types": "./dist/explore/index.d.ts",
+      "import": "./dist/explore.js"
+    },
     "./dashboards": {
       "types": "./dist/dashboards/index.d.ts",
       "import": "./dist/dashboards.js"

@@ -30,9 +30,9 @@ pub const JOB_LOGS_TABLE: &str = "github_job_logs";
 pub struct CaptureResult {
     /// `github_job_logs` pointer rows.
     pub rows: Vec<Value>,
-    /// CI graph nodes (WorkflowRun / Job / LogFile) for `github_nodes`.
+    /// CI graph nodes (WorkflowRun / Job / Artifact) for `github_nodes`.
     pub nodes: Vec<Value>,
-    /// CI graph edges (HAS_RUN / RUN_CONTAINS_JOB / JOB_HAS_LOG / RUN_ON_BRANCH)
+    /// CI graph edges (HAS_RUN / RUN_CONTAINS_JOB / HAS_ARTIFACT / RUN_ON_BRANCH)
     /// for `github_edges`.
     pub edges: Vec<Value>,
     /// Newest run `created_at` processed — advances the cursor watermark.
@@ -158,6 +158,7 @@ pub async fn capture_job_logs(
             let size_bytes = stored_bytes.len() as i64;
             let object_path = job_log_key(tenant, owner, repo, run_id, job_id);
 
+            let mut artifact_id: Option<String> = None;
             if let Some(store) = artifacts {
                 let record = ArtifactRecord {
                     id: None,
@@ -173,15 +174,19 @@ pub async fn capture_job_logs(
                     expires_at: None,
                     deleted_at: None,
                 };
-                if let Err(e) = store
+                match store
                     .put_and_register(record, bytes::Bytes::from(stored_bytes))
                     .await
                 {
-                    tracing::warn!(owner, repo, job_id, error = %e, "artifact store failed; row emitted without blob");
+                    Ok(id) => artifact_id = Some(id.to_string()),
+                    Err(e) => tracing::warn!(
+                        owner, repo, job_id, error = %e,
+                        "artifact store failed; row emitted without blob"
+                    ),
                 }
             }
 
-            // LogFile node + JOB_HAS_LOG edge (carries the object_path handle).
+            // Artifact node + HAS_ARTIFACT edge (carries object_path + catalog artifact_id).
             let (log_node, log_edge) = transform::log_file_rows(
                 owner,
                 repo,
@@ -191,6 +196,7 @@ pub async fn capture_job_logs(
                 &sha,
                 size_bytes,
                 truncated,
+                artifact_id.as_deref(),
             );
             nodes.push(log_node);
             edges.push(log_edge);
@@ -343,28 +349,31 @@ mod tests {
         );
         assert!(text.contains("build failed"), "non-secret content preserved");
 
-        // ── CI graph subgraph (E2) ──
-        // 1 run + 1 job + 1 log = 3 nodes; HAS_RUN + RUN_CONTAINS_JOB +
-        // JOB_HAS_LOG = 3 edges (no RUN_ON_BRANCH — the mock run has no branch).
+        // ── CI graph subgraph ──
+        // 1 run + 1 job + 1 artifact = 3 nodes; HAS_RUN + RUN_CONTAINS_JOB +
+        // HAS_ARTIFACT = 3 edges (no RUN_ON_BRANCH — the mock run has no branch).
         let label = |n: &Value| n["labels"].as_str().unwrap_or("").to_string();
         let id = |n: &Value| n["id"].as_str().unwrap_or("").to_string();
-        assert_eq!(res.nodes.len(), 3, "run+job+log nodes");
+        assert_eq!(res.nodes.len(), 3, "run+job+artifact nodes");
         assert!(res.nodes.iter().any(|n| label(n) == "WorkflowRun" && id(n) == "run:acme/app#100"));
         assert!(res.nodes.iter().any(|n| label(n) == "Job" && id(n) == "job:acme/app#900"));
         let log_node = res
             .nodes
             .iter()
-            .find(|n| label(n) == "LogFile" && id(n) == "log:acme/app#900")
-            .expect("LogFile node");
+            .find(|n| label(n) == "Artifact" && id(n) == "log:acme/app#900")
+            .expect("Artifact node");
+        let lprops: Value =
+            serde_json::from_str(log_node["props"].as_str().unwrap()).unwrap();
         assert!(
-            log_node["props"].as_str().unwrap().contains(&job_log_key(tenant, "acme", "app", 100, 900)),
-            "LogFile node carries the object_path retrieval handle"
+            lprops["object_path"].as_str().unwrap().contains(&job_log_key(tenant, "acme", "app", 100, 900)),
+            "Artifact node carries the object_path retrieval handle"
         );
+        assert!(lprops.get("artifact_id").is_some(), "Artifact node carries the catalog id");
 
         let etype = |e: &Value| e["type"].as_str().unwrap_or("").to_string();
         let etypes: Vec<String> = res.edges.iter().map(etype).collect();
         assert!(etypes.contains(&"HAS_RUN".to_string()));
         assert!(etypes.contains(&"RUN_CONTAINS_JOB".to_string()));
-        assert!(etypes.contains(&"JOB_HAS_LOG".to_string()));
+        assert!(etypes.contains(&"HAS_ARTIFACT".to_string()));
     }
 }

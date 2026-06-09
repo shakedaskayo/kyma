@@ -159,6 +159,50 @@ See [Agentic Memory](/agent/memory) for how memories are created, searched,
 and linked, and [Workers & nodes](/agent/workers) for the background processes
 that populate and maintain the memory graph.
 
+## Artifacts on the graph
+
+Artifacts — CI job logs, object-store blobs, agent-contributed files, filesystem-watch snapshots — are first-class graph nodes labeled `Artifact`.
+
+### CI logs (GitHub connector)
+
+Every GitHub CI job log captured by the [GitHub connector](/connectors/github) produces an `Artifact` node in the `github` graph, linked from its `Job` node by a `HAS_ARTIFACT` edge. Node properties:
+
+| Property | Value |
+| --- | --- |
+| `object_path` | Object-store path of the log blob. |
+| `sha256` | SHA-256 hex digest of the blob. |
+| `size_bytes` | Blob size in bytes. |
+| `artifact_class` | `log` |
+| `source` | `github` |
+| `retrievable` | `true` — set at capture (a blob was stored for this log). |
+| `artifact_id` | Catalog row id (UUID). |
+
+**Forward-only relabel note:** CI logs captured before this change keep their old `LogFile` label in the append-only tables; only newly captured logs carry the `Artifact` label. Re-capture a job to get the new label.
+
+**Redaction note:** The GitHub connector redacts secrets from CI log text before writing the blob to object-store (`kyma-redact` runs at capture time; raw log text is never persisted). What you retrieve from the viewer is already redacted.
+
+### Other artifact sources (server / Postgres mode)
+
+Object-store blobs, agent-contributed files, and filesystem-watch snapshots that have no matching producer node appear as `Artifact` nodes in a dedicated `artifacts` graph. This graph is materialized on startup and kept current by a periodic sync running in the server process.
+
+**Availability:** server + Postgres mode only. `kyma local` has no artifact catalog and no `artifacts` graph.
+
+### Viewing artifacts on the graph page
+
+1. Open `/graph` (the unified canvas).
+2. Filter by the `Artifact` node type using the label filter in the sidebar — this narrows the canvas to all artifact nodes across both the `github` graph and the `artifacts` graph.
+3. Click any `Artifact` node to open the sidebar viewer. The viewer streams the stored blob bytes as-is (via `GET /v1/artifacts/by-path?path=<object_path>`, paged with **Load more**).
+
+### Searching for artifacts
+
+Graph search matches on node id and label. Searching `artifact` returns all `Artifact` nodes. Searching a repo name, job name, or log path substring surfaces matching nodes if they appear in the node id.
+
+### Content search
+
+Full-text search across artifact blob contents is handled by the unified search endpoint (`POST /v1/search`), not the graph page.
+
+---
+
 ## Where to go next
 
 - KQL graph operators in detail: [KQL functions](/reference/kql-functions).

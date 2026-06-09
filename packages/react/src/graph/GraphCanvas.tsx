@@ -144,6 +144,7 @@ export function GraphCanvas({
 
   // Style toggles + interaction state from the store.
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
+  const focusSeq = useGraphStore((s) => s.focusSeq);
   const hoveredNodeId = useGraphStore((s) => s.hoveredNodeId);
   const searchQuery = useGraphStore((s) => s.searchQuery);
   const labelFilter = useGraphStore((s) => s.labelFilter);
@@ -297,6 +298,31 @@ export function GraphCanvas({
     }
     fg.centerAt(n.x, n.y, 600);
   }, [selectedNodeId, data.nodes, size.width, size.height]);
+
+  // Deep-link focus: when `focusNode` is requested (focusSeq bumps), forcibly
+  // center AND zoom in on the target — a stronger move than the gentle pan on
+  // plain selection. Retries until the force layout has settled coords.
+  useEffect(() => {
+    if (!focusSeq || !selectedNodeId) return;
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = () => {
+      const fg = fgRef.current;
+      const n = fg && (data.nodes.find((x) => x.id === selectedNodeId) as FNode | undefined);
+      if (fg && n && n.x != null && n.y != null) {
+        fg.centerAt(n.x, n.y, 800);
+        const z = (fg as unknown as { zoom?: () => number }).zoom?.() ?? 1;
+        fg.zoom(Math.max(z, 2.6), 800);
+        return;
+      }
+      if (tries++ < 24) timer = setTimeout(tick, 150);
+    };
+    tick();
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSeq]);
 
   // ── Node paint ──
   const paintNode = useCallback(

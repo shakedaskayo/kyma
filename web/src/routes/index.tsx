@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
-  beforeLoad: () => { throw redirect({ to: "/discover" }); },
+  beforeLoad: () => { throw redirect({ to: "/explore", search: { q: undefined } }); },
 });
