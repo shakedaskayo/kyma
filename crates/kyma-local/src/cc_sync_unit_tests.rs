@@ -51,6 +51,7 @@ async fn engine_at(tmp: &Path) -> (Engine, MemoryWriter, SharedToolCtx) {
         format: engine.format.clone(),
         pool: None,
         memory: None,
+        hitl: None,
     };
     (engine, writer, shared)
 }

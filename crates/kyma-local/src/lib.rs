@@ -132,6 +132,7 @@ fn mcp_state(engine: &Engine, memory: Option<kyma_memory::MemoryQueue>) -> McpSt
         format: engine.format.clone(),
         pool: None,
         memory,
+        hitl: None,
     };
     McpState {
         dispatch: ToolDispatch::new(shared),
@@ -352,6 +353,7 @@ pub fn build_local_app(
             format: format.clone(),
             pool: None,
             memory: memory.clone(),
+            hitl: None,
         }),
         server_info: ServerInfo {
             name: "kyma".into(),

@@ -46,6 +46,7 @@ pub async fn run(engine: &Engine, cfg: SyncConfig) -> Result<()> {
         format: engine.format.clone(),
         pool: None,
         memory: None,
+        hitl: None,
     };
     let realm_sql = cfg
         .realm

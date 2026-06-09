@@ -29,6 +29,7 @@ async fn db_free_dispatch() -> (ToolDispatch, ServerInfo) {
         format,
         pool: None,
         memory: None,
+        hitl: None,
     };
     (
         ToolDispatch::new(shared),
