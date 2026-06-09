@@ -31,6 +31,7 @@ pub mod graph_handler;
 pub mod flight;
 pub mod capabilities;
 mod health;
+pub mod query_multidb;
 pub mod icon_config;
 pub mod metrics;
 
@@ -659,18 +660,31 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
     let (parts, body) = req.into_parts();
     let headers: &HeaderMap = &parts.headers;
     let request_id = extract_request_id(headers);
-    let database = headers
-        .get("x-database")
-        .and_then(|v| v.to_str().ok())
+    let db_header = headers.get("x-database").and_then(|v| v.to_str().ok());
+    // `x-database: *` (the web "All databases" scope) spans every accessible
+    // database; an absent/empty/concrete header keeps the single-database path.
+    let all_db = crate::query_multidb::is_all_databases(db_header);
+    let database = db_header
+        .filter(|s| !s.is_empty())
         .unwrap_or("default")
         .to_owned();
 
-    // Enforce per-database token scope if the principal is scoped.
-    if let Some(principal) = parts.extensions.get::<crate::auth::Principal>() {
-        if let Err((status, msg)) = crate::auth::check_database_scope(principal, &database) {
-            return error_response(status, "forbidden", &msg, &request_id);
+    let principal = parts.extensions.get::<crate::auth::Principal>();
+    // Single-database requests enforce the per-database token scope. Cross-database
+    // requests instead intersect with `allowed_databases` during resolution
+    // (`check_database_scope` only understands one named database).
+    if !all_db {
+        if let Some(principal) = principal {
+            if let Err((status, msg)) = crate::auth::check_database_scope(principal, &database) {
+                return error_response(status, "forbidden", &msg, &request_id);
+            }
         }
     }
+    let tenant = principal
+        .map(|p| p.tenant)
+        .unwrap_or(kyma_core::tenant::DEFAULT_TENANT);
+    let allowed_databases: Option<Vec<String>> =
+        principal.and_then(|p| p.allowed_databases.clone());
 
     let body_bytes: Bytes = match axum::body::to_bytes(body, 16 * 1024 * 1024).await {
         Ok(b) => b,
@@ -707,40 +721,76 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
     // Resolve query budget: headers override, else defaults.
     let budget = resolve_query_budget(headers);
 
-    // 1. Load every table in the database and register them in a fresh
-    //    DataFusion SessionContext. This costs one catalog round-trip per
-    //    query in phase A; SessionContext-level caching lands later.
-    //    Tables are listed first so KQL `union` can receive the full schema map.
-    let tables = match state.catalog.list_tables_in_database(&database).await {
-        Ok(t) => t,
-        Err(e) => {
+    // Label for logs/metrics: "*" for a cross-database request, else the db name.
+    let db_label = if all_db { "*".to_string() } else { database.clone() };
+
+    // 1. Resolve the sources to query — a single database's tables, or (for a
+    //    cross-database `*` request) every accessible database's tables — and
+    //    the KQL schema map. Sources are resolved before the SessionContext is
+    //    built so KQL `union` / the cross-database union views get the full map.
+    enum Sources {
+        Single(Vec<TableRef>),
+        Multi(Vec<crate::query_multidb::DbTable>),
+    }
+    let (sources, schemas): (Sources, kyma_kql::SchemaMap) = if all_db {
+        let db_tables = match crate::query_multidb::resolve_all_db_tables(
+            &state.catalog,
+            tenant,
+            allowed_databases.as_deref(),
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "catalog_error",
+                    &format!("failed to resolve databases: {e}"),
+                    &request_id,
+                )
+            }
+        };
+        if db_tables.is_empty() {
             return error_response(
                 StatusCode::NOT_FOUND,
-                "database_not_found",
-                &format!("failed to list tables in database {database}: {e}"),
+                "database_empty",
+                "no accessible databases contain any tables",
                 &request_id,
-            )
+            );
         }
+        let schemas = crate::query_multidb::build_multidb_schema_map(&db_tables);
+        (Sources::Multi(db_tables), schemas)
+    } else {
+        let tables = match state.catalog.list_tables_in_database(&database).await {
+            Ok(t) => t,
+            Err(e) => {
+                return error_response(
+                    StatusCode::NOT_FOUND,
+                    "database_not_found",
+                    &format!("failed to list tables in database {database}: {e}"),
+                    &request_id,
+                )
+            }
+        };
+        if tables.is_empty() {
+            return error_response(
+                StatusCode::NOT_FOUND,
+                "database_empty",
+                &format!("no tables in database {database}"),
+                &request_id,
+            );
+        }
+        let schemas = build_schema_map(&tables);
+        (Sources::Single(tables), schemas)
     };
 
-    if tables.is_empty() {
-        return error_response(
-            StatusCode::NOT_FOUND,
-            "database_empty",
-            &format!("no tables in database {database}"),
-            &request_id,
-        );
-    }
-
-    // Content-Type routing between SQL and KQL frontends.
-    // Build the schema map from the registered tables so `union` can compute
-    // the column superset.
+    // Content-Type routing between SQL and KQL frontends. The schema map (built
+    // above) lets KQL `union` compute the column superset.
     let content_type = headers
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/sql");
     let (language, sql) = if content_type.starts_with("application/x-kql") {
-        let schemas = build_schema_map(&tables);
         match kyma_kql::kql_to_sql_with_schemas(&raw, &schemas) {
             Ok(s) => ("kql", s),
             Err(e) => {
@@ -756,7 +806,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         ("sql", raw)
     };
 
-    debug!(request_id = %request_id, database = %database, language, sql = %sql,
+    debug!(request_id = %request_id, database = %db_label, language, sql = %sql,
         budget_memory = budget.max_memory_bytes,
         budget_wall_ms = budget.max_wall_clock.as_millis() as u64,
         "query received");
@@ -779,30 +829,59 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
     };
     let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
     kyma_exec::register_vector_udfs(&ctx);
-    for t in tables {
-        let table_name = t.name.clone();
-        let kyma_tbl: Arc<KymaTable> = match state.node_id {
-            Some(nid) => Arc::new(KymaTable::with_node_id(
-                t,
-                state.catalog.clone(),
-                state.format.clone(),
-                nid,
-                database.clone(),
-            )),
-            None => Arc::new(KymaTable::new(
-                t,
-                state.catalog.clone(),
-                state.format.clone(),
-            )),
-        };
-        if let Err(e) = ctx.register_table(&table_name, kyma_tbl) {
-            error!(request_id = %request_id, table = %table_name, error = %e, "failed to register table");
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "internal",
-                &format!("failed to register table {table_name}: {e}"),
-                &request_id,
-            );
+    match sources {
+        Sources::Single(tables) => {
+            for t in tables {
+                let table_name = t.name.clone();
+                let kyma_tbl: Arc<KymaTable> = match state.node_id {
+                    Some(nid) => Arc::new(KymaTable::with_node_id(
+                        t,
+                        state.catalog.clone(),
+                        state.format.clone(),
+                        nid,
+                        database.clone(),
+                    )),
+                    None => Arc::new(KymaTable::new(
+                        t,
+                        state.catalog.clone(),
+                        state.format.clone(),
+                    )),
+                };
+                if let Err(e) = ctx.register_table(&table_name, kyma_tbl) {
+                    error!(request_id = %request_id, table = %table_name, error = %e, "failed to register table");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "internal",
+                        &format!("failed to register table {table_name}: {e}"),
+                        &request_id,
+                    );
+                }
+            }
+        }
+        Sources::Multi(db_tables) => {
+            if let Err(e) = crate::query_multidb::register_multidb_context(
+                &ctx,
+                &db_tables,
+                &state.catalog,
+                &state.format,
+                state.node_id,
+            )
+            .await
+            {
+                // A `__database` provenance collision is a client-fixable input
+                // error; other failures are internal.
+                let (status, code) = if e.contains(crate::query_multidb::PROVENANCE_COLUMN) {
+                    (StatusCode::BAD_REQUEST, "provenance_collision")
+                } else {
+                    (StatusCode::INTERNAL_SERVER_ERROR, "internal")
+                };
+                return error_response(
+                    status,
+                    code,
+                    &format!("failed to build cross-database context: {e}"),
+                    &request_id,
+                );
+            }
         }
     }
 
@@ -859,14 +938,14 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         }
     };
     let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
-    info!(request_id = %request_id, database = %database, rows = total_rows, "query completed");
+    info!(request_id = %request_id, database = %db_label, rows = total_rows, "query completed");
 
     ::metrics::counter!("kyma_query_requests_total",
-        "database" => database.clone(), "result" => "ok")
+        "database" => db_label.clone(), "result" => "ok")
     .increment(1);
-    ::metrics::histogram!("kyma_query_duration_seconds", "database" => database.clone())
+    ::metrics::histogram!("kyma_query_duration_seconds", "database" => db_label.clone())
         .record(start.elapsed().as_secs_f64());
-    ::metrics::histogram!("kyma_query_rows_returned", "database" => database.clone())
+    ::metrics::histogram!("kyma_query_rows_returned", "database" => db_label.clone())
         .record(total_rows as f64);
 
     // 3. Serialize each batch into NDJSON and stream.

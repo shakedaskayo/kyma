@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useSession } from "@/sdk/session";
+import { fetchSchema } from "@/sdk/catalog";
+import { INTERNAL_DATABASES } from "./DatabaseSwitcher";
 import { useHealth } from "@/sdk/reconnect";
 import { useWorkspace } from "@/features/tabs/workspace-store";
 import { ReconnectBanner } from "@/features/reconnect/ReconnectBanner";
@@ -131,12 +133,37 @@ function UserMenu() {
 
 export function Shell() {
   const { endpoint } = useSession();
+  const token = useSession((s) => s.token);
+  const setSession = useSession((s) => s.set);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const startHealth = useHealth((s) => s.start);
   useEffect(() => {
     if (!endpoint) return;
     return startHealth(endpoint);
   }, [endpoint, startHealth]);
+
+  // Resolve a concrete active database for the single-database pages
+  // (Connectors/Dashboards/Agent). The session default is empty and a legacy
+  // persisted value (e.g. "obs") may not exist on this server — pick the first
+  // non-internal database from the catalog so those pages point at real data.
+  useEffect(() => {
+    if (!endpoint || !token) return;
+    let cancelled = false;
+    void fetchSchema({ endpoint, token })
+      .then((schema) => {
+        if (cancelled) return;
+        const names = (schema.databases ?? [])
+          .map((d) => d.name)
+          .filter((n) => !INTERNAL_DATABASES.includes(n));
+        if (names.length === 0) return;
+        const cur = useSession.getState().database;
+        if (!cur || !names.includes(cur)) setSession({ database: names[0] });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [endpoint, token, setSession]);
 
   // The UI ships embedded in the server binary; when /health starts reporting
   // a new version mid-session (kyma update / reinstall restarted the server),

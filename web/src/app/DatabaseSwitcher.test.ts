@@ -1,11 +1,14 @@
 import { expect, test } from "vitest";
 import { headerScopeFor } from "./DatabaseSwitcher";
 
-test("pages that re-scope by database show the interactive switcher", () => {
+test("the Query Editor (and legacy /explore) is cross-database with an All-databases scope", () => {
+  for (const p of ["/query", "/query/abc", "/explore"]) {
+    expect(headerScopeFor(p).mode, p).toBe("query");
+  }
+});
+
+test("single-database pages show the concrete switcher", () => {
   for (const p of [
-    "/query",
-    "/query/abc",
-    "/explore",
     "/agent",
     "/connectors",
     "/connectors/123",

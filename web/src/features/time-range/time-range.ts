@@ -9,6 +9,7 @@ export function presetToKqlAgo(p: TimeRangePreset): string {
     case "24h": return "ago(24h)";
     case "7d":  return "ago(7d)";
     case "30d": return "ago(30d)";
+    case "none":
     case "custom": return "";
   }
 }

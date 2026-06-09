@@ -31,7 +31,9 @@ export type DiscoverTabState = {
 export const initialDiscoverTabState = (): DiscoverTabState => ({
   scope: { kind: "all" },
   search: "",
-  timeRange: { preset: "1h" },
+  // "all time" by default — show data whenever any exists, then let the user
+  // narrow (data is frequently older than a 1h window).
+  timeRange: { preset: "none" },
   visibleSources: null,
   selectedSource: null,
   columns: [],

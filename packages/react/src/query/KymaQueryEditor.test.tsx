@@ -282,6 +282,39 @@ describe("KymaQueryEditor", () => {
     expect(screen.queryByTestId("run-btn")).toBeNull();
   });
 
+  it("5. surfaces a query error banner when /v1/query fails (no more silent failures)", async () => {
+    const qc = makeQC();
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/v1/catalog/schema")) return makeSchemaResponse();
+      if (url.includes("/v1/query")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ error: { code: "sql_parse_error", message: "No field named timestamp" } }),
+            { status: 400, headers: new Headers({ "content-type": "application/json" }) },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("", { status: 404 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
+        <KymaQueryEditor defaultQuery="events | take 5" showTimeRange={false} database="testdb" />
+      </KymaProvider>,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("run-btn"));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain("Query failed");
+    });
+    expect(screen.getByRole("alert").textContent).toContain("No field named timestamp");
+  });
+
   it("4. two instances: independent query text (type in one, other unchanged)", async () => {
     const qc = makeQC();
     vi.stubGlobal(

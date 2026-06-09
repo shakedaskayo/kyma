@@ -147,7 +147,9 @@ export function createDiscoverStore(initial?: {
   const init = {
     search: initial?.search ?? "",
     scope: (initial?.scope ?? { kind: "all" }) as Scope,
-    timeRange: (initial?.timeRange ?? { preset: "1h" }) as TimeRange,
+    // Default to "all time" so a fresh Discover load shows data whenever any
+    // exists (data is often older than a 1h window); the user then narrows.
+    timeRange: (initial?.timeRange ?? { preset: "none" }) as TimeRange,
     visibleSources: null as SourceKey[] | null,
     selectedSource: null as SourceKey | null,
     columns: [] as string[],

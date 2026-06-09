@@ -5,7 +5,7 @@ export type QueryState = { query: string; preset: TimeRangePreset; from?: string
 // Single source of truth for valid presets.  Adding a new value to the
 // TimeRangePreset union without updating this set produces a TypeScript error.
 const VALID_PRESETS = new Set(
-  (["5m", "15m", "1h", "6h", "24h", "7d", "30d", "custom"] as const) satisfies readonly TimeRangePreset[],
+  (["none", "5m", "15m", "1h", "6h", "24h", "7d", "30d", "custom"] as const) satisfies readonly TimeRangePreset[],
 );
 
 // NOTE: base64url-encoded JSON for a typical query is ~50–200 bytes, well under

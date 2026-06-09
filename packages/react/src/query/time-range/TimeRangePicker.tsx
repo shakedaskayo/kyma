@@ -3,6 +3,7 @@ import type { TimeRange, TimeRangePreset } from "./time-range-types";
 import { Button } from "../../internal/ui/button";
 
 const PRESETS: { value: TimeRangePreset; label: string }[] = [
+  { value: "none",   label: "All time" },
   { value: "5m",     label: "Last 5 min" },
   { value: "15m",    label: "Last 15 min" },
   { value: "1h",     label: "Last 1 hour" },

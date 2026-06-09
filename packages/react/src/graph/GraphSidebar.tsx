@@ -1,4 +1,4 @@
-import { useMemo, type ComponentType } from "react";
+import { useMemo, useState, type ComponentType } from "react";
 import {
   ChevronDown,
   Layers,
@@ -16,6 +16,7 @@ import {
   Spline,
   Circle as CircleIcon,
   LayoutGrid,
+  ScrollText,
 } from "lucide-react";
 import {
   getLabelColor,
@@ -23,10 +24,16 @@ import {
 } from "@kyma-ai/client";
 import { getRelationshipFamilyColor } from "./graph-style";
 import { resolveGraphIcon } from "./graph-icons";
-import type { GraphNode, GraphRelationship, GraphStats } from "@kyma-ai/client";
+import type {
+  ArtifactWindow,
+  GraphNode,
+  GraphRelationship,
+  GraphStats,
+} from "@kyma-ai/client";
 import { useGraphStore } from "./graph-store";
 import type { GraphCoord } from "../hooks/useKymaGraph";
 import { graphKey } from "../hooks/useKymaGraph";
+import { useKymaClient } from "../provider/context";
 import { cn } from "../internal/cn";
 
 /**
@@ -421,6 +428,84 @@ function SectionRels({
   );
 }
 
+/* ─── Log-file viewer ───────────────────────────────────────────────────── */
+
+/** Pull an artifact `object_path` from a node's properties — either a direct
+ *  `object_path` key, or one nested inside a JSON-encoded `props` blob (how the
+ *  stored-graph provider serialises node props). Returns null when absent. */
+function objectPathOf(props: Record<string, unknown>): string | null {
+  const direct = props.object_path;
+  if (typeof direct === "string" && direct) return direct;
+  const blob = props.props;
+  if (typeof blob === "string" && blob.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(blob) as Record<string, unknown>;
+      if (typeof parsed.object_path === "string") return parsed.object_path;
+    } catch {
+      /* not JSON — ignore */
+    }
+  }
+  return null;
+}
+
+/** Inline viewer for a `LogFile` node (CI job logs, etc.): fetches the artifact
+ *  from the object store by path and pages through it with "Load more". */
+function LogFileViewer({ path }: { path: string }) {
+  const client = useKymaClient();
+  const [win, setWin] = useState<ArtifactWindow | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async (offset: number) => {
+    setLoading(true);
+    try {
+      const w = await client.artifacts.fetchArtifactByPath(path, { offset, limit: 65536 });
+      setWin((prev) => (prev && offset > 0 ? { ...w, content: prev.content + w.content } : w));
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="ky-mb-3">
+      {!win ? (
+        <button
+          type="button"
+          onClick={() => void load(0)}
+          disabled={loading}
+          className="ky-flex ky-w-full ky-items-center ky-justify-center ky-gap-1.5 ky-rounded-md ky-border ky-bg-background ky-py-1.5 ky-text-[11px] ky-font-medium ky-transition-colors hover:ky-bg-accent disabled:ky-opacity-50"
+        >
+          <ScrollText className="ky-h-3.5 ky-w-3.5" /> {loading ? "Loading…" : "View log"}
+        </button>
+      ) : (
+        <div className="ky-rounded-md ky-border">
+          <div className="ky-flex ky-items-center ky-gap-2 ky-border-b ky-px-2 ky-py-1 ky-text-[10px] ky-text-muted-foreground">
+            <ScrollText className="ky-h-3 ky-w-3" /> log
+            <span className="ky-ml-auto ky-font-mono">{win.size_bytes.toLocaleString()} B</span>
+          </div>
+          <pre className="ky-max-h-72 ky-overflow-auto ky-whitespace-pre-wrap ky-break-all ky-p-2 ky-text-[10px] ky-leading-snug">
+            {win.content || "(empty)"}
+          </pre>
+          {!win.eof && (
+            <button
+              type="button"
+              onClick={() => void load(win.offset + win.returned_bytes)}
+              disabled={loading}
+              className="ky-w-full ky-border-t ky-py-1 ky-text-[10px] ky-text-muted-foreground ky-transition-colors hover:ky-bg-accent disabled:ky-opacity-50"
+            >
+              {loading ? "Loading…" : "Load more"}
+            </button>
+          )}
+        </div>
+      )}
+      {error && <p className="ky-mt-1 ky-text-[10px] ky-text-destructive">{error}</p>}
+    </div>
+  );
+}
+
 /* ─── Inspector ─────────────────────────────────────────────────────────── */
 
 function NodeInspector({
@@ -440,6 +525,13 @@ function NodeInspector({
   const displayName = (node.properties.name as string | undefined) ?? node.id;
   const primaryLabel = node.labels[0] ?? "Node";
   const dotColor = getLabelColor(primaryLabel);
+
+  // LogFile nodes (CI job logs, scraped files, etc.) carry an `object_path` —
+  // surface an inline log viewer that streams the artifact from the object store.
+  const logPath = useMemo(() => {
+    if (!node.labels.some((l) => l.toLowerCase() === "logfile")) return null;
+    return objectPathOf(node.properties);
+  }, [node]);
 
   const neighbours = useMemo(() => {
     const out: {
@@ -511,6 +603,8 @@ function NodeInspector({
       >
         Expand neighbours
       </button>
+
+      {logPath && <LogFileViewer path={logPath} />}
 
       {/* Properties */}
       <div className="ky-mb-3">

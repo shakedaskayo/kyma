@@ -19,4 +19,5 @@ export * from "./credentials";
 export * from "./setup";
 export * from "./auth";
 export * from "./oauth";
+export * from "./artifacts";
 export * from "./graph-layout";

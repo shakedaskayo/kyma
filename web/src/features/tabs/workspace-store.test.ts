@@ -21,7 +21,7 @@ test("newTab defaults to discover kind", () => {
   expect(t.state.search).toBe("");
   expect(t.state.columns).toEqual([]);
   expect(t.state.viewMode).toBe("stream");
-  expect(t.state.timeRange.preset).toBe("1h");
+  expect(t.state.timeRange.preset).toBe("none");
   expect(t.state.live).toBe(false);
 });
 
@@ -31,7 +31,7 @@ test("newTab with kind: query produces a query tab", () => {
   expect(t.kind).toBe("query");
   if (t.kind !== "query") throw new Error("type narrowing");
   expect(t.state.query).toBe("");
-  expect(t.state.timeRange.preset).toBe("1h");
+  expect(t.state.timeRange.preset).toBe("none");
   expect(t.state.results.kind).toBe("idle");
 });
 
