@@ -444,17 +444,38 @@ const DEPLOY_FILES: &[(&str, &str)] = &[
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct DeployState {
+    /// Legacy field (aws|local). Still written for back-compat; new code reads
+    /// `compute`/`database`/`storage`/`auth` and falls back to this.
     target: String,
     tool: String,
     project_name: String,
     aws_region: String,
     image_tag: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    compute: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    database: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    storage: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auth: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     engine_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     supabase_project_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     container_name: Option<String>,
+}
+
+impl DeployState {
+    /// Compute backend, migrating a legacy `target` (aws→fargate, local→local).
+    fn compute(&self) -> Compute {
+        self.compute
+            .as_deref()
+            .and_then(|s| Compute::from_arg(s).ok())
+            .or_else(|| Compute::from_target(&self.target))
+            .unwrap_or(Compute::Fargate)
+    }
 }
 
 fn workspace_dir(name: &str) -> Result<PathBuf> {
@@ -2115,6 +2136,20 @@ mod tests {
         assert!(e2.contains("auth=supabase"), "{e2}");
         // supabase storage needs supabase db
         assert!(validate_combo(Compute::Eks, Database::Rds, Storage::Supabase, Auth::Token).is_err());
+    }
+
+    #[test]
+    fn deploy_state_migrates_legacy_target() {
+        let legacy = r#"{"target":"aws","tool":"terraform","project_name":"kyma-prod","aws_region":"us-east-1","image_tag":"v1"}"#;
+        let st: DeployState = serde_json::from_str(legacy).unwrap();
+        assert_eq!(st.compute(), Compute::Fargate);
+        let legacy_local = r#"{"target":"local","tool":"terraform","project_name":"p","aws_region":"r","image_tag":"v"}"#;
+        let st2: DeployState = serde_json::from_str(legacy_local).unwrap();
+        assert_eq!(st2.compute(), Compute::Local);
+        // explicit compute field wins over target
+        let modern = r#"{"target":"aws","tool":"terraform","project_name":"p","aws_region":"r","image_tag":"v","compute":"eks"}"#;
+        let st3: DeployState = serde_json::from_str(modern).unwrap();
+        assert_eq!(st3.compute(), Compute::Eks);
     }
 
     #[test]
