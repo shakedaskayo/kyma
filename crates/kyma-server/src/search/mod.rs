@@ -12,8 +12,10 @@
 //! Degrades gracefully: no embedder / no vector column → lexical-only; a failing
 //! source is skipped rather than failing the whole request.
 
+pub mod types;
+
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use arrow::json::ArrayWriter;
@@ -28,6 +30,7 @@ use datafusion::prelude::{SessionConfig, SessionContext};
 use kyma_exec::KymaTable;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::discover::compile::{compile_for_source, TimeRange};
@@ -42,6 +45,30 @@ const DEFAULT_LIMIT: usize = 50;
 const MAX_LIMIT: usize = 500;
 const DEFAULT_MAX_SOURCES: usize = 200;
 const MAX_BODY_BYTES: usize = 256 * 1024;
+
+/// Per-source DataFusion memory pool. Each leg only materializes the top
+/// `PER_LEG_K` rows, so a small bound is plenty — and it caps search's peak
+/// memory so a burst of broad ("all sources") searches can't exhaust the
+/// process. A leg that would exceed it errors and is skipped (lexical-only /
+/// fewer hits) rather than crashing the server.
+const PER_SOURCE_MEM_BUDGET: usize = 64 * 1024 * 1024;
+
+/// Process-wide cap on concurrent per-source search legs. Each permit guards one
+/// DataFusion context + memory pool, so peak search memory is bounded by
+/// `permits × PER_SOURCE_MEM_BUDGET` regardless of how many requests arrive at
+/// once or how broadly each fans out (a single "all" scope can resolve to
+/// `DEFAULT_MAX_SOURCES` sources). Without this, simultaneous broad searches
+/// spin up unbounded contexts and can OOM/wedge the server — the legs still all
+/// run, they just queue for a slot instead of all allocating at once.
+fn source_search_limiter() -> &'static Semaphore {
+    static LIMITER: OnceLock<Semaphore> = OnceLock::new();
+    LIMITER.get_or_init(|| {
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        Semaphore::new(cores.clamp(2, 8))
+    })
+}
 
 #[derive(Debug, Deserialize)]
 pub struct SearchBody {
@@ -228,9 +255,15 @@ async fn search_one_source(
     let source_key = format!("{}.{}", src.db, src.table.name);
     let table_name = src.table.name.clone();
 
+    // Gate the heavy work (context + memory pool + scans) on a process-wide
+    // permit so concurrent/broad searches queue for a slot instead of all
+    // allocating at once. Held until this leg returns. Err only if the
+    // semaphore were closed (never), in which case we proceed unbounded.
+    let _permit = source_search_limiter().acquire().await.ok();
+
     // Fresh, modestly-bounded context.
     let runtime = match RuntimeEnvBuilder::new()
-        .with_memory_pool(Arc::new(GreedyMemoryPool::new(256 * 1024 * 1024)))
+        .with_memory_pool(Arc::new(GreedyMemoryPool::new(PER_SOURCE_MEM_BUDGET)))
         .build()
     {
         Ok(r) => Arc::new(r),
