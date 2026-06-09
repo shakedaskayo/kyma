@@ -50,6 +50,26 @@ impl MemoryOp {
         MemoryOp::RelationshipWrite,
         MemoryOp::PromoteFileCandidate,
     ];
+
+    /// Stable `snake_case` wire string (matches the serde representation) —
+    /// used as the `operation` column value in the approval queue.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MemoryOp::Add => "add",
+            MemoryOp::Update => "update",
+            MemoryOp::Invalidate => "invalidate",
+            MemoryOp::Merge => "merge",
+            MemoryOp::Archive => "archive",
+            MemoryOp::LinkEntityCrossRealm => "link_entity_cross_realm",
+            MemoryOp::RelationshipWrite => "relationship_write",
+            MemoryOp::PromoteFileCandidate => "promote_file_candidate",
+        }
+    }
+
+    /// Parse the wire string back into an op. Unknown ⇒ `None`.
+    pub fn parse(s: &str) -> Option<MemoryOp> {
+        MemoryOp::ALL.into_iter().find(|o| o.as_str() == s)
+    }
 }
 
 /// The configured base behavior for an op class.
@@ -281,6 +301,18 @@ mod tests {
         let back: HitlPolicy = serde_json::from_value(v).unwrap();
         assert_eq!(back.confidence_threshold, p.confidence_threshold);
         assert_eq!(back.ops.get(&MemoryOp::Merge), Some(&OpMode::Gate));
+    }
+
+    #[test]
+    fn op_as_str_matches_serde_and_roundtrips() {
+        for op in MemoryOp::ALL {
+            // as_str() must equal the serde wire string so the DB column and
+            // JSON payloads never disagree.
+            let serde_str = serde_json::to_value(op).unwrap();
+            assert_eq!(serde_str, serde_json::json!(op.as_str()));
+            assert_eq!(MemoryOp::parse(op.as_str()), Some(op));
+        }
+        assert_eq!(MemoryOp::parse("nope"), None);
     }
 
     #[test]
