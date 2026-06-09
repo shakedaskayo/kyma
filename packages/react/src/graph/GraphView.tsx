@@ -81,13 +81,8 @@ export function GraphView({
     if (namespaceKeys.length === 0) return;
     if (graph !== "all" && !namespaceKeys.includes(graph)) setGraph("all");
     const hasStored = coords.some((c) => c.kind === "stored");
-    // Hidden by default: the synthetic /schema graph (when real graphs exist)
-    // and the file-candidate layer (un-promoted contributed/scraped files) —
-    // toggle either back on from the Graphs list in the sidebar.
     setHiddenNamespaces(
-      namespaceKeys.filter(
-        (k) => (hasStored && k.endsWith("/schema")) || k.includes("file_candidates"),
-      ),
+      hasStored ? namespaceKeys.filter((k) => k.endsWith("/schema")) : [],
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [namespaceKeysStr]);
