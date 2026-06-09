@@ -51,6 +51,21 @@ pulumi config set allowedEmailDomains '["company.com"]'
 # optional: domain, route53ZoneId, imageTag, oauthProviders …
 ```
 
+The stack's [backend selectors](./terraform#backend-selectors) are exposed as
+camelCased Pulumi config keys — e.g. `computeBackend`, `databaseBackend`,
+`storageBackend`, `authBackend`, `databaseUrl`, `storageEndpoint`, `adminToken`,
+`oidcIssuer`. For example, a Fargate + RDS + native-S3 + token stack:
+
+```sh
+pulumi config set computeBackend fargate
+pulumi config set databaseBackend rds
+pulumi config set storageBackend s3
+pulumi config set authBackend token
+pulumi config set --secret adminToken "$(openssl rand -base64 30)"
+```
+
+Outputs are camelCased too (`engineUrl`, `eksClusterName`, `eksIrsaRoleArn`, …).
+
 ## Deploy
 
 ```sh
