@@ -18,7 +18,14 @@ export type SessionState = {
    *  the client can be recreated after a page reload. */
   supabaseUrl: string;
   supabaseAnonKey: string;
+  /** The active concrete database for single-database pages (Connectors,
+   *  Dashboards, Agent). Empty until resolved from the catalog on first load.
+   *  Never the "*" all-databases sentinel — those pages need a real database. */
   database: string;
+  /** Scope for the cross-database-capable Query Editor: either "*" (unify across
+   *  every database — the default) or a concrete database name to filter to.
+   *  Sent verbatim as the `x-database` header; "*" makes the engine span all DBs. */
+  queryScope: string;
   user: AuthUser | null;
   set: (
     p: Partial<
@@ -32,6 +39,7 @@ export type SessionState = {
         | "supabaseUrl"
         | "supabaseAnonKey"
         | "database"
+        | "queryScope"
         | "user"
       >
     >,
@@ -76,7 +84,8 @@ export const useSession = create<SessionState>()(
       provider: "password" as AuthProvider,
       supabaseUrl: "",
       supabaseAnonKey: "",
-      database: "obs",
+      database: "",
+      queryScope: "*",
       user: null,
       set: (p) => set(p),
       reset: () =>
@@ -88,7 +97,8 @@ export const useSession = create<SessionState>()(
           provider: "password",
           supabaseUrl: "",
           supabaseAnonKey: "",
-          database: "obs",
+          database: "",
+          queryScope: "*",
           user: null,
         }),
       isConfigured: () => get().endpoint.length > 0,

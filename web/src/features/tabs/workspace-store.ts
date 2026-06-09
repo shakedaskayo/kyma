@@ -15,7 +15,7 @@ const noopStorage = {
 };
 
 export type TimeRangePreset =
-  | "5m" | "15m" | "1h" | "6h" | "24h" | "7d" | "30d" | "custom";
+  | "none" | "5m" | "15m" | "1h" | "6h" | "24h" | "7d" | "30d" | "custom";
 export type TimeRange = { preset: TimeRangePreset; from?: string; to?: string };
 
 export type ResultsState =
@@ -53,7 +53,10 @@ export function isTabDirty(t: Tab): boolean {
   return t.kind === "query" && isQueryTabDirty(t);
 }
 
-const DEFAULT_RANGE: TimeRange = { preset: "1h" };
+// "all time" by default: the editor injects no time filter unless the user
+// picks a window, so a typed query runs exactly as written and shows data even
+// when it's older than an hour.
+const DEFAULT_RANGE: TimeRange = { preset: "none" };
 
 // Exported so tests can verify the v1→v2/v3 transformation as a pure function
 // without touching real localStorage / persist middleware machinery.

@@ -39,6 +39,9 @@ function buildCsvBlob(columns: Column[], rows: Record<string, unknown>[]): Blob 
 
 function QueryEditorPage() {
   const { database } = useSession();
+  // Query Editor scope: "*" (unify across all databases — the default) or a
+  // concrete database to filter to. Driven by the header ScopeSwitcher.
+  const queryScope = useSession((s) => s.queryScope);
   const workspace = useWorkspace();
   // Per-tab live result from onResults callback (used for histogram + field-stats + downloads)
   const [liveResult, setLiveResult] = useState<LiveResult | null>(null);
@@ -243,9 +246,10 @@ function QueryEditorPage() {
         {/* Per-tab KymaQueryEditor — re-keyed on tabId so switching tabs mounts a fresh editor */}
         {active ? (
           <KymaQueryEditor
-            key={active.id}
+            key={`${active.id}:${queryScope}`}
             defaultQuery={active.state.query}
             timeRange={active.state.timeRange}
+            database={queryScope}
             className="min-h-0 flex-1"
             onQueryChange={(q) => workspace.updateQuery(active.id, { query: q })}
             onResults={(r) => setLiveResult({ columns: r.columns as Column[], rows: r.rows })}

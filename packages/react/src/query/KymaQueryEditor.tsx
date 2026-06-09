@@ -82,6 +82,17 @@ export interface KymaQueryEditorProps {
   onQueryChange?: (q: string) => void;
 }
 
+/** Best-effort human-readable message from an unknown query error. */
+function formatQueryError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 // ── Inner implementation (wrapped by error boundary below) ────────────────────
 
 function KymaQueryEditorInner({
@@ -138,7 +149,7 @@ function KymaQueryEditorInner({
 
   // ── Execution ─────────────────────────────────────────────────────────────────
 
-  const { columns, rows, isRunning, execute, cancel } = useKymaQuery();
+  const { columns, rows, isRunning, error, execute, cancel } = useKymaQuery();
 
   // Track whether we have had a successful run
   const hasResults = columns.length > 0 && rows.length > 0;
@@ -150,9 +161,10 @@ function KymaQueryEditorInner({
   const handleRun = useCallback(async () => {
     if (readOnly || isRunning) return;
     let effectiveQuery = query;
-    // Inject time filter for KQL only
+    // Inject time filter for KQL only — schema-aware so it targets the table's
+    // real time column (and injects nothing when there isn't one).
     if (language === "kql" && showTimeRange) {
-      effectiveQuery = prependTimeFilter(query, timeRange);
+      effectiveQuery = prependTimeFilter(query, timeRange, schema);
     }
     try {
       await execute({
@@ -163,7 +175,7 @@ function KymaQueryEditorInner({
     } catch {
       // errors are surfaced via the hook's `.error` field; re-throw is swallowed
     }
-  }, [readOnly, isRunning, query, language, showTimeRange, timeRange, execute, effectiveDatabase]);
+  }, [readOnly, isRunning, query, language, showTimeRange, timeRange, schema, execute, effectiveDatabase]);
 
   const handleQueryChange = useCallback(
     (v: string) => {
@@ -271,7 +283,16 @@ function KymaQueryEditorInner({
       {/* ── Results area ── */}
       {showResults && (
         <div className="ky-flex ky-min-h-0 ky-flex-1 ky-flex-col ky-overflow-hidden ky-border-t">
-          {!hasResults && !isRunning && (
+          {error != null && !isRunning && (
+            <div
+              role="alert"
+              className="ky-m-3 ky-rounded ky-border ky-border-destructive/50 ky-bg-destructive/10 ky-p-3 ky-text-xs ky-text-destructive"
+            >
+              <span className="ky-font-semibold">Query failed:</span>{" "}
+              {formatQueryError(error)}
+            </div>
+          )}
+          {error == null && !hasResults && !isRunning && (
             <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-p-6 ky-text-xs ky-text-muted-foreground">
               {columns.length === 0 ? "Run a query to see results." : "0 rows returned."}
             </div>
