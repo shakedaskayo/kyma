@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Brain, LayoutGrid, Moon, Search, SlidersHorizontal } from "lucide-react";
+import { Brain, LayoutGrid, Moon, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useReducedMotion } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/sdk/session";
 import { getMemorySettings, type DreamingSettings } from "@/sdk/memory";
 import { useDreamingRuns } from "@/features/dreaming/useDreaming";
+import { useReviewCount } from "@/features/review/useReview";
 import { AnimatedCounter } from "./AnimatedCounter";
 import { Sparkline } from "./Sparkline";
 import { useMemoryOverview } from "./useMemoryOverview";
@@ -17,6 +18,7 @@ const TABS = [
   { to: "/memory/overview", label: "Overview", icon: LayoutGrid, match: "/memory/overview" },
   { to: "/memory/search", label: "Search", icon: Search, match: "/memory/search" },
   { to: "/memory/dreaming", label: "Dreaming", icon: Moon, match: "/memory/dreaming" },
+  { to: "/memory/review", label: "Review", icon: ShieldCheck, match: "/memory/review" },
   { to: "/memory/settings", label: "Settings", icon: SlidersHorizontal, match: "/memory/settings" },
 ] as const;
 
@@ -43,6 +45,9 @@ export function MemoryHeader() {
 
   const { data: runs } = useDreamingRuns({ limit: 3 });
   const running = Boolean(runs?.some((r) => r.status === "running"));
+
+  const { data: reviewCounts } = useReviewCount();
+  const pendingReview = reviewCounts?.pending ?? 0;
 
   const storeSize = useMemo(
     () => (overview?.memory.counts ?? []).reduce((a, r) => a + num(r.n), 0),
@@ -155,6 +160,11 @@ export function MemoryHeader() {
               >
                 <Icon className="h-3.5 w-3.5" />
                 {t.label}
+                {t.to === "/memory/review" && pendingReview > 0 && (
+                  <span className="ml-0.5 rounded-full bg-rose-500/15 px-1.5 py-px text-2xs font-medium tabular-nums text-rose-500">
+                    {pendingReview}
+                  </span>
+                )}
                 {active && (
                   <span className="absolute inset-x-2 -bottom-[7px] h-0.5 rounded-full bg-violet-400" />
                 )}

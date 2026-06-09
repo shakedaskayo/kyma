@@ -111,6 +111,34 @@ export interface DreamingSettings {
   mutation_cap: number;
 }
 
+/** A class of memory mutation the HITL policy can govern. */
+export type MemoryOp =
+  | "add"
+  | "update"
+  | "invalidate"
+  | "merge"
+  | "archive"
+  | "link_entity_cross_realm"
+  | "relationship_write"
+  | "promote_file_candidate";
+
+/** Per-op base behavior: apply silently / apply-and-flag / hold for approval. */
+export type OpMode = "auto" | "post_hoc" | "gate";
+
+/** Operator-configurable human-in-the-loop policy over automatic memory mutations. */
+export interface HitlPolicy {
+  /** Master switch. When false, all mutations apply directly (default). */
+  enabled: boolean;
+  /** Base mode per op class. */
+  ops: Partial<Record<MemoryOp, OpMode>>;
+  /** Confidence below this escalates an op one severity level. */
+  confidence_threshold: number;
+  /** Realms the policy applies to (empty = all). */
+  realm_scope: string[];
+  /** Memory types the policy applies to (empty = all). */
+  type_scope: string[];
+}
+
 export interface MemorySettings {
   // ingestion
   extraction_enabled: boolean;
@@ -129,6 +157,8 @@ export interface MemorySettings {
   rrf_k: number;
   // dreaming (scheduled agentic housekeeping)
   dreaming: DreamingSettings;
+  // human-in-the-loop approval policy (default off)
+  hitl: HitlPolicy;
 }
 
 export async function getMemorySettings(t: KymaTransport): Promise<MemorySettings> {

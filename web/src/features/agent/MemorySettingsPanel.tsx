@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { Brain, Moon, RotateCcw, Save, Search, SlidersHorizontal } from "lucide-react";
+import { Brain, Moon, RotateCcw, Save, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useSession } from "@/sdk/session";
 import {
   getMemorySettings,
   putMemorySettings,
   type DreamingSettings,
+  type HitlPolicy,
+  type MemoryOp,
   type MemorySettings,
+  type OpMode,
 } from "@/sdk/memory";
 
 /**
@@ -26,6 +29,23 @@ const DREAMING_DEFAULTS: DreamingSettings = {
   mutation_cap: 100,
 };
 
+const HITL_DEFAULTS: HitlPolicy = {
+  enabled: false,
+  ops: {
+    add: "auto",
+    update: "post_hoc",
+    invalidate: "gate",
+    merge: "gate",
+    archive: "gate",
+    link_entity_cross_realm: "gate",
+    relationship_write: "post_hoc",
+    promote_file_candidate: "auto",
+  },
+  confidence_threshold: 0.6,
+  realm_scope: [],
+  type_scope: [],
+};
+
 const DEFAULTS: MemorySettings = {
   extraction_enabled: true,
   min_events: 1,
@@ -41,7 +61,20 @@ const DEFAULTS: MemorySettings = {
   half_life_days: 30,
   rrf_k: 60,
   dreaming: DREAMING_DEFAULTS,
+  hitl: HITL_DEFAULTS,
 };
+
+// The op classes surfaced in the approval-policy editor, ordered by risk.
+const MEMORY_OPS: { op: MemoryOp; label: string; hint: string }[] = [
+  { op: "invalidate", label: "Invalidate", hint: "Mark a memory contradicted / superseded." },
+  { op: "merge", label: "Merge", hint: "Fold duplicate/overlapping memories together." },
+  { op: "archive", label: "Archive", hint: "Retire a stale memory (hidden from recall)." },
+  { op: "link_entity_cross_realm", label: "Cross-realm link", hint: "Link a memory to a node in another realm/namespace." },
+  { op: "update", label: "Update", hint: "Rewrite a memory in place." },
+  { op: "relationship_write", label: "Relationship", hint: "Write a same-realm relationship/verdict edge." },
+  { op: "add", label: "Add", hint: "Create a brand-new memory." },
+  { op: "promote_file_candidate", label: "Promote candidate", hint: "Promote a file/symbol candidate into the live graph (high volume)." },
+];
 
 // Interval presets (1h / 6h / 12h / 24h) ↔ interval_secs.
 const INTERVAL_PRESETS: { label: string; secs: number }[] = [
@@ -79,7 +112,15 @@ export function MemorySettingsPanel() {
       .then((d) => {
         // Defensively backfill the dreaming block so the form (and the
         // whole-object PUT) never drops it if an older server omits it.
-        setS({ ...d, dreaming: { ...DREAMING_DEFAULTS, ...(d.dreaming ?? {}) } });
+        setS({
+          ...d,
+          dreaming: { ...DREAMING_DEFAULTS, ...(d.dreaming ?? {}) },
+          hitl: {
+            ...HITL_DEFAULTS,
+            ...(d.hitl ?? {}),
+            ops: { ...HITL_DEFAULTS.ops, ...(d.hitl?.ops ?? {}) },
+          },
+        });
         setError(null);
       })
       .catch((e) => setError((e as Error).message));
@@ -97,6 +138,18 @@ export function MemorySettingsPanel() {
     },
     [],
   );
+
+  const setHitl = useCallback(<K extends keyof HitlPolicy>(k: K, v: HitlPolicy[K]) => {
+    setS((cur) => (cur ? { ...cur, hitl: { ...cur.hitl, [k]: v } } : cur));
+    setStatus(null);
+  }, []);
+
+  const setOpMode = useCallback((op: MemoryOp, mode: OpMode) => {
+    setS((cur) =>
+      cur ? { ...cur, hitl: { ...cur.hitl, ops: { ...cur.hitl.ops, [op]: mode } } } : cur,
+    );
+    setStatus(null);
+  }, []);
 
   const save = useCallback(async () => {
     if (!endpoint || !token || !s) return;
@@ -217,6 +270,54 @@ export function MemorySettingsPanel() {
             />
           </Section>
 
+          {/* Approval policy (HITL) */}
+          <Section
+            icon={<ShieldCheck className="h-4 w-4" />}
+            title="Approval policy"
+            desc="Human-in-the-loop review for automatic memory mutations. Off = everything applies directly (no review)."
+          >
+            <Toggle
+              label="Require review"
+              hint="Master switch. When on, the per-operation modes below take effect and low-confidence ops escalate one level."
+              value={s.hitl.enabled}
+              onChange={(v) => setHitl("enabled", v)}
+            />
+            {s.hitl.enabled && (
+              <>
+                {MEMORY_OPS.map((o) => (
+                  <OpModeRow
+                    key={o.op}
+                    label={o.label}
+                    hint={o.hint}
+                    value={s.hitl.ops[o.op] ?? "auto"}
+                    onChange={(m) => setOpMode(o.op, m)}
+                  />
+                ))}
+                <SliderRow
+                  label="Confidence threshold"
+                  hint="Ops the model is less confident about than this are escalated one severity level (auto → review → gate)."
+                  value={s.hitl.confidence_threshold}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => setHitl("confidence_threshold", v)}
+                />
+                <CsvRow
+                  label="Realm scope"
+                  hint="Comma-separated realms the policy applies to. Empty = all realms."
+                  value={s.hitl.realm_scope}
+                  onChange={(v) => setHitl("realm_scope", v)}
+                />
+                <CsvRow
+                  label="Type scope"
+                  hint="Comma-separated memory types (fact, decision, …). Empty = all types."
+                  value={s.hitl.type_scope}
+                  onChange={(v) => setHitl("type_scope", v)}
+                />
+              </>
+            )}
+          </Section>
+
           {/* Ingestion */}
           <Section icon={<Brain className="h-4 w-4" />} title="Ingestion" desc="How conversation/connector activity becomes memory.">
             <Toggle
@@ -263,6 +364,83 @@ export function MemorySettingsPanel() {
         </div>
       </div>
     </div>
+  );
+}
+
+function OpModeRow({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: OpMode;
+  onChange: (m: OpMode) => void;
+}) {
+  const modes: { v: OpMode; l: string }[] = [
+    { v: "auto", l: "Auto" },
+    { v: "post_hoc", l: "Review" },
+    { v: "gate", l: "Gate" },
+  ];
+  return (
+    <Row
+      label={label}
+      hint={hint}
+      control={
+        <div className="flex overflow-hidden rounded-md border border-border/60">
+          {modes.map((m) => (
+            <button
+              key={m.v}
+              type="button"
+              onClick={() => onChange(m.v)}
+              className={`px-2 py-1 text-2xs transition-colors ${
+                value === m.v
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              {m.l}
+            </button>
+          ))}
+        </div>
+      }
+    />
+  );
+}
+
+function CsvRow({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: string[];
+  onChange: (v: string[]) => void;
+}) {
+  return (
+    <Row
+      label={label}
+      hint={hint}
+      control={
+        <input
+          type="text"
+          value={value.join(", ")}
+          onChange={(e) =>
+            onChange(
+              e.target.value
+                .split(",")
+                .map((x) => x.trim())
+                .filter(Boolean),
+            )
+          }
+          placeholder="all"
+          className="w-44 rounded border bg-background px-2 py-1 text-sm"
+        />
+      }
+    />
   );
 }
 

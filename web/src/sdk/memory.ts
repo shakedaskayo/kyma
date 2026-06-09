@@ -10,6 +10,9 @@ export type {
   MemoryQueryRequest,
   MemorySettings,
   DreamingSettings,
+  HitlPolicy,
+  MemoryOp,
+  OpMode,
 } from "@kyma-ai/client";
 
 import type { MemoryQueryRequest, MemorySettings } from "@kyma-ai/client";
