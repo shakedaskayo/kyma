@@ -51,9 +51,10 @@ Net: artifacts cannot be seen, traversed, searched, or opened from the graph pag
 | All-artifacts view | Unified canvas + an `Artifact` **label filter** (no dedicated graph needed for the cross-source view). |
 | Source scope | **All sources now:** github CI logs + object-store standalone blobs + fswatch/agent files. |
 | Edge model | **Single generic `HAS_ARTIFACT`** edge (producer → artifact). `JOB_HAS_LOG` is standardized to it. No `ARTIFACT_OF`. |
-| Log-vs-file distinction | Carried on the **node**: `artifact_class` prop + labels `["Artifact", <Class>]` (`Log`/`File`/`Build`), so "show only logs" is a label filter. |
+| Log-vs-file distinction | Carried on the **node**: a single `Artifact` label (the github `labels` column is a single Utf8 string — `transform.rs:13`) + an `artifact_class` prop (`log`/`file`/…). The all-artifacts view is the `Artifact` **label filter**; logs-only filtering is by the `artifact_class` prop, not a second label. (Refined from `["Artifact",<Class>]` after confirming the single-string labels schema.) |
 | Materialization | **Approach A** — per-source emission into producer graphs + a catalog→node **catch-all sync** for artifacts with no producer node. (Not B/central+cross-namespace edges; not C/virtual Postgres provider.) |
-| Graph UI | **Node + inline preview** — click an Artifact node → fetch blob, render redacted content inline + metadata + download. |
+| Graph UI | **Node + inline preview** — the preview already exists as `LogFileViewer` (`GraphSidebar.tsx:451`), today gated on the `LogFile` label; widen its trigger to the `Artifact` label. Click → fetch blob, render redacted content inline (paged) + metadata + download. |
+| github historical rows | github relabel is **forward-only**. The stored-graph dedups nodes by id with an arbitrary pick (`stored_graph.rs:43`) and the tables are append-only, so already-ingested `LogFile` rows are *not* rewritten; new captures emit `Artifact` nodes. A full historical relabel would need a table rebuild — deferred. |
 | Content search | **Out of scope** — full log/file content search across artifacts is Piece 1 (`/v1/search`). This piece is name/metadata search only. |
 
 ## Architecture
@@ -67,17 +68,15 @@ module, alongside the `ArtifactStore` trait at `crates/kyma-connectors/src/artif
 
 - **id:** stable, reusing the producer's existing node id where one exists (github:
   `log_file_node_id(owner, repo, job_id)`). Catch-all artifacts use `artifact::{uuid}`.
-- **labels:** `["Artifact", <Class>]` where `<Class>` is derived from `artifact_class`
-  (`log`→`Log`, `file`→`File`, …). Requires extending `make_node`
-  (`transform.rs:130`, currently single-label) / the node contract to carry a labels
-  array; `GraphView` already filters by label
-  (`packages/react/src/graph/GraphView.tsx`).
+- **labels:** a single `Artifact` label (the github `labels` column is one Utf8 string,
+  `transform.rs:13`; `make_node` at `:130` takes one label). Class lives in props.
 - **props:** `artifact_id` (catalog uuid — the new link), `object_path`, `sha256`,
   `size_bytes`, `artifact_class`, `source`, `created_at`, `retrievable` (true when
   `object_path` present and not expired/deleted), plus source context already present on
   CI nodes (`truncated`, etc.).
-- **name/title (searchable):** descriptive, e.g. `ci.yml · build · job 123 · log` for
-  CI; object-path basename + source for catch-all.
+- **name (display only):** human label, e.g. `build.log`. Note: stored-graph search keys
+  off **id + labels**, not name (`stored_graph.rs:76`), so searchability comes from the
+  `Artifact` label + the id's repo/job context (e.g. `log:acme/app#900`), not the name.
 - **edge:** `HAS_ARTIFACT` (producer → artifact). Edge props may carry `size_bytes`.
 
 ### 2. Two materialization paths, one contract
@@ -85,10 +84,11 @@ module, alongside the `ArtifactStore` trait at `crates/kyma-connectors/src/artif
 **(a) Producer-attached** — the source's ingest enriches/links the Artifact node in its
 own graph. github CI logs (the concrete gap) ship fully:
 
-- `transform.rs::log_file_rows` (`:257`) emits the node via the contract: add `Artifact`
-  + `Log` labels, set `artifact_id` (the uuid returned by `register_artifact`), keep the
-  existing retrieval props. The node id is unchanged, so existing `LogFile` nodes are
-  **enriched, not duplicated**.
+- `transform.rs::log_file_rows` (`:257`) emits the node via the contract: label
+  `Artifact` (was `LogFile`), set `artifact_id` (the uuid from `register_artifact`,
+  currently discarded at `joblogs.rs:176`), keep the existing retrieval props. The node
+  id is unchanged. **Forward-only** — already-ingested `LogFile` rows are not rewritten
+  (append-only + arbitrary id-dedup, `stored_graph.rs:43`).
 - The edge becomes `HAS_ARTIFACT` instead of `JOB_HAS_LOG` (`transform.rs:281-287`).
   `HAS_RUN` / `RUN_CONTAINS_JOB` / `RUN_ON_BRANCH` are untouched.
 - This path is the template fswatch/file ingest follows once its producer graph exists;
@@ -119,25 +119,26 @@ nodes are edge-free (standalone) unless a `table_ref`/producer linkage is availa
 
 Rides existing infrastructure — no new search endpoint:
 
-- Per-graph `/v1/graph/:graph/search` (`graph_handler.rs:~514`) does case-insensitive
-  name/label search; Artifact nodes get descriptive names (§1) so they match.
+- Per-graph `/v1/graph/:graph/search` matches case-insensitively over **id + labels**
+  (`stored_graph.rs:76`); Artifact nodes match on the `Artifact` label and the id's
+  repo/job context (e.g. `log:acme/app#900`).
 - All-DB discovery (`useKymaGraph.ts`) already fans out across graphs, so artifacts in
   github / `artifacts` graphs are searchable together.
 - **Content search is Piece 1** (`/v1/search` over the blobs), explicitly excluded here.
 
 ### 5. Graph UI — node + inline preview
 
-- The `Artifact` label appears in the label-filter legend (`GraphView.tsx`); toggling it
-  (or the `Log`/`File` sub-labels) is the all-artifacts / logs-only view.
-- The node detail/inspector panel gains an **artifact-aware preview**: when the selected
-  node has the `Artifact` label + `object_path`, it calls
-  `client.artifacts.byPath(object_path, {limit})` (`packages/client/src/artifacts.ts`)
-  and renders:
-  - redacted content inline, **truncated to the first ~64 KB** (full file via download);
-  - metadata: `size_bytes`, `sha256`, `source`, `artifact_class`, `created_at`;
-  - a download link (full blob).
-- This is the primary new front-end surface; everything else (canvas, edges, filter,
-  discovery) is existing behavior fed new data.
+- The `Artifact` label appears in the label-filter legend automatically (`SectionLabels`
+  in `GraphSidebar.tsx` renders whatever labels the stats return); toggling it is the
+  all-artifacts view.
+- The inline preview **already exists** as `LogFileViewer` (`GraphSidebar.tsx:451`) — it
+  fetches the blob via `client.artifacts.fetchArtifactByPath(path, {offset, limit:65536})`
+  and pages through it with "Load more". Today it is gated at `:531-534` on the `LogFile`
+  label. The change is to **widen that trigger** to fire for the `Artifact` label too (so
+  relabeling does not break it). `objectPathOf` already reads `object_path` from props or
+  the JSON `props` blob.
+- An optional polish task adds an `Artifact` icon/colour to `graph-icons.tsx` /
+  `getLabelColor` (unknown labels already fall back to a default).
 
 ### 6. Error handling / edge cases
 
