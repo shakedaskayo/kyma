@@ -448,8 +448,22 @@ function objectPathOf(props: Record<string, unknown>): string | null {
   return null;
 }
 
-/** Inline viewer for a `LogFile` node (CI job logs, etc.): fetches the artifact
- *  from the object store by path and pages through it with "Load more". */
+/** object_path for a node that should show the inline artifact viewer — any
+ *  node labeled `Artifact` (or the legacy `LogFile`) that carries an
+ *  `object_path`. Returns null otherwise. */
+export function artifactViewerPath(
+  node: Pick<GraphNode, "labels" | "properties">,
+): string | null {
+  const isArtifact = node.labels.some((l) => {
+    const ll = l.toLowerCase();
+    return ll === "artifact" || ll === "logfile";
+  });
+  return isArtifact ? objectPathOf(node.properties) : null;
+}
+
+/** Inline viewer for `Artifact` / `LogFile` nodes (CI job logs, object-store
+ *  blobs, etc.): fetches the artifact from the object store by path and pages
+ *  through it with "Load more". */
 function LogFileViewer({ path }: { path: string }) {
   const client = useKymaClient();
   const [win, setWin] = useState<ArtifactWindow | null>(null);
@@ -526,12 +540,9 @@ function NodeInspector({
   const primaryLabel = node.labels[0] ?? "Node";
   const dotColor = getLabelColor(primaryLabel);
 
-  // LogFile nodes (CI job logs, scraped files, etc.) carry an `object_path` —
-  // surface an inline log viewer that streams the artifact from the object store.
-  const logPath = useMemo(() => {
-    if (!node.labels.some((l) => l.toLowerCase() === "logfile")) return null;
-    return objectPathOf(node.properties);
-  }, [node]);
+  // Artifact nodes (CI job logs, object-store blobs, fs-watch files) carry an
+  // `object_path` — surface the inline viewer that streams the blob.
+  const logPath = useMemo(() => artifactViewerPath(node), [node]);
 
   const neighbours = useMemo(() => {
     const out: {
