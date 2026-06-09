@@ -2,7 +2,6 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import {
   Search,
-  Code,
   Network,
   LayoutDashboard,
   Plug,
@@ -40,8 +39,7 @@ const GROUPS: NavGroup[] = [
   {
     label: "Explore",
     items: [
-      { to: "/discover", label: "Discover", icon: Search },
-      { to: "/query", label: "Query Editor", icon: Code, search: { q: undefined } },
+      { to: "/explore", label: "Explore", icon: Search, search: { q: undefined } },
       { to: "/graph", label: "Graph", icon: Network },
     ],
   },
@@ -118,8 +116,10 @@ export function Sidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   const isActive = (to: string) =>
-    to === "/query"
-      ? pathname.startsWith("/query") || pathname.startsWith("/explore")
+    to === "/explore"
+      ? pathname.startsWith("/explore") ||
+        pathname.startsWith("/query") ||
+        pathname.startsWith("/discover")
       : pathname.startsWith(to);
 
   return (
