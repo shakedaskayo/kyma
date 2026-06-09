@@ -126,6 +126,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
         secrets: Arc::new(EnvSecretStore),
         credentials: Arc::new(kyma_connectors::runner::NoopCredentialStore),
         oauth: None,
+        artifacts: None,
     };
     let mut executors = ExecutorRegistry::new();
     executors.register(Arc::new(ConnectorSyncExecutor::new(deps)));
