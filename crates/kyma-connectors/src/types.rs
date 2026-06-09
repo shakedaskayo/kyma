@@ -84,6 +84,12 @@ pub struct ConnectorCtx {
     /// idempotency key and as a fallback sample timestamp.
     pub scheduled_for: DateTime<Utc>,
     pub metrics: ConnectorMetrics,
+    /// Object-store artifact capability for connectors that persist full-file
+    /// blobs (e.g. CI job logs). `None` when the runner wasn't wired with an
+    /// artifact store (tests, or connectors that never emit blobs), in which
+    /// case the connector must degrade gracefully (skip capture, still emit
+    /// metadata rows).
+    pub artifacts: Option<Arc<dyn crate::artifacts::ArtifactStore>>,
 }
 
 /// Failure classification that determines framework behaviour.

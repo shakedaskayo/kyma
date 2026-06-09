@@ -24,6 +24,7 @@ pub mod errors;
 pub mod fabric;
 pub mod index;
 pub mod query_frontend;
+pub mod retention;
 pub mod segment_format;
 pub mod tenant;
 pub mod types;

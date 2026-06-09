@@ -12,7 +12,8 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use kyma_catalog::PostgresCatalog;
 use kyma_compaction::{
-    CompactionScheduler, CompactionWorker, PhysicalDeleteWorker, RetentionSweeper,
+    ArtifactRetentionWorker, CompactionScheduler, CompactionWorker, PhysicalDeleteWorker,
+    RetentionSweeper,
 };
 use kyma_connectors::prometheus::PromConnector;
 use kyma_connectors::registry::ConnectorRegistry;
@@ -428,6 +429,10 @@ async fn main() -> Result<()> {
             },
             agent_state.clone(),
         )
+        .merge(kyma_server::artifacts_handler::artifacts_router(
+            catalog.clone(),
+            store.clone(),
+        ))
         .layer(axum::middleware::from_fn_with_state(
             AuthLayerState {
                 backend: backend.clone(),
@@ -456,7 +461,9 @@ async fn main() -> Result<()> {
         ),
     };
     let mcp_state = kyma_mcp::McpState {
-        dispatch: kyma_mcp::ToolDispatch::new(mcp_shared).with_connector_tools(mcp_connector_ctx),
+        dispatch: kyma_mcp::ToolDispatch::new(mcp_shared)
+            .with_artifact_store(store.clone())
+            .with_connector_tools(mcp_connector_ctx),
         server_info: kyma_mcp::ServerInfo {
             name: "kyma".into(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -843,6 +850,26 @@ async fn main() -> Result<()> {
         let _ = rx.recv().await;
     }));
 
+    // Artifact-retention worker — sweeps expired object-store artifacts (CI job
+    // logs, contributed files, fs-watch snapshots) that live outside the
+    // columnar extents, on the same soft-delete + grace pattern.
+    let mut artifact_gc = ArtifactRetentionWorker::new(catalog.clone(), store.clone());
+    if let Ok(s) = std::env::var("KYMA_ARTIFACT_GC_POLL_SECS")
+        .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+    {
+        artifact_gc.poll_interval = std::time::Duration::from_secs(s);
+    }
+    if let Ok(s) = std::env::var("KYMA_ARTIFACT_GC_GRACE_SECS")
+        .and_then(|v| v.parse::<i64>().map_err(|_| std::env::VarError::NotPresent))
+    {
+        artifact_gc.grace_period = chrono::Duration::seconds(s);
+    }
+    let artifact_gc_rx = shutdown_tx.subscribe();
+    let artifact_gc_handle = tokio::spawn(artifact_gc.run(async move {
+        let mut rx = artifact_gc_rx;
+        let _ = rx.recv().await;
+    }));
+
     // Memory consolidation ("dreaming") pipeline — periodically distills new
     // conversation-firehose activity into durable summary memories and records
     // each run in `memory_pipeline_runs`. On by default; set
@@ -874,6 +901,71 @@ async fn main() -> Result<()> {
         info!("memory consolidation pipeline enabled");
         Some(tokio::spawn(consolidator.run(async move {
             let mut rx = cons_rx;
+            let _ = rx.recv().await;
+        })))
+    } else {
+        None
+    };
+
+    // CI failure-correlation ("dreaming") pipeline — scans the github_job_logs
+    // failure signal for recurring failures and writes durable incident
+    // memories. On by default; set KYMA_CI_CORRELATE=0 to disable.
+    let ci_correlate_handle = if std::env::var("KYMA_CI_CORRELATE")
+        .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(true)
+    {
+        let mut correlator = kyma_server::agent::CiCorrelator::new(
+            kyma_server::agent::SharedToolCtx {
+                catalog: catalog.clone(),
+                format: format.clone(),
+                pool: Some(pg_pool.clone()),
+                memory: memory.clone(),
+            },
+            pg_pool.clone(),
+            kyma_core::tenant::DEFAULT_TENANT,
+        );
+        if let Ok(s) = std::env::var("KYMA_CI_CORRELATE_POLL_SECS")
+            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        {
+            correlator.poll_interval = std::time::Duration::from_secs(s);
+        }
+        let ci_rx = shutdown_tx.subscribe();
+        info!("ci-correlate pipeline enabled");
+        Some(tokio::spawn(correlator.run(async move {
+            let mut rx = ci_rx;
+            let _ = rx.recv().await;
+        })))
+    } else {
+        None
+    };
+
+    // File-candidate promotion ("dreaming") pipeline — resolves contributed /
+    // scraped candidate File nodes to their live upstream repo File nodes and
+    // stitches them with cross-graph SAME_AS edges. On by default; set
+    // KYMA_FILE_PROMOTE=0 to disable.
+    let file_promote_handle = if std::env::var("KYMA_FILE_PROMOTE")
+        .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(true)
+    {
+        let mut promoter = kyma_server::agent::FilePromoter::new(
+            kyma_server::agent::SharedToolCtx {
+                catalog: catalog.clone(),
+                format: format.clone(),
+                pool: Some(pg_pool.clone()),
+                memory: memory.clone(),
+            },
+            pg_pool.clone(),
+            kyma_core::tenant::DEFAULT_TENANT,
+        );
+        if let Ok(s) = std::env::var("KYMA_FILE_PROMOTE_POLL_SECS")
+            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        {
+            promoter.poll_interval = std::time::Duration::from_secs(s);
+        }
+        let fp_rx = shutdown_tx.subscribe();
+        info!("file-promote pipeline enabled");
+        Some(tokio::spawn(promoter.run(async move {
+            let mut rx = fp_rx;
             let _ = rx.recv().await;
         })))
     } else {
@@ -932,6 +1024,14 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(4);
+    // Shared object-store artifact capability for connectors that persist
+    // full-file blobs (e.g. GitHub Actions job logs) — threaded into the fabric
+    // connector executor via `tick_deps` below.
+    let artifact_store: std::sync::Arc<dyn kyma_connectors::artifacts::ArtifactStore> =
+        std::sync::Arc::new(kyma_connectors::artifacts::ObjectArtifactStore::new(
+            store.clone(),
+            pg_catalog.clone(),
+        ));
     let fabric_lease_secs: i64 = std::env::var("KYMA_FABRIC_LEASE_SECS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -979,6 +1079,7 @@ async fn main() -> Result<()> {
             pool: pg_pool.clone(),
             crypto: crypto.clone(),
         }),
+        artifacts: Some(artifact_store.clone()),
     };
     let mut exec_registry = kyma_jobs::ExecutorRegistry::new();
     exec_registry.register(Arc::new(
@@ -1177,6 +1278,12 @@ async fn main() -> Result<()> {
     if let Some(h) = memory_consolidator_handle {
         let _ = h.await;
     }
+    if let Some(h) = ci_correlate_handle {
+        let _ = h.await;
+    }
+    if let Some(h) = file_promote_handle {
+        let _ = h.await;
+    }
     if let Some(h) = kafka_handle {
         let _ = h.await;
     }
@@ -1187,6 +1294,7 @@ async fn main() -> Result<()> {
     let _ = scheduler_handle.await;
     let _ = retention_handle.await;
     let _ = gc_handle.await;
+    let _ = artifact_gc_handle.await;
     let _ = conn_sched_handle.await;
     let _ = idem_cleanup_handle.await;
     if let Some((_, h)) = memory_queue {

@@ -19,7 +19,7 @@ async fn list_returns_all_named_tools() {
     let dispatch = ToolDispatch::new(shared);
     let listed = dispatch.list();
     let names: Vec<_> = listed.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names.len(), 21);
+    assert_eq!(names.len(), 25);
     for expected in [
         "list_databases",
         "describe_table",
@@ -42,6 +42,10 @@ async fn list_returns_all_named_tools() {
         "memory_session_summary",
         "save_memories",
         "flush_memory",
+        "contribute_file",
+        "describe_file",
+        "file_neighbors",
+        "recall_file",
     ] {
         assert!(names.contains(&expected), "missing tool: {expected}");
     }

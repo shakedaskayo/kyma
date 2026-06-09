@@ -125,6 +125,9 @@ pub struct ConnectorTickDeps {
     pub secrets: Arc<dyn SecretStore>,
     pub credentials: Arc<dyn CredentialStore>,
     pub oauth: Option<crate::oauth::OAuthRuntime>,
+    /// Object-store artifact capability for connectors that persist full-file
+    /// blobs (e.g. CI job logs). `None` skips blob capture.
+    pub artifacts: Option<Arc<dyn crate::artifacts::ArtifactStore>>,
 }
 
 /// Terminal state of one tick, mapped by the queue front-end onto its own
@@ -187,6 +190,7 @@ pub async fn run_connector_tick(
         oauth: deps.oauth.clone(),
         scheduled_for,
         metrics: metrics.clone(),
+        artifacts: deps.artifacts.clone(),
     };
 
     let t0 = std::time::Instant::now();
@@ -353,6 +357,10 @@ pub struct ConnectorRunner {
     /// connectors. Attached via [`Self::with_oauth`]; `None` leaves refresh on
     /// operator-env client creds only.
     oauth: Option<crate::oauth::OAuthRuntime>,
+    /// Object-store artifact capability, passed into every `ConnectorCtx`.
+    /// Attached via [`Self::with_artifacts`]; `None` (the default) means
+    /// blob-emitting connectors skip capture.
+    artifacts: Option<Arc<dyn crate::artifacts::ArtifactStore>>,
     /// NodeId of the already-registered node (supplied by the caller).
     node_id: NodeId,
     pub idle_sleep: Duration,
@@ -383,6 +391,7 @@ impl ConnectorRunner {
             secrets: Arc::new(secrets),
             credentials,
             oauth: None,
+            artifacts: None,
             node_id,
             idle_sleep: Duration::from_millis(200),
             // 5 min: long enough for a sizeable repo clone or a multi-page
@@ -421,6 +430,14 @@ impl ConnectorRunner {
         self
     }
 
+    /// Attach the object-store artifact capability so connectors can persist
+    /// full-file blobs (CI job logs, etc.). Without this call, `ctx.artifacts`
+    /// is `None` and blob-emitting connectors skip capture.
+    pub fn with_artifacts(mut self, artifacts: Arc<dyn crate::artifacts::ArtifactStore>) -> Self {
+        self.artifacts = Some(artifacts);
+        self
+    }
+
     /// Bundle this runner's wiring into the queue-independent tick deps.
     pub fn tick_deps(&self) -> ConnectorTickDeps {
         ConnectorTickDeps {
@@ -431,6 +448,7 @@ impl ConnectorRunner {
             secrets: self.secrets.clone(),
             credentials: self.credentials.clone(),
             oauth: self.oauth.clone(),
+            artifacts: self.artifacts.clone(),
         }
     }
 

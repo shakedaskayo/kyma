@@ -28,3 +28,9 @@ futures.workspace = true
 metrics.workspace = true
 sqlx.workspace = true
 object_store.workspace = true
+bytes.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+testcontainers.workspace = true
+testcontainers-modules.workspace = true

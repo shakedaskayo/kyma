@@ -282,6 +282,147 @@ impl GithubClient {
         Ok(items)
     }
 
+    // ── Actions (E1) ──────────────────────────────────────────────────────────
+
+    /// Paginate an endpoint whose body is an *envelope object* with the items
+    /// under `key` (e.g. `actions/runs` → `workflow_runs`, `.../jobs` → `jobs`),
+    /// rather than a bare array. Otherwise identical to [`Self::paginate`]:
+    /// follows `Link: rel="next"`, honours `max_pages` and the rate-limit floor.
+    async fn paginate_keyed(
+        &self,
+        first_url: &str,
+        key: &str,
+        max_pages: usize,
+    ) -> Result<(Vec<Value>, StopReason), ConnectorError> {
+        let mut items: Vec<Value> = Vec::new();
+        let mut url = first_url.to_string();
+        let mut pages = 0usize;
+
+        loop {
+            let resp = self
+                .req(&url)
+                .send()
+                .await
+                .map_err(|e| ConnectorError::Transient(format!("network: {e}")))?;
+
+            let status = resp.status();
+            let remaining = parse_rate_limit_remaining(&resp);
+            let next_url = parse_link_next(&resp);
+
+            if !status.is_success() {
+                if status == StatusCode::FORBIDDEN
+                    || status == StatusCode::TOO_MANY_REQUESTS
+                    || status.is_server_error()
+                {
+                    return Err(ConnectorError::Transient(format!("HTTP {status}")));
+                }
+                return Err(ConnectorError::Permanent(format!("HTTP {status}")));
+            }
+
+            let body: Value = resp
+                .json()
+                .await
+                .map_err(|e| ConnectorError::Transient(format!("body parse: {e}")))?;
+
+            if let Some(arr) = body.get(key).and_then(|v| v.as_array()) {
+                items.extend(arr.iter().cloned());
+            }
+
+            pages += 1;
+
+            if let Some(r) = remaining {
+                if r < RATE_LIMIT_FLOOR {
+                    return Ok((items, StopReason::RateLimited));
+                }
+            }
+            if pages >= max_pages {
+                return Ok((items, StopReason::PageCap));
+            }
+            match next_url {
+                Some(next) => url = next,
+                None => return Ok((items, StopReason::Done)),
+            }
+        }
+    }
+
+    /// `GET /repos/{owner}/{repo}/actions/runs?per_page=100` — workflow runs,
+    /// most-recent first. Returns the `workflow_runs` items. The connector
+    /// applies the incremental watermark (by `created_at`) client-side.
+    pub async fn list_workflow_runs(
+        &self,
+        owner: &str,
+        repo: &str,
+        max_pages: usize,
+    ) -> Result<(Vec<Value>, StopReason), ConnectorError> {
+        let url = format!(
+            "{}/repos/{owner}/{repo}/actions/runs?per_page=100",
+            self.base_url
+        );
+        self.paginate_keyed(&url, "workflow_runs", max_pages).await
+    }
+
+    /// `GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs?per_page=100` —
+    /// the jobs of a single run. Returns the `jobs` items.
+    pub async fn list_run_jobs(
+        &self,
+        owner: &str,
+        repo: &str,
+        run_id: i64,
+        max_pages: usize,
+    ) -> Result<(Vec<Value>, StopReason), ConnectorError> {
+        let url = format!(
+            "{}/repos/{owner}/{repo}/actions/runs/{run_id}/jobs?per_page=100",
+            self.base_url
+        );
+        self.paginate_keyed(&url, "jobs", max_pages).await
+    }
+
+    /// `GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs` — the full plain
+    /// text log for one job. GitHub 302-redirects to a signed blob URL; reqwest
+    /// follows it (stripping the auth header cross-host, which the signed URL
+    /// requires). Returns the raw, UN-redacted text — the caller must redact
+    /// before persisting.
+    ///
+    /// Errors are the caller's to soften: a 404 (logs expired) should skip the
+    /// job's log rather than fail the whole tick.
+    pub async fn fetch_job_log_text(
+        &self,
+        owner: &str,
+        repo: &str,
+        job_id: i64,
+    ) -> Result<String, ConnectorError> {
+        let url = format!(
+            "{}/repos/{owner}/{repo}/actions/jobs/{job_id}/logs",
+            self.base_url
+        );
+        let resp = self.req(&url).send().await.map_err(|e| {
+            if e.is_timeout() || e.is_connect() {
+                ConnectorError::Transient(format!("network: {e}"))
+            } else {
+                ConnectorError::Permanent(format!("fetch: {e}"))
+            }
+        })?;
+
+        let status = resp.status();
+        if status.is_success() {
+            return resp
+                .text()
+                .await
+                .map_err(|e| ConnectorError::Transient(format!("log body: {e}")));
+        }
+        if status == StatusCode::FORBIDDEN
+            || status == StatusCode::TOO_MANY_REQUESTS
+            || status.is_server_error()
+        {
+            return Err(ConnectorError::Transient(format!(
+                "HTTP {status} fetching job {job_id} logs"
+            )));
+        }
+        Err(ConnectorError::Permanent(format!(
+            "HTTP {status} fetching job {job_id} logs"
+        )))
+    }
+
     // ── Code graph (B2) ───────────────────────────────────────────────────────
 
     /// `GET /repos/{owner}/{name}/git/trees/{sha}?recursive=1`
@@ -752,6 +893,62 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result, None, "expected None for oversized file");
+    }
+
+    // ── Actions (E1) ──────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn list_workflow_runs_extracts_envelope() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/repos/acme/repo/actions/runs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "total_count": 2,
+                "workflow_runs": [
+                    { "id": 1, "name": "CI", "status": "completed", "conclusion": "failure" },
+                    { "id": 2, "name": "CI", "status": "completed", "conclusion": "success" }
+                ]
+            })))
+            .mount(&server)
+            .await;
+        let client = make_client(&server).await;
+        let (runs, _) = client.list_workflow_runs("acme", "repo", 5).await.unwrap();
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0]["id"], 1);
+    }
+
+    #[tokio::test]
+    async fn list_run_jobs_extracts_envelope() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/repos/acme/repo/actions/runs/77/jobs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "total_count": 1,
+                "jobs": [ { "id": 9, "name": "build", "conclusion": "failure" } ]
+            })))
+            .mount(&server)
+            .await;
+        let client = make_client(&server).await;
+        let (jobs, _) = client.list_run_jobs("acme", "repo", 77, 5).await.unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0]["id"], 9);
+    }
+
+    #[tokio::test]
+    async fn fetch_job_log_text_returns_plaintext_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/repos/acme/repo/actions/jobs/9/logs"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("2024-01-01 step one\n2024-01-01 step two\n"),
+            )
+            .mount(&server)
+            .await;
+        let client = make_client(&server).await;
+        let text = client.fetch_job_log_text("acme", "repo", 9).await.unwrap();
+        assert!(text.contains("step one"), "got: {text}");
+        assert!(text.contains("step two"), "got: {text}");
     }
 
     #[tokio::test]

@@ -18,6 +18,7 @@
 
 pub mod admin_handler;
 pub mod agent;
+pub mod artifacts_handler;
 pub mod auth;
 pub mod auth_handler;
 pub mod catalog_handler;

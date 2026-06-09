@@ -155,6 +155,139 @@ fn make_edge(src: &str, rel: &str, dst: &str, extra: Map<String, Value>) -> Valu
     })
 }
 
+// ── CI / Actions graph (E2) ────────────────────────────────────────────────────
+//
+// Surfaces GitHub Actions as first-class nodes on the existing `github` graph:
+//   Repository --HAS_RUN--> WorkflowRun --RUN_CONTAINS_JOB--> Job --JOB_HAS_LOG--> LogFile
+//   WorkflowRun --RUN_ON_BRANCH--> Branch   (links CI into the repo graph)
+// The LogFile node carries the `object_path` + `sha256` retrieval handle. These
+// are cursor-incremental (emitted once per new run), so they are NOT gated by
+// `refetch_signature` — they pass through like pulls/issues.
+
+pub fn workflow_run_node_id(owner: &str, repo: &str, run_id: i64) -> String {
+    format!("run:{owner}/{repo}#{run_id}")
+}
+pub fn job_node_id(owner: &str, repo: &str, job_id: i64) -> String {
+    format!("job:{owner}/{repo}#{job_id}")
+}
+pub fn log_file_node_id(owner: &str, repo: &str, job_id: i64) -> String {
+    format!("log:{owner}/{repo}#{job_id}")
+}
+
+/// Copy a non-empty string field from `src[field]` into `map[key]`.
+fn copy_str(map: &mut Map<String, Value>, key: &str, src: &Value, field: &str) {
+    if let Some(s) = src.get(field).and_then(Value::as_str) {
+        if !s.is_empty() {
+            map.insert(key.to_string(), Value::String(s.to_string()));
+        }
+    }
+}
+
+/// WorkflowRun node + its structural edges: `HAS_RUN` (repo→run) and, when a
+/// head branch is known, `RUN_ON_BRANCH` (run→branch). `head_sha` rides as a
+/// prop so dreaming (E4) can correlate a run to the commit it ran on.
+pub fn workflow_run_rows(owner: &str, repo: &str, run: &Value) -> (Value, Vec<Value>) {
+    let run_id = run.get("id").and_then(Value::as_i64).unwrap_or(0);
+    let rid = workflow_run_node_id(owner, repo, run_id);
+    let mut props = Map::new();
+    props.insert("run_id".into(), json!(run_id));
+    copy_str(&mut props, "workflow_name", run, "name");
+    copy_str(&mut props, "status", run, "status");
+    copy_str(&mut props, "conclusion", run, "conclusion");
+    copy_str(&mut props, "event", run, "event");
+    copy_str(&mut props, "head_branch", run, "head_branch");
+    copy_str(&mut props, "head_sha", run, "head_sha");
+    copy_str(&mut props, "html_url", run, "html_url");
+    copy_str(&mut props, "created_at", run, "created_at");
+    copy_str(&mut props, "updated_at", run, "updated_at");
+    if let Some(n) = run.get("run_number").and_then(Value::as_i64) {
+        props.insert("run_number".into(), json!(n));
+    }
+    let name = run
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("run #{run_id}"));
+    let node = make_node(&rid, "WorkflowRun", &name, props);
+
+    let mut edges = vec![make_edge(&repo_id(owner, repo), "HAS_RUN", &rid, Map::new())];
+    if let Some(branch) = run
+        .get("head_branch")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        edges.push(make_edge(
+            &rid,
+            "RUN_ON_BRANCH",
+            &branch_id(owner, repo, branch),
+            Map::new(),
+        ));
+    }
+    (node, edges)
+}
+
+/// Job node + `RUN_CONTAINS_JOB` edge (run→job).
+pub fn job_rows(owner: &str, repo: &str, run_id: i64, job: &Value) -> (Value, Value) {
+    let job_id = job.get("id").and_then(Value::as_i64).unwrap_or(0);
+    let jid = job_node_id(owner, repo, job_id);
+    let mut props = Map::new();
+    props.insert("job_id".into(), json!(job_id));
+    copy_str(&mut props, "status", job, "status");
+    copy_str(&mut props, "conclusion", job, "conclusion");
+    copy_str(&mut props, "started_at", job, "started_at");
+    copy_str(&mut props, "completed_at", job, "completed_at");
+    copy_str(&mut props, "html_url", job, "html_url");
+    let name = job
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("job #{job_id}"));
+    let node = make_node(&jid, "Job", &name, props);
+    let edge = make_edge(
+        &workflow_run_node_id(owner, repo, run_id),
+        "RUN_CONTAINS_JOB",
+        &jid,
+        Map::new(),
+    );
+    (node, edge)
+}
+
+/// LogFile node (carries the `object_path` retrieval handle) + `JOB_HAS_LOG`
+/// edge (job→logfile).
+pub fn log_file_rows(
+    owner: &str,
+    repo: &str,
+    job_id: i64,
+    job_name: &str,
+    object_path: &str,
+    sha256: &str,
+    size_bytes: i64,
+    truncated: bool,
+) -> (Value, Value) {
+    let lid = log_file_node_id(owner, repo, job_id);
+    let mut props = Map::new();
+    props.insert("object_path".into(), json!(object_path));
+    props.insert("sha256".into(), json!(sha256));
+    props.insert("size_bytes".into(), json!(size_bytes));
+    props.insert("truncated".into(), json!(truncated));
+    props.insert("artifact_class".into(), json!("log"));
+    let name = if job_name.is_empty() {
+        format!("log #{job_id}")
+    } else {
+        format!("{job_name}.log")
+    };
+    let node = make_node(&lid, "LogFile", &name, props);
+    let edge = make_edge(
+        &job_node_id(owner, repo, job_id),
+        "JOB_HAS_LOG",
+        &lid,
+        Map::new(),
+    );
+    (node, edge)
+}
+
 // ── `closes #N` parser ───────────────────────────────────────────────────────
 
 /// Parse issue numbers mentioned in a PR body via `closes/fixes/resolves #N`.

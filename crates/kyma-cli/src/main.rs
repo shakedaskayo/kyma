@@ -24,6 +24,7 @@ mod client;
 mod connector;
 mod deploy;
 mod plugin;
+mod scrape;
 mod update;
 mod users;
 use client::{
@@ -92,6 +93,11 @@ enum Command {
         #[command(subcommand)]
         op: SessionsOp,
     },
+    /// Recursively scrape a file/folder into kyma's candidate file graph
+    /// (deterministic structure; the local path is the source pointer).
+    Scrape(scrape::ScrapeArgs),
+    /// Watch a path and contribute files as they change (foreground).
+    Watch(scrape::ScrapeArgs),
     /// Manage users — list/create/passwd/set-role/delete (admin token required).
     User {
         #[command(subcommand)]
@@ -471,6 +477,8 @@ async fn main() -> Result<()> {
             continue_session,
         } => cmd_query(question, json, session, continue_session).await,
         Command::Sessions { op } => cmd_sessions(op).await,
+        Command::Scrape(args) => scrape::scrape(args).await,
+        Command::Watch(args) => scrape::watch(args).await,
         Command::User { op } => users::run(op).await,
         Command::InstallSkill {
             target,

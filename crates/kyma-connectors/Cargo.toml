@@ -13,7 +13,10 @@ workspace = true
 [dependencies]
 kyma-core = { workspace = true }
 kyma-catalog = { workspace = true }
+kyma-storage = { workspace = true }
+kyma-redact = { workspace = true }
 kyma-ingest-core = { workspace = true }
+bytes = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }
@@ -37,24 +40,16 @@ object_store = { workspace = true }
 base64 = "0.22"
 sha2 = "0.10"
 
-# tree-sitter structural code graph deps — only compiled when the `github`
-# feature is enabled (they bring in C grammar crates which are slow to build).
-tree-sitter = { version = "0.26", optional = true }
-tree-sitter-rust = { version = "0.24", optional = true }
-tree-sitter-python = { version = "0.25", optional = true }
-tree-sitter-typescript = { version = "0.23", optional = true }
-tree-sitter-javascript = { version = "0.25", optional = true }
-tree-sitter-go = { version = "0.25", optional = true }
+# Structural code graph: the tree-sitter parser now lives in the standalone
+# `kyma-codeparse` crate (so server/memory can use it ungated). The connector's
+# deep code-graph still hides behind the `github` feature because it brings in
+# the heavy C grammar crates + git clone.
+kyma-codeparse = { workspace = true, optional = true }
 globset = { version = "0.4", optional = true }
 
 [features]
 github = [
-    "dep:tree-sitter",
-    "dep:tree-sitter-rust",
-    "dep:tree-sitter-python",
-    "dep:tree-sitter-typescript",
-    "dep:tree-sitter-javascript",
-    "dep:tree-sitter-go",
+    "dep:kyma-codeparse",
     "dep:globset",
 ]
 

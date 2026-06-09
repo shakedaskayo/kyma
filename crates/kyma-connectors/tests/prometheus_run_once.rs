@@ -46,6 +46,7 @@ fn ctx() -> ConnectorCtx {
             connector_id: uuid::Uuid::new_v4(),
             type_id: "prometheus",
         },
+        artifacts: None,
     }
 }
 

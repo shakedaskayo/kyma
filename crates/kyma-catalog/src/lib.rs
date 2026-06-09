@@ -16,9 +16,11 @@
 
 #![forbid(unsafe_code)]
 
+pub mod artifacts;
 mod credentials;
 mod error;
 pub mod fabric;
+pub mod retention_settings;
 pub mod saved_views;
 mod snapshot;
 

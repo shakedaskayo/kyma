@@ -15,6 +15,7 @@ members = [
     "crates/kyma-compaction",
     "crates/kyma-connectors",
     "crates/kyma-connector-core",
+    "crates/kyma-codeparse",
     "crates/kyma-jobs",
     "crates/kyma-kql",
     "crates/kyma-graph",
@@ -29,6 +30,7 @@ members = [
     "crates/kyma-memory",
     "crates/kyma-mcp",
     "crates/kyma-queue",
+    "crates/kyma-redact",
     "crates/kyma-ccmem",
     "web/src-tauri",
 ]
@@ -105,6 +107,10 @@ simd-json = "0.14"
 # Parser
 chumsky = "0.10"
 
+# Secret detection / redaction
+regex = "1"
+aho-corasick = "1"
+
 # Indices + compression
 fst = "0.4"
 zstd = "0.13"
@@ -152,6 +158,7 @@ kyma-kql               = { path = "crates/kyma-kql",             version = "0.0.
 kyma-compaction        = { path = "crates/kyma-compaction",      version = "0.0.7" }
 kyma-connectors        = { path = "crates/kyma-connectors",      version = "0.0.7" }
 kyma-connector-core    = { path = "crates/kyma-connector-core",  version = "0.0.7" }
+kyma-codeparse         = { path = "crates/kyma-codeparse",       version = "0.0.7" }
 kyma-jobs              = { path = "crates/kyma-jobs",            version = "0.0.7" }
 kyma-plan              = { path = "crates/kyma-plan",            version = "0.0.7" }
 kyma-exec              = { path = "crates/kyma-exec",            version = "0.0.7" }
@@ -162,6 +169,7 @@ kyma-embed             = { path = "crates/kyma-embed",           version = "0.0.
 kyma-memory            = { path = "crates/kyma-memory",          version = "0.0.7" }
 kyma-mcp               = { path = "crates/kyma-mcp",             version = "0.0.7" }
 kyma-queue             = { path = "crates/kyma-queue",           version = "0.0.7" }
+kyma-redact            = { path = "crates/kyma-redact",          version = "0.0.7" }
 kyma-ccmem             = { path = "crates/kyma-ccmem",           version = "0.0.7" }
 
 # Auth

@@ -19,6 +19,7 @@ kyma-kql.workspace = true
 kyma-catalog.workspace = true
 kyma-connectors.workspace = true
 kyma-memory.workspace = true
+kyma-redact.workspace = true
 kyma-ccmem.workspace = true
 # Local degraded-mode dreaming persists finished runs into the embedded SQLite
 # catalog (dreaming_local.rs downcasts the Catalog to SqliteCatalog).
@@ -30,7 +31,7 @@ arrow-array.workspace = true
 bytes.workspace = true
 kyma-web-assets = { workspace = true, optional = true }
 kyma-format-tlm = { workspace = true, optional = true }
-object_store = { workspace = true, optional = true }
+object_store = { workspace = true }
 testcontainers = { workspace = true, optional = true }
 testcontainers-modules = { workspace = true, optional = true }
 tonic-web = { workspace = true, optional = true }
@@ -99,7 +100,6 @@ cloud-auth = []
 web-ui  = ["dep:kyma-web-assets", "dep:tonic-web", "dep:http-body-util"]
 test-support = [
     "dep:kyma-format-tlm",
-    "dep:object_store",
     "dep:testcontainers",
     "dep:testcontainers-modules",
 ]

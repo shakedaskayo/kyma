@@ -28,6 +28,11 @@ pub struct RepoCursor {
     /// can skip already-processed paths (implementation detail, carried as
     /// informational state).
     pub files_done: Option<usize>,
+    /// RFC-3339 timestamp: the `created_at` of the most-recent workflow run
+    /// ingested. The next tick skips runs created at or before this time.
+    /// `None` means Actions have never been ingested for this repo.
+    #[serde(default)]
+    pub workflows_since: Option<DateTime<Utc>>,
 }
 
 /// Top-level cursor — keyed by `"owner/name"`.
@@ -77,6 +82,16 @@ impl Cursor {
         }
         if let Some(ts) = issues_since {
             entry.issues_since = Some(ts);
+        }
+    }
+
+    /// Advance the Actions watermark for a repo to the newest run `created_at`
+    /// seen this tick. Monotonic — never moves backwards.
+    pub fn update_workflows_cursor(&mut self, repo: &str, newest_created: DateTime<Utc>) {
+        let entry = self.repos.entry(repo.to_string()).or_default();
+        match entry.workflows_since {
+            Some(prev) if prev >= newest_created => {}
+            _ => entry.workflows_since = Some(newest_created),
         }
     }
 
@@ -138,5 +153,18 @@ mod tests {
         let rc = c.for_repo("any/repo");
         assert!(rc.tree_sha_ingested.is_none());
         assert!(rc.files_done.is_none());
+        assert!(rc.workflows_since.is_none());
+    }
+
+    #[test]
+    fn workflows_cursor_round_trip_and_monotonic() {
+        let mut c = Cursor::default();
+        let t1 = Utc::now();
+        c.update_workflows_cursor("owner/repo", t1);
+        // An older timestamp must not move the watermark backwards.
+        c.update_workflows_cursor("owner/repo", t1 - chrono::Duration::hours(1));
+        let v = c.to_value();
+        let c2 = Cursor::from_value(Some(&v));
+        assert_eq!(c2.for_repo("owner/repo").workflows_since, Some(t1));
     }
 }

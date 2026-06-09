@@ -9,10 +9,13 @@
 //! for the broader design context.
 
 pub mod cc_curate;
+pub mod ci_correlate;
 pub mod connector_tools;
 pub mod dreaming;
 pub mod dreaming_local;
 pub mod engine;
+pub mod file_promote;
+pub mod file_tools;
 pub mod identity;
 pub mod local;
 pub mod memory;
@@ -33,6 +36,11 @@ pub mod state;
 pub mod tools;
 pub mod ui_stream;
 
+pub use ci_correlate::CiCorrelator;
+pub use file_promote::FilePromoter;
+pub use file_tools::{
+    tool_contribute_file, tool_describe_file, tool_file_neighbors, tool_recall_file,
+};
 pub use memory::MemoryConsolidator;
 pub use memory_tools::{
     tool_flush_memory, tool_ingest_entity, tool_link_memory_to_entity, tool_list_memories,
@@ -43,8 +51,8 @@ pub use memory_tools::{
 pub use state::AgentState;
 pub use tools::{
     execute_sql, tool_describe_table, tool_explore_schema, tool_find_references_to,
-    tool_graph_traverse, tool_list_databases, tool_run_kql, tool_run_sql, tool_sample_rows,
-    SharedToolCtx,
+    tool_graph_traverse, tool_list_databases, tool_retrieve_artifact, tool_run_kql, tool_run_sql,
+    tool_sample_rows, SharedToolCtx,
 };
 
 /// Build the `/v1/agent/*` sub-router. Caller typically mounts it under
