@@ -19,6 +19,7 @@ kyma-kql.workspace = true
 kyma-catalog.workspace = true
 kyma-connectors.workspace = true
 kyma-memory.workspace = true
+kyma-artifact-graph.workspace = true
 kyma-embed.workspace = true
 kyma-redact.workspace = true
 kyma-ccmem.workspace = true

@@ -8,6 +8,7 @@
 //! See `docs/superpowers/specs/2026-04-21-nl-query-agent-and-vectors-design.md`
 //! for the broader design context.
 
+pub mod artifact_graph_sync;
 pub mod cc_curate;
 pub mod ci_correlate;
 pub mod connector_tools;
