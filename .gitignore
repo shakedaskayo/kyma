@@ -19,3 +19,6 @@ dist/
 coverage/
 *.profraw
 .fastembed_cache/
+
+# Storybook build output
+storybook-static/

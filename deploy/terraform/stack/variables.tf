@@ -53,6 +53,44 @@ variable "supabase_instance_size" {
 }
 
 # ---------------------------------------------------------------------------
+# Extents storage
+# ---------------------------------------------------------------------------
+
+variable "storage_backend" {
+  type        = string
+  description = "Where columnar extents live: `supabase` (default — Supabase Storage via its S3 protocol, everything stateful in one place) or `s3` (native AWS S3 bucket, fully automated, lowest latency from Fargate)."
+  default     = "supabase"
+
+  validation {
+    condition     = contains(["supabase", "s3"], var.storage_backend)
+    error_message = "storage_backend must be \"supabase\" or \"s3\"."
+  }
+}
+
+variable "storage_bucket" {
+  type        = string
+  description = "Bucket name for extents (created automatically for s3; create it in Supabase Storage for the supabase backend — `kyma deploy` does this for you)."
+  default     = "kyma"
+}
+
+# Supabase has no API to mint Storage S3 keys — create them in the dashboard
+# (Project Settings → Storage → S3 access keys) and pass them here. The
+# `kyma deploy` wizard walks you through it. Leave empty when storage_backend
+# is "s3".
+variable "supabase_s3_access_key_id" {
+  type        = string
+  description = "Supabase Storage S3 access key id (supabase backend only)."
+  default     = ""
+}
+
+variable "supabase_s3_secret_access_key" {
+  type        = string
+  description = "Supabase Storage S3 secret access key (supabase backend only)."
+  sensitive   = true
+  default     = ""
+}
+
+# ---------------------------------------------------------------------------
 # Auth policy
 # ---------------------------------------------------------------------------
 

@@ -136,6 +136,57 @@ impl SqliteCatalog {
         .map_err(ce)?;
         Ok(())
     }
+
+    // ── local-mode dreaming run persistence (degraded mode) ──────────────────
+
+    /// Upsert one dreaming run record. `run_json` is the Run JSON the HTTP
+    /// layer serves; `trace_json` is the agent_runs conversation trace. Called
+    /// both on insert (status `running`) and on finalize (terminal status), so
+    /// it is an UPSERT keyed on the run id. Local-mode only.
+    pub async fn upsert_dreaming_run(
+        &self,
+        run_id: Uuid,
+        agent_run_id: Option<Uuid>,
+        started_at: &str,
+        run_json: &str,
+        trace_json: &str,
+    ) -> Result<(), CatalogError> {
+        sqlx::query(
+            "INSERT INTO local_dreaming_runs (id, agent_run_id, started_at, run_json, trace_json) \
+             VALUES (?, ?, ?, ?, ?) \
+             ON CONFLICT (id) DO UPDATE SET \
+                agent_run_id = excluded.agent_run_id, \
+                run_json = excluded.run_json, \
+                trace_json = excluded.trace_json",
+        )
+        .bind(run_id)
+        .bind(agent_run_id)
+        .bind(started_at)
+        .bind(run_json)
+        .bind(trace_json)
+        .execute(&self.pool)
+        .await
+        .map_err(ce)?;
+        Ok(())
+    }
+
+    /// Load the most recent `limit` dreaming run records, newest first. Returns
+    /// `(run_json, trace_json)` strings — the caller deserializes. Local-mode
+    /// only.
+    pub async fn recent_dreaming_runs(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<(String, String)>, CatalogError> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT run_json, trace_json FROM local_dreaming_runs \
+             ORDER BY started_at DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(ce)?;
+        Ok(rows)
+    }
 }
 
 /// The embedded schema. Mirrors the Postgres migrations' columns; types are
@@ -331,6 +382,19 @@ CREATE TABLE IF NOT EXISTS sync_state (
     key       TEXT PRIMARY KEY,
     watermark TEXT NOT NULL
 );
+
+-- Local-mode durable record of dreaming runs (degraded mode, no Postgres).
+-- One row per finished run: `run_json` is the same Run shape the HTTP layer
+-- serves (memory_pipeline_runs equivalent), `trace_json` is the agent_runs
+-- conversation trace the UI drills into via /v1/agent/runs/:agent_run_id.
+CREATE TABLE IF NOT EXISTS local_dreaming_runs (
+    id           BLOB PRIMARY KEY,
+    agent_run_id BLOB,
+    started_at   TEXT NOT NULL,
+    run_json     TEXT NOT NULL,
+    trace_json   TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_local_dreaming_started ON local_dreaming_runs (started_at);
 "#;
 
 #[async_trait]

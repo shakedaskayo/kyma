@@ -21,6 +21,7 @@ pub mod catalog;
 pub mod credentials;
 pub mod crypto;
 pub mod errors;
+pub mod fabric;
 pub mod index;
 pub mod query_frontend;
 pub mod retention;

@@ -220,6 +220,19 @@ async fn restart_stale_server(fresh: &str) -> Result<()> {
         return Ok(());
     }
 
+    // Service-managed server (the default since install.sh switched to
+    // `kyma service install`): a kick reloads the swapped binary. Killing the
+    // pid instead would just make launchd/systemd respawn the OLD process
+    // image's restart loop semantics — go through the supervisor.
+    if let Some(ok) = kyma_local::server_service::restart_if_installed() {
+        if ok {
+            eprintln!("▸ restarted the supervised server (v{running} → v{fresh})");
+            return Ok(());
+        }
+        eprintln!("! couldn't restart the server service — run: kyma service status");
+        return Ok(());
+    }
+
     let loopback = endpoint.contains("127.0.0.1") || endpoint.contains("localhost");
     let pid = read_live_serve_pid();
     if !loopback || pid.is_none() {

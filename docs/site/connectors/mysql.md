@@ -133,7 +133,7 @@ collation-unsafe filters described above, which always go residual.
 | Source DDL emits unrepresentable type                  | Field routes to `dynamic`; warning in `last_error`. Sync continues.   |
 | Source PK changes                                      | Connector disabled, `disabled_reason="pk_changed"`. Manual resync.    |
 | `bigint unsigned` value > 2^63 - 1                     | Routed to `string` with warning. Existing typed data preserved.       |
-| Pool exhausted                                         | `503 pool_exhausted`; visible in `GET /v1/connectors/:id/status`.     |
+| Pool exhausted                                         | `503 pool_exhausted`; surfaced via `last_error` on `GET /v1/connectors/:id`. |
 
 ## Where to go next
 

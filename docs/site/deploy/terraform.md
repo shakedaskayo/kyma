@@ -26,12 +26,16 @@ terraform output engine_url
 | ------ | --------- |
 | `network` | 2-AZ VPC (public subnets only — **no NAT gateway**), ALB, target group with `/health` checks, optional ACM cert + Route53 records. |
 | `ecs-service` | ECS cluster, ARM64 Fargate task + service, task role (scoped S3), execution role (SSM secret injection), CloudWatch logs (30d). |
-| `storage` | Versioned, encrypted, private S3 extent bucket with lifecycle expiry of noncurrent versions. |
+| `storage` | (storage_backend=s3 only) Versioned, encrypted, private S3 extent bucket with lifecycle expiry. |
 | `supabase` | Supabase project (catalog Postgres + Auth) + anon key wired into the engine env. |
 | `secrets` | SSM SecureString parameters: catalog URL, `KYMA_SECRET_KEY`, fallback admin credentials. |
 
-The engine starts with `KYMA_AUTH_BACKEND=supabase` and **no S3 keys** —
-credentials come from the Fargate task role.
+Extents default to **Supabase Storage** (`storage_backend = "supabase"`,
+S3-protocol endpoint, keys via SSM — create them in the dashboard, or let
+`kyma deploy up` walk you through it). With `storage_backend = "s3"` the
+engine runs **keyless** — credentials come from the Fargate task role.
+The catalog connects through Supabase's session pooler (the direct DB host
+is IPv6-only on current projects).
 
 ## Key variables
 
@@ -43,6 +47,7 @@ credentials come from the Fargate task role.
 | `allowed_email_domains` | **Set it.** Without it, anyone who can register in your Supabase project gets read access. |
 | `oauth_providers` | Login-page buttons (e.g. `["google","github"]`) — enable the same providers in Supabase → Authentication. |
 | `domain`, `route53_zone_id` | Custom domain + automated TLS. Without a zone id, `apply` prints the ACM validation CNAME and waits for you to create it. Without a domain, the stack is plain HTTP on the ALB DNS name — demo-grade. |
+| `storage_backend` | `supabase` (default) or `s3` — see above. |
 | `image_tag` | Pin a release (`vX.Y.Z`). `kyma deploy` injects the tag matching the CLI. |
 | `task_cpu`, `task_memory`, `desired_count` | Sizing. Keep `desired_count = 1` — the engine is single-writer per catalog. |
 

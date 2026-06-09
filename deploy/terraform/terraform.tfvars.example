@@ -20,5 +20,13 @@ oauth_providers = [] # e.g. ["google", "github"]
 # domain          = "kyma.company.com"
 # route53_zone_id = "Z0123456789ABC"
 
+# Extents storage: "supabase" (default — Supabase Storage via its S3
+# protocol; create the S3 access keys in the dashboard and fill these in,
+# or let `kyma deploy up` walk you through it) or "s3" (native AWS bucket,
+# fully automated, keyless via the task role).
+storage_backend = "supabase"
+# supabase_s3_access_key_id     = ""
+# supabase_s3_secret_access_key = ""
+
 # Engine image — pin a released version.
 image_tag = "latest"

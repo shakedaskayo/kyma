@@ -19,11 +19,13 @@
 pub mod artifacts;
 mod credentials;
 mod error;
+pub mod fabric;
 pub mod retention_settings;
 pub mod saved_views;
 mod snapshot;
 
 pub use credentials::PgCredentialStore;
+pub use fabric::{PgFabricStore, WorkerAuth};
 pub use snapshot::PgSnapshotTxn;
 
 use async_trait::async_trait;

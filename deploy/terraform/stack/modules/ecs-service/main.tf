@@ -70,8 +70,11 @@ resource "aws_iam_role" "task" {
 }
 
 # Keyless S3: the engine resolves these credentials via the standard AWS
-# provider chain (no KYMA_S3_ACCESS_KEY_ID needed).
+# provider chain (no KYMA_S3_ACCESS_KEY_ID needed). Only for the native-S3
+# storage backend — Supabase Storage authenticates with its own keys.
 data "aws_iam_policy_document" "task_s3" {
+  count = var.s3_bucket_arn != "" ? 1 : 0
+
   statement {
     sid       = "ExtentObjects"
     actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"]
@@ -85,9 +88,11 @@ data "aws_iam_policy_document" "task_s3" {
 }
 
 resource "aws_iam_role_policy" "task_s3" {
+  count = var.s3_bucket_arn != "" ? 1 : 0
+
   name   = "extent-bucket-access"
   role   = aws_iam_role.task.id
-  policy = data.aws_iam_policy_document.task_s3.json
+  policy = data.aws_iam_policy_document.task_s3[0].json
 }
 
 # ---------------------------------------------------------------------------

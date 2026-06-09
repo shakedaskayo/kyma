@@ -2,8 +2,8 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { DiscoverTabState } from "../discover/discover-store";
 import { initialDiscoverTabState } from "../discover/discover-store";
-import { serializePills } from "../discover/discoverGrammar";
-import type { Pill } from "../discover/types";
+import { serializePills } from "@kyma-ai/react/discover";
+import type { Pill } from "@kyma-ai/react/discover";
 
 // Defensive storage: tests run under jsdom but the persist middleware may grab
 // `localStorage` before jsdom finishes wiring it. Wrap with a no-op fallback so
@@ -128,6 +128,16 @@ function tabIdentity(t: Tab): string {
   return `d|${search}|${JSON.stringify(scope)}`;
 }
 
+/** Title marking the query tab that Discover's "Open in Query Editor" owns. */
+export const EXPORT_TAB_TITLE = "from discover";
+
+// A discover-export tab the user hasn't made their own: still titled like an
+// export and not edited since its last run. Safe to reuse/collapse — an
+// edited export is user work and is never touched.
+function isReusableExportTab(t: Tab): t is QueryTab {
+  return t.kind === "query" && t.state.title === EXPORT_TAB_TITLE && !isQueryTabDirty(t);
+}
+
 // Collapse tabs whose content is identical, keeping the first occurrence.
 // Heals workspaces that accumulated duplicates (every reload of a `?q=` deep
 // link used to spawn a fresh tab). Remaps `activeId` onto the surviving
@@ -136,6 +146,17 @@ export function dedupeTabs(
   tabs: Tab[],
   activeId: string | null,
 ): { tabs: Tab[]; activeId: string | null } {
+  // Pre-pass: stale discover exports collapse to the NEWEST one. Exports bake
+  // time bounds into the query text, so no two are byte-identical and the
+  // exact-identity pass below can't heal that pile-up.
+  const exports = tabs.filter(isReusableExportTab);
+  if (exports.length > 1) {
+    const survivor = exports[exports.length - 1];
+    const pruned = new Set(exports.slice(0, -1).map((t) => t.id));
+    tabs = tabs.filter((t) => !pruned.has(t.id));
+    if (activeId && pruned.has(activeId)) activeId = survivor.id;
+  }
+
   const keptByIdentity = new Map<string, Tab>();
   const kept: Tab[] = [];
   for (const t of tabs) {
@@ -186,6 +207,10 @@ type Store = {
   tabs: Tab[];
   activeId: string | null;
   newTab: (seed?: NewTabSeed) => string;
+  /** Discover's "Open in Query Editor": reuse the pristine export tab if one
+   * exists (update + activate), else create it. Never clobbers an export the
+   * user edited. Returns the tab id. */
+  openExportTab: (state: Partial<QueryTabState>) => string;
   closeTab: (id: string) => void;
   setActive: (id: string) => void;
   updateQuery: (id: string, patch: Partial<QueryTabState>) => void;
@@ -223,6 +248,33 @@ export const useWorkspace = create<Store>()(
               };
         set({ tabs: [...get().tabs, tab], activeId: id });
         return id;
+      },
+      openExportTab: (state) => {
+        const existing = get().tabs.find(isReusableExportTab);
+        if (existing) {
+          set({
+            tabs: get().tabs.map((t) =>
+              t.id === existing.id && t.kind === "query"
+                ? {
+                    ...t,
+                    state: {
+                      ...t.state,
+                      ...state,
+                      title: EXPORT_TAB_TITLE,
+                      results: { kind: "idle" },
+                      submittedQuery: null,
+                    },
+                  }
+                : t,
+            ),
+            activeId: existing.id,
+          });
+          return existing.id;
+        }
+        return get().newTab({
+          kind: "query",
+          state: { ...state, title: EXPORT_TAB_TITLE },
+        });
       },
       closeTab: (id) => {
         const tabs = get().tabs.filter((t) => t.id !== id);

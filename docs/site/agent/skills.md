@@ -5,10 +5,33 @@ description: Local skill discovery for the Kyma agent. Drop a SKILL.md in a disc
 
 # Skills
 
+Enable skills to teach Kyma domain-specific tasks — drop a `SKILL.md` in a
+discovery root and toggle it on. The agent picks up the new behaviour on the
+next turn, with no restart needed.
+
 A **skill** is a markdown document that tells the agent how to do
-something specific — "when the user asks about X, do Y." Kyma
-discovers skills from the local filesystem and lets you enable them
-per-deployment.
+something specific: "when the user asks about X, do Y."
+
+## Enabling skills
+
+`/settings#skills` lists every discovered skill grouped by source
+(project / user / plugin). Toggle a skill on; the next agent turn
+includes its body. The selection is stored in `enabled_skills` and
+persists across server restarts.
+
+You can also drive the toggle over HTTP:
+
+```bash
+# List discovered skills (~50 on a developer machine that uses
+# Claude Code; just a handful on a server).
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/v1/agent/skills
+
+# Toggle skills on/off (the array is the full set of enabled names).
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  http://localhost:8080/v1/agent/skills/enabled \
+  -d '{"skills":["kyma","brainstorming"]}'
+```
 
 ## Discovery roots
 
@@ -29,7 +52,14 @@ The walker uses `std::fs::metadata` rather than `entry.file_type()` so
 symlinks into bundles, and the naive walker would miss them on
 macOS.
 
-## SKILL.md format
+## Writing your own
+
+The fastest path: copy `~/.kyma/skills/kyma/SKILL.md` (written by
+`kyma install-skill`) and adapt. The frontmatter `description` is the
+discovery trigger — be specific about the phrases that should fire the
+skill.
+
+### SKILL.md format
 
 ```markdown
 ---
@@ -54,26 +84,16 @@ Steps to take...
 The `name` and `description` are required. The body is appended
 verbatim to the system prompt when the skill is enabled.
 
-## Enabling skills
+## Skill priority
 
-`/settings#skills` lists every discovered skill grouped by source
-(project / user / plugin). Toggle a skill on; the next agent turn
-includes its body. The selection is a singleton stored in
-`enabled_skills` and persists across server restarts.
+When multiple skills could apply to a request, the agent follows
+the priority order spelled out by [superpowers using-superpowers](https://github.com/claude-plugins-official/superpowers):
 
-You can also drive the toggle over HTTP:
+1. Process skills (brainstorming, debugging) first — these set HOW.
+2. Domain skills (frontend-design, kyma) second — these set WHAT.
 
-```bash
-# List discovered skills (~50 on a developer machine that uses
-# Claude Code; just a handful on a server).
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/v1/agent/skills
-
-# Toggle skills on/off (the array is the full set of enabled names).
-curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  http://localhost:8080/v1/agent/skills/enabled \
-  -d '{"skills":["kyma","brainstorming"]}'
-```
+Kyma doesn't enforce this; the LLM does, based on each skill's
+self-described trigger conditions.
 
 ## How skills land in the prompt
 
@@ -94,21 +114,3 @@ section to the base system prompt:
 For the **Claude CLI engine**, this injection is skipped — Claude Code
 loads its own skills natively. The agent has access to anything you
 have installed in `~/.claude/skills/`.
-
-## Writing your own
-
-The fastest path: copy `~/.kyma/skills/kyma/SKILL.md` (written by
-`kyma install-skill`) and adapt. The frontmatter `description` is the
-discovery trigger — be specific about the phrases that should fire the
-skill.
-
-## Skill priority
-
-When multiple skills could apply to a request, the agent follows
-the priority order spelled out by [superpowers using-superpowers](https://github.com/claude-plugins-official/superpowers):
-
-1. Process skills (brainstorming, debugging) first — these set HOW.
-2. Domain skills (frontend-design, kyma) second — these set WHAT.
-
-Kyma doesn't enforce this; the LLM does, based on each skill's
-self-described trigger conditions.

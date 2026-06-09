@@ -73,6 +73,7 @@ impl AuthBackend for EnvAuthBackend {
             tenant: DEFAULT_TENANT,
             role,
             subject: None,
+            allowed_databases: None,
         })
     }
 }

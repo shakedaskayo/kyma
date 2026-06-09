@@ -5,14 +5,22 @@ description: A Claude Code plugin that turns your coding sessions into a realtim
 
 # The kyma-memory Claude Code plugin
 
-`kyma install-plugin` installs a proper [Claude Code plugin](https://docs.claude.com/en/docs/claude-code/plugins)
-that makes Claude Code a live source **and** consumer of your Kyma
-[Agentic Memory](/concepts/the-agent-loop) layer. It lives in-repo at
-`integrations/claude-code/kyma-memory/`.
+Install the plugin to turn Claude Code into a live source **and** consumer of Kyma's
+memory layer — it captures your session in realtime, auto-recalls relevant memories on
+each prompt, and distills learnings into durable memory at session end.
 
-This is distinct from the [Claude Code engine](/agent/claude-cli) (Kyma using
-`claude` as an LLM). Here it's the other direction: **Claude Code using Kyma** as
-its memory and data backend.
+```bash
+kyma connect https://your-kyma.example.com --token <token>
+kyma install-plugin            # → ~/.claude/skills/kyma-memory
+```
+
+Restart Claude Code and run `/kyma-status`. `install-plugin` templates your server
+URL + token into the plugin's `.mcp.json` so both the hooks and the MCP server work
+out of the box. It lives in-repo at `integrations/claude-code/kyma-memory/`.
+
+> **Note — engine vs. plugin:** This is distinct from the [Claude Code engine](/agent/claude-cli)
+> (Kyma using `claude` as an LLM backend). Here it's the other direction: **Claude Code using Kyma**
+> as its memory and data backend.
 
 ## What it does
 
@@ -25,17 +33,6 @@ stores none of its own):
 | **Recall** | `UserPromptSubmit` hook → `kyma recall` (MCP `recall_memory`) | Relevant durable memories are injected as context on each prompt. |
 | **Distill** | `SessionEnd` hook + `/kyma-remember` → `kyma distill` → `/v1/agent/ask` | The kyma agent extracts durable memories (decisions, preferences, learnings) at session end. |
 | **Direct tools** | bundled MCP server → `/mcp/v1` | The model can call `recall_memory`, `save_memory`, `run_kql`, `run_sql`, and the other Kyma tools natively. |
-
-## Install
-
-```bash
-kyma connect https://your-kyma.example.com --token <token>
-kyma install-plugin            # → ~/.claude/skills/kyma-memory
-```
-
-Restart Claude Code and run `/kyma-status`. `install-plugin` templates your server
-URL + token into the plugin's `.mcp.json` so both the hooks and the MCP server work
-out of the box.
 
 ## Hooks
 

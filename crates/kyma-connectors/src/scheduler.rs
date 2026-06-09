@@ -27,12 +27,15 @@ impl ConnectorScheduler {
             let now_ms = chrono::Utc::now().timestamp_millis();
             let bucketed = (now_ms / c.schedule_ms) * c.schedule_ms;
             // Each row carries its tenant_id; thread it through to the
-            // background_tasks insert so the cluster-global scheduler stays
-            // tenant-correct.
+            // jobs insert so the cluster-global scheduler stays
+            // tenant-correct. Connector syncs ride the worker fabric — the
+            // embedded worker (or any remote worker advertising the
+            // `connector` capability) claims and runs them.
             let inserted =
-                catalog_sql::enqueue_tick(self.catalog.pool(), c.tenant_id, c.id, bucketed).await?;
+                catalog_sql::enqueue_connector_sync(self.catalog.pool(), c.tenant_id, c.id, bucketed)
+                    .await?;
             if inserted > 0 {
-                debug!(connector = %c.name, bucketed, "enqueued connector_tick");
+                debug!(connector = %c.name, bucketed, "enqueued connector_sync job");
             }
         }
         Ok(())

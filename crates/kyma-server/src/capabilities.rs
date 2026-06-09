@@ -22,6 +22,10 @@ pub struct Capabilities {
     pub users_admin: bool,
     /// Live-tail WebSocket (`GET /v1/explore/live`).
     pub explore_live: bool,
+    /// Inline agent surface (`POST /v1/agent/ask` + sessions/skills/memory).
+    /// Embedded clients gate the chat component on this so servers without
+    /// the agent degrade to a "not available" card instead of a 404.
+    pub agent: bool,
 }
 
 impl Capabilities {
@@ -34,6 +38,7 @@ impl Capabilities {
         saved_views: true,
         users_admin: true,
         explore_live: true,
+        agent: true,
     };
     /// Local single binary — memory + data + graph + dashboards; connector
     /// and credential management live on the control plane.
@@ -45,6 +50,7 @@ impl Capabilities {
         saved_views: false,
         users_admin: true,
         explore_live: true,
+        agent: true,
     };
 }
 
@@ -63,5 +69,13 @@ mod tests {
         assert_eq!(json["explore_live"], true);
         let json = serde_json::to_value(Capabilities::LOCAL).unwrap();
         assert_eq!(json["explore_live"], true);
+    }
+
+    #[test]
+    fn capabilities_serialize_agent() {
+        let json = serde_json::to_value(Capabilities::SERVER).unwrap();
+        assert_eq!(json["agent"], true);
+        let json = serde_json::to_value(Capabilities::LOCAL).unwrap();
+        assert_eq!(json["agent"], true);
     }
 }

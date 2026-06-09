@@ -26,6 +26,7 @@ pub mod cleanup_handler;
 pub mod credentials_handler;
 pub mod dashboards_handler;
 pub mod discover;
+pub mod fabric_handler;
 pub mod graph_handler;
 pub mod flight;
 pub mod capabilities;
@@ -247,11 +248,34 @@ pub fn health_router() -> Router {
     Router::new().route("/health", get(health::health))
 }
 
+/// Local-mode stub for `GET /v1/workers`. The worker registry is a
+/// control-plane (Postgres-backed) surface not mounted in single-binary local
+/// mode, but the web UI's NodesStrip calls `/v1/workers` unconditionally. Serve
+/// an empty `{items: []}` (200) so it renders its empty state instead of
+/// hitting the SPA's 404 fallback. Dreaming in local mode runs inline in the
+/// serve process — there are no separate worker nodes to report.
+pub fn local_workers_router() -> Router {
+    Router::new().route(
+        "/v1/workers",
+        get(|| async { axum::Json(serde_json::json!({ "items": [] })) }),
+    )
+}
+
 /// Variant of [`router`] that additionally nests the inline agent surface
 /// under `/v1/agent`. Called by `kyma-bin` once the `PgPool` (needed for
 /// `agent_runs` persistence) is available.
+///
+/// The agent surface is guarded against database-scoped tokens (fail closed):
+/// the agent's tool loop lets the model address any database (`execute_sql`
+/// takes a database argument), bypassing per-handler scope checks. Until the
+/// tool context enforces `allowed_databases`, scoped tokens get 403 here —
+/// same policy as the Flight surface.
 pub fn router_with_agent(state: QueryState, agent_state: agent::AgentState) -> Router {
-    router(state).nest("/v1/agent", agent::router(agent_state))
+    router(state).nest(
+        "/v1/agent",
+        agent::router(agent_state)
+            .layer(axum::middleware::from_fn(scoped_token_guard_middleware)),
+    )
 }
 
 /// Wrap any router with a permissive dev CORS layer so a browser dev-server
@@ -269,6 +293,270 @@ pub fn with_permissive_cors(r: Router) -> Router {
         .allow_headers(Any)
         .expose_headers(Any);
     r.layer(cors)
+}
+
+/// CORS for production: explicit origin allow-list from
+/// `KYMA_CORS_ALLOWED_ORIGINS` (comma-separated). Falls back to the
+/// permissive mirror behavior when UNSET (dev default). When the variable is
+/// set but contains no valid origins (typo, bad syntax), we fail CLOSED with
+/// an empty allow-list — a misconfigured production deployment must not
+/// silently become world-readable.
+pub fn with_configured_cors(r: Router) -> Router {
+    use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+    let Some(raw) = std::env::var("KYMA_CORS_ALLOWED_ORIGINS").ok() else {
+        tracing::warn!("KYMA_CORS_ALLOWED_ORIGINS unset — using permissive CORS (dev only)");
+        return with_permissive_cors(r);
+    };
+    let origins: Vec<axum::http::HeaderValue> = raw
+        .split(',')
+        .filter_map(|s| s.trim().parse::<axum::http::HeaderValue>().ok())
+        .collect();
+    if origins.is_empty() {
+        tracing::error!(
+            value = %raw,
+            "KYMA_CORS_ALLOWED_ORIGINS set but contains no valid origins — \
+             failing closed (no cross-origin requests allowed)"
+        );
+    }
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods(Any)
+        .allow_headers(Any)
+        .expose_headers(Any);
+    r.layer(cors)
+}
+
+/// Axum middleware that enforces per-database token scope for handlers that
+/// resolve their target database from the `x-database` request header.
+///
+/// This is applied as a layer over routers in separate crates (e.g.
+/// `kyma-ingest-rest`) that cannot take a `kyma-server` dependency.
+/// The `Principal` is already inserted into request extensions by
+/// `require_role_middleware` before this middleware runs.
+pub async fn database_scope_middleware(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    // Resolve the database the same way the underlying handler will.
+    let database = req
+        .headers()
+        .get("x-database")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("default")
+        .to_owned();
+
+    if let Some(principal) = req.extensions().get::<crate::auth::Principal>() {
+        if let Err((status, msg)) = crate::auth::check_database_scope(principal, &database) {
+            let request_id = extract_request_id(req.headers());
+            return error_response(status, "forbidden", &msg, &request_id);
+        }
+    }
+
+    next.run(req).await
+}
+
+/// Axum middleware that rejects database-scoped principals on surfaces that
+/// can address databases internally, bypassing per-handler scope checks:
+/// Arrow Flight (`/flight/*` — tickets name databases), the agent
+/// (`/v1/agent/*` — the model's tool loop picks databases), and MCP
+/// (`/mcp` — same tool dispatch). Until scope enforcement exists inside
+/// those services we fail closed: tokens carrying an `allowed_databases`
+/// restriction get 403; unrestricted principals (and auth-disabled
+/// deployments, whose synthesized Admin principal has
+/// `allowed_databases: None`) are unaffected.
+pub async fn scoped_token_guard_middleware(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if let Some(principal) = req.extensions().get::<crate::auth::Principal>() {
+        if principal.allowed_databases.is_some() {
+            let request_id = extract_request_id(req.headers());
+            return error_response(
+                axum::http::StatusCode::FORBIDDEN,
+                "forbidden",
+                "database-scoped tokens cannot use this interface yet",
+                &request_id,
+            );
+        }
+    }
+
+    next.run(req).await
+}
+
+#[cfg(test)]
+mod cors_tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    fn make_app(origins_env: &str) -> Router {
+        // Temporarily set the env var, build the router, then clear it.
+        // Tests calling this are serialized via the CORS_TEST_MUTEX.
+        std::env::set_var("KYMA_CORS_ALLOWED_ORIGINS", origins_env);
+        let r = Router::new().route("/ping", axum::routing::get(|| async { "pong" }));
+        let app = with_configured_cors(r);
+        std::env::remove_var("KYMA_CORS_ALLOWED_ORIGINS");
+        app
+    }
+
+    // Serialise env-var mutation across all cors_tests.
+    static CORS_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[tokio::test]
+    async fn allowed_origin_gets_acao_header() {
+        let _guard = CORS_TEST_MUTEX.lock().unwrap();
+        let app = make_app("http://allowed.example.com, http://other.example.com");
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri("/ping")
+                    .header("origin", "http://allowed.example.com")
+                    .header("access-control-request-method", "GET")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let acao = res
+            .headers()
+            .get("access-control-allow-origin")
+            .and_then(|v| v.to_str().ok());
+        assert_eq!(
+            acao,
+            Some("http://allowed.example.com"),
+            "expected ACAO header for allowed origin"
+        );
+    }
+
+    #[tokio::test]
+    async fn disallowed_origin_gets_no_acao_header() {
+        let _guard = CORS_TEST_MUTEX.lock().unwrap();
+        let app = make_app("http://allowed.example.com");
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri("/ping")
+                    .header("origin", "http://evil.example.com")
+                    .header("access-control-request-method", "GET")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // tower-http CORS layer simply omits the ACAO header for disallowed origins.
+        let acao = res.headers().get("access-control-allow-origin");
+        assert!(
+            acao.is_none(),
+            "expected no ACAO header for disallowed origin, got: {:?}",
+            acao
+        );
+    }
+
+    #[tokio::test]
+    async fn set_but_invalid_origins_fail_closed_not_permissive() {
+        let _guard = CORS_TEST_MUTEX.lock().unwrap();
+        // A value with only invalid header values (newline is illegal) must
+        // NOT fall back to permissive mirroring — no origin gets ACAO.
+        let app = make_app("\n");
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri("/ping")
+                    .header("origin", "http://anything.example.com")
+                    .header("access-control-request-method", "GET")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let acao = res.headers().get("access-control-allow-origin");
+        assert!(
+            acao.is_none(),
+            "misconfigured allow-list must fail closed, got ACAO: {:?}",
+            acao
+        );
+    }
+}
+
+#[cfg(test)]
+mod scoped_token_guard_tests {
+    use super::*;
+    use crate::auth::{Principal, Role};
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    fn principal(allowed: Option<Vec<&str>>) -> Principal {
+        Principal {
+            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            role: Role::Admin,
+            subject: None,
+            allowed_databases: allowed
+                .map(|v| v.into_iter().map(String::from).collect()),
+        }
+    }
+
+    /// Builds a guarded route with an injected principal (None = no auth ran,
+    /// e.g. auth-disabled deployments before the middleware synthesizes one).
+    fn app(p: Option<Principal>) -> Router {
+        let inject = axum::middleware::from_fn(
+            move |mut req: axum::extract::Request, next: axum::middleware::Next| {
+                let p = p.clone();
+                async move {
+                    if let Some(p) = p {
+                        req.extensions_mut().insert(p);
+                    }
+                    next.run(req).await
+                }
+            },
+        );
+        Router::new()
+            .route("/flight/x", axum::routing::post(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(scoped_token_guard_middleware))
+            .layer(inject)
+    }
+
+    async fn status_of(app: Router) -> StatusCode {
+        app.oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/flight/x")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+        .status()
+    }
+
+    #[tokio::test]
+    async fn scoped_principal_is_rejected() {
+        let s = status_of(app(Some(principal(Some(vec!["staging"]))))).await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn unrestricted_principal_passes() {
+        let s = status_of(app(Some(principal(None)))).await;
+        assert_eq!(s, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn missing_principal_passes() {
+        // No Principal extension (auth fully disabled) — guard is a no-op.
+        let s = status_of(app(None)).await;
+        assert_eq!(s, StatusCode::OK);
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -376,6 +664,13 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         .and_then(|v| v.to_str().ok())
         .unwrap_or("default")
         .to_owned();
+
+    // Enforce per-database token scope if the principal is scoped.
+    if let Some(principal) = parts.extensions.get::<crate::auth::Principal>() {
+        if let Err((status, msg)) = crate::auth::check_database_scope(principal, &database) {
+            return error_response(status, "forbidden", &msg, &request_id);
+        }
+    }
 
     let body_bytes: Bytes = match axum::body::to_bytes(body, 16 * 1024 * 1024).await {
         Ok(b) => b,

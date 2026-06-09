@@ -4,8 +4,14 @@ import attrs from 'markdown-it-attrs'
 
 export default withMermaid(defineConfig({
   title: 'kyma',
-  description: 'Production knowledge, as a query.',
+  description: 'The context engine for coding agents — durable graph-aware memory, live data in KQL/SQL, and the graph that links them. One local binary, zero infra.',
   cleanUrls: true,
+
+  // Light is the default; the dark-mode toggle still works and persists per-visitor.
+  appearance: { initialValue: 'light' },
+
+  // Served from GitHub Pages at shakedaskayo.github.io/kyma/.
+  base: '/kyma/',
 
   // `README.md` is operator-facing notes on the docs site itself, not part of
   // the published surface. Sibling of `index.md`, so without exclusion it
@@ -16,21 +22,22 @@ export default withMermaid(defineConfig({
   ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?/],
 
   sitemap: {
-    hostname: 'https://getkyma.dev',
+    // Must include the base — VitePress sitemap URLs are page paths without it.
+    hostname: 'https://shakedaskayo.github.io/kyma/',
   },
 
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/icons/kyma-mark.svg' }],
-    ['link', { rel: 'canonical', href: 'https://getkyma.dev/' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/kyma/icons/kyma-mark.svg' }],
+    ['link', { rel: 'canonical', href: 'https://shakedaskayo.github.io/kyma/' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:title', content: 'kyma — production knowledge, as a query' }],
     ['meta', { property: 'og:description', content: 'A unified columnar query engine for every signal your stack emits. Logs, traces, metrics, plus first-class federation to Postgres, MySQL, MongoDB. Sub-second latency over a decade of history.' }],
-    ['meta', { property: 'og:url', content: 'https://getkyma.dev/' }],
-    ['meta', { property: 'og:image', content: 'https://getkyma.dev/icons/kyma-mark.svg' }],
+    ['meta', { property: 'og:url', content: 'https://shakedaskayo.github.io/kyma/' }],
+    ['meta', { property: 'og:image', content: 'https://shakedaskayo.github.io/kyma/icons/kyma-mark.svg' }],
     ['meta', { name: 'twitter:card', content: 'summary' }],
     ['meta', { name: 'twitter:title', content: 'kyma — production knowledge, as a query' }],
-    ['meta', { name: 'twitter:description', content: 'One columnar query engine for every signal your stack emits. By AgentcyLabs.' }],
-    ['meta', { name: 'twitter:image', content: 'https://getkyma.dev/icons/kyma-mark.svg' }],
+    ['meta', { name: 'twitter:description', content: 'One columnar query engine for every signal your stack emits.' }],
+    ['meta', { name: 'twitter:image', content: 'https://shakedaskayo.github.io/kyma/icons/kyma-mark.svg' }],
   ],
 
   themeConfig: {
@@ -44,12 +51,14 @@ export default withMermaid(defineConfig({
       { text: 'Connectors', link: '/connectors/' },
       { text: 'Deploy', link: '/deploy/' },
       { text: 'Agent', link: '/agent/' },
+      { text: 'Embed', link: '/embed/' },
       { text: 'Reference', link: '/reference/' },
       { text: 'Architecture', link: '/architecture/' },
-      { text: 'Recipes', link: '/recipes/' },
+      { text: 'Use cases', link: '/use-cases/' },
     ],
     sidebar: {
       '/quickstart/':    [{ text: 'Quickstart',    items: [
+        { text: 'Give your agent memory', link: '/quickstart/give-your-agent-memory' },
         { text: 'Five-minute start',   link: '/quickstart/five-minute-start' },
         { text: 'First real run',      link: '/quickstart/first-real-run' },
         { text: 'Concepts cheatsheet', link: '/quickstart/concepts-cheatsheet' },
@@ -58,12 +67,15 @@ export default withMermaid(defineConfig({
         text: 'Concepts',
         items: [
           { text: 'What kyma is',          link: '/concepts/what-is-kyma' },
+          { text: 'How kyma works',        link: '/concepts/how-kyma-works' },
           { text: 'The five invariants',   link: '/concepts/the-five-invariants' },
           { text: 'The pruning cascade',   link: '/concepts/the-pruning-cascade' },
           { text: 'Extents and snapshots', link: '/concepts/extents-and-snapshots' },
           { text: 'Schema model',          link: '/concepts/schema-model' },
           { text: 'Dynamic and vectors',   link: '/concepts/dynamic-and-vectors' },
           { text: 'The agent loop',        link: '/concepts/the-agent-loop' },
+          { text: 'Local & cluster mode',  link: '/concepts/local-and-cluster-mode' },
+          { text: 'Sync',                  link: '/concepts/sync' },
           { text: 'Multi-source data',     link: '/concepts/multi-source-data' },
           { text: 'Retention and compaction', link: '/concepts/retention-and-compaction' },
           { text: 'Observability',         link: '/concepts/observability' },
@@ -87,6 +99,7 @@ export default withMermaid(defineConfig({
           { text: 'PromQL',                    link: '/query/promql' },
           { text: 'Arrow Flight',              link: '/query/arrow-flight' },
           { text: 'Agent endpoint',            link: '/query/agent-endpoint' },
+          { text: 'Graph',                     link: '/query/graph' },
           { text: 'Pruning and performance',   link: '/query/pruning-and-performance' },
         ],
       }],
@@ -118,12 +131,15 @@ export default withMermaid(defineConfig({
         items: [
           { text: 'Overview',            link: '/agent/' },
           { text: 'Connect your agent',  link: '/agent/connect' },
+          { text: 'Connect via CLI',     link: '/agent/connect-from-cli' },
+          { text: 'Coding agents',       link: '/agent/coding-agents' },
           { text: 'Agentic Memory',      link: '/agent/memory' },
+          { text: 'Dreaming',            link: '/agent/dreaming' },
+          { text: 'Workers & nodes',     link: '/agent/workers' },
           { text: 'Engines',             link: '/agent/engines' },
           { text: 'Claude Code engine',  link: '/agent/claude-cli' },
           { text: 'Claude Code plugin',  link: '/agent/claude-code-plugin' },
           { text: 'Skills',              link: '/agent/skills' },
-          { text: 'Connect via CLI',     link: '/agent/connect-from-cli' },
         ],
       }],
       '/deploy/': [{
@@ -141,6 +157,7 @@ export default withMermaid(defineConfig({
         items: [
           { text: 'HTTP API',         link: '/reference/api' },
           { text: 'CLI',              link: '/reference/cli' },
+          { text: 'MCP',              link: '/reference/mcp' },
           { text: 'Environment vars', link: '/reference/env' },
           { text: 'KQL functions',    link: '/reference/kql-functions' },
           { text: 'Schema mappings',  link: '/reference/schema-mappings' },
@@ -155,13 +172,28 @@ export default withMermaid(defineConfig({
           { text: 'Benchmarks',            link: '/architecture/benchmarks' },
         ],
       }],
-      '/recipes/': [{
-        text: 'Recipes',
+      '/embed/': [{
+        text: 'Embed (React SDK)',
+        collapsed: false,
         items: [
-          { text: 'Debug a prod incident',     link: '/recipes/debug-prod-incident' },
-          { text: 'Triage an alert spike',     link: '/recipes/triage-alert-spike' },
-          { text: 'Agent watching a table',    link: '/recipes/agent-watching-a-table' },
-          { text: 'Ingest something custom',   link: '/recipes/ingest-something-custom' },
+          { text: 'Overview',              link: '/embed/' },
+          { text: 'Quickstart',            link: '/embed/quickstart' },
+          { text: 'Authentication',        link: '/embed/authentication' },
+          { text: 'CORS',                  link: '/embed/cors' },
+          { text: 'Theming',               link: '/embed/theming' },
+          { text: 'Components',            link: '/embed/components' },
+          { text: 'Headless hooks',        link: '/embed/hooks' },
+          { text: 'Server compatibility',  link: '/embed/server-compat' },
+          { text: 'Versioning & release',  link: '/embed/versioning' },
+        ],
+      }],
+      '/use-cases/': [{
+        text: 'Use cases',
+        items: [
+          { text: 'Overview',                        link: '/use-cases/' },
+          { text: 'Remember across sessions',        link: '/use-cases/remember-across-sessions' },
+          { text: 'Debug from your editor',          link: '/use-cases/debug-from-your-editor' },
+          { text: 'Ask your stack in English',       link: '/use-cases/ask-your-stack' },
         ],
       }],
     },
@@ -172,8 +204,8 @@ export default withMermaid(defineConfig({
       provider: 'local',
     },
     footer: {
-      message: 'An open project by <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link"><img src="/icons/brand/agentcy.svg" alt="" width="12" height="12" class="kyma-footer-mark"/> AgentcyLabs</a> · MIT licensed.',
-      copyright: 'Copyright © 2026 AgentcyLabs · <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link">agentcylabs.com</a> · <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener" class="kyma-footer-link">GitHub</a>',
+      message: 'An open-source project · MIT licensed.',
+      copyright: 'Copyright © 2026 the kyma authors · <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener" class="kyma-footer-link">GitHub</a>',
     },
   },
 

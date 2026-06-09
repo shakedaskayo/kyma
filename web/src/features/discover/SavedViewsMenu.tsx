@@ -11,7 +11,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { createSavedView } from "@/sdk/discover";
 import { useCapability } from "@/features/capabilities/ControlPlaneGate";
-import type { Scope } from "./types";
+import type { Scope } from "@kyma-ai/react/discover";
 
 type Props = { currentScope: Scope; onSaved?: (id: string) => void };
 

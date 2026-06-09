@@ -1,13 +1,16 @@
-export interface ColumnInfo { name: string; type: string; nullable: boolean; }
-export interface TableDoc  { name: string; columns: ColumnInfo[]; }
-export interface DatabaseDoc { name: string; tables: TableDoc[]; }
-export interface SchemaDoc { databases: DatabaseDoc[]; }
+// Shim: backwards-compatible wrappers around @kyma-ai/client catalog functions.
 
-export async function fetchSchema(args: { endpoint: string; token: string }): Promise<SchemaDoc> {
-  const res = await fetch(`${args.endpoint.replace(/\/$/, "")}/v1/catalog/schema`, {
-    headers: { authorization: `Bearer ${args.token}` },
-  });
-  if (res.status === 401 || res.status === 403) throw new Error(`unauthorized (${res.status})`);
-  if (!res.ok) throw new Error(`catalog fetch failed: ${res.status}`);
-  return (await res.json()) as SchemaDoc;
+export type {
+  ColumnInfo,
+  TableDoc,
+  DatabaseDoc,
+  SchemaDoc,
+} from "@kyma-ai/client";
+
+import { sessionClient } from "./client";
+
+type Base = { endpoint: string; token: string; database?: string };
+
+export function fetchSchema(_args: Base) {
+  return sessionClient().catalog.fetchSchema();
 }

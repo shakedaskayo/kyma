@@ -167,7 +167,7 @@ pub async fn discover_search_handler(
         };
 
     let scope_kind = scope_kind_label(&payload.scope).to_string();
-    let resolved = match resolve_scope(
+    let mut resolved = match resolve_scope(
         &payload.scope,
         tenant,
         state.catalog.clone(),
@@ -204,6 +204,14 @@ pub async fn discover_search_handler(
             );
         }
     };
+
+    // Filter resolved sources to only those databases the principal may access.
+    // Unrestricted principals (allowed_databases = None) pass everything through.
+    if let Some(principal) = parts.extensions.get::<crate::auth::Principal>() {
+        if let Some(allowed) = &principal.allowed_databases {
+            resolved.retain(|src| allowed.iter().any(|a| a == &src.db));
+        }
+    }
 
     // 8. Resolve the per-request budget from headers (shared helper).
     let budget = crate::resolve_query_budget(&parts.headers);

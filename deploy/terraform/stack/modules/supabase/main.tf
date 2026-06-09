@@ -18,3 +18,19 @@ resource "supabase_project" "this" {
 data "supabase_apikeys" "this" {
   project_ref = supabase_project.this.id
 }
+
+# Pooler connection strings (mode → URL). The direct db.<ref> host is
+# IPv6-only on current Supabase projects; engines on IPv4-only networks
+# (Fargate public subnets, most laptops) must connect via the pooler.
+data "supabase_pooler" "this" {
+  project_ref = supabase_project.this.id
+}
+
+locals {
+  pooler_session = try(data.supabase_pooler.this.url["session"], null)
+  database_url = local.pooler_session != null ? replace(
+    local.pooler_session, "[YOUR-PASSWORD]", var.db_pass
+    ) : (
+    "postgresql://postgres:${var.db_pass}@db.${supabase_project.this.id}.supabase.co:5432/postgres"
+  )
+}

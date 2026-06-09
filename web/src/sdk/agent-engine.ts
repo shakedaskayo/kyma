@@ -1,78 +1,26 @@
-//! Typed client for `/v1/agent/engines` + `/v1/agent/engine`.
+// Shim: backwards-compatible wrappers around @kyma-ai/client agent-engine functions.
 
-export type EngineKind = "anthropic" | "openai" | "ollama" | "claude_cli";
+export type {
+  EngineKind,
+  EngineConfig,
+  EngineSummary,
+  EngineList,
+  TestEngineResult,
+} from "@kyma-ai/client";
 
-export interface EngineConfig {
-  kind: EngineKind;
-  model: string;
-  credential_id?: string | null;
-  host?: string | null;
-  extras?: Record<string, unknown>;
+import type { EngineConfig } from "@kyma-ai/client";
+import { sessionClient } from "./client";
+
+type Args = { endpoint: string; token: string; database?: string };
+
+export function listEngines(_a: Args) {
+  return sessionClient().agent.listEngines();
 }
 
-export interface EngineSummary {
-  kind: EngineKind;
-  label: string;
-  models: string[];
-  needs_key: boolean;
+export function putEngine(_a: Args, cfg: EngineConfig) {
+  return sessionClient().agent.putEngine(cfg);
 }
 
-export interface EngineList {
-  available: EngineSummary[];
-  active: EngineConfig;
-}
-
-type Args = { endpoint: string; token: string };
-
-function base(endpoint: string) {
-  return endpoint.replace(/\/$/, "");
-}
-function headers(token: string): Record<string, string> {
-  return {
-    authorization: `Bearer ${token}`,
-    "content-type": "application/json",
-  };
-}
-
-export async function listEngines(a: Args): Promise<EngineList> {
-  const res = await fetch(`${base(a.endpoint)}/v1/agent/engines`, {
-    headers: headers(a.token),
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`engines: ${res.status}${t ? ` — ${t}` : ""}`);
-  }
-  return res.json();
-}
-
-export async function putEngine(a: Args, cfg: EngineConfig): Promise<EngineConfig> {
-  const res = await fetch(`${base(a.endpoint)}/v1/agent/engine`, {
-    method: "PUT",
-    headers: headers(a.token),
-    body: JSON.stringify(cfg),
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`save engine: ${res.status}${t ? ` — ${t}` : ""}`);
-  }
-  return res.json();
-}
-
-export interface TestEngineResult {
-  ok: boolean;
-  kind: EngineKind;
-  model: string;
-}
-
-export async function testEngine(a: Args, cfg: EngineConfig): Promise<TestEngineResult> {
-  const res = await fetch(`${base(a.endpoint)}/v1/agent/engine/test`, {
-    method: "POST",
-    headers: headers(a.token),
-    body: JSON.stringify(cfg),
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`test engine: ${res.status}${t ? ` — ${t}` : ""}`);
-  }
-  return res.json();
+export function testEngine(_a: Args, cfg: EngineConfig) {
+  return sessionClient().agent.testEngine(cfg);
 }

@@ -518,6 +518,68 @@ impl GithubClient {
             Err(_) => Ok(None), // binary file
         }
     }
+
+    /// `GET /repos/{owner}/{repo}/issues/{number}` — one issue (or PR shell).
+    pub async fn get_issue(
+        &self,
+        owner: &str,
+        name: &str,
+        number: u64,
+    ) -> Result<Value, ConnectorError> {
+        let url = format!("{}/repos/{owner}/{name}/issues/{number}", self.base_url);
+        let (body, _) = self.fetch_one(&url).await?;
+        Ok(body)
+    }
+
+    /// `GET /repos/{owner}/{repo}/readme` — the repo README, decoded.
+    /// Returns `None` for non-base64 encodings, binary content, or files over
+    /// `max_bytes`. Used by the dreaming agent's read-only `connector_read`.
+    pub async fn get_readme(
+        &self,
+        owner: &str,
+        name: &str,
+        max_bytes: usize,
+    ) -> Result<Option<String>, ConnectorError> {
+        let url = format!("{}/repos/{owner}/{name}/readme", self.base_url);
+        let (body, _) = self.fetch_one(&url).await?;
+        Ok(decode_b64_content(&body, max_bytes))
+    }
+
+    /// `GET /repos/{owner}/{repo}/contents/{path}` — one file, decoded. Same
+    /// `None` semantics as [`Self::get_readme`].
+    pub async fn get_contents(
+        &self,
+        owner: &str,
+        name: &str,
+        path: &str,
+        max_bytes: usize,
+    ) -> Result<Option<String>, ConnectorError> {
+        let path = path.trim_start_matches('/');
+        let url = format!("{}/repos/{owner}/{name}/contents/{path}", self.base_url);
+        let (body, _) = self.fetch_one(&url).await?;
+        Ok(decode_b64_content(&body, max_bytes))
+    }
+}
+
+/// Decode a GitHub contents-API body (`{content: <base64>, encoding}`) into
+/// UTF-8, skipping non-base64 encodings, binary content, and oversize files.
+fn decode_b64_content(body: &Value, max_bytes: usize) -> Option<String> {
+    if body.get("encoding").and_then(|v| v.as_str()) != Some("base64") {
+        return None;
+    }
+    let raw_b64 = body.get("content").and_then(|v| v.as_str()).unwrap_or("");
+    let clean: String = raw_b64.chars().filter(|c| !c.is_whitespace()).collect();
+    if clean.len() * 3 / 4 > max_bytes {
+        return None;
+    }
+    use base64::Engine as _;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(clean.as_bytes())
+        .ok()?;
+    if decoded.len() > max_bytes {
+        return None;
+    }
+    String::from_utf8(decoded).ok()
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

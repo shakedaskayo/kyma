@@ -5,17 +5,28 @@ description: kyma is a context engine for coding agents — durable graph-aware 
 
 # Agents & the context engine
 
-kyma is a **context engine for coding agents**: one place an agent recalls durable,
-graph-aware **memory**, queries **live data** (logs, traces, code, connectors) in KQL/SQL,
-and walks the **graph** that links them — recall *plus* live context *plus* relationships.
-
-**Connect any agent** via a **Claude Code plugin** (automatic capture + recall + slash
-commands), a **CLI** any tool shells out to (`kyma query` / `kyma recall` + a skill), or
-**MCP** (stdio + HTTP). It runs as a local single binary or a server, and syncs memory
-between them. → **[Connect your agent](./connect)**.
+Connect your agent — three paths: **[Claude Code plugin](./claude-code-plugin)** ·
+**[CLI](./connect-from-cli)** · **[MCP](./connect)**. Each gives your agent access to
+durable graph-aware **memory**, **live data** (logs, traces, code, connectors) in KQL/SQL,
+and the **graph** that links them. See **[Coding agents overview](./coding-agents)** for a
+comparison of all integration paths.
 
 kyma also ships a built-in **agent** that turns natural-language questions into KQL/SQL over
 your live data — in the web app at `/agent`, the HTTP `/v1/agent/ask` endpoint, or the CLI.
+
+## Quick tour
+
+```bash
+# 1. Connect this terminal to a running Kyma server.
+kyma connect http://localhost:8080 --token <bearer>
+
+# 2. Ask a question — streams to stdout.
+kyma query "what databases do we have, and how big is each one?"
+
+# 3. Make Claude Code aware of your Kyma server.
+kyma install-skill --also-link-claude
+# Now in any Claude Code session, "ask Kyma what's slow today" works.
+```
 
 ## Three things to know
 
@@ -36,24 +47,12 @@ your live data — in the web app at `/agent`, the HTTP `/v1/agent/ask` endpoint
    teaches any coding agent to use this CLI as its window into your
    production data.
 
-## Quick tour
-
-```bash
-# 1. Connect this terminal to a running Kyma server.
-kyma connect http://localhost:8080 --token <bearer>
-
-# 2. Ask a question — streams to stdout.
-kyma query "what databases do we have, and how big is each one?"
-
-# 3. Make Claude Code aware of your Kyma server.
-kyma install-skill --also-link-claude
-# Now in any Claude Code session, "ask Kyma what's slow today" works.
-```
-
 ## In this section
 
 - **[Connect your agent](./connect)** — the three integration paths (plugin · CLI · MCP),
   the local single binary, and local↔server sync. **Start here.**
+- **[Coding agents](./coding-agents)** — comparison of all integration paths and when to
+  use each one.
 - **[Agentic Memory](./memory)** — persistent, graph-aware memory for agents:
   capture → LLM extraction with conflict resolution + bi-temporal validity →
   near-realtime hybrid recall. The `memory_search` tool, `/v1/agent/memory/query`,

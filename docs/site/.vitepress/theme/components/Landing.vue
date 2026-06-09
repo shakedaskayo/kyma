@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { withBase } from 'vitepress'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Hero orbit — proper polar layout. Sources sit on the LEFT half-circle
@@ -206,11 +207,6 @@ const buildDate = new Date().toISOString().slice(0, 10)
 
     <!-- ════════════════════════════════════ HERO ════════════════════════════════════ -->
     <section class="kyma-hero kyma-hero--orbit">
-      <a class="kyma-byline" href="https://agentcylabs.com" target="_blank" rel="noopener">
-        <img src="/icons/brand/agentcy.svg" alt="" width="14" height="14" aria-hidden="true" />
-        <span>An open project by <strong>AgentcyLabs</strong></span>
-      </a>
-
       <h1 class="kyma-hero-title">kyma</h1>
       <p class="kyma-tagline">The context engine for coding agents.</p>
       <p class="kyma-lede">
@@ -221,9 +217,9 @@ const buildDate = new Date().toISOString().slice(0, 10)
       </p>
 
       <div class="kyma-cta-row">
-        <a href="/quickstart/five-minute-start" class="kyma-cta kyma-cta--primary">Quickstart</a>
-        <a href="/agent/connect" class="kyma-cta">Connect your agent</a>
-        <a href="/agent/memory" class="kyma-cta">Memory</a>
+        <a :href="withBase('/quickstart/give-your-agent-memory')" class="kyma-cta kyma-cta--primary">Give your agent memory</a>
+        <a :href="withBase('/concepts/how-kyma-works')" class="kyma-cta">How it works</a>
+        <a :href="withBase('/agent/memory')" class="kyma-cta">Memory</a>
         <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener" class="kyma-cta">GitHub</a>
       </div>
 
@@ -292,7 +288,7 @@ const buildDate = new Date().toISOString().slice(0, 10)
         <!-- Center mark: positioned by % of orbit container. -->
         <div class="kyma-orbit-center">
           <div class="kyma-orbit-mark">
-            <img src="/icons/kyma-mark.svg" alt="kyma" />
+            <img :src="withBase('/icons/kyma-mark.svg')" alt="kyma" />
             <div class="kyma-orbit-mark-pulse"></div>
           </div>
         </div>
@@ -310,9 +306,9 @@ const buildDate = new Date().toISOString().slice(0, 10)
             '--i': i,
           }"
           :title="node.label"
-          :href="node.role === 'source' ? '/ingest/' : '/query/'"
+          :href="withBase(node.role === 'source' ? '/ingest/' : '/query/')"
         >
-          <img :src="`/icons/brand/${node.slug}.svg`" :alt="node.label" width="22" height="22" />
+          <img :src="withBase(`/icons/brand/${node.slug}.svg`)" :alt="node.label" width="22" height="22" />
           <span class="kyma-orbit-label">{{ node.label }}</span>
         </a>
       </div>
@@ -334,27 +330,28 @@ const buildDate = new Date().toISOString().slice(0, 10)
 
     <!-- ════════════════════════════════════ THE BIG CLAIM ═══════════════════════════ -->
     <section class="kyma-claim">
-      <p class="kyma-claim-eyebrow">// THE PITCH</p>
+      <p class="kyma-claim-eyebrow">// THE HOOK</p>
       <h2 class="kyma-claim-title">
-        Turn anything in the org into something an <em>agent can answer</em>.
+        Your coding agent forgets everything. <em>kyma is the memory it keeps.</em>
       </h2>
       <p class="kyma-claim-body">
-        kyma is the answer layer for production-aware agents. One ingest pipe for every
-        signal — OTLP, REST, Kafka, file-drop. First-class federation to your operational
-        databases. KQL or SQL on the front. Sub-second latency over a decade of history.
-        And a built-in agent endpoint that turns natural-language questions into the same
-        query you'd have written yourself.
+        Install one binary, wire it to your agent, and it recalls durable, graph-aware
+        memory into every prompt — across sessions and machines. That's the hook. Then it
+        grows: the same engine lets your agent query your <strong>live data</strong> in
+        KQL or SQL, and walks the <strong>graph</strong> that ties every memory to the
+        real services, repos, and traces it's about. Memory → data → graph, one surface.
       </p>
     </section>
 
     <!-- ════════════════════════════════════ USE CASES ══════════════════════════════ -->
     <section class="kyma-usecases">
       <div class="kyma-usecases-header">
-        <p class="kyma-section-eyebrow">// WHAT IT REPLACES</p>
-        <h2 class="kyma-section-title">One engine, every team's data</h2>
+        <p class="kyma-section-eyebrow">// BEYOND MEMORY — THE LIVE DATA</p>
+        <h2 class="kyma-section-title">The same engine runs your whole stack</h2>
         <p class="kyma-section-lede">
-          Each tool below is a category your org probably has three of. Run them all
-          through one schema, one query language, one agent.
+          Memory is the front door. Underneath, kyma is one columnar engine for every
+          signal your org emits — so the live data your agent reasons over is the same
+          data these teams already live in. One schema, one query language, one agent.
         </p>
       </div>
 
@@ -378,14 +375,13 @@ const buildDate = new Date().toISOString().slice(0, 10)
     <!-- ════════════════════════════════════ CONTEXT GRAPH + RECURSIVE INTEL ═══════ -->
     <section class="kyma-graph">
       <div class="kyma-graph-text">
-        <p class="kyma-section-eyebrow">// THE CONTEXT ENGINE</p>
-        <h2 class="kyma-section-title">A context graph that scales with the org.</h2>
+        <p class="kyma-section-eyebrow">// THE GRAPH — WHERE IT ALL CONNECTS</p>
+        <h2 class="kyma-section-title">Where memory meets your systems.</h2>
         <p class="kyma-section-lede">
-          Rows and columns describe events. <strong>Graphs</strong> describe how those events
-          relate. kyma carries a native graph layer over the same Arrow storage —
-          millions of entities, hundreds of millions of relationships, queried in
-          milliseconds. The same engine that's already proving it on the
-          <a href="https://agentcylabs.com" target="_blank" rel="noopener">Agentcy platform</a>.
+          The third layer. A native graph over the same Arrow storage, where your agent's
+          <strong>memories</strong> are nodes wired to the real services, repos, and traces
+          they're about — millions of entities, hundreds of millions of relationships,
+          queried in milliseconds.
         </p>
         <ul class="kyma-graph-bullets">
           <li><strong>Entities + relationships as native types.</strong> Customers, deploys, services, alerts, agent runs — all linked, all queryable.</li>
@@ -490,8 +486,8 @@ const buildDate = new Date().toISOString().slice(0, 10)
           endpoint. Pick whichever your tool already speaks.
         </p>
         <div class="kyma-cta-row">
-          <a href="/query/kql" class="kyma-cta kyma-cta--primary">KQL reference</a>
-          <a href="/query/sql" class="kyma-cta">SQL reference</a>
+          <a :href="withBase('/query/kql')" class="kyma-cta kyma-cta--primary">KQL reference</a>
+          <a :href="withBase('/query/sql')" class="kyma-cta">SQL reference</a>
         </div>
       </div>
       <div class="kyma-example-code">
@@ -530,7 +526,7 @@ otel_logs
           Extent footers eliminate 90%+ of blocks via bloom filters. Block-level posting
           lists narrow to exact rows. The decode step only touches data that matters.
         </p>
-        <a href="/concepts/the-pruning-cascade" class="kyma-cta">Read the deep dive →</a>
+        <a :href="withBase('/concepts/the-pruning-cascade')" class="kyma-cta">Read the deep dive →</a>
       </div>
     </section>
 
@@ -539,35 +535,35 @@ otel_logs
       <p class="kyma-section-eyebrow">// THE DOCS</p>
       <h2 class="kyma-section-title">Get going</h2>
       <div class="kyma-sections">
-        <a class="kyma-section-card" href="/quickstart/">
+        <a class="kyma-section-card" :href="withBase('/quickstart/give-your-agent-memory')">
           <h3>Quickstart</h3>
-          <p>Five minutes from <code>docker compose up</code> to your first KQL query.</p>
+          <p>Give your coding agent memory in one command — local, zero infra, ~5 min.</p>
         </a>
-        <a class="kyma-section-card" href="/concepts/">
+        <a class="kyma-section-card" :href="withBase('/concepts/how-kyma-works')">
           <h3>Concepts</h3>
-          <p>How the engine thinks: invariants, the pruning cascade, schema, agents.</p>
+          <p>How it all works: memory → data → graph, the modes, dreaming, and sync.</p>
         </a>
-        <a class="kyma-section-card" href="/ingest/">
+        <a class="kyma-section-card" :href="withBase('/ingest/')">
           <h3>Ingest</h3>
           <p>OTLP gRPC, REST/NDJSON, Kafka, file-drop. One write path on the far side.</p>
         </a>
-        <a class="kyma-section-card" href="/query/">
+        <a class="kyma-section-card" :href="withBase('/query/')">
           <h3>Query</h3>
           <p>KQL, SQL, and the agent endpoint. Arrow Flight gRPC for zero-copy streams.</p>
         </a>
-        <a class="kyma-section-card" href="/connectors/">
+        <a class="kyma-section-card" :href="withBase('/connectors/')">
           <h3>Connectors</h3>
           <p>Postgres, MySQL, MongoDB. Federate live, or sync via CDC.</p>
         </a>
-        <a class="kyma-section-card" href="/architecture/architecture">
+        <a class="kyma-section-card" :href="withBase('/architecture/architecture')">
           <h3>Architecture</h3>
           <p>The five invariants and how they hold the engine together.</p>
         </a>
-        <a class="kyma-section-card" href="/recipes/">
-          <h3>Recipes</h3>
-          <p>Worked examples — copy, paste, adapt.</p>
+        <a class="kyma-section-card" :href="withBase('/use-cases/')">
+          <h3>Use cases</h3>
+          <p>What it's for — memory, live data, and the graph, doing real work.</p>
         </a>
-        <a class="kyma-section-card" href="/reference/">
+        <a class="kyma-section-card" :href="withBase('/reference/')">
           <h3>Reference</h3>
           <p>HTTP API, CLI, env vars, KQL functions, schema mappings.</p>
         </a>
@@ -576,10 +572,6 @@ otel_logs
 
     <!-- ════════════════════════════════════ FOOTER ═════════════════════════════════ -->
     <footer class="kyma-landing-footer">
-      <a class="kyma-byline kyma-byline--footer" href="https://agentcylabs.com" target="_blank" rel="noopener">
-        <img src="/icons/brand/agentcy.svg" alt="" width="16" height="16" aria-hidden="true" />
-        <span>kyma is an open project by <strong>AgentcyLabs</strong> — a context platform for production-aware agents. <span class="kyma-byline-cta">Visit agentcylabs.com →</span></span>
-      </a>
       <p class="kyma-landing-footer-meta">
         MIT licensed · Source on
         <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener">GitHub</a>

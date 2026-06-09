@@ -121,7 +121,7 @@ pub async fn persist_turn(
     run_id: Option<Uuid>,
 ) {
     let Some(pool) = pool else { return }; // local mode: no persistence
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "INSERT INTO agent_session_turns (session_id, tenant_id, turn_index, role, content_json, run_id) \
          VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (session_id, turn_index) DO NOTHING",
     )
@@ -132,7 +132,12 @@ pub async fn persist_turn(
     .bind(SqlxJson(json!({ "text": text })))
     .bind(run_id)
     .execute(pool)
-    .await;
+    .await
+    {
+        // Turn persistence is best-effort, but silence here cost a debugging
+        // session once — keep failures visible.
+        tracing::warn!(session_id = %session_id, turn_index, error = %e, "persist_turn failed");
+    }
 }
 
 /// Spawn a detached, best-effort rolling-summary pass for `session_id`. When

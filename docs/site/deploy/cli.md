@@ -67,8 +67,9 @@ the team setup.
 ## Local target
 
 `--target local` provisions **only** a Supabase project (via the
-Management API), writes `local.env` with the catalog URL + Supabase Auth
-wiring, and `up` runs `ghcr.io/shakedaskayo/kyma-engine` with docker on
-port 8080. `destroy` removes the container, its volume, and the Supabase
-project. The S3 lines in `local.env` are the commented upgrade path to
-object storage.
+Management API), writes `local.env` with the catalog URL (session pooler —
+the direct DB host is IPv6-only), Supabase Auth wiring, and Supabase
+Storage as the extents store (the wizard opens the dashboard's S3-keys
+page — Supabase has no API for those keys; skip to keep extents on the
+docker volume). `up` runs `ghcr.io/shakedaskayo/kyma-engine` on port 8080;
+`destroy` removes the container, its volume, and the Supabase project.

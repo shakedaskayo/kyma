@@ -1,6 +1,6 @@
 ---
 title: Multi-source data
-description: The practical face of federation and sync — how to register a source, the live(...) UX, the pushdown_summary, and the kyma_connector_health view that makes status queryable.
+description: The practical face of federation and sync — how to register a source, the live(...) UX, the pushdown_summary, and connector run-state via GET /v1/connectors/:id and connector metrics.
 ---
 
 # Multi-source data
@@ -143,54 +143,46 @@ Arrow output.
 
 ## Status, health, and observability
 
-`GET /v1/connectors/:id/status` returns a structured doc per source —
-federation pool stats, sync phase, lag in seconds, last error, schema
-drift if any:
+`GET /v1/connectors/:id` returns the connector row with current run
+state — `enabled`, `disabled_reason`, `last_run_at`, `last_success_at`,
+`last_error`, and `last_rows_ingested`:
 
 ```json
 {
-  "id": "...",
+  "id": "<uuid>",
+  "name": "pg_prod",
   "type": "postgres",
-  "mode": "both",
-  "source":     { "reachable": true, "version": "PG 15.4", ... },
-  "federation": { "status": "healthy", "pool_in_use": 2, "pool_max": 10,
-                  "p50_query_ms": 14, "p99_query_ms": 230, ... },
-  "sync":       { "status": "streaming", "lag_seconds": 4,
-                  "events_per_sec": 1200, "rows_synced": 5240000, ... }
+  "target_database": "default",
+  "target_table": "pg_prod",
+  "schedule_ms": 0,
+  "drive_model": "Continuous",
+  "enabled": true,
+  "disabled_reason": null,
+  "last_run_at": "2024-01-15T10:23:45Z",
+  "last_success_at": "2024-01-15T10:23:44Z",
+  "last_error": null,
+  "last_rows_ingested": 1200,
+  "config": { "..." }
 }
 ```
 
-The same data is exposed as a queryable kyma table:
+Secrets in `config` are redacted to `***` (unless they are unresolved
+`$env:` references, which are returned verbatim).
 
-```sql
-SELECT connector_name, mode, phase, lag_seconds, events_per_sec
-  FROM kyma_connector_health
- WHERE lag_seconds > 60;
-```
+For time-series observability, kyma exposes per-tick Prometheus metrics
+for every connector — query these in [Observability](/concepts/observability):
 
-Schema:
+| Metric                                          | Description                                    |
+| ----------------------------------------------- | ---------------------------------------------- |
+| `kyma_connector_cursor_age_seconds`             | Sync lag — how far behind the source cursor is |
+| `kyma_connector_rows_ingested_total`            | Cumulative rows landed                         |
+| `kyma_connector_errors_total`                   | Cumulative tick errors by connector            |
+| `kyma_connector_last_success_timestamp_seconds` | Unix timestamp of last successful tick         |
+| `kyma_connector_ticks_total`                    | Total tick count                               |
+| `kyma_connector_duration_seconds`               | Tick duration histogram                        |
 
-| Column           | Type        | Description                                               |
-| ---------------- | ----------- | --------------------------------------------------------- |
-| `connector_id`   | `string`    |                                                           |
-| `connector_name` | `string`    |                                                           |
-| `type`           | `string`    | `postgres` / `mysql` / `mongo` / `prometheus` / …          |
-| `mode`           | `string`    | `federation` / `sync` / `both`                             |
-| `phase`          | `string`    | per source-table                                           |
-| `lag_seconds`    | `real`      | sync-mode lag                                              |
-| `events_per_sec` | `real`      | sync throughput                                            |
-| `pool_in_use`    | `int`       | federation pool snapshot                                   |
-| `pool_max`       | `int`       |                                                            |
-| `last_error`     | `string`    |                                                            |
-| `last_event_at`  | `timestamp` |                                                            |
-| `timestamp`      | `timestamp` | row emit time (matches kyma's standard column name)        |
-
-Agents query this with KQL/SQL; dashboards chart it; alerts fire on it.
-This is what closes the "kyma observing kyma observing your databases"
-loop without dedicated alerting config.
-
-`GET /v1/connectors/:id/events` returns the last 100 state transitions
-— phase changes, error onsets, recoveries — for postmortem.
+Agents check `last_error` / `last_success_at` on the detail endpoint;
+dashboards and alerts consume the Prometheus metrics.
 
 ## System columns on synced tables
 
@@ -205,17 +197,16 @@ tombstones get garbage-collected.
 
 ## Mode-isolated pause
 
-`mode: "both"` connectors can have federation healthy while sync is
-errored, and vice versa. Pause one without re-snapshotting the other:
+To pause or resume a connector, use the plain pause and resume endpoints:
 
 ```bash
-curl -X POST 'http://localhost:8080/v1/connectors/<id>/pause?scope=sync'
-curl -X POST 'http://localhost:8080/v1/connectors/<id>/resume?scope=sync'
+curl -X POST http://localhost:8080/v1/connectors/<id>/pause
+curl -X POST http://localhost:8080/v1/connectors/<id>/resume
 ```
 
-Default `scope` is `all`. Useful when an upstream source is doing
-maintenance and you want to keep federation answering while sync
-catches up later.
+`pause` sets `enabled=false` with `disabled_reason='manual'`. `resume` clears
+it. For `mode: "both"` connectors, pausing stops the entire connector (both
+federation and sync). Use `GET /v1/connectors/:id` to confirm the state change.
 
 ## Where to go next
 

@@ -1,0 +1,8 @@
+/*
+ * Storybook preview styles — Tailwind components + utilities compiled via
+ * PostCSS (picks up postcss.config.js + tailwind.config.ts automatically).
+ * No @tailwind base — preflight is disabled in the embeddable SDK config;
+ * Storybook's own iframe provides a clean slate.
+ */
+@tailwind components;
+@tailwind utilities;

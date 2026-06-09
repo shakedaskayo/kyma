@@ -67,6 +67,8 @@ jobs:
       - name: Build web UI
         run: |
           pnpm install --frozen-lockfile
+          # web imports @kyma-ai/client + @kyma-ai/react via their built dist/
+          pnpm build:packages
           pnpm -C web build
 
       - name: Build CLI
@@ -109,6 +111,7 @@ jobs:
         if: matrix.os == 'ubuntu-22.04'
         run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build:packages
       - run: pnpm -C web build
       - run: pnpm -C web tauri build
       - uses: actions/upload-artifact@v4

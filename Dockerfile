@@ -1,14 +1,25 @@
 # syntax=docker/dockerfile:1.7
 
 # ---------- stage 1: web ----------
+# The web app imports the @kyma-ai/* workspace packages, so the build installs
+# the whole pnpm workspace, builds the packages (web consumes their dist/), then
+# builds web. Member manifests are copied first for a cache-friendly install
+# layer; the root lockfile drives a deterministic --frozen-lockfile install.
 FROM node:24-alpine AS web
 RUN corepack enable && corepack prepare pnpm@9 --activate
 WORKDIR /src
-COPY pnpm-workspace.yaml package.json .npmrc ./
-COPY web/package.json web/pnpm-lock.yaml* web/
-RUN pnpm -C web install --frozen-lockfile || pnpm -C web install
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml .npmrc ./
+COPY packages/client/package.json packages/client/
+COPY packages/react/package.json packages/react/
+COPY web/package.json web/
+COPY docs/site/package.json docs/site/
+COPY examples/embed-demo/package.json examples/embed-demo/
+RUN pnpm install --frozen-lockfile
+COPY packages/ packages/
 COPY web/ web/
-RUN pnpm -C web build
+RUN pnpm --filter @kyma-ai/client build \
+ && pnpm --filter @kyma-ai/react build \
+ && pnpm -C web build
 
 # ---------- stage 2: server ----------
 FROM rust:1.84-bookworm AS server

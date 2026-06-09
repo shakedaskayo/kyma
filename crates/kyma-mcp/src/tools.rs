@@ -96,6 +96,28 @@ impl ToolDispatch {
         self
     }
 
+    /// Add the read-only connector tools (`list_connectors`, `connector_read`)
+    /// so MCP-driven agents — notably Claude CLI dreaming runs — can fill
+    /// memory gaps from configured sources. Server mode only (needs the
+    /// credential store); local/stdio mode skips this.
+    pub fn with_connector_tools(
+        self,
+        ctx: kyma_server::agent::connector_tools::ConnectorToolCtx,
+    ) -> Self {
+        let mut map: HashMap<&'static str, Arc<dyn Tool>> = (*self.by_name).clone();
+        map.insert(
+            "list_connectors",
+            kyma_server::agent::connector_tools::tool_list_connectors(ctx.clone()),
+        );
+        map.insert(
+            "connector_read",
+            kyma_server::agent::connector_tools::tool_connector_read(ctx),
+        );
+        Self {
+            by_name: Arc::new(map),
+        }
+    }
+
     /// Render the tools as MCP `tools/list` entries.
     pub fn list(&self) -> Vec<Value> {
         let mut entries: Vec<(&'static str, Value)> = Vec::with_capacity(self.by_name.len());

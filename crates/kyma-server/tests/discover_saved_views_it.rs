@@ -37,6 +37,7 @@ impl AuthBackend for TestAuth {
             tenant: kyma_core::tenant::DEFAULT_TENANT,
             role: Role::Admin,
             subject: Some("test-user".to_string()),
+            allowed_databases: None,
         })
     }
 }

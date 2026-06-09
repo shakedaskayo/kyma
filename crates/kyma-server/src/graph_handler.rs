@@ -9,21 +9,33 @@ use kyma_core::catalog::Catalog;
 use kyma_graph::{ColumnDef, SchemaSource};
 
 /// Adapts the full [`Catalog`] down to the narrow [`SchemaSource`] the
-/// schema-graph needs.
+/// schema-graph needs. When `allowed` is `Some`, only those databases are
+/// visible — this is how per-database token scope applies to the synthetic
+/// schema graph (mirrors `catalog_handler::filter_schema_by_principal`).
 pub struct CatalogSchemaSource {
     catalog: Arc<dyn Catalog>,
+    allowed: Option<Vec<String>>,
 }
 
 impl CatalogSchemaSource {
     pub fn new(catalog: Arc<dyn Catalog>) -> Self {
-        Self { catalog }
+        Self { catalog, allowed: None }
+    }
+
+    /// Restrict visible databases to `allowed` (None = unrestricted).
+    pub fn with_allowed(catalog: Arc<dyn Catalog>, allowed: Option<Vec<String>>) -> Self {
+        Self { catalog, allowed }
     }
 }
 
 #[async_trait]
 impl SchemaSource for CatalogSchemaSource {
     async fn databases(&self) -> anyhow::Result<Vec<String>> {
-        Ok(self.catalog.list_databases().await.map_err(anyhow::Error::from)?)
+        let mut dbs = self.catalog.list_databases().await.map_err(anyhow::Error::from)?;
+        if let Some(allowed) = &self.allowed {
+            dbs.retain(|d| allowed.iter().any(|a| a == d));
+        }
+        Ok(dbs)
     }
     async fn tables(&self, database: &str) -> anyhow::Result<Vec<String>> {
         Ok(self.catalog.list_tables(database).await.map_err(anyhow::Error::from)?)
@@ -121,7 +133,7 @@ impl GraphQueryExecutor for QueryEngineExecutor {
 // ---------------------------------------------------------------------------
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -225,10 +237,14 @@ async fn resolve(
     state: &QueryState,
     graph: &str,
     database: &str,
+    allowed_databases: Option<Vec<String>>,
 ) -> Result<ResolvedProvider, Response> {
     if graph == SCHEMA_GRAPH {
+        // The schema graph spans all databases — apply the principal's
+        // per-database scope so scoped tokens can't enumerate metadata of
+        // databases outside their allow-list.
         return Ok(ResolvedProvider::Schema(SchemaGraphProvider::new(Arc::new(
-            CatalogSchemaSource::new(state.catalog.clone()),
+            CatalogSchemaSource::with_allowed(state.catalog.clone(), allowed_databases),
         ))));
     }
     match state.catalog.get_graph(database, graph).await {
@@ -333,11 +349,36 @@ fn db_from_headers(headers: &axum::http::HeaderMap) -> String {
         .to_string()
 }
 
+/// Enforce per-database token scope. Returns `Err(Response)` on violation.
+/// When `db` is empty (no x-database header), there is nothing to enforce.
+fn enforce_scope(
+    principal: Option<&crate::auth::Principal>,
+    db: &str,
+) -> Result<(), Response> {
+    if db.is_empty() {
+        return Ok(());
+    }
+    if let Some(p) = principal {
+        if let Err((status, msg)) = crate::auth::check_database_scope(p, db) {
+            return Err((
+                status,
+                Json(serde_json::json!({"error": {"code": "forbidden", "message": msg}})),
+            )
+                .into_response());
+        }
+    }
+    Ok(())
+}
+
 async fn list_graphs(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let db = db_from_headers(&headers);
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
     let mut refs = vec![GraphRef {
         name: SCHEMA_GRAPH.into(),
         kind: "schema".into(),
@@ -359,12 +400,17 @@ async fn list_graphs(
 
 async fn overview(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path(graph): Path<String>,
     Query(q): Query<OverviewQuery>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let db = db_from_headers(&headers);
-    let p = match resolve(&state, &graph, &db).await {
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -376,12 +422,17 @@ async fn overview(
 
 async fn stats(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path(graph): Path<String>,
     Query(q): Query<RealmQuery>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let db = db_from_headers(&headers);
-    let p = match resolve(&state, &graph, &db).await {
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -393,11 +444,16 @@ async fn stats(
 
 async fn schema(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path(graph): Path<String>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let db = db_from_headers(&headers);
-    let p = match resolve(&state, &graph, &db).await {
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -409,11 +465,16 @@ async fn schema(
 
 async fn node(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path((graph, id)): Path<(String, String)>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let db = db_from_headers(&headers);
-    let p = match resolve(&state, &graph, &db).await {
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -430,12 +491,17 @@ async fn node(
 
 async fn subgraph(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path((graph, id)): Path<(String, String)>,
     Query(q): Query<SubgraphQuery>,
     headers: axum::http::HeaderMap,
 ) -> Response {
     let db = db_from_headers(&headers);
-    let p = match resolve(&state, &graph, &db).await {
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -447,12 +513,17 @@ async fn subgraph(
 
 async fn search(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path(graph): Path<String>,
     headers: axum::http::HeaderMap,
     Json(body): Json<SearchBody>,
 ) -> Response {
     let db = db_from_headers(&headers);
-    let p = match resolve(&state, &graph, &db).await {
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -467,12 +538,17 @@ async fn search(
 
 async fn neighbors(
     State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path(graph): Path<String>,
     headers: axum::http::HeaderMap,
     Json(body): Json<NeighborsBody>,
 ) -> Response {
     let db = db_from_headers(&headers);
-    let p = match resolve(&state, &graph, &db).await {
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
         Ok(p) => p,
         Err(r) => return r,
     };

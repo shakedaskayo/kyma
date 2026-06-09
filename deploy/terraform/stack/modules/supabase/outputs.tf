@@ -8,11 +8,17 @@ output "project_url" {
   description = "Project base URL — auth (JWKS) + REST live under it."
 }
 
-# The provider exposes only the ref; the connection string is derived.
+# Session-mode pooler URL (IPv4-friendly); falls back to the direct host
+# if the pooler data source returns nothing.
 output "database_url" {
-  value       = "postgresql://postgres:${var.db_pass}@db.${supabase_project.this.id}.supabase.co:5432/postgres"
+  value       = local.database_url
   description = "Postgres connection string (kyma catalog)."
   sensitive   = true
+}
+
+output "storage_s3_endpoint" {
+  value       = "https://${supabase_project.this.id}.storage.supabase.co/storage/v1/s3"
+  description = "Supabase Storage S3-protocol endpoint (extents store)."
 }
 
 output "anon_key" {

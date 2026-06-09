@@ -182,48 +182,6 @@
   border-radius: 3px;
 }
 
-/* ---------------- AgentcyLabs byline (hero + landing footer) ------------- */
-.kyma-byline {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-family: var(--kyma-font-mono);
-  font-size: 0.78rem;
-  letter-spacing: 0.02em;
-  color: var(--kyma-fg-soft);
-  text-decoration: none;
-  margin-bottom: 1.25rem;
-  padding: 0.35rem 0.7rem;
-  border: 1px solid var(--kyma-rule-soft);
-  border-radius: 999px;
-  background: var(--kyma-bg-soft);
-  transition: border-color 0.15s ease, color 0.15s ease;
-}
-.kyma-byline:hover {
-  border-color: var(--kyma-accent);
-  color: var(--kyma-fg);
-}
-.kyma-byline strong {
-  color: var(--kyma-fg);
-  font-weight: 600;
-}
-.kyma-byline img {
-  display: block;
-  flex-shrink: 0;
-}
-
-.kyma-byline--footer {
-  font-size: 0.85rem;
-  margin-bottom: 0.5rem;
-  padding: 0.6rem 1rem;
-  background: var(--kyma-bg-soft);
-}
-.kyma-byline--footer .kyma-byline-cta {
-  color: var(--kyma-accent);
-  margin-left: 0.25rem;
-  white-space: nowrap;
-}
-
 .kyma-landing-footer {
   margin-top: 4rem;
   padding-top: 2rem;
@@ -245,8 +203,7 @@
 }
 
 /* Doc-page footer — slim, two lines (message + copyright). VitePress
-   already styles the container; we only need to polish links + the
-   inline AgentcyLabs mark. */
+   already styles the container; we only need to polish the links. */
 .VPFooter .kyma-footer-link {
   color: var(--kyma-link);
   text-decoration: none;
@@ -255,41 +212,66 @@
 .VPFooter .kyma-footer-link:hover {
   text-decoration: underline;
 }
-.VPFooter .kyma-footer-mark {
-  display: inline-block;
-  vertical-align: -0.15em;
-  margin-right: 0.15em;
-}
 
 /* ============================================================================
    Doc-page utilities (used by .md content for diagrams, callouts, grids)
    ============================================================================ */
 .feature-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 0.75rem;
-  margin: 1rem 0;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.1rem;
+  margin: 1.75rem 0;
 }
 .feature-card {
+  position: relative;
   background: var(--kyma-bg-soft);
   border: 1px solid var(--kyma-rule-soft);
-  border-radius: 6px;
-  padding: 1rem 1.2rem;
-  transition: border-color 0.15s;
+  border-radius: 10px;
+  padding: 1.35rem 1.45rem 1.4rem;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+/* phosphor LED — a quiet "this panel is live" cue */
+.feature-card::after {
+  content: "";
+  position: absolute;
+  top: 1.15rem;
+  right: 1.2rem;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--kyma-accent);
+  box-shadow: 0 0 0 3px var(--vp-c-brand-soft);
+  opacity: 0.5;
+  transition: opacity 0.18s ease, box-shadow 0.18s ease;
 }
 .feature-card:hover {
   border-color: var(--kyma-accent);
+  box-shadow: 0 0 0 1px var(--kyma-accent), 0 14px 34px -18px var(--vp-c-brand-soft);
+  transform: translateY(-2px);
+}
+.feature-card:hover::after {
+  opacity: 1;
+  box-shadow: 0 0 10px 1px var(--kyma-accent);
 }
 .feature-card h3 {
   font-family: var(--kyma-font-mono);
-  font-size: 0.95rem;
-  margin: 0 0 0.4rem;
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.5rem;
+  padding-right: 1rem;
 }
+.feature-card h3 a { color: var(--kyma-fg); }
+.feature-card h3 a:hover { color: var(--kyma-accent); }
 .feature-card p {
-  margin: 0;
+  margin: 0.4rem 0 0;
   color: var(--kyma-fg-soft);
   font-size: 0.92rem;
-  line-height: 1.5;
+  line-height: 1.6;
+}
+.feature-card div[class*="language-"] {
+  margin: 0.75rem 0 0.1rem;
+  font-size: 0.8rem;
 }
 
 /* ============================================================================
@@ -307,10 +289,6 @@
   position: relative;
   text-align: center;
   margin-bottom: 5rem;
-}
-
-.kyma-hero--orbit .kyma-byline {
-  margin: 0 auto 1.5rem;
 }
 
 .kyma-hero-title {
@@ -1063,4 +1041,262 @@
   font-size: 0.85em;
   color: var(--vp-c-text-2);
   margin-bottom: 1.2rem;
+}
+
+/* ============================================================================
+   Terminal kit — quickstart hero, path cards, eyebrows, callouts
+   "Tasteful terminal": phosphor accents, mono kickers, window-chrome blocks.
+   ============================================================================ */
+
+/* ---- Mono eyebrow / kicker ----------------------------------------------- */
+.vp-doc .kyma-eyebrow {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--kyma-accent);
+  margin: 0 0 0.7rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.vp-doc .kyma-eyebrow::before {
+  content: "//";
+  opacity: 0.55;
+}
+
+/* ---- Quickstart hero ------------------------------------------------------ */
+.vp-doc .kyma-qs-lede {
+  font-size: 1.18rem;
+  line-height: 1.55;
+  color: var(--kyma-fg-soft);
+  max-width: 48ch;
+  margin: 0.2rem 0 1.7rem;
+}
+
+/* ---- Command-first terminal (dark even in light mode) --------------------- */
+.kyma-terminal {
+  max-width: 720px;
+  margin: 0 0 2.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 11px;
+  overflow: hidden;
+  background: #0b0e13;
+  box-shadow: 0 22px 48px -26px rgba(0, 0, 0, 0.6);
+}
+.kyma-terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.62rem 0.95rem;
+  font-family: var(--kyma-font-mono);
+  font-size: 0.73rem;
+  letter-spacing: 0.05em;
+  color: #8b9bb0;
+  background: #11151c;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.kyma-terminal-bar .led {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #7ed957;
+  box-shadow: 0 0 8px 0 rgba(126, 217, 87, 0.9);
+  flex: none;
+}
+.kyma-terminal pre {
+  margin: 0;
+  padding: 1rem 1.1rem 1.1rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--kyma-font-mono);
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: #d6e4d0;
+}
+.kyma-terminal .prompt {
+  color: #7ed957;
+  font-weight: 700;
+  user-select: none;
+  margin-right: 0.6rem;
+}
+.kyma-terminal .caret {
+  display: inline-block;
+  width: 0.55ch;
+  height: 1.05em;
+  margin-left: 0.25rem;
+  vertical-align: -0.18em;
+  background: #7ed957;
+  box-shadow: 0 0 8px 0 rgba(126, 217, 87, 0.7);
+  animation: kyma-blink 1.15s steps(1) infinite;
+}
+@keyframes kyma-blink { 50% { opacity: 0; } }
+
+/* ---- Primary path cards --------------------------------------------------- */
+.kyma-paths {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.15rem;
+  margin: 0.4rem 0 2.6rem;
+}
+.kyma-path {
+  position: relative;
+  display: block;
+  padding: 1.4rem 1.5rem 1.45rem 1.7rem;
+  border: 1px solid var(--kyma-rule-soft);
+  border-radius: 12px;
+  background: var(--kyma-bg-soft);
+  color: var(--kyma-fg);
+  text-decoration: none !important;
+  overflow: hidden;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+.kyma-path::before {  /* phosphor accent rail */
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--kyma-accent);
+  opacity: 0.45;
+  transition: opacity 0.18s ease, box-shadow 0.18s ease;
+}
+.kyma-path:hover {
+  border-color: var(--kyma-accent);
+  box-shadow: 0 16px 38px -18px var(--vp-c-brand-soft);
+  transform: translateY(-2px);
+}
+.kyma-path:hover::before {
+  opacity: 1;
+  box-shadow: 0 0 14px 0 var(--kyma-accent);
+}
+.kyma-path--primary {
+  background: var(--vp-c-brand-soft);
+  border-color: color-mix(in srgb, var(--kyma-accent) 32%, transparent);
+}
+.kyma-path-kicker {
+  display: block;
+  font-family: var(--kyma-font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--kyma-accent);
+  margin-bottom: 0.6rem;
+}
+.kyma-path-title {
+  display: block;
+  font-family: var(--kyma-font-mono);
+  font-size: 1.24rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--kyma-fg);
+  margin-bottom: 0.45rem;
+}
+.kyma-path-desc {
+  display: block;
+  font-size: 0.93rem;
+  line-height: 1.6;
+  color: var(--kyma-fg-soft);
+  margin-bottom: 0.95rem;
+}
+.kyma-path-cmd {
+  display: block;
+  font-family: var(--kyma-font-mono);
+  font-size: 0.82rem;
+  color: var(--kyma-fg);
+  background: var(--kyma-bg);
+  border: 1px solid var(--kyma-rule-soft);
+  border-radius: 7px;
+  padding: 0.5rem 0.72rem;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.kyma-path-cmd::before {
+  content: "$ ";
+  color: var(--kyma-accent);
+  font-weight: 700;
+}
+.kyma-path-cta {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--kyma-accent);
+}
+.kyma-path:hover .kyma-path-cta { text-decoration: underline; }
+
+/* ---- "Then" — de-emphasized secondary links ------------------------------ */
+.kyma-next {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem 1.15rem;
+  margin: 0.3rem 0 2.4rem;
+}
+.kyma-next a {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.55rem;
+  padding: 0.72rem 0.25rem;
+  border-bottom: 1px solid var(--kyma-rule-soft);
+  font-family: var(--kyma-font-mono);
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--kyma-fg);
+  text-decoration: none !important;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.kyma-next a::before {
+  content: "→";
+  color: var(--kyma-accent);
+}
+.kyma-next a span {
+  flex: 1 0 100%;
+  padding-left: 1.1rem;
+  font-family: var(--kyma-font-body);
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--kyma-muted);
+}
+.kyma-next a:hover {
+  color: var(--kyma-accent);
+  border-color: var(--kyma-accent);
+}
+
+/* ---- Callouts: terminal panels with a mono label ------------------------- */
+.vp-doc .custom-block {
+  border-radius: 10px;
+  border: 1px solid var(--kyma-rule-soft);
+  border-left: 3px solid var(--kyma-accent);
+}
+.vp-doc .custom-block-title {
+  font-family: var(--kyma-font-mono);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.vp-doc .custom-block.warning { border-left-color: #d99a2b; }
+.vp-doc .custom-block.danger  { border-left-color: #d9534f; }
+.vp-doc .custom-block.info    { border-left-color: var(--kyma-link); }
+
+/* ---- Code blocks: a quieter terminal rail -------------------------------- */
+.vp-doc div[class*="language-"] {
+  border-radius: 10px;
+  border: 1px solid var(--kyma-rule-soft);
+}
+.vp-doc div[class*="language-"] > span.lang {
+  font-family: var(--kyma-font-mono);
+  color: var(--kyma-accent);
+  opacity: 0.7;
+}
+
+/* ---- Responsive ----------------------------------------------------------- */
+@media (max-width: 640px) {
+  .kyma-paths,
+  .kyma-next { grid-template-columns: 1fr; }
 }

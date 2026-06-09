@@ -17,7 +17,6 @@ use kyma_compaction::{
 };
 use kyma_connectors::prometheus::PromConnector;
 use kyma_connectors::registry::ConnectorRegistry;
-use kyma_connectors::runner::ConnectorRunner;
 use kyma_connectors::scheduler::ConnectorScheduler;
 use kyma_connectors::secrets::EnvSecretStore;
 use kyma_core::catalog::GraphSpec;
@@ -259,6 +258,23 @@ async fn main() -> Result<()> {
         }
         _ => Arc::new(EnvAuthBackend::from_env()),
     };
+    // Optionally wrap with OIDC validation. When KYMA_OIDC_ISSUERS is set,
+    // JWTs are validated against the listed issuers; non-JWT tokens fall
+    // through to the inner backend. When unset, OIDC is disabled and the
+    // inner backend handles all auth.
+    let backend: Arc<dyn AuthBackend> =
+        match kyma_server::auth::OidcConfig::from_env() {
+            Some(cfg) => {
+                tracing::info!(
+                    issuers = ?cfg.issuers,
+                    audience = %cfg.audience,
+                    "OIDC auth enabled"
+                );
+                Arc::new(kyma_server::auth::OidcAuthBackend::new(cfg, backend))
+            }
+            None => backend,
+        };
+
     if backend.enabled() {
         info!("auth: bearer-token protection enabled on /v1/ingest (write) + /v1/query (read)");
     } else {
@@ -296,6 +312,10 @@ async fn main() -> Result<()> {
         catalog: catalog.clone(),
         write_path: write_path.clone(),
     })
+    // Database scope check runs after auth middleware injects Principal.
+    .layer(axum::middleware::from_fn(
+        kyma_server::database_scope_middleware,
+    ))
     .layer(axum::middleware::from_fn_with_state(
         AuthLayerState {
             backend: backend.clone(),
@@ -389,6 +409,10 @@ async fn main() -> Result<()> {
         skills: skills_store,
         mcp_url,
         memory: memory.clone(),
+        // Server mode: dreaming persists to Postgres + the worker fabric, not
+        // the degraded local store. Settings live in the `memory_settings` row.
+        local_dreaming: None,
+        memory_settings_path: None,
     };
     // Build the SchemaCache once and share it across the query router, live
     // router, and flight router via Arc::clone — they all serve the same node
@@ -424,20 +448,40 @@ async fn main() -> Result<()> {
         pool: Some(pg_pool.clone()),
         memory: memory.clone(),
     };
+    // Read-only connector access over MCP: lets MCP-driven agents (notably
+    // Claude CLI dreaming runs) fill memory gaps from configured sources.
+    // Budget here is generous server-lifetime hygiene; per-run budgets are
+    // enforced on the adk path and by wall-clock on the CLI path.
+    let mcp_connector_ctx = kyma_server::agent::connector_tools::ConnectorToolCtx {
+        pool: Some(pg_pool.clone()),
+        credentials: cred_store.clone(),
+        tenant: kyma_core::tenant::DEFAULT_TENANT,
+        budget: Arc::new(
+            kyma_server::agent::connector_tools::ConnectorReadBudget::new(10_000, u64::MAX),
+        ),
+    };
     let mcp_state = kyma_mcp::McpState {
-        dispatch: kyma_mcp::ToolDispatch::new(mcp_shared).with_artifact_store(store.clone()),
+        dispatch: kyma_mcp::ToolDispatch::new(mcp_shared)
+            .with_artifact_store(store.clone())
+            .with_connector_tools(mcp_connector_ctx),
         server_info: kyma_mcp::ServerInfo {
             name: "kyma".into(),
             version: env!("CARGO_PKG_VERSION").into(),
         },
     };
-    let mcp_router = kyma_mcp::router(mcp_state).layer(axum::middleware::from_fn_with_state(
-        AuthLayerState {
-            backend: backend.clone(),
-            required: Role::Read,
-        },
-        require_role_middleware,
-    ));
+    let mcp_router = kyma_mcp::router(mcp_state)
+        // Fail closed: MCP tools (execute_sql etc.) address databases
+        // internally — same policy as /v1/agent/* and /flight/*.
+        .layer(axum::middleware::from_fn(
+            kyma_server::scoped_token_guard_middleware,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Read,
+            },
+            require_role_middleware,
+        ));
     // Connector registry + row-sink.
     let mut conn_reg = ConnectorRegistry::new();
     conn_reg.register(Arc::new(PromConnector));
@@ -656,6 +700,22 @@ async fn main() -> Result<()> {
             require_role_middleware,
         ),
     );
+    // Worker/job fabric — the distributed context-engine control plane.
+    // Worker-facing endpoints authenticate with worker tokens (kyw_…) via
+    // their own middleware; the operator surface rides the regular bearer
+    // middleware at Role::Write.
+    let fabric_store = std::sync::Arc::new(kyma_catalog::PgFabricStore::new(pg_pool.clone()));
+    let fabric_state = kyma_server::fabric_handler::FabricState::new(fabric_store.clone(), None);
+    let fabric_worker_router = kyma_server::fabric_handler::worker_router(fabric_state.clone());
+    let fabric_admin_router = kyma_server::fabric_handler::admin_router(fabric_state.clone()).layer(
+        axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Write,
+            },
+            require_role_middleware,
+        ),
+    );
     // Live-tail WebSocket — mounted WITHOUT auth middleware; the session
     // authenticates via its first message (browsers can't send WS headers).
     let live_router = kyma_server::discover::live::explore_live_router(
@@ -685,11 +745,19 @@ async fn main() -> Result<()> {
         .merge(oauth_callback_router)
         .merge(auth_login_router)
         .merge(auth_session_router)
+        .merge(fabric_worker_router)
+        .merge(fabric_admin_router)
         .merge(live_router);
 
     let app = app.merge(github_repos_router);
     #[cfg(feature = "web-ui")]
     let app = app.merge(kyma_server::web_ui::router());
+    // Re-assert the SPA fallback on the final app, un-layered: merging
+    // auth-layered routers can leave the inherited fallback wrapped by the
+    // auth middleware, which would 401 the login page and every asset the
+    // moment auth is enabled (supabase/session backends).
+    #[cfg(feature = "web-ui")]
+    let app = app.fallback(kyma_server::web_ui::serve_spa_fallback);
 
     // Expose Flight over gRPC-web at /flight/* so browsers can query via Arrow Flight.
     // Auth is enforced the same way as /v1/* (Bearer token, Role::Read required).
@@ -703,6 +771,13 @@ async fn main() -> Result<()> {
                 node_id: Some(lease.node_id),
                 pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
             })
+            // Fail closed: database-scoped tokens cannot use Flight (tickets
+            // address databases internally, bypassing per-handler scope
+            // checks). Layered before auth so it runs AFTER auth populates
+            // the Principal extension (axum layers run outermost-last-added).
+            .layer(axum::middleware::from_fn(
+                kyma_server::scoped_token_guard_middleware,
+            ))
             .layer(axum::middleware::from_fn_with_state(
                 AuthLayerState {
                     backend: backend.clone(),
@@ -933,7 +1008,7 @@ async fn main() -> Result<()> {
         None => None,
     };
 
-    // Connector scheduler.
+    // Connector scheduler — enqueues connector_sync jobs on the worker fabric.
     let conn_sched = ConnectorScheduler::new(pg_catalog.clone());
     let conn_sched_rx = shutdown_tx.subscribe();
     let conn_sched_handle = tokio::spawn(conn_sched.run(async move {
@@ -941,34 +1016,91 @@ async fn main() -> Result<()> {
         let _ = rx.recv().await;
     }));
 
-    // Connector runners (N workers, default 4).
-    let n_conn_workers = std::env::var("KYMA_CONNECTOR_WORKERS")
+    // Embedded fabric worker — the server's in-process compute identity. It
+    // registers in the workers table (visible in GET /v1/workers next to any
+    // remote daemons) and runs N job-runner loops claiming fabric jobs.
+    let n_fabric_workers = std::env::var("KYMA_FABRIC_WORKERS")
+        .or_else(|_| std::env::var("KYMA_CONNECTOR_WORKERS"))
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(4);
     // Shared object-store artifact capability for connectors that persist
-    // full-file blobs (e.g. GitHub Actions job logs). Writes the redacted blob
-    // and registers its catalog tracking row in one call.
+    // full-file blobs (e.g. GitHub Actions job logs) — threaded into the fabric
+    // connector executor via `tick_deps` below.
     let artifact_store: std::sync::Arc<dyn kyma_connectors::artifacts::ArtifactStore> =
         std::sync::Arc::new(kyma_connectors::artifacts::ObjectArtifactStore::new(
             store.clone(),
             pg_catalog.clone(),
         ));
-    let mut conn_runner_handles = Vec::with_capacity(n_conn_workers);
-    for _ in 0..n_conn_workers {
-        let runner = ConnectorRunner::new(
-            pg_catalog.clone(),
-            conn_registry.clone(),
-            conn_sink.clone(),
-            EnvSecretStore,
-            lease.node_id,
+    let fabric_lease_secs: i64 = std::env::var("KYMA_FABRIC_LEASE_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(300);
+    let mut embedded_caps: Vec<String> = ["connector", "dreaming", "llm"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    // Advertise the Claude CLI when the binary is present — dreaming jobs
+    // running on the ClaudeCli engine require it.
+    if kyma_server::agent::engine::claude_cli::locate_binary().is_some() {
+        embedded_caps.push("claude-cli".to_string());
+    }
+    let embedded_host = hostname::get()
+        .ok()
+        .and_then(|h| h.into_string().ok())
+        .unwrap_or_else(|| "localhost".to_string());
+    let embedded_worker_id = fabric_store
+        .upsert_embedded_worker(
+            kyma_core::tenant::DEFAULT_TENANT,
+            &kyma_core::fabric::WorkerRegistration {
+                name: format!("embedded@{embedded_host}"),
+                kind: kyma_core::fabric::WorkerKind::Embedded,
+                hostname: Some(embedded_host.clone()),
+                capabilities: embedded_caps.clone(),
+                labels: serde_json::json!({}),
+                sources: serde_json::json!({}),
+                max_concurrent: n_fabric_workers as i32,
+                version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            },
         )
-        .with_graph_register(graph_register.clone())
-        .with_credentials(cred_store.clone())
-        .with_oauth(pg_pool.clone(), crypto.clone())
-        .with_artifacts(artifact_store.clone());
+        .await
+        .map_err(|e| anyhow::anyhow!("registering embedded worker: {e}"))?;
+
+    let tick_deps = kyma_connectors::runner::ConnectorTickDeps {
+        control: Arc::new(kyma_connectors::runner::PgConnectorControl::new(
+            pg_pool.clone(),
+        )),
+        registry: conn_registry.clone(),
+        sink: conn_sink.clone(),
+        graph_register: graph_register.clone(),
+        secrets: Arc::new(EnvSecretStore),
+        credentials: cred_store.clone(),
+        oauth: Some(kyma_connectors::oauth::OAuthRuntime {
+            pool: pg_pool.clone(),
+            crypto: crypto.clone(),
+        }),
+        artifacts: Some(artifact_store.clone()),
+    };
+    let mut exec_registry = kyma_jobs::ExecutorRegistry::new();
+    exec_registry.register(Arc::new(
+        kyma_jobs::connector_sync::ConnectorSyncExecutor::new(tick_deps),
+    ));
+    exec_registry.register(Arc::new(DreamingExecutor {
+        state: agent_state.clone(),
+        worker_id: embedded_worker_id,
+    }));
+    let mut fabric_runner_handles = Vec::with_capacity(n_fabric_workers);
+    for _ in 0..n_fabric_workers {
+        let queue = Arc::new(kyma_jobs::PgQueue::new(
+            fabric_store.clone(),
+            embedded_worker_id,
+            None, // all-tenant: the embedded worker serves the whole deployment
+            embedded_caps.clone(),
+            fabric_lease_secs,
+        ));
+        let runner = kyma_jobs::JobRunner::new(queue, exec_registry.clone(), fabric_lease_secs);
         let runner_rx = shutdown_tx.subscribe();
-        conn_runner_handles.push(tokio::spawn(async move {
+        fabric_runner_handles.push(tokio::spawn(async move {
             let mut rx = runner_rx;
             runner
                 .run(async move {
@@ -977,10 +1109,62 @@ async fn main() -> Result<()> {
                 .await;
         }));
     }
+
+    // Fabric housekeeping: embedded-worker heartbeat + stale sweep (requeue
+    // expired leases, fail exhausted ones, offline silent workers).
+    let fabric_sweep_secs: u64 = std::env::var("KYMA_FABRIC_SWEEP_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30);
+    let fabric_offline_secs: i64 = std::env::var("KYMA_FABRIC_OFFLINE_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(90);
+    let fabric_housekeeping = {
+        let store = fabric_store.clone();
+        let mut rx = shutdown_tx.subscribe();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(fabric_sweep_secs));
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = rx.recv() => return,
+                    _ = tick.tick() => {
+                        if let Err(e) = store
+                            .touch_heartbeat(embedded_worker_id, &kyma_core::fabric::Heartbeat::default())
+                            .await
+                        {
+                            tracing::warn!(error = %e, "embedded worker heartbeat failed");
+                        }
+                        match store.sweep_stale(fabric_offline_secs).await {
+                            Ok((0, 0, 0)) => {}
+                            Ok((requeued, failed, offlined)) => tracing::info!(
+                                requeued, failed, offlined, "fabric sweep"
+                            ),
+                            Err(e) => tracing::warn!(error = %e, "fabric sweep failed"),
+                        }
+                    }
+                }
+            }
+        })
+    };
     info!(
-        workers = n_conn_workers,
-        "connector scheduler + runners started"
+        workers = n_fabric_workers,
+        worker_id = %embedded_worker_id,
+        "connector scheduler + embedded fabric worker started"
     );
+
+    // Dreaming scheduler — enqueues agentic memory-housekeeping jobs on the
+    // fabric when enabled in memory settings (OFF by default).
+    let dreaming_sched = kyma_server::agent::dreaming::DreamingScheduler::new(
+        agent_state.clone(),
+        fabric_store.clone(),
+    );
+    let dreaming_sched_rx = shutdown_tx.subscribe();
+    let dreaming_sched_handle = tokio::spawn(dreaming_sched.run(async move {
+        let mut rx = dreaming_sched_rx;
+        let _ = rx.recv().await;
+    }));
 
     // Idempotency ledger cleanup — runs every hour, deletes entries older
     // than 25 hours (1-hour grace beyond the 24-hour TTL).
@@ -1054,7 +1238,7 @@ async fn main() -> Result<()> {
     //    Apply dev CORS to the outermost router so browsers on a separate
     //    origin (e.g. `localhost:5173`) can reach the API. Production
     //    deploys should replace this with a config-driven allow-list.
-    let app = kyma_server::with_permissive_cors(app);
+    let app = kyma_server::with_configured_cors(app);
     let listener = tokio::net::TcpListener::bind(cli.http_addr)
         .await
         .with_context(|| format!("binding {}", cli.http_addr))?;
@@ -1116,8 +1300,17 @@ async fn main() -> Result<()> {
     if let Some((_, h)) = memory_queue {
         let _ = h.await;
     }
-    for h in conn_runner_handles {
+    for h in fabric_runner_handles {
         let _ = h.await;
+    }
+    let _ = fabric_housekeeping.await;
+    let _ = dreaming_sched_handle.await;
+    // Mark the embedded worker offline so discovery doesn't show a ghost.
+    if let Err(e) = fabric_store
+        .set_worker_status(embedded_worker_id, kyma_core::fabric::WorkerStatus::Offline)
+        .await
+    {
+        error!(error = %e, "failed to offline embedded worker on shutdown");
     }
 
     // 6. Best-effort cleanup — deregister the node.
@@ -1146,5 +1339,54 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => info!("ctrl-c received; shutting down"),
         _ = terminate => info!("SIGTERM received; shutting down"),
+    }
+}
+
+/// Embedded-worker executor for `dreaming` jobs: bridges the fabric's
+/// [`kyma_jobs::JobExecutor`] contract onto
+/// [`kyma_server::agent::dreaming::run_dreaming`], which owns the agent run
+/// and all persistence (run row, session, trace). Lives here because kyma-bin
+/// is the one place that holds both the fabric runtime and the AgentState.
+struct DreamingExecutor {
+    state: kyma_server::agent::AgentState,
+    worker_id: uuid::Uuid,
+}
+
+#[async_trait::async_trait]
+impl kyma_jobs::JobExecutor for DreamingExecutor {
+    fn kind(&self) -> &'static str {
+        kyma_core::fabric::JOB_DREAMING
+    }
+
+    async fn run(
+        &self,
+        ctx: &kyma_jobs::JobCtx,
+        job: &kyma_core::fabric::ClaimedJob,
+    ) -> Result<serde_json::Value, kyma_jobs::JobError> {
+        let mut req: kyma_server::agent::dreaming::DreamingRequest =
+            serde_json::from_value(job.payload.clone())
+                .map_err(|e| kyma_jobs::JobError::Config(format!("dreaming payload: {e}")))?;
+        req.job_id = Some(job.id);
+        req.worker_id = Some(self.worker_id);
+
+        // Bridge the executor's live snapshots onto the job's progress JSONB.
+        let sink = ctx.progress.clone();
+        let progress: kyma_server::agent::dreaming::ProgressFn =
+            std::sync::Arc::new(move |snapshot| {
+                let sink = sink.clone();
+                Box::pin(async move { sink.push(snapshot).await })
+            });
+
+        let (run_id, outcome) =
+            kyma_server::agent::dreaming::run_dreaming(&self.state, progress, req)
+                .await
+                // LLM runs are not retried (max_attempts=1) — any failure here
+                // is terminal for the job; the run row carries the detail.
+                .map_err(|e| kyma_jobs::JobError::Permanent(e.to_string()))?;
+        let _ = ctx.queue.link_dreaming_run(job.id, run_id).await;
+        Ok(serde_json::json!({
+            "run_id": run_id,
+            "stats": outcome,
+        }))
     }
 }

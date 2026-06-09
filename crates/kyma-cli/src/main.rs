@@ -28,7 +28,7 @@ mod scrape;
 mod update;
 mod users;
 use client::{
-    delete_json, effective_config, get_json, install_target, load_config, probe_health,
+    delete_json, effective_config, get_json, load_config, probe_health,
     save_config, stream_agent_ask, write_skill_file, ClientConfig,
 };
 
@@ -265,6 +265,13 @@ enum Command {
         #[command(subcommand)]
         action: WorkerAction,
     },
+    /// Manage the local server as an OS user service (launchd on macOS,
+    /// systemd --user on Linux): starts at login, restarts on crash —
+    /// `kyma serve` that stays up. See `kyma service --help`.
+    Service {
+        #[command(subcommand)]
+        action: ServiceAction,
+    },
 
     // ── admin subcommands ─────────────────────────────────────────────
 
@@ -370,6 +377,59 @@ enum WorkerAction {
     /// Stop + remove the background sync worker.
     Uninstall,
     /// Show whether the worker is installed/running and where it logs.
+    Status,
+    /// Run a fabric node daemon: register with the control plane, sync local
+    /// sources, and pull jobs this node accepts (low-impact by default).
+    Run {
+        /// Control-plane URL (or KYMA_SERVER_URL).
+        #[arg(long, env = "KYMA_SERVER_URL")]
+        server: String,
+        /// Worker token from `kyma worker create` (or KYMA_WORKER_TOKEN).
+        #[arg(long, env = "KYMA_WORKER_TOKEN")]
+        token: String,
+        /// Job kinds to accept (comma-separated). Default: source_sync only.
+        #[arg(long, value_delimiter = ',', default_value = "source_sync")]
+        accept: Vec<String>,
+        #[arg(long, default_value_t = 1)]
+        max_concurrent: usize,
+        /// Friendly node name (defaults to node@<hostname>).
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Mint a worker identity + token on the control plane (admin).
+    Create {
+        #[arg(long)]
+        name: String,
+        /// Capabilities to advertise (comma-separated). Default: `sources`
+        /// (this node owns local coding-agent sources). The running daemon also
+        /// advertises a per-agent `source:<kind>` for each detected agent.
+        #[arg(long, value_delimiter = ',', default_value = "sources")]
+        capabilities: Vec<String>,
+    },
+    /// List registered workers (node discovery).
+    List,
+    /// Revoke a worker's token and mark it offline.
+    Revoke {
+        /// Worker id (uuid).
+        id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ServiceAction {
+    /// Install + start the server service (web UI + API + workers).
+    Install {
+        /// Listen address.
+        #[arg(long, default_value = "127.0.0.1:7777")]
+        addr: String,
+        /// Static admin token (KYMA_AUTH_TOKENS=<token>:admin in the service
+        /// env). Omit for the auth-disabled local default.
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Stop + remove the server service.
+    Uninstall,
+    /// Show whether the server service is installed/running and where it logs.
     Status,
 }
 
@@ -482,6 +542,105 @@ async fn main() -> Result<()> {
             }
             WorkerAction::Uninstall => kyma_local::worker::uninstall(),
             WorkerAction::Status => kyma_local::worker::status(),
+            WorkerAction::Run {
+                server,
+                token,
+                accept,
+                max_concurrent,
+                name,
+            } => {
+                kyma_local::node::run_node(kyma_local::node::NodeConfig {
+                    server_url: server,
+                    token,
+                    accept,
+                    max_concurrent,
+                    name,
+                })
+                .await
+            }
+            WorkerAction::Create { name, capabilities } => {
+                let cfg = client::effective_config()?;
+                let resp = reqwest::Client::new()
+                    .post(format!("{}/v1/workers", cfg.endpoint.trim_end_matches('/')))
+                    .bearer_auth(cfg.token.clone().unwrap_or_default())
+                    .json(&serde_json::json!({ "name": name, "capabilities": capabilities }))
+                    .send()
+                    .await?;
+                let status = resp.status();
+                let body: serde_json::Value = resp.json().await.unwrap_or_default();
+                if !status.is_success() {
+                    anyhow::bail!("create failed ({status}): {body}");
+                }
+                println!("worker_id: {}", body["worker_id"].as_str().unwrap_or("?"));
+                println!("token:     {}", body["token"].as_str().unwrap_or("?"));
+                println!();
+                println!("Shown once — store it now. Start the node with:");
+                println!(
+                    "  kyma worker run --server {} --token <token>",
+                    cfg.endpoint
+                );
+                Ok(())
+            }
+            WorkerAction::List => {
+                let cfg = client::effective_config()?;
+                let resp = reqwest::Client::new()
+                    .get(format!("{}/v1/workers", cfg.endpoint.trim_end_matches('/')))
+                    .bearer_auth(cfg.token.clone().unwrap_or_default())
+                    .send()
+                    .await?;
+                let body: serde_json::Value = resp.json().await.unwrap_or_default();
+                let items = body["items"].as_array().cloned().unwrap_or_default();
+                if items.is_empty() {
+                    println!("no workers registered");
+                    return Ok(());
+                }
+                for w in items {
+                    println!(
+                        "{}  {:<26} {:<9} {:<8} caps={} presence={} heartbeat={}",
+                        w["id"].as_str().unwrap_or("?"),
+                        w["name"].as_str().unwrap_or("?"),
+                        w["kind"].as_str().unwrap_or("?"),
+                        w["status"].as_str().unwrap_or("?"),
+                        w["capabilities"]
+                            .as_array()
+                            .map(|a| a.len())
+                            .unwrap_or(0),
+                        w["presence"].as_array().map(|a| a.len()).unwrap_or(0),
+                        w["last_heartbeat"].as_str().unwrap_or("never"),
+                    );
+                }
+                Ok(())
+            }
+            WorkerAction::Revoke { id } => {
+                let cfg = client::effective_config()?;
+                let resp = reqwest::Client::new()
+                    .delete(format!(
+                        "{}/v1/workers/{}",
+                        cfg.endpoint.trim_end_matches('/'),
+                        id
+                    ))
+                    .bearer_auth(cfg.token.clone().unwrap_or_default())
+                    .send()
+                    .await?;
+                if resp.status().is_success() {
+                    println!("revoked {id}");
+                    Ok(())
+                } else {
+                    anyhow::bail!("revoke failed ({})", resp.status())
+                }
+            }
+        },
+        Command::Service { action } => match action {
+            ServiceAction::Install { addr, token } => {
+                kyma_local::server_service::install(&kyma_local::server_service::ServerOptions {
+                    addr,
+                    token,
+                    kyma_home: None,
+                })
+                .map(|_| ())
+            }
+            ServiceAction::Uninstall => kyma_local::server_service::uninstall(),
+            ServiceAction::Status => kyma_local::server_service::status(),
         },
 
         // ── admin subcommands ─────────────────────────────────────────

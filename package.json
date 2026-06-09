@@ -5,8 +5,18 @@
     "dev": "pnpm -C web dev",
     "build": "pnpm -C web build",
     "test": "pnpm -C web test",
+    "test:scripts": "node --test scripts/ky-prefix.test.mjs",
     "typecheck": "pnpm -C web typecheck",
-    "lint": "pnpm -C web lint"
+    "lint": "pnpm -C web lint",
+    "build:packages": "pnpm --filter @kyma-ai/client build && pnpm --filter @kyma-ai/react build",
+    "test:packages": "pnpm --filter @kyma-ai/client test && pnpm --filter @kyma-ai/react test",
+    "typecheck:all": "pnpm -r --filter './packages/*' --filter './web' --filter './examples/*' typecheck"
   },
-  "engines": { "node": ">=20", "pnpm": ">=9" }
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.0"
+  }
 }

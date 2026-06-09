@@ -31,12 +31,48 @@ identifiers; KQL is case-sensitive on operator names today.
 | `sort` / `order`       | `sort by col [asc \| desc], ...`                                 | Sort rows. KQL default is `desc` when omitted.                                |
 | `top`                  | `top N by col [asc \| desc]`                                     | `sort by col` + `take N` in one operator.                                     |
 | `distinct`             | `distinct [col1, col2, ...]`                                     | Deduplicate. With column list, also restricts the projection.                 |
-| `graph-traverse`       | `graph-traverse source <v> from <src> to <dst> max-hops N [direction forward\|backward\|both]` | Recursive edge-walk over a table where each row is an edge. Adds `depth` to the projection. |
+| `graph-traverse`       | `graph-traverse source <v> from <src> to <dst> max-hops N [direction forward\|backward\|both] [edge-type "<T>"]` | Recursive edge-walk over a table where each row is an edge. Emits the full originating edge row plus a `depth` column (strictly additive — `dst`/`depth` still present). |
 | `graph-shortest-path`  | `graph-shortest-path source <v> target <w> from <src> to <dst> max-hops N [direction ...]`   | Single-row result: `{depth, found}`. |
+| `make-graph`           | `make-graph <src> --> <dst> with <NodeTable> on <id>`                                          | Bind the active edge table to a node table for a following `graph-match`. Emits no SQL on its own; the row stream is unchanged. |
+| `graph-match`          | `graph-match (a)-[e[:TYPE]]->(b) project <var>.<col> [as <alias>], ...`                        | Fixed single-hop forward pattern over the preceding `make-graph`. Joins the edge table to the node table on each end. `project` is required (≥1 column). |
 
 `from`, `to`, `source`, `target`, `max-hops`, `direction`, `forward`,
-`backward`, `both`, `by`, `asc`, `desc` are reserved keywords inside
-their respective operators.
+`backward`, `both`, `edge-type`, `with`, `on`, `project`, `as`, `by`,
+`asc`, `desc` are reserved keywords inside their respective operators.
+
+### Graph operators
+
+The four graph operators treat an ordinary table as a set of edges —
+each row carries a source-id column and a destination-id column. They
+lower to recursive CTEs (traverse / shortest-path) or join CTEs
+(match), so the result is a normal row stream you can keep piping.
+
+```kusto
+// Walk up to 2 hops out from one seed node, following src → dst.
+context_edges
+| graph-traverse source "svc-a" from src to dst max-hops 2
+
+// Multiple seeds, and prune to a single edge type per hop.
+context_edges
+| graph-traverse source ("svc-a", "svc-b") from src to dst max-hops 3 edge-type "CALLS"
+
+// Shortest path between two nodes — one row back: {depth, found}.
+context_edges
+| graph-shortest-path source "svc-a" target "svc-z" from src to dst max-hops 6
+
+// Pattern match: bind edges to a node table, then project across the hop.
+call_edges
+| make-graph caller --> callee with services on id
+| graph-match (a)-[e:CALLS]->(b) project a.name, e.latency, b.name
+```
+
+`source` takes either a single scalar (`"svc-a"`) or a parenthesised
+tuple of seeds (`("svc-a", "svc-b")`). `direction` defaults to
+`forward`; `backward` walks `dst → src`, `both` walks either end.
+`edge-type "<T>"` matches the edge table's `type` column. `make-graph`
+must come from the edge table and immediately precede `graph-match`;
+the `:TYPE` in the pattern filters `e.type`, and each `project` item is
+`<var>.<col>` optionally `as <alias>`.
 
 ## Time helpers
 

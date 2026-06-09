@@ -272,6 +272,9 @@ impl SupabaseAuthBackend {
             tenant: DEFAULT_TENANT,
             role,
             subject: Some(username),
+            // Supabase tokens are unrestricted; per-database scoping rides on
+            // the generic-OIDC backend's claim mapping when that path is used.
+            allowed_databases: None,
         })
     }
 }

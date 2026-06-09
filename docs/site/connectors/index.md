@@ -117,9 +117,8 @@ polymorphic-field demotion to `dynamic`. Lands in DB-M3.
 ### [Multi-source data](/connectors/multi-source-data) 🚧
 
 The marquee surface — `live(...)` for federated reads, the
-`pushdown_summary` on every federated response, `kyma_connector_health`
-as a queryable kyma table. Cross-references the conceptual model at
-[Multi-source data](/concepts/multi-source-data).
+`pushdown_summary` on every federated response. Cross-references the
+conceptual model at [Multi-source data](/concepts/multi-source-data).
 
 </div>
 
@@ -134,9 +133,7 @@ as a queryable kyma table. Cross-references the conceptual model at
 - **One write path.** Rows produced by a tick go through the same
   JSON-to-Arrow coercion, the same staging buffer, and the same snapshot
   CAS as REST/NDJSON ingest. See [Extents and snapshots](/concepts/extents-and-snapshots).
-- **One health surface.** Per-tick metrics, `last_error`, `last_rows_ingested`
-  on the connector row, plus the `kyma_connector_health` view (DB-M0+) for
-  the database engines. See [Observability](/concepts/observability).
+- **One health surface.** Per-tick Prometheus metrics (`kyma_connector_cursor_age_seconds`, `kyma_connector_rows_ingested_total`, etc.) plus `last_error`, `last_rows_ingested`, `last_success_at` on the connector row (`GET /v1/connectors/:id`). See [Observability](/concepts/observability).
 
 ## What you get: a context graph
 

@@ -12,7 +12,7 @@
 //! Requires `Role::Write`.
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -40,9 +40,16 @@ pub struct CleanupQuery {
 /// `POST /v1/database/:db/table/:table/cleanup`
 pub async fn cleanup_table(
     State(state): State<CleanupState>,
+    principal: Option<Extension<crate::auth::Principal>>,
     Path((db, table)): Path<(String, String)>,
     Query(q): Query<CleanupQuery>,
 ) -> Result<Json<CleanupResult>, ApiError> {
+    if let Some(Extension(p)) = principal {
+        crate::auth::check_database_scope(&p, &db).map_err(|(status, msg)| ApiError::Forbidden {
+            status,
+            message: msg,
+        })?;
+    }
     let result = state
         .catalog
         .cleanup_soft_deleted_extents(&db, &table, q.before)
@@ -57,6 +64,7 @@ pub async fn cleanup_table(
 #[derive(Debug)]
 pub enum ApiError {
     Catalog(KymaError),
+    Forbidden { status: StatusCode, message: String },
 }
 
 impl From<KymaError> for ApiError {
@@ -81,6 +89,11 @@ impl IntoResponse for ApiError {
             ApiError::Catalog(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response(),
+            ApiError::Forbidden { status, message } => (
+                status,
+                Json(serde_json::json!({"error": {"code": "forbidden", "message": message}})),
             )
                 .into_response(),
         }

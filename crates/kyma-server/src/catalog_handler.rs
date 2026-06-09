@@ -10,7 +10,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Extension, Json};
 use serde::Serialize;
 use tokio::sync::Mutex;
 
@@ -86,7 +86,14 @@ impl SchemaCache {
 /// catalog. The 401 / auth gate is applied by the surrounding middleware
 /// (`require_role_middleware`), so this handler only runs for authenticated
 /// callers with at least `read` role.
-pub async fn schema_handler(State(state): State<QueryState>) -> impl IntoResponse {
+///
+/// When the caller's `Principal` carries a non-`None` `allowed_databases`
+/// list (OIDC-scoped tokens), the returned document is filtered to only the
+/// databases the principal may access.
+pub async fn schema_handler(
+    State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
+) -> impl IntoResponse {
     let cache = state.schema_cache.clone();
 
     // Freshness check under a short guard, then release.
@@ -97,7 +104,8 @@ pub async fn schema_handler(State(state): State<QueryState>) -> impl IntoRespons
     };
     if let Some((t, doc)) = &cached {
         if t.elapsed() < ttl {
-            return (StatusCode::OK, Json((**doc).clone())).into_response();
+            let doc = filter_schema_by_principal((**doc).clone(), principal.as_deref());
+            return (StatusCode::OK, Json(doc)).into_response();
         }
     }
 
@@ -123,7 +131,23 @@ pub async fn schema_handler(State(state): State<QueryState>) -> impl IntoRespons
         let mut guard = cache.inner.lock().await;
         *guard = Some((Instant::now(), doc.clone()));
     }
-    (StatusCode::OK, Json((*doc).clone())).into_response()
+    let doc = filter_schema_by_principal((*doc).clone(), principal.as_deref());
+    (StatusCode::OK, Json(doc)).into_response()
+}
+
+/// Filter a `SchemaDoc` to only the databases the principal may access.
+/// `None` principal (auth-disabled) or unrestricted principal → no filtering.
+fn filter_schema_by_principal(
+    mut doc: SchemaDoc,
+    principal: Option<&crate::auth::Principal>,
+) -> SchemaDoc {
+    if let Some(p) = principal {
+        if let Some(allowed) = &p.allowed_databases {
+            doc.databases
+                .retain(|db| allowed.iter().any(|a| a == &db.name));
+        }
+    }
+    doc
 }
 
 async fn build(catalog: &dyn Catalog) -> Result<SchemaDoc, kyma_core::errors::CatalogError> {

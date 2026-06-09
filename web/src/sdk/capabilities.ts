@@ -1,57 +1,28 @@
-// Feature discovery (`/v1/capabilities`) — which surfaces this server has.
-//
-// Local mode (`kyma serve`, embedded SQLite) deliberately omits the
-// control-plane surfaces (connectors, credentials, OAuth, saved Discover
-// views); pages gate on these flags and explain instead of hitting 404s.
-// Servers that predate the endpoint 404 here — we then assume the full
-// hosted feature set, which matches every pre-capabilities deployment.
+// Web-side capabilities hook. Framework-agnostic fetchCapabilities lives in
+// @kyma-ai/client; this file adds the React/react-query wrapper and re-exports
+// the types that web components import.
 
 import { useQuery } from "@tanstack/react-query";
-import { authFetch } from "./auth-fetch";
+import { fetchCapabilities, FULL_CAPABILITIES } from "@kyma-ai/client";
 import { useSession } from "./session";
+import { sessionClient } from "./client";
 
-export type Capabilities = {
-  mode: "local" | "server";
-  connectors: boolean;
-  credentials: boolean;
-  oauth: boolean;
-  saved_views: boolean;
-  users_admin: boolean;
-  /** Live-tail WebSocket (`GET /v1/explore/live`). */
-  explore_live: boolean;
-};
-
-export const FULL_CAPABILITIES: Capabilities = {
-  mode: "server",
-  connectors: true,
-  credentials: true,
-  oauth: true,
-  saved_views: true,
-  users_admin: true,
-  explore_live: true,
-};
-
-export async function fetchCapabilities(): Promise<Capabilities> {
-  try {
-    const res = await authFetch("/v1/capabilities");
-    if (!res.ok) return FULL_CAPABILITIES;
-    const body = (await res.json()) as Partial<Capabilities>;
-    return { ...FULL_CAPABILITIES, ...body };
-  } catch {
-    return FULL_CAPABILITIES;
-  }
-}
+// Re-export types so ControlPlaneGate and Sidebar imports remain unchanged.
+export type { Capabilities } from "@kyma-ai/client";
+export { FULL_CAPABILITIES } from "@kyma-ai/client";
 
 /** The connected server's capabilities; optimistic (full) until loaded. */
-export function useCapabilities(): Capabilities {
+export function useCapabilities() {
   const endpoint = useSession((s) => s.endpoint);
   const token = useSession((s) => s.token);
+
   const { data } = useQuery({
     queryKey: ["capabilities", endpoint],
-    queryFn: fetchCapabilities,
+    queryFn: () => fetchCapabilities(sessionClient().transport),
     enabled: Boolean(endpoint && token),
     staleTime: Infinity,
     retry: false,
   });
+
   return data ?? FULL_CAPABILITIES;
 }

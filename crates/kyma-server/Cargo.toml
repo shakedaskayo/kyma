@@ -21,6 +21,9 @@ kyma-connectors.workspace = true
 kyma-memory.workspace = true
 kyma-redact.workspace = true
 kyma-ccmem.workspace = true
+# Local degraded-mode dreaming persists finished runs into the embedded SQLite
+# catalog (dreaming_local.rs downcasts the Catalog to SqliteCatalog).
+kyma-catalog-sqlite.workspace = true
 kyma-ingest-core.workspace = true
 datafusion.workspace = true
 arrow.workspace = true
@@ -84,10 +87,12 @@ kyma-catalog.workspace = true
 tempfile = "3"
 wiremock = "0.6"
 # Embedded-engine fixtures for the cc_curate unit tests (no Postgres).
-kyma-catalog-sqlite.workspace = true
 kyma-format-tlm.workspace = true
 kyma-storage.workspace = true
 kyma-embed.workspace = true
+# RSA keypair generation for OidcAuthBackend unit tests.
+rsa = { version = "0.9", features = ["pem"] }
+rand = "0.8"
 
 [features]
 default = []
@@ -138,3 +143,6 @@ required-features = ["test-support"]
 [[test]]
 name = "discover_saved_views_it"
 required-features = ["test-support"]
+
+[[test]]
+name = "oidc_backend_it"
