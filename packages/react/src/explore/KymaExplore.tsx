@@ -30,6 +30,8 @@ import { useKymaSearch } from "../hooks/useKymaSearch";
 import { RowDetailDrawer } from "../discover/RowDetailDrawer";
 import { serializePills } from "../discover/discoverGrammar";
 import { resolveTimeRange } from "../discover/useDiscoverSearch";
+import { formatCell } from "../discover/columns";
+import { colorForKey } from "../internal/data-palette";
 import type { Pill, Scope } from "../discover/types";
 
 import { SchemaBrowser } from "../query/schema/SchemaBrowser";
@@ -78,6 +80,8 @@ function KymaExploreInner({
   const [rowFilter, setRowFilter] = useState("");
   const [openRow, setOpenRow] = useState<{ source: string; row: Record<string, unknown> } | null>(null);
   const [submittedMode, setSubmittedMode] = useState<ExploreMode | null>(null);
+  // Selected columns for the search document table (Kibana-style field pinning).
+  const [cols, setCols] = useState<string[]>([]);
 
   const { data: schema } = useQuery<SchemaDoc>({
     queryKey: ["kyma", endpoint, "explore-schema"],
@@ -209,8 +213,20 @@ function KymaExploreInner({
       ) : (
         <SearchResults
           hits={search.hits}
+          sourcesSearched={search.sourcesSearched}
+          elapsedMs={search.elapsedMs}
+          ran={search.ran}
           isRunning={search.isRunning}
           error={search.error}
+          cols={cols}
+          onToggleCol={(f) => setCols((c) => (c.includes(f) ? c.filter((x) => x !== f) : [...c, f]))}
+          onAddFilter={(field, value) =>
+            appendToInput(/\s/.test(value) ? `${field}:"${value}"` : `${field}:${value}`)
+          }
+          onZoom={(from, to) => {
+            setTimeRange({ preset: "custom", from, to });
+            void search.run({ query: inputRef.current, scope, time_range: { from, to }, limit: 100 });
+          }}
           onOpenRow={(source, row) => setOpenRow({ source, row })}
         />
       )}
@@ -228,18 +244,183 @@ function KymaExploreInner({
   );
 }
 
-// ── Keyword (hybrid search) body: ranked hits ────────────────────────────────
+// ── Keyword (hybrid search) body: Kibana-style Discover ───────────────────────
+//
+// Fields rail · time histogram · expandable document table. Composes the hybrid
+// search hits into the familiar observability-console layout.
+
+type FieldKind = "time" | "number" | "bool" | "text" | "json" | "null";
+
+const HIDDEN_FIELD = (k: string) => k.startsWith("__");
+const TIME_NAMES = ["ts", "timestamp", "at", "time", "event_time", "observed_time", "_time", "created_at", "date"];
+const ISO_RE = /^\d{4}-\d\d-\d\dT\d\d:\d\d/;
+
+function fieldKind(v: unknown): FieldKind {
+  if (v == null) return "null";
+  if (typeof v === "number") return "number";
+  if (typeof v === "boolean") return "bool";
+  if (typeof v === "string") return ISO_RE.test(v) ? "time" : "text";
+  return "json";
+}
+
+const KIND_GLYPH: Record<FieldKind, string> = {
+  time: "◷",
+  number: "#",
+  bool: "⊤",
+  text: "T",
+  json: "{}",
+  null: "∅",
+};
+
+function aggregateFields(hits: HybridSearchHit[]): { name: string; kind: FieldKind; count: number }[] {
+  const m = new Map<string, { kind: FieldKind; count: number }>();
+  for (const h of hits) {
+    for (const [k, v] of Object.entries(h.row)) {
+      if (HIDDEN_FIELD(k)) continue;
+      const cur = m.get(k);
+      const kind = fieldKind(v);
+      if (!cur) m.set(k, { kind, count: 1 });
+      else {
+        cur.count += 1;
+        if (cur.kind === "null" && kind !== "null") cur.kind = kind;
+      }
+    }
+  }
+  return Array.from(m.entries())
+    .map(([name, { kind, count }]) => ({ name, kind, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+function detectTimeField(hits: HybridSearchHit[]): string | null {
+  const sample = hits.slice(0, 8);
+  for (const name of TIME_NAMES) {
+    if (sample.some((h) => typeof h.row[name] === "string" && ISO_RE.test(h.row[name] as string))) return name;
+  }
+  for (const h of sample) {
+    for (const [k, v] of Object.entries(h.row)) {
+      if (!HIDDEN_FIELD(k) && typeof v === "string" && ISO_RE.test(v)) return k;
+    }
+  }
+  return null;
+}
+
+/** Top values of a field across hits, for the field popover. */
+function topValues(hits: HybridSearchHit[], field: string, n = 5): { value: string; pct: number }[] {
+  const counts = new Map<string, number>();
+  let total = 0;
+  for (const h of hits) {
+    const v = h.row[field];
+    if (v == null || v === "") continue;
+    const s = formatCell(v);
+    counts.set(s, (counts.get(s) ?? 0) + 1);
+    total += 1;
+  }
+  if (total === 0) return [];
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([value, c]) => ({ value, pct: Math.round((c / total) * 100) }));
+}
+
+function SourceBadge({ source }: { source: string }) {
+  return (
+    <span
+      className="ky-inline-flex ky-shrink-0 ky-items-center ky-gap-1 ky-rounded ky-px-1.5 ky-py-0.5 ky-font-mono ky-text-[10px]"
+      style={{ background: `${colorForKey(source)}1a`, color: colorForKey(source) }}
+      title={source}
+    >
+      <span className="ky-h-1.5 ky-w-1.5 ky-rounded-full" style={{ background: colorForKey(source) }} />
+      {source}
+    </span>
+  );
+}
+
+function FieldRow(props: {
+  name: string;
+  kind: FieldKind;
+  selected: boolean;
+  hits: HybridSearchHit[];
+  onToggleCol: () => void;
+  onAddFilter: (field: string, value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const top = open ? topValues(props.hits, props.name) : [];
+  return (
+    <li className="ky-border-b ky-border-border/40">
+      <div className="ky-group ky-flex ky-items-center ky-gap-1.5 ky-px-2 ky-py-1 hover:ky-bg-accent/40">
+        <span
+          title={props.kind}
+          className="ky-flex ky-h-4 ky-w-4 ky-shrink-0 ky-items-center ky-justify-center ky-rounded ky-bg-muted ky-text-[9px] ky-font-mono ky-text-muted-foreground"
+        >
+          {KIND_GLYPH[props.kind]}
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="ky-min-w-0 ky-flex-1 ky-truncate ky-text-left ky-font-mono ky-text-[11px]"
+          title={props.name}
+        >
+          {props.name}
+        </button>
+        <button
+          type="button"
+          title={props.selected ? "Remove column" : "Add as column"}
+          onClick={props.onToggleCol}
+          className={cn(
+            "ky-shrink-0 ky-rounded ky-px-1 ky-text-[11px] ky-opacity-0 group-hover:ky-opacity-100",
+            props.selected ? "ky-text-primary ky-opacity-100" : "ky-text-muted-foreground hover:ky-text-foreground",
+          )}
+        >
+          {props.selected ? "✓" : "＋"}
+        </button>
+      </div>
+      {open && (
+        <div className="ky-space-y-1 ky-bg-muted/30 ky-px-2 ky-py-1.5">
+          {top.length === 0 ? (
+            <div className="ky-text-[10px] ky-text-muted-foreground">No values in results.</div>
+          ) : (
+            top.map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => props.onAddFilter(props.name, t.value)}
+                title={`Filter ${props.name} = ${t.value}`}
+                className="ky-flex ky-w-full ky-items-center ky-gap-2 ky-text-left"
+              >
+                <span className="ky-min-w-0 ky-flex-1 ky-truncate ky-font-mono ky-text-[10px]">{t.value}</span>
+                <span className="ky-shrink-0 ky-tabular-nums ky-text-[10px] ky-text-muted-foreground">{t.pct}%</span>
+                <span className="ky-h-1 ky-w-8 ky-shrink-0 ky-overflow-hidden ky-rounded ky-bg-muted">
+                  <span className="ky-block ky-h-full ky-bg-primary/60" style={{ width: `${t.pct}%` }} />
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
 
 function SearchResults(props: {
   hits: HybridSearchHit[];
+  sourcesSearched: number;
+  elapsedMs: number;
+  ran: boolean;
   isRunning: boolean;
   error: unknown;
+  cols: string[];
+  onToggleCol: (field: string) => void;
+  onAddFilter: (field: string, value: string) => void;
+  onZoom: (from: string, to: string) => void;
   onOpenRow: (source: string, row: Record<string, unknown>) => void;
 }) {
-  const { hits, isRunning, error } = props;
-  if (isRunning) {
-    return <Centered>Searching…</Centered>;
-  }
+  const { hits, cols, isRunning, error, ran } = props;
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const fields = useMemo(() => aggregateFields(hits), [hits]);
+  const timeField = useMemo(() => detectTimeField(hits), [hits]);
+  const rows = useMemo(() => hits.map((h) => h.row), [hits]);
+
+  if (isRunning) return <Centered>Searching…</Centered>;
   if (error != null) {
     return (
       <div
@@ -250,49 +431,153 @@ function SearchResults(props: {
       </div>
     );
   }
-  if (hits.length === 0) {
+  if (ran && hits.length === 0) {
     return <Centered>No matches. Try different keywords or widen the time range.</Centered>;
   }
+
+  const toggleExpand = (i: number) =>
+    setExpanded((s) => {
+      const n = new Set(s);
+      n.has(i) ? n.delete(i) : n.add(i);
+      return n;
+    });
+
   return (
-    <div className="ky-min-h-0 ky-flex-1 ky-overflow-auto">
-      <ul className="ky-divide-y">
-        {hits.map((h, i) => (
-          <li key={i}>
-            <button
-              type="button"
-              onClick={() => props.onOpenRow(h.source, h.row)}
-              className="ky-flex ky-w-full ky-items-start ky-gap-3 ky-px-4 ky-py-2 ky-text-left hover:ky-bg-accent/40"
-            >
-              <span className="ky-mt-0.5 ky-shrink-0 ky-rounded ky-bg-muted ky-px-1.5 ky-py-0.5 ky-font-mono ky-text-[10px] ky-text-muted-foreground">
-                {h.source}
-              </span>
-              <span className="ky-min-w-0 ky-flex-1 ky-truncate ky-text-xs">{rowPreview(h.row)}</span>
-              <span className="ky-shrink-0 ky-tabular-nums ky-text-[10px] ky-text-muted-foreground">
-                {h.score.toFixed(3)}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+    <div className="ky-flex ky-min-h-0 ky-flex-1">
+      {/* Fields rail */}
+      <aside className="ky-flex ky-w-56 ky-shrink-0 ky-flex-col ky-overflow-hidden ky-border-r">
+        <div className="ky-border-b ky-px-2 ky-py-1.5 ky-text-[10px] ky-font-semibold ky-uppercase ky-tracking-wider ky-text-muted-foreground">
+          Fields · {fields.length}
+        </div>
+        <ul className="ky-min-h-0 ky-flex-1 ky-overflow-auto">
+          {fields.map((f) => (
+            <FieldRow
+              key={f.name}
+              name={f.name}
+              kind={f.kind}
+              selected={cols.includes(f.name)}
+              hits={hits}
+              onToggleCol={() => props.onToggleCol(f.name)}
+              onAddFilter={props.onAddFilter}
+            />
+          ))}
+        </ul>
+      </aside>
+
+      {/* Histogram + document table */}
+      <main className="ky-flex ky-min-w-0 ky-flex-1 ky-flex-col ky-min-h-0">
+        <div className="ky-flex ky-items-center ky-gap-3 ky-border-b ky-px-3 ky-py-1 ky-text-[11px] ky-text-muted-foreground">
+          <span className="ky-font-semibold ky-text-foreground">{hits.length.toLocaleString()}</span> hits
+          <span>·</span>
+          <span>{props.sourcesSearched} sources</span>
+          <span className="ky-ml-auto ky-tabular-nums">{props.elapsedMs} ms</span>
+        </div>
+        {timeField && (
+          <div className="ky-shrink-0 ky-border-b">
+            <HistogramTimeline rows={rows} timeCol={timeField} onBucketClick={(from, to) => props.onZoom(from.toISOString(), to.toISOString())} />
+          </div>
+        )}
+        <div className="ky-min-h-0 ky-flex-1 ky-overflow-auto ky-text-xs">
+          <table className="ky-w-full ky-border-collapse">
+            <thead className="ky-sticky ky-top-0 ky-z-10 ky-bg-background">
+              <tr className="ky-border-b ky-text-left ky-text-[10px] ky-uppercase ky-tracking-wider ky-text-muted-foreground">
+                <th className="ky-w-6" />
+                {timeField && <th className="ky-px-2 ky-py-1 ky-font-medium">{timeField}</th>}
+                {cols.length === 0 ? (
+                  <th className="ky-px-2 ky-py-1 ky-font-medium">Document</th>
+                ) : (
+                  cols.map((c) => (
+                    <th key={c} className="ky-px-2 ky-py-1 ky-font-mono ky-font-medium ky-normal-case ky-tracking-normal">
+                      {c}
+                    </th>
+                  ))
+                )}
+                <th className="ky-px-2 ky-py-1 ky-font-medium">Source</th>
+                <th className="ky-px-2 ky-py-1 ky-text-right ky-font-medium">_score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hits.map((h, i) => {
+                const isOpen = expanded.has(i);
+                const colSpan = 2 + (timeField ? 1 : 0) + (cols.length === 0 ? 1 : cols.length);
+                return (
+                  <React.Fragment key={i}>
+                    <tr
+                      className="ky-border-b ky-border-border/40 hover:ky-bg-accent/30 ky-cursor-pointer ky-align-top"
+                      onClick={() => toggleExpand(i)}
+                    >
+                      <td className="ky-py-1 ky-pl-2 ky-text-muted-foreground">{isOpen ? "▾" : "▸"}</td>
+                      {timeField && (
+                        <td className="ky-whitespace-nowrap ky-px-2 ky-py-1 ky-font-mono ky-text-[11px] ky-text-muted-foreground">
+                          {formatCell(h.row[timeField])}
+                        </td>
+                      )}
+                      {cols.length === 0 ? (
+                        <td className="ky-px-2 ky-py-1">
+                          <div className="ky-flex ky-flex-wrap ky-gap-x-3 ky-gap-y-0.5 ky-font-mono ky-text-[11px]">
+                            {Object.entries(h.row)
+                              .filter(([k]) => !HIDDEN_FIELD(k) && k !== timeField)
+                              .slice(0, 8)
+                              .map(([k, v]) => (
+                                <span key={k} className="ky-truncate">
+                                  <span className="ky-text-muted-foreground">{k}:</span>{" "}
+                                  <span>{formatCell(v).slice(0, 120)}</span>
+                                </span>
+                              ))}
+                          </div>
+                        </td>
+                      ) : (
+                        cols.map((c) => (
+                          <td key={c} className="ky-max-w-[28ch] ky-truncate ky-px-2 ky-py-1 ky-font-mono ky-text-[11px]">
+                            {formatCell(h.row[c])}
+                          </td>
+                        ))
+                      )}
+                      <td className="ky-px-2 ky-py-1">
+                        <SourceBadge source={h.source} />
+                      </td>
+                      <td className="ky-px-2 ky-py-1 ky-text-right ky-tabular-nums ky-text-[10px] ky-text-muted-foreground">
+                        {h.score.toFixed(3)}
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="ky-border-b ky-border-border/40 ky-bg-muted/20">
+                        <td />
+                        <td colSpan={colSpan} className="ky-px-2 ky-py-2">
+                          <div className="ky-mb-1 ky-flex ky-items-center ky-gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                props.onOpenRow(h.source, h.row);
+                              }}
+                              className="ky-rounded ky-border ky-px-1.5 ky-py-0.5 ky-text-[10px] ky-text-muted-foreground hover:ky-text-foreground"
+                            >
+                              Open detail
+                            </button>
+                          </div>
+                          <dl className="ky-grid ky-grid-cols-[minmax(8rem,12rem)_1fr] ky-gap-x-3 ky-gap-y-0.5 ky-font-mono ky-text-[11px]">
+                            {Object.entries(h.row)
+                              .filter(([k]) => !HIDDEN_FIELD(k))
+                              .map(([k, v]) => (
+                                <React.Fragment key={k}>
+                                  <dt className="ky-truncate ky-text-muted-foreground">{k}</dt>
+                                  <dd className="ky-whitespace-pre-wrap ky-break-words">{formatCell(v)}</dd>
+                                </React.Fragment>
+                              ))}
+                          </dl>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </main>
     </div>
   );
-}
-
-/** Short human-readable preview of a result row (prefers titley/texty fields). */
-function rowPreview(row: Record<string, unknown>): string {
-  const prefer = ["title", "content_preview", "content", "message", "msg", "text", "name", "label", "kind"];
-  for (const k of prefer) {
-    const v = row[k];
-    if (typeof v === "string" && v.trim()) return v.trim();
-  }
-  // Fall back to the first few non-empty string fields.
-  const parts: string[] = [];
-  for (const [k, v] of Object.entries(row)) {
-    if (k.startsWith("__")) continue;
-    if (typeof v === "string" && v.trim()) parts.push(`${k}=${v.trim()}`);
-    if (parts.length >= 3) break;
-  }
-  return parts.join("  ·  ") || JSON.stringify(row).slice(0, 160);
 }
 
 // ── Query (KQL/SQL) body ──────────────────────────────────────────────────────
