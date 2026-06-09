@@ -195,6 +195,7 @@ async fn changes_memory_handler(
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
+        hitl: None,
     };
     let since = params
         .since
@@ -242,6 +243,7 @@ async fn export_memory_handler(
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
+        hitl: None,
     };
     let realm_filter = params
         .realm
@@ -438,6 +440,7 @@ async fn memory_query_handler(
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
+        hitl: None,
     };
     let result = retrieve(&shared, &body.retrieve).await;
     let mut out = result.to_json();

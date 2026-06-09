@@ -15,6 +15,7 @@ async fn list_returns_all_named_tools() {
         format: state.format.clone(),
         pool: Some(pool),
         memory: None,
+        hitl: None,
     };
     let dispatch = ToolDispatch::new(shared);
     let listed = dispatch.list();
@@ -64,6 +65,7 @@ async fn list_entries_have_inputschema_objects() {
         format: state.format.clone(),
         pool: Some(pool),
         memory: None,
+        hitl: None,
     };
     let dispatch = ToolDispatch::new(shared);
     for tool in dispatch.list() {

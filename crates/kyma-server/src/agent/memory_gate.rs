@@ -103,6 +103,12 @@ pub enum OpPayload {
         target_id: String,
         replacement: AddSpec,
     },
+    /// Invalidate `target_id`, superseded by an *existing* memory `by_id`
+    /// (the `memory_judge` "supersedes" verdict — no new replacement created).
+    Supersede {
+        target_id: String,
+        by_id: String,
+    },
     Merge {
         into_id: String,
         from_ids: Vec<String>,
@@ -254,6 +260,43 @@ where
     }
 }
 
+/// Tool-side gate for the dreaming housekeeping tools. When the ctx carries a
+/// HITL gate, route the op through it and return the tool-result JSON; `None`
+/// means "no gate — the caller applies through its normal (ungated) path".
+pub async fn gate_tool_op(
+    shared: &SharedToolCtx,
+    op: MemoryOp,
+    realm: &str,
+    reason: Option<String>,
+    payload: OpPayload,
+) -> Option<Value> {
+    let gate = shared.hitl.as_deref()?;
+    let ctx = GateCtx {
+        op,
+        realm: realm.to_string(),
+        mem_type: None,
+        confidence: None,
+        reason,
+    };
+    let res = dispatch(gate, ctx, payload.clone(), || apply_op(shared, &payload)).await;
+    Some(match res {
+        Ok(o) if o.applied => json!({
+            "ok": true,
+            "applied": true,
+            "queued_for_review": o.queued_id.is_some(),
+            "queue_id": o.queued_id.map(|i| i.to_string()),
+        }),
+        Ok(o) => json!({
+            "ok": true,
+            "applied": false,
+            "queued_for_review": true,
+            "queue_id": o.queued_id.map(|i| i.to_string()),
+            "note": "deferred to the memory approval queue (HITL policy)",
+        }),
+        Err(e) => json!({"error": format!("gate: {e}")}),
+    })
+}
+
 // ── inverse (pure) ───────────────────────────────────────────────────────────
 
 /// Compute the undo for an applied op. Pure — drives the unit tests.
@@ -390,6 +433,36 @@ pub async fn apply_op(shared: &SharedToolCtx, payload: &OpPayload) -> anyhow::Re
                     realm: replacement.realm.clone(),
                     target_namespace: None,
                 }],
+            })
+        }
+        OpPayload::Supersede { target_id, by_id } => {
+            let prior = fetch_latest_node(shared, target_id)
+                .await
+                .map_err(|e| anyhow::anyhow!("fetch {target_id}: {e}"))?;
+            let realm = prior
+                .get("realm")
+                .and_then(Value::as_str)
+                .unwrap_or("default")
+                .to_string();
+            let mut row = prior.clone();
+            let now = now_rfc3339();
+            row["invalid_at"] = json!(now);
+            row["superseded_by"] = json!(by_id);
+            row["updated_at"] = json!(now);
+            writer.append_node_rows(vec![row]).await?;
+            let _ = writer
+                .link(by_id, target_id, EDGE_INVALIDATES, &realm, None)
+                .await;
+            Ok(AppliedRef {
+                prior_rows: vec![prior],
+                edges: vec![EdgeRef {
+                    src: by_id.clone(),
+                    dst: target_id.clone(),
+                    rel: EDGE_INVALIDATES.to_string(),
+                    realm,
+                    target_namespace: None,
+                }],
+                ..Default::default()
             })
         }
         OpPayload::Merge { into_id, from_ids } => {

@@ -52,6 +52,12 @@ pub struct SharedToolCtx {
     /// read-your-own-writes holds. `None` ⇒ the original synchronous write
     /// path (tests, `kyma sync`, `KYMA_MEMORY_ASYNC=0`).
     pub memory: Option<kyma_memory::MemoryQueue>,
+    /// HITL approval chokepoint for *autonomous* memory mutations. `Some` only
+    /// for the dreaming housekeeping toolset (built from the run's settings);
+    /// `None` for the interactive agent — user-driven tool calls are already
+    /// human-in-the-loop, so they apply directly. Wrapped in `Arc` so this ctx
+    /// stays cheaply `Clone`.
+    pub hitl: Option<std::sync::Arc<super::memory_gate::HitlGate>>,
 }
 
 impl SharedToolCtx {

@@ -68,6 +68,7 @@ fn shared_from(state: &AgentState) -> SharedToolCtx {
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
+        hitl: None,
     }
 }
 

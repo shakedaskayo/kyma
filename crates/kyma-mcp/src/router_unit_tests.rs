@@ -22,6 +22,7 @@ async fn build_app() -> axum::Router {
         format: state.format,
         pool: Some(pool),
         memory: None,
+        hitl: None,
     };
     router(McpState {
         dispatch: ToolDispatch::new(shared),
