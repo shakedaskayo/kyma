@@ -864,6 +864,39 @@ async fn main() -> Result<()> {
         None
     };
 
+    // File-candidate promotion ("dreaming") pipeline — resolves contributed /
+    // scraped candidate File nodes to their live upstream repo File nodes and
+    // stitches them with cross-graph SAME_AS edges. On by default; set
+    // KYMA_FILE_PROMOTE=0 to disable.
+    let file_promote_handle = if std::env::var("KYMA_FILE_PROMOTE")
+        .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(true)
+    {
+        let mut promoter = kyma_server::agent::FilePromoter::new(
+            kyma_server::agent::SharedToolCtx {
+                catalog: catalog.clone(),
+                format: format.clone(),
+                pool: Some(pg_pool.clone()),
+                memory: memory.clone(),
+            },
+            pg_pool.clone(),
+            kyma_core::tenant::DEFAULT_TENANT,
+        );
+        if let Ok(s) = std::env::var("KYMA_FILE_PROMOTE_POLL_SECS")
+            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        {
+            promoter.poll_interval = std::time::Duration::from_secs(s);
+        }
+        let fp_rx = shutdown_tx.subscribe();
+        info!("file-promote pipeline enabled");
+        Some(tokio::spawn(promoter.run(async move {
+            let mut rx = fp_rx;
+            let _ = rx.recv().await;
+        })))
+    } else {
+        None
+    };
+
     // File-drop watcher — polls an object-store prefix for NDJSON files.
     // Disabled by default; set KYMA_FILEDROP_ENABLED=1 to turn on.
     let filedrop_handle = if std::env::var("KYMA_FILEDROP_ENABLED")
@@ -1062,6 +1095,9 @@ async fn main() -> Result<()> {
         let _ = h.await;
     }
     if let Some(h) = ci_correlate_handle {
+        let _ = h.await;
+    }
+    if let Some(h) = file_promote_handle {
         let _ = h.await;
     }
     if let Some(h) = kafka_handle {

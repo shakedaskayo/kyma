@@ -11,6 +11,7 @@
 pub mod cc_curate;
 pub mod ci_correlate;
 pub mod engine;
+pub mod file_promote;
 pub mod file_tools;
 pub mod identity;
 pub mod local;
@@ -33,6 +34,7 @@ pub mod tools;
 pub mod ui_stream;
 
 pub use ci_correlate::CiCorrelator;
+pub use file_promote::FilePromoter;
 pub use file_tools::{
     tool_contribute_file, tool_describe_file, tool_file_neighbors, tool_recall_file,
 };
