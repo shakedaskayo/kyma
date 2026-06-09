@@ -1,6 +1,11 @@
 # Minimal 2-AZ network for a single public-facing service: VPC with public
-# subnets only (no NAT gateway — saves ~$32/mo; the task gets a public IP for
-# egress to S3/Supabase/GHCR), an ALB, and optional ACM + Route53 wiring.
+# subnets (no NAT gateway — saves ~$32/mo; tasks/nodes get a public IP for
+# egress to S3/Supabase/GHCR/EKS-API) + private subnets (RDS only), an
+# optional ALB, and optional ACM + Route53 wiring.
+#
+# `create_alb` gates the ALB and its security groups: the Fargate target uses
+# the ALB; the EKS target sets it false and routes traffic through a Kubernetes
+# ingress instead.
 
 data "aws_availability_zones" "available" {
   state = "available"
@@ -25,7 +30,22 @@ resource "aws_subnet" "public" {
   cidr_block              = cidrsubnet(aws_vpc.this.cidr_block, 8, count.index)
   availability_zone       = data.aws_availability_zones.available.names[count.index]
   map_public_ip_on_launch = true
-  tags                    = { Name = "${var.name}-public-${count.index}" }
+  tags = {
+    Name = "${var.name}-public-${count.index}"
+    # EKS uses this tag to place public load balancers.
+    "kubernetes.io/role/elb" = "1"
+  }
+}
+
+# Private subnets host RDS (not publicly accessible). No NAT — they have no
+# default route to the internet, which is fine: only intra-VPC reaches them.
+resource "aws_subnet" "private" {
+  count = 2
+
+  vpc_id            = aws_vpc.this.id
+  cidr_block        = cidrsubnet(aws_vpc.this.cidr_block, 8, count.index + 10)
+  availability_zone = data.aws_availability_zones.available.names[count.index]
+  tags              = { Name = "${var.name}-private-${count.index}" }
 }
 
 resource "aws_route_table" "public" {
@@ -44,11 +64,24 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.this.id
+  tags   = { Name = "${var.name}-private" }
+}
+
+resource "aws_route_table_association" "private" {
+  count = 2
+
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private.id
+}
+
 # ---------------------------------------------------------------------------
-# Security groups
+# Security groups (ALB path only)
 # ---------------------------------------------------------------------------
 
 resource "aws_security_group" "alb" {
+  count       = var.create_alb ? 1 : 0
   name        = "${var.name}-alb"
   description = "Public HTTP(S) into the kyma ALB"
   vpc_id      = aws_vpc.this.id
@@ -79,6 +112,7 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_security_group" "service" {
+  count       = var.create_alb ? 1 : 0
   name        = "${var.name}-engine"
   description = "kyma engine tasks: ALB in, internet out (S3/Supabase/GHCR)"
   vpc_id      = aws_vpc.this.id
@@ -88,7 +122,7 @@ resource "aws_security_group" "service" {
     from_port       = 8080
     to_port         = 8080
     protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
+    security_groups = [aws_security_group.alb[0].id]
   }
 
   egress {
@@ -101,18 +135,20 @@ resource "aws_security_group" "service" {
 }
 
 # ---------------------------------------------------------------------------
-# ALB + target group
+# ALB + target group (Fargate only)
 # ---------------------------------------------------------------------------
 
 resource "aws_lb" "this" {
+  count              = var.create_alb ? 1 : 0
   name               = "${var.name}-alb"
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
+  security_groups    = [aws_security_group.alb[0].id]
   subnets            = aws_subnet.public[*].id
   tags               = { ManagedBy = "terraform" }
 }
 
 resource "aws_lb_target_group" "engine" {
+  count       = var.create_alb ? 1 : 0
   name        = "${var.name}-engine"
   port        = 8080
   protocol    = "HTTP"
@@ -137,7 +173,7 @@ resource "aws_lb_target_group" "engine" {
 # ---------------------------------------------------------------------------
 
 locals {
-  https = var.domain != ""
+  https = var.create_alb && var.domain != ""
 }
 
 resource "aws_acm_certificate" "this" {
@@ -185,8 +221,8 @@ resource "aws_route53_record" "engine" {
   type    = "A"
 
   alias {
-    name                   = aws_lb.this.dns_name
-    zone_id                = aws_lb.this.zone_id
+    name                   = aws_lb.this[0].dns_name
+    zone_id                = aws_lb.this[0].zone_id
     evaluate_target_health = true
   }
 }
@@ -195,7 +231,7 @@ resource "aws_route53_record" "engine" {
 resource "aws_lb_listener" "https" {
   count = local.https ? 1 : 0
 
-  load_balancer_arn = aws_lb.this.arn
+  load_balancer_arn = aws_lb.this[0].arn
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
@@ -203,14 +239,14 @@ resource "aws_lb_listener" "https" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.engine.arn
+    target_group_arn = aws_lb_target_group.engine[0].arn
   }
 }
 
 resource "aws_lb_listener" "http_redirect" {
   count = local.https ? 1 : 0
 
-  load_balancer_arn = aws_lb.this.arn
+  load_balancer_arn = aws_lb.this[0].arn
   port              = 80
   protocol          = "HTTP"
 
@@ -226,14 +262,14 @@ resource "aws_lb_listener" "http_redirect" {
 
 # Plain-HTTP listener (no domain) — demo-grade, documented as such.
 resource "aws_lb_listener" "http" {
-  count = local.https ? 0 : 1
+  count = var.create_alb && var.domain == "" ? 1 : 0
 
-  load_balancer_arn = aws_lb.this.arn
+  load_balancer_arn = aws_lb.this[0].arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.engine.arn
+    target_group_arn = aws_lb_target_group.engine[0].arn
   }
 }
