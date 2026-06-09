@@ -43,7 +43,9 @@ fn rows_of(v: &Value) -> Vec<Value> {
 }
 
 /// Escape a string for safe inlining inside a single-quoted SQL literal.
-fn sql_lit(s: &str) -> String {
+/// Shared by the agent SQL-building call sites (one copy so the escaping rule
+/// can be hardened in a single place).
+pub(crate) fn sql_lit(s: &str) -> String {
     s.replace('\'', "''")
 }
 

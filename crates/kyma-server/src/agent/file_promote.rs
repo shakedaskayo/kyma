@@ -45,9 +45,7 @@ fn repo_and_path(provenance: &str) -> Option<(String, String)> {
     Some((repo.to_string(), path.to_string()))
 }
 
-fn sql_lit(s: &str) -> String {
-    s.replace('\'', "''")
-}
+use super::memory::sql_lit;
 
 /// Scheduled candidate→live promotion worker.
 pub struct FilePromoter {
@@ -156,41 +154,61 @@ impl FilePromoter {
             .with_database(FILE_CANDIDATES_DB);
 
         let scanned = candidates.len() as i64;
-        let mut promoted = 0i64;
-        for c in candidates {
-            let id = c.get("id").and_then(Value::as_str).unwrap_or("");
-            let prov = c.get("provenance").and_then(Value::as_str).unwrap_or("");
-            let Some((repo, path)) = repo_and_path(prov) else {
-                continue;
-            };
-            let gid = github_file_id(&repo, &path);
 
-            // Find which database holds the live github File node.
-            let mut found_db: Option<String> = None;
-            for db in dbs {
-                let q = format!(
-                    "SELECT id FROM {GITHUB_NODE_TABLE} WHERE id = '{}' LIMIT 1",
-                    sql_lit(&gid)
-                );
-                let r = execute_sql(&self.shared, db, &q, 1).await;
-                if r.get("rows").and_then(Value::as_array).is_some_and(|a| !a.is_empty()) {
-                    found_db = Some(db.clone());
-                    break;
+        // Resolve each candidate to its target github File id up front.
+        let pending: Vec<(&str, String, String)> = candidates
+            .iter()
+            .filter_map(|c| {
+                let id = c.get("id").and_then(Value::as_str)?;
+                let prov = c.get("provenance").and_then(Value::as_str).unwrap_or("");
+                let (repo, path) = repo_and_path(prov)?;
+                Some((id, github_file_id(&repo, &path), repo))
+            })
+            .collect();
+        if pending.is_empty() {
+            return Ok((scanned, 0));
+        }
+
+        // One IN-list query per database (not per candidate) to find which gids
+        // exist as live github File nodes, and where — turning O(candidates·dbs)
+        // DataFusion sessions into O(dbs).
+        let mut gid_db: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let unique_gids: std::collections::HashSet<&str> =
+            pending.iter().map(|(_, g, _)| g.as_str()).collect();
+        for db in dbs {
+            let want: Vec<&str> = unique_gids
+                .iter()
+                .copied()
+                .filter(|g| !gid_db.contains_key(*g))
+                .collect();
+            if want.is_empty() {
+                break;
+            }
+            let in_list = want
+                .iter()
+                .map(|g| format!("'{}'", sql_lit(g)))
+                .collect::<Vec<_>>()
+                .join(",");
+            let q = format!("SELECT id FROM {GITHUB_NODE_TABLE} WHERE id IN ({in_list})");
+            let r = execute_sql(&self.shared, db, &q, want.len()).await;
+            if let Some(rows) = r.get("rows").and_then(Value::as_array) {
+                for row in rows {
+                    if let Some(gid) = row.get("id").and_then(Value::as_str) {
+                        gid_db.entry(gid.to_string()).or_insert_with(|| db.clone());
+                    }
                 }
             }
-            let Some(db) = found_db else {
+        }
+
+        let mut promoted = 0i64;
+        for (id, gid, repo) in &pending {
+            let Some(db) = gid_db.get(gid) else {
                 continue; // no upstream match — stays a candidate
             };
-
             // Cross-graph SAME_AS edge: candidate File → live github File. The
             // target_namespace points the unified canvas at the github graph.
-            let realm = repo.clone();
             let target_ns = format!("{db}/github");
-            if writer
-                .link(id, &gid, "SAME_AS", &realm, Some(&target_ns))
-                .await
-                .is_ok()
-            {
+            if writer.link(id, gid, "SAME_AS", repo, Some(&target_ns)).await.is_ok() {
                 promoted += 1;
             }
         }

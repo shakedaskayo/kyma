@@ -30,7 +30,7 @@ const JOB_LOGS_TABLE: &str = "github_job_logs";
 /// keeps only signatures recurring across at least `min_runs` distinct runs
 /// since `cutoff` (rfc3339; lexicographic compare is chronological).
 fn recurring_failures_sql(cutoff_rfc3339: &str, min_runs: i64) -> String {
-    let cutoff = cutoff_rfc3339.replace('\'', "''");
+    let cutoff = super::memory::sql_lit(cutoff_rfc3339);
     format!(
         "SELECT owner, repo, failure_kind, failure_signature, \
                 count(DISTINCT run_id) AS runs, \

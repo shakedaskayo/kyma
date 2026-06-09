@@ -62,9 +62,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     s
 }
 
-fn sql_lit(s: &str) -> String {
-    s.replace('\'', "''")
-}
+use super::memory::sql_lit;
 
 // ── contribute_file ─────────────────────────────────────────────────────────
 
