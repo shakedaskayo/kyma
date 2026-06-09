@@ -28,6 +28,7 @@ members = [
     "crates/kyma-web-assets",
     "crates/kyma-embed",
     "crates/kyma-memory",
+    "crates/kyma-artifact-graph",
     "crates/kyma-mcp",
     "crates/kyma-queue",
     "crates/kyma-redact",
