@@ -77,3 +77,14 @@ output "eks_irsa_role_arn" {
   value       = one(module.eks[*].irsa_role_arn)
   description = "IAM role ARN to annotate the engine service account for keyless S3 on EKS (null otherwise)."
 }
+
+output "catalog_url" {
+  value       = local.catalog_url
+  description = "Resolved Postgres catalog URL — the CLI injects it into the Helm Secret on the EKS path."
+  sensitive   = true
+}
+
+output "storage_bucket_name" {
+  value       = local.s3_native ? one(module.storage[*].bucket_name) : var.storage_bucket
+  description = "Raw extents bucket name (for the EKS Helm install)."
+}

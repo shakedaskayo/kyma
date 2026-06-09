@@ -73,3 +73,14 @@ output "eks_irsa_role_arn" {
   value       = module.kyma.eks_irsa_role_arn
   description = "IAM role ARN to annotate the engine service account for keyless S3 on EKS (null otherwise)."
 }
+
+output "catalog_url" {
+  value       = module.kyma.catalog_url
+  description = "Resolved Postgres catalog URL — injected into the Helm Secret on the EKS path."
+  sensitive   = true
+}
+
+output "storage_bucket_name" {
+  value       = module.kyma.storage_bucket_name
+  description = "Raw extents bucket name (for the EKS Helm install)."
+}

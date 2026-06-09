@@ -52,7 +52,8 @@ pub(crate) enum Target {
 // gate (below) rejects invalid corners with an explanatory message.
 
 /// Where the engine container runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum Compute {
     /// AWS ECS Fargate (Terraform/Pulumi). Default.
     Fargate,
@@ -65,7 +66,8 @@ pub(crate) enum Compute {
 }
 
 /// Catalog Postgres provider.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum Database {
     /// Provision a Supabase project (catalog + optional Auth + optional Storage).
     Supabase,
@@ -76,7 +78,8 @@ pub(crate) enum Database {
 }
 
 /// Columnar-extents object store.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum Storage {
     /// Native AWS S3 bucket — keyless via the task/pod IAM role.
     S3,
@@ -87,7 +90,8 @@ pub(crate) enum Storage {
 }
 
 /// Sign-in backend.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum Auth {
     /// Supabase Auth (only with `database = supabase`).
     Supabase,
@@ -246,25 +250,70 @@ pub(crate) enum Op {
         /// Deployment name (workspace at ~/.kyma/deploy/<name>).
         #[arg(long, default_value = "prod")]
         name: String,
-        /// aws (production) or local (Supabase-backed test drive).
-        #[arg(long, value_enum, default_value = "aws")]
-        target: Target,
-        /// IaC tool for the aws target.
+        /// Compute target: fargate | eks | helm | local.
+        #[arg(long, value_enum)]
+        compute: Option<Compute>,
+        /// DEPRECATED alias for --compute (aws→fargate, local→local).
+        #[arg(long, value_enum)]
+        target: Option<Target>,
+        /// IaC tool for the fargate/eks targets.
         #[arg(long, value_enum, default_value = "terraform")]
         tool: IacTool,
+        /// Catalog database: supabase | rds | external.
+        #[arg(long, value_enum)]
+        database: Option<Database>,
+        /// Postgres URL for `--database external`.
+        #[arg(long)]
+        database_url: Option<String>,
+        /// Extents storage: s3 | supabase | external.
+        #[arg(long, value_enum)]
+        storage: Option<Storage>,
+        /// External S3-compatible endpoint (for `--storage external`).
+        #[arg(long)]
+        storage_endpoint: Option<String>,
+        /// Bucket name for the extents store.
+        #[arg(long)]
+        storage_bucket: Option<String>,
+        /// Region for the external S3-compatible store.
+        #[arg(long)]
+        storage_region: Option<String>,
+        /// Access key id for the external S3-compatible store.
+        #[arg(long)]
+        storage_access_key: Option<String>,
+        /// Secret access key for the external S3-compatible store.
+        #[arg(long)]
+        storage_secret: Option<String>,
+        /// Path-style addressing for the external store (default true).
+        #[arg(long)]
+        storage_path_style: Option<bool>,
+        /// Auth backend: supabase | token | oidc.
+        #[arg(long, value_enum)]
+        auth: Option<Auth>,
+        /// OIDC issuer URL (for `--auth oidc`).
+        #[arg(long)]
+        oidc_issuer: Option<String>,
+        /// OIDC client id (for `--auth oidc`).
+        #[arg(long)]
+        oidc_client_id: Option<String>,
         /// AWS region.
         #[arg(long)]
         region: Option<String>,
         /// Supabase organization id (skips the interactive picker).
         #[arg(long)]
         supabase_org: Option<String>,
-        /// Custom domain for the engine (aws target).
+        /// Custom domain for the engine (fargate target).
         #[arg(long)]
         domain: Option<String>,
+        /// Ingress host for the engine (helm/eks targets).
+        #[arg(long)]
+        ingress_host: Option<String>,
+        /// kubectl context to deploy into (helm target).
+        #[arg(long)]
+        kube_context: Option<String>,
         /// Email(s) granted the kyma admin role (comma-separated).
         #[arg(long)]
         admin_email: Option<String>,
-        /// Answer prompts with defaults (requires --supabase-org + a token source).
+        /// Answer prompts with defaults (supply the relevant flags).
         #[arg(long)]
         yes: bool,
         /// Render the workspace + print the planned commands, run nothing.
@@ -532,6 +581,10 @@ struct DeployState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     auth: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    kube_context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    namespace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     engine_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     supabase_project_ref: Option<String>,
@@ -590,10 +643,23 @@ fn write_private(path: &Path, contents: &str) -> Result<()> {
     Ok(())
 }
 
+/// Persist the wizard answers (0600 — contains secrets) so `kyma deploy up`
+/// can re-render the engine config after reading Terraform outputs (EKS path).
+fn save_answers(dir: &Path, a: &Answers) -> Result<()> {
+    write_private(&dir.join("answers.json"), &serde_json::to_string_pretty(a)?)
+}
+
+fn load_answers(dir: &Path) -> Result<Answers> {
+    let p = dir.join("answers.json");
+    let raw = std::fs::read_to_string(&p)
+        .with_context(|| format!("read {} — re-run `kyma deploy init`", p.display()))?;
+    Ok(serde_json::from_str(&raw)?)
+}
+
 // ── wizard answers + rendering ───────────────────────────────────────────────
 
 /// Bring-your-own S3-compatible object store (MinIO / R2 / GCS-interop).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ExternalStorage {
     endpoint: String,
     bucket: String,
@@ -603,7 +669,7 @@ struct ExternalStorage {
     path_style: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Answers {
     name: String,
     project_name: String,
@@ -638,12 +704,11 @@ struct Answers {
     // Kubernetes (Helm target)
     kube_context: String,
     ingress_host: String,
-}
-
-impl Answers {
-    fn use_supabase(&self) -> bool {
-        self.database == Database::Supabase || self.storage == Storage::Supabase
-    }
+    // Filled at `up` for EKS from Terraform outputs (otherwise empty).
+    #[serde(default)]
+    s3_bucket: String,
+    #[serde(default)]
+    irsa_role_arn: String,
 }
 
 fn hcl_string_list(items: &[String]) -> String {
@@ -756,8 +821,12 @@ fn engine_env(a: &Answers) -> (Vec<(String, String)>, Vec<(String, String)>) {
 
     match a.storage {
         Storage::S3 => {
-            // Native AWS S3: keyless via the task/pod IAM role; bucket+region are
-            // injected by the IaC (TF stack / EKS module), not here.
+            // Native AWS S3: keyless via the task/pod IAM role. The bucket name
+            // is only known after `terraform apply` (EKS path fills s3_bucket
+            // from the TF output at `up`).
+            if !a.s3_bucket.is_empty() {
+                env.push(("KYMA_S3_BUCKET".into(), a.s3_bucket.clone()));
+            }
             env.push(("KYMA_S3_REGION".into(), a.aws_region.clone()));
             env.push(("KYMA_S3_PATH_STYLE".into(), "false".into()));
             env.push(("KYMA_S3_ALLOW_HTTP".into(), "false".into()));
@@ -821,8 +890,15 @@ fn render_helm_values(a: &Answers) -> String {
         yaml_quote(&a.ingress_host),
         ingress_enabled
     ));
-    // serviceAccount.annotations is where the EKS module injects the IRSA role ARN.
-    s.push_str("serviceAccount:\n  create: true\n  name: kyma-engine\n  annotations: {}\n");
+    // serviceAccount.annotations carries the IRSA role ARN for keyless S3 on EKS.
+    if a.irsa_role_arn.is_empty() {
+        s.push_str("serviceAccount:\n  create: true\n  name: kyma-engine\n  annotations: {}\n");
+    } else {
+        s.push_str(&format!(
+            "serviceAccount:\n  create: true\n  name: kyma-engine\n  annotations:\n    eks.amazonaws.com/role-arn: {}\n",
+            yaml_quote(&a.irsa_role_arn)
+        ));
+    }
     s.push_str("resources: {}\n");
     s.push_str("env:\n");
     for (k, v) in &env {
@@ -959,6 +1035,27 @@ fn confirm(question: &str, default_yes: bool) -> Result<bool> {
         "y" | "yes" => true,
         _ => false,
     })
+}
+
+/// Prompt for a secret value without echoing it.
+fn prompt_secret(label: &str) -> Result<String> {
+    Ok(rpassword::prompt_password(format!("{label}: "))?
+        .trim()
+        .to_string())
+}
+
+/// Resolve a value from a CLI flag, else an interactive prompt, else a default.
+fn resolve_str(
+    flag: Option<String>,
+    interactive: bool,
+    label: &str,
+    default: &str,
+) -> Result<String> {
+    match flag {
+        Some(v) => Ok(v),
+        None if interactive => prompt(label, default),
+        None => Ok(default.to_string()),
+    }
 }
 
 fn note(msg: &str) {
@@ -1568,20 +1665,58 @@ pub(crate) async fn run(op: Op) -> Result<()> {
     match op {
         Op::Init {
             name,
+            compute,
             target,
             tool,
+            database,
+            database_url,
+            storage,
+            storage_endpoint,
+            storage_bucket,
+            storage_region,
+            storage_access_key,
+            storage_secret,
+            storage_path_style,
+            auth,
+            oidc_issuer,
+            oidc_client_id,
             region,
             supabase_org,
             domain,
+            ingress_host,
+            kube_context,
             admin_email,
             yes,
             print_only,
             force,
         } => {
-            cmd_init(
-                &name, target, tool, region, supabase_org, domain, admin_email, yes, print_only,
+            cmd_init(InitOpts {
+                name,
+                compute,
+                target,
+                tool,
+                database,
+                database_url,
+                storage,
+                storage_endpoint,
+                storage_bucket,
+                storage_region,
+                storage_access_key,
+                storage_secret,
+                storage_path_style,
+                auth,
+                oidc_issuer,
+                oidc_client_id,
+                region,
+                supabase_org,
+                domain,
+                ingress_host,
+                kube_context,
+                admin_email,
+                yes,
+                print_only,
                 force,
-            )
+            })
             .await
         }
         Op::Up { name, auto_approve } => cmd_up(&name, auto_approve).await,
@@ -1590,272 +1725,425 @@ pub(crate) async fn run(op: Op) -> Result<()> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn cmd_init(
-    name: &str,
-    target: Target,
+/// Wizard inputs (flags from `Op::Init`); unset fields are prompted for.
+struct InitOpts {
+    name: String,
+    compute: Option<Compute>,
+    target: Option<Target>,
     tool: IacTool,
+    database: Option<Database>,
+    database_url: Option<String>,
+    storage: Option<Storage>,
+    storage_endpoint: Option<String>,
+    storage_bucket: Option<String>,
+    storage_region: Option<String>,
+    storage_access_key: Option<String>,
+    storage_secret: Option<String>,
+    storage_path_style: Option<bool>,
+    auth: Option<Auth>,
+    oidc_issuer: Option<String>,
+    oidc_client_id: Option<String>,
     region: Option<String>,
     supabase_org: Option<String>,
     domain: Option<String>,
+    ingress_host: Option<String>,
+    kube_context: Option<String>,
     admin_email: Option<String>,
     yes: bool,
     print_only: bool,
     force: bool,
-) -> Result<()> {
-    let interactive = !yes;
-    let dir = workspace_dir(name)?;
-    if dir.join("deploy.json").exists() && !force && !print_only {
+}
+
+async fn cmd_init(o: InitOpts) -> Result<()> {
+    let name = o.name.clone();
+    let interactive = !o.yes && !o.print_only;
+    let dir = workspace_dir(&name)?;
+    if dir.join("deploy.json").exists() && !o.force && !o.print_only {
         bail!(
             "workspace '{name}' already exists at {} — rerun with --force to regenerate, or use `kyma deploy up`",
             dir.display()
         );
     }
 
-    // ── prereq checks ──
-    note("kyma production deployment");
+    note("kyma deployment");
     note("");
-    match target {
-        Target::Aws => {
-            let tool_bin = match tool {
+
+    // ── axis resolution (flag → prompt → default) ──
+    let compute = match (o.compute, o.target) {
+        (Some(c), _) => c,
+        (None, Some(Target::Aws)) => {
+            note("• --target is deprecated; mapping aws → --compute fargate");
+            Compute::Fargate
+        }
+        (None, Some(Target::Local)) => {
+            note("• --target is deprecated; mapping local → --compute local");
+            Compute::Local
+        }
+        (None, None) if interactive => {
+            Compute::from_arg(&prompt("Compute target [fargate|eks|helm|local]", "fargate")?)?
+        }
+        (None, None) => Compute::Fargate,
+    };
+
+    let database = match o.database {
+        Some(d) => d,
+        None if interactive => {
+            Database::from_arg(&prompt("Catalog database [supabase|rds|external]", "supabase")?)?
+        }
+        None => Database::Supabase,
+    };
+    let database_url = if database == Database::External {
+        match o.database_url {
+            Some(u) => u,
+            None if o.print_only => "postgresql://USER:PASS@HOST:5432/kyma".to_string(),
+            None if interactive => {
+                prompt_secret("Postgres URL (postgresql://user:pass@host:5432/db)")?
+            }
+            None => bail!("--database-url is required with --database external"),
+        }
+    } else {
+        String::new()
+    };
+
+    let storage = match o.storage {
+        Some(s) => s,
+        None if interactive => Storage::from_arg(&prompt(
+            "Extents storage [s3|supabase|external]",
+            default_storage(compute, database).as_str(),
+        )?)?,
+        None => default_storage(compute, database),
+    };
+    let external_storage = if storage == Storage::External {
+        let secret = match o.storage_secret {
+            Some(s) => s,
+            None if interactive => prompt_secret("Secret access key")?,
+            None => String::new(),
+        };
+        Some(ExternalStorage {
+            endpoint: resolve_str(o.storage_endpoint, interactive, "S3-compatible endpoint (https://host:port)", "")?,
+            bucket: resolve_str(o.storage_bucket, interactive, "Bucket", "kyma")?,
+            region: resolve_str(o.storage_region, interactive, "Region", "us-east-1")?,
+            access_key_id: resolve_str(o.storage_access_key, interactive, "Access key id", "")?,
+            secret_access_key: secret,
+            path_style: o.storage_path_style.unwrap_or(true),
+        })
+    } else {
+        None
+    };
+
+    let auth = match o.auth {
+        Some(a) => a,
+        None if interactive => Auth::from_arg(&prompt(
+            "Auth backend [supabase|token|oidc]",
+            default_auth(database).as_str(),
+        )?)?,
+        None => default_auth(database),
+    };
+
+    // Reject invalid combinations before any provisioning or prompting work.
+    validate_combo(compute, database, storage, auth)?;
+
+    let (oidc_issuer, oidc_client_id) = if auth == Auth::Oidc {
+        (
+            resolve_str(o.oidc_issuer, interactive, "OIDC issuer URL", "")?,
+            resolve_str(o.oidc_client_id, interactive, "OIDC client id", "")?,
+        )
+    } else {
+        (String::new(), String::new())
+    };
+    let admin_token = if auth == Auth::Token {
+        random_token(40)
+    } else {
+        String::new()
+    };
+
+    // ── prereq checks ──
+    match compute {
+        Compute::Fargate | Compute::Eks => {
+            let bin = match o.tool {
                 IacTool::Terraform => {
                     if have("terraform") {
                         "terraform"
                     } else if have("tofu") {
                         "tofu"
-                    } else if print_only {
+                    } else if o.print_only {
                         "terraform"
                     } else {
-                        bail!(
-                            "terraform (or tofu) not found — install from \
-                             https://developer.hashicorp.com/terraform/install and rerun"
-                        );
+                        bail!("terraform (or tofu) not found — install from https://developer.hashicorp.com/terraform/install and rerun");
                     }
                 }
                 IacTool::Pulumi => {
                     if have("pulumi") {
                         "pulumi"
-                    } else if print_only {
+                    } else if o.print_only {
                         "pulumi"
                     } else {
                         bail!("pulumi not found — install from https://www.pulumi.com/docs/install/ and rerun");
                     }
                 }
             };
-            note(&format!("• IaC tool: {tool_bin}"));
-            if !aws_credentials_present() && !print_only {
-                bail!(
-                    "no AWS credentials detected — run `aws configure` (or `aws sso login`), \
-                     or export AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, then rerun"
-                );
+            note(&format!("• IaC tool: {bin}"));
+            if !aws_credentials_present() && !o.print_only {
+                bail!("no AWS credentials detected — run `aws configure` (or `aws sso login`), then rerun");
             }
             note("• AWS credentials: found");
+            if compute == Compute::Eks && !have("helm") && !o.print_only {
+                bail!("helm not found — the eks target installs the engine via Helm after `terraform apply`");
+            }
         }
-        Target::Local => {
-            if !have("docker") && !print_only {
+        Compute::Helm => {
+            if !have("helm") && !o.print_only {
+                bail!("helm not found — install from https://helm.sh/docs/intro/install/ and rerun");
+            }
+            if !have("kubectl") && !o.print_only {
+                bail!("kubectl not found — the helm target deploys into your current kubectl context");
+            }
+            note("• helm + kubectl: found");
+        }
+        Compute::Local => {
+            if !have("docker") && !o.print_only {
                 bail!("docker not found — the local target runs the engine container with docker");
             }
             note("• docker: found");
         }
     }
 
-    // ── credentials + answers ──
-    let token = if print_only {
-        std::env::var("SUPABASE_ACCESS_TOKEN").unwrap_or_else(|_| "sbp_PRINT_ONLY".into())
-    } else {
-        resolve_supabase_token(interactive).await?
-    };
-
-    let org_id = match supabase_org {
-        Some(o) => o,
-        None if print_only => "org-print-only".to_string(),
-        None if interactive => pick_org(&token).await?,
-        None => bail!("--supabase-org is required with --yes"),
-    };
-
-    let aws_region = match region {
+    // ── region / domain / ingress ──
+    let aws_region = match o.region {
         Some(r) => r,
-        None if interactive && !print_only => prompt("AWS region", "us-east-1")?,
+        None if interactive && compute.is_aws() => prompt("AWS region", "us-east-1")?,
         None => "us-east-1".to_string(),
     };
-
-    let domain = match domain {
-        Some(d) => d,
-        None if interactive && !print_only && target == Target::Aws => prompt(
-            "Custom domain (empty = plain HTTP on the ALB DNS name)",
-            "",
-        )?,
-        None => String::new(),
+    let domain = if compute == Compute::Fargate {
+        match o.domain {
+            Some(d) => d,
+            None if interactive => {
+                prompt("Custom domain (empty = plain HTTP on the ALB DNS name)", "")?
+            }
+            None => String::new(),
+        }
+    } else {
+        String::new()
     };
-    let route53_zone_id = if !domain.is_empty() && interactive && !print_only {
+    let route53_zone_id = if !domain.is_empty() && interactive {
         prompt("Route53 zone id for that domain (empty = manual DNS validation)", "")?
     } else {
         String::new()
     };
+    let ingress_host = if compute.is_k8s() {
+        match o.ingress_host {
+            Some(h) => h,
+            None if interactive => {
+                prompt("Ingress host (empty = no ingress; use port-forward)", "")?
+            }
+            None => String::new(),
+        }
+    } else {
+        String::new()
+    };
+    let kube_context = if compute == Compute::Helm {
+        o.kube_context.unwrap_or_default()
+    } else {
+        String::new()
+    };
 
-    let admin_emails: Vec<String> = match admin_email {
+    // ── admin emails (supabase/oidc) ──
+    let admin_emails: Vec<String> = match o.admin_email {
         Some(e) => e.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
-        None if interactive && !print_only => {
+        None if interactive && auth != Auth::Token => {
             let raw = prompt("Admin email(s) (comma-separated — get the kyma admin role)", "")?;
             raw.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
         }
         None => Vec::new(),
     };
-    let allowed_email_domains: Vec<String> = admin_emails
-        .iter()
-        .filter_map(|e| e.rsplit_once('@').map(|(_, d)| d.to_lowercase()))
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect();
+    let allowed_email_domains: Vec<String> = if auth == Auth::Supabase {
+        admin_emails
+            .iter()
+            .filter_map(|e| e.rsplit_once('@').map(|(_, d)| d.to_lowercase()))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     let image_tag = resolve_image_tag().await;
     let db_password = random_token(24);
 
-    // Extents storage: Supabase Storage is the default whenever Supabase is
-    // the DB provider (always, in this stack); native S3 is the opt-out for
-    // the fully-keyless AWS path. Keys are pasted later (after the project
-    // exists) — `kyma deploy up` walks through it.
-    // (The full interactive axis flow — db/storage/auth selection + BYO inputs
-    // and the eks/helm targets — is layered on in cmd_init's Phase-5 rewrite.)
-    let storage = if target == Target::Aws && interactive && !print_only {
-        if confirm(
-            "Store extents in Supabase Storage (default; one manual key-paste step) instead of native S3 (fully automated)?",
-            true,
-        )? {
-            Storage::Supabase
+    // ── Supabase token + org (only when a Supabase backend is in use) ──
+    let use_supabase = database == Database::Supabase || storage == Storage::Supabase;
+    let supabase_token = if use_supabase {
+        if o.print_only {
+            std::env::var("SUPABASE_ACCESS_TOKEN").unwrap_or_else(|_| "sbp_PRINT_ONLY".into())
         } else {
-            Storage::S3
+            resolve_supabase_token(interactive).await?
         }
     } else {
-        Storage::Supabase
+        String::new()
     };
-    let compute = match target {
-        Target::Aws => Compute::Fargate,
-        Target::Local => Compute::Local,
+    let supabase_org_id = if use_supabase {
+        match o.supabase_org {
+            Some(s) => s,
+            None if o.print_only => "org-print-only".to_string(),
+            None if interactive => pick_org(&supabase_token).await?,
+            None => bail!("--supabase-org is required with --yes when a Supabase backend is used"),
+        }
+    } else {
+        String::new()
     };
 
-    let answers = Answers {
-        name: name.to_string(),
+    let mut answers = Answers {
+        name: name.clone(),
         project_name: format!("kyma-{name}"),
         compute,
-        database: Database::Supabase,
+        database,
         storage,
-        auth: Auth::Supabase,
+        auth,
         aws_region: aws_region.clone(),
         image_tag: image_tag.clone(),
         domain,
         route53_zone_id,
-        supabase_org_id: org_id.clone(),
+        supabase_org_id: supabase_org_id.clone(),
         supabase_region: aws_region.clone(),
         supabase_db_password: db_password.clone(),
         supabase_s3_access_key_id: String::new(),
         supabase_s3_secret_access_key: String::new(),
         supabase_url: String::new(),
         supabase_anon_key: String::new(),
-        database_url: String::new(),
-        external_storage: None,
+        database_url,
+        external_storage,
         admin_emails: admin_emails.clone(),
         allowed_email_domains,
         oauth_providers: vec![],
-        admin_token: String::new(),
-        oidc_issuer: String::new(),
-        oidc_client_id: String::new(),
-        kube_context: String::new(),
-        ingress_host: String::new(),
+        admin_token,
+        oidc_issuer,
+        oidc_client_id,
+        kube_context: kube_context.clone(),
+        ingress_host,
+        s3_bucket: String::new(),
+        irsa_role_arn: String::new(),
     };
 
-    // ── materialize ──
-    if print_only {
+    // ── print-only ──
+    if o.print_only {
+        let (fname, contents) = planned_artifact(&answers);
         note("");
-        note("── print-only: rendered terraform.tfvars ──");
-        println!("{}", render_tfvars(&answers));
+        note(&format!("── print-only: rendered {fname} ──"));
+        println!("{contents}");
         note("── planned commands ──");
-        match target {
-            Target::Aws => match tool {
-                IacTool::Terraform => {
-                    println!("cd {}/terraform && terraform init && terraform apply", dir.display());
-                }
-                IacTool::Pulumi => {
-                    println!(
-                        "cd {}/pulumi/typescript && pulumi package add terraform-module ../../terraform/stack kymaengine && pulumi up",
-                        dir.display()
-                    );
-                }
-            },
-            Target::Local => {
-                println!(
-                    "docker run -d --name kyma-{name} --env-file {}/local.env -p 8080:8080 {DEFAULT_IMAGE_REPO}:{image_tag}",
-                    dir.display()
-                );
-            }
-        }
+        print_planned_commands(&answers, &dir, o.tool);
         return Ok(());
     }
 
+    // ── materialize ──
     std::fs::create_dir_all(&dir)?;
     materialize(&dir)?;
 
     let mut state = DeployState {
-        target: match target {
-            Target::Aws => "aws".into(),
-            Target::Local => "local".into(),
-        },
-        tool: match tool {
+        target: if compute == Compute::Local { "local".into() } else { "aws".into() },
+        tool: match o.tool {
             IacTool::Terraform => "terraform".into(),
             IacTool::Pulumi => "pulumi".into(),
         },
         project_name: answers.project_name.clone(),
-        aws_region,
+        aws_region: aws_region.clone(),
         image_tag: image_tag.clone(),
+        compute: Some(compute.as_str().to_string()),
+        database: Some(database.as_str().to_string()),
+        storage: Some(storage.as_str().to_string()),
+        auth: Some(auth.as_str().to_string()),
+        kube_context: (!kube_context.is_empty()).then(|| kube_context.clone()),
+        namespace: Some("kyma".to_string()),
         ..Default::default()
     };
 
-    match target {
-        Target::Aws => {
+    match compute {
+        Compute::Fargate | Compute::Eks => {
             let tfvars = dir.join("terraform").join("terraform.tfvars");
-            if tfvars.exists() && !force {
+            if tfvars.exists() && !o.force {
                 note("• terraform.tfvars exists — keeping it (use --force to regenerate)");
             } else {
                 write_private(&tfvars, &render_tfvars(&answers))?;
                 note(&format!("• Wrote {}", tfvars.display()));
             }
-            // The Supabase provider reads SUPABASE_ACCESS_TOKEN; stash it for `up`.
-            write_private(&dir.join("supabase-token"), &token)?;
+            if use_supabase {
+                // The Supabase provider reads SUPABASE_ACCESS_TOKEN; stash for `up`.
+                write_private(&dir.join("supabase-token"), &supabase_token)?;
+            }
+            // EKS renders Helm values from Terraform outputs at `up` — persist answers.
+            if compute == Compute::Eks {
+                save_answers(&dir, &answers)?;
+            }
             save_state(&dir, &state)?;
             note("");
             note(&format!("Workspace ready: {}", dir.display()));
             note("Next: kyma deploy up");
         }
-        Target::Local => {
-            // Provision the Supabase project right away (it's the only cloud
-            // resource the local target needs).
-            let project = provision_local_project(
-                &token,
-                &answers.project_name,
-                &org_id,
-                &answers.supabase_region,
-                &db_password,
-                interactive,
-            )
-            .await?;
-            let env_file = dir.join("local.env");
-            write_private(
-                &env_file,
-                &render_local_env(
-                    &project.db_url,
-                    &project.supabase_url,
-                    &project.anon_key,
-                    &admin_emails,
-                    &random_token(48),
-                    project.s3.as_ref(),
-                ),
-            )?;
-            write_private(&dir.join("supabase-token"), &token)?;
-            state.supabase_project_ref = Some(project.project_ref.clone());
-            state.container_name = Some(format!("kyma-{name}"));
+        Compute::Helm => {
+            // No Terraform on the helm path — provision Supabase here if chosen.
+            if use_supabase {
+                let project = provision_local_project(
+                    &supabase_token,
+                    &answers.project_name,
+                    &supabase_org_id,
+                    &answers.supabase_region,
+                    &db_password,
+                    interactive,
+                )
+                .await?;
+                answers.database_url = project.db_url.clone();
+                answers.supabase_url = project.supabase_url.clone();
+                answers.supabase_anon_key = project.anon_key.clone();
+                if let Some(s3) = &project.s3 {
+                    answers.supabase_s3_access_key_id = s3.access_key_id.clone();
+                    answers.supabase_s3_secret_access_key = s3.secret_access_key.clone();
+                }
+                write_private(&dir.join("supabase-token"), &supabase_token)?;
+                state.supabase_project_ref = Some(project.project_ref.clone());
+                note(&format!("Supabase project ready: {}", project.supabase_url));
+            }
+            let values = dir.join("helm-values.yaml");
+            write_private(&values, &render_helm_values(&answers))?;
+            note(&format!("• Wrote {}", values.display()));
+            save_answers(&dir, &answers)?;
             save_state(&dir, &state)?;
             note("");
-            note(&format!("Supabase project ready: {}", project.supabase_url));
+            note(&format!("Workspace ready: {}", dir.display()));
+            note("Next: kyma deploy up   (helm upgrade --install into your kubectl context)");
+        }
+        Compute::Local => {
+            let secret_key = random_token(48);
+            let env_file = dir.join("local.env");
+            if use_supabase {
+                let project = provision_local_project(
+                    &supabase_token,
+                    &answers.project_name,
+                    &supabase_org_id,
+                    &answers.supabase_region,
+                    &db_password,
+                    interactive,
+                )
+                .await?;
+                write_private(
+                    &env_file,
+                    &render_local_env(
+                        &project.db_url,
+                        &project.supabase_url,
+                        &project.anon_key,
+                        &admin_emails,
+                        &secret_key,
+                        project.s3.as_ref(),
+                    ),
+                )?;
+                write_private(&dir.join("supabase-token"), &supabase_token)?;
+                state.supabase_project_ref = Some(project.project_ref.clone());
+                note(&format!("Supabase project ready: {}", project.supabase_url));
+            } else {
+                write_private(&env_file, &render_local_env_from(&answers, &secret_key))?;
+            }
+            state.container_name = Some(format!("kyma-{name}"));
+            save_answers(&dir, &answers)?;
+            save_state(&dir, &state)?;
             note(&format!("Env file: {}", env_file.display()));
             note("Next: kyma deploy up   (runs the engine container locally)");
         }
@@ -1863,181 +2151,327 @@ async fn cmd_init(
     Ok(())
 }
 
+/// The artifact `kyma deploy init` renders for a compute target (used by
+/// `--print-only` and the init flow).
+fn planned_artifact(a: &Answers) -> (String, String) {
+    match a.compute {
+        Compute::Fargate | Compute::Eks => ("terraform.tfvars".to_string(), render_tfvars(a)),
+        Compute::Helm => ("helm-values.yaml".to_string(), render_helm_values(a)),
+        Compute::Local => ("local.env".to_string(), render_local_env_from(a, "<secret-key>")),
+    }
+}
+
+fn print_planned_commands(a: &Answers, dir: &Path, tool: IacTool) {
+    match a.compute {
+        Compute::Fargate | Compute::Eks => match tool {
+            IacTool::Terraform => {
+                println!("cd {}/terraform && terraform init && terraform apply", dir.display())
+            }
+            IacTool::Pulumi => println!(
+                "cd {}/pulumi/typescript && pulumi package add terraform-module ../../terraform/stack kymaengine && pulumi up",
+                dir.display()
+            ),
+        },
+        Compute::Helm => println!(
+            "helm upgrade --install kyma {}/helm/kyma-engine -f {}/helm-values.yaml -n kyma --create-namespace",
+            dir.display(),
+            dir.display()
+        ),
+        Compute::Local => println!(
+            "docker run -d --name kyma-{} --env-file {}/local.env -p 8080:8080 {DEFAULT_IMAGE_REPO}:{}",
+            a.name,
+            dir.display(),
+            a.image_tag
+        ),
+    }
+}
+
 async fn cmd_up(name: &str, auto_approve: bool) -> Result<()> {
     let dir = workspace_dir(name)?;
     let mut state = load_state(&dir)?;
 
     // Supabase token for the provider/API (stashed by init).
-    let token_path = dir.join("supabase-token");
-    if let Ok(tok) = std::fs::read_to_string(&token_path) {
+    if let Ok(tok) = std::fs::read_to_string(dir.join("supabase-token")) {
         std::env::set_var("SUPABASE_ACCESS_TOKEN", tok.trim());
     }
 
-    match state.target.as_str() {
-        "aws" => {
+    match state.compute() {
+        Compute::Fargate => up_fargate(&dir, &mut state, auto_approve).await,
+        Compute::Eks => up_eks(&dir, &mut state, auto_approve).await,
+        Compute::Helm => up_helm(&dir, &mut state).await,
+        Compute::Local => up_local(&dir, name, &mut state),
+    }
+}
+
+fn snake_to_camel(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut upper = false;
+    for c in s.chars() {
+        if c == '_' {
+            upper = true;
+        } else if upper {
+            out.extend(c.to_uppercase());
+            upper = false;
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Read a stack output by its snake_case name across both shapes: Terraform
+/// (`{name: {value: ...}}`) and Pulumi (flat camelCase `{nameCamel: ...}`).
+fn output_str(outputs: &serde_json::Value, is_pulumi: bool, key: &str) -> Option<String> {
+    if is_pulumi {
+        outputs
+            .get(snake_to_camel(key))
+            .and_then(|v| v.as_str())
+            .map(String::from)
+    } else {
+        outputs
+            .get(key)
+            .and_then(|v| v.get("value"))
+            .and_then(|v| v.as_str())
+            .map(String::from)
+    }
+}
+
+/// Apply the IaC stack (terraform or pulumi), handling the Supabase-Storage
+/// two-phase key paste, and return `(outputs_json, is_pulumi)`.
+async fn iac_apply(
+    dir: &Path,
+    state: &DeployState,
+    auto_approve: bool,
+) -> Result<(serde_json::Value, bool)> {
+    match state.tool.as_str() {
+        "terraform" => {
             let tf_dir = dir.join("terraform");
-            match state.tool.as_str() {
-                "terraform" => {
-                    let bin = if have("terraform") { "terraform" } else { "tofu" };
-                    run_streamed(&tf_dir, bin, &["init"])?;
-                    // Supabase-storage backend with no keys yet: two-phase.
-                    // Phase 1 creates just the Supabase project, then the
-                    // user pastes S3 keys from the dashboard (no API for
-                    // them); phase 2 applies the full stack.
-                    let tfvars_path = tf_dir.join("terraform.tfvars");
-                    let tfvars = std::fs::read_to_string(&tfvars_path).unwrap_or_default();
-                    if tfvars.contains("storage_backend       = \"supabase\"")
-                        && tfvars.contains("supabase_s3_access_key_id     = \"\"")
-                    {
-                        note("• Supabase Storage backend: creating the Supabase project first…");
-                        run_streamed(
-                            &tf_dir,
-                            bin,
-                            &["apply", "-target=module.kyma.module.supabase", "-auto-approve"],
-                        )?;
-                        let raw = run_captured(&tf_dir, bin, &["output", "-json"])?;
-                        let outputs: serde_json::Value = serde_json::from_str(&raw)?;
-                        let project_ref = outputs
-                            .get("supabase_project_ref")
-                            .and_then(|v| v.get("value"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("_");
-                        match prompt_storage_keys(project_ref) {
-                            Some((ak, sk)) => {
-                                let updated = tfvars
-                                    .replace(
-                                        "supabase_s3_access_key_id     = \"\"",
-                                        &format!("supabase_s3_access_key_id     = \"{ak}\""),
-                                    )
-                                    .replace(
-                                        "supabase_s3_secret_access_key = \"\"",
-                                        &format!("supabase_s3_secret_access_key = \"{sk}\""),
-                                    );
-                                write_private(&tfvars_path, &updated)?;
-                                note("• Keys saved to terraform.tfvars — applying the full stack");
-                            }
-                            None => bail!(
-                                "Supabase Storage keys are required for storage_backend=\"supabase\" — \
-                                 paste them when prompted, or switch to storage_backend=\"s3\" in terraform.tfvars"
-                            ),
-                        }
+            let bin = if have("terraform") { "terraform" } else { "tofu" };
+            run_streamed(&tf_dir, bin, &["init"])?;
+            // Supabase-Storage backend with no keys yet: phase 1 creates the
+            // Supabase project, the user pastes S3 keys (no API mints them),
+            // phase 2 applies the full stack.
+            let tfvars_path = tf_dir.join("terraform.tfvars");
+            let tfvars = std::fs::read_to_string(&tfvars_path).unwrap_or_default();
+            if tfvars.contains("storage_backend       = \"supabase\"")
+                && tfvars.contains("supabase_s3_access_key_id     = \"\"")
+            {
+                note("• Supabase Storage backend: creating the Supabase project first…");
+                run_streamed(
+                    &tf_dir,
+                    bin,
+                    &["apply", "-target=module.kyma.module.supabase", "-auto-approve"],
+                )?;
+                let raw = run_captured(&tf_dir, bin, &["output", "-json"])?;
+                let outputs: serde_json::Value = serde_json::from_str(&raw)?;
+                let project_ref = output_str(&outputs, false, "supabase_project_ref")
+                    .unwrap_or_else(|| "_".to_string());
+                match prompt_storage_keys(&project_ref) {
+                    Some((ak, sk)) => {
+                        let updated = tfvars
+                            .replace(
+                                "supabase_s3_access_key_id     = \"\"",
+                                &format!("supabase_s3_access_key_id     = \"{ak}\""),
+                            )
+                            .replace(
+                                "supabase_s3_secret_access_key = \"\"",
+                                &format!("supabase_s3_secret_access_key = \"{sk}\""),
+                            );
+                        write_private(&tfvars_path, &updated)?;
+                        note("• Keys saved to terraform.tfvars — applying the full stack");
                     }
-                    let mut args = vec!["apply"];
-                    if auto_approve {
-                        args.push("-auto-approve");
-                    }
-                    run_streamed(&tf_dir, bin, &args)?;
-                    let raw = run_captured(&tf_dir, bin, &["output", "-json"])?;
-                    let outputs: serde_json::Value = serde_json::from_str(&raw)?;
-                    let get = |k: &str| {
-                        outputs
-                            .get(k)
-                            .and_then(|v| v.get("value"))
-                            .and_then(|v| v.as_str())
-                            .map(String::from)
-                    };
-                    let engine_url = get("engine_url")
-                        .ok_or_else(|| anyhow!("terraform outputs missing engine_url"))?;
-                    state.engine_url = Some(engine_url.clone());
-                    state.supabase_project_ref = get("supabase_project_ref");
-                    save_state(&dir, &state)?;
-                    // Supabase Storage backend: make sure the extents bucket
-                    // exists (Terraform can't create Supabase buckets).
-                    if let (Some(project_ref), Ok(token)) = (
-                        state.supabase_project_ref.clone(),
-                        std::fs::read_to_string(dir.join("supabase-token")),
-                    ) {
-                        let token = token.trim().to_string();
-                        let keys = supabase_get(&token, &format!("/v1/projects/{project_ref}/api-keys")).await;
-                        if let Ok(keys) = keys {
-                            let service_role = keys
-                                .as_array()
-                                .into_iter()
-                                .flatten()
-                                .find(|k| k.get("name").and_then(|n| n.as_str()) == Some("service_role"))
-                                .and_then(|k| k.get("api_key").and_then(|v| v.as_str()))
-                                .map(String::from);
-                            if let Some(sr) = service_role {
-                                let supabase_url = format!("https://{project_ref}.supabase.co");
-                                match ensure_bucket(&supabase_url, &sr, "kyma").await {
-                                    Ok(()) => note("• Extents bucket 'kyma' ready in Supabase Storage"),
-                                    Err(e) => note(&format!("• Could not create the extents bucket ({e}) — create 'kyma' in Supabase Storage manually")),
-                                }
-                            }
-                        }
-                    }
-                    finish_up(&engine_url, get("admin_password").as_deref());
+                    None => bail!(
+                        "Supabase Storage keys are required for storage_backend=\"supabase\" — \
+                         paste them when prompted, or switch to storage=s3 / external"
+                    ),
                 }
-                "pulumi" => {
-                    let pl_dir = dir.join("pulumi").join("typescript");
-                    run_streamed(&pl_dir, "npm", &["install", "--no-fund", "--no-audit"])?;
-                    run_streamed(
-                        &pl_dir,
-                        "pulumi",
-                        &["package", "add", "terraform-module", "../../terraform/stack", "kymaengine"],
-                    )
-                    .or_else(|_| {
-                        // pnpm's missing `pkg set` breaks only the link step;
-                        // the SDK is generated — link manually.
-                        run_streamed(
-                            &pl_dir,
-                            "npm",
-                            &["pkg", "set", "dependencies.@pulumi/kymaengine=file:sdks/kymaengine"],
-                        )
-                        .and_then(|()| run_streamed(&pl_dir, "npm", &["install", "--no-fund", "--no-audit"]))
-                    })?;
-                    let mut args = vec!["up"];
-                    if auto_approve {
-                        args.push("--yes");
-                    }
-                    run_streamed(&pl_dir, "pulumi", &args)?;
-                    let raw = run_captured(&pl_dir, "pulumi", &["stack", "output", "--json"])?;
-                    let outputs: serde_json::Value = serde_json::from_str(&raw)?;
-                    let engine_url = outputs
-                        .get("engineUrl")
-                        .and_then(|v| v.as_str())
-                        .ok_or_else(|| anyhow!("pulumi outputs missing engineUrl"))?
-                        .to_string();
-                    state.engine_url = Some(engine_url.clone());
-                    save_state(&dir, &state)?;
-                    finish_up(&engine_url, None);
-                }
-                other => bail!("unknown tool {other:?} in deploy.json"),
+            }
+            let mut args = vec!["apply"];
+            if auto_approve {
+                args.push("-auto-approve");
+            }
+            run_streamed(&tf_dir, bin, &args)?;
+            let raw = run_captured(&tf_dir, bin, &["output", "-json"])?;
+            Ok((serde_json::from_str(&raw)?, false))
+        }
+        "pulumi" => {
+            let pl_dir = dir.join("pulumi").join("typescript");
+            run_streamed(&pl_dir, "npm", &["install", "--no-fund", "--no-audit"])?;
+            run_streamed(
+                &pl_dir,
+                "pulumi",
+                &["package", "add", "terraform-module", "../../terraform/stack", "kymaengine"],
+            )
+            .or_else(|_| {
+                run_streamed(
+                    &pl_dir,
+                    "npm",
+                    &["pkg", "set", "dependencies.@pulumi/kymaengine=file:sdks/kymaengine"],
+                )
+                .and_then(|()| run_streamed(&pl_dir, "npm", &["install", "--no-fund", "--no-audit"]))
+            })?;
+            let mut args = vec!["up"];
+            if auto_approve {
+                args.push("--yes");
+            }
+            run_streamed(&pl_dir, "pulumi", &args)?;
+            let raw = run_captured(&pl_dir, "pulumi", &["stack", "output", "--json"])?;
+            Ok((serde_json::from_str(&raw)?, true))
+        }
+        other => bail!("unknown tool {other:?} in deploy.json"),
+    }
+}
+
+/// Supabase Storage buckets can't be created by Terraform — make sure the
+/// extents bucket exists via the Storage API (no-op for non-Supabase storage).
+async fn ensure_supabase_bucket(dir: &Path, state: &DeployState) {
+    let Some(project_ref) = state.supabase_project_ref.clone() else {
+        return;
+    };
+    let Ok(token) = std::fs::read_to_string(dir.join("supabase-token")) else {
+        return;
+    };
+    let token = token.trim().to_string();
+    if let Ok(keys) = supabase_get(&token, &format!("/v1/projects/{project_ref}/api-keys")).await {
+        let service_role = keys
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|k| k.get("name").and_then(|n| n.as_str()) == Some("service_role"))
+            .and_then(|k| k.get("api_key").and_then(|v| v.as_str()))
+            .map(String::from);
+        if let Some(sr) = service_role {
+            let supabase_url = format!("https://{project_ref}.supabase.co");
+            match ensure_bucket(&supabase_url, &sr, "kyma").await {
+                Ok(()) => note("• Extents bucket 'kyma' ready in Supabase Storage"),
+                Err(e) => note(&format!(
+                    "• Could not create the extents bucket ({e}) — create 'kyma' in Supabase Storage manually"
+                )),
             }
         }
-        "local" => {
-            let container = state
-                .container_name
-                .clone()
-                .unwrap_or_else(|| format!("kyma-{name}"));
-            let image = format!("{DEFAULT_IMAGE_REPO}:{}", state.image_tag);
-            let env_file = dir.join("local.env");
-            // Replace any previous container of the same name.
-            let _ = Proc::new("docker").args(["rm", "-f", &container]).output();
-            run_streamed(
-                &dir,
-                "docker",
-                &[
-                    "run",
-                    "-d",
-                    "--name",
-                    &container,
-                    "--env-file",
-                    env_file.to_str().unwrap(),
-                    "-p",
-                    "8080:8080",
-                    "-v",
-                    &format!("{container}-data:/root/.kyma"),
-                    &image,
-                ],
-            )?;
-            let engine_url = "http://localhost:8080".to_string();
-            state.engine_url = Some(engine_url.clone());
-            save_state(&dir, &state)?;
-            finish_up(&engine_url, None);
-        }
-        other => bail!("unknown target {other:?} in deploy.json"),
     }
+}
+
+async fn up_fargate(dir: &Path, state: &mut DeployState, auto_approve: bool) -> Result<()> {
+    let (outputs, is_pulumi) = iac_apply(dir, state, auto_approve).await?;
+    let engine_url = output_str(&outputs, is_pulumi, "engine_url")
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow!("stack outputs missing engine_url"))?;
+    state.engine_url = Some(engine_url.clone());
+    state.supabase_project_ref = output_str(&outputs, is_pulumi, "supabase_project_ref");
+    save_state(dir, state)?;
+    ensure_supabase_bucket(dir, state).await;
+    finish_up(&engine_url, output_str(&outputs, is_pulumi, "admin_password").as_deref());
+    Ok(())
+}
+
+async fn up_eks(dir: &Path, state: &mut DeployState, auto_approve: bool) -> Result<()> {
+    let (outputs, is_pulumi) = iac_apply(dir, state, auto_approve).await?;
+    let cluster = output_str(&outputs, is_pulumi, "eks_cluster_name")
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow!("stack outputs missing eks_cluster_name"))?;
+    state.supabase_project_ref = output_str(&outputs, is_pulumi, "supabase_project_ref");
+    save_state(dir, state)?;
+    ensure_supabase_bucket(dir, state).await;
+
+    // Render the Helm values from the persisted answers overlaid with the
+    // Terraform outputs (resolved catalog URL, created bucket, IRSA role).
+    let mut answers = load_answers(dir)?;
+    if let Some(url) = output_str(&outputs, is_pulumi, "catalog_url").filter(|s| !s.is_empty()) {
+        answers.database_url = url;
+    }
+    answers.s3_bucket = output_str(&outputs, is_pulumi, "storage_bucket_name").unwrap_or_default();
+    answers.irsa_role_arn = output_str(&outputs, is_pulumi, "eks_irsa_role_arn").unwrap_or_default();
+    let values_path = dir.join("helm-values.yaml");
+    write_private(&values_path, &render_helm_values(&answers))?;
+
+    note(&format!("• Configuring kubectl for cluster {cluster}…"));
+    run_streamed(
+        dir,
+        "aws",
+        &["eks", "update-kubeconfig", "--name", &cluster, "--region", &state.aws_region],
+    )?;
+
+    let chart = dir.join("helm").join("kyma-engine");
+    let chart_s = chart.to_str().unwrap();
+    let values_s = values_path.to_str().unwrap();
+    note("• Installing the kyma engine Helm chart…");
+    run_streamed(
+        dir,
+        "helm",
+        &[
+            "upgrade", "--install", "kyma", chart_s, "-f", values_s, "-n", "kyma",
+            "--create-namespace", "--wait", "--timeout", "300s",
+        ],
+    )?;
+
+    let engine_url = if answers.ingress_host.is_empty() {
+        "http://localhost:8080 (kubectl -n kyma port-forward svc/kyma-kyma-engine 8080:8080)".to_string()
+    } else {
+        format!("https://{}", answers.ingress_host)
+    };
+    state.engine_url = Some(engine_url.clone());
+    save_state(dir, state)?;
+    finish_up(&engine_url, None);
+    Ok(())
+}
+
+async fn up_helm(dir: &Path, state: &mut DeployState) -> Result<()> {
+    let values = dir.join("helm-values.yaml");
+    if !values.exists() {
+        bail!("helm-values.yaml missing — run `kyma deploy init` first");
+    }
+    let chart = dir.join("helm").join("kyma-engine");
+    let chart_s = chart.to_str().unwrap();
+    let values_s = values.to_str().unwrap();
+    let kctx = state.kube_context.clone().unwrap_or_default();
+    let mut args = vec![
+        "upgrade", "--install", "kyma", chart_s, "-f", values_s, "-n", "kyma",
+        "--create-namespace", "--wait", "--timeout", "300s",
+    ];
+    if !kctx.is_empty() {
+        args.push("--kube-context");
+        args.push(&kctx);
+    }
+    note("• helm upgrade --install kyma …");
+    run_streamed(dir, "helm", &args)?;
+
+    let answers = load_answers(dir).ok();
+    let engine_url = answers
+        .as_ref()
+        .filter(|a| !a.ingress_host.is_empty())
+        .map(|a| format!("https://{}", a.ingress_host))
+        .unwrap_or_else(|| {
+            "http://localhost:8080 (kubectl -n kyma port-forward svc/kyma-kyma-engine 8080:8080)".to_string()
+        });
+    state.engine_url = Some(engine_url.clone());
+    save_state(dir, state)?;
+    finish_up(&engine_url, None);
+    Ok(())
+}
+
+fn up_local(dir: &Path, name: &str, state: &mut DeployState) -> Result<()> {
+    let container = state
+        .container_name
+        .clone()
+        .unwrap_or_else(|| format!("kyma-{name}"));
+    let image = format!("{DEFAULT_IMAGE_REPO}:{}", state.image_tag);
+    let env_file = dir.join("local.env");
+    // Replace any previous container of the same name.
+    let _ = Proc::new("docker").args(["rm", "-f", &container]).output();
+    run_streamed(
+        dir,
+        "docker",
+        &[
+            "run", "-d", "--name", &container, "--env-file",
+            env_file.to_str().unwrap(), "-p", "8080:8080", "-v",
+            &format!("{container}-data:/root/.kyma"), &image,
+        ],
+    )?;
+    let engine_url = "http://localhost:8080".to_string();
+    state.engine_url = Some(engine_url.clone());
+    save_state(dir, state)?;
+    finish_up(&engine_url, None);
     Ok(())
 }
 
@@ -2046,8 +2480,7 @@ fn finish_up(engine_url: &str, admin_password: Option<&str>) {
     note("──────────────────────────────────────────────");
     note(&format!("kyma is deploying at: {engine_url}"));
     note("");
-    note("Sign in with your Supabase account (the first matching");
-    note("KYMA_ADMIN_EMAILS sign-in gets the admin role).");
+    note("Sign in via your configured auth backend (Supabase / OIDC / API token).");
     if let Some(pw) = admin_password {
         note(&format!("Fallback admin user: admin / {pw}"));
     }
@@ -2061,8 +2494,13 @@ async fn cmd_status(name: &str) -> Result<()> {
     let dir = workspace_dir(name)?;
     let state = load_state(&dir)?;
     println!("workspace:  {}", dir.display());
-    println!("target:     {}", state.target);
-    println!("tool:       {}", state.tool);
+    println!("compute:    {}", state.compute().as_str());
+    println!("database:   {}", state.database.as_deref().unwrap_or("supabase"));
+    println!("storage:    {}", state.storage.as_deref().unwrap_or("supabase"));
+    println!("auth:       {}", state.auth.as_deref().unwrap_or("supabase"));
+    if state.compute().is_aws() {
+        println!("tool:       {}", state.tool);
+    }
     println!("image tag:  {}", state.image_tag);
     if let Some(r) = &state.supabase_project_ref {
         println!("supabase:   https://supabase.com/dashboard/project/{r}");
@@ -2091,7 +2529,7 @@ async fn cmd_destroy(name: &str, yes: bool) -> Result<()> {
     let state = load_state(&dir)?;
     if !yes
         && !confirm(
-            &format!("Destroy deployment '{name}' ({} target) and all its data?", state.target),
+            &format!("Destroy deployment '{name}' ({} compute) and all its data?", state.compute().as_str()),
             false,
         )?
     {
@@ -2103,8 +2541,11 @@ async fn cmd_destroy(name: &str, yes: bool) -> Result<()> {
         std::env::set_var("SUPABASE_ACCESS_TOKEN", tok.trim());
     }
 
-    match state.target.as_str() {
-        "aws" => match state.tool.as_str() {
+    let compute = state.compute();
+    match compute {
+        // Destroying the EKS cluster removes the Helm release with it, so a
+        // single `terraform/pulumi destroy` tears down both AWS compute targets.
+        Compute::Fargate | Compute::Eks => match state.tool.as_str() {
             "terraform" => {
                 let bin = if have("terraform") { "terraform" } else { "tofu" };
                 run_streamed(&dir.join("terraform"), bin, &["destroy", "-auto-approve"])?;
@@ -2114,7 +2555,19 @@ async fn cmd_destroy(name: &str, yes: bool) -> Result<()> {
             }
             other => bail!("unknown tool {other:?}"),
         },
-        "local" => {
+        Compute::Helm => {
+            let kctx = state.kube_context.clone().unwrap_or_default();
+            let mut args = vec!["uninstall", "kyma", "-n", "kyma"];
+            if !kctx.is_empty() {
+                args.push("--kube-context");
+                args.push(&kctx);
+            }
+            // Best-effort: a missing release shouldn't abort Supabase cleanup.
+            if let Err(e) = run_streamed(&dir, "helm", &args) {
+                note(&format!("• helm uninstall reported: {e}"));
+            }
+        }
+        Compute::Local => {
             if let Some(container) = &state.container_name {
                 let _ = Proc::new("docker").args(["rm", "-f", container]).output();
                 let _ = Proc::new("docker")
@@ -2122,22 +2575,28 @@ async fn cmd_destroy(name: &str, yes: bool) -> Result<()> {
                     .output();
                 note(&format!("• Removed container {container}"));
             }
-            if let Some(project_ref) = &state.supabase_project_ref {
-                let token = std::fs::read_to_string(dir.join("supabase-token"))
-                    .map(|t| t.trim().to_string())
-                    .context("supabase token missing — delete the project in the dashboard")?;
-                reqwest::Client::new()
-                    .delete(format!("{}/v1/projects/{project_ref}", supabase_api_base()))
-                    .bearer_auth(&token)
-                    .send()
-                    .await?
-                    .error_for_status()
-                    .context("delete Supabase project")?;
-                note(&format!("• Deleted Supabase project {project_ref}"));
-            }
         }
-        other => bail!("unknown target {other:?}"),
     }
+
+    // Supabase projects provisioned by the CLI (helm/local paths) are deleted
+    // here; on fargate/eks the project is Terraform-managed and was already
+    // removed by `destroy` above.
+    if matches!(compute, Compute::Helm | Compute::Local) {
+        if let Some(project_ref) = &state.supabase_project_ref {
+            let token = std::fs::read_to_string(dir.join("supabase-token"))
+                .map(|t| t.trim().to_string())
+                .context("supabase token missing — delete the project in the dashboard")?;
+            reqwest::Client::new()
+                .delete(format!("{}/v1/projects/{project_ref}", supabase_api_base()))
+                .bearer_auth(&token)
+                .send()
+                .await?
+                .error_for_status()
+                .context("delete Supabase project")?;
+            note(&format!("• Deleted Supabase project {project_ref}"));
+        }
+    }
+
     note("Deployment destroyed. Workspace files kept for reference; delete with:");
     note(&format!("  rm -rf {}", dir.display()));
     Ok(())
@@ -2265,6 +2724,8 @@ mod tests {
             oidc_client_id: String::new(),
             kube_context: String::new(),
             ingress_host: String::new(),
+            s3_bucket: String::new(),
+            irsa_role_arn: String::new(),
         }
     }
 
@@ -2395,6 +2856,40 @@ mod tests {
         assert!(env.contains("KYMA_AUTH_TOKENS=tok:admin"));
         assert!(env.contains("KYMA_S3_ENDPOINT=https://minio:9000"));
         assert!(env.contains("KYMA_SECRET_KEY=sk"));
+    }
+
+    #[test]
+    fn planned_artifact_filename_per_compute() {
+        let mut a = answers();
+        a.compute = Compute::Fargate;
+        assert_eq!(planned_artifact(&a).0, "terraform.tfvars");
+        a.compute = Compute::Eks;
+        assert_eq!(planned_artifact(&a).0, "terraform.tfvars");
+        a.compute = Compute::Helm;
+        a.database = Database::External;
+        a.storage = Storage::External;
+        a.auth = Auth::Token;
+        a.database_url = "postgresql://x".into();
+        assert_eq!(planned_artifact(&a).0, "helm-values.yaml");
+        a.compute = Compute::Local;
+        assert_eq!(planned_artifact(&a).0, "local.env");
+    }
+
+    #[test]
+    fn helm_values_render_irsa_and_bucket_for_eks_s3() {
+        let mut a = answers();
+        a.compute = Compute::Eks;
+        a.database = Database::Rds;
+        a.storage = Storage::S3;
+        a.auth = Auth::Token;
+        a.database_url = "postgresql://u:p@rds:5432/kyma".into();
+        a.admin_token = "tok".into();
+        a.s3_bucket = "kyma-extents-abc".into();
+        a.irsa_role_arn = "arn:aws:iam::123:role/kyma-engine-irsa".into();
+        let y = render_helm_values(&a);
+        assert!(y.contains("eks.amazonaws.com/role-arn: \"arn:aws:iam::123:role/kyma-engine-irsa\""), "{y}");
+        assert!(y.contains("KYMA_S3_BUCKET: \"kyma-extents-abc\""), "{y}");
+        assert!(y.contains("KYMA_CATALOG_URL: \"postgresql://u:p@rds:5432/kyma\""), "{y}");
     }
 
     #[test]
