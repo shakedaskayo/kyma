@@ -2,6 +2,7 @@ import { createTransport, type KymaTransport, type TransportConfig } from "./tra
 import * as graph from "./graph";
 import * as query from "./query";
 import * as discover from "./discover";
+import * as search from "./search";
 import * as discoverLive from "./discover-live";
 import * as dashboards from "./dashboards";
 import * as catalog from "./catalog";
@@ -62,6 +63,8 @@ const GRAPH_FNS = [
 ] as const satisfies readonly (keyof typeof graph)[];
 
 const QUERY_FNS = ["runQuery"] as const satisfies readonly (keyof typeof query)[];
+
+const SEARCH_FNS = ["search"] as const satisfies readonly (keyof typeof search)[];
 
 const DISCOVER_FNS = [
   "searchDiscover",
@@ -150,6 +153,7 @@ const ARTIFACTS_FNS = [
 declare const _bindGuard: [
   Expect<AssertSameKeys<typeof GRAPH_FNS[number],         TransportFirstKeys<typeof graph>>>,
   Expect<AssertSameKeys<typeof QUERY_FNS[number],         TransportFirstKeys<typeof query>>>,
+  Expect<AssertSameKeys<typeof SEARCH_FNS[number],        TransportFirstKeys<typeof search>>>,
   Expect<AssertSameKeys<typeof DISCOVER_FNS[number],      TransportFirstKeys<typeof discover>>>,
   Expect<AssertSameKeys<typeof DASHBOARDS_FNS[number],    TransportFirstKeys<typeof dashboards>>>,
   Expect<AssertSameKeys<typeof CATALOG_FNS[number],       TransportFirstKeys<typeof catalog>>>,
@@ -199,6 +203,8 @@ export interface KymaClient {
 
   /** Query namespace — run KQL/SQL over the log/event stores. */
   readonly query: BoundModule<typeof query, typeof QUERY_FNS>;
+  /** Unified hybrid search (lexical + vector + RRF) across sources in scope. */
+  readonly search: BoundModule<typeof search, typeof SEARCH_FNS>;
 
   /**
    * Discover namespace — streaming search, saved views, and live-tail.
@@ -261,6 +267,7 @@ function fromTransport(t: KymaTransport): KymaClient {
 
     graph: bind(t, graph, GRAPH_FNS),
     query: bind(t, query, QUERY_FNS),
+    search: bind(t, search, SEARCH_FNS),
     discover: {
       ...bind(t, discover, DISCOVER_FNS),
       LiveSession: discoverLive.LiveSession,

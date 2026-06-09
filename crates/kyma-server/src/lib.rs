@@ -32,6 +32,7 @@ pub mod flight;
 pub mod capabilities;
 mod health;
 pub mod query_multidb;
+pub mod search;
 pub mod icon_config;
 pub mod metrics;
 
@@ -155,6 +156,7 @@ pub fn router(state: QueryState) -> Router {
 
     Router::new()
         .route("/v1/query", post(query_handler))
+        .route("/v1/search", post(search::search_handler))
         .route(
             "/v1/explore/search",
             post(discover::handler::discover_search_handler),

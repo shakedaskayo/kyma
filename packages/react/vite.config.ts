@@ -19,6 +19,7 @@ export default defineConfig({
         graph: "src/graph/index.ts",
         query: "src/query/index.ts",
         discover: "src/discover/index.ts",
+        explore: "src/explore/index.ts",
         dashboards: "src/dashboards/index.ts",
         agent: "src/agent/index.ts",
       },

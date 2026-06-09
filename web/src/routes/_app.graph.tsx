@@ -18,23 +18,27 @@ import { KymaGraph } from "@kyma-ai/react/graph";
 
 type GraphSearch = {
   graph?: string;
+  /** Deep-link: node id to center + highlight (e.g. from a search result). */
+  focus?: string;
 };
 
 export const Route = createFileRoute("/_app/graph")({
   validateSearch: (search: Record<string, unknown>): GraphSearch => ({
     graph: typeof search.graph === "string" ? search.graph : undefined,
+    focus: typeof search.focus === "string" ? search.focus : undefined,
   }),
   component: GraphPage,
 });
 
 function GraphPage() {
-  const { graph } = Route.useSearch();
+  const { graph, focus } = Route.useSearch();
   return (
     <div className="flex h-full w-full">
       <KymaGraph
         discover="all-databases"
         height="100%"
         focusQuery={graph}
+        focusNodeId={focus}
       />
     </div>
   );

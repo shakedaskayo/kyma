@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Network } from "lucide-react";
 import { useGraphStore } from "./graph-store";
 import { type GraphCoord, graphKey, useKymaGraph } from "../hooks/useKymaGraph";
@@ -46,6 +46,9 @@ export interface GraphViewProps {
    * the full GraphNode lives in this component's node map, not in the store.
    */
   onSelectedNodeChange?: (node: GraphNode | null) => void;
+  /** Deep-link target: raw node id (or composite `ns::id`) to center + highlight
+   *  once it's loaded. */
+  focusNodeId?: string;
 }
 
 export function GraphView({
@@ -55,11 +58,13 @@ export function GraphView({
   limit,
   showSidebar = true,
   onSelectedNodeChange,
+  focusNodeId,
 }: GraphViewProps) {
   const graph = useGraphStore((s) => s.graph);
   const setGraph = useGraphStore((s) => s.setGraph);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const selectNode = useGraphStore((s) => s.selectNode);
+  const focusNode = useGraphStore((s) => s.focusNode);
   const hoverNode = useGraphStore((s) => s.hoverNode);
   const hiddenLabels = useGraphStore((s) => s.hiddenLabels);
   const hiddenNamespaces = useGraphStore((s) => s.hiddenNamespaces);
@@ -109,6 +114,22 @@ export function GraphView({
     () => new Map(nodes.map((n) => [keyOf(n), n])),
     [nodes],
   );
+
+  // Deep-link focus: once the target node has loaded, center + highlight it.
+  // Accepts a raw node id (matched across namespaces) or a composite `ns::id`.
+  const focusedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusNodeId || nodes.length === 0) return;
+    if (focusedRef.current === focusNodeId) return;
+    const match = focusNodeId.includes("::")
+      ? nodesByCompositeId.get(focusNodeId)
+      : nodes.find((n) => n.id === focusNodeId);
+    if (match) {
+      focusedRef.current = focusNodeId;
+      focusNode(keyOf(match));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusNodeId, nodes]);
 
   const activeNamespaces = useMemo(() => {
     if (graph !== "all" && namespaceKeys.includes(graph)) return new Set([graph]);

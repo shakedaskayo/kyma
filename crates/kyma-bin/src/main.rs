@@ -871,6 +871,52 @@ async fn main() -> Result<()> {
         let _ = rx.recv().await;
     }));
 
+    // Catch-all artifact-graph sync — materializes graph nodes for artifacts
+    // that have no producer-graph node (object-store blobs, contributed files,
+    // fs-watch snapshots). Wired here (not inside ArtifactRetentionWorker)
+    // because that worker lives in kyma-compaction and holds no SegmentFormat
+    // handle; this startup site already has `catalog` + `format` in scope, so
+    // wiring here is the least-invasive correct seam. Runs an immediate startup
+    // backfill, then re-syncs on the artifact-GC cadence. Postgres-only: a safe
+    // no-op (Ok(0)) under `kyma local` (sqlite has no artifacts catalog).
+    let artifact_graph_poll = std::env::var("KYMA_ARTIFACT_GC_POLL_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(std::time::Duration::from_secs)
+        .unwrap_or_else(|| std::time::Duration::from_secs(300));
+    let artifact_graph_catalog = catalog.clone();
+    let artifact_graph_format = format.clone();
+    let mut artifact_graph_rx = shutdown_tx.subscribe();
+    let artifact_graph_handle = tokio::spawn(async move {
+        // Startup backfill for the default tenant.
+        if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes(
+            artifact_graph_catalog.clone(),
+            artifact_graph_format.clone(),
+            kyma_core::tenant::DEFAULT_TENANT,
+        )
+        .await
+        {
+            warn!(error = %e, "artifact-graph backfill failed");
+        }
+        loop {
+            tokio::select! {
+                biased;
+                _ = artifact_graph_rx.recv() => return,
+                _ = tokio::time::sleep(artifact_graph_poll) => {
+                    if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes(
+                        artifact_graph_catalog.clone(),
+                        artifact_graph_format.clone(),
+                        kyma_core::tenant::DEFAULT_TENANT,
+                    )
+                    .await
+                    {
+                        warn!(error = %e, "artifact-graph sync failed");
+                    }
+                }
+            }
+        }
+    });
+
     // Memory consolidation ("dreaming") pipeline — periodically distills new
     // conversation-firehose activity into durable summary memories and records
     // each run in `memory_pipeline_runs`. On by default; set
@@ -1299,6 +1345,7 @@ async fn main() -> Result<()> {
     let _ = retention_handle.await;
     let _ = gc_handle.await;
     let _ = artifact_gc_handle.await;
+    let _ = artifact_graph_handle.await;
     let _ = conn_sched_handle.await;
     let _ = idem_cleanup_handle.await;
     if let Some((_, h)) = memory_queue {

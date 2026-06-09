@@ -17,15 +17,11 @@ export function TabBar() {
   const { tabs, activeId, setActive, closeTab, newTab } = useWorkspace();
   const navigate = useNavigate();
 
-  // Tabs span two routes (query ↔ discover). Activating a tab must also move
-  // to the route that renders its kind, or the click appears to do nothing.
+  // All tabs render on the unified Explore page (KymaExplore handles both
+  // keyword search and KQL/SQL from one input).
   const activate = (t: Tab) => {
     setActive(t.id);
-    if (t.kind === "query") {
-      void navigate({ to: "/query", search: { q: undefined } });
-    } else {
-      void navigate({ to: "/discover" });
-    }
+    void navigate({ to: "/explore", search: { q: undefined } });
   };
 
   return (
@@ -48,7 +44,7 @@ export function TabBar() {
         className="rounded p-1 hover:bg-accent/40"
         onClick={() => {
           newTab({ kind: "query" });
-          void navigate({ to: "/query", search: { q: undefined } });
+          void navigate({ to: "/explore", search: { q: undefined } });
         }}
         title="New tab (⌘T)"
       >

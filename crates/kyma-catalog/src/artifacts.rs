@@ -122,6 +122,23 @@ impl PostgresCatalog {
         }
     }
 
+    /// All live (not soft-deleted) artifacts for `tenant`, newest first. Used by
+    /// the catch-all graph sync to materialize artifact nodes.
+    pub async fn list_live_artifacts(&self, tenant: TenantId) -> Result<Vec<ArtifactRecord>> {
+        let rows = sqlx::query(
+            "SELECT id, tenant_id, object_path, source, artifact_class, table_ref,
+                    connector_id, size_bytes, sha256, created_at, expires_at, deleted_at
+             FROM artifacts
+             WHERE tenant_id = $1 AND deleted_at IS NULL
+             ORDER BY created_at DESC",
+        )
+        .bind(tenant.as_uuid())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(sql)?;
+        rows.iter().map(row_to_artifact).collect()
+    }
+
     /// Pass 1: soft-delete live artifacts whose `expires_at` is past `now`.
     /// Returns `(id, object_path)` for each swept row.
     pub async fn soft_delete_expired_artifacts(

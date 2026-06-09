@@ -158,11 +158,11 @@ fn make_edge(src: &str, rel: &str, dst: &str, extra: Map<String, Value>) -> Valu
 // ── CI / Actions graph (E2) ────────────────────────────────────────────────────
 //
 // Surfaces GitHub Actions as first-class nodes on the existing `github` graph:
-//   Repository --HAS_RUN--> WorkflowRun --RUN_CONTAINS_JOB--> Job --JOB_HAS_LOG--> LogFile
+//   Repository --HAS_RUN--> WorkflowRun --RUN_CONTAINS_JOB--> Job --HAS_ARTIFACT--> Artifact
 //   WorkflowRun --RUN_ON_BRANCH--> Branch   (links CI into the repo graph)
-// The LogFile node carries the `object_path` + `sha256` retrieval handle. These
-// are cursor-incremental (emitted once per new run), so they are NOT gated by
-// `refetch_signature` — they pass through like pulls/issues.
+// The Artifact node carries the `object_path` + `sha256` retrieval handle + the
+// catalog `artifact_id`. These are cursor-incremental (emitted once per new run),
+// so they are NOT gated by `refetch_signature` — they pass through like pulls/issues.
 
 pub fn workflow_run_node_id(owner: &str, repo: &str, run_id: i64) -> String {
     format!("run:{owner}/{repo}#{run_id}")
@@ -254,8 +254,9 @@ pub fn job_rows(owner: &str, repo: &str, run_id: i64, job: &Value) -> (Value, Va
     (node, edge)
 }
 
-/// LogFile node (carries the `object_path` retrieval handle) + `JOB_HAS_LOG`
-/// edge (job→logfile).
+/// Artifact node for a CI job log (carries the `object_path` retrieval handle +
+/// the catalog `artifact_id`) + the `HAS_ARTIFACT` edge (job→artifact).
+#[allow(clippy::too_many_arguments)]
 pub fn log_file_rows(
     owner: &str,
     repo: &str,
@@ -265,6 +266,7 @@ pub fn log_file_rows(
     sha256: &str,
     size_bytes: i64,
     truncated: bool,
+    artifact_id: Option<&str>,
 ) -> (Value, Value) {
     let lid = log_file_node_id(owner, repo, job_id);
     let mut props = Map::new();
@@ -273,15 +275,20 @@ pub fn log_file_rows(
     props.insert("size_bytes".into(), json!(size_bytes));
     props.insert("truncated".into(), json!(truncated));
     props.insert("artifact_class".into(), json!("log"));
+    props.insert("source".into(), json!("github"));
+    props.insert("retrievable".into(), json!(true));
+    if let Some(aid) = artifact_id {
+        props.insert("artifact_id".into(), json!(aid));
+    }
     let name = if job_name.is_empty() {
         format!("log #{job_id}")
     } else {
         format!("{job_name}.log")
     };
-    let node = make_node(&lid, "LogFile", &name, props);
+    let node = make_node(&lid, "Artifact", &name, props);
     let edge = make_edge(
         &job_node_id(owner, repo, job_id),
-        "JOB_HAS_LOG",
+        "HAS_ARTIFACT",
         &lid,
         Map::new(),
     );
@@ -1625,5 +1632,46 @@ mod tests {
         let repo2 = make_node("repo:o/r", "Repository", "r", p2);
         let sig_c = refetch_signature(&[repo2, user], &[owns]);
         assert_ne!(sig_a, sig_c, "a changed stored prop must change the signature");
+    }
+}
+
+#[cfg(test)]
+mod artifact_node_tests {
+    use super::*;
+
+    #[test]
+    fn log_file_rows_emits_artifact_node_and_has_artifact_edge() {
+        let (node, edge) = log_file_rows(
+            "acme", "app", 900, "build",
+            "artifacts/t/github/acme/app/100/900.log.txt",
+            "deadbeef", 1234, false,
+            Some("11111111-1111-1111-1111-111111111111"),
+        );
+
+        assert_eq!(node["labels"], "Artifact");
+        assert_eq!(node["id"], "log:acme/app#900");
+
+        let props: serde_json::Value =
+            serde_json::from_str(node["props"].as_str().unwrap()).unwrap();
+        assert_eq!(props["artifact_id"], "11111111-1111-1111-1111-111111111111");
+        assert_eq!(props["artifact_class"], "log");
+        assert_eq!(props["source"], "github");
+        assert_eq!(props["retrievable"], true);
+        assert_eq!(props["object_path"], "artifacts/t/github/acme/app/100/900.log.txt");
+
+        assert_eq!(edge["type"], "HAS_ARTIFACT");
+        assert_eq!(edge["src"], "job:acme/app#900");
+        assert_eq!(edge["dst"], "log:acme/app#900");
+    }
+
+    #[test]
+    fn log_file_rows_without_artifact_id_omits_the_prop() {
+        let (node, _edge) = log_file_rows(
+            "acme", "app", 900, "build", "p", "s", 1, false, None,
+        );
+        let props: serde_json::Value =
+            serde_json::from_str(node["props"].as_str().unwrap()).unwrap();
+        assert!(props.get("artifact_id").is_none());
+        assert_eq!(props["retrievable"], true);
     }
 }

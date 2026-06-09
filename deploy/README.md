@@ -1,103 +1,70 @@
 # Deploying kyma to production
 
-Self-hosted production deployment of the kyma engine: **AWS ECS Fargate**
-(engine container) + **AWS S3** (columnar extents) + **Supabase** (catalog
-Postgres + Auth). One `terraform apply` — or one `kyma deploy` — and you get
-an HTTPS endpoint running the full engine with the web UI, Supabase login,
-and keyless IAM-role S3 access.
+Self-host the kyma engine with pluggable backends. Pick one option on each axis
+— the wizard wires the rest:
 
-```
-            ┌─────────────────────────── AWS ───────────────────────────┐
-            │  ALB (HTTPS, /health checks)                              │
-  users ───▶│   └─▶ ECS Fargate: kyma-engine (web UI + API, ARM64)      │
-            │         ├─▶ S3 extent bucket   (task-role auth, no keys)  │
-            │         └─▶ SSM parameters     (secrets at start-up)      │
-            └───────────────┬───────────────────────────────────────────┘
-                            │
-                  Supabase  ▼
-                  ├─ Postgres  → kyma catalog (KYMA_CATALOG_URL)
-                  └─ Auth      → login (JWTs verified via project JWKS)
-```
+| Axis | Options |
+| ---- | ------- |
+| **Compute** | `fargate` (ECS, default) · `eks` (Terraform-provisioned) · `helm` (your cluster) · `local` (docker) |
+| **Database** | `supabase` · `rds` · `external` (your `postgresql://` URL) |
+| **Storage** | `s3` (native, keyless) · `supabase` · `external` (MinIO/R2/any S3-compatible) |
+| **Auth** | `supabase` · `token` · `oidc` |
+
+The engine is backend-agnostic; this directory holds the IaC + Helm chart that
+expose those choices. Native `s3`/`rds` need an AWS compute target (`fargate`/`eks`).
 
 ## The easy way: `kyma deploy`
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash -s -- --prod-deploy
-# or, with the CLI already installed:
-kyma deploy init   # wizard: credentials, region, domain, tool
-kyma deploy up     # terraform/pulumi apply + `kyma connect` to the result
-kyma deploy status # outputs + live /health probe
+# or, with the CLI installed:
+kyma deploy init     # wizard: compute → database → storage → auth + credentials
+kyma deploy up       # provision + connect
+kyma deploy status   # outputs + live /health probe
 kyma deploy destroy
 ```
 
-The wizard collects AWS + Supabase credentials (reusing `SUPABASE_ACCESS_TOKEN`,
-an existing `supabase login`, or a browser OAuth flow where available),
-renders `terraform.tfvars`, and runs the IaC for you.
-
-## The manual way: Terraform
-
-Prereqs: Terraform ≥ 1.9, AWS credentials in the standard chain, and a
-Supabase access token:
+Preview any combination: `kyma deploy init --print-only`. Examples:
 
 ```sh
-export SUPABASE_ACCESS_TOKEN=sbp_…   # https://supabase.com/dashboard/account/tokens
-cd deploy/terraform
-cp terraform.tfvars.example terraform.tfvars   # then edit
-export TF_VAR_supabase_db_password="$(openssl rand -base64 24)"
-terraform init
-terraform apply
-terraform output engine_url
+# AWS-native: Fargate + RDS + native S3 + token auth
+kyma deploy init --compute fargate --database rds --storage s3 --auth token
+
+# Kubernetes: EKS cluster (Terraform) + engine via Helm, OIDC auth
+kyma deploy init --compute eks --database rds --storage s3 --auth oidc \
+  --oidc-issuer https://issuer.example.com --ingress-host kyma.example.com
+
+# Your cluster + your Postgres + your object store
+kyma deploy init --compute helm --database external --database-url "$DB_URL" \
+  --storage external --storage-endpoint https://minio:9000 --auth token \
+  --ingress-host kyma.example.com
 ```
 
-Then `kyma connect "$(terraform output -raw engine_url)" --token <api-token>`
-(mint an API token under Settings → API tokens after signing in).
+## Layout
 
-### Domain & TLS
+```
+terraform/                 # thin root (provider config) → stack/ module (fargate/eks)
+terraform/stack/modules/   # network, ecs-service, eks, supabase, rds, storage, secrets
+helm/kyma-engine/          # the engine Helm chart (helm target + EKS install)
+pulumi/                    # consumes stack/ via the terraform-module bridge
+```
 
-Set `domain` (+ `route53_zone_id` when the zone lives in Route53 — fully
-automated). Without a zone id, `apply` prints the ACM validation CNAME and
-waits while you create it at your DNS provider. With no domain at all, the
-stack exposes plain HTTP on the ALB DNS name — fine for a test drive,
-not for production (OAuth redirects want HTTPS).
+## The manual ways
 
-### Extents storage
+- **Terraform** (`fargate`/`eks`): `cd terraform && cp terraform.tfvars.example
+  terraform.tfvars` (set your backends) → `terraform init && apply`.
+- **Pulumi**: same `stack/` via the terraform-module bridge — see `pulumi/`.
+- **Helm** (any cluster): `helm upgrade --install kyma helm/kyma-engine -n kyma
+  --create-namespace -f your-values.yaml`.
 
-`storage_backend = "supabase"` (default) keeps the columnar extents in
-**Supabase Storage** via its S3-compatible endpoint — everything stateful
-lives in one Supabase project. Supabase has no API to mint S3 access keys,
-so that path has one manual step (dashboard → Storage → S3 access keys);
-`kyma deploy up` opens the page and waits for the paste. Set
-`storage_backend = "s3"` for a native AWS bucket — fully automated and
-keyless (Fargate task role), lowest latency from the engine.
-
-### Sign-in policy
-
-- `admin_emails` — Supabase-authenticated emails that get the kyma admin role.
-- `allowed_email_domains` — **set this** unless you've disabled public signup
-  in your Supabase project; anyone who can register otherwise gets read access.
-- `oauth_providers` — login-page buttons; enable the same providers in
-  Supabase → Authentication → Providers.
-
-### State
-
-Local state by default. For teams, uncomment the S3 backend in
-`backend.tf` and `terraform init -migrate-state`.
-
-### Cost floor
-
-ALB (~$16/mo) + 1× Fargate task 0.5 vCPU/1GB ARM64 (~$15/mo) + S3 + Supabase
-free/Pro tier. No NAT gateway (public subnets + task IP).
-
-## Pulumi
-
-The Terraform module is the single source of truth; Pulumi users consume it
-via the official terraform-module bridge — see [`pulumi/`](./pulumi/).
+Full docs: `docs/site/deploy/` → Overview · CLI · Terraform · Pulumi · Helm ·
+Kubernetes (EKS).
 
 ## Notes
 
-- gRPC (Arrow Flight) and OTLP-gRPC are disabled in this stack (ALB is
-  HTTP-only); OTLP/HTTP and the REST ingest API work through the ALB.
-- The engine self-migrates the catalog schema on first connect — no
-  bootstrap job needed.
-- Engine image: `ghcr.io/shakedaskayo/kyma-engine` (multi-arch on release
-  tags). Pin `image_tag` to a release.
+- gRPC (Arrow Flight) + OTLP-gRPC are off in these stacks (HTTP-only
+  ALB/ingress); OTLP/HTTP + REST ingest work. NLB variant is future work.
+- The engine self-migrates the catalog on first connect — no bootstrap job.
+- The Terraform `stack/` is provider-free (Pulumi-bridge requirement); EKS
+  provisions the cluster only and the CLI installs the chart as a second step.
+- Engine image: `ghcr.io/shakedaskayo/kyma-engine`. Pin `image_tag` to a release.

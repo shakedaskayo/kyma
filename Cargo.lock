@@ -4620,6 +4620,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyma-artifact-graph"
+version = "0.0.7"
+dependencies = [
+ "anyhow",
+ "arrow-schema",
+ "chrono",
+ "kyma-catalog",
+ "kyma-catalog-sqlite",
+ "kyma-core",
+ "kyma-format-tlm",
+ "kyma-ingest-core",
+ "kyma-storage",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "kyma-bin"
 version = "0.0.7"
 dependencies = [
@@ -5255,6 +5273,7 @@ dependencies = [
  "hex",
  "http-body-util",
  "jsonwebtoken",
+ "kyma-artifact-graph",
  "kyma-catalog",
  "kyma-catalog-sqlite",
  "kyma-ccmem",

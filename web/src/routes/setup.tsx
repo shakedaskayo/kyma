@@ -62,7 +62,7 @@ function Setup() {
   // Land on the app after setup. `to` is string-typed to use the loose
   // navigation signature (same pattern as login.tsx).
   const enterApp = () => {
-    const to: string = "/discover";
+    const to: string = "/explore";
     void navigate({ to });
   };
 
