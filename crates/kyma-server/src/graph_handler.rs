@@ -67,7 +67,7 @@ use kyma_graph::{GraphQueryExecutor, JsonRow};
 
 const GRAPH_MEMORY_POOL_BYTES: usize = 256 * 1024 * 1024;
 
-struct QueryEngineExecutor {
+pub(crate) struct QueryEngineExecutor {
     catalog: Arc<dyn kyma_core::catalog::Catalog>,
     format: Arc<dyn kyma_core::segment_format::SegmentFormat>,
 }
@@ -159,7 +159,7 @@ fn err500(e: anyhow::Error) -> Response {
 // ResolvedProvider: schema OR stored, unified behind GraphProvider.
 // ---------------------------------------------------------------------------
 
-enum ResolvedProvider {
+pub(crate) enum ResolvedProvider {
     Schema(SchemaGraphProvider),
     Stored(StoredGraphProvider),
 }
@@ -233,8 +233,39 @@ impl GraphProvider for ResolvedProvider {
 
 /// Resolve a graph name + database to either the synthetic schema-graph or a
 /// registered stored graph.  Returns a 404 or 500 `Response` on failure.
+///
+/// Thin wrapper over [`resolve_with`] that pulls the catalog/format out of the
+/// HTTP handler state and resolves under the default tenant (the graph HTTP
+/// surface is keyed by the `x-database` header + per-database token scope, not
+/// by a tenant id). The unified-search Graph arm calls [`resolve_with`]
+/// directly with the request's tenant.
 async fn resolve(
     state: &QueryState,
+    graph: &str,
+    database: &str,
+    allowed_databases: Option<Vec<String>>,
+) -> Result<ResolvedProvider, Response> {
+    resolve_with(
+        &state.catalog,
+        &state.format,
+        kyma_core::tenant::DEFAULT_TENANT,
+        graph,
+        database,
+        allowed_databases,
+    )
+    .await
+}
+
+/// Catalog/format-level graph resolver shared by the `/v1/graph/*` HTTP
+/// handlers and the unified-search Graph arm. Takes the two `Arc` handles plus
+/// the resolving `tenant` directly so callers that don't carry a full
+/// [`QueryState`] (e.g. `search::unified`) can reuse the exact same
+/// schema-vs-stored routing + `StoredGraphProvider` wiring instead of
+/// duplicating it. Returns a 404 / 500 `Response` on failure.
+pub(crate) async fn resolve_with(
+    catalog: &Arc<dyn kyma_core::catalog::Catalog>,
+    format: &Arc<dyn kyma_core::segment_format::SegmentFormat>,
+    tenant: kyma_core::tenant::TenantId,
     graph: &str,
     database: &str,
     allowed_databases: Option<Vec<String>>,
@@ -244,28 +275,11 @@ async fn resolve(
         // per-database scope so scoped tokens can't enumerate metadata of
         // databases outside their allow-list.
         return Ok(ResolvedProvider::Schema(SchemaGraphProvider::new(Arc::new(
-            CatalogSchemaSource::with_allowed(state.catalog.clone(), allowed_databases),
+            CatalogSchemaSource::with_allowed(catalog.clone(), allowed_databases),
         ))));
     }
-    match state.catalog.get_graph(database, graph).await {
-        Ok(Some(reg)) => {
-            let cfg = kyma_graph::StoredGraphConfig {
-                database: reg.database,
-                node_table: reg.node_table,
-                edge_table: reg.edge_table,
-                id_col: reg.id_col,
-                label_col: reg.label_col,
-                src_col: reg.src_col,
-                dst_col: reg.dst_col,
-                type_col: reg.type_col,
-                realm_col: reg.realm_col,
-            };
-            let exec = Arc::new(QueryEngineExecutor {
-                catalog: state.catalog.clone(),
-                format: state.format.clone(),
-            });
-            Ok(ResolvedProvider::Stored(StoredGraphProvider::new(cfg, exec)))
-        }
+    match catalog.get_graph_in_tenant(tenant, database, graph).await {
+        Ok(Some(reg)) => Ok(ResolvedProvider::Stored(stored_provider(catalog, format, reg))),
         Ok(None) => Err((
             StatusCode::NOT_FOUND,
             Json(
@@ -275,6 +289,32 @@ async fn resolve(
             .into_response()),
         Err(e) => Err(err500(anyhow::anyhow!(e.to_string()))),
     }
+}
+
+/// Build a `StoredGraphProvider` over a registration, wiring the DataFusion
+/// query executor from the catalog + format. The single construction site for
+/// stored-graph providers (HTTP handlers + unified search both route here).
+pub(crate) fn stored_provider(
+    catalog: &Arc<dyn kyma_core::catalog::Catalog>,
+    format: &Arc<dyn kyma_core::segment_format::SegmentFormat>,
+    reg: kyma_core::catalog::GraphRegistration,
+) -> StoredGraphProvider {
+    let cfg = kyma_graph::StoredGraphConfig {
+        database: reg.database,
+        node_table: reg.node_table,
+        edge_table: reg.edge_table,
+        id_col: reg.id_col,
+        label_col: reg.label_col,
+        src_col: reg.src_col,
+        dst_col: reg.dst_col,
+        type_col: reg.type_col,
+        realm_col: reg.realm_col,
+    };
+    let exec = Arc::new(QueryEngineExecutor {
+        catalog: catalog.clone(),
+        format: format.clone(),
+    });
+    StoredGraphProvider::new(cfg, exec)
 }
 
 // ---------------------------------------------------------------------------
