@@ -3,12 +3,13 @@
 use adk_rust::tool::SimpleToolContext;
 use adk_rust::Tool;
 use kyma_server::agent::{
-    tool_describe_table, tool_explore_schema, tool_find_references_to, tool_flush_memory,
-    tool_graph_traverse, tool_ingest_entity, tool_link_memory_to_entity, tool_list_databases,
-    tool_list_memories, tool_memory_compare, tool_memory_judge, tool_memory_search,
-    tool_memory_session_summary, tool_recall_memory, tool_retrieve_artifact, tool_run_kql,
-    tool_run_sql, tool_sample_rows, tool_save_memories, tool_save_memory,
-    tool_update_memory_importance, tool_update_memory_status, SharedToolCtx,
+    tool_contribute_file, tool_describe_file, tool_describe_table, tool_explore_schema,
+    tool_file_neighbors, tool_find_references_to, tool_flush_memory, tool_graph_traverse,
+    tool_ingest_entity, tool_link_memory_to_entity, tool_list_databases, tool_list_memories,
+    tool_memory_compare, tool_memory_judge, tool_memory_search, tool_memory_session_summary,
+    tool_recall_file, tool_recall_memory, tool_retrieve_artifact, tool_run_kql, tool_run_sql,
+    tool_sample_rows, tool_save_memories, tool_save_memory, tool_update_memory_importance,
+    tool_update_memory_status, SharedToolCtx,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -35,6 +36,12 @@ impl ToolDispatch {
             tool_find_references_to(shared.clone()),
         );
         map.insert("graph_traverse", tool_graph_traverse(shared.clone()));
+        // File-contribution + recall (E5): persist a file's structure once, then
+        // recall its meaning/relationships cheaply (context-window economy).
+        map.insert("contribute_file", tool_contribute_file(shared.clone()));
+        map.insert("describe_file", tool_describe_file(shared.clone()));
+        map.insert("file_neighbors", tool_file_neighbors(shared.clone()));
+        map.insert("recall_file", tool_recall_file(shared.clone()));
         // Agentic Memory tools — let MCP clients (e.g. the Claude Code plugin)
         // search/recall/save durable memories alongside the query tools.
         // `memory_search` is the primary graph-aware hybrid recall entry point.

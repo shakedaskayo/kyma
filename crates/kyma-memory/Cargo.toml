@@ -11,6 +11,7 @@ kyma-core = { workspace = true }
 kyma-ingest-core = { workspace = true }
 kyma-embed = { workspace = true }
 kyma-queue = { workspace = true }
+kyma-codeparse = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }

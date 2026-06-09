@@ -11,6 +11,7 @@
 
 pub mod embed;
 pub mod error;
+pub mod file_candidates;
 pub mod ingest;
 pub mod rows;
 pub mod schema;

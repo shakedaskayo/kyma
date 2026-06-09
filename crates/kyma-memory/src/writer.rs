@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::error::{MemoryError, Result};
 use crate::types::CreateMemory;
-use crate::{rows, schema, EDGE_TABLE, GRAPH_NAME, NODE_TABLE};
+use crate::{rows, schema, EDGE_TABLE, NODE_TABLE};
 
 /// Writes memory data and provisions the memory database/tables/graph on demand.
 #[derive(Clone)]
@@ -23,6 +23,7 @@ pub struct MemoryWriter {
     write: WritePath,
     embed: Arc<dyn EmbeddingBackend>,
     database: String,
+    graph_name: String,
 }
 
 impl MemoryWriter {
@@ -40,7 +41,18 @@ impl MemoryWriter {
             write,
             embed,
             database: crate::DEFAULT_DATABASE.to_string(),
+            graph_name: crate::GRAPH_NAME.to_string(),
         }
+    }
+
+    /// Point the writer at a different database + graph (same `memory_nodes` /
+    /// `memory_edges` schema). Used by the file-candidate graph, which reuses the
+    /// memory machinery (embedding, recall, graph registration) in its own
+    /// isolated `file_candidates` namespace. The graph is named after the db.
+    pub fn with_database(mut self, database: &str) -> Self {
+        self.database = database.to_string();
+        self.graph_name = database.to_string();
+        self
     }
 
     pub fn database(&self) -> &str {
@@ -90,7 +102,7 @@ impl MemoryWriter {
         };
         if let Err(e) = self
             .catalog
-            .create_graph(&self.database, GRAPH_NAME, spec)
+            .create_graph(&self.database, &self.graph_name, spec)
             .await
         {
             let msg = e.to_string();

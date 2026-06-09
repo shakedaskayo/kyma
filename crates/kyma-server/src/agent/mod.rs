@@ -11,6 +11,7 @@
 pub mod cc_curate;
 pub mod ci_correlate;
 pub mod engine;
+pub mod file_tools;
 pub mod identity;
 pub mod local;
 pub mod memory;
@@ -32,6 +33,9 @@ pub mod tools;
 pub mod ui_stream;
 
 pub use ci_correlate::CiCorrelator;
+pub use file_tools::{
+    tool_contribute_file, tool_describe_file, tool_file_neighbors, tool_recall_file,
+};
 pub use memory::MemoryConsolidator;
 pub use memory_tools::{
     tool_flush_memory, tool_ingest_entity, tool_link_memory_to_entity, tool_list_memories,
