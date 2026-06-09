@@ -1,25 +1,24 @@
 /**
  * KymaExplore — the unified data-exploration surface.
  *
- * One smart input that auto-detects keyword search (Discover grammar) vs raw
- * KQL/SQL and routes to the matching engine, sharing a single shell: scope +
- * time-range + Run, a histogram, a left rail, a results area, and a row-detail
- * drawer. Replaces the separate Discover and Query Editor pages.
+ * One smart input that auto-detects keyword search vs raw KQL/SQL and routes to
+ * the matching engine, sharing a single shell: scope + time-range + Run, a
+ * results area, and a row-detail drawer.
  *
- *   keyword → useDiscoverSearch (/v1/explore/search): sources/fields rail,
- *             per-source histogram, stream/table, row drawer. Cross-DB by design.
+ *   keyword → useKymaSearch (/v1/search): instant hybrid (lexical + vector,
+ *             RRF-fused) ranked hits across all sources in scope, with db.table
+ *             provenance. Click a hit to inspect; switch to KQL/SQL to correlate.
  *   kql/sql → useKymaQuery (/v1/query): schema browser → field-stats rail,
  *             timestamp histogram, results grid, chart, row drawer.
  *
- * The detected mode is shown as a badge the user can click to force a mode, so
- * the auto-detection is never a mystery.
+ * The detected mode is a clickable badge so auto-detection is never a mystery.
  */
 
 import React, { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Play, Square, Search as SearchIcon, Code2 } from "lucide-react";
 import { autoChartAxes } from "@kyma-ai/client";
-import type { Column, SchemaDoc } from "@kyma-ai/client";
+import type { Column, HybridSearchHit, SchemaDoc } from "@kyma-ai/client";
 
 import { KymaErrorBoundary } from "../internal/KymaErrorBoundary";
 import { Button } from "../internal/ui/button";
@@ -27,17 +26,11 @@ import { KymaContext, useKymaClient, useKymaContext } from "../provider/context"
 import { cn } from "../internal/cn";
 
 import { useKymaQuery } from "../hooks/useKymaQuery";
-import { useDiscoverSearch, resolveTimeRange } from "../discover/useDiscoverSearch";
-import { mergeSources } from "../discover/stream";
-import { Histogram } from "../discover/Histogram";
-import { StreamView } from "../discover/StreamView";
-import { SourcesRail } from "../discover/SourcesRail";
-import { FieldsRail } from "../discover/FieldsRail";
-import { SourceTableView } from "../discover/SourceTableView";
+import { useKymaSearch } from "../hooks/useKymaSearch";
 import { RowDetailDrawer } from "../discover/RowDetailDrawer";
-import { SummaryLine } from "../discover/SummaryLine";
 import { serializePills } from "../discover/discoverGrammar";
-import type { Pill, Scope, SourceKey } from "../discover/types";
+import { resolveTimeRange } from "../discover/useDiscoverSearch";
+import type { Pill, Scope } from "../discover/types";
 
 import { SchemaBrowser } from "../query/schema/SchemaBrowser";
 import { ResultsGrid } from "../query/results/ResultsGrid";
@@ -57,14 +50,14 @@ export interface KymaExploreProps {
   /** Initial time range. Defaults to "all time" so any data shows on first run. */
   timeRange?: TimeRange;
   /**
-   * Database scope. "*" (default) unifies across all databases; a concrete name
-   * filters. Drives `x-database` for KQL/SQL and the source glob for keyword search.
+   * Database scope. "*" (default) searches/queries across all databases; a
+   * concrete name filters. Drives `x-database` for KQL/SQL and the source glob
+   * for keyword search.
    */
   database?: string;
   className?: string;
   style?: React.CSSProperties;
   fallback?: React.ReactNode;
-  /** Called whenever the input text changes. */
   onQueryChange?: (q: string) => void;
 }
 
@@ -76,24 +69,16 @@ function KymaExploreInner({
   style,
   onQueryChange,
 }: Omit<KymaExploreProps, "fallback">) {
-  const baseClient = useKymaClient();
-  const client = useMemo(
-    () => (database ? baseClient.withDatabase(database) : baseClient),
-    [baseClient, database],
-  );
+  const client = useKymaClient();
   const endpoint = client.transport.endpoint;
 
-  // ── Input + run state ───────────────────────────────────────────────────────
   const [input, setInput] = useState(defaultQuery);
   const [forcedMode, setForcedMode] = useState<ExploreMode | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>(timeRangeProp ?? { preset: "none" });
   const [rowFilter, setRowFilter] = useState("");
   const [openRow, setOpenRow] = useState<{ source: string; row: Record<string, unknown> } | null>(null);
+  const [submittedMode, setSubmittedMode] = useState<ExploreMode | null>(null);
 
-  // The submitted query + the mode it was run as (drives which engine renders).
-  const [submitted, setSubmitted] = useState<{ text: string; mode: ExploreMode } | null>(null);
-
-  // ── Schema (table names for mode detection + the schema browser) ─────────────
   const { data: schema } = useQuery<SchemaDoc>({
     queryKey: ["kyma", endpoint, "explore-schema"],
     queryFn: () => client.catalog.fetchSchema(),
@@ -106,51 +91,38 @@ function KymaExploreInner({
 
   const liveMode: ExploreMode = forcedMode ?? detectMode(input, tableNames);
 
-  // ── Discover (keyword) engine ────────────────────────────────────────────────
-  const discoverScope: Scope = useMemo(
+  const scope: Scope = useMemo(
     () => (database && database !== "*" ? { kind: "sources", sources: [`${database}.*`] } : { kind: "all" }),
     [database],
   );
-  const searchEnabled = submitted?.mode === "search";
-  const { results, rerun, cancel: cancelDiscover } = useDiscoverSearch({
-    search: searchEnabled ? submitted!.text : "",
-    scope: discoverScope,
-    timeRange,
-    enabled: searchEnabled,
-  });
-  const [visibleSources, setVisibleSources] = useState<SourceKey[] | null>(null);
-  const [selectedSource, setSelectedSource] = useState<SourceKey | null>(null);
-  const [columns, setColumns] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<"stream" | { table: SourceKey }>("stream");
 
-  // ── Query (KQL/SQL) engine ────────────────────────────────────────────────────
+  const search = useKymaSearch();
   const { columns: qCols, rows: qRows, isRunning: qRunning, error: qError, execute, cancel: cancelQuery } =
     useKymaQuery();
 
-  // ── Run / cancel ──────────────────────────────────────────────────────────────
-  const runInputRef = useRef(input);
-  runInputRef.current = input;
+  const inputRef = useRef(input);
+  inputRef.current = input;
 
   const run = () => {
-    const text = runInputRef.current;
+    const text = inputRef.current;
     const mode = forcedMode ?? detectMode(text, tableNames);
     setRowFilter("");
     setOpenRow(null);
+    setSubmittedMode(mode);
     if (mode === "search") {
-      // If the same search is re-submitted, force a re-run.
-      if (submitted?.mode === "search" && submitted.text === text) rerun();
-      setSubmitted({ text, mode });
+      void search.run({
+        query: text,
+        scope,
+        time_range: resolveTimeRange(timeRange),
+        limit: 100,
+      });
     } else {
-      setSubmitted({ text, mode });
       const effective = mode === "kql" ? prependTimeFilter(text, timeRange, schema) : text;
       void execute({ database, query: effective, language: mode }).catch(() => {});
     }
   };
 
-  const cancel = () => {
-    cancelDiscover();
-    cancelQuery();
-  };
+  const cancel = () => cancelQuery();
 
   const setInputAndNotify = (v: string) => {
     setInput(v);
@@ -160,13 +132,9 @@ function KymaExploreInner({
     setInputAndNotify(input.trim() ? `${input.trim()} ${text}` : text);
   };
 
-  const handleOpenRow = (source: string, row: Record<string, unknown>) =>
-    setOpenRow({ source, row });
+  const running = search.isRunning || qRunning;
+  const showQuery = submittedMode === "kql" || submittedMode === "sql";
 
-  const running = results.status === "running" || qRunning;
-  const showQuery = submitted?.mode === "kql" || submitted?.mode === "sql";
-
-  // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div
       className={cn(
@@ -179,13 +147,11 @@ function KymaExploreInner({
       <div className="ky-flex ky-items-start ky-gap-2 ky-border-b ky-p-3">
         <button
           type="button"
-          title="Detected mode — click to force"
-          onClick={() => setForcedMode(cycleMode(liveMode, forcedMode))}
+          title="Detected mode — click to force the other mode (click again for auto)"
+          onClick={() => setForcedMode(forcedMode ? null : liveMode === "search" ? "kql" : "search")}
           className={cn(
             "ky-mt-0.5 ky-flex ky-shrink-0 ky-items-center ky-gap-1 ky-rounded ky-border ky-px-2 ky-py-1 ky-text-[11px] ky-font-medium",
-            liveMode === "search"
-              ? "ky-text-muted-foreground"
-              : "ky-border-primary/40 ky-text-primary",
+            liveMode === "search" ? "ky-text-muted-foreground" : "ky-border-primary/40 ky-text-primary",
             forcedMode && "ky-ring-1 ky-ring-primary/40",
           )}
         >
@@ -220,7 +186,7 @@ function KymaExploreInner({
       </div>
 
       {/* ── Body ── */}
-      {!submitted ? (
+      {submittedMode === null ? (
         <EmptyState />
       ) : showQuery ? (
         <QueryBody
@@ -235,29 +201,17 @@ function KymaExploreInner({
           onReplaceAndRun={(kql) => {
             setForcedMode("kql");
             setInputAndNotify(kql);
-            setSubmitted({ text: kql, mode: "kql" });
+            setSubmittedMode("kql");
             void execute({ database, query: prependTimeFilter(kql, timeRange, schema), language: "kql" }).catch(() => {});
           }}
-          onOpenRow={(row) => handleOpenRow(String(row["__database"] ?? "result"), row)}
+          onOpenRow={(row) => setOpenRow({ source: String(row["__database"] ?? "result"), row })}
         />
       ) : (
-        <DiscoverBody
-          results={results}
-          timeRange={timeRange}
-          visibleSources={visibleSources}
-          selectedSource={selectedSource}
-          columns={columns}
-          viewMode={viewMode}
-          onToggleVisible={(s) =>
-            setVisibleSources((cur) => toggleIn(cur, s, Array.from(results.sources.keys())))
-          }
-          onSelectSource={setSelectedSource}
-          onToggleColumn={(f) => setColumns((c) => (c.includes(f) ? c.filter((x) => x !== f) : [...c, f]))}
-          onInsertFilter={appendToInput}
-          onOpenTable={(s) => setViewMode({ table: s })}
-          onBackToStream={() => setViewMode("stream")}
-          onZoom={(from, to) => setTimeRange({ preset: "custom", from, to })}
-          onOpenRow={handleOpenRow}
+        <SearchResults
+          hits={search.hits}
+          isRunning={search.isRunning}
+          error={search.error}
+          onOpenRow={(source, row) => setOpenRow({ source, row })}
         />
       )}
 
@@ -274,102 +228,71 @@ function KymaExploreInner({
   );
 }
 
-// ── Discover (keyword) body ───────────────────────────────────────────────────
+// ── Keyword (hybrid search) body: ranked hits ────────────────────────────────
 
-const PRESET_LABEL: Record<string, string> = {
-  none: "all time", "5m": "last 5m", "15m": "last 15m", "1h": "last 1h", "6h": "last 6h",
-  "24h": "last 24h", "7d": "last 7d", "30d": "last 30d", custom: "custom range",
-};
-
-function DiscoverBody(props: {
-  results: ReturnType<typeof useDiscoverSearch>["results"];
-  timeRange: TimeRange;
-  visibleSources: SourceKey[] | null;
-  selectedSource: SourceKey | null;
-  columns: string[];
-  viewMode: "stream" | { table: SourceKey };
-  onToggleVisible: (s: SourceKey) => void;
-  onSelectSource: (s: SourceKey) => void;
-  onToggleColumn: (f: string) => void;
-  onInsertFilter: (t: string) => void;
-  onOpenTable: (s: SourceKey) => void;
-  onBackToStream: () => void;
-  onZoom: (from: string, to: string) => void;
+function SearchResults(props: {
+  hits: HybridSearchHit[];
+  isRunning: boolean;
+  error: unknown;
   onOpenRow: (source: string, row: Record<string, unknown>) => void;
 }) {
-  const { results, timeRange, visibleSources, selectedSource, columns, viewMode } = props;
-  const selected = selectedSource ? results.sources.get(selectedSource) ?? null : null;
-  const streamRows = mergeSources(Array.from(results.sources.values()), visibleSources);
-  const tableSrc = typeof viewMode === "object" ? results.sources.get(viewMode.table) ?? null : null;
-
-  return (
-    <>
-      <SummaryLine
-        sourcesSearched={results.sources.size}
-        windowLabel={PRESET_LABEL[timeRange.preset] ?? "all time"}
-        eventCount={streamRows.length}
-        finishedAt={results.finishedAt ?? null}
-        status={results.status}
-      />
-      <div className="ky-flex ky-min-h-0 ky-flex-1">
-        <aside className="ky-w-60 ky-shrink-0 ky-overflow-auto ky-border-r">
-          <SourcesRail
-            results={results}
-            visible={visibleSources}
-            onToggleVisible={props.onToggleVisible}
-            selected={selectedSource}
-            onSelect={props.onSelectSource}
-            onOpenTable={props.onOpenTable}
-          />
-          <FieldsRail
-            source={selected}
-            columns={columns}
-            onToggleColumn={props.onToggleColumn}
-            onInsertFilter={props.onInsertFilter}
-          />
-        </aside>
-        <main className="ky-flex ky-min-w-0 ky-flex-1 ky-flex-col ky-min-h-0">
-          {tableSrc ? (
-            <div className="ky-min-h-0 ky-flex-1 ky-overflow-auto">
-              <SourceTableView
-                src={tableSrc}
-                onBack={props.onBackToStream}
-                onOpenRow={(row) => props.onOpenRow(tableSrc.source, row)}
-              />
-            </div>
-          ) : (
-            <>
-              <Histogram
-                results={results}
-                rangeTo={resolveTimeRange(timeRange)?.to ?? null}
-                onZoom={props.onZoom}
-              />
-              {results.topError && (
-                <div
-                  role="alert"
-                  className="ky-m-3 ky-rounded ky-border ky-border-destructive/50 ky-bg-destructive/10 ky-p-3 ky-text-xs ky-text-destructive"
-                >
-                  <span className="ky-font-semibold">{results.topError.code}</span>: {results.topError.message}
-                </div>
-              )}
-              {results.status === "done" && results.sources.size === 0 ? (
-                <div className="ky-flex ky-flex-1 ky-items-center ky-justify-center ky-p-6 ky-text-sm ky-text-muted-foreground">
-                  No data sources match this scope.
-                </div>
-              ) : (
-                <StreamView
-                  rows={streamRows}
-                  sources={results.sources}
-                  columns={columns}
-                  onOpenRow={props.onOpenRow}
-                />
-              )}
-            </>
-          )}
-        </main>
+  const { hits, isRunning, error } = props;
+  if (isRunning) {
+    return <Centered>Searching…</Centered>;
+  }
+  if (error != null) {
+    return (
+      <div
+        role="alert"
+        className="ky-m-3 ky-rounded ky-border ky-border-destructive/50 ky-bg-destructive/10 ky-p-3 ky-text-xs ky-text-destructive"
+      >
+        <span className="ky-font-semibold">Search failed:</span> {formatErr(error)}
       </div>
-    </>
+    );
+  }
+  if (hits.length === 0) {
+    return <Centered>No matches. Try different keywords or widen the time range.</Centered>;
+  }
+  return (
+    <div className="ky-min-h-0 ky-flex-1 ky-overflow-auto">
+      <ul className="ky-divide-y">
+        {hits.map((h, i) => (
+          <li key={i}>
+            <button
+              type="button"
+              onClick={() => props.onOpenRow(h.source, h.row)}
+              className="ky-flex ky-w-full ky-items-start ky-gap-3 ky-px-4 ky-py-2 ky-text-left hover:ky-bg-accent/40"
+            >
+              <span className="ky-mt-0.5 ky-shrink-0 ky-rounded ky-bg-muted ky-px-1.5 ky-py-0.5 ky-font-mono ky-text-[10px] ky-text-muted-foreground">
+                {h.source}
+              </span>
+              <span className="ky-min-w-0 ky-flex-1 ky-truncate ky-text-xs">{rowPreview(h.row)}</span>
+              <span className="ky-shrink-0 ky-tabular-nums ky-text-[10px] ky-text-muted-foreground">
+                {h.score.toFixed(3)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
+}
+
+/** Short human-readable preview of a result row (prefers titley/texty fields). */
+function rowPreview(row: Record<string, unknown>): string {
+  const prefer = ["title", "content_preview", "content", "message", "msg", "text", "name", "label", "kind"];
+  for (const k of prefer) {
+    const v = row[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  // Fall back to the first few non-empty string fields.
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(row)) {
+    if (k.startsWith("__")) continue;
+    if (typeof v === "string" && v.trim()) parts.push(`${k}=${v.trim()}`);
+    if (parts.length >= 3) break;
+  }
+  return parts.join("  ·  ") || JSON.stringify(row).slice(0, 160);
 }
 
 // ── Query (KQL/SQL) body ──────────────────────────────────────────────────────
@@ -390,7 +313,6 @@ function QueryBody(props: {
   const hasResults = columns.length > 0 && rows.length > 0;
   const chartSpec = hasResults ? autoChartAxes(columns) : null;
   const isPlottable = chartSpec !== null && chartSpec.type !== "none";
-  // Result columns carry an inferred ColKind; "time" is the timestamp column.
   const timeColName = useMemo(() => columns.find((c) => c.kind === "time")?.name ?? null, [columns]);
 
   return (
@@ -413,18 +335,10 @@ function QueryBody(props: {
             <span className="ky-font-semibold">Query failed:</span> {formatErr(error)}
           </div>
         )}
-        {hasResults && timeColName && (
-          <HistogramTimeline rows={rows} timeCol={timeColName} />
-        )}
-        {isRunning && (
-          <div className="ky-flex ky-flex-1 ky-items-center ky-justify-center ky-p-6 ky-text-xs ky-text-muted-foreground">
-            Running…
-          </div>
-        )}
+        {hasResults && timeColName && <HistogramTimeline rows={rows} timeCol={timeColName} />}
+        {isRunning && <Centered>Running…</Centered>}
         {!isRunning && error == null && !hasResults && (
-          <div className="ky-flex ky-flex-1 ky-items-center ky-justify-center ky-p-6 ky-text-xs ky-text-muted-foreground">
-            {columns.length === 0 ? "Run a query to see results." : "0 rows returned."}
-          </div>
+          <Centered>{columns.length === 0 ? "Run a query to see results." : "0 rows returned."}</Centered>
         )}
         {hasResults && (
           <div className="ky-flex ky-min-h-0 ky-flex-1 ky-flex-col">
@@ -458,31 +372,25 @@ function QueryBody(props: {
   );
 }
 
+function Centered({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="ky-flex ky-flex-1 ky-items-center ky-justify-center ky-p-6 ky-text-xs ky-text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
 function EmptyState() {
   return (
     <div className="ky-flex ky-flex-1 ky-items-center ky-justify-center ky-p-8 ky-text-center ky-text-sm ky-text-muted-foreground">
       <div className="ky-space-y-1">
         <div>Search your data or run a query.</div>
         <div className="ky-text-xs ky-opacity-70">
-          Type keywords to search, or a table name / KQL / SQL to query. Press ⌘↵ to run.
+          Type keywords for instant hybrid search, or a table name / KQL / SQL to query. Press ⌘↵ to run.
         </div>
       </div>
     </div>
   );
-}
-
-// ── helpers ─────────────────────────────────────────────────────────────────
-
-function cycleMode(live: ExploreMode, forced: ExploreMode | null): ExploreMode | null {
-  // Clicking the badge forces the *other* primary mode; clicking again clears
-  // the override (back to auto).
-  if (forced) return null;
-  return live === "search" ? "kql" : "search";
-}
-
-function toggleIn(cur: SourceKey[] | null, s: SourceKey, all: SourceKey[]): SourceKey[] {
-  const base = cur ?? all;
-  return base.includes(s) ? base.filter((x) => x !== s) : [...base, s];
 }
 
 function formatErr(err: unknown): string {
@@ -494,8 +402,6 @@ function formatErr(err: unknown): string {
     return String(err);
   }
 }
-
-// ── Public wrapper ─────────────────────────────────────────────────────────────
 
 export function KymaExplore({ fallback, database, ...rest }: KymaExploreProps): JSX.Element {
   const ctx = useKymaContext();

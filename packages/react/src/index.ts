@@ -9,6 +9,8 @@ export { useKymaCapabilities } from "./hooks/useKymaCapabilities";
 export { useKymaGraph } from "./hooks/useKymaGraph";
 export type { UseKymaGraphArgs, UseKymaGraphResult } from "./hooks/useKymaGraph";
 export { useKymaQuery } from "./hooks/useKymaQuery";
+export { useKymaSearch } from "./hooks/useKymaSearch";
+export type { UseKymaSearchResult } from "./hooks/useKymaSearch";
 export type { KymaQueryArgs, UseKymaQueryResult } from "./hooks/useKymaQuery";
 export { useKymaDiscover } from "./hooks/useKymaDiscover";
 export type { UseKymaDiscoverResult } from "./hooks/useKymaDiscover";

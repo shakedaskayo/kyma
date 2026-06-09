@@ -7,6 +7,7 @@ export * from "./arrow";
 export * from "./graph";
 export * from "./query";
 export * from "./discover";
+export * from "./search";
 export * from "./discover-live";
 export * from "./dashboards";
 export * from "./catalog";
