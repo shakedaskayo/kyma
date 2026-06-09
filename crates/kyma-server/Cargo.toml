@@ -74,6 +74,7 @@ base64 = "0.22"
 jsonwebtoken.workspace = true
 hex = "0.4"
 claude-code-agent-sdk = "0.1.39"
+tempfile = "3"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }

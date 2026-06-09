@@ -33,6 +33,7 @@ pub mod routes;
 pub mod runner;
 pub mod search_tools;
 pub mod sessions;
+pub mod skill_delivery;
 pub mod skills;
 pub mod state;
 pub mod tools;
