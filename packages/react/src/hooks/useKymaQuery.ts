@@ -20,7 +20,11 @@ import { useKymaClient } from "../provider/context";
 export interface KymaQueryArgs {
   database: string;
   query: string;
-  language: "kql" | "sql";
+  language: "kql" | "sql" | "cypher";
+  /** Target graph for `cypher` queries, as `"<db>/<graph>"` (sent as the
+   *  `x-graph` header). Optional — the server auto-selects when a single graph
+   *  is in scope. */
+  graph?: string;
   walMs?: number;
   memBytes?: number;
 }
@@ -86,6 +90,7 @@ export function useKymaQuery(): UseKymaQueryResult {
           database: args.database,
           query: args.query,
           language: args.language,
+          graph: args.graph,
           walMs: args.walMs,
           memBytes: args.memBytes,
           signal: ac.signal,

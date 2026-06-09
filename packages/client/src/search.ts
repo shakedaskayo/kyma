@@ -52,8 +52,10 @@ export interface HybridSearchHit {
   source: string;
   /** Fused RRF score (higher = more relevant). */
   score: number;
-  /** The row data (data mode). Absent for memory/graph hits. */
-  row?: Record<string, unknown>;
+  /** The row data. Always present for data-mode hits (the only mode consumed
+   *  by the UI today). Memory/graph hits omit it; revisit to `row?` when a UI
+   *  renders those modes. */
+  row: Record<string, unknown>;
 
   // ── unified-envelope additions (present in memory/graph modes) ─────────────
   /** Entity kind: "memory", "node", "edge", etc. Absent in data mode. */
