@@ -14,6 +14,7 @@ import * as credentials from "./credentials";
 import * as auth from "./auth";
 import * as setup from "./setup";
 import * as oauth from "./oauth";
+import * as artifacts from "./artifacts";
 
 // ── Bind-coverage type guard ─────────────────────────────────────────────────
 // TransportFirstKeys<M> resolves to the union of keys in M whose value is a
@@ -136,6 +137,10 @@ const OAUTH_FNS = [
   "getOAuthFlowStatus",
 ] as const satisfies readonly (keyof typeof oauth)[];
 
+const ARTIFACTS_FNS = [
+  "fetchArtifactByPath",
+] as const satisfies readonly (keyof typeof artifacts)[];
+
 // ── Bind-coverage assertions ─────────────────────────────────────────────────
 // Each Expect<AssertSameKeys<...>> asserts that a *_FNS list covers EXACTLY the
 // transport-first exports of its module (no more, no fewer).
@@ -157,6 +162,7 @@ declare const _bindGuard: [
   Expect<AssertSameKeys<typeof AUTH_FNS[number],          TransportFirstKeys<typeof auth>>>,
   Expect<AssertSameKeys<typeof SETUP_FNS[number],         TransportFirstKeys<typeof setup>>>,
   Expect<AssertSameKeys<typeof OAUTH_FNS[number],         TransportFirstKeys<typeof oauth>>>,
+  Expect<AssertSameKeys<typeof ARTIFACTS_FNS[number],     TransportFirstKeys<typeof artifacts>>>,
 ];
 
 // ── bind helper ─────────────────────────────────────────────────────────────
@@ -233,6 +239,9 @@ export interface KymaClient {
   /** OAuth namespace — start/poll OAuth flows. */
   readonly oauth: BoundModule<typeof oauth, typeof OAUTH_FNS>;
 
+  /** Artifacts namespace — fetch stored object-store artifacts (e.g. CI log files) by key. */
+  readonly artifacts: BoundModule<typeof artifacts, typeof ARTIFACTS_FNS>;
+
   /**
    * Returns a view of the client with a default database applied to all requests.
    * Caller's explicit per-request `database` still wins (spread order in the
@@ -269,6 +278,7 @@ function fromTransport(t: KymaTransport): KymaClient {
     auth: bind(t, auth, AUTH_FNS),
     setup: bind(t, setup, SETUP_FNS),
     oauth: bind(t, oauth, OAUTH_FNS),
+    artifacts: bind(t, artifacts, ARTIFACTS_FNS),
 
     withDatabase(database: string): KymaClient {
       // Wrap the transport so the default database is applied.

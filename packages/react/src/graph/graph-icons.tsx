@@ -31,6 +31,9 @@ import {
   GitPullRequest,
   CircleDot,
   Tag,
+  Workflow,
+  SquareTerminal,
+  ScrollText,
 } from "lucide-react";
 import {
   SiGithub,
@@ -121,6 +124,12 @@ const KIND_ICONS: Record<string, Icon> = {
   issue: CircleDot,
   organization: Building2,
   label: Tag,
+  // CI / GitHub Actions. github::* nodes usually render the GitHub brand chip;
+  // these are the kind-glyph fallback + drive the per-kind color below.
+  workflowrun: Workflow,
+  workflow: Workflow,
+  job: SquareTerminal,
+  logfile: ScrollText,
 };
 
 const BRAND_ICONS: Record<string, Icon> = {
@@ -356,6 +365,11 @@ const KIND_COLOR: Record<string, string> = {
   issue: "#f87171",
   pullrequest: "#34d399",
   organization: "#fb7185",
+  // CI / GitHub Actions.
+  workflowrun: "#fb923c", // orange — a pipeline run
+  workflow: "#fb923c",
+  job: "#f97316", // deeper orange — a job within a run
+  logfile: "#94a3b8", // slate — a log artifact (like a file)
 };
 
 /** Resolve a node's fill color: per-kind for entities, label color otherwise. */
