@@ -46,6 +46,199 @@ pub(crate) enum Target {
     Local,
 }
 
+// ── orthogonal deployment axes ───────────────────────────────────────────────
+// The engine is backend-agnostic; these four independent selectors are what the
+// wizard, the Terraform stack, and the Helm chart switch on. A `validate_combo`
+// gate (below) rejects invalid corners with an explanatory message.
+
+/// Where the engine container runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum Compute {
+    /// AWS ECS Fargate (Terraform/Pulumi). Default.
+    Fargate,
+    /// AWS EKS — Terraform provisions the cluster and installs the Helm chart.
+    Eks,
+    /// Any existing Kubernetes cluster via the Helm chart (BYO kubectl context).
+    Helm,
+    /// Engine container run locally with docker (test drive).
+    Local,
+}
+
+/// Catalog Postgres provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum Database {
+    /// Provision a Supabase project (catalog + optional Auth + optional Storage).
+    Supabase,
+    /// Provision an AWS RDS Postgres instance in the stack VPC.
+    Rds,
+    /// Bring your own Postgres — a `postgresql://` URL you supply.
+    External,
+}
+
+/// Columnar-extents object store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum Storage {
+    /// Native AWS S3 bucket — keyless via the task/pod IAM role.
+    S3,
+    /// Supabase Storage via its S3-compatible endpoint.
+    Supabase,
+    /// Bring your own S3-compatible store (MinIO / R2 / GCS-interop): endpoint + keys.
+    External,
+}
+
+/// Sign-in backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum Auth {
+    /// Supabase Auth (only with `database = supabase`).
+    Supabase,
+    /// Static admin API token minted by the wizard (`KYMA_AUTH_TOKENS`).
+    Token,
+    /// OIDC issuer + client id (validated via JWKS).
+    Oidc,
+}
+
+impl Compute {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Fargate => "fargate",
+            Self::Eks => "eks",
+            Self::Helm => "helm",
+            Self::Local => "local",
+        }
+    }
+    fn from_arg(s: &str) -> Result<Self> {
+        match s {
+            "fargate" => Ok(Self::Fargate),
+            "eks" => Ok(Self::Eks),
+            "helm" => Ok(Self::Helm),
+            "local" => Ok(Self::Local),
+            o => bail!("unknown compute backend {o:?} (expected fargate|eks|helm|local)"),
+        }
+    }
+    /// Map the deprecated `--target aws|local` flag onto a compute backend.
+    fn from_target(s: &str) -> Option<Self> {
+        match s {
+            "aws" => Some(Self::Fargate),
+            "local" => Some(Self::Local),
+            _ => None,
+        }
+    }
+    fn is_aws(self) -> bool {
+        matches!(self, Self::Fargate | Self::Eks)
+    }
+    fn is_k8s(self) -> bool {
+        matches!(self, Self::Eks | Self::Helm)
+    }
+}
+
+impl Database {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Supabase => "supabase",
+            Self::Rds => "rds",
+            Self::External => "external",
+        }
+    }
+    fn from_arg(s: &str) -> Result<Self> {
+        match s {
+            "supabase" => Ok(Self::Supabase),
+            "rds" => Ok(Self::Rds),
+            "external" => Ok(Self::External),
+            o => bail!("unknown database backend {o:?} (expected supabase|rds|external)"),
+        }
+    }
+}
+
+impl Storage {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::S3 => "s3",
+            Self::Supabase => "supabase",
+            Self::External => "external",
+        }
+    }
+    fn from_arg(s: &str) -> Result<Self> {
+        match s {
+            "s3" => Ok(Self::S3),
+            "supabase" => Ok(Self::Supabase),
+            "external" => Ok(Self::External),
+            o => bail!("unknown storage backend {o:?} (expected s3|supabase|external)"),
+        }
+    }
+}
+
+impl Auth {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Supabase => "supabase",
+            Self::Token => "token",
+            Self::Oidc => "oidc",
+        }
+    }
+    fn from_arg(s: &str) -> Result<Self> {
+        match s {
+            "supabase" => Ok(Self::Supabase),
+            "token" => Ok(Self::Token),
+            "oidc" => Ok(Self::Oidc),
+            o => bail!("unknown auth backend {o:?} (expected supabase|token|oidc)"),
+        }
+    }
+}
+
+/// Reject invalid axis combinations with an explanatory message and the nearest
+/// valid alternative. Smart defaults live in [`default_storage`]/[`default_auth`].
+fn validate_combo(c: Compute, d: Database, s: Storage, a: Auth) -> Result<()> {
+    if s == Storage::S3 && !c.is_aws() {
+        bail!(
+            "storage=s3 (native AWS S3, keyless via the task/pod IAM role) requires an AWS compute \
+             target (fargate or eks). Use storage=external with an endpoint + keys for a non-AWS \
+             S3-compatible store, or switch compute to fargate/eks."
+        );
+    }
+    if d == Database::Rds && !c.is_aws() {
+        bail!(
+            "database=rds is provisioned inside the stack VPC and requires compute=fargate or eks. \
+             Use database=external with a postgresql:// URL on this compute target instead."
+        );
+    }
+    if a == Auth::Supabase && d != Database::Supabase {
+        bail!(
+            "auth=supabase requires database=supabase (Supabase Auth is tied to the Supabase \
+             project). Use auth=token (a minted admin token) or auth=oidc instead."
+        );
+    }
+    if s == Storage::Supabase && d != Database::Supabase {
+        bail!(
+            "storage=supabase needs a Supabase project; either set database=supabase, or choose \
+             storage=s3 (AWS) / storage=external. A storage-only Supabase project is not \
+             auto-provisioned in this version."
+        );
+    }
+    Ok(())
+}
+
+/// Default storage backend for a (compute, database) pair: keep everything in
+/// Supabase when the DB is Supabase, else native S3 on AWS, else BYO.
+fn default_storage(c: Compute, d: Database) -> Storage {
+    if d == Database::Supabase {
+        Storage::Supabase
+    } else if c.is_aws() {
+        Storage::S3
+    } else {
+        Storage::External
+    }
+}
+
+/// Default auth backend follows the database: Supabase Auth with Supabase, else
+/// a minted admin token.
+fn default_auth(d: Database) -> Auth {
+    if d == Database::Supabase {
+        Auth::Supabase
+    } else {
+        Auth::Token
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub(crate) enum Op {
     /// Wizard: collect credentials + settings, materialize the IaC workspace.
@@ -1642,6 +1835,79 @@ async fn cmd_destroy(name: &str, yes: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compute_parses_and_target_alias_maps() {
+        assert_eq!(Compute::from_arg("fargate").unwrap(), Compute::Fargate);
+        assert_eq!(Compute::from_arg("eks").unwrap(), Compute::Eks);
+        assert_eq!(Compute::from_arg("helm").unwrap(), Compute::Helm);
+        assert_eq!(Compute::from_arg("local").unwrap(), Compute::Local);
+        assert_eq!(Compute::from_target("aws"), Some(Compute::Fargate));
+        assert_eq!(Compute::from_target("local"), Some(Compute::Local));
+        assert!(Compute::from_arg("ec2").is_err());
+        // round-trips
+        for c in [Compute::Fargate, Compute::Eks, Compute::Helm, Compute::Local] {
+            assert_eq!(Compute::from_arg(c.as_str()).unwrap(), c);
+        }
+    }
+
+    #[test]
+    fn database_storage_auth_parse_round_trip() {
+        for d in [Database::Supabase, Database::Rds, Database::External] {
+            assert_eq!(Database::from_arg(d.as_str()).unwrap(), d);
+        }
+        for s in [Storage::S3, Storage::Supabase, Storage::External] {
+            assert_eq!(Storage::from_arg(s.as_str()).unwrap(), s);
+        }
+        for a in [Auth::Supabase, Auth::Token, Auth::Oidc] {
+            assert_eq!(Auth::from_arg(a.as_str()).unwrap(), a);
+        }
+        assert!(Database::from_arg("mysql").is_err());
+        assert!(Storage::from_arg("gcs").is_err());
+        assert!(Auth::from_arg("saml").is_err());
+    }
+
+    #[test]
+    fn valid_combos_pass() {
+        let ok = |c, d, s, a| validate_combo(c, d, s, a).is_ok();
+        assert!(ok(Compute::Fargate, Database::Supabase, Storage::Supabase, Auth::Supabase));
+        assert!(ok(Compute::Fargate, Database::Rds, Storage::S3, Auth::Token));
+        assert!(ok(Compute::Eks, Database::Rds, Storage::S3, Auth::Oidc));
+        assert!(ok(Compute::Helm, Database::External, Storage::External, Auth::Token));
+        assert!(ok(Compute::Local, Database::External, Storage::External, Auth::Token));
+        assert!(ok(Compute::Local, Database::Supabase, Storage::Supabase, Auth::Supabase));
+        assert!(ok(Compute::Eks, Database::External, Storage::S3, Auth::Oidc));
+    }
+
+    #[test]
+    fn invalid_combos_rejected_with_reason() {
+        // native S3 needs an AWS compute target
+        let e = validate_combo(Compute::Helm, Database::External, Storage::S3, Auth::Token)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("storage=s3") && e.contains("external"), "{e}");
+        // RDS needs an AWS compute target
+        assert!(validate_combo(Compute::Local, Database::Rds, Storage::External, Auth::Token).is_err());
+        // supabase auth needs supabase db
+        let e2 = validate_combo(Compute::Fargate, Database::Rds, Storage::S3, Auth::Supabase)
+            .unwrap_err()
+            .to_string();
+        assert!(e2.contains("auth=supabase"), "{e2}");
+        // supabase storage needs supabase db
+        assert!(validate_combo(Compute::Eks, Database::Rds, Storage::Supabase, Auth::Token).is_err());
+    }
+
+    #[test]
+    fn storage_and_auth_defaults() {
+        assert_eq!(default_storage(Compute::Fargate, Database::Supabase), Storage::Supabase);
+        assert_eq!(default_storage(Compute::Fargate, Database::Rds), Storage::S3);
+        assert_eq!(default_storage(Compute::Eks, Database::External), Storage::S3);
+        assert_eq!(default_storage(Compute::Helm, Database::External), Storage::External);
+        assert_eq!(default_storage(Compute::Local, Database::External), Storage::External);
+        assert_eq!(default_auth(Database::Supabase), Auth::Supabase);
+        assert_eq!(default_auth(Database::Rds), Auth::Token);
+        assert_eq!(default_auth(Database::External), Auth::Token);
+    }
 
     fn answers() -> Answers {
         Answers {
