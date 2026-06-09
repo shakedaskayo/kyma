@@ -499,7 +499,7 @@ impl Connector for GithubConnector {
                 {
                     Ok(res) => {
                         job_log_rows.extend(res.rows);
-                        // Merge CI nodes/edges (WorkflowRun/Job/LogFile) into the
+                        // Merge CI nodes/edges (WorkflowRun/Job/Artifact) into the
                         // github graph tables.
                         nodes.extend(res.nodes);
                         edges.extend(res.edges);
