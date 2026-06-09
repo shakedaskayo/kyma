@@ -13,6 +13,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use super::memory_gate::{self, OpPayload};
+use super::memory_policy::MemoryOp;
 use super::memory_retrieve::{retrieve, RetrieveRequest};
 use super::tools::{execute_sql, SharedToolCtx};
 
@@ -39,7 +41,7 @@ fn row_realm(row: &Value) -> String {
 
 /// Build a [`MemoryWriter`] from the shared tool context + the process-wide
 /// embedding backend. Returns a JSON error payload on failure.
-async fn build_writer(shared: &SharedToolCtx) -> std::result::Result<MemoryWriter, Value> {
+pub(crate) async fn build_writer(shared: &SharedToolCtx) -> std::result::Result<MemoryWriter, Value> {
     let embed = kyma_memory::shared_embedding()
         .await
         .map_err(|e| json!({"error": format!("embedding backend: {e}")}))?;
@@ -846,6 +848,28 @@ pub fn tool_link_memory_to_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         .unwrap_or_else(|| "REFERENCES".to_string());
                     let realm = parsed.realm.unwrap_or_else(|| DEFAULT_REALM.to_string());
 
+                    // HITL chokepoint: a cross-graph link is the riskier op
+                    // (LinkEntityCrossRealm); a same-graph edge is RelationshipWrite.
+                    if shared.hitl.is_some() {
+                        let op = if parsed.target_namespace.is_some() {
+                            MemoryOp::LinkEntityCrossRealm
+                        } else {
+                            MemoryOp::RelationshipWrite
+                        };
+                        let payload = OpPayload::Link {
+                            src: src.clone(),
+                            dst: parsed.target_node_id.clone(),
+                            rel: rel.clone(),
+                            realm: realm.clone(),
+                            target_namespace: parsed.target_namespace.clone(),
+                        };
+                        if let Some(out) =
+                            memory_gate::gate_tool_op(&shared, op, &realm, None, payload).await
+                        {
+                            return Ok(out);
+                        }
+                    }
+
                     // Async-by-default: queue the edge. FIFO + node-before-edge
                     // makes linking a just-queued memory safe.
                     if let Some(q) = shared.memory.as_ref() {
@@ -961,6 +985,24 @@ pub fn tool_update_memory_status(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         None => return Ok(json!({"error": "status must be active|background|archived"})),
                     };
                     let node_id = node_id_of(&parsed.memory_id);
+                    // HITL chokepoint: only archival is a gateable op (retiring a
+                    // memory); active/background transitions stay ungated.
+                    if shared.hitl.is_some() && parsed.status.eq_ignore_ascii_case("archived") {
+                        let payload = OpPayload::Archive {
+                            memory_id: node_id.clone(),
+                        };
+                        if let Some(out) = memory_gate::gate_tool_op(
+                            &shared,
+                            MemoryOp::Archive,
+                            DEFAULT_REALM,
+                            None,
+                            payload,
+                        )
+                        .await
+                        {
+                            return Ok(out);
+                        }
+                    }
                     // fetch_latest_node barriers internally, so this
                     // read-modify-write sees queued versions of the memory.
                     let mut row = match fetch_latest_node(&shared, &node_id).await {
@@ -1083,6 +1125,29 @@ pub fn tool_merge_memories(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
+                    // HITL chokepoint (autonomous runs only). When a gate is
+                    // present the merge routes through it; the ungated path below
+                    // is unchanged for the interactive agent.
+                    if shared.hitl.is_some() {
+                        let into = node_id_of(&parsed.into_id);
+                        let from_ids: Vec<String> =
+                            parsed.from_ids.iter().map(|f| node_id_of(f)).collect();
+                        let payload = OpPayload::Merge {
+                            into_id: into,
+                            from_ids,
+                        };
+                        if let Some(out) = memory_gate::gate_tool_op(
+                            &shared,
+                            MemoryOp::Merge,
+                            DEFAULT_REALM,
+                            None,
+                            payload,
+                        )
+                        .await
+                        {
+                            return Ok(out);
+                        }
+                    }
                     // Async path needs no writer (and no embedding backend);
                     // build one lazily only when the queue is absent.
                     let q = shared.memory.clone();
@@ -1288,6 +1353,44 @@ pub fn tool_memory_judge(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         .unwrap_or(DEFAULT_REALM)
                         .to_string();
                     let queued = q.is_some();
+
+                    // HITL chokepoint: supersede invalidates the target (by an
+                    // existing memory), merged folds it away, other verdicts write
+                    // a relationship. Route through the gate when present.
+                    if shared.hitl.is_some() {
+                        let (op, payload) = match verdict.as_str() {
+                            "supersedes" | "invalidates" => (
+                                MemoryOp::Invalidate,
+                                OpPayload::Supersede {
+                                    target_id: dst.clone(),
+                                    by_id: src.clone(),
+                                },
+                            ),
+                            "merged" | "merged_into" => (
+                                MemoryOp::Merge,
+                                OpPayload::Merge {
+                                    into_id: src.clone(),
+                                    from_ids: vec![dst.clone()],
+                                },
+                            ),
+                            _ => (
+                                MemoryOp::RelationshipWrite,
+                                OpPayload::Link {
+                                    src: src.clone(),
+                                    dst: dst.clone(),
+                                    rel: "RELATES_TO".to_string(),
+                                    realm: realm.clone(),
+                                    target_namespace: None,
+                                },
+                            ),
+                        };
+                        if let Some(out) =
+                            memory_gate::gate_tool_op(&shared, op, &realm, parsed.reason.clone(), payload)
+                                .await
+                        {
+                            return Ok(out);
+                        }
+                    }
 
                     match verdict.as_str() {
                         "supersedes" | "invalidates" => {

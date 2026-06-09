@@ -26,6 +26,8 @@ use kyma_memory::{CreateMemory, MemoryWriter};
 
 use super::engine::EngineKind;
 use super::memory_conflict::{self, ConflictTally};
+use super::memory_gate::HitlGate;
+use super::memory_queue_store::QueueStore;
 use super::state::AgentState;
 use super::tools::{execute_sql, SharedToolCtx};
 use super::{memory_extract, memory_resolve, memory_settings};
@@ -66,6 +68,7 @@ fn shared_from(state: &AgentState) -> SharedToolCtx {
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
+        hitl: None,
     }
 }
 
@@ -335,6 +338,18 @@ impl MemoryConsolidator {
         let writer = build_writer(&self.shared).await?;
         let _ = writer.ensure_provisioned().await;
         let settings = memory_settings::load(Some(&self.pool), self.tenant).await;
+        // HITL chokepoint — built once per tick. Only when the policy is on;
+        // otherwise consolidation applies directly (zero overhead, no rows).
+        let gate = settings.hitl.enabled.then(|| HitlGate {
+            policy: settings.hitl.clone(),
+            store: std::sync::Arc::new(QueueStore::Pg {
+                pool: self.pool.clone(),
+                tenant: self.tenant,
+            }),
+            resolver: None,
+            source: "realtime",
+            source_run_id: None,
+        });
         // LLM extraction only when the user enabled it AND a usable engine exists.
         let engine = if settings.extraction_enabled {
             self.usable_engine().await
@@ -360,7 +375,10 @@ impl MemoryConsolidator {
                 continue;
             }
             if let Some(state) = engine {
-                match self.extract_realm(state, &writer, realm, ts_filter).await {
+                match self
+                    .extract_realm(state, &writer, realm, ts_filter, gate.as_ref())
+                    .await
+                {
                     Ok(partial) => {
                         out.absorb(partial);
                         continue;
@@ -395,6 +413,7 @@ impl MemoryConsolidator {
         writer: &MemoryWriter,
         realm: &str,
         ts_filter: &str,
+        gate: Option<&HitlGate>,
     ) -> anyhow::Result<ConsolidateOutcome> {
         let window = self.fetch_window(realm, ts_filter).await;
         let mut out = ConsolidateOutcome::default();
@@ -436,6 +455,7 @@ impl MemoryConsolidator {
                 m,
                 refs,
                 provenance,
+                gate,
             )
             .await;
             out.tally.merge(&t);

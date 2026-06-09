@@ -27,10 +27,12 @@ import { Route as AppMemoryIndexRouteImport } from './../routes/_app.memory.inde
 import { Route as AppConnectorsIndexRouteImport } from './../routes/_app.connectors.index'
 import { Route as AppMemorySettingsRouteImport } from './../routes/_app.memory.settings'
 import { Route as AppMemorySearchRouteImport } from './../routes/_app.memory.search'
+import { Route as AppMemoryReviewRouteImport } from './../routes/_app.memory.review'
 import { Route as AppMemoryOverviewRouteImport } from './../routes/_app.memory.overview'
 import { Route as AppMemoryDreamingRouteImport } from './../routes/_app.memory.dreaming'
 import { Route as AppDashboardsIdRouteImport } from './../routes/_app.dashboards.$id'
 import { Route as AppConnectorsIdRouteImport } from './../routes/_app.connectors.$id'
+import { Route as AppMemoryReviewIndexRouteImport } from './../routes/_app.memory.review.index'
 import { Route as AppMemoryDreamingIndexRouteImport } from './../routes/_app.memory.dreaming.index'
 import { Route as AppMemoryDreamingRunIdRouteImport } from './../routes/_app.memory.dreaming.$runId'
 
@@ -123,6 +125,11 @@ const AppMemorySearchRoute = AppMemorySearchRouteImport.update({
   path: '/search',
   getParentRoute: () => AppMemoryRoute,
 } as any)
+const AppMemoryReviewRoute = AppMemoryReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => AppMemoryRoute,
+} as any)
 const AppMemoryOverviewRoute = AppMemoryOverviewRouteImport.update({
   id: '/overview',
   path: '/overview',
@@ -142,6 +149,11 @@ const AppConnectorsIdRoute = AppConnectorsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => AppConnectorsRoute,
+} as any)
+const AppMemoryReviewIndexRoute = AppMemoryReviewIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppMemoryReviewRoute,
 } as any)
 const AppMemoryDreamingIndexRoute = AppMemoryDreamingIndexRouteImport.update({
   id: '/',
@@ -172,12 +184,14 @@ export interface FileRoutesByFullPath {
   '/dashboards/$id': typeof AppDashboardsIdRoute
   '/memory/dreaming': typeof AppMemoryDreamingRouteWithChildren
   '/memory/overview': typeof AppMemoryOverviewRoute
+  '/memory/review': typeof AppMemoryReviewRouteWithChildren
   '/memory/search': typeof AppMemorySearchRoute
   '/memory/settings': typeof AppMemorySettingsRoute
   '/connectors/': typeof AppConnectorsIndexRoute
   '/memory/': typeof AppMemoryIndexRoute
   '/memory/dreaming/$runId': typeof AppMemoryDreamingRunIdRoute
   '/memory/dreaming/': typeof AppMemoryDreamingIndexRoute
+  '/memory/review/': typeof AppMemoryReviewIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -200,6 +214,7 @@ export interface FileRoutesByTo {
   '/memory': typeof AppMemoryIndexRoute
   '/memory/dreaming/$runId': typeof AppMemoryDreamingRunIdRoute
   '/memory/dreaming': typeof AppMemoryDreamingIndexRoute
+  '/memory/review': typeof AppMemoryReviewIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -221,12 +236,14 @@ export interface FileRoutesById {
   '/_app/dashboards/$id': typeof AppDashboardsIdRoute
   '/_app/memory/dreaming': typeof AppMemoryDreamingRouteWithChildren
   '/_app/memory/overview': typeof AppMemoryOverviewRoute
+  '/_app/memory/review': typeof AppMemoryReviewRouteWithChildren
   '/_app/memory/search': typeof AppMemorySearchRoute
   '/_app/memory/settings': typeof AppMemorySettingsRoute
   '/_app/connectors/': typeof AppConnectorsIndexRoute
   '/_app/memory/': typeof AppMemoryIndexRoute
   '/_app/memory/dreaming/$runId': typeof AppMemoryDreamingRunIdRoute
   '/_app/memory/dreaming/': typeof AppMemoryDreamingIndexRoute
+  '/_app/memory/review/': typeof AppMemoryReviewIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -248,12 +265,14 @@ export interface FileRouteTypes {
     | '/dashboards/$id'
     | '/memory/dreaming'
     | '/memory/overview'
+    | '/memory/review'
     | '/memory/search'
     | '/memory/settings'
     | '/connectors/'
     | '/memory/'
     | '/memory/dreaming/$runId'
     | '/memory/dreaming/'
+    | '/memory/review/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -276,6 +295,7 @@ export interface FileRouteTypes {
     | '/memory'
     | '/memory/dreaming/$runId'
     | '/memory/dreaming'
+    | '/memory/review'
   id:
     | '__root__'
     | '/'
@@ -296,12 +316,14 @@ export interface FileRouteTypes {
     | '/_app/dashboards/$id'
     | '/_app/memory/dreaming'
     | '/_app/memory/overview'
+    | '/_app/memory/review'
     | '/_app/memory/search'
     | '/_app/memory/settings'
     | '/_app/connectors/'
     | '/_app/memory/'
     | '/_app/memory/dreaming/$runId'
     | '/_app/memory/dreaming/'
+    | '/_app/memory/review/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -440,6 +462,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppMemorySearchRouteImport
       parentRoute: typeof AppMemoryRoute
     }
+    '/_app/memory/review': {
+      id: '/_app/memory/review'
+      path: '/review'
+      fullPath: '/memory/review'
+      preLoaderRoute: typeof AppMemoryReviewRouteImport
+      parentRoute: typeof AppMemoryRoute
+    }
     '/_app/memory/overview': {
       id: '/_app/memory/overview'
       path: '/overview'
@@ -467,6 +496,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/connectors/$id'
       preLoaderRoute: typeof AppConnectorsIdRouteImport
       parentRoute: typeof AppConnectorsRoute
+    }
+    '/_app/memory/review/': {
+      id: '/_app/memory/review/'
+      path: '/'
+      fullPath: '/memory/review/'
+      preLoaderRoute: typeof AppMemoryReviewIndexRouteImport
+      parentRoute: typeof AppMemoryReviewRoute
     }
     '/_app/memory/dreaming/': {
       id: '/_app/memory/dreaming/'
@@ -524,9 +560,22 @@ const AppMemoryDreamingRouteChildren: AppMemoryDreamingRouteChildren = {
 const AppMemoryDreamingRouteWithChildren =
   AppMemoryDreamingRoute._addFileChildren(AppMemoryDreamingRouteChildren)
 
+interface AppMemoryReviewRouteChildren {
+  AppMemoryReviewIndexRoute: typeof AppMemoryReviewIndexRoute
+}
+
+const AppMemoryReviewRouteChildren: AppMemoryReviewRouteChildren = {
+  AppMemoryReviewIndexRoute: AppMemoryReviewIndexRoute,
+}
+
+const AppMemoryReviewRouteWithChildren = AppMemoryReviewRoute._addFileChildren(
+  AppMemoryReviewRouteChildren,
+)
+
 interface AppMemoryRouteChildren {
   AppMemoryDreamingRoute: typeof AppMemoryDreamingRouteWithChildren
   AppMemoryOverviewRoute: typeof AppMemoryOverviewRoute
+  AppMemoryReviewRoute: typeof AppMemoryReviewRouteWithChildren
   AppMemorySearchRoute: typeof AppMemorySearchRoute
   AppMemorySettingsRoute: typeof AppMemorySettingsRoute
   AppMemoryIndexRoute: typeof AppMemoryIndexRoute
@@ -535,6 +584,7 @@ interface AppMemoryRouteChildren {
 const AppMemoryRouteChildren: AppMemoryRouteChildren = {
   AppMemoryDreamingRoute: AppMemoryDreamingRouteWithChildren,
   AppMemoryOverviewRoute: AppMemoryOverviewRoute,
+  AppMemoryReviewRoute: AppMemoryReviewRouteWithChildren,
   AppMemorySearchRoute: AppMemorySearchRoute,
   AppMemorySettingsRoute: AppMemorySettingsRoute,
   AppMemoryIndexRoute: AppMemoryIndexRoute,

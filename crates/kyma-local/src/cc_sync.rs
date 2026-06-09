@@ -152,6 +152,7 @@ async fn sync_project(
         format: engine.format.clone(),
         pool: None,
         memory: None,
+        hitl: None,
     };
     let mut report = ProjectSyncReport {
         slug: slug.clone(),

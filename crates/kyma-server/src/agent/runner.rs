@@ -144,6 +144,7 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
+        hitl: None,
     };
 
     let agent = LlmAgentBuilder::new(AGENT_NAME)

@@ -45,6 +45,11 @@ pub struct MemorySettings {
     // ── dreaming ────────────────────────────────────────────────────────────
     /// Scheduled agentic memory housekeeping (OFF by default).
     pub dreaming: DreamingSettings,
+
+    // ── human-in-the-loop ─────────────────────────────────────────────────────
+    /// Approval policy over automatic memory mutations (OFF by default — when
+    /// disabled the system behaves exactly as before this feature shipped).
+    pub hitl: super::memory_policy::HitlPolicy,
 }
 
 /// Knobs for the scheduled dreaming pipeline — an autonomous agent run that
@@ -110,6 +115,7 @@ impl Default for MemorySettings {
             half_life_days: kyma_memory::HALF_LIFE_DAYS,
             rrf_k: kyma_memory::RRF_K,
             dreaming: DreamingSettings::default(),
+            hitl: super::memory_policy::HitlPolicy::default(),
         }
     }
 }
@@ -204,5 +210,30 @@ mod tests {
         assert!(loaded.dreaming.enabled);
         assert_eq!(loaded.dreaming.wall_clock_secs, 180);
         assert_eq!(loaded.dreaming.mutation_cap, 6);
+    }
+
+    #[test]
+    fn legacy_settings_row_without_hitl_loads_default_off() {
+        // A settings row written before the HITL field existed must still load,
+        // with the policy defaulting to off (zero behavior change on upgrade).
+        let legacy = serde_json::json!({
+            "extraction_enabled": true,
+            "min_events": 1,
+            "dreaming": { "enabled": true }
+        });
+        let s: MemorySettings = serde_json::from_value(legacy).unwrap();
+        assert!(!s.hitl.enabled, "HITL must default off for legacy rows");
+        assert!(s.dreaming.enabled, "existing fields still load");
+    }
+
+    #[test]
+    fn hitl_roundtrips_through_settings_json() {
+        let mut s = MemorySettings::default();
+        s.hitl.enabled = true;
+        s.hitl.confidence_threshold = 0.8;
+        let v = serde_json::to_value(&s).unwrap();
+        let back: MemorySettings = serde_json::from_value(v).unwrap();
+        assert!(back.hitl.enabled);
+        assert_eq!(back.hitl.confidence_threshold, 0.8);
     }
 }

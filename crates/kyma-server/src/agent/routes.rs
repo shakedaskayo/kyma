@@ -100,6 +100,19 @@ pub fn router(state: AgentState) -> axum::Router {
             "/memory/dreaming/run",
             post(super::dreaming::trigger_run_handler),
         )
+        .route("/memory/review", get(super::memory_review::list_review))
+        .route(
+            "/memory/review/count",
+            get(super::memory_review::review_count),
+        )
+        .route(
+            "/memory/review/bulk",
+            post(super::memory_review::bulk_review),
+        )
+        .route(
+            "/memory/review/:id/:action",
+            post(super::memory_review::resolve_review),
+        )
         .with_state(state)
 }
 
@@ -195,6 +208,7 @@ async fn changes_memory_handler(
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
+        hitl: None,
     };
     let since = params
         .since
@@ -242,6 +256,7 @@ async fn export_memory_handler(
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
+        hitl: None,
     };
     let realm_filter = params
         .realm
@@ -438,6 +453,7 @@ async fn memory_query_handler(
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
+        hitl: None,
     };
     let result = retrieve(&shared, &body.retrieve).await;
     let mut out = result.to_json();

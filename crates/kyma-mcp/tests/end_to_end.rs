@@ -19,6 +19,7 @@ async fn full_mcp_handshake_against_seeded_server() {
         format: state.format.clone(),
         pool: Some(pool),
         memory: None,
+        hitl: None,
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),
@@ -117,6 +118,7 @@ async fn rejects_request_without_bearer_token() {
         format: state.format,
         pool: Some(pool),
         memory: None,
+        hitl: None,
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),

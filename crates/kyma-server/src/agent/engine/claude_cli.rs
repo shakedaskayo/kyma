@@ -37,11 +37,50 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 use tracing::{trace, warn};
 
-/// Discover the CLI binary on `$PATH`. Returns `None` if `claude` isn't
-/// installed — the catalogue uses this to decide whether to advertise the
-/// engine in the picker.
+/// Discover the CLI binary. Returns `None` if `claude` can't be found — the
+/// catalogue uses this to decide whether to advertise the engine in the picker.
+///
+/// Resolution order, first hit wins:
+///   1. `KYMA_CLAUDE_BIN` — explicit override (absolute path to the binary).
+///   2. `which claude` — the inherited `$PATH`.
+///   3. Well-known install locations under `$HOME` and the usual system bins.
+///
+/// Step 3 matters because the server is frequently launched in a context whose
+/// `$PATH` is *not* the user's interactive login PATH (macOS launchd / `open`,
+/// systemd, a daemon spawned by another process). Claude Code installs to
+/// `~/.local/bin/claude` by default, which such PATHs omit — so a bare
+/// `which::which("claude")` returns `None` and every dreaming run dies with
+/// "`claude` not found on PATH" even though the binary is right there.
 pub fn locate_binary() -> Option<std::path::PathBuf> {
-    which::which("claude").ok()
+    use std::path::PathBuf;
+
+    // 1. Explicit override.
+    if let Some(raw) = std::env::var_os("KYMA_CLAUDE_BIN") {
+        let p = PathBuf::from(raw);
+        if p.is_file() {
+            return Some(p);
+        }
+        warn!(path = %p.display(), "KYMA_CLAUDE_BIN is set but not a file; ignoring");
+    }
+
+    // 2. Inherited PATH.
+    if let Ok(p) = which::which("claude") {
+        return Some(p);
+    }
+
+    // 3. Well-known locations the inherited PATH may not cover.
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        candidates.push(home.join(".local/bin/claude"));
+        candidates.push(home.join(".claude/local/claude"));
+        candidates.push(home.join(".bun/bin/claude"));
+        candidates.push(home.join("bin/claude"));
+    }
+    candidates.push(PathBuf::from("/opt/homebrew/bin/claude"));
+    candidates.push(PathBuf::from("/usr/local/bin/claude"));
+    candidates.push(PathBuf::from("/usr/bin/claude"));
+
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 pub fn default_models() -> Vec<String> {
@@ -156,8 +195,13 @@ pub fn run_stream_with_pid(
     cwd: Option<&std::path::Path>,
     mcp: Option<&McpConfig>,
 ) -> anyhow::Result<(mpsc::UnboundedReceiver<ClaudeEvent>, Option<u32>)> {
-    let binary = locate_binary()
-        .ok_or_else(|| anyhow::anyhow!("`claude` not found on PATH — install Claude Code"))?;
+    let binary = locate_binary().ok_or_else(|| {
+        anyhow::anyhow!(
+            "`claude` not found — install Claude Code, or set KYMA_CLAUDE_BIN to its absolute path \
+             (the server's PATH is {:?})",
+            std::env::var("PATH").unwrap_or_default()
+        )
+    })?;
 
     let mut cmd = Command::new(&binary);
     cmd.arg("--print")

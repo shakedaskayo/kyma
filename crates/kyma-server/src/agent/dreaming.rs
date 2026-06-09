@@ -625,7 +625,27 @@ pub async fn run_dreaming_with(
     progress: ProgressFn,
     req: DreamingRequest,
 ) -> anyhow::Result<(Uuid, DreamingOutcome)> {
-    let settings = memory_settings::load_for(state).await.dreaming;
+    let full_settings = memory_settings::load_for(state).await;
+    // HITL chokepoint for autonomous housekeeping mutations. Built once per run
+    // and attached to the dreaming toolset's SharedToolCtx (adk engines). Only
+    // when the policy is enabled and a durable queue store exists.
+    // NOTE: the claude_cli engine drives mutations through the MCP server, whose
+    // tool context is process-global; gating that path needs per-request
+    // dreaming tagging in kyma-mcp and is tracked as a follow-up.
+    let hitl_gate = if full_settings.hitl.enabled {
+        super::memory_queue_store::QueueStore::from_state(state).map(|store| {
+            std::sync::Arc::new(super::memory_gate::HitlGate {
+                policy: full_settings.hitl.clone(),
+                store: std::sync::Arc::new(store),
+                resolver: None,
+                source: "dreaming",
+                source_run_id: Some(ids.run_id),
+            })
+        })
+    } else {
+        None
+    };
+    let settings = full_settings.dreaming;
     let mode = req.mode.clone().unwrap_or_else(|| settings.mode.clone());
     let engine_cfg = state.engines.get().await?;
     let engine = engine_cfg.kind.as_str().to_string();
@@ -680,6 +700,7 @@ pub async fn run_dreaming_with(
             &mut activity,
             &mut outcome,
             &mut trace,
+            hitl_gate.clone(),
         )
         .await
     };
@@ -824,6 +845,7 @@ async fn run_via_adk(
     activity: &mut Activity,
     outcome: &mut DreamingOutcome,
     trace: &mut Vec<Value>,
+    hitl: Option<std::sync::Arc<super::memory_gate::HitlGate>>,
 ) -> Result<(), String> {
     use adk_rust::agent::LlmAgentBuilder;
     use adk_rust::runner::{Runner, RunnerConfig};
@@ -844,6 +866,7 @@ async fn run_via_adk(
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
+        hitl,
     };
     let mutation_budget = Arc::new(MutationBudget::new(settings.mutation_cap));
     let read_budget = Arc::new(ConnectorReadBudget::new(

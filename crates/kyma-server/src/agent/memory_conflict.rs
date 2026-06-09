@@ -9,11 +9,12 @@
 
 use serde_json::{json, Value};
 
-use kyma_memory::types::{CreateMemory, MemoryType, RecallFilter};
-use kyma_memory::{rows, MemoryWriter, DEFAULT_DATABASE, EDGE_INVALIDATES, NODE_TABLE};
+use kyma_memory::types::{MemoryType, RecallFilter};
+use kyma_memory::{MemoryWriter, DEFAULT_DATABASE, NODE_TABLE};
 
 use super::memory_extract::{decide_conflict, ConflictOp, ExtractedMemory};
-use super::memory_tools::fetch_latest_node;
+use super::memory_gate::{self, AddSpec, GateCtx, HitlGate, OpPayload};
+use super::memory_policy::MemoryOp;
 use super::state::AgentState;
 use super::tools::{execute_sql, SharedToolCtx};
 
@@ -24,6 +25,8 @@ pub struct ConflictTally {
     pub updated: i64,
     pub noop: i64,
     pub invalidated: i64,
+    /// Decisions deferred to the HITL approval queue (not applied).
+    pub gated: i64,
 }
 
 impl ConflictTally {
@@ -35,6 +38,7 @@ impl ConflictTally {
         self.updated += other.updated;
         self.noop += other.noop;
         self.invalidated += other.invalidated;
+        self.gated += other.gated;
     }
     pub fn to_json(&self) -> Value {
         json!({
@@ -42,6 +46,7 @@ impl ConflictTally {
             "updated": self.updated,
             "noop": self.noop,
             "invalidated": self.invalidated,
+            "gated": self.gated,
         })
     }
 }
@@ -51,8 +56,10 @@ const NEIGHBOURS: usize = 5;
 
 /// Reconcile one candidate memory into the store. `references` are entity node
 /// ids the memory is about (become `REFERENCES` edges); `provenance` records
-/// how it was formed. Never errors out the pipeline — failures degrade to a
-/// no-op for that candidate and are logged.
+/// how it was formed. `gate` is the optional HITL chokepoint — when its policy
+/// gates/flags an op the mutation is deferred/recorded instead of (or in
+/// addition to) being applied. Never errors out the pipeline — failures degrade
+/// to a no-op for that candidate and are logged.
 pub async fn consolidate_memory(
     state: &AgentState,
     shared: &SharedToolCtx,
@@ -61,6 +68,7 @@ pub async fn consolidate_memory(
     m: &ExtractedMemory,
     references: Vec<String>,
     provenance: Value,
+    gate: Option<&HitlGate>,
 ) -> ConflictTally {
     let mut tally = ConflictTally::default();
     let content = m.content.trim();
@@ -87,53 +95,80 @@ pub async fn consolidate_memory(
         }
     };
 
-    match decision.op {
+    // Build the candidate's "create" spec once — reused for ADD, an UPDATE that
+    // falls back to ADD, and the INVALIDATE replacement.
+    let add_spec = || AddSpec {
+        content: content.to_string(),
+        title: m.title.clone(),
+        memory_type: m.kind.clone(),
+        realm: realm.to_string(),
+        importance: m.importance.clamp(0.0, 1.0),
+        references: references.clone(),
+        valid_at: m.valid_at.clone(),
+        provenance: provenance.clone(),
+    };
+
+    // 3. Map the A.U.D.N. decision onto a gateable (op, payload).
+    let (op, payload) = match decision.op {
         ConflictOp::Noop => {
             tally.noop += 1;
+            return tally;
         }
-        ConflictOp::Add => {
-            if add_memory(writer, realm, m, kind, content, references, provenance)
-                .await
-                .is_some()
-            {
-                tally.added += 1;
-            }
-        }
+        ConflictOp::Add => (MemoryOp::Add, OpPayload::Add(add_spec())),
         ConflictOp::Update => match decision.target_id.as_deref() {
             Some(target) => {
                 let new_content = decision.merged_content.as_deref().unwrap_or(content);
-                if update_memory(shared, writer, target, new_content).await {
-                    tally.updated += 1;
-                } else if add_memory(writer, realm, m, kind, content, references, provenance)
-                    .await
-                    .is_some()
-                {
-                    tally.added += 1; // target vanished → fall back to ADD
-                }
+                (
+                    MemoryOp::Update,
+                    OpPayload::Update {
+                        target_id: target.to_string(),
+                        new_content: new_content.to_string(),
+                    },
+                )
             }
-            None => {
-                if add_memory(writer, realm, m, kind, content, references, provenance)
-                    .await
-                    .is_some()
-                {
-                    tally.added += 1;
-                }
-            }
+            // No target → genuinely new; degrade to ADD.
+            None => (MemoryOp::Add, OpPayload::Add(add_spec())),
         },
-        ConflictOp::Invalidate => {
-            // Add the replacement first so we can record `superseded_by`.
-            match add_memory(writer, realm, m, kind, content, references, provenance).await {
-                Some(new_node_id) => {
-                    tally.added += 1;
-                    if let Some(target) = decision.target_id.as_deref() {
-                        if invalidate_memory(shared, writer, realm, target, &new_node_id).await {
-                            tally.invalidated += 1;
-                        }
-                    }
-                }
-                None => {}
+        ConflictOp::Invalidate => match decision.target_id.as_deref() {
+            Some(target) => (
+                MemoryOp::Invalidate,
+                OpPayload::Invalidate {
+                    target_id: target.to_string(),
+                    replacement: add_spec(),
+                },
+            ),
+            // Nothing to invalidate → just add the new memory.
+            None => (MemoryOp::Add, OpPayload::Add(add_spec())),
+        },
+    };
+
+    // 4. Route through the gate (or apply directly when there is none / policy
+    //    is off). `payload` is cloned into dispatch; the closure re-applies the
+    //    very same op via the single canonical applier.
+    let ctx = GateCtx {
+        op,
+        realm: realm.to_string(),
+        mem_type: Some(m.kind.clone()),
+        confidence: m.confidence,
+        reason: decision.reason.clone(),
+    };
+    let outcome = memory_gate::gate_or_apply(gate, ctx, payload.clone(), || {
+        memory_gate::apply_op(shared, &payload)
+    })
+    .await;
+
+    match outcome {
+        Ok(o) if o.applied => match op {
+            MemoryOp::Add => tally.added += 1,
+            MemoryOp::Update => tally.updated += 1,
+            MemoryOp::Invalidate => {
+                tally.added += 1; // replacement created
+                tally.invalidated += 1; // target superseded
             }
-        }
+            _ => {}
+        },
+        Ok(_) => tally.gated += 1, // deferred to the approval queue
+        Err(e) => tracing::debug!(error = %e, op = ?op, "consolidate apply failed"),
     }
     tally
 }
@@ -175,85 +210,7 @@ async fn nearest(
         .unwrap_or_default()
 }
 
-/// Persist a brand-new memory + its `REFERENCES` edges. Returns the node id.
-async fn add_memory(
-    writer: &MemoryWriter,
-    realm: &str,
-    m: &ExtractedMemory,
-    kind: MemoryType,
-    content: &str,
-    references: Vec<String>,
-    provenance: Value,
-) -> Option<String> {
-    let mut cm = CreateMemory::new(content);
-    cm.title = m.title.clone();
-    cm.memory_type = kind;
-    cm.realm = realm.to_string();
-    cm.importance = m.importance.clamp(0.0, 1.0);
-    cm.references = references;
-    cm.valid_at = m.valid_at.clone();
-    cm.provenance = Some(provenance);
-    cm.tags = vec!["source:extraction".to_string()];
-    match writer.save(&cm).await {
-        Ok(id) => Some(rows::node_id(&id)),
-        Err(e) => {
-            tracing::debug!(error = %e, "add_memory failed");
-            None
-        }
-    }
-}
-
-/// Rewrite an existing memory in place (new version, same id): replace content,
-/// re-embed, refresh `updated_at`/`valid_at`. Latest-wins makes it authoritative.
-async fn update_memory(
-    shared: &SharedToolCtx,
-    writer: &MemoryWriter,
-    target_node_id: &str,
-    new_content: &str,
-) -> bool {
-    let mut row = match fetch_latest_node(shared, target_node_id).await {
-        Ok(r) => r,
-        Err(_) => return false,
-    };
-    let emb = match writer.embed_one(new_content).await {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
-    let now = now_rfc3339();
-    row["content"] = json!(new_content);
-    row["content_preview"] = json!(rows::preview(new_content));
-    row["embedding"] = json!(emb);
-    row["updated_at"] = json!(now);
-    row["valid_at"] = json!(now);
-    writer.append_node_rows(vec![row]).await.is_ok()
-}
-
-/// Mark an existing memory invalidated (new version with `invalid_at` +
-/// `superseded_by` set) and record an `INVALIDATES` edge from its replacement.
-async fn invalidate_memory(
-    shared: &SharedToolCtx,
-    writer: &MemoryWriter,
-    realm: &str,
-    target_node_id: &str,
-    replacement_node_id: &str,
-) -> bool {
-    let mut row = match fetch_latest_node(shared, target_node_id).await {
-        Ok(r) => r,
-        Err(_) => return false,
-    };
-    let now = now_rfc3339();
-    row["invalid_at"] = json!(now);
-    row["superseded_by"] = json!(replacement_node_id);
-    row["updated_at"] = json!(now);
-    if writer.append_node_rows(vec![row]).await.is_err() {
-        return false;
-    }
-    let _ = writer
-        .link(replacement_node_id, target_node_id, EDGE_INVALIDATES, realm, None)
-        .await;
-    true
-}
-
-fn now_rfc3339() -> String {
-    chrono::Utc::now().to_rfc3339()
-}
+// The actual mutations (add / update / invalidate / merge / archive / link) now
+// live in one place — `memory_gate::apply_op` — so a deferred op approved later
+// re-runs exactly the same write. `consolidate_memory` just builds the payload
+// and routes it through the gate.

@@ -8,6 +8,7 @@ import {
   Link2,
   Plus,
   Scale,
+  ShieldCheck,
   Sparkles,
   Star,
   Timer,
@@ -92,6 +93,14 @@ export function RunDetail({ runId }: { runId: string }) {
                 node {run.worker_id.slice(0, 8)}
               </span>
             )}
+            <Link
+              to="/memory/review"
+              search={{ source_run_id: runId }}
+              className="flex items-center gap-1 underline hover:text-foreground"
+              title="Review this run's gated memory candidates"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" /> Candidates
+            </Link>
           </div>
         </div>
       </div>

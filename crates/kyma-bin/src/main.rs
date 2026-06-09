@@ -447,6 +447,7 @@ async fn main() -> Result<()> {
         format: format.clone(),
         pool: Some(pg_pool.clone()),
         memory: memory.clone(),
+        hitl: None,
     };
     // Read-only connector access over MCP: lets MCP-driven agents (notably
     // Claude CLI dreaming runs) fill memory gaps from configured sources.
@@ -930,6 +931,7 @@ async fn main() -> Result<()> {
                 format: format.clone(),
                 pool: Some(pg_pool.clone()),
                 memory: memory.clone(),
+                hitl: None,
             },
             pg_pool.clone(),
             kyma_core::tenant::DEFAULT_TENANT,
@@ -966,6 +968,7 @@ async fn main() -> Result<()> {
                 format: format.clone(),
                 pool: Some(pg_pool.clone()),
                 memory: memory.clone(),
+                hitl: None,
             },
             pg_pool.clone(),
             kyma_core::tenant::DEFAULT_TENANT,
@@ -999,6 +1002,7 @@ async fn main() -> Result<()> {
                 format: format.clone(),
                 pool: Some(pg_pool.clone()),
                 memory: memory.clone(),
+                hitl: None,
             },
             pg_pool.clone(),
             kyma_core::tenant::DEFAULT_TENANT,
