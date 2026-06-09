@@ -33,20 +33,37 @@ pub(crate) struct ScrapeArgs {
     pub max_bytes: u64,
 }
 
+/// Build the include/exclude glob matcher (shared by `scrape`'s walker and
+/// `watch`'s per-event filter). Empty when no globs are given (accept all).
+fn build_overrides(root: &Path, args: &ScrapeArgs) -> Result<ignore::overrides::Override> {
+    let mut ob = ignore::overrides::OverrideBuilder::new(root);
+    for g in &args.include {
+        ob.add(g).with_context(|| format!("bad --include glob {g:?}"))?;
+    }
+    for g in &args.exclude {
+        ob.add(&format!("!{g}")).with_context(|| format!("bad --exclude glob {g:?}"))?;
+    }
+    Ok(ob.build()?)
+}
+
 fn build_walker(root: &Path, args: &ScrapeArgs) -> Result<ignore::Walk> {
     let mut builder = ignore::WalkBuilder::new(root);
     builder.hidden(true).git_ignore(true).git_global(true).git_exclude(true);
     if !args.include.is_empty() || !args.exclude.is_empty() {
-        let mut ob = ignore::overrides::OverrideBuilder::new(root);
-        for g in &args.include {
-            ob.add(g).with_context(|| format!("bad --include glob {g:?}"))?;
-        }
-        for g in &args.exclude {
-            ob.add(&format!("!{g}")).with_context(|| format!("bad --exclude glob {g:?}"))?;
-        }
-        builder.overrides(ob.build()?);
+        builder.overrides(build_overrides(root, args)?);
     }
     Ok(builder.build())
+}
+
+/// Common noise that `watch` should never contribute (it doesn't get the
+/// walker's .gitignore handling, so skip the usual build/VCS dirs by path).
+fn is_noise(p: &Path) -> bool {
+    p.components().any(|c| {
+        matches!(
+            c.as_os_str().to_str(),
+            Some(".git") | Some("target") | Some("node_modules") | Some("dist") | Some(".venv")
+        )
+    })
 }
 
 /// Read one file (if text + under the size cap) and contribute it. Returns the
@@ -110,6 +127,10 @@ pub(crate) async fn watch(args: ScrapeArgs) -> Result<()> {
         .with_context(|| format!("resolve {}", args.path))?;
 
     // notify's callback is sync; forward events to an async channel.
+    // Apply the same --include/--exclude globs scrape uses, plus a noise-dir
+    // skip (watch has no walker to honour .gitignore).
+    let overrides = build_overrides(&root, &args)?;
+
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut watcher = notify::recommended_watcher(move |res| {
         let _ = tx.send(res);
@@ -126,7 +147,7 @@ pub(crate) async fn watch(args: ScrapeArgs) -> Result<()> {
             continue;
         }
         for p in event.paths {
-            if p.is_file() {
+            if p.is_file() && !is_noise(&p) && !overrides.matched(&p, false).is_ignore() {
                 if let Some(n) = contribute_one(&cfg, &root, &p, &args).await {
                     let rel = p.strip_prefix(&root).unwrap_or(&p).to_string_lossy().to_string();
                     println!("  ✓ {rel} ({n} symbols)");

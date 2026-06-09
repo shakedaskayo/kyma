@@ -61,44 +61,47 @@ pub async fn capture_job_logs(
     opts: &WorkflowOpts,
 ) -> Result<CaptureResult, ConnectorError> {
     let (runs, _stop) = gh.list_workflow_runs(owner, repo, opts.max_pages).await?;
-    if runs.len() > opts.max_runs_per_tick {
-        tracing::warn!(
-            owner, repo, fetched = runs.len(), cap = opts.max_runs_per_tick,
-            "more new workflow runs than max_runs_per_tick; oldest will wait for a later tick or raise the cap"
-        );
-    }
 
     let guard = kyma_redact::global();
     let mut rows: Vec<Value> = Vec::new();
     let mut nodes: Vec<Value> = Vec::new();
     let mut edges: Vec<Value> = Vec::new();
     let mut newest: Option<DateTime<Utc>> = since;
-    let mut processed = 0usize;
 
-    for run in &runs {
-        if processed >= opts.max_runs_per_tick {
-            break;
-        }
-        let run_id = run["id"].as_i64().unwrap_or(0);
-        if run_id == 0 {
-            continue;
-        }
-        let created = run["created_at"]
-            .as_str()
-            .and_then(|s| s.parse::<DateTime<Utc>>().ok());
-        // Incremental: skip runs at or before the watermark.
-        if let (Some(c), Some(s)) = (created, since) {
-            if c <= s {
-                continue;
+    // Select runs created after the watermark, OLDEST-first, capped. Processing
+    // oldest-first means a burst larger than the cap is consumed across ticks
+    // without ever skipping a run — the watermark only advances past runs we
+    // actually processed (advancing it to the newest first would strand the rest).
+    let mut new_runs: Vec<(&Value, DateTime<Utc>)> = runs
+        .iter()
+        .filter_map(|run| {
+            if run["id"].as_i64().unwrap_or(0) == 0 {
+                return None;
             }
-        }
-        processed += 1;
-        if let Some(c) = created {
-            newest = Some(match newest {
-                Some(n) if n >= c => n,
-                _ => c,
-            });
-        }
+            let created = run["created_at"]
+                .as_str()
+                .and_then(|s| s.parse::<DateTime<Utc>>().ok())?;
+            match since {
+                Some(s) if created <= s => None,
+                _ => Some((run, created)),
+            }
+        })
+        .collect();
+    new_runs.sort_by_key(|(_, c)| *c);
+    if new_runs.len() > opts.max_runs_per_tick {
+        tracing::warn!(
+            owner, repo, new = new_runs.len(), cap = opts.max_runs_per_tick,
+            "more new workflow runs than max_runs_per_tick; taking the oldest this tick, the rest next tick"
+        );
+        new_runs.truncate(opts.max_runs_per_tick);
+    }
+
+    for &(run, created) in &new_runs {
+        let run_id = run["id"].as_i64().unwrap_or(0);
+        newest = Some(match newest {
+            Some(n) if n >= created => n,
+            _ => created,
+        });
         let workflow_name = run["name"].as_str().unwrap_or("").to_string();
         let created_at = run["created_at"].as_str().unwrap_or("").to_string();
 

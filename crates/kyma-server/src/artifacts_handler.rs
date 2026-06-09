@@ -68,7 +68,7 @@ async fn get_artifact(
     let offset = q.offset as usize;
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
     let path = ObjPath::from(rec.object_path.as_str());
-    let (size, content) = match read_window(&state.store, &path, offset, limit).await {
+    let (size, nbytes, content) = match read_window(&state.store, &path, offset, limit).await {
         Ok(v) => v,
         Err(resp) => return resp,
     };
@@ -81,8 +81,8 @@ async fn get_artifact(
         "source": rec.source,
         "size_bytes": size,
         "offset": offset,
-        "returned_bytes": content.len(),
-        "eof": offset.saturating_add(content.len()) >= size,
+        "returned_bytes": nbytes,
+        "eof": offset.saturating_add(nbytes) >= size,
         "content": content,
     }))
     .into_response()
@@ -119,7 +119,7 @@ async fn get_artifact_by_path(
     let offset = q.offset as usize;
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
     let path = ObjPath::from(q.path.as_str());
-    let (size, content) = match read_window(&state.store, &path, offset, limit).await {
+    let (size, nbytes, content) = match read_window(&state.store, &path, offset, limit).await {
         Ok(v) => v,
         Err(resp) => return resp,
     };
@@ -127,21 +127,25 @@ async fn get_artifact_by_path(
         "object_path": q.path,
         "size_bytes": size,
         "offset": offset,
-        "returned_bytes": content.len(),
-        "eof": offset.saturating_add(content.len()) >= size,
+        "returned_bytes": nbytes,
+        "eof": offset.saturating_add(nbytes) >= size,
         "content": content,
     }))
     .into_response()
 }
 
-/// Read a clamped byte window of `path`, returning `(total_size, content)` or an
-/// error response. A past-end offset yields an empty slice rather than erroring.
+/// Read a clamped byte window of `path`, returning `(total_size, raw_bytes_read,
+/// content)` or an error response. A past-end offset yields an empty slice rather
+/// than erroring. `raw_bytes_read` is the count of bytes actually read (`end -
+/// offset`) — NOT `content.len()`, which would over-count when `from_utf8_lossy`
+/// substitutes U+FFFD (3 bytes) for invalid/boundary-split bytes. Paging must
+/// advance `offset` by `raw_bytes_read`, so it has to be exact.
 async fn read_window(
     store: &Arc<dyn ObjectStore>,
     path: &ObjPath,
     offset: usize,
     limit: usize,
-) -> Result<(usize, String), Response> {
+) -> Result<(usize, usize, String), Response> {
     let size = match store.head(path).await {
         Ok(meta) => meta.size,
         Err(object_store::Error::NotFound { .. }) => {
@@ -152,11 +156,11 @@ async fn read_window(
         }
     };
     if offset >= size {
-        return Ok((size, String::new()));
+        return Ok((size, 0, String::new()));
     }
     let end = offset.saturating_add(limit).min(size);
     match store.get_range(path, offset..end).await {
-        Ok(bytes) => Ok((size, String::from_utf8_lossy(&bytes).into_owned())),
+        Ok(bytes) => Ok((size, bytes.len(), String::from_utf8_lossy(&bytes).into_owned())),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("read: {e}")).into_response()),
     }
 }

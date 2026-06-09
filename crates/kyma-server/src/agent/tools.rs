@@ -904,12 +904,15 @@ pub fn tool_retrieve_artifact(store: Arc<dyn object_store::ObjectStore>) -> Arc<
                         }
                         Err(e) => return Ok(json!({"error": format!("head: {e}")})),
                     };
-                    let content = if offset >= size {
-                        String::new()
+                    // raw bytes read (end - offset), NOT content.len(): from_utf8_lossy
+                    // expands invalid/boundary-split bytes to U+FFFD (3 bytes), which
+                    // would corrupt the agent's offset paging.
+                    let (nbytes, content) = if offset >= size {
+                        (0usize, String::new())
                     } else {
                         let end = offset.saturating_add(limit).min(size);
                         match store.get_range(&path, offset..end).await {
-                            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                            Ok(bytes) => (bytes.len(), String::from_utf8_lossy(&bytes).into_owned()),
                             Err(e) => return Ok(json!({"error": format!("read: {e}")})),
                         }
                     };
@@ -917,8 +920,8 @@ pub fn tool_retrieve_artifact(store: Arc<dyn object_store::ObjectStore>) -> Arc<
                         "object_path": parsed.object_path,
                         "size_bytes": size,
                         "offset": offset,
-                        "returned_bytes": content.len(),
-                        "eof": offset.saturating_add(content.len()) >= size,
+                        "returned_bytes": nbytes,
+                        "eof": offset.saturating_add(nbytes) >= size,
                         "content": content,
                     }))
                 }

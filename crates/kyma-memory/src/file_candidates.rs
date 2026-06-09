@@ -55,8 +55,8 @@ pub fn file_node_id(realm: &str, repo: Option<&str>, path: &str) -> String {
 pub fn symbol_node_id(file_id: &str, name: &str, line: usize, kind: &str) -> String {
     format!("cand:sym:{file_id}#{name}#{line}#{kind}")
 }
-pub fn module_node_id(raw: &str) -> String {
-    format!("cand:mod:{raw}")
+pub fn module_node_id(realm: &str, raw: &str) -> String {
+    format!("cand:mod:{realm}:{raw}")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -189,7 +189,7 @@ pub async fn contribute(writer: &MemoryWriter, req: &ContributeFile) -> Result<F
     // Imports → Module nodes (deduped).
     let mut module_ids: HashSet<String> = HashSet::new();
     for i in &imports {
-        let mid = module_node_id(&i.raw);
+        let mid = module_node_id(realm, &i.raw);
         if module_ids.insert(mid.clone()) {
             specs.push(Spec {
                 id: mid,
