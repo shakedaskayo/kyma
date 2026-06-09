@@ -28,6 +28,7 @@ pub mod memory_gate;
 pub mod memory_policy;
 pub mod memory_queue_store;
 pub mod memory_resolve;
+pub mod memory_review;
 pub mod memory_retrieve;
 pub mod memory_settings;
 pub mod memory_tools;

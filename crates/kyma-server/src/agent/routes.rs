@@ -100,6 +100,19 @@ pub fn router(state: AgentState) -> axum::Router {
             "/memory/dreaming/run",
             post(super::dreaming::trigger_run_handler),
         )
+        .route("/memory/review", get(super::memory_review::list_review))
+        .route(
+            "/memory/review/count",
+            get(super::memory_review::review_count),
+        )
+        .route(
+            "/memory/review/bulk",
+            post(super::memory_review::bulk_review),
+        )
+        .route(
+            "/memory/review/:id/:action",
+            post(super::memory_review::resolve_review),
+        )
         .with_state(state)
 }
 
