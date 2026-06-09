@@ -149,6 +149,8 @@ export default withMermaid(defineConfig({
           { text: 'kyma deploy (CLI)',   link: '/deploy/cli' },
           { text: 'Terraform',           link: '/deploy/terraform' },
           { text: 'Pulumi',              link: '/deploy/pulumi' },
+          { text: 'Helm',                link: '/deploy/helm' },
+          { text: 'Kubernetes (EKS)',    link: '/deploy/kubernetes' },
         ],
       }],
 

@@ -3,6 +3,11 @@ output "engine_url" {
   description = "Base URL of the deployed engine (web UI + API). Use with `kyma connect`."
 }
 
+output "compute_backend" {
+  value       = module.kyma.compute_backend
+  description = "Compute backend in effect (fargate | eks)."
+}
+
 output "alb_dns_name" {
   value       = module.kyma.alb_dns_name
   description = "Raw ALB DNS name (CNAME target when managing DNS manually)."
@@ -52,4 +57,30 @@ output "ecs_service_name" {
 output "log_group" {
   value       = module.kyma.log_group
   description = "CloudWatch log group with engine logs."
+}
+
+output "database_endpoint" {
+  value       = module.kyma.database_endpoint
+  description = "RDS catalog hostname (null unless database_backend = rds)."
+}
+
+output "eks_cluster_name" {
+  value       = module.kyma.eks_cluster_name
+  description = "EKS cluster name (null unless compute_backend = eks). Use with `aws eks update-kubeconfig`."
+}
+
+output "eks_irsa_role_arn" {
+  value       = module.kyma.eks_irsa_role_arn
+  description = "IAM role ARN to annotate the engine service account for keyless S3 on EKS (null otherwise)."
+}
+
+output "catalog_url" {
+  value       = module.kyma.catalog_url
+  description = "Resolved Postgres catalog URL — injected into the Helm Secret on the EKS path."
+  sensitive   = true
+}
+
+output "storage_bucket_name" {
+  value       = module.kyma.storage_bucket_name
+  description = "Raw extents bucket name (for the EKS Helm install)."
 }
