@@ -1,5 +1,5 @@
-import { expect, test } from "vitest";
-import { detectMode } from "./detectMode";
+import { describe, it, expect, test } from "vitest";
+import { detectMode, modeLabel } from "./detectMode";
 
 const TABLES = ["claude_code_events", "events", "otel_logs"];
 
@@ -42,4 +42,12 @@ test("an unknown word is search even if it looks tabley", () => {
 test("a known table name used as a keyword phrase stays search", () => {
   // More than just the table name, not a KQL operator → treat as keyword phrase.
   expect(detectMode("events from yesterday", TABLES)).toBe("search");
+});
+
+describe("detectMode cypher", () => {
+  it("detects MATCH as cypher", () => { expect(detectMode("MATCH (a)-[r]->(b) RETURN a")).toBe("cypher"); });
+  it("detects OPTIONAL MATCH as cypher", () => { expect(detectMode("OPTIONAL MATCH (a) RETURN a")).toBe("cypher"); });
+  it("is case-insensitive", () => { expect(detectMode("match (a) return a")).toBe("cypher"); });
+  it("does not misfire on a table named match-ish", () => { expect(detectMode("matches | count", ["matches"])).toBe("kql"); });
+  it("labels cypher", () => { expect(modeLabel("cypher")).toBe("Cypher"); });
 });

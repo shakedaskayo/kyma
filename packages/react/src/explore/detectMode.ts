@@ -5,7 +5,7 @@
  * detected mode for the ambiguous ones.
  */
 
-export type ExploreMode = "search" | "kql" | "sql";
+export type ExploreMode = "search" | "kql" | "sql" | "cypher";
 
 const SQL_LEADING = /^\s*(select|with|show|explain)\b/i;
 const FIRST_IDENT = /^\s*([A-Za-z_][A-Za-z0-9_]*)/;
@@ -25,6 +25,7 @@ const FIRST_IDENT = /^\s*([A-Za-z_][A-Za-z0-9_]*)/;
 export function detectMode(input: string, tableNames: Iterable<string> = []): ExploreMode {
   const t = input.trim();
   if (t === "") return "search";
+  if (/^\s*(optional\s+)?match\s*\(/i.test(t)) return "cypher";
   if (SQL_LEADING.test(t)) return "sql";
   if (t.includes("|")) return "kql";
 
@@ -44,5 +45,10 @@ export function detectMode(input: string, tableNames: Iterable<string> = []): Ex
 
 /** Short label for the mode badge. */
 export function modeLabel(mode: ExploreMode): string {
-  return mode === "search" ? "Search" : mode === "kql" ? "KQL" : "SQL";
+  switch (mode) {
+    case "search":  return "Search";
+    case "kql":     return "KQL";
+    case "sql":     return "SQL";
+    case "cypher":  return "Cypher";
+  }
 }
