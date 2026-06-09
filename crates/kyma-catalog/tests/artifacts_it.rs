@@ -128,3 +128,49 @@ async fn expiry_sweep_and_gc_candidates_and_delete() {
         "row should be gone after delete"
     );
 }
+
+#[tokio::test]
+async fn list_live_artifacts_returns_only_live_for_tenant() {
+    let (catalog, _c) = fixture().await;
+    let t1 = TenantId::from_uuid(Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").unwrap());
+    let t2 = TenantId::from_uuid(Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap());
+    let now = Utc::now();
+
+    // Register two artifacts for t1.
+    catalog
+        .register_artifact(&rec(t1, "artifacts/t1/live.log"))
+        .await
+        .unwrap();
+    let mut expired = rec(t1, "artifacts/t1/expired.log");
+    expired.expires_at = Some(now - Duration::hours(1));
+    let expired_id = catalog.register_artifact(&expired).await.unwrap();
+
+    // Soft-delete the expired one.
+    let swept = catalog.soft_delete_expired_artifacts(now).await.unwrap();
+    assert_eq!(swept.len(), 1);
+    assert_eq!(swept[0].0, expired_id);
+
+    // Register one artifact for t2 — must not appear in t1's results.
+    catalog
+        .register_artifact(&rec(t2, "artifacts/t2/other.log"))
+        .await
+        .unwrap();
+
+    // Only the live t1 artifact is returned.
+    let live = catalog.list_live_artifacts(t1).await.unwrap();
+    assert_eq!(live.len(), 1, "only the non-deleted artifact should be returned");
+    assert_eq!(live[0].object_path, "artifacts/t1/live.log");
+    assert!(live[0].deleted_at.is_none(), "returned artifact must not be soft-deleted");
+
+    // t2's artifact is excluded from t1's list.
+    for a in &live {
+        assert_ne!(a.object_path, "artifacts/t2/other.log", "cross-tenant leak");
+    }
+
+    // Symmetric check: t2 sees exactly its own artifact, and t1's count is
+    // unchanged by t2's insert — catches a missing tenant predicate that the
+    // one-sided check above would not.
+    let live_t2 = catalog.list_live_artifacts(t2).await.unwrap();
+    assert_eq!(live_t2.len(), 1, "t2 sees exactly its own live artifact");
+    assert_eq!(live_t2[0].object_path, "artifacts/t2/other.log");
+}
