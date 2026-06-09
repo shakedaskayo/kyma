@@ -148,24 +148,19 @@ Rides existing infrastructure — no new search endpoint:
 - **Oversize blobs:** preview byte-window truncates; download serves full.
 - **Expired / soft-deleted** (`expires_at`/`deleted_at`): excluded from materialization;
   a node whose artifact later expires is removed/marked on the next sync.
-- **Label-array migration:** `make_node` single-label call sites are unaffected (they
-  pass one label); only the artifact contract uses the array form.
-
 ## Testing
 
 **Rust (`kyma-connectors`, `kyma-server`, `kyma-catalog`):**
 
-- Unit: artifact node-shape contract — labels `["Artifact","Log"]`, `artifact_id` set,
-  `retrievable` logic, searchable name format.
+- Unit: artifact node-shape contract — single `"Artifact"` label, `artifact_id` set
+  (conditional), `artifact_class` prop, `retrievable` logic.
 - Integration: ingesting a CI job log yields an `Artifact`-labeled node carrying
   `artifact_id` + an `HAS_ARTIFACT` edge (job→artifact) in `github_nodes`/`github_edges`;
-  the old `JOB_HAS_LOG` is gone / rewritten.
-- Catch-all: registering an object-store artifact with no producer yields a node in the
-  `artifacts` graph; `deleted_at`/expired rows are skipped; provisioner creates tables +
-  registration idempotently.
-- Search: `/v1/graph/artifacts/search` and the github graph search find an artifact by
-  name.
-- Backfill: existing pre-change artifacts/`JOB_HAS_LOG` edges are migrated.
+  no `JOB_HAS_LOG` is emitted. (Forward-only: existing rows are not rewritten.)
+- Catch-all: `ArtifactGraphWriter::sync` yields a node in the `artifacts` graph for a
+  non-`github` artifact; `deleted_at`/expired rows are skipped; provisioning + re-sync are
+  idempotent.
+- `list_live_artifacts` returns only live rows, scoped to the tenant.
 
 **Client / React (`packages/client`, `packages/react`):**
 
