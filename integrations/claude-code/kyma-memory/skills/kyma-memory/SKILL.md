@@ -39,6 +39,10 @@ The same `kyma` MCP server exposes `explore_schema`, `describe_table`, `run_kql`
 questions about the user's logs, traces, tables, and code/graph — including the
 `claude_code_events` table, which is this plugin's realtime capture of the conversation.
 
+Two more tools sit on the unified `/v1/search` substrate:
+- `search` — one hybrid lexical+vector query across all data sources in scope; returns ranked hits with `db.table` provenance + the row. Use for a fast broad sweep before narrowing with `run_kql`/`run_sql`.
+- `graph_search` — find graph nodes by text/label across one named graph or every graph; returns nodes with `<db>/<graph>` provenance and ids you can feed to `graph_traverse`.
+
 ## Enriching the graph
 
 Call `ingest_entity` (MCP server `kyma`) to mint a **virtual resource/entity** — a service,

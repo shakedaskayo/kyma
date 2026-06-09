@@ -7,9 +7,9 @@ use kyma_server::agent::{
     tool_file_neighbors, tool_find_references_to, tool_flush_memory, tool_graph_traverse,
     tool_ingest_entity, tool_link_memory_to_entity, tool_list_databases, tool_list_memories,
     tool_memory_compare, tool_memory_judge, tool_memory_search, tool_memory_session_summary,
-    tool_recall_file, tool_recall_memory, tool_retrieve_artifact, tool_run_kql, tool_run_sql,
-    tool_sample_rows, tool_save_memories, tool_save_memory, tool_update_memory_importance,
-    tool_update_memory_status, SharedToolCtx,
+    tool_graph_search, tool_recall_file, tool_recall_memory, tool_retrieve_artifact, tool_run_kql,
+    tool_run_sql, tool_sample_rows, tool_save_memories, tool_save_memory, tool_search,
+    tool_update_memory_importance, tool_update_memory_status, SharedToolCtx,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -36,6 +36,13 @@ impl ToolDispatch {
             tool_find_references_to(shared.clone()),
         );
         map.insert("graph_traverse", tool_graph_traverse(shared.clone()));
+        // Unified `/v1/search` substrate exposed to agents: hybrid lexical+vector
+        // data search + cross-graph node search (the same dispatcher behind
+        // POST /v1/search and the Explore UI). Memory mode is intentionally not
+        // re-exposed — memory_search/recall_memory already share retrieve() and
+        // return a richer payload than the unified envelope.
+        map.insert("search", tool_search(shared.clone()));
+        map.insert("graph_search", tool_graph_search(shared.clone()));
         // File-contribution + recall (E5): persist a file's structure once, then
         // recall its meaning/relationships cheaply (context-window economy).
         map.insert("contribute_file", tool_contribute_file(shared.clone()));
