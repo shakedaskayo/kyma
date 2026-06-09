@@ -13,10 +13,43 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use kyma_memory::file_candidates::{self, ContributeFile, FILE_CANDIDATES_DB};
+use kyma_core::catalog::Catalog;
+use kyma_core::segment_format::SegmentFormat;
+use kyma_memory::file_candidates::{self, ContributeFile, FileContribution, FILE_CANDIDATES_DB};
 use kyma_memory::MemoryWriter;
 
 use super::tools::{execute_sql, SharedToolCtx};
+
+/// Shared contribution path used by both the `contribute_file` MCP tool and the
+/// `POST /v1/agent/files/contribute` HTTP endpoint (which `kyma scrape`/`watch`
+/// call). Redacts secrets, hashes, parses, and writes the candidate subgraph.
+pub async fn contribute_file_impl(
+    catalog: Arc<dyn Catalog>,
+    format: Arc<dyn SegmentFormat>,
+    path: String,
+    realm: String,
+    repo: Option<String>,
+    content: String,
+    why_read: Option<String>,
+) -> std::result::Result<FileContribution, String> {
+    let (redacted, _findings) = kyma_redact::global().redact_text(&content);
+    let sha = sha256_hex(redacted.as_bytes());
+    let embed = kyma_memory::shared_embedding()
+        .await
+        .map_err(|e| format!("embedding backend: {e}"))?;
+    let writer = MemoryWriter::new(catalog, format, embed).with_database(FILE_CANDIDATES_DB);
+    let req = ContributeFile {
+        path,
+        realm,
+        repo,
+        content: redacted,
+        content_sha256: sha,
+        why_read,
+    };
+    file_candidates::contribute(&writer, &req)
+        .await
+        .map_err(|e| format!("contribute: {e}"))
+}
 
 fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
@@ -70,27 +103,19 @@ pub fn tool_contribute_file(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
-                    // Redact secrets BEFORE anything is stored/embedded.
-                    let (redacted, _findings) = kyma_redact::global().redact_text(&a.content);
-                    let sha = sha256_hex(redacted.as_bytes());
-                    let embed = match kyma_memory::shared_embedding().await {
-                        Ok(e) => e,
-                        Err(e) => return Ok(json!({"error": format!("embedding backend: {e}")})),
-                    };
-                    let writer =
-                        MemoryWriter::new(shared.catalog.clone(), shared.format.clone(), embed)
-                            .with_database(FILE_CANDIDATES_DB);
-                    let req = ContributeFile {
-                        path: a.path,
-                        realm: a.realm,
-                        repo: a.repo,
-                        content: redacted,
-                        content_sha256: sha,
-                        why_read: a.why_read,
-                    };
-                    match file_candidates::contribute(&writer, &req).await {
+                    match contribute_file_impl(
+                        shared.catalog.clone(),
+                        shared.format.clone(),
+                        a.path,
+                        a.realm,
+                        a.repo,
+                        a.content,
+                        a.why_read,
+                    )
+                    .await
+                    {
                         Ok(s) => Ok(serde_json::to_value(s).unwrap_or_else(|_| json!({}))),
-                        Err(e) => Ok(json!({"error": format!("contribute: {e}")})),
+                        Err(e) => Ok(json!({"error": e})),
                     }
                 }
             },

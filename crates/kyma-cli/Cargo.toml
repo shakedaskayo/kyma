@@ -46,6 +46,9 @@ tar = "0.4"
 sha2 = "0.10"
 # Hidden interactive password prompts for `kyma user create|passwd`.
 rpassword = "7"
+# `kyma scrape`/`watch`: gitignore-aware recursive walk + filesystem events.
+ignore = "0.4"
+notify = "6"
 # `kyma deploy`: PKCE verifiers + generated passwords.
 rand = "0.8"
 

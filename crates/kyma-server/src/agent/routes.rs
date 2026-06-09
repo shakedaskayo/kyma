@@ -84,6 +84,7 @@ pub fn router(state: AgentState) -> axum::Router {
             "/retention/settings",
             get(get_retention_settings).put(put_retention_settings),
         )
+        .route("/files/contribute", post(contribute_file_route))
         .route("/memory/export", get(export_memory_handler))
         .route("/memory/changes", get(changes_memory_handler))
         .route("/memory/import", post(import_memory_handler))
@@ -277,6 +278,43 @@ async fn put_memory_settings(
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// `POST /v1/agent/files/contribute` — persist a file's structure as candidate
+/// graph nodes (used by `kyma scrape` / `kyma watch` and any HTTP client). Same
+/// path as the `contribute_file` MCP tool.
+#[derive(Debug, serde::Deserialize)]
+struct ContributeFileBody {
+    path: String,
+    #[serde(default)]
+    realm: String,
+    repo: Option<String>,
+    content: String,
+    why_read: Option<String>,
+}
+
+async fn contribute_file_route(
+    State(state): State<AgentState>,
+    Json(body): Json<ContributeFileBody>,
+) -> Response {
+    match super::file_tools::contribute_file_impl(
+        state.catalog.clone(),
+        state.format.clone(),
+        body.path,
+        body.realm,
+        body.repo,
+        body.content,
+        body.why_read,
+    )
+    .await
+    {
+        Ok(s) => Json(serde_json::to_value(s).unwrap_or_else(|_| json!({}))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e })),
         )
             .into_response(),
     }
