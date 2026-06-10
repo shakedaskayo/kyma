@@ -122,6 +122,18 @@ impl PostgresCatalog {
         }
     }
 
+    /// Distinct tenants that currently have live (non-deleted) artifacts — the
+    /// set the catch-all artifact-graph sync must iterate.
+    pub async fn list_artifact_tenants(&self) -> Result<Vec<TenantId>> {
+        let rows: Vec<(uuid::Uuid,)> = sqlx::query_as(
+            "SELECT DISTINCT tenant_id FROM artifacts WHERE deleted_at IS NULL",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(sql)?;
+        Ok(rows.into_iter().map(|(id,)| TenantId::from_uuid(id)).collect())
+    }
+
     /// All live (not soft-deleted) artifacts for `tenant`, newest first. Used by
     /// the catch-all graph sync to materialize artifact nodes.
     pub async fn list_live_artifacts(&self, tenant: TenantId) -> Result<Vec<ArtifactRecord>> {

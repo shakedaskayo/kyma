@@ -898,11 +898,10 @@ async fn main() -> Result<()> {
     let artifact_graph_format = format.clone();
     let mut artifact_graph_rx = shutdown_tx.subscribe();
     let artifact_graph_handle = tokio::spawn(async move {
-        // Startup backfill for the default tenant.
-        if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes(
+        // Startup backfill for all tenants.
+        if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes_all_tenants(
             artifact_graph_catalog.clone(),
             artifact_graph_format.clone(),
-            kyma_core::tenant::DEFAULT_TENANT,
         )
         .await
         {
@@ -913,10 +912,9 @@ async fn main() -> Result<()> {
                 biased;
                 _ = artifact_graph_rx.recv() => return,
                 _ = tokio::time::sleep(artifact_graph_poll) => {
-                    if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes(
+                    if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes_all_tenants(
                         artifact_graph_catalog.clone(),
                         artifact_graph_format.clone(),
-                        kyma_core::tenant::DEFAULT_TENANT,
                     )
                     .await
                     {
