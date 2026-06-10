@@ -79,6 +79,11 @@ impl Connector for MsFabricConnector {
                     "xxxxxxxx.datawarehouse.fabric.microsoft.com",
                 ),
                 CatalogField::text("database", "Lakehouse / Warehouse name", "my_lakehouse"),
+                CatalogField::checkbox(
+                    "exclude_from_wildcard",
+                    "Exclude from \"All databases\" queries",
+                    "Keep this source out of x-database:* fan-outs; explicit queries still reach it.",
+                ),
             ],
             resource: None,
             default_target_table: None,

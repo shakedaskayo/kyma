@@ -17,11 +17,14 @@ import {
   buildCreateBody,
   formatInterval,
   isOAuth,
+  offersStoredCredential,
+  requiresStoredCredential,
   type KindFormValues,
 } from "./connector-kinds";
 import { ConnectorCatalog } from "./ConnectorCatalog";
 import { ConnectorConfigForm } from "./ConnectorConfigForm";
 import { ConnectorConnectStep } from "./ConnectorConnectStep";
+import { ConnectorCredentialPicker } from "./ConnectorCredentialPicker";
 import { RepoPicker } from "./RepoPicker";
 import { BrandIcon } from "./BrandIcon";
 import { useCreateConnector, useGitHubRepos } from "./useConnectors";
@@ -168,6 +171,8 @@ export function AddConnectorWizard({
     if (!values.name.trim()) return false;
     // OAuth connectors require a connected credential rather than form fields.
     if (isOAuth(entry)) return Boolean(values.credentialId);
+    // Credential-only connectors (e.g. msfabric) require a stored credential.
+    if (requiresStoredCredential(entry) && !values.credentialId) return false;
     return entry.fields.every((f) => !f.required || (values.fields[f.key] ?? "").trim());
   }, [entry, values]);
   const resourcesValid = !entry?.resource || values.resources.length > 0;
@@ -257,6 +262,12 @@ export function AddConnectorWizard({
                     onConnected={(a) => update({ credentialId: a.credentialId })}
                     onClear={() => update({ credentialId: null })}
                   />
+                ) : offersStoredCredential(entry) ? (
+                  <ConnectorCredentialPicker
+                    entry={entry}
+                    credentialId={values.credentialId}
+                    onChange={(credentialId) => update({ credentialId })}
+                  />
                 ) : undefined
               }
               verify={
@@ -291,8 +302,8 @@ export function AddConnectorWizard({
                 {entry.label}
                 <span className="ml-1 text-muted-foreground">· {authLabel(entry.auth_mode)}</span>
               </ReviewRow>
-              {isOAuth(entry) && (
-                <ReviewRow icon={<Check className="h-4 w-4 text-emerald-600" />} label="Account">
+              {(isOAuth(entry) || (offersStoredCredential(entry) && values.credentialId)) && (
+                <ReviewRow icon={<Check className="h-4 w-4 text-emerald-600" />} label={isOAuth(entry) ? "Account" : "Credential"}>
                   Connected
                   {(() => {
                     const label = creds.data?.find((c) => c.id === values.credentialId)?.label;

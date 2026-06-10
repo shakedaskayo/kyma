@@ -17,7 +17,8 @@ pub struct CatalogField {
     /// Key under the connector's `config` object.
     pub key: String,
     pub label: String,
-    /// `"text"` | `"secret"`. Secrets render as password inputs and are scrubbed.
+    /// `"text"` | `"secret"` | `"checkbox"`. Secrets render as password inputs
+    /// and are scrubbed; checkboxes land in the config as JSON booleans.
     #[serde(rename = "type")]
     pub kind: String,
     pub required: bool,
@@ -46,6 +47,16 @@ impl CatalogField {
             required: true,
             placeholder: Some(placeholder.into()),
             help: None,
+        }
+    }
+    pub fn checkbox(key: &str, label: &str, help: &str) -> Self {
+        Self {
+            key: key.into(),
+            label: label.into(),
+            kind: "checkbox".into(),
+            required: false,
+            placeholder: None,
+            help: Some(help.into()),
         }
     }
 }

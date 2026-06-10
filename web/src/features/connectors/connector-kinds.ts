@@ -38,6 +38,7 @@ export function authLabel(mode: string): string {
     case "pat": return "Token auth";
     case "oauth": return "OAuth";
     case "url": return "Endpoint URL";
+    case "service_principal": return "Service principal";
     case "none": return "No auth";
     default: return mode;
   }
@@ -60,6 +61,28 @@ export function isOAuth(entry: CatalogEntry): boolean {
   return entry.auth_mode === "oauth";
 }
 
+/** Credential kinds this entry accepts via a stored `credential_id`. */
+export function acceptedCredentialKinds(entry: CatalogEntry): string[] {
+  return entry.accepted_credential_kinds ?? [];
+}
+
+/**
+ * Whether the wizard must collect a stored credential for this entry: it
+ * accepts credential kinds (non-OAuth flow) and offers no inline secret field
+ * to fall back on (e.g. msfabric — service principals are credential-only).
+ * Entries with an inline secret alternative (e.g. postgres `url`) treat the
+ * picker as optional.
+ */
+export function requiresStoredCredential(entry: CatalogEntry): boolean {
+  if (isOAuth(entry) || acceptedCredentialKinds(entry).length === 0) return false;
+  return !entry.fields.some((f) => f.type === "secret" && f.required);
+}
+
+/** Whether to render the stored-credential picker for this entry at all. */
+export function offersStoredCredential(entry: CatalogEntry): boolean {
+  return !isOAuth(entry) && acceptedCredentialKinds(entry).length > 0;
+}
+
 /**
  * Assemble the `POST /v1/connectors` body generically from a catalog entry:
  * merge the entry's `config_defaults`, layer the collected field values, and
@@ -71,7 +94,11 @@ export function buildCreateBody(
   sessionDatabase: string,
 ): CreateConnectorBody {
   const config: Record<string, unknown> = { ...(entry.config_defaults ?? {}) };
-  for (const f of entry.fields) config[f.key] = values.fields[f.key] ?? "";
+  for (const f of entry.fields) {
+    // Checkbox fields land as JSON booleans (the wizard stores "true"/"").
+    config[f.key] =
+      f.type === "checkbox" ? values.fields[f.key] === "true" : values.fields[f.key] ?? "";
+  }
   if (entry.resource) config[entry.resource.config_key] = values.resources;
   // Credential-backed (OAuth) connectors resolve a stored credential at run
   // time — the connector reads `credential_id` from its config.

@@ -214,7 +214,13 @@ function ConnectorCredentialCard({ detail, entry }: { detail: Detail; entry?: Ca
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [oauth.phase, oauth.account]);
 
-  if (!credentialId && !isOAuthConn) return null;
+  // Non-OAuth credential-backed connectors (e.g. msfabric service principals)
+  // swap the linked credential via a picker over matching stored credentials.
+  const acceptedKinds = entry?.accepted_credential_kinds ?? [];
+  const swappable = !isOAuthConn && acceptedKinds.length > 0;
+  const matching = (creds ?? []).filter((c) => acceptedKinds.includes(c.kind));
+
+  if (!credentialId && !isOAuthConn && !swappable) return null;
   const cred = creds?.find((c) => c.id === credentialId);
   const connecting = oauth.phase === "starting" || oauth.phase === "awaiting";
 
@@ -242,6 +248,26 @@ function ConnectorCredentialCard({ detail, entry }: { detail: Detail; entry?: Ca
               >
                 {connecting ? "Waiting…" : "Reconnect"}
               </Button>
+            )}
+            {swappable && matching.length > 1 && (
+              <select
+                className="h-8 max-w-44 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={credentialId ?? ""}
+                disabled={patch.isPending}
+                onChange={(e) => {
+                  if (e.target.value && e.target.value !== credentialId) {
+                    patch.mutate({
+                      config: { ...detail.config, credential_id: e.target.value },
+                    });
+                  }
+                }}
+              >
+                {matching.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
         ) : (

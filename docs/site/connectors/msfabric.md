@@ -23,6 +23,13 @@ over the [SQL analytics endpoint](https://learn.microsoft.com/en-us/fabric/data-
    Lakehouse/Warehouse → *SQL analytics endpoint* → copy the connection
    string host, e.g. `xxxxxxxx.datawarehouse.fabric.microsoft.com`.
 
+Everything below is also available in the web UI: add a **Service
+principal** credential under *Settings → Credentials*, then pick
+*Microsoft Fabric* in the connector wizard — it prompts for the endpoint,
+item name, stored credential, and the wildcard opt-out. The connector
+detail page shows sync runs, last error, and lets you swap the linked
+credential.
+
 ## Store the credential
 
 ```bash

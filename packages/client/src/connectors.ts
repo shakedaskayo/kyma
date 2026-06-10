@@ -59,7 +59,7 @@ export interface ConnectorUpdate {
 export interface CatalogField {
   key: string;
   label: string;
-  type: "text" | "secret";
+  type: "text" | "secret" | "checkbox";
   required: boolean;
   placeholder?: string;
   help?: string;
@@ -94,6 +94,12 @@ export interface CatalogEntry {
   oauth_provider?: string;
   /** OAuth connectors: default scopes the UI requests. */
   oauth_scopes?: string[];
+  /**
+   * Credential kinds this connector accepts via `credential_id` in its config
+   * (e.g. ["service_principal"]). The wizard renders a stored-credential
+   * picker filtered to these kinds; absent/empty means inline secrets only.
+   */
+  accepted_credential_kinds?: string[];
 }
 
 interface CatalogEnvelope {
