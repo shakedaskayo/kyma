@@ -107,13 +107,11 @@ impl QueryState {
             } else if !self.select.is_empty() {
                 items.extend(self.select.iter().cloned());
             } else {
-                // project-away — materialize as SELECT * EXCEPT would be
-                // ideal, but DataFusion doesn't support that. For now emit
-                // SELECT * and let the caller know (or do it in outer query).
-                // This is lossy; `project-away` with exclude is rarely the
-                // only thing a pipeline has, and in most real usages the
-                // user pairs it with `project` before filtering.
-                items.push("*".to_string());
+                // project-away — DataFusion supports the `* EXCEPT (...)`
+                // wildcard option, so excluded columns are actually dropped.
+                // (A bare `SELECT *` here leaked embedding vectors into
+                // search previews and broke unified-search RRF dedup.)
+                items.push(format!("* EXCEPT ({})", self.exclude.join(", ")));
             }
             for (name, expr) in &self.extend {
                 items.push(format!("({expr}) AS {name}"));

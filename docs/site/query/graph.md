@@ -199,7 +199,16 @@ Graph search matches on node id and label. Searching `artifact` returns all `Art
 
 ### Content search
 
-Full-text search across artifact blob contents is handled by the unified search endpoint (`POST /v1/search`), not the graph page.
+Artifact blob **contents** are searchable through the unified search endpoint (`POST /v1/search`) and the Explore page, not the graph page.
+
+On the same cadence as the artifact-graph sync (`KYMA_ARTIFACT_GC_POLL_SECS`, default 300s), the server indexes text-like artifacts into the `artifacts.artifact_chunks` table:
+
+- **Which artifacts:** classes `log`, `file`, `text`, `doc`, `config`; up to 4 MB per blob; binary content is sniffed and skipped.
+- **How:** the blob is split into line-aligned ~1500-char chunks (max 64 per artifact), embedded with the process-shared embedding backend, and appended with the artifact's `artifact_id`, `object_path`, `source`, and `table_ref` for provenance.
+- **Search:** `artifact_chunks` is a regular table in the `artifacts` database, so default data-mode search (`{"query": "..."}`) hits it with both the lexical and the vector (cosine) leg. Hits carry `"source": "artifacts.artifact_chunks"` and the chunk row, including `artifact_id` to retrieve the full blob.
+- **Idempotent:** each artifact is indexed once per content hash (`sha256`); re-syncs skip already-indexed artifacts before fetching the blob.
+
+**Availability:** server + Postgres mode only, same as the artifact catalog.
 
 ---
 

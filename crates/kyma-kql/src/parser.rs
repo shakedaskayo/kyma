@@ -1575,6 +1575,22 @@ mod tests {
     }
 
     #[test]
+    fn project_away_excludes_columns() {
+        // `project-away` must actually drop the columns — DataFusion supports
+        // the `* EXCEPT (...)` wildcard option. A bare `SELECT *` here leaks
+        // excluded columns (e.g. 384-float embedding vectors) into search
+        // previews and breaks the unified-search RRF row dedup.
+        assert_eq!(
+            must("t | project-away embedding | take 5"),
+            "SELECT * EXCEPT (embedding) FROM t LIMIT 5"
+        );
+        assert_eq!(
+            must("t | project-away a, b"),
+            "SELECT * EXCEPT (a, b) FROM t"
+        );
+    }
+
+    #[test]
     fn count_aggregate() {
         let sql = must("t | count");
         assert!(

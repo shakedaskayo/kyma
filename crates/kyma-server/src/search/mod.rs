@@ -247,7 +247,7 @@ async fn search_one_source(
     };
 
     // ── Vector leg (cosine_distance) ──
-    let vector_rows = match (vec_col, qvec) {
+    let vector_rows = match (vec_col.as_deref(), qvec) {
         (Some(col), Some(qv)) if !non_vector_cols.is_empty() => {
             let proj = non_vector_cols
                 .iter()
@@ -267,15 +267,24 @@ async fn search_one_source(
     };
 
     // ── RRF fusion (keyed by stable row content) ──
+    // Strip the vector column as well as the score: a leg that still carries
+    // the embedding (or any future leg asymmetry) must not defeat the
+    // row-content dedup key or bloat the hit payload.
     let mut fused: BTreeMap<String, (f64, Value)> = BTreeMap::new();
     for (rank, mut row) in lexical_rows.into_iter().enumerate() {
         strip(&mut row, "__score");
+        if let Some(vc) = &vec_col {
+            strip(&mut row, vc);
+        }
         let key = row_key(&row);
         let e = fused.entry(key).or_insert((0.0, row));
         e.0 += 1.0 / (RRF_K + rank as f64);
     }
     for (rank, mut row) in vector_rows.into_iter().enumerate() {
         strip(&mut row, "__score");
+        if let Some(vc) = &vec_col {
+            strip(&mut row, vc);
+        }
         let key = row_key(&row);
         let e = fused.entry(key).or_insert((0.0, row));
         e.0 += 1.0 / (RRF_K + rank as f64);
