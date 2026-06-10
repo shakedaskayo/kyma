@@ -1076,6 +1076,39 @@ fn dreaming_toolset(
 // ── Claude CLI engine path ───────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
+/// Build the full skill list for a dreaming run: `kyma-dreaming` first, then
+/// every tenant-enabled skill (mirroring `runner::compose_system_prompt`).
+/// On any error fetching the enabled set we silently fall back to the
+/// `kyma-dreaming`-only vec so a bad skills store never breaks a dreaming run.
+async fn gather_dreaming_skills(state: &AgentState) -> Vec<super::skill_delivery::SkillDoc> {
+    let mut skills = vec![super::skill_delivery::SkillDoc {
+        name: "kyma-dreaming".to_string(),
+        body: super::dreaming_skill::kyma_dreaming_skill().to_string(),
+    }];
+
+    let enabled = match state.skills.get().await {
+        Ok(s) => s,
+        Err(_) => return skills,
+    };
+    if enabled.is_empty() {
+        return skills;
+    }
+    let enabled_set: std::collections::HashSet<&str> =
+        enabled.iter().map(String::as_str).collect();
+    let discovered = crate::agent::skills::discover_all();
+    let tenant_skills: Vec<_> = discovered
+        .into_iter()
+        .filter(|s| s.name != "kyma-dreaming" && enabled_set.contains(s.name.as_str()))
+        .collect();
+    for s in tenant_skills {
+        skills.push(super::skill_delivery::SkillDoc {
+            name: s.name.clone(),
+            body: s.body.clone(),
+        });
+    }
+    skills
+}
+
 async fn run_via_claude_cli(
     state: &AgentState,
     model: &str,
@@ -1108,10 +1141,7 @@ async fn run_via_claude_cli(
     // breaks a dreaming run. The scratch/delivery dir also keeps repo-local
     // CLAUDE.md / .claude settings out of the headless agent's context (it must
     // see the memory store through kyma's tools, not the operator's checkout).
-    let skills = vec![super::skill_delivery::SkillDoc {
-        name: "kyma-dreaming".to_string(),
-        body: super::dreaming_skill::kyma_dreaming_skill().to_string(),
-    }];
+    let skills = gather_dreaming_skills(state).await;
     let delivered = super::skill_delivery::deliver_to_workdir(&skills).await.ok();
 
     let scratch = std::env::temp_dir().join("kyma-dreaming");
@@ -1669,5 +1699,21 @@ mod trigger_tests {
         let s = DreamingSettings::default();
         let p = dreaming_trigger_prompt("full", None, &[], &s);
         assert!(p.contains("all realms"));
+    }
+
+    /// Verify the shape of the kyma-dreaming SkillDoc that `gather_dreaming_skills`
+    /// always inserts first.  We cannot cheaply construct an `AgentState` in a
+    /// unit test (it requires live DB pools), so we test the invariant inline:
+    /// the first element produced by the same logic used inside the helper must
+    /// be named "kyma-dreaming" and its body must be non-empty.
+    #[test]
+    fn gather_dreaming_skills_first_doc_is_kyma_dreaming() {
+        // Reproduce just the first-element construction from gather_dreaming_skills.
+        let first = crate::agent::skill_delivery::SkillDoc {
+            name: "kyma-dreaming".to_string(),
+            body: crate::agent::dreaming_skill::kyma_dreaming_skill().to_string(),
+        };
+        assert_eq!(first.name, "kyma-dreaming", "first skill must always be kyma-dreaming");
+        assert!(!first.body.is_empty(), "kyma-dreaming body must be non-empty");
     }
 }

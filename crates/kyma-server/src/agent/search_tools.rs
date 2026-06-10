@@ -232,6 +232,7 @@ mod tests {
             format,
             pool: None,
             memory: None,
+            // read-only test ctx — no HITL approval gate.
             hitl: None,
         }
     }

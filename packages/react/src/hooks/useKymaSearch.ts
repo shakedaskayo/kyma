@@ -2,8 +2,9 @@
  * useKymaSearch — headless hook for the unified hybrid search (`/v1/search`).
  *
  * Lexical + vector (RRF-fused) ranked results across the sources in scope. Each
- * hit carries `db.table` provenance + the row, so the caller can drill down with
- * a follow-up KQL/SQL query.
+ * hit carries `db.table` provenance + the row (data mode) or rich metadata
+ * (memory/graph modes), so the caller can drill down with a follow-up KQL/SQL
+ * query or navigate to the graph.
  */
 import { useCallback, useRef, useState } from "react";
 import type { HybridSearchHit, HybridSearchRequest } from "@kyma-ai/client";
@@ -13,6 +14,8 @@ export interface UseKymaSearchResult {
   hits: HybridSearchHit[];
   sourcesSearched: number;
   elapsedMs: number;
+  /** Echo of the mode the server used (absent when mode was "data"). */
+  mode: string | undefined;
   /** True once a search has been run (distinguishes "idle" from "0 hits"). */
   ran: boolean;
   isRunning: boolean;
@@ -26,6 +29,7 @@ export function useKymaSearch(): UseKymaSearchResult {
   const [hits, setHits] = useState<HybridSearchHit[]>([]);
   const [sourcesSearched, setSourcesSearched] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [mode, setMode] = useState<string | undefined>(undefined);
   const [ran, setRan] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -43,6 +47,7 @@ export function useKymaSearch(): UseKymaSearchResult {
         setHits(r.hits);
         setSourcesSearched(r.sources_searched);
         setElapsedMs(r.elapsed_ms);
+        setMode(r.mode);
         setRan(true);
       } catch (e) {
         if (mine !== seq.current) return;
@@ -56,5 +61,5 @@ export function useKymaSearch(): UseKymaSearchResult {
     [client],
   );
 
-  return { hits, sourcesSearched, elapsedMs, ran, isRunning, error, run };
+  return { hits, sourcesSearched, elapsedMs, mode, ran, isRunning, error, run };
 }

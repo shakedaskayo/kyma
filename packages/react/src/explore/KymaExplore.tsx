@@ -16,7 +16,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Play, Square, Search as SearchIcon, Code2, Network } from "lucide-react";
+import { Play, Square, Search as SearchIcon, Code2, Network, Brain, GitFork } from "lucide-react";
 import { autoChartAxes } from "@kyma-ai/client";
 import type { Column, HybridSearchHit, SchemaDoc } from "@kyma-ai/client";
 
@@ -96,6 +96,8 @@ function KymaExploreInner({
   const [rowFilter, setRowFilter] = useState("");
   const [openRow, setOpenRow] = useState<{ source: string; row: Record<string, unknown> } | null>(null);
   const [submittedMode, setSubmittedMode] = useState<ExploreMode | null>(null);
+  // Search target: which backend store to search against.
+  const [searchTarget, setSearchTarget] = useState<"data" | "memory" | "graph">("data");
   // Selected columns for the search document table (Kibana-style field pinning).
   const [cols, setCols] = useState<string[]>([]);
 
@@ -135,6 +137,9 @@ function KymaExploreInner({
         scope,
         time_range: resolveTimeRange(timeRange),
         limit: 100,
+        // Only set mode when it deviates from the default so the server
+        // preserves the pre-existing data-only behaviour when omitted.
+        ...(searchTarget !== "data" ? { mode: searchTarget } : {}),
       });
     } else {
       const effective = mode === "kql" ? prependTimeFilter(text, timeRange, schema) : text;
@@ -221,6 +226,37 @@ function KymaExploreInner({
         )}
       </div>
 
+      {/* ── Search-target chips (visible only in search mode) ── */}
+      {liveMode === "search" && (
+        <div className="ky-flex ky-items-center ky-gap-1 ky-border-b ky-px-3 ky-py-1.5">
+          <span className="ky-mr-1 ky-text-[10px] ky-font-medium ky-uppercase ky-tracking-wider ky-text-muted-foreground">
+            Search
+          </span>
+          {(["data", "memory", "graph"] as const).map((t) => {
+            const Icon = t === "data" ? SearchIcon : t === "memory" ? Brain : GitFork;
+            const label = t === "data" ? "Data" : t === "memory" ? "Memory" : "Graph";
+            const active = searchTarget === t;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setSearchTarget(t)}
+                className={cn(
+                  "ky-inline-flex ky-items-center ky-gap-1 ky-rounded ky-border ky-px-2 ky-py-0.5 ky-text-[11px] ky-font-medium ky-transition-colors",
+                  active
+                    ? "ky-border-primary/60 ky-bg-primary/10 ky-text-primary"
+                    : "ky-border-transparent ky-text-muted-foreground hover:ky-border-border hover:ky-text-foreground",
+                )}
+                title={`Search ${label}`}
+              >
+                <Icon className="ky-h-3 ky-w-3" />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* ── Body ── */}
       {submittedMode === null ? (
         <EmptyState />
@@ -257,7 +293,13 @@ function KymaExploreInner({
           }
           onZoom={(from, to) => {
             setTimeRange({ preset: "custom", from, to });
-            void search.run({ query: inputRef.current, scope, time_range: { from, to }, limit: 100 });
+            void search.run({
+              query: inputRef.current,
+              scope,
+              time_range: { from, to },
+              limit: 100,
+              ...(searchTarget !== "data" ? { mode: searchTarget } : {}),
+            });
           }}
           onOpenRow={(source, row) => setOpenRow({ source, row })}
           onViewInGraph={onViewInGraph}
@@ -308,6 +350,7 @@ const KIND_GLYPH: Record<FieldKind, string> = {
 function aggregateFields(hits: HybridSearchHit[]): { name: string; kind: FieldKind; count: number }[] {
   const m = new Map<string, { kind: FieldKind; count: number }>();
   for (const h of hits) {
+    if (!h.row) continue;
     for (const [k, v] of Object.entries(h.row)) {
       if (HIDDEN_FIELD(k)) continue;
       const cur = m.get(k);
@@ -325,12 +368,12 @@ function aggregateFields(hits: HybridSearchHit[]): { name: string; kind: FieldKi
 }
 
 function detectTimeField(hits: HybridSearchHit[]): string | null {
-  const sample = hits.slice(0, 8);
+  const sample = hits.slice(0, 8).filter((h) => !!h.row);
   for (const name of TIME_NAMES) {
-    if (sample.some((h) => typeof h.row[name] === "string" && ISO_RE.test(h.row[name] as string))) return name;
+    if (sample.some((h) => typeof h.row![name] === "string" && ISO_RE.test(h.row![name] as string))) return name;
   }
   for (const h of sample) {
-    for (const [k, v] of Object.entries(h.row)) {
+    for (const [k, v] of Object.entries(h.row!)) {
       if (!HIDDEN_FIELD(k) && typeof v === "string" && ISO_RE.test(v)) return k;
     }
   }
@@ -342,6 +385,7 @@ function topValues(hits: HybridSearchHit[], field: string, n = 5): { value: stri
   const counts = new Map<string, number>();
   let total = 0;
   for (const h of hits) {
+    if (!h.row) continue;
     const v = h.row[field];
     if (v == null || v === "") continue;
     const s = formatCell(v);
@@ -434,6 +478,77 @@ function FieldRow(props: {
   );
 }
 
+// ── Memory / graph hit card (no `row`) ───────────────────────────────────────
+
+const KIND_ICON: Record<string, React.ReactNode> = {
+  memory: <Brain className="ky-h-3.5 ky-w-3.5" />,
+  node: <GitFork className="ky-h-3.5 ky-w-3.5" />,
+  edge: <Network className="ky-h-3.5 ky-w-3.5" />,
+};
+
+function EnrichedHitCard({
+  hit,
+  onViewInGraph,
+}: {
+  hit: HybridSearchHit;
+  onViewInGraph?: (nodeId: string, db: string) => void;
+}) {
+  const kindIcon = hit.kind ? KIND_ICON[hit.kind] ?? <SearchIcon className="ky-h-3.5 ky-w-3.5" /> : null;
+  const dot = hit.source.indexOf(".");
+  const db = dot >= 0 ? hit.source.slice(0, dot) : hit.source;
+  const canViewInGraph = hit.kind === "node" && hit.id && onViewInGraph;
+
+  return (
+    <li className="ky-rounded-md ky-border ky-border-border/60 ky-bg-card ky-p-3 hover:ky-border-border ky-transition-colors">
+      <div className="ky-flex ky-items-start ky-gap-2">
+        {/* Kind icon */}
+        <span className="ky-mt-0.5 ky-flex ky-shrink-0 ky-items-center ky-justify-center ky-rounded ky-bg-muted ky-p-1 ky-text-muted-foreground">
+          {kindIcon}
+        </span>
+        <div className="ky-min-w-0 ky-flex-1 ky-space-y-1">
+          {/* Title / ID */}
+          <div className="ky-flex ky-items-center ky-gap-2">
+            <span className="ky-truncate ky-text-sm ky-font-medium ky-text-foreground">
+              {hit.title ?? hit.id ?? hit.source}
+            </span>
+            {hit.memory_type && (
+              <span className="ky-shrink-0 ky-rounded ky-bg-primary/10 ky-px-1.5 ky-py-0.5 ky-text-[10px] ky-font-medium ky-text-primary">
+                {hit.memory_type}
+              </span>
+            )}
+          </div>
+          {/* Content preview */}
+          {hit.content_preview && (
+            <p className="ky-line-clamp-3 ky-text-xs ky-text-muted-foreground">{hit.content_preview}</p>
+          )}
+          {/* Footer: source + score + actions */}
+          <div className="ky-flex ky-items-center ky-gap-2 ky-pt-0.5">
+            <SourceBadge source={hit.source} />
+            {hit.id && (
+              <span className="ky-font-mono ky-text-[10px] ky-text-muted-foreground" title="Entity ID">
+                {hit.id.length > 20 ? `${hit.id.slice(0, 20)}…` : hit.id}
+              </span>
+            )}
+            <span className="ky-ml-auto ky-tabular-nums ky-text-[10px] ky-text-muted-foreground">
+              {hit.score.toFixed(3)}
+            </span>
+            {canViewInGraph && (
+              <button
+                type="button"
+                onClick={() => onViewInGraph!(hit.id!, db)}
+                className="ky-inline-flex ky-items-center ky-gap-1 ky-rounded ky-border ky-border-primary/40 ky-px-1.5 ky-py-0.5 ky-text-[10px] ky-text-primary hover:ky-bg-primary/10"
+                title="Open in graph"
+              >
+                <Network className="ky-h-3 ky-w-3" /> View in graph
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </li>
+  );
+}
+
 function SearchResults(props: {
   hits: HybridSearchHit[];
   sourcesSearched: number;
@@ -450,9 +565,14 @@ function SearchResults(props: {
 }) {
   const { hits, cols, isRunning, error, ran } = props;
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  // Partition hits: data hits have a `row`, memory/graph hits do not.
+  const dataHits = useMemo(() => hits.filter((h) => !!h.row), [hits]);
+  const enrichedHits = useMemo(() => hits.filter((h) => !h.row), [hits]);
+  const isEnrichedMode = enrichedHits.length > 0 && dataHits.length === 0;
   const fields = useMemo(() => aggregateFields(hits), [hits]);
   const timeField = useMemo(() => detectTimeField(hits), [hits]);
-  const rows = useMemo(() => hits.map((h) => h.row), [hits]);
+  // Only use rows that have data (for histogram + table).
+  const rows = useMemo(() => dataHits.map((h) => h.row!), [dataHits]);
 
   if (isRunning) return <Centered>Searching…</Centered>;
   if (error != null) {
@@ -476,6 +596,32 @@ function SearchResults(props: {
       return n;
     });
 
+  // Memory/graph mode: card list (no `row`)
+  if (isEnrichedMode) {
+    return (
+      <div className="ky-flex ky-min-h-0 ky-flex-1 ky-flex-col">
+        <div className="ky-flex ky-items-center ky-gap-3 ky-border-b ky-px-3 ky-py-1 ky-text-[11px] ky-text-muted-foreground">
+          <span className="ky-font-semibold ky-text-foreground">{hits.length.toLocaleString()}</span> hits
+          <span>·</span>
+          <span>{props.sourcesSearched} sources</span>
+          <span className="ky-ml-auto ky-tabular-nums">{props.elapsedMs} ms</span>
+        </div>
+        <div className="ky-min-h-0 ky-flex-1 ky-overflow-auto ky-p-3">
+          <ul className="ky-space-y-2">
+            {enrichedHits.map((h, i) => (
+              <EnrichedHitCard
+                key={i}
+                hit={h}
+                onViewInGraph={props.onViewInGraph}
+              />
+            ))}
+          </ul>
+        </div>
+      </div>
+    );
+  }
+
+  // Data mode (default): Kibana-style fields rail + document table
   return (
     <div className="ky-flex ky-min-h-0 ky-flex-1">
       {/* Fields rail */}
@@ -531,7 +677,7 @@ function SearchResults(props: {
               </tr>
             </thead>
             <tbody>
-              {hits.map((h, i) => {
+              {dataHits.map((h, i) => {
                 const isOpen = expanded.has(i);
                 const colSpan = 2 + (timeField ? 1 : 0) + (cols.length === 0 ? 1 : cols.length);
                 return (
@@ -543,13 +689,13 @@ function SearchResults(props: {
                       <td className="ky-py-1 ky-pl-2 ky-text-muted-foreground">{isOpen ? "▾" : "▸"}</td>
                       {timeField && (
                         <td className="ky-whitespace-nowrap ky-px-2 ky-py-1 ky-font-mono ky-text-[11px] ky-text-muted-foreground">
-                          {formatCell(h.row[timeField])}
+                          {formatCell(h.row![timeField])}
                         </td>
                       )}
                       {cols.length === 0 ? (
                         <td className="ky-px-2 ky-py-1">
                           <div className="ky-flex ky-flex-wrap ky-gap-x-3 ky-gap-y-0.5 ky-font-mono ky-text-[11px]">
-                            {Object.entries(h.row)
+                            {Object.entries(h.row!)
                               .filter(([k]) => !HIDDEN_FIELD(k) && k !== timeField)
                               .slice(0, 8)
                               .map(([k, v]) => (
@@ -563,7 +709,7 @@ function SearchResults(props: {
                       ) : (
                         cols.map((c) => (
                           <td key={c} className="ky-max-w-[28ch] ky-truncate ky-px-2 ky-py-1 ky-font-mono ky-text-[11px]">
-                            {formatCell(h.row[c])}
+                            {formatCell(h.row![c])}
                           </td>
                         ))
                       )}
@@ -583,14 +729,14 @@ function SearchResults(props: {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                props.onOpenRow(h.source, h.row);
+                                props.onOpenRow(h.source, h.row!);
                               }}
                               className="ky-rounded ky-border ky-px-1.5 ky-py-0.5 ky-text-[10px] ky-text-muted-foreground hover:ky-text-foreground"
                             >
                               Open detail
                             </button>
                             {(() => {
-                              const g = graphEntityRef(h.source, h.row);
+                              const g = graphEntityRef(h.source, h.row!);
                               if (!g || !props.onViewInGraph) return null;
                               return (
                                 <button
@@ -608,7 +754,7 @@ function SearchResults(props: {
                             })()}
                           </div>
                           <dl className="ky-grid ky-grid-cols-[minmax(8rem,12rem)_1fr] ky-gap-x-3 ky-gap-y-0.5 ky-font-mono ky-text-[11px]">
-                            {Object.entries(h.row)
+                            {Object.entries(h.row!)
                               .filter(([k]) => !HIDDEN_FIELD(k))
                               .map(([k, v]) => (
                                 <React.Fragment key={k}>
