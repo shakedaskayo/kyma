@@ -53,6 +53,37 @@ pub struct TableConfig {
     pub wal_replication_interval_ms: Option<u32>,
     pub ingest_max_batch_bytes: Option<u64>,
     pub dead_letter_table: Option<String>,
+    /// When `Some`, this table is a **federated** (live-proxied) table: its
+    /// schema is cataloged here but its rows live on an external platform and
+    /// are fetched at query time. Federated tables hold no extents and reject
+    /// ingest. See `kyma-federation`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub federated: Option<FederatedTableSpec>,
+}
+
+/// Connection + addressing info for one federated table — self-contained so a
+/// query path can build a live remote scan from the `TableRef` alone (plus the
+/// credential store). Written by federated connectors (e.g. `msfabric`) on
+/// every metadata-sync tick.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FederatedTableSpec {
+    /// Platform id, e.g. `"msfabric"` (Microsoft Fabric SQL endpoint).
+    pub platform: String,
+    /// Platform endpoint host, e.g. `<id>.<region>.fabric.microsoft.com`.
+    pub endpoint: String,
+    /// Remote database/catalog name on the endpoint (Fabric: the lakehouse or
+    /// warehouse item name).
+    pub remote_database: String,
+    /// Remote schema the table lives in (Fabric/T-SQL: usually `dbo`).
+    pub remote_schema: String,
+    /// Remote table name (unqualified).
+    pub remote_table: String,
+    /// Credential used to authenticate against the platform.
+    pub credential_id: uuid::Uuid,
+    /// When true, this table is skipped by the cross-database `x-database: *`
+    /// union (live fan-out opt-out); explicit queries still work.
+    #[serde(default)]
+    pub exclude_from_wildcard: bool,
 }
 
 // -------------------- Extents --------------------
@@ -544,6 +575,24 @@ pub trait Catalog: Send + Sync {
         tenant: crate::tenant::TenantId,
         database: &str,
     ) -> Result<Vec<TableRef>>;
+
+    /// Drop a table and everything under it (snapshots, extent manifests —
+    /// object-store data is left for GC). Returns `true` if a table was
+    /// removed. Primary consumer: federated metadata sync, which drops +
+    /// recreates a table when the remote schema drifts (federated tables
+    /// hold no extents, so this is cheap).
+    async fn drop_table(&self, database: &str, name: &str) -> Result<bool> {
+        self.drop_table_in_tenant(crate::tenant::DEFAULT_TENANT, database, name)
+            .await
+    }
+
+    /// Tenant-scoped variant of [`drop_table`].
+    async fn drop_table_in_tenant(
+        &self,
+        tenant: crate::tenant::TenantId,
+        database: &str,
+        name: &str,
+    ) -> Result<bool>;
 
     // --- schema-listing (UI) ---
 

@@ -628,6 +628,59 @@ impl Catalog for SqliteCatalog {
         Ok(out)
     }
 
+    async fn drop_table_in_tenant(
+        &self,
+        tenant: TenantId,
+        database: &str,
+        name: &str,
+    ) -> Result<bool> {
+        // SQLite schema declares no FK cascades — delete children explicitly.
+        let id: Option<Uuid> = sqlx::query_scalar(
+            "SELECT t.id FROM tables t
+             JOIN databases d ON d.id = t.database_id AND d.tenant_id = ?
+             WHERE t.tenant_id = ? AND d.name = ? AND t.name = ?",
+        )
+        .bind(tenant.as_uuid())
+        .bind(tenant.as_uuid())
+        .bind(database)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(ce)?;
+        let Some(id) = id else { return Ok(false) };
+
+        let mut tx = self.pool.begin().await.map_err(ce)?;
+        sqlx::query("DELETE FROM extents WHERE table_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(ce)?;
+        sqlx::query(
+            "DELETE FROM manifests WHERE snapshot_id IN (SELECT id FROM snapshots WHERE table_id = ?)",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(ce)?;
+        sqlx::query("DELETE FROM snapshots WHERE table_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(ce)?;
+        sqlx::query("DELETE FROM schema_snapshots WHERE table_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(ce)?;
+        sqlx::query("DELETE FROM tables WHERE id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(ce)?;
+        tx.commit().await.map_err(ce)?;
+        Ok(true)
+    }
+
     // ------------------------- schema-listing (UI) -------------------------
 
     async fn list_databases_in_tenant(

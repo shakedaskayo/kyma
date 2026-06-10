@@ -147,7 +147,7 @@ async fn sync_project(
         .unwrap_or_default()
         .to_string();
     let (realm, project_path) = resolve_realm(slug_dir, &slug, known_paths);
-    let shared = SharedToolCtx {
+    let shared = SharedToolCtx { federation: None,
         catalog: engine.catalog.clone(),
         format: engine.format.clone(),
         pool: None,

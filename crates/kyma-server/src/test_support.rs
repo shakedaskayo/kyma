@@ -74,7 +74,7 @@ pub async fn seeded_state_empty() -> QueryState {
     // Suppress Drop so the container outlives the test's tokio runtime.
     std::mem::forget(container);
 
-    QueryState {
+    QueryState { federation: None,
         catalog,
         format,
         schema_cache: Arc::new(SchemaCache::default()),
@@ -147,7 +147,7 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
     // Suppress Drop so the container outlives the test's tokio runtime.
     std::mem::forget(container);
 
-    QueryState {
+    QueryState { federation: None,
         catalog,
         format,
         schema_cache: Arc::new(SchemaCache::default()),

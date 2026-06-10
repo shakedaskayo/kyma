@@ -33,6 +33,7 @@ kyma-memory.workspace = true
 kyma-plan.workspace = true
 kyma-kql.workspace = true
 kyma-exec.workspace = true
+kyma-federation.workspace = true
 kyma-server.workspace = true
 futures.workspace = true
 async-trait.workspace = true

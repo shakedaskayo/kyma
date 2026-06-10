@@ -58,7 +58,7 @@ async fn engine() -> (tempfile::TempDir, MemoryWriter, SharedToolCtx) {
     .expect("store");
     let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store, "kyma-test"));
     let writer = MemoryWriter::new(catalog.clone(), format.clone(), Arc::new(TestEmbed));
-    let shared = SharedToolCtx {
+    let shared = SharedToolCtx { federation: None,
         catalog,
         format,
         pool: None,

@@ -90,6 +90,16 @@ pub async fn resolve_all_db_tables(
         match catalog.list_tables_in_database_in_tenant(tenant, &db).await {
             Ok(tables) => {
                 for t in tables {
+                    // Federated sources can opt out of the wildcard fan-out
+                    // (live remote queries on someone else's compute);
+                    // explicit single-database queries still reach them.
+                    if t.config
+                        .federated
+                        .as_ref()
+                        .is_some_and(|f| f.exclude_from_wildcard)
+                    {
+                        continue;
+                    }
                     out.push(DbTable {
                         db: db.clone(),
                         table: t,
@@ -122,12 +132,18 @@ pub fn build_multidb_schema_map(db_tables: &[DbTable]) -> kyma_kql::SchemaMap {
 
 /// Register the cross-database context into `ctx`: one schema per database (so
 /// `db.table` resolves), then one `public` union view per distinct bare name.
+///
+/// Federated tables register live remote providers (built per database so
+/// same-source tables keep join pushdown); they need `federation` + `tenant`,
+/// and error out when federated tables are present without a runtime.
 pub async fn register_multidb_context(
     ctx: &SessionContext,
     db_tables: &[DbTable],
     catalog: &Arc<dyn Catalog>,
     format: &Arc<dyn SegmentFormat>,
     node_id: Option<NodeId>,
+    federation: Option<&Arc<kyma_federation::FederationRuntime>>,
+    tenant: TenantId,
 ) -> Result<(), String> {
     let cat = ctx
         .catalog("datafusion")
@@ -142,8 +158,38 @@ pub async fn register_multidb_context(
         }
     }
 
-    // 2. Register each KymaTable under its `db.table` schema-qualified name.
+    // 2a. Federated tables, grouped per database (names are unique within
+    //     one database, so the (name → provider) pairing is unambiguous).
+    let mut fed_by_db: BTreeMap<&str, Vec<TableRef>> = BTreeMap::new();
     for dt in db_tables {
+        if dt.table.config.federated.is_some() {
+            fed_by_db.entry(dt.db.as_str()).or_default().push(dt.table.clone());
+        }
+    }
+    if !fed_by_db.is_empty() {
+        let Some(fed_rt) = federation else {
+            return Err(
+                "federated tables present but this server has no federation runtime".to_string(),
+            );
+        };
+        for (db, tables) in fed_by_db {
+            let providers = fed_rt
+                .federated_providers(tenant, &tables)
+                .await
+                .map_err(|e| format!("federated providers for {db}: {e}"))?;
+            for (name, provider) in providers {
+                let reference = TableReference::partial(db.to_owned(), name.clone());
+                ctx.register_table(reference, provider)
+                    .map_err(|e| format!("register {db}.{name}: {e}"))?;
+            }
+        }
+    }
+
+    // 2b. Register each local KymaTable under its `db.table` schema-qualified name.
+    for dt in db_tables {
+        if dt.table.config.federated.is_some() {
+            continue;
+        }
         let kt: Arc<KymaTable> = match node_id {
             Some(nid) => Arc::new(KymaTable::with_node_id(
                 dt.table.clone(),

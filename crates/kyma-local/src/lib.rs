@@ -127,7 +127,7 @@ async fn open_engine(paths: &Paths) -> Result<Engine> {
 
 fn mcp_state(engine: &Engine, memory: Option<kyma_memory::MemoryQueue>) -> McpState {
     // No Postgres pool in local mode — recall/save run over the engine.
-    let shared = SharedToolCtx {
+    let shared = SharedToolCtx { federation: None,
         catalog: engine.catalog.clone(),
         format: engine.format.clone(),
         pool: None,
@@ -255,7 +255,7 @@ pub fn build_local_app(
     mcp_url: Option<String>,
 ) -> (axum::Router, AgentState) {
     let schema_cache = Arc::new(SchemaCache::from_env());
-    let query_state = QueryState {
+    let query_state = QueryState { federation: None,
         catalog: catalog.clone(),
         format: format.clone(),
         schema_cache: schema_cache.clone(),
@@ -339,7 +339,7 @@ pub fn build_local_app(
     // SPA fallback 404s unknown /v1/* paths instead of serving HTML.
     // (agent_state is cloned: the KYMA_CC_WATCH watcher in run_serve keeps one.)
     // Build a second QueryState for the live router sharing the same schema_cache.
-    let query_state_for_live = QueryState {
+    let query_state_for_live = QueryState { federation: None,
         catalog: catalog.clone(),
         format: format.clone(),
         schema_cache,
@@ -348,7 +348,7 @@ pub fn build_local_app(
     };
     // Build McpState from the same catalog + format the rest of the app uses.
     let mcp = McpState {
-        dispatch: ToolDispatch::new(SharedToolCtx {
+        dispatch: ToolDispatch::new(SharedToolCtx { federation: None,
             catalog: catalog.clone(),
             format: format.clone(),
             pool: None,

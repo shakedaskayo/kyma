@@ -139,7 +139,7 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
     let key = resolver.resolve(&cfg).await?;
     let llm = build_engine(&cfg, key)?;
 
-    let shared = SharedToolCtx {
+    let shared = SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),

@@ -12,7 +12,8 @@ export type CredentialKind =
   | "url"
   | "aws_creds"
   | "api_key"
-  | "github_app";
+  | "github_app"
+  | "service_principal";
 
 /** Tagged union of secret material — the `kind` discriminator picks the shape. */
 export type CredentialValue =
@@ -22,7 +23,8 @@ export type CredentialValue =
   | { kind: "url"; connection_string: string }
   | { kind: "aws_creds"; access_key_id: string; secret_access_key: string; session_token?: string }
   | { kind: "api_key"; value: string; header_name?: string }
-  | { kind: "github_app"; app_id: string; installation_id: string; private_key_pem: string };
+  | { kind: "github_app"; app_id: string; installation_id: string; private_key_pem: string }
+  | { kind: "service_principal"; tenant_id: string; client_id: string; client_secret: string };
 
 /** Public, non-secret view (no value, just a masked preview). */
 export interface CredentialSummary {
@@ -96,6 +98,7 @@ export function credentialKindLabel(kind: string): string {
     case "aws_creds": return "AWS access keys";
     case "api_key": return "API key";
     case "github_app": return "GitHub App";
+    case "service_principal": return "Service principal";
     default: return kind;
   }
 }

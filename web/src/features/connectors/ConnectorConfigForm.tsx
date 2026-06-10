@@ -59,24 +59,43 @@ export function ConnectorConfigForm({
       {/* OAuth connect flow (credential-backed kinds) in place of token fields. */}
       {authSlot}
 
-      {/* Schema-driven fields (PAT, endpoint, etc.) */}
-      {entry.fields.map((f) => (
-        <div key={f.key} className="space-y-1">
-          <Label htmlFor={`conn-field-${f.key}`}>
-            {f.label}
-            {f.required && " *"}
-          </Label>
-          <Input
-            id={`conn-field-${f.key}`}
-            type={f.type === "secret" ? "password" : "text"}
-            autoComplete={f.type === "secret" ? "off" : undefined}
-            value={values.fields[f.key] ?? ""}
-            onChange={(e) => setField(f.key, e.target.value)}
-            placeholder={f.placeholder}
-          />
-          {f.help && <p className="text-xs text-muted-foreground">{f.help}</p>}
-        </div>
-      ))}
+      {/* Schema-driven fields (PAT, endpoint, checkbox toggles, etc.) */}
+      {entry.fields.map((f) =>
+        f.type === "checkbox" ? (
+          <div key={f.key} className="space-y-1">
+            <label
+              htmlFor={`conn-field-${f.key}`}
+              className="flex items-center gap-2 text-sm font-medium"
+            >
+              <input
+                id={`conn-field-${f.key}`}
+                type="checkbox"
+                className="h-4 w-4 rounded border-input accent-primary"
+                checked={values.fields[f.key] === "true"}
+                onChange={(e) => setField(f.key, e.target.checked ? "true" : "")}
+              />
+              {f.label}
+            </label>
+            {f.help && <p className="pl-6 text-xs text-muted-foreground">{f.help}</p>}
+          </div>
+        ) : (
+          <div key={f.key} className="space-y-1">
+            <Label htmlFor={`conn-field-${f.key}`}>
+              {f.label}
+              {f.required && " *"}
+            </Label>
+            <Input
+              id={`conn-field-${f.key}`}
+              type={f.type === "secret" ? "password" : "text"}
+              autoComplete={f.type === "secret" ? "off" : undefined}
+              value={values.fields[f.key] ?? ""}
+              onChange={(e) => setField(f.key, e.target.value)}
+              placeholder={f.placeholder}
+            />
+            {f.help && <p className="text-xs text-muted-foreground">{f.help}</p>}
+          </div>
+        ),
+      )}
 
       {/* Inline token verification (PAT-auth kinds) */}
       {verify && tokenKey && (

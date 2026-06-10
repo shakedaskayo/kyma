@@ -90,6 +90,15 @@ pub struct ConnectorCtx {
     /// case the connector must degrade gracefully (skip capture, still emit
     /// metadata rows).
     pub artifacts: Option<Arc<dyn crate::artifacts::ArtifactStore>>,
+    /// Direct catalog access for *metadata-sync* connectors (federated
+    /// platforms like `msfabric`) that register schema-only tables instead of
+    /// returning rows. `None` when the runner wasn't wired with a catalog —
+    /// such connectors must fail with a Config error in that case.
+    pub catalog: Option<Arc<dyn kyma_core::catalog::Catalog>>,
+    /// The connector's configured target database. Row-producing connectors
+    /// never need it (the runner sinks into it on their behalf); metadata-sync
+    /// connectors use it as the kyma database to register tables under.
+    pub target_database: String,
 }
 
 /// Failure classification that determines framework behaviour.

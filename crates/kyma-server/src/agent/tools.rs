@@ -58,6 +58,10 @@ pub struct SharedToolCtx {
     /// human-in-the-loop, so they apply directly. Wrapped in `Arc` so this ctx
     /// stays cheaply `Clone`.
     pub hitl: Option<std::sync::Arc<super::memory_gate::HitlGate>>,
+    /// Live-proxy runtime for federated tables (Microsoft Fabric, …). `None`
+    /// ⇒ `run_sql` against a database containing federated tables returns a
+    /// clear error instead of empty results.
+    pub federation: Option<std::sync::Arc<kyma_federation::FederationRuntime>>,
 }
 
 impl SharedToolCtx {
@@ -156,11 +160,23 @@ pub fn tool_describe_table(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                                     })
                                 })
                                 .collect();
-                            Ok(json!({
+                            let mut out = json!({
                                 "database": parsed.database,
                                 "table": parsed.table,
                                 "columns": cols,
-                            }))
+                            });
+                            if let Some(fed) = t.config.federated.as_ref() {
+                                // Tell the agent this table is live-proxied:
+                                // queries run on the remote platform's compute.
+                                out["federated"] = json!({
+                                    "platform": fed.platform,
+                                    "remote": format!(
+                                        "{}/{}.{}",
+                                        fed.remote_database, fed.remote_schema, fed.remote_table
+                                    ),
+                                });
+                            }
+                            Ok(out)
                         }
                         Err(e) => Ok(json!({"error": format!("lookup_table: {e}")})),
                     }
@@ -419,9 +435,37 @@ pub async fn execute_sql(
         Ok(r) => Arc::new(r),
         Err(e) => return json!({"error": format!("runtime_env: {e}")}),
     };
-    let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
+    let (federated, local): (Vec<_>, Vec<_>) = tables
+        .into_iter()
+        .partition(|t| t.config.federated.is_some());
+    let ctx = if federated.is_empty() {
+        SessionContext::new_with_config_rt(SessionConfig::new(), runtime)
+    } else {
+        kyma_federation::federated_session_context(SessionConfig::new(), runtime)
+    };
     kyma_exec::register_vector_udfs(&ctx);
-    for t in tables {
+    if !federated.is_empty() {
+        let Some(fed_rt) = shared.federation.as_ref() else {
+            return json!({"error": format!(
+                "database `{database}` contains federated (live-proxied) tables but this server has no federation runtime"
+            )});
+        };
+        // The agent path is tenant-scoped at the transport layer; tools run
+        // under the default tenant like the rest of SharedToolCtx.
+        let providers = match fed_rt
+            .federated_providers(kyma_core::tenant::DEFAULT_TENANT, &federated)
+            .await
+        {
+            Ok(p) => p,
+            Err(e) => return json!({"error": format!("federated_providers: {e}")}),
+        };
+        for (name, provider) in providers {
+            if let Err(e) = ctx.register_table(&name, provider) {
+                return json!({"error": format!("register_table({name}): {e}")});
+            }
+        }
+    }
+    for t in local {
         let name = t.name.clone();
         let table = Arc::new(KymaTable::new(
             t,

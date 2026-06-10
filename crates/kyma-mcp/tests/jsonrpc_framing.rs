@@ -11,7 +11,7 @@ async fn build() -> String {
     let state = seeded_state_empty().await;
     let url = std::env::var("KYMA_TEST_DATABASE_URL").expect("KYMA_TEST_DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
-    let shared = SharedToolCtx {
+    let shared = SharedToolCtx { federation: None,
         catalog: state.catalog,
         format: state.format,
         pool: Some(pool),

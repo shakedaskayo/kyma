@@ -13,6 +13,7 @@ pub mod confluence;
 pub mod metrics;
 pub mod gitlab;
 pub mod gmail;
+pub mod msfabric;
 pub mod googledrive;
 pub mod graph_row;
 pub mod jira;

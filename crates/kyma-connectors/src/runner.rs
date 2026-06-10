@@ -128,6 +128,9 @@ pub struct ConnectorTickDeps {
     /// Object-store artifact capability for connectors that persist full-file
     /// blobs (e.g. CI job logs). `None` skips blob capture.
     pub artifacts: Option<Arc<dyn crate::artifacts::ArtifactStore>>,
+    /// Catalog access for metadata-sync (federated) connectors. `None` for
+    /// runners that only execute row-producing connectors.
+    pub catalog: Option<Arc<dyn Catalog>>,
 }
 
 /// Terminal state of one tick, mapped by the queue front-end onto its own
@@ -191,6 +194,8 @@ pub async fn run_connector_tick(
         scheduled_for,
         metrics: metrics.clone(),
         artifacts: deps.artifacts.clone(),
+        catalog: deps.catalog.clone(),
+        target_database: conn.target_database.clone(),
     };
 
     let t0 = std::time::Instant::now();
@@ -449,6 +454,7 @@ impl ConnectorRunner {
             credentials: self.credentials.clone(),
             oauth: self.oauth.clone(),
             artifacts: self.artifacts.clone(),
+            catalog: Some(self.catalog.clone() as Arc<dyn Catalog>),
         }
     }
 

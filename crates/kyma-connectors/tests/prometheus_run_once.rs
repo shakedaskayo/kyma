@@ -47,6 +47,8 @@ fn ctx() -> ConnectorCtx {
             type_id: "prometheus",
         },
         artifacts: None,
+        catalog: None,
+        target_database: "default".into(),
     }
 }
 

@@ -360,7 +360,7 @@ pub async fn unified_search(
         // share one retrieval path — full recall quality (RRF + semantic +
         // keyword + graph-expansion + bi-temporal validity) is preserved.
         SearchMode::Memory => {
-            let shared = SharedToolCtx {
+            let shared = SharedToolCtx { federation: None,
                 catalog: ctx.catalog.clone(),
                 format: ctx.format.clone(),
                 pool: ctx.pool.as_deref().cloned(),

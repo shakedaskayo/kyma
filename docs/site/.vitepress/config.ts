@@ -119,6 +119,7 @@ export default withMermaid(defineConfig({
           { text: 'Jira',                link: '/connectors/jira' },
           { text: 'Confluence',          link: '/connectors/confluence' },
           { text: 'Prometheus',          link: '/connectors/prometheus' },
+          { text: 'Microsoft Fabric',    link: '/connectors/msfabric' },
           { text: 'Postgres',            link: '/connectors/postgres' },
           { text: 'MySQL',               link: '/connectors/mysql' },
           { text: 'MongoDB',             link: '/connectors/mongo' },

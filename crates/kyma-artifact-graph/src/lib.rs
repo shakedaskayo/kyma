@@ -6,6 +6,8 @@
 //! Modeled on `kyma_memory::MemoryWriter` (provision-on-demand + `WritePath`
 //! append) but without embeddings — artifact nodes are plain Utf8 rows.
 
+pub mod content;
+
 use std::sync::Arc;
 
 use arrow_schema::{DataType, Field, Schema, SchemaRef};

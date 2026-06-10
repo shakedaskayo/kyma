@@ -48,9 +48,11 @@ async fn inserts_tick_after_interval() {
         .await
         .expect("second tick is a no-op (dedup)");
 
+    // Since the connector_sync cutover, scheduler ticks land on the worker
+    // fabric's `jobs` queue (not `background_tasks`).
     let rows = sqlx::query_as::<_, (i64,)>(
-        "SELECT count(*) FROM background_tasks
-         WHERE kind = 'connector_tick'
+        "SELECT count(*) FROM jobs
+         WHERE kind = 'connector_sync'
            AND payload->>'connector_id' = $1::text",
     )
     .bind(id.to_string())

@@ -895,7 +895,7 @@ async fn run_via_adk(
     let key = resolver.resolve(&cfg).await.map_err(|e| format!("creds: {e}"))?;
     let llm = super::engine::build_engine(&cfg, key).map_err(|e| format!("engine: {e}"))?;
 
-    let shared = super::tools::SharedToolCtx {
+    let shared = super::tools::SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
