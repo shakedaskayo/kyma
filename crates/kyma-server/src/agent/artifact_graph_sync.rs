@@ -4,11 +4,13 @@
 
 use std::sync::Arc;
 
+use kyma_artifact_graph::content::ArtifactContentIndexer;
 use kyma_artifact_graph::ArtifactGraphWriter;
 use kyma_catalog::PostgresCatalog;
 use kyma_core::catalog::Catalog;
 use kyma_core::segment_format::SegmentFormat;
 use kyma_core::tenant::TenantId;
+use object_store::ObjectStore;
 
 /// Materialize artifact nodes for one tenant. Returns the number of nodes
 /// written (0 when the catalog is not Postgres).
@@ -30,13 +32,44 @@ pub async fn sync_artifact_nodes(
     writer.sync(&records).await
 }
 
-/// Materialize artifact nodes for EVERY tenant that has live artifacts. No-op
-/// when the catalog is not Postgres (local mode has no artifacts table).
-/// Best-effort per tenant: a failure for one tenant is logged and the rest
-/// proceed. Returns the total nodes written.
+/// Index artifact **content** for one tenant: text-classed blobs are fetched,
+/// chunked, embedded, and appended to `artifacts.artifact_chunks` so the
+/// unified data-mode search can hit artifact content (not just node props).
+/// Returns the number of chunks written (0 when the catalog is not Postgres).
+///
+/// The embedder comes from the process-shared backend; if no embedder is
+/// available (e.g. model download failed) this is a no-op — the next sweep
+/// retries, and nothing is written un-embedded.
+pub async fn sync_artifact_content(
+    catalog: Arc<dyn Catalog>,
+    format: Arc<dyn SegmentFormat>,
+    store: Arc<dyn ObjectStore>,
+    tenant: TenantId,
+) -> anyhow::Result<usize> {
+    let Some(pg) = catalog.as_ref_any().downcast_ref::<PostgresCatalog>() else {
+        return Ok(0);
+    };
+    let embed = match kyma_memory::shared_embedding().await {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!(error = %e, "no embedding backend; skipping artifact content indexing");
+            return Ok(0);
+        }
+    };
+    let records = pg.list_live_artifacts(tenant).await?;
+    let indexer = ArtifactContentIndexer::new(catalog.clone(), format, store, embed);
+    indexer.index(&records).await
+}
+
+/// Materialize artifact nodes — and, when `store` is provided, index artifact
+/// content — for EVERY tenant that has live artifacts. No-op when the catalog
+/// is not Postgres (local mode has no artifacts table). Best-effort per
+/// tenant: a failure for one tenant is logged and the rest proceed. Returns
+/// the total nodes written.
 pub async fn sync_artifact_nodes_all_tenants(
     catalog: Arc<dyn Catalog>,
     format: Arc<dyn SegmentFormat>,
+    store: Option<Arc<dyn ObjectStore>>,
 ) -> anyhow::Result<usize> {
     let Some(pg) = catalog.as_ref_any().downcast_ref::<PostgresCatalog>() else {
         return Ok(0);
@@ -47,6 +80,19 @@ pub async fn sync_artifact_nodes_all_tenants(
         match sync_artifact_nodes(catalog.clone(), format.clone(), tenant).await {
             Ok(n) => total += n,
             Err(e) => tracing::warn!(error = %e, ?tenant, "artifact-graph sync failed for tenant"),
+        }
+        if let Some(store) = &store {
+            match sync_artifact_content(catalog.clone(), format.clone(), store.clone(), tenant)
+                .await
+            {
+                Ok(n) if n > 0 => {
+                    tracing::info!(chunks = n, ?tenant, "indexed artifact content")
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(error = %e, ?tenant, "artifact content indexing failed for tenant")
+                }
+            }
         }
     }
     Ok(total)

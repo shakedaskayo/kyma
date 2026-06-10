@@ -902,12 +902,16 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| std::time::Duration::from_secs(300));
     let artifact_graph_catalog = catalog.clone();
     let artifact_graph_format = format.clone();
+    // Object-store handle for the content indexer: artifact blobs are fetched,
+    // chunked + embedded into `artifacts.artifact_chunks` on the same cadence.
+    let artifact_graph_store = store.clone();
     let mut artifact_graph_rx = shutdown_tx.subscribe();
     let artifact_graph_handle = tokio::spawn(async move {
         // Startup backfill for all tenants.
         if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes_all_tenants(
             artifact_graph_catalog.clone(),
             artifact_graph_format.clone(),
+            Some(artifact_graph_store.clone()),
         )
         .await
         {
@@ -921,6 +925,7 @@ async fn main() -> Result<()> {
                     if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes_all_tenants(
                         artifact_graph_catalog.clone(),
                         artifact_graph_format.clone(),
+                        Some(artifact_graph_store.clone()),
                     )
                     .await
                     {

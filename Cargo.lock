@@ -4676,16 +4676,24 @@ name = "kyma-artifact-graph"
 version = "0.0.7"
 dependencies = [
  "anyhow",
+ "arrow-array",
  "arrow-schema",
+ "async-trait",
+ "bytes",
  "chrono",
+ "datafusion",
  "kyma-catalog",
  "kyma-catalog-sqlite",
  "kyma-core",
+ "kyma-embed",
+ "kyma-exec",
  "kyma-format-tlm",
  "kyma-ingest-core",
  "kyma-storage",
+ "object_store",
  "serde_json",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
