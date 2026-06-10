@@ -1709,9 +1709,9 @@ mod trigger_tests {
     #[test]
     fn gather_dreaming_skills_first_doc_is_kyma_dreaming() {
         // Reproduce just the first-element construction from gather_dreaming_skills.
-        let first = super::skill_delivery::SkillDoc {
+        let first = crate::agent::skill_delivery::SkillDoc {
             name: "kyma-dreaming".to_string(),
-            body: super::dreaming_skill::kyma_dreaming_skill().to_string(),
+            body: crate::agent::dreaming_skill::kyma_dreaming_skill().to_string(),
         };
         assert_eq!(first.name, "kyma-dreaming", "first skill must always be kyma-dreaming");
         assert!(!first.body.is_empty(), "kyma-dreaming body must be non-empty");
