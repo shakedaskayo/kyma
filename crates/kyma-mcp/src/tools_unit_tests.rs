@@ -20,7 +20,7 @@ async fn list_returns_all_named_tools() {
     let dispatch = ToolDispatch::new(shared);
     let listed = dispatch.list();
     let names: Vec<_> = listed.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names.len(), 25);
+    assert_eq!(names.len(), 27);
     for expected in [
         "list_databases",
         "describe_table",
@@ -30,6 +30,8 @@ async fn list_returns_all_named_tools() {
         "explore_schema",
         "find_references_to",
         "graph_traverse",
+        "search",
+        "graph_search",
         "memory_search",
         "recall_memory",
         "save_memory",

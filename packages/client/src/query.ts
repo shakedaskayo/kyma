@@ -17,22 +17,31 @@ export type ResultChunk = { columns: Column[]; rows: Record<string, unknown>[] }
 export type QueryArgs = {
   database: string;
   query: string;
-  language: "kql" | "sql";
+  language: "kql" | "sql" | "cypher";
+  /** Cypher only: "<db>/<graph>" identifying the target graph. */
+  graph?: string;
   walMs?: number;
   memBytes?: number;
   signal?: AbortSignal;
 };
 
-export function encodeTicket(t: { database: string; query: string; language: string }): Uint8Array {
+export function encodeTicket(t: { database: string; query: string; language: string; graph?: string }): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(t));
 }
 
 const CHUNK_ROWS = 500;
 
 export async function* runQuery(transport: KymaTransport, args: QueryArgs): AsyncGenerator<ResultChunk, void, void> {
+  const contentType =
+    args.language === "sql"    ? "application/sql" :
+    args.language === "cypher" ? "application/x-cypher" :
+                                 "application/x-kql";
   const extraHeaders: Record<string, string> = {
-    "content-type": args.language === "sql" ? "application/sql" : "application/x-kql",
+    "content-type": contentType,
   };
+  if (args.language === "cypher" && args.graph) {
+    extraHeaders["x-graph"] = args.graph;
+  }
   if (args.walMs)    extraHeaders["x-kyma-max-wall-clock-ms"] = String(args.walMs);
   if (args.memBytes) extraHeaders["x-kyma-max-memory-bytes"]  = String(args.memBytes);
 

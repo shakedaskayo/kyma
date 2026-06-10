@@ -14,7 +14,7 @@
  * The detected mode is a clickable badge so auto-detection is never a mystery.
  */
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Play, Square, Search as SearchIcon, Code2, Network } from "lucide-react";
 import { autoChartAxes } from "@kyma-ai/client";
@@ -60,6 +60,14 @@ export interface KymaExploreProps {
   className?: string;
   style?: React.CSSProperties;
   fallback?: React.ReactNode;
+  /**
+   * Run a search/query automatically on mount so the surface lands with data
+   * instead of an empty state — re-running the (persisted) `defaultQuery`, or,
+   * when it's empty, an empty keyword search that returns the most recent rows
+   * across the sources in scope. Defaults to `true`. Set `false` for embedders
+   * that don't want an automatic request on mount.
+   */
+  autoRun?: boolean;
   onQueryChange?: (q: string) => void;
   /**
    * Called when the user clicks "View in graph" on a result that is a graph
@@ -75,6 +83,7 @@ function KymaExploreInner({
   database = "*",
   className,
   style,
+  autoRun = true,
   onQueryChange,
   onViewInGraph,
 }: Omit<KymaExploreProps, "fallback">) {
@@ -134,6 +143,22 @@ function KymaExploreInner({
   };
 
   const cancel = () => cancelQuery();
+
+  // Auto-run on mount so the page lands with data instead of the empty state:
+  // re-run the persisted input, or — when it's empty — an empty keyword search
+  // that returns the most recent rows across the sources in scope. A non-empty
+  // input waits for the schema so a bare table name is classified as KQL (not a
+  // keyword search); an empty input always detects as "search" and runs at once.
+  // The instance is keyed per tab + scope upstream, so this fires once per tab
+  // activation / scope change.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (!autoRun || autoRan.current) return;
+    if (inputRef.current.trim() && !schema) return;
+    autoRan.current = true;
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRun, schema]);
 
   const setInputAndNotify = (v: string) => {
     setInput(v);

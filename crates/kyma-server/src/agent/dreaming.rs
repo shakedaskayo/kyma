@@ -342,6 +342,37 @@ RULES:
     p
 }
 
+/// Thin trigger used when the `kyma-dreaming` skill is delivered to the CLI: the
+/// procedure lives in the skill (see [`super::dreaming_skill`]); this carries
+/// only the run context + a start instruction. Falls back to [`dreaming_prompt`]
+/// when skill delivery fails.
+fn dreaming_trigger_prompt(
+    mode: &str,
+    focus: Option<&str>,
+    realm_scope: &[String],
+    s: &DreamingSettings,
+) -> String {
+    let scope = if realm_scope.is_empty() {
+        "all realms".to_string()
+    } else {
+        realm_scope.join(", ")
+    };
+    let focus_line = focus.map(|f| format!("\n- Focus: {f}")).unwrap_or_default();
+    format!(
+        "You are kyma's Dreaming agent — an autonomous background pass that housekeeps the user's \
+long-term memory store. Nobody is watching live; your final message becomes the run summary shown \
+in the UI.\n\n\
+Follow the `kyma-dreaming` skill for the full procedure — it is available in your skills.\n\n\
+Run context:\n\
+- Mode: {mode}\n\
+- Scope: {scope}\n\
+- Connector-read budget (READ-ONLY): {}\n\
+- Mutation cap: {}{focus_line}\n\n\
+Begin the dreaming pass now; end with the run summary as your final message.",
+        s.connector_read_budget, s.mutation_cap
+    )
+}
+
 // ── persistence behind a trait (PG fabric path vs local degraded path) ──────
 
 /// Immutable per-run identity passed to the recorder. The run/agent_run/session
@@ -677,10 +708,13 @@ pub async fn run_dreaming_with(
     let mut outcome = DreamingOutcome::default();
     let mut trace: Vec<Value> = Vec::new();
     let run_result: Result<(), String> = if engine_cfg.kind == EngineKind::ClaudeCli {
+        let skill_trigger =
+            dreaming_trigger_prompt(&mode, req.focus.as_deref(), &settings.realm_scope, &settings);
         run_via_claude_cli(
             state,
             &engine_cfg.model,
             &system_prompt,
+            &skill_trigger,
             &prompt_user,
             wall_clock,
             &mut activity,
@@ -1046,6 +1080,7 @@ async fn run_via_claude_cli(
     state: &AgentState,
     model: &str,
     system_prompt: &str,
+    skill_trigger: &str,
     user_prompt: &str,
     wall_clock: Duration,
     activity: &mut Activity,
@@ -1066,19 +1101,42 @@ async fn run_via_claude_cli(
         strict: true,
     });
 
-    // Scratch working directory: keeps repo-local CLAUDE.md / .claude
-    // settings out of the headless agent's context (it must see the memory
-    // store through kyma's tools, not the operator's checkout).
-    let scratch = std::env::temp_dir().join("kyma-dreaming");
-    let _ = std::fs::create_dir_all(&scratch);
+    // Deliver the dreaming playbook as the `kyma-dreaming` skill the CLI
+    // discovers under `<cwd>/.claude/skills`. On success the prompt is a thin
+    // trigger (the skill carries the procedure); on failure we fall back to the
+    // full hardcoded prompt + a plain scratch cwd, so a delivery hiccup never
+    // breaks a dreaming run. The scratch/delivery dir also keeps repo-local
+    // CLAUDE.md / .claude settings out of the headless agent's context (it must
+    // see the memory store through kyma's tools, not the operator's checkout).
+    let skills = vec![super::skill_delivery::SkillDoc {
+        name: "kyma-dreaming".to_string(),
+        body: super::dreaming_skill::kyma_dreaming_skill().to_string(),
+    }];
+    let delivered = super::skill_delivery::deliver_to_workdir(&skills).await.ok();
 
-    // The CLI takes one prompt: fold the dreaming instructions + task in.
-    let prompt = format!("{system_prompt}\n\n---\n\n{user_prompt}");
+    let scratch = std::env::temp_dir().join("kyma-dreaming");
+    let (cwd, prompt) = match &delivered {
+        Some(d) => (
+            d.workdir.path().to_path_buf(),
+            format!("{skill_trigger}\n\n---\n\n{user_prompt}"),
+        ),
+        None => {
+            warn!("dreaming skill delivery failed; falling back to the hardcoded prompt");
+            let _ = std::fs::create_dir_all(&scratch);
+            (
+                scratch.clone(),
+                format!("{system_prompt}\n\n---\n\n{user_prompt}"),
+            )
+        }
+    };
+
+    // The CLI takes one prompt. `delivered` (the temp workdir) is held in scope
+    // through the whole event loop so its `.claude/skills` survives the run.
     let (mut events, pid) = claude_cli::run_stream_with_pid(
         &prompt,
         Some(model),
         None,
-        Some(&scratch),
+        Some(&cwd),
         mcp.as_ref(),
     )
     .map_err(|e| format!("claude spawn: {e}"))?;
@@ -1579,5 +1637,37 @@ pub async fn trigger_run_handler(
             Json(json!({"error": e.to_string()})),
         )
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod trigger_tests {
+    use super::*;
+
+    #[test]
+    fn trigger_references_skill_and_carries_run_context() {
+        let s = DreamingSettings::default();
+        let p = dreaming_trigger_prompt(
+            "housekeeping",
+            Some("auth refactor"),
+            &["proj".to_string()],
+            &s,
+        );
+        assert!(p.contains("kyma-dreaming"), "references the skill");
+        assert!(p.contains("Mode: housekeeping"));
+        assert!(p.contains("proj"), "carries realm scope");
+        assert!(p.contains("auth refactor"), "carries focus");
+        assert!(p.contains("Connector-read budget"));
+        assert!(p.contains("Mutation cap"));
+        // The thin trigger must NOT inline the full phase procedure — that lives
+        // in the skill now.
+        assert!(!p.contains("PHASE 3"), "procedure lives in the skill, not the trigger");
+    }
+
+    #[test]
+    fn trigger_defaults_scope_to_all_realms() {
+        let s = DreamingSettings::default();
+        let p = dreaming_trigger_prompt("full", None, &[], &s);
+        assert!(p.contains("all realms"));
     }
 }

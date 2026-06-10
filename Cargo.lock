@@ -5132,6 +5132,7 @@ dependencies = [
  "chrono",
  "kyma-catalog-sqlite",
  "kyma-ccmem",
+ "kyma-compaction",
  "kyma-core",
  "kyma-embed",
  "kyma-format-tlm",

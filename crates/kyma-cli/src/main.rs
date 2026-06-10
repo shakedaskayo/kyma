@@ -74,6 +74,23 @@ enum Command {
     },
     /// Show the saved connection + probe the server's /health.
     Status,
+    /// Compact a table's small extents (merge them) so scans stay fast as data
+    /// accumulates. Talks to a running server; its in-process worker does the
+    /// merge. With no `--table`, compacts every table in scope.
+    Compact {
+        /// Table to compact, e.g. claude_code_events.
+        #[arg(long)]
+        table: Option<String>,
+        /// Database — defaults to `default` with --table, else every database.
+        #[arg(long)]
+        database: Option<String>,
+        /// Max extents merged per task (memory bound). Default 32.
+        #[arg(long)]
+        max_merge: Option<usize>,
+        /// Block until the live extent count stops dropping (or ~2 min).
+        #[arg(long)]
+        wait: bool,
+    },
     /// Stream an agent answer to stdout.
     Query {
         /// The question, e.g. "How many 500s in the last hour?"
@@ -470,6 +487,12 @@ async fn main() -> Result<()> {
             update::maybe_notify_update().await;
             result
         }
+        Command::Compact {
+            table,
+            database,
+            max_merge,
+            wait,
+        } => cmd_compact(table, database, max_merge, wait).await,
         Command::Query {
             question,
             json,
@@ -787,6 +810,27 @@ async fn main() -> Result<()> {
 }
 
 // ── client subcommand implementations ────────────────────────────────────────
+
+async fn cmd_compact(
+    table: Option<String>,
+    database: Option<String>,
+    max_merge: Option<usize>,
+    wait: bool,
+) -> Result<()> {
+    let cfg = client::effective_config()?;
+    let body = serde_json::json!({
+        "table": table,
+        "database": database,
+        "max_merge": max_merge,
+        "wait": wait,
+    });
+    if wait {
+        println!("Compacting… (waiting for the server's worker to drain the queue)");
+    }
+    let v = client::post_json(&cfg, "/v1/admin/compact", body).await?;
+    println!("{}", serde_json::to_string_pretty(&v)?);
+    Ok(())
+}
 
 async fn cmd_connect(url: String, token: Option<String>) -> Result<()> {
     let url = url.trim_end_matches('/').to_string();

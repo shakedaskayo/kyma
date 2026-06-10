@@ -22,3 +22,8 @@ coverage/
 
 # Storybook build output
 storybook-static/
+
+# Secrets / credentials (never commit)
+*_token
+read_only_token
+*.pat

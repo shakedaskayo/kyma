@@ -670,6 +670,15 @@ async fn main() -> Result<()> {
             require_role_middleware,
         ),
     );
+    let compact_write_router = kyma_server::compact_write_router(catalog.clone()).layer(
+        axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Write,
+            },
+            require_role_middleware,
+        ),
+    );
     // Feature discovery — everything is on in server mode (Role::Read).
     let capabilities_router = kyma_server::capabilities::router(
         kyma_server::capabilities::Capabilities::SERVER,
@@ -738,6 +747,7 @@ async fn main() -> Result<()> {
         .merge(dashboards_write_router)
         .merge(discover_views_write_router)
         .merge(cleanup_write_router)
+        .merge(compact_write_router)
         .merge(health_router)
         .merge(metrics_router)
         .merge(connector_admin_router)

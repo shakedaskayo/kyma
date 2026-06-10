@@ -14,6 +14,7 @@ pub mod ci_correlate;
 pub mod connector_tools;
 pub mod dreaming;
 pub mod dreaming_local;
+pub mod dreaming_skill;
 pub mod engine;
 pub mod file_promote;
 pub mod file_tools;
@@ -35,7 +36,9 @@ pub mod memory_settings;
 pub mod memory_tools;
 pub mod routes;
 pub mod runner;
+pub mod search_tools;
 pub mod sessions;
+pub mod skill_delivery;
 pub mod skills;
 pub mod state;
 pub mod tools;
@@ -47,6 +50,7 @@ pub use file_tools::{
     tool_contribute_file, tool_describe_file, tool_file_neighbors, tool_recall_file,
 };
 pub use memory::MemoryConsolidator;
+pub use search_tools::{tool_graph_search, tool_search};
 pub use memory_tools::{
     tool_flush_memory, tool_ingest_entity, tool_link_memory_to_entity, tool_list_memories,
     tool_memory_compare, tool_memory_judge, tool_memory_search, tool_memory_session_summary,

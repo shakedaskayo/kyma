@@ -371,6 +371,7 @@ pub fn build_local_app(
     // supported by the embedded SQLite catalog (the web UI needs them).
     let local_write_router = kyma_server::dashboards_write_router(catalog.clone())
         .merge(kyma_server::cleanup_write_router(catalog.clone()))
+        .merge(kyma_server::compact_write_router(catalog.clone()))
         .layer(write_mw());
     let admin_users_router =
         kyma_server::admin_handler::admin_users_router(catalog.clone()).layer(admin_mw());
@@ -480,6 +481,47 @@ pub async fn run_serve(addr: SocketAddr) -> Result<()> {
                 })
                 .await;
         });
+    }
+
+    // In-process compaction. Local mode previously never compacted (the
+    // scheduler was hardcoded to Postgres), so the `extents` table grew
+    // unbounded and every scan paid to enumerate thousands of tiny segments.
+    // The worker + scheduler now cooperate via the catalog task queue over
+    // SQLite; each stops on Ctrl-C like the dreaming scheduler above. Thresholds
+    // are tunable via KYMA_COMPACTION_* (same knobs as server mode).
+    {
+        use kyma_compaction::{CompactionScheduler, CompactionWorker};
+        let mut worker = CompactionWorker::new(
+            engine.catalog.clone(),
+            engine.format.clone(),
+            kyma_core::types::NodeId::new(),
+        );
+        let mut scheduler = CompactionScheduler::new(engine.catalog.clone());
+        if let Some(ms) = std::env::var("KYMA_COMPACTION_IDLE_SLEEP_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            worker.idle_sleep = std::time::Duration::from_millis(ms);
+        }
+        if let Some(s) = std::env::var("KYMA_COMPACTION_POLL_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            scheduler.poll_interval = std::time::Duration::from_secs(s);
+        }
+        if let Some(n) = std::env::var("KYMA_COMPACTION_MIN_EXTENTS")
+            .ok()
+            .and_then(|v| v.parse::<i64>().ok())
+        {
+            scheduler.min_extents_to_compact = n;
+        }
+        tokio::spawn(worker.run(async {
+            let _ = tokio::signal::ctrl_c().await;
+        }));
+        tokio::spawn(scheduler.run(async {
+            let _ = tokio::signal::ctrl_c().await;
+        }));
+        info!("local compaction worker + scheduler running");
     }
 
     // Optional resident watcher: keep Claude Code file memory synced while

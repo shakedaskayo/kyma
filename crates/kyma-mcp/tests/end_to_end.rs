@@ -85,7 +85,7 @@ async fn full_mcp_handshake_against_seeded_server() {
         .await
         .unwrap();
     let tools = list["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 21);
+    assert_eq!(tools.len(), 27);
 
     // 4. tools/call list_databases
     let call: Value = client

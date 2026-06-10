@@ -85,6 +85,41 @@ async fn full_table_snapshot_extent_round_trip() {
 }
 
 #[tokio::test]
+async fn compaction_candidates_picks_small_extents() {
+    // Exercises the SQLite window-function query behind
+    // `Catalog::compaction_candidates` (the seam that lets compaction run on the
+    // local SQLite catalog, not just Postgres).
+    let cat = fresh().await;
+    let db = cat.create_database("default").await.unwrap();
+    let table_id = cat
+        .create_table(db, "logs", sample_schema(), TableConfig::default())
+        .await
+        .unwrap();
+    let tref = cat.lookup_table("default", "logs").await.unwrap();
+
+    // Five small (4096-byte) live extents.
+    let mut txn = cat.begin_snapshot(table_id).await.unwrap();
+    for _ in 0..5 {
+        txn.add_extent(extent_for(&tref, &["info"])).await.unwrap();
+    }
+    txn.commit(SnapshotSummary { operation: "ingest".into(), rows_added: 500, ..Default::default() })
+        .await
+        .unwrap();
+
+    // ≥3 small extents → the table qualifies; capped to the smallest max_merge=4.
+    let groups = cat.compaction_candidates(1_000_000, 3, 4).await.unwrap();
+    assert_eq!(groups.len(), 1, "one table qualifies");
+    let (tid, eids) = &groups[0];
+    assert_eq!(*tid, table_id);
+    assert_eq!(eids.len(), 4, "capped at max_merge");
+
+    // Threshold above the extent count → no candidates.
+    assert!(cat.compaction_candidates(1_000_000, 10, 4).await.unwrap().is_empty());
+    // Byte ceiling below the extent size → no "small" extents qualify.
+    assert!(cat.compaction_candidates(1_000, 3, 4).await.unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn equals_prune_drops_non_matching_extent() {
     let cat = fresh().await;
     let db = cat.create_database("default").await.unwrap();

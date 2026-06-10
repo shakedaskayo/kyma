@@ -23,6 +23,7 @@ pub mod auth;
 pub mod auth_handler;
 pub mod catalog_handler;
 pub mod cleanup_handler;
+pub mod compact_handler;
 pub mod credentials_handler;
 pub mod dashboards_handler;
 pub mod discover;
@@ -238,6 +239,24 @@ pub fn cleanup_write_router(catalog: Arc<dyn kyma_core::catalog::Catalog>) -> Ro
             "/v1/database/:db/table/:table/cleanup",
             post(cleanup_table),
         )
+        .with_state(state)
+        .layer(SetRequestIdLayer::new(
+            REQUEST_ID_HEADER.clone(),
+            MakeRequestUuid,
+        ))
+        .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER.clone()))
+}
+
+/// Build the compaction write router — POST requires `Role::Write`.
+///
+/// Mounts `POST /v1/admin/compact`, which submits compaction tasks for small
+/// extents so the compaction worker merges them. Mount alongside the query
+/// router, wrapped with `require_role_middleware(Role::Write)`.
+pub fn compact_write_router(catalog: Arc<dyn kyma_core::catalog::Catalog>) -> Router {
+    use compact_handler::{compact, CompactState};
+    let state = CompactState { catalog };
+    Router::new()
+        .route("/v1/admin/compact", post(compact))
         .with_state(state)
         .layer(SetRequestIdLayer::new(
             REQUEST_ID_HEADER.clone(),
@@ -657,6 +676,75 @@ pub(crate) fn build_schema_map(tables: &[TableRef]) -> kyma_kql::SchemaMap {
         .collect()
 }
 
+/// Resolve the [`kyma_kql::GraphBinding`] a Cypher query runs against.
+///
+/// A Cypher query targets exactly ONE registered graph. The graph is selected
+/// from the `x-graph` request header, whose value is either `"<db>/<graph>"`
+/// (explicit database) or just `"<graph>"` (uses `database`, mirroring how
+/// `x-database` scopes the request). When `x_graph` is absent, the database's
+/// registered graphs are listed: if exactly one exists it is auto-selected;
+/// zero or many is a client error instructing the caller to name one.
+///
+/// On any failure returns `(StatusCode::BAD_REQUEST, message)` so the caller
+/// can fold it straight into [`error_response`] (mirroring the KQL error path).
+pub(crate) async fn resolve_graph_binding(
+    catalog: &Arc<dyn Catalog>,
+    tenant: kyma_core::tenant::TenantId,
+    x_graph: Option<&str>,
+    database: &str,
+) -> Result<kyma_kql::GraphBinding, (StatusCode, String)> {
+    // 1. Determine the (database, graph-name) pair to resolve.
+    let (db, name): (String, String) = match x_graph.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(spec) => match spec.split_once('/') {
+            Some((d, g)) => (d.to_string(), g.to_string()),
+            None => (database.to_string(), spec.to_string()),
+        },
+        None => {
+            // No header: auto-select iff the scope holds exactly one graph.
+            let regs = catalog
+                .list_graphs_in_tenant(tenant, database)
+                .await
+                .map_err(|e| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        format!("failed to list graphs in database {database}: {e}"),
+                    )
+                })?;
+            match regs.len() {
+                1 => (database.to_string(), regs.into_iter().next().unwrap().name),
+                _ => {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        "specify a graph via the x-graph header (\"<db>/<graph>\")".to_string(),
+                    ));
+                }
+            }
+        }
+    };
+
+    // 2. Look up the registration and map its column roles to the binding.
+    let reg = catalog
+        .get_graph_in_tenant(tenant, &db, &name)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("failed to resolve graph {name}: {e}"),
+            )
+        })?
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("graph not found: {name}")))?;
+
+    Ok(kyma_kql::GraphBinding {
+        edge_table: reg.edge_table,
+        node_table: reg.node_table,
+        id_col: reg.id_col,
+        src_col: reg.src_col,
+        dst_col: reg.dst_col,
+        type_col: reg.type_col,
+        label_col: reg.label_col,
+    })
+}
+
 async fn query_handler(State(state): State<QueryState>, req: Request) -> Response {
     let start = std::time::Instant::now();
     let (parts, body) = req.into_parts();
@@ -800,6 +888,31 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
                     StatusCode::BAD_REQUEST,
                     "kql_parse_error",
                     &format!("KQL parse: {e}"),
+                    &request_id,
+                );
+            }
+        }
+    } else if content_type.starts_with("application/x-cypher") {
+        // A Cypher query runs against ONE registered graph, selected via the
+        // `x-graph` header. Resolve its binding, translate Cypher → KQL, then
+        // reuse the KQL → SQL compiler so graph-match lowers like any other KQL.
+        let x_graph = headers.get("x-graph").and_then(|v| v.to_str().ok());
+        let binding =
+            match resolve_graph_binding(&state.catalog, tenant, x_graph, &database).await {
+                Ok(b) => b,
+                Err((code, msg)) => return error_response(code, "graph_resolution_error", &msg, &request_id),
+            };
+        // Both `cypher_to_kql` and `kql_to_sql_with_schemas` return
+        // `Result<_, ParseError>`, so the two stages chain via `and_then`.
+        match kyma_kql::cypher_to_kql(&raw, &binding)
+            .and_then(|kql| kyma_kql::kql_to_sql_with_schemas(&kql, &schemas))
+        {
+            Ok(s) => ("cypher", s),
+            Err(e) => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "cypher_parse_error",
+                    &format!("Cypher parse: {e}"),
                     &request_id,
                 );
             }

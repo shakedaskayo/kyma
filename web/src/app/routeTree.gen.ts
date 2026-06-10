@@ -24,6 +24,7 @@ import { Route as AppCredentialsRouteImport } from './../routes/_app.credentials
 import { Route as AppConnectorsRouteImport } from './../routes/_app.connectors'
 import { Route as AppAgentRouteImport } from './../routes/_app.agent'
 import { Route as AppMemoryIndexRouteImport } from './../routes/_app.memory.index'
+import { Route as AppDashboardsIndexRouteImport } from './../routes/_app.dashboards.index'
 import { Route as AppConnectorsIndexRouteImport } from './../routes/_app.connectors.index'
 import { Route as AppMemorySettingsRouteImport } from './../routes/_app.memory.settings'
 import { Route as AppMemorySearchRouteImport } from './../routes/_app.memory.search'
@@ -110,6 +111,11 @@ const AppMemoryIndexRoute = AppMemoryIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppMemoryRoute,
 } as any)
+const AppDashboardsIndexRoute = AppDashboardsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppDashboardsRoute,
+} as any)
 const AppConnectorsIndexRoute = AppConnectorsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -188,6 +194,7 @@ export interface FileRoutesByFullPath {
   '/memory/search': typeof AppMemorySearchRoute
   '/memory/settings': typeof AppMemorySettingsRoute
   '/connectors/': typeof AppConnectorsIndexRoute
+  '/dashboards/': typeof AppDashboardsIndexRoute
   '/memory/': typeof AppMemoryIndexRoute
   '/memory/dreaming/$runId': typeof AppMemoryDreamingRunIdRoute
   '/memory/dreaming/': typeof AppMemoryDreamingIndexRoute
@@ -200,7 +207,6 @@ export interface FileRoutesByTo {
   '/setup': typeof SetupRoute
   '/agent': typeof AppAgentRoute
   '/credentials': typeof AppCredentialsRoute
-  '/dashboards': typeof AppDashboardsRouteWithChildren
   '/discover': typeof AppDiscoverRoute
   '/explore': typeof AppExploreRoute
   '/graph': typeof AppGraphRoute
@@ -211,6 +217,7 @@ export interface FileRoutesByTo {
   '/memory/search': typeof AppMemorySearchRoute
   '/memory/settings': typeof AppMemorySettingsRoute
   '/connectors': typeof AppConnectorsIndexRoute
+  '/dashboards': typeof AppDashboardsIndexRoute
   '/memory': typeof AppMemoryIndexRoute
   '/memory/dreaming/$runId': typeof AppMemoryDreamingRunIdRoute
   '/memory/dreaming': typeof AppMemoryDreamingIndexRoute
@@ -240,6 +247,7 @@ export interface FileRoutesById {
   '/_app/memory/search': typeof AppMemorySearchRoute
   '/_app/memory/settings': typeof AppMemorySettingsRoute
   '/_app/connectors/': typeof AppConnectorsIndexRoute
+  '/_app/dashboards/': typeof AppDashboardsIndexRoute
   '/_app/memory/': typeof AppMemoryIndexRoute
   '/_app/memory/dreaming/$runId': typeof AppMemoryDreamingRunIdRoute
   '/_app/memory/dreaming/': typeof AppMemoryDreamingIndexRoute
@@ -269,6 +277,7 @@ export interface FileRouteTypes {
     | '/memory/search'
     | '/memory/settings'
     | '/connectors/'
+    | '/dashboards/'
     | '/memory/'
     | '/memory/dreaming/$runId'
     | '/memory/dreaming/'
@@ -281,7 +290,6 @@ export interface FileRouteTypes {
     | '/setup'
     | '/agent'
     | '/credentials'
-    | '/dashboards'
     | '/discover'
     | '/explore'
     | '/graph'
@@ -292,6 +300,7 @@ export interface FileRouteTypes {
     | '/memory/search'
     | '/memory/settings'
     | '/connectors'
+    | '/dashboards'
     | '/memory'
     | '/memory/dreaming/$runId'
     | '/memory/dreaming'
@@ -320,6 +329,7 @@ export interface FileRouteTypes {
     | '/_app/memory/search'
     | '/_app/memory/settings'
     | '/_app/connectors/'
+    | '/_app/dashboards/'
     | '/_app/memory/'
     | '/_app/memory/dreaming/$runId'
     | '/_app/memory/dreaming/'
@@ -441,6 +451,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppMemoryIndexRouteImport
       parentRoute: typeof AppMemoryRoute
     }
+    '/_app/dashboards/': {
+      id: '/_app/dashboards/'
+      path: '/'
+      fullPath: '/dashboards/'
+      preLoaderRoute: typeof AppDashboardsIndexRouteImport
+      parentRoute: typeof AppDashboardsRoute
+    }
     '/_app/connectors/': {
       id: '/_app/connectors/'
       path: '/'
@@ -537,10 +554,12 @@ const AppConnectorsRouteWithChildren = AppConnectorsRoute._addFileChildren(
 
 interface AppDashboardsRouteChildren {
   AppDashboardsIdRoute: typeof AppDashboardsIdRoute
+  AppDashboardsIndexRoute: typeof AppDashboardsIndexRoute
 }
 
 const AppDashboardsRouteChildren: AppDashboardsRouteChildren = {
   AppDashboardsIdRoute: AppDashboardsIdRoute,
+  AppDashboardsIndexRoute: AppDashboardsIndexRoute,
 }
 
 const AppDashboardsRouteWithChildren = AppDashboardsRoute._addFileChildren(

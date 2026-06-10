@@ -620,6 +620,53 @@ impl Catalog for PostgresCatalog {
             .collect())
     }
 
+    async fn compaction_candidates(
+        &self,
+        small_bytes: i64,
+        min_extents: i64,
+        max_merge: i64,
+    ) -> Result<Vec<(TableId, Vec<ExtentId>)>> {
+        use sqlx::Row as _;
+        // Per table: the smallest `max_merge` live extents under `small_bytes`,
+        // but only for tables that have at least `min_extents` such extents.
+        let rows = sqlx::query(
+            "WITH small AS (
+                SELECT table_id, id, byte_size,
+                       row_number() OVER (PARTITION BY table_id ORDER BY byte_size) AS rnk,
+                       count(*)      OVER (PARTITION BY table_id)                   AS total
+                FROM extents
+                WHERE deleted_at IS NULL
+                  AND byte_size < $1
+             )
+             SELECT table_id, id
+             FROM small
+             WHERE total >= $2 AND rnk <= $3
+             ORDER BY table_id, byte_size",
+        )
+        .bind(small_bytes)
+        .bind(min_extents)
+        .bind(max_merge)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(sql_err)?;
+
+        let mut by_table: std::collections::BTreeMap<Uuid, Vec<ExtentId>> =
+            std::collections::BTreeMap::new();
+        for row in rows {
+            let tid: Uuid = row.try_get("table_id").map_err(sql_err)?;
+            let eid: Uuid = row.try_get("id").map_err(sql_err)?;
+            by_table
+                .entry(tid)
+                .or_default()
+                .push(ExtentId::from_uuid(eid));
+        }
+        Ok(by_table
+            .into_iter()
+            .filter(|(_, v)| v.len() >= 2)
+            .map(|(tid, eids)| (TableId::from_uuid(tid), eids))
+            .collect())
+    }
+
     async fn delete_extent_rows(&self, extents: &[ExtentId]) -> Result<()> {
         if extents.is_empty() {
             return Ok(());
