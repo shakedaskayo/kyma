@@ -365,6 +365,9 @@ pub async fn unified_search(
                 format: ctx.format.clone(),
                 pool: ctx.pool.as_deref().cloned(),
                 memory: None,
+                // Unified search is read-only — no autonomous memory mutations,
+                // so no HITL approval gate (added to SharedToolCtx on main).
+                hitl: None,
             };
             let req = memory_request(&req);
             let result = retrieve(&shared, &req).await;
