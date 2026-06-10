@@ -29,6 +29,11 @@ pub struct ServerOptions {
     /// Store location pinned into the service env (services don't inherit
     /// the shell's `KYMA_HOME`). Filled by [`install`] when unset.
     pub kyma_home: Option<String>,
+    /// Credential-encryption key (`KYMA_SECRET_KEY` in the service env).
+    /// Filled by [`install`] from `<kyma_home>/secret.key`, minting one on
+    /// first install — the key must stay stable across reinstalls or
+    /// credentials encrypted at rest become undecryptable.
+    pub secret_key: Option<String>,
 }
 
 impl Default for ServerOptions {
@@ -37,6 +42,7 @@ impl Default for ServerOptions {
             addr: "127.0.0.1:7777".to_string(),
             token: None,
             kyma_home: None,
+            secret_key: None,
         }
     }
 }
@@ -50,7 +56,35 @@ fn service_env(opts: &ServerOptions) -> Vec<(String, String)> {
     if let Some(tok) = &opts.token {
         env.push(("KYMA_AUTH_TOKENS".to_string(), format!("{tok}:admin")));
     }
+    if let Some(key) = &opts.secret_key {
+        env.push(("KYMA_SECRET_KEY".to_string(), key.clone()));
+    }
     env
+}
+
+/// Load the store's stable secret key from `<kyma_home>/secret.key`, minting
+/// (base64, 32 random bytes, file mode 0600) on first use. Best-effort: an
+/// unreadable/unwritable store yields `None` and the service runs without the
+/// key, exactly as before.
+fn load_or_create_secret_key(kyma_home: &str) -> Option<String> {
+    let path = std::path::Path::new(kyma_home).join("secret.key");
+    if let Ok(existing) = std::fs::read_to_string(&path) {
+        let trimmed = existing.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    let key = kyma_core::crypto::generate_key();
+    std::fs::create_dir_all(kyma_home).ok();
+    if std::fs::write(&path, &key).is_err() {
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Some(key)
 }
 
 /// The `kyma` argv the service runs (after the binary path).
@@ -178,6 +212,9 @@ pub fn install(opts: &ServerOptions) -> Result<bool> {
         // does, custom KYMA_HOME included.
         opts.kyma_home =
             Some(std::env::var("KYMA_HOME").unwrap_or_else(|_| format!("{}/.kyma", home())));
+    }
+    if opts.secret_key.is_none() {
+        opts.secret_key = opts.kyma_home.as_deref().and_then(load_or_create_secret_key);
     }
     let opts = &opts;
     let log = log_path();

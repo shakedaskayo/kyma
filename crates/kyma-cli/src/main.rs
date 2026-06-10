@@ -659,6 +659,7 @@ async fn main() -> Result<()> {
                     addr,
                     token,
                     kyma_home: None,
+                    secret_key: None,
                 })
                 .map(|_| ())
             }
