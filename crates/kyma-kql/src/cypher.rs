@@ -9,14 +9,16 @@
 //! # Supported subset
 //!
 //! ```cypher
-//! MATCH (a[:Label])-[r[:TYPE]]->(b[:Label])
+//! MATCH (a[:Label])-[r[:TYPE]]->(b[:Label])[-[r2[:T2]]->(c)…]
 //! [WHERE <preds>]
 //! RETURN <proj>
 //! [LIMIT n]
 //! ```
 //!
-//! - Single hop only. Directed (`-[r]->`, `<-[r]-`) and undirected (`-[r]-`,
-//!   treated as forward in v1).
+//! - One or more **forward** hops. A single hop also supports directed
+//!   (`-[r]->`, `<-[r]-`) and undirected (`-[r]-`, treated as forward); a
+//!   multi-hop chain is forward-only (a backward `<-` hop is rejected, as it
+//!   would break the linear node order the matcher needs).
 //! - Node `:Label` → `| where <var>_<label_col> == 'Label'` after the match.
 //! - Rel `:TYPE` → the `graph-match` `[r:TYPE]` edge filter.
 //! - `WHERE` simple comparisons (`= <> < > <= >=`) on `<var>.<prop>` vs a
@@ -35,9 +37,9 @@
 //!
 //! # Deferred constructs (rejected with a precise error)
 //!
-//! Multi-hop, variable-length `-[*..]->`, `OPTIONAL MATCH`, multiple `MATCH`,
-//! `WITH`, `ORDER BY`, aggregation, `CREATE/SET/DELETE/MERGE`, `shortestPath`,
-//! `RETURN *`.
+//! Variable-length `-[*..]->`, backward hops inside a multi-hop chain,
+//! `OPTIONAL MATCH`, multiple `MATCH`, `WITH`, `ORDER BY`, aggregation,
+//! `CREATE/SET/DELETE/MERGE`, `shortestPath`, `RETURN *`.
 
 use crate::ParseError;
 
@@ -316,9 +318,10 @@ enum ReturnItem {
 
 #[derive(Debug, Clone)]
 struct Query {
-    a: NodePat,
-    rel: RelPat,
-    b: NodePat,
+    /// Pattern node chain `n0, n1, … nN` (length = `rels.len() + 1`).
+    nodes: Vec<NodePat>,
+    /// Pattern relationships `r0 … r{N-1}`; `rels[i]` connects `nodes[i]`→`nodes[i+1]`.
+    rels: Vec<RelPat>,
     where_preds: Vec<Comparison>,
     returns: Vec<ReturnItem>,
     limit: Option<i64>,
@@ -394,11 +397,16 @@ impl Parser {
             ));
         }
 
-        let (a, rel, b) = self.parse_pattern()?;
-
-        // A second relationship/node ⇒ multi-hop.
-        if matches!(self.peek(), Some(Tok::Dash | Tok::ArrowL)) {
-            return Err(unsupported("multi-hop pattern"));
+        // Pattern chain: node ( rel node )+ — one or more hops.
+        let mut nodes = vec![self.parse_node()?];
+        let mut rels: Vec<RelPat> = Vec::new();
+        loop {
+            rels.push(self.parse_rel()?);
+            nodes.push(self.parse_node()?);
+            // Another hop iff the next token starts a relationship (`-` or `<-`).
+            if !matches!(self.peek(), Some(Tok::Dash | Tok::ArrowL)) {
+                break;
+            }
         }
 
         // A second MATCH / OPTIONAL MATCH / WITH before RETURN ⇒ unsupported.
@@ -448,9 +456,8 @@ impl Parser {
         }
 
         Ok(Query {
-            a,
-            rel,
-            b,
+            nodes,
+            rels,
             where_preds,
             returns,
             limit,
@@ -476,10 +483,10 @@ impl Parser {
         Ok(())
     }
 
-    /// `(a[:L])-[r[:T]]->(b[:L])` (or `<-`, or undirected `-`).
-    fn parse_pattern(&mut self) -> Result<(NodePat, RelPat, NodePat), ParseError> {
-        let a = self.parse_node()?;
-
+    /// Parse one relationship between two nodes: `-[r[:T]]->` (forward),
+    /// `<-[r[:T]]-` (backward), or `-[r[:T]]-` (undirected). The flanking nodes
+    /// are parsed by the caller's chain loop in [`Parser::parse_query`].
+    fn parse_rel(&mut self) -> Result<RelPat, ParseError> {
         // Leading side of the relationship: `<-[` (backward) or `-[` (forward/undirected).
         let leading_backward = if self.eat(&Tok::ArrowL) {
             true
@@ -541,14 +548,11 @@ impl Parser {
             }
         };
 
-        let b = self.parse_node()?;
-
-        let rel = RelPat {
+        Ok(RelPat {
             var: rel_var,
             rel_type,
             direction,
-        };
-        Ok((a, rel, b))
+        })
     }
 
     /// `(var[:Label])`. The variable is required in v1 (anonymous nodes `()`
@@ -712,14 +716,19 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     // Validate that all referenced variables are one of the two node vars or
     // the relationship var. `graph-match` would reject unknown vars anyway, but
     // a Cypher-level message is friendlier.
-    let known: [&str; 3] = [&q.a.var, &q.rel.var, &q.b.var];
+    let known: Vec<&str> = q
+        .nodes
+        .iter()
+        .map(|n| n.var.as_str())
+        .chain(q.rels.iter().map(|r| r.var.as_str()))
+        .collect();
     let check_var = |v: &str| -> Result<(), ParseError> {
         if known.iter().any(|k| *k == v) {
             Ok(())
         } else {
             Err(ParseError(format!(
-                "cypher: unknown variable `{v}` (pattern declares {}, {}, {})",
-                q.a.var, q.rel.var, q.b.var
+                "cypher: unknown variable `{v}` (pattern declares {})",
+                known.join(", ")
             )))
         }
     };
@@ -755,7 +764,7 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
 
     // 2) Node-label filters need the label column projected.
     let mut label_filters: Vec<(String, String)> = Vec::new(); // (alias, label)
-    for node in [&q.a, &q.b] {
+    for node in &q.nodes {
         if let Some(label) = &node.label {
             let alias = format!("{}_{}", node.var, g.label_col);
             push_proj(&node.var, &g.label_col, alias.clone());
@@ -778,15 +787,31 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
         ));
     }
 
-    // ---- graph-match pattern (always emitted forward; v1 swaps endpoints
-    // for backward direction so the underlying forward-only matcher is correct).
-    let (left, right) = match q.rel.direction {
-        Direction::Backward => (&q.b.var, &q.a.var),
-        _ => (&q.a.var, &q.b.var),
+    // ---- graph-match pattern: a forward chain of one or more hops. ----
+    // A single hop preserves the backward-swap so the forward-only matcher is
+    // correct. A multi-hop pattern emits a forward chain and rejects a backward
+    // hop, which would break the linear node order the matcher expects.
+    let rel_pat = |r: &RelPat| match &r.rel_type {
+        Some(t) => format!("[{}:{}]", r.var, t),
+        None => format!("[{}]", r.var),
     };
-    let rel_pat = match &q.rel.rel_type {
-        Some(t) => format!("[{}:{}]", q.rel.var, t),
-        None => format!("[{}]", q.rel.var),
+    let pattern = if q.rels.len() == 1 {
+        let (left, right) = match q.rels[0].direction {
+            Direction::Backward => (&q.nodes[1].var, &q.nodes[0].var),
+            _ => (&q.nodes[0].var, &q.nodes[1].var),
+        };
+        format!("({left})-{}->({right})", rel_pat(&q.rels[0]))
+    } else {
+        let mut p = format!("({})", q.nodes[0].var);
+        for (i, r) in q.rels.iter().enumerate() {
+            if r.direction == Direction::Backward {
+                return Err(unsupported(
+                    "backward `<-` relationship in a multi-hop pattern",
+                ));
+            }
+            p.push_str(&format!("-{}->({})", rel_pat(r), q.nodes[i + 1].var));
+        }
+        p
     };
 
     // ---- project list ----
@@ -799,13 +824,12 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     // ---- assemble pipeline ----
     let mut kql = format!(
         "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
-         | graph-match ({left})-{rel}->({right}) project {proj}",
+         | graph-match {pattern} project {proj}",
         edges = g.edge_table,
         src = g.src_col,
         dst = g.dst_col,
         nodes = g.node_table,
         id = g.id_col,
-        rel = rel_pat,
         proj = proj_list,
     );
 
@@ -946,17 +970,52 @@ mod tests {
         );
     }
 
-    // ---- unsupported constructs → Err ---------------------------------
+    // ---- multi-hop (follow-up): forward N-hop chains ------------------
     #[test]
-    fn multi_hop_rejected() {
-        let err = cypher_to_kql(
-            "MATCH (a)-[r]->(b)-[s]->(c) RETURN a.name",
-            &binding(),
+    fn multi_hop_two_hops_translates_and_compiles() {
+        let kql = tr("MATCH (a)-[r1:CALLS]->(b)-[r2:DEPENDS]->(c) RETURN a.name, c.name");
+        assert!(
+            kql.contains("graph-match (a)-[r1:CALLS]->(b)-[r2:DEPENDS]->(c)"),
+            "forward 2-hop chain: {kql}"
         );
-        let msg = err.unwrap_err().0;
-        assert!(msg.contains("multi-hop"), "{msg}");
-        assert!(msg.contains("not supported yet"), "{msg}");
+        assert!(
+            kql.contains("a.name as a_name") && kql.contains("c.name as c_name"),
+            "endpoint projections: {kql}"
+        );
+        assert!(
+            kql_to_sql_with_schemas(&kql, &SchemaMap::default()).is_ok(),
+            "2-hop must compile through to SQL: {kql}"
+        );
     }
+
+    #[test]
+    fn multi_hop_three_hops_with_where_on_middle_compiles() {
+        let kql =
+            tr("MATCH (a)-[r1]->(b)-[r2]->(c)-[r3]->(d) WHERE b.kind = 'svc' RETURN a.name, d.name");
+        assert!(
+            kql.contains("graph-match (a)-[r1]->(b)-[r2]->(c)-[r3]->(d)"),
+            "forward 3-hop chain: {kql}"
+        );
+        assert!(
+            kql.contains("where b_kind == 'svc'"),
+            "WHERE on a middle node folds into a flat filter: {kql}"
+        );
+        assert!(
+            kql_to_sql_with_schemas(&kql, &SchemaMap::default()).is_ok(),
+            "3-hop must compile through to SQL: {kql}"
+        );
+    }
+
+    #[test]
+    fn multi_hop_backward_hop_rejected() {
+        // A backward hop inside a multi-hop chain breaks the linear node order
+        // the forward-only matcher needs — v1 rejects it with a clear message.
+        let err = cypher_to_kql("MATCH (a)-[r1]->(b)<-[r2]-(c) RETURN a.name", &binding());
+        let msg = err.unwrap_err().0;
+        assert!(msg.contains("backward") && msg.contains("multi-hop"), "{msg}");
+    }
+
+    // ---- unsupported constructs → Err ---------------------------------
 
     #[test]
     fn create_rejected() {

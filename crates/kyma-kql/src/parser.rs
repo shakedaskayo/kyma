@@ -801,13 +801,19 @@ impl<'s> Parser<'s> {
         Ok(())
     }
 
-    /// `graph-match (a)-[e[:TYPE]]->(b) project <var>.<col> [as <alias>], …`
+    /// `graph-match (a)-[e[:TYPE]]->(b)[-[e2[:T2]]->(c)…] project <var>.<col> [as <alias>], …`
     ///
-    /// Requires a preceding `make-graph` (errors otherwise). Parses a
-    /// fixed single-hop forward pattern and a required `project` list.
-    /// Pushes a non-recursive CTE `_gm_result` that 3-way-joins the edge
-    /// table to the node table twice (src-side alias `a`, dst-side alias `b`),
-    /// with an optional `WHERE e."type" = '<TYPE>'` when `:TYPE` is given.
+    /// Requires a preceding `make-graph` (errors otherwise). Parses a forward
+    /// chain of one or more hops and a required `project` list. Pushes a
+    /// non-recursive CTE `_gm_result`.
+    ///
+    /// - **Single hop (N=1):** the historical 3-way join — edge table aliased
+    ///   `e`, src node `a`, dst node `b` — with an optional `WHERE e."type"=…`.
+    ///   Emitted byte-for-byte as before.
+    /// - **Multi-hop (N≥2):** a (2N+1)-table join with positional aliases —
+    ///   nodes `n0..nN`, edges `ed0..ed{N-1}` — chained
+    ///   `ed_i.src = n_i.id` / `ed_i.dst = n_{i+1}.id`, with one
+    ///   `ed_i."type"=…` per typed edge.
     fn op_graph_match(&mut self) -> Result<(), ParseError> {
         let def = self
             .state
@@ -815,23 +821,33 @@ impl<'s> Parser<'s> {
             .clone()
             .ok_or_else(|| ParseError("graph-match requires a preceding make-graph".into()))?;
 
-        // Pattern: ( a ) - [ e [: TYPE] ] -> ( b )
+        // Pattern: ( n0 ) -[ e0 [:T0] ]-> ( n1 ) [ -[ e1 [:T1] ]-> ( n2 ) ]…
         self.expect(&Token::LParen, "(")?;
-        let a = self.expect_ident()?;
+        let mut nodes: Vec<String> = vec![self.expect_ident()?];
         self.expect(&Token::RParen, ")")?;
+        let mut edges: Vec<(String, Option<String>)> = Vec::new();
+        // First hop's `-`; subsequent hops are detected by eating the next `-`.
         self.expect(&Token::Minus, "-")?;
-        self.expect(&Token::LBracket, "[")?;
-        let e = self.expect_ident()?;
-        let edge_type = if self.eat(&Token::Colon) {
-            Some(self.expect_ident()?)
-        } else {
-            None
-        };
-        self.expect(&Token::RBracket, "]")?;
-        self.expect(&Token::RightArrow, "->")?;
-        self.expect(&Token::LParen, "(")?;
-        let b = self.expect_ident()?;
-        self.expect(&Token::RParen, ")")?;
+        loop {
+            self.expect(&Token::LBracket, "[")?;
+            let e = self.expect_ident()?;
+            let edge_type = if self.eat(&Token::Colon) {
+                Some(self.expect_ident()?)
+            } else {
+                None
+            };
+            self.expect(&Token::RBracket, "]")?;
+            self.expect(&Token::RightArrow, "->")?;
+            self.expect(&Token::LParen, "(")?;
+            nodes.push(self.expect_ident()?);
+            self.expect(&Token::RParen, ")")?;
+            edges.push((e, edge_type));
+            // Another hop iff the next token is `-` (consume it and continue).
+            if !self.eat(&Token::Minus) {
+                break;
+            }
+        }
+        let single = edges.len() == 1;
 
         // Required: project <var>.<col> [as <alias>], …
         self.expect_ident_eq("project")?;
@@ -840,16 +856,27 @@ impl<'s> Parser<'s> {
             let var = self.expect_ident()?;
             self.expect(&Token::Dot, ".")?;
             let col = self.expect_ident()?;
-            // Map the pattern variable to its SQL table alias.
-            let alias_tbl = if var == a {
-                "a"
-            } else if var == e {
-                "e"
-            } else if var == b {
-                "b"
+            // Map the pattern variable to its SQL table alias. Single-hop keeps
+            // the historical `a`/`e`/`b`; multi-hop uses positional `n*`/`ed*`.
+            let alias_tbl: String = if single {
+                if var == nodes[0] {
+                    "a".to_string()
+                } else if var == edges[0].0 {
+                    "e".to_string()
+                } else if var == nodes[1] {
+                    "b".to_string()
+                } else {
+                    return Err(ParseError(format!(
+                        "graph-match project: unknown variable `{var}`"
+                    )));
+                }
+            } else if let Some(i) = nodes.iter().position(|n| *n == var) {
+                format!("n{i}")
+            } else if let Some(i) = edges.iter().position(|(e, _)| *e == var) {
+                format!("ed{i}")
             } else {
                 return Err(ParseError(format!(
-                    "graph-match project: unknown variable `{var}` (expected {a}, {e}, or {b})"
+                    "graph-match project: unknown variable `{var}`"
                 )));
             };
             let out_alias = if self.eat_ident_eq("as") {
@@ -872,21 +899,52 @@ impl<'s> Parser<'s> {
             ));
         }
 
-        let where_clause = match &edge_type {
-            Some(t) => format!(r#" WHERE e."type" = '{}'"#, t.replace('\'', "''")),
-            None => String::new(),
+        let sel = select_items.join(", ");
+        let edges_tbl = &def.edge_table;
+        let nodes_tbl = &def.node_table;
+        let src = quote_ident(&def.src_col);
+        let dst = quote_ident(&def.dst_col);
+        let id = quote_ident(&def.id_col);
+
+        let body = if single {
+            // Byte-identical to the historical single-hop emission.
+            let where_clause = match &edges[0].1 {
+                Some(t) => format!(r#" WHERE e."type" = '{}'"#, t.replace('\'', "''")),
+                None => String::new(),
+            };
+            format!(
+                "SELECT {sel} FROM {edges_tbl} e \
+                 JOIN {nodes_tbl} a ON e.{src} = a.{id} \
+                 JOIN {nodes_tbl} b ON e.{dst} = b.{id}{where_clause}",
+            )
+        } else {
+            // Multi-hop chain: ed0 joins n0 (src) and n1 (dst); ed1 joins n1
+            // (src) and n2 (dst); … and so on.
+            let mut from = format!(
+                "{edges_tbl} ed0 \
+                 JOIN {nodes_tbl} n0 ON ed0.{src} = n0.{id} \
+                 JOIN {nodes_tbl} n1 ON ed0.{dst} = n1.{id}"
+            );
+            for i in 1..edges.len() {
+                let j = i + 1;
+                from.push_str(&format!(
+                    " JOIN {edges_tbl} ed{i} ON ed{i}.{src} = n{i}.{id} \
+                      JOIN {nodes_tbl} n{j} ON ed{i}.{dst} = n{j}.{id}"
+                ));
+            }
+            let mut wheres: Vec<String> = Vec::new();
+            for (i, (_, t)) in edges.iter().enumerate() {
+                if let Some(t) = t {
+                    wheres.push(format!(r#"ed{i}."type" = '{}'"#, t.replace('\'', "''")));
+                }
+            }
+            let where_clause = if wheres.is_empty() {
+                String::new()
+            } else {
+                format!(" WHERE {}", wheres.join(" AND "))
+            };
+            format!("SELECT {sel} FROM {from}{where_clause}")
         };
-        let body = format!(
-            "SELECT {sel} FROM {edges} e \
-             JOIN {nodes} a ON e.{src} = a.{id} \
-             JOIN {nodes} b ON e.{dst} = b.{id}{where_clause}",
-            sel = select_items.join(", "),
-            edges = def.edge_table,
-            nodes = def.node_table,
-            src = quote_ident(&def.src_col),
-            dst = quote_ident(&def.dst_col),
-            id = quote_ident(&def.id_col),
-        );
         self.state
             .ctes
             .push(("_gm_result".to_string(), body, false));
@@ -1708,6 +1766,36 @@ mod tests {
             err.is_err(),
             "graph-match requires a preceding make-graph"
         );
+    }
+
+    #[test]
+    fn make_graph_then_multi_hop_match_chains_joins() {
+        let sql = kql_to_sql(
+            r#"edges | make-graph caller --> callee with services on id | graph-match (a)-[e1:CALLS]->(b)-[e2:DEPENDS]->(c) project a.name, c.name"#
+        ).expect("2-hop parse");
+        // Positional aliases: ed0/ed1 edges, n0/n1/n2 nodes.
+        assert!(sql.contains("ed0.caller = n0.id"), "ed0 src→n0: {sql}");
+        assert!(sql.contains("ed0.callee = n1.id"), "ed0 dst→n1: {sql}");
+        assert!(sql.contains("ed1.caller = n1.id"), "ed1 src→n1 (chain): {sql}");
+        assert!(sql.contains("ed1.callee = n2.id"), "ed1 dst→n2: {sql}");
+        // Per-edge type filters AND-ed.
+        assert!(
+            sql.contains(r#"ed0."type" = 'CALLS'"#) && sql.contains(r#"ed1."type" = 'DEPENDS'"#),
+            "per-edge type filters: {sql}"
+        );
+        // Endpoint projections map to the right positional aliases.
+        assert!(sql.contains("n0.name AS a_name"), "a→n0: {sql}");
+        assert!(sql.contains("n2.name AS c_name"), "c→n2: {sql}");
+    }
+
+    #[test]
+    fn make_graph_then_match_single_hop_unchanged() {
+        // The N=1 path must stay byte-identical to the historical emission.
+        let sql = kql_to_sql(
+            r#"edges | make-graph caller --> callee with services on id | graph-match (a)-[e:CALLS]->(b) project a.name"#
+        ).expect("1-hop parse");
+        assert!(sql.contains("e.caller = a.id") && sql.contains("e.callee = b.id"), "single-hop aliases e/a/b: {sql}");
+        assert!(!sql.contains("ed0") && !sql.contains("n0"), "single-hop must NOT use positional aliases: {sql}");
     }
 
     #[test]
