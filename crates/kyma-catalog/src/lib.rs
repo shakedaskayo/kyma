@@ -315,6 +315,30 @@ impl Catalog for PostgresCatalog {
         Ok(out)
     }
 
+    async fn drop_table_in_tenant(
+        &self,
+        tenant: TenantId,
+        database: &str,
+        name: &str,
+    ) -> Result<bool> {
+        // tables → schema_snapshots / snapshots / extents all cascade on
+        // table_id; object-store data is left for GC.
+        let res = sqlx::query(
+            "DELETE FROM tables t
+             USING databases d
+             WHERE t.database_id = d.id
+               AND d.tenant_id = $1 AND t.tenant_id = $1
+               AND d.name = $2 AND t.name = $3",
+        )
+        .bind(tenant.as_uuid())
+        .bind(database)
+        .bind(name)
+        .execute(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(res.rows_affected() > 0)
+    }
+
     async fn alter_table_add_column(
         &self,
         table_id: TableId,

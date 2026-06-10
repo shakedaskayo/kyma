@@ -151,7 +151,7 @@ async fn build_gate(
         source: "review",
         source_run_id: None,
     };
-    let shared = SharedToolCtx {
+    let shared = SharedToolCtx { federation: None,
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),

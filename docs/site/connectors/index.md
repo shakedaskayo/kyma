@@ -84,6 +84,17 @@ App-password + username (`basic`) or PAT auth.
 
 <div class="feature-card">
 
+### [Microsoft Fabric](/connectors/msfabric)
+
+The first **federated** connector: Lakehouse / Warehouse tables queried
+live over the SQL analytics endpoint. Schemas cataloged in kyma, data
+stays in Fabric, whole subplans (filters, joins, aggregations) pushed
+down as one T-SQL statement. Shipped today.
+
+</div>
+
+<div class="feature-card">
+
 ### [Postgres](/connectors/postgres) 🚧
 
 Federation for live reads, replication-slot CDC for sync, both at

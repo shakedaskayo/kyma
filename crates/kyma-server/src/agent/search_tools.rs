@@ -227,10 +227,12 @@ mod tests {
         let format: Arc<dyn SegmentFormat> =
             Arc::new(kyma_format_tlm::TelemetryFormat::new(store, "test"));
         SharedToolCtx {
+            federation: None,
             catalog,
             format,
             pool: None,
             memory: None,
+            hitl: None,
         }
     }
 

@@ -124,6 +124,10 @@ pub struct QueryState {
     /// degrade to empty; query / catalog / graph / discover-search all run
     /// over the catalog + engine and work unchanged.
     pub pg_pool: Option<Arc<sqlx::PgPool>>,
+    /// Live-proxy runtime for federated tables (Microsoft Fabric, …). `None`
+    /// when no credential store is wired (local mode): federated tables then
+    /// fail queries with a clear error instead of silently returning empty.
+    pub federation: Option<Arc<kyma_federation::FederationRuntime>>,
 }
 
 /// Build the query router (auth-eligible — caller wraps with middleware).
@@ -942,11 +946,61 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
             );
         }
     };
-    let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
+    // Federated (live-proxied) tables need the federation optimizer rule +
+    // query planner on the context; plans without them are untouched by the
+    // extra rule, so the federated context is only built when needed.
+    let has_federated = match &sources {
+        Sources::Single(tables) => kyma_federation::any_federated(tables),
+        Sources::Multi(db_tables) => db_tables
+            .iter()
+            .any(|dt| dt.table.config.federated.is_some()),
+    };
+    let ctx = if has_federated {
+        kyma_federation::federated_session_context(SessionConfig::new(), runtime)
+    } else {
+        SessionContext::new_with_config_rt(SessionConfig::new(), runtime)
+    };
     kyma_exec::register_vector_udfs(&ctx);
     match sources {
         Sources::Single(tables) => {
-            for t in tables {
+            // Federated tables register live remote providers; local tables
+            // register KymaTables. Build the federated providers first in one
+            // batch so same-source tables share a provider (join pushdown).
+            let (federated, local): (Vec<_>, Vec<_>) = tables
+                .into_iter()
+                .partition(|t| t.config.federated.is_some());
+            if !federated.is_empty() {
+                let Some(fed_rt) = state.federation.as_ref() else {
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "federation_unavailable",
+                        "database contains federated tables but this server has no federation runtime (credential store not wired)",
+                        &request_id,
+                    );
+                };
+                let providers = match fed_rt.federated_providers(tenant, &federated).await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        return error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "federation_error",
+                            &format!("failed to build federated providers: {e}"),
+                            &request_id,
+                        );
+                    }
+                };
+                for (table_name, provider) in providers {
+                    if let Err(e) = ctx.register_table(&table_name, provider) {
+                        return error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "internal",
+                            &format!("failed to register federated table {table_name}: {e}"),
+                            &request_id,
+                        );
+                    }
+                }
+            }
+            for t in local {
                 let table_name = t.name.clone();
                 let kyma_tbl: Arc<KymaTable> = match state.node_id {
                     Some(nid) => Arc::new(KymaTable::with_node_id(
@@ -980,6 +1034,8 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
                 &state.catalog,
                 &state.format,
                 state.node_id,
+                state.federation.as_ref(),
+                tenant,
             )
             .await
             {

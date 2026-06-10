@@ -203,7 +203,7 @@ async fn changes_memory_handler(
     State(state): State<AgentState>,
     axum::extract::Query(params): axum::extract::Query<ChangesParams>,
 ) -> Json<Value> {
-    let shared = SharedToolCtx {
+    let shared = SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
@@ -251,7 +251,7 @@ async fn export_memory_handler(
     State(state): State<AgentState>,
     axum::extract::Query(params): axum::extract::Query<ExportParams>,
 ) -> Json<Value> {
-    let shared = SharedToolCtx {
+    let shared = SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
@@ -448,7 +448,7 @@ async fn memory_query_handler(
     State(state): State<AgentState>,
     Json(body): Json<MemoryQueryRequest>,
 ) -> Json<Value> {
-    let shared = SharedToolCtx {
+    let shared = SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),

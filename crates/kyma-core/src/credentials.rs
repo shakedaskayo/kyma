@@ -52,6 +52,13 @@ pub enum CredentialValue {
         installation_id: String,
         private_key_pem: String,
     },
+    /// Entra ID (Azure AD) service principal — client-credentials flow.
+    /// Used by federated platforms (Microsoft Fabric, Azure SQL, …).
+    ServicePrincipal {
+        tenant_id: String,
+        client_id: String,
+        client_secret: String,
+    },
 }
 
 impl CredentialValue {
@@ -65,6 +72,7 @@ impl CredentialValue {
             Self::AwsCreds { .. } => "aws_creds",
             Self::ApiKey { .. } => "api_key",
             Self::GithubApp { .. } => "github_app",
+            Self::ServicePrincipal { .. } => "service_principal",
         }
     }
 
@@ -98,6 +106,7 @@ impl CredentialValue {
             Self::AwsCreds { access_key_id, .. } => tail(access_key_id),
             Self::ApiKey { value, .. } => tail(value),
             Self::GithubApp { app_id, .. } => format!("app {app_id}"),
+            Self::ServicePrincipal { client_id, .. } => format!("sp {}", tail(client_id)),
         }
     }
 }

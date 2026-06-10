@@ -174,5 +174,13 @@ pub fn coming_soon() -> Vec<CatalogEntry> {
              "Tables, columns, and foreign-key relationships from a Postgres database."),
         soon("s3", "Amazon S3", "data", "amazons3", "none",
              "Objects and prefixes from an S3 bucket as a navigable tree."),
+        // Federated platforms (live-proxied; msfabric shipped first — these
+        // follow as further `kyma-federation` platform impls).
+        soon("databricks", "Databricks", "data", "databricks", "pat",
+             "Query Unity Catalog tables live via a SQL warehouse — no ingestion, data stays in Databricks."),
+        soon("snowflake", "Snowflake", "data", "snowflake", "pat",
+             "Query Snowflake tables live via the SQL API — no ingestion, data stays in Snowflake."),
+        soon("bigquery", "BigQuery", "data", "googlebigquery", "none",
+             "Query BigQuery datasets live — no ingestion, data stays in Google Cloud."),
     ]
 }

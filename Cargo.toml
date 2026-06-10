@@ -21,6 +21,7 @@ members = [
     "crates/kyma-graph",
     "crates/kyma-plan",
     "crates/kyma-exec",
+    "crates/kyma-federation",
     "crates/kyma-server",
     "crates/kyma-cli",
     "crates/kyma-bin",
@@ -81,6 +82,13 @@ arrow-schema = "53"
 arrow-json = "53"
 arrow-flight = "53"
 datafusion = "44"
+# Query federation (remote subplan pushdown). Pinned: 0.3.5 is the last release
+# on the DataFusion 44 line (0.3.6+ moved to DF 45/46; 0.4/0.5 need newer still).
+# Bump alongside any future DF upgrade.
+datafusion-federation = { version = "=0.3.5", features = ["sql"] }
+# TDS (SQL Server wire protocol) client — Microsoft Fabric SQL endpoints.
+tiberius = { version = "0.12", default-features = false, features = ["tds73", "rustls", "chrono"] }
+tokio-util = { version = "0.7", features = ["compat"] }
 
 # Storage
 object_store = { version = "0.11", features = ["aws"] }
@@ -163,6 +171,7 @@ kyma-codeparse         = { path = "crates/kyma-codeparse",       version = "0.0.
 kyma-jobs              = { path = "crates/kyma-jobs",            version = "0.0.7" }
 kyma-plan              = { path = "crates/kyma-plan",            version = "0.0.7" }
 kyma-exec              = { path = "crates/kyma-exec",            version = "0.0.7" }
+kyma-federation        = { path = "crates/kyma-federation",      version = "0.0.7" }
 kyma-server            = { path = "crates/kyma-server",          version = "0.0.7" }
 kyma-cli               = { path = "crates/kyma-cli",             version = "0.0.7" }
 kyma-web-assets        = { path = "crates/kyma-web-assets",      version = "0.0.7" }

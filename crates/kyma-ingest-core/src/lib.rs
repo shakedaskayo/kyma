@@ -158,6 +158,15 @@ impl WritePath {
         let start = std::time::Instant::now();
         let table_label = table.name.clone();
 
+        // Federated tables are metadata-only: rows live on the remote platform
+        // and are scanned at query time. Writing extents under one would
+        // silently shadow remote data, so reject loudly.
+        if table.config.federated.is_some() {
+            return Err(Error::Config(format!(
+                "table `{database}.{table_label}` is federated (live-proxied); it does not accept ingest"
+            )));
+        }
+
         // 0. If the request carried an idempotency key, short-circuit if we
         //    already processed it.
         if let Some(key) = idempotency_key {

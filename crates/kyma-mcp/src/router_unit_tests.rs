@@ -17,7 +17,7 @@ async fn build_app() -> axum::Router {
     )
     .await
     .unwrap();
-    let shared = SharedToolCtx {
+    let shared = SharedToolCtx { federation: None,
         catalog: state.catalog,
         format: state.format,
         pool: Some(pool),

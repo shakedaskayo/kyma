@@ -127,6 +127,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
         credentials: Arc::new(kyma_connectors::runner::NoopCredentialStore),
         oauth: None,
         artifacts: None,
+        catalog: None,
     };
     let mut executors = ExecutorRegistry::new();
     executors.register(Arc::new(ConnectorSyncExecutor::new(deps)));

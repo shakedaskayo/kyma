@@ -63,7 +63,7 @@ async fn build_writer(shared: &SharedToolCtx) -> anyhow::Result<MemoryWriter> {
 }
 
 fn shared_from(state: &AgentState) -> SharedToolCtx {
-    SharedToolCtx {
+    SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),

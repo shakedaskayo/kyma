@@ -335,6 +335,11 @@ async fn main() -> Result<()> {
         pg_catalog.pool().clone(),
         crypto.clone(),
     ));
+
+    // Live-proxy runtime for federated tables (Microsoft Fabric, …). Remote
+    // queries run on the external platform's compute — the guardrails bound
+    // each one. Tunable via env; defaults are conservative.
+    let federation = kyma_federation::runtime_from(cred_store.clone());
     let engine_store = std::sync::Arc::new(
         kyma_server::agent::engine::PgEnginePreferenceStore::new(pg_pool.clone()),
     );
@@ -420,7 +425,7 @@ async fn main() -> Result<()> {
     let schema_cache = std::sync::Arc::new(kyma_server::catalog_handler::SchemaCache::from_env());
     let query_router =
         kyma_server::router_with_agent(
-            QueryState {
+            QueryState { federation: Some(federation.clone()),
                 catalog: catalog.clone(),
                 format: format.clone(),
                 schema_cache: schema_cache.clone(),
@@ -442,7 +447,7 @@ async fn main() -> Result<()> {
         ));
 
     // Build MCP state from the same SharedToolCtx the inline /v1/agent endpoint uses.
-    let mcp_shared = kyma_server::agent::SharedToolCtx {
+    let mcp_shared = kyma_server::agent::SharedToolCtx { federation: Some(federation.clone()),
         catalog: catalog.clone(),
         format: format.clone(),
         pool: Some(pg_pool.clone()),
@@ -500,6 +505,7 @@ async fn main() -> Result<()> {
     conn_reg.register(Arc::new(kyma_connectors::slack::SlackConnector));
     conn_reg.register(Arc::new(kyma_connectors::jira::JiraConnector));
     conn_reg.register(Arc::new(kyma_connectors::confluence::ConfluenceConnector));
+    conn_reg.register(Arc::new(kyma_connectors::msfabric::MsFabricConnector));
     let conn_registry = Arc::new(conn_reg);
 
     // RowSink: bridges connector JSON rows → arrow coercion → WritePath.
@@ -729,7 +735,7 @@ async fn main() -> Result<()> {
     // Live-tail WebSocket — mounted WITHOUT auth middleware; the session
     // authenticates via its first message (browsers can't send WS headers).
     let live_router = kyma_server::discover::live::explore_live_router(
-        QueryState {
+        QueryState { federation: Some(federation.clone()),
             catalog: catalog.clone(),
             format: format.clone(),
             schema_cache: schema_cache.clone(),
@@ -775,7 +781,7 @@ async fn main() -> Result<()> {
     #[cfg(feature = "web-ui")]
     let app = {
         let flight_router =
-            kyma_server::flight_web_router(kyma_server::QueryState {
+            kyma_server::flight_web_router(kyma_server::QueryState { federation: Some(federation.clone()),
                 catalog: catalog.clone(),
                 format: format.clone(),
                 schema_cache: schema_cache.clone(),
@@ -936,7 +942,7 @@ async fn main() -> Result<()> {
         .unwrap_or(true)
     {
         let mut consolidator = kyma_server::agent::MemoryConsolidator::new(
-            kyma_server::agent::SharedToolCtx {
+            kyma_server::agent::SharedToolCtx { federation: Some(federation.clone()),
                 catalog: catalog.clone(),
                 format: format.clone(),
                 pool: Some(pg_pool.clone()),
@@ -973,7 +979,7 @@ async fn main() -> Result<()> {
         .unwrap_or(true)
     {
         let mut correlator = kyma_server::agent::CiCorrelator::new(
-            kyma_server::agent::SharedToolCtx {
+            kyma_server::agent::SharedToolCtx { federation: Some(federation.clone()),
                 catalog: catalog.clone(),
                 format: format.clone(),
                 pool: Some(pg_pool.clone()),
@@ -1007,7 +1013,7 @@ async fn main() -> Result<()> {
         .unwrap_or(true)
     {
         let mut promoter = kyma_server::agent::FilePromoter::new(
-            kyma_server::agent::SharedToolCtx {
+            kyma_server::agent::SharedToolCtx { federation: Some(federation.clone()),
                 catalog: catalog.clone(),
                 format: format.clone(),
                 pool: Some(pg_pool.clone()),
@@ -1140,6 +1146,7 @@ async fn main() -> Result<()> {
             crypto: crypto.clone(),
         }),
         artifacts: Some(artifact_store.clone()),
+        catalog: Some(catalog.clone()),
     };
     let mut exec_registry = kyma_jobs::ExecutorRegistry::new();
     exec_registry.register(Arc::new(

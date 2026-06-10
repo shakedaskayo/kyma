@@ -10,7 +10,7 @@ async fn list_returns_all_named_tools() {
     )
     .await
     .unwrap();
-    let shared = SharedToolCtx {
+    let shared = SharedToolCtx { federation: None,
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: Some(pool),
@@ -62,7 +62,7 @@ async fn list_entries_have_inputschema_objects() {
     )
     .await
     .unwrap();
-    let shared = SharedToolCtx {
+    let shared = SharedToolCtx { federation: None,
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: Some(pool),

@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { Key, KeyRound, Globe, Lock, Cloud, User as UserIcon, ShieldCheck, Boxes } from "lucide-react";
+import { Key, KeyRound, Globe, Lock, Cloud, User as UserIcon, ShieldCheck, Boxes, Building2 } from "lucide-react";
 
 // One glyph per kind — a quick visual cue in the list. Brand marks belong on
 // the *credential consumer* (the connector), not here; this just types the
@@ -14,6 +14,7 @@ const MAP: Record<string, ComponentType<any>> = {
   aws_creds: Cloud,
   api_key: KeyRound,
   github_app: Boxes,
+  service_principal: Building2,
 };
 const FALLBACK = Lock;
 

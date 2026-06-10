@@ -15,7 +15,7 @@ import { CredentialIcon } from "./CredentialIcon";
 // to the tagged union variant. Keeping them inline (vs. a generic schema-form)
 // keeps the wizard sharp and the variant shapes obvious.
 
-const KINDS: CredentialKind[] = ["pat", "basic", "oauth2", "url", "aws_creds", "api_key", "github_app"];
+const KINDS: CredentialKind[] = ["pat", "basic", "oauth2", "url", "aws_creds", "api_key", "github_app", "service_principal"];
 
 const KIND_DESCRIPTION: Record<CredentialKind, string> = {
   pat: "A single bearer token (GitHub/GitLab PAT, project token, …).",
@@ -25,6 +25,7 @@ const KIND_DESCRIPTION: Record<CredentialKind, string> = {
   aws_creds: "AWS-style static access keys, with optional session token.",
   api_key: "A generic API key, optionally sent under a custom header.",
   github_app: "GitHub App: app id + installation id + PEM private key.",
+  service_principal: "Entra ID (Azure AD) service principal — Microsoft Fabric, Azure SQL.",
 };
 
 export function AddCredentialDialog({
@@ -192,6 +193,14 @@ function KindFields({
           </div>
         </>
       );
+    case "service_principal":
+      return (
+        <>
+          <Row label="Directory (tenant) ID" name="tenant_id" placeholder="00000000-0000-0000-0000-000000000000" value={fields.tenant_id} onChange={set} required />
+          <Row label="Application (client) ID" name="client_id" placeholder="00000000-0000-0000-0000-000000000000" value={fields.client_id} onChange={set} required />
+          <Row label="Client secret" name="client_secret" type="password" placeholder="••••••••" value={fields.client_secret} onChange={set} required />
+        </>
+      );
   }
 }
 
@@ -231,6 +240,7 @@ function validForKind(kind: CredentialKind, fields: Record<string, string>): boo
     case "aws_creds": return required(fields, ["access_key_id", "secret_access_key"]);
     case "api_key": return required(fields, ["value"]);
     case "github_app": return required(fields, ["app_id", "installation_id", "private_key_pem"]);
+    case "service_principal": return required(fields, ["tenant_id", "client_id", "client_secret"]);
   }
 }
 
@@ -266,6 +276,13 @@ function toValue(kind: CredentialKind, f: Record<string, string>): CredentialVal
         app_id: g("app_id"),
         installation_id: g("installation_id"),
         private_key_pem: g("private_key_pem"),
+      };
+    case "service_principal":
+      return {
+        kind,
+        tenant_id: g("tenant_id"),
+        client_id: g("client_id"),
+        client_secret: g("client_secret"),
       };
   }
 }

@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 kyma-core = { workspace = true }
 kyma-catalog = { workspace = true }
+kyma-federation = { workspace = true }
 kyma-storage = { workspace = true }
 kyma-redact = { workspace = true }
 kyma-ingest-core = { workspace = true }

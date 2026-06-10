@@ -15,6 +15,7 @@ kyma-graph.workspace = true
 anyhow = { workspace = true }
 kyma-plan.workspace = true
 kyma-exec.workspace = true
+kyma-federation.workspace = true
 kyma-kql.workspace = true
 kyma-catalog.workspace = true
 kyma-connectors.workspace = true
@@ -87,6 +88,7 @@ sqlx.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 kyma-catalog.workspace = true
+kyma-ingest-core.workspace = true
 tempfile = "3"
 wiremock = "0.6"
 # Embedded-engine fixtures for the cc_curate unit tests (no Postgres).
