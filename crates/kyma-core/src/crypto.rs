@@ -77,9 +77,26 @@ impl Crypto {
     }
 }
 
+/// Generate a fresh `KYMA_SECRET_KEY` value: base64 of 32 random bytes — the
+/// format [`Crypto::from_secret`] accepts without SHA-256 stretching. Used by
+/// installers/services that mint a key for a deployed environment.
+pub fn generate_key() -> String {
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    STANDARD.encode(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_key_is_full_strength_base64() {
+        let k = generate_key();
+        let decoded = STANDARD.decode(k.as_bytes()).expect("base64");
+        assert_eq!(decoded.len(), 32, "exactly 32 random bytes");
+        assert_ne!(generate_key(), generate_key(), "random per call");
+    }
 
     #[test]
     fn roundtrip() {

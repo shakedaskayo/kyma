@@ -83,6 +83,24 @@ On `helm`/`local`, use `external` storage (endpoint + keys) and `external`/
 | [Helm](./helm) | Install the engine chart on any Kubernetes cluster. |
 | [Kubernetes / EKS](./kubernetes) | Provision an EKS cluster + install the chart. |
 
+## Required secret: `KYMA_SECRET_KEY`
+
+The server encrypts stored connector credentials (AES-256-GCM) with
+`KYMA_SECRET_KEY` and refuses to start without it. Every deploy path sets it
+for you: the Terraform stack generates one and injects it via SSM (Fargate) or
+a Kubernetes Secret (EKS/Helm), `kyma deploy` writes it to the workspace
+`local.env`, and `kyma service install` mints one at `~/.kyma/secret.key`.
+
+Running the binary directly? Set it yourself:
+
+```bash
+export KYMA_SECRET_KEY="$(openssl rand -base64 32)"
+```
+
+Keep the value stable for the lifetime of a deployment — rotating it makes
+credentials already encrypted at rest undecryptable (re-enter them after a
+rotation).
+
 ## After deploying
 
 1. Open the engine URL and sign in via your auth backend (Supabase / OIDC, or

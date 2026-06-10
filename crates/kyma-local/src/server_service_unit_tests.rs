@@ -19,6 +19,7 @@ fn launchd_plist_keeps_the_server_alive_across_crash_and_boot() {
         addr: "127.0.0.1:7777".into(),
         token: Some("tok123".into()),
         kyma_home: Some("/Users/x/.kyma".to_string()),
+        secret_key: Some("c2VjcmV0LWtleS10ZXN0".into()),
     };
     let plist = launchd_plist("/usr/local/bin/kyma", &opts, "/Users/x/.kyma/logs/server.log");
     assert!(plist.contains("<string>dev.getkyma.kyma-server</string>"));
@@ -35,6 +36,10 @@ fn launchd_plist_keeps_the_server_alive_across_crash_and_boot() {
     assert!(plist.contains("<string>tok123:admin</string>"));
     assert!(plist.contains("<key>KYMA_HOME</key>"));
     assert!(plist.contains("<key>WorkingDirectory</key>"));
+    // Credential-encryption key rides the service env too — the server can't
+    // decrypt stored connector credentials without it.
+    assert!(plist.contains("<key>KYMA_SECRET_KEY</key>"));
+    assert!(plist.contains("<string>c2VjcmV0LWtleS10ZXN0</string>"));
 
     // No token → no KYMA_AUTH_TOKENS entry (auth-disabled local default).
     let plain = launchd_plist(
@@ -54,12 +59,14 @@ fn systemd_unit_restarts_on_failure() {
         addr: "0.0.0.0:7777".into(),
         token: Some("tok".into()),
         kyma_home: Some("/home/x/.kyma".to_string()),
+        secret_key: Some("c2VjcmV0".into()),
     };
     let unit = systemd_unit("/usr/bin/kyma", &opts);
     assert!(unit.contains("ExecStart=/usr/bin/kyma serve --addr 0.0.0.0:7777"));
     assert!(unit.contains("Restart=on-failure"));
     assert!(unit.contains("Environment=KYMA_AUTH_TOKENS=tok:admin"));
     assert!(unit.contains("Environment=KYMA_HOME=/home/x/.kyma"));
+    assert!(unit.contains("Environment=KYMA_SECRET_KEY=c2VjcmV0"));
     assert!(unit.contains("WantedBy=default.target"));
 }
 
