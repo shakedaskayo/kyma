@@ -132,7 +132,7 @@ mod tests {
         let store = Arc::new(InMemory::new());
         let format: Arc<dyn SegmentFormat> =
             Arc::new(TelemetryFormat::new(store, "kyma-test"));
-        let n = sync_artifact_nodes_all_tenants(catalog, format)
+        let n = sync_artifact_nodes_all_tenants(catalog, format, None)
             .await
             .unwrap();
         assert_eq!(n, 0);

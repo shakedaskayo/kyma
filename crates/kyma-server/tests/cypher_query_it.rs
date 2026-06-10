@@ -158,16 +158,27 @@ async fn cypher_missing_x_graph_when_no_graph_is_400() {
 #[tokio::test]
 async fn cypher_malformed_is_400_with_parse_error() {
     let state = seeded_state_with_graph().await;
-    // Multi-hop is explicitly unsupported by cypher_to_kql → ParseError.
+    // Genuinely malformed Cypher → ParseError. (Multi-hop MATCH, the old
+    // probe here, is supported since the multi-hop graph-match work.)
+    let req = cypher_req(Some("obs/kg"), "obs", "FROBNICATE (a) RETURN a.name");
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    assert!(
+        body.contains("expected MATCH"),
+        "expected ParseError text in the 400 body, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn cypher_multi_hop_match_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // Regression guard: this exact shape was a 400 ("multi-hop not
+    // supported") before kyma-kql learned multi-hop graph-match.
     let req = cypher_req(
         Some("obs/kg"),
         "obs",
         "MATCH (a)-[r]->(b)-[s]->(c) RETURN a.name",
     );
     let (status, body) = run(state, req).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
-    assert!(
-        body.contains("multi-hop") || body.contains("not supported"),
-        "expected ParseError text in the 400 body, got: {body}"
-    );
+    assert_eq!(status, StatusCode::OK, "body: {body}");
 }
