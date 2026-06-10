@@ -260,14 +260,11 @@ impl CompactionWorker {
     }
 
     async fn list_tables_for(&self, table_id: TableId) -> Result<Vec<TableRef>> {
-        // Brute-force: list all databases' tables and filter. Works for phase
-        // C; the catalog trait doesn't yet expose a direct `table_by_id`, and
-        // adding one touches every implementation — not worth it right now.
-        //
-        // Slight inefficiency: one SELECT per known database. Until the
-        // catalog trait gets `lookup_table_by_id`, this is adequate.
-        let dbs: Vec<(uuid::Uuid, String)> = sqlx_list_databases(&self.catalog).await?;
-        for (_, name) in dbs {
+        // Brute-force: list all databases' tables and filter. Goes through the
+        // catalog trait (works on any backend) — the trait doesn't yet expose a
+        // direct `lookup_table_by_id`, and adding one touches every impl.
+        let dbs = self.catalog.list_databases().await?;
+        for name in dbs {
             let ts = self.catalog.list_tables_in_database(&name).await?;
             for t in ts {
                 if t.id == table_id {
@@ -434,90 +431,23 @@ struct CompactionCandidate {
 
 /// Find tables with enough small extents to warrant a compaction.
 ///
-/// Runs a direct SQL query on the catalog's pool — this is a phase-C
-/// shortcut; a future `Catalog::extent_sizes_by_table` method would be a
-/// cleaner boundary. The shortcut is acceptable because compaction only
-/// runs against `PostgresCatalog` for now.
+/// Delegates to `Catalog::compaction_candidates`, so it works against any
+/// backend (Postgres or the local SQLite catalog) — the backend runs the
+/// extent-size window query natively.
 async fn find_compaction_candidates(
     catalog: &Arc<dyn Catalog>,
     min_extents: i64,
     max_merge: i64,
     small_bytes: i64,
 ) -> Result<Vec<CompactionCandidate>> {
-    let pool = catalog_pool(catalog)?;
-
-    // One query per pass. Picks tables with ≥ min_extents small live extents,
-    // returns the smallest max_merge per table.
-    let rows = sqlx::query(
-        "WITH small AS (
-            SELECT table_id, id, byte_size,
-                   row_number() OVER (PARTITION BY table_id ORDER BY byte_size) AS rnk,
-                   count(*)      OVER (PARTITION BY table_id)                   AS total
-            FROM extents
-            WHERE deleted_at IS NULL
-              AND byte_size < $1
-         )
-         SELECT table_id, id, byte_size
-         FROM small
-         WHERE total >= $2 AND rnk <= $3
-         ORDER BY table_id, byte_size",
-    )
-    .bind(small_bytes)
-    .bind(min_extents)
-    .bind(max_merge)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| Error::Catalog(CatalogError::Sql(e.to_string())))?;
-
-    use sqlx::Row;
-    let mut by_table: std::collections::BTreeMap<uuid::Uuid, Vec<uuid::Uuid>> =
-        std::collections::BTreeMap::new();
-    for row in rows {
-        let tid: uuid::Uuid = row
-            .try_get("table_id")
-            .map_err(|e| Error::Catalog(CatalogError::Sql(e.to_string())))?;
-        let eid: uuid::Uuid = row
-            .try_get("id")
-            .map_err(|e| Error::Catalog(CatalogError::Sql(e.to_string())))?;
-        by_table.entry(tid).or_default().push(eid);
-    }
-    Ok(by_table
+    let groups = catalog
+        .compaction_candidates(small_bytes, min_extents, max_merge)
+        .await?;
+    Ok(groups
         .into_iter()
-        .filter(|(_, v)| v.len() >= 2)
-        .map(|(tid, eids)| CompactionCandidate {
-            table_id: TableId::from_uuid(tid),
-            source_extent_ids: eids,
+        .map(|(table_id, eids)| CompactionCandidate {
+            table_id,
+            source_extent_ids: eids.iter().map(|e| *e.as_uuid()).collect(),
         })
         .collect())
-}
-
-// ---------------------------------------------------------------------
-// Shortcut: borrow the Postgres pool out of the catalog via downcast.
-// ---------------------------------------------------------------------
-
-fn catalog_pool(catalog: &Arc<dyn Catalog>) -> Result<&sqlx::PgPool> {
-    // We know the only catalog impl right now is PostgresCatalog. Use
-    // downcast via `as_any`-style trick: we add a tiny helper method
-    // in kyma-catalog that exposes the pool, and access it here.
-    //
-    // For now: use an extension trait implemented by kyma_catalog::PostgresCatalog.
-    use std::any::Any;
-    let any_ref: &dyn Any = catalog.as_ref_any();
-    if let Some(pg) = any_ref.downcast_ref::<kyma_catalog::PostgresCatalog>() {
-        Ok(pg.pool())
-    } else {
-        Err(Error::Internal(
-            "compaction scheduler requires PostgresCatalog (phase-C shortcut)".into(),
-        ))
-    }
-}
-
-async fn sqlx_list_databases(catalog: &Arc<dyn Catalog>) -> Result<Vec<(uuid::Uuid, String)>> {
-    let pool = catalog_pool(catalog)?;
-    let rows: Vec<(uuid::Uuid, String)> =
-        sqlx::query_as("SELECT id, name FROM databases ORDER BY name")
-            .fetch_all(pool)
-            .await
-            .map_err(|e| Error::Catalog(CatalogError::Sql(e.to_string())))?;
-    Ok(rows)
 }

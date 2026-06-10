@@ -645,6 +645,26 @@ pub trait Catalog: Send + Sync {
         prune: &PrunePredicate,
     ) -> Result<Vec<ExtentManifest>>;
 
+    /// Find tables with enough small live extents to warrant compaction.
+    ///
+    /// Returns, per qualifying table, the ids of its smallest `max_merge` live
+    /// extents — the candidate set the compaction worker should merge. A table
+    /// qualifies when it has at least `min_extents` live extents smaller than
+    /// `small_bytes`. Only groups with ≥2 extents are returned.
+    ///
+    /// The default returns nothing (a backend opts in by overriding); the
+    /// `compaction` scheduler uses this instead of reaching into a backend's
+    /// connection pool, so it works against any catalog (Postgres or SQLite).
+    async fn compaction_candidates(
+        &self,
+        small_bytes: i64,
+        min_extents: i64,
+        max_merge: i64,
+    ) -> Result<Vec<(TableId, Vec<ExtentId>)>> {
+        let _ = (small_bytes, min_extents, max_merge);
+        Ok(Vec::new())
+    }
+
     // --- garbage collection ---
 
     async fn gc_candidates(&self, before: DateTime<Utc>) -> Result<Vec<ExtentId>>;
