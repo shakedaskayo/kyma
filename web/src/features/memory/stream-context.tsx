@@ -25,6 +25,7 @@ export function useSharedMemoryStream(): StreamValue {
       status: "idle",
       liveStatus: null,
       eventsPerMin: 0,
+      newestTs: "",
     }
   );
 }
