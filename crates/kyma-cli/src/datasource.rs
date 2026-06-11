@@ -58,13 +58,12 @@ pub(crate) enum IngestOp {
     /// (or just the one named).
     Status {
         /// Limit to a single data source by name or UUID.
-        // Flag stays `--connector` until the CLI surface renames in a later task.
-        #[arg(long = "connector")]
+        #[arg(long = "datasource")]
         data_source: Option<String>,
     },
     /// Poll status forever and print runs as they complete.
     Tail {
-        #[arg(long = "connector")]
+        #[arg(long = "datasource")]
         data_source: Option<String>,
         /// Polling interval in seconds.
         #[arg(long, default_value_t = 3)]
@@ -294,9 +293,9 @@ pub(crate) async fn run_ingest(op: IngestOp) -> Result<()> {
 // ── list ────────────────────────────────────────────────────────────────────
 
 async fn cmd_list(cfg: &ClientConfig) -> Result<()> {
-    let items = list_connectors(cfg).await?;
+    let items = list_data_sources(cfg).await?;
     if items.is_empty() {
-        println!("(no connectors registered)");
+        println!("(no data sources registered)");
         return Ok(());
     }
     println!(
@@ -470,7 +469,7 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
         .ok_or_else(|| anyhow!("server didn't return an id: {resp}"))?
         .to_string();
 
-    println!("Created connector {name} ({kind}) → id={id}");
+    println!("Created data source {name} ({kind}) → id={id}");
     println!("  database:      {db}");
     println!("  credential:    {credential_id}");
     println!("  schedule:      every {}ms", schedule_ms);
@@ -480,7 +479,7 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
         http_post(cfg, &format!("/v1/data-sources/{id}/trigger"), &json!({})).await?;
         poll_status(cfg, &id, 30).await?;
     } else {
-        println!("\nRun `kyma connector trigger {id}` to start a manual tick.");
+        println!("\nRun `kyma datasource trigger {id}` to start a manual tick.");
     }
     Ok(())
 }
@@ -604,7 +603,7 @@ async fn cmd_simple_op(cfg: &ClientConfig, name_or_id: &str, op: &str) -> Result
         "resume" => "resumed",
         other => other,
     };
-    println!("{past} connector {id}");
+    println!("{past} data source {id}");
     Ok(())
 }
 
@@ -612,7 +611,7 @@ async fn cmd_remove(cfg: &ClientConfig, name_or_id: &str, yes: bool) -> Result<(
     let id = resolve_id(cfg, name_or_id).await?;
     if !yes {
         use std::io::{stdin, stdout, Write};
-        print!("Delete connector {id}? [y/N] ");
+        print!("Delete data source {id}? [y/N] ");
         stdout().flush().ok();
         let mut s = String::new();
         stdin().read_line(&mut s).ok();
@@ -622,7 +621,7 @@ async fn cmd_remove(cfg: &ClientConfig, name_or_id: &str, yes: bool) -> Result<(
         }
     }
     http_delete(cfg, &format!("/v1/data-sources/{id}")).await?;
-    println!("removed connector {id}");
+    println!("removed data source {id}");
     Ok(())
 }
 
@@ -633,7 +632,7 @@ async fn cmd_ingest_status(cfg: &ClientConfig, only: Option<&str>) -> Result<()>
     } else {
         // The list endpoint returns sparse rows; fetch detail per data source
         // to populate last_run_at / last_success_at / last_error.
-        let shallow = list_connectors(cfg).await?;
+        let shallow = list_data_sources(cfg).await?;
         let mut out = Vec::with_capacity(shallow.len());
         for row in shallow {
             if let Some(id) = row.get("id").and_then(Value::as_str) {
@@ -649,7 +648,7 @@ async fn cmd_ingest_status(cfg: &ClientConfig, only: Option<&str>) -> Result<()>
         out
     };
     if items.is_empty() {
-        println!("(no connectors)");
+        println!("(no data sources)");
         return Ok(());
     }
     println!(
@@ -682,7 +681,7 @@ async fn cmd_ingest_tail(
             let id = resolve_id(cfg, name).await?;
             vec![http_get(cfg, &format!("/v1/data-sources/{id}")).await?]
         } else {
-            list_connectors(cfg).await?
+            list_data_sources(cfg).await?
         };
         for c in items {
             let id = c.get("id").and_then(Value::as_str).unwrap_or("").to_string();
@@ -730,7 +729,7 @@ async fn poll_status(cfg: &ClientConfig, id: &str, timeout_secs: u64) -> Result<
                 return Ok(());
             } else {
                 println!("  [{lr}] ERROR: {le}");
-                return Err(anyhow!("connector run failed"));
+                return Err(anyhow!("data source run failed"));
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -745,7 +744,7 @@ async fn resolve_id(cfg: &ClientConfig, name_or_id: &str) -> Result<String> {
     if looks_like_uuid(name_or_id) {
         return Ok(name_or_id.to_string());
     }
-    let items = list_connectors(cfg).await?;
+    let items = list_data_sources(cfg).await?;
     for c in items {
         if c.get("name").and_then(Value::as_str) == Some(name_or_id) {
             if let Some(id) = c.get("id").and_then(Value::as_str) {
@@ -753,7 +752,7 @@ async fn resolve_id(cfg: &ClientConfig, name_or_id: &str) -> Result<String> {
             }
         }
     }
-    bail!("no connector with name '{name_or_id}'")
+    bail!("no data source with name '{name_or_id}'")
 }
 
 fn looks_like_uuid(s: &str) -> bool {
@@ -767,7 +766,7 @@ fn looks_like_uuid(s: &str) -> bool {
 
 // ── HTTP plumbing ───────────────────────────────────────────────────────────
 
-async fn list_connectors(cfg: &ClientConfig) -> Result<Vec<Value>> {
+async fn list_data_sources(cfg: &ClientConfig) -> Result<Vec<Value>> {
     let v = http_get(cfg, "/v1/data-sources").await?;
     let items = v
         .get("items")

@@ -135,10 +135,8 @@ enum Command {
         which: SkillWhich,
     },
     /// Manage data sources — add a GitHub/GitLab/Bitbucket repo, list, pause,
-    /// resume, trigger, remove. See `kyma connector --help`.
-    // The user-facing subcommand stays `kyma connector` until the CLI surface
-    // renames in a later task; Task 2 only renames Rust symbols.
-    #[command(name = "connector")]
+    /// resume, trigger, remove. See `kyma datasource --help`.
+    #[command(name = "datasource")]
     DataSource {
         #[command(subcommand)]
         op: datasource::Op,
