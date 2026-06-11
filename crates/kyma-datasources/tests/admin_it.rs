@@ -85,7 +85,7 @@ async fn create_list_get_delete() {
         .oneshot(
             axum::http::Request::builder()
                 .method("POST")
-                .uri("/v1/connectors")
+                .uri("/v1/data-sources")
                 .header("content-type", "application/json")
                 .body(axum::body::Body::from(body.to_string()))
                 .unwrap(),
@@ -99,7 +99,7 @@ async fn create_list_get_delete() {
         .oneshot(
             axum::http::Request::builder()
                 .method("GET")
-                .uri("/v1/connectors")
+                .uri("/v1/data-sources")
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )
@@ -124,7 +124,7 @@ async fn rejects_invalid_config() {
         .oneshot(
             axum::http::Request::builder()
                 .method("POST")
-                .uri("/v1/connectors")
+                .uri("/v1/data-sources")
                 .header("content-type", "application/json")
                 .body(axum::body::Body::from(body.to_string()))
                 .unwrap(),

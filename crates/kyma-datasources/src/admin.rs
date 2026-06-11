@@ -1,4 +1,4 @@
-//! HTTP admin API — /v1/data sources CRUD.
+//! HTTP admin API — /v1/data-sources CRUD.
 
 use crate::catalog_sql;
 use crate::registry::DataSourceRegistry;
@@ -21,15 +21,15 @@ pub struct AdminState {
 
 pub fn router(state: AdminState) -> Router {
     Router::new()
-        .route("/v1/connectors", post(create).get(list))
-        .route("/v1/connectors/catalog", get(catalog))
+        .route("/v1/data-sources", post(create).get(list))
+        .route("/v1/data-sources/catalog", get(catalog))
         .route(
-            "/v1/connectors/:id",
+            "/v1/data-sources/:id",
             get(get_one).patch(patch_one).delete(delete_one),
         )
-        .route("/v1/connectors/:id/pause", post(pause))
-        .route("/v1/connectors/:id/resume", post(resume))
-        .route("/v1/connectors/:id/trigger", post(trigger))
+        .route("/v1/data-sources/:id/pause", post(pause))
+        .route("/v1/data-sources/:id/resume", post(resume))
+        .route("/v1/data-sources/:id/trigger", post(trigger))
         .with_state(state)
 }
 
@@ -106,7 +106,7 @@ async fn create(
     }
 }
 
-/// `GET /v1/data sources/catalog` — the vendor-agnostic catalog that drives the
+/// `GET /v1/data-sources/catalog` — the vendor-agnostic catalog that drives the
 /// data sources UI. Merges registered data sources (self-described, status
 /// `"available"`) with the static `coming_soon` list (registered wins on a
 /// `type_id` collision), sorted available-first then by category and label.

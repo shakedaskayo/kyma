@@ -1,6 +1,6 @@
 //! GitHub data source admin endpoints.
 //!
-//! Exposes `POST /v1/data sources/github/repos` — resolves the provided PAT
+//! Exposes `POST /v1/data-sources/github/repos` — resolves the provided PAT
 //! via `SecretStore`, lists all repos visible to the token (user + org repos),
 //! and returns them for the UI's repo picker.
 //!
@@ -49,7 +49,7 @@ struct AdminGithubState {
 pub fn github_repos_router(secrets: Arc<dyn SecretStore>) -> Router {
     let state = AdminGithubState { secrets };
     Router::new()
-        .route("/v1/connectors/github/repos", post(list_repos))
+        .route("/v1/data-sources/github/repos", post(list_repos))
         .with_state(state)
 }
 

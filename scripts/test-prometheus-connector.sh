@@ -31,7 +31,7 @@ cleanup() {
         wait "$MOCK_PID" 2>/dev/null || true
     fi
     if [[ -n "${CONN_ID:-}" ]]; then
-        curl -s -X DELETE "$HTTP/v1/connectors/$CONN_ID" >/dev/null || true
+        curl -s -X DELETE "$HTTP/v1/data-sources/$CONN_ID" >/dev/null || true
     fi
 }
 trap cleanup EXIT
@@ -84,7 +84,7 @@ BODY=$(cat <<EOF
 }
 EOF
 )
-CREATE=$(curl -sS -X POST "$HTTP/v1/connectors" \
+CREATE=$(curl -sS -X POST "$HTTP/v1/data-sources" \
     -H 'Content-Type: application/json' -d "$BODY")
 CONN_ID=$(echo "$CREATE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' 2>/dev/null || echo "")
 
@@ -97,7 +97,7 @@ section "Wait for first successful scrape"
 ROWS=0
 STATUS=""
 for _ in $(seq 1 20); do
-    STATUS=$(curl -sS "$HTTP/v1/connectors/$CONN_ID" 2>/dev/null || echo '')
+    STATUS=$(curl -sS "$HTTP/v1/data-sources/$CONN_ID" 2>/dev/null || echo '')
     if echo "$STATUS" | grep -q '"enabled":true'; then
         ROWS=$(curl -sS "$HTTP/metrics" \
             | grep -E "kyma_connector_rows_ingested_total\\{.*connector_id=\"$CONN_ID\"" \
@@ -142,12 +142,12 @@ fi
 section "Pause/resume: pause stops new ticks"
 # ---------------------------------------------------------------------------
 BEFORE=$(QUERY "SELECT count(*) AS n FROM metrics" | tail -n1)
-curl -sS -X POST "$HTTP/v1/connectors/$CONN_ID/pause" >/dev/null
+curl -sS -X POST "$HTTP/v1/data-sources/$CONN_ID/pause" >/dev/null
 sleep 2
 AFTER=$(QUERY "SELECT count(*) AS n FROM metrics" | tail -n1)
 if [[ "$BEFORE" == "$AFTER" ]]; then ok "pause stops new ticks"
 else nope "pause" "before=$BEFORE after=$AFTER"; fi
-curl -sS -X POST "$HTTP/v1/connectors/$CONN_ID/resume" >/dev/null
+curl -sS -X POST "$HTTP/v1/data-sources/$CONN_ID/resume" >/dev/null
 ok "resume accepted"
 
 # ---------------------------------------------------------------------------
@@ -181,7 +181,7 @@ wait "$MOCK_PID" 2>/dev/null || true
 MOCK_PID=$!
 sleep 2
 
-RECOVERED=$(curl -sS "$HTTP/v1/connectors/$CONN_ID" | grep -c 'last_success_at' || echo 0)
+RECOVERED=$(curl -sS "$HTTP/v1/data-sources/$CONN_ID" | grep -c 'last_success_at' || echo 0)
 if [[ "$RECOVERED" -ge 1 ]]; then ok "connector recovered after 503 (last_success_at present)"
 else nope "recovery" "last_success_at not found in connector response"; fi
 
@@ -189,7 +189,7 @@ else nope "recovery" "last_success_at not found in connector response"; fi
 section "Trigger: immediate tick"
 # ---------------------------------------------------------------------------
 TRIG_STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
-    -X POST "$HTTP/v1/connectors/$CONN_ID/trigger")
+    -X POST "$HTTP/v1/data-sources/$CONN_ID/trigger")
 if [[ "$TRIG_STATUS" == "202" || "$TRIG_STATUS" == "200" || "$TRIG_STATUS" == "204" ]]; then
     ok "trigger accepted (HTTP $TRIG_STATUS)"
 else
@@ -200,8 +200,8 @@ sleep 2
 # ---------------------------------------------------------------------------
 section "Delete connector"
 # ---------------------------------------------------------------------------
-curl -sS -X DELETE "$HTTP/v1/connectors/$CONN_ID" >/dev/null
-GONE=$(curl -sS -o /dev/null -w '%{http_code}' "$HTTP/v1/connectors/$CONN_ID")
+curl -sS -X DELETE "$HTTP/v1/data-sources/$CONN_ID" >/dev/null
+GONE=$(curl -sS -o /dev/null -w '%{http_code}' "$HTTP/v1/data-sources/$CONN_ID")
 if [[ "$GONE" == "404" ]]; then ok "connector deleted (404 on re-fetch)"
 else nope "delete" "expected 404, got $GONE"; fi
 

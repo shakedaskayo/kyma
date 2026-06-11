@@ -463,7 +463,7 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
         "schedule_ms": schedule_ms,
         "config": config,
     });
-    let resp = http_post(cfg, "/v1/connectors", &create_body).await?;
+    let resp = http_post(cfg, "/v1/data-sources", &create_body).await?;
     let id = resp
         .get("id")
         .and_then(Value::as_str)
@@ -477,7 +477,7 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
 
     if start {
         println!("\nTriggering first run...");
-        http_post(cfg, &format!("/v1/connectors/{id}/trigger"), &json!({})).await?;
+        http_post(cfg, &format!("/v1/data-sources/{id}/trigger"), &json!({})).await?;
         poll_status(cfg, &id, 30).await?;
     } else {
         println!("\nRun `kyma connector trigger {id}` to start a manual tick.");
@@ -589,14 +589,14 @@ async fn create_credential(cfg: &ClientConfig, label: &str, value: Value) -> Res
 
 async fn cmd_show(cfg: &ClientConfig, name_or_id: &str) -> Result<()> {
     let id = resolve_id(cfg, name_or_id).await?;
-    let body = http_get(cfg, &format!("/v1/connectors/{id}")).await?;
+    let body = http_get(cfg, &format!("/v1/data-sources/{id}")).await?;
     println!("{}", serde_json::to_string_pretty(&body)?);
     Ok(())
 }
 
 async fn cmd_simple_op(cfg: &ClientConfig, name_or_id: &str, op: &str) -> Result<()> {
     let id = resolve_id(cfg, name_or_id).await?;
-    http_post(cfg, &format!("/v1/connectors/{id}/{op}"), &json!({})).await?;
+    http_post(cfg, &format!("/v1/data-sources/{id}/{op}"), &json!({})).await?;
     // Past-tense per op — "{op}d" only reads right for pause/resume.
     let past = match op {
         "trigger" => "triggered a run for",
@@ -621,7 +621,7 @@ async fn cmd_remove(cfg: &ClientConfig, name_or_id: &str, yes: bool) -> Result<(
             return Ok(());
         }
     }
-    http_delete(cfg, &format!("/v1/connectors/{id}")).await?;
+    http_delete(cfg, &format!("/v1/data-sources/{id}")).await?;
     println!("removed connector {id}");
     Ok(())
 }
@@ -629,7 +629,7 @@ async fn cmd_remove(cfg: &ClientConfig, name_or_id: &str, yes: bool) -> Result<(
 async fn cmd_ingest_status(cfg: &ClientConfig, only: Option<&str>) -> Result<()> {
     let items = if let Some(name) = only {
         let id = resolve_id(cfg, name).await?;
-        vec![http_get(cfg, &format!("/v1/connectors/{id}")).await?]
+        vec![http_get(cfg, &format!("/v1/data-sources/{id}")).await?]
     } else {
         // The list endpoint returns sparse rows; fetch detail per data source
         // to populate last_run_at / last_success_at / last_error.
@@ -637,7 +637,7 @@ async fn cmd_ingest_status(cfg: &ClientConfig, only: Option<&str>) -> Result<()>
         let mut out = Vec::with_capacity(shallow.len());
         for row in shallow {
             if let Some(id) = row.get("id").and_then(Value::as_str) {
-                if let Ok(detail) = http_get(cfg, &format!("/v1/connectors/{id}")).await {
+                if let Ok(detail) = http_get(cfg, &format!("/v1/data-sources/{id}")).await {
                     out.push(detail);
                 } else {
                     out.push(row);
@@ -680,7 +680,7 @@ async fn cmd_ingest_tail(
     loop {
         let items = if let Some(name) = only {
             let id = resolve_id(cfg, name).await?;
-            vec![http_get(cfg, &format!("/v1/connectors/{id}")).await?]
+            vec![http_get(cfg, &format!("/v1/data-sources/{id}")).await?]
         } else {
             list_connectors(cfg).await?
         };
@@ -714,7 +714,7 @@ async fn cmd_ingest_tail(
 async fn poll_status(cfg: &ClientConfig, id: &str, timeout_secs: u64) -> Result<()> {
     let started = std::time::Instant::now();
     while started.elapsed().as_secs() < timeout_secs {
-        let body = http_get(cfg, &format!("/v1/connectors/{id}")).await?;
+        let body = http_get(cfg, &format!("/v1/data-sources/{id}")).await?;
         let lr = body
             .get("last_run_at")
             .and_then(Value::as_str)
@@ -768,12 +768,12 @@ fn looks_like_uuid(s: &str) -> bool {
 // ── HTTP plumbing ───────────────────────────────────────────────────────────
 
 async fn list_connectors(cfg: &ClientConfig) -> Result<Vec<Value>> {
-    let v = http_get(cfg, "/v1/connectors").await?;
+    let v = http_get(cfg, "/v1/data-sources").await?;
     let items = v
         .get("items")
         .and_then(Value::as_array)
         .cloned()
-        .ok_or_else(|| anyhow!("/v1/connectors: missing items array"))?;
+        .ok_or_else(|| anyhow!("/v1/data-sources: missing items array"))?;
     Ok(items)
 }
 
