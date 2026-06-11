@@ -8,6 +8,7 @@ import {
   KeyRound,
   Sparkles,
   Brain,
+  Activity,
   Cloud,
   Settings as SettingsIcon,
   PanelLeftClose,
@@ -57,6 +58,10 @@ const GROUPS: NavGroup[] = [
       { to: "/agent", label: "Agent", icon: Sparkles },
       { to: "/memory", label: "Memory", icon: Brain },
     ],
+  },
+  {
+    label: "Observe",
+    items: [{ to: "/traces", label: "Traces", icon: Activity }],
   },
 ];
 
