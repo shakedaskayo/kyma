@@ -119,6 +119,7 @@ const CONNECTORS_FNS = [
   "resumeConnector",
   "triggerConnector",
   "listGitHubRepos",
+  "listDataSourceWatchers",
 ] as const satisfies readonly (keyof typeof connectors)[];
 
 const CREDENTIALS_FNS = [

@@ -109,6 +109,56 @@ async fn create_list_get_delete() {
 }
 
 #[tokio::test]
+async fn watchers_list_empty_then_rows() {
+    let (_pg, s) = state().await;
+    let pool = s.catalog.pool().clone();
+    let app = app(s);
+
+    let resp = app
+        .clone()
+        .oneshot(
+            axum::http::Request::builder()
+                .method("GET")
+                .uri("/v1/data-sources/watchers")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(v["items"], json!([]));
+
+    kyma_datasources::watchers::WatcherRegistry::register(
+        &pool, "filedrop", "h", "n", "u", json!({}),
+    )
+    .await
+    .unwrap();
+
+    let resp = app
+        .oneshot(
+            axum::http::Request::builder()
+                .method("GET")
+                .uri("/v1/data-sources/watchers")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let items = v["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["kind"], "filedrop");
+}
+
+#[tokio::test]
 async fn rejects_invalid_config() {
     let (_pg, s) = state().await;
     let app = app(s.clone());

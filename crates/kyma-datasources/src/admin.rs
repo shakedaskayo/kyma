@@ -23,6 +23,9 @@ pub fn router(state: AdminState) -> Router {
     Router::new()
         .route("/v1/data-sources", post(create).get(list))
         .route("/v1/data-sources/catalog", get(catalog))
+        // Static segment — registered before `/:id` (axum prefers static over
+        // param regardless, but keep the ordering explicit).
+        .route("/v1/data-sources/watchers", get(list_watchers))
         .route(
             "/v1/data-sources/:id",
             get(get_one).patch(patch_one).delete(delete_one),
@@ -153,6 +156,23 @@ async fn catalog(State(s): State<AdminState>) -> impl IntoResponse {
         })
         .collect();
     (StatusCode::OK, Json(serde_json::json!({ "items": items }))).into_response()
+}
+
+/// `GET /v1/data-sources/watchers` — registered file watchers (filedrop,
+/// cc-sync) with node/identity provenance and staleness. Watchers are
+/// infrastructure-level (per node, not per tenant), so unlike the other
+/// routes this handler deliberately ignores the `TenantId` extension.
+async fn list_watchers(State(s): State<AdminState>) -> impl IntoResponse {
+    match crate::watchers::WatcherRegistry::list_and_prune(s.catalog.pool()).await {
+        Ok(items) => {
+            (StatusCode::OK, Json(serde_json::json!({ "items": items }))).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 async fn list(

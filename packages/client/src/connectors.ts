@@ -250,3 +250,32 @@ export function deriveStatus(detail: ConnectorDetail): ConnectorStatus {
   if (detail.last_success_at) return "synced";
   return "idle";
 }
+
+// ── Watchers (file watchers / cc-sync provenance) ─────────────────────────────
+
+export interface DataSourceWatcher {
+  id: string;
+  kind: "filedrop" | "cc_sync";
+  node_host: string;
+  node_id: string;
+  identity: string;
+  config: Record<string, unknown>;
+  started_at: string;
+  last_heartbeat_at: string;
+  last_scan: {
+    seen: number;
+    processed: number;
+    errors: number;
+    duration_ms: number;
+    at: string;
+    detail?: Record<string, unknown>;
+  } | null;
+  stale: boolean;
+}
+
+export async function listDataSourceWatchers(t: KymaTransport): Promise<DataSourceWatcher[]> {
+  const body = await handleResponse<{ items: DataSourceWatcher[] }>(
+    await t.request("/v1/data-sources/watchers"),
+  );
+  return body.items ?? [];
+}
