@@ -79,6 +79,13 @@ async fn register_heartbeat_list_prune() {
     assert_eq!(scan["processed"], 9);
     assert_eq!(scan["seen"], 10);
     assert!(!row.stale, "fresh heartbeat must not be stale");
+
+    // 4b. heartbeat(None) must COALESCE: last_scan stays Some with processed==9
+    reg.heartbeat(None).await;
+    let rows = WatcherRegistry::list(&pool).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    let scan = rows[0].last_scan.as_ref().expect("last_scan must still be Some after heartbeat(None)");
+    assert_eq!(scan["processed"], 9, "COALESCE must keep prior scan when None is passed");
     // timestamps round-trip as RFC 3339
     assert!(
         chrono::DateTime::parse_from_rfc3339(&row.last_heartbeat_at).is_ok(),
