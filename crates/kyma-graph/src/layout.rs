@@ -184,6 +184,117 @@ struct LNode {
     label_idx: usize,
 }
 
+/// Orbit post-pass: for every hub that has ≥ 4 degree-1 leaf neighbours,
+/// place those leaves on concentric rings centered on the hub.
+///
+/// Ring geometry:
+///   ring k radius: `r_k = 90.0 + 55.0 * k`
+///   ring k capacity: `floor(2π·r_k / 34.0)` (minimum 1)
+///
+/// Angles are evenly spaced starting from `base_angle = atan2(hub_y − centroid_y,
+/// hub_x − centroid_x) + π`, so the fan opens away from the graph centroid.
+/// If the hub lies exactly at the centroid, `base_angle = 0.0` is used.
+/// Leaves are sorted by node id (deterministic) before being assigned to rings
+/// in fill order.
+///
+/// Returns the set of `ln` indices that were repositioned (the "orbited" set).
+/// Non-leaf nodes and hubs with fewer than 4 leaves are left untouched.
+///
+/// The caller (force_layout) must exclude these indices from the subsequent
+/// overlap-resolution pass so the ring geometry is preserved.
+fn orbit_pass(
+    ln: &mut [LNode],
+    edge_pairs: &[(usize, usize)],
+    nodes: &[GraphNode],
+) -> std::collections::HashSet<usize> {
+    use std::collections::HashSet;
+
+    let n = ln.len();
+    if n == 0 {
+        return HashSet::new();
+    }
+
+    // Build undirected degree and adjacency lists (using ln indices).
+    // Vec<Vec<usize>> indexed directly by ln index is faster and more
+    // cache-friendly than a HashMap at 100k nodes.
+    let mut degree = vec![0usize; n];
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for &(s, t) in edge_pairs {
+        degree[s] += 1;
+        degree[t] += 1;
+        adj[s].push(t);
+        adj[t].push(s);
+    }
+
+    // Identify degree-1 nodes (leaves).
+    let is_leaf: Vec<bool> = (0..n).map(|i| degree[i] == 1).collect();
+
+    // Compute graph centroid (average of all node positions).
+    let cx: f64 = ln.iter().map(|nd| nd.x).sum::<f64>() / n as f64;
+    let cy: f64 = ln.iter().map(|nd| nd.y).sum::<f64>() / n as f64;
+
+    let mut orbited = HashSet::new();
+
+    // For each potential hub: collect its leaf neighbours.
+    // We iterate hubs in node-id order so the pass is deterministic.
+    let mut hub_indices: Vec<usize> = (0..n).collect();
+    hub_indices.sort_by(|&a, &b| nodes[ln[a].idx].id.cmp(&nodes[ln[b].idx].id));
+
+    for hub_li in hub_indices {
+        // Collect leaves of this hub, sorted by their node id for determinism.
+        let mut leaves: Vec<usize> = adj[hub_li]
+            .iter()
+            .copied()
+            .filter(|&nb| is_leaf[nb])
+            .collect();
+
+        if leaves.len() < 4 {
+            continue; // not a qualifying hub
+        }
+
+        // Sort leaves by their node id string — deterministic ordering.
+        leaves.sort_by(|&a, &b| nodes[ln[a].idx].id.cmp(&nodes[ln[b].idx].id));
+
+        let hub_x = ln[hub_li].x;
+        let hub_y = ln[hub_li].y;
+
+        // base_angle: hub's direction to centroid + π  (fan opens away from center).
+        let dx = hub_x - cx;
+        let dy = hub_y - cy;
+        let base_angle = if dx.abs() < 1e-9 && dy.abs() < 1e-9 {
+            0.0
+        } else {
+            dy.atan2(dx) + std::f64::consts::PI
+        };
+
+        // Place leaves on rings.
+        let mut placed = 0usize;
+        let mut k = 0usize;
+        while placed < leaves.len() {
+            let r_k = 90.0 + 55.0 * k as f64;
+            let capacity =
+                ((2.0 * std::f64::consts::PI * r_k / 34.0).floor() as usize).max(1);
+            let in_ring = capacity.min(leaves.len() - placed);
+
+            for i in 0..in_ring {
+                let li = leaves[placed + i];
+                let angle = base_angle + 2.0 * std::f64::consts::PI * i as f64 / in_ring as f64;
+                ln[li].x = hub_x + r_k * angle.cos();
+                ln[li].y = hub_y + r_k * angle.sin();
+                // Zero out velocity so the already-settled position isn't perturbed.
+                ln[li].vx = 0.0;
+                ln[li].vy = 0.0;
+                orbited.insert(li);
+            }
+
+            placed += in_ring;
+            k += 1;
+        }
+    }
+
+    orbited
+}
+
 /// Spatial-grid force layout — port of forceDirectedLayout() in graph-layout.ts.
 /// All constants intentionally identical to the TS reference.
 fn force_layout(
@@ -365,6 +476,11 @@ fn force_layout(
         }
     }
 
+    // Orbit post-pass: place degree-1 leaves of high-fanout hubs on concentric
+    // rings. Must run BEFORE the overlap pass, which will then skip orbited nodes
+    // (their ring capacity already guarantees no self-collision).
+    let orbited = orbit_pass(&mut ln, &edge_pairs, nodes);
+
     // Overlap resolution passes.
     let overlap_dist = 80.0;
     let ocell = overlap_dist * 2.0;
@@ -394,6 +510,22 @@ fn force_layout(
                 for (bi, &a) in bucket.iter().enumerate() {
                     let j_start = if same { bi + 1 } else { 0 };
                     for &b in &other[j_start..] {
+                        // Orbited leaves have already been collision-managed by
+                        // ring capacity (34-unit spacing ≥ visual leaf diameter).
+                        // Skipping them prevents the overlap pass from destroying
+                        // the clean ring geometry.
+                        //
+                        // Tradeoff: intra-ring spacing is guaranteed by ring
+                        // capacity, so same-ring collisions are handled. However,
+                        // cross-community collisions between an orbited leaf and a
+                        // non-orbited node are intentionally left unguarded — the
+                        // force iterations already separate communities before this
+                        // pass runs, and guarding those cross-community pairs would
+                        // push orbited leaves off their exact ring radii, destroying
+                        // the ring geometry.
+                        if orbited.contains(&a) || orbited.contains(&b) {
+                            continue;
+                        }
                         let ddx = ln[b].x - ln[a].x;
                         let ddy = ln[b].y - ln[a].y;
                         let dist = (ddx * ddx + ddy * ddy).sqrt();
@@ -495,7 +627,15 @@ mod tests {
 
     #[test]
     fn force_layout_spreads_nodes_apart() {
-        let (nodes, edges) = star(80);
+        // Use a non-star graph so the orbit pass doesn't apply; a chain of 80
+        // nodes has no node with ≥4 degree-1 leaves, so all nodes go through the
+        // overlap pass and the 40px invariant holds without exception.
+        let mut nodes: Vec<GraphNode> = (0..80).map(|i| node(&format!("n{i}"), "Service")).collect();
+        nodes.sort_by(|a, b| a.id.cmp(&b.id)); // deterministic
+        let edges: Vec<GraphRelationship> = (0..79)
+            .map(|i| edge(&format!("e{i}"), &format!("n{i}"), &format!("n{}", i + 1)))
+            .collect();
+
         let pos = compute_layout(LayoutAlgorithm::Force, &nodes, &edges, 1600.0, 1000.0);
         // After the overlap pass no two nodes should sit closer than ~half
         // OVERLAP_DIST (the pass runs 12 rounds; allow stragglers but not piles).
@@ -556,5 +696,108 @@ mod tests {
         for (id, (x, y)) in &pos {
             assert!(x.is_finite() && y.is_finite(), "node {id} produced non-finite position");
         }
+    }
+
+    // ── Task 1b: orbit post-pass tests ────────────────────────────────────────
+
+    /// star(60) → after force layout, every leaf must be within the expected ring
+    /// radii around the hub AND min pairwise leaf distance must be ≥ 25.
+    ///
+    /// Ring capacities for 60 leaves:
+    ///   ring 0 (r=90):  floor(2π·90/34)  = 16  → places leaves 0..15
+    ///   ring 1 (r=145): floor(2π·145/34) = 26  → places leaves 16..41
+    ///   ring 2 (r=200): floor(2π·200/34) = 36, places the remaining 18
+    ///                   (capacity 36 ≥ 18 remaining, so all 60 fit in k=0..2)
+    ///
+    /// For a leaf on ring k: expected distance to hub is r_k = 90 + 55*k.
+    /// We allow ±8 tolerance (the hub itself may have shifted slightly from the
+    /// force iterations, but the orbit pass snaps leaves to exact ring radii
+    /// relative to the hub's post-force position).
+    #[test]
+    fn orbit_pass_rings_leaves_around_hub() {
+        let (nodes, edges) = star(60);
+        let pos = compute_layout(LayoutAlgorithm::Force, &nodes, &edges, 1600.0, 1000.0);
+
+        let hub_pos = pos["hub"];
+        let leaf_positions: Vec<(f64, f64)> =
+            (0..60).map(|i| pos[&format!("leaf{i}")]).collect();
+
+        // Each leaf must be within ±8 of one of the three ring radii {90, 145, 200}.
+        let ring_radii = [90.0_f64, 145.0, 200.0];
+        for (i, &(lx, ly)) in leaf_positions.iter().enumerate() {
+            let dist = ((lx - hub_pos.0).powi(2) + (ly - hub_pos.1).powi(2)).sqrt();
+            let on_a_ring = ring_radii.iter().any(|&r| (dist - r).abs() <= 8.0);
+            assert!(
+                on_a_ring,
+                "leaf{i} dist to hub={dist:.1} is not within ±8 of any ring radius {ring_radii:?}"
+            );
+        }
+
+        // Min pairwise distance between leaves must be ≥ 25.
+        let mut min_pair_dist = f64::MAX;
+        for i in 0..leaf_positions.len() {
+            for j in (i + 1)..leaf_positions.len() {
+                let d = ((leaf_positions[i].0 - leaf_positions[j].0).powi(2)
+                    + (leaf_positions[i].1 - leaf_positions[j].1).powi(2))
+                .sqrt();
+                if d < min_pair_dist {
+                    min_pair_dist = d;
+                }
+            }
+        }
+        assert!(
+            min_pair_dist >= 25.0,
+            "minimum pairwise leaf distance={min_pair_dist:.1}, expected ≥ 25"
+        );
+    }
+
+    /// Two runs of force layout on a star graph must return bit-identical positions.
+    /// (Extends the existing determinism test to cover the orbit pass.)
+    #[test]
+    fn orbit_pass_is_deterministic() {
+        let (nodes, edges) = star(60);
+        let a = compute_layout(LayoutAlgorithm::Force, &nodes, &edges, 1600.0, 1000.0);
+        let b = compute_layout(LayoutAlgorithm::Force, &nodes, &edges, 1600.0, 1000.0);
+        assert_eq!(a, b, "force layout with orbit pass must be deterministic");
+    }
+
+    /// A path graph a-b-c-d has no node with ≥4 degree-1 neighbours, so the orbit
+    /// pass must be a no-op (returns 0 moved nodes).
+    #[test]
+    fn non_leaf_nodes_unaffected_by_orbit() {
+        use std::collections::HashMap;
+
+        let nodes = vec![
+            node("a", "Service"),
+            node("b", "Service"),
+            node("c", "Service"),
+            node("d", "Service"),
+        ];
+        let edges = vec![
+            edge("e0", "a", "b"),
+            edge("e1", "b", "c"),
+            edge("e2", "c", "d"),
+        ];
+
+        // Build LNode-like structs and call orbit_pass directly with a dummy placement.
+        // We verify that orbit_pass returns an empty set (0 nodes orbited) for a path.
+        let mut ln: Vec<LNode> = nodes
+            .iter()
+            .enumerate()
+            .map(|(i, _)| LNode { idx: i, x: i as f64 * 100.0, y: 0.0, vx: 0.0, vy: 0.0, label_idx: 0 })
+            .collect();
+
+        // Build the id→lidx map.
+        let id_to_lidx: HashMap<&str, usize> =
+            nodes.iter().enumerate().map(|(i, nd)| (nd.id.as_str(), i)).collect();
+        let edge_pairs: Vec<(usize, usize)> = edges
+            .iter()
+            .filter_map(|e| {
+                Some((*id_to_lidx.get(e.source_id.as_str())?, *id_to_lidx.get(e.target_id.as_str())?))
+            })
+            .collect();
+
+        let orbited = orbit_pass(&mut ln, &edge_pairs, &nodes);
+        assert!(orbited.is_empty(), "orbit pass should be a no-op for a path graph; orbited={orbited:?}");
     }
 }
