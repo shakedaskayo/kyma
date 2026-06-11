@@ -5219,6 +5219,7 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "hostname",
  "kyma-catalog-sqlite",
  "kyma-ccmem",
  "kyma-compaction",

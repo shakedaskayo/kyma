@@ -40,7 +40,7 @@ async fn local_app() -> axum::Router {
     // return 401.
     let backend: Arc<dyn kyma_server::auth::AuthBackend> =
         Arc::new(EnvAuthBackend::from_str("test-token:read"));
-    let (app, _agent_state) = build_local_app(catalog, format, backend, None, None, None);
+    let (app, _agent_state, _watchers) = build_local_app(catalog, format, backend, None, None, None);
     app
 }
 
@@ -65,6 +65,32 @@ async fn explore_live_reachable_without_auth() {
          404/405 means the route is not mounted, 401/403 means auth middleware is \
          blocking the path"
     );
+}
+
+/// `GET /v1/data-sources/watchers` must be mounted on a fresh local server
+/// (even with no cc-sync watcher running) and return `200 {"items":[]}` —
+/// the web UI's watchers tab needs an empty state, not a 404. Behind read
+/// auth like the rest of the API surface.
+#[tokio::test]
+async fn watchers_endpoint_returns_empty_items() {
+    let app = local_app().await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/v1/data-sources/watchers")
+        .header("authorization", "Bearer test-token")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "watchers endpoint must be mounted unconditionally in local mode"
+    );
+    let body = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json, serde_json::json!({ "items": [] }));
 }
 
 /// `GET /v1/dashboards` without auth must return 401.

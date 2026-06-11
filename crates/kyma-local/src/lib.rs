@@ -27,6 +27,7 @@ mod setup;
 mod sync;
 pub mod node;
 pub mod server_service;
+pub mod watcher_status;
 pub mod worker;
 
 #[cfg(test)]
@@ -244,7 +245,9 @@ pub async fn run_mcp() -> Result<()> {
 /// lifecycle that are not part of router construction.
 ///
 /// Also returns the `AgentState` so the caller can start optional background
-/// workers (e.g. the `KYMA_CC_WATCH` watcher) that hold a reference to it.
+/// workers (e.g. the `KYMA_CC_WATCH` watcher) that hold a reference to it,
+/// plus the `LocalWatcherStatus` handle feeding the already-mounted
+/// `/v1/data-sources/watchers` endpoint.
 #[allow(clippy::too_many_arguments)]
 pub fn build_local_app(
     catalog: Arc<dyn kyma_core::catalog::Catalog>,
@@ -253,7 +256,7 @@ pub fn build_local_app(
     memory: Option<kyma_memory::MemoryQueue>,
     local_dreaming: Option<Arc<kyma_server::agent::dreaming_local::LocalDreamingStore>>,
     mcp_url: Option<String>,
-) -> (axum::Router, AgentState) {
+) -> (axum::Router, AgentState, watcher_status::LocalWatcherStatus) {
     let schema_cache = Arc::new(SchemaCache::from_env());
     let query_state = QueryState { federation: None,
         catalog: catalog.clone(),
@@ -388,18 +391,25 @@ pub fn build_local_app(
     // /v1/workers stub (empty registry) so the dreaming UI's NodesStrip renders
     // its empty state. Behind read auth like the rest of the API surface.
     let workers_router = kyma_server::local_workers_router().layer(read_mw());
+    // In-process watcher registry serving /v1/data-sources/watchers — mounted
+    // unconditionally (even with KYMA_CC_WATCH=0 it returns {"items":[]}) so
+    // the web UI's watchers tab renders an empty state instead of a 404. The
+    // KYMA_CC_WATCH loop in run_serve feeds it via the returned handle.
+    let watchers = watcher_status::LocalWatcherStatus::default();
+    let watchers_router = watchers.router().layer(read_mw());
     let app = read_router
         .merge(ingest_router)
         .merge(local_write_router)
         .merge(admin_users_router)
         .merge(session_router)
         .merge(workers_router)
+        .merge(watchers_router)
         .merge(kyma_server::auth_handler::auth_login_router(catalog.clone()))
         .merge(kyma_server::health_router())
         .merge(live_router)
         .merge(kyma_server::web_ui::router());
     let app = kyma_server::with_permissive_cors(app);
-    (app, agent_state)
+    (app, agent_state, watchers)
 }
 
 /// `kyma serve` — serve the web UI + full HTTP API on `addr`, over the embedded
@@ -459,7 +469,7 @@ pub async fn run_serve(addr: SocketAddr) -> Result<()> {
         }
     }
 
-    let (app, agent_state) = build_local_app(
+    let (app, agent_state, watcher_status) = build_local_app(
         engine.catalog.clone(),
         engine.format.clone(),
         backend,
@@ -530,12 +540,38 @@ pub async fn run_serve(addr: SocketAddr) -> Result<()> {
         let eng = engine.clone();
         let agent = agent_state.clone();
         let poll = env_secs("KYMA_CC_SYNC_POLL_SECS", 30);
+        let status = watcher_status.clone();
         tokio::spawn(async move {
             let opts = SyncOptions::default();
+            // Register in the in-process watcher status served at
+            // /v1/data-sources/watchers — same provenance fields the
+            // control plane's Postgres registry records.
+            let (node_host, node_id, identity) = watcher_status::node_identity();
+            let config = serde_json::json!({
+                "poll_secs": poll.as_secs(),
+                "root": "~/.claude/projects",
+            });
+            let started_at = chrono::Utc::now().to_rfc3339();
+            let mut last_scan: Option<serde_json::Value> = None;
             loop {
-                if let Err(e) = run_cc_phase(&eng, Some(&agent), &opts).await {
-                    tracing::warn!("cc-sync watcher: {e}");
+                match run_cc_phase(&eng, Some(&agent), &opts).await {
+                    Ok(scan) => last_scan = Some(scan),
+                    // Failed cycle: keep the previous scan rollup — the
+                    // heartbeat below still proves the loop is alive, and
+                    // the error itself goes to the log.
+                    Err(e) => tracing::warn!("cc-sync watcher: {e}"),
                 }
+                status.upsert(watcher_status::LocalWatcher {
+                    id: "cc-sync".into(),
+                    kind: "cc_sync".into(),
+                    node_host: node_host.clone(),
+                    node_id: node_id.clone(),
+                    identity: identity.clone(),
+                    config: config.clone(),
+                    started_at: started_at.clone(),
+                    last_heartbeat_at: chrono::Utc::now().to_rfc3339(),
+                    last_scan: last_scan.clone(),
+                });
                 tokio::time::sleep(poll).await;
             }
         });
@@ -641,11 +677,16 @@ fn cc_pipeline_options(opts: &SyncOptions) -> cc_pipeline::CcPipelineOptions {
 }
 
 /// One Claude Code file-phase pass: ingest memory files → curate → apply.
+///
+/// Returns the sync-phase rollup in the watcher `last_scan` shape
+/// (`CcSyncReport::last_scan_value`) so the `KYMA_CC_WATCH` loop can feed
+/// `/v1/data-sources/watchers`; other callers ignore it.
 async fn run_cc_phase(
     engine: &Engine,
     agent: Option<&AgentState>,
     opts: &SyncOptions,
-) -> Result<()> {
+) -> Result<serde_json::Value> {
+    let pass_start = std::time::Instant::now();
     let embed = kyma_memory::shared_embedding()
         .await
         .map_err(|e| anyhow::anyhow!("embedding backend: {e}"))?;
@@ -680,7 +721,9 @@ async fn run_cc_phase(
         report.sync.projects.len(),
         if opts.dry_run { " (dry run)" } else { "" },
     );
-    Ok(())
+    Ok(report
+        .sync
+        .last_scan_value(u64::try_from(pass_start.elapsed().as_millis()).unwrap_or(u64::MAX)))
 }
 
 /// `kyma sync` — sync memory with Claude Code's file memory (always, when
