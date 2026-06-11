@@ -431,11 +431,11 @@ export function GraphCanvas({
         (globalScale >= LOD.labelAll ||
           ((selected || hovered || search || n.landmark) && globalScale >= LOD.labelLandmark));
       if (showLabel) {
-        const fontSize = Math.min(13, Math.max(9, 11 / globalScale + 2));
+        const fontSize = Math.min(12, Math.max(8, 10 / globalScale));
         ctx.font = `${selected ? 600 : 500} ${fontSize}px "IBM Plex Sans", ui-sans-serif, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        const label = n.label.length > 30 ? n.label.slice(0, 29) + "…" : n.label;
+        const label = n.label.length > 22 ? n.label.slice(0, 21) + "…" : n.label;
         const ly = n.y + r + 4 / globalScale;
         if (selected || hovered || search) {
           const tw = ctx.measureText(label).width;
@@ -571,7 +571,8 @@ export function GraphCanvas({
         linkDirectionalParticleWidth={2}
         linkDirectionalParticleSpeed={0.006}
         linkDirectionalParticleColor={(l) => (l as FLink).famColor}
-        linkLabel={showEdgeLabels ? (l) => (l as FLink).relType : undefined}
+        nodeLabel={() => ""}
+        linkLabel={showEdgeLabels ? (l) => (l as FLink).relType : () => ""}
         onRenderFramePre={onRenderFramePre}
         cooldownTicks={0}
         minZoom={0.06}

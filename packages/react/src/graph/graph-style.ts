@@ -108,7 +108,7 @@ export function radiusForDegree(degree: number, capDeg: number, sizeByDegree: bo
 /** Level-of-detail zoom thresholds (react-force-graph globalScale units). */
 export const LOD = {
   /** Below this, only landmark / selected / hovered / search labels show. */
-  labelAll: 1.3,
+  labelAll: 1.8,
   /** Below this, hide even landmark labels (pure dots). */
   labelLandmark: 0.45,
   /** Show type icons inside large nodes above this zoom. */
