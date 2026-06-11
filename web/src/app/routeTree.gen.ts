@@ -19,20 +19,23 @@ import { Route as AppMemoryRouteImport } from './../routes/_app.memory'
 import { Route as AppGraphRouteImport } from './../routes/_app.graph'
 import { Route as AppExploreRouteImport } from './../routes/_app.explore'
 import { Route as AppDiscoverRouteImport } from './../routes/_app.discover'
+import { Route as AppDataSourcesRouteImport } from './../routes/_app.data-sources'
 import { Route as AppDashboardsRouteImport } from './../routes/_app.dashboards'
 import { Route as AppCredentialsRouteImport } from './../routes/_app.credentials'
-import { Route as AppConnectorsRouteImport } from './../routes/_app.connectors'
 import { Route as AppAgentRouteImport } from './../routes/_app.agent'
 import { Route as AppMemoryIndexRouteImport } from './../routes/_app.memory.index'
+import { Route as AppDataSourcesIndexRouteImport } from './../routes/_app.data-sources.index'
 import { Route as AppDashboardsIndexRouteImport } from './../routes/_app.dashboards.index'
-import { Route as AppConnectorsIndexRouteImport } from './../routes/_app.connectors.index'
 import { Route as AppMemorySettingsRouteImport } from './../routes/_app.memory.settings'
 import { Route as AppMemorySearchRouteImport } from './../routes/_app.memory.search'
 import { Route as AppMemoryReviewRouteImport } from './../routes/_app.memory.review'
 import { Route as AppMemoryOverviewRouteImport } from './../routes/_app.memory.overview'
 import { Route as AppMemoryDreamingRouteImport } from './../routes/_app.memory.dreaming'
+import { Route as AppDataSourcesWatchersRouteImport } from './../routes/_app.data-sources.watchers'
+import { Route as AppDataSourcesSyncRouteImport } from './../routes/_app.data-sources.sync'
+import { Route as AppDataSourcesMemoriesRouteImport } from './../routes/_app.data-sources.memories'
+import { Route as AppDataSourcesIdRouteImport } from './../routes/_app.data-sources.$id'
 import { Route as AppDashboardsIdRouteImport } from './../routes/_app.dashboards.$id'
-import { Route as AppConnectorsIdRouteImport } from './../routes/_app.connectors.$id'
 import { Route as AppMemoryReviewIndexRouteImport } from './../routes/_app.memory.review.index'
 import { Route as AppMemoryDreamingIndexRouteImport } from './../routes/_app.memory.dreaming.index'
 import { Route as AppMemoryDreamingRunIdRouteImport } from './../routes/_app.memory.dreaming.$runId'
@@ -86,6 +89,11 @@ const AppDiscoverRoute = AppDiscoverRouteImport.update({
   path: '/discover',
   getParentRoute: () => AppRoute,
 } as any)
+const AppDataSourcesRoute = AppDataSourcesRouteImport.update({
+  id: '/data-sources',
+  path: '/data-sources',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDashboardsRoute = AppDashboardsRouteImport.update({
   id: '/dashboards',
   path: '/dashboards',
@@ -94,11 +102,6 @@ const AppDashboardsRoute = AppDashboardsRouteImport.update({
 const AppCredentialsRoute = AppCredentialsRouteImport.update({
   id: '/credentials',
   path: '/credentials',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppConnectorsRoute = AppConnectorsRouteImport.update({
-  id: '/connectors',
-  path: '/connectors',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAgentRoute = AppAgentRouteImport.update({
@@ -111,15 +114,15 @@ const AppMemoryIndexRoute = AppMemoryIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppMemoryRoute,
 } as any)
+const AppDataSourcesIndexRoute = AppDataSourcesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppDataSourcesRoute,
+} as any)
 const AppDashboardsIndexRoute = AppDashboardsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppDashboardsRoute,
-} as any)
-const AppConnectorsIndexRoute = AppConnectorsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppConnectorsRoute,
 } as any)
 const AppMemorySettingsRoute = AppMemorySettingsRouteImport.update({
   id: '/settings',
@@ -146,15 +149,30 @@ const AppMemoryDreamingRoute = AppMemoryDreamingRouteImport.update({
   path: '/dreaming',
   getParentRoute: () => AppMemoryRoute,
 } as any)
+const AppDataSourcesWatchersRoute = AppDataSourcesWatchersRouteImport.update({
+  id: '/watchers',
+  path: '/watchers',
+  getParentRoute: () => AppDataSourcesRoute,
+} as any)
+const AppDataSourcesSyncRoute = AppDataSourcesSyncRouteImport.update({
+  id: '/sync',
+  path: '/sync',
+  getParentRoute: () => AppDataSourcesRoute,
+} as any)
+const AppDataSourcesMemoriesRoute = AppDataSourcesMemoriesRouteImport.update({
+  id: '/memories',
+  path: '/memories',
+  getParentRoute: () => AppDataSourcesRoute,
+} as any)
+const AppDataSourcesIdRoute = AppDataSourcesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppDataSourcesRoute,
+} as any)
 const AppDashboardsIdRoute = AppDashboardsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => AppDashboardsRoute,
-} as any)
-const AppConnectorsIdRoute = AppConnectorsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AppConnectorsRoute,
 } as any)
 const AppMemoryReviewIndexRoute = AppMemoryReviewIndexRouteImport.update({
   id: '/',
@@ -178,23 +196,26 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/agent': typeof AppAgentRoute
-  '/connectors': typeof AppConnectorsRouteWithChildren
   '/credentials': typeof AppCredentialsRoute
   '/dashboards': typeof AppDashboardsRouteWithChildren
+  '/data-sources': typeof AppDataSourcesRouteWithChildren
   '/discover': typeof AppDiscoverRoute
   '/explore': typeof AppExploreRoute
   '/graph': typeof AppGraphRoute
   '/memory': typeof AppMemoryRouteWithChildren
   '/query': typeof AppQueryRoute
-  '/connectors/$id': typeof AppConnectorsIdRoute
   '/dashboards/$id': typeof AppDashboardsIdRoute
+  '/data-sources/$id': typeof AppDataSourcesIdRoute
+  '/data-sources/memories': typeof AppDataSourcesMemoriesRoute
+  '/data-sources/sync': typeof AppDataSourcesSyncRoute
+  '/data-sources/watchers': typeof AppDataSourcesWatchersRoute
   '/memory/dreaming': typeof AppMemoryDreamingRouteWithChildren
   '/memory/overview': typeof AppMemoryOverviewRoute
   '/memory/review': typeof AppMemoryReviewRouteWithChildren
   '/memory/search': typeof AppMemorySearchRoute
   '/memory/settings': typeof AppMemorySettingsRoute
-  '/connectors/': typeof AppConnectorsIndexRoute
   '/dashboards/': typeof AppDashboardsIndexRoute
+  '/data-sources/': typeof AppDataSourcesIndexRoute
   '/memory/': typeof AppMemoryIndexRoute
   '/memory/dreaming/$runId': typeof AppMemoryDreamingRunIdRoute
   '/memory/dreaming/': typeof AppMemoryDreamingIndexRoute
@@ -211,13 +232,16 @@ export interface FileRoutesByTo {
   '/explore': typeof AppExploreRoute
   '/graph': typeof AppGraphRoute
   '/query': typeof AppQueryRoute
-  '/connectors/$id': typeof AppConnectorsIdRoute
   '/dashboards/$id': typeof AppDashboardsIdRoute
+  '/data-sources/$id': typeof AppDataSourcesIdRoute
+  '/data-sources/memories': typeof AppDataSourcesMemoriesRoute
+  '/data-sources/sync': typeof AppDataSourcesSyncRoute
+  '/data-sources/watchers': typeof AppDataSourcesWatchersRoute
   '/memory/overview': typeof AppMemoryOverviewRoute
   '/memory/search': typeof AppMemorySearchRoute
   '/memory/settings': typeof AppMemorySettingsRoute
-  '/connectors': typeof AppConnectorsIndexRoute
   '/dashboards': typeof AppDashboardsIndexRoute
+  '/data-sources': typeof AppDataSourcesIndexRoute
   '/memory': typeof AppMemoryIndexRoute
   '/memory/dreaming/$runId': typeof AppMemoryDreamingRunIdRoute
   '/memory/dreaming': typeof AppMemoryDreamingIndexRoute
@@ -231,23 +255,26 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/_app/agent': typeof AppAgentRoute
-  '/_app/connectors': typeof AppConnectorsRouteWithChildren
   '/_app/credentials': typeof AppCredentialsRoute
   '/_app/dashboards': typeof AppDashboardsRouteWithChildren
+  '/_app/data-sources': typeof AppDataSourcesRouteWithChildren
   '/_app/discover': typeof AppDiscoverRoute
   '/_app/explore': typeof AppExploreRoute
   '/_app/graph': typeof AppGraphRoute
   '/_app/memory': typeof AppMemoryRouteWithChildren
   '/_app/query': typeof AppQueryRoute
-  '/_app/connectors/$id': typeof AppConnectorsIdRoute
   '/_app/dashboards/$id': typeof AppDashboardsIdRoute
+  '/_app/data-sources/$id': typeof AppDataSourcesIdRoute
+  '/_app/data-sources/memories': typeof AppDataSourcesMemoriesRoute
+  '/_app/data-sources/sync': typeof AppDataSourcesSyncRoute
+  '/_app/data-sources/watchers': typeof AppDataSourcesWatchersRoute
   '/_app/memory/dreaming': typeof AppMemoryDreamingRouteWithChildren
   '/_app/memory/overview': typeof AppMemoryOverviewRoute
   '/_app/memory/review': typeof AppMemoryReviewRouteWithChildren
   '/_app/memory/search': typeof AppMemorySearchRoute
   '/_app/memory/settings': typeof AppMemorySettingsRoute
-  '/_app/connectors/': typeof AppConnectorsIndexRoute
   '/_app/dashboards/': typeof AppDashboardsIndexRoute
+  '/_app/data-sources/': typeof AppDataSourcesIndexRoute
   '/_app/memory/': typeof AppMemoryIndexRoute
   '/_app/memory/dreaming/$runId': typeof AppMemoryDreamingRunIdRoute
   '/_app/memory/dreaming/': typeof AppMemoryDreamingIndexRoute
@@ -261,23 +288,26 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/agent'
-    | '/connectors'
     | '/credentials'
     | '/dashboards'
+    | '/data-sources'
     | '/discover'
     | '/explore'
     | '/graph'
     | '/memory'
     | '/query'
-    | '/connectors/$id'
     | '/dashboards/$id'
+    | '/data-sources/$id'
+    | '/data-sources/memories'
+    | '/data-sources/sync'
+    | '/data-sources/watchers'
     | '/memory/dreaming'
     | '/memory/overview'
     | '/memory/review'
     | '/memory/search'
     | '/memory/settings'
-    | '/connectors/'
     | '/dashboards/'
+    | '/data-sources/'
     | '/memory/'
     | '/memory/dreaming/$runId'
     | '/memory/dreaming/'
@@ -294,13 +324,16 @@ export interface FileRouteTypes {
     | '/explore'
     | '/graph'
     | '/query'
-    | '/connectors/$id'
     | '/dashboards/$id'
+    | '/data-sources/$id'
+    | '/data-sources/memories'
+    | '/data-sources/sync'
+    | '/data-sources/watchers'
     | '/memory/overview'
     | '/memory/search'
     | '/memory/settings'
-    | '/connectors'
     | '/dashboards'
+    | '/data-sources'
     | '/memory'
     | '/memory/dreaming/$runId'
     | '/memory/dreaming'
@@ -313,23 +346,26 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/_app/agent'
-    | '/_app/connectors'
     | '/_app/credentials'
     | '/_app/dashboards'
+    | '/_app/data-sources'
     | '/_app/discover'
     | '/_app/explore'
     | '/_app/graph'
     | '/_app/memory'
     | '/_app/query'
-    | '/_app/connectors/$id'
     | '/_app/dashboards/$id'
+    | '/_app/data-sources/$id'
+    | '/_app/data-sources/memories'
+    | '/_app/data-sources/sync'
+    | '/_app/data-sources/watchers'
     | '/_app/memory/dreaming'
     | '/_app/memory/overview'
     | '/_app/memory/review'
     | '/_app/memory/search'
     | '/_app/memory/settings'
-    | '/_app/connectors/'
     | '/_app/dashboards/'
+    | '/_app/data-sources/'
     | '/_app/memory/'
     | '/_app/memory/dreaming/$runId'
     | '/_app/memory/dreaming/'
@@ -416,6 +452,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDiscoverRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/data-sources': {
+      id: '/_app/data-sources'
+      path: '/data-sources'
+      fullPath: '/data-sources'
+      preLoaderRoute: typeof AppDataSourcesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/dashboards': {
       id: '/_app/dashboards'
       path: '/dashboards'
@@ -428,13 +471,6 @@ declare module '@tanstack/react-router' {
       path: '/credentials'
       fullPath: '/credentials'
       preLoaderRoute: typeof AppCredentialsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/connectors': {
-      id: '/_app/connectors'
-      path: '/connectors'
-      fullPath: '/connectors'
-      preLoaderRoute: typeof AppConnectorsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/agent': {
@@ -451,19 +487,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppMemoryIndexRouteImport
       parentRoute: typeof AppMemoryRoute
     }
+    '/_app/data-sources/': {
+      id: '/_app/data-sources/'
+      path: '/'
+      fullPath: '/data-sources/'
+      preLoaderRoute: typeof AppDataSourcesIndexRouteImport
+      parentRoute: typeof AppDataSourcesRoute
+    }
     '/_app/dashboards/': {
       id: '/_app/dashboards/'
       path: '/'
       fullPath: '/dashboards/'
       preLoaderRoute: typeof AppDashboardsIndexRouteImport
       parentRoute: typeof AppDashboardsRoute
-    }
-    '/_app/connectors/': {
-      id: '/_app/connectors/'
-      path: '/'
-      fullPath: '/connectors/'
-      preLoaderRoute: typeof AppConnectorsIndexRouteImport
-      parentRoute: typeof AppConnectorsRoute
     }
     '/_app/memory/settings': {
       id: '/_app/memory/settings'
@@ -500,19 +536,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppMemoryDreamingRouteImport
       parentRoute: typeof AppMemoryRoute
     }
+    '/_app/data-sources/watchers': {
+      id: '/_app/data-sources/watchers'
+      path: '/watchers'
+      fullPath: '/data-sources/watchers'
+      preLoaderRoute: typeof AppDataSourcesWatchersRouteImport
+      parentRoute: typeof AppDataSourcesRoute
+    }
+    '/_app/data-sources/sync': {
+      id: '/_app/data-sources/sync'
+      path: '/sync'
+      fullPath: '/data-sources/sync'
+      preLoaderRoute: typeof AppDataSourcesSyncRouteImport
+      parentRoute: typeof AppDataSourcesRoute
+    }
+    '/_app/data-sources/memories': {
+      id: '/_app/data-sources/memories'
+      path: '/memories'
+      fullPath: '/data-sources/memories'
+      preLoaderRoute: typeof AppDataSourcesMemoriesRouteImport
+      parentRoute: typeof AppDataSourcesRoute
+    }
+    '/_app/data-sources/$id': {
+      id: '/_app/data-sources/$id'
+      path: '/$id'
+      fullPath: '/data-sources/$id'
+      preLoaderRoute: typeof AppDataSourcesIdRouteImport
+      parentRoute: typeof AppDataSourcesRoute
+    }
     '/_app/dashboards/$id': {
       id: '/_app/dashboards/$id'
       path: '/$id'
       fullPath: '/dashboards/$id'
       preLoaderRoute: typeof AppDashboardsIdRouteImport
       parentRoute: typeof AppDashboardsRoute
-    }
-    '/_app/connectors/$id': {
-      id: '/_app/connectors/$id'
-      path: '/$id'
-      fullPath: '/connectors/$id'
-      preLoaderRoute: typeof AppConnectorsIdRouteImport
-      parentRoute: typeof AppConnectorsRoute
     }
     '/_app/memory/review/': {
       id: '/_app/memory/review/'
@@ -538,20 +595,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AppConnectorsRouteChildren {
-  AppConnectorsIdRoute: typeof AppConnectorsIdRoute
-  AppConnectorsIndexRoute: typeof AppConnectorsIndexRoute
-}
-
-const AppConnectorsRouteChildren: AppConnectorsRouteChildren = {
-  AppConnectorsIdRoute: AppConnectorsIdRoute,
-  AppConnectorsIndexRoute: AppConnectorsIndexRoute,
-}
-
-const AppConnectorsRouteWithChildren = AppConnectorsRoute._addFileChildren(
-  AppConnectorsRouteChildren,
-)
-
 interface AppDashboardsRouteChildren {
   AppDashboardsIdRoute: typeof AppDashboardsIdRoute
   AppDashboardsIndexRoute: typeof AppDashboardsIndexRoute
@@ -564,6 +607,26 @@ const AppDashboardsRouteChildren: AppDashboardsRouteChildren = {
 
 const AppDashboardsRouteWithChildren = AppDashboardsRoute._addFileChildren(
   AppDashboardsRouteChildren,
+)
+
+interface AppDataSourcesRouteChildren {
+  AppDataSourcesIdRoute: typeof AppDataSourcesIdRoute
+  AppDataSourcesMemoriesRoute: typeof AppDataSourcesMemoriesRoute
+  AppDataSourcesSyncRoute: typeof AppDataSourcesSyncRoute
+  AppDataSourcesWatchersRoute: typeof AppDataSourcesWatchersRoute
+  AppDataSourcesIndexRoute: typeof AppDataSourcesIndexRoute
+}
+
+const AppDataSourcesRouteChildren: AppDataSourcesRouteChildren = {
+  AppDataSourcesIdRoute: AppDataSourcesIdRoute,
+  AppDataSourcesMemoriesRoute: AppDataSourcesMemoriesRoute,
+  AppDataSourcesSyncRoute: AppDataSourcesSyncRoute,
+  AppDataSourcesWatchersRoute: AppDataSourcesWatchersRoute,
+  AppDataSourcesIndexRoute: AppDataSourcesIndexRoute,
+}
+
+const AppDataSourcesRouteWithChildren = AppDataSourcesRoute._addFileChildren(
+  AppDataSourcesRouteChildren,
 )
 
 interface AppMemoryDreamingRouteChildren {
@@ -615,9 +678,9 @@ const AppMemoryRouteWithChildren = AppMemoryRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppAgentRoute: typeof AppAgentRoute
-  AppConnectorsRoute: typeof AppConnectorsRouteWithChildren
   AppCredentialsRoute: typeof AppCredentialsRoute
   AppDashboardsRoute: typeof AppDashboardsRouteWithChildren
+  AppDataSourcesRoute: typeof AppDataSourcesRouteWithChildren
   AppDiscoverRoute: typeof AppDiscoverRoute
   AppExploreRoute: typeof AppExploreRoute
   AppGraphRoute: typeof AppGraphRoute
@@ -627,9 +690,9 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAgentRoute: AppAgentRoute,
-  AppConnectorsRoute: AppConnectorsRouteWithChildren,
   AppCredentialsRoute: AppCredentialsRoute,
   AppDashboardsRoute: AppDashboardsRouteWithChildren,
+  AppDataSourcesRoute: AppDataSourcesRouteWithChildren,
   AppDiscoverRoute: AppDiscoverRoute,
   AppExploreRoute: AppExploreRoute,
   AppGraphRoute: AppGraphRoute,

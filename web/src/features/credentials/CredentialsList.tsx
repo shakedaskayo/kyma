@@ -37,7 +37,7 @@ export function CredentialsList({ onAdd }: { onAdd: () => void }) {
       <EmptyState
         icon={KeyRound}
         title="No credentials yet"
-        description="Store typed secrets once — PATs, basic auth, connection URLs, AWS keys, OAuth tokens — and reference them from connectors and other subsystems by id. Encrypted at rest."
+        description="Store typed secrets once — PATs, basic auth, connection URLs, AWS keys, OAuth tokens — and reference them from data sources and other subsystems by id. Encrypted at rest."
         action={<Button onClick={onAdd}>Add credential</Button>}
       />
     );

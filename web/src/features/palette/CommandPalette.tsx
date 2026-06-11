@@ -5,7 +5,7 @@ import {
   Code,
   Network,
   LayoutDashboard,
-  Plug,
+  Database,
   KeyRound,
   Sparkles,
   Brain,
@@ -80,8 +80,8 @@ export function CommandPalette() {
           <CommandItem onSelect={run(() => navigate({ to: "/dashboards" }))}>
             <LayoutDashboard /> Dashboards
           </CommandItem>
-          <CommandItem onSelect={run(() => navigate({ to: "/connectors" }))}>
-            <Plug /> Connectors
+          <CommandItem onSelect={run(() => navigate({ to: "/data-sources" }))}>
+            <Database /> Data Sources
           </CommandItem>
           <CommandItem onSelect={run(() => navigate({ to: "/credentials" }))}>
             <KeyRound /> Credentials

@@ -39,7 +39,7 @@ export function DataSourceRow({ dataSource }: { dataSource: DataSourceSummary })
   const entry = catalog?.find((e) => e.type_id === dataSource.type);
   const status = detail ? deriveStatus(detail) : dataSource.enabled ? "idle" : "disabled";
 
-  const open = () => navigate({ to: "/connectors/$id", params: { id: dataSource.id } });
+  const open = () => navigate({ to: "/data-sources/$id", params: { id: dataSource.id } });
 
   return (
     <div

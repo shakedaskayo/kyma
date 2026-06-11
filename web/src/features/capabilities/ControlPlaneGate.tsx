@@ -22,7 +22,7 @@ export function ControlPlaneGate({
   children,
 }: {
   feature: Flag;
-  /** Plural surface name for the headline, e.g. "Connectors". */
+  /** Plural surface name for the headline, e.g. "Data Sources". */
   title: string;
   children: React.ReactNode;
 }) {

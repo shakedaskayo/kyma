@@ -18,7 +18,7 @@ export type SessionState = {
    *  the client can be recreated after a page reload. */
   supabaseUrl: string;
   supabaseAnonKey: string;
-  /** The active concrete database for single-database pages (Connectors,
+  /** The active concrete database for single-database pages (Data Sources,
    *  Dashboards, Agent). Empty until resolved from the catalog on first load.
    *  Never the "*" all-databases sentinel — those pages need a real database. */
   database: string;

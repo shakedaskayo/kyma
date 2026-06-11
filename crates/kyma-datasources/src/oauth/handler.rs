@@ -426,7 +426,7 @@ fn callback_html(ui_base: &str, provider: &str, state: Option<&str>, outcome: Ou
                 "credential_id": credential_id,
                 "label": label,
             }),
-            format!("{ui}/connectors/new?provider={provider}&credential_id={credential_id}&oauth=ok"),
+            format!("{ui}/data-sources/new?provider={provider}&credential_id={credential_id}&oauth=ok"),
         ),
         Outcome::Error(msg) => (
             serde_json::json!({
@@ -436,7 +436,7 @@ fn callback_html(ui_base: &str, provider: &str, state: Option<&str>, outcome: Ou
                 "state": state,
                 "error": msg,
             }),
-            format!("{ui}/connectors/new?provider={provider}&oauth=error"),
+            format!("{ui}/data-sources/new?provider={provider}&oauth=error"),
         ),
     };
     // Embed as JS; `</` is escaped so the JSON can't break out of the <script>.

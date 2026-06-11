@@ -21,7 +21,7 @@ export const ALL_DATABASES = "*";
  *  - "query": the Query Editor is cross-database-capable. Default scope is
  *    "All databases" (`*`); the user may filter to one database. Bound to
  *    `session.queryScope`, NOT `session.database`.
- *  - "switch": a single-database page (Agent, Connectors, Dashboards) that
+ *  - "switch": a single-database page (Agent, Data Sources, Dashboards) that
  *    re-scopes to the active concrete database via the `x-database` header.
  *    Bound to `session.database`; no "All databases" option.
  *  - "all": cross-database *by design* (Graph merges every (database, graph)
@@ -52,7 +52,7 @@ export function headerScopeFor(pathname: string): HeaderScope {
   }
   if (
     pathname.startsWith("/agent") ||
-    pathname.startsWith("/connectors") ||
+    pathname.startsWith("/data-sources") ||
     pathname.startsWith("/dashboards")
   ) {
     return { mode: "switch" };

@@ -139,7 +139,7 @@ export function RetentionSettings() {
       <MapEditor
         icon={<Plug className="h-4 w-4" />}
         title="By source"
-        desc="All artifacts from a connector/source, e.g. github → 30, fswatch → 7."
+        desc="All artifacts from a data source, e.g. github → 30, fswatch → 7."
         keyPlaceholder="github"
         map={s.per_source_days}
         onChange={(m) => setMap("per_source_days", m)}
