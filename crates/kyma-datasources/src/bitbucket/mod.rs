@@ -1,9 +1,9 @@
-//! Bitbucket Cloud connector — repositories, pull requests, issues, members.
+//! Bitbucket Cloud data source — repositories, pull requests, issues, members.
 //!
 //! Auth: optional basic auth (username + app password). Public repos work
 //! tokenless. Metadata-only (no clone, no source parsing). Emits to the
 //! `"bitbucket"` graph using the same node labels as the GitHub/GitLab
-//! connectors (Repository, PullRequest, Issue, User) so the unified UI lines
+//! data sources (Repository, PullRequest, Issue, User) so the unified UI lines
 //! them up; ids are prefixed `bb:` to avoid collisions.
 
 use async_trait::async_trait;
@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use crate::catalog::{CatalogEntry, CatalogField};
 use crate::types::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
 
 const MAX_REPOS_PER_TICK: usize = 20;
@@ -51,7 +51,7 @@ fn parse_repos(s: &str) -> Vec<String> {
 }
 
 #[async_trait]
-impl Connector for BitbucketConnector {
+impl DataSource for BitbucketConnector {
     fn type_id(&self) -> &'static str {
         "bitbucket"
     }
@@ -117,12 +117,12 @@ impl Connector for BitbucketConnector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &Value,
         _cursor: Option<&Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let parsed: BbConfig = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Permanent(format!("bad config: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("bad config: {e}")))?;
 
         // Resolve auth: credential_id (preferred) → inline username/app_password.
         // For `basic`: build `Basic base64(user:pass)`; for `pat`: build a Bearer.
@@ -133,7 +133,7 @@ impl Connector for BitbucketConnector {
                 .credentials
                 .get(ctx.tenant, cid)
                 .await
-                .map_err(|e| ConnectorError::Permanent(format!("resolve credential {cid}: {e}")))?;
+                .map_err(|e| DataSourceError::Permanent(format!("resolve credential {cid}: {e}")))?;
             match cred.value {
                 CredentialValue::Basic { username, password } => {
                     let creds = format!("{username}:{password}");
@@ -142,7 +142,7 @@ impl Connector for BitbucketConnector {
                 }
                 CredentialValue::Pat { token } => Some(format!("Bearer {token}")),
                 other => {
-                    return Err(ConnectorError::Permanent(format!(
+                    return Err(DataSourceError::Permanent(format!(
                         "credential {cid} has kind={}; bitbucket connector requires `basic` or `pat`",
                         other.kind()
                     )));
@@ -160,7 +160,7 @@ impl Connector for BitbucketConnector {
         if let Some(auth) = auth_header {
             headers.insert(
                 reqwest::header::AUTHORIZATION,
-                auth.parse().map_err(|_| ConnectorError::Permanent("bad auth header".into()))?,
+                auth.parse().map_err(|_| DataSourceError::Permanent("bad auth header".into()))?,
             );
         }
 
@@ -180,7 +180,7 @@ impl Connector for BitbucketConnector {
             // whole tick — skip the repo and keep going.
             let repo: Value = match get_json(&ctx.http, &repo_url, &headers).await {
                 Ok(v) => v,
-                Err(ConnectorError::Permanent(_)) => continue,
+                Err(DataSourceError::Permanent(_)) => continue,
                 Err(e) => return Err(e),
             };
             nodes.push(json!({
@@ -267,7 +267,7 @@ impl Connector for BitbucketConnector {
                         }
                     }
                 }
-                Err(ConnectorError::Permanent(_)) => {
+                Err(DataSourceError::Permanent(_)) => {
                     // Issue tracker disabled for this repo → 404 / not-found. Skip.
                 }
                 Err(e) => return Err(e),
@@ -277,7 +277,7 @@ impl Connector for BitbucketConnector {
         let nodes = nodes.into_iter().map(crate::graph_row::normalize_node).collect();
         let edges = edges.into_iter().map(crate::graph_row::normalize_edge).collect();
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: Vec::new(),
             new_cursor: None,
             tables: vec![
@@ -293,22 +293,22 @@ impl Connector for BitbucketConnector {
     }
 }
 
-async fn get_json(http: &reqwest::Client, url: &str, headers: &HeaderMap) -> Result<Value, ConnectorError> {
+async fn get_json(http: &reqwest::Client, url: &str, headers: &HeaderMap) -> Result<Value, DataSourceError> {
     let res = http
         .get(url)
         .headers(headers.clone())
         .timeout(Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| ConnectorError::Transient(format!("GET {url}: {e}")))?;
+        .map_err(|e| DataSourceError::Transient(format!("GET {url}: {e}")))?;
     let status = res.status();
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
-        return Err(ConnectorError::Transient(format!("GET {url} → {status}")));
+        return Err(DataSourceError::Transient(format!("GET {url} → {status}")));
     }
     if !status.is_success() {
-        return Err(ConnectorError::Permanent(format!("GET {url} → {status}")));
+        return Err(DataSourceError::Permanent(format!("GET {url} → {status}")));
     }
-    res.json().await.map_err(|e| ConnectorError::Transient(format!("parse {url}: {e}")))
+    res.json().await.map_err(|e| DataSourceError::Transient(format!("parse {url}: {e}")))
 }
 
 async fn paged(
@@ -316,7 +316,7 @@ async fn paged(
     base: &str,
     headers: &HeaderMap,
     extra_q: &str,
-) -> Result<Vec<Value>, ConnectorError> {
+) -> Result<Vec<Value>, DataSourceError> {
     // Bitbucket 2.0 paginates with `next` URLs; we honour them but cap pages.
     let sep = if base.contains('?') { '&' } else { '?' };
     let mut url = if extra_q.is_empty() {

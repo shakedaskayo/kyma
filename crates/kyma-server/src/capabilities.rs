@@ -1,7 +1,7 @@
 //! `/v1/capabilities` — feature discovery for clients.
 //!
 //! Local mode (`kyma serve`, embedded SQLite) deliberately omits the
-//! control-plane surfaces (connectors, credentials, OAuth, saved Discover
+//! control-plane surfaces (data sources, credentials, OAuth, saved Discover
 //! views). The web UI gates those pages on these flags so it can explain
 //! "runs on the control plane" instead of discovering missing routes via
 //! 404s. Servers that predate this endpoint 404 here too — clients should
@@ -14,6 +14,9 @@ use serde::Serialize;
 pub struct Capabilities {
     /// `"local"` (embedded SQLite, single binary) or `"server"` (control plane).
     pub mode: &'static str,
+    // Field name is the `/v1/capabilities` wire JSON key the web reads — it is
+    // renamed together with the TS client in a later task; Task 2 keeps the
+    // API surface byte-identical.
     pub connectors: bool,
     pub credentials: bool,
     pub oauth: bool,
@@ -40,7 +43,7 @@ impl Capabilities {
         explore_live: true,
         agent: true,
     };
-    /// Local single binary — memory + data + graph + dashboards; connector
+    /// Local single binary — memory + data + graph + dashboards; data source
     /// and credential management live on the control plane.
     pub const LOCAL: Self = Self {
         mode: "local",

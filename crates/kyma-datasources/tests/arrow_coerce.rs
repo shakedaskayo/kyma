@@ -48,11 +48,11 @@ fn empty_rows_yields_empty_vec() {
 
 #[test]
 fn coerces_rows_with_binary_props_column() {
-    // Reproduces the connector-sink bug surfaced by a live ingest:
+    // Reproduces the data-source-sink bug surfaced by a live ingest:
     // `ensure_table` creates tables with the default schema, whose `props`
     // catch-all column is `Binary`. arrow-json's reader rejects Binary, so a
     // naive ReaderBuilder call fails with "Binary is not supported by JSON".
-    // The github connector emits rows with a JSON-string `props` field, so the
+    // The github data source emits rows with a JSON-string `props` field, so the
     // sink must coerce them through the shared parse_ndjson Binary path.
     let schema = Arc::new(Schema::new(vec![
         Field::new("id", DataType::Utf8, true),

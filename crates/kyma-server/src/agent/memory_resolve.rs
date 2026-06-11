@@ -13,7 +13,7 @@
 //!
 //! "Everything in the catalog" is reachable as a link target: the resolver
 //! uses [`super::tools::find_references`], the same index that powers
-//! `find_references_to`, so any value a connector ingested (repos, services,
+//! `find_references_to`, so any value a data source ingested (repos, services,
 //! traces, …) can anchor a memory.
 
 use std::collections::HashMap;

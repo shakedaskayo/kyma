@@ -1,6 +1,6 @@
-//! JSON rows → Arrow `RecordBatch` coercion for the connector sink.
+//! JSON rows → Arrow `RecordBatch` coercion for the data source sink.
 //!
-//! Delegates to the shared [`kyma_ingest_core::parse_ndjson`] so connector
+//! Delegates to the shared [`kyma_ingest_core::parse_ndjson`] so data source
 //! ingest applies *exactly* the same coercion rules as REST, Kafka, and
 //! file-drop. Crucially that includes the two column kinds arrow-json's reader
 //! cannot decode on its own:
@@ -9,7 +9,7 @@
 //!   catch-all) — stored as raw JSON bytes,
 //! - `FixedSizeList<Float32, N>` vector columns.
 //!
-//! Reimplementing this here previously caused connector ingest into any
+//! Reimplementing this here previously caused data source ingest into any
 //! default-schema table to fail with "Binary is not supported by JSON", since
 //! `ensure_table` always provisions a Binary `props` column.
 
@@ -25,7 +25,7 @@ pub enum CoerceError {
     Ndjson(#[from] kyma_ingest_core::NdjsonError),
 }
 
-/// Coerce connector JSON rows into `RecordBatch`es against `schema`.
+/// Coerce data source JSON rows into `RecordBatch`es against `schema`.
 ///
 /// Serializes the rows to NDJSON and feeds the shared `parse_ndjson` helper,
 /// so Binary/vector columns are handled identically to every other ingest

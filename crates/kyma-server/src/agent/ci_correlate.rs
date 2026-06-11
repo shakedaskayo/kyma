@@ -184,7 +184,7 @@ impl CiCorrelator {
         let sql = recurring_failures_sql(&cutoff, self.min_runs);
 
         // The github_job_logs table lives in whichever database the GitHub
-        // connector targets — scan every database and union the hits.
+        // data source targets — scan every database and union the hits.
         let dbs = self.shared.catalog.list_databases().await.unwrap_or_default();
         let mut incidents: Vec<Incident> = Vec::new();
         for db in &dbs {

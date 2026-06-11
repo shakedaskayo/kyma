@@ -1,7 +1,7 @@
-//! Confluence connector — spaces, pages, authors, and the page tree as a graph.
+//! Confluence data source — spaces, pages, authors, and the page tree as a graph.
 //!
 //! Authenticates with a stored Atlassian OAuth2 token (shares the `cloudId`
-//! resolution with the Jira connector). Fetches the most recently modified
+//! resolution with the Jira data source). Fetches the most recently modified
 //! pages (bounded) via CQL search. Ids are prefixed `conf:`.
 
 use async_trait::async_trait;
@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::catalog::CatalogEntry;
 use crate::types::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
 
 const EXPAND: &str = "space,version,ancestors,history";
@@ -37,7 +37,7 @@ fn default_max_pages() -> usize {
 pub struct ConfluenceConnector;
 
 #[async_trait]
-impl Connector for ConfluenceConnector {
+impl DataSource for ConfluenceConnector {
     fn type_id(&self) -> &'static str {
         "confluence"
     }
@@ -74,15 +74,15 @@ impl Connector for ConfluenceConnector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &Value,
         cursor: Option<&Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let config: ConfluenceConfig = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Permanent(format!("bad config: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("bad config: {e}")))?;
         let cid = config
             .credential_id
-            .ok_or_else(|| ConnectorError::Config("credential_id required".into()))?;
+            .ok_or_else(|| DataSourceError::Config("credential_id required".into()))?;
         let token = crate::oauth::valid_access_token(ctx, cid).await?;
 
         let cloud_id = match config
@@ -110,7 +110,7 @@ impl Connector for ConfluenceConnector {
         let limit = 50usize;
         for _ in 0..config.max_pages_per_tick {
             let mut url = reqwest::Url::parse(&format!("{base}/content/search"))
-                .map_err(|e| ConnectorError::Permanent(format!("url: {e}")))?;
+                .map_err(|e| DataSourceError::Permanent(format!("url: {e}")))?;
             {
                 let mut p = url.query_pairs_mut();
                 p.append_pair("cql", &cql);
@@ -136,7 +136,7 @@ impl Connector for ConfluenceConnector {
         let nodes = nodes.into_iter().map(crate::graph_row::normalize_node).collect();
         let edges = edges.into_iter().map(crate::graph_row::normalize_edge).collect();
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: Vec::new(),
             new_cursor: Some(json!({ "cloud_id": cloud_id })),
             tables: vec![

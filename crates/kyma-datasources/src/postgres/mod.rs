@@ -1,4 +1,4 @@
-//! Postgres connector — introspects a target Postgres instance's schema and
+//! Postgres data source — introspects a target Postgres instance's schema and
 //! emits a property graph (schemas → tables → columns, with FK edges).
 //!
 //! Authentication: a single `url` field (`postgres://user:pass@host/db`),
@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use crate::catalog::{CatalogEntry, CatalogField};
 use crate::types::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
 
 #[derive(Debug, Deserialize, Default)]
@@ -33,7 +33,7 @@ struct PgConfig {
 pub struct PgIntrospectConnector;
 
 #[async_trait]
-impl Connector for PgIntrospectConnector {
+impl DataSource for PgIntrospectConnector {
     fn type_id(&self) -> &'static str {
         "postgres"
     }
@@ -92,12 +92,12 @@ impl Connector for PgIntrospectConnector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &serde_json::Value,
         _cursor: Option<&serde_json::Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let parsed: PgConfig = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Permanent(format!("bad config: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("bad config: {e}")))?;
 
         // Resolve the connection URL: credential first (preferred), then inline.
         let url: String = if let Some(cid) = parsed.credential_id {
@@ -106,11 +106,11 @@ impl Connector for PgIntrospectConnector {
                 .credentials
                 .get(ctx.tenant, cid)
                 .await
-                .map_err(|e| ConnectorError::Permanent(format!("resolve credential {cid}: {e}")))?;
+                .map_err(|e| DataSourceError::Permanent(format!("resolve credential {cid}: {e}")))?;
             match cred.value {
                 CredentialValue::Url { connection_string } => connection_string,
                 other => {
-                    return Err(ConnectorError::Permanent(format!(
+                    return Err(DataSourceError::Permanent(format!(
                         "credential {cid} has kind={}; postgres connector requires `url`",
                         other.kind()
                     )));
@@ -126,14 +126,14 @@ impl Connector for PgIntrospectConnector {
             .acquire_timeout(Duration::from_secs(10))
             .connect(&url)
             .await
-            .map_err(|e| ConnectorError::Transient(format!("connect: {e}")))?;
+            .map_err(|e| DataSourceError::Transient(format!("connect: {e}")))?;
 
         // The database name from current_database() gives stable ids that survive
         // host/port changes across deploys (the URL host might be a proxy).
         let db: String = sqlx::query_scalar("SELECT current_database()")
             .fetch_one(&pool)
             .await
-            .map_err(|e| ConnectorError::Transient(format!("current_database: {e}")))?;
+            .map_err(|e| DataSourceError::Transient(format!("current_database: {e}")))?;
 
         // ── schemas ────────────────────────────────────────────────────────────
         let schemas: Vec<String> = sqlx::query_scalar(
@@ -144,7 +144,7 @@ impl Connector for PgIntrospectConnector {
         )
         .fetch_all(&pool)
         .await
-        .map_err(|e| ConnectorError::Transient(format!("schemas: {e}")))?;
+        .map_err(|e| DataSourceError::Transient(format!("schemas: {e}")))?;
 
         // ── tables ─────────────────────────────────────────────────────────────
         let table_rows = sqlx::query(
@@ -156,7 +156,7 @@ impl Connector for PgIntrospectConnector {
         )
         .fetch_all(&pool)
         .await
-        .map_err(|e| ConnectorError::Transient(format!("tables: {e}")))?;
+        .map_err(|e| DataSourceError::Transient(format!("tables: {e}")))?;
 
         // ── columns ────────────────────────────────────────────────────────────
         let column_rows = sqlx::query(
@@ -168,7 +168,7 @@ impl Connector for PgIntrospectConnector {
         )
         .fetch_all(&pool)
         .await
-        .map_err(|e| ConnectorError::Transient(format!("columns: {e}")))?;
+        .map_err(|e| DataSourceError::Transient(format!("columns: {e}")))?;
 
         // ── foreign keys (src.column → dst.column) ────────────────────────────
         let fk_rows = sqlx::query(
@@ -189,7 +189,7 @@ impl Connector for PgIntrospectConnector {
         )
         .fetch_all(&pool)
         .await
-        .map_err(|e| ConnectorError::Transient(format!("foreign_keys: {e}")))?;
+        .map_err(|e| DataSourceError::Transient(format!("foreign_keys: {e}")))?;
 
         // ── transform → nodes/edges ───────────────────────────────────────────
         let mut nodes = Vec::<serde_json::Value>::new();
@@ -276,7 +276,7 @@ impl Connector for PgIntrospectConnector {
         let nodes = nodes.into_iter().map(crate::graph_row::normalize_node).collect();
         let edges = edges.into_iter().map(crate::graph_row::normalize_edge).collect();
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: Vec::new(),
             new_cursor: None,
             tables: vec![

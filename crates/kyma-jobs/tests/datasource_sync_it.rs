@@ -1,19 +1,19 @@
-//! Integration test — the production connector path on the worker fabric:
-//! scheduler enqueues a `connector_sync` job, the embedded worker claims it
-//! via [`PgQueue`], the [`ConnectorSyncExecutor`] runs the tick body, and the
+//! Integration test — the production data source path on the worker fabric:
+//! scheduler enqueues a `datasource_sync` job, the embedded worker claims it
+//! via [`PgQueue`], the [`DataSourceSyncExecutor`] runs the tick body, and the
 //! cursor + job status advance.
 
 use async_trait::async_trait;
 use kyma_catalog::{PgFabricStore, PostgresCatalog};
 use kyma_datasources::catalog_sql;
-use kyma_datasources::registry::ConnectorRegistry;
-use kyma_datasources::runner::{ConnectorTickDeps, PgConnectorControl, RowSink};
-use kyma_datasources::scheduler::ConnectorScheduler;
+use kyma_datasources::registry::DataSourceRegistry;
+use kyma_datasources::runner::{DataSourceTickDeps, PgConnectorControl, RowSink};
+use kyma_datasources::scheduler::DataSourceScheduler;
 use kyma_datasources::secrets::EnvSecretStore;
-use kyma_datasources::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
+use kyma_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
 use kyma_core::fabric::{WorkerKind, WorkerRegistration};
 use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_jobs::connector_sync::ConnectorSyncExecutor;
+use kyma_jobs::datasource_sync::DataSourceSyncExecutor;
 use kyma_jobs::{ExecutorRegistry, JobRunner, PgQueue};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -28,7 +28,7 @@ struct CountingConn {
 }
 
 #[async_trait]
-impl Connector for CountingConn {
+impl DataSource for CountingConn {
     fn type_id(&self) -> &'static str {
         "counter"
     }
@@ -37,13 +37,13 @@ impl Connector for CountingConn {
     }
     async fn run_once(
         &self,
-        _ctx: &ConnectorCtx,
+        _ctx: &DataSourceCtx,
         _cfg: &serde_json::Value,
         cursor: Option<&serde_json::Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let n = cursor.and_then(|v| v.as_u64()).unwrap_or(0);
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: vec![serde_json::json!({"n": n, "ok": true})],
             new_cursor: Some(serde_json::json!(n + 1)),
             tables: vec![],
@@ -68,7 +68,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
     let fake = Arc::new(CountingConn {
         calls: calls.clone(),
     });
-    let mut reg = ConnectorRegistry::new();
+    let mut reg = DataSourceRegistry::new();
     reg.register(fake.clone());
 
     let conn_id = catalog_sql::create_connector_direct(
@@ -85,8 +85,8 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
     .await
     .unwrap();
 
-    // The production scheduler enqueues a fabric `connector_sync` job.
-    let sched = ConnectorScheduler::new(catalog.clone());
+    // The production scheduler enqueues a fabric `datasource_sync` job.
+    let sched = DataSourceScheduler::new(catalog.clone());
     sched.tick_once().await.unwrap();
     // Idempotent: a second tick in the same bucket inserts nothing.
     sched.tick_once().await.unwrap();
@@ -118,7 +118,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
         .unwrap();
 
     let sink: RowSink = Arc::new(|_db, _tbl, _rows, _idem| Box::pin(async move { Ok(()) }));
-    let deps = ConnectorTickDeps {
+    let deps = DataSourceTickDeps {
         control: Arc::new(PgConnectorControl::new(catalog.pool().clone())),
         registry: Arc::new(reg),
         sink,
@@ -130,7 +130,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
         catalog: None,
     };
     let mut executors = ExecutorRegistry::new();
-    executors.register(Arc::new(ConnectorSyncExecutor::new(deps)));
+    executors.register(Arc::new(DataSourceSyncExecutor::new(deps)));
     let queue = Arc::new(PgQueue::new(fabric.clone(), worker_id, None, caps, 60));
     let runner = JobRunner::new(queue, executors, 60);
 

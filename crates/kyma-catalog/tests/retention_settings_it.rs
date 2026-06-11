@@ -32,7 +32,7 @@ fn artifact(tenant: TenantId, path: &str, class: &str) -> ArtifactRecord {
         source: "github".into(),
         artifact_class: class.into(),
         table_ref: None,
-        connector_id: None,
+        data_source_id: None,
         size_bytes: 1,
         sha256: None,
         created_at: None,

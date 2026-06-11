@@ -1,4 +1,4 @@
-//! Google Drive connector — files, folders, owners, and the folder tree as a
+//! Google Drive data source — files, folders, owners, and the folder tree as a
 //! property graph.
 //!
 //! Authenticates with a stored OAuth2 credential (scope
@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::catalog::CatalogEntry;
 use crate::types::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
 
 const FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
@@ -45,7 +45,7 @@ fn default_max_pages() -> usize {
 pub struct GdriveConnector;
 
 #[async_trait]
-impl Connector for GdriveConnector {
+impl DataSource for GdriveConnector {
     fn type_id(&self) -> &'static str {
         "googledrive"
     }
@@ -82,15 +82,15 @@ impl Connector for GdriveConnector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &Value,
         cursor: Option<&Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let config: GdriveConfig = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Permanent(format!("bad config: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("bad config: {e}")))?;
         let cid = config
             .credential_id
-            .ok_or_else(|| ConnectorError::Config("credential_id required".into()))?;
+            .ok_or_else(|| DataSourceError::Config("credential_id required".into()))?;
         let token = crate::oauth::valid_access_token(ctx, cid).await?;
 
         let q = build_query(&config.folders);
@@ -113,7 +113,7 @@ impl Connector for GdriveConnector {
                 break page_token.clone();
             }
             let mut url = reqwest::Url::parse(FILES_URL)
-                .map_err(|e| ConnectorError::Permanent(format!("url: {e}")))?;
+                .map_err(|e| DataSourceError::Permanent(format!("url: {e}")))?;
             {
                 let mut p = url.query_pairs_mut();
                 p.append_pair("q", &q);
@@ -143,7 +143,7 @@ impl Connector for GdriveConnector {
         let nodes = nodes.into_iter().map(crate::graph_row::normalize_node).collect();
         let edges = edges.into_iter().map(crate::graph_row::normalize_edge).collect();
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: Vec::new(),
             new_cursor: Some(json!({ "page_token": next_cursor_token })),
             tables: vec![

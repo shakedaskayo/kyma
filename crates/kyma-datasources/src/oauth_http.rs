@@ -1,19 +1,19 @@
-//! Shared HTTP helpers for OAuth2 data connectors.
+//! Shared HTTP helpers for OAuth2 data data sources.
 //!
 //! Bearer-authenticated JSON `GET`/`POST` with consistent error classification:
 //! 429, 5xx, network timeouts, and Google's `403 rateLimitExceeded` map to
-//! [`ConnectorError::Transient`] (retried next tick); other 4xx map to
-//! [`ConnectorError::Permanent`]. `Retry-After` is honored before a retry.
+//! [`DataSourceError::Transient`] (retried next tick); other 4xx map to
+//! [`DataSourceError::Permanent`]. `Retry-After` is honored before a retry.
 //!
 //! Access tokens are resolved + refreshed via [`crate::oauth::valid_access_token`];
-//! connectors pass the resulting bearer string here.
+//! data sources pass the resulting bearer string here.
 
 use std::time::Duration;
 
 use reqwest::{Client, Method};
 use serde_json::Value;
 
-use crate::types::ConnectorError;
+use crate::types::DataSourceError;
 
 const MAX_RETRIES: u32 = 3;
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -24,7 +24,7 @@ pub async fn get_json(
     url: &str,
     bearer: &str,
     extra_headers: &[(&str, &str)],
-) -> Result<Value, ConnectorError> {
+) -> Result<Value, DataSourceError> {
     request_json(http, Method::GET, url, bearer, extra_headers, None).await
 }
 
@@ -35,7 +35,7 @@ pub async fn post_json(
     bearer: &str,
     body: &Value,
     extra_headers: &[(&str, &str)],
-) -> Result<Value, ConnectorError> {
+) -> Result<Value, DataSourceError> {
     request_json(http, Method::POST, url, bearer, extra_headers, Some(body)).await
 }
 
@@ -46,7 +46,7 @@ async fn request_json(
     bearer: &str,
     extra_headers: &[(&str, &str)],
     body: Option<&Value>,
-) -> Result<Value, ConnectorError> {
+) -> Result<Value, DataSourceError> {
     let mut attempt: u32 = 0;
     loop {
         let mut req = http
@@ -71,9 +71,9 @@ async fn request_json(
                     continue;
                 }
                 return Err(if retryable {
-                    ConnectorError::Transient(format!("{method} {url}: {e}"))
+                    DataSourceError::Transient(format!("{method} {url}: {e}"))
                 } else {
-                    ConnectorError::Permanent(format!("{method} {url}: {e}"))
+                    DataSourceError::Permanent(format!("{method} {url}: {e}"))
                 });
             }
         };
@@ -84,13 +84,13 @@ async fn request_json(
             return resp
                 .json::<Value>()
                 .await
-                .map_err(|e| ConnectorError::Transient(format!("parse {url}: {e}")));
+                .map_err(|e| DataSourceError::Transient(format!("parse {url}: {e}")));
         }
 
         let code = status.as_u16();
         let text = resp.text().await.unwrap_or_default();
         // Google/Drive overload 403 for both rate-limit and real permission
-        // errors — inspect the reason to avoid disabling a connector on a
+        // errors — inspect the reason to avoid disabling a data source on a
         // transient quota blip.
         let rate_limited_403 = code == 403
             && (text.contains("rateLimitExceeded")
@@ -107,9 +107,9 @@ async fn request_json(
             continue;
         }
         if transient {
-            return Err(ConnectorError::Transient(format!("{method} {url} → {status}")));
+            return Err(DataSourceError::Transient(format!("{method} {url} → {status}")));
         }
-        return Err(ConnectorError::Permanent(format!(
+        return Err(DataSourceError::Permanent(format!(
             "{method} {url} → {status}: {}",
             truncate(&text, 200)
         )));
@@ -117,9 +117,9 @@ async fn request_json(
 }
 
 /// Resolve the Atlassian Cloud id for the token's first accessible site (shared
-/// by the Jira + Confluence connectors). Returns `Permanent` if the token has no
+/// by the Jira + Confluence data sources). Returns `Permanent` if the token has no
 /// accessible Atlassian resources.
-pub async fn resolve_atlassian_cloud_id(http: &Client, bearer: &str) -> Result<String, ConnectorError> {
+pub async fn resolve_atlassian_cloud_id(http: &Client, bearer: &str) -> Result<String, DataSourceError> {
     let resources = get_json(
         http,
         "https://api.atlassian.com/oauth/token/accessible-resources",
@@ -134,7 +134,7 @@ pub async fn resolve_atlassian_cloud_id(http: &Client, bearer: &str) -> Result<S
         .and_then(Value::as_str)
         .map(String::from)
         .ok_or_else(|| {
-            ConnectorError::Permanent(
+            DataSourceError::Permanent(
                 "token has no accessible Atlassian sites — re-authorize and grant access".into(),
             )
         })

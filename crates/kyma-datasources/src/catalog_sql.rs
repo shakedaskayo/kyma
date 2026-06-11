@@ -1,13 +1,13 @@
 //! Direct SQL helpers against PostgresCatalog::pool().
 //!
-//! Connector scheduler + runner read/write a handful of connector-
+//! DataSource scheduler + runner read/write a handful of data-source-
 //! specific rows that don't warrant growing the Catalog trait. This
 //! module is the one place those SQL statements live.
 //!
 //! Every helper is tenant-scoped: callers must pass a [`TenantId`], and
 //! mutating helpers bind it on INSERT, while readers/updaters/deleters
 //! constrain by `WHERE tenant_id = ...`. The one cluster-global helper is
-//! [`list_due_periodic`], which the connector scheduler invokes without a
+//! [`list_due_periodic`], which the data source scheduler invokes without a
 //! tenant context — it returns each row's `tenant_id` so the caller can
 //! propagate it (e.g., to [`enqueue_tick`]).
 
@@ -16,7 +16,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
-pub struct ConnectorRow {
+pub struct DataSourceRow {
     pub id: Uuid,
     pub tenant_id: TenantId,
     pub name: String,
@@ -34,9 +34,9 @@ pub struct ConnectorRow {
     pub disabled_reason: Option<String>,
 }
 
-fn row_to_connector(r: sqlx::postgres::PgRow) -> Result<ConnectorRow, sqlx::Error> {
+fn row_to_connector(r: sqlx::postgres::PgRow) -> Result<DataSourceRow, sqlx::Error> {
     let tenant_uuid: Uuid = r.try_get("tenant_id")?;
-    Ok(ConnectorRow {
+    Ok(DataSourceRow {
         id: r.try_get("id")?,
         tenant_id: TenantId::from_uuid(tenant_uuid),
         name: r.try_get("name")?,
@@ -55,7 +55,7 @@ fn row_to_connector(r: sqlx::postgres::PgRow) -> Result<ConnectorRow, sqlx::Erro
     })
 }
 
-/// Create a connector row (used from admin API + test setup).
+/// Create a data source row (used from admin API + test setup).
 #[allow(clippy::too_many_arguments)]
 pub async fn create_connector_direct(
     pool: &PgPool,
@@ -88,12 +88,12 @@ pub async fn create_connector_direct(
     Ok(id)
 }
 
-/// List periodic, enabled connectors due for a tick across all tenants.
+/// List periodic, enabled data sources due for a tick across all tenants.
 ///
 /// Cluster-global: the scheduler runs without a tenant context, so we
-/// return every due connector and include each row's `tenant_id` so the
+/// return every due data source and include each row's `tenant_id` so the
 /// caller can thread it through to [`enqueue_tick`].
-pub async fn list_due_periodic(pool: &PgPool) -> Result<Vec<ConnectorRow>, sqlx::Error> {
+pub async fn list_due_periodic(pool: &PgPool) -> Result<Vec<DataSourceRow>, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT id, tenant_id, name, type, target_database, target_table, config_jsonb,
                 schedule_ms, drive_model, enabled,
@@ -114,7 +114,7 @@ pub async fn load_connector(
     pool: &PgPool,
     tenant: TenantId,
     id: Uuid,
-) -> Result<Option<ConnectorRow>, sqlx::Error> {
+) -> Result<Option<DataSourceRow>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT id, tenant_id, name, type, target_database, target_table, config_jsonb,
                 schedule_ms, drive_model, enabled,
@@ -135,14 +135,14 @@ pub async fn load_connector(
 pub async fn load_cursor(
     pool: &PgPool,
     tenant: TenantId,
-    connector_id: Uuid,
+    data_source_id: Uuid,
 ) -> Result<Option<serde_json::Value>, sqlx::Error> {
     let row: Option<(serde_json::Value,)> = sqlx::query_as(
         "SELECT cursor_jsonb FROM connector_cursors
          WHERE tenant_id = $1 AND connector_id = $2",
     )
     .bind(tenant.as_uuid())
-    .bind(connector_id)
+    .bind(data_source_id)
     .fetch_optional(pool)
     .await?;
     Ok(row.and_then(|(v,)| if v.is_null() { None } else { Some(v) }))
@@ -151,7 +151,7 @@ pub async fn load_cursor(
 pub async fn upsert_cursor(
     pool: &PgPool,
     tenant: TenantId,
-    connector_id: Uuid,
+    data_source_id: Uuid,
     cursor: &serde_json::Value,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
@@ -161,7 +161,7 @@ pub async fn upsert_cursor(
          DO UPDATE SET cursor_jsonb = EXCLUDED.cursor_jsonb, updated_at = now()",
     )
     .bind(tenant.as_uuid())
-    .bind(connector_id)
+    .bind(data_source_id)
     .bind(cursor)
     .execute(pool)
     .await?;
@@ -171,7 +171,7 @@ pub async fn upsert_cursor(
 pub async fn mark_run_success(
     pool: &PgPool,
     tenant: TenantId,
-    connector_id: Uuid,
+    data_source_id: Uuid,
     rows_ingested: i64,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
@@ -184,7 +184,7 @@ pub async fn mark_run_success(
          WHERE tenant_id = $1 AND id = $2",
     )
     .bind(tenant.as_uuid())
-    .bind(connector_id)
+    .bind(data_source_id)
     .bind(rows_ingested)
     .execute(pool)
     .await?;
@@ -194,7 +194,7 @@ pub async fn mark_run_success(
 pub async fn mark_run_failure(
     pool: &PgPool,
     tenant: TenantId,
-    connector_id: Uuid,
+    data_source_id: Uuid,
     error: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
@@ -205,7 +205,7 @@ pub async fn mark_run_failure(
          WHERE tenant_id = $1 AND id = $2",
     )
     .bind(tenant.as_uuid())
-    .bind(connector_id)
+    .bind(data_source_id)
     .bind(error)
     .execute(pool)
     .await?;
@@ -215,7 +215,7 @@ pub async fn mark_run_failure(
 pub async fn disable_connector(
     pool: &PgPool,
     tenant: TenantId,
-    connector_id: Uuid,
+    data_source_id: Uuid,
     reason: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
@@ -224,7 +224,7 @@ pub async fn disable_connector(
          WHERE tenant_id = $1 AND id = $2",
     )
     .bind(tenant.as_uuid())
-    .bind(connector_id)
+    .bind(data_source_id)
     .bind(reason)
     .execute(pool)
     .await?;
@@ -237,7 +237,7 @@ pub async fn disable_connector(
 pub async fn enqueue_tick(
     pool: &PgPool,
     tenant: TenantId,
-    connector_id: Uuid,
+    data_source_id: Uuid,
     scheduled_for_ms: i64,
 ) -> Result<u64, sqlx::Error> {
     // tenant_id lives both on the row (NOT NULL column) and in the JSON
@@ -254,21 +254,21 @@ pub async fn enqueue_tick(
          ON CONFLICT DO NOTHING",
     )
     .bind(tenant.as_uuid())
-    .bind(connector_id)
+    .bind(data_source_id)
     .bind(scheduled_for_ms)
     .execute(pool)
     .await?;
     Ok(res.rows_affected())
 }
 
-/// Enqueue a `connector_sync` job on the worker fabric (`jobs` table) with
+/// Enqueue a `datasource_sync` job on the worker fabric (`jobs` table) with
 /// the bucketed `scheduled_for` — the fabric successor of [`enqueue_tick`].
 /// Race-safe via the partial unique index `jobs_connector_sync_uniq`
 /// (ON CONFLICT DO NOTHING → `Ok(0)` on duplicates).
 pub async fn enqueue_connector_sync(
     pool: &PgPool,
     tenant: TenantId,
-    connector_id: Uuid,
+    data_source_id: Uuid,
     scheduled_for_ms: i64,
 ) -> Result<u64, sqlx::Error> {
     // tenant_id lives both on the row (NOT NULL column) and in the JSON
@@ -286,7 +286,7 @@ pub async fn enqueue_connector_sync(
          ON CONFLICT DO NOTHING",
     )
     .bind(tenant.as_uuid())
-    .bind(connector_id)
+    .bind(data_source_id)
     .bind(scheduled_for_ms)
     .execute(pool)
     .await?;

@@ -2,7 +2,7 @@
 //!
 //! Each [`OAuthProvider`] is vendor-agnostic, plain data — the authorize/token
 //! endpoints, default scopes, PKCE support, how client creds are presented, and
-//! the env-var suffix for operator-configured apps. Several connectors can map
+//! the env-var suffix for operator-configured apps. Several data sources can map
 //! onto one provider (Gmail + Drive → `google`; Jira + Confluence →
 //! `atlassian`); see [`provider_for_connector`].
 
@@ -80,7 +80,7 @@ static PROVIDERS: &[OAuthProvider] = &[
         authorize_url: "https://auth.atlassian.com/authorize",
         token_url: "https://auth.atlassian.com/oauth/token",
         // offline_access yields a refresh token; read:me resolves accessible
-        // resources (cloud id). Connectors append their own read scopes.
+        // resources (cloud id). Data sources append their own read scopes.
         default_scopes: &["offline_access", "read:me"],
         scope_sep: " ",
         use_pkce: true,
@@ -114,7 +114,7 @@ pub fn all() -> &'static [OAuthProvider] {
     PROVIDERS
 }
 
-/// The OAuth scopes a connector needs — the full set the UI requests at
+/// The OAuth scopes a data source needs — the full set the UI requests at
 /// `/start` (already including `offline_access` / `read:me` where a provider
 /// needs them for refresh + cloud-id resolution). Empty ⇒ use provider defaults.
 pub fn scopes_for_connector(type_id: &str) -> Vec<String> {
@@ -142,7 +142,7 @@ pub fn scopes_for_connector(type_id: &str) -> Vec<String> {
     scopes.iter().map(|s| s.to_string()).collect()
 }
 
-/// Map a connector `type_id` to its OAuth provider slug. Several connectors can
+/// Map a data source `type_id` to its OAuth provider slug. Several data sources can
 /// share one provider/app (Gmail + Drive → Google; Jira + Confluence →
 /// Atlassian); everything else maps to a same-named provider.
 pub fn provider_for_connector(type_id: &str) -> &str {
@@ -151,7 +151,7 @@ pub fn provider_for_connector(type_id: &str) -> &str {
         "jira" | "confluence" => "atlassian",
         "notion" => "notion",
         "slack" => "slack",
-        // Unknown connectors map to a same-named provider — borrow the input
+        // Unknown data sources map to a same-named provider — borrow the input
         // rather than claiming a `'static` lifetime we don't have.
         other => other,
     }

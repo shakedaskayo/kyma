@@ -1,16 +1,16 @@
-//! Prometheus `/metrics` scrape connector.
+//! Prometheus `/metrics` scrape data source.
 
 pub mod parser;
 
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::types::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
+use crate::types::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
 
 #[derive(Default, Clone, Debug)]
 pub struct PromConnector;
 
-/// Parsed form of the connector's JSON config. Kept private — validation
+/// Parsed form of the data source's JSON config. Kept private — validation
 /// and `run_once` both deserialize internally.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -40,7 +40,7 @@ pub(crate) enum PromAuth {
 }
 
 #[async_trait]
-impl Connector for PromConnector {
+impl DataSource for PromConnector {
     fn type_id(&self) -> &'static str {
         "prometheus"
     }
@@ -100,12 +100,12 @@ impl Connector for PromConnector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &serde_json::Value,
         _cursor: Option<&serde_json::Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let parsed: PromConfig = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Config(format!("config parse: {e}")))?;
+            .map_err(|e| DataSourceError::Config(format!("config parse: {e}")))?;
 
         let (bearer, basic) = match &parsed.auth {
             None | Some(PromAuth::None) => (None, None),
@@ -113,7 +113,7 @@ impl Connector for PromConnector {
                 let t = ctx
                     .secrets
                     .resolve(token_ref)
-                    .map_err(|e| ConnectorError::Config(format!("token resolve: {e}")))?;
+                    .map_err(|e| DataSourceError::Config(format!("token resolve: {e}")))?;
                 (Some(t), None)
             }
             Some(PromAuth::Basic {
@@ -123,7 +123,7 @@ impl Connector for PromConnector {
                 let p = ctx
                     .secrets
                     .resolve(password_ref)
-                    .map_err(|e| ConnectorError::Config(format!("password resolve: {e}")))?;
+                    .map_err(|e| DataSourceError::Config(format!("password resolve: {e}")))?;
                 (None, Some((username.clone(), p)))
             }
         };
@@ -152,26 +152,26 @@ impl Connector for PromConnector {
                         break resp
                             .text()
                             .await
-                            .map_err(|e| ConnectorError::Transient(format!("body read: {e}")))?;
+                            .map_err(|e| DataSourceError::Transient(format!("body read: {e}")))?;
                     }
                     if status.as_u16() == 429 || status.is_server_error() {
                         if attempt >= 3 {
-                            return Err(ConnectorError::Transient(format!(
+                            return Err(DataSourceError::Transient(format!(
                                 "HTTP {status} after {attempt} retries"
                             )));
                         }
                     } else {
-                        return Err(ConnectorError::Permanent(format!("HTTP {status}")));
+                        return Err(DataSourceError::Permanent(format!("HTTP {status}")));
                     }
                 }
                 Err(e) if e.is_timeout() || e.is_connect() => {
                     if attempt >= 3 {
-                        return Err(ConnectorError::Transient(format!(
+                        return Err(DataSourceError::Transient(format!(
                             "network: {e} after {attempt} retries"
                         )));
                     }
                 }
-                Err(e) => return Err(ConnectorError::Permanent(format!("fetch: {e}"))),
+                Err(e) => return Err(DataSourceError::Permanent(format!("fetch: {e}"))),
             }
             attempt += 1;
             let base_ms = 100u64 * (1u64 << (attempt - 1).min(5));
@@ -183,7 +183,7 @@ impl Connector for PromConnector {
         };
 
         let samples = parser::parse_openmetrics(&body)
-            .map_err(|e| ConnectorError::Permanent(format!("parse: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("parse: {e}")))?;
         let ts = ctx.scheduled_for.to_rfc3339();
         let rows = samples
             .into_iter()
@@ -197,7 +197,7 @@ impl Connector for PromConnector {
             })
             .collect();
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows,
             new_cursor: None,
             tables: vec![],

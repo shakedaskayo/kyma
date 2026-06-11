@@ -1,4 +1,4 @@
-//! S3 connector — walks a bucket and emits a `Bucket → Prefix(es) → Object`
+//! S3 data source — walks a bucket and emits a `Bucket → Prefix(es) → Object`
 //! graph. Works against AWS S3 and any S3-compatible API (MinIO, Cloudflare R2,
 //! Backblaze B2, …) — path-style and a custom endpoint are exposed in config.
 //!
@@ -15,7 +15,7 @@ use std::collections::HashSet;
 
 use crate::catalog::{CatalogEntry, CatalogField};
 use crate::types::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
 
 #[derive(Debug, Deserialize)]
@@ -52,7 +52,7 @@ fn default_max_objects() -> usize {
 pub struct S3Connector;
 
 #[async_trait]
-impl Connector for S3Connector {
+impl DataSource for S3Connector {
     fn type_id(&self) -> &'static str {
         "s3"
     }
@@ -127,12 +127,12 @@ impl Connector for S3Connector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &serde_json::Value,
         _cursor: Option<&serde_json::Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let parsed: S3Config = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Permanent(format!("bad config: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("bad config: {e}")))?;
 
         // Resolve access keys: credential_id (preferred) → inline. Both yield
         // a triple (access_key_id, secret_access_key, session_token?).
@@ -143,7 +143,7 @@ impl Connector for S3Connector {
                     .credentials
                     .get(ctx.tenant, cid)
                     .await
-                    .map_err(|e| ConnectorError::Permanent(format!("resolve credential {cid}: {e}")))?;
+                    .map_err(|e| DataSourceError::Permanent(format!("resolve credential {cid}: {e}")))?;
                 match cred.value {
                     CredentialValue::AwsCreds {
                         access_key_id,
@@ -151,7 +151,7 @@ impl Connector for S3Connector {
                         session_token,
                     } => (access_key_id, secret_access_key, session_token),
                     other => {
-                        return Err(ConnectorError::Permanent(format!(
+                        return Err(DataSourceError::Permanent(format!(
                             "credential {cid} has kind={}; s3 connector requires `aws_creds`",
                             other.kind()
                         )));
@@ -183,7 +183,7 @@ impl Connector for S3Connector {
 
         let store = b
             .build()
-            .map_err(|e| ConnectorError::Permanent(format!("build s3 client: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("build s3 client: {e}")))?;
 
         let walk_prefix: Option<ObjPath> = parsed
             .prefix
@@ -196,7 +196,7 @@ impl Connector for S3Connector {
         let mut stream = store.list(walk_prefix.as_ref());
         let mut keys: Vec<(String, i64)> = Vec::new();
         while let Some(item) = stream.next().await {
-            let meta = item.map_err(|e| ConnectorError::Transient(format!("list: {e}")))?;
+            let meta = item.map_err(|e| DataSourceError::Transient(format!("list: {e}")))?;
             let key = meta.location.to_string();
             keys.push((key, meta.size as i64));
             if keys.len() >= parsed.max_objects {
@@ -267,7 +267,7 @@ impl Connector for S3Connector {
         let nodes = nodes.into_iter().map(crate::graph_row::normalize_node).collect();
         let edges = edges.into_iter().map(crate::graph_row::normalize_edge).collect();
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: Vec::new(),
             new_cursor: None,
             tables: vec![

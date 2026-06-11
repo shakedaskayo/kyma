@@ -1,11 +1,11 @@
-//! Connector tick runner.
+//! DataSource tick runner.
 
 use crate::catalog_sql;
-use crate::metrics::{ConnectorMetrics, TickResult};
-use crate::registry::ConnectorRegistry;
+use crate::metrics::{DataSourceMetrics, TickResult};
+use crate::registry::DataSourceRegistry;
 use crate::secrets::SecretStore;
 use kyma_core::credentials::CredentialStore;
-use crate::types::{ConnectorCtx, ConnectorError, ConnectorRun, GraphHint};
+use crate::types::{DataSourceCtx, DataSourceError, DataSourceRun, GraphHint};
 use chrono::Utc;
 use futures::future::BoxFuture;
 use kyma_catalog::PostgresCatalog;
@@ -41,16 +41,16 @@ pub type GraphRegisterFn = Arc<
     dyn Fn(String, GraphHint) -> BoxFuture<'static, Result<(), anyhow::Error>> + Send + Sync,
 >;
 
-/// Connector-table operations the tick body performs (row + cursor + status).
+/// DataSource-table operations the tick body performs (row + cursor + status).
 /// In-server execution implements this with direct SQL ([`PgConnectorControl`]);
 /// remote fabric workers implement it over the control-plane HTTP API.
 #[async_trait::async_trait]
-pub trait ConnectorControl: Send + Sync {
+pub trait DataSourceControl: Send + Sync {
     async fn load_connector(
         &self,
         tenant: TenantId,
         id: Uuid,
-    ) -> anyhow::Result<Option<catalog_sql::ConnectorRow>>;
+    ) -> anyhow::Result<Option<catalog_sql::DataSourceRow>>;
     async fn load_cursor(
         &self,
         tenant: TenantId,
@@ -67,7 +67,7 @@ pub trait ConnectorControl: Send + Sync {
     async fn disable_connector(&self, tenant: TenantId, id: Uuid, msg: &str) -> anyhow::Result<()>;
 }
 
-/// Direct-SQL [`ConnectorControl`] for in-server execution.
+/// Direct-SQL [`DataSourceControl`] for in-server execution.
 pub struct PgConnectorControl {
     pool: sqlx::PgPool,
 }
@@ -79,12 +79,12 @@ impl PgConnectorControl {
 }
 
 #[async_trait::async_trait]
-impl ConnectorControl for PgConnectorControl {
+impl DataSourceControl for PgConnectorControl {
     async fn load_connector(
         &self,
         tenant: TenantId,
         id: Uuid,
-    ) -> anyhow::Result<Option<catalog_sql::ConnectorRow>> {
+    ) -> anyhow::Result<Option<catalog_sql::DataSourceRow>> {
         Ok(catalog_sql::load_connector(&self.pool, tenant, id).await?)
     }
     async fn load_cursor(
@@ -113,23 +113,23 @@ impl ConnectorControl for PgConnectorControl {
     }
 }
 
-/// Everything one connector tick needs, independent of which queue delivered
-/// it (background_tasks via [`ConnectorRunner`], or a fabric `connector_sync`
+/// Everything one data source tick needs, independent of which queue delivered
+/// it (background_tasks via [`DataSourceRunner`], or a fabric `datasource_sync`
 /// job via kyma-jobs' executor).
 #[derive(Clone)]
-pub struct ConnectorTickDeps {
-    pub control: Arc<dyn ConnectorControl>,
-    pub registry: Arc<ConnectorRegistry>,
+pub struct DataSourceTickDeps {
+    pub control: Arc<dyn DataSourceControl>,
+    pub registry: Arc<DataSourceRegistry>,
     pub sink: RowSink,
     pub graph_register: GraphRegisterFn,
     pub secrets: Arc<dyn SecretStore>,
     pub credentials: Arc<dyn CredentialStore>,
     pub oauth: Option<crate::oauth::OAuthRuntime>,
-    /// Object-store artifact capability for connectors that persist full-file
+    /// Object-store artifact capability for data sources that persist full-file
     /// blobs (e.g. CI job logs). `None` skips blob capture.
     pub artifacts: Option<Arc<dyn crate::artifacts::ArtifactStore>>,
-    /// Catalog access for metadata-sync (federated) connectors. `None` for
-    /// runners that only execute row-producing connectors.
+    /// Catalog access for metadata-sync (federated) data sources. `None` for
+    /// runners that only execute row-producing data sources.
     pub catalog: Option<Arc<dyn Catalog>>,
 }
 
@@ -139,37 +139,37 @@ pub struct ConnectorTickDeps {
 pub enum TickOutcome {
     /// Run succeeded; rows ingested.
     Ok { rows: u64 },
-    /// Nothing to do (connector disabled or row missing) — treat as done.
+    /// Nothing to do (data source disabled or row missing) — treat as done.
     Skipped(&'static str),
     /// Retryable failure — the queue should retry within its attempt budget.
     Transient(String),
-    /// Non-retryable failure — recorded on the connector; do not retry.
+    /// Non-retryable failure — recorded on the data source; do not retry.
     Permanent(String),
-    /// Broken configuration — the connector was disabled; do not retry.
+    /// Broken configuration — the data source was disabled; do not retry.
     Config(String),
 }
 
-/// Run a single connector tick: load row + cursor, execute the connector,
+/// Run a single data source tick: load row + cursor, execute the data source,
 /// sink rows (per-table idempotency keys), register graphs, persist the
-/// cursor, and record run status on the connector row. Queue bookkeeping
+/// cursor, and record run status on the data source row. Queue bookkeeping
 /// (claim/complete/fail) is the caller's job.
 pub async fn run_connector_tick(
-    deps: &ConnectorTickDeps,
+    deps: &DataSourceTickDeps,
     tenant: TenantId,
-    connector_id: Uuid,
+    data_source_id: Uuid,
     scheduled_for_ms: i64,
 ) -> anyhow::Result<TickOutcome> {
     let scheduled_for = chrono::DateTime::<Utc>::from_timestamp_millis(scheduled_for_ms)
         .ok_or_else(|| anyhow::anyhow!("bad scheduled_for"))?;
 
-    let conn = match deps.control.load_connector(tenant, connector_id).await? {
+    let conn = match deps.control.load_connector(tenant, data_source_id).await? {
         Some(c) if c.enabled => c,
         Some(_) => {
-            debug!(connector_id = %connector_id, "skipping disabled connector");
+            debug!(data_source_id = %data_source_id, "skipping disabled connector");
             return Ok(TickOutcome::Skipped("disabled"));
         }
         None => {
-            warn!(connector_id = %connector_id, "connector row missing");
+            warn!(data_source_id = %data_source_id, "connector row missing");
             return Ok(TickOutcome::Skipped("missing"));
         }
     };
@@ -179,13 +179,13 @@ pub async fn run_connector_tick(
         .lookup(&conn.type_id)
         .ok_or_else(|| anyhow::anyhow!("no registered impl for type {}", conn.type_id))?;
 
-    let cursor = deps.control.load_cursor(tenant, connector_id).await?;
-    let metrics = ConnectorMetrics {
-        connector_id,
+    let cursor = deps.control.load_cursor(tenant, data_source_id).await?;
+    let metrics = DataSourceMetrics {
+        data_source_id,
         type_id: impl_arc.type_id(),
     };
-    let ctx = ConnectorCtx {
-        connector_id,
+    let ctx = DataSourceCtx {
+        data_source_id,
         tenant,
         http: reqwest::Client::builder().build()?,
         secrets: deps.secrets.clone(),
@@ -204,7 +204,7 @@ pub async fn run_connector_tick(
         .await;
 
     match outcome {
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows,
             new_cursor,
             tables,
@@ -215,7 +215,7 @@ pub async fn run_connector_tick(
             if !rows.is_empty() {
                 let idem = format!(
                     "connector:{}:{}",
-                    connector_id,
+                    data_source_id,
                     scheduled_for_ms * 1_000_000
                 );
                 // Sink → WritePath. A failure here (table missing, schema
@@ -230,9 +230,9 @@ pub async fn run_connector_tick(
                 .await
                 {
                     let msg = format!("sink: {e}");
-                    warn!(connector_id = %connector_id, error = %msg, "sink failed");
+                    warn!(data_source_id = %data_source_id, error = %msg, "sink failed");
                     deps.control
-                        .mark_run_failure(tenant, connector_id, &msg)
+                        .mark_run_failure(tenant, data_source_id, &msg)
                         .await?;
                     metrics.record_error("sink");
                     metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
@@ -249,7 +249,7 @@ pub async fn run_connector_tick(
                 let table_name = table_rows.table;
                 let idem = format!(
                     "connector:{}:{}:{}",
-                    connector_id,
+                    data_source_id,
                     table_name,
                     scheduled_for_ms * 1_000_000
                 );
@@ -263,9 +263,9 @@ pub async fn run_connector_tick(
                 .await
                 {
                     let msg = format!("sink({table_name}): {e}");
-                    warn!(connector_id = %connector_id, table = %table_name, error = %msg, "multi-table sink failed");
+                    warn!(data_source_id = %data_source_id, table = %table_name, error = %msg, "multi-table sink failed");
                     deps.control
-                        .mark_run_failure(tenant, connector_id, &msg)
+                        .mark_run_failure(tenant, data_source_id, &msg)
                         .await?;
                     metrics.record_error("sink");
                     metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
@@ -278,9 +278,9 @@ pub async fn run_connector_tick(
             if let Some(hint) = graph {
                 if let Err(e) = (deps.graph_register)(conn.target_database.clone(), hint).await {
                     let msg = format!("graph_register: {e}");
-                    warn!(connector_id = %connector_id, error = %msg, "graph registration failed");
+                    warn!(data_source_id = %data_source_id, error = %msg, "graph registration failed");
                     deps.control
-                        .mark_run_failure(tenant, connector_id, &msg)
+                        .mark_run_failure(tenant, data_source_id, &msg)
                         .await?;
                     metrics.record_error("graph_register");
                     metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
@@ -290,11 +290,11 @@ pub async fn run_connector_tick(
 
             let n_rows = legacy_rows + multi_rows;
             if let Some(c) = new_cursor {
-                if let Err(e) = deps.control.upsert_cursor(tenant, connector_id, &c).await {
+                if let Err(e) = deps.control.upsert_cursor(tenant, data_source_id, &c).await {
                     let msg = format!("cursor upsert: {e}");
-                    warn!(connector_id = %connector_id, error = %msg, "cursor upsert failed");
+                    warn!(data_source_id = %data_source_id, error = %msg, "cursor upsert failed");
                     deps.control
-                        .mark_run_failure(tenant, connector_id, &msg)
+                        .mark_run_failure(tenant, data_source_id, &msg)
                         .await?;
                     metrics.record_error("cursor");
                     metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
@@ -303,41 +303,41 @@ pub async fn run_connector_tick(
             }
             if let Err(e) = deps
                 .control
-                .mark_run_success(tenant, connector_id, n_rows as i64)
+                .mark_run_success(tenant, data_source_id, n_rows as i64)
                 .await
             {
-                error!(connector_id = %connector_id, error = %e, "mark_run_success failed");
+                error!(data_source_id = %data_source_id, error = %e, "mark_run_success failed");
                 // Fall through — the run itself succeeded; only the status
                 // update failed.
             }
             metrics.record_rows(n_rows);
             metrics.record_tick(TickResult::Ok, t0.elapsed().as_secs_f64());
             metrics.set_last_success(Utc::now());
-            info!(connector_id = %connector_id, rows = n_rows, "tick ok");
+            info!(data_source_id = %data_source_id, rows = n_rows, "tick ok");
             Ok(TickOutcome::Ok { rows: n_rows })
         }
-        Err(ConnectorError::Transient(msg)) => {
-            warn!(connector_id = %connector_id, error = %msg, "transient");
+        Err(DataSourceError::Transient(msg)) => {
+            warn!(data_source_id = %data_source_id, error = %msg, "transient");
             deps.control
-                .mark_run_failure(tenant, connector_id, &msg)
+                .mark_run_failure(tenant, data_source_id, &msg)
                 .await?;
             metrics.record_error("transient");
             metrics.record_tick(TickResult::Transient, t0.elapsed().as_secs_f64());
             Ok(TickOutcome::Transient(msg))
         }
-        Err(ConnectorError::Permanent(msg)) => {
-            warn!(connector_id = %connector_id, error = %msg, "permanent");
+        Err(DataSourceError::Permanent(msg)) => {
+            warn!(data_source_id = %data_source_id, error = %msg, "permanent");
             deps.control
-                .mark_run_failure(tenant, connector_id, &msg)
+                .mark_run_failure(tenant, data_source_id, &msg)
                 .await?;
             metrics.record_error("permanent");
             metrics.record_tick(TickResult::Permanent, t0.elapsed().as_secs_f64());
             Ok(TickOutcome::Permanent(msg))
         }
-        Err(ConnectorError::Config(msg)) => {
-            error!(connector_id = %connector_id, error = %msg, "config");
+        Err(DataSourceError::Config(msg)) => {
+            error!(data_source_id = %data_source_id, error = %msg, "config");
             deps.control
-                .disable_connector(tenant, connector_id, &msg)
+                .disable_connector(tenant, data_source_id, &msg)
                 .await?;
             metrics.record_error("config");
             metrics.record_tick(TickResult::Config, t0.elapsed().as_secs_f64());
@@ -347,24 +347,24 @@ pub async fn run_connector_tick(
 }
 
 #[derive(Clone)]
-pub struct ConnectorRunner {
+pub struct DataSourceRunner {
     catalog: Arc<PostgresCatalog>,
-    registry: Arc<ConnectorRegistry>,
+    registry: Arc<DataSourceRegistry>,
     sink: RowSink,
     graph_register: GraphRegisterFn,
     secrets: Arc<dyn SecretStore>,
-    /// System-wide credential store, passed into every `ConnectorCtx`.
+    /// System-wide credential store, passed into every `DataSourceCtx`.
     /// A no-op stub is supplied by default so existing builds (and tests)
     /// don't need wiring; callers attach the real store via
     /// [`Self::with_credentials`].
     credentials: Arc<dyn CredentialStore>,
     /// Run-time OAuth handle (pool + crypto) for token refresh of OAuth
-    /// connectors. Attached via [`Self::with_oauth`]; `None` leaves refresh on
+    /// data sources. Attached via [`Self::with_oauth`]; `None` leaves refresh on
     /// operator-env client creds only.
     oauth: Option<crate::oauth::OAuthRuntime>,
-    /// Object-store artifact capability, passed into every `ConnectorCtx`.
+    /// Object-store artifact capability, passed into every `DataSourceCtx`.
     /// Attached via [`Self::with_artifacts`]; `None` (the default) means
-    /// blob-emitting connectors skip capture.
+    /// blob-emitting data sources skip capture.
     artifacts: Option<Arc<dyn crate::artifacts::ArtifactStore>>,
     /// NodeId of the already-registered node (supplied by the caller).
     node_id: NodeId,
@@ -372,10 +372,10 @@ pub struct ConnectorRunner {
     pub claim_lease: chrono::Duration,
 }
 
-impl ConnectorRunner {
+impl DataSourceRunner {
     pub fn new<S: SecretStore + 'static>(
         catalog: Arc<PostgresCatalog>,
-        registry: Arc<ConnectorRegistry>,
+        registry: Arc<DataSourceRegistry>,
         sink: RowSink,
         secrets: S,
         node_id: NodeId,
@@ -384,7 +384,7 @@ impl ConnectorRunner {
         // via `with_graph_register`.
         let graph_register: GraphRegisterFn =
             Arc::new(|_db, _hint| Box::pin(async move { Ok(()) }));
-        // No-op credentials store by default — connectors that don't look up
+        // No-op credentials store by default — data sources that don't look up
         // credentials work unchanged; the real store is attached via
         // `with_credentials` from kyma-bin.
         let credentials: Arc<dyn CredentialStore> = Arc::new(NoopCredentialStore);
@@ -410,14 +410,14 @@ impl ConnectorRunner {
 
     /// Attach the system-wide credentials store. Without this call the runner
     /// uses a no-op store that errors `not found` on every lookup — fine for
-    /// connectors that take inline secrets, required for ones that resolve a
+    /// data sources that take inline secrets, required for ones that resolve a
     /// `credential_id`.
     pub fn with_credentials(mut self, store: Arc<dyn CredentialStore>) -> Self {
         self.credentials = store;
         self
     }
 
-    /// Attach the run-time OAuth handle so OAuth connectors can refresh + persist
+    /// Attach the run-time OAuth handle so OAuth data sources can refresh + persist
     /// expired access tokens (resolving per-tenant bring-your-own client creds
     /// from `oauth_clients` in addition to operator env).
     pub fn with_oauth(
@@ -435,17 +435,17 @@ impl ConnectorRunner {
         self
     }
 
-    /// Attach the object-store artifact capability so connectors can persist
+    /// Attach the object-store artifact capability so data sources can persist
     /// full-file blobs (CI job logs, etc.). Without this call, `ctx.artifacts`
-    /// is `None` and blob-emitting connectors skip capture.
+    /// is `None` and blob-emitting data sources skip capture.
     pub fn with_artifacts(mut self, artifacts: Arc<dyn crate::artifacts::ArtifactStore>) -> Self {
         self.artifacts = Some(artifacts);
         self
     }
 
     /// Bundle this runner's wiring into the queue-independent tick deps.
-    pub fn tick_deps(&self) -> ConnectorTickDeps {
-        ConnectorTickDeps {
+    pub fn tick_deps(&self) -> DataSourceTickDeps {
+        DataSourceTickDeps {
             control: Arc::new(PgConnectorControl::new(self.catalog.pool().clone())),
             registry: self.registry.clone(),
             sink: self.sink.clone(),
@@ -469,7 +469,7 @@ impl ConnectorRunner {
             return Ok(false);
         };
 
-        let connector_id = task
+        let data_source_id = task
             .payload
             .get("connector_id")
             .and_then(|v| v.as_str())
@@ -492,7 +492,7 @@ impl ConnectorRunner {
             .unwrap_or(DEFAULT_TENANT);
 
         let deps = self.tick_deps();
-        match run_connector_tick(&deps, tenant, connector_id, scheduled_for_ms).await? {
+        match run_connector_tick(&deps, tenant, data_source_id, scheduled_for_ms).await? {
             TickOutcome::Ok { .. } | TickOutcome::Skipped(_) => {
                 self.catalog.complete_task(task.id).await?;
             }
@@ -500,7 +500,7 @@ impl ConnectorRunner {
             TickOutcome::Transient(msg) => {
                 self.catalog.fail_task(task.id, &msg).await?;
             }
-            // Non-retryable outcomes recorded on the connector; the task is done.
+            // Non-retryable outcomes recorded on the data source; the task is done.
             TickOutcome::Permanent(_) | TickOutcome::Config(_) => {
                 self.catalog.complete_task(task.id).await?;
             }
@@ -557,9 +557,9 @@ impl ConnectorRunner {
 }
 
 /// Default [`CredentialStore`] used until `with_credentials` is called. Returns
-/// `not found` on every lookup so connectors that genuinely need a credential
+/// `not found` on every lookup so data sources that genuinely need a credential
 /// fail with a clear error instead of silently using uninitialized state. Also
-/// handy in tests that build a [`ConnectorCtx`] for credential-free connectors.
+/// handy in tests that build a [`DataSourceCtx`] for credential-free data sources.
 pub struct NoopCredentialStore;
 #[async_trait::async_trait]
 impl CredentialStore for NoopCredentialStore {

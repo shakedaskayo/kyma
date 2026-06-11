@@ -1,10 +1,10 @@
 //! Exercises PromConnector::run_once against an in-process HTTP server.
 
-use kyma_datasources::metrics::ConnectorMetrics;
+use kyma_datasources::metrics::DataSourceMetrics;
 use kyma_datasources::prometheus::PromConnector;
 use kyma_datasources::runner::NoopCredentialStore;
 use kyma_datasources::secrets::EnvSecretStore;
-use kyma_datasources::{Connector, ConnectorCtx};
+use kyma_datasources::{DataSource, DataSourceCtx};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -33,17 +33,17 @@ async fn spawn_mock(body: &'static str, status: u16) -> String {
     format!("http://{addr}/metrics")
 }
 
-fn ctx() -> ConnectorCtx {
-    ConnectorCtx {
-        connector_id: uuid::Uuid::new_v4(),
+fn ctx() -> DataSourceCtx {
+    DataSourceCtx {
+        data_source_id: uuid::Uuid::new_v4(),
         tenant: kyma_core::tenant::DEFAULT_TENANT,
         http: reqwest::Client::new(),
         secrets: Arc::new(EnvSecretStore),
         credentials: Arc::new(NoopCredentialStore),
         oauth: None,
         scheduled_for: chrono::Utc::now(),
-        metrics: ConnectorMetrics {
-            connector_id: uuid::Uuid::new_v4(),
+        metrics: DataSourceMetrics {
+            data_source_id: uuid::Uuid::new_v4(),
             type_id: "prometheus",
         },
         artifacts: None,
@@ -78,7 +78,7 @@ async fn http_5xx_is_transient() {
         .await
         .unwrap_err();
     match err {
-        kyma_datasources::ConnectorError::Transient(_) => {}
+        kyma_datasources::DataSourceError::Transient(_) => {}
         other => panic!("expected Transient, got {other:?}"),
     }
 }
@@ -92,7 +92,7 @@ async fn http_4xx_is_permanent() {
         .await
         .unwrap_err();
     match err {
-        kyma_datasources::ConnectorError::Permanent(_) => {}
+        kyma_datasources::DataSourceError::Permanent(_) => {}
         other => panic!("expected Permanent, got {other:?}"),
     }
 }

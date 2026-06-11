@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Ingestion connectors: pull-side integrations to third-party sources.
+//! Ingestion data sources: pull-side integrations to third-party sources.
 //!
 //! See `docs/superpowers/specs/2026-04-20-connectors-design.md`.
 
@@ -29,13 +29,13 @@ pub mod runner;
 pub mod scheduler;
 pub mod secrets;
 pub mod types;
-// The GitHub connector compiles unconditionally so it always appears in the
+// The GitHub data source compiles unconditionally so it always appears in the
 // catalog and ingests repo metadata. The deep tree-sitter code graph (the heavy
 // C grammar crates) stays behind the `github` feature — see `github::transform`.
 pub mod github;
 
 pub use catalog::{CatalogEntry, CatalogField, CatalogResource};
 pub use types::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, DriveModel, GraphHint,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, DriveModel, GraphHint,
     TableRows,
 };

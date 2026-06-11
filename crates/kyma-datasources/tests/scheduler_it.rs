@@ -2,7 +2,7 @@
 
 use kyma_catalog::PostgresCatalog;
 use kyma_datasources::catalog_sql;
-use kyma_datasources::scheduler::ConnectorScheduler;
+use kyma_datasources::scheduler::DataSourceScheduler;
 use kyma_core::tenant::DEFAULT_TENANT;
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ImageExt};
@@ -41,14 +41,14 @@ async fn inserts_tick_after_interval() {
     .await
     .unwrap();
 
-    let sched = ConnectorScheduler::new(catalog.clone());
+    let sched = DataSourceScheduler::new(catalog.clone());
     sched.tick_once().await.expect("first tick");
     sched
         .tick_once()
         .await
         .expect("second tick is a no-op (dedup)");
 
-    // Since the connector_sync cutover, scheduler ticks land on the worker
+    // Since the datasource_sync cutover, scheduler ticks land on the worker
     // fabric's `jobs` queue (not `background_tasks`).
     let rows = sqlx::query_as::<_, (i64,)>(
         "SELECT count(*) FROM jobs
@@ -84,7 +84,7 @@ async fn disabled_connectors_are_skipped() {
         .await
         .unwrap();
 
-    let sched = ConnectorScheduler::new(catalog.clone());
+    let sched = DataSourceScheduler::new(catalog.clone());
     sched.tick_once().await.unwrap();
 
     let (count,): (i64,) =

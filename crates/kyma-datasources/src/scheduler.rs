@@ -1,4 +1,4 @@
-//! Connector scheduler — enqueues connector_tick tasks for due connectors.
+//! DataSource scheduler — enqueues connector_tick tasks for due data sources.
 
 use crate::catalog_sql;
 use kyma_catalog::PostgresCatalog;
@@ -8,12 +8,12 @@ use std::time::Duration;
 use tracing::{debug, error, info};
 
 #[derive(Clone)]
-pub struct ConnectorScheduler {
+pub struct DataSourceScheduler {
     catalog: Arc<PostgresCatalog>,
     pub tick_interval: Duration,
 }
 
-impl ConnectorScheduler {
+impl DataSourceScheduler {
     pub fn new(catalog: Arc<PostgresCatalog>) -> Self {
         Self {
             catalog,
@@ -28,14 +28,14 @@ impl ConnectorScheduler {
             let bucketed = (now_ms / c.schedule_ms) * c.schedule_ms;
             // Each row carries its tenant_id; thread it through to the
             // jobs insert so the cluster-global scheduler stays
-            // tenant-correct. Connector syncs ride the worker fabric — the
+            // tenant-correct. DataSource syncs ride the worker fabric — the
             // embedded worker (or any remote worker advertising the
-            // `connector` capability) claims and runs them.
+            // `data source` capability) claims and runs them.
             let inserted =
                 catalog_sql::enqueue_connector_sync(self.catalog.pool(), c.tenant_id, c.id, bucketed)
                     .await?;
             if inserted > 0 {
-                debug!(connector = %c.name, bucketed, "enqueued connector_sync job");
+                debug!(data_source = %c.name, bucketed, "enqueued connector_sync job");
             }
         }
         Ok(())

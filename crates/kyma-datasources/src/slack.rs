@@ -1,4 +1,4 @@
-//! Slack connector — channels, messages, users, and reply threads as a graph.
+//! Slack data source — channels, messages, users, and reply threads as a graph.
 //!
 //! Authenticates with a stored OAuth2 token. Slack's Web API returns HTTP 200
 //! with `{"ok": false, ...}` on logical errors, so every call is checked via
@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::catalog::CatalogEntry;
 use crate::types::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
 
 const API: &str = "https://slack.com/api";
@@ -38,7 +38,7 @@ fn default_max_channels() -> usize {
 pub struct SlackConnector;
 
 #[async_trait]
-impl Connector for SlackConnector {
+impl DataSource for SlackConnector {
     fn type_id(&self) -> &'static str {
         "slack"
     }
@@ -75,15 +75,15 @@ impl Connector for SlackConnector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &Value,
         cursor: Option<&Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let config: SlackConfig = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Permanent(format!("bad config: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("bad config: {e}")))?;
         let cid = config
             .credential_id
-            .ok_or_else(|| ConnectorError::Config("credential_id required".into()))?;
+            .ok_or_else(|| DataSourceError::Config("credential_id required".into()))?;
         let token = crate::oauth::valid_access_token(ctx, cid).await?;
 
         let mut nodes: Vec<Value> = Vec::new();
@@ -157,7 +157,7 @@ impl Connector for SlackConnector {
         let nodes = nodes.into_iter().map(crate::graph_row::normalize_node).collect();
         let edges = edges.into_iter().map(crate::graph_row::normalize_edge).collect();
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: Vec::new(),
             new_cursor: Some(json!({ "ts": ts_cursor })),
             tables: vec![
@@ -179,9 +179,9 @@ async fn slack_get(
     token: &str,
     method: &str,
     params: &[(&str, &str)],
-) -> Result<Value, ConnectorError> {
+) -> Result<Value, DataSourceError> {
     let mut url = reqwest::Url::parse(&format!("{API}/{method}"))
-        .map_err(|e| ConnectorError::Permanent(format!("url: {e}")))?;
+        .map_err(|e| DataSourceError::Permanent(format!("url: {e}")))?;
     {
         let mut q = url.query_pairs_mut();
         for (k, v) in params {
@@ -194,9 +194,9 @@ async fn slack_get(
     }
     let err = resp.get("error").and_then(Value::as_str).unwrap_or("unknown");
     if err == "ratelimited" || err == "rate_limited" {
-        Err(ConnectorError::Transient(format!("slack {method}: {err}")))
+        Err(DataSourceError::Transient(format!("slack {method}: {err}")))
     } else {
-        Err(ConnectorError::Permanent(format!("slack {method}: {err}")))
+        Err(DataSourceError::Permanent(format!("slack {method}: {err}")))
     }
 }
 

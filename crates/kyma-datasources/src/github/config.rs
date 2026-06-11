@@ -1,4 +1,4 @@
-//! GitHub connector configuration.
+//! GitHub data source configuration.
 
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +17,7 @@ pub struct Modules {
     pub contributors: bool,
     /// Enable structural code-graph ingestion (file tree + imports via
     /// tree-sitter).  Defaults to `true` but only has effect when the
-    /// connector is compiled with the `github` feature (which brings in the
+    /// data source is compiled with the `github` feature (which brings in the
     /// tree-sitter grammar crates).
     #[serde(default = "bool_true")]
     pub codebase: bool,
@@ -147,9 +147,9 @@ impl Default for CodeOpts {
     }
 }
 
-/// Configuration for the GitHub metadata connector.
+/// Configuration for the GitHub metadata data source.
 ///
-/// Stored as JSON in the `connectors.config_jsonb` column. The `token`
+/// Stored as JSON in the `data sources.config_jsonb` column. The `token`
 /// field should be a `SecretStore` reference such as `"$env:GITHUB_TOKEN"`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

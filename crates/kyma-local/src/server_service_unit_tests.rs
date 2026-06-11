@@ -37,7 +37,7 @@ fn launchd_plist_keeps_the_server_alive_across_crash_and_boot() {
     assert!(plist.contains("<key>KYMA_HOME</key>"));
     assert!(plist.contains("<key>WorkingDirectory</key>"));
     // Credential-encryption key rides the service env too — the server can't
-    // decrypt stored connector credentials without it.
+    // decrypt stored data source credentials without it.
     assert!(plist.contains("<key>KYMA_SECRET_KEY</key>"));
     assert!(plist.contains("<string>c2VjcmV0LWtleS10ZXN0</string>"));
 

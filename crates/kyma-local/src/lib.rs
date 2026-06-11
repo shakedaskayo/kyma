@@ -334,7 +334,7 @@ pub fn build_local_app(
     // embedded catalog. Read surfaces (query/catalog/graph/agent/memory/MCP)
     // require Role::Read; ingest + dashboard/cleanup writes require
     // Role::Write; user admin requires Role::Admin; login/web/health are open.
-    // Control-plane-only surfaces (connectors, credentials, OAuth, saved-view
+    // Control-plane-only surfaces (data sources, credentials, OAuth, saved-view
     // writes) are NOT mounted — /v1/capabilities tells clients so, and the
     // SPA fallback 404s unknown /v1/* paths instead of serving HTML.
     // (agent_state is cloned: the KYMA_CC_WATCH watcher in run_serve keeps one.)

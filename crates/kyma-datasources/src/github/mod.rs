@@ -1,4 +1,4 @@
-//! GitHub metadata + structural code graph connector.
+//! GitHub metadata + structural code graph data source.
 //!
 //! Ingests repository metadata (repos, branches, pull requests, issues,
 //! contributors) **and** the structural code graph (Repo→Dir→File `CONTAINS`
@@ -29,7 +29,7 @@ use chrono::Utc;
 #[cfg(feature = "github")]
 use std::collections::HashSet;
 
-use crate::types::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
+use crate::types::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
 use client::{GithubClient, StopReason};
 use config::GithubConfig;
 use cursor::Cursor;
@@ -43,7 +43,7 @@ use transform::{FileImports, code_to_graph, resolve_imports};
 pub struct GithubConnector;
 
 #[async_trait]
-impl Connector for GithubConnector {
+impl DataSource for GithubConnector {
     fn type_id(&self) -> &'static str {
         "github"
     }
@@ -92,12 +92,12 @@ impl Connector for GithubConnector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &serde_json::Value,
         cursor: Option<&serde_json::Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let config: GithubConfig = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Config(format!("config parse: {e}")))?;
+            .map_err(|e| DataSourceError::Config(format!("config parse: {e}")))?;
 
         // Resolve the token: credential_id (preferred) → inline token via the
         // SecretStore (which handles "$env:GITHUB_TOKEN" refs). At least one
@@ -108,11 +108,11 @@ impl Connector for GithubConnector {
                 .credentials
                 .get(ctx.tenant, cid)
                 .await
-                .map_err(|e| ConnectorError::Permanent(format!("resolve credential {cid}: {e}")))?;
+                .map_err(|e| DataSourceError::Permanent(format!("resolve credential {cid}: {e}")))?;
             match cred.value {
                 CredentialValue::Pat { token } => token,
                 other => {
-                    return Err(ConnectorError::Permanent(format!(
+                    return Err(DataSourceError::Permanent(format!(
                         "credential {cid} has kind={}; github connector requires `pat`",
                         other.kind()
                     )));
@@ -121,7 +121,7 @@ impl Connector for GithubConnector {
         } else {
             ctx.secrets
                 .resolve(&config.token)
-                .map_err(|e| ConnectorError::Config(format!("token resolve: {e}")))?
+                .map_err(|e| DataSourceError::Config(format!("token resolve: {e}")))?
         };
 
         let gh = GithubClient::new(ctx.http.clone(), token);
@@ -137,7 +137,7 @@ impl Connector for GithubConnector {
         for repo_slug in &config.repos {
             let parts: Vec<&str> = repo_slug.splitn(2, '/').collect();
             if parts.len() != 2 {
-                return Err(ConnectorError::Config(format!(
+                return Err(DataSourceError::Config(format!(
                     "invalid repo slug {repo_slug:?}"
                 )));
             }
@@ -152,8 +152,8 @@ impl Connector for GithubConnector {
                         records.push(RawRecord::Repo(repo));
                         Some(j)
                     }
-                    Err(ConnectorError::Transient(e)) => {
-                        return Err(ConnectorError::Transient(format!(
+                    Err(DataSourceError::Transient(e)) => {
+                        return Err(DataSourceError::Transient(format!(
                             "get_repo {repo_slug}: {e}"
                         )));
                     }
@@ -189,8 +189,8 @@ impl Connector for GithubConnector {
                             });
                         }
                     }
-                    Err(ConnectorError::Transient(e)) => {
-                        return Err(ConnectorError::Transient(format!(
+                    Err(DataSourceError::Transient(e)) => {
+                        return Err(DataSourceError::Transient(format!(
                             "list_branches {repo_slug}: {e}"
                         )));
                     }
@@ -236,8 +236,8 @@ impl Connector for GithubConnector {
                             });
                         }
                     }
-                    Err(ConnectorError::Transient(e)) => {
-                        return Err(ConnectorError::Transient(format!(
+                    Err(DataSourceError::Transient(e)) => {
+                        return Err(DataSourceError::Transient(format!(
                             "list_pulls {repo_slug}: {e}"
                         )));
                     }
@@ -280,8 +280,8 @@ impl Connector for GithubConnector {
                             });
                         }
                     }
-                    Err(ConnectorError::Transient(e)) => {
-                        return Err(ConnectorError::Transient(format!(
+                    Err(DataSourceError::Transient(e)) => {
+                        return Err(DataSourceError::Transient(format!(
                             "list_issues {repo_slug}: {e}"
                         )));
                     }
@@ -299,8 +299,8 @@ impl Connector for GithubConnector {
                             records.push(RawRecord::User(u));
                         }
                     }
-                    Err(ConnectorError::Transient(e)) => {
-                        return Err(ConnectorError::Transient(format!(
+                    Err(DataSourceError::Transient(e)) => {
+                        return Err(DataSourceError::Transient(format!(
                             "list_contributors {repo_slug}: {e}"
                         )));
                     }
@@ -398,7 +398,7 @@ impl Connector for GithubConnector {
                 let max_files = config.code.max_files_per_tick;
 
                 let parsed = tokio::task::spawn_blocking(
-                    move || -> Result<Vec<FileImports>, ConnectorError> {
+                    move || -> Result<Vec<FileImports>, DataSourceError> {
                         let checkout = clone::clone_repo(&token_c, &owner_c, &name_c, None)?;
                         let glob_set = build_glob_set(&exclude);
                         let disk = clone::walk_source_files(
@@ -438,11 +438,11 @@ impl Connector for GithubConnector {
                     },
                 )
                 .await
-                .unwrap_or_else(|e| Err(ConnectorError::Config(format!("clone task join: {e}"))));
+                .unwrap_or_else(|e| Err(DataSourceError::Config(format!("clone task join: {e}"))));
 
                 let file_imports = match parsed {
                     Ok(fis) => fis,
-                    Err(ConnectorError::Transient(e)) => {
+                    Err(DataSourceError::Transient(e)) => {
                         tracing::warn!(repo = %repo_slug, error = %e, "git clone failed; skipping code graph this tick");
                         continue;
                     }
@@ -476,7 +476,7 @@ impl Connector for GithubConnector {
         // object-store artifact, and emits a `github_job_logs` pointer row.
         let mut job_log_rows: Vec<serde_json::Value> = Vec::new();
         if config.modules.job_logs {
-            // Register the resolved PAT as a known secret so the connector's own
+            // Register the resolved PAT as a known secret so the data source's own
             // token can never surface in a stored log, pattern or not.
             kyma_redact::global().register_value("github-token", &gh.token);
             for repo_slug in &config.repos {
@@ -507,8 +507,8 @@ impl Connector for GithubConnector {
                             cur.update_workflows_cursor(repo_slug, newest);
                         }
                     }
-                    Err(ConnectorError::Transient(e)) => {
-                        return Err(ConnectorError::Transient(format!(
+                    Err(DataSourceError::Transient(e)) => {
+                        return Err(DataSourceError::Transient(format!(
                             "job_logs {repo_slug}: {e}"
                         )));
                     }
@@ -537,7 +537,7 @@ impl Connector for GithubConnector {
             });
         }
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: vec![],
             new_cursor: Some(cur.to_value()),
             tables,

@@ -1,15 +1,15 @@
-//! Read-only connector access for the dreaming agent.
+//! Read-only data source access for the dreaming agent.
 //!
 //! Two tools give the agent direct, authenticated READ access to configured
-//! connectors so it can fill memory gaps with fresh context:
+//! data sources so it can fill memory gaps with fresh context:
 //!
 //! - `list_connectors` — discover what sources exist (no secrets exposed).
-//! - `connector_read(connector_id, operation, params)` — a narrow per-kind
-//!   allowlist of read operations, resolved through the connector's stored
+//! - `connector_read(data_source_id, operation, params)` — a narrow per-kind
+//!   allowlist of read operations, resolved through the data source's stored
 //!   credential. v1 kinds: `github` (readme/file/issues/pulls/repo) and
 //!   `postgres` (SELECT-only query). Other kinds return "unsupported".
 //!
-//! Every call is budgeted per run ([`ConnectorReadBudget`]) and results are
+//! Every call is budgeted per run ([`DataSourceReadBudget`]) and results are
 //! truncated so a giant file can't blow the context window. There are no
 //! write operations on this surface by construction.
 
@@ -26,14 +26,14 @@ use uuid::Uuid;
 /// Per-run gap-fill budget shared by every `connector_read` closure of one
 /// dreaming run. Over-budget calls return an error payload so the agent can
 /// move on to housekeeping instead of aborting.
-pub struct ConnectorReadBudget {
+pub struct DataSourceReadBudget {
     max_calls: u64,
     max_bytes: u64,
     used_calls: AtomicU64,
     used_bytes: AtomicU64,
 }
 
-impl ConnectorReadBudget {
+impl DataSourceReadBudget {
     pub fn new(max_calls: u32, max_bytes: u64) -> Self {
         Self {
             max_calls: max_calls as u64,
@@ -62,13 +62,13 @@ impl ConnectorReadBudget {
     }
 }
 
-/// Everything the connector read tools need. Built per dreaming run.
+/// Everything the data source read tools need. Built per dreaming run.
 #[derive(Clone)]
-pub struct ConnectorToolCtx {
+pub struct DataSourceToolCtx {
     pub pool: Option<PgPool>,
     pub credentials: Arc<dyn CredentialStore>,
     pub tenant: TenantId,
-    pub budget: Arc<ConnectorReadBudget>,
+    pub budget: Arc<DataSourceReadBudget>,
 }
 
 /// Per-operation result cap — keeps one read from flooding the context.
@@ -80,7 +80,7 @@ const LIST_CONNECTORS_DESC: &str = "List the configured data connectors (id, nam
 enabled, target database). Use this to discover which external sources you can read from \
 with `connector_read` when filling memory gaps.";
 
-pub fn tool_list_connectors(ctx: ConnectorToolCtx) -> Arc<dyn Tool> {
+pub fn tool_list_connectors(ctx: DataSourceToolCtx) -> Arc<dyn Tool> {
     Arc::new(
         FunctionTool::new(
             "list_connectors",
@@ -146,7 +146,7 @@ get_issue {repo?, number}, list_pulls {repo?, limit?} (repo defaults to the conn
 configured \"owner/name\"); postgres: query {sql} (SELECT-only, auto-limited). Budgeted per run; \
 results truncated to 8KB. Use list_connectors first to discover ids and supported ops.";
 
-pub fn tool_connector_read(ctx: ConnectorToolCtx) -> Arc<dyn Tool> {
+pub fn tool_connector_read(ctx: DataSourceToolCtx) -> Arc<dyn Tool> {
     Arc::new(
         FunctionTool::new(
             "connector_read",
@@ -160,7 +160,7 @@ pub fn tool_connector_read(ctx: ConnectorToolCtx) -> Arc<dyn Tool> {
     )
 }
 
-async fn connector_read(ctx: &ConnectorToolCtx, args: Value) -> Value {
+async fn connector_read(ctx: &DataSourceToolCtx, args: Value) -> Value {
     let Some(pool) = &ctx.pool else {
         return json!({"error": "no connector store in local mode"});
     };
@@ -171,7 +171,7 @@ async fn connector_read(ctx: &ConnectorToolCtx, args: Value) -> Value {
              continue with housekeeping using what you already have"
         )});
     }
-    let connector_id = match args
+    let data_source_id = match args
         .get("connector_id")
         .and_then(|v| v.as_str())
         .and_then(|s| Uuid::parse_str(s).ok())
@@ -190,7 +190,7 @@ async fn connector_read(ctx: &ConnectorToolCtx, args: Value) -> Value {
         "SELECT type, config_jsonb FROM connectors WHERE tenant_id = $1 AND id = $2",
     )
     .bind(ctx.tenant.as_uuid())
-    .bind(connector_id)
+    .bind(data_source_id)
     .fetch_optional(pool)
     .await
     {
@@ -238,8 +238,8 @@ async fn connector_read(ctx: &ConnectorToolCtx, args: Value) -> Value {
 
 // ── github ───────────────────────────────────────────────────────────────────
 
-async fn github_read(ctx: &ConnectorToolCtx, config: &Value, op: &str, params: &Value) -> Value {
-    // Resolve the repo: explicit param or the connector's first configured one.
+async fn github_read(ctx: &DataSourceToolCtx, config: &Value, op: &str, params: &Value) -> Value {
+    // Resolve the repo: explicit param or the data source's first configured one.
     let repo_param = params
         .get("repo")
         .and_then(|v| v.as_str())
@@ -260,7 +260,7 @@ async fn github_read(ctx: &ConnectorToolCtx, config: &Value, op: &str, params: &
     };
 
     // Credential: credential_id (preferred) → inline token. Mirrors the
-    // github connector's own resolution; env refs are not resolved here.
+    // github data source's own resolution; env refs are not resolved here.
     let token = match config
         .get("credential_id")
         .and_then(|v| v.as_str())
@@ -385,7 +385,7 @@ fn slim_issue(v: Value) -> Value {
 
 // ── postgres ─────────────────────────────────────────────────────────────────
 
-async fn postgres_read(ctx: &ConnectorToolCtx, config: &Value, op: &str, params: &Value) -> Value {
+async fn postgres_read(ctx: &DataSourceToolCtx, config: &Value, op: &str, params: &Value) -> Value {
     if op != "query" {
         return json!({"error": format!("unsupported postgres operation `{op}` (only `query`)")});
     }

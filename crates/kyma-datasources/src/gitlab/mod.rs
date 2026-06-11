@@ -1,4 +1,4 @@
-//! GitLab connector — projects, merge requests, issues, and members metadata.
+//! GitLab data source — projects, merge requests, issues, and members metadata.
 //!
 //! Uses GitLab REST v4 with optional `PRIVATE-TOKEN` auth (public projects work
 //! tokenless). Metadata-only by design: no clone, no source parsing. Emits
@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use crate::catalog::{CatalogEntry, CatalogField};
 use crate::types::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
 
 const MAX_PROJECTS_PER_TICK: usize = 20;
@@ -52,7 +52,7 @@ fn parse_projects(s: &str) -> Vec<String> {
 }
 
 #[async_trait]
-impl Connector for GitlabConnector {
+impl DataSource for GitlabConnector {
     fn type_id(&self) -> &'static str {
         "gitlab"
     }
@@ -108,12 +108,12 @@ impl Connector for GitlabConnector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &Value,
         _cursor: Option<&Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let parsed: GlConfig = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Permanent(format!("bad config: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("bad config: {e}")))?;
 
         // Resolve auth token — credential_id (preferred) → inline token → none.
         let token: String = if let Some(cid) = parsed.credential_id {
@@ -122,11 +122,11 @@ impl Connector for GitlabConnector {
                 .credentials
                 .get(ctx.tenant, cid)
                 .await
-                .map_err(|e| ConnectorError::Permanent(format!("resolve credential {cid}: {e}")))?;
+                .map_err(|e| DataSourceError::Permanent(format!("resolve credential {cid}: {e}")))?;
             match cred.value {
                 CredentialValue::Pat { token } => token,
                 other => {
-                    return Err(ConnectorError::Permanent(format!(
+                    return Err(DataSourceError::Permanent(format!(
                         "credential {cid} has kind={}; gitlab connector requires `pat`",
                         other.kind()
                     )));
@@ -140,7 +140,7 @@ impl Connector for GitlabConnector {
         if !token.is_empty() {
             headers.insert(
                 "PRIVATE-TOKEN",
-                token.parse().map_err(|_| ConnectorError::Permanent("bad token".into()))?,
+                token.parse().map_err(|_| DataSourceError::Permanent("bad token".into()))?,
             );
         }
         let api = parsed.api_url.trim_end_matches('/').to_string();
@@ -258,7 +258,7 @@ impl Connector for GitlabConnector {
                         }));
                     }
                 },
-                Err(ConnectorError::Permanent(_)) => { /* gated endpoint; skip */ }
+                Err(DataSourceError::Permanent(_)) => { /* gated endpoint; skip */ }
                 Err(e) => return Err(e),
             }
         }
@@ -266,7 +266,7 @@ impl Connector for GitlabConnector {
         let nodes = nodes.into_iter().map(crate::graph_row::normalize_node).collect();
         let edges = edges.into_iter().map(crate::graph_row::normalize_edge).collect();
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: Vec::new(),
             new_cursor: None,
             tables: vec![
@@ -295,19 +295,19 @@ fn urlenc(s: &str) -> String {
         .collect()
 }
 
-async fn get_json(http: &reqwest::Client, url: &str, headers: &HeaderMap) -> Result<Value, ConnectorError> {
+async fn get_json(http: &reqwest::Client, url: &str, headers: &HeaderMap) -> Result<Value, DataSourceError> {
     let res = http.get(url).headers(headers.clone())
         .timeout(Duration::from_secs(30))
         .send().await
-        .map_err(|e| ConnectorError::Transient(format!("GET {url}: {e}")))?;
+        .map_err(|e| DataSourceError::Transient(format!("GET {url}: {e}")))?;
     let status = res.status();
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
-        return Err(ConnectorError::Transient(format!("GET {url} → {status}")));
+        return Err(DataSourceError::Transient(format!("GET {url} → {status}")));
     }
     if !status.is_success() {
-        return Err(ConnectorError::Permanent(format!("GET {url} → {status}")));
+        return Err(DataSourceError::Permanent(format!("GET {url} → {status}")));
     }
-    res.json().await.map_err(|e| ConnectorError::Transient(format!("parse {url}: {e}")))
+    res.json().await.map_err(|e| DataSourceError::Transient(format!("parse {url}: {e}")))
 }
 
 async fn paged(
@@ -315,7 +315,7 @@ async fn paged(
     base: &str,
     headers: &HeaderMap,
     extra_q: &str,
-) -> Result<Vec<Value>, ConnectorError> {
+) -> Result<Vec<Value>, DataSourceError> {
     let mut out = Vec::<Value>::new();
     for page in 1..=MAX_PAGES_PER_ENDPOINT {
         let sep = if base.contains('?') { '&' } else { '?' };

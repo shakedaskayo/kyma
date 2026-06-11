@@ -104,8 +104,8 @@ pub fn is_refetch_edge(e: &Value) -> bool {
 /// A stable, order-independent signature over the full-refetch metadata rows.
 ///
 /// Used to skip re-emitting unchanged repo/user/branch rows every tick: the
-/// connector re-fetches these modules in full each poll, and the node/edge
-/// tables are append-only, so without a gate a continuous connector grows the
+/// data source re-fetches these modules in full each poll, and the node/edge
+/// tables are append-only, so without a gate a continuous data source grows the
 /// tables without bound. Hashing the *emitted rows* (not the raw API payload)
 /// means only changes to the fields we actually store trigger a re-emit.
 pub fn refetch_signature(nodes: &[Value], edges: &[Value]) -> String {

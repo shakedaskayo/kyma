@@ -87,11 +87,11 @@ use tracing::{debug, error, info};
 
 const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 
-pub use kyma_datasources::admin::AdminState as ConnectorAdminState;
+pub use kyma_datasources::admin::AdminState as DataSourceAdminState;
 pub use kyma_datasources::oauth::OAuthState;
 
-/// Build the connector admin router (auth-eligible — caller wraps with middleware).
-pub fn connector_admin_router(state: kyma_datasources::admin::AdminState) -> Router {
+/// Build the data source admin router (auth-eligible — caller wraps with middleware).
+pub fn datasource_admin_router(state: kyma_datasources::admin::AdminState) -> Router {
     kyma_datasources::admin::router(state)
 }
 

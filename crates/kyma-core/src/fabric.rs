@@ -5,7 +5,7 @@
 //!
 //! A *worker* is a fabric compute identity: the server's embedded in-process
 //! worker, or a remote daemon registered from any compute. A *job* is a
-//! placement-aware unit of work a worker claims under a lease: connector
+//! placement-aware unit of work a worker claims under a lease: data source
 //! syncs, dreaming runs, or node-local source syncs.
 
 use chrono::{DateTime, Utc};

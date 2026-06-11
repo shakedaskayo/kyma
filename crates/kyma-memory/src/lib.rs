@@ -47,7 +47,7 @@ pub const IMPORTANCE_WEIGHT: f64 = 0.3;
 /// - [`EDGE_RESOLVES_TO`]: a memory-side `entity` node → the real catalog graph
 ///   node it denotes (carries `target_namespace` for cross-graph stitching).
 /// - [`EDGE_RELATES_TO`]: entity ↔ entity, with the predicate in `props`.
-/// - [`EDGE_DERIVED_FROM`]: a memory → the source firehose/connector row it was
+/// - [`EDGE_DERIVED_FROM`]: a memory → the source firehose/data source row it was
 ///   extracted from (provenance edge).
 /// - [`EDGE_INVALIDATES`]: a new memory → the memory it supersedes (bi-temporal).
 /// - [`EDGE_MERGED_INTO`]: a memory → the memory it was merged into.

@@ -6,35 +6,35 @@
 //!
 //! The critical property under test is **per-table idempotency-key
 //! uniqueness**: the runner must produce a distinct key for each table in
-//! `ConnectorRun::tables`, otherwise the second table's rows would be
+//! `DataSourceRun::tables`, otherwise the second table's rows would be
 //! silently deduplicated against the first table's.
 //!
-//! Because `ConnectorRunner::claim_and_run_one` currently requires a live
+//! Because `DataSourceRunner::claim_and_run_one` currently requires a live
 //! `PostgresCatalog` (it calls `claim_task` + SQL helpers), the unit tests
 //! target the seam we *can* reach without a real Postgres instance: the
 //! `RowSink` and `GraphRegisterFn` type aliases + the runner's multi-table
 //! code path via a full integration test using testcontainers.
 //!
 //! The first test (`multi_table_distinct_idempotency_keys`) spins up a real
-//! Postgres container and runs a fake two-table connector end-to-end via
+//! Postgres container and runs a fake two-table data source end-to-end via
 //! `claim_and_run_one`. It verifies:
 //! 1. The sink was called once per table (two calls for two tables).
 //! 2. The idempotency keys for the two tables are DISTINCT (the critical
 //!    invariant).
 //! 3. `graph_register` was called exactly once.
 //!
-//! The second test (`legacy_rows_path_unchanged`) verifies that a connector
+//! The second test (`legacy_rows_path_unchanged`) verifies that a data source
 //! using only `rows` (not `tables`) still exercises the legacy path without
 //! any graph_register calls.
 
 use async_trait::async_trait;
 use kyma_catalog::PostgresCatalog;
 use kyma_datasources::catalog_sql;
-use kyma_datasources::registry::ConnectorRegistry;
-use kyma_datasources::runner::{ConnectorRunner, GraphRegisterFn, RowSink};
+use kyma_datasources::registry::DataSourceRegistry;
+use kyma_datasources::runner::{DataSourceRunner, GraphRegisterFn, RowSink};
 use kyma_datasources::secrets::EnvSecretStore;
 use kyma_datasources::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use kyma_core::tenant::DEFAULT_TENANT;
@@ -51,11 +51,11 @@ struct SinkCall {
     idem_key: Option<String>,
 }
 
-/// A fake connector that emits two tables + a GraphHint on every tick.
+/// A fake data source that emits two tables + a GraphHint on every tick.
 struct TwoTableConn;
 
 #[async_trait]
-impl Connector for TwoTableConn {
+impl DataSource for TwoTableConn {
     fn type_id(&self) -> &'static str {
         "two_table"
     }
@@ -64,11 +64,11 @@ impl Connector for TwoTableConn {
     }
     async fn run_once(
         &self,
-        _ctx: &ConnectorCtx,
+        _ctx: &DataSourceCtx,
         _cfg: &serde_json::Value,
         _cursor: Option<&serde_json::Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
-        Ok(ConnectorRun {
+    ) -> Result<DataSourceRun, DataSourceError> {
+        Ok(DataSourceRun {
             rows: vec![],
             new_cursor: None,
             tables: vec![
@@ -93,12 +93,12 @@ impl Connector for TwoTableConn {
     }
 }
 
-/// A fake connector that uses only the legacy `rows` path (no `tables`, no
+/// A fake data source that uses only the legacy `rows` path (no `tables`, no
 /// `graph`).
 struct LegacyConn;
 
 #[async_trait]
-impl Connector for LegacyConn {
+impl DataSource for LegacyConn {
     fn type_id(&self) -> &'static str {
         "legacy"
     }
@@ -107,11 +107,11 @@ impl Connector for LegacyConn {
     }
     async fn run_once(
         &self,
-        _ctx: &ConnectorCtx,
+        _ctx: &DataSourceCtx,
         _cfg: &serde_json::Value,
         _cursor: Option<&serde_json::Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
-        Ok(ConnectorRun {
+    ) -> Result<DataSourceRun, DataSourceError> {
+        Ok(DataSourceRun {
             rows: vec![serde_json::json!({"metric": "cpu", "value": 0.5})],
             new_cursor: None,
             tables: vec![],
@@ -151,7 +151,7 @@ fn recording_graph_register(
     (f, calls)
 }
 
-/// Spin up Postgres, register a connector that emits two tables + a
+/// Spin up Postgres, register a data source that emits two tables + a
 /// GraphHint, run one tick, and assert:
 ///  - The recording sink was called exactly TWICE (once per table).
 ///  - The two idempotency keys are DISTINCT (the critical invariant).
@@ -168,7 +168,7 @@ async fn multi_table_distinct_idempotency_keys() {
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
     let catalog = Arc::new(PostgresCatalog::connect(&url).await.unwrap());
 
-    let mut reg = ConnectorRegistry::new();
+    let mut reg = DataSourceRegistry::new();
     reg.register(Arc::new(TwoTableConn));
 
     let conn_id = catalog_sql::create_connector_direct(
@@ -177,7 +177,7 @@ async fn multi_table_distinct_idempotency_keys() {
         "two_table_test",
         "two_table",
         "graph_db",
-        // target_table is empty — this connector uses the tables path.
+        // target_table is empty — this data source uses the tables path.
         "",
         serde_json::json!({}),
         100,
@@ -187,7 +187,7 @@ async fn multi_table_distinct_idempotency_keys() {
     .unwrap();
 
     // Enqueue directly on the legacy background_tasks harness this test
-    // drives; the production scheduler now enqueues fabric `connector_sync`
+    // drives; the production scheduler now enqueues fabric `datasource_sync`
     // jobs (covered by kyma-jobs' integration test).
     catalog_sql::enqueue_tick(catalog.pool(), DEFAULT_TENANT, conn_id, 1_000)
         .await
@@ -205,7 +205,7 @@ async fn multi_table_distinct_idempotency_keys() {
     let (sink, sink_calls) = recording_sink();
     let (graph_fn, graph_calls) = recording_graph_register();
 
-    let runner = ConnectorRunner::new(
+    let runner = DataSourceRunner::new(
         catalog.clone(),
         Arc::new(reg),
         sink,
@@ -263,7 +263,7 @@ async fn multi_table_distinct_idempotency_keys() {
 }
 
 /// Verify the legacy `rows` path still works as-before: the sink is called
-/// exactly once, with the connector's target_table, and graph_register is
+/// exactly once, with the data source's target_table, and graph_register is
 /// NOT called.
 #[tokio::test]
 async fn legacy_rows_path_unchanged() {
@@ -277,7 +277,7 @@ async fn legacy_rows_path_unchanged() {
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
     let catalog = Arc::new(PostgresCatalog::connect(&url).await.unwrap());
 
-    let mut reg = ConnectorRegistry::new();
+    let mut reg = DataSourceRegistry::new();
     reg.register(Arc::new(LegacyConn));
 
     let conn_id = catalog_sql::create_connector_direct(
@@ -312,7 +312,7 @@ async fn legacy_rows_path_unchanged() {
     let (sink, sink_calls) = recording_sink();
     let (graph_fn, graph_calls) = recording_graph_register();
 
-    let runner = ConnectorRunner::new(
+    let runner = DataSourceRunner::new(
         catalog.clone(),
         Arc::new(reg),
         sink,

@@ -1,6 +1,6 @@
-//! OAuth2 authorization-code framework for connectors.
+//! OAuth2 authorization-code framework for data sources.
 //!
-//! Connectors that authenticate with `auth_mode: "oauth"` (Notion, Google,
+//! Data sources that authenticate with `auth_mode: "oauth"` (Notion, Google,
 //! Atlassian, Slack, …) obtain a [`kyma_core::credentials::CredentialValue::Oauth2`]
 //! credential through the browser flow implemented here:
 //!
@@ -13,7 +13,7 @@
 //!    redirect carries no bearer). We consume the `state` row, exchange the
 //!    code for tokens, store them as an encrypted `Oauth2` credential, and hand
 //!    the new `credential_id` back to the opener via `postMessage` + redirect.
-//! 3. Connectors resolve a fresh access token at run time via
+//! 3. Data sources resolve a fresh access token at run time via
 //!    [`token::valid_access_token`], which refreshes + persists in place.
 //!
 //! Client app credentials (`client_id` / `client_secret`) come from operator
@@ -33,8 +33,8 @@ pub use handler::{oauth_authed_router, oauth_callback_router, OAuthState};
 pub use provider::{provider_for_connector, scopes_for_connector, OAuthProvider};
 pub use token::valid_access_token;
 
-/// Run-time OAuth capability handed to connectors through
-/// [`crate::types::ConnectorCtx::oauth`]. Lets [`token::valid_access_token`]
+/// Run-time OAuth capability handed to data sources through
+/// [`crate::types::DataSourceCtx::oauth`]. Lets [`token::valid_access_token`]
 /// resolve a provider's client credentials (operator env **and** the per-tenant
 /// `oauth_clients` table) and decrypt them when refreshing an expired token.
 ///

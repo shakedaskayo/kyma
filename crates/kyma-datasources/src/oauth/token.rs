@@ -1,7 +1,7 @@
-//! Run-time access-token resolution for OAuth connectors.
+//! Run-time access-token resolution for OAuth data sources.
 //!
-//! Every OAuth connector calls [`valid_access_token`] in `run_once` instead of
-//! reading the credential directly — mirroring how the GitHub connector resolves
+//! Every OAuth data source calls [`valid_access_token`] in `run_once` instead of
+//! reading the credential directly — mirroring how the GitHub data source resolves
 //! a PAT, but with transparent refresh + write-back for expired tokens.
 
 use chrono::{Duration, Utc};
@@ -9,7 +9,7 @@ use kyma_core::credentials::CredentialValue;
 use uuid::Uuid;
 
 use super::{client, flow, provider};
-use crate::types::{ConnectorCtx, ConnectorError};
+use crate::types::{DataSourceCtx, DataSourceError};
 
 /// Resolve a valid OAuth2 access token for `credential_id`. If the stored token
 /// is expired (or within 60s of it) and a refresh token is present, refresh via
@@ -18,14 +18,14 @@ use crate::types::{ConnectorCtx, ConnectorError};
 /// Providers that issue non-expiring tokens (Notion, Slack) — or any credential
 /// without a refresh token — simply return the stored access token.
 pub async fn valid_access_token(
-    ctx: &ConnectorCtx,
+    ctx: &DataSourceCtx,
     credential_id: Uuid,
-) -> Result<String, ConnectorError> {
+) -> Result<String, DataSourceError> {
     let cred = ctx
         .credentials
         .get(ctx.tenant, credential_id)
         .await
-        .map_err(|e| ConnectorError::Permanent(format!("resolve credential {credential_id}: {e}")))?;
+        .map_err(|e| DataSourceError::Permanent(format!("resolve credential {credential_id}: {e}")))?;
 
     let CredentialValue::Oauth2 {
         access_token,
@@ -33,7 +33,7 @@ pub async fn valid_access_token(
         expires_at,
     } = cred.value
     else {
-        return Err(ConnectorError::Permanent(format!(
+        return Err(DataSourceError::Permanent(format!(
             "credential {credential_id} is kind={}; oauth connector requires `oauth2`",
             cred.kind
         )));
@@ -57,12 +57,12 @@ pub async fn valid_access_token(
         .get("provider")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            ConnectorError::Permanent(format!(
+            DataSourceError::Permanent(format!(
                 "credential {credential_id} metadata is missing `provider`; cannot refresh"
             ))
         })?;
     let prov = provider::lookup(provider_slug).ok_or_else(|| {
-        ConnectorError::Permanent(format!("unknown oauth provider `{provider_slug}`"))
+        DataSourceError::Permanent(format!("unknown oauth provider `{provider_slug}`"))
     })?;
 
     // Resolve client creds: per-tenant BYO (needs the run-time pool/crypto) +
@@ -70,18 +70,18 @@ pub async fn valid_access_token(
     let creds = match &ctx.oauth {
         Some(rt) => client::resolve_client(&rt.pool, &rt.crypto, ctx.tenant, prov)
             .await
-            .map_err(|e| ConnectorError::Transient(format!("resolve oauth client: {e}")))?,
+            .map_err(|e| DataSourceError::Transient(format!("resolve oauth client: {e}")))?,
         None => client::env_client(prov),
     };
     let Some(creds) = creds else {
-        return Err(ConnectorError::Transient(format!(
+        return Err(DataSourceError::Transient(format!(
             "no OAuth client configured for `{provider_slug}`; cannot refresh token"
         )));
     };
 
     let tokens = flow::refresh_token(&ctx.http, prov, &creds, &rt)
         .await
-        .map_err(|e| ConnectorError::Transient(format!("token refresh: {e}")))?;
+        .map_err(|e| DataSourceError::Transient(format!("token refresh: {e}")))?;
 
     // Persist the rotated tokens (some providers rotate the refresh token too;
     // keep the old one if a new one wasn't returned).
@@ -93,7 +93,7 @@ pub async fn valid_access_token(
     ctx.credentials
         .update_value(ctx.tenant, credential_id, &new_value)
         .await
-        .map_err(|e| ConnectorError::Transient(format!("persist refreshed token: {e}")))?;
+        .map_err(|e| DataSourceError::Transient(format!("persist refreshed token: {e}")))?;
 
     Ok(tokens.access_token)
 }

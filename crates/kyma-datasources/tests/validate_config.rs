@@ -1,5 +1,5 @@
 use kyma_datasources::prometheus::PromConnector;
-use kyma_datasources::Connector;
+use kyma_datasources::DataSource;
 use serde_json::json;
 
 fn c() -> PromConnector {

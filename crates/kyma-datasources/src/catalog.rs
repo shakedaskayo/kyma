@@ -1,20 +1,20 @@
-//! Connector catalog — the vendor-agnostic, self-describing metadata that
-//! powers the connectors UI. Each connector returns a [`CatalogEntry`] from
-//! [`crate::types::Connector::catalog`]; the registry collects them and the
-//! admin API serves them at `GET /v1/connectors/catalog` (merged with the
+//! DataSource catalog — the vendor-agnostic, self-describing metadata that
+//! powers the data sources UI. Each data source returns a [`CatalogEntry`] from
+//! [`crate::types::DataSource::catalog`]; the registry collects them and the
+//! admin API serves them at `GET /v1/data sources/catalog` (merged with the
 //! [`coming_soon`] list of not-yet-implemented vendors).
 //!
-//! Adding a new connector therefore needs **no UI change**: implement the
+//! Adding a new data source therefore needs **no UI change**: implement the
 //! trait (including `catalog()`) and register it — it appears in the catalog
 //! grid automatically, fully described (icon, category, auth, config fields).
 
 use serde::Serialize;
 use serde_json::Value;
 
-/// A single config input the wizard renders for a connector.
+/// A single config input the wizard renders for a data source.
 #[derive(Debug, Clone, Serialize)]
 pub struct CatalogField {
-    /// Key under the connector's `config` object.
+    /// Key under the data source's `config` object.
     pub key: String,
     pub label: String,
     /// `"text"` | `"secret"` | `"checkbox"`. Secrets render as password inputs
@@ -72,7 +72,7 @@ pub struct CatalogResource {
     pub token_field: String,
 }
 
-/// Self-describing metadata for one connector type.
+/// Self-describing metadata for one data source type.
 #[derive(Debug, Clone, Serialize)]
 pub struct CatalogEntry {
     pub type_id: String,
@@ -97,20 +97,20 @@ pub struct CatalogEntry {
     /// Config fragment the UI merges into what it sends (e.g. github modules).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config_defaults: Option<Value>,
-    /// The graph name this connector registers, if it produces a graph.
+    /// The graph name this data source registers, if it produces a graph.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub graph_name: Option<String>,
-    /// Credential kinds this connector accepts via `credential_id` in its
+    /// Credential kinds this data source accepts via `credential_id` in its
     /// config (e.g. `["url"]` for Postgres, `["pat","github_app"]` for
     /// GitHub once both are wired). The UI filters the credential picker by
-    /// these kinds. Empty means the connector takes inline secrets only —
-    /// every connector should opt in as it grows credential support.
+    /// these kinds. Empty means the data source takes inline secrets only —
+    /// every data source should opt in as it grows credential support.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub accepted_credential_kinds: Vec<String>,
 }
 
 impl CatalogEntry {
-    /// Minimal fallback so a connector that doesn't override `catalog()` still
+    /// Minimal fallback so a data source that doesn't override `catalog()` still
     /// shows up sensibly (rather than being invisible in the UI).
     pub fn minimal(type_id: &str) -> Self {
         Self {
@@ -132,7 +132,7 @@ impl CatalogEntry {
     }
 }
 
-/// A "coming soon" catalog entry — presentation-only, no `Connector` impl yet.
+/// A "coming soon" catalog entry — presentation-only, no `DataSource` impl yet.
 fn soon(type_id: &str, label: &str, category: &str, brand: &str, auth: &str, desc: &str) -> CatalogEntry {
     CatalogEntry {
         type_id: type_id.into(),
@@ -153,7 +153,7 @@ fn soon(type_id: &str, label: &str, category: &str, brand: &str, auth: &str, des
 }
 
 /// Vendors we present in the catalog but haven't implemented yet. These are
-/// merged with the registered connectors (which win on `type_id` collision) so
+/// merged with the registered data sources (which win on `type_id` collision) so
 /// the catalog reads like a real product surface, not a single-vendor tool.
 pub fn coming_soon() -> Vec<CatalogEntry> {
     vec![

@@ -12,7 +12,7 @@
 //! - [`MsFabricExecutor`] — the per-source `SQLExecutor` used by
 //!   `datafusion-federation` at query time;
 //! - [`introspect`] — `INFORMATION_SCHEMA` walk used by the `msfabric`
-//!   connector's metadata-sync tick to discover tables + Arrow schemas.
+//!   data source's metadata-sync tick to discover tables + Arrow schemas.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -395,7 +395,7 @@ fn json_to_batch(rows: &[serde_json::Value], schema: SchemaRef) -> anyhow::Resul
 }
 
 // ---------------------------------------------------------------------------
-// Introspection (used by the msfabric connector's metadata-sync tick)
+// Introspection (used by the msfabric data source's metadata-sync tick)
 // ---------------------------------------------------------------------------
 
 /// One remote table discovered by [`introspect`].

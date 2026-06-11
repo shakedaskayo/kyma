@@ -1,4 +1,4 @@
-//! Notion connector — pages, databases, users, and their relations as a
+//! Notion data source — pages, databases, users, and their relations as a
 //! property graph.
 //!
 //! Authenticates with a stored OAuth2 credential (the connect flow mints it).
@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::catalog::CatalogEntry;
 use crate::types::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
 
 const API: &str = "https://api.notion.com/v1";
@@ -42,7 +42,7 @@ fn default_max_pages() -> usize {
 pub struct NotionConnector;
 
 #[async_trait]
-impl Connector for NotionConnector {
+impl DataSource for NotionConnector {
     fn type_id(&self) -> &'static str {
         "notion"
     }
@@ -79,15 +79,15 @@ impl Connector for NotionConnector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &Value,
         cursor: Option<&Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let config: NotionConfig = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Permanent(format!("bad config: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("bad config: {e}")))?;
         let cid = config
             .credential_id
-            .ok_or_else(|| ConnectorError::Config("credential_id required".into()))?;
+            .ok_or_else(|| DataSourceError::Config("credential_id required".into()))?;
         let token = crate::oauth::valid_access_token(ctx, cid).await?;
 
         let db_filter: HashSet<&str> = config.databases.iter().map(String::as_str).collect();
@@ -156,7 +156,7 @@ impl Connector for NotionConnector {
         let nodes = nodes.into_iter().map(crate::graph_row::normalize_node).collect();
         let edges = edges.into_iter().map(crate::graph_row::normalize_edge).collect();
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: Vec::new(),
             new_cursor: Some(json!({ "last_edited": newest })),
             tables: vec![

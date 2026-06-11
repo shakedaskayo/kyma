@@ -54,7 +54,7 @@ pub struct MemorySettings {
 
 /// Knobs for the scheduled dreaming pipeline — an autonomous agent run that
 /// housekeeps the memory store (importance, relationships, dedup, archival)
-/// and fills gaps with read-only connector access. `#[serde(default)]` keeps
+/// and fills gaps with read-only data source access. `#[serde(default)]` keeps
 /// older settings rows loading.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -70,13 +70,13 @@ pub struct DreamingSettings {
     /// Agent-loop budget: max tool calls per run (adk engines).
     pub max_tool_calls: u32,
     /// Wall-clock budget per run, seconds (all engines). Agentic dreaming runs
-    /// (tool loops + LLM calls + connector reads) routinely need far longer than
+    /// (tool loops + LLM calls + data source reads) routinely need far longer than
     /// a typical request, so this defaults generously (1h); the `max_tool_calls`
-    /// / `mutation_cap` / connector budgets are the real per-run guardrails.
+    /// / `mutation_cap` / data source budgets are the real per-run guardrails.
     pub wall_clock_secs: u64,
     /// Gap-fill budget: max connector_read calls per run.
     pub connector_read_budget: u32,
-    /// Gap-fill budget: max bytes fetched across all connector reads.
+    /// Gap-fill budget: max bytes fetched across all data source reads.
     pub connector_read_max_bytes: u64,
     /// Cap on memory mutations (save/merge/archive/judge/…) per run.
     pub mutation_cap: u32,

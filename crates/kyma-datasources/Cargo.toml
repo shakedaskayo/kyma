@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "kyma connector framework: scheduled pulls from GitHub/GitLab/Bitbucket/Prometheus and other sources."
+description = "kyma data source framework: scheduled pulls from GitHub/GitLab/Bitbucket/Prometheus and other sources."
 
 [lints]
 workspace = true

@@ -1,6 +1,6 @@
-//! GitHub connector admin endpoints.
+//! GitHub data source admin endpoints.
 //!
-//! Exposes `POST /v1/connectors/github/repos` — resolves the provided PAT
+//! Exposes `POST /v1/data sources/github/repos` — resolves the provided PAT
 //! via `SecretStore`, lists all repos visible to the token (user + org repos),
 //! and returns them for the UI's repo picker.
 //!
@@ -113,7 +113,7 @@ async fn list_repos(
         }
         Err(e) => {
             let status = match &e {
-                crate::types::ConnectorError::Transient(_) => StatusCode::BAD_GATEWAY,
+                crate::types::DataSourceError::Transient(_) => StatusCode::BAD_GATEWAY,
                 _ => StatusCode::BAD_REQUEST,
             };
             (

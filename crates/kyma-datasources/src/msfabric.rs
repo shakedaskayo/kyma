@@ -1,6 +1,6 @@
-//! Microsoft Fabric connector — **metadata sync only** (federated source).
+//! Microsoft Fabric data source — **metadata sync only** (federated source).
 //!
-//! Unlike row-producing connectors, this one never ingests data. Each tick it
+//! Unlike row-producing data sources, this one never ingests data. Each tick it
 //! introspects a Fabric SQL analytics endpoint (`INFORMATION_SCHEMA` over TDS)
 //! and reconciles the target kyma database to mirror the remote tables as
 //! **federated** (live-proxied) tables: schema in the catalog, rows fetched at
@@ -11,7 +11,7 @@
 //! - remote schema/spec drift  → drop + recreate (federated tables hold no
 //!   extents, so this is cheap and atomic enough);
 //! - remote table disappeared  → drop the federated table — but only if its
-//!   spec points at *this* endpoint+database, so two msfabric connectors can
+//!   spec points at *this* endpoint+database, so two msfabric data sources can
 //!   share a target database;
 //! - name collides with a non-federated table → skip with a warning, never
 //!   clobber ingested data.
@@ -26,7 +26,7 @@ use serde_json::json;
 
 use crate::catalog::{CatalogEntry, CatalogField};
 use crate::types::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
 use kyma_core::catalog::{FederatedTableSpec, TableConfig};
 use kyma_core::credentials::CredentialValue;
@@ -52,7 +52,7 @@ struct MsFabricConfig {
 pub struct MsFabricConnector;
 
 #[async_trait]
-impl Connector for MsFabricConnector {
+impl DataSource for MsFabricConnector {
     fn type_id(&self) -> &'static str {
         "msfabric"
     }
@@ -112,14 +112,14 @@ impl Connector for MsFabricConnector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &serde_json::Value,
         _cursor: Option<&serde_json::Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let parsed: MsFabricConfig = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Permanent(format!("bad config: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("bad config: {e}")))?;
         let catalog = ctx.catalog.as_ref().ok_or_else(|| {
-            ConnectorError::Config(
+            DataSourceError::Config(
                 "msfabric requires catalog access; this runner wasn't wired with one".into(),
             )
         })?;
@@ -129,13 +129,13 @@ impl Connector for MsFabricConnector {
             .get(ctx.tenant, parsed.credential_id)
             .await
             .map_err(|e| {
-                ConnectorError::Permanent(format!(
+                DataSourceError::Permanent(format!(
                     "resolve credential {}: {e}",
                     parsed.credential_id
                 ))
             })?;
         if !matches!(cred.value, CredentialValue::ServicePrincipal { .. }) {
-            return Err(ConnectorError::Config(format!(
+            return Err(DataSourceError::Config(format!(
                 "credential {} has kind={}; msfabric requires `service_principal`",
                 parsed.credential_id,
                 cred.value.kind()
@@ -150,20 +150,20 @@ impl Connector for MsFabricConnector {
             INTROSPECT_TIMEOUT,
         )
         .await
-        .map_err(|e| ConnectorError::Transient(format!("fabric introspection: {e}")))?;
+        .map_err(|e| DataSourceError::Transient(format!("fabric introspection: {e}")))?;
 
         // 2. Ensure the target kyma database exists.
         let db_name = ctx.target_database.clone();
         let db_id = match catalog
             .lookup_database_in_tenant(ctx.tenant, &db_name)
             .await
-            .map_err(|e| ConnectorError::Transient(format!("lookup database: {e}")))?
+            .map_err(|e| DataSourceError::Transient(format!("lookup database: {e}")))?
         {
             Some(id) => id,
             None => catalog
                 .create_database_in_tenant(ctx.tenant, &db_name)
                 .await
-                .map_err(|e| ConnectorError::Transient(format!("create database: {e}")))?,
+                .map_err(|e| DataSourceError::Transient(format!("create database: {e}")))?,
         };
 
         // 3. Desired state: kyma table name → (remote meta, federated spec).
@@ -188,7 +188,7 @@ impl Connector for MsFabricConnector {
         let existing = catalog
             .list_tables_in_database_in_tenant(ctx.tenant, &db_name)
             .await
-            .map_err(|e| ConnectorError::Transient(format!("list tables: {e}")))?;
+            .map_err(|e| DataSourceError::Transient(format!("list tables: {e}")))?;
 
         let mut created = 0usize;
         let mut recreated = 0usize;
@@ -205,7 +205,7 @@ impl Connector for MsFabricConnector {
                 }
                 continue;
             };
-            // Only manage tables that point at this connector's source.
+            // Only manage tables that point at this data source's source.
             if fed.platform != PLATFORM_ID
                 || fed.endpoint != parsed.endpoint
                 || fed.remote_database != parsed.database
@@ -221,7 +221,7 @@ impl Connector for MsFabricConnector {
                         .drop_table_in_tenant(ctx.tenant, &db_name, &table.name)
                         .await
                         .map_err(|e| {
-                            ConnectorError::Transient(format!("drop {}: {e}", table.name))
+                            DataSourceError::Transient(format!("drop {}: {e}", table.name))
                         })?;
                     if desired.contains_key(&table.name) {
                         recreated += 1;
@@ -236,7 +236,7 @@ impl Connector for MsFabricConnector {
         let existing_names: std::collections::BTreeSet<String> = catalog
             .list_tables_in_database_in_tenant(ctx.tenant, &db_name)
             .await
-            .map_err(|e| ConnectorError::Transient(format!("list tables: {e}")))?
+            .map_err(|e| DataSourceError::Transient(format!("list tables: {e}")))?
             .into_iter()
             .map(|t| t.name)
             .collect();
@@ -252,12 +252,12 @@ impl Connector for MsFabricConnector {
             catalog
                 .create_table_in_tenant(ctx.tenant, db_id, name, meta.schema.clone(), config)
                 .await
-                .map_err(|e| ConnectorError::Transient(format!("create {name}: {e}")))?;
+                .map_err(|e| DataSourceError::Transient(format!("create {name}: {e}")))?;
             created += 1;
         }
 
         info!(
-            connector_id = %ctx.connector_id,
+            data_source_id = %ctx.data_source_id,
             database = %db_name,
             remote_tables = desired.len(),
             created, recreated, dropped,
@@ -269,7 +269,7 @@ impl Connector for MsFabricConnector {
         // kyma metadata about the remote source, not remote data.
         let (nodes, edges) = graph_rows(&parsed, &desired);
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: Vec::new(),
             new_cursor: None,
             tables: vec![

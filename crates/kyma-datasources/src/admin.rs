@@ -1,7 +1,7 @@
-//! HTTP admin API — /v1/connectors CRUD.
+//! HTTP admin API — /v1/data sources CRUD.
 
 use crate::catalog_sql;
-use crate::registry::ConnectorRegistry;
+use crate::registry::DataSourceRegistry;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -16,7 +16,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct AdminState {
     pub catalog: Arc<PostgresCatalog>,
-    pub registry: Arc<ConnectorRegistry>,
+    pub registry: Arc<DataSourceRegistry>,
 }
 
 pub fn router(state: AdminState) -> Router {
@@ -39,9 +39,9 @@ struct CreateReq {
     #[serde(rename = "type")]
     type_id: String,
     target_database: String,
-    /// Graph-style connectors that emit multiple tables via `ConnectorRun::tables`
-    /// may omit `target_table` (or pass an empty string); the connector's
-    /// `GraphHint` dictates the actual tables. Single-table connectors
+    /// Graph-style data sources that emit multiple tables via `DataSourceRun::tables`
+    /// may omit `target_table` (or pass an empty string); the data source's
+    /// `GraphHint` dictates the actual tables. Single-table data sources
     /// (e.g. Prometheus) should still supply it.
     #[serde(default)]
     target_table: String,
@@ -106,8 +106,8 @@ async fn create(
     }
 }
 
-/// `GET /v1/connectors/catalog` — the vendor-agnostic catalog that drives the
-/// connectors UI. Merges registered connectors (self-described, status
+/// `GET /v1/data sources/catalog` — the vendor-agnostic catalog that drives the
+/// data sources UI. Merges registered data sources (self-described, status
 /// `"available"`) with the static `coming_soon` list (registered wins on a
 /// `type_id` collision), sorted available-first then by category and label.
 async fn catalog(State(s): State<AdminState>) -> impl IntoResponse {
@@ -124,9 +124,9 @@ async fn catalog(State(s): State<AdminState>) -> impl IntoResponse {
         let bv = (b.status != "available", b.category.clone(), b.label.clone());
         av.cmp(&bv)
     });
-    // For OAuth connectors, surface the provider slug + scopes the UI needs to
+    // For OAuth data sources, surface the provider slug + scopes the UI needs to
     // drive the connect flow (`POST /v1/oauth/{provider}/start`). Injected here
-    // rather than carried on every CatalogEntry so non-OAuth connectors stay
+    // rather than carried on every CatalogEntry so non-OAuth data sources stay
     // untouched.
     let items: Vec<serde_json::Value> = entries
         .into_iter()

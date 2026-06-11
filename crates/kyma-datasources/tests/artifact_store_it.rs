@@ -1,4 +1,4 @@
-//! The connector `ArtifactStore` seam: `put_and_register` must both write the
+//! The data source `ArtifactStore` seam: `put_and_register` must both write the
 //! blob to the object store and register its catalog tracking row, so a CI
 //! job log is immediately retrievable (by bytes) and tracked (for retention).
 
@@ -37,7 +37,7 @@ async fn put_and_register_writes_blob_and_tracking_row() {
         source: "github".to_string(),
         artifact_class: "log".to_string(),
         table_ref: Some("kyma.github_job_logs".to_string()),
-        connector_id: None,
+        data_source_id: None,
         size_bytes: 11,
         sha256: Some(kyma_storage::sha256_hex(b"build failed")),
         created_at: None,

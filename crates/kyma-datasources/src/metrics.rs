@@ -1,4 +1,4 @@
-//! Per-connector metric emission helpers.
+//! Per-data-source metric emission helpers.
 //!
 //! Metric names follow the project's `kyma_connector_*` scheme and are
 //! emitted via the `metrics` facade crate. The exporter in kyma-server
@@ -8,16 +8,16 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 /// Cheap to clone; carries the stable labels that get stamped on every
-/// metric from one connector.
+/// metric from one data source.
 #[derive(Clone, Debug)]
-pub struct ConnectorMetrics {
-    pub connector_id: Uuid,
+pub struct DataSourceMetrics {
+    pub data_source_id: Uuid,
     pub type_id: &'static str,
 }
 
-impl ConnectorMetrics {
+impl DataSourceMetrics {
     pub fn record_tick(&self, result: TickResult, duration_s: f64) {
-        let id = self.connector_id.to_string();
+        let id = self.data_source_id.to_string();
         ::metrics::counter!(
             "kyma_connector_ticks_total",
             "connector_id" => id.clone(),
@@ -36,7 +36,7 @@ impl ConnectorMetrics {
     pub fn record_rows(&self, n: u64) {
         ::metrics::counter!(
             "kyma_connector_rows_ingested_total",
-            "connector_id" => self.connector_id.to_string(),
+            "connector_id" => self.data_source_id.to_string(),
             "type" => self.type_id,
         )
         .increment(n);
@@ -45,7 +45,7 @@ impl ConnectorMetrics {
     pub fn record_error(&self, reason: &'static str) {
         ::metrics::counter!(
             "kyma_connector_errors_total",
-            "connector_id" => self.connector_id.to_string(),
+            "connector_id" => self.data_source_id.to_string(),
             "type" => self.type_id,
             "reason" => reason,
         )
@@ -55,7 +55,7 @@ impl ConnectorMetrics {
     pub fn set_last_success(&self, at: DateTime<Utc>) {
         ::metrics::gauge!(
             "kyma_connector_last_success_timestamp_seconds",
-            "connector_id" => self.connector_id.to_string(),
+            "connector_id" => self.data_source_id.to_string(),
         )
         .set(at.timestamp() as f64);
     }
@@ -63,7 +63,7 @@ impl ConnectorMetrics {
     pub fn set_cursor_age(&self, seconds: f64) {
         ::metrics::gauge!(
             "kyma_connector_cursor_age_seconds",
-            "connector_id" => self.connector_id.to_string(),
+            "connector_id" => self.data_source_id.to_string(),
         )
         .set(seconds);
     }

@@ -1,4 +1,4 @@
-//! Gmail connector — messages, threads, and the correspondent graph (metadata
+//! Gmail data source — messages, threads, and the correspondent graph (metadata
 //! only; never message bodies).
 //!
 //! Authenticates with a stored OAuth2 token (scope `gmail.metadata`). Lists
@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::catalog::CatalogEntry;
 use crate::types::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
 
 const BASE: &str = "https://gmail.googleapis.com/gmail/v1/users/me";
@@ -41,7 +41,7 @@ fn default_max_messages() -> usize {
 pub struct GmailConnector;
 
 #[async_trait]
-impl Connector for GmailConnector {
+impl DataSource for GmailConnector {
     fn type_id(&self) -> &'static str {
         "gmail"
     }
@@ -78,15 +78,15 @@ impl Connector for GmailConnector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &Value,
         cursor: Option<&Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let config: GmailConfig = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Permanent(format!("bad config: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("bad config: {e}")))?;
         let cid = config
             .credential_id
-            .ok_or_else(|| ConnectorError::Config("credential_id required".into()))?;
+            .ok_or_else(|| DataSourceError::Config("credential_id required".into()))?;
         let token = crate::oauth::valid_access_token(ctx, cid).await?;
 
         let mut nodes: Vec<Value> = Vec::new();
@@ -95,7 +95,7 @@ impl Connector for GmailConnector {
 
         // List message ids (resume from stored pageToken).
         let mut list_url = reqwest::Url::parse(&format!("{BASE}/messages"))
-            .map_err(|e| ConnectorError::Permanent(format!("url: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("url: {e}")))?;
         {
             let mut p = list_url.query_pairs_mut();
             p.append_pair("q", &config.query);
@@ -118,7 +118,7 @@ impl Connector for GmailConnector {
 
         for id in &ids {
             let mut url = reqwest::Url::parse(&format!("{BASE}/messages/{id}"))
-                .map_err(|e| ConnectorError::Permanent(format!("url: {e}")))?;
+                .map_err(|e| DataSourceError::Permanent(format!("url: {e}")))?;
             {
                 let mut p = url.query_pairs_mut();
                 p.append_pair("format", "metadata");
@@ -133,7 +133,7 @@ impl Connector for GmailConnector {
         let nodes = nodes.into_iter().map(crate::graph_row::normalize_node).collect();
         let edges = edges.into_iter().map(crate::graph_row::normalize_edge).collect();
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: Vec::new(),
             new_cursor: Some(json!({ "page_token": next_token })),
             tables: vec![

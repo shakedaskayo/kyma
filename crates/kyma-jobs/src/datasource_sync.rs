@@ -1,36 +1,36 @@
-//! `connector_sync` executor — the connector tick re-hosted on the fabric.
+//! `datasource_sync` executor — the data source tick re-hosted on the fabric.
 //!
-//! The tick body (load row + cursor → run connector → sink rows → graphs →
+//! The tick body (load row + cursor → run data source → sink rows → graphs →
 //! cursor + run status) is `kyma_datasources::runner::run_connector_tick`,
 //! shared with the legacy background_tasks front-end. This executor only maps
 //! the job payload in and the [`TickOutcome`] onto fabric job semantics.
 
 use crate::executor::{JobCtx, JobError, JobExecutor};
 use async_trait::async_trait;
-use kyma_datasources::runner::{run_connector_tick, ConnectorTickDeps, TickOutcome};
+use kyma_datasources::runner::{run_connector_tick, DataSourceTickDeps, TickOutcome};
 use kyma_core::fabric::ClaimedJob;
 use kyma_core::tenant::{TenantId, DEFAULT_TENANT};
 use serde_json::{json, Value as Json};
 use uuid::Uuid;
 
-pub struct ConnectorSyncExecutor {
-    deps: ConnectorTickDeps,
+pub struct DataSourceSyncExecutor {
+    deps: DataSourceTickDeps,
 }
 
-impl ConnectorSyncExecutor {
-    pub fn new(deps: ConnectorTickDeps) -> Self {
+impl DataSourceSyncExecutor {
+    pub fn new(deps: DataSourceTickDeps) -> Self {
         Self { deps }
     }
 }
 
 #[async_trait]
-impl JobExecutor for ConnectorSyncExecutor {
+impl JobExecutor for DataSourceSyncExecutor {
     fn kind(&self) -> &'static str {
         kyma_core::fabric::JOB_CONNECTOR_SYNC
     }
 
     async fn run(&self, ctx: &JobCtx, job: &ClaimedJob) -> Result<Json, JobError> {
-        let connector_id = job
+        let data_source_id = job
             .payload
             .get("connector_id")
             .and_then(|v| v.as_str())
@@ -54,11 +54,11 @@ impl JobExecutor for ConnectorSyncExecutor {
         ctx.progress
             .push(json!({
                 "current_phase": "syncing",
-                "connector_id": connector_id,
+                "connector_id": data_source_id,
             }))
             .await;
 
-        let outcome = run_connector_tick(&self.deps, tenant, connector_id, scheduled_for_ms)
+        let outcome = run_connector_tick(&self.deps, tenant, data_source_id, scheduled_for_ms)
             .await
             .map_err(|e| JobError::Transient(e.to_string()))?;
 
@@ -67,7 +67,7 @@ impl JobExecutor for ConnectorSyncExecutor {
             TickOutcome::Skipped(reason) => Ok(json!({ "skipped": reason })),
             // Retryable: the fabric re-queues within the attempt budget.
             TickOutcome::Transient(msg) => Err(JobError::Transient(msg)),
-            // Recorded on the connector row; the job itself is done (mirrors
+            // Recorded on the data source row; the job itself is done (mirrors
             // the background_tasks behavior of completing the task).
             TickOutcome::Permanent(msg) => Ok(json!({ "error": msg, "permanent": true })),
             TickOutcome::Config(msg) => Ok(json!({ "error": msg, "disabled": true })),

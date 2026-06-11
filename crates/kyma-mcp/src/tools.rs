@@ -65,7 +65,7 @@ impl ToolDispatch {
             tool_link_memory_to_entity(shared.clone()),
         );
         // Dynamic ingestion: create virtual resources/entities on the graph,
-        // wired to memories + existing catalog (connector) resources.
+        // wired to memories + existing catalog (data source) resources.
         map.insert("ingest_entity", tool_ingest_entity(shared.clone()));
         // Curation: re-weight / archive memories during housekeeping.
         map.insert(
@@ -103,22 +103,22 @@ impl ToolDispatch {
         self
     }
 
-    /// Add the read-only connector tools (`list_connectors`, `connector_read`)
+    /// Add the read-only data source tools (`list_connectors`, `connector_read`)
     /// so MCP-driven agents — notably Claude CLI dreaming runs — can fill
     /// memory gaps from configured sources. Server mode only (needs the
     /// credential store); local/stdio mode skips this.
-    pub fn with_connector_tools(
+    pub fn with_datasource_tools(
         self,
-        ctx: kyma_server::agent::connector_tools::ConnectorToolCtx,
+        ctx: kyma_server::agent::datasource_tools::DataSourceToolCtx,
     ) -> Self {
         let mut map: HashMap<&'static str, Arc<dyn Tool>> = (*self.by_name).clone();
         map.insert(
             "list_connectors",
-            kyma_server::agent::connector_tools::tool_list_connectors(ctx.clone()),
+            kyma_server::agent::datasource_tools::tool_list_connectors(ctx.clone()),
         );
         map.insert(
             "connector_read",
-            kyma_server::agent::connector_tools::tool_connector_read(ctx),
+            kyma_server::agent::datasource_tools::tool_connector_read(ctx),
         );
         Self {
             by_name: Arc::new(map),

@@ -1,4 +1,4 @@
-//! Incremental-fetch cursor for the GitHub connector.
+//! Incremental-fetch cursor for the GitHub data source.
 //!
 //! The cursor is serialized as JSON and stored in `connector_cursors`. On
 //! each tick we read it back, use the stored timestamps for `since`-filtered
@@ -43,7 +43,7 @@ pub struct Cursor {
     /// nodes + OWNS/HAS_BRANCH edges) emitted on the last successful tick.
     /// These modules are re-fetched in full every poll (unlike the
     /// cursor-incremental pulls/issues), so without this gate a continuous
-    /// connector would re-append identical rows on every tick. When the new
+    /// data source would re-append identical rows on every tick. When the new
     /// signature matches, those rows are dropped before ingest. `None` = never
     /// ingested.
     #[serde(default)]

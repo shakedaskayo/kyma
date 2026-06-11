@@ -226,7 +226,7 @@ impl ArtifactContentIndexer {
             .map_err(|e| anyhow::anyhow!("artifact fetch: {e}"))?
         else {
             // Tracking row without a blob (row-before-blob write order): the
-            // next sweep retries after the connector re-writes it.
+            // next sweep retries after the data source re-writes it.
             return Ok(0);
         };
         if bytes.len() > MAX_BLOB_BYTES || !looks_textual(&bytes) {
@@ -325,7 +325,7 @@ mod tests {
             source: "fswatch".into(),
             artifact_class: "log".into(),
             table_ref: Some("prod.ci_logs".into()),
-            connector_id: None,
+            data_source_id: None,
             size_bytes: 10,
             sha256: Some("abc".into()),
             created_at: None,
@@ -351,7 +351,7 @@ mod tests {
             source: "fswatch".into(),
             artifact_class: "log".into(),
             table_ref: None,
-            connector_id: None,
+            data_source_id: None,
             size_bytes: 10,
             sha256: Some("h1".into()),
             created_at: None,

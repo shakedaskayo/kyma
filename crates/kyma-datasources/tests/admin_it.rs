@@ -3,8 +3,8 @@ use axum::http::StatusCode;
 use axum::{Extension, Router};
 use kyma_catalog::PostgresCatalog;
 use kyma_datasources::admin::{router, AdminState};
-use kyma_datasources::registry::ConnectorRegistry;
-use kyma_datasources::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
+use kyma_datasources::registry::DataSourceRegistry;
+use kyma_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
 use kyma_core::tenant::DEFAULT_TENANT;
 use serde_json::json;
 use std::sync::Arc;
@@ -15,7 +15,7 @@ use tower::ServiceExt;
 struct StubConn;
 
 #[async_trait]
-impl Connector for StubConn {
+impl DataSource for StubConn {
     fn type_id(&self) -> &'static str {
         "stub"
     }
@@ -28,11 +28,11 @@ impl Connector for StubConn {
     }
     async fn run_once(
         &self,
-        _: &ConnectorCtx,
+        _: &DataSourceCtx,
         _: &serde_json::Value,
         _: Option<&serde_json::Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
-        Ok(ConnectorRun {
+    ) -> Result<DataSourceRun, DataSourceError> {
+        Ok(DataSourceRun {
             rows: vec![],
             new_cursor: None,
             tables: vec![],
@@ -51,7 +51,7 @@ async fn state() -> (testcontainers::ContainerAsync<Postgres>, AdminState) {
     let port = pg.get_host_port_ipv4(5432).await.unwrap();
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
     let catalog = Arc::new(PostgresCatalog::connect(&url).await.unwrap());
-    let mut reg = ConnectorRegistry::new();
+    let mut reg = DataSourceRegistry::new();
     reg.register(Arc::new(StubConn));
     let s = AdminState {
         catalog,

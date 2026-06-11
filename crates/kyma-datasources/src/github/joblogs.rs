@@ -18,7 +18,7 @@ use crate::github::client::GithubClient;
 use crate::github::config::WorkflowOpts;
 use crate::github::failure;
 use crate::github::transform;
-use crate::types::ConnectorError;
+use crate::types::DataSourceError;
 use kyma_catalog::artifacts::ArtifactRecord;
 use kyma_core::tenant::TenantId;
 
@@ -59,7 +59,7 @@ pub async fn capture_job_logs(
     repo: &str,
     since: Option<DateTime<Utc>>,
     opts: &WorkflowOpts,
-) -> Result<CaptureResult, ConnectorError> {
+) -> Result<CaptureResult, DataSourceError> {
     let (runs, _stop) = gh.list_workflow_runs(owner, repo, opts.max_pages).await?;
 
     let guard = kyma_redact::global();
@@ -167,7 +167,7 @@ pub async fn capture_job_logs(
                     source: "github".into(),
                     artifact_class: "log".into(),
                     table_ref: Some(JOB_LOGS_TABLE.to_string()),
-                    connector_id: None,
+                    data_source_id: None,
                     size_bytes,
                     sha256: Some(sha.clone()),
                     created_at: None,

@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 pub struct RetentionSettings {
     /// Fallback when nothing more specific matches. `None` = retain forever.
     pub global_default_days: Option<u32>,
-    /// Per data-source (connector type / origin), e.g. `"github"`, `"fswatch"`.
+    /// Per data-source (data source type / origin), e.g. `"github"`, `"fswatch"`.
     pub per_source_days: HashMap<String, u32>,
     /// Per columnar table, keyed `"database.table"`. Applies to extents.
     pub per_table_days: HashMap<String, u32>,

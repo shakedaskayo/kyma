@@ -2,7 +2,7 @@
 //!
 //! A dreaming run is an autonomous agent run (the configured engine: adk
 //! providers or the Claude CLI) that reviews recent raw material, fills gaps
-//! with READ-ONLY connector access, and housekeeps the memory store:
+//! with READ-ONLY data source access, and housekeeps the memory store:
 //! re-scores importance, builds relationships, dedups/merges, and archives
 //! stale memories — all bi-temporal, never hard-deleting.
 //!
@@ -32,8 +32,8 @@ use uuid::Uuid;
 
 use kyma_core::tenant::TenantId;
 
-use super::connector_tools::{
-    tool_connector_read, tool_list_connectors, ConnectorReadBudget, ConnectorToolCtx,
+use super::datasource_tools::{
+    tool_connector_read, tool_list_connectors, DataSourceReadBudget, DataSourceToolCtx,
 };
 use super::dreaming_local::LocalDreamingStore;
 use super::engine::{claude_cli, EngineKind};
@@ -69,7 +69,7 @@ pub struct DreamingRequest {
     /// `full` | `housekeeping_only` | `sources`; falls back to settings.
     #[serde(default)]
     pub mode: Option<String>,
-    /// Optional focus hint folded into the prompt (a realm, a connector, …).
+    /// Optional focus hint folded into the prompt (a realm, a data source, …).
     #[serde(default)]
     pub focus: Option<String>,
     /// The fabric job id (for run linkage); `None` when run inline.
@@ -903,11 +903,11 @@ async fn run_via_adk(
         hitl,
     };
     let mutation_budget = Arc::new(MutationBudget::new(settings.mutation_cap));
-    let read_budget = Arc::new(ConnectorReadBudget::new(
+    let read_budget = Arc::new(DataSourceReadBudget::new(
         settings.connector_read_budget,
         settings.connector_read_max_bytes,
     ));
-    let connector_ctx = ConnectorToolCtx {
+    let connector_ctx = DataSourceToolCtx {
         pool: state.pool.clone(),
         credentials: state.credentials.clone(),
         tenant: state.tenant,
@@ -915,7 +915,7 @@ async fn run_via_adk(
     };
 
     // Base toolset (same as the interactive agent), with the memory-mutating
-    // tools wrapped in the run's mutation budget, plus the connector read
+    // tools wrapped in the run's mutation budget, plus the data source read
     // tools for gap-fill.
     let mut builder = LlmAgentBuilder::new(super::runner::AGENT_NAME)
         .description("Kyma dreaming agent — autonomous memory housekeeping.")
@@ -1025,10 +1025,10 @@ async fn run_via_adk(
 }
 
 /// The dreaming toolset: every interactive tool, with mutating memory tools
-/// wrapped in the run's [`MutationBudget`], plus the connector read tools.
+/// wrapped in the run's [`MutationBudget`], plus the data source read tools.
 fn dreaming_toolset(
     shared: &super::tools::SharedToolCtx,
-    connector_ctx: ConnectorToolCtx,
+    connector_ctx: DataSourceToolCtx,
     mutation_budget: &Arc<MutationBudget>,
     mode: &str,
 ) -> Vec<Arc<dyn Tool>> {

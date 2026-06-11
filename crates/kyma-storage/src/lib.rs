@@ -194,7 +194,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 
 /// Store `bytes` at `key`, overwriting any existing object. Use for
 /// deterministic keys where the latest write wins (e.g. a CI job-log path that
-/// the connector re-captures on each tick).
+/// the data source re-captures on each tick).
 pub async fn put_artifact(store: &Arc<dyn ObjectStore>, key: &ObjPath, bytes: Bytes) -> Result<()> {
     store
         .put(key, bytes.into())

@@ -1,12 +1,12 @@
-//! Integration test — scheduler + runner + a fake Connector.
+//! Integration test — scheduler + runner + a fake DataSource.
 
 use async_trait::async_trait;
 use kyma_catalog::PostgresCatalog;
 use kyma_datasources::catalog_sql;
-use kyma_datasources::registry::ConnectorRegistry;
-use kyma_datasources::runner::ConnectorRunner;
+use kyma_datasources::registry::DataSourceRegistry;
+use kyma_datasources::runner::DataSourceRunner;
 use kyma_datasources::secrets::EnvSecretStore;
-use kyma_datasources::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
+use kyma_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use kyma_core::tenant::DEFAULT_TENANT;
 use std::sync::{
@@ -22,7 +22,7 @@ struct CountingConn {
 }
 
 #[async_trait]
-impl Connector for CountingConn {
+impl DataSource for CountingConn {
     fn type_id(&self) -> &'static str {
         "counter"
     }
@@ -31,13 +31,13 @@ impl Connector for CountingConn {
     }
     async fn run_once(
         &self,
-        _ctx: &ConnectorCtx,
+        _ctx: &DataSourceCtx,
         _cfg: &serde_json::Value,
         cursor: Option<&serde_json::Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let n = cursor.and_then(|v| v.as_u64()).unwrap_or(0);
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: vec![serde_json::json!({"n": n, "ok": true})],
             new_cursor: Some(serde_json::json!(n + 1)),
             tables: vec![],
@@ -62,7 +62,7 @@ async fn runner_claims_and_updates_cursor() {
     let fake = Arc::new(CountingConn {
         calls: calls.clone(),
     });
-    let mut reg = ConnectorRegistry::new();
+    let mut reg = DataSourceRegistry::new();
     reg.register(fake.clone());
 
     let id = catalog_sql::create_connector_direct(
@@ -80,7 +80,7 @@ async fn runner_claims_and_updates_cursor() {
     .unwrap();
 
     // Enqueue directly on the legacy background_tasks harness this test
-    // drives; the production scheduler now enqueues fabric `connector_sync`
+    // drives; the production scheduler now enqueues fabric `datasource_sync`
     // jobs (covered by kyma-jobs' integration test).
     catalog_sql::enqueue_tick(catalog.pool(), DEFAULT_TENANT, id, 1_000)
         .await
@@ -101,7 +101,7 @@ async fn runner_claims_and_updates_cursor() {
     // covered by the E2E test script.
     let sink: kyma_datasources::runner::RowSink =
         Arc::new(|_db, _tbl, _rows, _idem| Box::pin(async move { Ok(()) }));
-    let runner = ConnectorRunner::new(
+    let runner = DataSourceRunner::new(
         catalog.clone(),
         Arc::new(reg),
         sink,

@@ -10,7 +10,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::types::ConnectorError;
+use crate::types::DataSourceError;
 
 /// A temporary checkout that removes its directory on drop.
 pub struct Checkout {
@@ -31,7 +31,7 @@ pub fn clone_repo(
     owner: &str,
     repo: &str,
     branch: Option<&str>,
-) -> Result<Checkout, ConnectorError> {
+) -> Result<Checkout, DataSourceError> {
     let root = std::env::temp_dir().join(format!(
         "kyma-gh-{}-{}-{:016x}",
         owner.replace(['/', '\\'], "_"),
@@ -58,12 +58,12 @@ pub fn clone_repo(
 
     let out = cmd
         .output()
-        .map_err(|e| ConnectorError::Config(format!("git clone spawn failed (is `git` installed?): {e}")))?;
+        .map_err(|e| DataSourceError::Config(format!("git clone spawn failed (is `git` installed?): {e}")))?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         // Surface the last, most-specific line; never echo the token.
         let msg = stderr.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
-        return Err(ConnectorError::Transient(format!("git clone failed: {msg}")));
+        return Err(DataSourceError::Transient(format!("git clone failed: {msg}")));
     }
     Ok(Checkout { root })
 }

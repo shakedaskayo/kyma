@@ -16,8 +16,8 @@ use kyma_compaction::{
     RetentionSweeper,
 };
 use kyma_datasources::prometheus::PromConnector;
-use kyma_datasources::registry::ConnectorRegistry;
-use kyma_datasources::scheduler::ConnectorScheduler;
+use kyma_datasources::registry::DataSourceRegistry;
+use kyma_datasources::scheduler::DataSourceScheduler;
 use kyma_datasources::secrets::EnvSecretStore;
 use kyma_core::catalog::GraphSpec;
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
@@ -34,7 +34,7 @@ use kyma_ingest_rest::IngestState;
 use kyma_server::auth::{
     require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role,
 };
-use kyma_server::{ConnectorAdminState, QueryState};
+use kyma_server::{DataSourceAdminState, QueryState};
 use kyma_storage::{build_object_store, config_from_env};
 use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer as OtlpLogsServer;
 use std::net::SocketAddr;
@@ -324,8 +324,8 @@ async fn main() -> Result<()> {
         require_role_middleware,
     ));
     // System-wide encrypted credentials store + engine-preference store.
-    // Built here (not later) because AgentState and the connector runner both
-    // need them — see /v1/agent/* and /v1/connectors/*. Key loaded from
+    // Built here (not later) because AgentState and the data source runner both
+    // need them — see /v1/agent/* and /v1/data sources/*. Key loaded from
     // KYMA_SECRET_KEY (sha256-stretched if shorter than 32 bytes).
     let crypto = std::sync::Arc::new(
         kyma_core::crypto::Crypto::from_env()
@@ -454,22 +454,22 @@ async fn main() -> Result<()> {
         memory: memory.clone(),
         hitl: None,
     };
-    // Read-only connector access over MCP: lets MCP-driven agents (notably
+    // Read-only data source access over MCP: lets MCP-driven agents (notably
     // Claude CLI dreaming runs) fill memory gaps from configured sources.
     // Budget here is generous server-lifetime hygiene; per-run budgets are
     // enforced on the adk path and by wall-clock on the CLI path.
-    let mcp_connector_ctx = kyma_server::agent::connector_tools::ConnectorToolCtx {
+    let mcp_connector_ctx = kyma_server::agent::datasource_tools::DataSourceToolCtx {
         pool: Some(pg_pool.clone()),
         credentials: cred_store.clone(),
         tenant: kyma_core::tenant::DEFAULT_TENANT,
         budget: Arc::new(
-            kyma_server::agent::connector_tools::ConnectorReadBudget::new(10_000, u64::MAX),
+            kyma_server::agent::datasource_tools::DataSourceReadBudget::new(10_000, u64::MAX),
         ),
     };
     let mcp_state = kyma_mcp::McpState {
         dispatch: kyma_mcp::ToolDispatch::new(mcp_shared)
             .with_artifact_store(store.clone())
-            .with_connector_tools(mcp_connector_ctx),
+            .with_datasource_tools(mcp_connector_ctx),
         server_info: kyma_mcp::ServerInfo {
             name: "kyma".into(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -488,17 +488,17 @@ async fn main() -> Result<()> {
             },
             require_role_middleware,
         ));
-    // Connector registry + row-sink.
-    let mut conn_reg = ConnectorRegistry::new();
+    // DataSource registry + row-sink.
+    let mut conn_reg = DataSourceRegistry::new();
     conn_reg.register(Arc::new(PromConnector));
     conn_reg.register(Arc::new(kyma_datasources::postgres::PgIntrospectConnector));
     conn_reg.register(Arc::new(kyma_datasources::s3::S3Connector));
     conn_reg.register(Arc::new(kyma_datasources::gitlab::GitlabConnector));
     conn_reg.register(Arc::new(kyma_datasources::bitbucket::BitbucketConnector));
     // GitHub registers unconditionally (metadata + repo graph). The deep code
-    // graph inside it is feature-gated; the connector itself is always present.
+    // graph inside it is feature-gated; the data source itself is always present.
     conn_reg.register(Arc::new(kyma_datasources::github::GithubConnector));
-    // OAuth2 SaaS connectors (token via the connect flow → encrypted credential).
+    // OAuth2 SaaS data sources (token via the connect flow → encrypted credential).
     conn_reg.register(Arc::new(kyma_datasources::notion::NotionConnector));
     conn_reg.register(Arc::new(kyma_datasources::googledrive::GdriveConnector));
     conn_reg.register(Arc::new(kyma_datasources::gmail::GmailConnector));
@@ -508,7 +508,7 @@ async fn main() -> Result<()> {
     conn_reg.register(Arc::new(kyma_datasources::msfabric::MsFabricConnector));
     let conn_registry = Arc::new(conn_reg);
 
-    // RowSink: bridges connector JSON rows → arrow coercion → WritePath.
+    // RowSink: bridges data source JSON rows → arrow coercion → WritePath.
     //
     // The sink auto-creates the target table (ensure_table) and promotes
     // unknown JSON properties to columns (evolve_schema_for_records) before
@@ -578,7 +578,7 @@ async fn main() -> Result<()> {
 
     let health_router = kyma_server::health_router();
     let metrics_router = kyma_server::metrics::router();
-    let connector_admin_router = kyma_server::connector_admin_router(ConnectorAdminState {
+    let datasource_admin_router = kyma_server::datasource_admin_router(DataSourceAdminState {
         catalog: pg_catalog.clone(),
         registry: conn_registry.clone(),
     })
@@ -633,7 +633,7 @@ async fn main() -> Result<()> {
     );
     let oauth_callback_router = kyma_server::oauth_callback_router(oauth_state);
 
-    // GitHub connector — repos picker endpoint (Role::Write, behind auth).
+    // GitHub data source — repos picker endpoint (Role::Write, behind auth).
     let github_repos_router = {
         let secrets: std::sync::Arc<dyn kyma_datasources::secrets::SecretStore> =
             Arc::new(kyma_datasources::secrets::EnvSecretStore);
@@ -756,7 +756,7 @@ async fn main() -> Result<()> {
         .merge(compact_write_router)
         .merge(health_router)
         .merge(metrics_router)
-        .merge(connector_admin_router)
+        .merge(datasource_admin_router)
         .merge(credentials_router)
         .merge(oauth_authed_router)
         .merge(oauth_callback_router)
@@ -1077,8 +1077,8 @@ async fn main() -> Result<()> {
         None => None,
     };
 
-    // Connector scheduler — enqueues connector_sync jobs on the worker fabric.
-    let conn_sched = ConnectorScheduler::new(pg_catalog.clone());
+    // DataSource scheduler — enqueues datasource_sync jobs on the worker fabric.
+    let conn_sched = DataSourceScheduler::new(pg_catalog.clone());
     let conn_sched_rx = shutdown_tx.subscribe();
     let conn_sched_handle = tokio::spawn(conn_sched.run(async move {
         let mut rx = conn_sched_rx;
@@ -1093,9 +1093,9 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(4);
-    // Shared object-store artifact capability for connectors that persist
+    // Shared object-store artifact capability for data sources that persist
     // full-file blobs (e.g. GitHub Actions job logs) — threaded into the fabric
-    // connector executor via `tick_deps` below.
+    // data source executor via `tick_deps` below.
     let artifact_store: std::sync::Arc<dyn kyma_datasources::artifacts::ArtifactStore> =
         std::sync::Arc::new(kyma_datasources::artifacts::ObjectArtifactStore::new(
             store.clone(),
@@ -1135,7 +1135,7 @@ async fn main() -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("registering embedded worker: {e}"))?;
 
-    let tick_deps = kyma_datasources::runner::ConnectorTickDeps {
+    let tick_deps = kyma_datasources::runner::DataSourceTickDeps {
         control: Arc::new(kyma_datasources::runner::PgConnectorControl::new(
             pg_pool.clone(),
         )),
@@ -1153,7 +1153,7 @@ async fn main() -> Result<()> {
     };
     let mut exec_registry = kyma_jobs::ExecutorRegistry::new();
     exec_registry.register(Arc::new(
-        kyma_jobs::connector_sync::ConnectorSyncExecutor::new(tick_deps),
+        kyma_jobs::datasource_sync::DataSourceSyncExecutor::new(tick_deps),
     ));
     exec_registry.register(Arc::new(DreamingExecutor {
         state: agent_state.clone(),

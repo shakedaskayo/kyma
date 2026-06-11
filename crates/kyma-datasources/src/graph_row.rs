@@ -1,13 +1,13 @@
-//! Canonical node/edge row shape for graph connectors.
+//! Canonical node/edge row shape for graph data sources.
 //!
-//! The connector framework's sink expects each row to land with a fixed top-
+//! The data source framework's sink expects each row to land with a fixed top-
 //! level shape: nodes as `{ id, labels (string), name, props (json string) }`
 //! and edges as `{ id, src, dst, type, props }`. Extra fields are packed into
 //! `props` as a JSON-serialized object so the storage table stays narrow (the
 //! evolve_schema seam caps at 32 columns) and the `<g>_nodes`/`<g>_edges`
 //! tables remain queryable.
 //!
-//! Connectors are free to build rich rows (any extras) and call `normalize_*`
+//! Data sources are free to build rich rows (any extras) and call `normalize_*`
 //! at emit time — this keeps the per-vendor code legible while satisfying the
 //! framework contract.
 
@@ -53,7 +53,7 @@ pub fn normalize_node(v: Value) -> Value {
         None => String::new(),
     };
     let mut extras: Map<String, Value> = obj;
-    // If the connector tagged a `vendor`, derive a classification
+    // If the data source tagged a `vendor`, derive a classification
     // `type` ("vendor::resource") from the label so the graph can brand +
     // classify the node (e.g. vendor "github" + label "PullRequest" →
     // "github::pull_request").

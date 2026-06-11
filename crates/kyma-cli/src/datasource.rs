@@ -1,11 +1,11 @@
-//! `kyma connector` + `kyma ingest` — connector lifecycle subcommands.
+//! `kyma data source` + `kyma ingest` — data source lifecycle subcommands.
 //!
-//! Wraps the server's `/v1/connectors` + `/v1/credentials` HTTP API so a user
+//! Wraps the server's `/v1/data sources` + `/v1/credentials` HTTP API so a user
 //! can stand up a GitHub/GitLab/Bitbucket repo ingestion in one command:
 //!
 //! ```text
 //! export GITHUB_TOKEN=ghp_…
-//! kyma connector add github shakedaskayo/kyma --start
+//! kyma data source add github shakedaskayo/kyma --start
 //! ```
 //!
 //! Token discovery order (matches the server's [`CredentialResolver`]):
@@ -25,23 +25,23 @@ use serde_json::{json, Value};
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Op {
-    /// List connectors registered on the server.
+    /// List data sources registered on the server.
     List,
-    /// Register a new connector and (optionally) trigger the first run.
+    /// Register a new data source and (optionally) trigger the first run.
     Add {
         #[command(subcommand)]
         source: Source,
     },
-    /// Show one connector's config + last-run status.
+    /// Show one data source's config + last-run status.
     Show {
-        /// Connector name or UUID.
+        /// DataSource name or UUID.
         name_or_id: String,
     },
-    /// Pause a connector (stops the scheduler from triggering ticks).
+    /// Pause a data source (stops the scheduler from triggering ticks).
     Pause { name_or_id: String },
-    /// Resume a paused connector.
+    /// Resume a paused data source.
     Resume { name_or_id: String },
-    /// Delete a connector.
+    /// Delete a data source.
     Remove {
         name_or_id: String,
         /// Skip the confirmation prompt.
@@ -54,17 +54,18 @@ pub(crate) enum Op {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum IngestOp {
-    /// Show last_run_at / last_success_at / last_error for each connector
+    /// Show last_run_at / last_success_at / last_error for each data source
     /// (or just the one named).
     Status {
-        /// Limit to a single connector by name or UUID.
-        #[arg(long)]
-        connector: Option<String>,
+        /// Limit to a single data source by name or UUID.
+        // Flag stays `--connector` until the CLI surface renames in a later task.
+        #[arg(long = "connector")]
+        data_source: Option<String>,
     },
     /// Poll status forever and print runs as they complete.
     Tail {
-        #[arg(long)]
-        connector: Option<String>,
+        #[arg(long = "connector")]
+        data_source: Option<String>,
         /// Polling interval in seconds.
         #[arg(long, default_value_t = 3)]
         interval: u64,
@@ -92,7 +93,7 @@ pub(crate) enum Source {
     /// default — disable with `--no-codebase` for metadata-only.
     Github {
         /// `owner/repo`, e.g. `shakedaskayo/kyma`. Pass multiple comma-separated
-        /// to bundle them under one connector.
+        /// to bundle them under one data source.
         repos: String,
         #[command(flatten)]
         common: CommonAdd,
@@ -232,7 +233,7 @@ impl CodeOpts {
 
 #[derive(Debug, Args)]
 pub(crate) struct CommonAdd {
-    /// Human-readable connector name. Defaults to `<source>-<owner>-<repo>`.
+    /// Human-readable data source name. Defaults to `<source>-<owner>-<repo>`.
     #[arg(long)]
     pub name: Option<String>,
     /// Target database (created with `kyma create-database`). Defaults to the
@@ -248,7 +249,7 @@ pub(crate) struct CommonAdd {
     /// Schedule interval in milliseconds. Default 300000 (5 minutes).
     #[arg(long, default_value_t = 300_000)]
     pub schedule_ms: i64,
-    /// Trigger an immediate first run after creating the connector.
+    /// Trigger an immediate first run after creating the data source.
     #[arg(long)]
     pub start: bool,
 }
@@ -281,11 +282,11 @@ pub(crate) async fn run_ingest(op: IngestOp) -> Result<()> {
     }
     let cfg = client::effective_config()?;
     match op {
-        IngestOp::Status { connector } => cmd_ingest_status(&cfg, connector.as_deref()).await,
+        IngestOp::Status { data_source } => cmd_ingest_status(&cfg, data_source.as_deref()).await,
         IngestOp::Tail {
-            connector,
+            data_source,
             interval,
-        } => cmd_ingest_tail(&cfg, connector.as_deref(), interval).await,
+        } => cmd_ingest_tail(&cfg, data_source.as_deref(), interval).await,
         IngestOp::Push { .. } => unreachable!("handled above"),
     }
 }
@@ -389,7 +390,7 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
                 config.insert("api_url".into(), Value::String(url));
             }
             // Forward-compatibility: server doesn't read these yet, but the
-            // surface is reserved so today's `kyma connector add gitlab …
+            // surface is reserved so today's `kyma data source add gitlab …
             // --no-codebase` keeps working when codebase parsing lands.
             config.insert("modules".into(), Value::Object(modules.into_object()));
             if let Some(c) = code.into_object() {
@@ -630,7 +631,7 @@ async fn cmd_ingest_status(cfg: &ClientConfig, only: Option<&str>) -> Result<()>
         let id = resolve_id(cfg, name).await?;
         vec![http_get(cfg, &format!("/v1/connectors/{id}")).await?]
     } else {
-        // The list endpoint returns sparse rows; fetch detail per connector
+        // The list endpoint returns sparse rows; fetch detail per data source
         // to populate last_run_at / last_success_at / last_error.
         let shallow = list_connectors(cfg).await?;
         let mut out = Vec::with_capacity(shallow.len());

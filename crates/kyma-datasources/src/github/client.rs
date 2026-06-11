@@ -13,7 +13,7 @@
 //! ## Retries
 //! 403 (GitHub rate-limit), 429, and 5xx responses trigger a Transient error.
 //! 4xx (other) responses return Permanent. Network/timeout errors retry up to
-//! 3 times with exponential back-off + jitter (mirrors prometheus connector).
+//! 3 times with exponential back-off + jitter (mirrors prometheus data source).
 //!
 //! ## Code graph (B2 additions)
 //! `get_tree` fetches the recursive git-tree for a commit SHA.
@@ -23,7 +23,7 @@ use chrono::{DateTime, Utc};
 use reqwest::{Client, Response, StatusCode};
 use serde_json::Value;
 
-use crate::types::ConnectorError;
+use crate::types::DataSourceError;
 
 const RATE_LIMIT_FLOOR: u64 = 10;
 const GITHUB_API_BASE: &str = "https://api.github.com";
@@ -75,7 +75,7 @@ impl GithubClient {
 
     /// Execute a single request with retry logic. Returns the parsed JSON body
     /// and remaining rate-limit count (if the header is present).
-    async fn fetch_one(&self, url: &str) -> Result<(Value, Option<u64>), ConnectorError> {
+    async fn fetch_one(&self, url: &str) -> Result<(Value, Option<u64>), DataSourceError> {
         let mut attempt: u32 = 0;
         loop {
             let resp = self
@@ -84,9 +84,9 @@ impl GithubClient {
                 .await
                 .map_err(|e| {
                     if e.is_timeout() || e.is_connect() {
-                        ConnectorError::Transient(format!("network: {e}"))
+                        DataSourceError::Transient(format!("network: {e}"))
                     } else {
-                        ConnectorError::Permanent(format!("fetch: {e}"))
+                        DataSourceError::Permanent(format!("fetch: {e}"))
                     }
                 })?;
 
@@ -97,26 +97,26 @@ impl GithubClient {
                 let body: Value = resp
                     .json()
                     .await
-                    .map_err(|e| ConnectorError::Transient(format!("body parse: {e}")))?;
+                    .map_err(|e| DataSourceError::Transient(format!("body parse: {e}")))?;
                 return Ok((body, remaining));
             }
 
             // 403 (GitHub rate-limit token) or 429 (secondary rate-limit) → Transient
             if status == StatusCode::FORBIDDEN || status == StatusCode::TOO_MANY_REQUESTS {
                 if attempt >= 3 {
-                    return Err(ConnectorError::Transient(format!(
+                    return Err(DataSourceError::Transient(format!(
                         "HTTP {status} (rate-limited) after {attempt} retries"
                     )));
                 }
             } else if status.is_server_error() {
                 if attempt >= 3 {
-                    return Err(ConnectorError::Transient(format!(
+                    return Err(DataSourceError::Transient(format!(
                         "HTTP {status} after {attempt} retries"
                     )));
                 }
             } else {
                 // 4xx other → permanent
-                return Err(ConnectorError::Permanent(format!("HTTP {status}")));
+                return Err(DataSourceError::Permanent(format!("HTTP {status}")));
             }
 
             attempt += 1;
@@ -138,7 +138,7 @@ impl GithubClient {
         &self,
         first_url: &str,
         max_pages: usize,
-    ) -> Result<(Vec<Value>, StopReason), ConnectorError> {
+    ) -> Result<(Vec<Value>, StopReason), DataSourceError> {
         let mut items: Vec<Value> = Vec::new();
         let mut url = first_url.to_string();
         let mut pages = 0usize;
@@ -148,7 +148,7 @@ impl GithubClient {
                 .req(&url)
                 .send()
                 .await
-                .map_err(|e| ConnectorError::Transient(format!("network: {e}")))?;
+                .map_err(|e| DataSourceError::Transient(format!("network: {e}")))?;
 
             let status = resp.status();
             let remaining = parse_rate_limit_remaining(&resp);
@@ -159,15 +159,15 @@ impl GithubClient {
                     || status == StatusCode::TOO_MANY_REQUESTS
                     || status.is_server_error()
                 {
-                    return Err(ConnectorError::Transient(format!("HTTP {status}")));
+                    return Err(DataSourceError::Transient(format!("HTTP {status}")));
                 }
-                return Err(ConnectorError::Permanent(format!("HTTP {status}")));
+                return Err(DataSourceError::Permanent(format!("HTTP {status}")));
             }
 
             let body: Value = resp
                 .json()
                 .await
-                .map_err(|e| ConnectorError::Transient(format!("body parse: {e}")))?;
+                .map_err(|e| DataSourceError::Transient(format!("body parse: {e}")))?;
 
             match body {
                 Value::Array(arr) => items.extend(arr),
@@ -198,7 +198,7 @@ impl GithubClient {
     // ── Public API ────────────────────────────────────────────────────────────
 
     /// `GET /repos/{owner}/{repo}` — single repo metadata.
-    pub async fn get_repo(&self, owner: &str, name: &str) -> Result<Value, ConnectorError> {
+    pub async fn get_repo(&self, owner: &str, name: &str) -> Result<Value, DataSourceError> {
         let url = format!("{}/repos/{owner}/{name}", self.base_url);
         let (body, _) = self.fetch_one(&url).await?;
         Ok(body)
@@ -210,7 +210,7 @@ impl GithubClient {
         owner: &str,
         repo: &str,
         max_pages: usize,
-    ) -> Result<Vec<Value>, ConnectorError> {
+    ) -> Result<Vec<Value>, DataSourceError> {
         let url = format!(
             "{}/repos/{owner}/{repo}/branches?per_page=100",
             self.base_url
@@ -226,7 +226,7 @@ impl GithubClient {
         repo: &str,
         since: Option<DateTime<Utc>>,
         max_pages: usize,
-    ) -> Result<(Vec<Value>, StopReason), ConnectorError> {
+    ) -> Result<(Vec<Value>, StopReason), DataSourceError> {
         let since_param = since
             .map(|t| format!("&since={}", t.to_rfc3339()))
             .unwrap_or_default();
@@ -244,7 +244,7 @@ impl GithubClient {
         repo: &str,
         since: Option<DateTime<Utc>>,
         max_pages: usize,
-    ) -> Result<(Vec<Value>, StopReason), ConnectorError> {
+    ) -> Result<(Vec<Value>, StopReason), DataSourceError> {
         let since_param = since
             .map(|t| format!("&since={}", t.to_rfc3339()))
             .unwrap_or_default();
@@ -261,7 +261,7 @@ impl GithubClient {
         owner: &str,
         repo: &str,
         max_pages: usize,
-    ) -> Result<Vec<Value>, ConnectorError> {
+    ) -> Result<Vec<Value>, DataSourceError> {
         let url = format!(
             "{}/repos/{owner}/{repo}/contributors?per_page=100",
             self.base_url
@@ -276,7 +276,7 @@ impl GithubClient {
     pub async fn list_user_repos(
         &self,
         max_pages: usize,
-    ) -> Result<Vec<Value>, ConnectorError> {
+    ) -> Result<Vec<Value>, DataSourceError> {
         let url = format!("{}/user/repos?per_page=100&sort=updated", self.base_url);
         let (items, _reason) = self.paginate(&url, max_pages).await?;
         Ok(items)
@@ -293,7 +293,7 @@ impl GithubClient {
         first_url: &str,
         key: &str,
         max_pages: usize,
-    ) -> Result<(Vec<Value>, StopReason), ConnectorError> {
+    ) -> Result<(Vec<Value>, StopReason), DataSourceError> {
         let mut items: Vec<Value> = Vec::new();
         let mut url = first_url.to_string();
         let mut pages = 0usize;
@@ -303,7 +303,7 @@ impl GithubClient {
                 .req(&url)
                 .send()
                 .await
-                .map_err(|e| ConnectorError::Transient(format!("network: {e}")))?;
+                .map_err(|e| DataSourceError::Transient(format!("network: {e}")))?;
 
             let status = resp.status();
             let remaining = parse_rate_limit_remaining(&resp);
@@ -314,15 +314,15 @@ impl GithubClient {
                     || status == StatusCode::TOO_MANY_REQUESTS
                     || status.is_server_error()
                 {
-                    return Err(ConnectorError::Transient(format!("HTTP {status}")));
+                    return Err(DataSourceError::Transient(format!("HTTP {status}")));
                 }
-                return Err(ConnectorError::Permanent(format!("HTTP {status}")));
+                return Err(DataSourceError::Permanent(format!("HTTP {status}")));
             }
 
             let body: Value = resp
                 .json()
                 .await
-                .map_err(|e| ConnectorError::Transient(format!("body parse: {e}")))?;
+                .map_err(|e| DataSourceError::Transient(format!("body parse: {e}")))?;
 
             if let Some(arr) = body.get(key).and_then(|v| v.as_array()) {
                 items.extend(arr.iter().cloned());
@@ -346,14 +346,14 @@ impl GithubClient {
     }
 
     /// `GET /repos/{owner}/{repo}/actions/runs?per_page=100` — workflow runs,
-    /// most-recent first. Returns the `workflow_runs` items. The connector
+    /// most-recent first. Returns the `workflow_runs` items. The data source
     /// applies the incremental watermark (by `created_at`) client-side.
     pub async fn list_workflow_runs(
         &self,
         owner: &str,
         repo: &str,
         max_pages: usize,
-    ) -> Result<(Vec<Value>, StopReason), ConnectorError> {
+    ) -> Result<(Vec<Value>, StopReason), DataSourceError> {
         let url = format!(
             "{}/repos/{owner}/{repo}/actions/runs?per_page=100",
             self.base_url
@@ -369,7 +369,7 @@ impl GithubClient {
         repo: &str,
         run_id: i64,
         max_pages: usize,
-    ) -> Result<(Vec<Value>, StopReason), ConnectorError> {
+    ) -> Result<(Vec<Value>, StopReason), DataSourceError> {
         let url = format!(
             "{}/repos/{owner}/{repo}/actions/runs/{run_id}/jobs?per_page=100",
             self.base_url
@@ -390,16 +390,16 @@ impl GithubClient {
         owner: &str,
         repo: &str,
         job_id: i64,
-    ) -> Result<String, ConnectorError> {
+    ) -> Result<String, DataSourceError> {
         let url = format!(
             "{}/repos/{owner}/{repo}/actions/jobs/{job_id}/logs",
             self.base_url
         );
         let resp = self.req(&url).send().await.map_err(|e| {
             if e.is_timeout() || e.is_connect() {
-                ConnectorError::Transient(format!("network: {e}"))
+                DataSourceError::Transient(format!("network: {e}"))
             } else {
-                ConnectorError::Permanent(format!("fetch: {e}"))
+                DataSourceError::Permanent(format!("fetch: {e}"))
             }
         })?;
 
@@ -408,17 +408,17 @@ impl GithubClient {
             return resp
                 .text()
                 .await
-                .map_err(|e| ConnectorError::Transient(format!("log body: {e}")));
+                .map_err(|e| DataSourceError::Transient(format!("log body: {e}")));
         }
         if status == StatusCode::FORBIDDEN
             || status == StatusCode::TOO_MANY_REQUESTS
             || status.is_server_error()
         {
-            return Err(ConnectorError::Transient(format!(
+            return Err(DataSourceError::Transient(format!(
                 "HTTP {status} fetching job {job_id} logs"
             )));
         }
-        Err(ConnectorError::Permanent(format!(
+        Err(DataSourceError::Permanent(format!(
             "HTTP {status} fetching job {job_id} logs"
         )))
     }
@@ -435,7 +435,7 @@ impl GithubClient {
         owner: &str,
         name: &str,
         sha: &str,
-    ) -> Result<Vec<TreeEntry>, ConnectorError> {
+    ) -> Result<Vec<TreeEntry>, DataSourceError> {
         let url = format!(
             "{}/repos/{owner}/{name}/git/trees/{sha}?recursive=1",
             self.base_url
@@ -480,7 +480,7 @@ impl GithubClient {
         name: &str,
         sha: &str,
         max_file_bytes: usize,
-    ) -> Result<Option<String>, ConnectorError> {
+    ) -> Result<Option<String>, DataSourceError> {
         let url = format!(
             "{}/repos/{owner}/{name}/git/blobs/{sha}",
             self.base_url
@@ -506,7 +506,7 @@ impl GithubClient {
         use base64::Engine as _;
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(clean.as_bytes())
-            .map_err(|e| ConnectorError::Permanent(format!("base64 decode: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("base64 decode: {e}")))?;
 
         if decoded.len() > max_file_bytes {
             return Ok(None);
@@ -525,7 +525,7 @@ impl GithubClient {
         owner: &str,
         name: &str,
         number: u64,
-    ) -> Result<Value, ConnectorError> {
+    ) -> Result<Value, DataSourceError> {
         let url = format!("{}/repos/{owner}/{name}/issues/{number}", self.base_url);
         let (body, _) = self.fetch_one(&url).await?;
         Ok(body)
@@ -539,7 +539,7 @@ impl GithubClient {
         owner: &str,
         name: &str,
         max_bytes: usize,
-    ) -> Result<Option<String>, ConnectorError> {
+    ) -> Result<Option<String>, DataSourceError> {
         let url = format!("{}/repos/{owner}/{name}/readme", self.base_url);
         let (body, _) = self.fetch_one(&url).await?;
         Ok(decode_b64_content(&body, max_bytes))
@@ -553,7 +553,7 @@ impl GithubClient {
         name: &str,
         path: &str,
         max_bytes: usize,
-    ) -> Result<Option<String>, ConnectorError> {
+    ) -> Result<Option<String>, DataSourceError> {
         let path = path.trim_start_matches('/');
         let url = format!("{}/repos/{owner}/{name}/contents/{path}", self.base_url);
         let (body, _) = self.fetch_one(&url).await?;
@@ -728,7 +728,7 @@ mod tests {
         // (attempt 0,1,2,3) it should return Transient.
         let result = client.get_repo("acme", "repo").await;
         assert!(
-            matches!(result, Err(ConnectorError::Transient(_))),
+            matches!(result, Err(DataSourceError::Transient(_))),
             "expected Transient, got {:?}",
             result
         );

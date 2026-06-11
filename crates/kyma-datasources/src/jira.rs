@@ -1,9 +1,9 @@
-//! Jira connector — projects, issues, epics, and their links as a graph.
+//! Jira data source — projects, issues, epics, and their links as a graph.
 //!
 //! Authenticates with a stored Atlassian OAuth2 token; resolves the site
 //! `cloudId` from the token's accessible resources. Fetches the most recently
 //! updated issues (bounded) via the Jira Cloud REST API. Uses the same node
-//! labels (Issue, User, Project) as the code connectors so cross-vendor views
+//! labels (Issue, User, Project) as the code data sources so cross-vendor views
 //! line up. Ids are prefixed `jira:`.
 
 use async_trait::async_trait;
@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::catalog::CatalogEntry;
 use crate::types::{
-    ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
+    ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
 
 const FIELDS: &str =
@@ -42,7 +42,7 @@ fn default_max_pages() -> usize {
 pub struct JiraConnector;
 
 #[async_trait]
-impl Connector for JiraConnector {
+impl DataSource for JiraConnector {
     fn type_id(&self) -> &'static str {
         "jira"
     }
@@ -78,15 +78,15 @@ impl Connector for JiraConnector {
 
     async fn run_once(
         &self,
-        ctx: &ConnectorCtx,
+        ctx: &DataSourceCtx,
         cfg: &Value,
         cursor: Option<&Value>,
-    ) -> Result<ConnectorRun, ConnectorError> {
+    ) -> Result<DataSourceRun, DataSourceError> {
         let config: JiraConfig = serde_json::from_value(cfg.clone())
-            .map_err(|e| ConnectorError::Permanent(format!("bad config: {e}")))?;
+            .map_err(|e| DataSourceError::Permanent(format!("bad config: {e}")))?;
         let cid = config
             .credential_id
-            .ok_or_else(|| ConnectorError::Config("credential_id required".into()))?;
+            .ok_or_else(|| DataSourceError::Config("credential_id required".into()))?;
         let token = crate::oauth::valid_access_token(ctx, cid).await?;
 
         // cloudId: config → cursor cache → resolve from token.
@@ -113,7 +113,7 @@ impl Connector for JiraConnector {
         let mut start_at = 0usize;
         for _ in 0..config.max_pages_per_tick {
             let mut url = reqwest::Url::parse(&format!("{base}/search"))
-                .map_err(|e| ConnectorError::Permanent(format!("url: {e}")))?;
+                .map_err(|e| DataSourceError::Permanent(format!("url: {e}")))?;
             {
                 let mut p = url.query_pairs_mut();
                 p.append_pair("jql", &jql);
@@ -139,7 +139,7 @@ impl Connector for JiraConnector {
         let nodes = nodes.into_iter().map(crate::graph_row::normalize_node).collect();
         let edges = edges.into_iter().map(crate::graph_row::normalize_edge).collect();
 
-        Ok(ConnectorRun {
+        Ok(DataSourceRun {
             rows: Vec::new(),
             new_cursor: Some(json!({ "cloud_id": cloud_id })),
             tables: vec![

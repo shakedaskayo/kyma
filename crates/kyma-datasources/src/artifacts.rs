@@ -1,9 +1,9 @@
-//! Connector artifact capability.
+//! DataSource artifact capability.
 //!
-//! Lets a connector's `run_once` persist a full-file blob (e.g. a redacted CI
+//! Lets a data source's `run_once` persist a full-file blob (e.g. a redacted CI
 //! job log) to the object store AND register its catalog tracking row in one
-//! call, without the connector touching the catalog directly. Handed to the
-//! connector via [`crate::types::ConnectorCtx::artifacts`].
+//! call, without the data source touching the catalog directly. Handed to the
+//! data source via [`crate::types::DataSourceCtx::artifacts`].
 //!
 //! Bytes are stored verbatim — the caller redacts first (see kyma-redact).
 
@@ -17,7 +17,7 @@ use object_store::path::Path as ObjPath;
 use object_store::ObjectStore;
 use uuid::Uuid;
 
-/// Capability for writing + tracking object-store artifacts from a connector.
+/// Capability for writing + tracking object-store artifacts from a data source.
 #[async_trait]
 pub trait ArtifactStore: Send + Sync {
     /// Register the catalog tracking row for `record`, then write `bytes` to the
@@ -26,7 +26,7 @@ pub trait ArtifactStore: Send + Sync {
     ///
     /// Row-before-blob ordering is deliberate: if the blob write fails, the
     /// tracking row simply points at a missing object — retrieval returns
-    /// `None` and the next connector tick re-writes the blob at the same
+    /// `None` and the next data source tick re-writes the blob at the same
     /// deterministic key. The reverse order would leave an untracked orphan
     /// blob that no retention sweep would ever reclaim.
     async fn put_and_register(&self, record: ArtifactRecord, bytes: Bytes) -> anyhow::Result<Uuid>;

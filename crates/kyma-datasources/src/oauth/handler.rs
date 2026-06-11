@@ -80,7 +80,7 @@ pub fn oauth_callback_router(state: OAuthState) -> Router {
 
 #[derive(Deserialize)]
 struct StartReq {
-    /// Connector this credential is for (e.g. `"googledrive"`). Stored on the
+    /// DataSource this credential is for (e.g. `"googledrive"`). Stored on the
     /// flow + credential metadata for display.
     connector_type: String,
     /// Override the provider's default scopes.
