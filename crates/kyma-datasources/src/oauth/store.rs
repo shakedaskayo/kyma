@@ -11,7 +11,7 @@ pub struct NewFlow<'a> {
     pub tenant: TenantId,
     pub state: &'a str,
     pub provider: &'a str,
-    pub connector_type: &'a str,
+    pub data_source_type: &'a str,
     pub label: &'a str,
     pub scopes: &'a str,
     pub redirect_uri: &'a str,
@@ -23,14 +23,14 @@ pub struct NewFlow<'a> {
 pub async fn insert_flow(pool: &PgPool, f: &NewFlow<'_>) -> Result<()> {
     sqlx::query(
         "INSERT INTO oauth_flows
-         (tenant_id, state, provider, connector_type, label, scopes, redirect_uri,
+         (tenant_id, state, provider, data_source_type, label, scopes, redirect_uri,
           enc_code_verifier, expires_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
     )
     .bind(f.tenant.as_uuid())
     .bind(f.state)
     .bind(f.provider)
-    .bind(f.connector_type)
+    .bind(f.data_source_type)
     .bind(f.label)
     .bind(f.scopes)
     .bind(f.redirect_uri)
@@ -45,7 +45,7 @@ pub async fn insert_flow(pool: &PgPool, f: &NewFlow<'_>) -> Result<()> {
 pub struct ClaimedFlow {
     pub tenant: TenantId,
     pub provider: String,
-    pub connector_type: String,
+    pub data_source_type: String,
     pub label: String,
     pub scopes: String,
     pub redirect_uri: String,
@@ -60,7 +60,7 @@ pub async fn consume_flow(pool: &PgPool, state: &str) -> Result<ClaimedFlow> {
     let row = sqlx::query(
         "UPDATE oauth_flows SET status = 'consumed'
          WHERE state = $1 AND status = 'pending' AND expires_at > now()
-         RETURNING tenant_id, provider, connector_type, label, scopes, redirect_uri,
+         RETURNING tenant_id, provider, data_source_type, label, scopes, redirect_uri,
                    enc_code_verifier",
     )
     .bind(state)
@@ -71,7 +71,7 @@ pub async fn consume_flow(pool: &PgPool, state: &str) -> Result<ClaimedFlow> {
     Ok(ClaimedFlow {
         tenant: TenantId::from_uuid(tenant_uuid),
         provider: row.get("provider"),
-        connector_type: row.get("connector_type"),
+        data_source_type: row.get("data_source_type"),
         label: row.get("label"),
         scopes: row.get("scopes"),
         redirect_uri: row.get("redirect_uri"),

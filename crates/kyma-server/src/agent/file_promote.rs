@@ -221,7 +221,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn github_file_id_matches_connector_scheme() {
+    fn github_file_id_matches_data_source_scheme() {
         assert_eq!(
             github_file_id("acme/app", "src/main.rs"),
             "file:acme/app:src/main.rs"

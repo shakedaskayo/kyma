@@ -27,7 +27,7 @@ async fn pg_catalog() -> (
 #[tokio::test]
 async fn inserts_tick_after_interval() {
     let (_pg, catalog) = pg_catalog().await;
-    let id = catalog_sql::create_connector_direct(
+    let id = catalog_sql::create_data_source_direct(
         catalog.pool(),
         DEFAULT_TENANT,
         "p1",
@@ -52,8 +52,8 @@ async fn inserts_tick_after_interval() {
     // fabric's `jobs` queue (not `background_tasks`).
     let rows = sqlx::query_as::<_, (i64,)>(
         "SELECT count(*) FROM jobs
-         WHERE kind = 'connector_sync'
-           AND payload->>'connector_id' = $1::text",
+         WHERE kind = 'data_source_sync'
+           AND payload->>'data_source_id' = $1::text",
     )
     .bind(id.to_string())
     .fetch_one(catalog.pool())
@@ -63,9 +63,9 @@ async fn inserts_tick_after_interval() {
 }
 
 #[tokio::test]
-async fn disabled_connectors_are_skipped() {
+async fn disabled_data_sources_are_skipped() {
     let (_pg, catalog) = pg_catalog().await;
-    let id = catalog_sql::create_connector_direct(
+    let id = catalog_sql::create_data_source_direct(
         catalog.pool(),
         DEFAULT_TENANT,
         "p2",
@@ -78,7 +78,7 @@ async fn disabled_connectors_are_skipped() {
     )
     .await
     .unwrap();
-    sqlx::query("UPDATE connectors SET enabled = FALSE WHERE id = $1")
+    sqlx::query("UPDATE data_sources SET enabled = FALSE WHERE id = $1")
         .bind(id)
         .execute(catalog.pool())
         .await
@@ -88,7 +88,7 @@ async fn disabled_connectors_are_skipped() {
     sched.tick_once().await.unwrap();
 
     let (count,): (i64,) =
-        sqlx::query_as("SELECT count(*) FROM background_tasks WHERE kind = 'connector_tick'")
+        sqlx::query_as("SELECT count(*) FROM background_tasks WHERE kind = 'data_source_tick'")
             .fetch_one(catalog.pool())
             .await
             .unwrap();

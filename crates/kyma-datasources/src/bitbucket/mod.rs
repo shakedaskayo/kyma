@@ -143,7 +143,7 @@ impl DataSource for BitbucketConnector {
                 CredentialValue::Pat { token } => Some(format!("Bearer {token}")),
                 other => {
                     return Err(DataSourceError::Permanent(format!(
-                        "credential {cid} has kind={}; bitbucket connector requires `basic` or `pat`",
+                        "credential {cid} has kind={}; bitbucket data source requires `basic` or `pat`",
                         other.kind()
                     )));
                 }

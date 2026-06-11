@@ -51,7 +51,7 @@ pub struct DataSourceRun {
     /// existing data sources (e.g. Prometheus). Set to an empty `Vec` when
     /// using the multi-table `tables` path.
     pub rows: Vec<serde_json::Value>,
-    /// When `Some`, the framework upserts this into `connector_cursors`.
+    /// When `Some`, the framework upserts this into `data_source_cursors`.
     pub new_cursor: Option<serde_json::Value>,
     /// Multi-table output path. Each entry names a distinct target table
     /// and its rows. The framework ingests each entry independently, with

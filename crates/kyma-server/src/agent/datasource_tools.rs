@@ -89,11 +89,11 @@ pub fn tool_list_connectors(ctx: DataSourceToolCtx) -> Arc<dyn Tool> {
                 let ctx = ctx.clone();
                 async move {
                     let Some(pool) = &ctx.pool else {
-                        return Ok(json!({"error": "no connector store in local mode"}));
+                        return Ok(json!({"error": "no data source store in local mode"}));
                     };
                     let rows = sqlx::query(
                         "SELECT id, name, type, enabled, target_database \
-                         FROM connectors WHERE tenant_id = $1 ORDER BY name",
+                         FROM data_sources WHERE tenant_id = $1 ORDER BY name",
                     )
                     .bind(ctx.tenant.as_uuid())
                     .fetch_all(pool)
@@ -115,7 +115,7 @@ pub fn tool_list_connectors(ctx: DataSourceToolCtx) -> Arc<dyn Tool> {
                                 .collect();
                             Ok(json!({ "connectors": items }))
                         }
-                        Err(e) => Ok(json!({"error": format!("list connectors: {e}")})),
+                        Err(e) => Ok(json!({"error": format!("list data sources: {e}")})),
                     }
                 }
             },
@@ -162,7 +162,7 @@ pub fn tool_connector_read(ctx: DataSourceToolCtx) -> Arc<dyn Tool> {
 
 async fn connector_read(ctx: &DataSourceToolCtx, args: Value) -> Value {
     let Some(pool) = &ctx.pool else {
-        return json!({"error": "no connector store in local mode"});
+        return json!({"error": "no data source store in local mode"});
     };
     if !ctx.budget.take_call() {
         let (calls, bytes) = ctx.budget.used();
@@ -187,7 +187,7 @@ async fn connector_read(ctx: &DataSourceToolCtx, args: Value) -> Value {
     let params = args.get("params").cloned().unwrap_or_else(|| json!({}));
 
     let row = match sqlx::query(
-        "SELECT type, config_jsonb FROM connectors WHERE tenant_id = $1 AND id = $2",
+        "SELECT type, config_jsonb FROM data_sources WHERE tenant_id = $1 AND id = $2",
     )
     .bind(ctx.tenant.as_uuid())
     .bind(data_source_id)
@@ -195,8 +195,8 @@ async fn connector_read(ctx: &DataSourceToolCtx, args: Value) -> Value {
     .await
     {
         Ok(Some(r)) => r,
-        Ok(None) => return json!({"error": "no such connector"}),
-        Err(e) => return json!({"error": format!("load connector: {e}")}),
+        Ok(None) => return json!({"error": "no such data source"}),
+        Err(e) => return json!({"error": format!("load data source: {e}")}),
     };
     let kind: String = row.get("type");
     let config: Value = row.get("config_jsonb");
@@ -205,7 +205,7 @@ async fn connector_read(ctx: &DataSourceToolCtx, args: Value) -> Value {
         "github" => github_read(ctx, &config, &operation, &params).await,
         "postgres" => postgres_read(ctx, &config, &operation, &params).await,
         other => json!({"error": format!(
-            "connector kind `{other}` has no read operations in this version \
+            "data source kind `{other}` has no read operations in this version \
              (supported: github, postgres)"
         )}),
     };
@@ -284,7 +284,7 @@ async fn github_read(ctx: &DataSourceToolCtx, config: &Value, op: &str, params: 
                 .and_then(|v| v.as_str())
                 .unwrap_or_default();
             if inline.is_empty() || inline.starts_with('$') {
-                return json!({"error": "connector has no directly readable credential"});
+                return json!({"error": "data source has no directly readable credential"});
             }
             inline.to_string()
         }
@@ -431,7 +431,7 @@ async fn postgres_read(ctx: &DataSourceToolCtx, config: &Value, op: &str, params
         None => {
             let inline = config.get("url").and_then(|v| v.as_str()).unwrap_or_default();
             if inline.is_empty() {
-                return json!({"error": "connector has no connection url"});
+                return json!({"error": "data source has no connection url"});
             }
             inline.to_string()
         }

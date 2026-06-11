@@ -4,7 +4,7 @@
 //! endpoints, default scopes, PKCE support, how client creds are presented, and
 //! the env-var suffix for operator-configured apps. Several data sources can map
 //! onto one provider (Gmail + Drive → `google`; Jira + Confluence →
-//! `atlassian`); see [`provider_for_connector`].
+//! `atlassian`); see [`provider_for_data_source`].
 
 use serde::Serialize;
 
@@ -117,7 +117,7 @@ pub fn all() -> &'static [OAuthProvider] {
 /// The OAuth scopes a data source needs — the full set the UI requests at
 /// `/start` (already including `offline_access` / `read:me` where a provider
 /// needs them for refresh + cloud-id resolution). Empty ⇒ use provider defaults.
-pub fn scopes_for_connector(type_id: &str) -> Vec<String> {
+pub fn scopes_for_data_source(type_id: &str) -> Vec<String> {
     let scopes: &[&str] = match type_id {
         "googledrive" => &["https://www.googleapis.com/auth/drive.metadata.readonly"],
         "gmail" => &["https://www.googleapis.com/auth/gmail.metadata"],
@@ -145,7 +145,7 @@ pub fn scopes_for_connector(type_id: &str) -> Vec<String> {
 /// Map a data source `type_id` to its OAuth provider slug. Several data sources can
 /// share one provider/app (Gmail + Drive → Google; Jira + Confluence →
 /// Atlassian); everything else maps to a same-named provider.
-pub fn provider_for_connector(type_id: &str) -> &str {
+pub fn provider_for_data_source(type_id: &str) -> &str {
     match type_id {
         "googledrive" | "gmail" => "google",
         "jira" | "confluence" => "atlassian",
@@ -171,12 +171,12 @@ mod tests {
     }
 
     #[test]
-    fn connector_provider_mapping() {
-        assert_eq!(provider_for_connector("gmail"), "google");
-        assert_eq!(provider_for_connector("googledrive"), "google");
-        assert_eq!(provider_for_connector("jira"), "atlassian");
-        assert_eq!(provider_for_connector("confluence"), "atlassian");
-        assert_eq!(provider_for_connector("notion"), "notion");
-        assert_eq!(provider_for_connector("slack"), "slack");
+    fn data_source_provider_mapping() {
+        assert_eq!(provider_for_data_source("gmail"), "google");
+        assert_eq!(provider_for_data_source("googledrive"), "google");
+        assert_eq!(provider_for_data_source("jira"), "atlassian");
+        assert_eq!(provider_for_data_source("confluence"), "atlassian");
+        assert_eq!(provider_for_data_source("notion"), "notion");
+        assert_eq!(provider_for_data_source("slack"), "slack");
     }
 }

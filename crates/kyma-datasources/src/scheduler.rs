@@ -1,4 +1,4 @@
-//! Data source scheduler — enqueues connector_tick tasks for due data sources.
+//! Data source scheduler — enqueues data_source_tick tasks for due data sources.
 
 use crate::catalog_sql;
 use kyma_catalog::PostgresCatalog;
@@ -32,22 +32,22 @@ impl DataSourceScheduler {
             // embedded worker (or any remote worker advertising the
             // `data source` capability) claims and runs them.
             let inserted =
-                catalog_sql::enqueue_connector_sync(self.catalog.pool(), c.tenant_id, c.id, bucketed)
+                catalog_sql::enqueue_data_source_sync(self.catalog.pool(), c.tenant_id, c.id, bucketed)
                     .await?;
             if inserted > 0 {
-                debug!(data_source = %c.name, bucketed, "enqueued connector_sync job");
+                debug!(data_source = %c.name, bucketed, "enqueued data_source_sync job");
             }
         }
         Ok(())
     }
 
     pub async fn run(self, shutdown: impl Future<Output = ()>) {
-        info!("connector scheduler starting");
+        info!("data source scheduler starting");
         tokio::pin!(shutdown);
         loop {
             tokio::select! {
                 biased;
-                () = &mut shutdown => { info!("connector scheduler shutdown"); return; }
+                () = &mut shutdown => { info!("data source scheduler shutdown"); return; }
                 _ = tokio::time::sleep(self.tick_interval) => {
                     if let Err(e) = self.tick_once().await {
                         error!(error = %e, "scheduler tick failed");

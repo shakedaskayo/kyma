@@ -19,7 +19,7 @@ impl DataSourceRegistry {
         let id = c.type_id();
         assert!(
             !self.by_type.contains_key(id),
-            "connector type {id:?} already registered",
+            "data source type {id:?} already registered",
         );
         self.by_type.insert(id, c);
     }

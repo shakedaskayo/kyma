@@ -65,7 +65,7 @@ async fn runner_claims_and_updates_cursor() {
     let mut reg = DataSourceRegistry::new();
     reg.register(fake.clone());
 
-    let id = catalog_sql::create_connector_direct(
+    let id = catalog_sql::create_data_source_direct(
         catalog.pool(),
         DEFAULT_TENANT,
         "c1",
@@ -90,8 +90,8 @@ async fn runner_claims_and_updates_cursor() {
     let lease = catalog
         .register_node(NodeInfo {
             role: NodeRole::Ingest,
-            endpoint: "connector-runner:test".into(),
-            capabilities: serde_json::json!({"connector_runner": true}),
+            endpoint: "data-source-runner:test".into(),
+            capabilities: serde_json::json!({"data_source_runner": true}),
         })
         .await
         .unwrap();

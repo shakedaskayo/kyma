@@ -14,7 +14,7 @@ use serde_json::Value as Json;
 use uuid::Uuid;
 
 /// Job kinds carried by the fabric in v1.
-pub const JOB_CONNECTOR_SYNC: &str = "connector_sync";
+pub const JOB_DATA_SOURCE_SYNC: &str = "data_source_sync";
 pub const JOB_DREAMING: &str = "dreaming";
 pub const JOB_SOURCE_SYNC: &str = "source_sync";
 

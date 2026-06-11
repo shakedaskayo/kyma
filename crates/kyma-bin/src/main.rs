@@ -458,7 +458,7 @@ async fn main() -> Result<()> {
     // Claude CLI dreaming runs) fill memory gaps from configured sources.
     // Budget here is generous server-lifetime hygiene; per-run budgets are
     // enforced on the adk path and by wall-clock on the CLI path.
-    let mcp_connector_ctx = kyma_server::agent::datasource_tools::DataSourceToolCtx {
+    let mcp_data_source_ctx = kyma_server::agent::datasource_tools::DataSourceToolCtx {
         pool: Some(pg_pool.clone()),
         credentials: cred_store.clone(),
         tenant: kyma_core::tenant::DEFAULT_TENANT,
@@ -469,7 +469,7 @@ async fn main() -> Result<()> {
     let mcp_state = kyma_mcp::McpState {
         dispatch: kyma_mcp::ToolDispatch::new(mcp_shared)
             .with_artifact_store(store.clone())
-            .with_datasource_tools(mcp_connector_ctx),
+            .with_datasource_tools(mcp_data_source_ctx),
         server_info: kyma_mcp::ServerInfo {
             name: "kyma".into(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -1089,7 +1089,7 @@ async fn main() -> Result<()> {
     // registers in the workers table (visible in GET /v1/workers next to any
     // remote daemons) and runs N job-runner loops claiming fabric jobs.
     let n_fabric_workers = std::env::var("KYMA_FABRIC_WORKERS")
-        .or_else(|_| std::env::var("KYMA_CONNECTOR_WORKERS"))
+        .or_else(|_| std::env::var("KYMA_DATA_SOURCE_WORKERS"))
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(4);
@@ -1105,7 +1105,7 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(300);
-    let mut embedded_caps: Vec<String> = ["connector", "dreaming", "llm"]
+    let mut embedded_caps: Vec<String> = ["data_source", "dreaming", "llm"]
         .iter()
         .map(|s| s.to_string())
         .collect();
@@ -1221,7 +1221,7 @@ async fn main() -> Result<()> {
     info!(
         workers = n_fabric_workers,
         worker_id = %embedded_worker_id,
-        "connector scheduler + embedded fabric worker started"
+        "data source scheduler + embedded fabric worker started"
     );
 
     // Dreaming scheduler — enqueues agentic memory-housekeeping jobs on the

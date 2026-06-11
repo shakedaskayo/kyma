@@ -304,7 +304,7 @@ impl SQLExecutor for MsFabricExecutor {
 
     async fn table_names(&self) -> DfResult<Vec<String>> {
         Err(DataFusionError::NotImplemented(
-            "msfabric: table discovery happens via the connector's metadata sync".into(),
+            "msfabric: table discovery happens via the data source's metadata sync".into(),
         ))
     }
 

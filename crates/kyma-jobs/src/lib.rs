@@ -11,7 +11,7 @@
 //! - [`executor::JobExecutor`] — one implementation per job kind.
 //! - [`runner::JobRunner`] — the claim → dispatch → report loop, with lease
 //!   keep-alive while an executor runs.
-//! - [`datasource_sync`] — the `connector_sync`-kind executor, re-hosting the
+//! - [`datasource_sync`] — the `data_source_sync`-kind executor, re-hosting the
 //!   data source tick body over the fabric.
 
 #![forbid(unsafe_code)]

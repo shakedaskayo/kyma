@@ -113,7 +113,7 @@ impl DataSource for GithubConnector {
                 CredentialValue::Pat { token } => token,
                 other => {
                     return Err(DataSourceError::Permanent(format!(
-                        "credential {cid} has kind={}; github connector requires `pat`",
+                        "credential {cid} has kind={}; github data source requires `pat`",
                         other.kind()
                     )));
                 }

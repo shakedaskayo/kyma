@@ -84,7 +84,7 @@ async fn create(
         )
             .into_response();
     }
-    let res = catalog_sql::create_connector_direct(
+    let res = catalog_sql::create_data_source_direct(
         s.catalog.pool(),
         tenant,
         &req.name,
@@ -134,10 +134,10 @@ async fn catalog(State(s): State<AdminState>) -> impl IntoResponse {
             let mut v = serde_json::to_value(&e).unwrap_or(serde_json::Value::Null);
             if e.auth_mode == "oauth" {
                 if let serde_json::Value::Object(ref mut m) = v {
-                    let provider = crate::oauth::provider_for_connector(&e.type_id);
+                    let provider = crate::oauth::provider_for_data_source(&e.type_id);
                     if !provider.is_empty() {
                         m.insert("oauth_provider".into(), serde_json::Value::String(provider.to_string()));
-                        let scopes = crate::oauth::scopes_for_connector(&e.type_id);
+                        let scopes = crate::oauth::scopes_for_data_source(&e.type_id);
                         if !scopes.is_empty() {
                             m.insert(
                                 "oauth_scopes".into(),
@@ -160,7 +160,7 @@ async fn list(
     State(s): State<AdminState>,
 ) -> impl IntoResponse {
     let rows = sqlx::query_as::<_, (Uuid, String, String, bool)>(
-        "SELECT id, name, type, enabled FROM connectors
+        "SELECT id, name, type, enabled FROM data_sources
          WHERE tenant_id = $1
          ORDER BY name",
     )
@@ -195,7 +195,7 @@ async fn get_one(
     State(s): State<AdminState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
-    match catalog_sql::load_connector(s.catalog.pool(), tenant, id).await {
+    match catalog_sql::load_data_source(s.catalog.pool(), tenant, id).await {
         Ok(Some(c)) => {
             let scrubbed = scrub_secrets(c.config_jsonb.clone());
             (
@@ -286,7 +286,7 @@ async fn patch_one(
         }
     }
     if let Some(cfg) = &req.config {
-        let Some(c) = catalog_sql::load_connector(s.catalog.pool(), tenant, id)
+        let Some(c) = catalog_sql::load_data_source(s.catalog.pool(), tenant, id)
             .await
             .ok()
             .flatten()
@@ -309,7 +309,7 @@ async fn patch_one(
         }
     }
     let res = sqlx::query(
-        "UPDATE connectors SET
+        "UPDATE data_sources SET
              name = COALESCE($3, name),
              schedule_ms = COALESCE($4, schedule_ms),
              enabled = COALESCE($5, enabled),
@@ -341,7 +341,7 @@ async fn delete_one(
     State(s): State<AdminState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
-    let res = sqlx::query("DELETE FROM connectors WHERE tenant_id = $1 AND id = $2")
+    let res = sqlx::query("DELETE FROM data_sources WHERE tenant_id = $1 AND id = $2")
         .bind(tenant.as_uuid())
         .bind(id)
         .execute(s.catalog.pool())
@@ -362,7 +362,7 @@ async fn pause(
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
     let _ = sqlx::query(
-        "UPDATE connectors SET enabled = FALSE, disabled_reason = 'manual',
+        "UPDATE data_sources SET enabled = FALSE, disabled_reason = 'manual',
          updated_at = now() WHERE tenant_id = $1 AND id = $2",
     )
     .bind(tenant.as_uuid())
@@ -378,7 +378,7 @@ async fn resume(
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
     let _ = sqlx::query(
-        "UPDATE connectors SET enabled = TRUE, disabled_reason = NULL,
+        "UPDATE data_sources SET enabled = TRUE, disabled_reason = NULL,
          updated_at = now() WHERE tenant_id = $1 AND id = $2",
     )
     .bind(tenant.as_uuid())
@@ -401,7 +401,7 @@ async fn trigger(
     // graph before either persists the cursor (read-dedup hides it, but the
     // append-only tables grow). One task per bucket keeps ingestion idempotent.
     let schedule_ms: i64 = sqlx::query_scalar(
-        "SELECT schedule_ms FROM connectors WHERE tenant_id = $1 AND id = $2",
+        "SELECT schedule_ms FROM data_sources WHERE tenant_id = $1 AND id = $2",
     )
     .bind(tenant.as_uuid())
     .bind(id)

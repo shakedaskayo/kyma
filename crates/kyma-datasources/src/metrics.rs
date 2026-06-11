@@ -1,6 +1,6 @@
 //! Per-data-source metric emission helpers.
 //!
-//! Metric names follow the project's `kyma_connector_*` scheme and are
+//! Metric names follow the project's `kyma_data_source_*` scheme and are
 //! emitted via the `metrics` facade crate. The exporter in kyma-server
 //! turns these into Prometheus scrape output at /metrics.
 
@@ -19,15 +19,15 @@ impl DataSourceMetrics {
     pub fn record_tick(&self, result: TickResult, duration_s: f64) {
         let id = self.data_source_id.to_string();
         ::metrics::counter!(
-            "kyma_connector_ticks_total",
-            "connector_id" => id.clone(),
+            "kyma_data_source_ticks_total",
+            "data_source_id" => id.clone(),
             "type" => self.type_id,
             "result" => result.as_label(),
         )
         .increment(1);
         ::metrics::histogram!(
-            "kyma_connector_duration_seconds",
-            "connector_id" => id,
+            "kyma_data_source_duration_seconds",
+            "data_source_id" => id,
             "type" => self.type_id,
         )
         .record(duration_s);
@@ -35,8 +35,8 @@ impl DataSourceMetrics {
 
     pub fn record_rows(&self, n: u64) {
         ::metrics::counter!(
-            "kyma_connector_rows_ingested_total",
-            "connector_id" => self.data_source_id.to_string(),
+            "kyma_data_source_rows_ingested_total",
+            "data_source_id" => self.data_source_id.to_string(),
             "type" => self.type_id,
         )
         .increment(n);
@@ -44,8 +44,8 @@ impl DataSourceMetrics {
 
     pub fn record_error(&self, reason: &'static str) {
         ::metrics::counter!(
-            "kyma_connector_errors_total",
-            "connector_id" => self.data_source_id.to_string(),
+            "kyma_data_source_errors_total",
+            "data_source_id" => self.data_source_id.to_string(),
             "type" => self.type_id,
             "reason" => reason,
         )
@@ -54,16 +54,16 @@ impl DataSourceMetrics {
 
     pub fn set_last_success(&self, at: DateTime<Utc>) {
         ::metrics::gauge!(
-            "kyma_connector_last_success_timestamp_seconds",
-            "connector_id" => self.data_source_id.to_string(),
+            "kyma_data_source_last_success_timestamp_seconds",
+            "data_source_id" => self.data_source_id.to_string(),
         )
         .set(at.timestamp() as f64);
     }
 
     pub fn set_cursor_age(&self, seconds: f64) {
         ::metrics::gauge!(
-            "kyma_connector_cursor_age_seconds",
-            "connector_id" => self.data_source_id.to_string(),
+            "kyma_data_source_cursor_age_seconds",
+            "data_source_id" => self.data_source_id.to_string(),
         )
         .set(seconds);
     }

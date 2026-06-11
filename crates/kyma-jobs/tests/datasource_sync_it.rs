@@ -71,7 +71,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
     let mut reg = DataSourceRegistry::new();
     reg.register(fake.clone());
 
-    let conn_id = catalog_sql::create_connector_direct(
+    let conn_id = catalog_sql::create_data_source_direct(
         catalog.pool(),
         DEFAULT_TENANT,
         "c1",
@@ -91,7 +91,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
     // Idempotent: a second tick in the same bucket inserts nothing.
     sched.tick_once().await.unwrap();
     let pending: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM jobs WHERE kind = 'connector_sync'")
+        sqlx::query_scalar("SELECT count(*) FROM jobs WHERE kind = 'data_source_sync'")
             .fetch_one(catalog.pool())
             .await
             .unwrap();
@@ -99,7 +99,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
 
     // Embedded worker registers in the fabric and claims the job.
     let fabric = Arc::new(PgFabricStore::new(catalog.pool().clone()));
-    let caps: Vec<String> = vec!["connector".into()];
+    let caps: Vec<String> = vec!["data_source".into()];
     let worker_id = fabric
         .upsert_embedded_worker(
             DEFAULT_TENANT,
@@ -135,7 +135,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
     let runner = JobRunner::new(queue, executors, 60);
 
     let ran = runner
-        .claim_and_run_one(&["connector_sync".to_string()])
+        .claim_and_run_one(&["data_source_sync".to_string()])
         .await
         .unwrap();
     assert!(ran, "worker should have claimed the job");
@@ -147,7 +147,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
         .unwrap();
     assert_eq!(cur, Some(serde_json::json!(1)));
     let (status, result): (String, serde_json::Value) = sqlx::query_as(
-        "SELECT status, result FROM jobs WHERE kind = 'connector_sync' LIMIT 1",
+        "SELECT status, result FROM jobs WHERE kind = 'data_source_sync' LIMIT 1",
     )
     .fetch_one(catalog.pool())
     .await

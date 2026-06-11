@@ -283,7 +283,7 @@ from your nodes' coding agents that are already in the memory store.
     if gap_fill {
         p.push_str(&format!(
             "
-PHASE 2 — GAP-FILL (budget: {} connector reads, READ-ONLY):
+PHASE 2 — GAP-FILL (budget: {} data source reads, READ-ONLY):
 - When a memory references something with missing or stale context, use `list_connectors` \
 then `connector_read` to fetch fresh context from the source (a GitHub README/file/issue, a \
 SELECT against a connected Postgres).
@@ -298,14 +298,14 @@ SELECT against a connected Postgres).
             "
 PHASE 3 — GRAPH WIRING & ENTITY MAINTENANCE (the core of dreaming):
 The context graph has three layers you must keep fully wired together:
-(a) MEMORIES (the memory graph), (b) DETERMINISTIC RESOURCES — connector-ingested nodes \
+(a) MEMORIES (the memory graph), (b) DETERMINISTIC RESOURCES — data-source-ingested nodes \
 (repos, files, issues, tables, services) living in their own database/graph namespaces, and \
 (c) LOGICAL ENTITIES — virtual nodes you create for things that exist conceptually (a service, \
 a person, a project, an architecture concept) but have no single deterministic row.
 - For each significant memory, find what it is ABOUT: use find_references_to(value) and \
-graph_traverse over the connector graphs to locate the deterministic node(s), then \
+graph_traverse over the data source graphs to locate the deterministic node(s), then \
 link_memory_to_entity(memory_id, target_node_id, target_namespace) — the namespace is the \
-resource's `database/graph` (e.g. a github repo node lives in its connector's graph). A memory \
+resource's `database/graph` (e.g. a github repo node lives in its data source's graph). A memory \
 without edges is a dead memory.
 - CREATE logical entities with ingest_entity for recurring concepts that deserve a node: \
 prefer `type` as `provider::resource` (e.g. `github::repository`, `kubernetes::pod`) or a \
@@ -334,7 +334,7 @@ why (cite memory ids), and anything that needs human attention. This is your las
 
 RULES:
 - NEVER hard-delete; archival and superseding are the only removal paths.
-- Connector access is READ-ONLY; do not attempt writes against sources.
+- Data source access is READ-ONLY; do not attempt writes against sources.
 - Prefer a few high-value mutations over many speculative ones.
 - If budgets run out, proceed to the summary.
 ",
@@ -907,7 +907,7 @@ async fn run_via_adk(
         settings.connector_read_budget,
         settings.connector_read_max_bytes,
     ));
-    let connector_ctx = DataSourceToolCtx {
+    let data_source_ctx = DataSourceToolCtx {
         pool: state.pool.clone(),
         credentials: state.credentials.clone(),
         tenant: state.tenant,
@@ -921,7 +921,7 @@ async fn run_via_adk(
         .description("Kyma dreaming agent — autonomous memory housekeeping.")
         .instruction(system_prompt)
         .model(llm);
-    for tool in dreaming_toolset(&shared, connector_ctx, &mutation_budget, mode) {
+    for tool in dreaming_toolset(&shared, data_source_ctx, &mutation_budget, mode) {
         builder = builder.tool(tool);
     }
     let agent: Arc<dyn adk_rust::Agent> = Arc::new(
@@ -1028,7 +1028,7 @@ async fn run_via_adk(
 /// wrapped in the run's [`MutationBudget`], plus the data source read tools.
 fn dreaming_toolset(
     shared: &super::tools::SharedToolCtx,
-    connector_ctx: DataSourceToolCtx,
+    data_source_ctx: DataSourceToolCtx,
     mutation_budget: &Arc<MutationBudget>,
     mode: &str,
 ) -> Vec<Arc<dyn Tool>> {
@@ -1067,8 +1067,8 @@ fn dreaming_toolset(
     }
     // Gap-fill tools only when the mode allows them (the prompt matches).
     if mode != "housekeeping_only" {
-        tools.push(tool_list_connectors(connector_ctx.clone()));
-        tools.push(tool_connector_read(connector_ctx));
+        tools.push(tool_list_connectors(data_source_ctx.clone()));
+        tools.push(tool_connector_read(data_source_ctx));
     }
     tools
 }

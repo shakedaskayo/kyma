@@ -152,7 +152,7 @@ impl DataSource for S3Connector {
                     } => (access_key_id, secret_access_key, session_token),
                     other => {
                         return Err(DataSourceError::Permanent(format!(
-                            "credential {cid} has kind={}; s3 connector requires `aws_creds`",
+                            "credential {cid} has kind={}; s3 data source requires `aws_creds`",
                             other.kind()
                         )));
                     }

@@ -127,7 +127,7 @@ impl DataSource for GitlabConnector {
                 CredentialValue::Pat { token } => token,
                 other => {
                     return Err(DataSourceError::Permanent(format!(
-                        "credential {cid} has kind={}; gitlab connector requires `pat`",
+                        "credential {cid} has kind={}; gitlab data source requires `pat`",
                         other.kind()
                     )));
                 }

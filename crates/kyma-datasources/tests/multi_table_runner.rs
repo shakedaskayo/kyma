@@ -171,7 +171,7 @@ async fn multi_table_distinct_idempotency_keys() {
     let mut reg = DataSourceRegistry::new();
     reg.register(Arc::new(TwoTableConn));
 
-    let conn_id = catalog_sql::create_connector_direct(
+    let conn_id = catalog_sql::create_data_source_direct(
         catalog.pool(),
         DEFAULT_TENANT,
         "two_table_test",
@@ -280,7 +280,7 @@ async fn legacy_rows_path_unchanged() {
     let mut reg = DataSourceRegistry::new();
     reg.register(Arc::new(LegacyConn));
 
-    let conn_id = catalog_sql::create_connector_direct(
+    let conn_id = catalog_sql::create_data_source_direct(
         catalog.pool(),
         DEFAULT_TENANT,
         "legacy_test",

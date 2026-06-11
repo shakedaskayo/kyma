@@ -34,7 +34,7 @@ pub struct DataSourceRow {
     pub disabled_reason: Option<String>,
 }
 
-fn row_to_connector(r: sqlx::postgres::PgRow) -> Result<DataSourceRow, sqlx::Error> {
+fn row_to_data_source(r: sqlx::postgres::PgRow) -> Result<DataSourceRow, sqlx::Error> {
     let tenant_uuid: Uuid = r.try_get("tenant_id")?;
     Ok(DataSourceRow {
         id: r.try_get("id")?,
@@ -57,7 +57,7 @@ fn row_to_connector(r: sqlx::postgres::PgRow) -> Result<DataSourceRow, sqlx::Err
 
 /// Create a data source row (used from admin API + test setup).
 #[allow(clippy::too_many_arguments)]
-pub async fn create_connector_direct(
+pub async fn create_data_source_direct(
     pool: &PgPool,
     tenant: TenantId,
     name: &str,
@@ -69,7 +69,7 @@ pub async fn create_connector_direct(
     drive_model: &str,
 ) -> Result<Uuid, sqlx::Error> {
     let (id,): (Uuid,) = sqlx::query_as(
-        "INSERT INTO connectors
+        "INSERT INTO data_sources
            (tenant_id, name, type, target_database, target_table, config_jsonb,
             schedule_ms, drive_model)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -99,7 +99,7 @@ pub async fn list_due_periodic(pool: &PgPool) -> Result<Vec<DataSourceRow>, sqlx
                 schedule_ms, drive_model, enabled,
                 last_run_at, last_success_at, last_error,
                 last_rows_ingested, disabled_reason
-         FROM connectors
+         FROM data_sources
          WHERE enabled = TRUE AND drive_model = 'periodic'
            AND (last_run_at IS NULL
                 OR last_run_at < now() - (schedule_ms || ' milliseconds')::interval)",
@@ -107,10 +107,10 @@ pub async fn list_due_periodic(pool: &PgPool) -> Result<Vec<DataSourceRow>, sqlx
     .fetch_all(pool)
     .await?;
 
-    rows.into_iter().map(row_to_connector).collect()
+    rows.into_iter().map(row_to_data_source).collect()
 }
 
-pub async fn load_connector(
+pub async fn load_data_source(
     pool: &PgPool,
     tenant: TenantId,
     id: Uuid,
@@ -120,7 +120,7 @@ pub async fn load_connector(
                 schedule_ms, drive_model, enabled,
                 last_run_at, last_success_at, last_error,
                 last_rows_ingested, disabled_reason
-         FROM connectors WHERE tenant_id = $1 AND id = $2",
+         FROM data_sources WHERE tenant_id = $1 AND id = $2",
     )
     .bind(tenant.as_uuid())
     .bind(id)
@@ -129,7 +129,7 @@ pub async fn load_connector(
     let Some(r) = row else {
         return Ok(None);
     };
-    Ok(Some(row_to_connector(r)?))
+    Ok(Some(row_to_data_source(r)?))
 }
 
 pub async fn load_cursor(
@@ -138,8 +138,8 @@ pub async fn load_cursor(
     data_source_id: Uuid,
 ) -> Result<Option<serde_json::Value>, sqlx::Error> {
     let row: Option<(serde_json::Value,)> = sqlx::query_as(
-        "SELECT cursor_jsonb FROM connector_cursors
-         WHERE tenant_id = $1 AND connector_id = $2",
+        "SELECT cursor_jsonb FROM data_source_cursors
+         WHERE tenant_id = $1 AND data_source_id = $2",
     )
     .bind(tenant.as_uuid())
     .bind(data_source_id)
@@ -155,9 +155,9 @@ pub async fn upsert_cursor(
     cursor: &serde_json::Value,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO connector_cursors (tenant_id, connector_id, cursor_jsonb)
+        "INSERT INTO data_source_cursors (tenant_id, data_source_id, cursor_jsonb)
          VALUES ($1, $2, $3)
-         ON CONFLICT (connector_id)
+         ON CONFLICT (data_source_id)
          DO UPDATE SET cursor_jsonb = EXCLUDED.cursor_jsonb, updated_at = now()",
     )
     .bind(tenant.as_uuid())
@@ -175,7 +175,7 @@ pub async fn mark_run_success(
     rows_ingested: i64,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE connectors
+        "UPDATE data_sources
          SET last_run_at = now(),
              last_success_at = now(),
              last_error = NULL,
@@ -198,7 +198,7 @@ pub async fn mark_run_failure(
     error: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE connectors
+        "UPDATE data_sources
          SET last_run_at = now(),
              last_error = $3,
              updated_at = now()
@@ -212,14 +212,14 @@ pub async fn mark_run_failure(
     Ok(())
 }
 
-pub async fn disable_connector(
+pub async fn disable_data_source(
     pool: &PgPool,
     tenant: TenantId,
     data_source_id: Uuid,
     reason: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE connectors
+        "UPDATE data_sources
          SET enabled = FALSE, disabled_reason = $3, updated_at = now()
          WHERE tenant_id = $1 AND id = $2",
     )
@@ -231,7 +231,7 @@ pub async fn disable_connector(
     Ok(())
 }
 
-/// Enqueue a single connector_tick task with the bucketed `scheduled_for`.
+/// Enqueue a single data_source_tick task with the bucketed `scheduled_for`.
 /// Race-safe: the partial unique index on `background_tasks` turns duplicate
 /// inserts into `Ok(0)` (we use ON CONFLICT DO NOTHING).
 pub async fn enqueue_tick(
@@ -245,10 +245,10 @@ pub async fn enqueue_tick(
     let res = sqlx::query(
         "INSERT INTO background_tasks (tenant_id, kind, payload, priority)
          VALUES ($1,
-                 'connector_tick',
+                 'data_source_tick',
                  jsonb_build_object(
                      'tenant_id', $1::text,
-                     'connector_id', $2::text,
+                     'data_source_id', $2::text,
                      'scheduled_for', $3::text),
                  0)
          ON CONFLICT DO NOTHING",
@@ -261,11 +261,11 @@ pub async fn enqueue_tick(
     Ok(res.rows_affected())
 }
 
-/// Enqueue a `datasource_sync` job on the worker fabric (`jobs` table) with
+/// Enqueue a `data_source_sync` job on the worker fabric (`jobs` table) with
 /// the bucketed `scheduled_for` — the fabric successor of [`enqueue_tick`].
-/// Race-safe via the partial unique index `jobs_connector_sync_uniq`
+/// Race-safe via the partial unique index `jobs_data_source_sync_uniq`
 /// (ON CONFLICT DO NOTHING → `Ok(0)` on duplicates).
-pub async fn enqueue_connector_sync(
+pub async fn enqueue_data_source_sync(
     pool: &PgPool,
     tenant: TenantId,
     data_source_id: Uuid,
@@ -276,13 +276,13 @@ pub async fn enqueue_connector_sync(
     let res = sqlx::query(
         "INSERT INTO jobs (tenant_id, kind, payload, priority, req_capabilities)
          VALUES ($1,
-                 'connector_sync',
+                 'data_source_sync',
                  jsonb_build_object(
                      'tenant_id', $1::text,
-                     'connector_id', $2::text,
+                     'data_source_id', $2::text,
                      'scheduled_for', $3::text),
                  0,
-                 ARRAY['connector'])
+                 ARRAY['data_source'])
          ON CONFLICT DO NOTHING",
     )
     .bind(tenant.as_uuid())

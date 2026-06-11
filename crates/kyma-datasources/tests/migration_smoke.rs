@@ -1,11 +1,11 @@
-//! Smoke test: migration 005 applies cleanly and creates expected objects.
+//! Smoke test: migrations apply cleanly and creates expected objects.
 
 use kyma_catalog::PostgresCatalog;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 
 #[tokio::test]
-async fn migration_005_creates_connector_tables() {
+async fn migrations_create_data_source_tables() {
     let pg = Postgres::default()
         .with_name("pgvector/pgvector")
         .with_tag("pg16")
@@ -20,23 +20,23 @@ async fn migration_005_creates_connector_tables() {
         .expect("connect + migrate");
 
     let pool = catalog.pool();
-    sqlx::query("SELECT 1 FROM connectors LIMIT 0")
+    sqlx::query("SELECT 1 FROM data_sources LIMIT 0")
         .execute(pool)
         .await
-        .expect("connectors table exists");
-    sqlx::query("SELECT 1 FROM connector_cursors LIMIT 0")
+        .expect("data_sources table exists");
+    sqlx::query("SELECT 1 FROM data_source_cursors LIMIT 0")
         .execute(pool)
         .await
-        .expect("connector_cursors table exists");
-    sqlx::query("SELECT 1 FROM connector_leases LIMIT 0")
+        .expect("data_source_cursors table exists");
+    sqlx::query("SELECT 1 FROM data_source_leases LIMIT 0")
         .execute(pool)
         .await
-        .expect("connector_leases table exists");
+        .expect("data_source_leases table exists");
 
     let (count,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM pg_indexes
          WHERE tablename = 'background_tasks'
-         AND indexname = 'background_tasks_connector_tick_uniq'",
+         AND indexname = 'background_tasks_data_source_tick_uniq'",
     )
     .fetch_one(pool)
     .await
@@ -46,7 +46,7 @@ async fn migration_005_creates_connector_tables() {
     let (indexdef,): (String,) = sqlx::query_as(
         "SELECT indexdef FROM pg_indexes
          WHERE tablename = 'background_tasks'
-         AND indexname = 'background_tasks_connector_tick_uniq'",
+         AND indexname = 'background_tasks_data_source_tick_uniq'",
     )
     .fetch_one(pool)
     .await
@@ -56,8 +56,8 @@ async fn migration_005_creates_connector_tables() {
         "dedup index must be UNIQUE, got: {indexdef}"
     );
     assert!(
-        indexdef.contains("connector_tick"),
-        "dedup index must be partial on kind='connector_tick', got: {indexdef}"
+        indexdef.contains("data_source_tick"),
+        "dedup index must be partial on kind='data_source_tick', got: {indexdef}"
     );
     assert!(
         indexdef.contains("pending") && indexdef.contains("claimed"),

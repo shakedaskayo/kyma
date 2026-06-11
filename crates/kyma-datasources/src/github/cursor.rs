@@ -1,6 +1,6 @@
 //! Incremental-fetch cursor for the GitHub data source.
 //!
-//! The cursor is serialized as JSON and stored in `connector_cursors`. On
+//! The cursor is serialized as JSON and stored in `data_source_cursors`. On
 //! each tick we read it back, use the stored timestamps for `since`-filtered
 //! pulls/issues queries, and write an updated cursor after ingestion.
 

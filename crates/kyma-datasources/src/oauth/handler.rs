@@ -82,7 +82,7 @@ pub fn oauth_callback_router(state: OAuthState) -> Router {
 struct StartReq {
     /// DataSource this credential is for (e.g. `"googledrive"`). Stored on the
     /// flow + credential metadata for display.
-    connector_type: String,
+    data_source_type: String,
     /// Override the provider's default scopes.
     #[serde(default)]
     scopes: Option<Vec<String>>,
@@ -158,7 +158,7 @@ async fn start(
     let label = req
         .label
         .filter(|l| !l.trim().is_empty())
-        .unwrap_or_else(|| format!("{} ({})", prov.display, req.connector_type));
+        .unwrap_or_else(|| format!("{} ({})", prov.display, req.data_source_type));
 
     let enc_verifier = match verifier.as_ref().map(|v| s.crypto.encrypt(v.as_bytes())).transpose() {
         Ok(v) => v,
@@ -169,7 +169,7 @@ async fn start(
         tenant,
         state: &state_tok,
         provider: prov.slug,
-        connector_type: &req.connector_type,
+        data_source_type: &req.data_source_type,
         label: &label,
         scopes: &scope_str,
         redirect_uri: &redirect_uri,
@@ -326,7 +326,7 @@ async fn callback(
     };
     let metadata = serde_json::json!({
         "provider": prov.slug,
-        "connector_type": flow_row.connector_type,
+        "data_source_type": flow_row.data_source_type,
         "scopes": flow_row.scopes,
         "obtained_via": "oauth",
     });

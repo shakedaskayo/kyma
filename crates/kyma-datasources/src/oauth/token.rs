@@ -34,7 +34,7 @@ pub async fn valid_access_token(
     } = cred.value
     else {
         return Err(DataSourceError::Permanent(format!(
-            "credential {credential_id} is kind={}; oauth connector requires `oauth2`",
+            "credential {credential_id} is kind={}; oauth data source requires `oauth2`",
             cred.kind
         )));
     };

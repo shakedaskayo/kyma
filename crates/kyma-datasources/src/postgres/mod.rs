@@ -111,7 +111,7 @@ impl DataSource for PgIntrospectConnector {
                 CredentialValue::Url { connection_string } => connection_string,
                 other => {
                     return Err(DataSourceError::Permanent(format!(
-                        "credential {cid} has kind={}; postgres connector requires `url`",
+                        "credential {cid} has kind={}; postgres data source requires `url`",
                         other.kind()
                     )));
                 }

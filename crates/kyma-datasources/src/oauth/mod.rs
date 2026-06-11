@@ -30,7 +30,7 @@ pub mod token;
 use std::sync::Arc;
 
 pub use handler::{oauth_authed_router, oauth_callback_router, OAuthState};
-pub use provider::{provider_for_connector, scopes_for_connector, OAuthProvider};
+pub use provider::{provider_for_data_source, scopes_for_data_source, OAuthProvider};
 pub use token::valid_access_token;
 
 /// Run-time OAuth capability handed to data sources through

@@ -46,7 +46,7 @@ pub type GraphRegisterFn = Arc<
 /// remote fabric workers implement it over the control-plane HTTP API.
 #[async_trait::async_trait]
 pub trait DataSourceControl: Send + Sync {
-    async fn load_connector(
+    async fn load_data_source(
         &self,
         tenant: TenantId,
         id: Uuid,
@@ -64,7 +64,7 @@ pub trait DataSourceControl: Send + Sync {
     ) -> anyhow::Result<()>;
     async fn mark_run_success(&self, tenant: TenantId, id: Uuid, rows: i64) -> anyhow::Result<()>;
     async fn mark_run_failure(&self, tenant: TenantId, id: Uuid, msg: &str) -> anyhow::Result<()>;
-    async fn disable_connector(&self, tenant: TenantId, id: Uuid, msg: &str) -> anyhow::Result<()>;
+    async fn disable_data_source(&self, tenant: TenantId, id: Uuid, msg: &str) -> anyhow::Result<()>;
 }
 
 /// Direct-SQL [`DataSourceControl`] for in-server execution.
@@ -80,12 +80,12 @@ impl PgConnectorControl {
 
 #[async_trait::async_trait]
 impl DataSourceControl for PgConnectorControl {
-    async fn load_connector(
+    async fn load_data_source(
         &self,
         tenant: TenantId,
         id: Uuid,
     ) -> anyhow::Result<Option<catalog_sql::DataSourceRow>> {
-        Ok(catalog_sql::load_connector(&self.pool, tenant, id).await?)
+        Ok(catalog_sql::load_data_source(&self.pool, tenant, id).await?)
     }
     async fn load_cursor(
         &self,
@@ -108,8 +108,8 @@ impl DataSourceControl for PgConnectorControl {
     async fn mark_run_failure(&self, tenant: TenantId, id: Uuid, msg: &str) -> anyhow::Result<()> {
         Ok(catalog_sql::mark_run_failure(&self.pool, tenant, id, msg).await?)
     }
-    async fn disable_connector(&self, tenant: TenantId, id: Uuid, msg: &str) -> anyhow::Result<()> {
-        Ok(catalog_sql::disable_connector(&self.pool, tenant, id, msg).await?)
+    async fn disable_data_source(&self, tenant: TenantId, id: Uuid, msg: &str) -> anyhow::Result<()> {
+        Ok(catalog_sql::disable_data_source(&self.pool, tenant, id, msg).await?)
     }
 }
 
@@ -153,7 +153,7 @@ pub enum TickOutcome {
 /// sink rows (per-table idempotency keys), register graphs, persist the
 /// cursor, and record run status on the data source row. Queue bookkeeping
 /// (claim/complete/fail) is the caller's job.
-pub async fn run_connector_tick(
+pub async fn run_data_source_tick(
     deps: &DataSourceTickDeps,
     tenant: TenantId,
     data_source_id: Uuid,
@@ -162,14 +162,14 @@ pub async fn run_connector_tick(
     let scheduled_for = chrono::DateTime::<Utc>::from_timestamp_millis(scheduled_for_ms)
         .ok_or_else(|| anyhow::anyhow!("bad scheduled_for"))?;
 
-    let conn = match deps.control.load_connector(tenant, data_source_id).await? {
+    let conn = match deps.control.load_data_source(tenant, data_source_id).await? {
         Some(c) if c.enabled => c,
         Some(_) => {
-            debug!(data_source_id = %data_source_id, "skipping disabled connector");
+            debug!(data_source_id = %data_source_id, "skipping disabled data source");
             return Ok(TickOutcome::Skipped("disabled"));
         }
         None => {
-            warn!(data_source_id = %data_source_id, "connector row missing");
+            warn!(data_source_id = %data_source_id, "data source row missing");
             return Ok(TickOutcome::Skipped("missing"));
         }
     };
@@ -214,7 +214,7 @@ pub async fn run_connector_tick(
             let legacy_rows = rows.len() as u64;
             if !rows.is_empty() {
                 let idem = format!(
-                    "connector:{}:{}",
+                    "data_source:{}:{}",
                     data_source_id,
                     scheduled_for_ms * 1_000_000
                 );
@@ -248,7 +248,7 @@ pub async fn run_connector_tick(
             for table_rows in tables {
                 let table_name = table_rows.table;
                 let idem = format!(
-                    "connector:{}:{}:{}",
+                    "data_source:{}:{}:{}",
                     data_source_id,
                     table_name,
                     scheduled_for_ms * 1_000_000
@@ -337,7 +337,7 @@ pub async fn run_connector_tick(
         Err(DataSourceError::Config(msg)) => {
             error!(data_source_id = %data_source_id, error = %msg, "config");
             deps.control
-                .disable_connector(tenant, data_source_id, &msg)
+                .disable_data_source(tenant, data_source_id, &msg)
                 .await?;
             metrics.record_error("config");
             metrics.record_tick(TickResult::Config, t0.elapsed().as_secs_f64());
@@ -463,7 +463,7 @@ impl DataSourceRunner {
 
         let Some(task) = self
             .catalog
-            .claim_task("connector_tick", node_id, self.claim_lease)
+            .claim_task("data_source_tick", node_id, self.claim_lease)
             .await?
         else {
             return Ok(false);
@@ -471,10 +471,10 @@ impl DataSourceRunner {
 
         let data_source_id = task
             .payload
-            .get("connector_id")
+            .get("data_source_id")
             .and_then(|v| v.as_str())
             .and_then(|s| Uuid::parse_str(s).ok())
-            .ok_or_else(|| anyhow::anyhow!("task missing connector_id"))?;
+            .ok_or_else(|| anyhow::anyhow!("task missing data_source_id"))?;
         let scheduled_for_ms = task
             .payload
             .get("scheduled_for")
@@ -492,7 +492,7 @@ impl DataSourceRunner {
             .unwrap_or(DEFAULT_TENANT);
 
         let deps = self.tick_deps();
-        match run_connector_tick(&deps, tenant, data_source_id, scheduled_for_ms).await? {
+        match run_data_source_tick(&deps, tenant, data_source_id, scheduled_for_ms).await? {
             TickOutcome::Ok { .. } | TickOutcome::Skipped(_) => {
                 self.catalog.complete_task(task.id).await?;
             }
@@ -509,7 +509,7 @@ impl DataSourceRunner {
     }
 
     /// Recover abandoned claims from previous engine processes — any
-    /// connector_tick row left in `claimed` whose `claim_expires_at` is in the
+    /// data_source_tick row left in `claimed` whose `claim_expires_at` is in the
     /// past is marked `failed` so the queue self-heals across restarts.
     /// Without this, a sigkill or panic mid-tick could permanently jam the
     /// queue. Idempotent; safe to call from every worker on startup.
@@ -519,7 +519,7 @@ impl DataSourceRunner {
              SET status = 'failed',
                  last_error = COALESCE(last_error, '') || ' [recovered: stale claim on restart]',
                  updated_at = now()
-             WHERE kind = 'connector_tick'
+             WHERE kind = 'data_source_tick'
                AND status = 'claimed'
                AND claim_expires_at < now()",
         )
@@ -529,7 +529,7 @@ impl DataSourceRunner {
     }
 
     pub async fn run(self, shutdown: impl Future<Output = ()>) {
-        info!(node_id = %self.node_id, "connector runner starting");
+        info!(node_id = %self.node_id, "data source runner starting");
         // Best-effort one-shot recovery on startup. If multiple workers race
         // this in parallel, the SQL `UPDATE … WHERE status = 'claimed'` is
         // idempotent — the second pass simply finds nothing to update.
@@ -542,7 +542,7 @@ impl DataSourceRunner {
         loop {
             tokio::select! {
                 biased;
-                () = &mut shutdown => { info!("connector runner shutdown"); return; }
+                () = &mut shutdown => { info!("data source runner shutdown"); return; }
                 res = self.claim_and_run_one() => match res {
                     Ok(true)  => {}
                     Ok(false) => tokio::time::sleep(self.idle_sleep).await,
