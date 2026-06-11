@@ -298,7 +298,30 @@ stop_stale_server() {  # the web UI is embedded in the binary → old process = 
   return 1
 }
 
+# Pull the admin token out of an existing service definition so re-installs
+# reuse it instead of minting a fresh one the running server won't accept.
+# Prints the token or nothing.
+existing_service_token() {
+  local f="$1"
+  [ -f "$f" ] || return 0
+  # plist:  <key>KYMA_AUTH_TOKENS</key>\n    <string>TOKEN:admin</string>
+  # systemd: Environment=KYMA_AUTH_TOKENS=TOKEN:admin
+  grep -A1 'KYMA_AUTH_TOKENS' "$f" 2>/dev/null \
+    | sed -nE 's/.*<string>([^:<]+):admin<\/string>.*/\1/p; s/.*KYMA_AUTH_TOKENS=([^:]+):admin.*/\1/p' \
+    | head -1
+}
+
 start_serve() {
+  # Reuse the token already pinned in the service definition (if any) so a
+  # re-run never desyncs the CLI from a server we are NOT restarting.
+  local existing_service_file=""
+  case "$(uname -s)" in
+    Darwin) existing_service_file="$HOME/Library/LaunchAgents/dev.getkyma.kyma-server.plist" ;;
+    Linux)  existing_service_file="$HOME/.config/systemd/user/kyma-server.service" ;;
+  esac
+  if [ -z "$TOKEN" ]; then
+    TOKEN="$(existing_service_token "$existing_service_file")"
+  fi
   [ -z "$TOKEN" ] && TOKEN="kyma-local-$(rand_hex)"
   mkdir -p "$HOME/.kyma/logs"
   local log="$HOME/.kyma/logs/server.log"
