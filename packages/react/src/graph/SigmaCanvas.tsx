@@ -42,8 +42,6 @@ export interface SigmaCanvasProps {
   /** Bump to rebuild the graphology instance (export accumulator version). */
   version: number;
   activeNamespaces: Set<string>;
-  /** Focus-neighborhood isolation root (double-click). Null = off. Task 9 moves this to store. */
-  focusModeId: string | null;
   onNodeClick: (compositeId: string) => void;
   onNodeHover: (compositeId: string | null) => void;
   onNodeDoubleClick: (compositeId: string) => void;
@@ -68,6 +66,7 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
   const showEdgeLabels = useGraphStore((s) => s.showEdgeLabels);
   const sizeByDegree = useGraphStore((s) => s.sizeByDegree);
   const curvedEdges = useGraphStore((s) => s.curvedEdges);
+  const focusModeId = useGraphStore((s) => s.focusModeId);
 
   // Build the graphology graph when data or relevant options change.
   // `version` acts as the data-change signal (the accumulator is mutable).
@@ -108,7 +107,6 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     }
 
     let focusModeIds: Set<string> | null = null;
-    const { focusModeId } = props;
     if (focusModeId && graph.hasNode(focusModeId)) {
       focusModeIds = new Set([focusModeId]);
       for (const nb of graph.neighbors(focusModeId)) {
@@ -135,7 +133,7 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     relTypeFilter,
     showEdgeLabels,
     isDark,
-    props.focusModeId,
+    focusModeId,
   ]);
 
   // Instantiate Sigma once per graph + style settings.
@@ -252,7 +250,7 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     searchQuery,
     relTypeFilter,
     showEdgeLabels,
-    props.focusModeId,
+    focusModeId,
   ]);
 
   // Fly-to on deep-link / command-bar focus (focusSeq bumps).

@@ -1,4 +1,4 @@
-import { expect, test, describe } from "vitest";
+import { expect, test, describe, it } from "vitest";
 import { createGraphStore } from "./graph-store";
 
 describe("createGraphStore factory", () => {
@@ -68,5 +68,51 @@ describe("createGraphStore factory", () => {
     expect(store.getState().hiddenLabels).toContain("Table");
     store.getState().toggleHiddenLabel("Table");
     expect(store.getState().hiddenLabels).not.toContain("Table");
+  });
+});
+
+describe("trail", () => {
+  it("appends visited nodes, dedups consecutive, caps at 20", () => {
+    const s = createGraphStore();
+    s.getState().pushTrail("db/g::a");
+    s.getState().pushTrail("db/g::a");
+    s.getState().pushTrail("db/g::b");
+    expect(s.getState().trail).toEqual(["db/g::a", "db/g::b"]);
+    for (let i = 0; i < 30; i++) s.getState().pushTrail(`db/g::n${i}`);
+    expect(s.getState().trail.length).toBe(20);
+  });
+
+  it("jumpTrail truncates after the target and selects it", () => {
+    const s = createGraphStore();
+    ["a", "b", "c"].forEach((id) => s.getState().pushTrail(id));
+    s.getState().jumpTrail(0);
+    expect(s.getState().trail).toEqual(["a"]);
+    expect(s.getState().selectedNodeId).toBe("a");
+    expect(s.getState().focusSeq).toBeGreaterThan(0); // triggers fly-to
+  });
+});
+
+describe("focus mode + command bar", () => {
+  it("focusModeId set/clear", () => {
+    const s = createGraphStore();
+    s.getState().setFocusMode("db/g::a");
+    expect(s.getState().focusModeId).toBe("db/g::a");
+    s.getState().setFocusMode(null);
+    expect(s.getState().focusModeId).toBeNull();
+  });
+
+  it("commandBarOpen toggles", () => {
+    const s = createGraphStore();
+    s.getState().setCommandBarOpen(true);
+    expect(s.getState().commandBarOpen).toBe(true);
+  });
+
+  it("setGraph resets focus mode but keeps the trail", () => {
+    const s = createGraphStore();
+    s.getState().pushTrail("x");
+    s.getState().setFocusMode("x");
+    s.getState().setGraph("db/g");
+    expect(s.getState().focusModeId).toBeNull();
+    expect(s.getState().trail).toEqual(["x"]);
   });
 });
