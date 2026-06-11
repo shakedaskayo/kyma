@@ -30,10 +30,10 @@ struct PgConfig {
     credential_id: Option<uuid::Uuid>,
 }
 
-pub struct PgIntrospectConnector;
+pub struct PgIntrospectDataSource;
 
 #[async_trait]
-impl DataSource for PgIntrospectConnector {
+impl DataSource for PgIntrospectDataSource {
     fn type_id(&self) -> &'static str {
         "postgres"
     }

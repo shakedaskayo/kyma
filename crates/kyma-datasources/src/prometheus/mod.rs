@@ -8,7 +8,7 @@ use serde::Deserialize;
 use crate::types::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
 
 #[derive(Default, Clone, Debug)]
-pub struct PromConnector;
+pub struct PromDataSource;
 
 /// Parsed form of the data source's JSON config. Kept private — validation
 /// and `run_once` both deserialize internally.
@@ -40,7 +40,7 @@ pub(crate) enum PromAuth {
 }
 
 #[async_trait]
-impl DataSource for PromConnector {
+impl DataSource for PromDataSource {
     fn type_id(&self) -> &'static str {
         "prometheus"
     }

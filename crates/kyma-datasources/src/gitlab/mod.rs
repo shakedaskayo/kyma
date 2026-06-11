@@ -42,7 +42,7 @@ fn default_api_url() -> String {
     "https://gitlab.com/api/v4".into()
 }
 
-pub struct GitlabConnector;
+pub struct GitlabDataSource;
 
 fn parse_projects(s: &str) -> Vec<String> {
     s.split(|c| c == ',' || c == '\n' || c == ' ')
@@ -52,7 +52,7 @@ fn parse_projects(s: &str) -> Vec<String> {
 }
 
 #[async_trait]
-impl DataSource for GitlabConnector {
+impl DataSource for GitlabDataSource {
     fn type_id(&self) -> &'static str {
         "gitlab"
     }

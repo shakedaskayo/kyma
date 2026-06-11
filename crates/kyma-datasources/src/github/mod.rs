@@ -40,10 +40,10 @@ use transform::{RawRecord, to_graph};
 use transform::{FileImports, code_to_graph, resolve_imports};
 
 #[derive(Default, Clone, Debug)]
-pub struct GithubConnector;
+pub struct GithubDataSource;
 
 #[async_trait]
-impl DataSource for GithubConnector {
+impl DataSource for GithubDataSource {
     fn type_id(&self) -> &'static str {
         "github"
     }

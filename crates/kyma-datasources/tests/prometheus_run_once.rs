@@ -1,7 +1,7 @@
-//! Exercises PromConnector::run_once against an in-process HTTP server.
+//! Exercises PromDataSource::run_once against an in-process HTTP server.
 
 use kyma_datasources::metrics::DataSourceMetrics;
-use kyma_datasources::prometheus::PromConnector;
+use kyma_datasources::prometheus::PromDataSource;
 use kyma_datasources::runner::NoopCredentialStore;
 use kyma_datasources::secrets::EnvSecretStore;
 use kyma_datasources::{DataSource, DataSourceCtx};
@@ -56,7 +56,7 @@ fn ctx() -> DataSourceCtx {
 async fn happy_path_emits_rows() {
     let endpoint = spawn_mock("a_metric{x=\"y\"} 1\nb_metric 2\n", 200).await;
     let cfg = json!({ "endpoint": endpoint });
-    let run = PromConnector::default()
+    let run = PromDataSource::default()
         .run_once(&ctx(), &cfg, None)
         .await
         .expect("ok");
@@ -73,7 +73,7 @@ async fn happy_path_emits_rows() {
 async fn http_5xx_is_transient() {
     let endpoint = spawn_mock("", 503).await;
     let cfg = json!({ "endpoint": endpoint });
-    let err = PromConnector::default()
+    let err = PromDataSource::default()
         .run_once(&ctx(), &cfg, None)
         .await
         .unwrap_err();
@@ -87,7 +87,7 @@ async fn http_5xx_is_transient() {
 async fn http_4xx_is_permanent() {
     let endpoint = spawn_mock("", 404).await;
     let cfg = json!({ "endpoint": endpoint });
-    let err = PromConnector::default()
+    let err = PromDataSource::default()
         .run_once(&ctx(), &cfg, None)
         .await
         .unwrap_err();

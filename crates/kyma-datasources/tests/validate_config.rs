@@ -1,9 +1,9 @@
-use kyma_datasources::prometheus::PromConnector;
+use kyma_datasources::prometheus::PromDataSource;
 use kyma_datasources::DataSource;
 use serde_json::json;
 
-fn c() -> PromConnector {
-    PromConnector::default()
+fn c() -> PromDataSource {
+    PromDataSource::default()
 }
 
 #[test]

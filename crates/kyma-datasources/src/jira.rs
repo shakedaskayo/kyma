@@ -39,10 +39,10 @@ fn default_max_pages() -> usize {
     5
 }
 
-pub struct JiraConnector;
+pub struct JiraDataSource;
 
 #[async_trait]
-impl DataSource for JiraConnector {
+impl DataSource for JiraDataSource {
     fn type_id(&self) -> &'static str {
         "jira"
     }

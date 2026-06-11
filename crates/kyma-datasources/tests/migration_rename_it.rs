@@ -75,6 +75,13 @@ async fn rename_migration_preserves_rows() {
                                    'scheduled_for', '60000'),
                 0);
 
+        INSERT INTO background_tasks (tenant_id, kind, payload, priority)
+        VALUES ('{TENANT}', 'connector_sync',
+                jsonb_build_object('tenant_id', '{TENANT}'::text,
+                                   'connector_id', '{DS_ID}'::text,
+                                   'scheduled_for', '60000'),
+                0);
+
         INSERT INTO workers (tenant_id, name, kind, capabilities)
         VALUES ('{TENANT}', 'embedded@test', 'embedded',
                 ARRAY['connector','dreaming','llm']);
@@ -166,6 +173,17 @@ async fn rename_migration_preserves_rows() {
     .await
     .unwrap();
     assert_eq!(n_new, 1, "rekeyed data_source_tick present");
+    let (n_sync,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM background_tasks
+         WHERE kind = 'data_source_sync'
+           AND payload ? 'data_source_id'
+           AND payload->>'data_source_id' = $1",
+    )
+    .bind(DS_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(n_sync, 1, "rekeyed data_source_sync present");
     let (n_old,): (i64,) = sqlx::query_as(
         "SELECT count(*) FROM background_tasks
          WHERE kind IN ('connector_tick','connector_sync') OR payload ? 'connector_id'",

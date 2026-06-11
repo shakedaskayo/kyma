@@ -15,7 +15,7 @@ use kyma_compaction::{
     ArtifactRetentionWorker, CompactionScheduler, CompactionWorker, PhysicalDeleteWorker,
     RetentionSweeper,
 };
-use kyma_datasources::prometheus::PromConnector;
+use kyma_datasources::prometheus::PromDataSource;
 use kyma_datasources::registry::DataSourceRegistry;
 use kyma_datasources::scheduler::DataSourceScheduler;
 use kyma_datasources::secrets::EnvSecretStore;
@@ -490,22 +490,22 @@ async fn main() -> Result<()> {
         ));
     // DataSource registry + row-sink.
     let mut conn_reg = DataSourceRegistry::new();
-    conn_reg.register(Arc::new(PromConnector));
-    conn_reg.register(Arc::new(kyma_datasources::postgres::PgIntrospectConnector));
-    conn_reg.register(Arc::new(kyma_datasources::s3::S3Connector));
-    conn_reg.register(Arc::new(kyma_datasources::gitlab::GitlabConnector));
-    conn_reg.register(Arc::new(kyma_datasources::bitbucket::BitbucketConnector));
+    conn_reg.register(Arc::new(PromDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::postgres::PgIntrospectDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::s3::S3DataSource));
+    conn_reg.register(Arc::new(kyma_datasources::gitlab::GitlabDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::bitbucket::BitbucketDataSource));
     // GitHub registers unconditionally (metadata + repo graph). The deep code
     // graph inside it is feature-gated; the data source itself is always present.
-    conn_reg.register(Arc::new(kyma_datasources::github::GithubConnector));
+    conn_reg.register(Arc::new(kyma_datasources::github::GithubDataSource));
     // OAuth2 SaaS data sources (token via the connect flow → encrypted credential).
-    conn_reg.register(Arc::new(kyma_datasources::notion::NotionConnector));
-    conn_reg.register(Arc::new(kyma_datasources::googledrive::GdriveConnector));
-    conn_reg.register(Arc::new(kyma_datasources::gmail::GmailConnector));
-    conn_reg.register(Arc::new(kyma_datasources::slack::SlackConnector));
-    conn_reg.register(Arc::new(kyma_datasources::jira::JiraConnector));
-    conn_reg.register(Arc::new(kyma_datasources::confluence::ConfluenceConnector));
-    conn_reg.register(Arc::new(kyma_datasources::msfabric::MsFabricConnector));
+    conn_reg.register(Arc::new(kyma_datasources::notion::NotionDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::googledrive::GdriveDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::gmail::GmailDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::slack::SlackDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::jira::JiraDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::confluence::ConfluenceDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::msfabric::MsFabricDataSource));
     let conn_registry = Arc::new(conn_reg);
 
     // RowSink: bridges data source JSON rows → arrow coercion → WritePath.
@@ -1136,7 +1136,7 @@ async fn main() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("registering embedded worker: {e}"))?;
 
     let tick_deps = kyma_datasources::runner::DataSourceTickDeps {
-        control: Arc::new(kyma_datasources::runner::PgConnectorControl::new(
+        control: Arc::new(kyma_datasources::runner::PgDataSourceControl::new(
             pg_pool.clone(),
         )),
         registry: conn_registry.clone(),

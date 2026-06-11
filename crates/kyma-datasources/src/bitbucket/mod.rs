@@ -41,7 +41,7 @@ struct BbConfig {
     repos: String,
 }
 
-pub struct BitbucketConnector;
+pub struct BitbucketDataSource;
 
 fn parse_repos(s: &str) -> Vec<String> {
     s.split(|c| c == ',' || c == '\n' || c == ' ')
@@ -51,7 +51,7 @@ fn parse_repos(s: &str) -> Vec<String> {
 }
 
 #[async_trait]
-impl DataSource for BitbucketConnector {
+impl DataSource for BitbucketDataSource {
     fn type_id(&self) -> &'static str {
         "bitbucket"
     }

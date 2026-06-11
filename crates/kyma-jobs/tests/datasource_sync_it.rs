@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use kyma_catalog::{PgFabricStore, PostgresCatalog};
 use kyma_datasources::catalog_sql;
 use kyma_datasources::registry::DataSourceRegistry;
-use kyma_datasources::runner::{DataSourceTickDeps, PgConnectorControl, RowSink};
+use kyma_datasources::runner::{DataSourceTickDeps, PgDataSourceControl, RowSink};
 use kyma_datasources::scheduler::DataSourceScheduler;
 use kyma_datasources::secrets::EnvSecretStore;
 use kyma_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
@@ -119,7 +119,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
 
     let sink: RowSink = Arc::new(|_db, _tbl, _rows, _idem| Box::pin(async move { Ok(()) }));
     let deps = DataSourceTickDeps {
-        control: Arc::new(PgConnectorControl::new(catalog.pool().clone())),
+        control: Arc::new(PgDataSourceControl::new(catalog.pool().clone())),
         registry: Arc::new(reg),
         sink,
         graph_register: Arc::new(|_db, _hint| Box::pin(async move { Ok(()) })),

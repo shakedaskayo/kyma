@@ -42,7 +42,7 @@ pub type GraphRegisterFn = Arc<
 >;
 
 /// DataSource-table operations the tick body performs (row + cursor + status).
-/// In-server execution implements this with direct SQL ([`PgConnectorControl`]);
+/// In-server execution implements this with direct SQL ([`PgDataSourceControl`]);
 /// remote fabric workers implement it over the control-plane HTTP API.
 #[async_trait::async_trait]
 pub trait DataSourceControl: Send + Sync {
@@ -68,18 +68,18 @@ pub trait DataSourceControl: Send + Sync {
 }
 
 /// Direct-SQL [`DataSourceControl`] for in-server execution.
-pub struct PgConnectorControl {
+pub struct PgDataSourceControl {
     pool: sqlx::PgPool,
 }
 
-impl PgConnectorControl {
+impl PgDataSourceControl {
     pub fn new(pool: sqlx::PgPool) -> Self {
         Self { pool }
     }
 }
 
 #[async_trait::async_trait]
-impl DataSourceControl for PgConnectorControl {
+impl DataSourceControl for PgDataSourceControl {
     async fn load_data_source(
         &self,
         tenant: TenantId,
@@ -446,7 +446,7 @@ impl DataSourceRunner {
     /// Bundle this runner's wiring into the queue-independent tick deps.
     pub fn tick_deps(&self) -> DataSourceTickDeps {
         DataSourceTickDeps {
-            control: Arc::new(PgConnectorControl::new(self.catalog.pool().clone())),
+            control: Arc::new(PgDataSourceControl::new(self.catalog.pool().clone())),
             registry: self.registry.clone(),
             sink: self.sink.clone(),
             graph_register: self.graph_register.clone(),

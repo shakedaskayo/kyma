@@ -49,10 +49,10 @@ struct MsFabricConfig {
     exclude_from_wildcard: bool,
 }
 
-pub struct MsFabricConnector;
+pub struct MsFabricDataSource;
 
 #[async_trait]
-impl DataSource for MsFabricConnector {
+impl DataSource for MsFabricDataSource {
     fn type_id(&self) -> &'static str {
         "msfabric"
     }

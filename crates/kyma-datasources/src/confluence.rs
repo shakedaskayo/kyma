@@ -34,10 +34,10 @@ fn default_max_pages() -> usize {
     5
 }
 
-pub struct ConfluenceConnector;
+pub struct ConfluenceDataSource;
 
 #[async_trait]
-impl DataSource for ConfluenceConnector {
+impl DataSource for ConfluenceDataSource {
     fn type_id(&self) -> &'static str {
         "confluence"
     }

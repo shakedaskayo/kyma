@@ -39,10 +39,10 @@ fn default_max_pages() -> usize {
     10
 }
 
-pub struct NotionConnector;
+pub struct NotionDataSource;
 
 #[async_trait]
-impl DataSource for NotionConnector {
+impl DataSource for NotionDataSource {
     fn type_id(&self) -> &'static str {
         "notion"
     }

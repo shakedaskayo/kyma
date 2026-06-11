@@ -49,10 +49,10 @@ fn default_max_objects() -> usize {
     2000
 }
 
-pub struct S3Connector;
+pub struct S3DataSource;
 
 #[async_trait]
-impl DataSource for S3Connector {
+impl DataSource for S3DataSource {
     fn type_id(&self) -> &'static str {
         "s3"
     }

@@ -35,10 +35,10 @@ fn default_max_channels() -> usize {
     20
 }
 
-pub struct SlackConnector;
+pub struct SlackDataSource;
 
 #[async_trait]
-impl DataSource for SlackConnector {
+impl DataSource for SlackDataSource {
     fn type_id(&self) -> &'static str {
         "slack"
     }

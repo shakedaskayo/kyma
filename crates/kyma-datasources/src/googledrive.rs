@@ -42,10 +42,10 @@ fn default_max_pages() -> usize {
     10
 }
 
-pub struct GdriveConnector;
+pub struct GdriveDataSource;
 
 #[async_trait]
-impl DataSource for GdriveConnector {
+impl DataSource for GdriveDataSource {
     fn type_id(&self) -> &'static str {
         "googledrive"
     }

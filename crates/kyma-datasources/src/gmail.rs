@@ -38,10 +38,10 @@ fn default_max_messages() -> usize {
     100
 }
 
-pub struct GmailConnector;
+pub struct GmailDataSource;
 
 #[async_trait]
-impl DataSource for GmailConnector {
+impl DataSource for GmailDataSource {
     fn type_id(&self) -> &'static str {
         "gmail"
     }
