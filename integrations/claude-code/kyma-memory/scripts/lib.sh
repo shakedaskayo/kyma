@@ -73,7 +73,9 @@ kyma_emit() {
       rm -f "$KYMA_CAPTURE_HEALTH" 2>/dev/null
     else
       mkdir -p "$(dirname "$KYMA_CAPTURE_HEALTH")" 2>/dev/null
-      detail=$(printf '%s' "$err" | head -c 300 | tr '"' "'" | tr '\n' ' ')
+      # Sanitize for a JSON string: quotes → apostrophes, backslashes dropped,
+      # control chars → spaces (keeps the marker parseable whatever kyma prints).
+      detail=$(printf '%s' "$err" | head -c 300 | tr '"' "'" | tr -d '\\' | tr -c '[:print:]' ' ')
       printf '{"ts":"%s","status":"error","detail":"%s"}\n' "$(now_ts)" "$detail" \
         >"$KYMA_CAPTURE_HEALTH" 2>/dev/null
     fi
