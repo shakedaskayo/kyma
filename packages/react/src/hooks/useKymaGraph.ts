@@ -70,21 +70,27 @@ export interface UseKymaGraphResult {
 // ── Implementation ────────────────────────────────────────────────────────────
 
 /**
- * The hook operates in three discovery modes:
- * 1. `discover: "all-databases"` — catalog schema → listGraphs fan-out across all DBs.
- * 2. `graphs` provided — use those coords directly.
+ * useGraphCoords — resolves (database, graph) coordinates from the three
+ * discovery modes. Extracted so useGraphExport can share the same logic.
+ *
+ * Modes:
+ * 1. `discover: "all-databases"` — catalog schema → listGraphs fan-out.
+ * 2. `graphs` provided — use those coords directly (no network).
  * 3. Neither — list graphs from the default database only.
  */
-export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
+export function useGraphCoords(
+  args?: Pick<UseKymaGraphArgs, "graphs" | "discover">,
+): {
+  coords: GraphCoord[];
+  isLoading: boolean;
+  error: unknown;
+} {
   const client = useKymaClient();
   const endpoint = client.transport.endpoint;
   const database = client.transport.database ?? "default";
-  const realm = args?.realm;
-  const limit = args?.limit ?? 800;
 
   const discoverAll = args?.discover === "all-databases";
   const explicitGraphs = args?.graphs;
-  // "simple discovery" = list graphs for the default database only
   const needsSimpleDiscovery = !explicitGraphs && !discoverAll;
 
   // ── Phase 1a: simple discovery (default database only) ───────────────────
@@ -120,13 +126,50 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
   });
 
   // ── Resolved coordinates ──────────────────────────────────────────────────
-  const resolvedCoords: GraphCoord[] = useMemo(() => {
+  const coords: GraphCoord[] = useMemo(() => {
     if (discoverAll) return allDbDiscoveryQuery.data ?? [];
     if (explicitGraphs) {
       return explicitGraphs.map((g) => ({ database: g.database ?? database, graph: g.graph }));
     }
     return simpleDiscoveryQuery.data ?? [];
   }, [discoverAll, explicitGraphs, database, allDbDiscoveryQuery.data, simpleDiscoveryQuery.data]);
+
+  const isLoading =
+    (needsSimpleDiscovery && simpleDiscoveryQuery.isLoading) ||
+    (discoverAll && allDbDiscoveryQuery.isLoading);
+
+  const error =
+    simpleDiscoveryQuery.isError
+      ? simpleDiscoveryQuery.error
+      : allDbDiscoveryQuery.isError
+        ? allDbDiscoveryQuery.error
+        : null;
+
+  return { coords, isLoading, error };
+}
+
+/**
+ * The hook operates in three discovery modes:
+ * 1. `discover: "all-databases"` — catalog schema → listGraphs fan-out across all DBs.
+ * 2. `graphs` provided — use those coords directly.
+ * 3. Neither — list graphs from the default database only.
+ */
+export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
+  const client = useKymaClient();
+  const endpoint = client.transport.endpoint;
+  const database = client.transport.database ?? "default";
+  const realm = args?.realm;
+  const limit = args?.limit ?? 800;
+
+  // ── Discovery via useGraphCoords ──────────────────────────────────────────
+  const {
+    coords: resolvedCoords,
+    isLoading: discoveryLoading,
+    error: discoveryError,
+  } = useGraphCoords(args);
+
+  const needsSimpleDiscovery = !args?.graphs && args?.discover !== "all-databases";
+  const discoverAll = args?.discover === "all-databases";
 
   // ── Phase 2: load each graph in parallel ──────────────────────────────────
   const queries = useQueries({
@@ -220,17 +263,6 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
 
   // ── Loading / error state ─────────────────────────────────────────────────
   const settled = queries.reduce((n, q) => n + (q.isSuccess || q.isError ? 1 : 0), 0);
-
-  const discoveryLoading =
-    (needsSimpleDiscovery && simpleDiscoveryQuery.isLoading) ||
-    (discoverAll && allDbDiscoveryQuery.isLoading);
-
-  const discoveryError =
-    simpleDiscoveryQuery.isError
-      ? simpleDiscoveryQuery.error
-      : allDbDiscoveryQuery.isError
-        ? allDbDiscoveryQuery.error
-        : null;
 
   const firstQueryError = queries.find((q) => q.isError)?.error ?? null;
   const firstError = firstQueryError ?? discoveryError;
