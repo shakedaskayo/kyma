@@ -32,7 +32,7 @@ budgets for this run; honor them.
 
 ## PHASE 2 — GAP-FILL (READ-ONLY, within the provided data-source-read budget)
 - When a memory references something with missing or stale context, use
-  `list_connectors` then `connector_read` to fetch fresh context from the source
+  `list_data_sources` then `data_source_read` to fetch fresh context from the source
   (a GitHub README / file / issue; a SELECT against a connected Postgres).
 - Save what you learn with `save_memory` and wire it with
   `link_memory_to_entity` / `ingest_entity`.
@@ -81,7 +81,7 @@ memory ids), and anything that needs human attention. This is your last message.
 
 ## RULES
 - NEVER hard-delete; archival and superseding are the only removal paths.
-- Data source access is READ-ONLY; never attempt writes against sources.
+- Data source access is READ-ONLY; never attempt writes against data sources.
 - Prefer a few high-value mutations over many speculative ones.
 - If budgets run out, proceed to the summary.
 "#
@@ -99,7 +99,7 @@ mod tests {
         assert!(s.contains("description:"));
         let lower = s.to_lowercase();
         assert!(lower.contains("phase 1 — review"));
-        assert!(lower.contains("connector_read"));
+        assert!(lower.contains("data_source_read"));
         assert!(lower.contains("merge_memories"));
         assert!(lower.contains("memory_judge"));
         assert!(lower.contains("link_memory_to_entity"));

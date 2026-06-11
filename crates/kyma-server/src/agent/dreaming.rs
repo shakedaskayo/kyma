@@ -33,7 +33,7 @@ use uuid::Uuid;
 use kyma_core::tenant::TenantId;
 
 use super::datasource_tools::{
-    tool_connector_read, tool_list_connectors, DataSourceReadBudget, DataSourceToolCtx,
+    tool_data_source_read, tool_list_data_sources, DataSourceReadBudget, DataSourceToolCtx,
 };
 use super::dreaming_local::LocalDreamingStore;
 use super::engine::{claude_cli, EngineKind};
@@ -89,7 +89,7 @@ pub struct DreamingOutcome {
     pub importance_rescored: u32,
     pub judgements: u32,
     pub entities_linked: u32,
-    pub connector_reads: u32,
+    pub data_source_reads: u32,
     pub tool_calls: u32,
     pub summary: String,
 }
@@ -158,7 +158,7 @@ impl Activity {
             "memories_merged": outcome.memories_merged,
             "memories_archived": outcome.memories_archived,
             "entities_linked": outcome.entities_linked,
-            "connector_reads": outcome.connector_reads,
+            "data_source_reads": outcome.data_source_reads,
             "tool_calls": outcome.tool_calls,
         });
     }
@@ -284,13 +284,13 @@ from your nodes' coding agents that are already in the memory store.
         p.push_str(&format!(
             "
 PHASE 2 — GAP-FILL (budget: {} data source reads, READ-ONLY):
-- When a memory references something with missing or stale context, use `list_connectors` \
-then `connector_read` to fetch fresh context from the source (a GitHub README/file/issue, a \
+- When a memory references something with missing or stale context, use `list_data_sources` \
+then `data_source_read` to fetch fresh context from the source (a GitHub README/file/issue, a \
 SELECT against a connected Postgres).
 - Save what you learn with save_memory and wire it with link_memory_to_entity / ingest_entity.
 - Do not exceed the budget; if a read fails, move on.
 ",
-            s.connector_read_budget
+            s.data_source_read_budget
         ));
     }
     if housekeeping {
@@ -366,10 +366,10 @@ Follow the `kyma-dreaming` skill for the full procedure — it is available in y
 Run context:\n\
 - Mode: {mode}\n\
 - Scope: {scope}\n\
-- Connector-read budget (READ-ONLY): {}\n\
+- Data-source-read budget (READ-ONLY): {}\n\
 - Mutation cap: {}{focus_line}\n\n\
 Begin the dreaming pass now; end with the run summary as your final message.",
-        s.connector_read_budget, s.mutation_cap
+        s.data_source_read_budget, s.mutation_cap
     )
 }
 
@@ -843,12 +843,12 @@ async fn observe_tool_call(
             outcome.entities_linked += 1;
             ("🔗", "Linking memory ↔ entity".to_string())
         }
-        "connector_read" => {
-            outcome.connector_reads += 1;
+        "data_source_read" => {
+            outcome.data_source_reads += 1;
             let op = args.get("operation").and_then(|v| v.as_str()).unwrap_or("read");
-            ("🔌", format!("Connector read: {op}"))
+            ("🔌", format!("Data source read: {op}"))
         }
-        "list_connectors" => ("🔌", "Listing connectors".to_string()),
+        "list_data_sources" => ("🔌", "Listing data sources".to_string()),
         "memory_search" | "recall_memory" | "list_memories" => {
             let q: String = args
                 .get("query")
@@ -904,8 +904,8 @@ async fn run_via_adk(
     };
     let mutation_budget = Arc::new(MutationBudget::new(settings.mutation_cap));
     let read_budget = Arc::new(DataSourceReadBudget::new(
-        settings.connector_read_budget,
-        settings.connector_read_max_bytes,
+        settings.data_source_read_budget,
+        settings.data_source_read_max_bytes,
     ));
     let data_source_ctx = DataSourceToolCtx {
         pool: state.pool.clone(),
@@ -1067,8 +1067,8 @@ fn dreaming_toolset(
     }
     // Gap-fill tools only when the mode allows them (the prompt matches).
     if mode != "housekeeping_only" {
-        tools.push(tool_list_connectors(data_source_ctx.clone()));
-        tools.push(tool_connector_read(data_source_ctx));
+        tools.push(tool_list_data_sources(data_source_ctx.clone()));
+        tools.push(tool_data_source_read(data_source_ctx));
     }
     tools
 }
@@ -1687,7 +1687,7 @@ mod trigger_tests {
         assert!(p.contains("Mode: housekeeping"));
         assert!(p.contains("proj"), "carries realm scope");
         assert!(p.contains("auth refactor"), "carries focus");
-        assert!(p.contains("Connector-read budget"));
+        assert!(p.contains("Data-source-read budget"));
         assert!(p.contains("Mutation cap"));
         // The thin trigger must NOT inline the full phase procedure — that lives
         // in the skill now.

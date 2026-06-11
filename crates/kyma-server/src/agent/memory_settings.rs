@@ -74,10 +74,10 @@ pub struct DreamingSettings {
     /// a typical request, so this defaults generously (1h); the `max_tool_calls`
     /// / `mutation_cap` / data source budgets are the real per-run guardrails.
     pub wall_clock_secs: u64,
-    /// Gap-fill budget: max connector_read calls per run.
-    pub connector_read_budget: u32,
+    /// Gap-fill budget: max data_source_read calls per run.
+    pub data_source_read_budget: u32,
     /// Gap-fill budget: max bytes fetched across all data source reads.
-    pub connector_read_max_bytes: u64,
+    pub data_source_read_max_bytes: u64,
     /// Cap on memory mutations (save/merge/archive/judge/…) per run.
     pub mutation_cap: u32,
 }
@@ -91,8 +91,8 @@ impl Default for DreamingSettings {
             realm_scope: vec![],
             max_tool_calls: 100,
             wall_clock_secs: 3_600,
-            connector_read_budget: 25,
-            connector_read_max_bytes: 4 * 1024 * 1024,
+            data_source_read_budget: 25,
+            data_source_read_max_bytes: 4 * 1024 * 1024,
             mutation_cap: 60,
         }
     }

@@ -103,7 +103,7 @@ impl ToolDispatch {
         self
     }
 
-    /// Add the read-only data source tools (`list_connectors`, `connector_read`)
+    /// Add the read-only data source tools (`list_data_sources`, `data_source_read`)
     /// so MCP-driven agents — notably Claude CLI dreaming runs — can fill
     /// memory gaps from configured sources. Server mode only (needs the
     /// credential store); local/stdio mode skips this.
@@ -113,12 +113,12 @@ impl ToolDispatch {
     ) -> Self {
         let mut map: HashMap<&'static str, Arc<dyn Tool>> = (*self.by_name).clone();
         map.insert(
-            "list_connectors",
-            kyma_server::agent::datasource_tools::tool_list_connectors(ctx.clone()),
+            "list_data_sources",
+            kyma_server::agent::datasource_tools::tool_list_data_sources(ctx.clone()),
         );
         map.insert(
-            "connector_read",
-            kyma_server::agent::datasource_tools::tool_connector_read(ctx),
+            "data_source_read",
+            kyma_server::agent::datasource_tools::tool_data_source_read(ctx),
         );
         Self {
             by_name: Arc::new(map),

@@ -3,8 +3,8 @@
 //! Two tools give the agent direct, authenticated READ access to configured
 //! data sources so it can fill memory gaps with fresh context:
 //!
-//! - `list_connectors` — discover what sources exist (no secrets exposed).
-//! - `connector_read(data_source_id, operation, params)` — a narrow per-kind
+//! - `list_data_sources` — discover what sources exist (no secrets exposed).
+//! - `data_source_read(data_source_id, operation, params)` — a narrow per-kind
 //!   allowlist of read operations, resolved through the data source's stored
 //!   credential. v1 kinds: `github` (readme/file/issues/pulls/repo) and
 //!   `postgres` (SELECT-only query). Other kinds return "unsupported".
@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
 
-/// Per-run gap-fill budget shared by every `connector_read` closure of one
+/// Per-run gap-fill budget shared by every `data_source_read` closure of one
 /// dreaming run. Over-budget calls return an error payload so the agent can
 /// move on to housekeeping instead of aborting.
 pub struct DataSourceReadBudget {
@@ -76,15 +76,15 @@ const MAX_RESULT_CHARS: usize = 8 * 1024;
 /// Max file size fetched from a source before truncation/skip.
 const MAX_FETCH_BYTES: usize = 512 * 1024;
 
-const LIST_CONNECTORS_DESC: &str = "List the configured data connectors (id, name, kind, \
+const LIST_DATA_SOURCES_DESC: &str = "List the configured data sources (id, name, kind, \
 enabled, target database). Use this to discover which external sources you can read from \
-with `connector_read` when filling memory gaps.";
+with `data_source_read` when filling memory gaps.";
 
-pub fn tool_list_connectors(ctx: DataSourceToolCtx) -> Arc<dyn Tool> {
+pub fn tool_list_data_sources(ctx: DataSourceToolCtx) -> Arc<dyn Tool> {
     Arc::new(
         FunctionTool::new(
-            "list_connectors",
-            LIST_CONNECTORS_DESC,
+            "list_data_sources",
+            LIST_DATA_SOURCES_DESC,
             move |_tc: Arc<dyn ToolContext>, _args: Value| {
                 let ctx = ctx.clone();
                 async move {
@@ -139,45 +139,45 @@ fn read_ops_for(kind: &str) -> Vec<&'static str> {
     }
 }
 
-const CONNECTOR_READ_DESC: &str = "READ-ONLY access to a configured connector's source, using \
-its stored credential. Args: {connector_id, operation, params}. Operations by kind — \
+const DATA_SOURCE_READ_DESC: &str = "READ-ONLY access to a configured data source, using \
+its stored credential. Args: {data_source_id, operation, params}. Operations by kind — \
 github: get_repo {repo?}, get_readme {repo?}, get_file {repo?, path}, list_issues {repo?, limit?}, \
-get_issue {repo?, number}, list_pulls {repo?, limit?} (repo defaults to the connector's first \
+get_issue {repo?, number}, list_pulls {repo?, limit?} (repo defaults to the data source's first \
 configured \"owner/name\"); postgres: query {sql} (SELECT-only, auto-limited). Budgeted per run; \
-results truncated to 8KB. Use list_connectors first to discover ids and supported ops.";
+results truncated to 8KB. Use list_data_sources first to discover ids and supported ops.";
 
-pub fn tool_connector_read(ctx: DataSourceToolCtx) -> Arc<dyn Tool> {
+pub fn tool_data_source_read(ctx: DataSourceToolCtx) -> Arc<dyn Tool> {
     Arc::new(
         FunctionTool::new(
-            "connector_read",
-            CONNECTOR_READ_DESC,
+            "data_source_read",
+            DATA_SOURCE_READ_DESC,
             move |_tc: Arc<dyn ToolContext>, args: Value| {
                 let ctx = ctx.clone();
-                async move { Ok(connector_read(&ctx, args).await) }
+                async move { Ok(data_source_read(&ctx, args).await) }
             },
         )
         .with_read_only(true),
     )
 }
 
-async fn connector_read(ctx: &DataSourceToolCtx, args: Value) -> Value {
+async fn data_source_read(ctx: &DataSourceToolCtx, args: Value) -> Value {
     let Some(pool) = &ctx.pool else {
         return json!({"error": "no data source store in local mode"});
     };
     if !ctx.budget.take_call() {
         let (calls, bytes) = ctx.budget.used();
         return json!({"error": format!(
-            "connector read budget exhausted for this run ({calls} calls, {bytes} bytes) — \
+            "data source read budget exhausted for this run ({calls} calls, {bytes} bytes) — \
              continue with housekeeping using what you already have"
         )});
     }
     let data_source_id = match args
-        .get("connector_id")
+        .get("data_source_id")
         .and_then(|v| v.as_str())
         .and_then(|s| Uuid::parse_str(s).ok())
     {
         Some(id) => id,
-        None => return json!({"error": "connector_id (uuid) is required"}),
+        None => return json!({"error": "data_source_id (uuid) is required"}),
     };
     let operation = args
         .get("operation")
@@ -405,7 +405,7 @@ async fn postgres_read(ctx: &DataSourceToolCtx, config: &Value, op: &str, params
         "copy", "vacuum", "call", "do ",
     ];
     if !is_select || forbidden.iter().any(|kw| lowered.starts_with(kw)) {
-        return json!({"error": "postgres connector_read is SELECT-only"});
+        return json!({"error": "postgres data_source_read is SELECT-only"});
     }
     // Hard row cap regardless of the query's own LIMIT.
     let limited = format!("SELECT * FROM ({normalized}) AS _kyma_read LIMIT 100");
