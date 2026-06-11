@@ -44,6 +44,80 @@ export function rescaleRadius(r: number): number {
   return RADIUS_DST_MIN + t * (RADIUS_DST_MAX - RADIUS_DST_MIN);
 }
 
+// ── Namespace tiling ────────────────────────────────────────────────────────
+
+/**
+ * Each graph is laid out server-side in its own independent coordinate space,
+ * so a unified multi-graph view stacks every graph on top of the same region
+ * (in the degenerate case, N single-node graphs all land on the exact same
+ * point — zero bbox — which sigma's autoRescale blows up to fill the screen).
+ *
+ * Tile namespaces into a grid: each namespace keeps its internal layout but is
+ * offset into its own cell. Deterministic (namespaces sorted) and a no-op for
+ * single-namespace views. Exported for tests.
+ */
+export function namespaceTileOffsets(
+  nodes: GraphNode[],
+  positions: Map<string, { x: number; y: number }>,
+): Map<string, { dx: number; dy: number }> {
+  // Per-namespace bbox.
+  const boxes = new Map<string, { minX: number; maxX: number; minY: number; maxY: number }>();
+  for (const n of nodes) {
+    const ns = (n as unknown as { namespace?: string }).namespace ?? "";
+    const pos = positions.get(keyOf(n));
+    if (!pos) continue;
+    const b = boxes.get(ns);
+    if (!b) {
+      boxes.set(ns, { minX: pos.x, maxX: pos.x, minY: pos.y, maxY: pos.y });
+    } else {
+      b.minX = Math.min(b.minX, pos.x);
+      b.maxX = Math.max(b.maxX, pos.x);
+      b.minY = Math.min(b.minY, pos.y);
+      b.maxY = Math.max(b.maxY, pos.y);
+    }
+  }
+  const out = new Map<string, { dx: number; dy: number }>();
+  if (boxes.size <= 1) return out; // single namespace keeps its native layout
+
+  const MARGIN = 320;
+  const cellW = Math.max(...[...boxes.values()].map((b) => b.maxX - b.minX), 400) + MARGIN;
+  const cellH = Math.max(...[...boxes.values()].map((b) => b.maxY - b.minY), 400) + MARGIN;
+  const namespaces = [...boxes.keys()].sort();
+  const cols = Math.ceil(Math.sqrt(namespaces.length));
+  namespaces.forEach((ns, i) => {
+    const b = boxes.get(ns)!;
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    // Center each namespace's bbox inside its cell.
+    out.set(ns, {
+      dx: col * cellW - b.minX + (cellW - (b.maxX - b.minX)) / 2,
+      dy: row * cellH - b.minY + (cellH - (b.maxY - b.minY)) / 2,
+    });
+  });
+  return out;
+}
+
+/**
+ * Largest axis of the graph's position bounding box. Near-zero for a single
+ * node or coincident nodes — sigma's autoRescale divides by this extent, so
+ * graph-space node sizes explode to fill the screen. The renderer switches to
+ * screen-based sizing below `4 × RADIUS_DST_MAX`. Exported for tests.
+ */
+export function positionExtent(g: Graph): number {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  g.forEachNode((_, a) => {
+    minX = Math.min(minX, a.x as number);
+    maxX = Math.max(maxX, a.x as number);
+    minY = Math.min(minY, a.y as number);
+    maxY = Math.max(maxY, a.y as number);
+  });
+  if (!Number.isFinite(minX)) return 0;
+  return Math.max(maxX - minX, maxY - minY);
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────
 
 export interface BuildOptions {
@@ -91,13 +165,19 @@ export function buildGraphologyGraph(
     ? Math.max(2, degs[Math.max(0, degs.length - landmarkCount)])
     : 1;
 
+  // Offset each namespace's independent layout into its own grid cell so
+  // unified views don't stack graphs on top of each other.
+  const tiles = namespaceTileOffsets(nodes, positions);
+
   for (const n of nodes) {
     const ns = (n as unknown as { namespace?: string }).namespace ?? "";
     if (!opts.activeNamespaces.has(ns)) continue;
     if (opts.hiddenLabels.includes(n.labels[0] ?? "")) continue;
 
     const key = keyOf(n);
-    const pos = positions.get(key) ?? { x: 0, y: 0 };
+    const raw = positions.get(key) ?? { x: 0, y: 0 };
+    const tile = tiles.get(ns);
+    const pos = tile ? { x: raw.x + tile.dx, y: raw.y + tile.dy } : raw;
     const color = resolveNodeColor(n.labels, n.properties);
     const icon = resolveGraphIcon(n.labels, n.properties);
     const label =

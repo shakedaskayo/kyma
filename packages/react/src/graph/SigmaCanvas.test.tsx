@@ -129,3 +129,41 @@ describe("buildGraphologyGraph", () => {
     expect(leafSize).toBeGreaterThanOrEqual(2.5);
   });
 });
+
+describe("namespaceTileOffsets + positionExtent (degenerate unified views)", () => {
+  it("tiles multiple namespaces apart even when their layouts coincide", async () => {
+    const { namespaceTileOffsets } = await import("./sigma-graph-builder");
+    const mk = (ns: string) =>
+      ({ id: "a", labels: ["Memory"], properties: {}, metadata: meta, namespace: ns } as never);
+    const nodes = [mk("db/g1"), mk("db/g2"), mk("db/g3")];
+    const positions = new Map([
+      ["db/g1::a", { x: 833.9, y: 499.2 }],
+      ["db/g2::a", { x: 833.9, y: 499.2 }],
+      ["db/g3::a", { x: 833.9, y: 499.2 }],
+    ]);
+    const tiles = namespaceTileOffsets(nodes, positions);
+    expect(tiles.size).toBe(3);
+    const placed = [...tiles.entries()].map(([, t]) => ({
+      x: 833.9 + t.dx,
+      y: 499.2 + t.dy,
+    }));
+    for (let i = 0; i < placed.length; i++)
+      for (let j = i + 1; j < placed.length; j++) {
+        const d = Math.hypot(placed[i].x - placed[j].x, placed[i].y - placed[j].y);
+        expect(d).toBeGreaterThan(300);
+      }
+  });
+
+  it("single namespace gets no offsets; positionExtent flags coincident graphs", async () => {
+    const { namespaceTileOffsets, positionExtent, buildGraphologyGraph, RADIUS_DST_MAX } =
+      await import("./sigma-graph-builder");
+    const node = { id: "a", labels: ["Memory"], properties: {}, metadata: meta, namespace: "db/g" } as never;
+    expect(namespaceTileOffsets([node], new Map([["db/g::a", { x: 5, y: 5 }]])).size).toBe(0);
+    const g = buildGraphologyGraph([node], [], new Map([["db/g::a", { x: 5, y: 5 }]]), {
+      sizeByDegree: true,
+      hiddenLabels: [],
+      activeNamespaces: new Set(["db/g"]),
+    });
+    expect(positionExtent(g)).toBeLessThan(4 * RADIUS_DST_MAX);
+  });
+});
