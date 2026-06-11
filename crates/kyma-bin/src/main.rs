@@ -350,6 +350,9 @@ async fn main() -> Result<()> {
         write_path: write_path.clone(),
         database: cli.otlp_database.clone(),
     });
+    // Pre-create otel_traces so the Traces page never shows a 404 on fresh
+    // install while waiting for the first self-trace batch to flush.
+    kyma_ingest_otlp::ensure_traces_table(&catalog, &cli.otlp_database).await;
     let ingest_router = kyma_ingest_rest::router(IngestState {
         catalog: catalog.clone(),
         write_path: write_path.clone(),
