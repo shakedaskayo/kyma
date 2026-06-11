@@ -2,11 +2,11 @@
 
 use async_trait::async_trait;
 use kyma_catalog::PostgresCatalog;
-use kyma_connectors::catalog_sql;
-use kyma_connectors::registry::ConnectorRegistry;
-use kyma_connectors::runner::ConnectorRunner;
-use kyma_connectors::secrets::EnvSecretStore;
-use kyma_connectors::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
+use kyma_datasources::catalog_sql;
+use kyma_datasources::registry::ConnectorRegistry;
+use kyma_datasources::runner::ConnectorRunner;
+use kyma_datasources::secrets::EnvSecretStore;
+use kyma_datasources::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use kyma_core::tenant::DEFAULT_TENANT;
 use std::sync::{
@@ -99,7 +99,7 @@ async fn runner_claims_and_updates_cursor() {
     // Runner uses a stubbed RowSink — closes over a counter. Avoids
     // depending on a live WritePath here. Real WritePath wiring is
     // covered by the E2E test script.
-    let sink: kyma_connectors::runner::RowSink =
+    let sink: kyma_datasources::runner::RowSink =
         Arc::new(|_db, _tbl, _rows, _idem| Box::pin(async move { Ok(()) }));
     let runner = ConnectorRunner::new(
         catalog.clone(),

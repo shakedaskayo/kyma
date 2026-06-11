@@ -4710,8 +4710,8 @@ dependencies = [
  "hostname",
  "kyma-catalog",
  "kyma-compaction",
- "kyma-connectors",
  "kyma-core",
+ "kyma-datasources",
  "kyma-exec",
  "kyma-federation",
  "kyma-format-tlm",
@@ -4860,15 +4860,37 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-connector-core"
+name = "kyma-core"
 version = "0.0.7"
 dependencies = [
- "kyma-connectors",
- "kyma-core",
+ "aes-gcm",
+ "anyhow",
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "futures",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]
-name = "kyma-connectors"
+name = "kyma-datasource-core"
+version = "0.0.7"
+dependencies = [
+ "kyma-core",
+ "kyma-datasources",
+]
+
+[[package]]
+name = "kyma-datasources"
 version = "0.0.7"
 dependencies = [
  "anyhow",
@@ -4905,28 +4927,6 @@ dependencies = [
  "tracing",
  "uuid",
  "wiremock",
-]
-
-[[package]]
-name = "kyma-core"
-version = "0.0.7"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "arrow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "futures",
- "rand 0.8.6",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "uuid",
 ]
 
 [[package]]
@@ -5182,8 +5182,8 @@ dependencies = [
  "chrono",
  "futures",
  "kyma-catalog",
- "kyma-connectors",
  "kyma-core",
+ "kyma-datasources",
  "serde",
  "serde_json",
  "sqlx",
@@ -5364,8 +5364,8 @@ dependencies = [
  "kyma-catalog",
  "kyma-catalog-sqlite",
  "kyma-ccmem",
- "kyma-connectors",
  "kyma-core",
+ "kyma-datasources",
  "kyma-embed",
  "kyma-exec",
  "kyma-federation",

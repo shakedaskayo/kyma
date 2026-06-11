@@ -13,7 +13,7 @@ workspace = true
 [dependencies]
 kyma-core = { workspace = true }
 kyma-catalog = { workspace = true }
-kyma-connectors = { workspace = true }
+kyma-datasources = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }

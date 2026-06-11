@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use kyma_connectors::registry::ConnectorRegistry;
-use kyma_connectors::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
+use kyma_datasources::registry::ConnectorRegistry;
+use kyma_datasources::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
 use std::sync::Arc;
 
 struct FakeConn;

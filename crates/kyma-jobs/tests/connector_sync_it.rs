@@ -5,12 +5,12 @@
 
 use async_trait::async_trait;
 use kyma_catalog::{PgFabricStore, PostgresCatalog};
-use kyma_connectors::catalog_sql;
-use kyma_connectors::registry::ConnectorRegistry;
-use kyma_connectors::runner::{ConnectorTickDeps, PgConnectorControl, RowSink};
-use kyma_connectors::scheduler::ConnectorScheduler;
-use kyma_connectors::secrets::EnvSecretStore;
-use kyma_connectors::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
+use kyma_datasources::catalog_sql;
+use kyma_datasources::registry::ConnectorRegistry;
+use kyma_datasources::runner::{ConnectorTickDeps, PgConnectorControl, RowSink};
+use kyma_datasources::scheduler::ConnectorScheduler;
+use kyma_datasources::secrets::EnvSecretStore;
+use kyma_datasources::{ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun};
 use kyma_core::fabric::{WorkerKind, WorkerRegistration};
 use kyma_core::tenant::DEFAULT_TENANT;
 use kyma_jobs::connector_sync::ConnectorSyncExecutor;
@@ -124,7 +124,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
         sink,
         graph_register: Arc::new(|_db, _hint| Box::pin(async move { Ok(()) })),
         secrets: Arc::new(EnvSecretStore),
-        credentials: Arc::new(kyma_connectors::runner::NoopCredentialStore),
+        credentials: Arc::new(kyma_datasources::runner::NoopCredentialStore),
         oauth: None,
         artifacts: None,
         catalog: None,

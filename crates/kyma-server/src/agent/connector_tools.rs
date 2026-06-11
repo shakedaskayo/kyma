@@ -294,7 +294,7 @@ async fn github_read(ctx: &ConnectorToolCtx, config: &Value, op: &str, params: &
         Ok(c) => c,
         Err(e) => return json!({"error": format!("http client: {e}")}),
     };
-    let client = kyma_connectors::github::client::GithubClient::new(http, token);
+    let client = kyma_datasources::github::client::GithubClient::new(http, token);
 
     match op {
         "get_repo" => match client.get_repo(owner, name).await {

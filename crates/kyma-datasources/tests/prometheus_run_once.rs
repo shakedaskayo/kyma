@@ -1,10 +1,10 @@
 //! Exercises PromConnector::run_once against an in-process HTTP server.
 
-use kyma_connectors::metrics::ConnectorMetrics;
-use kyma_connectors::prometheus::PromConnector;
-use kyma_connectors::runner::NoopCredentialStore;
-use kyma_connectors::secrets::EnvSecretStore;
-use kyma_connectors::{Connector, ConnectorCtx};
+use kyma_datasources::metrics::ConnectorMetrics;
+use kyma_datasources::prometheus::PromConnector;
+use kyma_datasources::runner::NoopCredentialStore;
+use kyma_datasources::secrets::EnvSecretStore;
+use kyma_datasources::{Connector, ConnectorCtx};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -78,7 +78,7 @@ async fn http_5xx_is_transient() {
         .await
         .unwrap_err();
     match err {
-        kyma_connectors::ConnectorError::Transient(_) => {}
+        kyma_datasources::ConnectorError::Transient(_) => {}
         other => panic!("expected Transient, got {other:?}"),
     }
 }
@@ -92,7 +92,7 @@ async fn http_4xx_is_permanent() {
         .await
         .unwrap_err();
     match err {
-        kyma_connectors::ConnectorError::Permanent(_) => {}
+        kyma_datasources::ConnectorError::Permanent(_) => {}
         other => panic!("expected Permanent, got {other:?}"),
     }
 }

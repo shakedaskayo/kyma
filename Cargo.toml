@@ -13,8 +13,8 @@ members = [
     "crates/kyma-ingest-otlp",
     "crates/kyma-ingest-kafka",
     "crates/kyma-compaction",
-    "crates/kyma-connectors",
-    "crates/kyma-connector-core",
+    "crates/kyma-datasources",
+    "crates/kyma-datasource-core",
     "crates/kyma-codeparse",
     "crates/kyma-jobs",
     "crates/kyma-kql",
@@ -165,8 +165,8 @@ kyma-ingest-kafka      = { path = "crates/kyma-ingest-kafka",    version = "0.0.
 kyma-graph             = { path = "crates/kyma-graph",           version = "0.0.7" }
 kyma-kql               = { path = "crates/kyma-kql",             version = "0.0.7" }
 kyma-compaction        = { path = "crates/kyma-compaction",      version = "0.0.7" }
-kyma-connectors        = { path = "crates/kyma-connectors",      version = "0.0.7" }
-kyma-connector-core    = { path = "crates/kyma-connector-core",  version = "0.0.7" }
+kyma-datasources        = { path = "crates/kyma-datasources",      version = "0.0.7" }
+kyma-datasource-core    = { path = "crates/kyma-datasource-core",  version = "0.0.7" }
 kyma-codeparse         = { path = "crates/kyma-codeparse",       version = "0.0.7" }
 kyma-jobs              = { path = "crates/kyma-jobs",            version = "0.0.7" }
 kyma-plan              = { path = "crates/kyma-plan",            version = "0.0.7" }

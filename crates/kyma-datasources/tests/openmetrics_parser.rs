@@ -1,4 +1,4 @@
-use kyma_connectors::prometheus::parser::parse_openmetrics;
+use kyma_datasources::prometheus::parser::parse_openmetrics;
 
 #[test]
 fn parses_counter_and_gauge() {

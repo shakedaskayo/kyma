@@ -29,11 +29,11 @@
 
 use async_trait::async_trait;
 use kyma_catalog::PostgresCatalog;
-use kyma_connectors::catalog_sql;
-use kyma_connectors::registry::ConnectorRegistry;
-use kyma_connectors::runner::{ConnectorRunner, GraphRegisterFn, RowSink};
-use kyma_connectors::secrets::EnvSecretStore;
-use kyma_connectors::{
+use kyma_datasources::catalog_sql;
+use kyma_datasources::registry::ConnectorRegistry;
+use kyma_datasources::runner::{ConnectorRunner, GraphRegisterFn, RowSink};
+use kyma_datasources::secrets::EnvSecretStore;
+use kyma_datasources::{
     ConfigError, Connector, ConnectorCtx, ConnectorError, ConnectorRun, GraphHint, TableRows,
 };
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};

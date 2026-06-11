@@ -15,10 +15,10 @@ use kyma_compaction::{
     ArtifactRetentionWorker, CompactionScheduler, CompactionWorker, PhysicalDeleteWorker,
     RetentionSweeper,
 };
-use kyma_connectors::prometheus::PromConnector;
-use kyma_connectors::registry::ConnectorRegistry;
-use kyma_connectors::scheduler::ConnectorScheduler;
-use kyma_connectors::secrets::EnvSecretStore;
+use kyma_datasources::prometheus::PromConnector;
+use kyma_datasources::registry::ConnectorRegistry;
+use kyma_datasources::scheduler::ConnectorScheduler;
+use kyma_datasources::secrets::EnvSecretStore;
 use kyma_core::catalog::GraphSpec;
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use kyma_core::segment_format::SegmentFormat;
@@ -491,21 +491,21 @@ async fn main() -> Result<()> {
     // Connector registry + row-sink.
     let mut conn_reg = ConnectorRegistry::new();
     conn_reg.register(Arc::new(PromConnector));
-    conn_reg.register(Arc::new(kyma_connectors::postgres::PgIntrospectConnector));
-    conn_reg.register(Arc::new(kyma_connectors::s3::S3Connector));
-    conn_reg.register(Arc::new(kyma_connectors::gitlab::GitlabConnector));
-    conn_reg.register(Arc::new(kyma_connectors::bitbucket::BitbucketConnector));
+    conn_reg.register(Arc::new(kyma_datasources::postgres::PgIntrospectConnector));
+    conn_reg.register(Arc::new(kyma_datasources::s3::S3Connector));
+    conn_reg.register(Arc::new(kyma_datasources::gitlab::GitlabConnector));
+    conn_reg.register(Arc::new(kyma_datasources::bitbucket::BitbucketConnector));
     // GitHub registers unconditionally (metadata + repo graph). The deep code
     // graph inside it is feature-gated; the connector itself is always present.
-    conn_reg.register(Arc::new(kyma_connectors::github::GithubConnector));
+    conn_reg.register(Arc::new(kyma_datasources::github::GithubConnector));
     // OAuth2 SaaS connectors (token via the connect flow → encrypted credential).
-    conn_reg.register(Arc::new(kyma_connectors::notion::NotionConnector));
-    conn_reg.register(Arc::new(kyma_connectors::googledrive::GdriveConnector));
-    conn_reg.register(Arc::new(kyma_connectors::gmail::GmailConnector));
-    conn_reg.register(Arc::new(kyma_connectors::slack::SlackConnector));
-    conn_reg.register(Arc::new(kyma_connectors::jira::JiraConnector));
-    conn_reg.register(Arc::new(kyma_connectors::confluence::ConfluenceConnector));
-    conn_reg.register(Arc::new(kyma_connectors::msfabric::MsFabricConnector));
+    conn_reg.register(Arc::new(kyma_datasources::notion::NotionConnector));
+    conn_reg.register(Arc::new(kyma_datasources::googledrive::GdriveConnector));
+    conn_reg.register(Arc::new(kyma_datasources::gmail::GmailConnector));
+    conn_reg.register(Arc::new(kyma_datasources::slack::SlackConnector));
+    conn_reg.register(Arc::new(kyma_datasources::jira::JiraConnector));
+    conn_reg.register(Arc::new(kyma_datasources::confluence::ConfluenceConnector));
+    conn_reg.register(Arc::new(kyma_datasources::msfabric::MsFabricConnector));
     let conn_registry = Arc::new(conn_reg);
 
     // RowSink: bridges connector JSON rows → arrow coercion → WritePath.
@@ -515,7 +515,7 @@ async fn main() -> Result<()> {
     // coercing + ingesting. Both helpers are no-ops on the happy path when the
     // table already exists with the right shape, so the legacy Prometheus path
     // is unaffected.
-    let conn_sink: kyma_connectors::runner::RowSink = {
+    let conn_sink: kyma_datasources::runner::RowSink = {
         let catalog_for_sink = catalog.clone();
         let write_path_for_sink = write_path.clone();
         Arc::new(
@@ -534,7 +534,7 @@ async fn main() -> Result<()> {
                         .await
                         .map_err(|e| anyhow::anyhow!("evolve_schema: {e}"))?;
                     let batches =
-                        kyma_connectors::arrow_coerce::rows_to_batches(&table.schema, rows)
+                        kyma_datasources::arrow_coerce::rows_to_batches(&table.schema, rows)
                             .map_err(|e| anyhow::anyhow!("arrow coerce: {e}"))?;
                     write_path
                         .ingest_with_idempotency(&db, &table, batches, idem.as_deref())
@@ -548,9 +548,9 @@ async fn main() -> Result<()> {
 
     // GraphRegisterFn: registers (or idempotently re-registers) a
     // property-graph binding in the catalog after multi-table ingest.
-    let graph_register: kyma_connectors::runner::GraphRegisterFn = {
+    let graph_register: kyma_datasources::runner::GraphRegisterFn = {
         let catalog_for_graph = catalog.clone();
-        Arc::new(move |db: String, hint: kyma_connectors::GraphHint| {
+        Arc::new(move |db: String, hint: kyma_datasources::GraphHint| {
             let catalog = catalog_for_graph.clone();
             Box::pin(async move {
                 let spec =
@@ -635,9 +635,9 @@ async fn main() -> Result<()> {
 
     // GitHub connector — repos picker endpoint (Role::Write, behind auth).
     let github_repos_router = {
-        let secrets: std::sync::Arc<dyn kyma_connectors::secrets::SecretStore> =
-            Arc::new(kyma_connectors::secrets::EnvSecretStore);
-        kyma_connectors::github::github_repos_router(secrets).layer(
+        let secrets: std::sync::Arc<dyn kyma_datasources::secrets::SecretStore> =
+            Arc::new(kyma_datasources::secrets::EnvSecretStore);
+        kyma_datasources::github::github_repos_router(secrets).layer(
             axum::middleware::from_fn_with_state(
                 AuthLayerState {
                     backend: backend.clone(),
@@ -1096,8 +1096,8 @@ async fn main() -> Result<()> {
     // Shared object-store artifact capability for connectors that persist
     // full-file blobs (e.g. GitHub Actions job logs) — threaded into the fabric
     // connector executor via `tick_deps` below.
-    let artifact_store: std::sync::Arc<dyn kyma_connectors::artifacts::ArtifactStore> =
-        std::sync::Arc::new(kyma_connectors::artifacts::ObjectArtifactStore::new(
+    let artifact_store: std::sync::Arc<dyn kyma_datasources::artifacts::ArtifactStore> =
+        std::sync::Arc::new(kyma_datasources::artifacts::ObjectArtifactStore::new(
             store.clone(),
             pg_catalog.clone(),
         ));
@@ -1135,8 +1135,8 @@ async fn main() -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("registering embedded worker: {e}"))?;
 
-    let tick_deps = kyma_connectors::runner::ConnectorTickDeps {
-        control: Arc::new(kyma_connectors::runner::PgConnectorControl::new(
+    let tick_deps = kyma_datasources::runner::ConnectorTickDeps {
+        control: Arc::new(kyma_datasources::runner::PgConnectorControl::new(
             pg_pool.clone(),
         )),
         registry: conn_registry.clone(),
@@ -1144,7 +1144,7 @@ async fn main() -> Result<()> {
         graph_register: graph_register.clone(),
         secrets: Arc::new(EnvSecretStore),
         credentials: cred_store.clone(),
-        oauth: Some(kyma_connectors::oauth::OAuthRuntime {
+        oauth: Some(kyma_datasources::oauth::OAuthRuntime {
             pool: pg_pool.clone(),
             crypto: crypto.clone(),
         }),

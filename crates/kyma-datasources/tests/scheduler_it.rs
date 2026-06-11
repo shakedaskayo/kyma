@@ -1,8 +1,8 @@
 //! Integration test (testcontainers) for the scheduler.
 
 use kyma_catalog::PostgresCatalog;
-use kyma_connectors::catalog_sql;
-use kyma_connectors::scheduler::ConnectorScheduler;
+use kyma_datasources::catalog_sql;
+use kyma_datasources::scheduler::ConnectorScheduler;
 use kyma_core::tenant::DEFAULT_TENANT;
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ImageExt};

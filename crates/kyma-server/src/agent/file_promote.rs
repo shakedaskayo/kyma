@@ -26,7 +26,7 @@ use super::tools::{execute_sql, SharedToolCtx};
 const GITHUB_NODE_TABLE: &str = "github_nodes";
 
 /// The live `github` graph node id for a repo file. Mirrors
-/// `kyma_connectors::github::transform::file_id` (`file:{owner}/{repo}:{path}`),
+/// `kyma_datasources::github::transform::file_id` (`file:{owner}/{repo}:{path}`),
 /// which is how the connector keys File nodes — so a contributed file under a
 /// known repo maps to the exact same node.
 fn github_file_id(repo: &str, path: &str) -> String {

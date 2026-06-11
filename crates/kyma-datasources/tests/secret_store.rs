@@ -1,4 +1,4 @@
-use kyma_connectors::secrets::{EnvSecretStore, SecretError, SecretStore};
+use kyma_datasources::secrets::{EnvSecretStore, SecretError, SecretStore};
 
 #[test]
 fn literal_passes_through() {

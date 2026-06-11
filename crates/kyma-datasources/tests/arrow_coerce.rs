@@ -1,5 +1,5 @@
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
-use kyma_connectors::arrow_coerce::rows_to_batches;
+use kyma_datasources::arrow_coerce::rows_to_batches;
 use serde_json::json;
 use std::sync::Arc;
 

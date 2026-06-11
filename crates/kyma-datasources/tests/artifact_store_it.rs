@@ -5,7 +5,7 @@
 use bytes::Bytes;
 use kyma_catalog::artifacts::ArtifactRecord;
 use kyma_catalog::PostgresCatalog;
-use kyma_connectors::artifacts::{ArtifactStore, ObjectArtifactStore};
+use kyma_datasources::artifacts::{ArtifactStore, ObjectArtifactStore};
 use kyma_core::tenant::TenantId;
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ImageExt};

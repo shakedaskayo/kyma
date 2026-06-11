@@ -1,13 +1,13 @@
 //! `connector_sync` executor — the connector tick re-hosted on the fabric.
 //!
 //! The tick body (load row + cursor → run connector → sink rows → graphs →
-//! cursor + run status) is `kyma_connectors::runner::run_connector_tick`,
+//! cursor + run status) is `kyma_datasources::runner::run_connector_tick`,
 //! shared with the legacy background_tasks front-end. This executor only maps
 //! the job payload in and the [`TickOutcome`] onto fabric job semantics.
 
 use crate::executor::{JobCtx, JobError, JobExecutor};
 use async_trait::async_trait;
-use kyma_connectors::runner::{run_connector_tick, ConnectorTickDeps, TickOutcome};
+use kyma_datasources::runner::{run_connector_tick, ConnectorTickDeps, TickOutcome};
 use kyma_core::fabric::ClaimedJob;
 use kyma_core::tenant::{TenantId, DEFAULT_TENANT};
 use serde_json::{json, Value as Json};
