@@ -28,7 +28,7 @@ const ICONS: Record<string, LucideIcon> = {
   brain: Brain,
   check: CheckCircle2,
   cloud: Cloud,
-  connector: Cloud,
+  data_source: Cloud,
   database: Database,
   created: Plus,
   create: Plus,

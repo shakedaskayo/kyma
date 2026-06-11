@@ -10,8 +10,8 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 export interface StartOAuthBody {
-  /** Connector type this credential is for (e.g. "googledrive"). */
-  connector_type: string;
+  /** Data source type this credential is for (e.g. "googledrive"). */
+  data_source_type: string;
   /** Scopes to request (defaults to the provider's defaults server-side). */
   scopes?: string[];
   /** Label for the credential the callback mints. */

@@ -135,7 +135,7 @@ export function useOAuthConnect(provider: string | undefined, connectorType: str
       setAccount(null);
       setPopupBlocked(false);
       try {
-        const body: StartOAuthBody = { connector_type: connectorType };
+        const body: StartOAuthBody = { data_source_type: connectorType };
         if (opts?.scopes?.length) body.scopes = opts.scopes;
         if (opts?.label) body.label = opts.label;
         if (opts?.clientId && opts?.clientSecret) {
