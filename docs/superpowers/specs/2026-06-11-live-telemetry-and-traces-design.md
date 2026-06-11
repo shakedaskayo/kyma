@@ -61,7 +61,7 @@ Three user-visible failures on the Memory surface, one root cause discovered dur
 ### Part 4 — Traces page (web)
 
 - New sidebar item **Traces** in the Explore group (`web/src/app/Sidebar.tsx`), route `/traces`.
-- **List view:** one row per trace, grouped from root spans via KQL on `otel_traces`. Columns: start time, root operation name, entity (`subject`), service, duration, span count, status. Filters: existing time-range control, service, subject, status, free-text over span names. Live-tail toggle reusing the `LiveSession` machinery.
+- **List view:** one row per trace, grouped from root spans via KQL on `otel_traces`. Columns: start time, root operation name, entity (`subject`), service, duration, span count, status. Filters: time-range presets, service, subject, status, free-text over span names. A "live" toggle keeps the list fresh by polling every 5s (the self-trace batch exporter flushes on a similar cadence, so a socket buys nothing here).
 - **Detail view** (`/traces/$traceId` or drawer): waterfall span tree — indented parent/child layout, proportional duration bars, per-span attributes panel (JSON attributes, status, timings). Data: `otel_traces | where trace_id == '…'`.
 - **Entity-centric flow:** clicking a subject filters the list to that identity — "what is this workstation/agent doing end-to-end".
 
