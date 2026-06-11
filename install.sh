@@ -308,7 +308,7 @@ existing_service_token() {
   # systemd: Environment=KYMA_AUTH_TOKENS=TOKEN:admin
   grep -A1 'KYMA_AUTH_TOKENS' "$f" 2>/dev/null \
     | sed -nE 's/.*<string>([^:<]+):admin<\/string>.*/\1/p; s/.*KYMA_AUTH_TOKENS=([^:]+):admin.*/\1/p' \
-    | head -1
+    | head -1 || true
 }
 
 start_serve() {
