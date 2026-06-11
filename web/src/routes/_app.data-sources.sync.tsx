@@ -1,8 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { SyncTab } from "@/features/datasources/SyncTab";
 
-// Stub — Task 16 replaces this with the real Memory Sync surface.
+// Memory Sync tab — Claude Code memory sync status with per-realm counters.
+// Header + section tabs live in the layout route.
 export const Route = createFileRoute("/_app/data-sources/sync")({
   component: () => (
-    <p className="p-6 text-sm text-muted-foreground">Memory sync — coming in the next commit.</p>
+    <div className="p-6">
+      <SyncTab />
+    </div>
   ),
 });

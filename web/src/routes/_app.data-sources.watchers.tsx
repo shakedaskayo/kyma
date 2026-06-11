@@ -1,8 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { WatchersTab } from "@/features/datasources/WatchersTab";
 
-// Stub — Task 16 replaces this with the real File Watchers surface.
+// File Watchers tab — node-local filedrop + cc-sync watchers and their
+// heartbeat/scan health. Header + section tabs live in the layout route.
 export const Route = createFileRoute("/_app/data-sources/watchers")({
   component: () => (
-    <p className="p-6 text-sm text-muted-foreground">File watchers — coming in the next commit.</p>
+    <div className="p-6">
+      <WatchersTab />
+    </div>
   ),
 });

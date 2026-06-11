@@ -18,14 +18,15 @@ const TABS = [
  */
 export function DataSourcesTabs() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const siblingActive = TABS.some((t) => !t.exact && pathname.startsWith(t.to));
+  // Boundary-safe prefix match: "/data-sources/sync/foo" matches the sync tab
+  // but "/data-sources/sync-other" does not.
+  const matches = (to: string) => pathname === to || pathname.startsWith(to + "/");
+  const siblingActive = TABS.some((t) => !t.exact && matches(t.to));
 
   return (
     <nav className="flex items-center gap-1 pb-1.5">
       {TABS.map((t) => {
-        const active = t.exact
-          ? pathname.startsWith(t.to) && !siblingActive
-          : pathname.startsWith(t.to);
+        const active = t.exact ? matches(t.to) && !siblingActive : matches(t.to);
         return (
           <Link
             key={t.to}

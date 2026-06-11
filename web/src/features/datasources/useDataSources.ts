@@ -7,6 +7,7 @@ import {
   getDataSource,
   getDataSourceCatalog,
   listDataSources,
+  listDataSourceWatchers,
   listGitHubRepos,
   patchDataSource,
   pauseDataSource,
@@ -15,6 +16,7 @@ import {
   type DataSourceUpdate,
   type CreateDataSourceBody,
 } from "@/sdk/datasources";
+import { memorySourceSummary } from "@/sdk/memory";
 
 // Query keys are scoped to (endpoint, database) — never the bearer or any PAT.
 const listKey = (endpoint: string, database: string) =>
@@ -42,6 +44,36 @@ export function useDataSources() {
     queryKey: listKey(endpoint, database),
     queryFn: () => listDataSources({ endpoint, token, database }),
     // Token optional — gate only on the endpoint (matches the graph hooks).
+    enabled: Boolean(endpoint),
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Live node-local watchers (filedrop + cc-sync). Shared by the File Watchers
+ * and Memory Sync tabs (same key → one cache entry); polled so live/stale and
+ * scan counters track the engine without a manual refresh.
+ */
+export function useDataSourceWatchers() {
+  const { endpoint, token, database } = useSession();
+  return useQuery({
+    queryKey: ["data-sources", "watchers", endpoint],
+    queryFn: () => listDataSourceWatchers({ endpoint, token, database }),
+    enabled: Boolean(endpoint),
+    refetchInterval: 15_000,
+  });
+}
+
+/**
+ * Provenance summary (memories per source × realm) for the Memories tab.
+ * Lives in the memory domain (key + endpoint) but is consumed here — the tab
+ * shows where memories come from, not the store itself.
+ */
+export function useMemorySourceSummary() {
+  const { endpoint, token, database } = useSession();
+  return useQuery({
+    queryKey: ["memory", "source-summary", endpoint],
+    queryFn: () => memorySourceSummary({ endpoint, token, database }),
     enabled: Boolean(endpoint),
     staleTime: 30_000,
   });

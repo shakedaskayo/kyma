@@ -1,8 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { MemoriesSummaryTab } from "@/features/datasources/MemoriesSummaryTab";
 
-// Stub — Task 16 replaces this with the real Memories surface.
+// Memories tab — provenance summary (memories per source × realm). Header +
+// section tabs live in the layout route.
 export const Route = createFileRoute("/_app/data-sources/memories")({
   component: () => (
-    <p className="p-6 text-sm text-muted-foreground">Memories — coming in the next commit.</p>
+    <div className="p-6">
+      <MemoriesSummaryTab />
+    </div>
   ),
 });

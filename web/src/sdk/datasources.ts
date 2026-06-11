@@ -10,6 +10,7 @@ export type {
   CatalogEntry,
   GitHubRepo,
   DataSourceStatus,
+  DataSourceWatcher,
 } from "@kyma-ai/client";
 export { SCHEDULE_MS_MIN, SCHEDULE_MS_MAX, deriveStatus } from "@kyma-ai/client";
 
@@ -56,4 +57,8 @@ export function triggerDataSource(args: Base & { id: string }) {
 
 export function listGitHubRepos(args: Base & { pat: string }) {
   return sessionClient().datasources.listGitHubRepos({ pat: args.pat });
+}
+
+export function listDataSourceWatchers(_args: Base) {
+  return sessionClient().datasources.listDataSourceWatchers();
 }
