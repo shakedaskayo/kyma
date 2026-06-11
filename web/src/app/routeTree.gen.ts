@@ -14,6 +14,7 @@ import { Route as SettingsRouteImport } from './../routes/settings'
 import { Route as LoginRouteImport } from './../routes/login'
 import { Route as AppRouteImport } from './../routes/_app'
 import { Route as IndexRouteImport } from './../routes/index'
+import { Route as GraphBenchRouteImport } from './../routes/graph-bench'
 import { Route as AppQueryRouteImport } from './../routes/_app.query'
 import { Route as AppMemoryRouteImport } from './../routes/_app.memory'
 import { Route as AppGraphRouteImport } from './../routes/_app.graph'
@@ -37,6 +38,11 @@ import { Route as AppMemoryReviewIndexRouteImport } from './../routes/_app.memor
 import { Route as AppMemoryDreamingIndexRouteImport } from './../routes/_app.memory.dreaming.index'
 import { Route as AppMemoryDreamingRunIdRouteImport } from './../routes/_app.memory.dreaming.$runId'
 
+const GraphBenchRoute = GraphBenchRouteImport.update({
+  id: '/graph-bench',
+  path: '/graph-bench',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
   path: '/setup',
@@ -177,6 +183,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
+  '/graph-bench': typeof GraphBenchRoute
   '/agent': typeof AppAgentRoute
   '/connectors': typeof AppConnectorsRouteWithChildren
   '/credentials': typeof AppCredentialsRoute
@@ -205,6 +212,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
+  '/graph-bench': typeof GraphBenchRoute
   '/agent': typeof AppAgentRoute
   '/credentials': typeof AppCredentialsRoute
   '/discover': typeof AppDiscoverRoute
@@ -230,6 +238,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
+  '/graph-bench': typeof GraphBenchRoute
   '/_app/agent': typeof AppAgentRoute
   '/_app/connectors': typeof AppConnectorsRouteWithChildren
   '/_app/credentials': typeof AppCredentialsRoute
@@ -260,6 +269,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/setup'
+    | '/graph-bench'
     | '/agent'
     | '/connectors'
     | '/credentials'
@@ -288,6 +298,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/setup'
+    | '/graph-bench'
     | '/agent'
     | '/credentials'
     | '/discover'
@@ -312,6 +323,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/setup'
+    | '/graph-bench'
     | '/_app/agent'
     | '/_app/connectors'
     | '/_app/credentials'
@@ -342,10 +354,18 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
   SetupRoute: typeof SetupRoute
+  GraphBenchRoute: typeof GraphBenchRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/graph-bench': {
+      id: '/graph-bench'
+      path: '/graph-bench'
+      fullPath: '/graph-bench'
+      preLoaderRoute: typeof GraphBenchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/setup': {
       id: '/setup'
       path: '/setup'
@@ -645,6 +665,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
   SetupRoute: SetupRoute,
+  GraphBenchRoute: GraphBenchRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
