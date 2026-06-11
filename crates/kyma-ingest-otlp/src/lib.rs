@@ -237,6 +237,24 @@ impl LogsService for OtlpLogsService {
     }
 }
 
+// -------- public bootstrap helpers ------------------------------------
+
+/// Pre-create the `otel_traces` table so it exists immediately on fresh
+/// install, before the first self-trace batch is flushed. Called from
+/// `kyma-bin` right after the self-trace exporter is wired to storage.
+pub async fn ensure_traces_table(catalog: &Arc<dyn Catalog>, database: &str) {
+    if let Err(e) = ensure_otel_table(
+        catalog,
+        database,
+        traces::OTEL_TRACES_TABLE,
+        traces::otel_traces_schema(),
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "could not pre-create otel_traces table");
+    }
+}
+
 // -------- helpers -----------------------------------------------------
 
 /// Ensure `table` exists in `database` with `schema`, creating the database
