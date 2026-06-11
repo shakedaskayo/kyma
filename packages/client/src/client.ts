@@ -106,6 +106,7 @@ const MEMORY_FNS = [
   "queryMemory",
   "getMemorySettings",
   "putMemorySettings",
+  "memorySourceSummary",
 ] as const satisfies readonly (keyof typeof memory)[];
 
 const CONNECTORS_FNS = [

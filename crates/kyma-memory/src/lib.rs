@@ -22,7 +22,7 @@ mod writer;
 pub use embed::{build_embedding_backend, shared_embedding};
 pub use error::{MemoryError, Result};
 pub use ingest::{spawn_memory_queue, MemoryIngestConfig, MemoryOp, MemoryQueue};
-pub use types::{CreateMemory, MemoryStatus, MemoryType, RecallFilter};
+pub use types::{CreateMemory, MemoryStatus, MemoryType, RecallFilter, SourceSummary};
 pub use writer::{redact_create, MemoryWriter};
 
 /// Dedicated database that holds the memory tables.

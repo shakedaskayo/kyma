@@ -176,3 +176,23 @@ export async function putMemorySettings(
   });
   if (!res.ok) throw await errorFromResponse(res);
 }
+
+// ── provenance summary (GET /v1/agent/memory/source-summary) ─────────────────
+
+/** Count of non-archived memories formed by `source` (e.g. "claude-code",
+ * "dreaming"; no provenance source = "manual") in `realm`. Powers the Data
+ * Sources "Memories" tab. */
+export interface MemorySourceSummary {
+  source: string;
+  realm: string;
+  count: number;
+}
+
+export async function memorySourceSummary(
+  t: KymaTransport,
+): Promise<MemorySourceSummary[]> {
+  const body = await handleResponse<{ items: MemorySourceSummary[] }>(
+    await t.request("/v1/agent/memory/source-summary"),
+  );
+  return body.items ?? [];
+}
