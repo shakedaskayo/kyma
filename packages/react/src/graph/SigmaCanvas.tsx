@@ -20,7 +20,7 @@ import { useGraphStore } from "./graph-store";
 import { edgeDisplay, lodTier, nodeDisplay, type DisplayCtx } from "./graph-display";
 import { makeDrawNodeHover } from "./graph-hover-draw";
 import { alpha as withAlpha } from "./graph-style";
-import { buildGraphologyGraph } from "./sigma-graph-builder";
+import { buildGraphologyGraph, positionExtent, RADIUS_DST_MAX } from "./sigma-graph-builder";
 // Re-export builder, BuildOptions, and keyOf for tests and consumers.
 export { buildGraphologyGraph, keyOf } from "./sigma-graph-builder";
 export type { BuildOptions } from "./sigma-graph-builder";
@@ -29,6 +29,14 @@ export type { BuildOptions } from "./sigma-graph-builder";
 
 /** RGB portion of the neutral hairline color. */
 const NEUTRAL_RGB = "148,163,184";
+
+/** Below this node count, screen-pixel sizing beats the constellation look. */
+const CONSTELLATION_MIN_NODES = 300;
+
+/** Map builder sizes [2.5,22] into a comfortable screen-px range [6,18]. */
+function screenSize(size: number): number {
+  return 6 + ((size - 2.5) / (22 - 2.5)) * 12;
+}
 
 function neutralEdgeColor(alpha: number): string {
   return `rgba(${NEUTRAL_RGB},${alpha})`;
@@ -149,6 +157,12 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     // the at-rest alpha down with edge count so fans stay airy, never a wash.
     const edgeDensityScale = Math.max(0.05, Math.min(1, 9_000 / Math.max(1, graph.size)));
 
+    // Constellation mode: graph-space sizing only pays off for big graphs
+    // with a real spatial extent; small graphs read better at fixed px sizes.
+    const constellation =
+      graph.order >= CONSTELLATION_MIN_NODES &&
+      positionExtent(graph) >= 4 * RADIUS_DST_MAX;
+
     const sigma = new Sigma(graph, container, {
       defaultEdgeType: "line",
       edgeProgramClasses: {
@@ -178,10 +192,20 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
       edgeLabelSize: 9,
       minCameraRatio: 0.02,
       maxCameraRatio: 4,
-      // Node/edge sizes live in graph-space, so zooming out shrinks dots into
-      // the constellation look instead of constant-pixel blobs.
-      itemSizesReference: "positions",
-      zoomToSizeRatioFunction: (ratio) => ratio,
+      // Sizing strategy by graph scale:
+      // - LARGE graphs (≥ CONSTELLATION_MIN_NODES, sane extent): sizes live in
+      //   graph-space ("positions"), so zooming out shrinks dots into the
+      //   constellation look instead of constant-pixel blobs.
+      // - SMALL or degenerate graphs (few nodes, or coincident positions where
+      //   autoRescale would explode graph-space sizes to fill the viewport):
+      //   classic screen-pixel sizing, with sizes lifted into a comfortable
+      //   visible range by the node reducer below.
+      ...(constellation
+        ? {
+            itemSizesReference: "positions" as const,
+            zoomToSizeRatioFunction: (ratio: number) => ratio,
+          }
+        : {}),
       // Reducers own label visibility — disable sigma's threshold-based culling.
       labelRenderedSizeThreshold: 0,
       zIndex: true,
@@ -194,17 +218,24 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
         // Amendment: use image type only at mid/near LOD or for landmark hubs.
         const useImageType = hasImage && (tier !== "far" || isLandmark);
 
+        const baseSize = constellation
+          ? (attrs.size as number)
+          : screenSize(attrs.size as number);
+
+        // Tiny graphs: always label visible nodes — LOD tiers are meaningless
+        // when the whole graph fits in a glance.
+        const label =
+          d.label ?? (!d.hidden && !d.dimmed && graph.order <= 50 ? (attrs.label as string) : null);
+
         return {
           ...attrs,
           type: useImageType ? "image" : "circle",
           hidden: d.hidden,
-          label: d.label,
+          label,
           color: d.dimmed
             ? withAlpha(attrs.color as string, 0.15)
             : (attrs.color as string),
-          size: d.highlighted
-            ? (attrs.size as number) * 1.25
-            : (attrs.size as number),
+          size: d.highlighted ? baseSize * 1.25 : baseSize,
           zIndex: d.highlighted ? 2 : d.dimmed ? 0 : 1,
           highlighted: d.highlighted,
         };
