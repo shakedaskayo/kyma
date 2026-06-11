@@ -100,3 +100,11 @@ Make the graph explorer render the **full graph every time** (tens of thousands 
 - 3D rendering.
 - Mobile/touch-first optimization (basic pinch-zoom only).
 - Replacing the search backend (existing `searchNodes` reused).
+
+## Amendment — reference-image visual direction (2026-06-11)
+
+User-supplied reference images (radial brand-icon arcs on light bg; dark starburst communities with neutral edge fans) refine §1 and the layout:
+
+1. **Edges at rest are neutral hairlines** — thin translucent slate (dark mode ≈ rgba(148,163,184,~0.16), light mode darker equivalent), NOT family-colored. Relationship-family color, bold arrowheads, and label pills appear only in the loud state (hover / selection / relationship-type isolation) and in the legend. The canvas at rest reads as colored constellation clusters connected by faint fans.
+2. **Node color carries the story** — vivid label/kind colors on plain dots for the mass of nodes; icons render only at mid/near LOD and always on landmark hubs. Hub size contrast increases (degree-scaled, 95th-percentile cap retained, but wider radius range) so each community reads as a big labeled hub with small satellites.
+3. **Starburst orbit post-pass (server layout)** — after force layout converges, degree-1 leaves are re-placed on evenly-spaced rings orbiting their sole neighbor (ring radius grows with leaf count; deterministic angle order). Hubs become crisp starbursts instead of fuzzy blobs. Implemented in `kyma-graph::layout` as a force-layout post-process, before the overlap pass is re-run for orbit collisions only.

@@ -3260,3 +3260,13 @@ git commit -m "feat(web): synthetic graph benchmark route for renderer perf veri
 - **Deliberate deviations from spec:** none. `limit` prop retained-but-deprecated per spec §5.
 - **Type consistency spots checked:** `LayoutAlgorithm` (client string union ↔ Rust enum, serde lowercase matches); composite-id scheme `${namespace}::${id}` used identically in merge/build/walk/inspector; cursor grammar `layout_id:kind:offset` in Task 2 ↔ Task 3 ↔ client passthrough.
 - **Known verify-on-site points (flagged inline):** sigma v3 minor API drift (reducers/camera helpers), `radiusForDegree` signature, `detectCommunities` return shape, client transport request helper name, `QueryState` construction sites.
+
+---
+
+## Amendment — reference-image visual direction (2026-06-11)
+
+Overrides specifics in Tasks 6–7 and adds Task 1b. See the spec's same-dated amendment.
+
+- **Task 1b (new, server):** in `crates/kyma-graph/src/layout.rs`, add a deterministic orbit post-pass to `force_layout`: collect degree-1 nodes per hub (their sole neighbor); for each hub with ≥4 leaves, place its leaves on concentric rings centered on the hub — ring radius `r_k = 90 + 55*k`, ring capacity `floor(2π r_k / 34)`, angles evenly spaced starting at the hub's angle-to-graph-center (deterministic), leaves ordered by id. Then re-run the existing overlap pass. Tests: star(60) → all leaves within ring radii of hub ± tolerance and min pairwise leaf distance ≥ 25; determinism re-asserted.
+- **Task 6 override (`edgeDisplay`):** at-rest edges return a NEUTRAL color signal (`loud: false` → renderer uses neutral hairline rgba(148,163,184,alpha) with alpha 0.16 far / 0.22 mid-near dark mode, 0.28 light), ignoring family color. Loud state (incident to focus / relType isolation match) uses the family color as before. `edgeDisplay` gains a `neutral: boolean` field (true at rest, false when loud) so the reducer picks the palette.
+- **Task 7 override (`buildGraphologyGraph` + reducers):** node `image` attribute still computed, but the node reducer only renders type "image" at mid/near LOD or for landmark hubs (size ≥ landmark threshold — top-decile degree); otherwise plain circle. Radius range widens: `radiusForDegree` output rescaled to [2.5, 22] so hubs visibly dominate. Edge reducer uses `neutral` per Task 6 override.
