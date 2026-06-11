@@ -377,6 +377,19 @@ fn default_neighbors_limit() -> usize {
     200
 }
 
+#[derive(Deserialize)]
+struct ExportQuery {
+    realm: Option<String>,
+    #[serde(default)]
+    algorithm: kyma_graph::LayoutAlgorithm,
+    cursor: Option<String>,
+    #[serde(default = "default_export_page_size")]
+    page_size: usize,
+}
+fn default_export_page_size() -> usize {
+    crate::graph_layout_cache::PAGE_SIZE_DEFAULT
+}
+
 // ---------------------------------------------------------------------------
 // Handlers — each reads x-database from headers and dispatches via resolve().
 // ---------------------------------------------------------------------------
@@ -601,6 +614,156 @@ async fn neighbors(
     }
 }
 
+/// "Fetch everything" limit for full-graph export. NOT `usize::MAX`: the
+/// stored-graph provider folds the limit into a SQL `LIMIT`, and DataFusion
+/// rejects values that don't fit an `Int64` cast.
+const EXPORT_FETCH_ALL: usize = u32::MAX as usize;
+
+/// Full-graph export with precomputed layout positions, paginated.
+/// First call (no cursor): checks cache freshness via stats fingerprint,
+/// computes layout (inline for small graphs, background task for large),
+/// and returns the first node page or `layout_status: "computing"`.
+/// Subsequent calls pass the returned cursor and are served from the cache.
+async fn export(
+    State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
+    Path(graph): Path<String>,
+    Query(q): Query<ExportQuery>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    use crate::graph_layout_cache::{
+        parse_cursor, slice_page, CacheKey, CacheState, LaidOutGraph, LayoutCache,
+        SYNC_COMPUTE_MAX_NODES,
+    };
+    let db = db_from_headers(&headers);
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
+    let page_size = q.page_size.clamp(100, 50_000);
+
+    // Pages 2+: serve straight from the layout_id in the cursor.
+    if let Some(cursor) = &q.cursor {
+        let Some((layout_id, kind, offset)) = parse_cursor(cursor) else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": {"code": "bad_cursor", "message": "malformed cursor"}})),
+            )
+                .into_response();
+        };
+        return match state.layout_cache.by_layout_id(&layout_id) {
+            Some(laid) => {
+                (StatusCode::OK, Json(slice_page(&laid, kind, offset, page_size))).into_response()
+            }
+            // Evicted mid-paging — client restarts from cursor=None.
+            None => (
+                StatusCode::GONE,
+                Json(serde_json::json!({"error": {"code": "layout_evicted", "message": "layout evicted; restart export"}})),
+            )
+                .into_response(),
+        };
+    }
+
+    // First page: resolve provider + fingerprint.
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    let stats = match p.stats(q.realm.as_deref()).await {
+        Ok(s) => s,
+        Err(e) => return err500(e),
+    };
+    let fingerprint = (stats.total_nodes, stats.total_relationships); // fingerprint.1 == total_relationships == total_edges (same count, different wire names)
+    let key = CacheKey {
+        database: db.clone(),
+        graph: graph.clone(),
+        realm: q.realm.clone(),
+        algorithm: q.algorithm,
+    };
+    let computing = |key: &CacheKey, fp: (usize, usize)| {
+        Json(kyma_graph::GraphExportPage {
+            layout_status: "computing".into(),
+            layout_id: LayoutCache::layout_id(key, fp),
+            total_nodes: fp.0,
+            total_edges: fp.1,
+            nodes: vec![],
+            edges: vec![],
+            next_cursor: None,
+        })
+    };
+
+    match state.layout_cache.get_fresh(&key, fingerprint) {
+        Some(CacheState::Ready(laid)) => {
+            (StatusCode::OK, Json(slice_page(&laid, 'n', 0, page_size))).into_response()
+        }
+        Some(CacheState::Computing) => {
+            (StatusCode::OK, computing(&key, fingerprint)).into_response()
+        }
+        None => {
+            let compute = move |payload: kyma_graph::GraphPayload,
+                                key: &CacheKey|
+                  -> LaidOutGraph {
+                let positions = kyma_graph::compute_layout(
+                    key.algorithm,
+                    &payload.nodes,
+                    &payload.edges,
+                    kyma_graph::LAYOUT_WIDTH,
+                    kyma_graph::LAYOUT_HEIGHT,
+                );
+                let fp = (payload.nodes.len(), payload.edges.len());
+                LaidOutGraph {
+                    layout_id: LayoutCache::layout_id(key, fp),
+                    fingerprint: fp,
+                    nodes: payload
+                        .nodes
+                        .into_iter()
+                        .map(|n| {
+                            let (x, y) = positions.get(&n.id).copied().unwrap_or((0.0, 0.0));
+                            kyma_graph::PositionedNode { node: n, x, y }
+                        })
+                        .collect(),
+                    edges: payload.edges,
+                }
+            };
+
+            if stats.total_nodes <= SYNC_COMPUTE_MAX_NODES {
+                // Small graph: compute inline and serve the first page now.
+                let payload = match p.overview(q.realm.as_deref(), EXPORT_FETCH_ALL).await {
+                    Ok(pl) => pl,
+                    Err(e) => return err500(e),
+                };
+                let laid = state.layout_cache.insert_ready(key.clone(), compute(payload, &key));
+                (StatusCode::OK, Json(slice_page(&laid, 'n', 0, page_size))).into_response()
+            } else {
+                // Large graph: background compute, report computing.
+                // v1: no cross-key concurrency cap. With MAX_ENTRIES = 8 distinct cached
+                // graphs, worst case is 8 concurrent background overview + layout tasks.
+                // Add a Semaphore here if that ever becomes a problem.
+                if state.layout_cache.begin_compute(&key) {
+                    let cache = state.layout_cache.clone();
+                    let realm = q.realm.clone();
+                    let bg_key = key.clone();
+                    let mut guard = cache.compute_guard(bg_key.clone());
+                    tokio::spawn(async move {
+                        match p.overview(realm.as_deref(), EXPORT_FETCH_ALL).await {
+                            Ok(payload) => {
+                                let laid = compute(payload, &bg_key);
+                                cache.insert_ready(bg_key, laid);
+                                guard.disarm();
+                            }
+                            Err(e) => {
+                                tracing::warn!("graph export layout failed: {e}");
+                                // guard drops here, calling abort_compute
+                            }
+                        }
+                    });
+                }
+                (StatusCode::OK, computing(&key, fingerprint)).into_response()
+            }
+        }
+    }
+}
+
 /// Read-only graph router. Caller wraps with the same `Role::Read` middleware
 /// as the rest of the query surface.
 pub fn graph_router(state: QueryState) -> Router {
@@ -613,6 +776,7 @@ pub fn graph_router(state: QueryState) -> Router {
         .route("/v1/graph/:graph/nodes/:id/subgraph", get(subgraph))
         .route("/v1/graph/:graph/search", post(search))
         .route("/v1/graph/:graph/neighbors", post(neighbors))
+        .route("/v1/graph/:graph/export", get(export))
         .with_state(state)
 }
 
@@ -857,5 +1021,217 @@ mod tests {
             StatusCode::OK,
             "stats endpoint should return 200 for registered stored graph"
         );
+    }
+
+    // ── export endpoint tests ──────────────────────────────────────────────
+
+    /// First call to `/v1/graph/schema/export` on the seeded state (empty cache)
+    /// must return 200 with `layout_status == "ready"` immediately (schema graph
+    /// is well below SYNC_COMPUTE_MAX_NODES), a non-empty `layout_id`, and at
+    /// least one node carrying numeric `x`/`y` fields plus `id`/`labels`.
+    #[tokio::test]
+    async fn export_endpoint_returns_ready_layout_with_positions() {
+        let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
+        let app = graph_router(state);
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/graph/schema/export")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(
+            v["layout_status"].as_str().unwrap(),
+            "ready",
+            "schema graph is small — must be ready synchronously"
+        );
+        let layout_id = v["layout_id"].as_str().unwrap();
+        assert!(!layout_id.is_empty(), "layout_id must be non-empty");
+
+        let nodes = v["nodes"].as_array().unwrap();
+        assert!(!nodes.is_empty(), "nodes must be non-empty on first export page");
+        for node in nodes {
+            assert!(
+                node["id"].as_str().is_some(),
+                "every node must have an id string"
+            );
+            assert!(
+                node["labels"].as_array().is_some(),
+                "every node must have a labels array"
+            );
+            assert!(
+                node["x"].as_f64().is_some(),
+                "every node must have a numeric x"
+            );
+            assert!(
+                node["y"].as_f64().is_some(),
+                "every node must have a numeric y"
+            );
+        }
+    }
+
+    /// Walk cursor pages until `next_cursor` is absent, accumulate all node-ids
+    /// and edge-ids, then compare against the `/overview` endpoint's sets.
+    /// The schema graph is small so this terminates in one or a few pages.
+    #[tokio::test]
+    async fn export_cursor_walk_reassembles_full_graph() {
+        let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
+        // Use a small page_size to exercise the cursor path even for a small graph.
+        // The floor is clamped to 100, so pick 100 to ensure at least the cursor
+        // path is exercised (the overview will have fewer nodes than 100, so
+        // realistically a single page suffices — but the walk loop still terminates).
+        let page_size = 100usize;
+
+        let app = graph_router(state);
+
+        // ── walk export pages ──────────────────────────────────────────────
+        let mut all_node_ids: std::collections::HashSet<String> = Default::default();
+        let mut all_edge_ids: std::collections::HashSet<String> = Default::default();
+        let mut cursor: Option<String> = None;
+        let mut iterations = 0usize;
+        loop {
+            iterations += 1;
+            assert!(iterations <= 1000, "cursor walk did not terminate");
+            let uri = match &cursor {
+                None => format!("/v1/graph/schema/export?page_size={page_size}"),
+                Some(c) => format!(
+                    "/v1/graph/schema/export?page_size={page_size}&cursor={}",
+                    urlencoding_simple(c)
+                ),
+            };
+            let res = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(&uri)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "page {iterations} failed");
+            let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+            let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(v["layout_status"].as_str().unwrap(), "ready");
+            for n in v["nodes"].as_array().unwrap() {
+                all_node_ids.insert(n["id"].as_str().unwrap().to_string());
+            }
+            for e in v["edges"].as_array().unwrap() {
+                all_edge_ids.insert(e["id"].as_str().unwrap().to_string());
+            }
+            cursor = v["next_cursor"].as_str().map(str::to_string);
+            if cursor.is_none() {
+                break;
+            }
+        }
+
+        // ── compare against overview ───────────────────────────────────────
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/graph/schema/overview?limit=100000")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let ov: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        let ov_node_ids: std::collections::HashSet<String> = ov["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n["id"].as_str().unwrap().to_string())
+            .collect();
+        let ov_edge_ids: std::collections::HashSet<String> = ov["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["id"].as_str().unwrap().to_string())
+            .collect();
+
+        assert_eq!(
+            all_node_ids, ov_node_ids,
+            "export node-id set must match overview node-id set"
+        );
+        assert_eq!(
+            all_edge_ids, ov_edge_ids,
+            "export edge-id set must match overview edge-id set"
+        );
+    }
+
+    /// A syntactically garbage cursor string must produce HTTP 400 with
+    /// `error.code == "bad_cursor"`.
+    #[tokio::test]
+    async fn export_garbage_cursor_is_400() {
+        let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
+        let app = graph_router(state);
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/graph/schema/export?cursor=garbage")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            v["error"]["code"].as_str().unwrap(),
+            "bad_cursor",
+            "expected bad_cursor error code, got: {v}"
+        );
+    }
+
+    /// A syntactically valid cursor whose `layout_id` is not in the cache
+    /// (never existed or already evicted) must produce HTTP 410 with
+    /// `error.code == "layout_evicted"`.
+    ///
+    /// Cursor grammar: `"{layout_id}:n:{offset}"`.  We use `Ldeadbeefdeadbeef`
+    /// as a layout_id that can never be in a fresh cache.
+    #[tokio::test]
+    async fn export_unknown_layout_id_cursor_is_410() {
+        let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
+        let app = graph_router(state);
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/graph/schema/export?cursor=Ldeadbeefdeadbeef:n:0")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::GONE);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            v["error"]["code"].as_str().unwrap(),
+            "layout_evicted",
+            "expected layout_evicted error code, got: {v}"
+        );
+    }
+
+    /// Minimal percent-encoding helper for cursor values in test URIs.
+    /// Only encodes characters that would break a query string.
+    fn urlencoding_simple(s: &str) -> String {
+        s.bytes()
+            .flat_map(|b| match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b':' => {
+                    vec![b as char]
+                }
+                other => format!("%{other:02X}").chars().collect::<Vec<_>>(),
+            })
+            .collect()
     }
 }

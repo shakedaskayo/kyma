@@ -80,6 +80,7 @@ pub async fn seeded_state_empty() -> QueryState {
         schema_cache: Arc::new(SchemaCache::default()),
         node_id: None,
         pg_pool: Some(pg_pool),
+        layout_cache: Arc::new(crate::graph_layout_cache::LayoutCache::new()),
     }
 }
 
@@ -153,6 +154,7 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
         schema_cache: Arc::new(SchemaCache::default()),
         node_id: None,
         pg_pool: Some(pg_pool),
+        layout_cache: Arc::new(crate::graph_layout_cache::LayoutCache::new()),
     }
 }
 

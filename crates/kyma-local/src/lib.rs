@@ -261,6 +261,7 @@ pub fn build_local_app(
         schema_cache: schema_cache.clone(),
         node_id: None,
         pg_pool: None, // local: no Postgres — pool-only surfaces degrade gracefully
+        layout_cache: std::sync::Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
     };
     // Engine preference + enabled skills persist to JSON under ~/.kyma so
     // Settings → Agent engine works locally and survives restarts. Engine
@@ -345,6 +346,7 @@ pub fn build_local_app(
         schema_cache,
         node_id: None,
         pg_pool: None,
+        layout_cache: std::sync::Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
     };
     // Build McpState from the same catalog + format the rest of the app uses.
     let mcp = McpState {

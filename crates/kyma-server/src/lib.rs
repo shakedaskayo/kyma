@@ -29,6 +29,7 @@ pub mod dashboards_handler;
 pub mod discover;
 pub mod fabric_handler;
 pub mod graph_handler;
+pub mod graph_layout_cache;
 pub mod flight;
 pub mod capabilities;
 mod health;
@@ -128,6 +129,8 @@ pub struct QueryState {
     /// when no credential store is wired (local mode): federated tables then
     /// fail queries with a clear error instead of silently returning empty.
     pub federation: Option<Arc<kyma_federation::FederationRuntime>>,
+    /// Server-side layout cache for the full-graph export endpoint.
+    pub layout_cache: Arc<graph_layout_cache::LayoutCache>,
 }
 
 /// Build the query router (auth-eligible — caller wraps with middleware).

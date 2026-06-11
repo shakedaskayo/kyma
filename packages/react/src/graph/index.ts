@@ -13,6 +13,8 @@ export {
   type GraphStore,
   type GraphStoreState,
 } from "./graph-store";
+export { SigmaCanvas, type SigmaCanvasProps } from "./SigmaCanvas";
+export { HullsLayer } from "./HullsLayer";
 export type {
   GraphNode,
   GraphRelationship,

@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './../routes/__root'
 import { Route as SetupRouteImport } from './../routes/setup'
 import { Route as SettingsRouteImport } from './../routes/settings'
 import { Route as LoginRouteImport } from './../routes/login'
+import { Route as GraphBenchRouteImport } from './../routes/graph-bench'
 import { Route as AppRouteImport } from './../routes/_app'
 import { Route as IndexRouteImport } from './../routes/index'
 import { Route as AppTracesRouteImport } from './../routes/_app.traces'
@@ -51,6 +52,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GraphBenchRoute = GraphBenchRouteImport.update({
+  id: '/graph-bench',
+  path: '/graph-bench',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
@@ -180,6 +186,7 @@ const AppMemoryDreamingRunIdRoute = AppMemoryDreamingRunIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/graph-bench': typeof GraphBenchRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
@@ -209,6 +216,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/graph-bench': typeof GraphBenchRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
@@ -235,6 +243,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/graph-bench': typeof GraphBenchRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
@@ -266,6 +275,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/graph-bench'
     | '/login'
     | '/settings'
     | '/setup'
@@ -295,6 +305,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/graph-bench'
     | '/login'
     | '/settings'
     | '/setup'
@@ -320,6 +331,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_app'
+    | '/graph-bench'
     | '/login'
     | '/settings'
     | '/setup'
@@ -351,6 +363,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  GraphBenchRoute: typeof GraphBenchRoute
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
   SetupRoute: typeof SetupRoute
@@ -377,6 +390,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/graph-bench': {
+      id: '/graph-bench'
+      path: '/graph-bench'
+      fullPath: '/graph-bench'
+      preLoaderRoute: typeof GraphBenchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {
@@ -663,6 +683,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  GraphBenchRoute: GraphBenchRoute,
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
   SetupRoute: SetupRoute,

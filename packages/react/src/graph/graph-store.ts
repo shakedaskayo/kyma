@@ -54,6 +54,18 @@ export type GraphStoreState = {
    */
   overview: boolean;
 
+  /** Visited-node breadcrumb trail (composite ids, newest last, max 20). */
+  trail: string[];
+  /** Focus-neighborhood isolation root (double-click). Null = off. */
+  focusModeId: string | null;
+  commandBarOpen: boolean;
+
+  pushTrail(id: string): void;
+  jumpTrail(index: number): void;
+  clearTrail(): void;
+  setFocusMode(id: string | null): void;
+  setCommandBarOpen(v: boolean): void;
+
   setGraph(name: string): void;
   setLayout(layout: LayoutAlgorithm): void;
   selectNode(id: string | null): void;
@@ -99,6 +111,9 @@ export const initialGraphState = {
   curvedEdges: true,
   communityHulls: true,
   overview: true,
+  trail: [] as string[],
+  focusModeId: null as string | null,
+  commandBarOpen: false,
 };
 
 // ── Factory ───────────────────────────────────────────────────────────────────
@@ -113,8 +128,26 @@ export function createGraphStore(overrides?: Partial<typeof initialGraphState>) 
   const initial = { ...initialGraphState, ...overrides };
   return createStore<GraphStoreState>()((set) => ({
     ...initial,
+    pushTrail: (id) =>
+      set((s) => {
+        if (s.trail[s.trail.length - 1] === id) return {};
+        return { trail: [...s.trail, id].slice(-20) };
+      }),
+    jumpTrail: (index) =>
+      set((s) => {
+        const target = s.trail[index];
+        if (!target) return {};
+        return {
+          trail: s.trail.slice(0, index + 1),
+          selectedNodeId: target,
+          focusSeq: s.focusSeq + 1,
+        };
+      }),
+    clearTrail: () => set({ trail: [] }),
+    setFocusMode: (id) => set({ focusModeId: id }),
+    setCommandBarOpen: (v) => set({ commandBarOpen: v }),
     setGraph: (name) =>
-      set({ graph: name, selectedNodeId: null, labelFilter: null, relTypeFilter: null, hiddenLabels: [] }),
+      set({ graph: name, selectedNodeId: null, labelFilter: null, relTypeFilter: null, hiddenLabels: [], focusModeId: null }),
     setLayout: (layout) => set({ layout }),
     selectNode: (id) => set({ selectedNodeId: id }),
     focusNode: (id) => set((s) => ({ selectedNodeId: id, focusSeq: s.focusSeq + 1 })),

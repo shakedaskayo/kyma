@@ -6,6 +6,7 @@
 //! are unit-testable without a database.
 
 pub mod executor;
+pub mod layout;
 pub mod provider;
 pub mod schema_graph;
 pub mod source;
@@ -13,11 +14,12 @@ pub mod stored_graph;
 pub mod types;
 
 pub use executor::{GraphQueryExecutor, JsonRow, StoredGraphConfig};
+pub use layout::{compute_layout, LayoutAlgorithm, LAYOUT_HEIGHT, LAYOUT_WIDTH};
 pub use provider::GraphProvider;
 pub use schema_graph::SchemaGraphProvider;
 pub use stored_graph::StoredGraphProvider;
 pub use source::{ColumnDef, SchemaSource};
 pub use types::{
-    Direction, EdgeExpansion, GraphNode, GraphPayload, GraphRef, GraphRelationship,
-    GraphSchema, GraphStats, NodeMetadata, Props, SearchHits,
+    Direction, EdgeExpansion, GraphExportPage, GraphNode, GraphPayload, GraphRef,
+    GraphRelationship, GraphSchema, GraphStats, NodeMetadata, PositionedNode, Props, SearchHits,
 };

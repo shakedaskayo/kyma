@@ -473,6 +473,7 @@ async fn main() -> Result<()> {
                 schema_cache: schema_cache.clone(),
                 node_id: Some(lease.node_id),
                 pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
+                layout_cache: std::sync::Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
             },
             agent_state.clone(),
         )
@@ -783,6 +784,7 @@ async fn main() -> Result<()> {
             schema_cache: schema_cache.clone(),
             node_id: Some(lease.node_id),
             pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
+            layout_cache: std::sync::Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
         },
         backend.clone(),
         Some(ingest_events),
@@ -829,6 +831,7 @@ async fn main() -> Result<()> {
                 schema_cache: schema_cache.clone(),
                 node_id: Some(lease.node_id),
                 pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
+                layout_cache: std::sync::Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
             })
             // Fail closed: database-scoped tokens cannot use Flight (tickets
             // address databases internally, bypassing per-handler scope

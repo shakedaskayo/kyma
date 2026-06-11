@@ -2,6 +2,7 @@
 
 import type { KymaTransport } from "./transport";
 import { errorFromResponse } from "./errors";
+import type { LayoutAlgorithm } from "./graph-layout";
 
 export type Props = Record<string, unknown>;
 
@@ -65,6 +66,27 @@ export interface GraphRef {
   description: string;
 }
 export type Direction = "forward" | "backward" | "both";
+
+export type PositionedGraphNode = GraphNode & { x: number; y: number };
+
+export interface GraphExportPage {
+  layout_status: "ready" | "computing";
+  layout_id: string;
+  total_nodes: number;
+  total_edges: number;
+  nodes: PositionedGraphNode[];
+  edges: GraphRelationship[];
+  /** Omitted by the server on the final page (never null). */
+  next_cursor?: string;
+}
+
+export interface ExportGraphArgs {
+  graph: string;
+  realm?: string;
+  algorithm?: LayoutAlgorithm;
+  cursor?: string;
+  pageSize?: number;
+}
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) throw await errorFromResponse(res);
@@ -162,6 +184,21 @@ export async function expandNeighbors(
         limit: args.limit ?? 200,
       }),
     }),
+  );
+}
+
+export async function exportGraph(
+  t: KymaTransport,
+  args: ExportGraphArgs,
+): Promise<GraphExportPage> {
+  const q = new URLSearchParams();
+  if (args.realm) q.set("realm", args.realm);
+  if (args.algorithm) q.set("algorithm", args.algorithm);
+  if (args.cursor) q.set("cursor", args.cursor);
+  if (args.pageSize != null) q.set("page_size", String(args.pageSize));
+  const qs = q.toString();
+  return handleResponse<GraphExportPage>(
+    await t.request(`/v1/graph/${encodeURIComponent(args.graph)}/export${qs ? `?${qs}` : ""}`),
   );
 }
 
