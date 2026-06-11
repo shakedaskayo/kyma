@@ -1014,4 +1014,219 @@ mod tests {
             "stats endpoint should return 200 for registered stored graph"
         );
     }
+
+    // ── export endpoint tests ──────────────────────────────────────────────
+
+    /// First call to `/v1/graph/schema/export` on the seeded state (empty cache)
+    /// must return 200 with `layout_status == "ready"` immediately (schema graph
+    /// is well below SYNC_COMPUTE_MAX_NODES), a non-empty `layout_id`, and at
+    /// least one node carrying numeric `x`/`y` fields plus `id`/`labels`.
+    #[tokio::test]
+    async fn export_endpoint_returns_ready_layout_with_positions() {
+        let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
+        let app = graph_router(state);
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/graph/schema/export")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(
+            v["layout_status"].as_str().unwrap(),
+            "ready",
+            "schema graph is small — must be ready synchronously"
+        );
+        let layout_id = v["layout_id"].as_str().unwrap();
+        assert!(!layout_id.is_empty(), "layout_id must be non-empty");
+
+        let nodes = v["nodes"].as_array().unwrap();
+        assert!(!nodes.is_empty(), "nodes must be non-empty on first export page");
+        for node in nodes {
+            assert!(
+                node["id"].as_str().is_some(),
+                "every node must have an id string"
+            );
+            assert!(
+                node["labels"].as_array().is_some(),
+                "every node must have a labels array"
+            );
+            assert!(
+                node["x"].as_f64().is_some(),
+                "every node must have a numeric x"
+            );
+            assert!(
+                node["y"].as_f64().is_some(),
+                "every node must have a numeric y"
+            );
+        }
+    }
+
+    /// Walk cursor pages until `next_cursor` is absent, accumulate all node-ids
+    /// and edge-ids, then compare against the `/overview` endpoint's sets.
+    /// The schema graph is small so this terminates in one or a few pages.
+    #[tokio::test]
+    async fn export_cursor_walk_reassembles_full_graph() {
+        let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
+        // Use a small page_size to exercise the cursor path even for a small graph.
+        // The floor is clamped to 100, so pick 100 to ensure at least the cursor
+        // path is exercised (the overview will have fewer nodes than 100, so
+        // realistically a single page suffices — but the walk loop still terminates).
+        let page_size = 100usize;
+
+        let app = graph_router(state);
+
+        // ── walk export pages ──────────────────────────────────────────────
+        let mut all_node_ids: std::collections::HashSet<String> = Default::default();
+        let mut all_edge_ids: std::collections::HashSet<String> = Default::default();
+        let mut cursor: Option<String> = None;
+        let mut iterations = 0usize;
+        loop {
+            iterations += 1;
+            assert!(iterations <= 1000, "cursor walk did not terminate");
+            let uri = match &cursor {
+                None => format!("/v1/graph/schema/export?page_size={page_size}"),
+                Some(c) => format!(
+                    "/v1/graph/schema/export?page_size={page_size}&cursor={}",
+                    urlencoding_simple(c)
+                ),
+            };
+            let res = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(&uri)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "page {iterations} failed");
+            let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+            let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(v["layout_status"].as_str().unwrap(), "ready");
+            for n in v["nodes"].as_array().unwrap() {
+                all_node_ids.insert(n["id"].as_str().unwrap().to_string());
+            }
+            for e in v["edges"].as_array().unwrap() {
+                all_edge_ids.insert(e["id"].as_str().unwrap().to_string());
+            }
+            cursor = v["next_cursor"].as_str().map(str::to_string);
+            if cursor.is_none() {
+                break;
+            }
+        }
+
+        // ── compare against overview ───────────────────────────────────────
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/graph/schema/overview?limit=100000")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let ov: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        let ov_node_ids: std::collections::HashSet<String> = ov["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n["id"].as_str().unwrap().to_string())
+            .collect();
+        let ov_edge_ids: std::collections::HashSet<String> = ov["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["id"].as_str().unwrap().to_string())
+            .collect();
+
+        assert_eq!(
+            all_node_ids, ov_node_ids,
+            "export node-id set must match overview node-id set"
+        );
+        assert_eq!(
+            all_edge_ids, ov_edge_ids,
+            "export edge-id set must match overview edge-id set"
+        );
+    }
+
+    /// A syntactically garbage cursor string must produce HTTP 400 with
+    /// `error.code == "bad_cursor"`.
+    #[tokio::test]
+    async fn export_garbage_cursor_is_400() {
+        let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
+        let app = graph_router(state);
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/graph/schema/export?cursor=garbage")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            v["error"]["code"].as_str().unwrap(),
+            "bad_cursor",
+            "expected bad_cursor error code, got: {v}"
+        );
+    }
+
+    /// A syntactically valid cursor whose `layout_id` is not in the cache
+    /// (never existed or already evicted) must produce HTTP 410 with
+    /// `error.code == "layout_evicted"`.
+    ///
+    /// Cursor grammar: `"{layout_id}:n:{offset}"`.  We use `Ldeadbeefdeadbeef`
+    /// as a layout_id that can never be in a fresh cache.
+    #[tokio::test]
+    async fn export_unknown_layout_id_cursor_is_410() {
+        let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
+        let app = graph_router(state);
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/graph/schema/export?cursor=Ldeadbeefdeadbeef:n:0")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::GONE);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            v["error"]["code"].as_str().unwrap(),
+            "layout_evicted",
+            "expected layout_evicted error code, got: {v}"
+        );
+    }
+
+    /// Minimal percent-encoding helper for cursor values in test URIs.
+    /// Only encodes characters that would break a query string.
+    fn urlencoding_simple(s: &str) -> String {
+        s.chars()
+            .flat_map(|c| match c {
+                'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' | ':' => {
+                    vec![c]
+                }
+                other => {
+                    let b = other as u32;
+                    format!("%{b:02X}").chars().collect::<Vec<_>>()
+                }
+            })
+            .collect()
+    }
 }
