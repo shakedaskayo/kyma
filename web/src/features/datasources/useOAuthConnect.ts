@@ -18,7 +18,7 @@ export interface ConnectedAccount {
  * bring-your-own client secret is passed as a `connect()` argument — never
  * stored in a query cache key.
  */
-export function useOAuthConnect(provider: string | undefined, connectorType: string) {
+export function useOAuthConnect(provider: string | undefined, dataSourceType: string) {
   const { endpoint, token, database } = useSession();
   const [phase, setPhase] = useState<OAuthPhase>("idle");
   const [account, setAccount] = useState<ConnectedAccount | null>(null);
@@ -127,7 +127,7 @@ export function useOAuthConnect(provider: string | undefined, connectorType: str
   const connect = useCallback(
     async (opts?: { clientId?: string; clientSecret?: string; scopes?: string[]; label?: string }) => {
       if (!provider) {
-        fail("This connector has no OAuth provider configured.");
+        fail("This data source has no OAuth provider configured.");
         return;
       }
       setPhase("starting");
@@ -135,7 +135,7 @@ export function useOAuthConnect(provider: string | undefined, connectorType: str
       setAccount(null);
       setPopupBlocked(false);
       try {
-        const body: StartOAuthBody = { data_source_type: connectorType };
+        const body: StartOAuthBody = { data_source_type: dataSourceType };
         if (opts?.scopes?.length) body.scopes = opts.scopes;
         if (opts?.label) body.label = opts.label;
         if (opts?.clientId && opts?.clientSecret) {
@@ -176,7 +176,7 @@ export function useOAuthConnect(provider: string | undefined, connectorType: str
         fail((e as Error).message);
       }
     },
-    [endpoint, token, database, provider, connectorType, startPolling, fail],
+    [endpoint, token, database, provider, dataSourceType, startPolling, fail],
   );
 
   return { phase, account, error, popupBlocked, authorizeUrl, connect, reset };

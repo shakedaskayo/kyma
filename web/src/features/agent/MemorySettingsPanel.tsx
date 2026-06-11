@@ -319,7 +319,7 @@ export function MemorySettingsPanel() {
           </Section>
 
           {/* Ingestion */}
-          <Section icon={<Brain className="h-4 w-4" />} title="Ingestion" desc="How conversation/data-source activity becomes memory.">
+          <Section icon={<Brain className="h-4 w-4" />} title="Ingestion" desc="How conversation and data source activity becomes memory.">
             <Toggle
               label="LLM extraction"
               hint="Extract atomic memories, entities, and relationships with conflict resolution. When off, the pipeline writes deterministic activity summaries."

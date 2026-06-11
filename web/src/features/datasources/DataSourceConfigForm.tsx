@@ -2,7 +2,7 @@ import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2 } from "l
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { CatalogEntry } from "@/sdk/datasources";
-import { INTERVAL_PRESETS, type KindFormValues } from "./connector-kinds";
+import { INTERVAL_PRESETS, type KindFormValues } from "./datasource-kinds";
 
 /** Inline token-verification state for token-auth kinds. */
 export interface TokenVerify {
@@ -27,7 +27,7 @@ interface Props {
   authSlot?: React.ReactNode;
 }
 
-export function ConnectorConfigForm({
+export function DataSourceConfigForm({
   entry,
   values,
   onChange,
@@ -46,12 +46,12 @@ export function ConnectorConfigForm({
     <div className="space-y-4">
       {/* Name */}
       <div className="space-y-1">
-        <Label htmlFor="conn-name">Name *</Label>
+        <Label htmlFor="ds-name">Name *</Label>
         <Input
-          id="conn-name"
+          id="ds-name"
           value={values.name}
           onChange={(e) => onChange({ name: e.target.value })}
-          placeholder={`My ${entry.label} connector`}
+          placeholder={`My ${entry.label} data source`}
           autoFocus
         />
       </div>
@@ -64,11 +64,11 @@ export function ConnectorConfigForm({
         f.type === "checkbox" ? (
           <div key={f.key} className="space-y-1">
             <label
-              htmlFor={`conn-field-${f.key}`}
+              htmlFor={`ds-field-${f.key}`}
               className="flex items-center gap-2 text-sm font-medium"
             >
               <input
-                id={`conn-field-${f.key}`}
+                id={`ds-field-${f.key}`}
                 type="checkbox"
                 className="h-4 w-4 rounded border-input accent-primary"
                 checked={values.fields[f.key] === "true"}
@@ -80,12 +80,12 @@ export function ConnectorConfigForm({
           </div>
         ) : (
           <div key={f.key} className="space-y-1">
-            <Label htmlFor={`conn-field-${f.key}`}>
+            <Label htmlFor={`ds-field-${f.key}`}>
               {f.label}
               {f.required && " *"}
             </Label>
             <Input
-              id={`conn-field-${f.key}`}
+              id={`ds-field-${f.key}`}
               type={f.type === "secret" ? "password" : "text"}
               autoComplete={f.type === "secret" ? "off" : undefined}
               value={values.fields[f.key] ?? ""}
@@ -126,9 +126,9 @@ export function ConnectorConfigForm({
 
       {/* Sync interval */}
       <div className="space-y-1">
-        <Label htmlFor="conn-interval">Sync interval</Label>
+        <Label htmlFor="ds-interval">Sync interval</Label>
         <select
-          id="conn-interval"
+          id="ds-interval"
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           value={values.scheduleMs}
           onChange={(e) => onChange({ scheduleMs: Number(e.target.value) })}
@@ -158,18 +158,18 @@ export function ConnectorConfigForm({
         {advancedOpen && (
           <div className="mt-2 grid grid-cols-2 gap-2 rounded-md border bg-muted/20 p-3">
             <div className="space-y-1">
-              <Label htmlFor="conn-db">Target database</Label>
+              <Label htmlFor="ds-db">Target database</Label>
               <Input
-                id="conn-db"
+                id="ds-db"
                 value={values.targetDatabase}
                 onChange={(e) => onChange({ targetDatabase: e.target.value })}
                 placeholder="(session default)"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="conn-table">Target table</Label>
+              <Label htmlFor="ds-table">Target table</Label>
               <Input
-                id="conn-table"
+                id="ds-table"
                 value={values.targetTable}
                 onChange={(e) => onChange({ targetTable: e.target.value })}
                 placeholder={entry.default_target_table ?? ""}

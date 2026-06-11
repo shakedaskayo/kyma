@@ -2,8 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ConnectorsList } from "@/features/connectors/ConnectorsList";
-import { AddConnectorWizard } from "@/features/connectors/AddConnectorWizard";
+import { DataSourcesList } from "@/features/datasources/DataSourcesList";
+import { AddDataSourceWizard } from "@/features/datasources/AddDataSourceWizard";
 import { ControlPlaneGate, useCapability } from "@/features/capabilities/ControlPlaneGate";
 
 export const Route = createFileRoute("/_app/connectors/")({
@@ -35,11 +35,11 @@ function ConnectorsListPage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         <ControlPlaneGate feature="data_sources" title="Connectors">
-          <ConnectorsList onAdd={() => setAddOpen(true)} />
+          <DataSourcesList onAdd={() => setAddOpen(true)} />
         </ControlPlaneGate>
       </div>
 
-      <AddConnectorWizard
+      <AddDataSourceWizard
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onCreated={(id) => navigate({ to: "/connectors/$id", params: { id } })}

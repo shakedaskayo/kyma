@@ -21,18 +21,18 @@ import {
   type DataSourceDetail as Detail,
 } from "@/sdk/datasources";
 import { useCredentials } from "@/features/credentials/useCredentials";
-import { formatInterval, graphNameForEntry } from "./connector-kinds";
+import { formatInterval, graphNameForEntry } from "./datasource-kinds";
 import { BrandIcon } from "./BrandIcon";
 import { StatusBadge } from "./StatusBadge";
 import { useOAuthConnect } from "./useOAuthConnect";
 import {
-  useConnectorCatalog,
-  useDeleteConnector,
-  usePatchConnector,
-  usePauseConnector,
-  useResumeConnector,
-  useTriggerConnector,
-} from "./useConnectors";
+  useDataSourceCatalog,
+  useDeleteDataSource,
+  usePatchDataSource,
+  usePauseDataSource,
+  useResumeDataSource,
+  useTriggerDataSource,
+} from "./useDataSources";
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -46,7 +46,7 @@ function fmtDate(iso: string | null): string {
   });
 }
 
-export function ConnectorDetail({
+export function DataSourceDetail({
   detail,
   onDeleted,
 }: {
@@ -54,11 +54,11 @@ export function ConnectorDetail({
   onDeleted: () => void;
 }) {
   const navigate = useNavigate();
-  const trigger = useTriggerConnector(detail.id);
-  const pause = usePauseConnector(detail.id);
-  const resume = useResumeConnector(detail.id);
-  const del = useDeleteConnector();
-  const { data: catalog } = useConnectorCatalog();
+  const trigger = useTriggerDataSource(detail.id);
+  const pause = usePauseDataSource(detail.id);
+  const resume = useResumeDataSource(detail.id);
+  const del = useDeleteDataSource();
+  const { data: catalog } = useDataSourceCatalog();
   const entry = catalog?.find((e) => e.type_id === detail.type);
   const status = deriveStatus(detail);
 
@@ -135,7 +135,7 @@ export function ConnectorDetail({
           className="ml-auto text-muted-foreground hover:text-destructive"
           disabled={del.isPending}
           onClick={() => {
-            if (confirm(`Delete connector "${detail.name}"? This cannot be undone.`)) {
+            if (confirm(`Delete data source "${detail.name}"? This cannot be undone.`)) {
               del.mutate(detail.id, { onSuccess: onDeleted });
             }
           }}
@@ -162,7 +162,7 @@ export function ConnectorDetail({
 
       <SyncStatus detail={detail} graphName={entry?.graph_name ?? null} />
 
-      <ConnectorCredentialCard detail={detail} entry={entry} />
+      <DataSourceCredentialCard detail={detail} entry={entry} />
 
       {/* Selected resources (e.g. repositories) */}
       {resources.length > 0 && (
@@ -192,20 +192,20 @@ export function ConnectorDetail({
   );
 }
 
-/** Shows the connector's linked credential and, for OAuth connectors, a
- * Reconnect action that re-runs the connect flow and repoints the connector at
+/** Shows the data source's linked credential and, for OAuth data sources, a
+ * Reconnect action that re-runs the connect flow and repoints the data source at
  * the freshly minted credential. */
-function ConnectorCredentialCard({ detail, entry }: { detail: Detail; entry?: CatalogEntry }) {
+function DataSourceCredentialCard({ detail, entry }: { detail: Detail; entry?: CatalogEntry }) {
   const credentialId =
     typeof detail.config?.credential_id === "string"
       ? (detail.config.credential_id as string)
       : undefined;
   const { data: creds } = useCredentials();
-  const patch = usePatchConnector(detail.id);
+  const patch = usePatchDataSource(detail.id);
   const isOAuthConn = entry?.auth_mode === "oauth";
   const oauth = useOAuthConnect(entry?.oauth_provider, detail.type);
 
-  // On a successful reconnect, repoint the connector at the new credential.
+  // On a successful reconnect, repoint the data source at the new credential.
   useEffect(() => {
     if (oauth.phase === "success" && oauth.account) {
       patch.mutate({ config: { ...detail.config, credential_id: oauth.account.credentialId } });
@@ -214,7 +214,7 @@ function ConnectorCredentialCard({ detail, entry }: { detail: Detail; entry?: Ca
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [oauth.phase, oauth.account]);
 
-  // Non-OAuth credential-backed connectors (e.g. msfabric service principals)
+  // Non-OAuth credential-backed data sources (e.g. msfabric service principals)
   // swap the linked credential via a picker over matching stored credentials.
   const acceptedKinds = entry?.accepted_credential_kinds ?? [];
   const swappable = !isOAuthConn && acceptedKinds.length > 0;
@@ -301,9 +301,9 @@ function ConnectorCredentialCard({ detail, entry }: { detail: Detail; entry?: Ca
 }
 
 function SyncStatus({ detail, graphName }: { detail: Detail; graphName: string | null }) {
-  // For graph connectors, show the connector's *graph size* (the meaningful,
+  // For graph data sources, show the data source's *graph size* (the meaningful,
   // cumulative number) rather than last-run rows — which sit at 0 once polling
-  // reaches steady state. Non-graph connectors show last-run rows instead.
+  // reaches steady state. Non-graph data sources show last-run rows instead.
   const { endpoint, token, database } = useSession();
   const { data: gstats } = useQuery({
     queryKey: ["graph", "stats", endpoint, database, graphName],

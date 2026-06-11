@@ -32,7 +32,7 @@ const DARK_BRAND_COLOR: Record<string, string> = {
 // Brand slug (from the engine catalog's `brand` field) → an icon component.
 // `any` props: simple-icons and lucide have different (but compatible-at-runtime)
 // prop shapes; we call each with the props it accepts in `BrandIcon` below.
-// Adding a connector in the engine needs no change here unless it introduces a
+// Adding a data source in the engine needs no change here unless it introduces a
 // brand not yet mapped — in which case it falls back to a generic glyph.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const BRAND: Record<string, ComponentType<any>> = {

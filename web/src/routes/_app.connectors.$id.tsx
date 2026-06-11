@@ -1,8 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useConnector } from "@/features/connectors/useConnectors";
-import { ConnectorDetail } from "@/features/connectors/ConnectorDetail";
+import { useDataSource } from "@/features/datasources/useDataSources";
+import { DataSourceDetail } from "@/features/datasources/DataSourceDetail";
 
 export const Route = createFileRoute("/_app/connectors/$id")({
   component: ConnectorDetailPage,
@@ -11,7 +11,7 @@ export const Route = createFileRoute("/_app/connectors/$id")({
 function ConnectorDetailPage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, error } = useConnector(id);
+  const { data: detail, isLoading, error } = useDataSource(id);
 
   return (
     <div className="flex h-full flex-col bg-muted/10">
@@ -44,7 +44,7 @@ function ConnectorDetailPage() {
           </div>
         )}
         {detail && (
-          <ConnectorDetail detail={detail} onDeleted={() => navigate({ to: "/connectors" })} />
+          <DataSourceDetail detail={detail} onDeleted={() => navigate({ to: "/connectors" })} />
         )}
       </div>
     </div>

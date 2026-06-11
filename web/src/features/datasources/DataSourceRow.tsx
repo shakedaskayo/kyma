@@ -4,13 +4,13 @@ import { Button } from "@/components/ui/button";
 import { deriveStatus, type DataSourceSummary } from "@/sdk/datasources";
 import { BrandIcon } from "./BrandIcon";
 import {
-  useConnector,
-  useConnectorCatalog,
-  useDeleteConnector,
-  usePauseConnector,
-  useResumeConnector,
-  useTriggerConnector,
-} from "./useConnectors";
+  useDataSource,
+  useDataSourceCatalog,
+  useDeleteDataSource,
+  usePauseDataSource,
+  useResumeDataSource,
+  useTriggerDataSource,
+} from "./useDataSources";
 import { StatusBadge } from "./StatusBadge";
 
 function relTime(iso: string | null): string {
@@ -27,19 +27,19 @@ function relTime(iso: string | null): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
-export function ConnectorRow({ connector }: { connector: DataSourceSummary }) {
+export function DataSourceRow({ dataSource }: { dataSource: DataSourceSummary }) {
   const navigate = useNavigate();
   // Lazy per-row hydration — the list endpoint carries no status/metrics.
-  const { data: detail } = useConnector(connector.id);
-  const trigger = useTriggerConnector(connector.id);
-  const pause = usePauseConnector(connector.id);
-  const resume = useResumeConnector(connector.id);
-  const del = useDeleteConnector();
-  const { data: catalog } = useConnectorCatalog();
-  const entry = catalog?.find((e) => e.type_id === connector.type);
-  const status = detail ? deriveStatus(detail) : connector.enabled ? "idle" : "disabled";
+  const { data: detail } = useDataSource(dataSource.id);
+  const trigger = useTriggerDataSource(dataSource.id);
+  const pause = usePauseDataSource(dataSource.id);
+  const resume = useResumeDataSource(dataSource.id);
+  const del = useDeleteDataSource();
+  const { data: catalog } = useDataSourceCatalog();
+  const entry = catalog?.find((e) => e.type_id === dataSource.type);
+  const status = detail ? deriveStatus(detail) : dataSource.enabled ? "idle" : "disabled";
 
-  const open = () => navigate({ to: "/connectors/$id", params: { id: connector.id } });
+  const open = () => navigate({ to: "/connectors/$id", params: { id: dataSource.id } });
 
   return (
     <div
@@ -55,9 +55,9 @@ export function ConnectorRow({ connector }: { connector: DataSourceSummary }) {
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate font-medium text-foreground">{connector.name}</span>
+          <span className="truncate font-medium text-foreground">{dataSource.name}</span>
           <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-            {entry?.label ?? connector.type}
+            {entry?.label ?? dataSource.type}
           </span>
         </div>
         <div className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground">
@@ -80,12 +80,12 @@ export function ConnectorRow({ connector }: { connector: DataSourceSummary }) {
           size="icon"
           className="h-8 w-8"
           title="Sync now"
-          disabled={trigger.isPending || !connector.enabled}
+          disabled={trigger.isPending || !dataSource.enabled}
           onClick={() => trigger.mutate()}
         >
           <RefreshCw className={trigger.isPending ? "animate-spin" : ""} />
         </Button>
-        {connector.enabled ? (
+        {dataSource.enabled ? (
           <Button
             variant="ghost"
             size="icon"
@@ -115,8 +115,8 @@ export function ConnectorRow({ connector }: { connector: DataSourceSummary }) {
           title="Delete"
           disabled={del.isPending}
           onClick={() => {
-            if (confirm(`Delete connector "${connector.name}"? This cannot be undone.`)) {
-              del.mutate(connector.id);
+            if (confirm(`Delete data source "${dataSource.name}"? This cannot be undone.`)) {
+              del.mutate(dataSource.id);
             }
           }}
         >

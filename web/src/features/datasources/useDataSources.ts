@@ -18,25 +18,25 @@ import {
 
 // Query keys are scoped to (endpoint, database) — never the bearer or any PAT.
 const listKey = (endpoint: string, database: string) =>
-  ["connectors", endpoint, database] as const;
+  ["data-sources", endpoint, database] as const;
 const detailKey = (endpoint: string, database: string, id: string) =>
-  ["connectors", endpoint, database, id] as const;
+  ["data-sources", endpoint, database, id] as const;
 
 /**
- * The engine-driven connector catalog (available + coming-soon vendors). Cached
+ * The engine-driven data source catalog (available + coming-soon vendors). Cached
  * aggressively — it's static metadata that only changes on an engine deploy.
  */
-export function useConnectorCatalog() {
+export function useDataSourceCatalog() {
   const { endpoint, token, database } = useSession();
   return useQuery({
-    queryKey: ["connectors", "catalog", endpoint],
+    queryKey: ["data-sources", "catalog", endpoint],
     queryFn: () => getDataSourceCatalog({ endpoint, token, database }),
     enabled: Boolean(endpoint),
     staleTime: 10 * 60_000,
   });
 }
 
-export function useConnectors() {
+export function useDataSources() {
   const { endpoint, token, database } = useSession();
   return useQuery({
     queryKey: listKey(endpoint, database),
@@ -48,7 +48,7 @@ export function useConnectors() {
 }
 
 /** Lazy per-row hydration of metrics/status (list carries none). */
-export function useConnector(id: string | null) {
+export function useDataSource(id: string | null) {
   const { endpoint, token, database } = useSession();
   return useQuery({
     queryKey: detailKey(endpoint, database, id ?? ""),
@@ -58,7 +58,7 @@ export function useConnector(id: string | null) {
   });
 }
 
-export function useCreateConnector() {
+export function useCreateDataSource() {
   const { endpoint, token, database } = useSession();
   const qc = useQueryClient();
   return useMutation({
@@ -66,13 +66,13 @@ export function useCreateConnector() {
       createDataSource({ endpoint, token, database, body }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: listKey(endpoint, database) });
-      toast.success("Connector created.");
+      toast.success("Data source created.");
     },
     onError: (e) => toast.error(`Create failed: ${(e as Error).message}`),
   });
 }
 
-export function usePatchConnector(id: string) {
+export function usePatchDataSource(id: string) {
   const { endpoint, token, database } = useSession();
   const qc = useQueryClient();
   return useMutation({
@@ -81,13 +81,13 @@ export function usePatchConnector(id: string) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: listKey(endpoint, database) });
       void qc.invalidateQueries({ queryKey: detailKey(endpoint, database, id) });
-      toast.success("Connector updated.");
+      toast.success("Data source updated.");
     },
     onError: (e) => toast.error(`Update failed: ${(e as Error).message}`),
   });
 }
 
-export function usePauseConnector(id: string) {
+export function usePauseDataSource(id: string) {
   const { endpoint, token, database } = useSession();
   const qc = useQueryClient();
   return useMutation({
@@ -95,13 +95,13 @@ export function usePauseConnector(id: string) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: listKey(endpoint, database) });
       void qc.invalidateQueries({ queryKey: detailKey(endpoint, database, id) });
-      toast.success("Connector paused.");
+      toast.success("Data source paused.");
     },
     onError: (e) => toast.error(`Pause failed: ${(e as Error).message}`),
   });
 }
 
-export function useResumeConnector(id: string) {
+export function useResumeDataSource(id: string) {
   const { endpoint, token, database } = useSession();
   const qc = useQueryClient();
   return useMutation({
@@ -109,13 +109,13 @@ export function useResumeConnector(id: string) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: listKey(endpoint, database) });
       void qc.invalidateQueries({ queryKey: detailKey(endpoint, database, id) });
-      toast.success("Connector resumed.");
+      toast.success("Data source resumed.");
     },
     onError: (e) => toast.error(`Resume failed: ${(e as Error).message}`),
   });
 }
 
-export function useTriggerConnector(id: string) {
+export function useTriggerDataSource(id: string) {
   const { endpoint, token, database } = useSession();
   const qc = useQueryClient();
   return useMutation({
@@ -128,14 +128,14 @@ export function useTriggerConnector(id: string) {
   });
 }
 
-export function useDeleteConnector() {
+export function useDeleteDataSource() {
   const { endpoint, token, database } = useSession();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteDataSource({ endpoint, token, database, id }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: listKey(endpoint, database) });
-      toast.success("Connector deleted.");
+      toast.success("Data source deleted.");
     },
     onError: (e) => toast.error(`Delete failed: ${(e as Error).message}`),
   });

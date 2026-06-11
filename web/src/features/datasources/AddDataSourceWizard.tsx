@@ -20,14 +20,14 @@ import {
   offersStoredCredential,
   requiresStoredCredential,
   type KindFormValues,
-} from "./connector-kinds";
-import { ConnectorCatalog } from "./ConnectorCatalog";
-import { ConnectorConfigForm } from "./ConnectorConfigForm";
-import { ConnectorConnectStep } from "./ConnectorConnectStep";
-import { ConnectorCredentialPicker } from "./ConnectorCredentialPicker";
+} from "./datasource-kinds";
+import { DataSourceCatalog } from "./DataSourceCatalog";
+import { DataSourceConfigForm } from "./DataSourceConfigForm";
+import { DataSourceConnectStep } from "./DataSourceConnectStep";
+import { DataSourceCredentialPicker } from "./DataSourceCredentialPicker";
 import { RepoPicker } from "./RepoPicker";
 import { BrandIcon } from "./BrandIcon";
-import { useCreateConnector, useGitHubRepos } from "./useConnectors";
+import { useCreateDataSource, useGitHubRepos } from "./useDataSources";
 import { useCredentials } from "@/features/credentials/useCredentials";
 
 type Step = "catalog" | "config" | "resources" | "review";
@@ -101,7 +101,7 @@ function ReviewRow({
   );
 }
 
-export function AddConnectorWizard({
+export function AddDataSourceWizard({
   open,
   onClose,
   onCreated,
@@ -111,7 +111,7 @@ export function AddConnectorWizard({
   onCreated: (id: string) => void;
 }) {
   const { database } = useSession();
-  const create = useCreateConnector();
+  const create = useCreateDataSource();
   const repos = useGitHubRepos();
   const creds = useCredentials();
 
@@ -169,9 +169,9 @@ export function AddConnectorWizard({
   const configValid = useMemo(() => {
     if (!entry) return false;
     if (!values.name.trim()) return false;
-    // OAuth connectors require a connected credential rather than form fields.
+    // OAuth data sources require a connected credential rather than form fields.
     if (isOAuth(entry)) return Boolean(values.credentialId);
-    // Credential-only connectors (e.g. msfabric) require a stored credential.
+    // Credential-only data sources (e.g. msfabric) require a stored credential.
     if (requiresStoredCredential(entry) && !values.credentialId) return false;
     return entry.fields.every((f) => !f.required || (values.fields[f.key] ?? "").trim());
   }, [entry, values]);
@@ -223,7 +223,7 @@ export function AddConnectorWizard({
               </button>
             )}
             {step === "catalog" || !entry ? (
-              "Add a connector"
+              "Add a data source"
             ) : (
               <span className="flex items-center gap-2">
                 <BrandIcon brand={entry.brand} size={18} />
@@ -244,11 +244,11 @@ export function AddConnectorWizard({
 
         <div className="py-1">
           {step === "catalog" && (
-            <ConnectorCatalog selectedType={entry?.type_id} onPick={pickEntry} />
+            <DataSourceCatalog selectedType={entry?.type_id} onPick={pickEntry} />
           )}
 
           {step === "config" && entry && (
-            <ConnectorConfigForm
+            <DataSourceConfigForm
               entry={entry}
               values={values}
               onChange={update}
@@ -256,14 +256,14 @@ export function AddConnectorWizard({
               onToggleAdvanced={() => setAdvancedOpen((v) => !v)}
               authSlot={
                 isOAuth(entry) ? (
-                  <ConnectorConnectStep
+                  <DataSourceConnectStep
                     entry={entry}
                     credentialId={values.credentialId}
                     onConnected={(a) => update({ credentialId: a.credentialId })}
                     onClear={() => update({ credentialId: null })}
                   />
                 ) : offersStoredCredential(entry) ? (
-                  <ConnectorCredentialPicker
+                  <DataSourceCredentialPicker
                     entry={entry}
                     credentialId={values.credentialId}
                     onChange={(credentialId) => update({ credentialId })}
@@ -352,7 +352,7 @@ export function AddConnectorWizard({
 
           {create.isError && (
             <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              {(create.error as Error)?.message ?? "Failed to create connector."}
+              {(create.error as Error)?.message ?? "Failed to create data source."}
             </p>
           )}
         </div>
@@ -368,7 +368,7 @@ export function AddConnectorWizard({
           )}
           {step === "review" && (
             <Button onClick={handleCreate} disabled={create.isPending}>
-              {create.isPending ? "Creating…" : "Create connector"}
+              {create.isPending ? "Creating…" : "Create data source"}
             </Button>
           )}
         </DialogFooter>

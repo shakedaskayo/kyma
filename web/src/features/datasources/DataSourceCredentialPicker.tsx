@@ -4,15 +4,15 @@ import type { CatalogEntry } from "@/sdk/datasources";
 import { credentialKindLabel } from "@/sdk/credentials";
 import { useCredentials } from "@/features/credentials/useCredentials";
 import { CredentialIcon } from "@/features/credentials/CredentialIcon";
-import { acceptedCredentialKinds, requiresStoredCredential } from "./connector-kinds";
+import { acceptedCredentialKinds, requiresStoredCredential } from "./datasource-kinds";
 
 /**
- * Stored-credential picker for non-OAuth credential-backed connectors
+ * Stored-credential picker for non-OAuth credential-backed data sources
  * (e.g. msfabric's Entra service principal). Lists credentials filtered to
  * the entry's `accepted_credential_kinds`; the selection flows into the
- * connector config as `credential_id` via `buildCreateBody`.
+ * data source config as `credential_id` via `buildCreateBody`.
  */
-export function ConnectorCredentialPicker({
+export function DataSourceCredentialPicker({
   entry,
   credentialId,
   onChange,
@@ -29,13 +29,13 @@ export function ConnectorCredentialPicker({
 
   return (
     <div className="space-y-1">
-      <Label htmlFor="conn-credential">
+      <Label htmlFor="ds-credential">
         Credential{required && " *"}
         <span className="ml-1 font-normal text-muted-foreground">({kindLabels})</span>
       </Label>
       {matching.length > 0 ? (
         <select
-          id="conn-credential"
+          id="ds-credential"
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           value={credentialId ?? ""}
           onChange={(e) => onChange(e.target.value || null)}
@@ -53,7 +53,7 @@ export function ConnectorCredentialPicker({
           <span>
             No {kindLabels} credential stored yet. Add one under{" "}
             <span className="font-medium text-foreground">Settings → Credentials</span>, then
-            return here — the connector resolves it by reference, so a single rotation
+            return here — the data source resolves it by reference, so a single rotation
             propagates.
           </span>
         </div>
@@ -61,7 +61,7 @@ export function ConnectorCredentialPicker({
       {credentialId && (
         <p className="flex items-center gap-1 text-xs text-muted-foreground">
           <CredentialIcon kind={matching.find((c) => c.id === credentialId)?.kind ?? ""} size={12} />
-          Stored encrypted; the connector reads it at run time.
+          Stored encrypted; the data source reads it at run time.
         </p>
       )}
     </div>

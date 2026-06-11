@@ -9,12 +9,12 @@ import { BrandIcon } from "./BrandIcon";
 import { useOAuthConnect, type ConnectedAccount } from "./useOAuthConnect";
 
 /**
- * The "Connect <provider>" step for OAuth connectors. Big primary connect
+ * The "Connect <provider>" step for OAuth data sources. Big primary connect
  * button (popup), an advanced disclosure to bring your own client app, and a
  * picker to reuse an existing OAuth credential. Surfaces the minted (or chosen)
  * `credential_id` to the wizard via `onConnected`.
  */
-export function ConnectorConnectStep({
+export function DataSourceConnectStep({
   entry,
   credentialId,
   onConnected,

@@ -3,24 +3,24 @@ import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { CatalogEntry } from "@/sdk/datasources";
-import { useConnectorCatalog } from "./useConnectors";
-import { CATEGORIES, categoryLabel, authLabel } from "./connector-kinds";
+import { useDataSourceCatalog } from "./useDataSources";
+import { CATEGORIES, categoryLabel, authLabel } from "./datasource-kinds";
 import { BrandIcon } from "./BrandIcon";
 
 /**
  * The vendor catalog grid — the source-selection surface. Entries come from the
- * engine (`/v1/data-sources/catalog`), grouped by category. Available connectors
+ * engine (`/v1/data-sources/catalog`), grouped by category. Available data sources
  * are clickable; "coming soon" ones are shown (greyed, with a badge) so the
  * product reads like a real integrations marketplace, not a single-vendor tool.
  */
-export function ConnectorCatalog({
+export function DataSourceCatalog({
   selectedType,
   onPick,
 }: {
   selectedType?: string | null;
   onPick: (entry: CatalogEntry) => void;
 }) {
-  const { data, isLoading, isError, error } = useConnectorCatalog();
+  const { data, isLoading, isError, error } = useDataSourceCatalog();
   const [query, setQuery] = useState("");
 
   const groups = useMemo(() => {
@@ -54,7 +54,7 @@ export function ConnectorCatalog({
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           className="h-9 pl-8"
-          placeholder="Search connectors…"
+          placeholder="Search data sources…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           autoFocus
@@ -62,7 +62,7 @@ export function ConnectorCatalog({
       </div>
 
       {isLoading && (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" aria-label="Loading connectors">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" aria-label="Loading data sources">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="flex items-start gap-3 rounded-lg border p-3">
               <div className="h-9 w-9 shrink-0 animate-pulse rounded-md bg-muted" />
@@ -81,7 +81,7 @@ export function ConnectorCatalog({
         </div>
       )}
       {!isLoading && !isError && groups.length === 0 && (
-        <div className="py-12 text-center text-sm text-muted-foreground">No connectors match.</div>
+        <div className="py-12 text-center text-sm text-muted-foreground">No data sources match.</div>
       )}
 
       <div className="max-h-[52vh] space-y-4 overflow-y-auto pr-1">

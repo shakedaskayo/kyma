@@ -3,7 +3,7 @@ import type { CatalogEntry, CreateDataSourceBody } from "@/sdk/datasources";
 // Catalog presentation + create helpers. The catalog itself is engine-driven
 // (GET /v1/data-sources/catalog → CatalogEntry[]); this module only adds the
 // generic create-body assembly, category ordering, and interval presets, so a
-// new connector needs no change here.
+// new data source needs no change here.
 
 /** Inputs the wizard collects before assembling the create body. */
 export interface KindFormValues {
@@ -16,7 +16,7 @@ export interface KindFormValues {
   targetTable: string;
   /** resource selection (e.g. selected repos "owner/name") */
   resources: string[];
-  /** stored credential id (OAuth connectors); set by the connect step. */
+  /** stored credential id (OAuth data sources); set by the connect step. */
   credentialId: string | null;
 }
 
@@ -32,7 +32,7 @@ export function categoryLabel(id: string): string {
   return CATEGORIES.find((c) => c.id === id)?.label ?? "Other";
 }
 
-/** Short label for a connector's auth mode (shown on cards / review). */
+/** Short label for a data source's auth mode (shown on cards / review). */
 export function authLabel(mode: string): string {
   switch (mode) {
     case "pat": return "Token auth";
@@ -100,8 +100,8 @@ export function buildCreateBody(
       f.type === "checkbox" ? values.fields[f.key] === "true" : values.fields[f.key] ?? "";
   }
   if (entry.resource) config[entry.resource.config_key] = values.resources;
-  // Credential-backed (OAuth) connectors resolve a stored credential at run
-  // time — the connector reads `credential_id` from its config.
+  // Credential-backed (OAuth) data sources resolve a stored credential at run
+  // time — the data source reads `credential_id` from its config.
   if (values.credentialId) config.credential_id = values.credentialId;
   return {
     name: values.name.trim(),
@@ -113,7 +113,7 @@ export function buildCreateBody(
   };
 }
 
-/** The "Open graph" target for a connector, falling back to its type. */
+/** The "Open graph" target for a data source, falling back to its type. */
 export function graphNameForEntry(entry: CatalogEntry | undefined, type: string): string {
   return entry?.graph_name ?? type;
 }
