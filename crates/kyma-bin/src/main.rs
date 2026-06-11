@@ -30,6 +30,7 @@ use kyma_ingest_core::{
 use kyma_ingest_filedrop::{FiledropConfig, FiledropWatcher};
 use kyma_ingest_kafka::{KafkaConsumerConfig, KafkaConsumerWorker};
 use kyma_ingest_otlp::OtlpLogsService;
+use kyma_ingest_otlp::traces::OtlpTraceService;
 use kyma_ingest_rest::IngestState;
 use kyma_server::auth::{
     require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role,
@@ -79,14 +80,49 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                tracing_subscriber::EnvFilter::new("info,sqlx=warn,hyper=warn,h2=warn")
-            }),
+    use opentelemetry::trace::TracerProvider as _;
+    use tracing_subscriber::layer::SubscriberExt as _;
+    use tracing_subscriber::util::SubscriberInitExt as _;
+    use tracing_subscriber::Layer as _;
+
+    // The env filter is attached to the fmt layer ONLY: a restrictive
+    // RUST_LOG (e.g. `warn`) must not silence self-tracing, whose otel layer
+    // carries its own `kyma_telemetry` Targets filter below.
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        tracing_subscriber::EnvFilter::new("info,sqlx=warn,hyper=warn,h2=warn")
+    });
+
+    // Self-tracing: spans with target `kyma_telemetry` are exported into our
+    // own otel_traces table. The exporter starts unwired (drops batches) and
+    // is connected to storage further down, once the write path exists.
+    // (BatchSpanProcessor needs the Tokio runtime — we're inside #[tokio::main].)
+    let self_exporter = kyma_ingest_otlp::self_export::SelfTraceExporter::unwired();
+    let self_trace_handle = self_exporter.handle();
+    let tracer_provider = opentelemetry_sdk::trace::TracerProvider::builder()
+        .with_batch_exporter(self_exporter, opentelemetry_sdk::runtime::Tokio)
+        .build();
+    let tracer = tracer_provider.tracer("kyma-server");
+    let otel_layer = tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_filter(
+            tracing_subscriber::filter::Targets::new()
+                .with_target("kyma_telemetry", tracing::Level::INFO),
+        );
+
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(true)
+                .with_filter(env_filter),
         )
-        .with_target(true)
+        .with(otel_layer)
         .init();
+
+    // Keep the provider (and its batch processor) alive for the process
+    // lifetime. We intentionally do NOT call shutdown on exit — spans in the
+    // last flush window (~5s) are lost on shutdown, which is acceptable for
+    // self-tracing.
+    let _tracer_provider_guard = tracer_provider;
 
     // Install the Prometheus recorder. Must happen before any metrics macro
     // fires — so, very first thing in main.
@@ -308,6 +344,12 @@ async fn main() -> Result<()> {
         info!("ingest staging: disabled (KYMA_STAGING_DISABLED=1)");
         WritePath::new(catalog.clone(), format.clone()).with_events(ingest_events.clone())
     };
+    // Connect self-tracing to storage (drops silently before this point).
+    let _ = self_trace_handle.set(kyma_ingest_otlp::self_export::SelfTraceCtx {
+        catalog: catalog.clone(),
+        write_path: write_path.clone(),
+        database: cli.otlp_database.clone(),
+    });
     let ingest_router = kyma_ingest_rest::router(IngestState {
         catalog: catalog.clone(),
         write_path: write_path.clone(),
@@ -1289,11 +1331,18 @@ async fn main() -> Result<()> {
             write_path.clone(),
             cli.otlp_database.clone(),
         ));
+        let otlp_trace_svc = OtlpTraceService::new(
+            catalog.clone(),
+            write_path.clone(),
+            cli.otlp_database.clone(),
+        )
+        .into_server();
         let mut otlp_rx = shutdown_tx.subscribe();
         info!(addr = %otlp_addr, database = %cli.otlp_database, "otlp gRPC server listening");
         Some(tokio::spawn(async move {
             let res = tonic::transport::Server::builder()
                 .add_service(otlp_svc)
+                .add_service(otlp_trace_svc)
                 .serve_with_shutdown(otlp_addr, async move {
                     let _ = otlp_rx.recv().await;
                 })

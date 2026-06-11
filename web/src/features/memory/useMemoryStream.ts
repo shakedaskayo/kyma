@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { LiveSession, type LiveStatus } from "@/sdk/discover-live";
 import { useSession } from "@/sdk/session";
-import { str } from "./lib";
+import { str, isBackfill, spanRowToEvent } from "./lib";
 
 /**
  * A single firehose event in the live pulse. `key` is stable per event so
  * AnimatePresence can track entrance/exit; `ts` is the source timestamp.
+ * `backfill` is true when the event was already old at arrival (suppresses
+ * the live-flash animation — backfill history renders without it).
  */
 export interface PulseEvent {
   key: string;
@@ -14,17 +16,25 @@ export interface PulseEvent {
   sessionId: string;
   realm: string;
   text: string;
+  backfill: boolean;
 }
+
+/** Shape produced by rowToEvent / spanRowToEvent before backfill classification. */
+type RawEvent = Omit<PulseEvent, "backfill">;
 
 export type StreamMode = "live" | "polling" | "idle";
 
 const FIREHOSE_SOURCE = "default.claude_code_events";
 const FIREHOSE_DB = "default";
+const OPS_SOURCE = "otel.otel_traces";
+const OPS_DB = "otel";
+const OPS_KQL =
+  "otel_traces | where name startswith 'memory.' or name startswith 'agent.' or name startswith 'ingest.' | sort by start_time desc | take 12";
 const MAX_EVENTS = 60; // ring cap kept in state
 const RELEASE_INTERVAL_MS = 900; // visual cadence — ~1 entry/sec sliding in
 const POLL_INTERVAL_MS = 2000;
 
-function rowToEvent(row: Record<string, unknown>): PulseEvent {
+function rowToEvent(row: Record<string, unknown>): RawEvent {
   const ts = str(row.ts) || str(row.at) || str(row.timestamp) || new Date().toISOString();
   const kind = str(row.kind) || "event";
   const sessionId = str(row.session_id) || "—";
@@ -40,7 +50,8 @@ function rowToEvent(row: Record<string, unknown>): PulseEvent {
 }
 
 /**
- * Live-streams firehose events from `default.claude_code_events`.
+ * Live-streams firehose events from `default.claude_code_events` and op spans
+ * from `otel.otel_traces`.
  *
  * Primary path: the explore live-tail WebSocket (`LiveSession`) — ~250ms
  * latency row frames. If the socket errors (or never reaches `live`), we fall
@@ -50,12 +61,17 @@ function rowToEvent(row: Record<string, unknown>): PulseEvent {
  * In BOTH paths incoming events are buffered and *released one at a time* on a
  * ~1/sec cadence so the pulse rail reads as a living stream rather than a batch
  * dump. `reducedMotion` disables the staged release (everything appears at once).
+ *
+ * Events that are already older than BACKFILL_THRESHOLD_MS at arrival are
+ * classified as `backfill: true` and rendered immediately into history without
+ * the live-flash animation.
  */
 export function useMemoryStream(opts?: { reducedMotion?: boolean; enabled?: boolean }): {
   events: PulseEvent[];
   status: StreamMode;
   liveStatus: LiveStatus | null;
   eventsPerMin: number;
+  newestTs: string;
 } {
   const { endpoint, token } = useSession();
   const enabled = opts?.enabled ?? true;
@@ -72,25 +88,6 @@ export function useMemoryStream(opts?: { reducedMotion?: boolean; enabled?: bool
   const recentTimesRef = useRef<number[]>([]);
   const [eventsPerMin, setEventsPerMin] = useState(0);
 
-  // Ingest a batch of raw rows: dedupe, push novel ones into the buffer.
-  const ingest = useRef((rows: Record<string, unknown>[]) => {
-    const fresh: PulseEvent[] = [];
-    for (const r of rows) {
-      const ev = rowToEvent(r);
-      if (seenRef.current.has(ev.key)) continue;
-      seenRef.current.add(ev.key);
-      fresh.push(ev);
-    }
-    if (fresh.length === 0) return;
-    // Oldest first into the buffer so they tick in chronologically.
-    fresh.sort((a, b) => a.ts.localeCompare(b.ts));
-    bufferRef.current.push(...fresh);
-    if (!staged) {
-      // Flush immediately (reduced motion): no staged release.
-      flushAll();
-    }
-  });
-
   // Pull the whole buffer into state at once (reduced-motion path).
   function flushAll() {
     if (bufferRef.current.length === 0) return;
@@ -100,6 +97,39 @@ export function useMemoryStream(opts?: { reducedMotion?: boolean; enabled?: bool
     for (let i = 0; i < batch.length; i++) recentTimesRef.current.push(now);
     setEvents((cur) => [...batch].reverse().concat(cur).slice(0, MAX_EVENTS));
   }
+
+  // Ingest a batch of raw rows: classify backfill at arrival, dedupe, push
+  // novel live events into the staged buffer and backfill history directly.
+  const ingest = useRef(
+    (
+      rows: Record<string, unknown>[],
+      toEvent: (r: Record<string, unknown>) => RawEvent = rowToEvent,
+    ) => {
+      const arrival = Date.now();
+      const freshLive: PulseEvent[] = [];
+      const history: PulseEvent[] = [];
+      for (const r of rows) {
+        const ev = toEvent(r);
+        if (seenRef.current.has(ev.key)) continue;
+        seenRef.current.add(ev.key);
+        const backfill = isBackfill(ev.ts, arrival);
+        (backfill ? history : freshLive).push({ ...ev, backfill });
+      }
+      // History renders immediately without animation (old rows must not animate as live).
+      if (history.length > 0) {
+        history.sort((a, b) => b.ts.localeCompare(a.ts));
+        setEvents((cur) => [...cur, ...history].slice(0, MAX_EVENTS));
+      }
+      if (freshLive.length === 0) return;
+      // Oldest first into the buffer so they tick in chronologically.
+      freshLive.sort((a, b) => a.ts.localeCompare(b.ts));
+      bufferRef.current.push(...freshLive);
+      if (!staged) {
+        // Flush immediately (reduced motion): no staged release.
+        flushAll();
+      }
+    },
+  );
 
   // Staged release: emit one buffered event per tick.
   useEffect(() => {
@@ -132,6 +162,7 @@ export function useMemoryStream(opts?: { reducedMotion?: boolean; enabled?: bool
 
     let disposed = false;
     let session: LiveSession | null = null;
+    let opsSession: LiveSession | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
     let usingPolling = false;
@@ -140,7 +171,9 @@ export function useMemoryStream(opts?: { reducedMotion?: boolean; enabled?: bool
       if (usingPolling || disposed) return;
       usingPolling = true;
       session?.close();
+      opsSession?.close();
       session = null;
+      opsSession = null;
       setStatus("polling");
       const tick = async () => {
         try {
@@ -174,6 +207,35 @@ export function useMemoryStream(opts?: { reducedMotion?: boolean; enabled?: bool
           if (rows.length > 0) ingest.current(rows);
         } catch {
           /* transient — keep polling */
+        }
+
+        // ops fetch in polling mode
+        try {
+          const opsRes = await fetch(`${endpoint.replace(/\/$/, "")}/v1/query`, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${token}`,
+              "content-type": "application/x-kql",
+              "x-database": OPS_DB,
+            },
+            body: OPS_KQL + "\n| take 20",
+          });
+          if (opsRes.ok && !disposed) {
+            const opsRows: Record<string, unknown>[] = [];
+            for (const line of (await opsRes.text()).split("\n")) {
+              const t = line.trim();
+              if (t) {
+                try {
+                  opsRows.push(JSON.parse(t));
+                } catch {
+                  /* skip */
+                }
+              }
+            }
+            if (opsRows.length) ingest.current(opsRows, spanRowToEvent);
+          }
+        } catch {
+          /* ops polling is best-effort */
         }
       };
       void tick();
@@ -209,14 +271,32 @@ export function useMemoryStream(opts?: { reducedMotion?: boolean; enabled?: bool
       },
     });
 
+    opsSession = new LiveSession({
+      endpoint,
+      token,
+      body: {
+        query: OPS_KQL,
+        scope: { kind: "sources", sources: [OPS_SOURCE] },
+        time_range: null,
+      },
+      onStatus: () => {},
+      onFrame: (f) => {
+        if (disposed || usingPolling) return;
+        if (f.type === "rows" && Array.isArray(f.rows)) ingest.current(f.rows, spanRowToEvent);
+      },
+    });
+
     return () => {
       disposed = true;
       if (fallbackTimer) clearTimeout(fallbackTimer);
       if (pollTimer) clearInterval(pollTimer);
       session?.close();
+      opsSession?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endpoint, token, enabled]);
 
-  return { events, status, liveStatus, eventsPerMin };
+  const newestTs = events.reduce<string>((acc, e) => (e.ts > acc ? e.ts : acc), "");
+
+  return { events, status, liveStatus, eventsPerMin, newestTs };
 }

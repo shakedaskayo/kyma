@@ -49,6 +49,9 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info};
 
+pub mod self_export;
+pub mod traces;
+
 const OTEL_LOGS_TABLE: &str = "otel_logs";
 
 fn otel_logs_schema() -> Arc<Schema> {
@@ -96,39 +99,7 @@ impl OtlpLogsService {
     /// Ensure the `otel_logs` table exists in the target database.
     /// Idempotent — returns the existing `TableRef` if already present.
     async fn ensure_table(&self) -> Result<kyma_core::catalog::TableRef, Status> {
-        match self
-            .catalog
-            .lookup_table(&self.database, OTEL_LOGS_TABLE)
-            .await
-        {
-            Ok(t) => Ok(t),
-            Err(_) => {
-                // Table not found — create it. Also create the database if
-                // it doesn't exist (first-ingest bootstrapping is expected
-                // with OTLP, which doesn't have a separate "create" step).
-                let db_id = match find_database_id(&*self.catalog, &self.database).await {
-                    Some(id) => id,
-                    None => self
-                        .catalog
-                        .create_database(&self.database)
-                        .await
-                        .map_err(|e| Status::internal(format!("create_database: {e}")))?,
-                };
-                self.catalog
-                    .create_table(
-                        db_id,
-                        OTEL_LOGS_TABLE,
-                        otel_logs_schema(),
-                        TableConfig::default(),
-                    )
-                    .await
-                    .map_err(|e| Status::internal(format!("create_table: {e}")))?;
-                self.catalog
-                    .lookup_table(&self.database, OTEL_LOGS_TABLE)
-                    .await
-                    .map_err(|e| Status::internal(format!("lookup after create: {e}")))
-            }
-        }
+        ensure_otel_table(&self.catalog, &self.database, OTEL_LOGS_TABLE, otel_logs_schema()).await
     }
 }
 
@@ -268,6 +239,36 @@ impl LogsService for OtlpLogsService {
 
 // -------- helpers -----------------------------------------------------
 
+/// Ensure `table` exists in `database` with `schema`, creating the database
+/// on first use (OTLP has no separate "create" step). Idempotent.
+pub(crate) async fn ensure_otel_table(
+    catalog: &Arc<dyn Catalog>,
+    database: &str,
+    table: &str,
+    schema: Arc<Schema>,
+) -> Result<kyma_core::catalog::TableRef, Status> {
+    match catalog.lookup_table(database, table).await {
+        Ok(t) => Ok(t),
+        Err(_) => {
+            let db_id = match find_database_id(&**catalog, database).await {
+                Some(id) => id,
+                None => catalog
+                    .create_database(database)
+                    .await
+                    .map_err(|e| Status::internal(format!("create_database: {e}")))?,
+            };
+            catalog
+                .create_table(db_id, table, schema, TableConfig::default())
+                .await
+                .map_err(|e| Status::internal(format!("create_table: {e}")))?;
+            catalog
+                .lookup_table(database, table)
+                .await
+                .map_err(|e| Status::internal(format!("lookup after create: {e}")))
+        }
+    }
+}
+
 /// Look up a database by name. Returns `None` if not found. Uses a raw SQL
 /// query against the catalog's underlying pool to avoid plumbing yet
 /// another trait method — OTLP is a bootstrapping path so this compromise
@@ -287,7 +288,7 @@ async fn find_database_id(catalog: &dyn Catalog, name: &str) -> Option<DatabaseI
     row.map(|(id,)| DatabaseId::from_uuid(id))
 }
 
-fn any_value_to_string(v: &AnyValue) -> Option<String> {
+pub(crate) fn any_value_to_string(v: &AnyValue) -> Option<String> {
     let inner = v.value.as_ref()?;
     Some(match inner {
         AnyValueValue::StringValue(s) => s.clone(),
@@ -307,7 +308,7 @@ fn any_value_to_string(v: &AnyValue) -> Option<String> {
     })
 }
 
-fn keyvalue_to_json(pairs: &[KeyValue]) -> serde_json::Value {
+pub(crate) fn keyvalue_to_json(pairs: &[KeyValue]) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     for kv in pairs {
         map.insert(kv.key.clone(), any_value_to_json(kv.value.as_ref()));
@@ -337,7 +338,7 @@ fn any_value_to_json(v: Option<&AnyValue>) -> serde_json::Value {
     }
 }
 
-fn split_service_and_json(attrs: &[KeyValue]) -> (Option<String>, String) {
+pub(crate) fn split_service_and_json(attrs: &[KeyValue]) -> (Option<String>, String) {
     let mut service_name = None;
     let mut rest = Vec::with_capacity(attrs.len());
     for kv in attrs {
@@ -370,7 +371,7 @@ fn merge_attrs_json(
     serde_json::to_string(&resource_map).unwrap_or_else(|_| "{}".into())
 }
 
-fn hex_encode(bytes: &[u8]) -> String {
+pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
     for &b in bytes {

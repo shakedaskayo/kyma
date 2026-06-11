@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 use sqlx::types::Json as SqlxJson;
 use sqlx::PgPool;
 use tracing::{debug, error, info, warn};
+use tracing::Instrument as _;
 
 use super::engine::{
     build_engine, claude_cli, engine_catalogue, CredentialResolver, EngineConfig, EngineKind,
@@ -135,45 +136,57 @@ async fn import_memory_handler(
     Extension(principal): Extension<Principal>,
     Json(body): Json<ImportBody>,
 ) -> Response {
-    // Import is a bulk WRITE of memory nodes/edges from another instance. The
-    // surrounding agent router is mounted at `Role::Read`, so gate this one
-    // route at `Role::Write` in-handler — a read-only token must not be able to
-    // push memory into the store.
-    if principal.role < Role::Write {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({ "error": "memory import requires write role" })),
-        )
-            .into_response();
-    }
-    let embed = match kyma_memory::shared_embedding().await {
-        Ok(e) => e,
-        Err(e) => {
-            return Json(json!({ "error": format!("embedding backend: {e}") })).into_response()
+    let span = tracing::info_span!(
+        target: "kyma_telemetry",
+        "memory.import",
+        kyma.subject = principal.subject.as_deref().unwrap_or(""),
+        kyma.tenant = %principal.tenant,
+        memory.imported = tracing::field::Empty,
+    );
+    async move {
+        // Import is a bulk WRITE of memory nodes/edges from another instance. The
+        // surrounding agent router is mounted at `Role::Read`, so gate this one
+        // route at `Role::Write` in-handler — a read-only token must not be able to
+        // push memory into the store.
+        if principal.role < Role::Write {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "memory import requires write role" })),
+            )
+                .into_response();
         }
-    };
-    let writer = kyma_memory::MemoryWriter::new(state.catalog.clone(), state.format.clone(), embed);
-    let mut applied_nodes = 0usize;
-    let mut applied_edges = 0usize;
-    let mut errors: Vec<String> = Vec::new();
-    if !body.memory_nodes.is_empty() {
-        match writer.append_node_rows(body.memory_nodes.clone()).await {
-            Ok(()) => applied_nodes = body.memory_nodes.len(),
-            Err(e) => errors.push(format!("nodes: {e}")),
+        let embed = match kyma_memory::shared_embedding().await {
+            Ok(e) => e,
+            Err(e) => {
+                return Json(json!({ "error": format!("embedding backend: {e}") })).into_response()
+            }
+        };
+        let writer = kyma_memory::MemoryWriter::new(state.catalog.clone(), state.format.clone(), embed);
+        let mut applied_nodes = 0usize;
+        let mut applied_edges = 0usize;
+        let mut errors: Vec<String> = Vec::new();
+        if !body.memory_nodes.is_empty() {
+            match writer.append_node_rows(body.memory_nodes.clone()).await {
+                Ok(()) => applied_nodes = body.memory_nodes.len(),
+                Err(e) => errors.push(format!("nodes: {e}")),
+            }
         }
-    }
-    if !body.memory_edges.is_empty() {
-        match writer.append_edge_rows(body.memory_edges.clone()).await {
-            Ok(()) => applied_edges = body.memory_edges.len(),
-            Err(e) => errors.push(format!("edges: {e}")),
+        if !body.memory_edges.is_empty() {
+            match writer.append_edge_rows(body.memory_edges.clone()).await {
+                Ok(()) => applied_edges = body.memory_edges.len(),
+                Err(e) => errors.push(format!("edges: {e}")),
+            }
         }
+        tracing::Span::current().record("memory.imported", applied_nodes + applied_edges);
+        Json(json!({
+            "applied_nodes": applied_nodes,
+            "applied_edges": applied_edges,
+            "errors": errors,
+        }))
+        .into_response()
     }
-    Json(json!({
-        "applied_nodes": applied_nodes,
-        "applied_edges": applied_edges,
-        "errors": errors,
-    }))
-    .into_response()
+    .instrument(span)
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -249,40 +262,57 @@ async fn changes_memory_handler(
 /// (`X-Database: memory`, `X-Table: memory_nodes|memory_edges`, NDJSON).
 async fn export_memory_handler(
     State(state): State<AgentState>,
+    Extension(principal): Extension<Principal>,
     axum::extract::Query(params): axum::extract::Query<ExportParams>,
 ) -> Json<Value> {
-    let shared = SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
-        catalog: state.catalog.clone(),
-        format: state.format.clone(),
-        pool: state.pool.clone(),
-        memory: state.memory.clone(),
-        hitl: None,
-    };
-    let realm_filter = params
-        .realm
-        .as_deref()
-        .map(|r| format!(" AND realm = '{}'", r.replace('\'', "''")))
-        .unwrap_or_default();
-    let nodes_sql = format!(
-        "WITH latest AS (SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM memory_nodes) \
-         SELECT id, labels, realm, memory_type, title, content, content_preview, tags, importance, status, \
-                source_session_id, source_run_id, embedding, created_at, updated_at, \
-                valid_at, invalid_at, superseded_by, provenance, topic_key \
-         FROM latest WHERE __rn = 1{realm_filter}"
+    let span = tracing::info_span!(
+        target: "kyma_telemetry",
+        "memory.export",
+        kyma.subject = principal.subject.as_deref().unwrap_or(""),
+        kyma.tenant = %principal.tenant,
+        memory.exported = tracing::field::Empty,
     );
-    let edges_sql =
-        "SELECT id, src, dst, type, realm, target_namespace, props, created_at FROM memory_edges";
-    let db = kyma_memory::DEFAULT_DATABASE;
-    let nodes = execute_sql(&shared, db, &nodes_sql, 1_000_000).await;
-    let edges = execute_sql(&shared, db, edges_sql, 1_000_000).await;
-    let rows = |v: Value| v.get("rows").cloned().unwrap_or_else(|| json!([]));
-    Json(json!({
-        "memory_nodes": rows(nodes),
-        "memory_edges": rows(edges),
-        "hint": "Re-import on another instance via POST /v1/agent/memory/import \
-                 with this same {memory_nodes, memory_edges} body (writes through \
-                 the MemoryWriter, preserving the canonical schema + embeddings).",
-    }))
+    async move {
+        let shared = SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+            catalog: state.catalog.clone(),
+            format: state.format.clone(),
+            pool: state.pool.clone(),
+            memory: state.memory.clone(),
+            hitl: None,
+        };
+        let realm_filter = params
+            .realm
+            .as_deref()
+            .map(|r| format!(" AND realm = '{}'", r.replace('\'', "''")))
+            .unwrap_or_default();
+        let nodes_sql = format!(
+            "WITH latest AS (SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM memory_nodes) \
+             SELECT id, labels, realm, memory_type, title, content, content_preview, tags, importance, status, \
+                    source_session_id, source_run_id, embedding, created_at, updated_at, \
+                    valid_at, invalid_at, superseded_by, provenance, topic_key \
+             FROM latest WHERE __rn = 1{realm_filter}"
+        );
+        let edges_sql =
+            "SELECT id, src, dst, type, realm, target_namespace, props, created_at FROM memory_edges";
+        let db = kyma_memory::DEFAULT_DATABASE;
+        let nodes = execute_sql(&shared, db, &nodes_sql, 1_000_000).await;
+        let edges = execute_sql(&shared, db, edges_sql, 1_000_000).await;
+        let rows = |v: Value| v.get("rows").cloned().unwrap_or_else(|| json!([]));
+        let nodes_val = rows(nodes);
+        let edges_val = rows(edges);
+        let exported_count = nodes_val.as_array().map_or(0, Vec::len)
+            + edges_val.as_array().map_or(0, Vec::len);
+        tracing::Span::current().record("memory.exported", exported_count);
+        Json(json!({
+            "memory_nodes": nodes_val,
+            "memory_edges": edges_val,
+            "hint": "Re-import on another instance via POST /v1/agent/memory/import \
+                     with this same {memory_nodes, memory_edges} body (writes through \
+                     the MemoryWriter, preserving the canonical schema + embeddings).",
+        }))
+    }
+    .instrument(span)
+    .await
 }
 
 /// `GET /v1/agent/memory/settings` — current tunable memory settings. Reads the
@@ -446,35 +476,52 @@ struct MemoryQueryRequest {
 
 async fn memory_query_handler(
     State(state): State<AgentState>,
+    Extension(principal): Extension<Principal>,
     Json(body): Json<MemoryQueryRequest>,
 ) -> Json<Value> {
-    let shared = SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
-        catalog: state.catalog.clone(),
-        format: state.format.clone(),
-        pool: state.pool.clone(),
-        memory: state.memory.clone(),
-        hitl: None,
-    };
-    let result = retrieve(&shared, &body.retrieve).await;
-    let mut out = result.to_json();
-    if body.mode.as_deref() == Some("agentic") && !result.context.is_empty() {
-        let prompt = format!("Question: {}\n\n{}", body.retrieve.query, result.context);
-        if let Ok(brief) = run_oneshot(
-            &state,
-            "kyma-memory-brief",
-            "Answers a question from retrieved memory.",
-            "Answer the question using ONLY the provided memories. Be concise and cite memory \
-             ids. If the memories don't contain the answer, say so plainly.",
-            &prompt,
-        )
-        .await
-        {
-            if let Value::Object(ref mut m) = out {
-                m.insert("brief".into(), Value::String(brief));
+    let query_preview: String = body.retrieve.query.chars().take(200).collect();
+    let span = tracing::info_span!(
+        target: "kyma_telemetry",
+        "memory.recall",
+        kyma.subject = principal.subject.as_deref().unwrap_or(""),
+        kyma.tenant = %principal.tenant,
+        memory.query = %query_preview,
+        memory.results = tracing::field::Empty,
+        memory.took_ms = tracing::field::Empty,
+    );
+    async move {
+        let shared = SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+            catalog: state.catalog.clone(),
+            format: state.format.clone(),
+            pool: state.pool.clone(),
+            memory: state.memory.clone(),
+            hitl: None,
+        };
+        let result = retrieve(&shared, &body.retrieve).await;
+        tracing::Span::current().record("memory.results", result.memories.len());
+        tracing::Span::current().record("memory.took_ms", result.took_ms);
+        let mut out = result.to_json();
+        if body.mode.as_deref() == Some("agentic") && !result.context.is_empty() {
+            let prompt = format!("Question: {}\n\n{}", body.retrieve.query, result.context);
+            if let Ok(brief) = run_oneshot(
+                &state,
+                "kyma-memory-brief",
+                "Answers a question from retrieved memory.",
+                "Answer the question using ONLY the provided memories. Be concise and cite memory \
+                 ids. If the memories don't contain the answer, say so plainly.",
+                &prompt,
+            )
+            .await
+            {
+                if let Value::Object(ref mut m) = out {
+                    m.insert("brief".into(), Value::String(brief));
+                }
             }
         }
+        Json(out)
     }
-    Json(out)
+    .instrument(span)
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -680,6 +727,7 @@ impl Emitter {
 /// POST /v1/agent/ask — run one agent turn and stream SSE frames.
 async fn ask_handler(
     State(state): State<AgentState>,
+    Extension(principal): Extension<Principal>,
     headers: axum::http::HeaderMap,
     Json(body): Json<AskRequest>,
 ) -> Response {
@@ -691,6 +739,13 @@ async fn ask_handler(
         )
             .into_response();
     }
+    let agent_span = tracing::info_span!(
+        target: "kyma_telemetry",
+        "agent.query",
+        kyma.subject = principal.subject.as_deref().unwrap_or(""),
+        kyma.tenant = %principal.tenant,
+        agent.question = %question.chars().take(200).collect::<String>(),
+    );
 
     // Engine-kind branch: the Claude CLI engine owns its own tool loop, OAuth,
     // skills, and MCPs — adk-rust can't wrap it. Divert here before building
@@ -981,7 +1036,7 @@ async fn ask_handler(
             status_str,
         )
         .await;
-    });
+    }.instrument(agent_span));
 
     ui_stream::response(rx)
 }

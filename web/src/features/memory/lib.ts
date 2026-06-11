@@ -39,6 +39,11 @@ export const KIND_STYLE: Record<string, { dot: string; hsl: string; label: strin
   tool_result: { dot: "bg-amber-300", hsl: "45 90% 62%", label: "tool result" },
   session_start: { dot: "bg-emerald-400", hsl: "160 70% 52%", label: "session start" },
   session_end: { dot: "bg-rose-400", hsl: "350 85% 68%", label: "session end" },
+  "memory.recall": { dot: "bg-teal-400", hsl: "174 70% 55%", label: "recall" },
+  "memory.import": { dot: "bg-emerald-400", hsl: "152 70% 50%", label: "memory saved" },
+  "memory.export": { dot: "bg-slate-400", hsl: "215 16% 64%", label: "memory export" },
+  "agent.query": { dot: "bg-fuchsia-400", hsl: "289 85% 66%", label: "agent query" },
+  "ingest.batch": { dot: "bg-lime-400", hsl: "84 70% 55%", label: "ingestion" },
 };
 
 export const kindStyle = (k: string) => KIND_STYLE[k] ?? { dot: "bg-primary", hsl: "183 74% 50%", label: k.replace(/_/g, " ") };
@@ -82,4 +87,35 @@ export function intervalLabel(secs: number): string {
   if (secs % 3600 === 0) return `${secs / 3600}h`;
   if (secs % 60 === 0) return `${secs / 60}m`;
   return `${secs}s`;
+}
+
+/** Backfill horizon: events older than this AT ARRIVAL are history, not live. */
+export const BACKFILL_THRESHOLD_MS = 5 * 60 * 1000;
+/** Stalled-capture horizon: connected but nothing newer than this = stalled. */
+export const STALL_THRESHOLD_MS = 10 * 60 * 1000;
+
+/** True when a source timestamp is too old (or unparseable) to animate as live. */
+export function isBackfill(iso: string, arrivalNow: number): boolean {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return true;
+  return arrivalNow - t > BACKFILL_THRESHOLD_MS;
+}
+
+/** Map an `otel_traces` row (memory/agent/ingest op span) to a pulse event. */
+export function spanRowToEvent(row: Record<string, unknown>): {
+  key: string; ts: string; kind: string; sessionId: string; realm: string; text: string;
+} {
+  const ts = str(row.end_time) || str(row.start_time) || new Date().toISOString();
+  const kind = str(row.name) || "op";
+  const sessionId = str(row.subject) || str(row.trace_id) || "—";
+  let text = "";
+  try {
+    const attrs = JSON.parse(str(row.attributes_json) || "{}") as Record<string, unknown>;
+    text =
+      str(attrs["memory.query"]) ||
+      str(attrs["agent.question"]) ||
+      (str(attrs["memory.results"]) ? `${str(attrs["memory.results"])} memories` : "");
+  } catch { /* attributes are best-effort */ }
+  const key = `span|${str(row.trace_id)}|${str(row.span_id)}|${ts}`;
+  return { key, ts, kind, sessionId, realm: "", text };
 }

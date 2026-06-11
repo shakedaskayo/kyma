@@ -32,6 +32,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tracing::{error, info, warn};
+use tracing::Instrument as _;
 
 const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 
@@ -117,132 +118,158 @@ async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Respo
     // Default ON. Set X-Schema-Evolve: false to drop unknown fields silently
     // (the pre-helper behavior).
     let schema_evolve = header_bool(headers, "x-schema-evolve", true);
+    let ingest_span = tracing::info_span!(
+        target: "kyma_telemetry",
+        "ingest.batch",
+        ingest.table = %table,
+        ingest.rows = tracing::field::Empty,
+    );
+    ingest_batch_inner(state, request_id, database, table, idempotency_key, auto_create, schema_evolve, body, ingest_span).await
+}
 
-    // Actually read the body now that we have what we need from headers.
-    let body: Bytes = match axum::body::to_bytes(body, 64 * 1024 * 1024).await {
-        Ok(b) => b,
-        Err(e) => {
-            return error_response(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                "body_too_large",
-                &format!("failed to read request body: {e}"),
-                &request_id,
-            );
-        }
-    };
+#[allow(clippy::too_many_arguments)]
+async fn ingest_batch_inner(
+    state: IngestState,
+    request_id: String,
+    database: String,
+    table: String,
+    idempotency_key: Option<String>,
+    auto_create: bool,
+    schema_evolve: bool,
+    body: axum::body::Body,
+    span: tracing::Span,
+) -> Response {
+    async move {
 
-    // Resolve the table. With X-Auto-Create=true (default), the helper
-    // creates the database + an empty default-schema table on first write.
-    // With X-Auto-Create=false we keep the strict 404 behavior so callers
-    // who pre-provision can detect typos.
-    let table_ref = if auto_create {
-        match ensure_table(&*state.catalog, &database, &table).await {
-            Ok(t) => t,
-            Err(e) => {
-                return error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "ensure_table_failed",
-                    &format!("ensure_table: {e}"),
-                    &request_id,
-                );
-            }
-        }
-    } else {
-        match state.catalog.lookup_table(&database, &table).await {
-            Ok(t) => t,
-            Err(e) => {
-                return error_response(
-                    StatusCode::NOT_FOUND,
-                    "table_not_found",
-                    &format!("table lookup failed: {e}"),
-                    &request_id,
-                );
-            }
-        }
-    };
-
-    // Parse the body for schema evolution (cheap one-pass JSON scan over the
-    // bytes, only when X-Schema-Evolve is set). The parsed records are
-    // discarded; the actual NDJSON parse below uses arrow-json's path so the
-    // fast path stays untouched.
-    let table_ref = if schema_evolve {
-        match parse_records_for_inspection(body.as_ref()) {
-            Ok(records) => {
-                match evolve_schema_for_records(&*state.catalog, &database, table_ref, &records)
-                    .await
-                {
-                    Ok(t) => t,
-                    Err(e) => {
-                        warn!(error = %e, "schema_evolve failed; continuing with current schema");
-                        // Fall through with the original table_ref. We can
-                        // recover by re-looking up — but since the alters
-                        // failed, the lookup would be the same. Bail with a
-                        // clear error.
-                        return error_response(
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "schema_evolve_failed",
-                            &format!("schema_evolve: {e}"),
-                            &request_id,
-                        );
-                    }
-                }
-            }
-            Err(_) => {
-                // The pre-scan failed to parse some lines — let the real
-                // parser below produce a precise error. Use the un-evolved
-                // schema; missing fields simply land in `props`.
-                table_ref
-            }
-        }
-    } else {
-        table_ref
-    };
-
-    // Parse the NDJSON body into `RecordBatch`es using the table's schema.
-    // The shared helper adds FixedSizeList<Float32> (vector-column) support
-    // on top of arrow-json's reader; primitive-only schemas hit the fast path
-    // and behave identically to the previous direct ReaderBuilder call.
-    let batches: Vec<arrow_array::RecordBatch> =
-        match parse_ndjson(body.as_ref(), table_ref.schema.clone()) {
+        // Actually read the body now that we have what we need from headers.
+        let body: Bytes = match axum::body::to_bytes(body, 64 * 1024 * 1024).await {
             Ok(b) => b,
             Err(e) => {
                 return error_response(
-                    StatusCode::BAD_REQUEST,
-                    "bad_request_body",
-                    &format!("failed to decode NDJSON: {e}"),
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "body_too_large",
+                    &format!("failed to read request body: {e}"),
                     &request_id,
                 );
             }
         };
 
-    match state
-        .write_path
-        .ingest_with_idempotency(&database, &table_ref, batches, idempotency_key.as_deref())
-        .await
-    {
-        Ok(ack) => {
-            info!(
-                request_id = %request_id,
-                database = %database,
-                table = %table,
-                snapshot_id = %ack.snapshot_id,
-                rows = ack.rows_ingested,
-                bytes = ack.bytes_written,
-                "ingest committed"
-            );
-            let resp: IngestResponse = ack.into();
-            (StatusCode::OK, Json(resp)).into_response()
-        }
-        Err(e) => {
-            error!(request_id = %request_id, database = %database, table = %table, error = %e, "ingest failed");
-            error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "ingest_failed",
-                &format!("{e}"),
-                &request_id,
-            )
+        // Resolve the table. With X-Auto-Create=true (default), the helper
+        // creates the database + an empty default-schema table on first write.
+        // With X-Auto-Create=false we keep the strict 404 behavior so callers
+        // who pre-provision can detect typos.
+        let table_ref = if auto_create {
+            match ensure_table(&*state.catalog, &database, &table).await {
+                Ok(t) => t,
+                Err(e) => {
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "ensure_table_failed",
+                        &format!("ensure_table: {e}"),
+                        &request_id,
+                    );
+                }
+            }
+        } else {
+            match state.catalog.lookup_table(&database, &table).await {
+                Ok(t) => t,
+                Err(e) => {
+                    return error_response(
+                        StatusCode::NOT_FOUND,
+                        "table_not_found",
+                        &format!("table lookup failed: {e}"),
+                        &request_id,
+                    );
+                }
+            }
+        };
+
+        // Parse the body for schema evolution (cheap one-pass JSON scan over the
+        // bytes, only when X-Schema-Evolve is set). The parsed records are
+        // discarded; the actual NDJSON parse below uses arrow-json's path so the
+        // fast path stays untouched.
+        let table_ref = if schema_evolve {
+            match parse_records_for_inspection(body.as_ref()) {
+                Ok(records) => {
+                    match evolve_schema_for_records(&*state.catalog, &database, table_ref, &records)
+                        .await
+                    {
+                        Ok(t) => t,
+                        Err(e) => {
+                            warn!(error = %e, "schema_evolve failed; continuing with current schema");
+                            // Fall through with the original table_ref. We can
+                            // recover by re-looking up — but since the alters
+                            // failed, the lookup would be the same. Bail with a
+                            // clear error.
+                            return error_response(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "schema_evolve_failed",
+                                &format!("schema_evolve: {e}"),
+                                &request_id,
+                            );
+                        }
+                    }
+                }
+                Err(_) => {
+                    // The pre-scan failed to parse some lines — let the real
+                    // parser below produce a precise error. Use the un-evolved
+                    // schema; missing fields simply land in `props`.
+                    table_ref
+                }
+            }
+        } else {
+            table_ref
+        };
+
+        // Parse the NDJSON body into `RecordBatch`es using the table's schema.
+        // The shared helper adds FixedSizeList<Float32> (vector-column) support
+        // on top of arrow-json's reader; primitive-only schemas hit the fast path
+        // and behave identically to the previous direct ReaderBuilder call.
+        let batches: Vec<arrow_array::RecordBatch> =
+            match parse_ndjson(body.as_ref(), table_ref.schema.clone()) {
+                Ok(b) => b,
+                Err(e) => {
+                    return error_response(
+                        StatusCode::BAD_REQUEST,
+                        "bad_request_body",
+                        &format!("failed to decode NDJSON: {e}"),
+                        &request_id,
+                    );
+                }
+            };
+
+        match state
+            .write_path
+            .ingest_with_idempotency(&database, &table_ref, batches, idempotency_key.as_deref())
+            .await
+        {
+            Ok(ack) => {
+                tracing::Span::current().record("ingest.rows", ack.rows_ingested);
+                info!(
+                    request_id = %request_id,
+                    database = %database,
+                    table = %table,
+                    snapshot_id = %ack.snapshot_id,
+                    rows = ack.rows_ingested,
+                    bytes = ack.bytes_written,
+                    "ingest committed"
+                );
+                let resp: IngestResponse = ack.into();
+                (StatusCode::OK, Json(resp)).into_response()
+            }
+            Err(e) => {
+                error!(request_id = %request_id, database = %database, table = %table, error = %e, "ingest failed");
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "ingest_failed",
+                    &format!("{e}"),
+                    &request_id,
+                )
+            }
         }
     }
+    .instrument(span)
+    .await
 }
 
 // ---- admin handlers -------------------------------------------------

@@ -28,7 +28,7 @@ mod scrape;
 mod update;
 mod users;
 use client::{
-    delete_json, effective_config, get_json, load_config, probe_health,
+    delete_json, effective_config, get_json, load_config, probe_auth, probe_health,
     save_config, stream_agent_ask, write_skill_file, ClientConfig,
 };
 
@@ -656,12 +656,20 @@ async fn main() -> Result<()> {
         Command::Service { action } => match action {
             ServiceAction::Install { addr, token } => {
                 kyma_local::server_service::install(&kyma_local::server_service::ServerOptions {
-                    addr,
-                    token,
+                    addr: addr.clone(),
+                    token: token.clone(),
                     kyma_home: None,
                     secret_key: None,
-                })
-                .map(|_| ())
+                })?;
+                // Keep the CLI pointed at the service we just installed: the
+                // plist/unit carries this token, so config.json must match or
+                // every CLI call and capture hook 401s silently.
+                if let Err(e) =
+                    client::persist_local_connection(&format!("http://{addr}"), token.as_deref())
+                {
+                    eprintln!("warning: couldn't sync ~/.kyma/config.json: {e}");
+                }
+                Ok(())
             }
             ServiceAction::Uninstall => kyma_local::server_service::uninstall(),
             ServiceAction::Status => kyma_local::server_service::status(),
@@ -860,9 +868,34 @@ async fn cmd_status() -> Result<()> {
                     "not set"
                 }
             );
-            match probe_health(&cfg).await {
+            // Use effective_config for probes so KYMA_SERVER_URL/KYMA_TOKEN env
+            // overrides are honoured; fall back to the on-disk config if it fails.
+            let probe_cfg = effective_config().unwrap_or_else(|_| cfg.clone());
+            match probe_health(&probe_cfg).await {
                 Ok(body) => println!("Health:    {}", body.trim()),
                 Err(e) => println!("Health:    error — {e}"),
+            }
+            match probe_auth(&probe_cfg).await {
+                Ok(true) => println!("Auth:      ok (token accepted)"),
+                Ok(false) => println!(
+                    "Auth:      TOKEN REJECTED — the server does not accept the configured token.\n           Fix: re-run the installer, or `kyma service install --addr <addr> --token <tok>`,\n           or `kyma connect {} --token <tok>` with the server's real token.",
+                    probe_cfg.endpoint
+                ),
+                Err(e) => println!("Auth:      probe error — {e}"),
+            }
+            // Hook-side capture health (written by the kyma-memory plugin hooks).
+            if let Ok(dir) = client::config_dir() {
+                let p = dir.join("capture-health.json");
+                if let Ok(raw) = std::fs::read_to_string(&p) {
+                    let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+                    println!(
+                        "Capture:   LAST INGEST FAILED at {} — {}",
+                        v["ts"].as_str().unwrap_or("?"),
+                        v["detail"].as_str().unwrap_or("unknown error"),
+                    );
+                } else {
+                    println!("Capture:   ok (no recorded hook failures)");
+                }
             }
         }
         Err(_) => {
