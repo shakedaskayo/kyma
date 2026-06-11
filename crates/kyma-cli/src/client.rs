@@ -240,3 +240,71 @@ pub(crate) fn write_skill_file(target: &Path, body: &str) -> Result<PathBuf> {
     std::fs::write(&path, body).with_context(|| format!("write {}", path.display()))?;
     Ok(path)
 }
+
+/// Sync the local connection (endpoint + token) into a config file, preserving
+/// any other persisted fields (e.g. `last_session_id`). Used by
+/// `kyma service install` so the plist/unit token and the CLI token can never
+/// drift apart — the silent-401 capture outage of 2026-06-07.
+pub(crate) fn persist_local_connection_at(
+    path: &Path,
+    endpoint: &str,
+    token: Option<&str>,
+) -> Result<()> {
+    let mut cfg: ClientConfig = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+    cfg.endpoint = endpoint.to_string();
+    if let Some(t) = token {
+        cfg.token = Some(t.to_string());
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("mkdir {}", dir.display()))?;
+    }
+    std::fs::write(path, serde_json::to_string_pretty(&cfg)?)
+        .with_context(|| format!("write {}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+/// `persist_local_connection_at` against the default `~/.kyma/config.json`.
+pub(crate) fn persist_local_connection(endpoint: &str, token: Option<&str>) -> Result<()> {
+    persist_local_connection_at(&config_path()?, endpoint, token)
+}
+
+#[cfg(test)]
+mod persist_tests {
+    use super::*;
+
+    #[test]
+    fn persist_local_connection_writes_endpoint_and_token() {
+        let dir = std::env::temp_dir().join(format!("kyma-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+
+        persist_local_connection_at(&path, "http://127.0.0.1:7777", Some("tok-abc")).unwrap();
+        let cfg: ClientConfig =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(cfg.endpoint, "http://127.0.0.1:7777");
+        assert_eq!(cfg.token.as_deref(), Some("tok-abc"));
+
+        // Re-persisting with a new token preserves unrelated fields.
+        let with_session = ClientConfig {
+            endpoint: "http://127.0.0.1:7777".into(),
+            token: Some("tok-abc".into()),
+            last_session_id: Some("sess-1".into()),
+        };
+        std::fs::write(&path, serde_json::to_string(&with_session).unwrap()).unwrap();
+        persist_local_connection_at(&path, "http://127.0.0.1:7777", Some("tok-new")).unwrap();
+        let cfg: ClientConfig =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(cfg.token.as_deref(), Some("tok-new"));
+        assert_eq!(cfg.last_session_id.as_deref(), Some("sess-1"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

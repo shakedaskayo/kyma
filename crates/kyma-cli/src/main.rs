@@ -656,12 +656,20 @@ async fn main() -> Result<()> {
         Command::Service { action } => match action {
             ServiceAction::Install { addr, token } => {
                 kyma_local::server_service::install(&kyma_local::server_service::ServerOptions {
-                    addr,
-                    token,
+                    addr: addr.clone(),
+                    token: token.clone(),
                     kyma_home: None,
                     secret_key: None,
-                })
-                .map(|_| ())
+                })?;
+                // Keep the CLI pointed at the service we just installed: the
+                // plist/unit carries this token, so config.json must match or
+                // every CLI call and capture hook 401s silently.
+                if let Err(e) =
+                    client::persist_local_connection(&format!("http://{addr}"), token.as_deref())
+                {
+                    eprintln!("warning: couldn't sync ~/.kyma/config.json: {e}");
+                }
+                Ok(())
             }
             ServiceAction::Uninstall => kyma_local::server_service::uninstall(),
             ServiceAction::Status => kyma_local::server_service::status(),
