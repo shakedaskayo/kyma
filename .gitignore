@@ -27,3 +27,4 @@ storybook-static/
 *_token
 read_only_token
 *.pat
+.superpowers/
