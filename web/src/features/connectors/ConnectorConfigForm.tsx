@@ -1,7 +1,7 @@
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { CatalogEntry } from "@/sdk/connectors";
+import type { CatalogEntry } from "@/sdk/datasources";
 import { INTERVAL_PRESETS, type KindFormValues } from "./connector-kinds";
 
 /** Inline token-verification state for token-auth kinds. */

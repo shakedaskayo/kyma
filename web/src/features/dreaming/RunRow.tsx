@@ -99,8 +99,8 @@ export function RunRow({ run }: { run: Run }) {
           {s.entities_linked > 0 && (
             <StatChip icon={Link2} label="linked" value={s.entities_linked} />
           )}
-          {s.connector_reads > 0 && (
-            <StatChip icon={Cloud} label="reads" value={s.connector_reads} />
+          {s.data_source_reads > 0 && (
+            <StatChip icon={Cloud} label="reads" value={s.data_source_reads} />
           )}
         </div>
       )}

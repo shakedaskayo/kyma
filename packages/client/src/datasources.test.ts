@@ -1,17 +1,17 @@
 import { beforeEach, expect, test, vi } from "vitest";
 import {
-  listConnectors,
-  getConnector,
-  createConnector,
-  patchConnector,
-  deleteConnector,
-  pauseConnector,
-  resumeConnector,
-  triggerConnector,
+  listDataSources,
+  getDataSource,
+  createDataSource,
+  patchDataSource,
+  deleteDataSource,
+  pauseDataSource,
+  resumeDataSource,
+  triggerDataSource,
   listGitHubRepos,
   deriveStatus,
-  type ConnectorDetail,
-} from "./connectors";
+  type DataSourceDetail,
+} from "./datasources";
 import { createTransport } from "./transport";
 
 const mockFetch = vi.fn();
@@ -34,7 +34,7 @@ function empty(status: number) {
   return new Response(null, { status });
 }
 
-function detail(over: Partial<ConnectorDetail> = {}): ConnectorDetail {
+function detail(over: Partial<DataSourceDetail> = {}): DataSourceDetail {
   return {
     id: "c1",
     name: "gh",
@@ -56,36 +56,36 @@ function detail(over: Partial<ConnectorDetail> = {}): ConnectorDetail {
 
 // ── list ────────────────────────────────────────────────────────────────────────
 
-test("listConnectors unwraps the .items envelope", async () => {
+test("listDataSources unwraps the .items envelope", async () => {
   mockFetch.mockResolvedValue(
     ok({ items: [{ id: "c1", name: "gh", type: "github", enabled: true }] }),
   );
-  const items = await listConnectors(makeTransport(mockFetch));
+  const items = await listDataSources(makeTransport(mockFetch));
   const [url, init] = mockFetch.mock.calls[0];
-  expect(url).toBe("http://localhost:7070/v1/connectors");
+  expect(url).toBe("http://localhost:7070/v1/data-sources");
   expect(init.headers.get("authorization")).toBe("Bearer tok");
   expect(items).toHaveLength(1);
   expect(items[0].id).toBe("c1");
 });
 
-test("listConnectors tolerates a missing items array", async () => {
+test("listDataSources tolerates a missing items array", async () => {
   mockFetch.mockResolvedValue(ok({}));
-  const items = await listConnectors(makeTransport(mockFetch));
+  const items = await listDataSources(makeTransport(mockFetch));
   expect(items).toEqual([]);
 });
 
 // ── get ─────────────────────────────────────────────────────────────────────────
 
-test("getConnector GETs the detail endpoint", async () => {
+test("getDataSource GETs the detail endpoint", async () => {
   mockFetch.mockResolvedValue(ok(detail()));
-  await getConnector(makeTransport(mockFetch), { id: "c1" });
+  await getDataSource(makeTransport(mockFetch), { id: "c1" });
   const [url] = mockFetch.mock.calls[0];
-  expect(url).toBe("http://localhost:7070/v1/connectors/c1");
+  expect(url).toBe("http://localhost:7070/v1/data-sources/c1");
 });
 
 // ── create ──────────────────────────────────────────────────────────────────────
 
-test("createConnector POSTs the create body and returns the id", async () => {
+test("createDataSource POSTs the create body and returns the id", async () => {
   mockFetch.mockResolvedValue(ok({ id: "new1" }, 201));
   const body = {
     name: "my-gh",
@@ -95,9 +95,9 @@ test("createConnector POSTs the create body and returns the id", async () => {
     schedule_ms: 300_000,
     config: { token: "pat", repos: ["owner/repo"] },
   };
-  const res = await createConnector(makeTransport(mockFetch), { body });
+  const res = await createDataSource(makeTransport(mockFetch), { body });
   const [url, init] = mockFetch.mock.calls[0];
-  expect(url).toBe("http://localhost:7070/v1/connectors");
+  expect(url).toBe("http://localhost:7070/v1/data-sources");
   expect(init.method).toBe("POST");
   expect(JSON.parse(init.body)).toEqual(body);
   expect(res.id).toBe("new1");
@@ -105,38 +105,38 @@ test("createConnector POSTs the create body and returns the id", async () => {
 
 // ── mutations (204 / 202 empty bodies) ───────────────────────────────────────────
 
-test("patchConnector PATCHes and accepts a 204 empty body", async () => {
+test("patchDataSource PATCHes and accepts a 204 empty body", async () => {
   mockFetch.mockResolvedValue(empty(204));
   await expect(
-    patchConnector(makeTransport(mockFetch), { id: "c1", patch: { name: "renamed" } }),
+    patchDataSource(makeTransport(mockFetch), { id: "c1", patch: { name: "renamed" } }),
   ).resolves.toBeUndefined();
   const [url, init] = mockFetch.mock.calls[0];
-  expect(url).toBe("http://localhost:7070/v1/connectors/c1");
+  expect(url).toBe("http://localhost:7070/v1/data-sources/c1");
   expect(init.method).toBe("PATCH");
   expect(JSON.parse(init.body)).toEqual({ name: "renamed" });
 });
 
-test("deleteConnector accepts a 204 empty body", async () => {
+test("deleteDataSource accepts a 204 empty body", async () => {
   mockFetch.mockResolvedValue(empty(204));
-  await expect(deleteConnector(makeTransport(mockFetch), { id: "c1" })).resolves.toBeUndefined();
+  await expect(deleteDataSource(makeTransport(mockFetch), { id: "c1" })).resolves.toBeUndefined();
   const [url, init] = mockFetch.mock.calls[0];
-  expect(url).toBe("http://localhost:7070/v1/connectors/c1");
+  expect(url).toBe("http://localhost:7070/v1/data-sources/c1");
   expect(init.method).toBe("DELETE");
 });
 
-test("pauseConnector / resumeConnector POST to the right paths", async () => {
+test("pauseDataSource / resumeDataSource POST to the right paths", async () => {
   mockFetch.mockResolvedValue(empty(204));
-  await pauseConnector(makeTransport(mockFetch), { id: "c1" });
-  expect(mockFetch.mock.calls[0][0]).toBe("http://localhost:7070/v1/connectors/c1/pause");
-  await resumeConnector(makeTransport(mockFetch), { id: "c1" });
-  expect(mockFetch.mock.calls[1][0]).toBe("http://localhost:7070/v1/connectors/c1/resume");
+  await pauseDataSource(makeTransport(mockFetch), { id: "c1" });
+  expect(mockFetch.mock.calls[0][0]).toBe("http://localhost:7070/v1/data-sources/c1/pause");
+  await resumeDataSource(makeTransport(mockFetch), { id: "c1" });
+  expect(mockFetch.mock.calls[1][0]).toBe("http://localhost:7070/v1/data-sources/c1/resume");
 });
 
-test("triggerConnector accepts a 202 empty body", async () => {
+test("triggerDataSource accepts a 202 empty body", async () => {
   mockFetch.mockResolvedValue(empty(202));
-  await expect(triggerConnector(makeTransport(mockFetch), { id: "c1" })).resolves.toBeUndefined();
+  await expect(triggerDataSource(makeTransport(mockFetch), { id: "c1" })).resolves.toBeUndefined();
   const [url, init] = mockFetch.mock.calls[0];
-  expect(url).toBe("http://localhost:7070/v1/connectors/c1/trigger");
+  expect(url).toBe("http://localhost:7070/v1/data-sources/c1/trigger");
   expect(init.method).toBe("POST");
 });
 
@@ -159,7 +159,7 @@ test("listGitHubRepos POSTs the PAT in the body and unwraps .repos", async () =>
   );
   const repos = await listGitHubRepos(makeTransport(mockFetch), { pat: "ghp_secret" });
   const [url, init] = mockFetch.mock.calls[0];
-  expect(url).toBe("http://localhost:7070/v1/connectors/github/repos");
+  expect(url).toBe("http://localhost:7070/v1/data-sources/github/repos");
   expect(init.method).toBe("POST");
   expect(JSON.parse(init.body)).toEqual({ token: "ghp_secret" });
   expect(init.headers.get("authorization")).toBe("Bearer tok");
@@ -171,26 +171,26 @@ test("listGitHubRepos POSTs the PAT in the body and unwraps .repos", async () =>
 
 test("throws on 401", async () => {
   mockFetch.mockResolvedValue(new Response("no", { status: 401 }));
-  await expect(listConnectors(makeTransport(mockFetch))).rejects.toThrow(/unauthorized|token rejected/i);
+  await expect(listDataSources(makeTransport(mockFetch))).rejects.toThrow(/unauthorized|token rejected/i);
 });
 
 test("handleEmpty throws on a 500", async () => {
   mockFetch.mockResolvedValue(new Response("boom", { status: 500 }));
-  await expect(triggerConnector(makeTransport(mockFetch), { id: "c1" })).rejects.toThrow(/request failed: 500/);
+  await expect(triggerDataSource(makeTransport(mockFetch), { id: "c1" })).rejects.toThrow(/request failed: 500/);
 });
 
 // ── x-database header ─────────────────────────────────────────────────────────────
 
 test("sends x-database header when database is set", async () => {
   mockFetch.mockResolvedValue(ok({ items: [] }));
-  await listConnectors(makeTransport(mockFetch, "obs"));
+  await listDataSources(makeTransport(mockFetch, "obs"));
   const [, init] = mockFetch.mock.calls[0];
   expect(init.headers.get("x-database")).toBe("obs");
 });
 
 test("omits x-database header when database is absent", async () => {
   mockFetch.mockResolvedValue(ok({ items: [] }));
-  await listConnectors(makeTransport(mockFetch));
+  await listDataSources(makeTransport(mockFetch));
   const [, init] = mockFetch.mock.calls[0];
   expect(init.headers.get("x-database")).toBeNull();
 });

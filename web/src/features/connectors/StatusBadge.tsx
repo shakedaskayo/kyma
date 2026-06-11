@@ -1,11 +1,11 @@
 import { AlertCircle, CheckCircle2, CircleSlash, Loader2, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ConnectorStatus } from "@/sdk/connectors";
+import type { DataSourceStatus } from "@/sdk/datasources";
 
 // Mirrors the rounded-full status pills from app/shell.tsx.
 
 const STYLES: Record<
-  ConnectorStatus,
+  DataSourceStatus,
   { label: string; className: string; icon: typeof CheckCircle2; spin?: boolean }
 > = {
   synced: {
@@ -44,7 +44,7 @@ export function StatusBadge({
   status,
   className,
 }: {
-  status: ConnectorStatus;
+  status: DataSourceStatus;
   className?: string;
 }) {
   const s = STYLES[status];

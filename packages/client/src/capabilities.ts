@@ -1,7 +1,7 @@
 // Feature discovery (`/v1/capabilities`) — which surfaces this server has.
 //
 // Local mode (`kyma serve`, embedded SQLite) deliberately omits the
-// control-plane surfaces (connectors, credentials, OAuth, saved Discover
+// control-plane surfaces (data sources, credentials, OAuth, saved Discover
 // views); pages gate on these flags and explain instead of hitting 404s.
 // Servers that predate the endpoint 404 here — we then assume the full
 // hosted feature set, which matches every pre-capabilities deployment.
@@ -15,7 +15,7 @@ import type { KymaTransport } from "./transport";
 
 export type Capabilities = {
   mode: "local" | "server";
-  connectors: boolean;
+  data_sources: boolean;
   credentials: boolean;
   oauth: boolean;
   saved_views: boolean;
@@ -28,7 +28,7 @@ export type Capabilities = {
 
 export const FULL_CAPABILITIES: Capabilities = {
   mode: "server",
-  connectors: true,
+  data_sources: true,
   credentials: true,
   oauth: true,
   saved_views: true,

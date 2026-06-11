@@ -1,4 +1,4 @@
-// Typed client for the kyma connectors layer (`/v1/connectors/*`). JSON in/out.
+// Typed client for the kyma data sources layer (`/v1/data-sources/*`). JSON in/out.
 // Adds `handleEmpty` for the 204/202 mutation responses.
 
 import type { KymaTransport } from "./transport";
@@ -7,7 +7,7 @@ import { errorFromResponse } from "./errors";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 /** List item — the wrapped `{ items: [...] }` shape carries no metrics. */
-export interface ConnectorSummary {
+export interface DataSourceSummary {
   id: string;
   name: string;
   type: string;
@@ -15,7 +15,7 @@ export interface ConnectorSummary {
 }
 
 /** Full detail — `config` arrives secret-scrubbed (`***`). */
-export interface ConnectorDetail {
+export interface DataSourceDetail {
   id: string;
   name: string;
   type: string;
@@ -30,22 +30,22 @@ export interface ConnectorDetail {
   last_error: string | null;
   last_rows_ingested: number | null;
   config: Record<string, unknown>;
-  /** Stored credential this connector authenticates with, if any. */
+  /** Stored credential this data source authenticates with, if any. */
   credential_id?: string | null;
 }
 
-export interface CreateConnectorBody {
+export interface CreateDataSourceBody {
   name: string;
   type: string;
   target_database: string;
   target_table: string;
   schedule_ms: number;
   config: Record<string, unknown>;
-  /** Stored credential id (OAuth/PAT) the connector resolves at run time. */
+  /** Stored credential id (OAuth/PAT) the data source resolves at run time. */
   credential_id?: string | null;
 }
 
-export interface ConnectorUpdate {
+export interface DataSourceUpdate {
   name?: string;
   schedule_ms?: number;
   enabled?: boolean;
@@ -53,9 +53,9 @@ export interface ConnectorUpdate {
   credential_id?: string | null;
 }
 
-// ── Catalog (engine-driven; GET /v1/connectors/catalog) ───────────────────────
+// ── Catalog (engine-driven; GET /v1/data-sources/catalog) ───────────────────────
 
-/** A config input the wizard renders for a connector kind. */
+/** A config input the wizard renders for a data source kind. */
 export interface CatalogField {
   key: string;
   label: string;
@@ -74,7 +74,7 @@ export interface CatalogResource {
   token_field: string;
 }
 
-/** Self-describing connector metadata, served by the engine. */
+/** Self-describing data source metadata, served by the engine. */
 export interface CatalogEntry {
   type_id: string;
   label: string;
@@ -90,12 +90,12 @@ export interface CatalogEntry {
   default_target_table?: string;
   config_defaults?: Record<string, unknown>;
   graph_name?: string;
-  /** OAuth connectors: provider slug to start the connect flow with. */
+  /** OAuth data sources: provider slug to start the connect flow with. */
   oauth_provider?: string;
-  /** OAuth connectors: default scopes the UI requests. */
+  /** OAuth data sources: default scopes the UI requests. */
   oauth_scopes?: string[];
   /**
-   * Credential kinds this connector accepts via `credential_id` in its config
+   * Credential kinds this data source accepts via `credential_id` in its config
    * (e.g. ["service_principal"]). The wizard renders a stored-credential
    * picker filtered to these kinds; absent/empty means inline secrets only.
    */
@@ -106,12 +106,12 @@ interface CatalogEnvelope {
   items: CatalogEntry[];
 }
 
-export async function getConnectorCatalog(t: KymaTransport): Promise<CatalogEntry[]> {
-  const body = await handleResponse<CatalogEnvelope>(await t.request("/v1/connectors/catalog"));
+export async function getDataSourceCatalog(t: KymaTransport): Promise<CatalogEntry[]> {
+  const body = await handleResponse<CatalogEnvelope>(await t.request("/v1/data-sources/catalog"));
   return body.items ?? [];
 }
 
-/** A repository as returned by `POST /v1/connectors/github/repos`. */
+/** A repository as returned by `POST /v1/data-sources/github/repos`. */
 export interface GitHubRepo {
   full_name: string;
   name: string;
@@ -121,8 +121,8 @@ export interface GitHubRepo {
   description: string | null;
 }
 
-/** Derived (client-side) connector status — there is no server enum. */
-export type ConnectorStatus =
+/** Derived (client-side) data source status — there is no server enum. */
+export type DataSourceStatus =
   | "disabled"
   | "error"
   | "syncing"
@@ -148,27 +148,27 @@ async function handleEmpty(res: Response): Promise<void> {
 // ── API functions ─────────────────────────────────────────────────────────────
 
 interface ListEnvelope {
-  items: ConnectorSummary[];
+  items: DataSourceSummary[];
 }
 
-export async function listConnectors(t: KymaTransport): Promise<ConnectorSummary[]> {
-  const body = await handleResponse<ListEnvelope>(await t.request("/v1/connectors"));
+export async function listDataSources(t: KymaTransport): Promise<DataSourceSummary[]> {
+  const body = await handleResponse<ListEnvelope>(await t.request("/v1/data-sources"));
   return body.items ?? [];
 }
 
-export async function getConnector(
+export async function getDataSource(
   t: KymaTransport,
   args: { id: string },
-): Promise<ConnectorDetail> {
-  return handleResponse<ConnectorDetail>(await t.request(`/v1/connectors/${args.id}`));
+): Promise<DataSourceDetail> {
+  return handleResponse<DataSourceDetail>(await t.request(`/v1/data-sources/${args.id}`));
 }
 
-export async function createConnector(
+export async function createDataSource(
   t: KymaTransport,
-  args: { body: CreateConnectorBody },
+  args: { body: CreateDataSourceBody },
 ): Promise<{ id: string }> {
   return handleResponse<{ id: string }>(
-    await t.request("/v1/connectors", {
+    await t.request("/v1/data-sources", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(args.body),
@@ -176,12 +176,12 @@ export async function createConnector(
   );
 }
 
-export async function patchConnector(
+export async function patchDataSource(
   t: KymaTransport,
-  args: { id: string; patch: ConnectorUpdate },
+  args: { id: string; patch: DataSourceUpdate },
 ): Promise<void> {
   return handleEmpty(
-    await t.request(`/v1/connectors/${args.id}`, {
+    await t.request(`/v1/data-sources/${args.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(args.patch),
@@ -189,20 +189,20 @@ export async function patchConnector(
   );
 }
 
-export async function deleteConnector(t: KymaTransport, args: { id: string }): Promise<void> {
-  return handleEmpty(await t.request(`/v1/connectors/${args.id}`, { method: "DELETE" }));
+export async function deleteDataSource(t: KymaTransport, args: { id: string }): Promise<void> {
+  return handleEmpty(await t.request(`/v1/data-sources/${args.id}`, { method: "DELETE" }));
 }
 
-export async function pauseConnector(t: KymaTransport, args: { id: string }): Promise<void> {
-  return handleEmpty(await t.request(`/v1/connectors/${args.id}/pause`, { method: "POST" }));
+export async function pauseDataSource(t: KymaTransport, args: { id: string }): Promise<void> {
+  return handleEmpty(await t.request(`/v1/data-sources/${args.id}/pause`, { method: "POST" }));
 }
 
-export async function resumeConnector(t: KymaTransport, args: { id: string }): Promise<void> {
-  return handleEmpty(await t.request(`/v1/connectors/${args.id}/resume`, { method: "POST" }));
+export async function resumeDataSource(t: KymaTransport, args: { id: string }): Promise<void> {
+  return handleEmpty(await t.request(`/v1/data-sources/${args.id}/resume`, { method: "POST" }));
 }
 
-export async function triggerConnector(t: KymaTransport, args: { id: string }): Promise<void> {
-  return handleEmpty(await t.request(`/v1/connectors/${args.id}/trigger`, { method: "POST" }));
+export async function triggerDataSource(t: KymaTransport, args: { id: string }): Promise<void> {
+  return handleEmpty(await t.request(`/v1/data-sources/${args.id}/trigger`, { method: "POST" }));
 }
 
 interface ReposEnvelope {
@@ -219,7 +219,7 @@ export async function listGitHubRepos(
   args: { pat: string },
 ): Promise<GitHubRepo[]> {
   const body = await handleResponse<ReposEnvelope>(
-    await t.request("/v1/connectors/github/repos", {
+    await t.request("/v1/data-sources/github/repos", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ token: args.pat }),
@@ -231,11 +231,11 @@ export async function listGitHubRepos(
 // ── Derived status ──────────────────────────────────────────────────────────────
 
 /**
- * Synthesize a connector status from the detail fields — the server exposes no
+ * Synthesize a data source status from the detail fields — the server exposes no
  * status enum. Precedence: disabled → error → syncing (a run started but no
  * success yet) → synced (at least one success) → idle (never run).
  */
-export function deriveStatus(detail: ConnectorDetail): ConnectorStatus {
+export function deriveStatus(detail: DataSourceDetail): DataSourceStatus {
   if (!detail.enabled) return "disabled";
   if (detail.last_error) return "error";
   // A run is in flight when it started but hasn't recorded a success yet, or

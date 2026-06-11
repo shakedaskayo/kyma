@@ -1,6 +1,6 @@
 import { KeyRound } from "lucide-react";
 import { Label } from "@/components/ui/label";
-import type { CatalogEntry } from "@/sdk/connectors";
+import type { CatalogEntry } from "@/sdk/datasources";
 import { credentialKindLabel } from "@/sdk/credentials";
 import { useCredentials } from "@/features/credentials/useCredentials";
 import { CredentialIcon } from "@/features/credentials/CredentialIcon";

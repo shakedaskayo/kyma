@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Pause, Play, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { deriveStatus, type ConnectorSummary } from "@/sdk/connectors";
+import { deriveStatus, type DataSourceSummary } from "@/sdk/datasources";
 import { BrandIcon } from "./BrandIcon";
 import {
   useConnector,
@@ -27,7 +27,7 @@ function relTime(iso: string | null): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
-export function ConnectorRow({ connector }: { connector: ConnectorSummary }) {
+export function ConnectorRow({ connector }: { connector: DataSourceSummary }) {
   const navigate = useNavigate();
   // Lazy per-row hydration — the list endpoint carries no status/metrics.
   const { data: detail } = useConnector(connector.id);

@@ -1,5 +1,5 @@
 // Object-store artifact fetch (`/v1/artifacts/by-path`) — read a byte window of
-// a stored artifact (e.g. a CI job log captured by the GitHub connector) by its
+// a stored artifact (e.g. a CI job log captured by the GitHub data source) by its
 // object-store key. Graph `LogFile` nodes carry an `object_path` (not the
 // artifact id), so the graph log-viewer fetches content through this path-keyed
 // endpoint. Range reads (`offset`/`limit`) let the UI page through large logs;

@@ -106,8 +106,8 @@ export interface DreamingSettings {
   realm_scope: string[];
   max_tool_calls: number;
   wall_clock_secs: number;
-  connector_read_budget: number;
-  connector_read_max_bytes: number;
+  data_source_read_budget: number;
+  data_source_read_max_bytes: number;
   mutation_cap: number;
 }
 

@@ -2,19 +2,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useSession } from "@/sdk/session";
 import {
-  createConnector,
-  deleteConnector,
-  getConnector,
-  getConnectorCatalog,
-  listConnectors,
+  createDataSource,
+  deleteDataSource,
+  getDataSource,
+  getDataSourceCatalog,
+  listDataSources,
   listGitHubRepos,
-  patchConnector,
-  pauseConnector,
-  resumeConnector,
-  triggerConnector,
-  type ConnectorUpdate,
-  type CreateConnectorBody,
-} from "@/sdk/connectors";
+  patchDataSource,
+  pauseDataSource,
+  resumeDataSource,
+  triggerDataSource,
+  type DataSourceUpdate,
+  type CreateDataSourceBody,
+} from "@/sdk/datasources";
 
 // Query keys are scoped to (endpoint, database) — never the bearer or any PAT.
 const listKey = (endpoint: string, database: string) =>
@@ -30,7 +30,7 @@ export function useConnectorCatalog() {
   const { endpoint, token, database } = useSession();
   return useQuery({
     queryKey: ["connectors", "catalog", endpoint],
-    queryFn: () => getConnectorCatalog({ endpoint, token, database }),
+    queryFn: () => getDataSourceCatalog({ endpoint, token, database }),
     enabled: Boolean(endpoint),
     staleTime: 10 * 60_000,
   });
@@ -40,7 +40,7 @@ export function useConnectors() {
   const { endpoint, token, database } = useSession();
   return useQuery({
     queryKey: listKey(endpoint, database),
-    queryFn: () => listConnectors({ endpoint, token, database }),
+    queryFn: () => listDataSources({ endpoint, token, database }),
     // Token optional — gate only on the endpoint (matches the graph hooks).
     enabled: Boolean(endpoint),
     staleTime: 30_000,
@@ -52,7 +52,7 @@ export function useConnector(id: string | null) {
   const { endpoint, token, database } = useSession();
   return useQuery({
     queryKey: detailKey(endpoint, database, id ?? ""),
-    queryFn: () => getConnector({ endpoint, token, database, id: id! }),
+    queryFn: () => getDataSource({ endpoint, token, database, id: id! }),
     enabled: Boolean(endpoint && id),
     staleTime: 15_000,
   });
@@ -62,8 +62,8 @@ export function useCreateConnector() {
   const { endpoint, token, database } = useSession();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: CreateConnectorBody) =>
-      createConnector({ endpoint, token, database, body }),
+    mutationFn: (body: CreateDataSourceBody) =>
+      createDataSource({ endpoint, token, database, body }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: listKey(endpoint, database) });
       toast.success("Connector created.");
@@ -76,8 +76,8 @@ export function usePatchConnector(id: string) {
   const { endpoint, token, database } = useSession();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: ConnectorUpdate) =>
-      patchConnector({ endpoint, token, database, id, patch }),
+    mutationFn: (patch: DataSourceUpdate) =>
+      patchDataSource({ endpoint, token, database, id, patch }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: listKey(endpoint, database) });
       void qc.invalidateQueries({ queryKey: detailKey(endpoint, database, id) });
@@ -91,7 +91,7 @@ export function usePauseConnector(id: string) {
   const { endpoint, token, database } = useSession();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => pauseConnector({ endpoint, token, database, id }),
+    mutationFn: () => pauseDataSource({ endpoint, token, database, id }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: listKey(endpoint, database) });
       void qc.invalidateQueries({ queryKey: detailKey(endpoint, database, id) });
@@ -105,7 +105,7 @@ export function useResumeConnector(id: string) {
   const { endpoint, token, database } = useSession();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => resumeConnector({ endpoint, token, database, id }),
+    mutationFn: () => resumeDataSource({ endpoint, token, database, id }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: listKey(endpoint, database) });
       void qc.invalidateQueries({ queryKey: detailKey(endpoint, database, id) });
@@ -119,7 +119,7 @@ export function useTriggerConnector(id: string) {
   const { endpoint, token, database } = useSession();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => triggerConnector({ endpoint, token, database, id }),
+    mutationFn: () => triggerDataSource({ endpoint, token, database, id }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: detailKey(endpoint, database, id) });
       toast.success("Sync triggered.");
@@ -132,7 +132,7 @@ export function useDeleteConnector() {
   const { endpoint, token, database } = useSession();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => deleteConnector({ endpoint, token, database, id }),
+    mutationFn: (id: string) => deleteDataSource({ endpoint, token, database, id }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: listKey(endpoint, database) });
       toast.success("Connector deleted.");

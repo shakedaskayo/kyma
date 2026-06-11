@@ -3,10 +3,10 @@
  *
  * ## Data shape
  * `fetchCapabilities()` (from @kyma-ai/client) returns `Capabilities`:
- *   { mode: "local"|"server", connectors: boolean, credentials: boolean,
+ *   { mode: "local"|"server", data_sources: boolean, credentials: boolean,
  *     oauth: boolean, saved_views: boolean, users_admin: boolean, explore_live: boolean }
  *
- * The `capability` prop is a string key of that object (e.g. "connectors").
+ * The `capability` prop is a string key of that object (e.g. "data_sources").
  *
  * ## Fail-open policy (documented here intentionally)
  * When the capabilities query is loading or has errored, CapabilityGate renders
@@ -21,7 +21,7 @@ import type { Capabilities } from "@kyma-ai/client";
 import { useKymaCapabilities } from "../hooks/useKymaCapabilities";
 
 export interface CapabilityGateProps {
-  /** A key of the Capabilities object, e.g. "connectors", "saved_views". */
+  /** A key of the Capabilities object, e.g. "data_sources", "saved_views". */
   capability: string;
   children: ReactNode;
   /** Override the default "not available on this server" card. */

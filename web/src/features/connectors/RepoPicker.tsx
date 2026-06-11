@@ -3,7 +3,7 @@ import { Check, Lock, RefreshCw, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import type { GitHubRepo } from "@/sdk/connectors";
+import type { GitHubRepo } from "@/sdk/datasources";
 
 interface Props {
   /** Fetched repos (lifted to the wizard so the PAT is fetched once). */

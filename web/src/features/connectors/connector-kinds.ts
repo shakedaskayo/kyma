@@ -1,7 +1,7 @@
-import type { CatalogEntry, CreateConnectorBody } from "@/sdk/connectors";
+import type { CatalogEntry, CreateDataSourceBody } from "@/sdk/datasources";
 
 // Catalog presentation + create helpers. The catalog itself is engine-driven
-// (GET /v1/connectors/catalog → CatalogEntry[]); this module only adds the
+// (GET /v1/data-sources/catalog → CatalogEntry[]); this module only adds the
 // generic create-body assembly, category ordering, and interval presets, so a
 // new connector needs no change here.
 
@@ -84,7 +84,7 @@ export function offersStoredCredential(entry: CatalogEntry): boolean {
 }
 
 /**
- * Assemble the `POST /v1/connectors` body generically from a catalog entry:
+ * Assemble the `POST /v1/data-sources` body generically from a catalog entry:
  * merge the entry's `config_defaults`, layer the collected field values, and
  * write the selected resources under the entry's `resource.config_key`.
  */
@@ -92,7 +92,7 @@ export function buildCreateBody(
   entry: CatalogEntry,
   values: KindFormValues,
   sessionDatabase: string,
-): CreateConnectorBody {
+): CreateDataSourceBody {
   const config: Record<string, unknown> = { ...(entry.config_defaults ?? {}) };
   for (const f of entry.fields) {
     // Checkbox fields land as JSON booleans (the wizard stores "true"/"").

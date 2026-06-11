@@ -2,14 +2,14 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { CatalogEntry } from "@/sdk/connectors";
+import type { CatalogEntry } from "@/sdk/datasources";
 import { useConnectorCatalog } from "./useConnectors";
 import { CATEGORIES, categoryLabel, authLabel } from "./connector-kinds";
 import { BrandIcon } from "./BrandIcon";
 
 /**
  * The vendor catalog grid — the source-selection surface. Entries come from the
- * engine (`/v1/connectors/catalog`), grouped by category. Available connectors
+ * engine (`/v1/data-sources/catalog`), grouped by category. Available connectors
  * are clickable; "coming soon" ones are shown (greyed, with a badge) so the
  * product reads like a real integrations marketplace, not a single-vendor tool.
  */

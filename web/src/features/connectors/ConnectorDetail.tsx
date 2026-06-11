@@ -18,8 +18,8 @@ import { getStats } from "@/sdk/graph";
 import {
   deriveStatus,
   type CatalogEntry,
-  type ConnectorDetail as Detail,
-} from "@/sdk/connectors";
+  type DataSourceDetail as Detail,
+} from "@/sdk/datasources";
 import { useCredentials } from "@/features/credentials/useCredentials";
 import { formatInterval, graphNameForEntry } from "./connector-kinds";
 import { BrandIcon } from "./BrandIcon";

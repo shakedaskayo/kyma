@@ -1,7 +1,7 @@
-// Gate for control-plane-only surfaces (connectors, credentials, OAuth).
+// Gate for control-plane-only surfaces (data sources, credentials, OAuth).
 //
 // Local mode (`kyma serve`, single binary over SQLite) covers memory, data,
-// graph, and dashboards; connector + credential management run on the hosted
+// graph, and dashboards; data-source + credential management run on the hosted
 // control plane. When the connected server reports a capability as off, the
 // page renders this explainer instead of firing requests that 404.
 
