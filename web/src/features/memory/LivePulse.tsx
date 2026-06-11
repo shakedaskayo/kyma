@@ -4,7 +4,7 @@ import { Radio, WifiOff } from "lucide-react";
 import { useReducedMotion } from "@/lib/motion";
 import { relTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { kindStyle, sessionHue } from "./lib";
+import { kindStyle, sessionHue, STALL_THRESHOLD_MS } from "./lib";
 import { useSharedMemoryStream } from "./stream-context";
 import { type PulseEvent } from "./useMemoryStream";
 
@@ -16,7 +16,7 @@ import { type PulseEvent } from "./useMemoryStream";
  */
 export function LivePulse({ className }: { className?: string }) {
   const reduce = useReducedMotion();
-  const { events, status, eventsPerMin } = useSharedMemoryStream();
+  const { events, status, eventsPerMin, newestTs } = useSharedMemoryStream();
 
   // Re-tick relative timestamps every 5s.
   const [now, setNow] = useState(() => Date.now());
@@ -26,6 +26,11 @@ export function LivePulse({ className }: { className?: string }) {
   }, []);
 
   const connected = status === "live" || status === "polling";
+  const stalled =
+    connected && newestTs !== "" && now - new Date(newestTs).getTime() > STALL_THRESHOLD_MS;
+
+  const fresh = events.filter((e) => !e.backfill);
+  const history = events.filter((e) => e.backfill);
 
   return (
     <div className={cn("flex h-full flex-col", className)}>
@@ -36,14 +41,20 @@ export function LivePulse({ className }: { className?: string }) {
             <span
               className={cn(
                 "absolute inline-flex h-full w-full animate-ping rounded-full opacity-70",
-                status === "live" ? "bg-violet-500" : "bg-sky-500",
+                stalled ? "bg-amber-500" : status === "live" ? "bg-violet-500" : "bg-sky-500",
               )}
             />
           )}
           <span
             className={cn(
               "relative inline-flex h-2 w-2 rounded-full",
-              status === "live" ? "bg-violet-400" : status === "polling" ? "bg-sky-400" : "bg-muted-foreground",
+              stalled
+                ? "bg-amber-400"
+                : status === "live"
+                  ? "bg-violet-400"
+                  : status === "polling"
+                    ? "bg-sky-400"
+                    : "bg-muted-foreground",
             )}
           />
         </span>
@@ -56,9 +67,20 @@ export function LivePulse({ className }: { className?: string }) {
           ) : (
             <WifiOff className="h-3 w-3" />
           )}
-          {status === "live" ? "streaming" : status === "polling" ? "polling" : "idle"}
-          {eventsPerMin > 0 && (
-            <span className="tabular-nums text-foreground/70">· {eventsPerMin}/min</span>
+          {stalled ? (
+            <span
+              className="text-amber-400"
+              title="The stream is connected but no events are arriving. Check `kyma status` — capture may be failing."
+            >
+              capture stalled · last event {relTime(newestTs, now)}
+            </span>
+          ) : (
+            <>
+              {status === "live" ? "streaming" : status === "polling" ? "polling" : "idle"}
+              {eventsPerMin > 0 && (
+                <span className="tabular-nums text-foreground/70">· {eventsPerMin}/min</span>
+              )}
+            </>
           )}
         </span>
       </div>
@@ -73,10 +95,20 @@ export function LivePulse({ className }: { className?: string }) {
           ) : (
             <ul className="space-y-1.5">
               <AnimatePresence initial={false}>
-                {events.map((ev) => (
+                {fresh.map((ev) => (
                   <PulseRow key={ev.key} ev={ev} now={now} reduce={reduce} />
                 ))}
               </AnimatePresence>
+              {history.length > 0 && (
+                <li className="flex items-center gap-2 px-1 pt-2 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  <span className="h-px flex-1 bg-border/60" />
+                  earlier
+                  <span className="h-px flex-1 bg-border/60" />
+                </li>
+              )}
+              {history.map((ev) => (
+                <PulseRow key={ev.key} ev={ev} now={now} reduce={true} />
+              ))}
             </ul>
           )}
         </div>
