@@ -14,9 +14,9 @@ import { Route as SettingsRouteImport } from './../routes/settings'
 import { Route as LoginRouteImport } from './../routes/login'
 import { Route as AppRouteImport } from './../routes/_app'
 import { Route as IndexRouteImport } from './../routes/index'
+import { Route as AppTracesRouteImport } from './../routes/_app.traces'
 import { Route as AppQueryRouteImport } from './../routes/_app.query'
 import { Route as AppMemoryRouteImport } from './../routes/_app.memory'
-import { Route as AppTracesRouteImport } from './../routes/_app.traces'
 import { Route as AppGraphRouteImport } from './../routes/_app.graph'
 import { Route as AppExploreRouteImport } from './../routes/_app.explore'
 import { Route as AppDiscoverRouteImport } from './../routes/_app.discover'
@@ -62,6 +62,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppTracesRoute = AppTracesRouteImport.update({
+  id: '/traces',
+  path: '/traces',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppQueryRoute = AppQueryRouteImport.update({
   id: '/query',
   path: '/query',
@@ -70,11 +75,6 @@ const AppQueryRoute = AppQueryRouteImport.update({
 const AppMemoryRoute = AppMemoryRouteImport.update({
   id: '/memory',
   path: '/memory',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppTracesRoute = AppTracesRouteImport.update({
-  id: '/traces',
-  path: '/traces',
   getParentRoute: () => AppRoute,
 } as any)
 const AppGraphRoute = AppGraphRouteImport.update({
@@ -393,6 +393,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/traces': {
+      id: '/_app/traces'
+      path: '/traces'
+      fullPath: '/traces'
+      preLoaderRoute: typeof AppTracesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/query': {
       id: '/_app/query'
       path: '/query'
@@ -405,13 +412,6 @@ declare module '@tanstack/react-router' {
       path: '/memory'
       fullPath: '/memory'
       preLoaderRoute: typeof AppMemoryRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/traces': {
-      id: '/_app/traces'
-      path: '/traces'
-      fullPath: '/traces'
-      preLoaderRoute: typeof AppTracesRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/graph': {
