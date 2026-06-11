@@ -14,10 +14,8 @@ use serde::Serialize;
 pub struct Capabilities {
     /// `"local"` (embedded SQLite, single binary) or `"server"` (control plane).
     pub mode: &'static str,
-    // Field name is the `/v1/capabilities` wire JSON key the web reads — it is
-    // renamed together with the TS client in a later task; Task 2 keeps the
-    // API surface byte-identical.
-    pub connectors: bool,
+    /// Whether data-source management routes are available (control-plane only).
+    pub data_sources: bool,
     pub credentials: bool,
     pub oauth: bool,
     /// Saved Discover views (write side is Postgres-backed today).
@@ -35,7 +33,7 @@ impl Capabilities {
     /// Hosted control plane — everything on.
     pub const SERVER: Self = Self {
         mode: "server",
-        connectors: true,
+        data_sources: true,
         credentials: true,
         oauth: true,
         saved_views: true,
@@ -47,7 +45,7 @@ impl Capabilities {
     /// and credential management live on the control plane.
     pub const LOCAL: Self = Self {
         mode: "local",
-        connectors: false,
+        data_sources: false,
         credentials: false,
         oauth: false,
         saved_views: false,
@@ -80,5 +78,14 @@ mod tests {
         assert_eq!(json["agent"], true);
         let json = serde_json::to_value(Capabilities::LOCAL).unwrap();
         assert_eq!(json["agent"], true);
+    }
+
+    #[test]
+    fn capabilities_serialize_data_sources() {
+        let json = serde_json::to_value(Capabilities::SERVER).unwrap();
+        assert_eq!(json["data_sources"], true);
+        assert!(json.get("connectors").is_none());
+        let json = serde_json::to_value(Capabilities::LOCAL).unwrap();
+        assert_eq!(json["data_sources"], false);
     }
 }
