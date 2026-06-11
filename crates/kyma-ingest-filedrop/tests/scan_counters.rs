@@ -100,6 +100,7 @@ async fn run_fires_scan_hook_each_cycle() {
     assert_eq!(first.seen, 1);
     assert_eq!(first.processed, 1);
     assert_eq!(first.errors, 0);
+    assert!(first.duration_ms < 1000, "duration_ms sanity: timer must be wired");
 
     // A subsequent cycle replays from the ledger: seen but not processed.
     let second = tokio::time::timeout(Duration::from_secs(5), rx.recv())

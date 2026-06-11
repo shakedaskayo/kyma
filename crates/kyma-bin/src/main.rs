@@ -1074,14 +1074,19 @@ async fn main() -> Result<()> {
         {
             Ok(reg) => {
                 watcher = watcher.with_scan_hook(std::sync::Arc::new(move |scan| {
+                    // Capture timestamp synchronously so it reflects scan completion,
+                    // not whenever the executor picks up the task.
+                    let at = chrono::Utc::now();
                     let reg = reg.clone();
+                    // one-shot UPDATE; completes fast, no retry
                     tokio::spawn(async move {
+                        // FiledropScan → ScanStats: add registry-layer fields (at, detail)
                         reg.heartbeat(Some(&kyma_datasources::watchers::ScanStats {
                             seen: scan.seen,
                             processed: scan.processed,
                             errors: scan.errors,
                             duration_ms: scan.duration_ms,
-                            at: chrono::Utc::now(),
+                            at,
                             detail: None,
                         }))
                         .await;
