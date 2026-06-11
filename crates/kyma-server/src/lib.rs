@@ -29,6 +29,7 @@ pub mod dashboards_handler;
 pub mod discover;
 pub mod fabric_handler;
 pub mod graph_handler;
+pub mod graph_layout_cache;
 pub mod flight;
 pub mod capabilities;
 mod health;

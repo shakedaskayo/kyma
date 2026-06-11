@@ -91,6 +91,31 @@ pub enum Direction {
     Both,
 }
 
+/// Node + its precomputed layout position, as served by `/v1/graph/:graph/export`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PositionedNode {
+    #[serde(flatten)]
+    pub node: GraphNode,
+    pub x: f64,
+    pub y: f64,
+}
+
+/// One page of the full-graph export. Node pages stream first, then edge
+/// pages; `next_cursor` is `None` on the final page. `layout_status` is
+/// `"computing"` (with empty nodes/edges) while a large layout is being
+/// computed in the background — clients poll until `"ready"`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GraphExportPage {
+    pub layout_status: String,
+    pub layout_id: String,
+    pub total_nodes: usize,
+    pub total_edges: usize,
+    pub nodes: Vec<PositionedNode>,
+    pub edges: Vec<GraphRelationship>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
