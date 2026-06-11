@@ -1,4 +1,4 @@
-//! Shared HTTP helpers for OAuth2 data data sources.
+//! Shared HTTP helpers for OAuth2 data sources.
 //!
 //! Bearer-authenticated JSON `GET`/`POST` with consistent error classification:
 //! 429, 5xx, network timeouts, and Google's `403 rateLimitExceeded` map to

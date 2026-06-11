@@ -1,4 +1,4 @@
-//! DataSource scheduler — enqueues connector_tick tasks for due data sources.
+//! Data source scheduler — enqueues connector_tick tasks for due data sources.
 
 use crate::catalog_sql;
 use kyma_catalog::PostgresCatalog;

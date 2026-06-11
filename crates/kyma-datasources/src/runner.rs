@@ -1,4 +1,4 @@
-//! DataSource tick runner.
+//! Data source tick runner.
 
 use crate::catalog_sql;
 use crate::metrics::{DataSourceMetrics, TickResult};
