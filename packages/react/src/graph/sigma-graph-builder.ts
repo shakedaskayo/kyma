@@ -37,6 +37,9 @@ const RADIUS_SRC_MAX = 14;
 export const RADIUS_DST_MIN = 2.5;
 export const RADIUS_DST_MAX = 22;
 
+/** Hard cap for canvas node labels — sentence-length names get an ellipsis. */
+export const LABEL_MAX_CHARS = 56;
+
 export function rescaleRadius(r: number): number {
   const t =
     (Math.max(RADIUS_SRC_MIN, Math.min(RADIUS_SRC_MAX, r)) - RADIUS_SRC_MIN) /
@@ -180,10 +183,16 @@ export function buildGraphologyGraph(
     const pos = tile ? { x: raw.x + tile.dx, y: raw.y + tile.dy } : raw;
     const color = resolveNodeColor(n.labels, n.properties);
     const icon = resolveGraphIcon(n.labels, n.properties);
-    const label =
+    // Canvas labels are wayfinding, not content: memory nodes carry whole
+    // sentences as their name — truncate hard (full text lives in the
+    // inspector and the hover pill gets the same truncated form).
+    const rawLabel =
       (n.properties?.name as string | undefined) ||
       (n.properties?.title as string | undefined) ||
       n.id;
+    const label = rawLabel.length > LABEL_MAX_CHARS
+      ? `${rawLabel.slice(0, LABEL_MAX_CHARS - 1).trimEnd()}…`
+      : rawLabel;
     const nodeDegree = degree.get(key) ?? 0;
     const rawRadius = radiusForDegree(nodeDegree, capDeg, opts.sizeByDegree);
     const size = rescaleRadius(rawRadius);

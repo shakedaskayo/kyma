@@ -27,19 +27,46 @@ export type { BuildOptions } from "./sigma-graph-builder";
 
 // ── Neutral edge color helper ──────────────────────────────────────────────
 
-/** RGB portion of the neutral hairline color. */
-const NEUTRAL_RGB = "148,163,184";
+/** Neutral hairline color per theme — slate-400 on dark, slate-600 on light
+ *  (slate-400 on a white canvas is nearly invisible). */
+const NEUTRAL_HEX_DARK = "#94a3b8";
+const NEUTRAL_HEX_LIGHT = "#475569";
+
+/** Approximate galaxy-substrate colors the edges sit on, per theme. */
+const CANVAS_BG_DARK = "#0c1322";
+const CANVAS_BG_LIGHT = "#f4f6f9";
+
+/**
+ * Pre-baked translucency: blend `fg` toward the theme background by `t` and
+ * return an OPAQUE hex. Sigma's edge programs wash translucent colors out
+ * toward white (blend-convention mismatch), so we never hand them alpha —
+ * opaque colors render identically everywhere, and overlapping edges no
+ * longer stack to white-hot at hubs.
+ */
+function mixToBg(fgHex: string, t: number, isDark: boolean): string {
+  const bgHex = isDark ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
+  const p = (h: string) => parseInt(h.replace("#", ""), 16);
+  const f = p(fgHex);
+  const b = p(bgHex);
+  const ch = (shift: number) =>
+    Math.round(((b >> shift) & 255) * (1 - t) + ((f >> shift) & 255) * t);
+  return `#${((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, "0")}`;
+}
 
 /** Below this node count, screen-pixel sizing beats the constellation look. */
 const CONSTELLATION_MIN_NODES = 300;
+
+/** Up to this many edges, at-rest edges keep small directional arrowheads —
+ *  beyond it, arrow programs cost too much and direction arrives on focus. */
+const REST_ARROWS_MAX_EDGES = 5_000;
 
 /** Map builder sizes [2.5,22] into a comfortable screen-px range [6,18]. */
 function screenSize(size: number): number {
   return 6 + ((size - 2.5) / (22 - 2.5)) * 12;
 }
 
-function neutralEdgeColor(alpha: number): string {
-  return `rgba(${NEUTRAL_RGB},${alpha})`;
+function neutralEdgeColor(alpha: number, isDark: boolean): string {
+  return mixToBg(isDark ? NEUTRAL_HEX_DARK : NEUTRAL_HEX_LIGHT, alpha, isDark);
 }
 
 // ── Component props ────────────────────────────────────────────────────────
@@ -162,6 +189,7 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     const constellation =
       graph.order >= CONSTELLATION_MIN_NODES &&
       positionExtent(graph) >= 4 * RADIUS_DST_MAX;
+    const restArrows = graph.size <= REST_ARROWS_MAX_EDGES;
 
     const sigma = new Sigma(graph, container, {
       defaultEdgeType: "line",
@@ -252,18 +280,36 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
           ctxRef.current,
         );
 
-        // Amendment: at-rest (neutral) edges use slate hairline, not family color.
+        // Amendment: at-rest (neutral) edges use slate hairline, not family
+        // color. All edge colors are pre-baked opaque (see mixToBg).
         const color = d.neutral
-          ? neutralEdgeColor(d.alpha * edgeDensityScale)
-          : withAlpha(attrs.familyColor as string, d.alpha);
+          ? neutralEdgeColor(d.alpha * edgeDensityScale, isDark)
+          : mixToBg(attrs.familyColor as string, d.alpha, isDark);
+
+        // Quiet edges keep small directional arrowheads while the arrow
+        // program is affordable; huge graphs fall back to plain GL lines and
+        // direction arrives in the loud (focus) state.
+        const arrowType = curvedEdges ? "curvedArrow" : "straightArrow";
+        const restType = restArrows ? arrowType : "line";
+
+        // In constellation mode sizes live in graph-space and grow as you zoom
+        // in — fine for nodes, but edges must stay hairlines, not fat bars.
+        // Multiplying by the camera ratio keeps their on-screen width constant
+        // (reducers re-run on every camera update).
+        const zoomClamp = constellation
+          ? (sigmaRef.current?.getCamera().ratio ?? 1)
+          : 1;
+
+        // At-rest arrow edges get a touch more width so the arrowheads
+        // actually read as direction markers (heads scale with edge size).
+        const restWidth = restArrows && !d.loud ? Math.max(d.size, 1.6) : d.size;
 
         return {
           ...attrs,
-          // Quiet edges are 1px GL lines; loud edges get a real arrow program.
-          type: d.loud ? (curvedEdges ? "curvedArrow" : "straightArrow") : "line",
+          type: d.loud ? arrowType : restType,
           hidden: d.hidden,
           color,
-          size: d.size,
+          size: restWidth * zoomClamp,
           label: d.label,
           zIndex: d.loud ? 2 : 0,
         };
@@ -288,6 +334,10 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     sigma.on("clickStage", () => props.onNodeClick(""));
     sigma.on("enterNode", ({ node }) => props.onNodeHover(node));
     sigma.on("leaveNode", () => props.onNodeHover(null));
+    // leaveNode doesn't fire when the pointer exits the whole container (e.g.
+    // straight onto the sidebar) — without this the hover-dim state sticks.
+    const clearHover = () => props.onNodeHover(null);
+    container.addEventListener("mouseleave", clearHover);
 
     // LOD: refresh reducers on every camera move so tier updates propagate.
     // Update ctxRef.current.tier BEFORE refreshing so reducers see the current
@@ -307,6 +357,7 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     });
 
     return () => {
+      container.removeEventListener("mouseleave", clearHover);
       sigmaRef.current = null;
       sigma.kill();
     };
