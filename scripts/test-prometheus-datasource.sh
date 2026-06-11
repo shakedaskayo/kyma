@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end test of the Prometheus connector.
+# End-to-end test of the Prometheus data source.
 #
 # Prerequisites:
 #   * docker-compose up (postgres + minio + redpanda)
@@ -56,7 +56,7 @@ fi
 section "Bootstrap telemetry.metrics schema"
 # ---------------------------------------------------------------------------
 # Plant the 'metrics' table schema via an NDJSON ingest to make sure the
-# connector's first scrape doesn't lazy-create an incompatible schema.
+# data source's first scrape doesn't lazy-create an incompatible schema.
 BOOT=$(echo '{"timestamp":"2026-01-01T00:00:00Z","name":"bootstrap","value":0.0,"labels":"{}"}' \
     | curl -sS -w '\n%{http_code}' -X POST "$HTTP/v1/ingest" \
         -H 'Content-Type: application/x-ndjson' \
@@ -71,7 +71,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-section "Create Prometheus connector"
+section "Create Prometheus data source"
 # ---------------------------------------------------------------------------
 BODY=$(cat <<EOF
 {
@@ -88,8 +88,8 @@ CREATE=$(curl -sS -X POST "$HTTP/v1/data-sources" \
     -H 'Content-Type: application/json' -d "$BODY")
 CONN_ID=$(echo "$CREATE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' 2>/dev/null || echo "")
 
-if [[ -n "$CONN_ID" ]]; then ok "connector created id=$CONN_ID"
-else nope "create connector" "$CREATE"; fi
+if [[ -n "$CONN_ID" ]]; then ok "data source created id=$CONN_ID"
+else nope "create data source" "$CREATE"; fi
 
 # ---------------------------------------------------------------------------
 section "Wait for first successful scrape"
@@ -100,13 +100,13 @@ for _ in $(seq 1 20); do
     STATUS=$(curl -sS "$HTTP/v1/data-sources/$CONN_ID" 2>/dev/null || echo '')
     if echo "$STATUS" | grep -q '"enabled":true'; then
         ROWS=$(curl -sS "$HTTP/metrics" \
-            | grep -E "kyma_connector_rows_ingested_total\\{.*connector_id=\"$CONN_ID\"" \
+            | grep -E "kyma_data_source_rows_ingested_total\\{.*data_source_id=\"$CONN_ID\"" \
             | awk '{print $NF}' | head -1 || echo 0)
         if [[ "${ROWS:-0}" -gt 0 ]]; then break; fi
     fi
     sleep 0.5
 done
-if [[ "${ROWS:-0}" -gt 0 ]]; then ok "connector ran (rows=$ROWS)"
+if [[ "${ROWS:-0}" -gt 0 ]]; then ok "data source ran (rows=$ROWS)"
 else nope "first scrape" "STATUS=$STATUS ROWS=${ROWS:-0}"; fi
 
 # ---------------------------------------------------------------------------
@@ -167,7 +167,7 @@ HTTPServer(('127.0.0.1', ${MOCK_PORT}), H).serve_forever()
 MOCK_PID=$!
 sleep 4
 ERR=$(curl -sS "$HTTP/metrics" \
-    | grep -E 'kyma_connector_errors_total.*reason="transient"' \
+    | grep -E 'kyma_data_source_errors_total.*reason="transient"' \
     | awk '{print $NF}' | head -1 || echo 0)
 if [[ "${ERR%.*}" -gt 0 ]] 2>/dev/null; then ok "transient errors counted ($ERR)"
 else nope "errors_total transient" "ERR=${ERR:-0}"; fi
@@ -182,8 +182,8 @@ MOCK_PID=$!
 sleep 2
 
 RECOVERED=$(curl -sS "$HTTP/v1/data-sources/$CONN_ID" | grep -c 'last_success_at' || echo 0)
-if [[ "$RECOVERED" -ge 1 ]]; then ok "connector recovered after 503 (last_success_at present)"
-else nope "recovery" "last_success_at not found in connector response"; fi
+if [[ "$RECOVERED" -ge 1 ]]; then ok "data source recovered after 503 (last_success_at present)"
+else nope "recovery" "last_success_at not found in data source response"; fi
 
 # ---------------------------------------------------------------------------
 section "Trigger: immediate tick"
@@ -198,11 +198,11 @@ fi
 sleep 2
 
 # ---------------------------------------------------------------------------
-section "Delete connector"
+section "Delete data source"
 # ---------------------------------------------------------------------------
 curl -sS -X DELETE "$HTTP/v1/data-sources/$CONN_ID" >/dev/null
 GONE=$(curl -sS -o /dev/null -w '%{http_code}' "$HTTP/v1/data-sources/$CONN_ID")
-if [[ "$GONE" == "404" ]]; then ok "connector deleted (404 on re-fetch)"
+if [[ "$GONE" == "404" ]]; then ok "data source deleted (404 on re-fetch)"
 else nope "delete" "expected 404, got $GONE"; fi
 
 CONN_ID=""   # prevent cleanup double-delete
