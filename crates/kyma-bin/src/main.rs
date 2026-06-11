@@ -1047,12 +1047,51 @@ async fn main() -> Result<()> {
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
     {
-        let watcher = FiledropWatcher::new(
+        let fd_config = FiledropConfig::from_env();
+        let mut watcher = FiledropWatcher::new(
             catalog.clone(),
             store.clone(),
             write_path.clone(),
-            FiledropConfig::from_env(),
+            fd_config.clone(),
         );
+        // Register in the watcher registry and heartbeat per scan via the
+        // scan hook. Best-effort: a registry failure must not prevent the
+        // watcher from running — warn and run unregistered.
+        let (host, node_id, user) = kyma_datasources::watchers::node_identity();
+        match kyma_datasources::watchers::WatcherRegistry::register(
+            pg_catalog.pool(),
+            "filedrop",
+            &host,
+            &node_id,
+            &user,
+            serde_json::json!({
+                "prefixes": fd_config.prefixes,
+                "poll_secs": fd_config.poll_interval.as_secs(),
+                "delete_after_ingest": fd_config.delete_after_ingest,
+            }),
+        )
+        .await
+        {
+            Ok(reg) => {
+                watcher = watcher.with_scan_hook(std::sync::Arc::new(move |scan| {
+                    let reg = reg.clone();
+                    tokio::spawn(async move {
+                        reg.heartbeat(Some(&kyma_datasources::watchers::ScanStats {
+                            seen: scan.seen,
+                            processed: scan.processed,
+                            errors: scan.errors,
+                            duration_ms: scan.duration_ms,
+                            at: chrono::Utc::now(),
+                            detail: None,
+                        }))
+                        .await;
+                    });
+                }));
+            }
+            Err(e) => {
+                warn!(error = %e, "watcher registry unavailable; filedrop runs unregistered");
+            }
+        }
         let filedrop_rx = shutdown_tx.subscribe();
         info!("file-drop watcher enabled");
         Some(tokio::spawn(watcher.run(async move {

@@ -105,6 +105,28 @@ impl FiledropConfig {
     }
 }
 
+/// Outcome of one poll cycle, handed to the optional scan hook.
+#[derive(Debug, Clone, Default)]
+pub struct FiledropScan {
+    /// Objects listed across all configured prefixes.
+    pub seen: u64,
+    /// Objects newly ingested (idempotency-ledger replays don't count).
+    pub processed: u64,
+    /// Per-object processing failures (a failed list aborts the tick and is
+    /// reported by `run()` as `errors: 1` instead).
+    pub errors: u64,
+    /// Wall-clock duration of the whole tick.
+    pub duration_ms: u64,
+}
+
+/// Callback invoked after every poll cycle with that cycle's [`FiledropScan`].
+///
+/// This is how the binary bridges the watcher into the watcher registry
+/// (heartbeats) without this crate depending on `kyma-datasources`. Runs on
+/// the watcher's task inside the tokio runtime, so implementations may
+/// `tokio::spawn`.
+pub type ScanHook = std::sync::Arc<dyn Fn(FiledropScan) + Send + Sync>;
+
 /// The file-drop watcher. Cloneable; `run` consumes self.
 #[derive(Clone)]
 pub struct FiledropWatcher {
@@ -112,6 +134,7 @@ pub struct FiledropWatcher {
     store: Arc<dyn ObjectStore>,
     write_path: WritePath,
     config: FiledropConfig,
+    scan_hook: Option<ScanHook>,
 }
 
 impl FiledropWatcher {
@@ -126,7 +149,16 @@ impl FiledropWatcher {
             store,
             write_path,
             config,
+            scan_hook: None,
         }
+    }
+
+    /// Install a hook that fires after every poll cycle with that cycle's
+    /// [`FiledropScan`]. Used by the binary to heartbeat the watcher registry.
+    #[must_use]
+    pub fn with_scan_hook(mut self, hook: ScanHook) -> Self {
+        self.scan_hook = Some(hook);
+        self
     }
 
     pub async fn run(self, shutdown: impl Future<Output = ()>) {
@@ -146,26 +178,42 @@ impl FiledropWatcher {
                     return;
                 }
                 _ = tokio::time::sleep(self.config.poll_interval) => {
-                    if let Err(e) = self.tick().await {
-                        warn!(error = %e, "filedrop tick failed");
+                    match self.tick().await {
+                        Ok(scan) => {
+                            if let Some(hook) = &self.scan_hook {
+                                hook(scan);
+                            }
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "filedrop tick failed");
+                            if let Some(hook) = &self.scan_hook {
+                                hook(FiledropScan { errors: 1, ..Default::default() });
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
+    /// One poll cycle: scan every configured prefix and process what's there.
+    /// Returns the cycle's counters; `run()` hands them to the scan hook.
+    /// Public so integration tests can drive a single deterministic cycle.
     #[instrument(skip(self))]
-    async fn tick(&self) -> Result<()> {
+    pub async fn tick(&self) -> Result<FiledropScan> {
         // Walk each configured prefix in turn. We don't parallelize here on
         // purpose: a single watcher should be I/O-bound on the object store
         // anyway, and serial scanning gives deterministic per-prefix logs.
-        let mut total_seen = 0usize;
-        let mut total_processed = 0usize;
+        let started = std::time::Instant::now();
+        let mut total_seen = 0u64;
+        let mut total_processed = 0u64;
+        let mut total_errors = 0u64;
         for prefix in &self.config.prefixes {
             let prefix_path = Path::from(prefix.clone());
             let mut stream = self.store.list(Some(&prefix_path));
-            let mut seen = 0usize;
-            let mut processed = 0usize;
+            let mut seen = 0u64;
+            let mut processed = 0u64;
+            let mut errors = 0u64;
             while let Some(obj) = stream.next().await {
                 let obj = obj.map_err(|e| Error::Internal(format!("list {prefix}: {e}")))?;
                 seen += 1;
@@ -173,20 +221,27 @@ impl FiledropWatcher {
                     Ok(true) => processed += 1,
                     Ok(false) => {} // replayed from ledger; not counted as new work
                     Err(e) => {
+                        errors += 1;
                         warn!(path = %obj.location, prefix = %prefix, error = %e, "filedrop: failed to process file");
                     }
                 }
             }
             total_seen += seen;
             total_processed += processed;
+            total_errors += errors;
             if seen > 0 {
-                debug!(prefix = %prefix, seen, processed, "filedrop scan (per-prefix)");
+                debug!(prefix = %prefix, seen, processed, errors, "filedrop scan (per-prefix)");
             }
         }
         if total_seen > 0 {
-            debug!(seen = total_seen, processed = total_processed, "filedrop scan complete");
+            debug!(seen = total_seen, processed = total_processed, errors = total_errors, "filedrop scan complete");
         }
-        Ok(())
+        Ok(FiledropScan {
+            seen: total_seen,
+            processed: total_processed,
+            errors: total_errors,
+            duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        })
     }
 
     /// Returns `Ok(true)` if the file was newly ingested, `Ok(false)` if it
