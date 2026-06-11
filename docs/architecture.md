@@ -96,6 +96,64 @@ Raft) or execution runtimes is a bounded change, not a rewrite.
 
 ---
 
+## Self-telemetry
+
+Kyma instruments itself via OpenTelemetry and writes traces into its own store.
+
+### OTLP receiver signals
+
+| Signal  | Table               | gRPC method                       |
+|---------|---------------------|-----------------------------------|
+| Logs    | `otel.otel_logs`    | `opentelemetry.proto.collector.logs.v1.LogsService/Export` |
+| Traces  | `otel.otel_traces`  | `opentelemetry.proto.collector.trace.v1.TraceService/Export` |
+
+Both listeners share port 4317 (configurable via `KYMA_OTLP_ADDR`; disabled by default — set to `0.0.0.0:4317` to enable).
+
+### `otel.otel_traces` schema
+
+| Column           | Type                        | Notes |
+|------------------|-----------------------------|-------|
+| `start_time`     | Timestamp(ns)               | span start |
+| `end_time`       | Timestamp(ns)               | span end |
+| `duration_ns`    | Int64                       | `end_time - start_time` |
+| `trace_id`       | Utf8                        | hex-encoded |
+| `span_id`        | Utf8                        | hex-encoded |
+| `parent_span_id` | Utf8 (nullable)             | null for root spans |
+| `name`           | Utf8                        | span name |
+| `kind`           | Utf8                        | SERVER / CLIENT / INTERNAL / … |
+| `status_code`    | Utf8                        | OK / ERROR / UNSET |
+| `status_message` | Utf8 (nullable)             | error description |
+| `service_name`   | Utf8 (nullable)             | promoted from `service.name` resource attr |
+| `subject`        | Utf8 (nullable)             | promoted from `kyma.subject` span attr |
+| `tenant`         | Utf8 (nullable)             | promoted from `kyma.tenant` span attr |
+| `attributes_json`| Utf8                        | remaining span attributes as JSON |
+| `resource_json`  | Utf8                        | remaining resource attributes as JSON |
+
+### Self-instrumentation (`kyma_telemetry` target)
+
+The server instruments its own API operations by emitting tracing spans with `target: "kyma_telemetry"`. A layered tracing registry filters the OTel exporter layer to this target only — spans outside `kyma_telemetry` go to the log formatter but not to storage, preventing recursion.
+
+Instrumented operations:
+
+| Span name        | Handler                  | Key attributes |
+|------------------|--------------------------|----------------|
+| `request`        | auth middleware          | `http.method`, `http.route`, `kyma.tenant`, `kyma.subject`, `http.status` |
+| `memory.recall`  | memory query handler     | `memory.query`, `memory.results`, `memory.took_ms` |
+| `memory.import`  | memory import handler    | `memory.imported` |
+| `memory.export`  | memory export handler    | `memory.exported` |
+| `agent.query`    | agent ask handler        | `agent.question` |
+| `ingest.batch`   | REST ingest handler      | `ingest.table`, `ingest.rows` |
+
+The `SelfTraceExporter` is an in-process `opentelemetry_sdk::SpanExporter`. It starts unwired (drops all spans) and is connected to storage via `OnceLock` once the server's `WritePath` is ready. There is no loopback gRPC — spans go directly to `WritePath::ingest`.
+
+Spans are excluded from self-tracing for: `GET /health`, `GET /metrics*`, and `GET /v1/explore/live*` (long-lived WebSocket).
+
+### Capture-health monitoring
+
+The Claude Code integration hooks write `~/.kyma/capture-health.json` on every failed ingest attempt (and delete it on success). `kyma status` reads this file and surfaces capture failures alongside the auth probe result, so a silent 401 streak no longer goes undetected.
+
+---
+
 ## Slice roadmap
 
 | Slice | Scope | Duration |
