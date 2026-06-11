@@ -28,6 +28,8 @@ export function makeDrawNodeHover(
   isDark: boolean,
 ): NodeHoverDrawingFunction<Attributes, Attributes, Attributes> {
   return (ctx, data, settings) => {
+    // Guard sigma's shared 2D context — we mutate font/fill/stroke state.
+    ctx.save();
     // Soft focus ring around the node.
     ctx.beginPath();
     ctx.arc(data.x, data.y, data.size + 3, 0, Math.PI * 2);
@@ -35,7 +37,10 @@ export function makeDrawNodeHover(
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    if (!data.label) return;
+    if (!data.label) {
+      ctx.restore();
+      return;
+    }
     const fontSize = settings.labelSize;
     ctx.font = `500 ${fontSize}px ${settings.labelFont}`;
     const textW = ctx.measureText(data.label).width;
@@ -54,5 +59,6 @@ export function makeDrawNodeHover(
 
     ctx.fillStyle = isDark ? "#e2e8f0" : "#0f172a";
     ctx.fillText(data.label, pillX + padX, data.y + fontSize * 0.34);
+    ctx.restore();
   };
 }

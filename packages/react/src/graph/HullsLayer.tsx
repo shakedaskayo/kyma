@@ -114,9 +114,13 @@ export function HullsLayer({
           if (i === 0) ctx.moveTo(mx, my);
           else ctx.quadraticCurveTo(cur.x, cur.y, mx, my);
         }
-        const last = hull[hull.length - 1];
+        // Close the loop around the FIRST vertex: the loop above ends at
+        // midpoint(last, first), so the remaining arc bends through hull[0]
+        // back to the starting midpoint(first, second). (Curving through
+        // `last` again would add a degenerate zero-length arc + straight seam.)
         const first = hull[0];
-        ctx.quadraticCurveTo(last.x, last.y, (last.x + first.x) / 2, (last.y + first.y) / 2);
+        const second = hull[1];
+        ctx.quadraticCurveTo(first.x, first.y, (first.x + second.x) / 2, (first.y + second.y) / 2);
         ctx.closePath();
         const color = getLabelColor(String(communityIdx));
         ctx.fillStyle = `${color}0A`;
