@@ -687,6 +687,7 @@ async fn run_cc_phase(
     opts: &SyncOptions,
 ) -> Result<serde_json::Value> {
     let pass_start = std::time::Instant::now();
+    let wall_start = chrono::Utc::now();
     let embed = kyma_memory::shared_embedding()
         .await
         .map_err(|e| anyhow::anyhow!("embedding backend: {e}"))?;
@@ -723,7 +724,10 @@ async fn run_cc_phase(
     );
     Ok(report
         .sync
-        .last_scan_value(u64::try_from(pass_start.elapsed().as_millis()).unwrap_or(u64::MAX)))
+        .last_scan_value(
+            u64::try_from(pass_start.elapsed().as_millis()).unwrap_or(u64::MAX),
+            wall_start,
+        ))
 }
 
 /// `kyma sync` — sync memory with Claude Code's file memory (always, when

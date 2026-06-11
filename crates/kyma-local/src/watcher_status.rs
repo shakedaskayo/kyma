@@ -71,6 +71,7 @@ impl LocalWatcher {
 /// `kyma_datasources::watchers::node_identity` (inlined: kyma-local must not
 /// depend on the Postgres-backed datasources crate). `KYMA_NODE_ID` overrides
 /// the node id (defaults to the hostname).
+/// Keep in sync with `kyma_datasources::watchers::node_identity`.
 pub fn node_identity() -> (String, String, String) {
     let host = hostname::get()
         .ok()
@@ -92,6 +93,8 @@ pub struct LocalWatcherStatus(Arc<RwLock<Vec<LocalWatcher>>>);
 impl LocalWatcherStatus {
     /// Replace the watcher with the same `id`, or append if new.
     pub fn upsert(&self, w: LocalWatcher) {
+        // Poison means a watcher-write thread panicked; recover the inner state
+        // rather than crashing the serving thread.
         let mut items = self.0.write().unwrap_or_else(|e| e.into_inner());
         match items.iter_mut().find(|x| x.id == w.id) {
             Some(slot) => *slot = w,

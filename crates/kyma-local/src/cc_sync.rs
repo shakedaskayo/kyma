@@ -102,7 +102,11 @@ impl CcSyncReport {
     /// inside `run_once` (one broken project must not block the rest), so
     /// nothing reaches this rollup; a whole-pass failure never produces a
     /// report at all.
-    pub(crate) fn last_scan_value(&self, duration_ms: u64) -> Value {
+    pub(crate) fn last_scan_value(
+        &self,
+        duration_ms: u64,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Value {
         let (mut seen, mut processed) = (0usize, 0usize);
         let realms: Vec<Value> = self
             .projects
@@ -125,7 +129,7 @@ impl CcSyncReport {
             "processed": processed,
             "errors": 0,
             "duration_ms": duration_ms,
-            "at": chrono::Utc::now().to_rfc3339(),
+            "at": at.to_rfc3339(),
             "detail": { "realms": realms },
         })
     }
