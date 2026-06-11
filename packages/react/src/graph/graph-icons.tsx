@@ -306,8 +306,9 @@ export function resolveGraphIcon(
     if (rk && KIND_ICONS[rk]) return kindIcon(rk);
   }
 
-  // 2. Vendor hint from provenance keys
-  for (const k of ["vendor", "brand", "source_type", "sourcetype", "source", "provider", "connector"]) {
+  // 2. Vendor hint from provenance keys ("connector" kept for nodes ingested
+  //    before the data-sources rename)
+  for (const k of ["vendor", "brand", "source_type", "sourcetype", "source", "provider", "data_source", "connector"]) {
     const v = pick(k);
     if (v && BRAND_ICONS[v]) return brand(v);
   }

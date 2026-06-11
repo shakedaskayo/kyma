@@ -2,7 +2,7 @@
 // ships (Simple Icons removed Slack and Amazon S3 for trademark reasons). These
 // are the official logos, inlined so the catalog shows recognisable brand marks
 // rather than generic glyphs. `monochrome` collapses them to `currentColor`.
-// Copied from web/src/features/connectors/vendor-icons.tsx (do not import from web).
+// Copied from web/src/features/datasources/vendor-icons.tsx (do not import from web).
 
 export interface VendorIconProps {
   size?: number;

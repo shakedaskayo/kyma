@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 // Walks every page of the web UI against a FRESH local-mode server
 // (`kyma serve` over an empty store — the exact post-install state).
 // Every surface must render: working pages show their content/empty states,
-// control-plane-only pages (connectors, credentials) show the capability
+// control-plane-only pages (data sources, credentials) show the capability
 // gate — never a parse error, never a dead fetch.
 //
 // Run:
@@ -62,8 +62,8 @@ test("fresh local mode: every page renders, no fetch/parse errors", async ({ pag
   await page.goto("/dashboards");
   await expect(page.getByText(/dashboard/i).first()).toBeVisible({ timeout: 10_000 });
 
-  // Connectors / Credentials — control-plane gates, not broken fetches.
-  await page.goto("/connectors");
+  // Data sources / Credentials — control-plane gates, not broken fetches.
+  await page.goto("/data-sources");
   await expect(page.getByText(/control plane/i).first()).toBeVisible({ timeout: 10_000 });
 
   await page.goto("/credentials");

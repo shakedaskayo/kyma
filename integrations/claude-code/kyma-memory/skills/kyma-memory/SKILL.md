@@ -47,10 +47,10 @@ Two more tools sit on the unified `/v1/search` substrate:
 
 Call `ingest_entity` (MCP server `kyma`) to mint a **virtual resource/entity** — a service,
 repo, table, person, file, config, or concept — and wire it to existing graph nodes
-(`target_namespace` + node id, e.g. a connector-ingested `repo:owner/name`) and to memories
+(`target_namespace` + node id, e.g. a data-source-ingested `repo:owner/name`) and to memories
 (`memory:<uuid>`). Discover real node ids first with `find_references_to` / `graph_traverse` /
 `recall_memory`; it's idempotent per `(realm, kind, name)`. The `/kyma-ingest` command guides
-this and also triggers connector pulls.
+this and also triggers data source pulls.
 
 ## Don't
 

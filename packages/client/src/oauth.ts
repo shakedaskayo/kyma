@@ -1,4 +1,4 @@
-// Typed client for the OAuth2 connector connect flow (`/v1/oauth/*`).
+// Typed client for the OAuth2 data source connect flow (`/v1/oauth/*`).
 // All functions require an authenticated transport.
 
 import type { KymaTransport } from "./transport";

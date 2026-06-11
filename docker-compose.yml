@@ -119,7 +119,7 @@ services:
       KYMA_ADMIN_PASSWORD: kyma_dev
       # base64-encoded 32-byte key for AES-GCM credential encryption (dev only).
       KYMA_SECRET_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-      # OAuth2 connector flow. Set the externally reachable origin so the
+      # OAuth2 data source flow. Set the externally reachable origin so the
       # provider redirect_uri and the post-auth UI return both resolve. Register
       # each provider's app with redirect URI
       # <base>/v1/oauth/<provider>/callback, then fill in the client id/secret to
