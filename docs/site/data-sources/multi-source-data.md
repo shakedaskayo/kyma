@@ -1,6 +1,6 @@
 ---
 title: Multi-source data
-description: The practical face of federation and sync — how to register a source, the live(...) UX, the pushdown_summary, and connector run-state via GET /v1/connectors/:id and connector metrics.
+description: The practical face of federation and sync — how to register a source, the live(...) UX, the pushdown_summary, and data source run-state via GET /v1/data-sources/:id and data source metrics.
 ---
 
 # Multi-source data
@@ -15,13 +15,13 @@ status surface.
 The model in one sentence: every external source registers as a
 DataFusion catalog (federation), or replays into kyma extents via CDC
 (sync), or both — the same connection, the same schema introspection,
-the same status row, on the same connector framework as
-[Prometheus](/connectors/prometheus).
+the same status row, on the same data source framework as
+[Prometheus](/data-sources/prometheus).
 
 ## Register a source
 
 ```bash
-curl -sS -X POST http://localhost:8080/v1/connectors \
+curl -sS -X POST http://localhost:8080/v1/data-sources \
   -H "Content-Type: application/json" \
   --data-binary @- <<'JSON'
 {
@@ -49,12 +49,12 @@ Response: `{"id": "<uuid>"}`. After this:
 - The `pg_prod.public.*` and `pg_prod.billing.*` namespaces are valid in
   any KQL or SQL query — federated reads run live against the source.
 - `public.users` and `billing.invoices` have started snapshotting into
-  kyma extents. Once the initial snapshot is done the connector advances
+  kyma extents. Once the initial snapshot is done the data source advances
   to `phase=streaming` and stays there.
 
 Per-engine config and the type-mapping tables live on each engine page:
-[Postgres](/connectors/postgres), [MySQL](/connectors/mysql),
-[MongoDB](/connectors/mongo).
+[Postgres](/data-sources/postgres), [MySQL](/data-sources/mysql),
+[MongoDB](/data-sources/mongo).
 
 The admin API runs `validate_secrets_resolvable` before persisting, so
 a typo'd `secret_ref` fails at create time, not silently in the runner.
@@ -116,7 +116,7 @@ Every response that touched a federated source carries a
 This is the trust mechanism for federation. If a query is slow, the
 summary tells you exactly which filter went residual and why, so you
 can rewrite the query, change the source schema (e.g., a MySQL
-collation — see [MySQL](/connectors/mysql#collation-safety)), or
+collation — see [MySQL](/data-sources/mysql#collation-safety)), or
 register a different mode.
 
 The CI suite asserts `pushdown_summary` is non-degrading on a curated
@@ -143,7 +143,7 @@ Arrow output.
 
 ## Status, health, and observability
 
-`GET /v1/connectors/:id` returns the connector row with current run
+`GET /v1/data-sources/:id` returns the data source row with current run
 state — `enabled`, `disabled_reason`, `last_run_at`, `last_success_at`,
 `last_error`, and `last_rows_ingested`:
 
@@ -170,16 +170,16 @@ Secrets in `config` are redacted to `***` (unless they are unresolved
 `$env:` references, which are returned verbatim).
 
 For time-series observability, kyma exposes per-tick Prometheus metrics
-for every connector — query these in [Observability](/concepts/observability):
+for every data source — query these in [Observability](/concepts/observability):
 
 | Metric                                          | Description                                    |
 | ----------------------------------------------- | ---------------------------------------------- |
-| `kyma_connector_cursor_age_seconds`             | Sync lag — how far behind the source cursor is |
-| `kyma_connector_rows_ingested_total`            | Cumulative rows landed                         |
-| `kyma_connector_errors_total`                   | Cumulative tick errors by connector            |
-| `kyma_connector_last_success_timestamp_seconds` | Unix timestamp of last successful tick         |
-| `kyma_connector_ticks_total`                    | Total tick count                               |
-| `kyma_connector_duration_seconds`               | Tick duration histogram                        |
+| `kyma_data_source_cursor_age_seconds`             | Sync lag — how far behind the source cursor is |
+| `kyma_data_source_rows_ingested_total`            | Cumulative rows landed                         |
+| `kyma_data_source_errors_total`                   | Cumulative tick errors by data source            |
+| `kyma_data_source_last_success_timestamp_seconds` | Unix timestamp of last successful tick         |
+| `kyma_data_source_ticks_total`                    | Total tick count                               |
+| `kyma_data_source_duration_seconds`               | Tick duration histogram                        |
 
 Agents check `last_error` / `last_success_at` on the detail endpoint;
 dashboards and alerts consume the Prometheus metrics.
@@ -197,21 +197,21 @@ tombstones get garbage-collected.
 
 ## Mode-isolated pause
 
-To pause or resume a connector, use the plain pause and resume endpoints:
+To pause or resume a data source, use the plain pause and resume endpoints:
 
 ```bash
-curl -X POST http://localhost:8080/v1/connectors/<id>/pause
-curl -X POST http://localhost:8080/v1/connectors/<id>/resume
+curl -X POST http://localhost:8080/v1/data-sources/<id>/pause
+curl -X POST http://localhost:8080/v1/data-sources/<id>/resume
 ```
 
 `pause` sets `enabled=false` with `disabled_reason='manual'`. `resume` clears
-it. For `mode: "both"` connectors, pausing stops the entire connector (both
-federation and sync). Use `GET /v1/connectors/:id` to confirm the state change.
+it. For `mode: "both"` data sources, pausing stops the entire data source (both
+federation and sync). Use `GET /v1/data-sources/:id` to confirm the state change.
 
 ## Where to go next
 
 - The conceptual model: [Multi-source data (concepts)](/concepts/multi-source-data).
-- The framework that makes all of this work: [Connector framework](/connectors/framework).
-- Engine pages: [Postgres](/connectors/postgres),
-  [MySQL](/connectors/mysql), [MongoDB](/connectors/mongo).
+- The framework that makes all of this work: [Data source framework](/data-sources/framework).
+- Engine pages: [Postgres](/data-sources/postgres),
+  [MySQL](/data-sources/mysql), [MongoDB](/data-sources/mongo).
 - The shape of pushdown decisions: [Pruning and performance](/query/pruning-and-performance).

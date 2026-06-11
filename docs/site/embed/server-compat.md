@@ -14,7 +14,7 @@ JSON object with boolean feature flags:
 ```json
 {
   "mode": "server",
-  "connectors": true,
+  "data_sources": true,
   "credentials": true,
   "oauth": true,
   "saved_views": true,

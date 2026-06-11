@@ -63,10 +63,10 @@ agent ask twenty exploratory questions per prompt:
 Two directions, same group-commit write path and the same extents underneath:
 
 - **Push** — your stack sends to kyma: OTLP, REST/NDJSON, Kafka, or file-drop. See [Ingest](/ingest/).
-- **Pull** — **connectors** fetch from sources on a **schedule**: GitHub/GitLab/Bitbucket,
-  Prometheus, Postgres/MySQL/MongoDB, Notion/Slack/Jira/Confluence/Gmail/Drive. A connector
+- **Pull** — **data sources** fetch from sources on a **schedule**: GitHub/GitLab/Bitbucket,
+  Prometheus, Postgres/MySQL/MongoDB, Notion/Slack/Jira/Confluence/Gmail/Drive. A data source
   runs periodically and lands rows continuously, so the picture stays current without you
-  re-running anything. See [Connectors](/connectors/).
+  re-running anything. See [Data sources](/data-sources/).
 
 ## Keeping memory sharp — consolidation & dreaming
 
@@ -75,7 +75,7 @@ Memory doesn't just accumulate; kyma maintains it:
 - **Deterministic consolidation** (always on) — cheap firehose rollups that keep the
   memory tables tidy. No LLM, runs regardless.
 - **[Dreaming](/agent/dreaming)** (opt-in) — a scheduled, autonomous agent that reviews
-  recent memories, fills gaps with read-only connector access, wires memories to the
+  recent memories, fills gaps with read-only data source access, wires memories to the
   resources they're about, merges duplicates, and supersedes contradictions (bi-temporal —
   never a hard delete). It's the intelligence layer on top of consolidation, bounded by
   call/byte/wall-clock budgets.
@@ -88,7 +88,7 @@ The same context engine runs two ways, and grows from one to the other without a
 |---|---|---|
 | Infra | embedded SQLite + local files — zero infra | Postgres + object store (S3/MinIO) |
 | Who | one developer, offline, instant | a team, always-on, shared |
-| Extras | on-demand ingest + query | scheduled connectors, dreaming, the full web app |
+| Extras | on-demand ingest + query | scheduled data sources, dreaming, the full web app |
 
 A read-scale **cluster** is the same server with multiple stateless nodes over shared
 object storage. See [Local & cluster mode](/concepts/local-and-cluster-mode).

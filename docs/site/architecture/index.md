@@ -24,7 +24,7 @@ indices that make the cascade work.
 
 If you're evaluating kyma, start with the architecture overview and
 the slice roadmap. If you're building on kyma — implementing a new
-segment format, writing a connector, or planning a self-hosted
+segment format, writing a data source, or planning a self-hosted
 deployment — the storage format page is where the real specification
 lives. The benchmarks page anchors all of it in measured numbers.
 

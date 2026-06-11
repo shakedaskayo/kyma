@@ -77,7 +77,7 @@ Compaction is also where tombstone collapse happens.
 
 ## Tombstone collapse
 
-Synced tables (from connectors in sync mode) get tombstone rows when
+Synced tables (from data sources in sync mode) get tombstone rows when
 the source deletes a row. A tombstone is `_kyma_op = 'delete'` plus
 the primary key.
 

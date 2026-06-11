@@ -28,7 +28,7 @@ rewrite.
 - **Address:** `database.table.column`
 - **Default database:** `default`
 - **System columns** — present only on tables synced from external sources
-  via the connector framework. Internal kyma tables don't have these.
+  via the data source framework. Internal kyma tables don't have these.
   - `_kyma_pk` — concatenated source primary key
   - `_kyma_op` — `'insert' | 'update' | 'delete'`
   - `_kyma_lsn` — engine-specific cursor at commit time
@@ -84,4 +84,4 @@ Pulled from `kyma-bin/src/main.rs` and the storage / auth modules.
 | `KYMA_S3_ALLOW_HTTP`       | `false`                                                | Permit non-TLS S3. `true` for local MinIO.                               |
 
 For the full list — including compaction, retention, GC, file-drop, Kafka,
-and connector-worker tunables — see [Reference](/reference/).
+and data-source-worker tunables — see [Reference](/reference/).

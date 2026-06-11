@@ -8,19 +8,19 @@ description: Ingest a Slack workspace — channels, messages, threads, mentions,
 Ingests a Slack workspace as a property graph: channels, messages, reply
 threads, `@`-mentions, and the people behind them. Incremental per channel via
 the `oldest` message-timestamp cursor. Slack's Web API returns HTTP 200 with
-`{"ok": false}` on logical errors, which the connector handles (a `ratelimited`
+`{"ok": false}` on logical errors, which the data source handles (a `ratelimited`
 response is retried, anything else is a permanent error).
 
-::: tip OAuth connector
+::: tip OAuth data source
 Authorize once with **Connect** in the UI. Provider slug `slack`; see
-[OAuth connectors](/connectors/oauth) for the Slack app setup. Requested scopes:
+[OAuth data sources](/data-sources/oauth) for the Slack app setup. Requested scopes:
 `channels:read`, `channels:history`, `groups:read`, `groups:history`,
 `users:read`.
 :::
 
 ## Connect
 
-1. **Connectors → Add connector → Slack**.
+1. **Data sources → Add data source → Slack**.
 2. Name it, **Connect Slack**, approve the workspace install.
 3. (Optional) restrict to specific channel ids; empty = public channels the
    token can list.

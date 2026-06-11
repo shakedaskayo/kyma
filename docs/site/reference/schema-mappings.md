@@ -1,18 +1,18 @@
 ---
 title: Schema mappings
-description: Postgres / MySQL / MongoDB type → kyma type mappings the connector framework will use when DB-M1, DB-M2, and DB-M3 ship.
+description: Postgres / MySQL / MongoDB type → kyma type mappings the data source framework will use when DB-M1, DB-M2, and DB-M3 ship.
 ---
 
 # Schema mappings
 
 > 🚧 **Roadmap.** These mappings are the source-of-truth tables the
-> Postgres, MySQL, and MongoDB connectors will use once they land
-> (DB-M1, DB-M2, DB-M3 in the connector roadmap). They are not yet
-> in the running engine. The Prometheus connector that exists today
+> Postgres, MySQL, and MongoDB data sources will use once they land
+> (DB-M1, DB-M2, DB-M3 in the data source roadmap). They are not yet
+> in the running engine. The Prometheus data source that exists today
 > doesn't introspect a relational schema — it ingests metrics with a
 > fixed shape.
 
-When a relational or document source is synced, kyma's connector
+When a relational or document source is synced, kyma's data source
 framework introspects the source's schema and projects each source
 column / field to a kyma column type. Three rules govern the
 projection:
@@ -60,7 +60,7 @@ older than `retention.tombstone_days` (default 30).
 
 Composite types and domains unwrap to their base type. Out-of-band
 types not in this table land in `dynamic` with a `last_error`
-warning surfaced through the connector status endpoint.
+warning surfaced through the data source status endpoint.
 
 ## MySQL → kyma
 
@@ -123,7 +123,7 @@ union-read the typed and dynamic copies via
 | -------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Postgres / MySQL — single-column PK          | string-cast of the PK.                                                                       |
 | Postgres / MySQL — composite PK              | `<col1>:<col2>:...` (URL-safe, ordered by `information_schema`).                            |
-| Postgres / MySQL — no PK                     | Connector **fails to start** for that table with `last_error = "table has no primary key"`. |
+| Postgres / MySQL — no PK                     | Data source **fails to start** for that table with `last_error = "table has no primary key"`. |
 | MongoDB                                      | Stringified `_id`.                                                                           |
 
 ## What's deferred

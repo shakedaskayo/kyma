@@ -15,7 +15,7 @@ Pick the surface that matches how you're calling kyma — not what the
 data looks like, because that's the same on the other side.
 
 ![The Discover search UI querying across sources](/screenshots/discover-search.png)
-*The **Discover** UI — a faceted search across every source at once (here spanning a GitHub connector's `github_nodes`/`github_edges` and the agent's `memory_nodes`), with one click to open the result in the full Query Editor.*
+*The **Discover** UI — a faceted search across every source at once (here spanning a GitHub data source's `github_nodes`/`github_edges` and the agent's `memory_nodes`), with one click to open the result in the full Query Editor.*
 
 <div class="feature-grid">
 
@@ -57,7 +57,7 @@ at kyma's endpoint with no other change.
 
 gRPC at `:9090` — zero-copy Arrow batches over the wire. Use it when
 the NDJSON HTTP response is the bottleneck: streaming millions of
-rows to a Polars DataFrame, a Spark connector, an Arrow-native client.
+rows to a Polars DataFrame, a Spark data source, an Arrow-native client.
 
 </div>
 

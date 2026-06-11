@@ -62,10 +62,10 @@ defineProps<{
         <text x="100" y="72" class="msf-pathway-sub-em" text-anchor="middle">→ Arrow batches</text>
       </g>
 
-      <!-- Sync pathway: CdcConnector -->
+      <!-- Sync pathway: CdcDataSource -->
       <g transform="translate(290, 230)">
         <rect width="200" height="80" class="msf-pathway-rect"/>
-        <text x="100" y="22" class="msf-pathway-title" text-anchor="middle">CdcConnector::stream</text>
+        <text x="100" y="22" class="msf-pathway-title" text-anchor="middle">CdcDataSource::stream</text>
         <text x="100" y="40" class="msf-pathway-sub" text-anchor="middle">snapshot · stream events</text>
         <text x="100" y="56" class="msf-pathway-sub" text-anchor="middle">commit + cursor (CAS)</text>
         <text x="100" y="72" class="msf-pathway-sub-em" text-anchor="middle">→ kyma extents</text>

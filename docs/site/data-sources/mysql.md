@@ -1,11 +1,11 @@
 ---
 title: MySQL
-description: Federation and binlog-CDC sync against MySQL 8.0+. Same shape as the Postgres connector, plus collation-safety in the planner so case-insensitive columns never silently corrupt federated equality.
+description: Federation and binlog-CDC sync against MySQL 8.0+. Same shape as the Postgres data source, plus collation-safety in the planner so case-insensitive columns never silently corrupt federated equality.
 ---
 
 # MySQL
 
-> 🚧 **Roadmap.** This connector ships in DB-M2, after [Postgres](/connectors/postgres). The design below is committed and stable; the implementation is in progress.
+> 🚧 **Roadmap.** This data source ships in DB-M2, after [Postgres](/data-sources/postgres). The design below is committed and stable; the implementation is in progress.
 
 The MySQL engine reuses everything DB-M1 delivered for Postgres — the
 `ExternalSource` trait, the federation crate, the CDC consumer, the
@@ -17,7 +17,7 @@ checkpoint, and one correctness-critical pushdown rule: collations.
 ## Configuration
 
 ```bash
-curl -sS -X POST http://localhost:8080/v1/connectors \
+curl -sS -X POST http://localhost:8080/v1/data-sources \
   -H "Content-Type: application/json" \
   --data-binary @- <<'JSON'
 {
@@ -42,7 +42,7 @@ JSON
 ```
 
 The `mode`, `connection`, `scope`, and `sync` shapes are the same as
-[Postgres](/connectors/postgres#modes). `tls: "required"` is the default;
+[Postgres](/data-sources/postgres#modes). `tls: "required"` is the default;
 disabling it requires an explicit override.
 
 ## Collation safety
@@ -75,14 +75,14 @@ Two-phase pipeline per source-table, mirroring the Postgres flow:
 
 1. **Initial snapshot.** `START TRANSACTION WITH CONSISTENT SNAPSHOT`,
    capture `gtid_executed`, stream rows, advance
-   `connector_cdc_state.phase` to `streaming` with the captured GTID set
+   `data_source_cdc_state.phase` to `streaming` with the captured GTID set
    as the cursor — atomically with the kyma extent CAS.
 2. **Streaming.** `COM_BINLOG_DUMP_GTID` with the executed-GTID set as
    the resume point. Row events become rows tagged with `_kyma_op`;
    deletes are tombstones.
 
 Cursor checkpoints are GTID sets, stored as opaque JSON in
-`connector_cdc_state.checkpoint`. Reopen-from-checkpoint is the only
+`data_source_cdc_state.checkpoint`. Reopen-from-checkpoint is the only
 recovery path; the source replays, kyma's idempotency layer dedupes.
 
 ## Type mapping
@@ -111,7 +111,7 @@ Every synced row has four extra columns kyma adds automatically:
 | `_kyma_lsn`      | `string`    | GTID at commit time.                                                    |
 | `_kyma_event_at` | `timestamp` | Wall-clock the source emitted the event.                                |
 
-A source table with no primary key is rejected at connector start with
+A source table with no primary key is rejected at data source start with
 `disabled_reason="table has no primary key — cannot CDC sync"`. Use
 `mode: "federation"` for that table instead.
 
@@ -119,7 +119,7 @@ A source table with no primary key is rejected at connector start with
 
 Filters, projection, `LIMIT`, `ORDER BY`, single-source aggregations,
 opportunistic same-source joins. The list is identical to
-[Postgres](/connectors/postgres#federation-pushdown) — minus the
+[Postgres](/data-sources/postgres#federation-pushdown) — minus the
 collation-unsafe filters described above, which always go residual.
 
 ## Failure modes
@@ -127,17 +127,17 @@ collation-unsafe filters described above, which always go residual.
 | Failure                                                | Behavior                                                              |
 | ------------------------------------------------------ | --------------------------------------------------------------------- |
 | Source unreachable                                     | Federation: `502 source_unreachable`. Sync: stream reopens at GTID.    |
-| TLS handshake fails                                    | Connector disabled, `disabled_reason="tls_failed: <detail>"`.          |
-| Binlog purged past the connector's GTID                | Connector disabled, `disabled_reason="binlog_purged"`. Manual resync. |
+| TLS handshake fails                                    | Data source disabled, `disabled_reason="tls_failed: <detail>"`.          |
+| Binlog purged past the data source's GTID                | Data source disabled, `disabled_reason="binlog_purged"`. Manual resync. |
 | `tinyint(1)` source column widens to `tinyint(4)`      | New column added; old `bool` column preserved; reads union via `coalesce`. |
 | Source DDL emits unrepresentable type                  | Field routes to `dynamic`; warning in `last_error`. Sync continues.   |
-| Source PK changes                                      | Connector disabled, `disabled_reason="pk_changed"`. Manual resync.    |
+| Source PK changes                                      | Data source disabled, `disabled_reason="pk_changed"`. Manual resync.    |
 | `bigint unsigned` value > 2^63 - 1                     | Routed to `string` with warning. Existing typed data preserved.       |
-| Pool exhausted                                         | `503 pool_exhausted`; surfaced via `last_error` on `GET /v1/connectors/:id`. |
+| Pool exhausted                                         | `503 pool_exhausted`; surfaced via `last_error` on `GET /v1/data-sources/:id`. |
 
 ## Where to go next
 
-- The first DB engine and the shape both share: [Postgres](/connectors/postgres).
+- The first DB engine and the shape both share: [Postgres](/data-sources/postgres).
 - Cross-source joins, the `pushdown_summary`, `live(...)`:
-  [Multi-source data](/connectors/multi-source-data).
-- The framework: [Connector framework](/connectors/framework).
+  [Multi-source data](/data-sources/multi-source-data).
+- The framework: [Data source framework](/data-sources/framework).

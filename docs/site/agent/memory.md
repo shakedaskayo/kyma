@@ -7,7 +7,7 @@ description: Kyma is a context engine for coding agents — persistent graph-awa
 
 > **Memory is one half of Kyma's *context engine*.** Through the same MCP server,
 > an agent doesn't only recall stored facts — it queries **live data** (logs,
-> traces, connectors, the catalog) in KQL/SQL and traverses the **graph** that
+> traces, data sources, the catalog) in KQL/SQL and traverses the **graph** that
 > links memories to the real resources they're about. Recall **+** live context
 > **+** relationships, in one place. That's the difference between a memory store
 > and a context engine.
@@ -34,7 +34,7 @@ hybrid + graph retrieval.
 flowchart LR
   subgraph Capture
     F[firehose<br/>claude_code_events] 
-    C[connector tables<br/>repos · services · traces]
+    C[data source tables<br/>repos · services · traces]
   end
   Capture --> X[LLM extract<br/>facts · entities · relationships]
   X --> R[resolve + link<br/>→ catalog graph nodes]
@@ -149,11 +149,11 @@ recall but stays for audit), `merged` archives it, and
 
 **Dynamic ingestion.** `ingest_entity` mints a **virtual resource** — a service,
 repo, table, person, file, config, or concept — and wires it to existing graph
-nodes (cross-graph via `target_namespace`, e.g. a connector-ingested
+nodes (cross-graph via `target_namespace`, e.g. a data-source-ingested
 `repo:owner/name`) and to memories (`memory:<uuid>`). Entities render in the
-unified graph alongside connector resources and are idempotent per
+unified graph alongside data source resources and are idempotent per
 `(realm, kind, name)`. The Claude Code [`/kyma-ingest`](/agent/claude-code-plugin)
-command drives this — and also triggers on-demand **connector** pulls so an agent
+command drives this — and also triggers on-demand **data source** pulls so an agent
 can fill the graph from GitHub/Prometheus/etc. without leaving the editor.
 
 **Privacy.** Content wrapped in `<private>…</private>` is stripped at the store
@@ -254,8 +254,8 @@ see [Dreaming](/agent/dreaming) for what each run does. Knobs:
 | `realm_scope` | `[]` | Realms in scope; empty = all. |
 | `max_tool_calls` | `100` | Agent-loop budget per run. |
 | `wall_clock_secs` | `600` | Hard wall-clock cap per run. |
-| `connector_read_budget` | `25` | Max `connector_read` calls per run (gap-fill). |
-| `connector_read_max_bytes` | `4194304` | Max bytes fetched per run (4 MiB). |
+| `data_source_read_budget` | `25` | Max `data_source_read` calls per run (gap-fill). |
+| `data_source_read_max_bytes` | `4194304` | Max bytes fetched per run (4 MiB). |
 | `mutation_cap` | `60` | Max memory mutations per run. |
 
 ## Engine & embeddings

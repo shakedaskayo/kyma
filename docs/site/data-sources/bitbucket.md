@@ -3,7 +3,7 @@ title: Bitbucket
 description: Ingest Bitbucket Cloud repositories, branches, pull requests, and issues into a property graph.
 ---
 
-# Bitbucket connector
+# Bitbucket data source
 
 Ingests Bitbucket Cloud metadata into `bitbucket_nodes` and
 `bitbucket_edges`. No source parsing yet — metadata only.
@@ -14,13 +14,13 @@ Ingests Bitbucket Cloud metadata into `bitbucket_nodes` and
 # App-password auth (most common):
 export BITBUCKET_TOKEN=<app-password>
 kyma create-database bitbucket
-kyma connector add bitbucket atlassian/python-bitbucket \
+kyma datasource add bitbucket atlassian/python-bitbucket \
   --username me@example.com \
   --app-password "$BITBUCKET_TOKEN" \
   --start
 
 # Or with a PAT (Bitbucket Server / Data Center):
-kyma connector add bitbucket my-ws/my-repo --token bbtok-... --start
+kyma datasource add bitbucket my-ws/my-repo --token bbtok-... --start
 ```
 
 ## Auth

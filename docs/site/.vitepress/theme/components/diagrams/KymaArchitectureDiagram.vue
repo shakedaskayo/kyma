@@ -84,10 +84,10 @@ defineProps<{
           <text x="80" y="36" class="node-sub">CAS snapshot</text>
         </g>
 
-        <!-- Connectors (pull-side) -->
+        <!-- Data sources (pull-side) -->
         <g class="node node-pull" transform="translate(390, 60)">
           <rect width="180" height="120" />
-          <text x="90" y="22" class="node-title">Connectors</text>
+          <text x="90" y="22" class="node-title">Data sources</text>
           <text x="90" y="42" class="node-sub">Postgres · MySQL · Mongo</text>
           <text x="90" y="58" class="node-sub">federation · sync</text>
           <text x="90" y="78" class="node-sub">Prometheus · Sentry</text>
@@ -285,7 +285,7 @@ defineProps<{
   letter-spacing: 0.04em;
 }
 
-/* ---- Connector lines ---- */
+/* ---- Data source lines ---- */
 .link {
   stroke: var(--kyma-fg);
   stroke-width: 1;

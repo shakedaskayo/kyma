@@ -3,7 +3,7 @@ title: GitLab
 description: Ingest GitLab projects, branches, merge requests, issues, and members into a property graph.
 ---
 
-# GitLab connector
+# GitLab data source
 
 Ingests GitLab project metadata into `gitlab_nodes` and
 `gitlab_edges`. No source parsing yet — metadata only.
@@ -14,10 +14,10 @@ Ingests GitLab project metadata into `gitlab_nodes` and
 # gitlab.com
 export GITLAB_TOKEN=glpat-...
 kyma create-database gitlab
-kyma connector add gitlab gitlab-org/gitlab --start
+kyma datasource add gitlab gitlab-org/gitlab --start
 
 # Self-hosted GitLab
-kyma connector add gitlab my-group/my-project \
+kyma datasource add gitlab my-group/my-project \
   --api-url https://gitlab.mycorp.io/api/v4 \
   --start
 ```

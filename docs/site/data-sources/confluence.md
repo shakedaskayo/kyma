@@ -8,11 +8,11 @@ description: Ingest Atlassian Confluence — spaces, pages, authors, and the pag
 Ingests Confluence as a property graph: spaces, pages, their authors, and the
 page hierarchy. Fetches the most recently modified pages (bounded per tick) via
 CQL search. Shares the Atlassian OAuth app and `cloudId` resolution with the
-[Jira](/connectors/jira) connector.
+[Jira](/data-sources/jira) data source.
 
-::: tip OAuth connector
+::: tip OAuth data source
 Authorize once with **Connect** in the UI. Provider slug `atlassian` (one app
-serves both Confluence and Jira); see [OAuth connectors](/connectors/oauth) for
+serves both Confluence and Jira); see [OAuth data sources](/data-sources/oauth) for
 setup. Requested scopes: `read:confluence-content.all`,
 `read:confluence-space.summary`, `read:confluence-user`, `read:me`,
 `offline_access`. The site **cloudId** is resolved automatically.
@@ -20,7 +20,7 @@ setup. Requested scopes: `read:confluence-content.all`,
 
 ## Connect
 
-1. **Connectors → Add connector → Confluence**.
+1. **Data sources → Add data source → Confluence**.
 2. Name it, **Connect Confluence**, approve access to your site.
 3. (Optional) restrict to specific space keys; empty = all accessible.
 4. Pick a sync interval and **Create**.

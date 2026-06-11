@@ -1,6 +1,6 @@
 # Dreaming
 
-**Dreaming** is scheduled, agentic memory housekeeping — off by default. It runs an autonomous agent (using your configured engine) that reviews recent memories, fills gaps with read-only connector access, and keeps the context graph healthy.
+**Dreaming** is scheduled, agentic memory housekeeping — off by default. It runs an autonomous agent (using your configured engine) that reviews recent memories, fills gaps with read-only data source access, and keeps the context graph healthy.
 
 The always-on deterministic consolidation pipeline (cheap firehose rollups) keeps running regardless; dreaming is the intelligence layer on top.
 
@@ -26,12 +26,12 @@ All dreaming knobs live under the `dreaming` key in `/v1/agent/memory/settings`.
 |---|---|---|
 | `enabled` | `false` | Master switch — dreaming never runs unless `true` |
 | `interval_secs` | `86400` | Schedule cadence in seconds (default: daily) |
-| `mode` | `"full"` | `full` \| `housekeeping_only` (no connector reads) \| `sources` |
+| `mode` | `"full"` | `full` \| `housekeeping_only` (no data source reads) \| `sources` |
 | `realm_scope` | `[]` | Realms in scope; empty list = all realms |
 | `max_tool_calls` | `100` | Agent-loop budget per run (adk engines) |
 | `wall_clock_secs` | `600` | Hard wall-clock limit; runaway CLI agents are killed |
-| `connector_read_budget` | `25` | Max connector reads per run |
-| `connector_read_max_bytes` | `4194304` | Max bytes fetched across all connector reads (4 MiB) |
+| `data_source_read_budget` | `25` | Max data source reads per run |
+| `data_source_read_max_bytes` | `4194304` | Max bytes fetched across all data source reads (4 MiB) |
 | `mutation_cap` | `60` | Max memory mutations per run (save / merge / archive / judge) |
 
 ---
@@ -51,7 +51,7 @@ curl -X POST $KYMA/v1/agent/memory/dreaming/run \
 | Field | Type | Description |
 |---|---|---|
 | `mode` | string | Override the scheduled mode for this run only |
-| `focus` | string | Hint folded into the prompt (a realm name, a connector, …) |
+| `focus` | string | Hint folded into the prompt (a realm name, a data source, …) |
 
 **Responses:**
 
@@ -78,15 +78,15 @@ See [API reference](/reference/api) for full endpoint shapes.
 A run works in four phases, bounded by the wall-clock and budget knobs above:
 
 1. **Review** — surveys recent memories and the coding-agent activity firehose (`claude_code_events` table — events streamed from agents connected to your nodes) plus memory files synced from those agents.
-2. **Gap-fill** — when a memory references something with missing context, the agent calls `list_connectors` + `connector_read` to fetch fresh, read-only context from your sources (a GitHub README/file/issue, a SELECT against a connected Postgres) — authenticated through the connector's stored credential, budgeted by `connector_read_budget` and `connector_read_max_bytes`. Skipped when `mode` is `housekeeping_only`.
-3. **Graph wiring & entity maintenance** — the core: links memories to deterministic resources they're about (connector-ingested repos, tables, services), creates and maintains logical entities (`ingest_entity` is idempotent — entities are refreshed, not duplicated), relates entities with meaningful edge types, re-scores importance, merges duplicates, supersedes contradictions (bi-temporal — never a hard delete), and archives stale memories.
-4. **Summary** — the final agent message becomes the run's report; outcome counters (memories created/merged/archived, connector reads, tool calls) are stored on the run record.
+2. **Gap-fill** — when a memory references something with missing context, the agent calls `list_data_sources` + `data_source_read` to fetch fresh, read-only context from your sources (a GitHub README/file/issue, a SELECT against a connected Postgres) — authenticated through the data source's stored credential, budgeted by `data_source_read_budget` and `data_source_read_max_bytes`. Skipped when `mode` is `housekeeping_only`.
+3. **Graph wiring & entity maintenance** — the core: links memories to deterministic resources they're about (data-source-ingested repos, tables, services), creates and maintains logical entities (`ingest_entity` is idempotent — entities are refreshed, not duplicated), relates entities with meaningful edge types, re-scores importance, merges duplicates, supersedes contradictions (bi-temporal — never a hard delete), and archives stale memories.
+4. **Summary** — the final agent message becomes the run's report; outcome counters (memories created/merged/archived, data source reads, tool calls) are stored on the run record.
 
 ---
 
 ## Limits and safety
 
-- **Connector access is read-only by construction** — per-kind operation allowlists; SELECT-only SQL with an injected LIMIT; call and byte budgets.
+- **Data source access is read-only by construction** — per-kind operation allowlists; SELECT-only SQL with an injected LIMIT; call and byte budgets.
 - **Memory mutations are bi-temporal** — merging archives the source and records a `MERGED_INTO` edge; superseding sets `invalid_at`; nothing is hard-deleted.
 - **Every mutation is tallied** — visible in the run's stats and in the drilldown conversation.
 

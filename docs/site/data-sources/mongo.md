@@ -5,7 +5,7 @@ description: Federation and change-stream sync against MongoDB 7.0+. Nested-docu
 
 # MongoDB
 
-> 🚧 **Roadmap.** This connector ships in DB-M3, after [Postgres](/connectors/postgres) and [MySQL](/connectors/mysql). The design below is committed and stable; the implementation is in progress.
+> 🚧 **Roadmap.** This data source ships in DB-M3, after [Postgres](/data-sources/postgres) and [MySQL](/data-sources/mysql). The design below is committed and stable; the implementation is in progress.
 
 The MongoDB engine is the document-store member of the family. The
 trait is the same; what changes is everything below it: BSON instead of
@@ -19,7 +19,7 @@ feature.
 ## Configuration
 
 ```bash
-curl -sS -X POST http://localhost:8080/v1/connectors \
+curl -sS -X POST http://localhost:8080/v1/data-sources \
   -H "Content-Type: application/json" \
   --data-binary @- <<'JSON'
 {
@@ -45,7 +45,7 @@ JSON
 ```
 
 `mode`, `connection`, and `tls` semantics match the SQL engines —
-[Postgres](/connectors/postgres#modes) is the reference. The
+[Postgres](/data-sources/postgres#modes) is the reference. The
 Mongo-specific bit is `scope.flatten_depth` (default `2`), which
 controls how deep nested objects flatten to dotted columns.
 
@@ -93,7 +93,7 @@ Schema only widens — kyma never narrows, never deletes, never re-types.
 
 The default stability threshold is **100 events with one consistent
 type within a sliding window of 1000 events** (or the entire snapshot if
-under 1000 docs). Tunable per-connector via
+under 1000 docs). Tunable per-data-source via
 `sync.inference.stability_threshold`.
 
 ## BSON type coercion
@@ -124,14 +124,14 @@ Two-phase pipeline per source-collection:
 1. **Initial snapshot.** Take a `$changeStream` resume token via
    `startAtOperationTime` taken **before** the snapshot read; stream the
    collection's documents in batches; on the final batch advance
-   `connector_cdc_state.phase` to `streaming` with the resume token as
+   `data_source_cdc_state.phase` to `streaming` with the resume token as
    the cursor — atomically with the kyma extent CAS.
 2. **Streaming.** Open a change stream with `resumeAfter=<token>`;
    group-commit batches. Inserts/updates/deletes become rows tagged with
    `_kyma_op`; deletes are tombstones.
 
 Cursor checkpoints are change-stream resume tokens, stored as opaque
-JSON in `connector_cdc_state.checkpoint`. Reopen-from-token is the
+JSON in `data_source_cdc_state.checkpoint`. Reopen-from-token is the
 recovery path; the change stream replays from the token; kyma's
 idempotency layer dedupes any partway-through events.
 
@@ -167,17 +167,17 @@ runs at its source; DataFusion joins the streams.
 | Failure                                                  | Behavior                                                              |
 | -------------------------------------------------------- | --------------------------------------------------------------------- |
 | Source unreachable                                       | Federation: `502 source_unreachable`. Sync: stream reopens at token.  |
-| TLS handshake fails                                      | Connector disabled, `disabled_reason="tls_failed: <detail>"`.         |
-| Resume token expired (oplog rolled past it)              | Connector disabled, `disabled_reason="resume_token_invalid"`. Manual resync. |
+| TLS handshake fails                                      | Data source disabled, `disabled_reason="tls_failed: <detail>"`.         |
+| Resume token expired (oplog rolled past it)              | Data source disabled, `disabled_reason="resume_token_invalid"`. Manual resync. |
 | New polymorphic field shows up                           | Demoted to `dynamic`; existing typed-column data preserved.           |
 | Document depth exceeds `flatten_depth`                   | Subtree lands in `dynamic` for that field. Reads via dynamic accessors. |
 | Decimal128 overflow under default mode                   | Routed to `string` with warning. Set `scope.decimal128_mode` to fix.   |
 | UTF-8 decode fails on `String` field                     | Field becomes `dynamic` with raw bytes base64'd; warning.             |
-| Pool exhausted                                           | `503 pool_exhausted`; surfaced via `last_error` on `GET /v1/connectors/:id`. |
+| Pool exhausted                                           | `503 pool_exhausted`; surfaced via `last_error` on `GET /v1/data-sources/:id`. |
 
 ## Where to go next
 
-- The SQL siblings: [Postgres](/connectors/postgres), [MySQL](/connectors/mysql).
+- The SQL siblings: [Postgres](/data-sources/postgres), [MySQL](/data-sources/mysql).
 - Cross-source queries, `live(...)`, the `pushdown_summary`:
-  [Multi-source data](/connectors/multi-source-data).
+  [Multi-source data](/data-sources/multi-source-data).
 - How `dynamic` works in queries: [Dynamic and vectors](/concepts/dynamic-and-vectors).

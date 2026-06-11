@@ -10,16 +10,16 @@ authored them, and — most usefully — the **relations** between pages. Walks 
 workspace via Notion's `search` API sorted by `last_edited_time`, so ticks are
 incremental (a stored floor stops the walk once it reaches already-seen items).
 
-::: tip OAuth connector
+::: tip OAuth data source
 Authorize once with **Connect** in the UI — there's no token to paste. Provider
-slug `notion`; see [OAuth connectors](/connectors/oauth) for the one-time
+slug `notion`; see [OAuth data sources](/data-sources/oauth) for the one-time
 provider-app setup. Notion is capability-based: grant the integration **read
 content** + **read user information** when you authorize.
 :::
 
 ## Connect
 
-1. **Connectors → Add connector → Notion**.
+1. **Data sources → Add data source → Notion**.
 2. Name it, click **Connect Notion**, and approve access in the Notion window.
 3. (Optional) restrict to specific databases; leave empty for the whole
    workspace the integration can see.
@@ -63,5 +63,5 @@ are prefixed `notion:`.
 }
 ```
 
-Default sync interval is 10 minutes. The connector resolves and refreshes the
-OAuth token automatically each tick — see [OAuth connectors](/connectors/oauth).
+Default sync interval is 10 minutes. The data source resolves and refreshes the
+OAuth token automatically each tick — see [OAuth data sources](/data-sources/oauth).

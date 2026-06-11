@@ -11,15 +11,15 @@ content (scope `drive.metadata.readonly`). Walks `files.list` page-by-page,
 carrying the page token in its cursor so a large drive is covered across ticks
 and then re-walked to pick up changes.
 
-::: tip OAuth connector
+::: tip OAuth data source
 Authorize once with **Connect** in the UI. Provider slug `google` (shared with
-Gmail); see [OAuth connectors](/connectors/oauth) for the Google Cloud app
+Gmail); see [OAuth data sources](/data-sources/oauth) for the Google Cloud app
 setup. Requested scope: `https://www.googleapis.com/auth/drive.metadata.readonly`.
 :::
 
 ## Connect
 
-1. **Connectors → Add connector → Google Drive**.
+1. **Data sources → Add data source → Google Drive**.
 2. Name it, **Connect Google Drive**, approve access.
 3. (Optional) restrict to specific folder ids, or enable shared drives.
 4. Pick a sync interval and **Create**.

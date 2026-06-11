@@ -121,7 +121,7 @@ kyma update --check  # just tell me if I'm behind
 
 </details>
 
-Want it server-side for a team, with connectors and continuous ingestion? See
+Want it server-side for a team, with data sources and continuous ingestion? See
 **[Two tiers](#two-tiers-local-binary--control-plane)**.
 
 ---
@@ -135,7 +135,7 @@ Plugin slash commands, the CLI, or MCP tools all hit the same engine:
 |---|---|---|
 | 🧠 **Memory** | `memory_search` · `recall_memory` · `save_memory` · `list_memories` | Graph-aware hybrid recall (vector + keyword + graph), durable across sessions/machines. |
 | 🕸️ **Graph** | `ingest_entity` · `link_memory_to_entity` · `graph_traverse` · `find_references_to` | Mint **virtual resources**, wire them to memories *and* real resources, walk the graph. |
-| 📊 **Live data** | `run_kql` · `run_sql` · `explore_schema` · `describe_table` · `sample_rows` · `list_databases` | Query logs, traces, connector data, the catalog — in KQL or SQL, sub-second. |
+| 📊 **Live data** | `run_kql` · `run_sql` · `explore_schema` · `describe_table` · `sample_rows` · `list_databases` | Query logs, traces, data-source tables, the catalog — in KQL or SQL, sub-second. |
 | 🛠️ **Curation** | `update_memory_status` · `update_memory_importance` · `memory_compare` · `memory_judge` · `memory_session_summary` | Re-weight, archive, resolve conflicts, record session recaps. |
 
 > Call `memory_search` **first** when a question may depend on prior context, then follow
@@ -212,7 +212,7 @@ What makes the recall best-in-class:
   resolution; falls back to deterministic summaries when no engine is configured.
 - **Deterministic topic-key upsert** — a stable `topic_key` updates a memory in place
   (no LLM, no duplicates), complementing the LLM path.
-- **Provenance categories** — synthetic / extracted / connector-derived, so housekeeping
+- **Provenance categories** — synthetic / extracted / data-source-derived, so housekeeping
   scores and relevance-checks by source.
 - **Privacy** — **`<private>…</private>`** is stripped before anything is embedded or stored.
 
@@ -229,7 +229,7 @@ engine in the spirit of Azure Data Explorer (Kusto) — built so agents can quer
 
 - **Ingests every signal** your stack emits — logs, traces, metrics, tool calls, prompt /
   response bodies, deploy events, config diffs — via OTLP, REST, Kafka, or file-drop, plus
-  scheduled connectors (GitHub / GitLab / Bitbucket / Prometheus / Postgres / S3 / Notion /
+  scheduled data sources (GitHub / GitLab / Bitbucket / Prometheus / Postgres / S3 / Notion /
   Slack / Jira / Confluence / Gmail / Drive).
 - **Stores columnar Arrow** on object storage you own, with per-extent stats + token
   indices so a query skips 99%+ of data via a **three-level pruning cascade**.
@@ -294,7 +294,7 @@ across both via sync.
 | Infra | none — embedded SQLite + local files | Postgres + object store (S3/MinIO) |
 | Use | per-developer, offline, instant | team, always-on, shared |
 | Memory | ✅ save / recall / graph | ✅ + background consolidation ("dreaming") |
-| Live data | ✅ on-demand ingest + query | ✅ + **connectors** (GitHub, Prometheus, …) on a schedule |
+| Live data | ✅ on-demand ingest + query | ✅ + **data sources** (GitHub, Prometheus, …) on a schedule |
 | Web UI | ✅ `kyma serve` | ✅ Graph Explorer · Memory · Discover · Agent |
 | Sync | ✅ `kyma sync` → control plane | ✅ receives + reconciles |
 
@@ -337,7 +337,7 @@ The web app (hosted server, or `kyma serve`) has four first-class surfaces:
 Shipping today: local mode in the `kyma` CLI (`mcp` · `serve` · `setup` · `sync`), the
 agentic-memory stack (hybrid + graph recall, bi-temporal, A.U.D.N., topic-key upsert, conflict
 tools, provenance, export/import), the MCP server (stdio + HTTP), REST/OTLP/Kafka/file-drop
-ingest, scheduled connectors, KQL + SQL over Arrow Flight, the 3-level pruning cascade, the web
+ingest, scheduled data sources, KQL + SQL over Arrow Flight, the 3-level pruning cascade, the web
 app, compaction/retention/GC, and bidirectional memory sync. Next: PromQL · Flight-SQL ·
 multi-node read scale-out · cross-region federation.
 
@@ -359,7 +359,7 @@ crates/
   kyma-memory/          agentic memory: schema, writer, hybrid+graph recall
   kyma-mcp/             MCP server — stdio + HTTP transports, shared dispatch
   kyma-server/          HTTP + Flight gRPC API, agent surface, auth, web UI
-  kyma-connectors/      connector framework (GitHub, Prometheus, SaaS, …)
+  kyma-datasources/     data source framework (GitHub, Prometheus, SaaS, …)
   kyma-compaction/      background compaction, retention, physical GC
   kyma-local/           local-engine library behind `kyma` mcp · serve · setup · sync
   kyma-cli/             the `kyma` CLI — client + admin + local engine (one binary)

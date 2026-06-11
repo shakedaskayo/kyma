@@ -236,7 +236,7 @@ policy in section 10.
   ```
 - Stable error codes: `{ "error": "table '<db>'.'<table>' not found" }` (`404`); `{ "error": "<message>" }` (`500`).
 
-### `POST /v1/connectors` — create a connector
+### `POST /v1/data-sources` — create a data source
 
 **Frozen.**
 
@@ -247,18 +247,18 @@ policy in section 10.
   ```json
   {
     "name": "<string>",
-    "type": "<connector_type_id>",
+    "type": "<data_source_type_id>",
     "target_database": "<string>",
     "target_table": "<string>",
     "schedule_ms": 60000,
-    "config": { "...connector-specific config..." }
+    "config": { "...data-source-specific config..." }
   }
   ```
   `schedule_ms` must be in `[100, 86400000]`.
 - Response: `201 Created` with JSON body `{ "id": "<uuid>" }`.
 - Stable error codes: `{ "error": "unknown type <type>" }` (`400`); `{ "error": "<validation message>" }` (`400`); `{ "error": "schedule_ms must be in [100, 86400000]" }` (`400`); `{ "error": "<message>" }` (`500`).
 
-### `GET /v1/connectors` — list connectors
+### `GET /v1/data-sources` — list data sources
 
 **Frozen.**
 
@@ -271,17 +271,17 @@ policy in section 10.
   ```
 - Stable error codes: `{ "error": "<message>" }` (`500`).
 
-### `GET /v1/connectors/:id` — get a connector
+### `GET /v1/data-sources/:id` — get a data source
 
 **Frozen.**
 
 - Headers:
   - `Authorization: Bearer <token>` (required when auth is enabled; `Role::Write`)
 - Request body: none.
-- Response: `200 OK` with JSON body containing full connector detail: `id`, `name`, `type`, `target_database`, `target_table`, `schedule_ms`, `drive_model` (the connector's execution model; currently `"periodic"` for all connectors), `enabled`, `disabled_reason`, `last_run_at`, `last_success_at`, `last_error`, `last_rows_ingested`, `config` (secret fields scrubbed to `"***"`).
+- Response: `200 OK` with JSON body containing full data source detail: `id`, `name`, `type`, `target_database`, `target_table`, `schedule_ms`, `drive_model` (the data source's execution model; currently `"periodic"` for all data sources), `enabled`, `disabled_reason`, `last_run_at`, `last_success_at`, `last_error`, `last_rows_ingested`, `config` (secret fields scrubbed to `"***"`).
 - Stable error codes: `404 Not Found` (no body); `{ "error": "<message>" }` (`500`).
 
-### `PATCH /v1/connectors/:id` — update a connector
+### `PATCH /v1/data-sources/:id` — update a data source
 
 **Frozen.**
 
@@ -292,7 +292,7 @@ policy in section 10.
 - Response: `204 No Content` on success.
 - Stable error codes: `{ "error": "schedule_ms must be in [100, 86400000]" }` (`400`); `{ "error": "<validation message>" }` (`400`); `404 Not Found` (no body); `{ "error": "<message>" }` (`500`).
 
-### `DELETE /v1/connectors/:id` — delete a connector
+### `DELETE /v1/data-sources/:id` — delete a data source
 
 **Frozen.**
 
@@ -302,7 +302,7 @@ policy in section 10.
 - Response: `204 No Content`.
 - Stable error codes: `{ "error": "<message>" }` (`500`).
 
-### `POST /v1/connectors/:id/pause` — pause a connector
+### `POST /v1/data-sources/:id/pause` — pause a data source
 
 **Frozen.**
 
@@ -312,7 +312,7 @@ policy in section 10.
 - Response: `204 No Content`.
 - Stable error codes: none (errors are swallowed internally; the response is always `204`).
 
-### `POST /v1/connectors/:id/resume` — resume a paused connector
+### `POST /v1/data-sources/:id/resume` — resume a paused data source
 
 **Frozen.**
 
@@ -322,7 +322,7 @@ policy in section 10.
 - Response: `204 No Content`.
 - Stable error codes: none (errors are swallowed internally; the response is always `204`).
 
-### `POST /v1/connectors/:id/trigger` — immediately trigger a connector run
+### `POST /v1/data-sources/:id/trigger` — immediately trigger a data source run
 
 **Frozen.**
 
@@ -969,10 +969,10 @@ These rules apply across the v1.x series. Breaking the schema requires the depre
 | `extents` | Individual data-file metadata (object-store paths, stats) | `id` (PK), `tenant_id`, `table_id` | FK → `tables`, `manifests`, `schema_snapshots`; soft-delete via `deleted_at`; GIST + GIN + partial indexes |
 | `nodes` | Cluster membership and heartbeat leases | `id` (PK), `lease_id` | Not tenant-scoped; `role` IN `('all_in_one','ingest','query','compaction')` |
 | `ingest_ledger` | Idempotency records for POST /v1/ingest | `(tenant_id, idempotency_key)` (composite PK) | FK → `tables`, `snapshots`; TTL via `ttl_expires_at` |
-| `background_tasks` | Distributed work queue (compaction, GC, connectors) | `id` (PK), `tenant_id` | FK → `tables`, `nodes`; `status` IN `('pending','claimed','done','failed')` |
-| `connectors` | Ingestion-connector definitions | `id` (PK), `tenant_id`, `name` | UNIQUE `(tenant_id, name)`; `drive_model` IN `('periodic','continuous')`; KMS columns added in 007 |
-| `connector_cursors` | Per-connector checkpoint/cursor state | `connector_id` (PK) | FK → `connectors`; one row per connector |
-| `connector_leases` | Streaming-connector node leases (reserved for Slice 2) | `connector_id` (PK) | FK → `connectors`; unused in v1.0 |
+| `background_tasks` | Distributed work queue (compaction, GC, data sources) | `id` (PK), `tenant_id` | FK → `tables`, `nodes`; `status` IN `('pending','claimed','done','failed')` |
+| `data_sources` | Data source definitions | `id` (PK), `tenant_id`, `name` | UNIQUE `(tenant_id, name)`; `drive_model` IN `('periodic','continuous')`; KMS columns added in 007 |
+| `data_source_cursors` | Per-data-source checkpoint/cursor state | `data_source_id` (PK) | FK → `data_sources`; one row per data source |
+| `data_source_leases` | Streaming-data-source node leases (reserved for Slice 2) | `data_source_id` (PK) | FK → `data_sources`; unused in v1.0 |
 | `dashboards` | Dashboard metadata | `id` (PK), `tenant_id` | No name-uniqueness constraint (names may repeat across tenants) |
 | `dashboard_panels` | Individual panels within a dashboard | `id` (PK), `tenant_id`, `dashboard_id` | FK → `dashboards`; `panel_type` IN `('chart','table','markdown','stat')` |
 | `column_metadata` | Per-column semantic annotations for the agent | `(tenant_id, database, table_name, column_name)` (composite PK) | Optional embedding link via `embedding_model_id` |
@@ -1124,7 +1124,7 @@ Indexes: `ingest_ledger_ttl` on `(ttl_expires_at)`.
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
 | `id` | `UUID` | no | `uuid_generate_v4()` | PK |
-| `kind` | `TEXT` | no | none | Task kind: `'compaction'`, `'retention_sweep'`, `'physical_gc'`, `'connector_tick'`, etc. |
+| `kind` | `TEXT` | no | none | Task kind: `'compaction'`, `'retention_sweep'`, `'physical_gc'`, `'data_source_tick'`, etc. |
 | `table_id` | `UUID` | yes | none | FK → `tables(id)` ON DELETE CASCADE; NULL for non-table tasks |
 | `payload` | `JSONB` | no | `'{}'::jsonb` | Task-specific parameters |
 | `status` | `TEXT` | no | `'pending'` | CHECK `status IN ('pending','claimed','done','failed')` |
@@ -1138,20 +1138,20 @@ Indexes: `ingest_ledger_ttl` on `(ttl_expires_at)`.
 | `updated_at` | `TIMESTAMPTZ` | no | `now()` | |
 | `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
 
-Indexes: `background_tasks_pending` partial on `(kind, priority DESC, created_at) WHERE status = 'pending'`. `background_tasks_claimed_expiry` partial on `(claim_expires_at) WHERE status = 'claimed'`. `background_tasks_connector_tick_uniq` UNIQUE partial on `((payload->>'connector_id'), (payload->>'scheduled_for')) WHERE kind = 'connector_tick' AND status IN ('pending', 'claimed')` (added in 005). `background_tasks_tenant_idx` on `(tenant_id)`.
+Indexes: `background_tasks_pending` partial on `(kind, priority DESC, created_at) WHERE status = 'pending'`. `background_tasks_claimed_expiry` partial on `(claim_expires_at) WHERE status = 'claimed'`. `background_tasks_data_source_tick_uniq` UNIQUE partial on `((payload->>'data_source_id'), (payload->>'scheduled_for')) WHERE kind = 'data_source_tick' AND status IN ('pending', 'claimed')` (added in 005). `background_tasks_tenant_idx` on `(tenant_id)`.
 
 ---
 
-#### `connectors`
+#### `data_sources`
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
 | `id` | `UUID` | no | `uuid_generate_v4()` | PK |
 | `name` | `TEXT` | no | none | Part of UNIQUE `(tenant_id, name)` (added in 007, replacing single-column UNIQUE) |
-| `type` | `TEXT` | no | none | Connector type identifier |
+| `type` | `TEXT` | no | none | Data source type identifier |
 | `target_database` | `TEXT` | no | none | Destination database name |
 | `target_table` | `TEXT` | no | none | Destination table name |
-| `config_jsonb` | `JSONB` | no | none | Connector-specific configuration (secret fields encrypted via KMS in Slice 2) |
+| `config_jsonb` | `JSONB` | no | none | Data-source-specific configuration (secret fields encrypted via KMS in Slice 2) |
 | `schedule_ms` | `BIGINT` | no | none | Polling interval in milliseconds; CHECK `(schedule_ms >= 100 AND schedule_ms <= 86400000)` |
 | `drive_model` | `TEXT` | no | none | CHECK `drive_model IN ('periodic','continuous')` |
 | `enabled` | `BOOLEAN` | no | `TRUE` | |
@@ -1164,35 +1164,35 @@ Indexes: `background_tasks_pending` partial on `(kind, priority DESC, created_at
 | `updated_at` | `TIMESTAMPTZ` | no | `now()` | Updated by writers; no trigger |
 | `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
 | `kms_key_id` | `TEXT` | yes | none | Added in 007; KMS key reference for secret encryption (Slice 2) |
-| `encrypted_secrets` | `BYTEA` | yes | none | Added in 007; encrypted connector secrets (Slice 2) |
+| `encrypted_secrets` | `BYTEA` | yes | none | Added in 007; encrypted data source secrets (Slice 2) |
 
-Indexes: `connectors_enabled_drive_idx` partial on `(drive_model, enabled) WHERE enabled = TRUE`. `connectors_tenant_name_uniq` UNIQUE on `(tenant_id, name)`. `connectors_tenant_idx` on `(tenant_id)`.
+Indexes: `data_sources_enabled_drive_idx` partial on `(drive_model, enabled) WHERE enabled = TRUE`. `data_sources_tenant_name_uniq` UNIQUE on `(tenant_id, name)`. `data_sources_tenant_idx` on `(tenant_id)`.
 
 ---
 
-#### `connector_cursors`
+#### `data_source_cursors`
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
-| `connector_id` | `UUID` | no | none | PK; FK → `connectors(id)` ON DELETE CASCADE; one row per connector |
+| `data_source_id` | `UUID` | no | none | PK; FK → `data_sources(id)` ON DELETE CASCADE; one row per data source |
 | `cursor_jsonb` | `JSONB` | yes | none | Last checkpoint (API cursor, timestamp, etc.) |
 | `updated_at` | `TIMESTAMPTZ` | no | `now()` | |
 | `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
 
-Indexes: `connector_cursors_tenant_idx` on `(tenant_id)`.
+Indexes: `data_source_cursors_tenant_idx` on `(tenant_id)`.
 
 ---
 
-#### `connector_leases`
+#### `data_source_leases`
 
 | Column | Type | Nullable | Default | Notes |
 |---|---|---|---|---|
-| `connector_id` | `UUID` | no | none | PK; FK → `connectors(id)` ON DELETE CASCADE |
+| `data_source_id` | `UUID` | no | none | PK; FK → `data_sources(id)` ON DELETE CASCADE |
 | `node_id` | `TEXT` | no | none | Claiming node identity |
 | `expires_at` | `TIMESTAMPTZ` | no | none | Lease expiry |
 | `tenant_id` | `UUID` | no | none | Added in 007; no default after migration |
 
-Indexes: `connector_leases_tenant_idx` on `(tenant_id)`. **Note:** this table is pre-provisioned for the `Continuous` drive model (streaming connectors) and is unused in v1.0.
+Indexes: `data_source_leases_tenant_idx` on `(tenant_id)`. **Note:** this table is pre-provisioned for the `Continuous` drive model (streaming data sources) and is unused in v1.0.
 
 ---
 
@@ -1448,11 +1448,11 @@ Every `KYMA_*` env var below is part of the v1.0 contract. Removing or renaming 
 |---|---|---|
 | `KYMA_SCHEMA_CACHE_TTL_SECS` | `5` | Server-side TTL in seconds for the `GET /v1/catalog/schema` response cache. Set to `0` to disable caching. Unsigned integer. |
 
-#### Connector runner
+#### Data source runner
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_CONNECTOR_WORKERS` | `4` | Number of concurrent connector runner goroutines. Unsigned integer. |
+| `KYMA_DATA_SOURCE_WORKERS` | `4` | Number of concurrent data source runner goroutines. Unsigned integer. |
 
 #### Embedding provider
 
@@ -1462,7 +1462,7 @@ Every `KYMA_*` env var below is part of the v1.0 contract. Removing or renaming 
 | `KYMA_EMBED_MODEL_ID` | Provider-specific (see notes) | Embedding model identifier. Default per provider: `fastembed` → `bge-small-en-v1.5`; `ollama` → `nomic-embed-text`; `openai-compat` → `text-embedding-3-small`; `gemini` → `text-embedding-004`. |
 | `KYMA_EMBED_BASE_URL` | Provider-specific (see notes) | Base URL for network embedding providers. Default: `http://localhost:11434` for `ollama`; `https://api.openai.com/v1` for `openai-compat`. Ignored for `fastembed` and `gemini`. |
 | `KYMA_EMBED_MODEL_PATH` | _(unset)_ | Local filesystem path to a pre-downloaded fastembed model. Only used when `KYMA_EMBED_PROVIDER=fastembed`. |
-| `KYMA_EMBED_API_KEY_ENV` | `OPENAI_API_KEY` | Name of the environment variable that holds the API key for `openai-compat`. The engine reads the named env var at query time via the connector secret store. Only used when `KYMA_EMBED_PROVIDER=openai-compat`. |
+| `KYMA_EMBED_API_KEY_ENV` | `OPENAI_API_KEY` | Name of the environment variable that holds the API key for `openai-compat`. The engine reads the named env var at query time via the data source secret store. Only used when `KYMA_EMBED_PROVIDER=openai-compat`. |
 
 #### Inline data-assistant (agent)
 
@@ -1480,7 +1480,7 @@ These env vars come from libraries kyma uses or from runtime convention. kyma in
 | `RUST_LOG` | `tracing-subscriber` | Controls the log level filter. Parsed by `EnvFilter::try_from_default_env()`. When unset, kyma defaults to `info,sqlx=warn,hyper=warn,h2=warn`. Syntax: `[target=]level[,...]`, e.g. `RUST_LOG=debug,sqlx=warn`. |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `object_store` / `aws-sdk` | Standard AWS credential env vars. Used as fallback when `KYMA_S3_ACCESS_KEY_ID` / `KYMA_S3_SECRET_ACCESS_KEY` are unset and no instance-role credential is available. |
 | `AWS_DEFAULT_REGION` | `object_store` / `aws-sdk` | AWS region fallback when `KYMA_S3_REGION` is unset. |
-| `OPENAI_API_KEY` | Embedding / connector | API key for OpenAI-compatible embedding providers. The variable name is configurable via `KYMA_EMBED_API_KEY_ENV`; `OPENAI_API_KEY` is the default. |
+| `OPENAI_API_KEY` | Embedding / data source | API key for OpenAI-compatible embedding providers. The variable name is configurable via `KYMA_EMBED_API_KEY_ENV`; `OPENAI_API_KEY` is the default. |
 | `GOOGLE_API_KEY` | Embedding | API key for the Gemini embedding provider. Hard-coded variable name when `KYMA_EMBED_PROVIDER=gemini`; not configurable. |
 
 ### Test-only variables

@@ -145,7 +145,7 @@ node.
 ### [Observability](/concepts/observability)
 
 How to tell what kyma is doing. Prometheus `/metrics`, the agent run
-trace, connector run state (`GET /v1/connectors/:id`), and
+trace, data source run state (`GET /v1/data-sources/:id`), and
 `pushdown_summary` — the trust mechanism for federation.
 
 </div>
@@ -164,7 +164,7 @@ trace, connector run state (`GET /v1/connectors/:id`), and
   + [dynamic and vectors](/concepts/dynamic-and-vectors) cover it.
 - **Integrating with another database?**
   [Multi-source data](/concepts/multi-source-data), then the
-  [Connectors section](/connectors/) for the operational details.
+  [Data sources section](/data-sources/) for the operational details.
 - **Architecting a deployment?** Start with
   [the five invariants](/concepts/the-five-invariants), then
   [Architecture](/architecture/) for the slice roadmap.

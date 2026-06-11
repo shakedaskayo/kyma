@@ -8,12 +8,12 @@ description: Ingest Jira Cloud — projects, issues, epics, assignees, and issue
 Ingests Jira Cloud as a property graph: projects, issues, epics, the people
 assigned to and reporting them, and the **links between issues**. Fetches the
 most recently updated issues (bounded per tick) and reuses the same graph node
-labels — `Issue`, `User`, `Project` — as the code connectors, so cross-vendor
+labels — `Issue`, `User`, `Project` — as the code data sources, so cross-vendor
 views line up.
 
-::: tip OAuth connector
+::: tip OAuth data source
 Authorize once with **Connect** in the UI. Provider slug `atlassian` (one app
-serves both Jira and Confluence); see [OAuth connectors](/connectors/oauth) for
+serves both Jira and Confluence); see [OAuth data sources](/data-sources/oauth) for
 the Atlassian developer-console setup. Requested scopes: `read:jira-work`,
 `read:jira-user`, `read:me`, `offline_access`. The site **cloudId** is resolved
 automatically from the token's accessible resources.
@@ -21,7 +21,7 @@ automatically from the token's accessible resources.
 
 ## Connect
 
-1. **Connectors → Add connector → Jira**.
+1. **Data sources → Add data source → Jira**.
 2. Name it, **Connect Jira**, approve access to your site.
 3. (Optional) restrict to specific project keys; empty = all accessible.
 4. Pick a sync interval and **Create**.

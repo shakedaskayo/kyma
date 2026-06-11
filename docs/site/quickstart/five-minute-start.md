@@ -137,18 +137,18 @@ kyma install-skill --also-link-claude
 
 ## Step 5: Ingest a GitHub repo
 
-One command stands up a connector that pulls a repo into a property
+One command stands up a data source that pulls a repo into a property
 graph. The token comes from `$GITHUB_TOKEN`, `$GH_TOKEN`, or `gh auth
 token` (whichever is set first):
 
 ```bash
 kyma create-database github
-kyma connector add github shakedaskayo/kyma --start
+kyma datasource add github shakedaskayo/kyma --start
 ```
 
 Now visit `/graph` in the web app — your repo appears as a node-and-
 edge graph (commits, branches, PRs, issues, contributors). See
-[Connectors → GitHub](/connectors/github) for the full surface.
+[Data sources → GitHub](/data-sources/github) for the full surface.
 
 ## Next
 

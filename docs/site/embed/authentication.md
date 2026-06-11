@@ -125,7 +125,7 @@ A valid Kyma OIDC token must contain:
 | Role | Permitted operations |
 |---|---|
 | `read` | GET / query operations; no writes, no admin |
-| `write` | Ingest, create/update dashboards, manage connectors |
+| `write` | Ingest, create/update dashboards, manage data sources |
 | `admin` | Everything, including user and engine management |
 
 Roles are ordered: `read < write < admin`. A `write` token satisfies any `read`

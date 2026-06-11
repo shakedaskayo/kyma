@@ -26,7 +26,7 @@ The catalog recognizes eight types:
 | `vector(N)` | `FixedSizeList<Float32, N>`         | Fixed dimension; ANN indices in M-B.   |
 
 Plus the four system columns kyma adds to tables synced from external
-sources via the connector framework — `_kyma_pk`, `_kyma_op`, `_kyma_lsn`,
+sources via the data source framework — `_kyma_pk`, `_kyma_op`, `_kyma_lsn`,
 `_kyma_event_at`. Internal kyma tables don't carry these.
 
 ## Schema only widens
@@ -93,7 +93,7 @@ otel_logs
 ```
 
 You can promote a `dynamic` path to a typed column once the schema
-stabilizes. A connector with sync mode does this automatically — see
+stabilizes. A data source with sync mode does this automatically — see
 [Multi-source data](/concepts/multi-source-data).
 
 ## When to use what

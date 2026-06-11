@@ -6,7 +6,7 @@ The shared rules every metric kyma exports must follow. Area specs (A1–A4) def
 
 - Every metric name starts with `kyma_`.
 - Format: `kyma_<subsystem>_<metric>_<unit>` where:
-  - `<subsystem>` is `ingest`, `query`, `catalog`, `storage`, `compaction`, `retention`, `gc`, `auth`, `mcp`, `server`, `flight`, `agent`, `connector`, `embed`, ...
+  - `<subsystem>` is `ingest`, `query`, `catalog`, `storage`, `compaction`, `retention`, `gc`, `auth`, `mcp`, `server`, `flight`, `agent`, `data_source`, `embed`, ...
   - `<metric>` is a short snake_case noun.
   - `<unit>` is the Prometheus unit suffix when applicable: `_seconds`, `_bytes`, `_total` (counters), `_ratio`, `_count`.
 
@@ -56,12 +56,12 @@ The following metrics are emitted by the engine today. Metrics that DO NOT yet f
 - `kyma_compaction_duration_seconds` (histogram)
 - `kyma_compaction_tasks_submitted_total` (counter)
 - `kyma_compaction_tasks_total` (counter)
-- `kyma_connector_cursor_age_seconds` (gauge)
-- `kyma_connector_duration_seconds` (histogram)
-- `kyma_connector_errors_total` (counter)
-- `kyma_connector_last_success_timestamp_seconds` (gauge)
-- `kyma_connector_rows_ingested_total` (counter)
-- `kyma_connector_ticks_total` (counter)
+- `kyma_data_source_cursor_age_seconds` (gauge)
+- `kyma_data_source_duration_seconds` (histogram)
+- `kyma_data_source_errors_total` (counter)
+- `kyma_data_source_last_success_timestamp_seconds` (gauge)
+- `kyma_data_source_rows_ingested_total` (counter)
+- `kyma_data_source_ticks_total` (counter)
 - `kyma_filedrop_objects_processed_total` (counter)
 - `kyma_filedrop_rows_total` (counter)
 - `kyma_flight_do_get_total` (counter)

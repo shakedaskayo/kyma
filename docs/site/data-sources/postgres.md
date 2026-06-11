@@ -5,10 +5,10 @@ description: Federation for live reads, replication-slot CDC for sync, both at o
 
 # Postgres
 
-> 🚧 **Roadmap.** This connector ships in DB-M1. The design below is committed and stable; the implementation is in progress.
+> 🚧 **Roadmap.** This data source ships in DB-M1. The design below is committed and stable; the implementation is in progress.
 
 The Postgres engine is the first of three operational-database
-connectors. It registers as a DataFusion catalog (federation), replays
+data sources. It registers as a DataFusion catalog (federation), replays
 the source's logical replication into kyma extents (sync), or both at
 once. The same connection pool, the same schema introspection, the same
 status surface.
@@ -19,7 +19,7 @@ feature.
 ## Modes
 
 ```bash
-curl -sS -X POST http://localhost:8080/v1/connectors \
+curl -sS -X POST http://localhost:8080/v1/data-sources \
   -H "Content-Type: application/json" \
   --data-binary @- <<'JSON'
 {
@@ -50,7 +50,7 @@ JSON
   logical replication into kyma extents. Queries hit kyma, not the source.
 - **`mode: "both"`** — both at once. Bare references resolve to synced
   extents; `live(table)` opts into the federated path. See
-  [Multi-source data](/connectors/multi-source-data).
+  [Multi-source data](/data-sources/multi-source-data).
 
 `tls` is `"required"` by default; `"disabled"` works but emits a loud
 warning into `last_error` and refuses to start without an explicit
@@ -89,19 +89,19 @@ limit, sort)`; the shared `PushdownPlanner` reads the Postgres
 
 Every federated response carries a `pushdown_summary` array — one entry
 per `FederatedScan` — listing what got pushed, what stayed residual, and
-why. See [Multi-source data](/connectors/multi-source-data#status-health-and-observability).
+why. See [Multi-source data](/data-sources/multi-source-data#status-health-and-observability).
 
 ## CDC sync
 
 Two-phase pipeline per source-table:
 
 1. **Initial snapshot.** `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY`,
-   `pg_create_logical_replication_slot('kyma_<connector_id>', 'pgoutput', true)`,
+   `pg_create_logical_replication_slot('kyma_<data_source_id>', 'pgoutput', true)`,
    `SET TRANSACTION SNAPSHOT '<exported>'`. Stream rows in batches; on the
-   final batch, advance `connector_cdc_state.phase` to `streaming` and
+   final batch, advance `data_source_cdc_state.phase` to `streaming` and
    commit the cursor at the slot's LSN — atomically with the kyma
    extent CAS.
-2. **Streaming.** `START_REPLICATION SLOT kyma_<connector_id> LOGICAL <lsn>`
+2. **Streaming.** `START_REPLICATION SLOT kyma_<data_source_id> LOGICAL <lsn>`
    with `proto_version=2`. Group-commit batches to kyma extents.
    `INSERT`/`UPDATE`/`DELETE` events become rows tagged with `_kyma_op`
    and a tombstone row for deletes.
@@ -109,7 +109,7 @@ Two-phase pipeline per source-table:
 The exactly-once knot: the cursor advance is a payload in the same
 `tables.current_snapshot_id` CAS that already commits the extent
 manifest. Either both land or neither does. On `kill -9` mid-batch, the
-runner reopens from `connector_cdc_state.checkpoint`; the source
+runner reopens from `data_source_cdc_state.checkpoint`; the source
 replays; kyma's idempotency layer dedupes any partway-through rows.
 
 ## Type mapping
@@ -147,7 +147,7 @@ Every synced row has four extra columns kyma adds automatically:
 | `_kyma_lsn`      | `string`    | Postgres LSN at commit time.                     |
 | `_kyma_event_at` | `timestamp` | Wall-clock the source emitted the event.         |
 
-A source table with no primary key is rejected at connector start with
+A source table with no primary key is rejected at data source start with
 `disabled_reason="table has no primary key — cannot CDC sync"`. CDC
 without a PK can't dedupe replays or build tombstones correctly. Use
 `mode: "federation"` for that table instead, or add a PK on the source.
@@ -157,17 +157,17 @@ without a PK can't dedupe replays or build tombstones correctly. Use
 | Failure                                    | Behavior                                                                   |
 | ------------------------------------------ | -------------------------------------------------------------------------- |
 | Source unreachable                         | Federation: `502 source_unreachable`. Sync: stream reopens at last cursor. |
-| TLS handshake fails                        | Connector disabled, `disabled_reason="tls_failed: <detail>"`.              |
-| Replication slot dropped externally        | Connector disabled, `disabled_reason="replication_slot_missing"`. Does NOT auto-recreate. Operator decides: re-enable to re-snapshot, or restore externally. |
+| TLS handshake fails                        | Data source disabled, `disabled_reason="tls_failed: <detail>"`.              |
+| Replication slot dropped externally        | Data source disabled, `disabled_reason="replication_slot_missing"`. Does NOT auto-recreate. Operator decides: re-enable to re-snapshot, or restore externally. |
 | Source DDL adds an unrepresentable type    | Field routes to `dynamic`; warning in `last_error`. Sync continues.        |
 | Source DDL drops a column                  | Column null-fills going forward. Existing data preserved.                  |
-| Source PK changes                          | Connector disabled, `disabled_reason="pk_changed"`. Manual resync.         |
-| Pool exhausted                             | `503 pool_exhausted`; surfaced via `last_error` on `GET /v1/connectors/:id`. |
+| Source PK changes                          | Data source disabled, `disabled_reason="pk_changed"`. Manual resync.         |
+| Pool exhausted                             | `503 pool_exhausted`; surfaced via `last_error` on `GET /v1/data-sources/:id`. |
 | Pushdown produced incorrect SQL (bug)      | Source SQL parse error; `5xx pushdown_failed`; logs SQL + residual. CI property tests gate this. |
 
 ## Where to go next
 
 - Cross-source joins, the `live(...)` wrapper, the `pushdown_summary`:
-  [Multi-source data](/connectors/multi-source-data).
+  [Multi-source data](/data-sources/multi-source-data).
 - The conceptual model: [Multi-source data](/concepts/multi-source-data).
-- The framework: [Connector framework](/connectors/framework).
+- The framework: [Data source framework](/data-sources/framework).

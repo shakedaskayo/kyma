@@ -1,23 +1,23 @@
 ---
-title: OAuth connectors
+title: OAuth data sources
 description: The OAuth2 connect flow for SaaS sources — Notion, Google Drive, Gmail, Slack, Jira, and Confluence. How operators register provider apps, the env vars, and the bring-your-own option.
 ---
 
-# OAuth connectors
+# OAuth data sources
 
 Some sources authenticate with OAuth2 instead of a pasted token: **Notion,
-Google Drive, Gmail, Slack, Jira, and Confluence**. For these the connectors UI
+Google Drive, Gmail, Slack, Jira, and Confluence**. For these the data sources UI
 shows a **Connect** button instead of a token field — you authorize in the
 provider's own window, and kyma stores the resulting tokens as an encrypted
-[credential](/connectors/framework#secrets-by-reference) that the connector
+[credential](/data-sources/framework#secrets-by-reference) that the data source
 resolves (and refreshes) at run time.
 
-![OAuth connectors in the Add-connector catalog](/screenshots/connectors-catalog-oauth.png)
+![OAuth data sources in the add-data-source catalog](/screenshots/data-sources-catalog-oauth.png)
 *The knowledge and project sources — Notion, Google Drive, Gmail, Slack, Jira, Confluence — each marked **OAUTH**.*
 
-One OAuth app per **provider** backs one or more connectors:
+One OAuth app per **provider** backs one or more data sources:
 
-| Provider slug | Connectors | Where you register the app |
+| Provider slug | Data sources | Where you register the app |
 |---|---|---|
 | `google` | Google Drive, Gmail | [Google Cloud console](https://console.cloud.google.com/apis/credentials) |
 | `notion` | Notion | [Notion integrations](https://www.notion.so/my-integrations) (public integration) |
@@ -35,11 +35,11 @@ One OAuth app per **provider** backs one or more connectors:
 3. kyma exchanges the code for tokens, stores them as an `oauth2` credential
    (encrypted with `KYMA_SECRET_KEY`), and hands the new `credential_id` back to
    the wizard.
-4. On each tick the connector calls the shared resolver, which transparently
+4. On each tick the data source calls the shared resolver, which transparently
    **refreshes** an expired access token and persists the rotated tokens.
 
-![The Connect step of the add-connector wizard](/screenshots/oauth-connect-step.png)
-*The **Connect** step. Name the connector, hit the **Connect** button to authorize in a popup, optionally bring your own OAuth app, and set the sync interval — no token to paste.*
+![The Connect step of the add-data-source wizard](/screenshots/oauth-connect-step.png)
+*The **Connect** step. Name the data source, hit the **Connect** button to authorize in a popup, optionally bring your own OAuth app, and set the sync interval — no token to paste.*
 
 ## Operator setup
 
@@ -77,16 +77,16 @@ e.g. `https://kyma.example.com/v1/oauth/google/callback`,
 `docker-compose.yml` already sets `KYMA_OAUTH_REDIRECT_BASE=http://localhost:8080`
 and lists the per-provider vars (commented). Fill in a provider's
 `CLIENT_ID`/`CLIENT_SECRET` to light up its **Connect** button. With none set,
-the catalog still lists the connectors; clicking **Connect** returns a clear
+the catalog still lists the data sources; clicking **Connect** returns a clear
 "no OAuth client configured" message.
 :::
 
 ### Scopes requested
 
-kyma requests least-privilege, read-only scopes per connector — you don't set
+kyma requests least-privilege, read-only scopes per data source — you don't set
 these, the UI sends them:
 
-| Connector | Scopes |
+| Data source | Scopes |
 |---|---|
 | Google Drive | `drive.metadata.readonly` |
 | Gmail | `gmail.metadata` (headers only — never message bodies) |
@@ -96,12 +96,12 @@ these, the UI sends them:
 | Notion | (capability-based; granted when you authorize the integration) |
 
 Google and Atlassian issue **refresh tokens** (`access_type=offline` /
-`offline_access`), so connectors keep syncing without re-auth. Notion and Slack
+`offline_access`), so data sources keep syncing without re-auth. Notion and Slack
 bot tokens are long-lived and don't expire.
 
 ## Bring your own app
 
-Don't want to set operator-wide env vars? Each connector's **Connect** step has
+Don't want to set operator-wide env vars? Each data source's **Connect** step has
 an **Advanced → use your own OAuth app** disclosure. Paste a `client_id` /
 `client_secret` and kyma stores them per-tenant (secret encrypted), taking
 precedence over the operator env for that provider. Register the same redirect
@@ -109,14 +109,14 @@ URI as above.
 
 ## Managing a connection
 
-![The connectors list showing a synced connector](/screenshots/connectors-list.png)
-*The connectors list — each row shows the source, sync status, last run, and rows ingested.*
+![The data sources list showing a synced data source](/screenshots/data-sources-list.png)
+*The data sources list — each row shows the source, sync status, last run, and rows ingested.*
 
-The connector detail page shows a **Credential** card with the linked account
-and a **Reconnect** action (re-runs the connect flow and repoints the connector
+The data source detail page shows a **Credential** card with the linked account
+and a **Reconnect** action (re-runs the connect flow and repoints the data source
 at the fresh credential) — useful if a token is revoked. Credentials are also
 listed and manageable under **Settings → Credentials**; one credential can back
-multiple connectors, and rotating it propagates everywhere.
+multiple data sources, and rotating it propagates everywhere.
 
 ## Security
 

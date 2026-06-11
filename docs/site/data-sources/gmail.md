@@ -11,16 +11,16 @@ you email. **Header metadata only** — it never reads message bodies (scope
 cursor across ticks), then fetches `From`/`To`/`Cc`/`Subject`/`Date` headers for
 each.
 
-::: tip OAuth connector
+::: tip OAuth data source
 Authorize once with **Connect** in the UI. Provider slug `google` (shared with
-Google Drive); see [OAuth connectors](/connectors/oauth). Requested scope:
+Google Drive); see [OAuth data sources](/data-sources/oauth). Requested scope:
 `https://www.googleapis.com/auth/gmail.metadata` (the lowest-privilege Gmail
 scope — headers and labels, no bodies).
 :::
 
 ## Connect
 
-1. **Connectors → Add connector → Gmail**.
+1. **Data sources → Add data source → Gmail**.
 2. Name it, **Connect Gmail**, approve access.
 3. (Optional, **Advanced**) set a Gmail search `query` to scope which messages
    are ingested (default `newer_than:1y`).

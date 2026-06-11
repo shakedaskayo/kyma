@@ -5,7 +5,7 @@ description: Query Fabric Lakehouse and Warehouse tables live over the SQL analy
 
 # Microsoft Fabric
 
-`type`: `"msfabric"`. The first **federated** connector: it never ingests
+`type`: `"msfabric"`. The first **federated** data source: it never ingests
 rows. A periodic metadata sync mirrors the remote tables into a kyma
 database as *federated tables* (schema only), and queries against them
 execute live on Fabric's compute — filters, joins between two Fabric
@@ -25,8 +25,8 @@ over the [SQL analytics endpoint](https://learn.microsoft.com/en-us/fabric/data-
 
 Everything below is also available in the web UI: add a **Service
 principal** credential under *Settings → Credentials*, then pick
-*Microsoft Fabric* in the connector wizard — it prompts for the endpoint,
-item name, stored credential, and the wildcard opt-out. The connector
+*Microsoft Fabric* in the data source wizard — it prompts for the endpoint,
+item name, stored credential, and the wildcard opt-out. The data source
 detail page shows sync runs, last error, and lets you swap the linked
 credential.
 
@@ -50,10 +50,10 @@ JSON
 
 Response: `{"id": "<credential-uuid>", ...}`.
 
-## Register the connector
+## Register the data source
 
 ```bash
-curl -sS -X POST http://localhost:8080/v1/connectors \
+curl -sS -X POST http://localhost:8080/v1/data-sources \
   -H "Content-Type: application/json" \
   --data-binary @- <<'JSON'
 {
@@ -144,7 +144,7 @@ Set `"exclude_from_wildcard": true` to keep the source out of
 - `OFFSET` without `ORDER BY` is not expressible in T-SQL and surfaces a
   remote error; add an `ORDER BY`.
 - The SQL analytics endpoint's Delta→SQL metadata sync can lag a recent
-  OneLake write by a short window; the next connector tick (or Fabric's
+  OneLake write by a short window; the next data source tick (or Fabric's
   metadata refresh API) catches it up.
 - Databricks, Snowflake, and BigQuery follow as further platforms on the
   same federation substrate.

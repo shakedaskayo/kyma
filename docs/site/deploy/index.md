@@ -85,7 +85,7 @@ On `helm`/`local`, use `external` storage (endpoint + keys) and `external`/
 
 ## Required secret: `KYMA_SECRET_KEY`
 
-The server encrypts stored connector credentials (AES-256-GCM) with
+The server encrypts stored data source credentials (AES-256-GCM) with
 `KYMA_SECRET_KEY` and refuses to start without it. Every deploy path sets it
 for you: the Terraform stack generates one and injects it via SSM (Fargate) or
 a Kubernetes Secret (EKS/Helm), `kyma deploy` writes it to the workspace
