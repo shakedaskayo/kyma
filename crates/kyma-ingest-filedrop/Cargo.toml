@@ -27,3 +27,7 @@ chrono.workspace = true
 metrics.workspace = true
 sha2 = "0.10"
 serde_json.workspace = true
+
+[dev-dependencies]
+kyma-catalog-sqlite.workspace = true
+kyma-format-tlm.workspace = true

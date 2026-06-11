@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Tree-sitter structural code parser (imports / symbols / calls / inheritance) for kyma. Ungated so server + memory can parse contributed/scraped files without the heavy GitHub connector feature."
+description = "Tree-sitter structural code parser (imports / symbols / calls / inheritance) for kyma. Ungated so server + memory can parse contributed/scraped files without the heavy GitHub data source feature."
 
 [lints]
 workspace = true

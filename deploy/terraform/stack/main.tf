@@ -27,7 +27,7 @@ resource "random_id" "suffix" {
   byte_length = 3
 }
 
-# Encrypts connector credentials at rest inside kyma.
+# Encrypts data source credentials at rest inside kyma.
 resource "random_password" "secret_key" {
   length  = 48
   special = false

@@ -19,7 +19,7 @@ function CredentialsPage() {
         <div>
           <h1 className="text-lg font-semibold">Credentials</h1>
           <p className="text-sm text-muted-foreground">
-            Typed, encrypted secrets — reused by connectors, MCP servers, and agents.
+            Typed, encrypted secrets — reused by data sources, MCP servers, and agents.
           </p>
         </div>
         {supported && (

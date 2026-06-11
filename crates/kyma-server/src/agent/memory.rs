@@ -100,6 +100,22 @@ async fn memory_section(shared: &SharedToolCtx) -> Value {
     })
 }
 
+// ── GET /v1/agent/memory/source-summary ──────────────────────────────────────
+
+/// Memories grouped by provenance source + realm (latest version per id,
+/// archived excluded; no provenance source = "manual"). Powers the Data
+/// Sources "Memories" tab. The engine has no JSON UDFs, so the SQL groups by
+/// the raw provenance blob and `provenance.source` is folded out in Rust.
+pub async fn source_summary_handler(State(state): State<AgentState>) -> Json<Value> {
+    let shared = shared_from(&state);
+    let sql = kyma_memory::sql::source_summary_sql(kyma_memory::NODE_TABLE);
+    // An empty/unprovisioned memory store surfaces as an execute_sql error;
+    // rows_of maps that to no rows, i.e. an empty summary.
+    let rows = rows_of(&execute_sql(&shared, MEMORY_DB, &sql, 100_000).await);
+    let items = kyma_memory::sql::fold_source_summary(&rows);
+    Json(json!({ "items": items }))
+}
+
 async fn firehose_section(shared: &SharedToolCtx) -> Value {
     let by_kind =
         "SELECT kind, count(*) AS n FROM claude_code_events GROUP BY kind ORDER BY n DESC";

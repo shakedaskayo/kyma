@@ -18,7 +18,7 @@ coherent across the spectrum via [sync](/concepts/sync).
 | Storage | local files (`~/.kyma`) | object store (S3 / MinIO) | object store (shared) |
 | Infra | none | Postgres + object store | + a load balancer |
 | Best for | one developer, offline, instant | a team, always-on | read scale-out, HA |
-| Extras | on-demand ingest + query, local web UI | scheduled connectors, [dreaming](/agent/dreaming), full web app | everything, horizontally |
+| Extras | on-demand ingest + query, local web UI | scheduled data sources, [dreaming](/agent/dreaming), full web app | everything, horizontally |
 
 ### Local mode — `kyma`
 
@@ -31,7 +31,7 @@ This is where [Give your agent memory](/quickstart/give-your-agent-memory) start
 
 The team tier: Postgres for the catalog, an object store (S3 or MinIO) for extents.
 On top of local mode it adds the things that need to be always-on and shared — scheduled
-[connectors](/connectors/), background [dreaming](/agent/dreaming), and the full web app
+[data sources](/data-sources/), background [dreaming](/agent/dreaming), and the full web app
 (Graph Explorer · Memory · Discover · Agent). Stand it up with `docker compose up -d`
 ([Five-minute start](/quickstart/five-minute-start)) or [deploy it to production](/deploy/).
 
@@ -46,7 +46,7 @@ serialize through catalog CAS. Read throughput scales with node count.
 ## How to choose
 
 - **Just want your agent to remember?** Local mode. Nothing to provision.
-- **A team sharing memory + live connectors?** Control plane.
+- **A team sharing memory + live data sources?** Control plane.
 - **High query volume or HA?** A cluster of control-plane nodes.
 
 You're never locked in: start local, [sync](/concepts/sync) to a control plane when your

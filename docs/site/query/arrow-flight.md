@@ -6,7 +6,7 @@ description: Zero-copy gRPC query surface on :9090. Submit a JSON ticket via do_
 # Arrow Flight
 
 When the HTTP NDJSON response is the bottleneck — streaming millions of
-rows into a Polars DataFrame, feeding a Spark connector, talking to an
+rows into a Polars DataFrame, feeding a Spark data source, talking to an
 Arrow-native client — Arrow Flight is what you want. It's a gRPC service
 that returns query results as raw Arrow `RecordBatch`es over the wire.
 No JSON encode, no JSON decode, no row-by-row materialization.

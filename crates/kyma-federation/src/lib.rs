@@ -2,7 +2,7 @@
 //!
 //! External data platforms (Microsoft Fabric, and later Databricks, Snowflake,
 //! BigQuery) hold data kyma should never ingest wholesale. Instead, a
-//! *federated connector* (e.g. `msfabric` in `kyma-connectors`) syncs only
+//! *federated data source* (e.g. `msfabric` in `kyma-datasources`) syncs only
 //! table **schemas** into the catalog — marking each table with
 //! [`FederatedTableSpec`] in its `TableConfig` — and this crate turns those
 //! metadata-only tables into live remote scans at query time.

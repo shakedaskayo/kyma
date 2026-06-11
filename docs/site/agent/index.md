@@ -7,7 +7,7 @@ description: kyma is a context engine for coding agents — durable graph-aware 
 
 Connect your agent — three paths: **[Claude Code plugin](./claude-code-plugin)** ·
 **[CLI](./connect-from-cli)** · **[MCP](./connect)**. Each gives your agent access to
-durable graph-aware **memory**, **live data** (logs, traces, code, connectors) in KQL/SQL,
+durable graph-aware **memory**, **live data** (logs, traces, code, data sources) in KQL/SQL,
 and the **graph** that links them. See **[Coding agents overview](./coding-agents)** for a
 comparison of all integration paths.
 

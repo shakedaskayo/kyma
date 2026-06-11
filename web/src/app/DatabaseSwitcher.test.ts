@@ -10,8 +10,8 @@ test("the Query Editor (and legacy /explore) is cross-database with an All-datab
 test("single-database pages show the concrete switcher", () => {
   for (const p of [
     "/agent",
-    "/connectors",
-    "/connectors/123",
+    "/data-sources",
+    "/data-sources/123",
     "/dashboards",
     "/dashboards/42",
   ]) {

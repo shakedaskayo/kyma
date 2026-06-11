@@ -24,8 +24,8 @@ const DREAMING_DEFAULTS: DreamingSettings = {
   realm_scope: [],
   max_tool_calls: 40,
   wall_clock_secs: 300,
-  connector_read_budget: 20,
-  connector_read_max_bytes: 1_000_000,
+  data_source_read_budget: 20,
+  data_source_read_max_bytes: 1_000_000,
   mutation_cap: 100,
 };
 
@@ -220,7 +220,7 @@ export function MemorySettingsPanel() {
             />
             <StringSelectRow
               label="Mode"
-              hint="Full = distill + housekeep + read sources. Housekeeping only = merge/archive/rescore. Sources = pull connector reads."
+              hint="Full = distill + housekeep + read sources. Housekeeping only = merge/archive/rescore. Sources = pull data source reads."
               value={s.dreaming.mode}
               options={DREAMING_MODES}
               onChange={(v) => setDreaming("mode", v as DreamingSettings["mode"])}
@@ -260,13 +260,13 @@ export function MemorySettingsPanel() {
               onChange={(v) => setDreaming("mutation_cap", v)}
             />
             <NumberRow
-              label="Connector read budget"
-              hint="Maximum connector reads per run (sources/full mode)."
-              value={s.dreaming.connector_read_budget}
+              label="Data source read budget"
+              hint="Maximum data source reads per run (sources/full mode)."
+              value={s.dreaming.data_source_read_budget}
               min={0}
               max={1000}
               step={1}
-              onChange={(v) => setDreaming("connector_read_budget", v)}
+              onChange={(v) => setDreaming("data_source_read_budget", v)}
             />
           </Section>
 
@@ -319,7 +319,7 @@ export function MemorySettingsPanel() {
           </Section>
 
           {/* Ingestion */}
-          <Section icon={<Brain className="h-4 w-4" />} title="Ingestion" desc="How conversation/connector activity becomes memory.">
+          <Section icon={<Brain className="h-4 w-4" />} title="Ingestion" desc="How conversation and data source activity becomes memory.">
             <Toggle
               label="LLM extraction"
               hint="Extract atomic memories, entities, and relationships with conflict resolution. When off, the pipeline writes deterministic activity summaries."

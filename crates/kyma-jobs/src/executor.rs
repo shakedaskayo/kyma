@@ -55,7 +55,7 @@ pub struct JobCtx {
 
 #[async_trait]
 pub trait JobExecutor: Send + Sync {
-    /// The job kind this executor handles (e.g. `connector_sync`).
+    /// The job kind this executor handles (e.g. `datasource_sync`).
     fn kind(&self) -> &'static str;
     /// Run one job to completion. The returned JSON becomes `jobs.result`.
     async fn run(&self, ctx: &JobCtx, job: &ClaimedJob) -> Result<Json, JobError>;

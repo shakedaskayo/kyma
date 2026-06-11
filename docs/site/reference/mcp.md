@@ -61,8 +61,8 @@ Use stdio for local development and single-user setups. Use HTTP when a team
 shares a single kyma deployment, or when an agent runs in a remote environment
 that cannot exec a binary.
 
-::: tip Note on connector tools
-`list_connectors` and `connector_read` are **server mode only** — they need
+::: tip Note on data source tools
+`list_data_sources` and `data_source_read` are **server mode only** — they need
 the credential store. They are not available over stdio / `kyma mcp`.
 :::
 
@@ -85,7 +85,7 @@ requires no token.
 
 ## Tools
 
-**23 tools total: 21 available over stdio, plus 2 connector tools in server mode only.**
+**23 tools total: 21 available over stdio, plus 2 data source tools in server mode only.**
 
 ### Query
 
@@ -123,15 +123,15 @@ requires no token.
 | `ingest_entity` | Create (or update) a virtual resource/entity on the knowledge graph and wire it to existing graph nodes and memories. Idempotent on (realm, kind, name). |
 | `link_memory_to_entity` | Link a memory to an existing graph entity (repo, service, table, user, …) by node id, creating a REFERENCES edge. |
 
-### Connectors (server mode only)
+### Data sources (server mode only)
 
 These two tools are added when kyma runs as a server and has access to the
 credential store. They are **not available** over stdio (`kyma mcp`).
 
 | Tool | Purpose |
 | ---- | ------- |
-| `list_connectors` | List the configured data connectors (id, name, kind, enabled, target database). Use this to discover which external sources you can read from with `connector_read`. |
-| `connector_read` | Read-only access to a configured connector's source using its stored credential. Supports github operations (`get_repo`, `get_readme`, `get_file`, `list_issues`, `get_issue`, `list_pulls`) and postgres (`query`). |
+| `list_data_sources` | List the configured data sources (id, name, kind, enabled, target database). Use this to discover which external sources you can read from with `data_source_read`. |
+| `data_source_read` | Read-only access to a configured data source using its stored credential. Supports github operations (`get_repo`, `get_readme`, `get_file`, `list_issues`, `get_issue`, `list_pulls`) and postgres (`query`). |
 
 ---
 

@@ -4,7 +4,7 @@ import {
   Search,
   Network,
   LayoutDashboard,
-  Plug,
+  Database,
   KeyRound,
   Sparkles,
   Brain,
@@ -48,7 +48,7 @@ const GROUPS: NavGroup[] = [
     label: "Build",
     items: [
       { to: "/dashboards", label: "Dashboards", icon: LayoutDashboard },
-      { to: "/connectors", label: "Connectors", icon: Plug, requires: "connectors" },
+      { to: "/data-sources", label: "Data Sources", icon: Database, requires: "data_sources" },
       { to: "/credentials", label: "Credentials", icon: KeyRound, requires: "credentials" },
     ],
   },

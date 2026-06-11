@@ -63,7 +63,7 @@ pub struct TableConfig {
 
 /// Connection + addressing info for one federated table — self-contained so a
 /// query path can build a live remote scan from the `TableRef` alone (plus the
-/// credential store). Written by federated connectors (e.g. `msfabric`) on
+/// credential store). Written by federated data sources (e.g. `msfabric`) on
 /// every metadata-sync tick.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FederatedTableSpec {

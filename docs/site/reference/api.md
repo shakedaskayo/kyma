@@ -283,32 +283,32 @@ Required query param: `before=<RFC3339>` (e.g.
 `2025-01-01T00:00:00Z`). Response body is the aggregate count:
 `{extents_deleted, rows_freed, bytes_freed}`.
 
-## Connectors
+## Data sources
 
-The connector admin surface manages periodic / scheduled connectors. The
-catalog (`GET /v1/connectors/catalog`) is what drives the UI's source picker.
+The data source admin surface manages periodic / scheduled data sources. The
+catalog (`GET /v1/data-sources/catalog`) is what drives the UI's source picker.
 
 | Method | Path                                  | Min role | Effect                                                                                  |
 | ------ | ------------------------------------- | -------- | --------------------------------------------------------------------------------------- |
-| GET    | `/v1/connectors/catalog`              | Write    | The vendor catalog (available + coming-soon) that powers the Add-connector UI.          |
-| POST   | `/v1/connectors`                      | Write    | Create a connector. Body: `{name, type, target_database, target_table, schedule_ms, config}`. |
-| GET    | `/v1/connectors`                      | Write    | List connectors (id, name, type, enabled).                                              |
-| GET    | `/v1/connectors/{id}`                 | Write    | Read a connector. Secret-shaped fields in `config` are scrubbed to `***`.               |
-| PATCH  | `/v1/connectors/{id}`                 | Write    | Update name / schedule / enabled / config.                                              |
-| DELETE | `/v1/connectors/{id}`                 | Write    | Delete the connector.                                                                   |
-| POST   | `/v1/connectors/{id}/pause`           | Write    | Disable the connector (`disabled_reason="manual"`).                                     |
-| POST   | `/v1/connectors/{id}/resume`          | Write    | Re-enable.                                                                              |
-| POST   | `/v1/connectors/{id}/trigger`         | Write    | Enqueue an immediate tick. Returns `202 Accepted`.                                      |
+| GET    | `/v1/data-sources/catalog`              | Write    | The vendor catalog (available + coming-soon) that powers the add-data-source UI.          |
+| POST   | `/v1/data-sources`                      | Write    | Create a data source. Body: `{name, type, target_database, target_table, schedule_ms, config}`. |
+| GET    | `/v1/data-sources`                      | Write    | List data sources (id, name, type, enabled).                                              |
+| GET    | `/v1/data-sources/{id}`                 | Write    | Read a data source. Secret-shaped fields in `config` are scrubbed to `***`.               |
+| PATCH  | `/v1/data-sources/{id}`                 | Write    | Update name / schedule / enabled / config.                                              |
+| DELETE | `/v1/data-sources/{id}`                 | Write    | Delete the data source.                                                                   |
+| POST   | `/v1/data-sources/{id}/pause`           | Write    | Disable the data source (`disabled_reason="manual"`).                                     |
+| POST   | `/v1/data-sources/{id}/resume`          | Write    | Re-enable.                                                                              |
+| POST   | `/v1/data-sources/{id}/trigger`         | Write    | Enqueue an immediate tick. Returns `202 Accepted`.                                      |
 
 `schedule_ms` must be in the range `[100, 86400000]` (100 ms → 24 h).
-See [Connectors](/connectors/) for the typed config shape per
-connector type.
+See [Data sources](/data-sources/) for the typed config shape per
+data source type.
 
 ## Credentials
 
-Typed, encrypted secrets referenced by connectors (and other subsystems) via a
+Typed, encrypted secrets referenced by data sources (and other subsystems) via a
 `credential_id` in their config. List/get return a masked **preview**, never
-plaintext. Requires `KYMA_SECRET_KEY`. See [OAuth connectors](/connectors/oauth).
+plaintext. Requires `KYMA_SECRET_KEY`. See [OAuth data sources](/data-sources/oauth).
 
 | Method | Path                     | Min role | Effect                                                                          |
 | ------ | ------------------------ | -------- | ------------------------------------------------------------------------------- |
@@ -322,13 +322,13 @@ plaintext. Requires `KYMA_SECRET_KEY`. See [OAuth connectors](/connectors/oauth)
 
 ## OAuth
 
-The browser flow that mints `oauth2` credentials for OAuth connectors. The
+The browser flow that mints `oauth2` credentials for OAuth data sources. The
 callback is **unauthenticated** (a cross-site IdP redirect carries no bearer); the
-single-use `state` token is the trust anchor. See [OAuth connectors](/connectors/oauth).
+single-use `state` token is the trust anchor. See [OAuth data sources](/data-sources/oauth).
 
 | Method | Path                                | Min role | Effect                                                                                       |
 | ------ | ----------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
-| POST   | `/v1/oauth/{provider}/start`        | Write    | Begin a flow. Body: `{connector_type, scopes?, label?, client_id?, client_secret?}`. Returns `{authorize_url, state}`. |
+| POST   | `/v1/oauth/{provider}/start`        | Write    | Begin a flow. Body: `{data_source_type, scopes?, label?, client_id?, client_secret?}`. Returns `{authorize_url, state}`. |
 | GET    | `/v1/oauth/{provider}/callback`     | _none_   | IdP redirect target. Exchanges the code, mints the credential, posts the result back to the opener. |
 | GET    | `/v1/oauth/flows/{state}`           | Write    | Poll a flow's `{status, credential_id}` — the fallback when `postMessage` can't reach the UI.  |
 
@@ -336,7 +336,7 @@ single-use `state` token is the trust anchor. See [OAuth connectors](/connectors
 
 ## Worker fabric
 
-The distributed compute fabric that runs connector syncs, dreaming jobs, and
+The distributed compute fabric that runs data source syncs, dreaming jobs, and
 arbitrary scheduled work. See [Workers](/agent/workers) for daemon setup and
 job lifecycle details.
 
@@ -366,7 +366,7 @@ return `204`; `409` means the lease was lost.
 `POST /v1/jobs/claim` body:
 
 ```json
-{ "kinds": ["connector_sync"], "max": 1, "wait_ms": 5000 }
+{ "kinds": ["data_source_sync"], "max": 1, "wait_ms": 5000 }
 ```
 
 ### Operator (regular bearer, Role::Write)

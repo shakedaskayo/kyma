@@ -83,7 +83,7 @@ fn rec(source: &str, class: &str, path: &str, size: i64) -> ArtifactRecord {
         source: source.into(),
         artifact_class: class.into(),
         table_ref: None,
-        connector_id: None,
+        data_source_id: None,
         size_bytes: size,
         sha256: Some(format!("sha-{path}")),
         created_at: Some(Utc::now()),

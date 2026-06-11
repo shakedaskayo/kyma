@@ -13,6 +13,7 @@ export type {
   HitlPolicy,
   MemoryOp,
   OpMode,
+  MemorySourceSummary,
 } from "@kyma-ai/client";
 
 import type { MemoryQueryRequest, MemorySettings } from "@kyma-ai/client";
@@ -34,4 +35,8 @@ export function getMemorySettings(_a: Args) {
 
 export function putMemorySettings(_a: Args, s: MemorySettings) {
   return sessionClient().memory.putMemorySettings(s);
+}
+
+export function memorySourceSummary(_a: Args) {
+  return sessionClient().memory.memorySourceSummary();
 }

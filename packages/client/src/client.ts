@@ -10,7 +10,7 @@ import * as capabilities from "./capabilities";
 import * as agentEngine from "./agent-engine";
 import * as agentSkills from "./agent-skills";
 import * as memory from "./memory";
-import * as connectors from "./connectors";
+import * as datasources from "./datasources";
 import * as credentials from "./credentials";
 import * as auth from "./auth";
 import * as setup from "./setup";
@@ -107,20 +107,22 @@ const MEMORY_FNS = [
   "queryMemory",
   "getMemorySettings",
   "putMemorySettings",
+  "memorySourceSummary",
 ] as const satisfies readonly (keyof typeof memory)[];
 
-const CONNECTORS_FNS = [
-  "getConnectorCatalog",
-  "listConnectors",
-  "getConnector",
-  "createConnector",
-  "patchConnector",
-  "deleteConnector",
-  "pauseConnector",
-  "resumeConnector",
-  "triggerConnector",
+const DATASOURCES_FNS = [
+  "getDataSourceCatalog",
+  "listDataSources",
+  "getDataSource",
+  "createDataSource",
+  "patchDataSource",
+  "deleteDataSource",
+  "pauseDataSource",
+  "resumeDataSource",
+  "triggerDataSource",
   "listGitHubRepos",
-] as const satisfies readonly (keyof typeof connectors)[];
+  "listDataSourceWatchers",
+] as const satisfies readonly (keyof typeof datasources)[];
 
 const CREDENTIALS_FNS = [
   "listCredentials",
@@ -162,7 +164,7 @@ declare const _bindGuard: [
   Expect<AssertSameKeys<typeof AGENT_ENGINE_FNS[number],  TransportFirstKeys<typeof agentEngine>>>,
   Expect<AssertSameKeys<typeof AGENT_SKILLS_FNS[number],  TransportFirstKeys<typeof agentSkills>>>,
   Expect<AssertSameKeys<typeof MEMORY_FNS[number],        TransportFirstKeys<typeof memory>>>,
-  Expect<AssertSameKeys<typeof CONNECTORS_FNS[number],    TransportFirstKeys<typeof connectors>>>,
+  Expect<AssertSameKeys<typeof DATASOURCES_FNS[number],    TransportFirstKeys<typeof datasources>>>,
   Expect<AssertSameKeys<typeof CREDENTIALS_FNS[number],   TransportFirstKeys<typeof credentials>>>,
   Expect<AssertSameKeys<typeof AUTH_FNS[number],          TransportFirstKeys<typeof auth>>>,
   Expect<AssertSameKeys<typeof SETUP_FNS[number],         TransportFirstKeys<typeof setup>>>,
@@ -231,8 +233,8 @@ export interface KymaClient {
   /** Memory namespace — overview, hybrid recall, settings. */
   readonly memory: BoundModule<typeof memory, typeof MEMORY_FNS>;
 
-  /** Connectors namespace — manage data connectors. */
-  readonly connectors: BoundModule<typeof connectors, typeof CONNECTORS_FNS>;
+  /** Data sources namespace — manage data sources. */
+  readonly datasources: BoundModule<typeof datasources, typeof DATASOURCES_FNS>;
 
   /** Credentials namespace — secret store for PATs, OAuth2 tokens, etc. */
   readonly credentials: BoundModule<typeof credentials, typeof CREDENTIALS_FNS>;
@@ -281,7 +283,7 @@ function fromTransport(t: KymaTransport): KymaClient {
       ...bind(t, agentSkills, AGENT_SKILLS_FNS),
     },
     memory: bind(t, memory, MEMORY_FNS),
-    connectors: bind(t, connectors, CONNECTORS_FNS),
+    datasources: bind(t, datasources, DATASOURCES_FNS),
     credentials: bind(t, credentials, CREDENTIALS_FNS),
     auth: bind(t, auth, AUTH_FNS),
     setup: bind(t, setup, SETUP_FNS),

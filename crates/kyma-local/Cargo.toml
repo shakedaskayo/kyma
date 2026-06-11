@@ -25,6 +25,9 @@ kyma-ingest-rest.workspace = true
 kyma-ingest-core.workspace = true
 tokio.workspace = true
 axum.workspace = true
+# Node provenance for the local watcher status (same version
+# kyma-datasources pins for its node_identity helper).
+hostname = "0.4"
 reqwest.workspace = true
 serde_json.workspace = true
 chrono.workspace = true

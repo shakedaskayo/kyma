@@ -195,7 +195,7 @@ const STAT_CARDS: { key: keyof RunStats; label: string; icon: LucideIcon }[] = [
   { key: "importance_rescored", label: "Rescored", icon: Star },
   { key: "judgements", label: "Judgements", icon: Scale },
   { key: "entities_linked", label: "Linked", icon: Link2 },
-  { key: "connector_reads", label: "Reads", icon: Cloud },
+  { key: "data_source_reads", label: "Reads", icon: Cloud },
   { key: "tool_calls", label: "Tool calls", icon: Wrench },
 ];
 

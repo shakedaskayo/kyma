@@ -24,7 +24,7 @@ maps and arrays are first-class.
 Anything that's structurally not a single column:
 
 - OTLP resource attributes — a map of arbitrary keys per log line.
-- Mongo documents synced via the connector framework. Top-level fields
+- Mongo documents synced via the data source framework. Top-level fields
   flatten to dotted columns up to `flatten_depth`; deeper nesting and
   polymorphic fields land in `dynamic`.
 - Postgres `jsonb` columns — the entire document as one `dynamic` value.
@@ -84,7 +84,7 @@ kyma-cli alter-table otel_logs add-column \
 ```
 
 After promotion, new writes go to the typed column; old data stays in
-`dynamic`. Reads union the two via `coalesce()`. Connectors in sync
+`dynamic`. Reads union the two via `coalesce()`. Data sources in sync
 mode do this promotion automatically.
 
 ## The `vector(N)` column

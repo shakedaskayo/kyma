@@ -2,7 +2,7 @@
 // runs (`/v1/agent/memory/dreaming/*`), the worker registry (`/v1/workers`), and
 // the agent-run trace drilldown (`/v1/agent/runs/:id`). JSON in/out.
 //
-// Mirrors the per-module fetch-helper convention of `sdk/connectors.ts`:
+// Mirrors the per-module fetch-helper convention of `sdk/datasources.ts`:
 // `base()` trims the trailing slash, `headers()` carries the bearer + x-database,
 // `handleResponse` / `handleEmpty` normalize the error surface.
 
@@ -20,7 +20,7 @@ export interface RunStats {
   importance_rescored: number;
   judgements: number;
   entities_linked: number;
-  connector_reads: number;
+  data_source_reads: number;
   tool_calls: number;
   summary: string;
 }

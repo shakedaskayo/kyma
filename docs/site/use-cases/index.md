@@ -71,7 +71,7 @@ otel_logs | where _timestamp > ago(15m) and severity_text == "ERROR"
 ### [Ask your whole stack in plain English](/use-cases/ask-your-stack)
 
 "Why is checkout slow today?" → the agent turns it into KQL/SQL across logs, traces,
-connectors, and your operational databases, and streams the answer.
+data sources, and your operational databases, and streams the answer.
 
 ```bash
 kyma query "p99 latency on /api/checkout in the last hour, by version"
@@ -100,13 +100,13 @@ context_edges | graph-traverse source "cus_42" from src to dst max-hops 3
 
 <div class="feature-card">
 
-### [Turn your repo into a queryable graph](/connectors/github)
+### [Turn your repo into a queryable graph](/data-sources/github)
 
 Connect GitHub and the agent traverses code, PRs, issues, and people — and your memories
 link to the real files and services they're about.
 
 ```bash
-kyma connector add github your-org/your-repo --start
+kyma datasource add github your-org/your-repo --start
 ```
 
 </div>

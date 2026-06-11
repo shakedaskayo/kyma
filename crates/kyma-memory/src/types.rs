@@ -127,6 +127,17 @@ impl CreateMemory {
     }
 }
 
+/// One row of the memory provenance summary: how many latest-version,
+/// non-archived memories were formed by `source` in `realm`. `source` is
+/// `provenance.source` (e.g. "claude-code", "dreaming"); memories without a
+/// provenance source are reported as `"manual"`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceSummary {
+    pub source: String,
+    pub realm: String,
+    pub count: i64,
+}
+
 /// Filters for recall / listing.
 #[derive(Debug, Clone, Default)]
 pub struct RecallFilter {

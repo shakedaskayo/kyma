@@ -106,8 +106,8 @@ export interface DreamingSettings {
   realm_scope: string[];
   max_tool_calls: number;
   wall_clock_secs: number;
-  connector_read_budget: number;
-  connector_read_max_bytes: number;
+  data_source_read_budget: number;
+  data_source_read_max_bytes: number;
   mutation_cap: number;
 }
 
@@ -175,4 +175,24 @@ export async function putMemorySettings(
     body: JSON.stringify(s),
   });
   if (!res.ok) throw await errorFromResponse(res);
+}
+
+// ── provenance summary (GET /v1/agent/memory/source-summary) ─────────────────
+
+/** Count of non-archived memories formed by `source` (e.g. "claude-code",
+ * "dreaming"; no provenance source = "manual") in `realm`. Powers the Data
+ * Sources "Memories" tab. */
+export interface MemorySourceSummary {
+  source: string;
+  realm: string;
+  count: number;
+}
+
+export async function memorySourceSummary(
+  t: KymaTransport,
+): Promise<MemorySourceSummary[]> {
+  const body = await handleResponse<{ items: MemorySourceSummary[] }>(
+    await t.request("/v1/agent/memory/source-summary"),
+  );
+  return body.items ?? [];
 }

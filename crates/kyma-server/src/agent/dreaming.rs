@@ -2,7 +2,7 @@
 //!
 //! A dreaming run is an autonomous agent run (the configured engine: adk
 //! providers or the Claude CLI) that reviews recent raw material, fills gaps
-//! with READ-ONLY connector access, and housekeeps the memory store:
+//! with READ-ONLY data source access, and housekeeps the memory store:
 //! re-scores importance, builds relationships, dedups/merges, and archives
 //! stale memories — all bi-temporal, never hard-deleting.
 //!
@@ -32,8 +32,8 @@ use uuid::Uuid;
 
 use kyma_core::tenant::TenantId;
 
-use super::connector_tools::{
-    tool_connector_read, tool_list_connectors, ConnectorReadBudget, ConnectorToolCtx,
+use super::datasource_tools::{
+    tool_data_source_read, tool_list_data_sources, DataSourceReadBudget, DataSourceToolCtx,
 };
 use super::dreaming_local::LocalDreamingStore;
 use super::engine::{claude_cli, EngineKind};
@@ -69,7 +69,7 @@ pub struct DreamingRequest {
     /// `full` | `housekeeping_only` | `sources`; falls back to settings.
     #[serde(default)]
     pub mode: Option<String>,
-    /// Optional focus hint folded into the prompt (a realm, a connector, …).
+    /// Optional focus hint folded into the prompt (a realm, a data source, …).
     #[serde(default)]
     pub focus: Option<String>,
     /// The fabric job id (for run linkage); `None` when run inline.
@@ -89,7 +89,7 @@ pub struct DreamingOutcome {
     pub importance_rescored: u32,
     pub judgements: u32,
     pub entities_linked: u32,
-    pub connector_reads: u32,
+    pub data_source_reads: u32,
     pub tool_calls: u32,
     pub summary: String,
 }
@@ -158,7 +158,7 @@ impl Activity {
             "memories_merged": outcome.memories_merged,
             "memories_archived": outcome.memories_archived,
             "entities_linked": outcome.entities_linked,
-            "connector_reads": outcome.connector_reads,
+            "data_source_reads": outcome.data_source_reads,
             "tool_calls": outcome.tool_calls,
         });
     }
@@ -283,14 +283,14 @@ from your nodes' coding agents that are already in the memory store.
     if gap_fill {
         p.push_str(&format!(
             "
-PHASE 2 — GAP-FILL (budget: {} connector reads, READ-ONLY):
-- When a memory references something with missing or stale context, use `list_connectors` \
-then `connector_read` to fetch fresh context from the source (a GitHub README/file/issue, a \
+PHASE 2 — GAP-FILL (budget: {} data source reads, READ-ONLY):
+- When a memory references something with missing or stale context, use `list_data_sources` \
+then `data_source_read` to fetch fresh context from the source (a GitHub README/file/issue, a \
 SELECT against a connected Postgres).
 - Save what you learn with save_memory and wire it with link_memory_to_entity / ingest_entity.
 - Do not exceed the budget; if a read fails, move on.
 ",
-            s.connector_read_budget
+            s.data_source_read_budget
         ));
     }
     if housekeeping {
@@ -298,14 +298,14 @@ SELECT against a connected Postgres).
             "
 PHASE 3 — GRAPH WIRING & ENTITY MAINTENANCE (the core of dreaming):
 The context graph has three layers you must keep fully wired together:
-(a) MEMORIES (the memory graph), (b) DETERMINISTIC RESOURCES — connector-ingested nodes \
+(a) MEMORIES (the memory graph), (b) DETERMINISTIC RESOURCES — data-source-ingested nodes \
 (repos, files, issues, tables, services) living in their own database/graph namespaces, and \
 (c) LOGICAL ENTITIES — virtual nodes you create for things that exist conceptually (a service, \
 a person, a project, an architecture concept) but have no single deterministic row.
 - For each significant memory, find what it is ABOUT: use find_references_to(value) and \
-graph_traverse over the connector graphs to locate the deterministic node(s), then \
+graph_traverse over the data source graphs to locate the deterministic node(s), then \
 link_memory_to_entity(memory_id, target_node_id, target_namespace) — the namespace is the \
-resource's `database/graph` (e.g. a github repo node lives in its connector's graph). A memory \
+resource's `database/graph` (e.g. a github repo node lives in its data source's graph). A memory \
 without edges is a dead memory.
 - CREATE logical entities with ingest_entity for recurring concepts that deserve a node: \
 prefer `type` as `provider::resource` (e.g. `github::repository`, `kubernetes::pod`) or a \
@@ -334,7 +334,7 @@ why (cite memory ids), and anything that needs human attention. This is your las
 
 RULES:
 - NEVER hard-delete; archival and superseding are the only removal paths.
-- Connector access is READ-ONLY; do not attempt writes against sources.
+- Data source access is READ-ONLY; do not attempt writes against sources.
 - Prefer a few high-value mutations over many speculative ones.
 - If budgets run out, proceed to the summary.
 ",
@@ -366,10 +366,10 @@ Follow the `kyma-dreaming` skill for the full procedure — it is available in y
 Run context:\n\
 - Mode: {mode}\n\
 - Scope: {scope}\n\
-- Connector-read budget (READ-ONLY): {}\n\
+- Data-source-read budget (READ-ONLY): {}\n\
 - Mutation cap: {}{focus_line}\n\n\
 Begin the dreaming pass now; end with the run summary as your final message.",
-        s.connector_read_budget, s.mutation_cap
+        s.data_source_read_budget, s.mutation_cap
     )
 }
 
@@ -843,12 +843,12 @@ async fn observe_tool_call(
             outcome.entities_linked += 1;
             ("🔗", "Linking memory ↔ entity".to_string())
         }
-        "connector_read" => {
-            outcome.connector_reads += 1;
+        "data_source_read" => {
+            outcome.data_source_reads += 1;
             let op = args.get("operation").and_then(|v| v.as_str()).unwrap_or("read");
-            ("🔌", format!("Connector read: {op}"))
+            ("🔌", format!("Data source read: {op}"))
         }
-        "list_connectors" => ("🔌", "Listing connectors".to_string()),
+        "list_data_sources" => ("🔌", "Listing data sources".to_string()),
         "memory_search" | "recall_memory" | "list_memories" => {
             let q: String = args
                 .get("query")
@@ -903,11 +903,11 @@ async fn run_via_adk(
         hitl,
     };
     let mutation_budget = Arc::new(MutationBudget::new(settings.mutation_cap));
-    let read_budget = Arc::new(ConnectorReadBudget::new(
-        settings.connector_read_budget,
-        settings.connector_read_max_bytes,
+    let read_budget = Arc::new(DataSourceReadBudget::new(
+        settings.data_source_read_budget,
+        settings.data_source_read_max_bytes,
     ));
-    let connector_ctx = ConnectorToolCtx {
+    let data_source_ctx = DataSourceToolCtx {
         pool: state.pool.clone(),
         credentials: state.credentials.clone(),
         tenant: state.tenant,
@@ -915,13 +915,13 @@ async fn run_via_adk(
     };
 
     // Base toolset (same as the interactive agent), with the memory-mutating
-    // tools wrapped in the run's mutation budget, plus the connector read
+    // tools wrapped in the run's mutation budget, plus the data source read
     // tools for gap-fill.
     let mut builder = LlmAgentBuilder::new(super::runner::AGENT_NAME)
         .description("Kyma dreaming agent — autonomous memory housekeeping.")
         .instruction(system_prompt)
         .model(llm);
-    for tool in dreaming_toolset(&shared, connector_ctx, &mutation_budget, mode) {
+    for tool in dreaming_toolset(&shared, data_source_ctx, &mutation_budget, mode) {
         builder = builder.tool(tool);
     }
     let agent: Arc<dyn adk_rust::Agent> = Arc::new(
@@ -1025,10 +1025,10 @@ async fn run_via_adk(
 }
 
 /// The dreaming toolset: every interactive tool, with mutating memory tools
-/// wrapped in the run's [`MutationBudget`], plus the connector read tools.
+/// wrapped in the run's [`MutationBudget`], plus the data source read tools.
 fn dreaming_toolset(
     shared: &super::tools::SharedToolCtx,
-    connector_ctx: ConnectorToolCtx,
+    data_source_ctx: DataSourceToolCtx,
     mutation_budget: &Arc<MutationBudget>,
     mode: &str,
 ) -> Vec<Arc<dyn Tool>> {
@@ -1067,8 +1067,8 @@ fn dreaming_toolset(
     }
     // Gap-fill tools only when the mode allows them (the prompt matches).
     if mode != "housekeeping_only" {
-        tools.push(tool_list_connectors(connector_ctx.clone()));
-        tools.push(tool_connector_read(connector_ctx));
+        tools.push(tool_list_data_sources(data_source_ctx.clone()));
+        tools.push(tool_data_source_read(data_source_ctx));
     }
     tools
 }
@@ -1687,7 +1687,7 @@ mod trigger_tests {
         assert!(p.contains("Mode: housekeeping"));
         assert!(p.contains("proj"), "carries realm scope");
         assert!(p.contains("auth refactor"), "carries focus");
-        assert!(p.contains("Connector-read budget"));
+        assert!(p.contains("Data-source-read budget"));
         assert!(p.contains("Mutation cap"));
         // The thin trigger must NOT inline the full phase procedure — that lives
         // in the skill now.

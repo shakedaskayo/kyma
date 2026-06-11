@@ -76,6 +76,10 @@ pub fn router(state: AgentState) -> axum::Router {
             get(get_enabled_skills).put(put_enabled_skills),
         )
         .route("/memory/overview", get(super::memory::overview_handler))
+        .route(
+            "/memory/source-summary",
+            get(super::memory::source_summary_handler),
+        )
         .route("/memory/query", post(memory_query_handler))
         .route(
             "/memory/settings",

@@ -1,6 +1,6 @@
 ---
 title: Environment variables
-description: Every KYMA_* environment variable the binary reads, grouped by area — catalog, storage, HTTP, gRPC, OTLP, auth, staging, compaction, connectors, agent, local engine, node daemon, memory, cloud sync.
+description: Every KYMA_* environment variable the binary reads, grouped by area — catalog, storage, HTTP, gRPC, OTLP, auth, staging, compaction, data sources, agent, local engine, node daemon, memory, cloud sync.
 ---
 
 # Environment variables
@@ -166,22 +166,22 @@ Keycloak, etc.) and maps claims to kyma roles.
 | `KYMA_KAFKA_BATCH_SIZE`       | S    | `500`            | Per-batch row count.                                                     |
 | `KYMA_KAFKA_BATCH_TIMEOUT_MS` | S    | `500`            | Per-batch wall-clock timeout.                                            |
 
-## Connectors
+## Data sources
 
 | Name                       | Side | Default | Purpose                                                                                              |
 | -------------------------- | ---- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `KYMA_CONNECTOR_WORKERS`   | S    | `4`     | Number of connector-runner tasks. Also the fallback for `KYMA_FABRIC_WORKERS` when unset.            |
+| `KYMA_DATA_SOURCE_WORKERS`   | S    | `4`     | Number of data-source-runner tasks. Also the fallback for `KYMA_FABRIC_WORKERS` when unset.            |
 | `KYMA_DISCOVER_MAX_SOURCES` | S   | _bin default_ | Cap on sources returned by the discovery endpoint.                                             |
-| `KYMA_GH_PAT`              | S    | _unset_ | GitHub personal-access token injected into `git clone` credentials for private-repo connectors.      |
+| `KYMA_GH_PAT`              | S    | _unset_ | GitHub personal-access token injected into `git clone` credentials for private-repo data sources.      |
 
-Per-connector secrets are resolved through the `EnvSecretStore` —
+Per-data-source secrets are resolved through the `EnvSecretStore` —
 config values written as `$env:VAR_NAME` resolve to whatever
 `std::env::var("VAR_NAME")` returns at fetch time.
 
 ## Credentials & OAuth
 
 The typed credentials store (PATs, OAuth tokens, connection URLs) is encrypted
-at rest; the [OAuth connect flow](/connectors/oauth) needs a public origin and a
+at rest; the [OAuth connect flow](/data-sources/oauth) needs a public origin and a
 client app per provider.
 
 | Name                          | Side | Default                 | Purpose                                                                                              |
@@ -198,7 +198,7 @@ The server-side job dispatch layer that routes work to registered worker nodes.
 
 | Name                        | Side | Default | Purpose                                                                             |
 | --------------------------- | ---- | ------- | ----------------------------------------------------------------------------------- |
-| `KYMA_FABRIC_WORKERS`       | S    | `4`     | Goroutine-pool size for the fabric dispatcher. Falls back to `KYMA_CONNECTOR_WORKERS`. |
+| `KYMA_FABRIC_WORKERS`       | S    | `4`     | Goroutine-pool size for the fabric dispatcher. Falls back to `KYMA_DATA_SOURCE_WORKERS`. |
 | `KYMA_FABRIC_LEASE_SECS`    | S    | `300`   | How long a job lease is held before the fabric considers it expired (5 minutes).    |
 | `KYMA_FABRIC_SWEEP_SECS`    | S    | `30`    | How often the fabric sweeps for expired leases.                                     |
 | `KYMA_FABRIC_OFFLINE_SECS`  | S    | `90`    | Seconds without a heartbeat before a node is marked offline.                        |

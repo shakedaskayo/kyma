@@ -479,10 +479,10 @@ function DataStep({ endpoint, onNext }: { endpoint: string; onNext: () => void }
           <div className="mb-1.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-[#dfdfd6]/40">
             <Terminal className="h-3.5 w-3.5" /> Connect a source from the CLI
           </div>
-          <CopyRow text="kyma connector add github <owner>/<repo> --start" />
+          <CopyRow text="kyma datasource add github <owner>/<repo> --start" />
           <p className="mt-1.5 text-[12px] leading-snug text-[#dfdfd6]/45">
             GitHub, GitLab, Bitbucket, Postgres, Prometheus &amp; more — see{" "}
-            <span className="font-mono text-[#dfdfd6]/70">kyma connector --help</span>.
+            <span className="font-mono text-[#dfdfd6]/70">kyma datasource --help</span>.
           </p>
         </div>
 

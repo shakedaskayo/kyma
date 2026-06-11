@@ -2,7 +2,7 @@ import type { Capabilities } from "@kyma-ai/client";
 
 export const CAPABILITIES_FIXTURE: Capabilities = {
   mode: "server",
-  connectors: true,
+  data_sources: true,
   credentials: true,
   oauth: true,
   saved_views: true,

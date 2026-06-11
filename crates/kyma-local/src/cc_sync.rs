@@ -90,6 +90,51 @@ pub(crate) struct CcSyncReport {
     pub projects: Vec<ProjectSyncReport>,
 }
 
+impl CcSyncReport {
+    /// Rollup as a `last_scan` JSON value in the control plane's `ScanStats`
+    /// shape (`kyma_datasources::watchers`): `{seen, processed, errors,
+    /// duration_ms, at, detail}` with `detail.realms` carrying per-project
+    /// counts. Built manually rather than via Serialize: `ProjectSyncReport`
+    /// embeds `PathBuf`s (`dir`, `project_path`) that don't belong on the
+    /// wire, and the totals here aren't fields of the struct anyway.
+    ///
+    /// `errors` is always 0: per-project failures are logged and dropped
+    /// inside `run_once` (one broken project must not block the rest), so
+    /// nothing reaches this rollup; a whole-pass failure never produces a
+    /// report at all.
+    pub(crate) fn last_scan_value(
+        &self,
+        duration_ms: u64,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Value {
+        let (mut seen, mut processed) = (0usize, 0usize);
+        let realms: Vec<Value> = self
+            .projects
+            .iter()
+            .map(|p| {
+                seen += p.upserted + p.skipped + p.user_edited;
+                processed += p.upserted + p.user_edited;
+                json!({
+                    "realm": p.realm,
+                    "upserted": p.upserted,
+                    "skipped": p.skipped,
+                    "user_edited": p.user_edited,
+                    "edges_added": p.edges_added,
+                    "archived": p.archived,
+                })
+            })
+            .collect();
+        json!({
+            "seen": seen,
+            "processed": processed,
+            "errors": 0,
+            "duration_ms": duration_ms,
+            "at": at.to_rfc3339(),
+            "detail": { "realms": realms },
+        })
+    }
+}
+
 /// Scan every project memory dir under `opts.projects_dir` and sync each
 /// memory file into the engine.
 pub(crate) async fn run_once(

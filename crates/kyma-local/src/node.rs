@@ -15,7 +15,7 @@
 //! one registry entry; only Claude Code has a working ingestion pipeline today.
 //!
 //! Low-impact by default: a dev-laptop daemon accepts ONLY `source_sync`
-//! (one concurrent job). Heavy kinds (dreaming, connector syncs) run on the
+//! (one concurrent job). Heavy kinds (dreaming, data source syncs) run on the
 //! server's embedded worker unless this node opts in.
 
 use anyhow::{Context, Result};
@@ -343,7 +343,7 @@ pub async fn run_node(cfg: NodeConfig) -> Result<()> {
     if accepts_source_sync {
         executors.register(Arc::new(SourceSyncExecutor));
     }
-    // NOTE: remote `dreaming` / `connector_sync` execution lands in a
+    // NOTE: remote `dreaming` / `datasource_sync` execution lands in a
     // follow-up (needs control-plane-side trace materialization + the HTTP
     // write surface). Accepting them today claims jobs this daemon cannot
     // run, so refuse early.

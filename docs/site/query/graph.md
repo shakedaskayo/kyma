@@ -19,7 +19,7 @@ to configure. kyma derives it from the catalog at query time:
 
 - Every table in a database becomes a node.
 - Inferred `REFERENCES` edges connect tables whose columns share value domains
-  (foreign-key relationships, connector-produced `*_id` columns, and so on).
+  (foreign-key relationships, data-source-produced `*_id` columns, and so on).
 - Column details are available behind a depth toggle in the web UI.
 
 The **realm** of a schema-graph node is the database name, so a multi-database
@@ -34,7 +34,7 @@ the schema graph to keep the view clean.
 
 A stored graph is a property-graph you register against two tables — one for
 nodes, one for edges. Once registered, kyma reads those tables on every graph
-query, deduplicating append-only connector rows to one canonical node per id.
+query, deduplicating append-only data source rows to one canonical node per id.
 
 ### Register a graph
 
@@ -163,9 +163,9 @@ that populate and maintain the memory graph.
 
 Artifacts — CI job logs, object-store blobs, agent-contributed files, filesystem-watch snapshots — are first-class graph nodes labeled `Artifact`.
 
-### CI logs (GitHub connector)
+### CI logs (GitHub data source)
 
-Every GitHub CI job log captured by the [GitHub connector](/connectors/github) produces an `Artifact` node in the `github` graph, linked from its `Job` node by a `HAS_ARTIFACT` edge. Node properties:
+Every GitHub CI job log captured by the [GitHub data source](/data-sources/github) produces an `Artifact` node in the `github` graph, linked from its `Job` node by a `HAS_ARTIFACT` edge. Node properties:
 
 | Property | Value |
 | --- | --- |
@@ -179,7 +179,7 @@ Every GitHub CI job log captured by the [GitHub connector](/connectors/github) p
 
 **Forward-only relabel note:** CI logs captured before this change keep their old `LogFile` label in the append-only tables; only newly captured logs carry the `Artifact` label. Re-capture a job to get the new label.
 
-**Redaction note:** The GitHub connector redacts secrets from CI log text before writing the blob to object-store (`kyma-redact` runs at capture time; raw log text is never persisted). What you retrieve from the viewer is already redacted.
+**Redaction note:** The GitHub data source redacts secrets from CI log text before writing the blob to object-store (`kyma-redact` runs at capture time; raw log text is never persisted). What you retrieve from the viewer is already redacted.
 
 ### Other artifact sources (server / Postgres mode)
 

@@ -15,10 +15,10 @@ use kyma_compaction::{
     ArtifactRetentionWorker, CompactionScheduler, CompactionWorker, PhysicalDeleteWorker,
     RetentionSweeper,
 };
-use kyma_connectors::prometheus::PromConnector;
-use kyma_connectors::registry::ConnectorRegistry;
-use kyma_connectors::scheduler::ConnectorScheduler;
-use kyma_connectors::secrets::EnvSecretStore;
+use kyma_datasources::prometheus::PromDataSource;
+use kyma_datasources::registry::DataSourceRegistry;
+use kyma_datasources::scheduler::DataSourceScheduler;
+use kyma_datasources::secrets::EnvSecretStore;
 use kyma_core::catalog::GraphSpec;
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use kyma_core::segment_format::SegmentFormat;
@@ -35,7 +35,7 @@ use kyma_ingest_rest::IngestState;
 use kyma_server::auth::{
     require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role,
 };
-use kyma_server::{ConnectorAdminState, QueryState};
+use kyma_server::{DataSourceAdminState, QueryState};
 use kyma_storage::{build_object_store, config_from_env};
 use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer as OtlpLogsServer;
 use std::net::SocketAddr;
@@ -366,8 +366,8 @@ async fn main() -> Result<()> {
         require_role_middleware,
     ));
     // System-wide encrypted credentials store + engine-preference store.
-    // Built here (not later) because AgentState and the connector runner both
-    // need them — see /v1/agent/* and /v1/connectors/*. Key loaded from
+    // Built here (not later) because AgentState and the data source runner both
+    // need them — see /v1/agent/* and /v1/data sources/*. Key loaded from
     // KYMA_SECRET_KEY (sha256-stretched if shorter than 32 bytes).
     let crypto = std::sync::Arc::new(
         kyma_core::crypto::Crypto::from_env()
@@ -497,22 +497,22 @@ async fn main() -> Result<()> {
         memory: memory.clone(),
         hitl: None,
     };
-    // Read-only connector access over MCP: lets MCP-driven agents (notably
+    // Read-only data source access over MCP: lets MCP-driven agents (notably
     // Claude CLI dreaming runs) fill memory gaps from configured sources.
     // Budget here is generous server-lifetime hygiene; per-run budgets are
     // enforced on the adk path and by wall-clock on the CLI path.
-    let mcp_connector_ctx = kyma_server::agent::connector_tools::ConnectorToolCtx {
+    let mcp_data_source_ctx = kyma_server::agent::datasource_tools::DataSourceToolCtx {
         pool: Some(pg_pool.clone()),
         credentials: cred_store.clone(),
         tenant: kyma_core::tenant::DEFAULT_TENANT,
         budget: Arc::new(
-            kyma_server::agent::connector_tools::ConnectorReadBudget::new(10_000, u64::MAX),
+            kyma_server::agent::datasource_tools::DataSourceReadBudget::new(10_000, u64::MAX),
         ),
     };
     let mcp_state = kyma_mcp::McpState {
         dispatch: kyma_mcp::ToolDispatch::new(mcp_shared)
             .with_artifact_store(store.clone())
-            .with_connector_tools(mcp_connector_ctx),
+            .with_datasource_tools(mcp_data_source_ctx),
         server_info: kyma_mcp::ServerInfo {
             name: "kyma".into(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -531,34 +531,34 @@ async fn main() -> Result<()> {
             },
             require_role_middleware,
         ));
-    // Connector registry + row-sink.
-    let mut conn_reg = ConnectorRegistry::new();
-    conn_reg.register(Arc::new(PromConnector));
-    conn_reg.register(Arc::new(kyma_connectors::postgres::PgIntrospectConnector));
-    conn_reg.register(Arc::new(kyma_connectors::s3::S3Connector));
-    conn_reg.register(Arc::new(kyma_connectors::gitlab::GitlabConnector));
-    conn_reg.register(Arc::new(kyma_connectors::bitbucket::BitbucketConnector));
+    // DataSource registry + row-sink.
+    let mut conn_reg = DataSourceRegistry::new();
+    conn_reg.register(Arc::new(PromDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::postgres::PgIntrospectDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::s3::S3DataSource));
+    conn_reg.register(Arc::new(kyma_datasources::gitlab::GitlabDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::bitbucket::BitbucketDataSource));
     // GitHub registers unconditionally (metadata + repo graph). The deep code
-    // graph inside it is feature-gated; the connector itself is always present.
-    conn_reg.register(Arc::new(kyma_connectors::github::GithubConnector));
-    // OAuth2 SaaS connectors (token via the connect flow → encrypted credential).
-    conn_reg.register(Arc::new(kyma_connectors::notion::NotionConnector));
-    conn_reg.register(Arc::new(kyma_connectors::googledrive::GdriveConnector));
-    conn_reg.register(Arc::new(kyma_connectors::gmail::GmailConnector));
-    conn_reg.register(Arc::new(kyma_connectors::slack::SlackConnector));
-    conn_reg.register(Arc::new(kyma_connectors::jira::JiraConnector));
-    conn_reg.register(Arc::new(kyma_connectors::confluence::ConfluenceConnector));
-    conn_reg.register(Arc::new(kyma_connectors::msfabric::MsFabricConnector));
+    // graph inside it is feature-gated; the data source itself is always present.
+    conn_reg.register(Arc::new(kyma_datasources::github::GithubDataSource));
+    // OAuth2 SaaS data sources (token via the connect flow → encrypted credential).
+    conn_reg.register(Arc::new(kyma_datasources::notion::NotionDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::googledrive::GdriveDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::gmail::GmailDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::slack::SlackDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::jira::JiraDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::confluence::ConfluenceDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::msfabric::MsFabricDataSource));
     let conn_registry = Arc::new(conn_reg);
 
-    // RowSink: bridges connector JSON rows → arrow coercion → WritePath.
+    // RowSink: bridges data source JSON rows → arrow coercion → WritePath.
     //
     // The sink auto-creates the target table (ensure_table) and promotes
     // unknown JSON properties to columns (evolve_schema_for_records) before
     // coercing + ingesting. Both helpers are no-ops on the happy path when the
     // table already exists with the right shape, so the legacy Prometheus path
     // is unaffected.
-    let conn_sink: kyma_connectors::runner::RowSink = {
+    let conn_sink: kyma_datasources::runner::RowSink = {
         let catalog_for_sink = catalog.clone();
         let write_path_for_sink = write_path.clone();
         Arc::new(
@@ -577,7 +577,7 @@ async fn main() -> Result<()> {
                         .await
                         .map_err(|e| anyhow::anyhow!("evolve_schema: {e}"))?;
                     let batches =
-                        kyma_connectors::arrow_coerce::rows_to_batches(&table.schema, rows)
+                        kyma_datasources::arrow_coerce::rows_to_batches(&table.schema, rows)
                             .map_err(|e| anyhow::anyhow!("arrow coerce: {e}"))?;
                     write_path
                         .ingest_with_idempotency(&db, &table, batches, idem.as_deref())
@@ -591,9 +591,9 @@ async fn main() -> Result<()> {
 
     // GraphRegisterFn: registers (or idempotently re-registers) a
     // property-graph binding in the catalog after multi-table ingest.
-    let graph_register: kyma_connectors::runner::GraphRegisterFn = {
+    let graph_register: kyma_datasources::runner::GraphRegisterFn = {
         let catalog_for_graph = catalog.clone();
-        Arc::new(move |db: String, hint: kyma_connectors::GraphHint| {
+        Arc::new(move |db: String, hint: kyma_datasources::GraphHint| {
             let catalog = catalog_for_graph.clone();
             Box::pin(async move {
                 let spec =
@@ -621,7 +621,7 @@ async fn main() -> Result<()> {
 
     let health_router = kyma_server::health_router();
     let metrics_router = kyma_server::metrics::router();
-    let connector_admin_router = kyma_server::connector_admin_router(ConnectorAdminState {
+    let datasource_admin_router = kyma_server::datasource_admin_router(DataSourceAdminState {
         catalog: pg_catalog.clone(),
         registry: conn_registry.clone(),
     })
@@ -676,11 +676,11 @@ async fn main() -> Result<()> {
     );
     let oauth_callback_router = kyma_server::oauth_callback_router(oauth_state);
 
-    // GitHub connector — repos picker endpoint (Role::Write, behind auth).
+    // GitHub data source — repos picker endpoint (Role::Write, behind auth).
     let github_repos_router = {
-        let secrets: std::sync::Arc<dyn kyma_connectors::secrets::SecretStore> =
-            Arc::new(kyma_connectors::secrets::EnvSecretStore);
-        kyma_connectors::github::github_repos_router(secrets).layer(
+        let secrets: std::sync::Arc<dyn kyma_datasources::secrets::SecretStore> =
+            Arc::new(kyma_datasources::secrets::EnvSecretStore);
+        kyma_datasources::github::github_repos_router(secrets).layer(
             axum::middleware::from_fn_with_state(
                 AuthLayerState {
                     backend: backend.clone(),
@@ -800,7 +800,7 @@ async fn main() -> Result<()> {
         .merge(compact_write_router)
         .merge(health_router)
         .merge(metrics_router)
-        .merge(connector_admin_router)
+        .merge(datasource_admin_router)
         .merge(credentials_router)
         .merge(oauth_authed_router)
         .merge(oauth_callback_router)
@@ -1092,12 +1092,56 @@ async fn main() -> Result<()> {
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
     {
-        let watcher = FiledropWatcher::new(
+        let fd_config = FiledropConfig::from_env();
+        let mut watcher = FiledropWatcher::new(
             catalog.clone(),
             store.clone(),
             write_path.clone(),
-            FiledropConfig::from_env(),
+            fd_config.clone(),
         );
+        // Register in the watcher registry and heartbeat per scan via the
+        // scan hook. Best-effort: a registry failure must not prevent the
+        // watcher from running — warn and run unregistered.
+        let (host, node_id, user) = kyma_datasources::watchers::node_identity();
+        match kyma_datasources::watchers::WatcherRegistry::register(
+            pg_catalog.pool(),
+            "filedrop",
+            &host,
+            &node_id,
+            &user,
+            serde_json::json!({
+                "prefixes": fd_config.prefixes,
+                "poll_secs": fd_config.poll_interval.as_secs(),
+                "delete_after_ingest": fd_config.delete_after_ingest,
+            }),
+        )
+        .await
+        {
+            Ok(reg) => {
+                watcher = watcher.with_scan_hook(std::sync::Arc::new(move |scan| {
+                    // Capture timestamp synchronously so it reflects scan completion,
+                    // not whenever the executor picks up the task.
+                    let at = chrono::Utc::now();
+                    let reg = reg.clone();
+                    // one-shot UPDATE; completes fast, no retry
+                    tokio::spawn(async move {
+                        // FiledropScan → ScanStats: add registry-layer fields (at, detail)
+                        reg.heartbeat(Some(&kyma_datasources::watchers::ScanStats {
+                            seen: scan.seen,
+                            processed: scan.processed,
+                            errors: scan.errors,
+                            duration_ms: scan.duration_ms,
+                            at,
+                            detail: None,
+                        }))
+                        .await;
+                    });
+                }));
+            }
+            Err(e) => {
+                warn!(error = %e, "watcher registry unavailable; filedrop runs unregistered");
+            }
+        }
         let filedrop_rx = shutdown_tx.subscribe();
         info!("file-drop watcher enabled");
         Some(tokio::spawn(watcher.run(async move {
@@ -1122,8 +1166,8 @@ async fn main() -> Result<()> {
         None => None,
     };
 
-    // Connector scheduler — enqueues connector_sync jobs on the worker fabric.
-    let conn_sched = ConnectorScheduler::new(pg_catalog.clone());
+    // DataSource scheduler — enqueues datasource_sync jobs on the worker fabric.
+    let conn_sched = DataSourceScheduler::new(pg_catalog.clone());
     let conn_sched_rx = shutdown_tx.subscribe();
     let conn_sched_handle = tokio::spawn(conn_sched.run(async move {
         let mut rx = conn_sched_rx;
@@ -1134,15 +1178,15 @@ async fn main() -> Result<()> {
     // registers in the workers table (visible in GET /v1/workers next to any
     // remote daemons) and runs N job-runner loops claiming fabric jobs.
     let n_fabric_workers = std::env::var("KYMA_FABRIC_WORKERS")
-        .or_else(|_| std::env::var("KYMA_CONNECTOR_WORKERS"))
+        .or_else(|_| std::env::var("KYMA_DATA_SOURCE_WORKERS"))
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(4);
-    // Shared object-store artifact capability for connectors that persist
+    // Shared object-store artifact capability for data sources that persist
     // full-file blobs (e.g. GitHub Actions job logs) — threaded into the fabric
-    // connector executor via `tick_deps` below.
-    let artifact_store: std::sync::Arc<dyn kyma_connectors::artifacts::ArtifactStore> =
-        std::sync::Arc::new(kyma_connectors::artifacts::ObjectArtifactStore::new(
+    // data source executor via `tick_deps` below.
+    let artifact_store: std::sync::Arc<dyn kyma_datasources::artifacts::ArtifactStore> =
+        std::sync::Arc::new(kyma_datasources::artifacts::ObjectArtifactStore::new(
             store.clone(),
             pg_catalog.clone(),
         ));
@@ -1150,7 +1194,7 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(300);
-    let mut embedded_caps: Vec<String> = ["connector", "dreaming", "llm"]
+    let mut embedded_caps: Vec<String> = ["data_source", "dreaming", "llm"]
         .iter()
         .map(|s| s.to_string())
         .collect();
@@ -1180,8 +1224,8 @@ async fn main() -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("registering embedded worker: {e}"))?;
 
-    let tick_deps = kyma_connectors::runner::ConnectorTickDeps {
-        control: Arc::new(kyma_connectors::runner::PgConnectorControl::new(
+    let tick_deps = kyma_datasources::runner::DataSourceTickDeps {
+        control: Arc::new(kyma_datasources::runner::PgDataSourceControl::new(
             pg_pool.clone(),
         )),
         registry: conn_registry.clone(),
@@ -1189,7 +1233,7 @@ async fn main() -> Result<()> {
         graph_register: graph_register.clone(),
         secrets: Arc::new(EnvSecretStore),
         credentials: cred_store.clone(),
-        oauth: Some(kyma_connectors::oauth::OAuthRuntime {
+        oauth: Some(kyma_datasources::oauth::OAuthRuntime {
             pool: pg_pool.clone(),
             crypto: crypto.clone(),
         }),
@@ -1198,7 +1242,7 @@ async fn main() -> Result<()> {
     };
     let mut exec_registry = kyma_jobs::ExecutorRegistry::new();
     exec_registry.register(Arc::new(
-        kyma_jobs::connector_sync::ConnectorSyncExecutor::new(tick_deps),
+        kyma_jobs::datasource_sync::DataSourceSyncExecutor::new(tick_deps),
     ));
     exec_registry.register(Arc::new(DreamingExecutor {
         state: agent_state.clone(),
@@ -1266,7 +1310,7 @@ async fn main() -> Result<()> {
     info!(
         workers = n_fabric_workers,
         worker_id = %embedded_worker_id,
-        "connector scheduler + embedded fabric worker started"
+        "data source scheduler + embedded fabric worker started"
     );
 
     // Dreaming scheduler — enqueues agentic memory-housekeeping jobs on the

@@ -6,7 +6,7 @@ description: Wire any coding agent to kyma's context engine — durable memory +
 # Connect your agent
 
 kyma is a **context engine**: one place your coding agent recalls durable, graph-aware
-**memory**, queries **live data** (logs, traces, code, connectors) in KQL/SQL, and walks
+**memory**, queries **live data** (logs, traces, code, data sources) in KQL/SQL, and walks
 the **graph** that links them. Getting an agent connected takes one command.
 
 MCP is the cross-agent standard — but it's **pull-only** (the agent only sees what it
@@ -92,7 +92,7 @@ The same context engine runs two ways, and memory stays coherent across them:
 - **`kyma` (local mode)** — one binary per developer: stdio MCP (`kyma mcp`), an optional
   local web UI (`kyma serve`), and on-demand ingest. Zero infra.
 - **kyma server** — the team control plane: Postgres + object store, scheduled
-  **connectors**, background consolidation, the full web app.
+  **data sources**, background consolidation, the full web app.
 
 Keep a machine in sync with the control plane (push local changes + pull remote ones,
 incrementally):

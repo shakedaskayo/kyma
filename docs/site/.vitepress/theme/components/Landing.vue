@@ -551,8 +551,8 @@ otel_logs
           <h3>Query</h3>
           <p>KQL, SQL, and the agent endpoint. Arrow Flight gRPC for zero-copy streams.</p>
         </a>
-        <a class="kyma-section-card" :href="withBase('/connectors/')">
-          <h3>Connectors</h3>
+        <a class="kyma-section-card" :href="withBase('/data-sources/')">
+          <h3>Data Sources</h3>
           <p>Postgres, MySQL, MongoDB. Federate live, or sync via CDC.</p>
         </a>
         <a class="kyma-section-card" :href="withBase('/architecture/architecture')">

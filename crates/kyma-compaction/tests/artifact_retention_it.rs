@@ -26,7 +26,7 @@ fn rec(tenant: TenantId, path: &str, expires_at: chrono::DateTime<Utc>) -> Artif
         source: "github".into(),
         artifact_class: "log".into(),
         table_ref: None,
-        connector_id: None,
+        data_source_id: None,
         size_bytes: 3,
         sha256: None,
         created_at: None,

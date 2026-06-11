@@ -30,7 +30,7 @@ function CapWrapper({
 
 const BASE_CAPS = {
   mode: "server",
-  connectors: true,
+  data_sources: true,
   credentials: true,
   oauth: true,
   saved_views: true,
@@ -50,7 +50,7 @@ describe("CapabilityGate", () => {
     );
     render(
       <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
-        <CapabilityGate capability="connectors">
+        <CapabilityGate capability="data_sources">
           <div data-testid="content">content</div>
         </CapabilityGate>
       </KymaProvider>,
@@ -65,7 +65,7 @@ describe("CapabilityGate", () => {
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
     render(
       <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
-        <CapabilityGate capability="connectors">
+        <CapabilityGate capability="data_sources">
           <div data-testid="content">content</div>
         </CapabilityGate>
       </KymaProvider>,
@@ -75,7 +75,7 @@ describe("CapabilityGate", () => {
   });
 
   it("renders 'not available' fallback when capability is absent", async () => {
-    const capsWithout = { ...BASE_CAPS, connectors: false };
+    const capsWithout = { ...BASE_CAPS, data_sources: false };
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
     vi.stubGlobal(
       "fetch",
@@ -86,7 +86,7 @@ describe("CapabilityGate", () => {
         json: async () => capsWithout,
       }),
     );
-    render(<CapWrapper capability="connectors" qc={qc} />);
+    render(<CapWrapper capability="data_sources" qc={qc} />);
     // After capabilities load, the capability is absent — show default fallback
     await waitFor(() => {
       expect(screen.queryByTestId("capability-unavailable")).toBeTruthy();
@@ -95,7 +95,7 @@ describe("CapabilityGate", () => {
   });
 
   it("renders custom fallback prop when capability is absent", async () => {
-    const capsWithout = { ...BASE_CAPS, connectors: false };
+    const capsWithout = { ...BASE_CAPS, data_sources: false };
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
     vi.stubGlobal(
       "fetch",
@@ -107,7 +107,7 @@ describe("CapabilityGate", () => {
     );
     render(
       <CapWrapper
-        capability="connectors"
+        capability="data_sources"
         qc={qc}
         fallback={<div data-testid="custom-fallback">not supported</div>}
       />,

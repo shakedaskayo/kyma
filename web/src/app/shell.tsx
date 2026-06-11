@@ -143,7 +143,7 @@ export function Shell() {
   }, [endpoint, startHealth]);
 
   // Resolve a concrete active database for the single-database pages
-  // (Connectors/Dashboards/Agent). The session default is empty and a legacy
+  // (Data Sources/Dashboards/Agent). The session default is empty and a legacy
   // persisted value (e.g. "obs") may not exist on this server — pick the first
   // non-internal database from the catalog so those pages point at real data.
   useEffect(() => {

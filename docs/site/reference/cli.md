@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: kyma CLI reference — local engine (mcp, serve, setup, sync, worker, service), client commands (connect, status, query, sessions, install-skill, connector, ingest, recall, remember, entity, distill, deploy), and admin commands (create-database, create-table, ...).
+description: kyma CLI reference — local engine (mcp, serve, setup, sync, worker, service), client commands (connect, status, query, sessions, install-skill, data source, ingest, recall, remember, entity, distill, deploy), and admin commands (create-database, create-table, ...).
 ---
 
 # CLI
@@ -11,7 +11,7 @@ description: kyma CLI reference — local engine (mcp, serve, setup, sync, worke
   local object store, zero infra). Includes `kyma mcp`, `kyma serve`,
   `kyma setup`, `kyma sync`, `kyma worker`, `kyma service`.
 - **Client mode** — talks to a running Kyma server over HTTP. Used for
-  asking the agent questions, managing connectors, and wiring up coding
+  asking the agent questions, managing data sources, and wiring up coding
   agents.
 - **Admin mode** — talks directly to the Postgres catalog. Used for
   provisioning databases, tables, and graphs from scripts.
@@ -154,7 +154,7 @@ kyma worker status
 #### Fabric node daemon + admin (`run | create | list | revoke`)
 
 Register this machine as a worker node with the control plane, pull
-and run jobs (connector syncs, dreaming tasks, etc.).
+and run jobs (data source syncs, dreaming tasks, etc.).
 
 ```bash
 # Start the node daemon
@@ -332,27 +332,27 @@ Read a session transcript on **stdin** and hand it to the kyma agent (which owns
 tail -n 600 transcript.jsonl | kyma distill --realm kyma
 ```
 
-### `kyma connector <op>`
+### `kyma datasource <op>`
 
-Manage connectors. See [Connectors → GitHub](/connectors/github),
-[GitLab](/connectors/gitlab), [Bitbucket](/connectors/bitbucket) for
+Manage data sources. See [Data sources → GitHub](/data-sources/github),
+[GitLab](/data-sources/gitlab), [Bitbucket](/data-sources/bitbucket) for
 type-specific args.
 
 ```bash
-kyma connector list
-kyma connector add github shakedaskayo/kyma --start
-kyma connector add gitlab gitlab-org/gitlab --start
-kyma connector add bitbucket atlassian/python-bitbucket --username me --app-password $BBPW --start
-kyma connector show gh-shakedaskayo-kyma
-kyma connector pause gh-shakedaskayo-kyma
-kyma connector resume gh-shakedaskayo-kyma
-kyma connector trigger gh-shakedaskayo-kyma
-kyma connector remove gh-shakedaskayo-kyma
+kyma datasource list
+kyma datasource add github shakedaskayo/kyma --start
+kyma datasource add gitlab gitlab-org/gitlab --start
+kyma datasource add bitbucket atlassian/python-bitbucket --username me --app-password $BBPW --start
+kyma datasource show gh-shakedaskayo-kyma
+kyma datasource pause gh-shakedaskayo-kyma
+kyma datasource resume gh-shakedaskayo-kyma
+kyma datasource trigger gh-shakedaskayo-kyma
+kyma datasource remove gh-shakedaskayo-kyma
 ```
 
 `<name|id>` is interchangeable — pass either the human-readable name
 or the UUID. `--start` triggers an immediate first run after creating
-the connector and polls until the first tick completes (or 30 s).
+the data source and polls until the first tick completes (or 30 s).
 
 #### `add` ingestion knobs
 
@@ -362,10 +362,10 @@ with `--no-<module>`:
 
 ```bash
 # Metadata only — skip source parsing.
-kyma connector add github my-org/big-repo --no-codebase --start
+kyma datasource add github my-org/big-repo --no-codebase --start
 
 # Constrain code parsing to two languages, with a tighter file cap.
-kyma connector add github my-org/big-repo \
+kyma datasource add github my-org/big-repo \
   --languages rust,go \
   --max-files 1000 \
   --max-bytes 524288 \
@@ -388,27 +388,27 @@ kyma connector add github my-org/big-repo \
 | `--max-pages N`       | API pages per module per tick (100 items/page).             | 10                                       |
 | `--schedule-ms N`     | Tick interval in milliseconds.                              | 300 000 (5 min)                          |
 
-Token discovery for `connector add` (in order):
+Token discovery for `datasource add` (in order):
 `--token` → `--credential-id` → `$<KIND>_TOKEN` env → `gh auth token`
 shell-out (github only).
 
-::: tip OAuth connectors
-`connector add` covers the token-auth git sources. The OAuth connectors —
-[Notion](/connectors/notion), [Google Drive](/connectors/googledrive),
-[Gmail](/connectors/gmail), [Slack](/connectors/slack), [Jira](/connectors/jira),
-[Confluence](/connectors/confluence) — authenticate through the browser, so add
-them from the web UI's **Connect** flow. See [OAuth connectors](/connectors/oauth).
+::: tip OAuth data sources
+`datasource add` covers the token-auth git sources. The OAuth data sources —
+[Notion](/data-sources/notion), [Google Drive](/data-sources/googledrive),
+[Gmail](/data-sources/gmail), [Slack](/data-sources/slack), [Jira](/data-sources/jira),
+[Confluence](/data-sources/confluence) — authenticate through the browser, so add
+them from the web UI's **Connect** flow. See [OAuth data sources](/data-sources/oauth).
 :::
 
 ### `kyma ingest <op>`
 
-Inspect ingestion runs across one or all connectors.
+Inspect ingestion runs across one or all data sources.
 
 ```bash
-kyma ingest status                     # all connectors, last-run snapshot
-kyma ingest status --connector gh-…    # one connector
+kyma ingest status                     # all data sources, last-run snapshot
+kyma ingest status --datasource gh-…    # one data source
 kyma ingest tail                       # poll forever
-kyma ingest tail --connector gh-… --interval 5
+kyma ingest tail --datasource gh-… --interval 5
 ```
 
 #### `kyma ingest push --table T [--db D] [--idempotency-key K]`
@@ -593,6 +593,6 @@ kyma query "what databases do we have?"
 ```bash
 export GITHUB_TOKEN=ghp_xxx     # or have `gh auth status` happy
 kyma create-database github     # one-time
-kyma connector add github shakedaskayo/kyma --start
+kyma datasource add github shakedaskayo/kyma --start
 kyma ingest status
 ```

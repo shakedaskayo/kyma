@@ -6,7 +6,7 @@ description: kyma is the context engine for coding agents — durable graph-awar
 # What kyma is
 
 **The context engine for coding agents.** One place your agent recalls durable
-**memory**, queries **live data** (logs, traces, code, connectors) in KQL or SQL,
+**memory**, queries **live data** (logs, traces, code, data sources) in KQL or SQL,
 and walks the **graph** that ties a decision to the resources it's about.
 
 A memory store remembers what you told it. A context engine also knows your live
@@ -22,7 +22,7 @@ kyma is one engine that does three things, in order of how you'll meet them:
   (vector + keyword + graph). The "it remembers" layer your agent feels first.
 - **Live data** — every signal your stack emits (logs, traces, metrics, tool calls,
   prompt/response bodies, deploy events, config diffs) ingested through OTLP, REST,
-  Kafka, or file-drop, plus scheduled connectors — answered in KQL or SQL at
+  Kafka, or file-drop, plus scheduled data sources — answered in KQL or SQL at
   sub-second latency over years of history.
 - **The graph** — entities and relationships as a first-class layer. Memories resolve
   to the *real* nodes they're about (a repo, a service, a table, a trace), so recall

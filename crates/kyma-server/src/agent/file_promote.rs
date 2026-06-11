@@ -26,8 +26,8 @@ use super::tools::{execute_sql, SharedToolCtx};
 const GITHUB_NODE_TABLE: &str = "github_nodes";
 
 /// The live `github` graph node id for a repo file. Mirrors
-/// `kyma_connectors::github::transform::file_id` (`file:{owner}/{repo}:{path}`),
-/// which is how the connector keys File nodes — so a contributed file under a
+/// `kyma_datasources::github::transform::file_id` (`file:{owner}/{repo}:{path}`),
+/// which is how the data source keys File nodes — so a contributed file under a
 /// known repo maps to the exact same node.
 fn github_file_id(repo: &str, path: &str) -> String {
     format!("file:{repo}:{path}")
@@ -221,7 +221,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn github_file_id_matches_connector_scheme() {
+    fn github_file_id_matches_data_source_scheme() {
         assert_eq!(
             github_file_id("acme/app", "src/main.rs"),
             "file:acme/app:src/main.rs"

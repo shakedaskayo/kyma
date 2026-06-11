@@ -21,7 +21,7 @@
 //!   version
 
 mod client;
-mod connector;
+mod datasource;
 mod deploy;
 mod plugin;
 mod scrape;
@@ -134,11 +134,12 @@ enum Command {
         #[arg(long, value_enum, default_value = "kyma")]
         which: SkillWhich,
     },
-    /// Manage connectors — add a GitHub/GitLab/Bitbucket repo, list, pause,
-    /// resume, trigger, remove. See `kyma connector --help`.
-    Connector {
+    /// Manage data sources — add a GitHub/GitLab/Bitbucket repo, list, pause,
+    /// resume, trigger, remove. See `kyma datasource --help`.
+    #[command(name = "datasource")]
+    DataSource {
         #[command(subcommand)]
-        op: connector::Op,
+        op: datasource::Op,
     },
     /// Deploy kyma to production (AWS Fargate + S3 + Supabase) or run a
     /// Supabase-backed local test drive. See `kyma deploy --help`.
@@ -150,7 +151,7 @@ enum Command {
     /// streams NDJSON from stdin into a table.
     Ingest {
         #[command(subcommand)]
-        op: connector::IngestOp,
+        op: datasource::IngestOp,
     },
     /// Recall durable memories from Kyma (semantic search via the MCP
     /// `recall_memory` tool). Used by the kyma-memory plugin to inject context.
@@ -508,9 +509,9 @@ async fn main() -> Result<()> {
             also_link_claude,
             which,
         } => cmd_install_skill(target, also_link_claude, which).await,
-        Command::Connector { op } => connector::run(op).await,
+        Command::DataSource { op } => datasource::run(op).await,
         Command::Deploy { op } => deploy::run(op).await,
-        Command::Ingest { op } => connector::run_ingest(op).await,
+        Command::Ingest { op } => datasource::run_ingest(op).await,
         Command::Recall {
             query,
             realm,

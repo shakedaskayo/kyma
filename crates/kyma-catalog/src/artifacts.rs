@@ -26,13 +26,13 @@ pub struct ArtifactRecord {
     pub id: Option<Uuid>,
     pub tenant_id: TenantId,
     pub object_path: String,
-    /// Connector / origin, e.g. `"github"`, `"fswatch"`.
+    /// DataSource / origin, e.g. `"github"`, `"fswatch"`.
     pub source: String,
     /// `"log"` | `"file"` | …
     pub artifact_class: String,
     /// `"database.table"` the blob is referenced from, if any.
     pub table_ref: Option<String>,
-    pub connector_id: Option<Uuid>,
+    pub data_source_id: Option<Uuid>,
     pub size_bytes: i64,
     pub sha256: Option<String>,
     pub created_at: Option<DateTime<Utc>>,
@@ -53,7 +53,7 @@ fn row_to_artifact(r: &sqlx::postgres::PgRow) -> Result<ArtifactRecord> {
         source: r.try_get("source").map_err(sql)?,
         artifact_class: r.try_get("artifact_class").map_err(sql)?,
         table_ref: r.try_get("table_ref").map_err(sql)?,
-        connector_id: r.try_get("connector_id").map_err(sql)?,
+        data_source_id: r.try_get("data_source_id").map_err(sql)?,
         size_bytes: r.try_get("size_bytes").map_err(sql)?,
         sha256: r.try_get("sha256").map_err(sql)?,
         created_at: Some(r.try_get("created_at").map_err(sql)?),
@@ -64,20 +64,20 @@ fn row_to_artifact(r: &sqlx::postgres::PgRow) -> Result<ArtifactRecord> {
 
 impl PostgresCatalog {
     /// Upsert an artifact tracking row, keyed on `(tenant_id, object_path)`.
-    /// Returns the row id. Re-registering the same path (connectors re-tick,
+    /// Returns the row id. Re-registering the same path (data sources re-tick,
     /// fs-watch re-fires) updates metadata in place — and clears `deleted_at`,
     /// resurrecting a row whose blob was re-captured after expiry.
     pub async fn register_artifact(&self, rec: &ArtifactRecord) -> Result<Uuid> {
         let row: (Uuid,) = sqlx::query_as(
             "INSERT INTO artifacts
                 (tenant_id, object_path, source, artifact_class, table_ref,
-                 connector_id, size_bytes, sha256, expires_at)
+                 data_source_id, size_bytes, sha256, expires_at)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
              ON CONFLICT (tenant_id, object_path) DO UPDATE SET
                 source         = EXCLUDED.source,
                 artifact_class = EXCLUDED.artifact_class,
                 table_ref      = EXCLUDED.table_ref,
-                connector_id   = EXCLUDED.connector_id,
+                data_source_id = EXCLUDED.data_source_id,
                 size_bytes     = EXCLUDED.size_bytes,
                 sha256         = EXCLUDED.sha256,
                 expires_at     = EXCLUDED.expires_at,
@@ -89,7 +89,7 @@ impl PostgresCatalog {
         .bind(&rec.source)
         .bind(&rec.artifact_class)
         .bind(&rec.table_ref)
-        .bind(rec.connector_id)
+        .bind(rec.data_source_id)
         .bind(rec.size_bytes)
         .bind(&rec.sha256)
         .bind(rec.expires_at)
@@ -108,7 +108,7 @@ impl PostgresCatalog {
     ) -> Result<Option<ArtifactRecord>> {
         let row = sqlx::query(
             "SELECT id, tenant_id, object_path, source, artifact_class, table_ref,
-                    connector_id, size_bytes, sha256, created_at, expires_at, deleted_at
+                    data_source_id, size_bytes, sha256, created_at, expires_at, deleted_at
              FROM artifacts WHERE id = $1 AND tenant_id = $2",
         )
         .bind(id)
@@ -139,7 +139,7 @@ impl PostgresCatalog {
     pub async fn list_live_artifacts(&self, tenant: TenantId) -> Result<Vec<ArtifactRecord>> {
         let rows = sqlx::query(
             "SELECT id, tenant_id, object_path, source, artifact_class, table_ref,
-                    connector_id, size_bytes, sha256, created_at, expires_at, deleted_at
+                    data_source_id, size_bytes, sha256, created_at, expires_at, deleted_at
              FROM artifacts
              WHERE tenant_id = $1 AND deleted_at IS NULL
              ORDER BY created_at DESC",

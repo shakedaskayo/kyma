@@ -88,25 +88,25 @@ use tracing::{debug, error, info};
 
 const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 
-pub use kyma_connectors::admin::AdminState as ConnectorAdminState;
-pub use kyma_connectors::oauth::OAuthState;
+pub use kyma_datasources::admin::AdminState as DataSourceAdminState;
+pub use kyma_datasources::oauth::OAuthState;
 
-/// Build the connector admin router (auth-eligible — caller wraps with middleware).
-pub fn connector_admin_router(state: kyma_connectors::admin::AdminState) -> Router {
-    kyma_connectors::admin::router(state)
+/// Build the data source admin router (auth-eligible — caller wraps with middleware).
+pub fn datasource_admin_router(state: kyma_datasources::admin::AdminState) -> Router {
+    kyma_datasources::admin::router(state)
 }
 
 /// Build the authenticated OAuth router (start + poll) — caller wraps with the
 /// `Role::Write` middleware.
 pub fn oauth_authed_router(state: OAuthState) -> Router {
-    kyma_connectors::oauth::oauth_authed_router(state)
+    kyma_datasources::oauth::oauth_authed_router(state)
 }
 
 /// Build the **unauthenticated** OAuth callback router — mount alongside the
 /// login route (the IdP redirect carries no bearer; the single-use `state`
 /// token is the trust anchor).
 pub fn oauth_callback_router(state: OAuthState) -> Router {
-    kyma_connectors::oauth::oauth_callback_router(state)
+    kyma_datasources::oauth::oauth_callback_router(state)
 }
 
 /// Shared HTTP-handler state for the query surface.

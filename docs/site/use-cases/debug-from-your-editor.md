@@ -12,7 +12,7 @@ It doesn't guess — it remembers, queries, and traverses.
 ## Setup
 
 Your agent is [connected](/agent/connect), your services ship OTLP logs to kyma, and your
-repo is [connected as a graph](/connectors/github). Now, in the editor:
+repo is [connected as a graph](/data-sources/github). Now, in the editor:
 
 > **You:** checkout is throwing 502s around 14:32 — what broke?
 

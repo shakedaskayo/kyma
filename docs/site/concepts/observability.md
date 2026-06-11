@@ -1,6 +1,6 @@
 ---
 title: Observability
-description: How to tell what kyma is doing. Prometheus metrics, request IDs, structured logs, agent run replay, dreaming run history, connector status, and the pushdown_summary that prevents federation from silently degrading.
+description: How to tell what kyma is doing. Prometheus metrics, request IDs, structured logs, agent run replay, dreaming run history, data source status, and the pushdown_summary that prevents federation from silently degrading.
 ---
 
 # Observability
@@ -12,7 +12,7 @@ kyma exposes four distinct observability surfaces, each aimed at a different aud
 | Prometheus metrics | `GET /metrics` | Operators, alerting systems |
 | Agent run replay | `GET /v1/agent/runs/:run_id` | Engineers debugging a wrong answer |
 | Dreaming run history | `GET /v1/agent/memory/dreaming/runs` | Engineers reviewing background memory synthesis |
-| Connector status | `GET /v1/connectors/:id` | Operators of multi-source deployments |
+| Data source status | `GET /v1/data-sources/:id` | Operators of multi-source deployments |
 | `pushdown_summary` | Response body on every federated query | Anyone whose federated query was unexpectedly slow |
 
 Structured logs (`tracing` crate) and request-ID correlation round out the picture.
@@ -80,20 +80,20 @@ A value below 0.8 in production warrants investigation.
 | `kyma_physical_gc_objects_deleted_total` | — | Objects physically removed from object storage. |
 | `kyma_physical_gc_objects_delete_failed_total` | — | GC failures. Persistent non-zero = permission or network issue against object storage. |
 
-### Connectors
+### Data sources
 
 | Metric | Labels | What it measures |
 | ------ | ------ | ---------------- |
-| `kyma_connector_cursor_age_seconds` | `name`, `table` | Age of the sync cursor — how far the connector is behind the source. Rising = a sync source falling behind. Alert if > your RPO. |
-| `kyma_connector_rows_ingested_total` | `name`, `table` | Rows synced from each source-table. |
-| `kyma_connector_ticks_total` | `name` | Connector polling or CDC event cycles. Flat for a sync connector = it has stopped. |
-| `kyma_connector_errors_total` | `name` | Hard errors per connector. Any sustained non-zero rate warrants investigation. |
-| `kyma_connector_duration_seconds` | `name` | Time spent per connector tick. |
-| `kyma_connector_last_success_timestamp_seconds` | `name` | Unix timestamp of last successful tick. Alert if `time() - kyma_connector_last_success_timestamp_seconds > threshold`. |
+| `kyma_data_source_cursor_age_seconds` | `name`, `table` | Age of the sync cursor — how far the data source is behind the source. Rising = a sync source falling behind. Alert if > your RPO. |
+| `kyma_data_source_rows_ingested_total` | `name`, `table` | Rows synced from each source-table. |
+| `kyma_data_source_ticks_total` | `name` | Data source polling or CDC event cycles. Flat for a sync data source = it has stopped. |
+| `kyma_data_source_errors_total` | `name` | Hard errors per data source. Any sustained non-zero rate warrants investigation. |
+| `kyma_data_source_duration_seconds` | `name` | Time spent per data source tick. |
+| `kyma_data_source_last_success_timestamp_seconds` | `name` | Unix timestamp of last successful tick. Alert if `time() - kyma_data_source_last_success_timestamp_seconds > threshold`. |
 
-**Example PromQL — connectors that haven't succeeded in 5 minutes:**
+**Example PromQL — data sources that haven't succeeded in 5 minutes:**
 ```promql
-time() - kyma_connector_last_success_timestamp_seconds > 300
+time() - kyma_data_source_last_success_timestamp_seconds > 300
 ```
 
 ### Agent and MCP
@@ -146,10 +146,10 @@ kyma uses the `tracing` crate with structured fields. Set `RUST_LOG` to control 
 RUST_LOG=warn kyma serve
 
 # Debug a specific component
-RUST_LOG=kyma_connectors=debug,kyma_ingest_core=info,warn kyma serve
+RUST_LOG=kyma_datasources=debug,kyma_ingest_core=info,warn kyma serve
 ```
 
-Log lines include `request_id`, `table`, `connector`, and other relevant fields so they can be
+Log lines include `request_id`, `table`, `data_source_id`, and other relevant fields so they can be
 joined against metrics or correlated across services.
 
 ---
@@ -206,16 +206,16 @@ background synthesis produced an unexpected result.
 
 ---
 
-## Connector status
+## Data source status
 
-List connectors, or fetch one by id for its last-run state:
+List data sources, or fetch one by id for its last-run state:
 
 ```bash
-curl http://localhost:8080/v1/connectors           # all connectors
-curl http://localhost:8080/v1/connectors/<id>       # one, with last-run fields
+curl http://localhost:8080/v1/data-sources           # all data sources
+curl http://localhost:8080/v1/data-sources/<id>       # one, with last-run fields
 ```
 
-The per-connector response carries the run state (secrets scrubbed):
+The per-data-source response carries the run state (secrets scrubbed):
 
 ```json
 {
@@ -236,14 +236,14 @@ The per-connector response carries the run state (secrets scrubbed):
 
 | Field | Watch for |
 | ----- | --------- |
-| `last_success_at` | Stale relative to `schedule_ms` — the connector has stopped making progress. |
-| `last_error` | Non-null on a connector that should be healthy. |
-| `enabled` / `disabled_reason` | A connector auto-disabled after repeated failures. |
+| `last_success_at` | Stale relative to `schedule_ms` — the data source has stopped making progress. |
+| `last_error` | Non-null on a data source that should be healthy. |
+| `enabled` / `disabled_reason` | A data source auto-disabled after repeated failures. |
 | `last_rows_ingested` | Persistently `0` for a source you expect to change. |
 
-For time-series health (alerting, dashboards), use the Prometheus connector
-metrics above — `kyma_connector_cursor_age_seconds` (sync lag),
-`kyma_connector_last_success_timestamp_seconds`, and `kyma_connector_errors_total`
+For time-series health (alerting, dashboards), use the Prometheus data source
+metrics above — `kyma_data_source_cursor_age_seconds` (sync lag),
+`kyma_data_source_last_success_timestamp_seconds`, and `kyma_data_source_errors_total`
 are the operational signals. Full endpoint list in the
 [API reference](/reference/api).
 
@@ -311,6 +311,6 @@ In the meantime, use request IDs + structured logs for correlation (see above).
 
 ## Where to go next
 
-- Connector administration: [Connectors](/connectors/).
+- Data source administration: [Data sources](/data-sources/).
 - The agent endpoint contract: [The agent loop](/concepts/the-agent-loop).
 - Multi-source query semantics: [Multi-source data](/concepts/multi-source-data).

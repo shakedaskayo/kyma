@@ -23,7 +23,7 @@ down to the source. Cross-source joins happen in DataFusion, with the
 small side fetched live.
 
 ```bash
-curl -X POST http://localhost:8080/v1/connectors \
+curl -X POST http://localhost:8080/v1/data-sources \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "pg_prod",
@@ -144,7 +144,7 @@ for how tombstones get garbage-collected.
 
 ## Schema evolution on synced sources
 
-The connector framework runs the same schema-evolver as native ingest.
+The data source framework runs the same schema-evolver as native ingest.
 A new column on the source becomes a new typed column on the kyma
 table after enough events with consistent type. A column whose type
 becomes polymorphic falls back to `dynamic`. Old data is preserved
@@ -156,5 +156,5 @@ correctly; you'd silently lose data. Use federation instead.
 
 ## Where to go next
 
-- Connector administration: [Connectors](/connectors/).
+- Data source administration: [Data sources](/data-sources/).
 - Pushdown details and the `pushdown_summary`: [Observability](/concepts/observability).

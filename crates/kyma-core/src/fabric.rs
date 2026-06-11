@@ -5,7 +5,7 @@
 //!
 //! A *worker* is a fabric compute identity: the server's embedded in-process
 //! worker, or a remote daemon registered from any compute. A *job* is a
-//! placement-aware unit of work a worker claims under a lease: connector
+//! placement-aware unit of work a worker claims under a lease: data source
 //! syncs, dreaming runs, or node-local source syncs.
 
 use chrono::{DateTime, Utc};
@@ -14,7 +14,7 @@ use serde_json::Value as Json;
 use uuid::Uuid;
 
 /// Job kinds carried by the fabric in v1.
-pub const JOB_CONNECTOR_SYNC: &str = "connector_sync";
+pub const JOB_DATA_SOURCE_SYNC: &str = "data_source_sync";
 pub const JOB_DREAMING: &str = "dreaming";
 pub const JOB_SOURCE_SYNC: &str = "source_sync";
 

@@ -17,7 +17,7 @@ const SCHEMA_TS: &str = "1970-01-01T00:00:00Z";
 
 /// True if `name` is a `<g>_nodes`/`<g>_edges` table that backs a registered
 /// property-graph (its sibling table exists). These are storage plumbing for
-/// the connector/stored graphs and are hidden from the catalog *schema* graph —
+/// the data source/stored graphs and are hidden from the catalog *schema* graph —
 /// surfacing them as standalone `Table` nodes is confusing.
 fn is_graph_storage_table(name: &str, all: &std::collections::HashSet<String>) -> bool {
     if let Some(base) = name.strip_suffix("_nodes") {

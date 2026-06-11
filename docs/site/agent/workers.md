@@ -56,14 +56,14 @@ Kyma is engine-agnostic. Claude Code (`~/.claude/projects`) ships with a full in
 | Kind | What runs | Where it runs |
 |---|---|---|
 | `source_sync` | Reads local coding-agent files → pushes to engine (one job per detected agent) | Pinned to the owning node |
-| `connector_sync` | Scheduled connector ingestion | Embedded worker (or any `connector`-capable worker) |
+| `data_source_sync` | Scheduled data source ingestion | Embedded worker (or any `data_source`-capable worker) |
 | `dreaming` | Agentic memory housekeeping | Embedded worker (capability-routed) |
 
 Default `--accept` is `source_sync`. Pass `--accept dreaming,source_sync` to widen what a node will claim.
 
-**Locally you get this for free:** the server runs an embedded worker in-process, so `connector_sync` and `dreaming` jobs never need an external daemon unless you want to offload them.
+**Locally you get this for free:** the server runs an embedded worker in-process, so `data_source_sync` and `dreaming` jobs never need an external daemon unless you want to offload them.
 
-**Roadmap (deferred):** remote execution of `dreaming` and `connector_sync` on external daemons — the claim/lease surface already supports it; executor dispatch is the follow-up. See [Dreaming](/agent/dreaming) for the current in-process dreaming model.
+**Roadmap (deferred):** remote execution of `dreaming` and `data_source_sync` on external daemons — the claim/lease surface already supports it; executor dispatch is the follow-up. See [Dreaming](/agent/dreaming) for the current in-process dreaming model.
 
 ## Security
 

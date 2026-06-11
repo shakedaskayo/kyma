@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 /**
  * Standard empty state — the icon-in-halo + headline + description + optional
  * action pattern used across list/grid pages. Codifies what was hand-rolled in
- * Connectors / Credentials / Agent / Query / Dashboards.
+ * Data Sources / Credentials / Agent / Query / Dashboards.
  */
 export interface EmptyStateProps extends React.HTMLAttributes<HTMLDivElement> {
   icon?: LucideIcon;

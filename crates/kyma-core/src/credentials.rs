@@ -1,7 +1,7 @@
 //! Typed credentials — the system-wide secret model.
 //!
 //! A [`Credential`] is an encrypted, labelled, typed secret value referenced by
-//! id. Subsystems that need authenticated access to something (connectors,
+//! id. Subsystems that need authenticated access to something (data sources,
 //! MCP servers, agent providers, …) store a `credential_id` instead of inline
 //! secrets, so a single rotation propagates.
 //!
@@ -118,7 +118,7 @@ pub struct Credential {
     pub label: String,
     pub kind: String,
     /// Decrypted secret material — present only when the caller has explicit
-    /// access to the plaintext (e.g. inside the connector framework). The
+    /// access to the plaintext (e.g. inside the data source framework). The
     /// REST API returns [`CredentialSummary`] instead.
     pub value: CredentialValue,
     pub metadata: serde_json::Value,
@@ -155,7 +155,7 @@ impl From<Credential> for CredentialSummary {
 }
 
 /// Abstract access to the credentials store. Implemented by [`kyma_catalog`]
-/// for real persistence; trivial in-memory mocks make testing connectors easy
+/// for real persistence; trivial in-memory mocks make testing data sources easy
 /// without standing up Postgres.
 #[async_trait::async_trait]
 pub trait CredentialStore: Send + Sync {
@@ -164,7 +164,7 @@ pub trait CredentialStore: Send + Sync {
     /// Replace the secret material of an existing credential in place — used
     /// when an OAuth2 token refresh rotates the access/refresh token so the
     /// stored credential stays valid. The default errors, so in-memory mocks
-    /// and connectors that never refresh don't need to implement it.
+    /// and data sources that never refresh don't need to implement it.
     async fn update_value(
         &self,
         _tenant: crate::tenant::TenantId,

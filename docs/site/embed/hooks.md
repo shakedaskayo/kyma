@@ -295,7 +295,7 @@ function useKymaCapabilities(): UseQueryResult<Capabilities>
 ```
 
 `Capabilities` is a flat object with boolean fields
-(`mode`, `connectors`, `credentials`, `oauth`, `saved_views`, `users_admin`,
+(`mode`, `data_sources`, `credentials`, `oauth`, `saved_views`, `users_admin`,
 `explore_live`). `staleTime` is 5 minutes.
 
 ---
@@ -308,7 +308,7 @@ import type { KymaContextValue } from "@kyma-ai/react";
 ```
 
 Returns the `KymaClient` from context. Use this to call the full client API
-(graph, query, discover, dashboards, connectors, etc.) from any component
+(graph, query, discover, dashboards, data sources, etc.) from any component
 inside the provider.
 
 ```tsx

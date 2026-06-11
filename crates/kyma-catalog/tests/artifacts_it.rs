@@ -37,7 +37,7 @@ fn rec(tenant: TenantId, path: &str) -> ArtifactRecord {
         source: "github".to_string(),
         artifact_class: "log".to_string(),
         table_ref: Some("kyma.github_job_logs".to_string()),
-        connector_id: None,
+        data_source_id: None,
         size_bytes: 1234,
         sha256: Some("deadbeef".to_string()),
         created_at: None,
@@ -56,7 +56,7 @@ async fn register_is_idempotent_and_get_is_tenant_scoped() {
     let id1 = catalog.register_artifact(&rec(t1, path)).await.unwrap();
 
     // Re-register same (tenant, object_path) upserts in place — same row id,
-    // updated size. Connectors re-tick and must not accumulate duplicate rows.
+    // updated size. Data sources re-tick and must not accumulate duplicate rows.
     let mut updated = rec(t1, path);
     updated.size_bytes = 9999;
     let id2 = catalog.register_artifact(&updated).await.unwrap();

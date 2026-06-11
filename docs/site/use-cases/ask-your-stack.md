@@ -1,6 +1,6 @@
 ---
 title: Ask your whole stack in plain English
-description: Turn natural-language questions into KQL/SQL across logs, traces, connectors, and your operational databases — via the built-in agent endpoint, the CLI, or any connected coding agent.
+description: Turn natural-language questions into KQL/SQL across logs, traces, data sources, and your operational databases — via the built-in agent endpoint, the CLI, or any connected coding agent.
 ---
 
 # Ask your whole stack in plain English
@@ -35,7 +35,7 @@ curl -N -X POST $KYMA/v1/agent/ask -H 'content-type: application/json' \
 The agent reasons across everything kyma holds — not just logs:
 
 - **Telemetry** — "errors per service in the last hour", "p99 latency on `/api/checkout`".
-- **Connectors & DBs** — "top customers by support tickets this week" (federated to Postgres),
+- **Data sources & DBs** — "top customers by support tickets this week" (federated to Postgres),
   "AWS spend by team this month" (billing exports ingested as a table).
 - **Agent + memory** — "what did we decide about the payments gateway?", "which sessions
   called `send_email` with `draft:true` last Tuesday?"

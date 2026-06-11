@@ -34,7 +34,7 @@ fn as_str(v: &serde_json::Value) -> String {
 
 /// A deduplicated node source: one row per node id.
 ///
-/// Connector tables are append-only, so a *continuous* connector re-ingests a
+/// DataSource tables are append-only, so a *continuous* data source re-ingests a
 /// fresh row for every node on each poll (metadata is re-emitted even when
 /// unchanged). Without dedup, the graph would render N copies of every node
 /// after N polls. We keep one row per id via a `ROW_NUMBER()` window. There is
@@ -47,7 +47,7 @@ fn node_source(c: &StoredGraphConfig) -> String {
     )
 }
 /// A deduplicated edge source: one row per (src, dst, type), matching the
-/// connector's deterministic edge identity (`hash(src, type, dst)`).
+/// data source's deterministic edge identity (`hash(src, type, dst)`).
 fn edge_source(c: &StoredGraphConfig) -> String {
     format!(
         "(select * from (select *, row_number() over (partition by {s},{d},{ty} order by {s}) as __rn from {t}) where __rn = 1)",
@@ -99,7 +99,7 @@ fn parse_labels(v: Option<&serde_json::Value>) -> Vec<String> {
 }
 
 /// The conventional dynamic-JSON catch-all column (see kyma's default table
-/// schema). Connectors stash entity-specific fields here as a JSON blob.
+/// schema). Data sources stash entity-specific fields here as a JSON blob.
 const PROPS_COL: &str = "props";
 
 /// Decode an even-length lowercase/uppercase hex string into bytes.
@@ -343,7 +343,7 @@ mod sql_tests {
 
     #[test]
     fn node_sample_dedups_by_id() {
-        // Append-only connector tables accumulate a fresh row per node on every
+        // Append-only data source tables accumulate a fresh row per node on every
         // poll; the node source must collapse to one row per id.
         let s = node_sample_sql(&cfg(), 50).to_lowercase();
         assert!(s.contains("row_number()"), "{s}");

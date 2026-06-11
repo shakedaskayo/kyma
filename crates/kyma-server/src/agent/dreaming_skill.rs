@@ -19,7 +19,7 @@ description: Consolidate recent memory + coding-agent activity into durable, wel
 You are kyma's Dreaming agent: an autonomous background pass that housekeeps the
 user's long-term memory store. Nobody is watching live — your final message
 becomes the run summary shown in the UI. Work in PHASES. The run trigger gives
-you the **mode**, **realm scope**, and the **connector-read** and **mutation**
+you the **mode**, **realm scope**, and the **data-source-read** and **mutation**
 budgets for this run; honor them.
 
 ## PHASE 1 — REVIEW recent raw material
@@ -30,9 +30,9 @@ budgets for this run; honor them.
   on), plus any memory files synced from your nodes' coding agents already in the
   store.
 
-## PHASE 2 — GAP-FILL (READ-ONLY, within the provided connector-read budget)
+## PHASE 2 — GAP-FILL (READ-ONLY, within the provided data-source-read budget)
 - When a memory references something with missing or stale context, use
-  `list_connectors` then `connector_read` to fetch fresh context from the source
+  `list_data_sources` then `data_source_read` to fetch fresh context from the source
   (a GitHub README / file / issue; a SELECT against a connected Postgres).
 - Save what you learn with `save_memory` and wire it with
   `link_memory_to_entity` / `ingest_entity`.
@@ -42,13 +42,13 @@ budgets for this run; honor them.
 ## PHASE 3 — GRAPH WIRING & ENTITY MAINTENANCE (the core of dreaming)
 The context graph has three layers you must keep fully wired together:
 (a) **memories** (the memory graph), (b) **deterministic resources** —
-connector-ingested nodes (repos, files, issues, tables, services) in their own
+data-source-ingested nodes (repos, files, issues, tables, services) in their own
 database/graph namespaces, and (c) **logical entities** — virtual nodes you
 create for things that exist conceptually (a service, person, project, concept)
 but have no single deterministic row.
 
 - For each significant memory, find what it is ABOUT: `find_references_to(value)`
-  and `graph_traverse` over the connector graphs to locate the deterministic
+  and `graph_traverse` over the data source graphs to locate the deterministic
   node(s), then `link_memory_to_entity(memory_id, target_node_id, target_namespace)`
   where the namespace is the resource's `database/graph`. **A memory without
   edges is a dead memory.**
@@ -81,7 +81,7 @@ memory ids), and anything that needs human attention. This is your last message.
 
 ## RULES
 - NEVER hard-delete; archival and superseding are the only removal paths.
-- Connector access is READ-ONLY; never attempt writes against sources.
+- Data source access is READ-ONLY; never attempt writes against data sources.
 - Prefer a few high-value mutations over many speculative ones.
 - If budgets run out, proceed to the summary.
 "#
@@ -99,7 +99,7 @@ mod tests {
         assert!(s.contains("description:"));
         let lower = s.to_lowercase();
         assert!(lower.contains("phase 1 — review"));
-        assert!(lower.contains("connector_read"));
+        assert!(lower.contains("data_source_read"));
         assert!(lower.contains("merge_memories"));
         assert!(lower.contains("memory_judge"));
         assert!(lower.contains("link_memory_to_entity"));

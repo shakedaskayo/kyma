@@ -43,11 +43,11 @@ kyma grows in three steps — each one is the same engine and the same graph, do
 
 1. **Memory** — your agent remembers across sessions ([Give your agent memory](/quickstart/give-your-agent-memory)).
 2. **Live data** — point logs, traces, and code at it; query in KQL/SQL ([Five-minute start](/quickstart/five-minute-start)).
-3. **The graph** — connectors build a property graph and memory links to the real resources it's about ([How kyma works](/concepts/how-kyma-works)).
+3. **The graph** — data sources build a property graph and memory links to the real resources it's about ([How kyma works](/concepts/how-kyma-works)).
 
 ## Where to go after
 
 - The mental model, end to end: [How kyma works](/concepts/how-kyma-works) · [Concepts](/concepts/).
-- More ways to get data in: [Ingest](/ingest/) · [Connectors](/connectors/).
+- More ways to get data in: [Ingest](/ingest/) · [Data sources](/data-sources/).
 - More ways to ask questions: [Query](/query/).
 - What it's for: [Use cases](/use-cases/).

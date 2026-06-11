@@ -84,7 +84,7 @@ mostly examples.
 
 ## The write path, in stages
 
-Every frontend — and every [connector](/connectors/) tick — converges on one
+Every frontend — and every [data source](/data-sources/) tick — converges on one
 pipeline:
 
 1. **Coerce.** JSON-shaped input becomes an Arrow `RecordBatch`. Unknown fields

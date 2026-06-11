@@ -54,7 +54,7 @@ pub struct MemorySettings {
 
 /// Knobs for the scheduled dreaming pipeline — an autonomous agent run that
 /// housekeeps the memory store (importance, relationships, dedup, archival)
-/// and fills gaps with read-only connector access. `#[serde(default)]` keeps
+/// and fills gaps with read-only data source access. `#[serde(default)]` keeps
 /// older settings rows loading.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -70,14 +70,21 @@ pub struct DreamingSettings {
     /// Agent-loop budget: max tool calls per run (adk engines).
     pub max_tool_calls: u32,
     /// Wall-clock budget per run, seconds (all engines). Agentic dreaming runs
-    /// (tool loops + LLM calls + connector reads) routinely need far longer than
+    /// (tool loops + LLM calls + data source reads) routinely need far longer than
     /// a typical request, so this defaults generously (1h); the `max_tool_calls`
-    /// / `mutation_cap` / connector budgets are the real per-run guardrails.
+    /// / `mutation_cap` / data source budgets are the real per-run guardrails.
     pub wall_clock_secs: u64,
-    /// Gap-fill budget: max connector_read calls per run.
-    pub connector_read_budget: u32,
-    /// Gap-fill budget: max bytes fetched across all connector reads.
-    pub connector_read_max_bytes: u64,
+    /// Gap-fill budget: max data_source_read calls per run.
+    ///
+    /// `alias`: settings persisted before the connectors → data-sources
+    /// rename (027) carry the old key; the alias keeps those loading instead
+    /// of silently resetting the operator's budget to the default. Aliases
+    /// affect deserialization only — we always write the new key.
+    #[serde(alias = "connector_read_budget")]
+    pub data_source_read_budget: u32,
+    /// Gap-fill budget: max bytes fetched across all data source reads.
+    #[serde(alias = "connector_read_max_bytes")]
+    pub data_source_read_max_bytes: u64,
     /// Cap on memory mutations (save/merge/archive/judge/…) per run.
     pub mutation_cap: u32,
 }
@@ -91,8 +98,8 @@ impl Default for DreamingSettings {
             realm_scope: vec![],
             max_tool_calls: 100,
             wall_clock_secs: 3_600,
-            connector_read_budget: 25,
-            connector_read_max_bytes: 4 * 1024 * 1024,
+            data_source_read_budget: 25,
+            data_source_read_max_bytes: 4 * 1024 * 1024,
             mutation_cap: 60,
         }
     }
@@ -224,6 +231,28 @@ mod tests {
         let s: MemorySettings = serde_json::from_value(legacy).unwrap();
         assert!(!s.hitl.enabled, "HITL must default off for legacy rows");
         assert!(s.dreaming.enabled, "existing fields still load");
+    }
+
+    #[test]
+    fn pre_rename_dreaming_budget_keys_still_load() {
+        // Settings persisted before the connectors → data-sources rename
+        // (e.g. kyma-local's JSON file, which no SQL migration touches) carry
+        // the old field names — the serde aliases must map them instead of
+        // silently resetting the budgets to defaults.
+        let legacy = serde_json::json!({
+            "dreaming": {
+                "enabled": true,
+                "connector_read_budget": 7,
+                "connector_read_max_bytes": 123_456
+            }
+        });
+        let s: MemorySettings = serde_json::from_value(legacy).unwrap();
+        assert_eq!(s.dreaming.data_source_read_budget, 7);
+        assert_eq!(s.dreaming.data_source_read_max_bytes, 123_456);
+        // Wire output stays new-keyed.
+        let v = serde_json::to_value(&s).unwrap();
+        assert!(v["dreaming"].get("connector_read_budget").is_none());
+        assert_eq!(v["dreaming"]["data_source_read_budget"], 7);
     }
 
     #[test]

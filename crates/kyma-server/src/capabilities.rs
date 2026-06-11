@@ -1,7 +1,7 @@
 //! `/v1/capabilities` — feature discovery for clients.
 //!
 //! Local mode (`kyma serve`, embedded SQLite) deliberately omits the
-//! control-plane surfaces (connectors, credentials, OAuth, saved Discover
+//! control-plane surfaces (data sources, credentials, OAuth, saved Discover
 //! views). The web UI gates those pages on these flags so it can explain
 //! "runs on the control plane" instead of discovering missing routes via
 //! 404s. Servers that predate this endpoint 404 here too — clients should
@@ -14,7 +14,8 @@ use serde::Serialize;
 pub struct Capabilities {
     /// `"local"` (embedded SQLite, single binary) or `"server"` (control plane).
     pub mode: &'static str,
-    pub connectors: bool,
+    /// Whether data-source management routes are available (control-plane only).
+    pub data_sources: bool,
     pub credentials: bool,
     pub oauth: bool,
     /// Saved Discover views (write side is Postgres-backed today).
@@ -32,7 +33,7 @@ impl Capabilities {
     /// Hosted control plane — everything on.
     pub const SERVER: Self = Self {
         mode: "server",
-        connectors: true,
+        data_sources: true,
         credentials: true,
         oauth: true,
         saved_views: true,
@@ -40,11 +41,11 @@ impl Capabilities {
         explore_live: true,
         agent: true,
     };
-    /// Local single binary — memory + data + graph + dashboards; connector
+    /// Local single binary — memory + data + graph + dashboards; data source
     /// and credential management live on the control plane.
     pub const LOCAL: Self = Self {
         mode: "local",
-        connectors: false,
+        data_sources: false,
         credentials: false,
         oauth: false,
         saved_views: false,
@@ -77,5 +78,14 @@ mod tests {
         assert_eq!(json["agent"], true);
         let json = serde_json::to_value(Capabilities::LOCAL).unwrap();
         assert_eq!(json["agent"], true);
+    }
+
+    #[test]
+    fn capabilities_serialize_data_sources() {
+        let json = serde_json::to_value(Capabilities::SERVER).unwrap();
+        assert_eq!(json["data_sources"], true);
+        assert!(json.get("connectors").is_none());
+        let json = serde_json::to_value(Capabilities::LOCAL).unwrap();
+        assert_eq!(json["data_sources"], false);
     }
 }

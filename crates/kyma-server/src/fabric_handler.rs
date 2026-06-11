@@ -32,7 +32,7 @@ use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 /// Optional claim-time enrichment: resolve per-job secrets/runspecs for
-/// REMOTE workers (e.g. a connector_sync claim carries the decrypted
+/// REMOTE workers (e.g. a datasource_sync claim carries the decrypted
 /// credential so the daemon never needs `KYMA_SECRET_KEY`). Wired by kyma-bin.
 pub type ClaimEnricher =
     Arc<dyn Fn(ClaimedJob) -> BoxFuture<'static, anyhow::Result<ClaimedJob>> + Send + Sync>;

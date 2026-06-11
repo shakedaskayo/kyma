@@ -4,7 +4,11 @@
 //! (`row_number() ... ORDER BY updated_at DESC`), matching the append-only
 //! "latest-wins" model.
 
-use crate::types::RecallFilter;
+use std::collections::BTreeMap;
+
+use serde_json::Value;
+
+use crate::types::{RecallFilter, SourceSummary};
 
 /// Quote + escape a string literal for inline SQL.
 pub fn sql_str(s: &str) -> String {
@@ -269,10 +273,68 @@ pub fn nodes_by_id_sql(node_table: &str, ids: &[String]) -> String {
     )
 }
 
+/// Counts per (provenance blob, realm) over the latest, non-archived node
+/// versions — the raw input to the Data Sources "where do memories come from"
+/// summary. `provenance` is an opaque JSON string column and the engine has no
+/// JSON UDFs, so the query groups by the raw blob; [`fold_source_summary`]
+/// parses `provenance.source` out of each group and merges in Rust.
+pub fn source_summary_sql(node_table: &str) -> String {
+    format!(
+        "WITH latest AS (\n  \
+           SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM {nt}\n) \
+         SELECT provenance, realm, count(*) AS n FROM latest \
+         WHERE __rn = 1 AND status <> 'archived' \
+         GROUP BY provenance, realm",
+        nt = node_table,
+    )
+}
+
+/// Fold the `{provenance, realm, n}` rows of [`source_summary_sql`] into
+/// per-(source, realm) counts. A missing/unparsable provenance or one without
+/// a `source` string counts as `"manual"`; a NULL realm counts as the default
+/// realm. Sorted by count descending, then (source, realm) for determinism.
+pub fn fold_source_summary(rows: &[Value]) -> Vec<SourceSummary> {
+    let mut counts: BTreeMap<(String, String), i64> = BTreeMap::new();
+    for row in rows {
+        let source = row
+            .get("provenance")
+            .and_then(Value::as_str)
+            .and_then(|p| serde_json::from_str::<Value>(p).ok())
+            .and_then(|p| p.get("source").and_then(Value::as_str).map(str::to_owned))
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "manual".to_string());
+        let realm = row
+            .get("realm")
+            .and_then(Value::as_str)
+            .filter(|r| !r.is_empty())
+            .unwrap_or(crate::DEFAULT_REALM)
+            .to_string();
+        // Arrow→JSON keeps count(*) numeric, but tolerate stringified numbers.
+        let n = match row.get("n") {
+            Some(Value::Number(v)) => v.as_i64().unwrap_or(0),
+            Some(Value::String(s)) => s.parse().unwrap_or(0),
+            _ => 0,
+        };
+        *counts.entry((source, realm)).or_insert(0) += n;
+    }
+    let mut out: Vec<SourceSummary> = counts
+        .into_iter()
+        .map(|((source, realm), count)| SourceSummary { source, realm, count })
+        .collect();
+    out.sort_by(|a, b| {
+        b.count
+            .cmp(&a.count)
+            .then_with(|| a.source.cmp(&b.source))
+            .then_with(|| a.realm.cmp(&b.realm))
+    });
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::{MemoryStatus, MemoryType};
+    use serde_json::json;
 
     #[test]
     fn sql_str_escapes_quotes() {
@@ -380,5 +442,55 @@ mod tests {
         let s = nodes_by_id_sql("memory_nodes", &["memory:a".into()]);
         assert!(s.contains("id IN ('memory:a')"));
         assert!(s.contains("invalid_at IS NULL"));
+    }
+
+    #[test]
+    fn source_summary_sql_dedups_and_excludes_archived() {
+        let s = source_summary_sql("memory_nodes");
+        assert!(s.contains("PARTITION BY id ORDER BY updated_at DESC"));
+        assert!(s.contains("__rn = 1"));
+        assert!(s.contains("status <> 'archived'"));
+        assert!(s.contains("GROUP BY provenance, realm"));
+    }
+
+    #[test]
+    fn fold_source_summary_parses_source_and_merges() {
+        // Two distinct claude-code provenance blobs (different run ids) must
+        // merge into one (source, realm) bucket; NULL provenance and a blob
+        // without a `source` key both count as "manual".
+        let rows = vec![
+            json!({"provenance": "{\"source\":\"claude-code\",\"run_id\":\"a\"}", "realm": "kyma", "n": 1}),
+            json!({"provenance": "{\"source\":\"claude-code\",\"run_id\":\"b\"}", "realm": "kyma", "n": 1}),
+            json!({"provenance": null, "realm": "default", "n": 1}),
+            json!({"provenance": "{\"run_id\":\"c\"}", "realm": "default", "n": 2}),
+        ];
+        let out = fold_source_summary(&rows);
+        assert_eq!(
+            out,
+            vec![
+                SourceSummary { source: "manual".into(), realm: "default".into(), count: 3 },
+                SourceSummary { source: "claude-code".into(), realm: "kyma".into(), count: 2 },
+            ]
+        );
+    }
+
+    #[test]
+    fn fold_source_summary_defaults_null_realm_and_string_counts() {
+        let rows = vec![json!({"provenance": null, "realm": null, "n": "4"})];
+        let out = fold_source_summary(&rows);
+        assert_eq!(
+            out,
+            vec![SourceSummary { source: "manual".into(), realm: "default".into(), count: 4 }]
+        );
+    }
+
+    #[test]
+    fn fold_source_summary_treats_malformed_provenance_as_manual() {
+        let rows = vec![json!({"provenance": "not json", "realm": "kyma", "n": 1})];
+        let out = fold_source_summary(&rows);
+        assert_eq!(
+            out,
+            vec![SourceSummary { source: "manual".into(), realm: "kyma".into(), count: 1 }]
+        );
     }
 }

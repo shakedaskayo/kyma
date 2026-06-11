@@ -7,7 +7,7 @@ description: HTTP API, CLI, environment variables, KQL functions, schema mapping
 
 Lookup tables for everything the running engine exposes — every HTTP
 route, every CLI flag, every `KYMA_*` env var, every KQL operator and
-function, and the type mappings the connector framework uses when it
+function, and the type mappings the data source framework uses when it
 syncs an external database.
 
 Today these pages are hand-written and accurate as of the latest
@@ -21,7 +21,7 @@ from `kyma-cli docs-export`; the user-visible pages don't change.
 ### [HTTP API](/reference/api)
 
 Every HTTP route the engine serves — health, metrics, query, ingest,
-catalog, agent, dashboards, connectors. Method, path, auth role,
+catalog, agent, dashboards, data sources. Method, path, auth role,
 content-type, request and response shape. Arrow Flight (separate
 gRPC port) included.
 
@@ -44,7 +44,7 @@ command.
 
 Every `KYMA_*` variable the binary reads, grouped by area —
 catalog, storage, HTTP, gRPC, OTLP, auth, staging, compaction,
-connectors, agent. Default value, purpose, and where in the source
+data sources, agent. Default value, purpose, and where in the source
 it's read.
 
 </div>
@@ -64,7 +64,7 @@ parser understands today. Use this page as the lookup index; the
 ### [Schema mappings](/reference/schema-mappings)
 
 🚧 Roadmap. The Postgres / MySQL / MongoDB to kyma type mappings
-the connector framework will use when DB-M1, DB-M2, and DB-M3
+the data source framework will use when DB-M1, DB-M2, and DB-M3
 ship. Source-of-truth tables, mark-for-mark, from the
 multi-source-database design spec.
 

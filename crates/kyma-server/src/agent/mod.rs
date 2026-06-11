@@ -11,7 +11,7 @@
 pub mod artifact_graph_sync;
 pub mod cc_curate;
 pub mod ci_correlate;
-pub mod connector_tools;
+pub mod datasource_tools;
 pub mod dreaming;
 pub mod dreaming_local;
 pub mod dreaming_skill;
