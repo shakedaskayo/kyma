@@ -377,6 +377,19 @@ fn default_neighbors_limit() -> usize {
     200
 }
 
+#[derive(Deserialize)]
+struct ExportQuery {
+    realm: Option<String>,
+    #[serde(default)]
+    algorithm: kyma_graph::LayoutAlgorithm,
+    cursor: Option<String>,
+    #[serde(default = "default_export_page_size")]
+    page_size: usize,
+}
+fn default_export_page_size() -> usize {
+    crate::graph_layout_cache::PAGE_SIZE_DEFAULT
+}
+
 // ---------------------------------------------------------------------------
 // Handlers — each reads x-database from headers and dispatches via resolve().
 // ---------------------------------------------------------------------------
@@ -601,6 +614,148 @@ async fn neighbors(
     }
 }
 
+/// Full-graph export with precomputed layout positions, paginated.
+/// First call (no cursor): checks cache freshness via stats fingerprint,
+/// computes layout (inline for small graphs, background task for large),
+/// and returns the first node page or `layout_status: "computing"`.
+/// Subsequent calls pass the returned cursor and are served from the cache.
+async fn export(
+    State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
+    Path(graph): Path<String>,
+    Query(q): Query<ExportQuery>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    use crate::graph_layout_cache::{
+        parse_cursor, slice_page, CacheKey, CacheState, LaidOutGraph, LayoutCache,
+        SYNC_COMPUTE_MAX_NODES,
+    };
+    let db = db_from_headers(&headers);
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
+    let page_size = q.page_size.clamp(100, 50_000);
+
+    // Pages 2+: serve straight from the layout_id in the cursor.
+    if let Some(cursor) = &q.cursor {
+        let Some((layout_id, kind, offset)) = parse_cursor(cursor) else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": {"code": "bad_cursor", "message": "malformed cursor"}})),
+            )
+                .into_response();
+        };
+        return match state.layout_cache.by_layout_id(&layout_id) {
+            Some(laid) => {
+                (StatusCode::OK, Json(slice_page(&laid, kind, offset, page_size))).into_response()
+            }
+            // Evicted mid-paging — client restarts from cursor=None.
+            None => (
+                StatusCode::GONE,
+                Json(serde_json::json!({"error": {"code": "layout_evicted", "message": "layout evicted; restart export"}})),
+            )
+                .into_response(),
+        };
+    }
+
+    // First page: resolve provider + fingerprint.
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let p = match resolve(&state, &graph, &db, allowed).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    let stats = match p.stats(q.realm.as_deref()).await {
+        Ok(s) => s,
+        Err(e) => return err500(e),
+    };
+    let fingerprint = (stats.total_nodes, stats.total_relationships);
+    let key = CacheKey {
+        database: db.clone(),
+        graph: graph.clone(),
+        realm: q.realm.clone(),
+        algorithm: q.algorithm,
+    };
+    let computing = |key: &CacheKey, fp: (usize, usize)| {
+        Json(kyma_graph::GraphExportPage {
+            layout_status: "computing".into(),
+            layout_id: LayoutCache::layout_id(key, fp),
+            total_nodes: fp.0,
+            total_edges: fp.1,
+            nodes: vec![],
+            edges: vec![],
+            next_cursor: None,
+        })
+    };
+
+    match state.layout_cache.get_fresh(&key, fingerprint) {
+        Some(CacheState::Ready(laid)) => {
+            (StatusCode::OK, Json(slice_page(&laid, 'n', 0, page_size))).into_response()
+        }
+        Some(CacheState::Computing) => {
+            (StatusCode::OK, computing(&key, fingerprint)).into_response()
+        }
+        None => {
+            let compute = move |payload: kyma_graph::GraphPayload,
+                                key: &CacheKey|
+                  -> LaidOutGraph {
+                let positions = kyma_graph::compute_layout(
+                    key.algorithm,
+                    &payload.nodes,
+                    &payload.edges,
+                    kyma_graph::LAYOUT_WIDTH,
+                    kyma_graph::LAYOUT_HEIGHT,
+                );
+                let fp = (payload.nodes.len(), payload.edges.len());
+                LaidOutGraph {
+                    layout_id: LayoutCache::layout_id(key, fp),
+                    fingerprint: fp,
+                    nodes: payload
+                        .nodes
+                        .into_iter()
+                        .map(|n| {
+                            let (x, y) = positions.get(&n.id).copied().unwrap_or((0.0, 0.0));
+                            kyma_graph::PositionedNode { node: n, x, y }
+                        })
+                        .collect(),
+                    edges: payload.edges,
+                }
+            };
+
+            if stats.total_nodes <= SYNC_COMPUTE_MAX_NODES {
+                // Small graph: compute inline and serve the first page now.
+                let payload = match p.overview(q.realm.as_deref(), usize::MAX).await {
+                    Ok(pl) => pl,
+                    Err(e) => return err500(e),
+                };
+                let laid = state.layout_cache.insert_ready(key.clone(), compute(payload, &key));
+                (StatusCode::OK, Json(slice_page(&laid, 'n', 0, page_size))).into_response()
+            } else {
+                // Large graph: background compute, report computing.
+                if state.layout_cache.begin_compute(&key) {
+                    let cache = state.layout_cache.clone();
+                    let realm = q.realm.clone();
+                    let bg_key = key.clone();
+                    let mut guard = cache.compute_guard(bg_key.clone());
+                    tokio::spawn(async move {
+                        match p.overview(realm.as_deref(), usize::MAX).await {
+                            Ok(payload) => {
+                                let laid = compute(payload, &bg_key);
+                                cache.insert_ready(bg_key, laid);
+                                guard.disarm();
+                            }
+                            Err(e) => {
+                                tracing::warn!("graph export layout failed: {e}");
+                                // guard drops here, calling abort_compute
+                            }
+                        }
+                    });
+                }
+                (StatusCode::OK, computing(&key, fingerprint)).into_response()
+            }
+        }
+    }
+}
+
 /// Read-only graph router. Caller wraps with the same `Role::Read` middleware
 /// as the rest of the query surface.
 pub fn graph_router(state: QueryState) -> Router {
@@ -613,6 +768,7 @@ pub fn graph_router(state: QueryState) -> Router {
         .route("/v1/graph/:graph/nodes/:id/subgraph", get(subgraph))
         .route("/v1/graph/:graph/search", post(search))
         .route("/v1/graph/:graph/neighbors", post(neighbors))
+        .route("/v1/graph/:graph/export", get(export))
         .with_state(state)
 }
 
