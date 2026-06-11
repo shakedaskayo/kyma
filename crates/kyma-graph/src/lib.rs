@@ -20,6 +20,6 @@ pub use schema_graph::SchemaGraphProvider;
 pub use stored_graph::StoredGraphProvider;
 pub use source::{ColumnDef, SchemaSource};
 pub use types::{
-    Direction, EdgeExpansion, GraphNode, GraphPayload, GraphRef, GraphRelationship,
-    GraphSchema, GraphStats, NodeMetadata, Props, SearchHits,
+    Direction, EdgeExpansion, GraphExportPage, GraphNode, GraphPayload, GraphRef,
+    GraphRelationship, GraphSchema, GraphStats, NodeMetadata, PositionedNode, Props, SearchHits,
 };
