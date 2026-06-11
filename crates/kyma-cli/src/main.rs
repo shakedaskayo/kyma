@@ -879,7 +879,7 @@ async fn cmd_status() -> Result<()> {
                 Ok(true) => println!("Auth:      ok (token accepted)"),
                 Ok(false) => println!(
                     "Auth:      TOKEN REJECTED — the server does not accept the configured token.\n           Fix: re-run the installer, or `kyma service install --addr <addr> --token <tok>`,\n           or `kyma connect {} --token <tok>` with the server's real token.",
-                    cfg.endpoint
+                    probe_cfg.endpoint
                 ),
                 Err(e) => println!("Auth:      probe error — {e}"),
             }

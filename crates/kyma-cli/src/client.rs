@@ -238,7 +238,7 @@ pub(crate) async fn probe_auth(cfg: &ClientConfig) -> Result<bool> {
     if let Some(t) = &cfg.token {
         req = req.bearer_auth(t);
     }
-    let res = req.send().await?;
+    let res = req.send().await.context("GET /v1/auth/me")?;
     Ok(!matches!(res.status().as_u16(), 401 | 403))
 }
 
