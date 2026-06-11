@@ -6,18 +6,17 @@
  * two instances on the same page never share selection / layout state.
  *
  * Props deliberately omitted (not wired — no dead props shipped):
- *   - minimap: store.showMiniMap exists but GraphCanvas does not consume it; no
- *     visible effect. Omitted until canvas-side wiring is added.
- *   - renderNodeTooltip: GraphCanvas has no tooltip escape hatch today. Omitted.
+ *   - renderNodeTooltip: no tooltip escape hatch today. Omitted.
  *   - database: graph targets carry their database per entry in `graphs`;
  *     the provider default covers bare entries. A top-level override would be
  *     ambiguous, so it is omitted.
  *
- * toolbar prop: The sidebar IS the toolbar + controls surface combined. Setting
- *   toolbar={false} AND sidebar={false} hides the entire control surface.
- *   Setting toolbar={false} alone also hides the sidebar (they are the same DOM
- *   region). If you want the sidebar but no top toolbar, that distinction does
- *   not exist in the current design — both resolve to showSidebar on GraphView.
+ * toolbar / sidebar props: Both control the chrome (CommandBar, inspector,
+ *   legend, breadcrumbs, minimap). Setting either to false hides the full
+ *   chrome surface. They resolve to showChrome on GraphView.
+ *
+ * renderer prop: "webgl" (Sigma.js) or "canvas" (ForceGraph2D fallback).
+ *   Default: auto-detected via webglAvailable() — tries webgl2 then webgl.
  */
 import { useCallback, useEffect, useRef, type JSX } from "react";
 import type { GraphNode } from "@kyma-ai/client";
@@ -26,6 +25,8 @@ import { GraphStoreContext, createGraphStore } from "./graph-store";
 import type { GraphStore } from "./graph-store";
 import { GraphView } from "./GraphView";
 import type { LayoutAlgorithm } from "@kyma-ai/client";
+// Re-export so embedders can query the renderer without rendering.
+export { webglAvailable } from "./GraphView";
 
 // ── Public prop surface ────────────────────────────────────────────────────────
 
@@ -39,13 +40,18 @@ export interface KymaGraphProps {
   /** Initial store layout algorithm. Default "force". */
   layout?: LayoutAlgorithm;
   /**
-   * Show the sidebar (controls, inspector, legend). Default true.
-   * Note: toolbar and sidebar share the same DOM region in the current design;
-   * setting either to false hides the whole control surface.
+   * Show chrome (CommandBar, inspector, legend, breadcrumbs, minimap). Default true.
+   * Note: toolbar and sidebar are legacy aliases — setting either to false hides
+   * the whole chrome surface.
    */
+  chrome?: boolean;
   toolbar?: boolean;
-  /** Same as toolbar — controls the sidebar visibility. Default true. */
   sidebar?: boolean;
+  /**
+   * Renderer to use. "webgl" uses Sigma.js, "canvas" uses the ForceGraph2D fallback.
+   * Default: auto-detected via webglAvailable().
+   */
+  renderer?: "webgl" | "canvas";
   /** Initial search/focus query seeded into the store on first render. */
   focusQuery?: string;
   /** Deep-link target node id (raw or composite `ns::id`) to center + highlight
@@ -60,7 +66,7 @@ export interface KymaGraphProps {
   /** Custom fallback node shown by the error boundary when a render error occurs. */
   fallback?: React.ReactNode;
   /**
-   * Called when a node is clicked. Wired via store subscription: GraphCanvas
+   * Called when a node is clicked. Wired via store subscription: GraphView
    * writes selectedNodeId to the store on click; KymaGraph subscribes to that
    * field and calls onNodeClick with the resolved GraphNode.
    */
@@ -85,8 +91,10 @@ export function KymaGraph(props: KymaGraphProps): JSX.Element {
     discover,
     height = "100%",
     layout = "force",
+    chrome,
     toolbar = true,
     sidebar = true,
+    renderer,
     focusQuery,
     focusNodeId,
     realm,
@@ -127,7 +135,8 @@ export function KymaGraph(props: KymaGraphProps): JSX.Element {
     [onNodeClick, onSelectionChange],
   );
 
-  const showSidebar = sidebar && toolbar;
+  // chrome prop overrides the legacy toolbar/sidebar combo.
+  const showChrome = (chrome ?? true) && sidebar && toolbar;
 
   return (
     <KymaErrorBoundary fallback={fallback}>
@@ -140,7 +149,8 @@ export function KymaGraph(props: KymaGraphProps): JSX.Element {
             graphs={graphs}
             discover={discover}
             realm={realm}
-            showSidebar={showSidebar}
+            renderer={renderer}
+            showChrome={showChrome}
             focusNodeId={focusNodeId}
             onSelectedNodeChange={
               onNodeClick || onSelectionChange ? handleSelectedNodeChange : undefined
