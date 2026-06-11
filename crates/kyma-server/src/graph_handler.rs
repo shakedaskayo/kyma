@@ -668,7 +668,7 @@ async fn export(
         Ok(s) => s,
         Err(e) => return err500(e),
     };
-    let fingerprint = (stats.total_nodes, stats.total_relationships);
+    let fingerprint = (stats.total_nodes, stats.total_relationships); // fingerprint.1 == total_relationships == total_edges (same count, different wire names)
     let key = CacheKey {
         database: db.clone(),
         graph: graph.clone(),
@@ -731,6 +731,9 @@ async fn export(
                 (StatusCode::OK, Json(slice_page(&laid, 'n', 0, page_size))).into_response()
             } else {
                 // Large graph: background compute, report computing.
+                // v1: no cross-key concurrency cap. With MAX_ENTRIES = 8 distinct cached
+                // graphs, worst case is 8 concurrent background overview + layout tasks.
+                // Add a Semaphore here if that ever becomes a problem.
                 if state.layout_cache.begin_compute(&key) {
                     let cache = state.layout_cache.clone();
                     let realm = q.realm.clone();
@@ -1217,15 +1220,12 @@ mod tests {
     /// Minimal percent-encoding helper for cursor values in test URIs.
     /// Only encodes characters that would break a query string.
     fn urlencoding_simple(s: &str) -> String {
-        s.chars()
-            .flat_map(|c| match c {
-                'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' | ':' => {
-                    vec![c]
+        s.bytes()
+            .flat_map(|b| match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b':' => {
+                    vec![b as char]
                 }
-                other => {
-                    let b = other as u32;
-                    format!("%{b:02X}").chars().collect::<Vec<_>>()
-                }
+                other => format!("%{other:02X}").chars().collect::<Vec<_>>(),
             })
             .collect()
     }
