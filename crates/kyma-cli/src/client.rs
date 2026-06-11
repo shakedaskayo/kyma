@@ -36,18 +36,25 @@ pub(crate) fn load_config() -> Result<ClientConfig> {
     Ok(cfg)
 }
 
-pub(crate) fn save_config(cfg: &ClientConfig) -> Result<()> {
-    let dir = config_dir()?;
-    std::fs::create_dir_all(&dir).with_context(|| format!("mkdir {}", dir.display()))?;
-    let path = config_path()?;
+/// Write `cfg` to `path`, creating parent directories and locking permissions
+/// to 0600 on Unix. The single authoritative write path used by both
+/// `save_config` and `persist_local_connection_at`.
+pub(crate) fn save_config_at(path: &Path, cfg: &ClientConfig) -> Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("mkdir {}", dir.display()))?;
+    }
     let json = serde_json::to_string_pretty(cfg)?;
-    std::fs::write(&path, json).with_context(|| format!("write {}", path.display()))?;
+    std::fs::write(path, json).with_context(|| format!("write {}", path.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
     }
     Ok(())
+}
+
+pub(crate) fn save_config(cfg: &ClientConfig) -> Result<()> {
+    save_config_at(&config_path()?, cfg)
 }
 
 /// Resolve the effective config: precedence is `KYMA_SERVER_URL` /
@@ -250,25 +257,18 @@ pub(crate) fn persist_local_connection_at(
     endpoint: &str,
     token: Option<&str>,
 ) -> Result<()> {
+    // Tolerate missing or corrupt config (self-healing — install must not fail),
+    // at the cost of discarding unparseable contents.
     let mut cfg: ClientConfig = std::fs::read_to_string(path)
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok())
         .unwrap_or_default();
     cfg.endpoint = endpoint.to_string();
+    // Passing None preserves any existing token (auth-disabled installs don't clear credentials).
     if let Some(t) = token {
         cfg.token = Some(t.to_string());
     }
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("mkdir {}", dir.display()))?;
-    }
-    std::fs::write(path, serde_json::to_string_pretty(&cfg)?)
-        .with_context(|| format!("write {}", path.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(())
+    save_config_at(path, &cfg)
 }
 
 /// `persist_local_connection_at` against the default `~/.kyma/config.json`.
