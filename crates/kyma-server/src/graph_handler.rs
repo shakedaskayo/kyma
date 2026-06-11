@@ -614,6 +614,11 @@ async fn neighbors(
     }
 }
 
+/// "Fetch everything" limit for full-graph export. NOT `usize::MAX`: the
+/// stored-graph provider folds the limit into a SQL `LIMIT`, and DataFusion
+/// rejects values that don't fit an `Int64` cast.
+const EXPORT_FETCH_ALL: usize = u32::MAX as usize;
+
 /// Full-graph export with precomputed layout positions, paginated.
 /// First call (no cursor): checks cache freshness via stats fingerprint,
 /// computes layout (inline for small graphs, background task for large),
@@ -723,7 +728,7 @@ async fn export(
 
             if stats.total_nodes <= SYNC_COMPUTE_MAX_NODES {
                 // Small graph: compute inline and serve the first page now.
-                let payload = match p.overview(q.realm.as_deref(), usize::MAX).await {
+                let payload = match p.overview(q.realm.as_deref(), EXPORT_FETCH_ALL).await {
                     Ok(pl) => pl,
                     Err(e) => return err500(e),
                 };
@@ -740,7 +745,7 @@ async fn export(
                     let bg_key = key.clone();
                     let mut guard = cache.compute_guard(bg_key.clone());
                     tokio::spawn(async move {
-                        match p.overview(realm.as_deref(), usize::MAX).await {
+                        match p.overview(realm.as_deref(), EXPORT_FETCH_ALL).await {
                             Ok(payload) => {
                                 let laid = compute(payload, &bg_key);
                                 cache.insert_ready(bg_key, laid);
