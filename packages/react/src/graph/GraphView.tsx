@@ -189,8 +189,11 @@ export function GraphView({
       focusedRef.current = focusNodeId;
       focusNode(keyOf(match));
     }
+    // exp.version (not `nodes`) — the accumulator array is mutated in place, so
+    // its reference never changes; version is what signals "new nodes arrived"
+    // and lets a deep-link target found in a later chunk still get focused.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusNodeId, nodes]);
+  }, [focusNodeId, exp.version]);
 
   // ── onSelectedNodeChange bridge ───────────────────────────────────────────────
   const selectedNode = selectedNodeId ? (nodesByCompositeId.get(selectedNodeId) ?? null) : null;
@@ -210,15 +213,6 @@ export function GraphView({
     setSigma(s);
     graphRef.current = s.getGraph();
   }, []);
-
-  // Clear sigma refs when it gets killed (version bump triggers SigmaCanvas rebuild).
-  useEffect(() => {
-    return () => {
-      setSigma(null);
-      graphRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exp.version]);
 
   // ── Zoom controls (WebGL path) ────────────────────────────────────────────────
   const zoomIn = useCallback(() => {

@@ -51,7 +51,7 @@ export interface UseKymaGraphResult {
   stats: GraphStats | null;
   /** Node count contributed by each namespace (db/graph composite key). */
   namespaceCounts: Record<string, number>;
-  /** Resolved graph coordinates — used by GraphSidebar namespace picker. */
+  /** Resolved graph coordinates — used by LegendDock namespace picker. */
   coords: GraphCoord[];
   /** Granular fetch progress across all (database, graph) pairs. */
   progress: GraphProgress;

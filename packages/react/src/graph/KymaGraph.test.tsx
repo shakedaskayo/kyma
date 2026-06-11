@@ -228,12 +228,18 @@ describe("KymaGraph", () => {
 
   it("hides the chrome when sidebar={false}", async () => {
     stubGraphFetch();
-    render(provider(<KymaGraph graphs={GRAPHS} sidebar={false} />));
+    const { container } = render(provider(<KymaGraph graphs={GRAPHS} sidebar={false} />));
     await waitFor(() => expect(fgInstances.length).toBe(1));
-    // With chrome hidden: no CommandBar (no search input) and no LegendDock.
-    // The mock-force-graph div renders but no chrome elements should appear.
-    // Verify the graph canvas still mounts (the mock records its instance).
-    expect(fgInstances[0]).toBeDefined();
+    // The LegendDock chip ("N nodes · M edges") is the always-visible chrome
+    // element — it must be absent when the chrome is hidden.
+    expect(container.textContent).not.toContain("edges");
+  });
+
+  it("shows the legend dock chip by default", async () => {
+    stubGraphFetch();
+    const { container } = render(provider(<KymaGraph graphs={GRAPHS} />));
+    await waitFor(() => expect(fgInstances.length).toBe(1));
+    await waitFor(() => expect(container.textContent).toContain("edges"));
   });
 
   it("renders the error-boundary fallback when the canvas throws", async () => {
