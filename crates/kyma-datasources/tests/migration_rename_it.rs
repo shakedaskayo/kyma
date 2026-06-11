@@ -93,6 +93,20 @@ async fn rename_migration_preserves_rows() {
                                    'scheduled_for', '60000'),
                 ARRAY['connector']);
 
+        INSERT INTO memory_settings (tenant_id, settings)
+        VALUES ('{TENANT}',
+                '{{"extraction_enabled": true,
+                   "dreaming": {{"enabled": true,
+                                 "connector_read_budget": 7,
+                                 "connector_read_max_bytes": 123456,
+                                 "mutation_cap": 9}}}}'::jsonb);
+
+        INSERT INTO memory_pipeline_runs
+            (id, tenant_id, kind, status, started_at, finished_at, stats_json)
+        VALUES ('33333333-3333-3333-3333-333333333333', '{TENANT}', 'dreaming',
+                'success', now(), now(),
+                '{{"memories_created": 3, "connector_reads": 5, "tool_calls": 11}}'::jsonb);
+
         INSERT INTO oauth_flows
             (tenant_id, state, provider, connector_type, label, redirect_uri, expires_at)
         VALUES ('{TENANT}', 'state-1', 'github', 'github', 'lbl',
@@ -275,6 +289,37 @@ async fn rename_migration_preserves_rows() {
     .await
     .unwrap();
     assert_eq!(n_old_idx, 0);
+
+    // memory_settings: dreaming budgets rekeyed inside the settings jsonb,
+    // sibling keys untouched.
+    let settings: serde_json::Value = sqlx::query_scalar(
+        "SELECT settings FROM memory_settings WHERE tenant_id = $1::uuid",
+    )
+    .bind(TENANT)
+    .fetch_one(&pool)
+    .await
+    .expect("memory_settings row");
+    let dreaming = &settings["dreaming"];
+    assert_eq!(dreaming["data_source_read_budget"], 7);
+    assert_eq!(dreaming["data_source_read_max_bytes"], 123_456);
+    assert!(dreaming.get("connector_read_budget").is_none());
+    assert!(dreaming.get("connector_read_max_bytes").is_none());
+    assert_eq!(dreaming["enabled"], true, "sibling keys survive the rekey");
+    assert_eq!(dreaming["mutation_cap"], 9);
+    assert_eq!(settings["extraction_enabled"], true);
+
+    // memory_pipeline_runs.stats_json: outcome counter rekeyed.
+    let stats: serde_json::Value = sqlx::query_scalar(
+        "SELECT stats_json FROM memory_pipeline_runs
+         WHERE id = '33333333-3333-3333-3333-333333333333'::uuid",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("memory_pipeline_runs row");
+    assert_eq!(stats["data_source_reads"], 5);
+    assert!(stats.get("connector_reads").is_none());
+    assert_eq!(stats["memories_created"], 3, "sibling keys survive the rekey");
+    assert_eq!(stats["tool_calls"], 11);
 
     // Watcher registry exists and starts empty.
     let (n_watchers,): (i64,) = sqlx::query_as("SELECT count(*) FROM data_source_watchers")

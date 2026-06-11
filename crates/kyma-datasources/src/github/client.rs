@@ -533,7 +533,7 @@ impl GithubClient {
 
     /// `GET /repos/{owner}/{repo}/readme` — the repo README, decoded.
     /// Returns `None` for non-base64 encodings, binary content, or files over
-    /// `max_bytes`. Used by the dreaming agent's read-only `connector_read`.
+    /// `max_bytes`. Used by the dreaming agent's read-only `data_source_read`.
     pub async fn get_readme(
         &self,
         owner: &str,

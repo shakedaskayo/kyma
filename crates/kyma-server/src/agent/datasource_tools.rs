@@ -113,7 +113,7 @@ pub fn tool_list_data_sources(ctx: DataSourceToolCtx) -> Arc<dyn Tool> {
                                     })
                                 })
                                 .collect();
-                            Ok(json!({ "connectors": items }))
+                            Ok(json!({ "data_sources": items }))
                         }
                         Err(e) => Ok(json!({"error": format!("list data sources: {e}")})),
                     }

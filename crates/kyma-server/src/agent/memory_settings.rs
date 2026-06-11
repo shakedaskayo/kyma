@@ -75,8 +75,15 @@ pub struct DreamingSettings {
     /// / `mutation_cap` / data source budgets are the real per-run guardrails.
     pub wall_clock_secs: u64,
     /// Gap-fill budget: max data_source_read calls per run.
+    ///
+    /// `alias`: settings persisted before the connectors → data-sources
+    /// rename (027) carry the old key; the alias keeps those loading instead
+    /// of silently resetting the operator's budget to the default. Aliases
+    /// affect deserialization only — we always write the new key.
+    #[serde(alias = "connector_read_budget")]
     pub data_source_read_budget: u32,
     /// Gap-fill budget: max bytes fetched across all data source reads.
+    #[serde(alias = "connector_read_max_bytes")]
     pub data_source_read_max_bytes: u64,
     /// Cap on memory mutations (save/merge/archive/judge/…) per run.
     pub mutation_cap: u32,
@@ -224,6 +231,28 @@ mod tests {
         let s: MemorySettings = serde_json::from_value(legacy).unwrap();
         assert!(!s.hitl.enabled, "HITL must default off for legacy rows");
         assert!(s.dreaming.enabled, "existing fields still load");
+    }
+
+    #[test]
+    fn pre_rename_dreaming_budget_keys_still_load() {
+        // Settings persisted before the connectors → data-sources rename
+        // (e.g. kyma-local's JSON file, which no SQL migration touches) carry
+        // the old field names — the serde aliases must map them instead of
+        // silently resetting the budgets to defaults.
+        let legacy = serde_json::json!({
+            "dreaming": {
+                "enabled": true,
+                "connector_read_budget": 7,
+                "connector_read_max_bytes": 123_456
+            }
+        });
+        let s: MemorySettings = serde_json::from_value(legacy).unwrap();
+        assert_eq!(s.dreaming.data_source_read_budget, 7);
+        assert_eq!(s.dreaming.data_source_read_max_bytes, 123_456);
+        // Wire output stays new-keyed.
+        let v = serde_json::to_value(&s).unwrap();
+        assert!(v["dreaming"].get("connector_read_budget").is_none());
+        assert_eq!(v["dreaming"]["data_source_read_budget"], 7);
     }
 
     #[test]

@@ -100,6 +100,40 @@ UPDATE credentials
  WHERE metadata ? 'connector_type';
 
 -- ------------------------------------------------------------------
+-- memory_settings (020): the `dreaming` object inside the per-tenant
+-- settings jsonb carries operator budgets under the old serde field
+-- names. The struct loads with `#[serde(default)]`, so an old-keyed row
+-- would silently reset those budgets to defaults — rekey in place.
+-- (DreamingSettings also carries serde aliases for the old keys, so
+-- this is belt-and-braces rather than load-bearing.)
+-- ------------------------------------------------------------------
+UPDATE memory_settings
+   SET settings = jsonb_set(settings, '{dreaming}',
+                  ((settings->'dreaming') - 'connector_read_budget')
+                  || jsonb_build_object('data_source_read_budget',
+                                        settings->'dreaming'->'connector_read_budget')),
+       updated_at = now()
+ WHERE settings->'dreaming' ? 'connector_read_budget';
+
+UPDATE memory_settings
+   SET settings = jsonb_set(settings, '{dreaming}',
+                  ((settings->'dreaming') - 'connector_read_max_bytes')
+                  || jsonb_build_object('data_source_read_max_bytes',
+                                        settings->'dreaming'->'connector_read_max_bytes')),
+       updated_at = now()
+ WHERE settings->'dreaming' ? 'connector_read_max_bytes';
+
+-- ------------------------------------------------------------------
+-- memory_pipeline_runs (016, stats_json added in 023): DreamingOutcome
+-- counters from finished runs carry the old `connector_reads` key.
+-- ------------------------------------------------------------------
+UPDATE memory_pipeline_runs
+   SET stats_json = (stats_json - 'connector_reads')
+                    || jsonb_build_object('data_source_reads',
+                                          stats_json->'connector_reads')
+ WHERE stats_json ? 'connector_reads';
+
+-- ------------------------------------------------------------------
 -- artifacts (026): provenance column.
 -- ------------------------------------------------------------------
 ALTER TABLE artifacts RENAME COLUMN connector_id TO data_source_id;
