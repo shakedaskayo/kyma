@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
-import { getOverview, getNode, searchNodes, expandNeighbors, getStats, getSubgraph, listGraphs } from "./graph";
+import { getOverview, getNode, searchNodes, expandNeighbors, getStats, getSubgraph, listGraphs, exportGraph } from "./graph";
 import { createTransport } from "./transport";
 
 const mockFetch = vi.fn();
@@ -93,4 +93,44 @@ test("omits x-database header when database is absent", async () => {
   await listGraphs(makeTransport(mockFetch)); // no database
   const [, init] = mockFetch.mock.calls[0];
   expect(init.headers.get("x-database")).toBeNull();
+});
+
+test("exportGraph requests /export with algorithm + pageSize and parses positioned nodes", async () => {
+  const mockPage = {
+    layout_status: "ready",
+    layout_id: "Labc",
+    total_nodes: 2,
+    total_edges: 0,
+    nodes: [
+      { id: "n1", labels: ["Table"], properties: {}, metadata: { created_at: "", updated_at: "", realm: "default" }, x: 10, y: 20 },
+      { id: "n2", labels: ["Column"], properties: {}, metadata: { created_at: "", updated_at: "", realm: "default" }, x: 30, y: 40 },
+    ],
+    edges: [],
+    next_cursor: "Labc:e:0",
+  };
+  mockFetch.mockResolvedValue(ok(mockPage));
+  const res = await exportGraph(makeTransport(mockFetch), { graph: "g", algorithm: "force", pageSize: 500 });
+  const [url] = mockFetch.mock.calls[0];
+  expect(url).toContain("/v1/graph/g/export");
+  expect(url).toContain("algorithm=force");
+  expect(url).toContain("page_size=500");
+  expect(res.layout_status).toBe("ready");
+  expect(res.total_nodes).toBe(2);
+  expect(res.nodes[0].x).toBe(10);
+  expect(res.next_cursor).toBe("Labc:e:0");
+});
+
+test("exportGraph passes cursor through in the URL", async () => {
+  const mockPage = {
+    layout_status: "ready",
+    layout_id: "Labc",
+    total_nodes: 0,
+    total_edges: 0,
+    nodes: [],
+    edges: [],
+  };
+  mockFetch.mockResolvedValue(ok(mockPage));
+  await exportGraph(makeTransport(mockFetch), { graph: "g", cursor: "Labc:e:0" });
+  const [url] = mockFetch.mock.calls[0];
+  expect(url).toContain("cursor=Labc%3Ae%3A0");
 });

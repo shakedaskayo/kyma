@@ -60,6 +60,7 @@ const GRAPH_FNS = [
   "getSubgraph",
   "searchNodes",
   "expandNeighbors",
+  "exportGraph",
 ] as const satisfies readonly (keyof typeof graph)[];
 
 const QUERY_FNS = ["runQuery"] as const satisfies readonly (keyof typeof query)[];
