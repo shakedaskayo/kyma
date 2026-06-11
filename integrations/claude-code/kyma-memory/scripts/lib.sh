@@ -15,6 +15,8 @@ KYMA_CC_TABLE="${KYMA_CC_TABLE:-claude_code_events}"
 KYMA_CC_RECALL_LIMIT="${KYMA_CC_RECALL_LIMIT:-5}"
 KYMA_CC_MAXLEN="${KYMA_CC_MAXLEN:-4000}"          # max bytes of any captured text field
 KYMA_CC_FILE_SYNC="${KYMA_CC_FILE_SYNC:-1}"       # 1 = sync ~/.claude/projects/*/memory files
+# Where hook-side capture failures are recorded for `kyma status` to surface.
+KYMA_CAPTURE_HEALTH="${KYMA_CAPTURE_HEALTH:-$HOME/.kyma/capture-health.json}"
 # The file phase honors more env knobs (read by `kyma sync`, not these hooks):
 #   KYMA_CC_CURATE=1                  curation + writeback (archive/promote/index)
 #   KYMA_CC_PROMOTE=1                 promote high-value memories to native files
@@ -59,10 +61,22 @@ kyma_clean() {
 
 # Ship one compact NDJSON event line ($1) to the firehose. Detached so it
 # survives the hook process exiting and never adds latency to the turn.
+# Outcome is recorded to $KYMA_CAPTURE_HEALTH: failures write a marker,
+# the next success clears it — so a silent 401 streak is visible to
+# `kyma status` instead of vanishing.
 kyma_emit() {
   [ "$KYMA_CC_CAPTURE" = "off" ] && return 0
   have kyma || return 0
-  ( printf '%s\n' "$1" | kyma ingest push --table "$KYMA_CC_TABLE" --db "$KYMA_CC_DB" \
-      >/dev/null 2>&1 & ) >/dev/null 2>&1
+  (
+    err=$(printf '%s\n' "$1" | kyma ingest push --table "$KYMA_CC_TABLE" --db "$KYMA_CC_DB" 2>&1 >/dev/null)
+    if [ $? -eq 0 ]; then
+      rm -f "$KYMA_CAPTURE_HEALTH" 2>/dev/null
+    else
+      mkdir -p "$(dirname "$KYMA_CAPTURE_HEALTH")" 2>/dev/null
+      detail=$(printf '%s' "$err" | head -c 300 | tr '"' "'" | tr '\n' ' ')
+      printf '{"ts":"%s","status":"error","detail":"%s"}\n' "$(now_ts)" "$detail" \
+        >"$KYMA_CAPTURE_HEALTH" 2>/dev/null
+    fi
+  ) >/dev/null 2>&1 &
   return 0
 }

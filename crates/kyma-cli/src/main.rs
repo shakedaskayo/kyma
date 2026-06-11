@@ -883,6 +883,20 @@ async fn cmd_status() -> Result<()> {
                 ),
                 Err(e) => println!("Auth:      probe error — {e}"),
             }
+            // Hook-side capture health (written by the kyma-memory plugin hooks).
+            if let Ok(dir) = client::config_dir() {
+                let p = dir.join("capture-health.json");
+                if let Ok(raw) = std::fs::read_to_string(&p) {
+                    let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+                    println!(
+                        "Capture:   LAST INGEST FAILED at {} — {}",
+                        v["ts"].as_str().unwrap_or("?"),
+                        v["detail"].as_str().unwrap_or("unknown error"),
+                    );
+                } else {
+                    println!("Capture:   ok (no recorded hook failures)");
+                }
+            }
         }
         Err(_) => {
             println!("No config found. Run `kyma connect <url>` first.");
