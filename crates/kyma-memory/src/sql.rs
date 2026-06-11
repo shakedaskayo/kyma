@@ -300,7 +300,7 @@ pub fn fold_source_summary(rows: &[Value]) -> Vec<SourceSummary> {
             .get("provenance")
             .and_then(Value::as_str)
             .and_then(|p| serde_json::from_str::<Value>(p).ok())
-            .and_then(|p| p.get("source").and_then(Value::as_str).map(str::to_string))
+            .and_then(|p| p.get("source").and_then(Value::as_str).map(str::to_owned))
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "manual".to_string());
         let realm = row
@@ -481,6 +481,16 @@ mod tests {
         assert_eq!(
             out,
             vec![SourceSummary { source: "manual".into(), realm: "default".into(), count: 4 }]
+        );
+    }
+
+    #[test]
+    fn fold_source_summary_treats_malformed_provenance_as_manual() {
+        let rows = vec![json!({"provenance": "not json", "realm": "kyma", "n": 1})];
+        let out = fold_source_summary(&rows);
+        assert_eq!(
+            out,
+            vec![SourceSummary { source: "manual".into(), realm: "kyma".into(), count: 1 }]
         );
     }
 }
