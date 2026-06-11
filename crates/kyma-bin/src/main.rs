@@ -30,6 +30,7 @@ use kyma_ingest_core::{
 use kyma_ingest_filedrop::{FiledropConfig, FiledropWatcher};
 use kyma_ingest_kafka::{KafkaConsumerConfig, KafkaConsumerWorker};
 use kyma_ingest_otlp::OtlpLogsService;
+use kyma_ingest_otlp::traces::OtlpTraceService;
 use kyma_ingest_rest::IngestState;
 use kyma_server::auth::{
     require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role,
@@ -1289,11 +1290,18 @@ async fn main() -> Result<()> {
             write_path.clone(),
             cli.otlp_database.clone(),
         ));
+        let otlp_trace_svc = OtlpTraceService::new(
+            catalog.clone(),
+            write_path.clone(),
+            cli.otlp_database.clone(),
+        )
+        .into_server();
         let mut otlp_rx = shutdown_tx.subscribe();
         info!(addr = %otlp_addr, database = %cli.otlp_database, "otlp gRPC server listening");
         Some(tokio::spawn(async move {
             let res = tonic::transport::Server::builder()
                 .add_service(otlp_svc)
+                .add_service(otlp_trace_svc)
                 .serve_with_shutdown(otlp_addr, async move {
                     let _ = otlp_rx.recv().await;
                 })

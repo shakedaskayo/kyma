@@ -91,29 +91,6 @@ pub fn request_to_batch(req: &ExportTraceServiceRequest) -> Result<RecordBatch, 
         .map(|ss| ss.spans.len())
         .sum();
 
-    if total_spans == 0 {
-        // Return a zero-row batch with the correct schema.
-        let arrays: Vec<ArrayRef> = vec![
-            Arc::new(TimestampNanosecondBuilder::with_capacity(0).finish()),
-            Arc::new(TimestampNanosecondBuilder::with_capacity(0).finish()),
-            Arc::new(Int64Builder::with_capacity(0).finish()),
-            Arc::new(StringBuilder::with_capacity(0, 0).finish()),
-            Arc::new(StringBuilder::with_capacity(0, 0).finish()),
-            Arc::new(StringBuilder::with_capacity(0, 0).finish()),
-            Arc::new(StringBuilder::with_capacity(0, 0).finish()),
-            Arc::new(StringBuilder::with_capacity(0, 0).finish()),
-            Arc::new(StringBuilder::with_capacity(0, 0).finish()),
-            Arc::new(StringBuilder::with_capacity(0, 0).finish()),
-            Arc::new(StringBuilder::with_capacity(0, 0).finish()),
-            Arc::new(StringBuilder::with_capacity(0, 0).finish()),
-            Arc::new(StringBuilder::with_capacity(0, 0).finish()),
-            Arc::new(StringBuilder::with_capacity(0, 0).finish()),
-            Arc::new(StringBuilder::with_capacity(0, 0).finish()),
-        ];
-        return RecordBatch::try_new(otel_traces_schema(), arrays)
-            .map_err(|e| Status::internal(format!("build empty batch: {e}")));
-    }
-
     let cap = total_spans;
     let str_cap = cap * 32;
 
@@ -244,6 +221,82 @@ pub fn request_to_batch(req: &ExportTraceServiceRequest) -> Result<RecordBatch, 
 
     RecordBatch::try_new(otel_traces_schema(), arrays)
         .map_err(|e| Status::internal(format!("build batch: {e}")))
+}
+
+// -------- service -------------------------------------------------------
+
+use kyma_core::catalog::Catalog;
+use kyma_ingest_core::WritePath;
+use opentelemetry_proto::tonic::collector::trace::v1::{
+    trace_service_server::{TraceService, TraceServiceServer},
+    ExportTracePartialSuccess, ExportTraceServiceResponse,
+};
+use tonic::{Request, Response};
+use tracing::{debug, info};
+
+/// The OTLP traces service implementation.
+pub struct OtlpTraceService {
+    catalog: Arc<dyn Catalog>,
+    write_path: WritePath,
+    database: String,
+}
+
+impl OtlpTraceService {
+    pub fn new(
+        catalog: Arc<dyn Catalog>,
+        write_path: WritePath,
+        database: impl Into<String>,
+    ) -> Self {
+        Self {
+            catalog,
+            write_path,
+            database: database.into(),
+        }
+    }
+
+    pub fn into_server(self) -> TraceServiceServer<Self> {
+        TraceServiceServer::new(self)
+    }
+}
+
+#[tonic::async_trait]
+impl TraceService for OtlpTraceService {
+    async fn export(
+        &self,
+        request: Request<ExportTraceServiceRequest>,
+    ) -> Result<Response<ExportTraceServiceResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let batch = request_to_batch(&req)?;
+        let total = batch.num_rows();
+        debug!(resource_spans = req.resource_spans.len(), total, "otlp trace export");
+        if total == 0 {
+            return Ok(Response::new(ExportTraceServiceResponse::default()));
+        }
+        let table_ref = crate::ensure_otel_table(
+            &self.catalog,
+            &self.database,
+            OTEL_TRACES_TABLE,
+            otel_traces_schema(),
+        )
+        .await?;
+        let ack = self
+            .write_path
+            .ingest(&self.database, &table_ref, vec![batch])
+            .await
+            .map_err(|e| tonic::Status::internal(format!("ingest: {e}")))?;
+        ::metrics::counter!("kyma_otlp_spans_total").increment(ack.rows_ingested);
+        info!(rows = ack.rows_ingested, "otlp trace export committed");
+        Ok(Response::new(ExportTraceServiceResponse {
+            partial_success: if ack.rows_ingested == total as u64 {
+                None
+            } else {
+                Some(ExportTracePartialSuccess {
+                    rejected_spans: (total as i64 - ack.rows_ingested as i64).max(0),
+                    error_message: String::new(),
+                })
+            },
+        }))
+    }
 }
 
 #[cfg(test)]

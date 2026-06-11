@@ -98,39 +98,7 @@ impl OtlpLogsService {
     /// Ensure the `otel_logs` table exists in the target database.
     /// Idempotent — returns the existing `TableRef` if already present.
     async fn ensure_table(&self) -> Result<kyma_core::catalog::TableRef, Status> {
-        match self
-            .catalog
-            .lookup_table(&self.database, OTEL_LOGS_TABLE)
-            .await
-        {
-            Ok(t) => Ok(t),
-            Err(_) => {
-                // Table not found — create it. Also create the database if
-                // it doesn't exist (first-ingest bootstrapping is expected
-                // with OTLP, which doesn't have a separate "create" step).
-                let db_id = match find_database_id(&*self.catalog, &self.database).await {
-                    Some(id) => id,
-                    None => self
-                        .catalog
-                        .create_database(&self.database)
-                        .await
-                        .map_err(|e| Status::internal(format!("create_database: {e}")))?,
-                };
-                self.catalog
-                    .create_table(
-                        db_id,
-                        OTEL_LOGS_TABLE,
-                        otel_logs_schema(),
-                        TableConfig::default(),
-                    )
-                    .await
-                    .map_err(|e| Status::internal(format!("create_table: {e}")))?;
-                self.catalog
-                    .lookup_table(&self.database, OTEL_LOGS_TABLE)
-                    .await
-                    .map_err(|e| Status::internal(format!("lookup after create: {e}")))
-            }
-        }
+        ensure_otel_table(&self.catalog, &self.database, OTEL_LOGS_TABLE, otel_logs_schema()).await
     }
 }
 
@@ -269,6 +237,36 @@ impl LogsService for OtlpLogsService {
 }
 
 // -------- helpers -----------------------------------------------------
+
+/// Ensure `table` exists in `database` with `schema`, creating the database
+/// on first use (OTLP has no separate "create" step). Idempotent.
+pub(crate) async fn ensure_otel_table(
+    catalog: &Arc<dyn Catalog>,
+    database: &str,
+    table: &str,
+    schema: Arc<Schema>,
+) -> Result<kyma_core::catalog::TableRef, Status> {
+    match catalog.lookup_table(database, table).await {
+        Ok(t) => Ok(t),
+        Err(_) => {
+            let db_id = match find_database_id(&**catalog, database).await {
+                Some(id) => id,
+                None => catalog
+                    .create_database(database)
+                    .await
+                    .map_err(|e| Status::internal(format!("create_database: {e}")))?,
+            };
+            catalog
+                .create_table(db_id, table, schema, TableConfig::default())
+                .await
+                .map_err(|e| Status::internal(format!("create_table: {e}")))?;
+            catalog
+                .lookup_table(database, table)
+                .await
+                .map_err(|e| Status::internal(format!("lookup after create: {e}")))
+        }
+    }
+}
 
 /// Look up a database by name. Returns `None` if not found. Uses a raw SQL
 /// query against the catalog's underlying pool to avoid plumbing yet

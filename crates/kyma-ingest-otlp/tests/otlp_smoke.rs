@@ -88,3 +88,46 @@ async fn otlp_export_logs() {
         resp.partial_success
     );
 }
+
+#[tokio::test]
+#[ignore = "requires a live kyma OTLP server on 127.0.0.1:4317"]
+async fn otlp_export_traces() {
+    use opentelemetry_proto::tonic::collector::trace::v1::trace_service_client::TraceServiceClient;
+    use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
+    use opentelemetry_proto::tonic::trace::v1::{span, ResourceSpans, ScopeSpans, Span, Status};
+
+    let mut client = TraceServiceClient::connect("http://127.0.0.1:4317")
+        .await
+        .expect("connect to OTLP server");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+    let req = ExportTraceServiceRequest {
+        resource_spans: vec![ResourceSpans {
+            resource: Some(opentelemetry_proto::tonic::resource::v1::Resource {
+                attributes: vec![kv("service.name", "otlp-trace-smoke")],
+                dropped_attributes_count: 0,
+            }),
+            scope_spans: vec![ScopeSpans {
+                scope: None,
+                spans: vec![Span {
+                    trace_id: vec![0xcc; 16],
+                    span_id: vec![0xdd; 8],
+                    parent_span_id: vec![],
+                    name: "smoke.root".into(),
+                    kind: span::SpanKind::Server as i32,
+                    start_time_unix_nano: now - 50_000_000,
+                    end_time_unix_nano: now,
+                    attributes: vec![kv("kyma.subject", "smoke-test")],
+                    status: Some(Status { message: String::new(), code: 1 }),
+                    ..Default::default()
+                }],
+                schema_url: String::new(),
+            }],
+            schema_url: String::new(),
+        }],
+    };
+    let resp = client.export(req).await.expect("export").into_inner();
+    assert!(resp.partial_success.is_none());
+}
