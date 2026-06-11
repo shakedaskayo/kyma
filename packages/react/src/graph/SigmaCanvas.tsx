@@ -13,11 +13,12 @@ import { useEffect, useMemo, useRef } from "react";
 import Sigma from "sigma";
 import { createNodeImageProgram } from "@sigma/node-image";
 import { EdgeCurvedArrowProgram } from "@sigma/edge-curve";
-import { EdgeArrowProgram } from "sigma/rendering";
+import { EdgeArrowProgram, EdgeLineProgram } from "sigma/rendering";
 import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
 import { useKymaContext } from "../provider/context";
 import { useGraphStore } from "./graph-store";
 import { edgeDisplay, lodTier, nodeDisplay, type DisplayCtx } from "./graph-display";
+import { makeDrawNodeHover } from "./graph-hover-draw";
 import { alpha as withAlpha } from "./graph-style";
 import { buildGraphologyGraph } from "./sigma-graph-builder";
 // Re-export builder, BuildOptions, and keyOf for tests and consumers.
@@ -54,6 +55,9 @@ export interface SigmaCanvasProps {
 export function SigmaCanvas(props: SigmaCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
+  // Camera continuity across per-chunk sigma rebuilds (see restore below).
+  const savedCameraRef = useRef<{ x: number; y: number; ratio: number; angle: number } | null>(null);
+  const userMovedCameraRef = useRef(false);
   const { isDark } = useKymaContext();
 
   // Store state.
@@ -141,16 +145,31 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     const container = containerRef.current;
     if (!container) return;
 
+    // Dense graphs stack thousands of translucent hairlines per pixel — scale
+    // the at-rest alpha down with edge count so fans stay airy, never a wash.
+    const edgeDensityScale = Math.max(0.05, Math.min(1, 9_000 / Math.max(1, graph.size)));
+
     const sigma = new Sigma(graph, container, {
-      defaultEdgeType: curvedEdges ? "curvedArrow" : "straightArrow",
+      defaultEdgeType: "line",
       edgeProgramClasses: {
+        // GL_LINES hairlines for the at-rest neutral mass — orders of magnitude
+        // cheaper than arrow/curve programs at 100k edges. Loud edges switch
+        // to arrow programs via the reducer's `type` override.
+        line: EdgeLineProgram,
         straightArrow: EdgeArrowProgram,
         curvedArrow: EdgeCurvedArrowProgram,
       },
       nodeProgramClasses: {
-        image: createNodeImageProgram({ keepWithinCircle: true }),
+        // Reference look: solid label-colored disc with a padded white glyph
+        // inside ("background" composites the icon over the node color).
+        image: createNodeImageProgram({
+          drawingMode: "background",
+          keepWithinCircle: true,
+          padding: 0.22,
+        }),
       },
       renderEdgeLabels: true,
+      defaultDrawNodeHover: makeDrawNodeHover(isDark),
       labelColor: { color: isDark ? "#cbd5e1" : "#334155" },
       edgeLabelColor: { color: isDark ? "#94a3b8" : "#64748b" },
       labelFont: "IBM Plex Sans, sans-serif",
@@ -159,6 +178,10 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
       edgeLabelSize: 9,
       minCameraRatio: 0.02,
       maxCameraRatio: 4,
+      // Node/edge sizes live in graph-space, so zooming out shrinks dots into
+      // the constellation look instead of constant-pixel blobs.
+      itemSizesReference: "positions",
+      zoomToSizeRatioFunction: (ratio) => ratio,
       // Reducers own label visibility — disable sigma's threshold-based culling.
       labelRenderedSizeThreshold: 0,
       zIndex: true,
@@ -187,7 +210,9 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
         };
       },
       edgeReducer: (id, attrs) => {
-        const [src, tgt] = sigma.getGraph().extremities(id);
+        // `graph` (not `sigma.getGraph()`) — Sigma's constructor runs reducers
+        // synchronously, while the `sigma` const is still in its TDZ.
+        const [src, tgt] = graph.extremities(id);
         const d = edgeDisplay(
           id,
           attrs as { size: number; relType: string },
@@ -198,11 +223,13 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
 
         // Amendment: at-rest (neutral) edges use slate hairline, not family color.
         const color = d.neutral
-          ? neutralEdgeColor(d.alpha)
+          ? neutralEdgeColor(d.alpha * edgeDensityScale)
           : withAlpha(attrs.familyColor as string, d.alpha);
 
         return {
           ...attrs,
+          // Quiet edges are 1px GL lines; loud edges get a real arrow program.
+          type: d.loud ? (curvedEdges ? "curvedArrow" : "straightArrow") : "line",
           hidden: d.hidden,
           color,
           size: d.size,
@@ -213,6 +240,12 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     });
 
     sigmaRef.current = sigma;
+    // Restore the user's camera across chunk-streaming rebuilds — each new
+    // Sigma instance starts at the fitted default, which would yank the view
+    // back while pages arrive. Only restore once the user has actually moved.
+    if (userMovedCameraRef.current && savedCameraRef.current) {
+      sigma.getCamera().setState(savedCameraRef.current);
+    }
     props.onSigmaReady?.(sigma);
 
     // Event wiring.
@@ -231,7 +264,15 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     // time, not at camera-update time).
     sigma.getCamera().on("updated", () => {
       ctxRef.current.tier = lodTier(sigma.getCamera().ratio);
+      savedCameraRef.current = sigma.getCamera().getState();
       sigma.refresh({ skipIndexation: true });
+    });
+    // Any direct interaction marks the camera as user-owned.
+    sigma.getMouseCaptor().on("mousedown", () => {
+      userMovedCameraRef.current = true;
+    });
+    sigma.getMouseCaptor().on("wheel", () => {
+      userMovedCameraRef.current = true;
     });
 
     return () => {

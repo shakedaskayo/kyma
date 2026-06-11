@@ -80,10 +80,16 @@ export function buildGraphologyGraph(
   // capDeg = max degree — the most-connected node defines the scale.
   // For very large real-world graphs (power-law distributions) this naturally
   // maps hubs to size 22 and leaves near 2.5.
-  // landmarkThreshold = 90th-percentile degree — top-decile nodes show icons at far LOD.
+  // landmarkThreshold: landmarks are the few hubs that keep their icon + label
+  // even zoomed all the way out. Cap the count hard (top 1%, max 200) — a
+  // percentile alone floods dense graphs with thousands of "landmarks" because
+  // low-degree ties all clear the threshold together.
   const degs = [...degree.values()].sort((a, b) => a - b);
   const capDeg = degs.length ? degs[degs.length - 1] : 1;
-  const landmarkThreshold = degs.length ? degs[Math.floor(degs.length * 0.9)] : 1;
+  const landmarkCount = Math.min(60, Math.max(8, Math.floor(degs.length * 0.01)));
+  const landmarkThreshold = degs.length
+    ? Math.max(2, degs[Math.max(0, degs.length - landmarkCount)])
+    : 1;
 
   for (const n of nodes) {
     const ns = (n as unknown as { namespace?: string }).namespace ?? "";

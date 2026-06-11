@@ -88,8 +88,14 @@ export function HullsLayer({
       if (!communities) return;
 
       const graph = sigma.getGraph();
-      for (const [communityIdx, memberIds] of communities) {
-        if (memberIds.length < 3) continue;
+      // Restraint: only sizeable communities, largest first, hard cap — hulls
+      // are a whisper of grouping, not terrain. Tiny alphas keep them from
+      // matting over the constellation on either theme.
+      const sizeable = [...communities.entries()]
+        .filter(([, m]) => m.length >= 8)
+        .sort((a, b) => b[1].length - a[1].length)
+        .slice(0, 12);
+      for (const [communityIdx, memberIds] of sizeable) {
         const pts = memberIds
           .filter((id) => graph.hasNode(id))
           .map((id) => {
@@ -97,14 +103,24 @@ export function HullsLayer({
             return sigma.graphToViewport({ x: a.x as number, y: a.y as number });
           });
         if (pts.length < 3) continue;
-        const hull = padHull(convexHull(pts), 26);
+        const hull = padHull(convexHull(pts), 30);
+        // Smooth, organic outline: quadratic curves through edge midpoints.
         ctx.beginPath();
-        hull.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+        for (let i = 0; i < hull.length; i++) {
+          const cur = hull[i];
+          const next = hull[(i + 1) % hull.length];
+          const mx = (cur.x + next.x) / 2;
+          const my = (cur.y + next.y) / 2;
+          if (i === 0) ctx.moveTo(mx, my);
+          else ctx.quadraticCurveTo(cur.x, cur.y, mx, my);
+        }
+        const last = hull[hull.length - 1];
+        const first = hull[0];
+        ctx.quadraticCurveTo(last.x, last.y, (last.x + first.x) / 2, (last.y + first.y) / 2);
         ctx.closePath();
-        // Use a deterministic color keyed on the community index string.
         const color = getLabelColor(String(communityIdx));
-        ctx.fillStyle = `${color}14`;
-        ctx.strokeStyle = `${color}30`;
+        ctx.fillStyle = `${color}0A`;
+        ctx.strokeStyle = `${color}1F`;
         ctx.fill();
         ctx.stroke();
       }

@@ -126,7 +126,7 @@ export function edgeDisplay(
   if (incident) {
     return {
       hidden: false,
-      alpha: 0.95,
+      alpha: 0.85,
       size: Math.max(attrs.size * 1.8, 2),
       label: ctx.tier === "far" ? null : attrs.relType,
       loud: true,
@@ -144,9 +144,10 @@ export function edgeDisplay(
     };
   }
   // At rest: neutral hairlines — amendment override.
-  // alpha: 0.16 far; 0.22 mid/near dark; 0.28 mid/near light.
+  // alpha: 0.1 far; 0.15 mid/near dark; 0.22 mid/near light. (Cooled after
+  // live review: converging fans run hot, especially on the dark theme.)
   const alpha =
-    ctx.tier === "far" ? 0.16 : ctx.isDark ? 0.22 : 0.28;
+    ctx.tier === "far" ? 0.1 : ctx.isDark ? 0.15 : 0.22;
   return {
     hidden: false,
     alpha,

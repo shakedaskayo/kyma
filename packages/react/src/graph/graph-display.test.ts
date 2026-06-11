@@ -68,31 +68,31 @@ describe("edgeDisplay (quiet/loud)", () => {
     expect(d.neutral).toBe(true);
   });
 
-  it("at rest far tier: alpha=0.16, neutral=true", () => {
+  it("at rest far tier: alpha=0.1, neutral=true", () => {
     const d = edgeDisplay("e1", attrs, "a", "b", baseCtx({ tier: "far" }));
-    expect(d.alpha).toBe(0.16);
+    expect(d.alpha).toBe(0.1);
     expect(d.neutral).toBe(true);
   });
 
-  it("at rest mid/near dark mode: alpha=0.22, neutral=true", () => {
+  it("at rest mid/near dark mode: alpha=0.15, neutral=true", () => {
     const dMid = edgeDisplay("e1", attrs, "a", "b", baseCtx({ tier: "mid", isDark: true }));
-    expect(dMid.alpha).toBe(0.22);
+    expect(dMid.alpha).toBe(0.15);
     expect(dMid.neutral).toBe(true);
     const dNear = edgeDisplay("e1", attrs, "a", "b", baseCtx({ tier: "near", isDark: true }));
-    expect(dNear.alpha).toBe(0.22);
+    expect(dNear.alpha).toBe(0.15);
     expect(dNear.neutral).toBe(true);
   });
 
-  it("at rest mid/near light mode: alpha=0.28, neutral=true", () => {
+  it("at rest mid/near light mode: alpha=0.22, neutral=true", () => {
     const d = edgeDisplay("e1", attrs, "a", "b", baseCtx({ tier: "mid", isDark: false }));
-    expect(d.alpha).toBe(0.28);
+    expect(d.alpha).toBe(0.22);
     expect(d.neutral).toBe(true);
   });
 
   it("loud when incident to focus: bold + labeled, neutral=false", () => {
     const ctx = baseCtx({ focusId: "a", neighborhood: new Set(["a", "b"]) });
     const d = edgeDisplay("e1", attrs, "a", "b", ctx);
-    expect(d.alpha).toBeGreaterThan(0.85);
+    expect(d.alpha).toBeGreaterThanOrEqual(0.85);
     expect(d.size).toBeGreaterThan(attrs.size);
     expect(d.label).toBe("DEPENDS_ON");
     expect(d.loud).toBe(true);
@@ -110,7 +110,7 @@ describe("edgeDisplay (quiet/loud)", () => {
     // muted edge: neutral=false (it's explicitly filtered, not at rest)
     expect(edgeDisplay("e1", attrs, "a", "b", ctx).neutral).toBe(false);
     const d = edgeDisplay("e1", { ...attrs, relType: "CONTAINS" }, "a", "b", ctx);
-    expect(d.alpha).toBeGreaterThan(0.85);
+    expect(d.alpha).toBeGreaterThanOrEqual(0.85);
     // loud edge: neutral=false
     expect(d.neutral).toBe(false);
   });
