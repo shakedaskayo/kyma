@@ -29,6 +29,7 @@ pub mod runner;
 pub mod scheduler;
 pub mod secrets;
 pub mod types;
+pub mod watchers;
 // The GitHub data source compiles unconditionally so it always appears in the
 // catalog and ingests repo metadata. The deep tree-sitter code graph (the heavy
 // C grammar crates) stays behind the `github` feature — see `github::transform`.

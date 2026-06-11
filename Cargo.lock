@@ -4905,6 +4905,7 @@ dependencies = [
  "fastrand",
  "futures",
  "globset",
+ "hostname",
  "kyma-catalog",
  "kyma-codeparse",
  "kyma-core",
