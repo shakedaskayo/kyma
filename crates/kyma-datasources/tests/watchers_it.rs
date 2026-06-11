@@ -2,6 +2,7 @@
 //! provenance): register (upsert), heartbeat with scan stats, list with
 //! staleness computation, and 24h prune.
 
+use chrono::Utc;
 use kyma_catalog::PostgresCatalog;
 use kyma_datasources::watchers::{ScanStats, WatcherRegistry};
 use serde_json::json;
@@ -25,13 +26,14 @@ async fn pg_pool() -> (testcontainers::ContainerAsync<Postgres>, sqlx::PgPool) {
 
 #[tokio::test]
 async fn register_heartbeat_list_prune() {
+    // `_pg` keeps the container alive for the duration of this test.
     let (_pg, pool) = pg_pool().await;
 
     let config = json!({"prefixes": ["drops/"], "poll_secs": 5});
 
     // 1. register
     let reg = WatcherRegistry::register(
-        pool.clone(),
+        &pool,
         "filedrop",
         "host-a",
         "node-a",
@@ -43,7 +45,7 @@ async fn register_heartbeat_list_prune() {
 
     // 2. register again with identical args -> same id (upsert)
     let reg2 = WatcherRegistry::register(
-        pool.clone(),
+        &pool,
         "filedrop",
         "host-a",
         "node-a",
@@ -60,13 +62,13 @@ async fn register_heartbeat_list_prune() {
         processed: 9,
         errors: 1,
         duration_ms: 120,
-        at: "2026-06-11T00:00:00Z".into(),
+        at: Utc::now(),
         detail: None,
     }))
     .await;
 
     // 4. list -> one row, fresh
-    let rows = WatcherRegistry::list(&pool).await.unwrap();
+    let rows = WatcherRegistry::list_and_prune(&pool).await.unwrap();
     assert_eq!(rows.len(), 1);
     let row = &rows[0];
     assert_eq!(row.id, reg.id());
@@ -82,7 +84,7 @@ async fn register_heartbeat_list_prune() {
 
     // 4b. heartbeat(None) must COALESCE: last_scan stays Some with processed==9
     reg.heartbeat(None).await;
-    let rows = WatcherRegistry::list(&pool).await.unwrap();
+    let rows = WatcherRegistry::list_and_prune(&pool).await.unwrap();
     assert_eq!(rows.len(), 1);
     let scan = rows[0].last_scan.as_ref().expect("last_scan must still be Some after heartbeat(None)");
     assert_eq!(scan["processed"], 9, "COALESCE must keep prior scan when None is passed");
@@ -106,7 +108,7 @@ async fn register_heartbeat_list_prune() {
     .execute(&pool)
     .await
     .unwrap();
-    let rows = WatcherRegistry::list(&pool).await.unwrap();
+    let rows = WatcherRegistry::list_and_prune(&pool).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert!(rows[0].stale, "heartbeat older than 3x poll_secs must be stale");
 
@@ -118,6 +120,6 @@ async fn register_heartbeat_list_prune() {
     .execute(&pool)
     .await
     .unwrap();
-    let rows = WatcherRegistry::list(&pool).await.unwrap();
+    let rows = WatcherRegistry::list_and_prune(&pool).await.unwrap();
     assert!(rows.is_empty(), "watchers silent for >24h must be pruned");
 }

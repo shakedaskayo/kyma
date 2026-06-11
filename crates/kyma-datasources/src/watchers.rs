@@ -17,8 +17,8 @@ pub struct ScanStats {
     pub processed: u64,
     pub errors: u64,
     pub duration_ms: u64,
-    /// RFC 3339 timestamp of the scan.
-    pub at: String,
+    /// Timestamp of the scan; chrono's serde impl serialises as RFC 3339.
+    pub at: DateTime<Utc>,
     /// Watcher-specific extras (cc-sync packs per-realm report rollups here).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<serde_json::Value>,
@@ -64,14 +64,7 @@ pub fn node_identity() -> (String, String, String) {
 }
 
 fn config_hash(config: &serde_json::Value) -> String {
-    const HEX: &[u8] = b"0123456789abcdef";
-    let digest = Sha256::digest(config.to_string().as_bytes());
-    let mut out = String::with_capacity(digest.len() * 2);
-    for &b in &digest {
-        out.push(HEX[(b >> 4) as usize] as char);
-        out.push(HEX[(b & 0xf) as usize] as char);
-    }
-    out
+    format!("{:x}", Sha256::digest(config.to_string().as_bytes()))
 }
 
 impl WatcherRegistry {
@@ -85,7 +78,7 @@ impl WatcherRegistry {
     /// heartbeat — a watcher restart reclaims its row instead of leaving a
     /// stale duplicate behind.
     pub async fn register(
-        pool: PgPool,
+        pool: &PgPool,
         kind: &str,
         node_host: &str,
         node_id: &str,
@@ -111,9 +104,9 @@ impl WatcherRegistry {
         .bind(identity)
         .bind(&config)
         .bind(&hash)
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await?;
-        Ok(Self { pool, id })
+        Ok(Self { pool: pool.clone(), id })
     }
 
     /// Record a heartbeat (and optionally the latest scan stats).
@@ -143,15 +136,21 @@ impl WatcherRegistry {
     }
 
     /// List registered watchers, pruning rows silent for more than 24 hours.
-    /// `stale` is computed in SQL: heartbeat older than 3x the configured
-    /// poll interval (`poll_secs`, default 30s).
-    pub async fn list(pool: &PgPool) -> Result<Vec<WatcherRow>, sqlx::Error> {
-        sqlx::query(
+    ///
+    /// Prune is non-optional: it runs before the SELECT, and a DELETE failure
+    /// surfaces as the returned error. `stale` is computed in SQL: heartbeat
+    /// older than 3x the configured poll interval (`poll_secs`, default 30s).
+    pub async fn list_and_prune(pool: &PgPool) -> Result<Vec<WatcherRow>, sqlx::Error> {
+        let pruned = sqlx::query(
             "DELETE FROM data_source_watchers
              WHERE last_heartbeat_at < now() - interval '24 hours'",
         )
         .execute(pool)
-        .await?;
+        .await?
+        .rows_affected();
+        if pruned > 0 {
+            tracing::debug!(pruned, "pruned stale watchers");
+        }
 
         let rows = sqlx::query_as::<
             _,
