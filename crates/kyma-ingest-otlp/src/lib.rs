@@ -49,6 +49,8 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info};
 
+pub mod traces;
+
 const OTEL_LOGS_TABLE: &str = "otel_logs";
 
 fn otel_logs_schema() -> Arc<Schema> {
@@ -287,7 +289,7 @@ async fn find_database_id(catalog: &dyn Catalog, name: &str) -> Option<DatabaseI
     row.map(|(id,)| DatabaseId::from_uuid(id))
 }
 
-fn any_value_to_string(v: &AnyValue) -> Option<String> {
+pub(crate) fn any_value_to_string(v: &AnyValue) -> Option<String> {
     let inner = v.value.as_ref()?;
     Some(match inner {
         AnyValueValue::StringValue(s) => s.clone(),
@@ -307,7 +309,7 @@ fn any_value_to_string(v: &AnyValue) -> Option<String> {
     })
 }
 
-fn keyvalue_to_json(pairs: &[KeyValue]) -> serde_json::Value {
+pub(crate) fn keyvalue_to_json(pairs: &[KeyValue]) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     for kv in pairs {
         map.insert(kv.key.clone(), any_value_to_json(kv.value.as_ref()));
@@ -337,7 +339,7 @@ fn any_value_to_json(v: Option<&AnyValue>) -> serde_json::Value {
     }
 }
 
-fn split_service_and_json(attrs: &[KeyValue]) -> (Option<String>, String) {
+pub(crate) fn split_service_and_json(attrs: &[KeyValue]) -> (Option<String>, String) {
     let mut service_name = None;
     let mut rest = Vec::with_capacity(attrs.len());
     for kv in attrs {
@@ -370,7 +372,7 @@ fn merge_attrs_json(
     serde_json::to_string(&resource_map).unwrap_or_else(|_| "{}".into())
 }
 
-fn hex_encode(bytes: &[u8]) -> String {
+pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
     for &b in bytes {
