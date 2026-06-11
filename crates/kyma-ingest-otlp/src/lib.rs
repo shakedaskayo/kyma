@@ -49,6 +49,7 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info};
 
+pub mod self_export;
 pub mod traces;
 
 const OTEL_LOGS_TABLE: &str = "otel_logs";

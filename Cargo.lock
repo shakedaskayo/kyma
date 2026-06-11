@@ -5126,6 +5126,7 @@ dependencies = [
 name = "kyma-ingest-otlp"
 version = "0.0.7"
 dependencies = [
+ "anyhow",
  "arrow",
  "arrow-array",
  "arrow-schema",
@@ -5136,7 +5137,9 @@ dependencies = [
  "kyma-core",
  "kyma-ingest-core",
  "metrics",
+ "opentelemetry 0.27.1",
  "opentelemetry-proto 0.27.0",
+ "opentelemetry_sdk 0.27.1",
  "prost 0.13.5",
  "serde",
  "serde_json",
