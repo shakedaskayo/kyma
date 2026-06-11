@@ -400,7 +400,26 @@ export function resolveNodeColor(
 }
 
 // ── Canvas image cache ──────────────────────────────────────────────────────
+const dataUrlCache = new Map<string, string>();
 const imgCache = new Map<string, HTMLImageElement>();
+
+/**
+ * Data-URL SVG for an icon at a color — used as sigma's node `image` attribute.
+ * Synchronous and allocation-light (no DOM); safe to call from reducers.
+ * Results are cached by `${icon.id}:${color}` to avoid redundant renderToStaticMarkup
+ * calls (buildGraphologyGraph can call this 50k+ times per rebuild).
+ */
+export function getIconDataUrl(icon: ResolvedIcon, color: string): string {
+  const key = `${icon.id}:${color}`;
+  const hit = dataUrlCache.get(key);
+  if (hit) return hit;
+  const svg = renderToStaticMarkup(
+    createElement(icon.Comp, { size: 40, color, stroke: color, strokeWidth: icon.brand ? 1.8 : 2 }),
+  );
+  const url = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  dataUrlCache.set(key, url);
+  return url;
+}
 
 /**
  * Get a cached HTMLImageElement for an icon at a given color. Returns the image
@@ -415,12 +434,9 @@ export function getIconImage(
   const key = `${icon.id}:${color}`;
   const hit = imgCache.get(key);
   if (hit) return hit;
-  const svg = renderToStaticMarkup(
-    createElement(icon.Comp, { size: 40, color, stroke: color, strokeWidth: icon.brand ? 1.8 : 2 }),
-  );
   const img = new Image(40, 40);
   img.onload = onReady;
-  img.src = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  img.src = getIconDataUrl(icon, color);
   imgCache.set(key, img);
   return img;
 }
