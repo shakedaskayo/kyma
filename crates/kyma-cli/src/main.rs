@@ -28,7 +28,7 @@ mod scrape;
 mod update;
 mod users;
 use client::{
-    delete_json, effective_config, get_json, load_config, probe_health,
+    delete_json, effective_config, get_json, load_config, probe_auth, probe_health,
     save_config, stream_agent_ask, write_skill_file, ClientConfig,
 };
 
@@ -868,9 +868,20 @@ async fn cmd_status() -> Result<()> {
                     "not set"
                 }
             );
-            match probe_health(&cfg).await {
+            // Use effective_config for probes so KYMA_SERVER_URL/KYMA_TOKEN env
+            // overrides are honoured; fall back to the on-disk config if it fails.
+            let probe_cfg = effective_config().unwrap_or_else(|_| cfg.clone());
+            match probe_health(&probe_cfg).await {
                 Ok(body) => println!("Health:    {}", body.trim()),
                 Err(e) => println!("Health:    error — {e}"),
+            }
+            match probe_auth(&probe_cfg).await {
+                Ok(true) => println!("Auth:      ok (token accepted)"),
+                Ok(false) => println!(
+                    "Auth:      TOKEN REJECTED — the server does not accept the configured token.\n           Fix: re-run the installer, or `kyma service install --addr <addr> --token <tok>`,\n           or `kyma connect {} --token <tok>` with the server's real token.",
+                    cfg.endpoint
+                ),
+                Err(e) => println!("Auth:      probe error — {e}"),
             }
         }
         Err(_) => {

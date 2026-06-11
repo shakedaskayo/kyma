@@ -231,6 +231,17 @@ pub(crate) async fn probe_health(cfg: &ClientConfig) -> Result<String> {
     Ok(res.text().await.unwrap_or_default())
 }
 
+/// `true` = token accepted, `false` = 401/403, error = transport failure.
+pub(crate) async fn probe_auth(cfg: &ClientConfig) -> Result<bool> {
+    let url = format!("{}/v1/auth/me", cfg.endpoint.trim_end_matches('/'));
+    let mut req = http_client().get(url);
+    if let Some(t) = &cfg.token {
+        req = req.bearer_auth(t);
+    }
+    let res = req.send().await?;
+    Ok(!matches!(res.status().as_u16(), 401 | 403))
+}
+
 /// Resolve the install target dir. If `explicit` is given, use it; else
 /// default to `$HOME/.kyma/skills/kyma/`. Creates the dir.
 pub(crate) fn install_target(explicit: Option<PathBuf>) -> Result<PathBuf> {
