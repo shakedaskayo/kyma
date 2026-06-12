@@ -465,20 +465,26 @@ enum SessionsOp {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Logs go to STDERR so command output (and the `kyma mcp` stdio protocol
-    // channel) stays clean on stdout. The binary owns the subscriber; the
-    // local-engine library never installs one.
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,sqlx=warn,hyper=warn")),
-        )
-        .with_target(false)
-        .try_init()
-        .ok();
-
     let cli = Cli::parse();
+
+    // `kyma serve` sets up a richer subscriber that includes the OTel self-trace
+    // layer; all other subcommands use a plain fmt subscriber.
+    let self_trace_handle = if matches!(cli.command, Command::Serve { .. }) {
+        Some(kyma_local::setup_serve_tracing())
+    } else {
+        // Logs go to STDERR so command output (and the `kyma mcp` stdio
+        // protocol channel) stays clean on stdout.
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,sqlx=warn,hyper=warn")),
+            )
+            .with_target(false)
+            .try_init()
+            .ok();
+        None
+    };
 
     match cli.command {
         // ── client subcommands ────────────────────────────────────────
@@ -542,7 +548,7 @@ async fn main() -> Result<()> {
             // Fire-and-forget staleness nudge; serve runs until killed so it
             // prints (to stderr) once the throttled check resolves.
             tokio::spawn(update::maybe_notify_update());
-            kyma_local::run_serve(addr).await
+            kyma_local::run_serve(addr, self_trace_handle).await
         }
         Command::Setup { agent, print } => kyma_local::run_setup(&agent, print),
         Command::Sync { watch, dry_run, cc_only, cloud_only, project } => {

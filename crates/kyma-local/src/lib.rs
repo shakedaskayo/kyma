@@ -48,7 +48,7 @@ mod cc_sync_unit_tests;
 mod cc_writeback_unit_tests;
 
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::{Context, Result};
 use kyma_catalog_sqlite::SqliteCatalog;
@@ -57,6 +57,7 @@ use kyma_core::segment_format::SegmentFormat;
 use kyma_format_tlm::TelemetryFormat;
 use kyma_ingest_core::events::IngestEvents;
 use kyma_ingest_core::WritePath;
+use kyma_ingest_otlp::self_export::{SelfTraceCtx, SelfTraceExporter};
 use kyma_ingest_rest::IngestState;
 use kyma_mcp::{serve_stdio, McpState, ServerInfo, ToolDispatch};
 use kyma_core::credentials::CredentialStore;
@@ -78,6 +79,47 @@ use kyma_server::catalog_handler::SchemaCache;
 use kyma_server::QueryState;
 use kyma_storage::{build_object_store, StorageConfig};
 use tracing::{info, warn};
+
+/// Set up the tracing subscriber for `kyma serve` — includes the fmt layer
+/// AND a `tracing_opentelemetry` layer that routes `kyma_telemetry`-target
+/// spans to the in-process self-trace exporter.
+///
+/// Returns the handle for wiring the exporter to storage once the catalog
+/// is ready. Call this BEFORE `run_serve` and pass the returned handle to
+/// `run_serve`.
+///
+/// If the global subscriber is already installed (e.g. in a test harness),
+/// this is a no-op and returns an unwired handle.
+pub fn setup_serve_tracing() -> Arc<OnceLock<SelfTraceCtx>> {
+    let exporter = SelfTraceExporter::unwired();
+    let handle = exporter.handle();
+    use opentelemetry::trace::TracerProvider as _;
+    let tp = opentelemetry_sdk::trace::TracerProvider::builder()
+        .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
+        .build();
+    let tracer = tp.tracer("kyma-local");
+    let otel_layer = tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_filter(
+            tracing_subscriber::filter::Targets::new()
+                .with_target("kyma_telemetry", tracing::Level::INFO),
+        );
+    use tracing_subscriber::prelude::*;
+    let _ = tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_target(false)
+                .with_filter(
+                    tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                        tracing_subscriber::EnvFilter::new("info,sqlx=warn,hyper=warn")
+                    }),
+                ),
+        )
+        .with(otel_layer)
+        .try_init();
+    handle
+}
 
 /// Resolved on-disk locations for the local engine.
 struct Paths {
@@ -464,9 +506,30 @@ pub fn build_local_app(
 
 /// `kyma serve` — serve the web UI + full HTTP API on `addr`, over the embedded
 /// catalog (zero infra).
-pub async fn run_serve(addr: SocketAddr) -> Result<()> {
+///
+/// `self_trace_handle` is the value returned by `setup_serve_tracing()`. When
+/// `Some`, the self-trace exporter is wired to the catalog write path so that
+/// internal `kyma_telemetry` spans land in the `otel_traces` table.
+pub async fn run_serve(
+    addr: SocketAddr,
+    self_trace_handle: Option<Arc<OnceLock<SelfTraceCtx>>>,
+) -> Result<()> {
     kyma_server::agent::identity::set_source("local-serve");
     let engine = open_engine(&resolve_paths()).await?;
+
+    // Wire self-trace exporter now that the catalog + write path are ready.
+    // This makes internal kyma_telemetry spans land in otel_traces immediately.
+    // Pre-create the table so the Traces page never 404s on an empty database.
+    if let Some(handle) = &self_trace_handle {
+        let wp = WritePath::new(engine.catalog.clone(), engine.format.clone());
+        let _ = handle.set(SelfTraceCtx {
+            catalog: engine.catalog.clone(),
+            write_path: wp,
+            database: "otel".into(),
+        });
+    }
+    kyma_ingest_otlp::ensure_traces_table(&engine.catalog, "otel").await;
+
     let memq = spawn_local_memory_queue(&engine).await;
     let memory = memq.as_ref().map(|m| m.queue.clone());
 
