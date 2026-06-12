@@ -22,6 +22,7 @@
 pub mod agent_sources;
 mod cc_pipeline;
 mod cc_sync;
+mod source_watchers;
 mod vault_sync;
 mod cc_writeback;
 mod cli_config_heal;
@@ -715,7 +716,7 @@ pub async fn run_serve(
     });
 
     let tick_deps = DataSourceTickDeps {
-        control: ds_control,
+        control: ds_control.clone(),
         registry: conn_registry.clone(),
         sink: conn_sink,
         graph_register,
@@ -829,6 +830,20 @@ pub async fn run_serve(
             let _ = tokio::signal::ctrl_c().await;
         }));
         info!("local compaction worker + scheduler running");
+    }
+
+    // Vault watchers: continuous sync loops for continuous-drive data sources
+    // (obsidian). Reconciles enabled rows ↔ running notify loops every 15s,
+    // so create/pause/resume/delete in the UI take effect without a restart.
+    {
+        let eng = engine.clone();
+        let status = watcher_status.clone();
+        let control = ds_control.clone();
+        let pool_w = pool.clone();
+        tokio::spawn(async move {
+            source_watchers::run_manager(eng, status, control, pool_w).await;
+        });
+        info!("vault watcher manager running (continuous data sources)");
     }
 
     // Resident watcher: keep Claude Code file memory synced while the local
