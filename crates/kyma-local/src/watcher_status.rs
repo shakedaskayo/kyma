@@ -6,8 +6,14 @@
 
 use axum::{extract::State, routing::get, Json, Router};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::{Arc, RwLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, RwLock,
+};
+
+use crate::watcher_settings::WatcherSettings;
 
 /// One registered in-process watcher. Mirrors the control plane's
 /// `WatcherRow` field-for-field; `stale` is computed read-side (see
@@ -86,20 +92,45 @@ pub fn node_identity() -> (String, String, String) {
 
 /// Shared in-process watcher store. Cheap to clone (Arc inside); the cc-sync
 /// loop holds one clone and upserts each cycle, the router holds another and
-/// serves reads.
-#[derive(Clone, Default)]
-pub struct LocalWatcherStatus(Arc<RwLock<Vec<LocalWatcher>>>);
+/// serves reads. `cc_sync_enabled` is the runtime toggle — flipped by the
+/// settings API and persisted to `~/.kyma/watcher-settings.json`.
+#[derive(Clone)]
+pub struct LocalWatcherStatus {
+    watchers: Arc<RwLock<Vec<LocalWatcher>>>,
+    pub cc_sync_enabled: Arc<AtomicBool>,
+}
+
+impl Default for LocalWatcherStatus {
+    fn default() -> Self {
+        Self {
+            watchers: Arc::new(RwLock::new(vec![])),
+            cc_sync_enabled: Arc::new(AtomicBool::new(true)),
+        }
+    }
+}
 
 impl LocalWatcherStatus {
     /// Replace the watcher with the same `id`, or append if new.
     pub fn upsert(&self, w: LocalWatcher) {
-        // Poison means a watcher-write thread panicked; recover the inner state
-        // rather than crashing the serving thread.
-        let mut items = self.0.write().unwrap_or_else(|e| e.into_inner());
+        let mut items = self.watchers.write().unwrap_or_else(|e| e.into_inner());
         match items.iter_mut().find(|x| x.id == w.id) {
             Some(slot) => *slot = w,
             None => items.push(w),
         }
+    }
+
+    /// Remove the watcher with the given `id` from the visible list.
+    pub fn remove(&self, id: &str) {
+        let mut items = self.watchers.write().unwrap_or_else(|e| e.into_inner());
+        items.retain(|w| w.id != id);
+    }
+
+    pub fn cc_sync_enabled(&self) -> bool {
+        self.cc_sync_enabled.load(Ordering::Relaxed)
+    }
+
+    pub fn set_cc_sync_enabled(&self, v: bool) {
+        self.cc_sync_enabled.store(v, Ordering::Relaxed);
     }
 
     /// Router serving `GET /v1/data-sources/watchers` → `{"items": [...]}` —
@@ -112,9 +143,21 @@ impl LocalWatcherStatus {
             .with_state(self.clone())
     }
 
-    fn items_json(&self, now: DateTime<Utc>) -> Value {
+    /// Router for watcher settings — always mounted regardless of ds_admin.
+    /// `GET /v1/data-sources/watchers/settings` — current settings.
+    /// `PUT /v1/data-sources/watchers/settings` — update settings (persisted).
+    pub fn settings_router(&self) -> Router {
+        Router::new()
+            .route(
+                "/v1/data-sources/watchers/settings",
+                get(get_settings).put(put_settings),
+            )
+            .with_state(self.clone())
+    }
+
+    pub fn items_json(&self, now: DateTime<Utc>) -> Value {
         let items: Vec<Value> = self
-            .0
+            .watchers
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .iter()
@@ -126,6 +169,40 @@ impl LocalWatcherStatus {
 
 async fn list_watchers(State(s): State<LocalWatcherStatus>) -> Json<Value> {
     Json(s.items_json(Utc::now()))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SettingsResponse {
+    cc_sync_enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct SettingsPatch {
+    cc_sync_enabled: Option<bool>,
+}
+
+async fn get_settings(State(s): State<LocalWatcherStatus>) -> Json<SettingsResponse> {
+    Json(SettingsResponse {
+        cc_sync_enabled: s.cc_sync_enabled(),
+    })
+}
+
+async fn put_settings(
+    State(s): State<LocalWatcherStatus>,
+    Json(patch): Json<SettingsPatch>,
+) -> Json<SettingsResponse> {
+    if let Some(enabled) = patch.cc_sync_enabled {
+        s.set_cc_sync_enabled(enabled);
+        let settings = WatcherSettings {
+            cc_sync_enabled: enabled,
+        };
+        tokio::spawn(async move {
+            let _ = settings.save().await;
+        });
+    }
+    Json(SettingsResponse {
+        cc_sync_enabled: s.cc_sync_enabled(),
+    })
 }
 
 #[cfg(test)]
@@ -162,6 +239,18 @@ mod tests {
         assert_eq!(items[0]["id"], "cc-sync");
         assert_eq!(items[0]["last_scan"]["seen"], 5);
         assert_eq!(items[1]["id"], "other");
+    }
+
+    #[test]
+    fn remove_by_id() {
+        let status = LocalWatcherStatus::default();
+        let now = Utc::now();
+        status.upsert(watcher("cc-sync", now, 30));
+        status.upsert(watcher("other", now, 30));
+        status.remove("cc-sync");
+        let items = status.items_json(now)["items"].as_array().unwrap().clone();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["id"], "other");
     }
 
     #[test]

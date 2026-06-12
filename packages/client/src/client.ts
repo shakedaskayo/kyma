@@ -122,6 +122,8 @@ const DATASOURCES_FNS = [
   "triggerDataSource",
   "listGitHubRepos",
   "listDataSourceWatchers",
+  "getWatcherSettings",
+  "updateWatcherSettings",
 ] as const satisfies readonly (keyof typeof datasources)[];
 
 const CREDENTIALS_FNS = [

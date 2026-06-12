@@ -16,6 +16,8 @@ use kyma_core::tenant::TenantId;
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
+use crate::watcher_status::LocalWatcherStatus;
+
 // ---------------------------------------------------------------------------
 // SqliteDataSourceCatalog
 // ---------------------------------------------------------------------------
@@ -23,11 +25,19 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct SqliteDataSourceCatalog {
     pool: SqlitePool,
+    /// In-process watcher status — injected so `list_watchers()` returns the
+    /// cc-sync heartbeat without a Postgres registry.
+    watcher_status: Option<LocalWatcherStatus>,
 }
 
 impl SqliteDataSourceCatalog {
     pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+        Self { pool, watcher_status: None }
+    }
+
+    pub fn with_watcher_status(mut self, ws: LocalWatcherStatus) -> Self {
+        self.watcher_status = Some(ws);
+        self
     }
 }
 
@@ -239,6 +249,21 @@ impl DataSourceCatalog for SqliteDataSourceCatalog {
         bucket_ms: i64,
     ) -> Result<u64> {
         enqueue_jobs_sync(&self.pool, tenant, id, bucket_ms).await
+    }
+
+    async fn list_watchers(&self) -> Result<Vec<serde_json::Value>> {
+        if let Some(ws) = &self.watcher_status {
+            let now = chrono::Utc::now();
+            let items = ws
+                .items_json(now)
+                .get("items")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            Ok(items)
+        } else {
+            Ok(vec![])
+        }
     }
 }
 
