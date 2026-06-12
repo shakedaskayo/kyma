@@ -1,0 +1,149 @@
+name: release-cli
+#
+# Builds the kyma CLI binary for macOS (arm64 + x64) and Linux (arm64 + x64),
+# then creates (or updates) a GitHub release with the binary artifacts.
+#
+# Triggered by vX.Y.Z tags only — @kyma-ai/* npm tags are excluded.
+# Artifact naming matches install.sh / kyma update conventions:
+#   kyma-darwin-arm64.tar.gz, kyma-darwin-x64.tar.gz
+#   kyma-linux-arm64.tar.gz,  kyma-linux-x64.tar.gz
+#
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+jobs:
+  # ── macOS builds (native, no cross-compilation) ─────────────────────────────
+  build-macos:
+    name: "build (${{ matrix.target }})"
+    runs-on: macos-15  # Apple Silicon runner
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            artifact: kyma-darwin-arm64
+          - target: x86_64-apple-darwin
+            artifact: kyma-darwin-x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Build web UI
+        run: pnpm -C web install --frozen-lockfile && pnpm -C web build
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build CLI
+        run: cargo build -p kyma-cli --release --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          cp target/${{ matrix.target }}/release/kyma kyma
+          tar czf ${{ matrix.artifact }}.tar.gz kyma
+          shasum -a 256 ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.tar.gz.sha256
+
+  # ── Linux builds (cross-compilation via cross) ───────────────────────────────
+  build-linux:
+    name: "build (${{ matrix.target }})"
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            artifact: kyma-linux-x64
+          - target: aarch64-unknown-linux-gnu
+            artifact: kyma-linux-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Build web UI
+        run: pnpm -C web install --frozen-lockfile && pnpm -C web build
+
+      - name: Install Rust target + cross
+        run: |
+          rustup target add ${{ matrix.target }}
+          cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build CLI (cross)
+        run: cross build -p kyma-cli --release --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          cp target/${{ matrix.target }}/release/kyma kyma
+          tar czf ${{ matrix.artifact }}.tar.gz kyma
+          sha256sum ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.tar.gz.sha256
+
+  # ── Create / update GitHub release with all artifacts ───────────────────────
+  release:
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            kyma-darwin-arm64.tar.gz
+            kyma-darwin-arm64.tar.gz.sha256
+            kyma-darwin-x64.tar.gz
+            kyma-darwin-x64.tar.gz.sha256
+            kyma-linux-arm64.tar.gz
+            kyma-linux-arm64.tar.gz.sha256
+            kyma-linux-x64.tar.gz
+            kyma-linux-x64.tar.gz.sha256
+          generate_release_notes: true
+          fail_on_unmatched_files: true
