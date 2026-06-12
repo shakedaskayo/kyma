@@ -83,7 +83,12 @@ export interface CatalogEntry {
   /** simple-icons slug for the brand mark (e.g. "github") */
   brand: string;
   auth_mode: "pat" | "oauth" | "url" | "none" | string;
-  status: "available" | "coming_soon";
+  status: "available" | "installed" | "coming_soon";
+  /**
+   * "periodic" — ticked by the scheduler on schedule_ms; "continuous" —
+   * synced by a node-local file watcher (no interval to configure).
+   */
+  drive_model: "periodic" | "continuous" | string;
   default_schedule_ms: number;
   fields: CatalogField[];
   resource?: CatalogResource;
@@ -255,7 +260,7 @@ export function deriveStatus(detail: DataSourceDetail): DataSourceStatus {
 
 export interface DataSourceWatcher {
   id: string;
-  kind: "filedrop" | "cc_sync";
+  kind: "filedrop" | "cc_sync" | "obsidian" | string;
   node_host: string;
   node_id: string;
   identity: string;
