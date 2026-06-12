@@ -15,6 +15,7 @@ kyma-jobs.workspace = true
 kyma-datasources.workspace = true
 kyma-compaction.workspace = true
 kyma-catalog-sqlite.workspace = true
+kyma-ingest-otlp.workspace = true
 kyma-storage.workspace = true
 kyma-format-tlm.workspace = true
 # web-ui embeds the same web interface the hosted server serves.
@@ -34,6 +35,10 @@ sqlx = { workspace = true, features = ["sqlite"] }
 serde_json.workspace = true
 chrono.workspace = true
 tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-opentelemetry.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 uuid.workspace = true
