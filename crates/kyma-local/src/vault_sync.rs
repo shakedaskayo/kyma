@@ -321,10 +321,8 @@ async fn link_wikilinks(
 ) -> Result<usize> {
     use std::collections::HashMap;
 
-    let by_name: HashMap<String, &ScanEntry> = entries
-        .iter()
-        .map(|e| (e.name.to_lowercase(), e))
-        .collect();
+    let by_name: HashMap<String, &ScanEntry> =
+        entries.iter().map(|e| (e.name.to_lowercase(), e)).collect();
 
     // (src, dst) lowercase-name pairs worth emitting this run.
     let mut pairs: Vec<(String, String)> = Vec::new();

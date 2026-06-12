@@ -160,7 +160,10 @@ async fn rescan_skips_unchanged_and_edit_updates_same_node() {
         &format!("{LATEST} SELECT content FROM latest WHERE rn = 1 AND topic_key = 'obsidian:11111111-1111-1111-1111-111111111111/Alpha.md'"),
     )
     .await;
-    assert!(got[0]["content"].as_str().expect("content").contains("Version two"));
+    assert!(got[0]["content"]
+        .as_str()
+        .expect("content")
+        .contains("Version two"));
 }
 
 #[tokio::test]
@@ -178,7 +181,10 @@ async fn wikilinks_become_edges_with_obsidian_flavors() {
     let o = opts(&vault);
 
     let report = run_once(&engine, &writer, &o).await.expect("sync");
-    assert_eq!(report.edges_added, 2, "beta + gamma resolve; ghost/self drop");
+    assert_eq!(
+        report.edges_added, 2,
+        "beta + gamma resolve; ghost/self drop"
+    );
 
     let edges = rows(
         &shared,

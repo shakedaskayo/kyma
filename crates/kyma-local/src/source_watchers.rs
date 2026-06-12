@@ -189,18 +189,20 @@ async fn run_source_loop(
     // The notify watcher runs callbacks on its own thread; keep the handle
     // alive for the loop's lifetime. Filter to markdown outside dot-dirs so
     // .obsidian workspace churn doesn't trigger syncs.
-    let mut watcher = match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        let Ok(event) = res else { return };
-        let relevant = event.paths.iter().any(|p| {
-            p.extension().and_then(|e| e.to_str()) == Some("md")
-                && !p
-                    .components()
-                    .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
-        });
-        if relevant {
-            let _ = tx.try_send(());
-        }
-    }) {
+    let mut watcher = match notify::recommended_watcher(
+        move |res: notify::Result<notify::Event>| {
+            let Ok(event) = res else { return };
+            let relevant = event.paths.iter().any(|p| {
+                p.extension().and_then(|e| e.to_str()) == Some("md")
+                    && !p
+                        .components()
+                        .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+            });
+            if relevant {
+                let _ = tx.try_send(());
+            }
+        },
+    ) {
         Ok(w) => Some(w),
         Err(e) => {
             tracing::warn!(source = %src.id, "vault watcher: notify unavailable, polling only: {e}");
@@ -243,7 +245,10 @@ async fn run_source_loop(
                     &src.realm,
                 );
                 let processed = i64::try_from(report.upserted).unwrap_or(i64::MAX);
-                if let Err(e) = control.mark_run_success(tenant, source_uuid, processed).await {
+                if let Err(e) = control
+                    .mark_run_success(tenant, source_uuid, processed)
+                    .await
+                {
                     tracing::warn!(source = %src.id, "vault watcher: recording success failed: {e}");
                 }
                 last_scan = Some(scan);
