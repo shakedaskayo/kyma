@@ -1,12 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { WatchersTab } from "@/features/datasources/WatchersTab";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// File Watchers tab — node-local filedrop + cc-sync watchers and their
-// heartbeat/scan health. Header + section tabs live in the layout route.
+// The File Watchers tab merged into the unified /data-sources page.
 export const Route = createFileRoute("/_app/data-sources/watchers")({
-  component: () => (
-    <div className="p-6">
-      <WatchersTab />
-    </div>
-  ),
+  beforeLoad: () => {
+    throw redirect({ to: "/data-sources" });
+  },
 });

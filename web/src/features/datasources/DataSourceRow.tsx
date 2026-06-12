@@ -1,8 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Pause, Play, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { deriveStatus, type DataSourceSummary } from "@/sdk/datasources";
+import {
+  deriveStatus,
+  type DataSourceSummary,
+  type DataSourceWatcher,
+} from "@/sdk/datasources";
 import { BrandIcon } from "./BrandIcon";
+import { LiveBadge } from "./LocalSyncRows";
 import {
   useDataSource,
   useDataSourceCatalog,
@@ -27,7 +32,14 @@ function relTime(iso: string | null): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
-export function DataSourceRow({ dataSource }: { dataSource: DataSourceSummary }) {
+export function DataSourceRow({
+  dataSource,
+  watcher,
+}: {
+  dataSource: DataSourceSummary;
+  /** The node-local watcher running this source (continuous-drive sources). */
+  watcher?: DataSourceWatcher;
+}) {
   const navigate = useNavigate();
   // Lazy per-row hydration — the list endpoint carries no status/metrics.
   const { data: detail } = useDataSource(dataSource.id);
@@ -37,6 +49,7 @@ export function DataSourceRow({ dataSource }: { dataSource: DataSourceSummary })
   const del = useDeleteDataSource();
   const { data: catalog } = useDataSourceCatalog();
   const entry = catalog?.find((e) => e.type_id === dataSource.type);
+  const continuous = entry?.drive_model === "continuous";
   const status = detail ? deriveStatus(detail) : dataSource.enabled ? "idle" : "disabled";
 
   const open = () => navigate({ to: "/data-sources/$id", params: { id: dataSource.id } });
@@ -61,30 +74,40 @@ export function DataSourceRow({ dataSource }: { dataSource: DataSourceSummary })
           </span>
         </div>
         <div className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground">
+          {continuous && <span>Continuous</span>}
           <span>Last sync {relTime(detail?.last_success_at ?? null)}</span>
           {detail?.last_rows_ingested != null && (
-            <span className="tabular-nums">{detail.last_rows_ingested.toLocaleString()} rows</span>
+            <span className="tabular-nums">
+              {detail.last_rows_ingested.toLocaleString()} {continuous ? "notes" : "rows"}
+            </span>
           )}
         </div>
       </div>
 
-      <StatusBadge status={status} />
+      {watcher && dataSource.enabled ? (
+        <LiveBadge stale={watcher.stale} />
+      ) : (
+        <StatusBadge status={status} />
+      )}
 
       {/* Quick actions — stopPropagation so they don't open the detail view. */}
       <div
         className="flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100"
         onClick={(e) => e.stopPropagation()}
       >
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          title="Sync now"
-          disabled={trigger.isPending || !dataSource.enabled}
-          onClick={() => trigger.mutate()}
-        >
-          <RefreshCw className={trigger.isPending ? "animate-spin" : ""} />
-        </Button>
+        {/* Continuous sources sync on file events — no manual trigger. */}
+        {!continuous && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title="Sync now"
+            disabled={trigger.isPending || !dataSource.enabled}
+            onClick={() => trigger.mutate()}
+          >
+            <RefreshCw className={trigger.isPending ? "animate-spin" : ""} />
+          </Button>
+        )}
         {dataSource.enabled ? (
           <Button
             variant="ghost"
