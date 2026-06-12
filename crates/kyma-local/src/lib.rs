@@ -23,6 +23,7 @@ pub mod agent_sources;
 mod cc_pipeline;
 mod cc_sync;
 mod cc_writeback;
+mod cli_config_heal;
 mod cred_store;
 mod datasource_catalog;
 mod setup;
@@ -562,6 +563,28 @@ pub async fn run_serve(
         EnvAuthBackend::from_env(),
         true,
     ));
+
+    // Self-heal the CLI connection: the CLI, MCP, and every coding-agent
+    // capture hook read ~/.kyma/config.json, and a stale token there (e.g. an
+    // expired browser session token from `kyma connect`) silently 401s them
+    // all. Validate it against this serve's auth backend and mint a durable
+    // replacement when needed. Best-effort — never blocks startup.
+    if env_flag("KYMA_LOCAL_HEAL_CONFIG", true) {
+        let cfg_path = std::path::PathBuf::from(home_dir()).join(".kyma/config.json");
+        match cli_config_heal::heal_cli_config(&cfg_path, addr, &backend, &engine.catalog).await {
+            Ok(cli_config_heal::HealOutcome::TokenMinted) => {
+                info!(config = %cfg_path.display(), "minted durable CLI token (stored token was missing or stale)");
+            }
+            Ok(cli_config_heal::HealOutcome::EndpointRepaired) => {
+                info!(config = %cfg_path.display(), "repaired CLI endpoint");
+            }
+            Ok(cli_config_heal::HealOutcome::ForeignEndpoint) => {
+                info!(config = %cfg_path.display(), "CLI config points at another server — left untouched");
+            }
+            Ok(cli_config_heal::HealOutcome::TokenValid) => {}
+            Err(e) => warn!(error = %e, "couldn't self-heal CLI config"),
+        }
+    }
 
     // Degraded local-mode dreaming state: in-memory ring hydrated from the
     // embedded SQLite catalog. Inline runs + the dreaming HTTP handlers read it.
