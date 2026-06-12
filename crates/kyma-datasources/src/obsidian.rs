@@ -48,8 +48,7 @@ impl DataSource for ObsidianDataSource {
         let path = cfg
             .get("vault_path")
             .and_then(Value::as_str)
-            .map(str::trim)
-            .unwrap_or("");
+            .map_or("", str::trim);
         if path.is_empty() {
             return Err(ConfigError("vault_path is required".into()));
         }
