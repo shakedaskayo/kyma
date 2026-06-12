@@ -7,6 +7,7 @@ pub mod arrow_coerce;
 pub mod bitbucket;
 pub mod catalog;
 pub mod catalog_sql;
+pub mod catalog_trait;
 pub mod confluence;
 pub mod metrics;
 pub mod gitlab;
@@ -34,6 +35,8 @@ pub mod watchers;
 pub mod github;
 
 pub use catalog::{CatalogEntry, CatalogField, CatalogResource};
+pub use catalog_sql::DataSourceRow;
+pub use catalog_trait::{DataSourceCatalog, PgDataSourceCatalog};
 pub use types::{
     ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, DriveModel, GraphHint,
     TableRows,

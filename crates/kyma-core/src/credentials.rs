@@ -159,6 +159,7 @@ impl From<Credential> for CredentialSummary {
 /// without standing up Postgres.
 #[async_trait::async_trait]
 pub trait CredentialStore: Send + Sync {
+    /// Fetch a credential with its decrypted secret material.
     async fn get(&self, tenant: crate::tenant::TenantId, id: Uuid) -> anyhow::Result<Credential>;
 
     /// Replace the secret material of an existing credential in place — used
@@ -172,5 +173,42 @@ pub trait CredentialStore: Send + Sync {
         _value: &CredentialValue,
     ) -> anyhow::Result<()> {
         anyhow::bail!("this credential store does not support update_value")
+    }
+
+    /// Create a new credential. Default implementation returns an error.
+    async fn create(
+        &self,
+        _tenant: crate::tenant::TenantId,
+        _label: &str,
+        _value: &CredentialValue,
+        _metadata: serde_json::Value,
+    ) -> anyhow::Result<CredentialSummary> {
+        anyhow::bail!("this credential store does not support create")
+    }
+
+    /// List all credentials for a tenant (summaries, no plaintext).
+    async fn list(
+        &self,
+        _tenant: crate::tenant::TenantId,
+    ) -> anyhow::Result<Vec<CredentialSummary>> {
+        anyhow::bail!("this credential store does not support list")
+    }
+
+    /// Fetch a credential with its decrypted value (alias for `get`).
+    async fn fetch(
+        &self,
+        tenant: crate::tenant::TenantId,
+        id: Uuid,
+    ) -> anyhow::Result<Credential> {
+        self.get(tenant, id).await
+    }
+
+    /// Delete a credential by id.
+    async fn delete(
+        &self,
+        _tenant: crate::tenant::TenantId,
+        _id: Uuid,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("this credential store does not support delete")
     }
 }

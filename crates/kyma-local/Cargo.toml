@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 kyma-core.workspace = true
 kyma-jobs.workspace = true
+kyma-datasources.workspace = true
 kyma-compaction.workspace = true
 kyma-catalog-sqlite.workspace = true
 kyma-storage.workspace = true
@@ -29,6 +30,7 @@ axum.workspace = true
 # kyma-datasources pins for its node_identity helper).
 hostname = "0.4"
 reqwest.workspace = true
+sqlx = { workspace = true, features = ["sqlite"] }
 serde_json.workspace = true
 chrono.workspace = true
 tracing.workspace = true

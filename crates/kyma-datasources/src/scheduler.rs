@@ -1,7 +1,6 @@
 //! Data source scheduler — enqueues data_source_tick tasks for due data sources.
 
-use crate::catalog_sql;
-use kyma_catalog::PostgresCatalog;
+use crate::catalog_trait::DataSourceCatalog;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,20 +8,20 @@ use tracing::{debug, error, info};
 
 #[derive(Clone)]
 pub struct DataSourceScheduler {
-    catalog: Arc<PostgresCatalog>,
+    catalog: Arc<dyn DataSourceCatalog>,
     pub tick_interval: Duration,
 }
 
 impl DataSourceScheduler {
-    pub fn new(catalog: Arc<PostgresCatalog>) -> Self {
+    pub fn new(catalog: Arc<dyn DataSourceCatalog>) -> Self {
         Self {
             catalog,
             tick_interval: Duration::from_millis(500),
         }
     }
 
-    pub async fn tick_once(&self) -> Result<(), sqlx::Error> {
-        let due = catalog_sql::list_due_periodic(self.catalog.pool()).await?;
+    pub async fn tick_once(&self) -> Result<(), anyhow::Error> {
+        let due = self.catalog.list_due_periodic().await?;
         for c in due {
             let now_ms = chrono::Utc::now().timestamp_millis();
             let bucketed = (now_ms / c.schedule_ms) * c.schedule_ms;
@@ -31,9 +30,10 @@ impl DataSourceScheduler {
             // tenant-correct. DataSource syncs ride the worker fabric — the
             // embedded worker (or any remote worker advertising the
             // `data source` capability) claims and runs them.
-            let inserted =
-                catalog_sql::enqueue_data_source_sync(self.catalog.pool(), c.tenant_id, c.id, bucketed)
-                    .await?;
+            let inserted = self
+                .catalog
+                .enqueue_data_source_sync(c.tenant_id, c.id, bucketed)
+                .await?;
             if inserted > 0 {
                 debug!(data_source = %c.name, bucketed, "enqueued data_source_sync job");
             }

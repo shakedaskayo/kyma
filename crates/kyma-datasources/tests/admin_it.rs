@@ -3,10 +3,12 @@ use axum::http::StatusCode;
 use axum::{Extension, Router};
 use kyma_catalog::PostgresCatalog;
 use kyma_datasources::admin::{router, AdminState};
+use kyma_datasources::catalog_trait::{DataSourceCatalog, PgDataSourceCatalog};
 use kyma_datasources::registry::DataSourceRegistry;
 use kyma_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
 use kyma_core::tenant::DEFAULT_TENANT;
 use serde_json::json;
+use sqlx::PgPool;  // used for WatcherRegistry::register
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
@@ -41,7 +43,7 @@ impl DataSource for StubConn {
     }
 }
 
-async fn state() -> (testcontainers::ContainerAsync<Postgres>, AdminState) {
+async fn state() -> (testcontainers::ContainerAsync<Postgres>, AdminState, PgPool) {
     let pg = Postgres::default()
         .with_name("pgvector/pgvector")
         .with_tag("pg16")
@@ -50,14 +52,17 @@ async fn state() -> (testcontainers::ContainerAsync<Postgres>, AdminState) {
         .unwrap();
     let port = pg.get_host_port_ipv4(5432).await.unwrap();
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
-    let catalog = Arc::new(PostgresCatalog::connect(&url).await.unwrap());
+    let pg_catalog = Arc::new(PostgresCatalog::connect(&url).await.unwrap());
+    let pool = pg_catalog.pool().clone();
+    let catalog: Arc<dyn DataSourceCatalog> =
+        Arc::new(PgDataSourceCatalog::from_pg_catalog(&pg_catalog));
     let mut reg = DataSourceRegistry::new();
     reg.register(Arc::new(StubConn));
     let s = AdminState {
         catalog,
         registry: Arc::new(reg),
     };
-    (pg, s)
+    (pg, s, pool)
 }
 
 fn app(s: AdminState) -> Router {
@@ -69,7 +74,7 @@ fn app(s: AdminState) -> Router {
 
 #[tokio::test]
 async fn create_list_get_delete() {
-    let (_pg, s) = state().await;
+    let (_pg, s, _pool) = state().await;
     let app = app(s.clone());
 
     let body = json!({
@@ -110,8 +115,7 @@ async fn create_list_get_delete() {
 
 #[tokio::test]
 async fn watchers_list_empty_then_rows() {
-    let (_pg, s) = state().await;
-    let pool = s.catalog.pool().clone();
+    let (_pg, s, pool) = state().await;
     let app = app(s);
 
     let resp = app
@@ -160,7 +164,7 @@ async fn watchers_list_empty_then_rows() {
 
 #[tokio::test]
 async fn rejects_invalid_config() {
-    let (_pg, s) = state().await;
+    let (_pg, s, _pool) = state().await;
     let app = app(s.clone());
     let body = json!({
         "name": "p2",

@@ -1,13 +1,12 @@
 //! HTTP admin API — /v1/data-sources CRUD.
 
-use crate::catalog_sql;
+use crate::catalog_trait::DataSourceCatalog;
 use crate::registry::DataSourceRegistry;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
-use kyma_catalog::PostgresCatalog;
 use kyma_core::tenant::TenantId;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -15,7 +14,7 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct AdminState {
-    pub catalog: Arc<PostgresCatalog>,
+    pub catalog: Arc<dyn DataSourceCatalog>,
     pub registry: Arc<DataSourceRegistry>,
 }
 
@@ -87,18 +86,19 @@ async fn create(
         )
             .into_response();
     }
-    let res = catalog_sql::create_data_source_direct(
-        s.catalog.pool(),
-        tenant,
-        &req.name,
-        &req.type_id,
-        &req.target_database,
-        &req.target_table,
-        req.config,
-        req.schedule_ms,
-        "periodic",
-    )
-    .await;
+    let res = s
+        .catalog
+        .create_data_source(
+            tenant,
+            &req.name,
+            &req.type_id,
+            &req.target_database,
+            &req.target_table,
+            req.config,
+            req.schedule_ms,
+            "periodic",
+        )
+        .await;
     match res {
         Ok(id) => (StatusCode::CREATED, Json(IdResp { id })).into_response(),
         Err(e) => (
@@ -163,7 +163,7 @@ async fn catalog(State(s): State<AdminState>) -> impl IntoResponse {
 /// infrastructure-level (per node, not per tenant), so unlike the other
 /// routes this handler deliberately ignores the `TenantId` extension.
 async fn list_watchers(State(s): State<AdminState>) -> impl IntoResponse {
-    match crate::watchers::WatcherRegistry::list_and_prune(s.catalog.pool()).await {
+    match s.catalog.list_watchers().await {
         Ok(items) => {
             (StatusCode::OK, Json(serde_json::json!({ "items": items }))).into_response()
         }
@@ -179,15 +179,7 @@ async fn list(
     Extension(tenant): Extension<TenantId>,
     State(s): State<AdminState>,
 ) -> impl IntoResponse {
-    let rows = sqlx::query_as::<_, (Uuid, String, String, bool)>(
-        "SELECT id, name, type, enabled FROM data_sources
-         WHERE tenant_id = $1
-         ORDER BY name",
-    )
-    .bind(tenant.as_uuid())
-    .fetch_all(s.catalog.pool())
-    .await;
-    match rows {
+    match s.catalog.list_data_sources(tenant).await {
         Ok(rows) => {
             let items: Vec<_> = rows
                 .into_iter()
@@ -215,7 +207,7 @@ async fn get_one(
     State(s): State<AdminState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
-    match catalog_sql::load_data_source(s.catalog.pool(), tenant, id).await {
+    match s.catalog.load_data_source(tenant, id).await {
         Ok(Some(c)) => {
             let scrubbed = scrub_secrets(c.config_jsonb.clone());
             (
@@ -306,7 +298,9 @@ async fn patch_one(
         }
     }
     if let Some(cfg) = &req.config {
-        let Some(c) = catalog_sql::load_data_source(s.catalog.pool(), tenant, id)
+        let Some(c) = s
+            .catalog
+            .load_data_source(tenant, id)
             .await
             .ok()
             .flatten()
@@ -328,24 +322,17 @@ async fn patch_one(
                 .into_response();
         }
     }
-    let res = sqlx::query(
-        "UPDATE data_sources SET
-             name = COALESCE($3, name),
-             schedule_ms = COALESCE($4, schedule_ms),
-             enabled = COALESCE($5, enabled),
-             config_jsonb = COALESCE($6, config_jsonb),
-             disabled_reason = CASE WHEN $5 = TRUE THEN NULL ELSE disabled_reason END,
-             updated_at = now()
-         WHERE tenant_id = $1 AND id = $2",
-    )
-    .bind(tenant.as_uuid())
-    .bind(id)
-    .bind(req.name.as_deref())
-    .bind(req.schedule_ms)
-    .bind(req.enabled)
-    .bind(req.config.as_ref())
-    .execute(s.catalog.pool())
-    .await;
+    let res = s
+        .catalog
+        .patch_data_source(
+            tenant,
+            id,
+            req.name.as_deref(),
+            req.schedule_ms,
+            req.enabled,
+            req.config,
+        )
+        .await;
     match res {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (
@@ -361,12 +348,7 @@ async fn delete_one(
     State(s): State<AdminState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
-    let res = sqlx::query("DELETE FROM data_sources WHERE tenant_id = $1 AND id = $2")
-        .bind(tenant.as_uuid())
-        .bind(id)
-        .execute(s.catalog.pool())
-        .await;
-    match res {
+    match s.catalog.delete_data_source(tenant, id).await {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -381,14 +363,7 @@ async fn pause(
     State(s): State<AdminState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
-    let _ = sqlx::query(
-        "UPDATE data_sources SET enabled = FALSE, disabled_reason = 'manual',
-         updated_at = now() WHERE tenant_id = $1 AND id = $2",
-    )
-    .bind(tenant.as_uuid())
-    .bind(id)
-    .execute(s.catalog.pool())
-    .await;
+    let _ = s.catalog.set_enabled(tenant, id, false, Some("manual")).await;
     StatusCode::NO_CONTENT
 }
 
@@ -397,14 +372,7 @@ async fn resume(
     State(s): State<AdminState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
-    let _ = sqlx::query(
-        "UPDATE data_sources SET enabled = TRUE, disabled_reason = NULL,
-         updated_at = now() WHERE tenant_id = $1 AND id = $2",
-    )
-    .bind(tenant.as_uuid())
-    .bind(id)
-    .execute(s.catalog.pool())
-    .await;
+    let _ = s.catalog.set_enabled(tenant, id, true, None).await;
     StatusCode::NO_CONTENT
 }
 
@@ -414,23 +382,7 @@ async fn trigger(
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
     let now_ms = chrono::Utc::now().timestamp_millis();
-    // Align the manual trigger to the scheduler's time-bucket so it dedups
-    // (ON CONFLICT DO NOTHING) with any pending/just-run scheduled tick. Without
-    // this a trigger enqueues a *separate* task that the SKIP-LOCKED workers run
-    // concurrently with the scheduled tick — both re-parse + re-emit the code
-    // graph before either persists the cursor (read-dedup hides it, but the
-    // append-only tables grow). One task per bucket keeps ingestion idempotent.
-    let schedule_ms: i64 = sqlx::query_scalar(
-        "SELECT schedule_ms FROM data_sources WHERE tenant_id = $1 AND id = $2",
-    )
-    .bind(tenant.as_uuid())
-    .bind(id)
-    .fetch_optional(s.catalog.pool())
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or(0);
-    let key = if schedule_ms > 0 { (now_ms / schedule_ms) * schedule_ms } else { now_ms };
-    let _ = catalog_sql::enqueue_tick(s.catalog.pool(), tenant, id, key).await;
+    let _ = s.catalog.enqueue_trigger(tenant, id, now_ms).await;
     StatusCode::ACCEPTED
 }
+

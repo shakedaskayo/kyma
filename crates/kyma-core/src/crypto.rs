@@ -75,6 +75,37 @@ impl Crypto {
             .decrypt(Nonce::from_slice(nonce_bytes), ct)
             .map_err(|e| anyhow!("aes-gcm decrypt: {e}"))
     }
+
+    /// Load from `KYMA_SECRET_KEY` env var, or generate + persist a random key
+    /// to `key_path` on first use (`0600` permissions). Safe for local mode where
+    /// no env var is configured.
+    pub fn from_env_or_file(key_path: &str) -> Result<Self> {
+        if let Ok(raw) = std::env::var("KYMA_SECRET_KEY") {
+            return Ok(Self::from_secret(&raw));
+        }
+        let path = std::path::Path::new(key_path);
+        if path.exists() {
+            let raw = std::fs::read_to_string(path)
+                .with_context(|| format!("reading key file {key_path}"))?;
+            return Ok(Self::from_secret(raw.trim()));
+        }
+        // First boot — generate and persist.
+        let key = generate_key();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating dir {}", parent.display()))?;
+        }
+        std::fs::write(path, &key)
+            .with_context(|| format!("writing key file {key_path}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                .with_context(|| format!("setting permissions on {key_path}"))?;
+        }
+        eprintln!("kyma: generated local secret key at {key_path} (first boot)");
+        Ok(Self::from_secret(&key))
+    }
 }
 
 /// Generate a fresh `KYMA_SECRET_KEY` value: base64 of 32 random bytes — the

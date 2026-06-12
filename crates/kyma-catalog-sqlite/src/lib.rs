@@ -395,6 +395,91 @@ CREATE TABLE IF NOT EXISTS local_dreaming_runs (
     trace_json   TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_local_dreaming_started ON local_dreaming_runs (started_at);
+
+-- Credentials store (local mode — mirrors Postgres schema; enc_value is
+-- nonce(12) || ciphertext AES-256-GCM stored as a BLOB).
+CREATE TABLE IF NOT EXISTS credentials (
+    id          TEXT NOT NULL PRIMARY KEY,
+    tenant_id   TEXT NOT NULL,
+    label       TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    enc_value   BLOB NOT NULL,
+    metadata    TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    UNIQUE (tenant_id, label)
+);
+CREATE INDEX IF NOT EXISTS idx_credentials_tenant ON credentials (tenant_id);
+
+-- Data sources (local mode — mirrors Postgres connectors/data_sources schema).
+CREATE TABLE IF NOT EXISTS data_sources (
+    id                  TEXT NOT NULL PRIMARY KEY,
+    tenant_id           TEXT NOT NULL,
+    name                TEXT NOT NULL,
+    type                TEXT NOT NULL,
+    target_database     TEXT NOT NULL,
+    target_table        TEXT NOT NULL DEFAULT '',
+    config_json         TEXT NOT NULL DEFAULT '{}',
+    schedule_ms         INTEGER NOT NULL,
+    drive_model         TEXT NOT NULL DEFAULT 'periodic',
+    enabled             INTEGER NOT NULL DEFAULT 1,
+    disabled_reason     TEXT,
+    last_run_at         TEXT,
+    last_success_at     TEXT,
+    last_error          TEXT,
+    last_rows_ingested  INTEGER,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    UNIQUE (tenant_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_data_sources_tenant ON data_sources (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_data_sources_enabled ON data_sources (drive_model, enabled)
+    WHERE enabled = 1;
+
+-- Cursor state per data source (checkpoint for incremental sync).
+CREATE TABLE IF NOT EXISTS data_source_cursors (
+    data_source_id TEXT NOT NULL PRIMARY KEY REFERENCES data_sources(id) ON DELETE CASCADE,
+    cursor_json    TEXT,
+    updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS jobs (
+    id               TEXT PRIMARY KEY,
+    tenant_id        TEXT NOT NULL,
+    kind             TEXT NOT NULL,
+    payload          TEXT NOT NULL DEFAULT '{}',
+    status           TEXT NOT NULL DEFAULT 'pending',
+    priority         INTEGER NOT NULL DEFAULT 0,
+    req_capabilities TEXT NOT NULL DEFAULT '[]',
+    claimed_by       TEXT,
+    claim_expires_at TEXT,
+    attempt          INTEGER NOT NULL DEFAULT 0,
+    max_attempts     INTEGER NOT NULL DEFAULT 3,
+    progress         TEXT NOT NULL DEFAULT '{}',
+    result           TEXT,
+    last_error       TEXT,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS jobs_pending_idx ON jobs (kind, priority DESC, created_at)
+    WHERE status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS jobs_data_source_sync_uniq
+    ON jobs (json_extract(payload, '$.data_source_id'), json_extract(payload, '$.scheduled_for'))
+    WHERE kind = 'data_source_sync' AND status IN ('pending', 'claimed', 'running');
+
+CREATE TABLE IF NOT EXISTS workers (
+    id             TEXT PRIMARY KEY,
+    tenant_id      TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    hostname       TEXT,
+    kind           TEXT NOT NULL DEFAULT 'embedded',
+    capabilities   TEXT NOT NULL DEFAULT '[]',
+    status         TEXT NOT NULL DEFAULT 'online',
+    max_concurrent INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL,
+    UNIQUE (tenant_id, name)
+);
 "#;
 
 #[async_trait]

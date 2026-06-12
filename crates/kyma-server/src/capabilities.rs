@@ -41,12 +41,12 @@ impl Capabilities {
         explore_live: true,
         agent: true,
     };
-    /// Local single binary — memory + data + graph + dashboards; data source
-    /// and credential management live on the control plane.
+    /// Local single binary — full feature parity with the server except OAuth
+    /// and saved Discover views (those require Postgres).
     pub const LOCAL: Self = Self {
         mode: "local",
-        data_sources: false,
-        credentials: false,
+        data_sources: true,
+        credentials: true,
         oauth: false,
         saved_views: false,
         users_admin: true,
@@ -86,6 +86,6 @@ mod tests {
         assert_eq!(json["data_sources"], true);
         assert!(json.get("connectors").is_none());
         let json = serde_json::to_value(Capabilities::LOCAL).unwrap();
-        assert_eq!(json["data_sources"], false);
+        assert_eq!(json["data_sources"], true);
     }
 }

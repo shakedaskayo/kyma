@@ -10,8 +10,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
-use kyma_catalog::PgCredentialStore;
-use kyma_core::credentials::CredentialValue;
+use kyma_core::credentials::{CredentialStore, CredentialValue};
 use kyma_core::tenant::TenantId;
 use serde::Deserialize;
 use serde_json::Value;
@@ -20,7 +19,7 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct CredentialsState {
-    pub store: Arc<PgCredentialStore>,
+    pub store: Arc<dyn CredentialStore>,
 }
 
 pub fn router(state: CredentialsState) -> Router {
