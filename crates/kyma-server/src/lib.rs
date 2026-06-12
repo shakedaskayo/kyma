@@ -616,7 +616,7 @@ pub(crate) fn error_response(status: StatusCode, code: &str, message: &str, requ
 }
 
 pub(crate) fn resolve_query_budget(headers: &HeaderMap) -> kyma_core::query_frontend::QueryBudget {
-    let mut b = kyma_core::query_frontend::QueryBudget::default();
+    let mut b = kyma_core::query_frontend::QueryBudget::from_env();
     if let Some(v) = headers
         .get("x-kyma-max-wall-clock-ms")
         .and_then(|v| v.to_str().ok())

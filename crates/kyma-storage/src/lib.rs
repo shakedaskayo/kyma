@@ -64,11 +64,21 @@ pub fn build_object_store(config: &StorageConfig) -> Result<Arc<dyn ObjectStore>
             } else {
                 AmazonS3Builder::new()
             };
+            // Request timeout is env-tunable (`KYMA_S3_TIMEOUT_SECS`): large
+            // extent PUTs on slow links need more than the client default.
+            let mut client_opts = object_store::ClientOptions::new();
+            if let Some(secs) = std::env::var("KYMA_S3_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+            {
+                client_opts = client_opts.with_timeout(std::time::Duration::from_secs(secs.max(1)));
+            }
             let mut builder = base
                 .with_bucket_name(bucket)
                 .with_region(region)
                 .with_virtual_hosted_style_request(!*path_style)
-                .with_allow_http(*allow_http);
+                .with_allow_http(*allow_http)
+                .with_client_options(client_opts);
             if let Some(ep) = endpoint {
                 builder = builder.with_endpoint(ep);
             }
