@@ -1,6 +1,7 @@
 /**
- * CommandBar — ⌘K glass panel, top-center. One box for: node search with
- * fly-to (Enter/click), arrow-key navigation, and Esc to close. Searches the
+ * CommandBar — glass search panel, top-center. Opened from the always-visible
+ * search pill or ⌘K/Ctrl+K. One box for: node search with fly-to
+ * (Enter/click), arrow-key navigation, and Esc to close. Searches the
  * already-loaded graphology instance (no server round-trip — the full graph
  * is local).
  */
@@ -56,7 +57,25 @@ export function CommandBar({ graphRef }: { graphRef: React.RefObject<Graph | nul
     return out;
   }, [graphRef, query]);
 
-  if (!open) return null;
+  if (!open) {
+    const isMac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
+    return (
+      <div className="ky-absolute ky-left-1/2 ky-top-6 ky-z-30 -ky-translate-x-1/2">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Search nodes"
+          className="ky-glass ky-flex ky-items-center ky-gap-2 ky-rounded-full ky-border ky-border-border ky-px-3 ky-py-1.5 ky-text-xs ky-text-muted-foreground ky-shadow-elev-2 ky-transition-colors hover:ky-text-foreground"
+        >
+          <Search className="ky-h-3.5 ky-w-3.5" />
+          Search nodes…
+          <kbd className="ky-rounded ky-border ky-border-border ky-px-1.5 ky-py-0.5 ky-text-2xs">
+            {isMac ? "⌘K" : "Ctrl K"}
+          </kbd>
+        </button>
+      </div>
+    );
+  }
 
   const select = (id: string) => {
     pushTrail(id);

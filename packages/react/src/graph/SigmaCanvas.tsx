@@ -339,6 +339,11 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     const clearHover = () => props.onNodeHover(null);
     container.addEventListener("mouseleave", clearHover);
 
+    // Sigma only listens to window resize, but the container also shrinks/
+    // grows when the inspector panel docks/undocks beside the canvas.
+    const ro = new ResizeObserver(() => sigma.resize());
+    ro.observe(container);
+
     // LOD: refresh reducers on every camera move so tier updates propagate.
     // Update ctxRef.current.tier BEFORE refreshing so reducers see the current
     // LOD tier — without this the tier lags one frame (computed at React render
@@ -357,6 +362,7 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     });
 
     return () => {
+      ro.disconnect();
       container.removeEventListener("mouseleave", clearHover);
       sigmaRef.current = null;
       sigma.kill();

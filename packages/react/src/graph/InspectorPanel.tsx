@@ -1,8 +1,9 @@
 /**
- * InspectorPanel — floating glass panel, right side, mounted only while a
- * node is selected. Properties, metadata, and incident edges grouped by
- * relationship type with direction glyphs; per-edge fly-to; focus-
- * neighborhood + copy-id actions.
+ * InspectorPanel — docked glass sidebar, right edge, mounted only while a
+ * node is selected. Docks beside the canvas (the canvas shrinks) rather than
+ * floating over it, so the panel never covers the graph. Properties,
+ * metadata, and incident edges grouped by relationship type with direction
+ * glyphs; per-edge fly-to; focus-neighborhood + copy-id actions.
  */
 import { useMemo } from "react";
 import { ArrowLeft, ArrowRight, Copy, Crosshair, X } from "lucide-react";
@@ -48,7 +49,7 @@ export function InspectorPanel({
   const name = (node.properties?.name as string) || (node.properties?.title as string) || node.id;
 
   return (
-    <div className="ky-absolute ky-right-4 ky-top-16 ky-bottom-20 ky-z-20 ky-w-80 ky-overflow-y-auto ky-rounded-xl ky-border ky-border-border ky-glass ky-shadow-elev-3 ky-animate-fade-in">
+    <div className="ky-h-full ky-w-80 ky-max-w-[85vw] ky-shrink-0 ky-overflow-y-auto ky-border-l ky-border-border ky-glass ky-animate-fade-in">
       <div className="ky-flex ky-items-start ky-justify-between ky-border-b ky-border-border ky-p-3">
         <div className="ky-min-w-0">
           <div className="ky-truncate ky-text-sm ky-font-medium ky-text-foreground">{name}</div>
