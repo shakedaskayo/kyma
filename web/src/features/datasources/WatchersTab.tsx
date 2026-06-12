@@ -1,10 +1,11 @@
 import { Brain, FolderSearch, Radar, type LucideIcon } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { relTime } from "@/lib/time";
 import type { DataSourceWatcher } from "@/sdk/datasources";
-import { useDataSourceWatchers } from "./useDataSources";
+import { useDataSourceWatchers, useUpdateWatcherSettings, useWatcherSettings } from "./useDataSources";
 
 const KINDS: Record<DataSourceWatcher["kind"], { label: string; icon: LucideIcon }> = {
   filedrop: { label: "File drop", icon: FolderSearch },
@@ -108,6 +109,8 @@ function WatcherCard({ watcher }: { watcher: DataSourceWatcher }) {
 
 export function WatchersTab() {
   const { data: watchers, isLoading, error } = useDataSourceWatchers();
+  const { data: settings } = useWatcherSettings();
+  const { mutate: updateSettings, isPending } = useUpdateWatcherSettings();
 
   if (isLoading) {
     return <SkeletonRows rows={4} className="mx-auto max-w-3xl py-2" />;
@@ -122,27 +125,29 @@ export function WatchersTab() {
   }
 
   if (!watchers || watchers.length === 0) {
+    const ccEnabled = settings?.cc_sync_enabled ?? true;
     return (
       <EmptyState
         icon={Radar}
         title="No file watchers running"
         description="Watchers run alongside the engine and stream files or Claude Code memory into the context graph from the node where they live."
         action={
-          <div className="space-y-1.5 text-xs text-muted-foreground">
-            <p>
+          <div className="flex flex-col items-center gap-3">
+            {!ccEnabled && (
+              <Button
+                size="sm"
+                onClick={() => updateSettings({ cc_sync_enabled: true })}
+                disabled={isPending}
+              >
+                Enable Claude Code sync
+              </Button>
+            )}
+            <p className="text-xs text-muted-foreground">
               File drop: set{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono">
-                KYMA_FILEDROP_ENABLED=1
-              </code>{" "}
-              and{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono">
-                KYMA_FILEDROP_PREFIXES
-              </code>{" "}
-              on the engine.
-            </p>
-            <p>
-              Claude Code sync: set{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono">KYMA_CC_WATCH=1</code>.
+              <code className="rounded bg-muted px-1 py-0.5 font-mono">KYMA_FILEDROP_ENABLED=1</code>
+              {" "}and{" "}
+              <code className="rounded bg-muted px-1 py-0.5 font-mono">KYMA_FILEDROP_PREFIXES</code>
+              {" "}on the engine.
             </p>
           </div>
         }

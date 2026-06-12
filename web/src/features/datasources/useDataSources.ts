@@ -6,6 +6,7 @@ import {
   deleteDataSource,
   getDataSource,
   getDataSourceCatalog,
+  getWatcherSettings,
   listDataSources,
   listDataSourceWatchers,
   listGitHubRepos,
@@ -13,6 +14,7 @@ import {
   pauseDataSource,
   resumeDataSource,
   triggerDataSource,
+  updateWatcherSettings,
   type DataSourceUpdate,
   type CreateDataSourceBody,
 } from "@/sdk/datasources";
@@ -61,6 +63,29 @@ export function useDataSourceWatchers() {
     queryFn: () => listDataSourceWatchers({ endpoint, token, database }),
     enabled: Boolean(endpoint),
     refetchInterval: 15_000,
+  });
+}
+
+export function useWatcherSettings() {
+  const { endpoint, token, database } = useSession();
+  return useQuery({
+    queryKey: ["data-sources", "watcher-settings", endpoint],
+    queryFn: () => getWatcherSettings({ endpoint, token, database }),
+    enabled: Boolean(endpoint),
+  });
+}
+
+export function useUpdateWatcherSettings() {
+  const { endpoint, token, database } = useSession();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: { cc_sync_enabled?: boolean }) =>
+      updateWatcherSettings({ endpoint, token, database, patch }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["data-sources", "watcher-settings", endpoint] });
+      void qc.invalidateQueries({ queryKey: ["data-sources", "watchers", endpoint] });
+    },
+    onError: () => toast.error("Failed to update watcher settings"),
   });
 }
 

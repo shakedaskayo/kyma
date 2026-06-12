@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import type { DataSourceWatcher } from "@/sdk/datasources";
+import type { DataSourceWatcher, WatcherSettings } from "@/sdk/datasources";
 
 // Mutable holder so each test can set what the tab "loads".
 const h = vi.hoisted(() => ({
   watchers: [] as DataSourceWatcher[],
+  settings: { cc_sync_enabled: true } as WatcherSettings,
   isLoading: false,
   error: null as Error | null,
 }));
 
 vi.mock("./useDataSources", () => ({
   useDataSourceWatchers: () => ({ data: h.watchers, isLoading: h.isLoading, error: h.error }),
+  useWatcherSettings: () => ({ data: h.settings }),
+  useUpdateWatcherSettings: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 import { WatchersTab } from "./WatchersTab";
@@ -40,16 +43,26 @@ function watcher(over: Partial<DataSourceWatcher> = {}): DataSourceWatcher {
 afterEach(() => {
   cleanup();
   h.watchers = [];
+  h.settings = { cc_sync_enabled: true };
   h.isLoading = false;
   h.error = null;
 });
 
 describe("WatchersTab", () => {
-  it("shows the enablement empty state when nothing is running", () => {
+  it("shows the empty state with file-drop hint when nothing is running (cc enabled)", () => {
+    h.settings = { cc_sync_enabled: true };
     render(<WatchersTab />);
     expect(screen.getByText("No file watchers running")).toBeTruthy();
     expect(screen.getByText("KYMA_FILEDROP_ENABLED=1")).toBeTruthy();
-    expect(screen.getByText("KYMA_CC_WATCH=1")).toBeTruthy();
+    // cc_sync already enabled — no enable button shown
+    expect(screen.queryByRole("button", { name: /Enable Claude Code sync/ })).toBeNull();
+  });
+
+  it("shows Enable button when cc_sync is disabled", () => {
+    h.settings = { cc_sync_enabled: false };
+    render(<WatchersTab />);
+    expect(screen.getByText("No file watchers running")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Enable Claude Code sync" })).toBeTruthy();
   });
 
   it("renders a card per watcher with kind, target, and scan line", () => {

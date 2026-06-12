@@ -279,3 +279,28 @@ export async function listDataSourceWatchers(t: KymaTransport): Promise<DataSour
   );
   return body.items ?? [];
 }
+
+// ── Watcher settings (local-mode toggle for cc-sync) ──────────────────────────
+
+export interface WatcherSettings {
+  cc_sync_enabled: boolean;
+}
+
+export async function getWatcherSettings(t: KymaTransport): Promise<WatcherSettings> {
+  return handleResponse<WatcherSettings>(
+    await t.request("/v1/data-sources/watchers/settings"),
+  );
+}
+
+export async function updateWatcherSettings(
+  t: KymaTransport,
+  patch: Partial<WatcherSettings>,
+): Promise<WatcherSettings> {
+  return handleResponse<WatcherSettings>(
+    await t.request("/v1/data-sources/watchers/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+  );
+}

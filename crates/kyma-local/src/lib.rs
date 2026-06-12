@@ -28,6 +28,7 @@ mod datasource_catalog;
 mod setup;
 mod sqlite_queue;
 mod sync;
+mod watcher_settings;
 pub mod node;
 pub mod server_service;
 pub mod watcher_status;
@@ -298,9 +299,9 @@ pub async fn run_mcp() -> Result<()> {
 /// lifecycle that are not part of router construction.
 ///
 /// Also returns the `AgentState` so the caller can start optional background
-/// workers (e.g. the `KYMA_CC_WATCH` watcher) that hold a reference to it,
-/// plus the `LocalWatcherStatus` handle feeding the already-mounted
-/// `/v1/data-sources/watchers` endpoint.
+/// workers (e.g. the `KYMA_CC_WATCH` watcher) that hold a reference to it.
+/// `watcher_status` is passed in by the caller (created before `SqliteDataSourceCatalog`
+/// so it can be injected into the catalog for `list_watchers()`).
 #[allow(clippy::too_many_arguments)]
 pub fn build_local_app(
     catalog: Arc<dyn kyma_core::catalog::Catalog>,
@@ -314,7 +315,10 @@ pub fn build_local_app(
     // Optional data source admin state (catalog + registry). When provided the
     // /v1/data-sources routes are mounted behind Role::Write.
     ds_admin: Option<(Arc<dyn DataSourceCatalog>, Arc<DataSourceRegistry>)>,
-) -> (axum::Router, AgentState, watcher_status::LocalWatcherStatus) {
+    // In-process watcher status — created before SqliteDataSourceCatalog and
+    // injected into it so list_watchers() returns cc-sync heartbeats.
+    watcher_status: watcher_status::LocalWatcherStatus,
+) -> (axum::Router, AgentState) {
     let schema_cache = Arc::new(SchemaCache::from_env());
     let query_state = QueryState { federation: None,
         catalog: catalog.clone(),
@@ -456,13 +460,16 @@ pub fn build_local_app(
     let workers_router = kyma_server::local_workers_router().layer(read_mw());
     // In-process watcher registry serving /v1/data-sources/watchers.
     // Omit this when the full datasource admin router is mounted — that router
-    // already exposes /v1/data-sources/watchers and the two would conflict.
-    let watchers = watcher_status::LocalWatcherStatus::default();
+    // already exposes /v1/data-sources/watchers (via SqliteDataSourceCatalog
+    // which has watcher_status injected) and the two would conflict.
     let watchers_router = if ds_admin.is_none() {
-        Some(watchers.router().layer(read_mw()))
+        Some(watcher_status.router().layer(read_mw()))
     } else {
         None
     };
+    // Settings route always mounted — lets the UI toggle cc-sync regardless of
+    // whether the full ds_admin router is present.
+    let watcher_settings_router = watcher_status.settings_router().layer(read_mw());
 
     // Credentials CRUD — only when a real credential store was supplied.
     let creds_router = cred_store.map(|store| {
@@ -490,7 +497,8 @@ pub fn build_local_app(
         .merge(kyma_server::auth_handler::auth_login_router(catalog.clone()))
         .merge(kyma_server::health_router())
         .merge(live_router)
-        .merge(kyma_server::web_ui::router());
+        .merge(kyma_server::web_ui::router())
+        .merge(watcher_settings_router);
     if let Some(r) = watchers_router {
         app = app.merge(r);
     }
@@ -501,7 +509,7 @@ pub fn build_local_app(
         app = app.merge(r);
     }
     let app = kyma_server::with_permissive_cors(app);
-    (app, agent_state, watchers)
+    (app, agent_state)
 }
 
 /// `kyma serve` — serve the web UI + full HTTP API on `addr`, over the embedded
@@ -596,9 +604,20 @@ pub async fn run_serve(
     let cred_store: Arc<dyn CredentialStore> =
         Arc::new(cred_store::SqliteCredentialStore::new(pool.clone(), crypto));
 
+    // ── In-process watcher status (created before ds_catalog so it can be
+    // injected for list_watchers()) ─────────────────────────────────────────
+    let watcher_status = {
+        let ws = watcher_status::LocalWatcherStatus::default();
+        let settings = watcher_settings::WatcherSettings::load().await;
+        ws.set_cc_sync_enabled(settings.cc_sync_enabled);
+        ws
+    };
+
     // ── Data Sources: catalog + connector registry ──────────────────────────
-    let ds_catalog: Arc<dyn DataSourceCatalog> =
-        Arc::new(datasource_catalog::SqliteDataSourceCatalog::new(pool.clone()));
+    let ds_catalog: Arc<dyn DataSourceCatalog> = Arc::new(
+        datasource_catalog::SqliteDataSourceCatalog::new(pool.clone())
+            .with_watcher_status(watcher_status.clone()),
+    );
     let ds_control = Arc::new(datasource_catalog::SqliteDataSourceControl::new(pool.clone()));
 
     let mut conn_reg = DataSourceRegistry::new();
@@ -679,7 +698,7 @@ pub async fn run_serve(
         catalog: Some(engine.catalog.clone()),
     };
 
-    let (app, agent_state, watcher_status) = build_local_app(
+    let (app, agent_state) = build_local_app(
         engine.catalog.clone(),
         engine.format.clone(),
         backend,
@@ -688,6 +707,7 @@ pub async fn run_serve(
         mcp_url,
         Some(cred_store),
         Some((ds_catalog.clone(), conn_registry.clone())),
+        watcher_status.clone(),
     );
 
     // ── Data source scheduler: periodic tick + trigger enqueue ──────────────
@@ -783,18 +803,16 @@ pub async fn run_serve(
         info!("local compaction worker + scheduler running");
     }
 
-    // Optional resident watcher: keep Claude Code file memory synced while
-    // the local server runs (opt-in: KYMA_CC_WATCH=1).
-    if env_flag("KYMA_CC_WATCH", false) {
+    // Resident watcher: keep Claude Code file memory synced while the local
+    // server runs. On by default — disable via the UI (Settings) or by setting
+    // KYMA_CC_WATCH=0 as a host-level kill switch.
+    if env_flag("KYMA_CC_WATCH", true) {
         let eng = engine.clone();
         let agent = agent_state.clone();
         let poll = env_secs("KYMA_CC_SYNC_POLL_SECS", 30);
         let status = watcher_status.clone();
         tokio::spawn(async move {
             let opts = SyncOptions::default();
-            // Register in the in-process watcher status served at
-            // /v1/data-sources/watchers — same provenance fields the
-            // control plane's Postgres registry records.
             let (node_host, node_id, identity) = watcher_status::node_identity();
             let config = serde_json::json!({
                 "poll_secs": poll.as_secs(),
@@ -803,28 +821,37 @@ pub async fn run_serve(
             let started_at = chrono::Utc::now().to_rfc3339();
             let mut last_scan: Option<serde_json::Value> = None;
             loop {
-                match run_cc_phase(&eng, Some(&agent), &opts).await {
-                    Ok(scan) => last_scan = Some(scan),
-                    // Failed cycle: keep the previous scan rollup — the
-                    // heartbeat below still proves the loop is alive, and
-                    // the error itself goes to the log.
-                    Err(e) => tracing::warn!("cc-sync watcher: {e}"),
+                if status.cc_sync_enabled() {
+                    match run_cc_phase(&eng, Some(&agent), &opts).await {
+                        Ok(scan) => last_scan = Some(scan),
+                        Err(e) => tracing::warn!("cc-sync watcher: {e}"),
+                    }
+                    status.upsert(watcher_status::LocalWatcher {
+                        id: "cc-sync".into(),
+                        kind: "cc_sync".into(),
+                        node_host: node_host.clone(),
+                        node_id: node_id.clone(),
+                        identity: identity.clone(),
+                        config: config.clone(),
+                        started_at: started_at.clone(),
+                        last_heartbeat_at: chrono::Utc::now().to_rfc3339(),
+                        last_scan: last_scan.clone(),
+                    });
+                } else {
+                    // Disabled — remove from the visible list so the UI shows
+                    // the empty state with the Enable button.
+                    status.remove("cc-sync");
+                    last_scan = None;
                 }
-                status.upsert(watcher_status::LocalWatcher {
-                    id: "cc-sync".into(),
-                    kind: "cc_sync".into(),
-                    node_host: node_host.clone(),
-                    node_id: node_id.clone(),
-                    identity: identity.clone(),
-                    config: config.clone(),
-                    started_at: started_at.clone(),
-                    last_heartbeat_at: chrono::Utc::now().to_rfc3339(),
-                    last_scan: last_scan.clone(),
-                });
                 tokio::time::sleep(poll).await;
             }
         });
-        info!("cc-sync watcher running (KYMA_CC_WATCH=1, every {:?})", poll);
+        let enabled = watcher_status.cc_sync_enabled();
+        if enabled {
+            info!("cc-sync watcher running (every {:?}; toggle in UI or KYMA_CC_WATCH=0 to disable)", poll);
+        } else {
+            info!("cc-sync watcher spawned but disabled via settings (enable in UI)");
+        }
     }
 
     let listener = tokio::net::TcpListener::bind(addr)

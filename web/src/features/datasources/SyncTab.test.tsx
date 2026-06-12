@@ -1,10 +1,11 @@
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import type { DataSourceWatcher } from "@/sdk/datasources";
+import type { DataSourceWatcher, WatcherSettings } from "@/sdk/datasources";
 
 const h = vi.hoisted(() => ({
   watchers: [] as DataSourceWatcher[],
+  settings: { cc_sync_enabled: true } as WatcherSettings,
   isLoading: false,
   error: null as Error | null,
 }));
@@ -15,6 +16,8 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("./useDataSources", () => ({
   useDataSourceWatchers: () => ({ data: h.watchers, isLoading: h.isLoading, error: h.error }),
+  useWatcherSettings: () => ({ data: h.settings }),
+  useUpdateWatcherSettings: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 import { SyncTab } from "./SyncTab";
@@ -49,16 +52,25 @@ function ccWatcher(over: Partial<DataSourceWatcher> = {}): DataSourceWatcher {
 afterEach(() => {
   cleanup();
   h.watchers = [];
+  h.settings = { cc_sync_enabled: true };
   h.isLoading = false;
   h.error = null;
 });
 
 describe("SyncTab", () => {
-  it("shows the KYMA_CC_WATCH empty state when no cc_sync watcher runs", () => {
+  it("shows 'starting' empty state when enabled but no watcher running yet", () => {
     h.watchers = [{ ...ccWatcher(), kind: "filedrop" }];
+    h.settings = { cc_sync_enabled: true };
     render(<SyncTab />);
-    expect(screen.getByText("Claude Code sync is not running")).toBeTruthy();
-    expect(screen.getByText("KYMA_CC_WATCH=1")).toBeTruthy();
+    expect(screen.getByText("Claude Code sync is starting…")).toBeTruthy();
+  });
+
+  it("shows 'paused' empty state with Enable button when cc_sync_enabled is false", () => {
+    h.watchers = [];
+    h.settings = { cc_sync_enabled: false };
+    render(<SyncTab />);
+    expect(screen.getByText("Claude Code sync is paused")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Enable sync" })).toBeTruthy();
   });
 
   it("renders the summary line and per-realm table when running", () => {
@@ -72,6 +84,8 @@ describe("SyncTab", () => {
     expect(screen.getByText("User edited")).toBeTruthy();
     // Link to /memory in the realms note.
     expect(screen.getByText("Memory")).toBeTruthy();
+    // Pause button visible when running.
+    expect(screen.getByRole("button", { name: "Pause sync" })).toBeTruthy();
   });
 
   it("shows 'No realms synced yet' for a fresh watcher", () => {

@@ -11,6 +11,7 @@ export type {
   GitHubRepo,
   DataSourceStatus,
   DataSourceWatcher,
+  WatcherSettings,
 } from "@kyma-ai/client";
 export { SCHEDULE_MS_MIN, SCHEDULE_MS_MAX, deriveStatus } from "@kyma-ai/client";
 
@@ -61,4 +62,12 @@ export function listGitHubRepos(args: Base & { pat: string }) {
 
 export function listDataSourceWatchers(_args: Base) {
   return sessionClient().datasources.listDataSourceWatchers();
+}
+
+export function getWatcherSettings(_args: Base) {
+  return sessionClient().datasources.getWatcherSettings();
+}
+
+export function updateWatcherSettings(_args: Base & { patch: { cc_sync_enabled?: boolean } }) {
+  return sessionClient().datasources.updateWatcherSettings(_args.patch);
 }
