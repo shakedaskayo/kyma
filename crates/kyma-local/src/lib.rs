@@ -659,6 +659,7 @@ pub async fn run_serve(
     conn_reg.register(Arc::new(kyma_datasources::jira::JiraDataSource));
     conn_reg.register(Arc::new(kyma_datasources::confluence::ConfluenceDataSource));
     conn_reg.register(Arc::new(kyma_datasources::msfabric::MsFabricDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::obsidian::ObsidianDataSource));
     let conn_registry = Arc::new(conn_reg);
 
     // ── RowSink: auto-create + evolve schema, then ingest ───────────────────

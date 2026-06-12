@@ -17,6 +17,7 @@ pub mod googledrive;
 pub mod graph_row;
 pub mod jira;
 pub mod notion;
+pub mod obsidian;
 pub mod oauth;
 pub mod oauth_http;
 pub mod postgres;
