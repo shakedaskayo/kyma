@@ -4,8 +4,8 @@ import Graph from "graphology";
 import { CommandBar } from "./CommandBar";
 import { GraphStoreContext, createGraphStore } from "./graph-store";
 
-function setup() {
-  const store = createGraphStore({ commandBarOpen: true });
+function setup(commandBarOpen = true) {
+  const store = createGraphStore({ commandBarOpen });
   const graph = new Graph({ multi: true, type: "directed" });
   graph.addNode("db/g::a", { label: "payment-svc", nodeLabel: "Service", x: 0, y: 0, size: 1 });
   graph.addNode("db/g::b", { label: "orders-table", nodeLabel: "Table", x: 0, y: 0, size: 1 });
@@ -35,5 +35,12 @@ describe("CommandBar", () => {
     const { store } = setup();
     fireEvent.keyDown(screen.getByPlaceholderText(/search/i), { key: "Escape" });
     expect(store.getState().commandBarOpen).toBe(false);
+  });
+
+  it("renders a visible search trigger when closed, which opens the bar", () => {
+    const { store } = setup(false);
+    const trigger = screen.getByRole("button", { name: /search nodes/i });
+    fireEvent.click(trigger);
+    expect(store.getState().commandBarOpen).toBe(true);
   });
 });

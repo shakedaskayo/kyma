@@ -249,8 +249,12 @@ export function GraphView({
     : "radial-gradient(120% 100% at 50% -10%, hsl(210 36% 99%), hsl(210 30% 96%) 100%)";
 
   // ── Render ────────────────────────────────────────────────────────────────────
+  // Flex row: canvas area + docked inspector. The inspector docks beside the
+  // canvas (which shrinks via SigmaCanvas's ResizeObserver) instead of
+  // floating over it, so selecting a node never hides part of the graph.
   return (
-    <div className="ky-relative ky-h-full ky-w-full ky-overflow-hidden">
+    <div className="ky-flex ky-h-full ky-w-full ky-overflow-hidden">
+      <div className="ky-relative ky-h-full ky-min-w-0 ky-flex-1 ky-overflow-hidden">
       {/* Galaxy substrate (behind the transparent canvas) */}
       <div className="ky-pointer-events-none ky-absolute ky-inset-0" style={{ background: galaxyBg }} />
 
@@ -365,11 +369,6 @@ export function GraphView({
         <>
           <CommandBar graphRef={graphRef} />
           <BreadcrumbTrail nodesByCompositeId={nodesByCompositeId} />
-          <InspectorPanel
-            node={selectedNode}
-            edges={edges}
-            nodesByCompositeId={nodesByCompositeId}
-          />
           <LegendDock
             stats={exp.acc.stats}
             coords={coords}
@@ -414,6 +413,16 @@ export function GraphView({
             </div>
           )}
         </>
+      )}
+      </div>
+
+      {/* Docked inspector — sits beside the canvas, never over it */}
+      {showChrome && (
+        <InspectorPanel
+          node={selectedNode}
+          edges={edges}
+          nodesByCompositeId={nodesByCompositeId}
+        />
       )}
     </div>
   );
