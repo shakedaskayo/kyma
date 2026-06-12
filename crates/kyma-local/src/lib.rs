@@ -22,6 +22,7 @@
 pub mod agent_sources;
 mod cc_pipeline;
 mod cc_sync;
+mod vault_sync;
 mod cc_writeback;
 mod cli_config_heal;
 mod cred_store;
@@ -45,6 +46,9 @@ mod cc_pipeline_unit_tests;
 
 #[cfg(test)]
 mod cc_sync_unit_tests;
+
+#[cfg(test)]
+mod vault_sync_unit_tests;
 
 #[cfg(test)]
 mod cc_writeback_unit_tests;
