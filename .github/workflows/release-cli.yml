@@ -38,10 +38,16 @@ jobs:
         with:
           node-version: "22"
           cache: "pnpm"
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Build web UI
-        run: pnpm -C web install --frozen-lockfile && pnpm -C web build
+        # Root workspace install — web depends on workspace:* packages
+        # (@kyma-ai/client, @kyma-ai/react) that must be built (dist/) first.
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @kyma-ai/client build
+          pnpm --filter @kyma-ai/react build
+          pnpm --filter kyma-web build
 
       - name: Install Rust target
         run: rustup target add ${{ matrix.target }}
@@ -91,10 +97,16 @@ jobs:
         with:
           node-version: "22"
           cache: "pnpm"
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Build web UI
-        run: pnpm -C web install --frozen-lockfile && pnpm -C web build
+        # Root workspace install — web depends on workspace:* packages
+        # (@kyma-ai/client, @kyma-ai/react) that must be built (dist/) first.
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @kyma-ai/client build
+          pnpm --filter @kyma-ai/react build
+          pnpm --filter kyma-web build
 
       - name: Install Rust target + cross
         run: |
