@@ -61,6 +61,14 @@ export function isOAuth(entry: CatalogEntry): boolean {
   return entry.auth_mode === "oauth";
 }
 
+/**
+ * Continuous-drive sources sync via a node-local file watcher — there is no
+ * interval to pick and no target table; the wizard hides those steps.
+ */
+export function isWatcherDriven(entry: CatalogEntry): boolean {
+  return entry.drive_model === "continuous";
+}
+
 /** Credential kinds this entry accepts via a stored `credential_id`. */
 export function acceptedCredentialKinds(entry: CatalogEntry): string[] {
   return entry.accepted_credential_kinds ?? [];

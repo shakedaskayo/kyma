@@ -49,6 +49,7 @@ impl DataSource for PgIntrospectDataSource {
             brand: "postgresql".into(),
             auth_mode: "url".into(),
             status: "available".into(),
+            drive_model: "periodic".into(),
             default_schedule_ms: 15 * 60_000,
             fields: vec![CatalogField {
                 key: "url".into(),

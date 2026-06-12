@@ -57,6 +57,7 @@ impl DataSource for GmailDataSource {
             brand: "gmail".into(),
             auth_mode: "oauth".into(),
             status: "available".into(),
+            drive_model: "periodic".into(),
             default_schedule_ms: 15 * 60_000,
             fields: Vec::new(),
             resource: None,

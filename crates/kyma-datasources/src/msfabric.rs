@@ -69,6 +69,7 @@ impl DataSource for MsFabricDataSource {
             brand: "microsoft".into(),
             auth_mode: "service_principal".into(),
             status: "available".into(),
+            drive_model: "periodic".into(),
             // Metadata-only sync; 30 min keeps schemas fresh without hammering
             // the endpoint.
             default_schedule_ms: 30 * 60_000,

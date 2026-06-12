@@ -3,12 +3,15 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataSourcesList } from "@/features/datasources/DataSourcesList";
+import { CcSyncRow, FiledropRow } from "@/features/datasources/LocalSyncRows";
 import { AddDataSourceWizard } from "@/features/datasources/AddDataSourceWizard";
 import { ControlPlaneGate } from "@/features/capabilities/ControlPlaneGate";
+import { useDataSourceWatchers } from "@/features/datasources/useDataSources";
 
-// The Sources tab: the list of configured data sources. The page title and
-// section tabs live in the `_app.data-sources.tsx` layout; this route only
-// owns the list content + the Add wizard.
+// The unified Data Sources page: one list with the pre-installed Claude Code
+// memory sync on top, then every configured source (continuous vault watchers
+// and scheduled connectors alike) and any filedrop watchers. The page title
+// lives in the `_app.data-sources.tsx` layout; the detail in `$id`.
 //
 // NOTE: the engine's OAuth callback fallback redirect lands on
 // /data-sources/new (see crates/kyma-datasources/src/oauth/handler.rs), which
@@ -21,16 +24,24 @@ export const Route = createFileRoute("/_app/data-sources/")({
 function DataSourcesPage() {
   const navigate = useNavigate();
   const [addOpen, setAddOpen] = useState(false);
+  const { data: watchers } = useDataSourceWatchers();
+  const filedrops = (watchers ?? []).filter((w) => w.kind === "filedrop");
 
   return (
     <div className="p-6">
       <ControlPlaneGate feature="data_sources" title="Data Sources">
-        <div className="mb-4 flex justify-end">
-          <Button onClick={() => setAddOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" /> Add data source
-          </Button>
+        <div className="mx-auto flex max-w-3xl flex-col gap-2">
+          <div className="mb-1 flex items-center justify-end">
+            <Button onClick={() => setAddOpen(true)}>
+              <Plus className="mr-1.5 h-4 w-4" /> Add data source
+            </Button>
+          </div>
+          <CcSyncRow />
+          {filedrops.map((w) => (
+            <FiledropRow key={w.id} watcher={w} />
+          ))}
+          <DataSourcesList onAdd={() => setAddOpen(true)} watchers={watchers} />
         </div>
-        <DataSourcesList onAdd={() => setAddOpen(true)} />
       </ControlPlaneGate>
 
       <AddDataSourceWizard

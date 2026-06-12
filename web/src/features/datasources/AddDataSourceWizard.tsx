@@ -17,6 +17,7 @@ import {
   buildCreateBody,
   formatInterval,
   isOAuth,
+  isWatcherDriven,
   offersStoredCredential,
   requiresStoredCredential,
   type KindFormValues,
@@ -314,12 +315,18 @@ export function AddDataSourceWizard({
               <ReviewRow icon={<Check className="h-4 w-4" />} label="Name">
                 <span className="font-medium">{values.name.trim() || "—"}</span>
               </ReviewRow>
-              <ReviewRow icon={<Timer className="h-4 w-4" />} label="Sync interval">
-                {formatInterval(values.scheduleMs)}
+              <ReviewRow icon={<Timer className="h-4 w-4" />} label="Sync">
+                {isWatcherDriven(entry)
+                  ? "Continuous — synced by a file watcher"
+                  : formatInterval(values.scheduleMs)}
               </ReviewRow>
-              <ReviewRow icon={<Database className="h-4 w-4" />} label="Target database">
-                <span className="font-mono text-xs">{values.targetDatabase.trim() || database}</span>
-              </ReviewRow>
+              {!isWatcherDriven(entry) && (
+                <ReviewRow icon={<Database className="h-4 w-4" />} label="Target database">
+                  <span className="font-mono text-xs">
+                    {values.targetDatabase.trim() || database}
+                  </span>
+                </ReviewRow>
+              )}
               {entry.graph_name && (
                 <ReviewRow icon={<Table2 className="h-4 w-4" />} label="Graph tables">
                   <span className="font-mono text-xs">

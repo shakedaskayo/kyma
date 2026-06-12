@@ -512,7 +512,7 @@ async fn archive_deleted(
 
 /// Append an archived version of the node carrying `topic_key`. Returns
 /// false when there is nothing to do (no node, or already archived).
-async fn archive_node(
+pub(crate) async fn archive_node(
     writer: &MemoryWriter,
     shared: &SharedToolCtx,
     topic_key: &str,
@@ -698,7 +698,7 @@ fn known_project_paths(claude_json: Option<&Path>) -> Vec<String> {
 
 /// Find the live node carrying a topic key. Keys embed the project slug, so
 /// they are globally unique — no realm filter (rename-safe).
-async fn node_id_by_topic_key(shared: &SharedToolCtx, topic_key: &str) -> Option<String> {
+pub(crate) async fn node_id_by_topic_key(shared: &SharedToolCtx, topic_key: &str) -> Option<String> {
     let q = format!(
         "WITH latest AS (SELECT id, topic_key, \
            row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS rn FROM {nt}) \

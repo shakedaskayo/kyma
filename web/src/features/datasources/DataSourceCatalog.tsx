@@ -117,24 +117,31 @@ function CatalogCard({
   onPick: () => void;
 }) {
   const available = entry.status === "available";
+  const installed = entry.status === "installed";
   return (
     <button
       type="button"
       onClick={onPick}
       disabled={!available}
-      title={available ? `Add ${entry.label}` : `${entry.label} — coming soon`}
+      title={
+        available
+          ? `Add ${entry.label}`
+          : installed
+            ? `${entry.label} — pre-installed, already running`
+            : `${entry.label} — coming soon`
+      }
       className={cn(
         "group relative flex items-start gap-3 rounded-lg border p-3 text-left transition",
-        available
-          ? "hover:border-primary/50 hover:bg-accent/30"
-          : "cursor-default opacity-70",
+        available && "hover:border-primary/50 hover:bg-accent/30",
+        installed && "cursor-default",
+        !available && !installed && "cursor-default opacity-70",
         selected && "border-primary bg-primary/5",
       )}
     >
       <div
         className={cn(
           "flex h-9 w-9 shrink-0 items-center justify-center rounded-md border bg-background",
-          !available && "grayscale",
+          !available && !installed && "grayscale",
         )}
       >
         <BrandIcon brand={entry.brand} size={20} />
@@ -145,6 +152,10 @@ function CatalogCard({
           {available ? (
             <span className="shrink-0 rounded-full bg-emerald-500/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-emerald-600">
               Live
+            </span>
+          ) : installed ? (
+            <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">
+              Installed
             </span>
           ) : (
             <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
