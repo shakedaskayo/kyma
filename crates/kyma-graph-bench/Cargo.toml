@@ -12,3 +12,11 @@ workspace = true
 
 [dependencies]
 anyhow.workspace = true
+kyma-graph-testkit.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "oracle"
+harness = false
