@@ -419,6 +419,32 @@ pub async fn execute_sql(
     sql: &str,
     max_rows: usize,
 ) -> Value {
+    // Emit a telemetry child span only when the caller is already inside a
+    // kyma_telemetry span (request handler, tool.call, memory.search.*).
+    // Background workers (memory queue, dreaming, cc-curation) call this too,
+    // and the OTel layer — which only sees kyma_telemetry spans — would export
+    // theirs as parentless single-span `sql.execute` roots: pure noise on the
+    // Traces page.
+    let inside_telemetry = tracing::Span::current()
+        .metadata()
+        .is_some_and(|m| m.target() == "kyma_telemetry");
+    if !inside_telemetry {
+        return execute_sql_inner(shared, database, sql, max_rows).await;
+    }
+    let span = tracing::info_span!(
+        target: "kyma_telemetry",
+        "sql.execute",
+        sql.database = %database,
+    );
+    tracing::Instrument::instrument(execute_sql_inner(shared, database, sql, max_rows), span).await
+}
+
+async fn execute_sql_inner(
+    shared: &SharedToolCtx,
+    database: &str,
+    sql: &str,
+    max_rows: usize,
+) -> Value {
     let tables = match shared.catalog.list_tables_in_database(database).await {
         Ok(t) => t,
         Err(e) => {

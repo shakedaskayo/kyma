@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildSpanTree, fmtDurationNs, type SpanRow } from "./lib";
+import {
+  buildSpanTree,
+  fmtDurationNs,
+  parseAttrs,
+  splitOperation,
+  utcIso,
+  type SpanRow,
+} from "./lib";
 
 const span = (over: Partial<SpanRow>): SpanRow => ({
   start_time: "2026-06-11T12:00:00Z",
@@ -42,5 +49,42 @@ describe("fmtDurationNs", () => {
     expect(fmtDurationNs(950)).toBe("950ns");
     expect(fmtDurationNs(2_500_000)).toBe("2.5ms");
     expect(fmtDurationNs(1_250_000_000)).toBe("1.25s");
+  });
+});
+
+describe("utcIso", () => {
+  it("marks naive server timestamps as UTC", () => {
+    // The query API returns timestamps without a timezone suffix; parsing
+    // them as local time shifted every span by the user's UTC offset.
+    expect(utcIso("2026-06-12T15:19:03.626234")).toBe("2026-06-12T15:19:03.626234Z");
+  });
+  it("leaves explicit timezones alone", () => {
+    expect(utcIso("2026-06-12T15:19:03Z")).toBe("2026-06-12T15:19:03Z");
+    expect(utcIso("2026-06-12T15:19:03+03:00")).toBe("2026-06-12T15:19:03+03:00");
+    expect(utcIso("2026-06-12T15:19:03.1-07:00")).toBe("2026-06-12T15:19:03.1-07:00");
+  });
+});
+
+describe("parseAttrs", () => {
+  it("parses and stringifies values", () => {
+    expect(parseAttrs('{"http.status":"200","n":3}')).toEqual({ "http.status": "200", n: "3" });
+  });
+  it("tolerates malformed json", () => {
+    expect(parseAttrs("not json")).toEqual({});
+    expect(parseAttrs("")).toEqual({});
+  });
+});
+
+describe("splitOperation", () => {
+  it("splits HTTP-style names into method + path", () => {
+    expect(splitOperation("GET /v1/query")).toEqual({ method: "GET", path: "/v1/query" });
+    expect(splitOperation("POST /v1/ingest")).toEqual({ method: "POST", path: "/v1/ingest" });
+  });
+  it("passes through non-HTTP operation names", () => {
+    expect(splitOperation("memory.recall")).toEqual({ method: null, path: "memory.recall" });
+    expect(splitOperation("GET something extra")).toEqual({
+      method: null,
+      path: "GET something extra",
+    });
   });
 });

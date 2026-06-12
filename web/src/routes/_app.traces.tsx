@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { X } from "lucide-react";
+import { Check, Copy, X } from "lucide-react";
 import { TracesList } from "@/features/traces/TracesList";
 import { TraceWaterfall } from "@/features/traces/TraceWaterfall";
 
@@ -20,28 +21,60 @@ function TracesPage() {
 
   return (
     <div className="flex h-full">
-      <div className="min-w-0 flex-1 p-4">
-        <h1 className="mb-3 text-sm font-medium text-foreground/90">Traces</h1>
-        <TracesList selected={trace ?? null} onSelect={select} />
+      <div className="flex min-w-0 flex-1 flex-col p-4">
+        <div className="mb-3">
+          <h1 className="text-sm font-medium text-foreground/90">Traces</h1>
+          <p className="text-xs text-muted-foreground">
+            Kyma's own operations, end to end — plus anything shipped to the OTLP endpoint.
+          </p>
+        </div>
+        <div className="min-h-0 flex-1">
+          <TracesList selected={trace ?? null} onSelect={select} />
+        </div>
       </div>
       {trace && (
-        <aside className="flex w-[34rem] shrink-0 flex-col border-l border-border/60 bg-surface">
+        <aside className="flex w-[36rem] shrink-0 flex-col border-l border-border/60 bg-surface">
           <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
-            <span className="font-mono text-xs text-muted-foreground" title={trace}>
-              trace {trace.slice(0, 16)}…
-            </span>
+            <TraceId id={trace} />
             <button
               onClick={() => select(null)}
-              className="ml-auto text-muted-foreground hover:text-foreground"
+              className="ml-auto rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+              aria-label="Close trace panel"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1">
             <TraceWaterfall traceId={trace} />
           </div>
         </aside>
       )}
     </div>
+  );
+}
+
+function TraceId({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard
+          .writeText(id)
+          .then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+          })
+          .catch(() => {});
+      }}
+      className="group flex items-center gap-1.5 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
+      title={`copy ${id}`}
+    >
+      trace {id.slice(0, 16)}…
+      {copied ? (
+        <Check className="h-3 w-3 text-emerald-400" />
+      ) : (
+        <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
+      )}
+    </button>
   );
 }

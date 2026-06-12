@@ -84,7 +84,7 @@ use kyma_exec::KymaTable;
 use serde::Serialize;
 use std::sync::Arc;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, Instrument as _};
 
 const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 
@@ -964,6 +964,15 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         SessionContext::new_with_config_rt(SessionConfig::new(), runtime)
     };
     kyma_exec::register_vector_udfs(&ctx);
+    // Child span of the request span: table registration + SQL planning.
+    // Awaits are individually instrumented — entering a span guard across an
+    // await would corrupt the subscriber's span stack.
+    let plan_span = tracing::info_span!(
+        target: "kyma_telemetry",
+        "query.plan",
+        query.language = language,
+        query.federated = has_federated,
+    );
     match sources {
         Sources::Single(tables) => {
             // Federated tables register live remote providers; local tables
@@ -981,7 +990,11 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
                         &request_id,
                     );
                 };
-                let providers = match fed_rt.federated_providers(tenant, &federated).await {
+                let providers = match fed_rt
+                    .federated_providers(tenant, &federated)
+                    .instrument(plan_span.clone())
+                    .await
+                {
                     Ok(p) => p,
                     Err(e) => {
                         return error_response(
@@ -1040,6 +1053,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
                 state.federation.as_ref(),
                 tenant,
             )
+            .instrument(plan_span.clone())
             .await
             {
                 // A `__database` provenance collision is a client-fixable input
@@ -1061,7 +1075,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
 
     // 2. Parse + execute the SQL. DataFusion returns a stream of Arrow
     //    RecordBatches. For phase A we collect and then serialize to NDJSON.
-    let df = match ctx.sql(&sql).await {
+    let df = match ctx.sql(&sql).instrument(plan_span.clone()).await {
         Ok(df) => df,
         Err(e) => {
             return error_response(
@@ -1072,8 +1086,17 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
             );
         }
     };
+    drop(plan_span);
+    let collect_span = tracing::info_span!(
+        target: "kyma_telemetry",
+        "query.collect",
+        query.rows = tracing::field::Empty,
+    );
     // Enforce wall-clock budget: tokio::time::timeout cancels the future.
-    let batches = match tokio::time::timeout(budget.max_wall_clock, df.collect()).await {
+    let batches = match tokio::time::timeout(budget.max_wall_clock, df.collect())
+        .instrument(collect_span.clone())
+        .await
+    {
         Ok(Ok(b)) => b,
         Ok(Err(e)) => {
             // ResourcesExhausted from DataFusion signals memory-pool exhaustion.
@@ -1112,6 +1135,8 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         }
     };
     let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    collect_span.record("query.rows", total_rows);
+    drop(collect_span);
     info!(request_id = %request_id, database = %db_label, rows = total_rows, "query completed");
 
     ::metrics::counter!("kyma_query_requests_total",
