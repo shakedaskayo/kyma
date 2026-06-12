@@ -56,10 +56,15 @@ pub struct PostgresCatalog {
 
 impl PostgresCatalog {
     /// Connect to Postgres and run migrations.
+    ///
+    /// Pool size and acquire timeout are env-tunable: `KYMA_PG_MAX_CONNS`
+    /// (default 16) and `KYMA_PG_ACQUIRE_TIMEOUT_SECS` (default 10).
     pub async fn connect(database_url: &str) -> Result<Self> {
+        let max_conns = env_parse("KYMA_PG_MAX_CONNS", 16u32).max(1);
+        let acquire_secs = env_parse("KYMA_PG_ACQUIRE_TIMEOUT_SECS", 10u64).max(1);
         let pool = PgPoolOptions::new()
-            .max_connections(16)
-            .acquire_timeout(Duration::from_secs(10))
+            .max_connections(max_conns)
+            .acquire_timeout(Duration::from_secs(acquire_secs))
             .connect(database_url)
             .await
             .map_err(|e| CatalogError::Sql(e.to_string()))?;
@@ -76,6 +81,21 @@ impl PostgresCatalog {
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
+
+    /// Publish pool-saturation gauges (`kyma_pg_pool_size`, `kyma_pg_pool_idle`).
+    /// Call periodically from the host process; cheap (atomic loads).
+    pub fn record_pool_metrics(&self) {
+        ::metrics::gauge!("kyma_pg_pool_size").set(self.pool.size() as f64);
+        ::metrics::gauge!("kyma_pg_pool_idle").set(self.pool.num_idle() as f64);
+    }
+}
+
+/// Parse an env var, falling back to `default` when unset or malformed.
+fn env_parse<T: std::str::FromStr>(key: &str, default: T) -> T {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 #[async_trait]

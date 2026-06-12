@@ -4753,6 +4753,7 @@ dependencies = [
  "chrono",
  "futures",
  "kyma-core",
+ "metrics",
  "pgvector",
  "serde",
  "serde_json",
