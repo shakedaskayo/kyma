@@ -43,6 +43,33 @@ impl DataSource for StubConn {
     }
 }
 
+/// A stub whose catalog declares `drive_model = "continuous"` (like obsidian) —
+/// create must persist the registry's drive model, not hardcode periodic.
+struct WatcherStub;
+
+#[async_trait]
+impl DataSource for WatcherStub {
+    fn type_id(&self) -> &'static str {
+        "wstub"
+    }
+    fn catalog(&self) -> kyma_datasources::CatalogEntry {
+        let mut c = kyma_datasources::CatalogEntry::minimal("wstub");
+        c.drive_model = "continuous".into();
+        c
+    }
+    fn validate_config(&self, _cfg: &serde_json::Value) -> Result<(), ConfigError> {
+        Ok(())
+    }
+    async fn run_once(
+        &self,
+        _: &DataSourceCtx,
+        _: &serde_json::Value,
+        _: Option<&serde_json::Value>,
+    ) -> Result<DataSourceRun, DataSourceError> {
+        Err(DataSourceError::Permanent("watcher-driven".into()))
+    }
+}
+
 async fn state() -> (testcontainers::ContainerAsync<Postgres>, AdminState, PgPool) {
     let pg = Postgres::default()
         .with_name("pgvector/pgvector")
@@ -58,6 +85,7 @@ async fn state() -> (testcontainers::ContainerAsync<Postgres>, AdminState, PgPoo
         Arc::new(PgDataSourceCatalog::from_pg_catalog(&pg_catalog));
     let mut reg = DataSourceRegistry::new();
     reg.register(Arc::new(StubConn));
+    reg.register(Arc::new(WatcherStub));
     let s = AdminState {
         catalog,
         registry: Arc::new(reg),
@@ -160,6 +188,78 @@ async fn watchers_list_empty_then_rows() {
     let items = v["items"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["kind"], "filedrop");
+}
+
+#[tokio::test]
+async fn catalog_includes_installed_and_drive_model() {
+    let (_pg, s, _pool) = state().await;
+    let app = app(s);
+
+    let resp = app
+        .oneshot(
+            axum::http::Request::builder()
+                .method("GET")
+                .uri("/v1/data-sources/catalog")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let items = v["items"].as_array().unwrap();
+
+    for item in items {
+        let dm = item["drive_model"].as_str().unwrap_or("");
+        assert!(!dm.is_empty(), "every entry carries drive_model: {item}");
+    }
+    let claude = items
+        .iter()
+        .find(|i| i["type_id"] == "claude_code")
+        .expect("claude_code present");
+    assert_eq!(claude["status"], "installed");
+    assert_eq!(claude["drive_model"], "continuous");
+    assert_eq!(claude["brand"], "claude");
+    let wstub = items.iter().find(|i| i["type_id"] == "wstub").unwrap();
+    assert_eq!(wstub["drive_model"], "continuous");
+    assert_eq!(wstub["status"], "available");
+}
+
+#[tokio::test]
+async fn create_uses_registry_drive_model() {
+    let (_pg, s, pool) = state().await;
+    let app = app(s);
+
+    let body = json!({
+        "name": "w1",
+        "type": "wstub",
+        "target_database": "db",
+        "target_table": "",
+        "schedule_ms": 60000,
+        "config": {}
+    });
+    let resp = app
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/v1/data-sources")
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let dm: String =
+        sqlx::query_scalar("SELECT drive_model FROM data_sources WHERE name = 'w1'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(dm, "continuous");
 }
 
 #[tokio::test]

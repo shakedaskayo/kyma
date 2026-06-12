@@ -57,6 +57,7 @@ impl DataSource for PromDataSource {
             brand: "prometheus".into(),
             auth_mode: "url".into(),
             status: "available".into(),
+            drive_model: "periodic".into(),
             default_schedule_ms: 60_000,
             fields: vec![CatalogField::text(
                 "endpoint",

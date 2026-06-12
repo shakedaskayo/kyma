@@ -54,6 +54,7 @@ impl DataSource for SlackDataSource {
             brand: "slack".into(),
             auth_mode: "oauth".into(),
             status: "available".into(),
+            drive_model: "periodic".into(),
             default_schedule_ms: 10 * 60_000,
             fields: Vec::new(),
             resource: None,
