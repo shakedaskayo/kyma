@@ -34,6 +34,9 @@ members = [
     "crates/kyma-queue",
     "crates/kyma-redact",
     "crates/kyma-ccmem",
+    "crates/kyma-retrieval-eval",
+    "crates/kyma-graph-testkit",
+    "crates/kyma-graph-bench",
     "web/src-tauri",
 ]
 
@@ -153,6 +156,7 @@ fastrand = "2"
 kyma-core              = { path = "crates/kyma-core",            version = "0.0.16" }
 kyma-format-tlm        = { path = "crates/kyma-format-tlm",      version = "0.0.16" }
 kyma-format-stub-vec   = { path = "crates/kyma-format-stub-vec", version = "0.0.16" }
+kyma-graph-testkit     = { path = "crates/kyma-graph-testkit",   version = "0.0.16" }
 kyma-catalog           = { path = "crates/kyma-catalog",         version = "0.0.16" }
 kyma-catalog-sqlite    = { path = "crates/kyma-catalog-sqlite",  version = "0.0.16" }
 kyma-local             = { path = "crates/kyma-local",           version = "0.0.16" }
