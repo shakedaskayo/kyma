@@ -19,6 +19,7 @@ use kyma_datasources::prometheus::PromDataSource;
 use kyma_datasources::registry::DataSourceRegistry;
 use kyma_datasources::scheduler::DataSourceScheduler;
 use kyma_datasources::secrets::EnvSecretStore;
+use kyma_datasources::PgDataSourceCatalog;
 use kyma_core::catalog::GraphSpec;
 use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
 use kyma_core::segment_format::SegmentFormat;
@@ -624,8 +625,10 @@ async fn main() -> Result<()> {
 
     let health_router = kyma_server::health_router();
     let metrics_router = kyma_server::metrics::router();
+    let pg_ds_catalog: Arc<dyn kyma_datasources::catalog_trait::DataSourceCatalog> =
+        Arc::new(PgDataSourceCatalog::from_pg_catalog(&pg_catalog));
     let datasource_admin_router = kyma_server::datasource_admin_router(DataSourceAdminState {
-        catalog: pg_catalog.clone(),
+        catalog: pg_ds_catalog.clone(),
         registry: conn_registry.clone(),
     })
     .layer(axum::middleware::from_fn_with_state(
@@ -1170,7 +1173,7 @@ async fn main() -> Result<()> {
     };
 
     // DataSource scheduler — enqueues datasource_sync jobs on the worker fabric.
-    let conn_sched = DataSourceScheduler::new(pg_catalog.clone());
+    let conn_sched = DataSourceScheduler::new(pg_ds_catalog.clone());
     let conn_sched_rx = shutdown_tx.subscribe();
     let conn_sched_handle = tokio::spawn(conn_sched.run(async move {
         let mut rx = conn_sched_rx;

@@ -2,6 +2,7 @@
 
 use kyma_catalog::PostgresCatalog;
 use kyma_datasources::catalog_sql;
+use kyma_datasources::catalog_trait::{DataSourceCatalog, PgDataSourceCatalog};
 use kyma_datasources::scheduler::DataSourceScheduler;
 use kyma_core::tenant::DEFAULT_TENANT;
 use std::sync::Arc;
@@ -11,6 +12,7 @@ use testcontainers_modules::postgres::Postgres;
 async fn pg_catalog() -> (
     testcontainers::ContainerAsync<Postgres>,
     Arc<PostgresCatalog>,
+    Arc<dyn DataSourceCatalog>,
 ) {
     let pg = Postgres::default()
         .with_name("pgvector/pgvector")
@@ -20,15 +22,17 @@ async fn pg_catalog() -> (
         .unwrap();
     let port = pg.get_host_port_ipv4(5432).await.unwrap();
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
-    let catalog = Arc::new(PostgresCatalog::connect(&url).await.unwrap());
-    (pg, catalog)
+    let pg_cat = Arc::new(PostgresCatalog::connect(&url).await.unwrap());
+    let ds_catalog: Arc<dyn DataSourceCatalog> =
+        Arc::new(PgDataSourceCatalog::from_pg_catalog(&pg_cat));
+    (pg, pg_cat, ds_catalog)
 }
 
 #[tokio::test]
 async fn inserts_tick_after_interval() {
-    let (_pg, catalog) = pg_catalog().await;
+    let (_pg, pg_cat, ds_catalog) = pg_catalog().await;
     let id = catalog_sql::create_data_source_direct(
-        catalog.pool(),
+        pg_cat.pool(),
         DEFAULT_TENANT,
         "p1",
         "prometheus",
@@ -41,7 +45,7 @@ async fn inserts_tick_after_interval() {
     .await
     .unwrap();
 
-    let sched = DataSourceScheduler::new(catalog.clone());
+    let sched = DataSourceScheduler::new(ds_catalog);
     sched.tick_once().await.expect("first tick");
     sched
         .tick_once()
@@ -56,7 +60,7 @@ async fn inserts_tick_after_interval() {
            AND payload->>'data_source_id' = $1::text",
     )
     .bind(id.to_string())
-    .fetch_one(catalog.pool())
+    .fetch_one(pg_cat.pool())
     .await
     .unwrap();
     assert_eq!(rows.0, 1, "exactly one task enqueued");
@@ -64,9 +68,9 @@ async fn inserts_tick_after_interval() {
 
 #[tokio::test]
 async fn disabled_data_sources_are_skipped() {
-    let (_pg, catalog) = pg_catalog().await;
+    let (_pg, pg_cat, ds_catalog) = pg_catalog().await;
     let id = catalog_sql::create_data_source_direct(
-        catalog.pool(),
+        pg_cat.pool(),
         DEFAULT_TENANT,
         "p2",
         "prometheus",
@@ -80,16 +84,17 @@ async fn disabled_data_sources_are_skipped() {
     .unwrap();
     sqlx::query("UPDATE data_sources SET enabled = FALSE WHERE id = $1")
         .bind(id)
-        .execute(catalog.pool())
+        .execute(pg_cat.pool())
         .await
         .unwrap();
 
-    let sched = DataSourceScheduler::new(catalog.clone());
+    let sched = DataSourceScheduler::new(ds_catalog);
     sched.tick_once().await.unwrap();
 
+    // Disabled sources should produce no jobs.
     let (count,): (i64,) =
-        sqlx::query_as("SELECT count(*) FROM background_tasks WHERE kind = 'data_source_tick'")
-            .fetch_one(catalog.pool())
+        sqlx::query_as("SELECT count(*) FROM jobs WHERE kind = 'data_source_sync'")
+            .fetch_one(pg_cat.pool())
             .await
             .unwrap();
     assert_eq!(count, 0);

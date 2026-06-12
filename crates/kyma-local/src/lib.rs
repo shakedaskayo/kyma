@@ -23,7 +23,10 @@ pub mod agent_sources;
 mod cc_pipeline;
 mod cc_sync;
 mod cc_writeback;
+mod cred_store;
+mod datasource_catalog;
 mod setup;
+mod sqlite_queue;
 mod sync;
 pub mod node;
 pub mod server_service;
@@ -56,6 +59,14 @@ use kyma_ingest_core::events::IngestEvents;
 use kyma_ingest_core::WritePath;
 use kyma_ingest_rest::IngestState;
 use kyma_mcp::{serve_stdio, McpState, ServerInfo, ToolDispatch};
+use kyma_core::credentials::CredentialStore;
+use kyma_core::crypto::Crypto;
+use kyma_datasources::admin::AdminState as DataSourceAdminState;
+use kyma_datasources::catalog_trait::DataSourceCatalog;
+use kyma_datasources::registry::DataSourceRegistry;
+use kyma_datasources::runner::{DataSourceTickDeps, GraphRegisterFn, RowSink};
+use kyma_datasources::scheduler::DataSourceScheduler;
+use kyma_datasources::secrets::EnvSecretStore;
 use kyma_server::agent::local::{
     FileEnabledSkillsStore, FileEnginePreferenceStore, NullCredentialStore,
 };
@@ -256,6 +267,11 @@ pub fn build_local_app(
     memory: Option<kyma_memory::MemoryQueue>,
     local_dreaming: Option<Arc<kyma_server::agent::dreaming_local::LocalDreamingStore>>,
     mcp_url: Option<String>,
+    // Optional credential store — if None, falls back to NullCredentialStore.
+    cred_store: Option<Arc<dyn CredentialStore>>,
+    // Optional data source admin state (catalog + registry). When provided the
+    // /v1/data-sources routes are mounted behind Role::Write.
+    ds_admin: Option<(Arc<dyn DataSourceCatalog>, Arc<DataSourceRegistry>)>,
 ) -> (axum::Router, AgentState, watcher_status::LocalWatcherStatus) {
     let schema_cache = Arc::new(SchemaCache::from_env());
     let query_state = QueryState { federation: None,
@@ -274,6 +290,9 @@ pub fn build_local_app(
         let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         format!("{base}/.kyma")
     });
+    let resolved_cred_store: Arc<dyn CredentialStore> = cred_store
+        .clone()
+        .unwrap_or_else(|| Arc::new(NullCredentialStore));
     let agent_state = AgentState {
         catalog: catalog.clone(),
         format: format.clone(),
@@ -281,7 +300,7 @@ pub fn build_local_app(
         engines: Arc::new(FileEnginePreferenceStore::new(std::format!(
             "{kyma_home}/agent-engine.json"
         ))),
-        credentials: Arc::new(NullCredentialStore),
+        credentials: resolved_cred_store,
         tenant: kyma_core::tenant::DEFAULT_TENANT,
         skills: Arc::new(FileEnabledSkillsStore::new(std::format!(
             "{kyma_home}/agent-skills.json"
@@ -393,23 +412,52 @@ pub fn build_local_app(
     // /v1/workers stub (empty registry) so the dreaming UI's NodesStrip renders
     // its empty state. Behind read auth like the rest of the API surface.
     let workers_router = kyma_server::local_workers_router().layer(read_mw());
-    // In-process watcher registry serving /v1/data-sources/watchers — mounted
-    // unconditionally (even with KYMA_CC_WATCH=0 it returns {"items":[]}) so
-    // the web UI's watchers tab renders an empty state instead of a 404. The
-    // KYMA_CC_WATCH loop in run_serve feeds it via the returned handle.
+    // In-process watcher registry serving /v1/data-sources/watchers.
+    // Omit this when the full datasource admin router is mounted — that router
+    // already exposes /v1/data-sources/watchers and the two would conflict.
     let watchers = watcher_status::LocalWatcherStatus::default();
-    let watchers_router = watchers.router().layer(read_mw());
-    let app = read_router
+    let watchers_router = if ds_admin.is_none() {
+        Some(watchers.router().layer(read_mw()))
+    } else {
+        None
+    };
+
+    // Credentials CRUD — only when a real credential store was supplied.
+    let creds_router = cred_store.map(|store| {
+        kyma_server::credentials_handler::router(
+            kyma_server::credentials_handler::CredentialsState { store },
+        )
+        .layer(write_mw())
+    });
+
+    // Data source admin CRUD — only when a catalog + registry were supplied.
+    let ds_router = ds_admin.map(|(ds_catalog, ds_registry)| {
+        kyma_server::datasource_admin_router(DataSourceAdminState {
+            catalog: ds_catalog,
+            registry: ds_registry,
+        })
+        .layer(write_mw())
+    });
+
+    let mut app = read_router
         .merge(ingest_router)
         .merge(local_write_router)
         .merge(admin_users_router)
         .merge(session_router)
         .merge(workers_router)
-        .merge(watchers_router)
         .merge(kyma_server::auth_handler::auth_login_router(catalog.clone()))
         .merge(kyma_server::health_router())
         .merge(live_router)
         .merge(kyma_server::web_ui::router());
+    if let Some(r) = watchers_router {
+        app = app.merge(r);
+    }
+    if let Some(r) = creds_router {
+        app = app.merge(r);
+    }
+    if let Some(r) = ds_router {
+        app = app.merge(r);
+    }
     let app = kyma_server::with_permissive_cors(app);
     (app, agent_state, watchers)
 }
@@ -471,6 +519,103 @@ pub async fn run_serve(addr: SocketAddr) -> Result<()> {
         }
     }
 
+    // ── Credentials: AES-256-GCM key from env or auto-generated file ──────────
+    let kyma_home = std::env::var("KYMA_HOME").unwrap_or_else(|_| {
+        let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        format!("{base}/.kyma")
+    });
+    let secret_key_path = format!("{kyma_home}/secret.key");
+    let crypto = Arc::new(
+        Crypto::from_env_or_file(&secret_key_path)
+            .context("loading or generating local secret key")?,
+    );
+    let pool = engine.sqlite.pool().clone();
+    let cred_store: Arc<dyn CredentialStore> =
+        Arc::new(cred_store::SqliteCredentialStore::new(pool.clone(), crypto));
+
+    // ── Data Sources: catalog + connector registry ──────────────────────────
+    let ds_catalog: Arc<dyn DataSourceCatalog> =
+        Arc::new(datasource_catalog::SqliteDataSourceCatalog::new(pool.clone()));
+    let ds_control = Arc::new(datasource_catalog::SqliteDataSourceControl::new(pool.clone()));
+
+    let mut conn_reg = DataSourceRegistry::new();
+    // Register all supported connectors (same set as the hosted server).
+    use kyma_datasources::prometheus::PromDataSource;
+    conn_reg.register(Arc::new(PromDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::postgres::PgIntrospectDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::s3::S3DataSource));
+    conn_reg.register(Arc::new(kyma_datasources::gitlab::GitlabDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::bitbucket::BitbucketDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::github::GithubDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::notion::NotionDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::googledrive::GdriveDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::gmail::GmailDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::slack::SlackDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::jira::JiraDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::confluence::ConfluenceDataSource));
+    conn_reg.register(Arc::new(kyma_datasources::msfabric::MsFabricDataSource));
+    let conn_registry = Arc::new(conn_reg);
+
+    // ── RowSink: auto-create + evolve schema, then ingest ───────────────────
+    let catalog_for_sink = engine.catalog.clone();
+    let format_for_sink = engine.format.clone();
+    let conn_sink: RowSink = Arc::new(
+        move |db: String, tbl: String, rows: Vec<serde_json::Value>, idem: Option<String>| {
+            let catalog = catalog_for_sink.clone();
+            let write_path = kyma_ingest_core::WritePath::new(catalog.clone(), format_for_sink.clone());
+            Box::pin(async move {
+                let table = kyma_ingest_core::ensure_table(catalog.as_ref(), &db, &tbl)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("ensure_table: {e}"))?;
+                let table = kyma_ingest_core::evolve_schema_for_records(catalog.as_ref(), &db, table, &rows)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("evolve_schema: {e}"))?;
+                let batches =
+                    kyma_datasources::arrow_coerce::rows_to_batches(&table.schema, rows)
+                        .map_err(|e| anyhow::anyhow!("arrow coerce: {e}"))?;
+                write_path
+                    .ingest_with_idempotency(&db, &table, batches, idem.as_deref())
+                    .await
+                    .map_err(|e| anyhow::anyhow!("ingest: {e}"))?;
+                Ok(())
+            })
+        },
+    );
+
+    // ── GraphRegisterFn: create property graph binding after ingest ─────────
+    let catalog_for_graph = engine.catalog.clone();
+    let graph_register: GraphRegisterFn = Arc::new(move |db: String, hint: kyma_datasources::GraphHint| {
+        let catalog = catalog_for_graph.clone();
+        Box::pin(async move {
+            let spec = kyma_core::catalog::GraphSpec::with_defaults(hint.node_table.clone(), hint.edge_table.clone());
+            match catalog.create_graph(&db, &hint.graph_name, spec).await {
+                Ok(_) => {}
+                Err(e) => {
+                    let msg = e.to_string();
+                    if !msg.contains("already exists")
+                        && !msg.contains("duplicate")
+                        && !msg.contains("23505")
+                    {
+                        tracing::warn!(db=%db, graph=%hint.graph_name, "graph register: {e}");
+                    }
+                }
+            }
+            Ok(())
+        })
+    });
+
+    let tick_deps = DataSourceTickDeps {
+        control: ds_control,
+        registry: conn_registry.clone(),
+        sink: conn_sink,
+        graph_register,
+        secrets: Arc::new(EnvSecretStore),
+        credentials: cred_store.clone(),
+        oauth: None, // OAuth requires Postgres
+        artifacts: None,
+        catalog: Some(engine.catalog.clone()),
+    };
+
     let (app, agent_state, watcher_status) = build_local_app(
         engine.catalog.clone(),
         engine.format.clone(),
@@ -478,7 +623,46 @@ pub async fn run_serve(addr: SocketAddr) -> Result<()> {
         memory,
         local_dreaming.clone(),
         mcp_url,
+        Some(cred_store),
+        Some((ds_catalog.clone(), conn_registry.clone())),
     );
+
+    // ── Data source scheduler: periodic tick + trigger enqueue ──────────────
+    {
+        let sched = DataSourceScheduler::new(ds_catalog.clone());
+        tokio::spawn(async move {
+            sched
+                .run(async {
+                    let _ = tokio::signal::ctrl_c().await;
+                })
+                .await;
+        });
+        info!("local data source scheduler running");
+    }
+
+    // ── Fabric worker: claims + executes data_source_sync jobs ──────────────
+    {
+        let worker_id = uuid::Uuid::new_v4();
+        let queue = Arc::new(sqlite_queue::SqliteQueue::new(
+            pool.clone(),
+            worker_id,
+            vec!["data_source".to_string()],
+            120, // 2-minute lease
+        ));
+        let mut exec_reg = kyma_jobs::ExecutorRegistry::new();
+        exec_reg.register(Arc::new(
+            kyma_jobs::datasource_sync::DataSourceSyncExecutor::new(tick_deps),
+        ));
+        let runner = kyma_jobs::JobRunner::new(queue, exec_reg, 120);
+        tokio::spawn(async move {
+            runner
+                .run(async {
+                    let _ = tokio::signal::ctrl_c().await;
+                })
+                .await;
+        });
+        info!(%worker_id, "local fabric worker running (data_source_sync)");
+    }
 
     // Optional in-process dreaming scheduler — only fires when dreaming is
     // enabled in ${KYMA_HOME}/memory-settings.json (OFF by default). Runs inline

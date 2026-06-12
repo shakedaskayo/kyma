@@ -186,4 +186,26 @@ impl CredentialStore for PgCredentialStore {
     ) -> Result<()> {
         self.set_value(tenant, id, value).await
     }
+
+    async fn create(
+        &self,
+        tenant: TenantId,
+        label: &str,
+        value: &CredentialValue,
+        metadata: serde_json::Value,
+    ) -> Result<CredentialSummary> {
+        PgCredentialStore::create(self, tenant, label, value, metadata).await
+    }
+
+    async fn list(&self, tenant: TenantId) -> Result<Vec<CredentialSummary>> {
+        PgCredentialStore::list(self, tenant).await
+    }
+
+    async fn fetch(&self, tenant: TenantId, id: Uuid) -> Result<Credential> {
+        PgCredentialStore::fetch(self, tenant, id).await
+    }
+
+    async fn delete(&self, tenant: TenantId, id: Uuid) -> Result<()> {
+        PgCredentialStore::delete(self, tenant, id).await
+    }
 }
