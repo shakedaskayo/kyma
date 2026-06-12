@@ -74,6 +74,12 @@ pub(crate) struct QueryEngineExecutor {
 
 #[async_trait]
 impl GraphQueryExecutor for QueryEngineExecutor {
+    #[tracing::instrument(
+        target = "kyma_telemetry",
+        name = "graph.query",
+        skip_all,
+        fields(graph.database = %database)
+    )]
     async fn query(&self, database: &str, sql: String) -> anyhow::Result<Vec<JsonRow>> {
         let tables = self
             .catalog

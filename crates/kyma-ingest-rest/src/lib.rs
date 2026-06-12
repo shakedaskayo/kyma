@@ -225,7 +225,13 @@ async fn ingest_batch_inner(
         // The shared helper adds FixedSizeList<Float32> (vector-column) support
         // on top of arrow-json's reader; primitive-only schemas hit the fast path
         // and behave identically to the previous direct ReaderBuilder call.
-        let batches: Vec<arrow_array::RecordBatch> =
+        let batches: Vec<arrow_array::RecordBatch> = {
+            let parse_span = tracing::info_span!(
+                target: "kyma_telemetry",
+                "ingest.parse",
+                ingest.bytes = body.len(),
+            );
+            let _g = parse_span.enter();
             match parse_ndjson(body.as_ref(), table_ref.schema.clone()) {
                 Ok(b) => b,
                 Err(e) => {
@@ -236,11 +242,20 @@ async fn ingest_batch_inner(
                         &request_id,
                     );
                 }
-            };
+            }
+        };
 
+        // Wraps the WritePath call site only — the self-trace exporter calls
+        // WritePath directly, so spans must never live *inside* it (recursion).
+        let write_span = tracing::info_span!(
+            target: "kyma_telemetry",
+            "ingest.write",
+            ingest.batches = batches.len(),
+        );
         match state
             .write_path
             .ingest_with_idempotency(&database, &table_ref, batches, idempotency_key.as_deref())
+            .instrument(write_span)
             .await
         {
             Ok(ack) => {

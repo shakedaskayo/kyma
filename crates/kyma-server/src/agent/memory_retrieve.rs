@@ -20,6 +20,7 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tracing::Instrument as _;
 
 use kyma_core::tenant::DEFAULT_TENANT;
 use kyma_memory::types::{MemoryType, RecallFilter};
@@ -155,7 +156,8 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     if writer.ensure_provisioned().await.is_err() {
         return done(Vec::new(), Vec::new(), started);
     }
-    let qvec = match writer.embed_one(&req.query).await {
+    let embed_span = tracing::info_span!(target: "kyma_telemetry", "memory.embed");
+    let qvec = match writer.embed_one(&req.query).instrument(embed_span).await {
         Ok(v) => v,
         Err(_) => return done(Vec::new(), Vec::new(), started),
     };
@@ -174,16 +176,20 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     // 1+2. Candidate generation in parallel.
     let ann = (settings.ann_threshold > 0.0).then_some(settings.ann_threshold);
     let vec_sql = sql::recall_sql(NODE_TABLE, &qvec, &filter, CAND_K, ann);
+    let vec_span = tracing::info_span!(target: "kyma_telemetry", "memory.search.vector");
     let (vec_res, kw_res) = if tokens.is_empty() {
         (
-            execute_sql(shared, DEFAULT_DATABASE, &vec_sql, CAND_K).await,
+            execute_sql(shared, DEFAULT_DATABASE, &vec_sql, CAND_K)
+                .instrument(vec_span)
+                .await,
             json!({ "rows": [] }),
         )
     } else {
         let kw_sql = sql::keyword_recall_sql(NODE_TABLE, &tokens, &filter, CAND_K);
+        let kw_span = tracing::info_span!(target: "kyma_telemetry", "memory.search.keyword");
         tokio::join!(
-            execute_sql(shared, DEFAULT_DATABASE, &vec_sql, CAND_K),
-            execute_sql(shared, DEFAULT_DATABASE, &kw_sql, CAND_K),
+            execute_sql(shared, DEFAULT_DATABASE, &vec_sql, CAND_K).instrument(vec_span),
+            execute_sql(shared, DEFAULT_DATABASE, &kw_sql, CAND_K).instrument(kw_span),
         )
     };
 
@@ -210,7 +216,14 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     // 4. Graph expansion from the top fused seeds.
     let mut linked: Vec<LinkedResource> = Vec::new();
     if hops >= 1 && !cands.is_empty() {
-        graph_expand(shared, &mut cands, &mut linked, &filter.realms, hops, limit).await;
+        let expand_span = tracing::info_span!(
+            target: "kyma_telemetry",
+            "memory.graph_expand",
+            memory.hops = hops,
+        );
+        graph_expand(shared, &mut cands, &mut linked, &filter.realms, hops, limit)
+            .instrument(expand_span)
+            .await;
     }
 
     // 5. Final blend + sort.

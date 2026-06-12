@@ -53,8 +53,29 @@ export function fmtDurationNs(ns: number): string {
   return `${+(ns / 1_000_000_000).toFixed(2)}s`;
 }
 
-export const STATUS_TONE: Record<string, string> = {
-  OK: "text-emerald-300",
-  ERROR: "text-rose-300",
-  UNSET: "text-muted-foreground",
-};
+/**
+ * The query API returns timestamps without a timezone suffix but they are
+ * UTC; `new Date()` would parse them as *local* time and shift every span by
+ * the user's UTC offset. Tag them explicitly.
+ */
+export function utcIso(ts: string): string {
+  return /(?:Z|[+-]\d{2}:\d{2})$/.test(ts) ? ts : `${ts}Z`;
+}
+
+/** Safe attributes_json → flat string map. */
+export function parseAttrs(json: string): Record<string, string> {
+  try {
+    const obj = JSON.parse(json || "{}") as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, String(v)]));
+  } catch {
+    return {};
+  }
+}
+
+const HTTP_OP = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) (\S+)$/;
+
+/** "GET /v1/query" → method + path; anything else passes through whole. */
+export function splitOperation(name: string): { method: string | null; path: string } {
+  const m = HTTP_OP.exec(name);
+  return m ? { method: m[1], path: m[2] } : { method: null, path: name };
+}

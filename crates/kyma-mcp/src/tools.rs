@@ -154,7 +154,15 @@ impl ToolDispatch {
             ));
         };
         let ctx = Arc::new(SimpleToolContext::new("kyma-mcp"));
-        match tool.execute(ctx, arguments).await {
+        // Span names must be static in `tracing`; otel.name carries the
+        // per-tool display name through to the exported span.
+        let span = tracing::info_span!(
+            target: "kyma_telemetry",
+            "tool.call",
+            otel.name = %format!("tool.{name}"),
+            tool.name = %name,
+        );
+        match tracing::Instrument::instrument(tool.execute(ctx, arguments), span).await {
             Ok(value) => Ok(json!({
                 "content": [
                     {"type": "text", "text": serde_json::to_string(&value).expect("serializing serde_json::Value to string is infallible")}

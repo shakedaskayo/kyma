@@ -95,15 +95,19 @@ pub async fn require_role_middleware(
         kyma.tenant = %tenant,
         kyma.subject = tracing::field::Empty,
         http.status = tracing::field::Empty,
+        // Declared Empty so the later `record()` lands — recording an
+        // undeclared field is a silent no-op in `tracing`.
+        otel.status_code = tracing::field::Empty,
     );
     if let Some(s) = &subject {
         span.record("kyma.subject", s.as_str());
     }
     let resp = next.run(req).instrument(span.clone()).await;
     span.record("http.status", resp.status().as_u16());
-    if resp.status().is_server_error() {
-        span.record("otel.status_code", "ERROR");
-    }
+    span.record(
+        "otel.status_code",
+        if resp.status().is_server_error() { "ERROR" } else { "OK" },
+    );
     resp
 }
 

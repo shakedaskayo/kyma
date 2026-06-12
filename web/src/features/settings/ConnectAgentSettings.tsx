@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Check, Copy, Terminal } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, Terminal } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/sdk/session";
+import { createApiToken } from "@/sdk/tokens";
 import { cn } from "@/lib/utils";
 
 /**
@@ -12,20 +13,34 @@ import { cn } from "@/lib/utils";
  * it up to this server so any coding agent (Claude Code, Cursor, Aider)
  * can query Kyma directly via the installed skill.
  *
- * Each step is a labelled snippet with a Copy button; the server URL and
- * (when available) the bearer token are pre-substituted from the active
- * session so the user doesn't have to edit before pasting.
+ * Each step is a labelled snippet with a Copy button; the server URL is
+ * pre-substituted from the active session, and the bearer token is a
+ * long-lived API token minted on demand — NOT the browser session token,
+ * which expires within the hour and would silently break the CLI and
+ * every capture hook pointed at it.
  */
 export function ConnectAgentSettings() {
   const { endpoint, token } = useSession();
+  const [minted, setMinted] = useState<string | null>(null);
+  const [minting, setMinting] = useState(false);
+  const [mintError, setMintError] = useState<string | null>(null);
+
+  function mint() {
+    setMinting(true);
+    setMintError(null);
+    createApiToken({ name: "cli-connect" })
+      .then((t) => setMinted(t.token))
+      .catch((e: unknown) => setMintError((e as Error).message || "couldn't mint a token"))
+      .finally(() => setMinting(false));
+  }
 
   // Reasonable fallback so the page is still useful when the user lands
   // here before logging in (rare in practice — the route is gated — but
   // the snippet block shouldn't look broken).
   const url = endpoint || "http://localhost:8080";
-  const tokenPart = token
-    ? ` --token "${token}"`
-    : ` --token "<paste your bearer token here>"`;
+  const tokenPart = minted
+    ? ` --token "${minted}"`
+    : ` --token "<generate a token above, or paste your own>"`;
 
   const installCmd = "cargo install --path crates/kyma-cli";
   const connectCmd = `kyma connect ${url}${tokenPart}`;
@@ -55,12 +70,36 @@ export function ConnectAgentSettings() {
           n={2}
           title="Connect this server"
           hint={
-            token
-              ? "Your bearer token is pre-filled below — paste and run."
-              : "Sign in first so we can pre-fill the bearer token, or paste your own."
+            minted
+              ? "Long-lived API token minted and pre-filled below — paste and run."
+              : "Mint a long-lived API token for the CLI. (Browser session tokens expire within the hour and would break the connection silently.)"
           }
           cmd={connectCmd}
-          secret={Boolean(token)}
+          secret={Boolean(minted)}
+          action={
+            !minted ? (
+              <div className="ml-7 flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  disabled={minting || !token}
+                  onClick={mint}
+                >
+                  {minting ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <KeyRound className="h-3 w-3" />
+                  )}
+                  Generate CLI token
+                </Button>
+                {mintError && (
+                  <span className="text-xs text-destructive">{mintError}</span>
+                )}
+              </div>
+            ) : undefined
+          }
         />
 
         <Step
@@ -108,12 +147,14 @@ function Step({
   hint,
   cmd,
   secret = false,
+  action,
 }: {
   n: number;
   title: string;
   hint: string;
   cmd: string;
   secret?: boolean;
+  action?: React.ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
   const [revealed, setRevealed] = useState(false);
@@ -149,6 +190,7 @@ function Step({
         <span className="text-sm font-medium">{title}</span>
       </div>
       <p className="pl-7 text-xs text-muted-foreground">{hint}</p>
+      {action}
       <div className="relative ml-7 overflow-hidden rounded-md border bg-background">
         <div className="absolute left-2 top-1.5 text-muted-foreground">
           <Terminal className="h-3 w-3" />
