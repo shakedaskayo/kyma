@@ -13,6 +13,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod sidecar_cache;
+
 use kyma_core::errors::{Result, StorageError};
 use object_store::aws::AmazonS3Builder;
 use object_store::local::LocalFileSystem;
@@ -73,12 +75,15 @@ pub fn build_object_store(config: &StorageConfig) -> Result<Arc<dyn ObjectStore>
             {
                 client_opts = client_opts.with_timeout(std::time::Duration::from_secs(secs.max(1)));
             }
+            // NOTE: `with_client_options` REPLACES the builder's ClientOptions
+            // wholesale, so it must come before `with_allow_http` (which is
+            // stored inside the ClientOptions) or http:// endpoints break.
             let mut builder = base
                 .with_bucket_name(bucket)
                 .with_region(region)
                 .with_virtual_hosted_style_request(!*path_style)
-                .with_allow_http(*allow_http)
-                .with_client_options(client_opts);
+                .with_client_options(client_opts)
+                .with_allow_http(*allow_http);
             if let Some(ep) = endpoint {
                 builder = builder.with_endpoint(ep);
             }

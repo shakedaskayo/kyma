@@ -17,6 +17,14 @@ use uuid::Uuid;
 pub const JOB_DATA_SOURCE_SYNC: &str = "data_source_sync";
 pub const JOB_DREAMING: &str = "dreaming";
 pub const JOB_SOURCE_SYNC: &str = "source_sync";
+/// Build index sidecars (ANN/FTS) for a set of extents — see
+/// `kyma-jobs::index_build`.
+pub const JOB_INDEX_BUILD: &str = "index_build";
+/// Periodic ANN sidecar maintenance (re-train / re-balance). S1 executor.
+pub const JOB_ANN_MAINTAIN: &str = "ann_maintain";
+/// Backfill embeddings for rows ingested before a vector column/model was
+/// configured. S1 executor.
+pub const JOB_EMBED_BACKFILL: &str = "embed_backfill";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

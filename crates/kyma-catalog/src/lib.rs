@@ -37,6 +37,7 @@ use kyma_core::catalog::{
     SnapshotTxn, TableConfig, TableRef, TokenPrincipal, User,
 };
 use kyma_core::errors::{CatalogError, Result};
+use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
 use kyma_core::tenant::TenantId;
 use kyma_core::types::{DatabaseId, ExtentId, NodeId, SchemaSnapshotId, SnapshotId, TableId};
 use serde_json::Value as Json;
@@ -648,6 +649,103 @@ impl Catalog for PostgresCatalog {
             }
         }
         Ok(out)
+    }
+
+    // --- index sidecars ---
+
+    async fn register_index_sidecar(
+        &self,
+        tenant: TenantId,
+        desc: &IndexSidecarDescriptor,
+    ) -> Result<()> {
+        // Upsert on the logical key (extent, column, kind, model). The
+        // conflict target mirrors the `extent_indexes_uniq` expression index
+        // (COALESCE handles the nullable model id). The existing row id is
+        // kept; mutable fields are replaced. The tenant guard on the UPDATE
+        // makes a cross-tenant re-register a silent no-op rather than a
+        // cross-tenant overwrite.
+        sqlx::query(
+            "INSERT INTO extent_indexes
+                (id, tenant_id, table_id, extent_id, column_name, kind,
+                 object_path, byte_size, params, embedding_model_id, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+             ON CONFLICT (extent_id, column_name, kind, COALESCE(embedding_model_id, ''))
+             DO UPDATE SET object_path = EXCLUDED.object_path,
+                           byte_size   = EXCLUDED.byte_size,
+                           params      = EXCLUDED.params,
+                           created_at  = EXCLUDED.created_at
+             WHERE extent_indexes.tenant_id = EXCLUDED.tenant_id",
+        )
+        .bind(desc.id)
+        .bind(tenant.as_uuid())
+        .bind(desc.table_id.as_uuid())
+        .bind(desc.extent_id.as_uuid())
+        .bind(&desc.column)
+        .bind(desc.kind.as_str())
+        .bind(&desc.object_path)
+        .bind(desc.byte_size as i64)
+        .bind(&desc.params)
+        .bind(desc.embedding_model_id.as_deref())
+        .bind(desc.created_at)
+        .execute(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(())
+    }
+
+    async fn list_index_sidecars(
+        &self,
+        tenant: TenantId,
+        table_id: TableId,
+        extent_ids: &[ExtentId],
+        kind: Option<SidecarKind>,
+    ) -> Result<Vec<IndexSidecarDescriptor>> {
+        if extent_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids: Vec<Uuid> = extent_ids.iter().map(|e| *e.as_uuid()).collect();
+        let mut sql = String::from(
+            "SELECT id, table_id, extent_id, column_name, kind, object_path,
+                    byte_size, params, embedding_model_id, created_at
+             FROM extent_indexes
+             WHERE tenant_id = $1 AND table_id = $2 AND extent_id = ANY($3)",
+        );
+        if kind.is_some() {
+            sql.push_str(" AND kind = $4");
+        }
+        sql.push_str(" ORDER BY extent_id, column_name, kind, embedding_model_id NULLS FIRST");
+
+        let mut q = sqlx::query(&sql)
+            .bind(tenant.as_uuid())
+            .bind(table_id.as_uuid())
+            .bind(&ids);
+        if let Some(k) = kind {
+            q = q.bind(k.as_str());
+        }
+        let rows = q.fetch_all(&self.pool).await.map_err(sql_err)?;
+        rows.iter().map(row_to_sidecar).collect()
+    }
+
+    async fn delete_index_sidecars_for_extents(
+        &self,
+        tenant: TenantId,
+        extent_ids: &[ExtentId],
+    ) -> Result<Vec<String>> {
+        if extent_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids: Vec<Uuid> = extent_ids.iter().map(|e| *e.as_uuid()).collect();
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "DELETE FROM extent_indexes
+             WHERE tenant_id = $1 AND extent_id = ANY($2)
+             RETURNING object_path",
+        )
+        .bind(tenant.as_uuid())
+        .bind(&ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(rows.into_iter().map(|(p,)| p).collect())
     }
 
     async fn gc_candidates(&self, before: DateTime<Utc>) -> Result<Vec<ExtentId>> {
@@ -1850,6 +1948,24 @@ fn row_to_panel(row: &sqlx::postgres::PgRow) -> std::result::Result<DashboardPan
         grid_w: row.try_get("grid_w").map_err(sql_err)?,
         grid_h: row.try_get("grid_h").map_err(sql_err)?,
         display_order: row.try_get("display_order").map_err(sql_err)?,
+    })
+}
+
+fn row_to_sidecar(row: &sqlx::postgres::PgRow) -> Result<IndexSidecarDescriptor> {
+    use sqlx::Row as _;
+    let kind_str: String = row.try_get("kind").map_err(sql_err)?;
+    let kind: SidecarKind = kind_str.parse()?;
+    Ok(IndexSidecarDescriptor {
+        id: row.try_get("id").map_err(sql_err)?,
+        extent_id: ExtentId::from_uuid(row.try_get("extent_id").map_err(sql_err)?),
+        table_id: TableId::from_uuid(row.try_get("table_id").map_err(sql_err)?),
+        column: row.try_get("column_name").map_err(sql_err)?,
+        kind,
+        object_path: row.try_get("object_path").map_err(sql_err)?,
+        byte_size: row.try_get::<i64, _>("byte_size").map_err(sql_err)? as u64,
+        params: row.try_get("params").map_err(sql_err)?,
+        embedding_model_id: row.try_get("embedding_model_id").map_err(sql_err)?,
+        created_at: row.try_get("created_at").map_err(sql_err)?,
     })
 }
 

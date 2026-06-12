@@ -13,11 +13,14 @@
 //!   keep-alive while an executor runs.
 //! - [`datasource_sync`] — the `data_source_sync`-kind executor, re-hosting the
 //!   data source tick body over the fabric.
+//! - [`index_build`] — the `index_build`-kind executor: builds index sidecars
+//!   (ANN/FTS) per extent via pluggable `SidecarBuilder`s (S1 provides them).
 
 #![forbid(unsafe_code)]
 
 pub mod datasource_sync;
 pub mod executor;
+pub mod index_build;
 pub mod queue;
 pub mod runner;
 

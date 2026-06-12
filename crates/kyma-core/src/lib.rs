@@ -12,6 +12,7 @@
 //! - [`errors`] — typed errors; all fallible functions return `Result<T>`.
 //! - [`segment_format`] — `SegmentFormat` + reader/writer traits.
 //! - [`index`] — `IndexProvider`, `PostingList`, `TermDict`.
+//! - [`index_sidecar`] — `SidecarKind`, `IndexSidecarDescriptor`, `SidecarBuilder`.
 //! - [`catalog`] — `Catalog`, `SnapshotTxn`, `ExtentManifest`, `PrunePredicate`.
 //! - [`query_frontend`] — `QueryFrontend`, `QueryContext`, `QueryBudget`.
 
@@ -23,6 +24,7 @@ pub mod crypto;
 pub mod errors;
 pub mod fabric;
 pub mod index;
+pub mod index_sidecar;
 pub mod query_frontend;
 pub mod retention;
 pub mod segment_format;

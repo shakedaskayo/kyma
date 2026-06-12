@@ -1254,6 +1254,16 @@ async fn main() -> Result<()> {
         state: agent_state.clone(),
         worker_id: embedded_worker_id,
     }));
+    // Index-sidecar build jobs (S0.4 plumbing). The builder map is empty
+    // until S1 ships the ivf_rabitq / tantivy_fts builders — an index_build
+    // job claimed before then fails terminally with a clear "no builder
+    // registered" error instead of sitting pending forever.
+    exec_registry.register(Arc::new(kyma_jobs::index_build::IndexBuildExecutor::new(
+        catalog.clone(),
+        format.clone(),
+        store.clone(),
+        std::collections::HashMap::new(),
+    )));
     let mut fabric_runner_handles = Vec::with_capacity(n_fabric_workers);
     for _ in 0..n_fabric_workers {
         let queue = Arc::new(kyma_jobs::PgQueue::new(

@@ -39,6 +39,7 @@ use kyma_core::catalog::{
     User,
 };
 use kyma_core::errors::{CatalogError, Result};
+use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
 use kyma_core::tenant::{TenantId, DEFAULT_TENANT};
 use kyma_core::types::{DatabaseId, ExtentId, NodeId, SchemaSnapshotId, SnapshotId, TableId};
 use serde_json::Value as Json;
@@ -261,6 +262,27 @@ CREATE TABLE IF NOT EXISTS extents (
     deleted_at         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_extents_table ON extents (table_id, deleted_at);
+
+-- Index sidecars (mirrors Postgres migration 028). Foreign keys are OFF on
+-- this pool, so there is no ON DELETE CASCADE — delete_extent_rows and
+-- cleanup_soft_deleted_extents delete these rows explicitly.
+CREATE TABLE IF NOT EXISTS extent_indexes (
+    id                 BLOB PRIMARY KEY,
+    tenant_id          BLOB NOT NULL,
+    table_id           BLOB NOT NULL,
+    extent_id          BLOB NOT NULL,
+    column_name        TEXT NOT NULL,
+    kind               TEXT NOT NULL,
+    object_path        TEXT NOT NULL,
+    byte_size          INTEGER NOT NULL,
+    params             TEXT NOT NULL DEFAULT '{}',
+    embedding_model_id TEXT,
+    created_at         TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS extent_indexes_uniq
+    ON extent_indexes (extent_id, column_name, kind, COALESCE(embedding_model_id, ''));
+CREATE INDEX IF NOT EXISTS extent_indexes_lookup
+    ON extent_indexes (table_id, column_name, kind);
 
 CREATE TABLE IF NOT EXISTS background_tasks (
     id               BLOB PRIMARY KEY,
@@ -1077,6 +1099,117 @@ impl Catalog for SqliteCatalog {
         Ok(out)
     }
 
+    // ------------------------- index sidecars -------------------------
+
+    async fn register_index_sidecar(
+        &self,
+        tenant: TenantId,
+        desc: &IndexSidecarDescriptor,
+    ) -> Result<()> {
+        // Dialect-safe upsert (no expression conflict targets): UPDATE the
+        // logical key first; INSERT when nothing matched. Single-process
+        // local mode makes the update/insert window benign.
+        let updated = sqlx::query(
+            "UPDATE extent_indexes
+             SET object_path = ?, byte_size = ?, params = ?, created_at = ?
+             WHERE tenant_id = ? AND extent_id = ? AND column_name = ? AND kind = ?
+               AND COALESCE(embedding_model_id, '') = COALESCE(?, '')",
+        )
+        .bind(&desc.object_path)
+        .bind(desc.byte_size as i64)
+        .bind(desc.params.to_string())
+        .bind(desc.created_at)
+        .bind(tenant.as_uuid())
+        .bind(desc.extent_id.as_uuid())
+        .bind(&desc.column)
+        .bind(desc.kind.as_str())
+        .bind(desc.embedding_model_id.as_deref())
+        .execute(&self.pool)
+        .await
+        .map_err(ce)?;
+        if updated.rows_affected() > 0 {
+            return Ok(());
+        }
+        sqlx::query(
+            "INSERT INTO extent_indexes
+                (id, tenant_id, table_id, extent_id, column_name, kind,
+                 object_path, byte_size, params, embedding_model_id, created_at)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        )
+        .bind(desc.id)
+        .bind(tenant.as_uuid())
+        .bind(desc.table_id.as_uuid())
+        .bind(desc.extent_id.as_uuid())
+        .bind(&desc.column)
+        .bind(desc.kind.as_str())
+        .bind(&desc.object_path)
+        .bind(desc.byte_size as i64)
+        .bind(desc.params.to_string())
+        .bind(desc.embedding_model_id.as_deref())
+        .bind(desc.created_at)
+        .execute(&self.pool)
+        .await
+        .map_err(ce)?;
+        Ok(())
+    }
+
+    async fn list_index_sidecars(
+        &self,
+        tenant: TenantId,
+        table_id: TableId,
+        extent_ids: &[ExtentId],
+        kind: Option<SidecarKind>,
+    ) -> Result<Vec<IndexSidecarDescriptor>> {
+        if extent_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = vec!["?"; extent_ids.len()].join(",");
+        let mut sql = format!(
+            "SELECT id, table_id, extent_id, column_name, kind, object_path,
+                    byte_size, params, embedding_model_id, created_at
+             FROM extent_indexes
+             WHERE tenant_id = ? AND table_id = ? AND extent_id IN ({placeholders})"
+        );
+        if kind.is_some() {
+            sql.push_str(" AND kind = ?");
+        }
+        sql.push_str(" ORDER BY extent_id, column_name, kind");
+
+        let mut q = sqlx::query(&sql)
+            .bind(tenant.as_uuid())
+            .bind(table_id.as_uuid());
+        for e in extent_ids {
+            q = q.bind(*e.as_uuid());
+        }
+        if let Some(k) = kind {
+            q = q.bind(k.as_str());
+        }
+        let rows = q.fetch_all(&self.pool).await.map_err(ce)?;
+        rows.iter().map(row_to_sidecar).collect()
+    }
+
+    async fn delete_index_sidecars_for_extents(
+        &self,
+        tenant: TenantId,
+        extent_ids: &[ExtentId],
+    ) -> Result<Vec<String>> {
+        if extent_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = vec!["?"; extent_ids.len()].join(",");
+        let sql = format!(
+            "DELETE FROM extent_indexes
+             WHERE tenant_id = ? AND extent_id IN ({placeholders})
+             RETURNING object_path"
+        );
+        let mut q = sqlx::query_scalar::<_, String>(&sql).bind(tenant.as_uuid());
+        for e in extent_ids {
+            q = q.bind(*e.as_uuid());
+        }
+        let paths = q.fetch_all(&self.pool).await.map_err(ce)?;
+        Ok(paths)
+    }
+
     // ------------------------- garbage collection -------------------------
 
     async fn gc_candidates(&self, before: DateTime<Utc>) -> Result<Vec<ExtentId>> {
@@ -1145,6 +1278,15 @@ impl Catalog for SqliteCatalog {
             return Ok(());
         }
         let placeholders = vec!["?"; extents.len()].join(",");
+        // Foreign keys are off on this pool, so the extent_indexes rows
+        // (Postgres: ON DELETE CASCADE) are deleted explicitly first.
+        let sidecar_sql =
+            format!("DELETE FROM extent_indexes WHERE extent_id IN ({placeholders})");
+        let mut sq = sqlx::query(&sidecar_sql);
+        for e in extents {
+            sq = sq.bind(*e.as_uuid());
+        }
+        sq.execute(&self.pool).await.map_err(ce)?;
         let sql = format!("DELETE FROM extents WHERE id IN ({placeholders})");
         let mut q = sqlx::query(&sql);
         for e in extents {
@@ -1190,6 +1332,21 @@ impl Catalog for SqliteCatalog {
         .await
         .map_err(ce)?;
         let (count, rows, bytes) = agg.unwrap_or((0, 0, 0));
+
+        // No FK cascade on this pool: drop the sidecar rows of the extents
+        // about to be hard-deleted.
+        sqlx::query(
+            "DELETE FROM extent_indexes WHERE extent_id IN (
+                 SELECT id FROM extents
+                 WHERE tenant_id = ? AND table_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?
+             )",
+        )
+        .bind(tenant.as_uuid())
+        .bind(table_id)
+        .bind(before)
+        .execute(&self.pool)
+        .await
+        .map_err(ce)?;
 
         sqlx::query(
             "DELETE FROM extents
@@ -2232,6 +2389,24 @@ fn ce(e: sqlx::Error) -> CatalogError {
 
 fn parse_json(s: &str) -> Result<Json, CatalogError> {
     serde_json::from_str(s).map_err(|e| CatalogError::Sql(format!("invalid stored json: {e}")))
+}
+
+fn row_to_sidecar(row: &SqliteRow) -> Result<IndexSidecarDescriptor> {
+    let kind_str: String = row.try_get("kind").map_err(ce)?;
+    let kind: SidecarKind = kind_str.parse()?;
+    let params_str: String = row.try_get("params").map_err(ce)?;
+    Ok(IndexSidecarDescriptor {
+        id: row.try_get("id").map_err(ce)?,
+        extent_id: ExtentId::from_uuid(row.try_get("extent_id").map_err(ce)?),
+        table_id: TableId::from_uuid(row.try_get("table_id").map_err(ce)?),
+        column: row.try_get("column_name").map_err(ce)?,
+        kind,
+        object_path: row.try_get("object_path").map_err(ce)?,
+        byte_size: row.try_get::<i64, _>("byte_size").map_err(ce)? as u64,
+        params: parse_json(&params_str).unwrap_or(Json::Null),
+        embedding_model_id: row.try_get("embedding_model_id").map_err(ce)?,
+        created_at: row.try_get("created_at").map_err(ce)?,
+    })
 }
 
 fn role_to_str(role: NodeRole) -> &'static str {

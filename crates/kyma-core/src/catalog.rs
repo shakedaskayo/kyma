@@ -714,6 +714,44 @@ pub trait Catalog: Send + Sync {
         Ok(Vec::new())
     }
 
+    // --- index sidecars (extent_indexes) ---
+
+    /// Register (idempotent upsert) one index-sidecar descriptor.
+    ///
+    /// The upsert key is `(extent_id, column, kind, embedding_model_id)` —
+    /// re-registering the same logical sidecar replaces `object_path`,
+    /// `byte_size`, and `params` in place rather than inserting a duplicate.
+    /// Callers upload the object **before** registering, so a crash between
+    /// the two leaves only an orphan object, never a dangling row.
+    async fn register_index_sidecar(
+        &self,
+        tenant: crate::tenant::TenantId,
+        desc: &crate::index_sidecar::IndexSidecarDescriptor,
+    ) -> Result<()>;
+
+    /// List sidecar descriptors for the given extents of `table_id`,
+    /// optionally filtered to one [`SidecarKind`][crate::index_sidecar::SidecarKind].
+    /// An empty `extent_ids` slice returns an empty result.
+    async fn list_index_sidecars(
+        &self,
+        tenant: crate::tenant::TenantId,
+        table_id: TableId,
+        extent_ids: &[ExtentId],
+        kind: Option<crate::index_sidecar::SidecarKind>,
+    ) -> Result<Vec<crate::index_sidecar::IndexSidecarDescriptor>>;
+
+    /// Delete every sidecar row attached to the given extents, returning the
+    /// `object_path`s of the deleted rows so the caller can GC the objects.
+    ///
+    /// Note the routine GC path does **not** need this: `extent_indexes` rows
+    /// cascade when extent rows are hard-deleted, and the physical-delete
+    /// worker collects sidecar object paths before dropping the extent rows.
+    async fn delete_index_sidecars_for_extents(
+        &self,
+        tenant: crate::tenant::TenantId,
+        extent_ids: &[ExtentId],
+    ) -> Result<Vec<String>>;
+
     // --- garbage collection ---
 
     async fn gc_candidates(&self, before: DateTime<Utc>) -> Result<Vec<ExtentId>>;
