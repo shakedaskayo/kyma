@@ -1,0 +1,11 @@
+{
+  "query": "recent 500 errors in the ingest service",
+  "mode": "data",
+  "judged": [
+    { "key": "default/logs/row:ingest-5xx-2026-06-01T10:00:00Z", "grade": 3 },
+    { "key": "default/logs/row:ingest-5xx-2026-05-30T08:12:00Z", "grade": 2 },
+    { "key": "default/logs/row:query-timeout-2026-06-01T09:55:00Z", "grade": 1 },
+    { "key": "default/logs/row:healthcheck-ok-2026-06-01T10:01:00Z", "grade": 0 }
+  ],
+  "notes": "EXAMPLE fixture — synthetic keys, exists only to test the golden-runner wiring. Replace with a query mined from Ask-Kyma traces + frozen LLM-judge grades."
+}

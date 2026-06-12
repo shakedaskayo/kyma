@@ -1,0 +1,10 @@
+{
+  "query": "what sync strategy does the user prefer for multi-branch work",
+  "mode": "memory",
+  "judged": [
+    { "key": "mem:feedback_local_merge_sync", "grade": 3 },
+    { "key": "mem:project_prod_deploy_track", "grade": 1 },
+    { "key": "mem:feedback_docs_developer_friendly", "grade": 0 }
+  ],
+  "notes": "EXAMPLE fixture — synthetic keys, exists only to test the golden-runner wiring. Replace with a query mined from Ask-Kyma traces + frozen LLM-judge grades."
+}
