@@ -12,6 +12,8 @@ import {
   SiAsana,
   SiPostgresql,
   SiPrometheus,
+  SiClaude,
+  SiObsidian,
 } from "@icons-pack/react-simple-icons";
 import { Plug } from "lucide-react";
 import { useTheme } from "@/lib/theme";
@@ -27,6 +29,8 @@ const DARK_BRAND_COLOR: Record<string, string> = {
   github: "#f0f6fc",
   notion: "#ffffff",
   bitbucket: "#2684ff",
+  // Obsidian's #7C3AED reads muddy on dark surfaces; lift it.
+  obsidian: "#a88bfa",
 };
 
 // Brand slug (from the engine catalog's `brand` field) → an icon component.
@@ -48,6 +52,8 @@ const BRAND: Record<string, ComponentType<any>> = {
   asana: SiAsana,
   postgresql: SiPostgresql,
   prometheus: SiPrometheus,
+  claude: SiClaude,
+  obsidian: SiObsidian,
 };
 
 // Vendors whose mark was removed from simple-icons (Slack, Amazon S3) use the
