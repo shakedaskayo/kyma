@@ -1448,6 +1448,14 @@ async fn main() -> Result<()> {
     write_path.drain_staging().await;
     info!("staging buffer drained");
 
+    // Broadcast the wind-down signal BEFORE joining any task handles. The
+    // grpc/otlp/filedrop/kafka servers and the background workers all run until
+    // they observe this signal (serve_with_shutdown / shutdown_tx.subscribe()),
+    // so awaiting their handles first would deadlock — the task never returns
+    // because the signal that ends it hasn't been sent yet. In production this
+    // manifested as SIGTERM hanging until the k8s grace-period SIGKILL.
+    let _ = shutdown_tx.send(());
+
     if let Some(h) = grpc_handle {
         let _ = h.await;
     }
@@ -1470,8 +1478,7 @@ async fn main() -> Result<()> {
         let _ = h.await;
     }
 
-    // Tell workers to wind down.
-    let _ = shutdown_tx.send(());
+    // Workers were already signaled above; join their handles.
     let _ = worker_handle.await;
     let _ = scheduler_handle.await;
     let _ = retention_handle.await;
