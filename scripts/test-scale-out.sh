@@ -23,6 +23,7 @@ export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
 export KYMA_S3_PATH_STYLE="true"
 export KYMA_S3_ALLOW_HTTP="true"
 export KYMA_OTLP_ADDR=off
+export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
 export KYMA_STAGING_DISABLED=1
 export KYMA_COMPACTION_POLL_SECS="3600"
 export KYMA_RETENTION_POLL_SECS="3600"

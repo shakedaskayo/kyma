@@ -346,14 +346,25 @@ async fn main() -> Result<()> {
         WritePath::new(catalog.clone(), format.clone()).with_events(ingest_events.clone())
     };
     // Connect self-tracing to storage (drops silently before this point).
-    let _ = self_trace_handle.set(kyma_ingest_otlp::self_export::SelfTraceCtx {
-        catalog: catalog.clone(),
-        write_path: write_path.clone(),
-        database: cli.otlp_database.clone(),
-    });
-    // Pre-create otel_traces so the Traces page never shows a 404 on fresh
-    // install while waiting for the first self-trace batch to flush.
-    kyma_ingest_otlp::ensure_traces_table(&catalog, &cli.otlp_database).await;
+    // `KYMA_SELF_TRACE=off` (or 0/false) leaves the exporter unwired so the
+    // server's own spans are never written to otel_traces — operators who don't
+    // want self-traces consuming their storage, and deterministic tests that
+    // assert exact extent/object counts, both set this.
+    let self_trace_enabled = std::env::var("KYMA_SELF_TRACE")
+        .map(|v| !matches!(v.as_str(), "off" | "0" | "false"))
+        .unwrap_or(true);
+    if self_trace_enabled {
+        let _ = self_trace_handle.set(kyma_ingest_otlp::self_export::SelfTraceCtx {
+            catalog: catalog.clone(),
+            write_path: write_path.clone(),
+            database: cli.otlp_database.clone(),
+        });
+        // Pre-create otel_traces so the Traces page never shows a 404 on fresh
+        // install while waiting for the first self-trace batch to flush.
+        kyma_ingest_otlp::ensure_traces_table(&catalog, &cli.otlp_database).await;
+    } else {
+        info!("self-tracing: disabled (KYMA_SELF_TRACE=off)");
+    }
     let ingest_router = kyma_ingest_rest::router(IngestState {
         catalog: catalog.clone(),
         write_path: write_path.clone(),

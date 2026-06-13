@@ -103,6 +103,22 @@ run_step "mcp integration (testcontainers)" \
 run_step "jobs integration (testcontainers)" \
   cargo test --locked -p kyma-jobs -- --test-threads=2
 
+# Each integration script boots its own server(s) and resets the shared
+# Postgres+MinIO stack. A prior script's server can still be draining (and
+# holding its port) when the next one starts, causing "server never healthy"
+# flakes. Between scripts, kill any lingering engine processes and wait for the
+# common ports to free so every script starts from a clean slate.
+reap_servers() {
+  pkill -9 -f "target/debug/kyma$" 2>/dev/null || true
+  pkill -9 -f "target/debug/kyma " 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if ! lsof -ti tcp:8080,tcp:9090,tcp:18080,tcp:18081 >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+}
+
 for lvl in "${LEVELS[@]}"; do
   arr="STAGE_SCRIPTS_${lvl}[@]"
   for script in "${!arr+"${!arr}"}"; do
@@ -111,9 +127,11 @@ for lvl in "${LEVELS[@]}"; do
       SKIPPED+=("$script (not present yet)")
       continue
     fi
+    reap_servers
     run_step "$script" bash "$script"
   done
 done
+reap_servers
 
 # S4 additionally runs the full gauntlet nightly tier.
 if [ "$STAGE" = "s4" ]; then
