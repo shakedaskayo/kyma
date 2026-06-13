@@ -32,11 +32,10 @@ COPY --from=web /src/web/dist ./web/dist
 # Docker Desktop (which caps memory at ~8 GB on macOS).
 ENV CARGO_PROFILE_RELEASE_LTO=off \
     CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4
-# Both kyma-bin and kyma-cli declare a [[bin]] named "kyma", so building the CLI
-# overwrites target/release/kyma. Build the CLI first, copy it aside as kyma-cli,
-# then build the server so target/release/kyma is the server binary.
+# kyma-bin emits `kyma` (the server); kyma-cli emits `kyma-cli` (the management
+# CLI). Distinct binary names → no copy-aside dance. Built separately because
+# only kyma-bin carries the web-ui/github features.
 RUN cargo build -p kyma-cli --release \
- && cp /src/target/release/kyma /src/target/release/kyma-cli \
  && cargo build -p kyma-bin --release --features web-ui,github
 
 # ---------- stage 3: runtime ----------

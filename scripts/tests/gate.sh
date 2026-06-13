@@ -82,7 +82,26 @@ run_step() {
   fi
 }
 
-run_step "cargo test --workspace" cargo test --workspace --quiet
+# Run tests the way .github/workflows/rust-tests.yml does — per-crate for the
+# testcontainer-backed suites — instead of one monolithic `cargo test
+# --workspace`. A single workspace run launches every crate's Postgres/MinIO
+# containers at once and thrashes Docker (StartupTimeout flakes); the per-crate
+# split is what keeps CI green and makes "green locally" predict "green in CI".
+run_step "compile all test targets" \
+  cargo test --workspace --locked --no-run \
+  --exclude app --exclude kyma-bin --exclude kyma-ingest-kafka
+run_step "unit suites (no infra)" \
+  cargo test --locked \
+  -p kyma-core -p kyma-storage -p kyma-kql -p kyma-memory \
+  -p kyma-catalog-sqlite -p kyma-retrieval-eval -p kyma-graph-testkit
+run_step "catalog integration (testcontainers)" \
+  cargo test --locked -p kyma-catalog -- --test-threads=2
+run_step "server integration (testcontainers)" \
+  cargo test --locked -p kyma-server --features "test-support cloud-auth" -- --test-threads=2
+run_step "mcp integration (testcontainers)" \
+  cargo test --locked -p kyma-mcp --features "kyma-server/test-support" -- --test-threads=2
+run_step "jobs integration (testcontainers)" \
+  cargo test --locked -p kyma-jobs -- --test-threads=2
 
 for lvl in "${LEVELS[@]}"; do
   arr="STAGE_SCRIPTS_${lvl}[@]"

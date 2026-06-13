@@ -69,7 +69,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 section "Create table retention_days=1 + ingest 2-day-old data"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name aged \
     --schema 'timestamp:timestamp,n:int' --retention-days 1 >/dev/null
 ./target/debug/kyma-cli create-table --db default --name fresh \

@@ -64,7 +64,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 section "Bootstrap (CLI talks directly to Postgres — no auth path)"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name authtest \
     --schema 'timestamp:timestamp,n:int' >/dev/null
 

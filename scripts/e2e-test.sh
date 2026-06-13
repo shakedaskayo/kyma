@@ -117,7 +117,7 @@ assert_eq "server /health returns status=ok" '"ok"' "$(echo "$health" | jq .stat
 # Test 1: Bootstrap — create database + two tables
 # ------------------------------------------------------------------
 section "Test 1 — bootstrap: create database + tables"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name http_logs   --schema 'timestamp:timestamp,status:int,path:string,message:string' >/dev/null
 ./target/debug/kyma-cli create-table --db default --name user_events --schema 'timestamp:timestamp,user_id:long,event:string' >/dev/null
 tables_listing=$(./target/debug/kyma-cli list-tables --db default | awk '{print $1}' | sort | tr '\n' ',' | sed 's/,$//')

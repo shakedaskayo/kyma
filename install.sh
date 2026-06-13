@@ -251,7 +251,13 @@ install_source() {
   info "Building + installing the CLI (cargo install) — this can take several minutes…"
   ( cd "$repo_root" && cargo install --path crates/kyma-cli --locked --force ) \
     || die "cargo install failed"
-  # cargo installs to ~/.cargo/bin
+  # cargo installs the `kyma-cli` binary to ~/.cargo/bin. End users invoke it as
+  # `kyma`, matching the prebuilt-tarball path — symlink (fall back to copy).
+  local cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+  if [ -f "$cargo_bin/kyma-cli" ]; then
+    ln -sf "$cargo_bin/kyma-cli" "$cargo_bin/kyma" 2>/dev/null \
+      || cp -f "$cargo_bin/kyma-cli" "$cargo_bin/kyma"
+  fi
   return 0
 }
 

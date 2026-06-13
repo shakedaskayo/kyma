@@ -59,7 +59,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 section "Create table + ingest 10 extents, one region each"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name events \
     --schema 'timestamp:timestamp,region:string,shard:int,message:string' >/dev/null
 

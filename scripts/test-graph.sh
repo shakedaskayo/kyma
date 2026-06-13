@@ -62,7 +62,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 section "Create edges table (service-dependency graph)"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name calls \
     --schema 'timestamp:timestamp,caller:string,callee:string,latency_ms:int' >/dev/null
 

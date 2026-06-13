@@ -62,7 +62,8 @@ jobs:
 
       - name: Package
         run: |
-          cp target/${{ matrix.target }}/release/kyma kyma
+          # kyma-cli's build output is `kyma-cli`; end users get it as `kyma`.
+          cp target/${{ matrix.target }}/release/kyma-cli kyma
           tar czf ${{ matrix.artifact }}.tar.gz kyma
           shasum -a 256 ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
 
@@ -123,7 +124,8 @@ jobs:
 
       - name: Package
         run: |
-          cp target/${{ matrix.target }}/release/kyma kyma
+          # kyma-cli's build output is `kyma-cli`; end users get it as `kyma`.
+          cp target/${{ matrix.target }}/release/kyma-cli kyma
           tar czf ${{ matrix.artifact }}.tar.gz kyma
           sha256sum ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
 

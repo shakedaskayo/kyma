@@ -72,7 +72,7 @@ else
 fi
 
 section "Create target table (events)"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name events \
     --schema 'timestamp:timestamp,level:string,message:string' >/dev/null
 

@@ -103,7 +103,7 @@ docker exec kyma-postgres psql -U kyma -d kyma -qc \
      END" >/dev/null 2>&1 || true
 
 section "Create table via A"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name so_events \
     --schema 'timestamp:timestamp,region:string,status:int' >/dev/null
 

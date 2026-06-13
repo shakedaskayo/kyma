@@ -73,7 +73,7 @@ done
 printf "  ${DIM}server PID $SERVER_PID${NC}\n"
 
 section "Create table, ingest 10 extents"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name compact_me \
     --schema 'timestamp:timestamp,n:int,label:string' >/dev/null
 for i in $(seq 1 10); do

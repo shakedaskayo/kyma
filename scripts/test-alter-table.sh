@@ -66,7 +66,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 section "Create table with V1 schema (3 cols) and ingest 3 rows"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name evolve \
     --schema 'timestamp:timestamp,status:int,path:string' >/dev/null
 

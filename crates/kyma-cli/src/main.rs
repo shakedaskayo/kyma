@@ -294,7 +294,14 @@ enum Command {
     // ── admin subcommands ─────────────────────────────────────────────
 
     /// Create a new database (namespace) — admin, talks to Postgres directly.
-    CreateDatabase { name: String },
+    CreateDatabase {
+        name: String,
+        /// Succeed (and print the existing id) if the database already exists,
+        /// instead of erroring. Makes bootstrap scripts idempotent — the server
+        /// itself pre-creates `default` on boot.
+        #[arg(long)]
+        if_not_exists: bool,
+    },
     /// Create a new table — admin.
     CreateTable {
         #[arg(long)]
@@ -694,8 +701,21 @@ async fn main() -> Result<()> {
             force,
             no_restart,
         } => update::run(check, version, force, no_restart).await,
-        Command::CreateDatabase { name } => {
+        Command::CreateDatabase {
+            name,
+            if_not_exists,
+        } => {
             let catalog = connect_catalog(&cli.catalog_url).await?;
+            if if_not_exists {
+                if let Some(id) = catalog
+                    .lookup_database(&name)
+                    .await
+                    .with_context(|| format!("looking up database {name}"))?
+                {
+                    println!("database {name} already exists ({id})");
+                    return Ok(());
+                }
+            }
             let id = catalog
                 .create_database(&name)
                 .await

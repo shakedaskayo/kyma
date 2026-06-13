@@ -63,7 +63,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 section "Bootstrap"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name load \
     --schema 'timestamp:timestamp,n:int,payload:string' >/dev/null
 

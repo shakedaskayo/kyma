@@ -67,7 +67,7 @@ docker exec kyma-minio mc mb --ignore-existing local/kyma >/dev/null
 
 section "Start server A, create schema, ingest 50 rows"
 start_kyma "$LOG_A" || { f "server A never healthy"; exit 1; }
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name chaos \
     --schema 'timestamp:timestamp,n:int' >/dev/null
 
