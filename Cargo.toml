@@ -17,6 +17,7 @@ members = [
     "crates/kyma-datasource-core",
     "crates/kyma-codeparse",
     "crates/kyma-jobs",
+    "crates/kyma-index-vector",
     "crates/kyma-kql",
     "crates/kyma-graph",
     "crates/kyma-plan",
@@ -173,6 +174,7 @@ kyma-datasources        = { path = "crates/kyma-datasources",      version = "0.
 kyma-datasource-core    = { path = "crates/kyma-datasource-core",  version = "0.0.16" }
 kyma-codeparse         = { path = "crates/kyma-codeparse",       version = "0.0.16" }
 kyma-jobs              = { path = "crates/kyma-jobs",            version = "0.0.16" }
+kyma-index-vector      = { path = "crates/kyma-index-vector",    version = "0.0.16" }
 kyma-plan              = { path = "crates/kyma-plan",            version = "0.0.16" }
 kyma-exec              = { path = "crates/kyma-exec",            version = "0.0.16" }
 kyma-federation        = { path = "crates/kyma-federation",      version = "0.0.16" }
