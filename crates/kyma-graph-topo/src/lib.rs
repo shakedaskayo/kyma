@@ -335,6 +335,43 @@ impl CsrGraph {
         None
     }
 
+    /// Connected components by BFS labeling under `dir` (use `Both` for
+    /// weakly-connected components — the usual notion of "is this graph in one
+    /// piece"). Returns `(node_id, component_id)` with dense component ids
+    /// assigned in node-index discovery order; a node with no edges is its own
+    /// singleton component. Cheap connectivity for graph stats, the explorer,
+    /// and as the partition for per-component PPR / community runs.
+    pub fn connected_components(&self, dir: Direction) -> Vec<(String, u32)> {
+        let n = self.ids.len();
+        let mut comp = vec![u32::MAX; n];
+        let mut next = 0u32;
+        let mut nbrs: Vec<u32> = Vec::new();
+        let mut queue: VecDeque<u32> = VecDeque::new();
+        for start in 0..n {
+            if comp[start] != u32::MAX {
+                continue;
+            }
+            comp[start] = next;
+            queue.clear();
+            queue.push_back(start as u32);
+            while let Some(u) = queue.pop_front() {
+                nbrs.clear();
+                self.step(u, dir, EtypeFilter::Any, &mut nbrs);
+                for &v in &nbrs {
+                    if comp[v as usize] == u32::MAX {
+                        comp[v as usize] = next;
+                        queue.push_back(v);
+                    }
+                }
+            }
+            next += 1;
+        }
+        comp.iter()
+            .enumerate()
+            .map(|(i, &c)| (self.ids[i].clone(), c))
+            .collect()
+    }
+
     /// Approximate personalized `PageRank` from `seeds` via the
     /// Andersen–Chung–Lang forward-push algorithm (S3.4): the basis for graph
     /// proximity in memory retrieval, replacing the fixed hop loop.
