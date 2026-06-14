@@ -898,6 +898,12 @@ async fn main() -> Result<()> {
         let _ = rx.recv().await;
     }));
 
+    // Index-build activation scheduler: enqueues ivf_rabitq build jobs for
+    // un-indexed vector columns so ANN sidecars actually get created.
+    let index_scheduler = kyma_compaction::IndexScheduler::new(catalog.clone());
+    let index_scheduler_handle =
+        tokio::spawn(index_scheduler.run(shutdown_tx.subscribe()));
+
     // Retention sweeper (soft-delete expired).
     let mut retention = RetentionSweeper::new(catalog.clone());
     if let Ok(s) = std::env::var("KYMA_RETENTION_POLL_SECS")
@@ -1502,6 +1508,7 @@ async fn main() -> Result<()> {
 
     // Workers were already signaled above; join their handles.
     let _ = worker_handle.await;
+    let _ = index_scheduler_handle.await;
     let _ = scheduler_handle.await;
     let _ = retention_handle.await;
     let _ = gc_handle.await;

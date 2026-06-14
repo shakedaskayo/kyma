@@ -17,9 +17,11 @@
 #![forbid(unsafe_code)]
 
 pub mod artifact_retention;
+pub mod index_scheduler;
 pub mod retention;
 
 pub use artifact_retention::{ArtifactRetentionWorker, ArtifactSweepStats};
+pub use index_scheduler::IndexScheduler;
 pub use retention::{PhysicalDeleteWorker, RetentionSweeper};
 
 use arrow_array::{new_null_array, ArrayRef, RecordBatch};
