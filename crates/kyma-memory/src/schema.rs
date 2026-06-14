@@ -45,6 +45,11 @@ pub fn memory_nodes_schema(dim: i32) -> SchemaRef {
         Field::new("provenance", DataType::Utf8, true),
         // Deterministic upsert key: (realm, topic_key) updates in place.
         Field::new("topic_key", DataType::Utf8, true),
+        // Memory-class model (S3.3): retention/consolidation class, visibility
+        // space (public / private:<agent>), and the writing agent.
+        Field::new("memory_class", DataType::Utf8, true),
+        Field::new("space", DataType::Utf8, true),
+        Field::new("writer_agent_id", DataType::Utf8, true),
     ]))
 }
 
@@ -54,6 +59,10 @@ pub fn memory_nodes_schema(dim: i32) -> SchemaRef {
 /// extents null-fill on read).
 pub const BITEMPORAL_COLUMNS: &[&str] =
     &["valid_at", "invalid_at", "superseded_by", "provenance", "topic_key"];
+
+/// Memory-class columns (S3.3) added after bi-temporal support. Healed the same
+/// way — nullable, so historical extents null-fill on read.
+pub const MEMORY_CLASS_COLUMNS: &[&str] = &["memory_class", "space", "writer_agent_id"];
 
 /// Schema for `memory_edges`. Graph columns: `src`, `dst`, `type`, `realm`.
 /// `target_namespace` carries the foreign endpoint's `database/graph` for
@@ -101,6 +110,16 @@ mod tests {
     fn node_schema_has_bitemporal_columns() {
         let s = memory_nodes_schema(384);
         for c in BITEMPORAL_COLUMNS {
+            let f = s.field_with_name(c).unwrap_or_else(|_| panic!("missing column {c}"));
+            assert!(f.is_nullable(), "{c} must be nullable for back-compat");
+            assert_eq!(f.data_type(), &DataType::Utf8);
+        }
+    }
+
+    #[test]
+    fn node_schema_has_memory_class_columns() {
+        let s = memory_nodes_schema(384);
+        for c in MEMORY_CLASS_COLUMNS {
             let f = s.field_with_name(c).unwrap_or_else(|_| panic!("missing column {c}"));
             assert!(f.is_nullable(), "{c} must be nullable for back-compat");
             assert_eq!(f.data_type(), &DataType::Utf8);
