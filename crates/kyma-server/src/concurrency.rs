@@ -62,6 +62,51 @@ pub fn acquire() -> Result<QueryPermit, u64> {
     }
 }
 
+/// Process-global cap on concurrent **agent runs** (S2.6). Each run is far
+/// heavier than a query — an LLM tool loop with model calls, memory recall, and
+/// data-source reads — so a separate, smaller ceiling protects the node from
+/// agent-run overload. `None` when disabled.
+fn agent_limiter() -> Option<&'static Arc<Semaphore>> {
+    static S: OnceLock<Option<Arc<Semaphore>>> = OnceLock::new();
+    S.get_or_init(|| {
+        let n = std::env::var("KYMA_AGENT_MAX_CONCURRENT")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0);
+        if n == 0 {
+            None
+        } else {
+            Some(Arc::new(Semaphore::new(n)))
+        }
+    })
+    .as_ref()
+}
+
+fn agent_retry_after_secs() -> u64 {
+    std::env::var("KYMA_AGENT_RETRY_AFTER_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(5)
+        .max(1)
+}
+
+/// Held for the lifetime of an agent run (move it into the run's spawned task so
+/// the slot frees when the run finishes). `None` when the cap is disabled.
+pub struct AgentRunPermit(#[allow(dead_code)] Option<OwnedSemaphorePermit>);
+
+/// Try to admit one agent run. `Ok(permit)` to proceed (hold it for the whole
+/// run); `Err(retry_after_secs)` when the node is at its agent-run capacity.
+/// Off by default (`KYMA_AGENT_MAX_CONCURRENT` unset/0 ⇒ unlimited).
+pub fn acquire_agent_run() -> Result<AgentRunPermit, u64> {
+    match agent_limiter() {
+        None => Ok(AgentRunPermit(None)),
+        Some(sem) => match Arc::clone(sem).try_acquire_owned() {
+            Ok(p) => Ok(AgentRunPermit(Some(p))),
+            Err(_) => Err(agent_retry_after_secs()),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,6 +116,14 @@ mod tests {
         // No env set in this test ⇒ disabled ⇒ always Ok, never exhausts.
         for _ in 0..1000 {
             assert!(acquire().is_ok());
+        }
+    }
+
+    #[test]
+    fn agent_run_disabled_when_unset_grants_inert_permits() {
+        // KYMA_AGENT_MAX_CONCURRENT unset ⇒ unlimited ⇒ never rejects.
+        for _ in 0..1000 {
+            assert!(acquire_agent_run().is_ok());
         }
     }
 

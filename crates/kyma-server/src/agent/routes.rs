@@ -776,6 +776,26 @@ async fn ask_handler(
         }
     }
 
+    // S2.6 agent-run admission: cap concurrent agent runs (each is a heavy LLM
+    // tool loop — model calls + memory recall + data-source reads). Off by
+    // default (`KYMA_AGENT_MAX_CONCURRENT` unset). The permit is moved into the
+    // run's spawned task below, so the slot frees when the run finishes. (The
+    // Claude-CLI engine path above owns its own resource model; capping it is a
+    // follow-up.)
+    let agent_permit = match crate::concurrency::acquire_agent_run() {
+        Ok(p) => p,
+        Err(retry) => {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                [(axum::http::header::RETRY_AFTER, retry.to_string())],
+                Json(json!({
+                    "error": "agent run capacity reached; retry after the indicated delay"
+                })),
+            )
+                .into_response();
+        }
+    };
+
     let run_id = uuid::Uuid::new_v4();
     let include_thinking = body.include_thinking;
     let model = model_id(&state).await;
@@ -860,6 +880,9 @@ async fn ask_handler(
     let summary_every = summary_every();
 
     tokio::spawn(async move {
+        // Hold the admission permit for the whole run; the slot frees when this
+        // task ends (success, error, or early return).
+        let _agent_permit = agent_permit;
         let mut em = Emitter::new(ui, &run_id.to_string());
         let mut tool_calls: u32 = 0;
         let mut last_run_sql: Option<String> = None;
