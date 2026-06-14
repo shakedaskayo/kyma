@@ -5210,6 +5210,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "kyma-graph-topo",
+ "object_store",
  "serde",
  "serde_json",
  "tokio",
