@@ -30,6 +30,8 @@ use kyma_ingest_core::{
 };
 use serde::Serialize;
 use std::sync::Arc;
+
+mod rate_limit;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tracing::{error, info, warn};
 use tracing::Instrument as _;
@@ -97,6 +99,11 @@ async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Respo
         .and_then(|v| v.to_str().ok())
         .unwrap_or("default")
         .to_owned();
+    // S2.6: token-bucket ingest rate limit (off unless KYMA_INGEST_RATE_RPS set).
+    // Metered per database; an empty bucket → 429 + Retry-After.
+    if let Err(retry_after_secs) = rate_limit::check(&database) {
+        return rate_limited_response(retry_after_secs, &request_id);
+    }
     let idempotency_key: Option<String> = headers
         .get("x-idempotency-key")
         .and_then(|v| v.to_str().ok())
@@ -391,6 +398,22 @@ struct ErrorDetail<'a> {
     code: &'a str,
     message: &'a str,
     request_id: &'a str,
+}
+
+/// `429 Too Many Requests` with a `Retry-After` header (whole seconds, ≥1) when
+/// the ingest token bucket is empty (S2.6).
+fn rate_limited_response(retry_after_secs: f64, request_id: &str) -> Response {
+    let secs = retry_after_secs.ceil().max(1.0) as u64;
+    let mut resp = error_response(
+        StatusCode::TOO_MANY_REQUESTS,
+        "rate_limited",
+        "ingest rate limit exceeded; retry after the indicated delay",
+        request_id,
+    );
+    if let Ok(v) = axum::http::HeaderValue::from_str(&secs.to_string()) {
+        resp.headers_mut().insert(axum::http::header::RETRY_AFTER, v);
+    }
+    resp
 }
 
 fn error_response(status: StatusCode, code: &str, message: &str, request_id: &str) -> Response {
