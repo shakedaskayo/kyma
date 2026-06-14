@@ -116,6 +116,10 @@ struct SaveMemoryArgs {
     /// false: the save is acked immediately and batched in the background.
     #[serde(default)]
     sync: Option<bool>,
+    /// Visibility scope (S3.3). Omit or `"public"` to share; `"private:<agent>"`
+    /// restricts recall to that agent. Recall honors this via `space_agent`.
+    #[serde(default)]
+    space: Option<String>,
 }
 
 /// Fold a [`SaveMemoryArgs`] into the [`CreateMemory`] the writer/queue takes.
@@ -136,6 +140,9 @@ fn create_from_save_args(parsed: SaveMemoryArgs) -> CreateMemory {
     cm.importance = parsed.importance.unwrap_or(0.5).clamp(0.0, 1.0);
     cm.references = parsed.references.unwrap_or_default();
     cm.topic_key = parsed.topic_key.filter(|s| !s.trim().is_empty());
+    cm.space = parsed.space.filter(|s| !s.trim().is_empty());
+    // Attribute the writing client (S3.3) for provenance + space scoping.
+    cm.writer_agent_id = super::identity::client_name();
     // Stamp who is writing (host / transport / MCP client) into provenance.
     super::identity::stamp_provenance(&mut cm);
     cm
@@ -606,6 +613,10 @@ struct RecallMemoryArgs {
     /// Require these tags (substring match).
     #[serde(default)]
     tags: Option<Vec<String>>,
+    /// Agent identity for memory-space visibility (S3.3): returns shared
+    /// memories plus this agent's own `private:<agent>`. Omit for shared-only.
+    #[serde(default)]
+    space_agent: Option<String>,
 }
 
 const RECALL_MEMORY_DESC: &str = "Recall the most relevant stored memories for \
@@ -637,9 +648,7 @@ pub fn tool_recall_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         include_invalidated: false,
                         limit: parsed.limit,
                         expand_hops: Some(1),
-                        // Populated once agent identity is threaded onto the
-                        // tool ctx (follow-on); None = no space filter.
-                        space_agent: None,
+                        space_agent: parsed.space_agent,
                     };
                     // Read-your-own-writes: land queued writes for the target
                     // realms first (bounded; no-op when nothing is pending).
@@ -684,6 +693,10 @@ struct MemorySearchArgs {
     /// Point-in-time recall (RFC3339): only memories valid at this instant.
     #[serde(default)]
     as_of: Option<String>,
+    /// Agent identity for memory-space visibility (S3.3): returns shared
+    /// memories plus this agent's own `private:<agent>`. Omit for shared-only.
+    #[serde(default)]
+    space_agent: Option<String>,
 }
 
 const MEMORY_SEARCH_DESC: &str = "Find anything fast across the agent's memory: \
@@ -717,7 +730,7 @@ pub fn tool_memory_search(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         include_invalidated: false,
                         limit: parsed.limit,
                         expand_hops: parsed.expand_hops,
-                        space_agent: None,
+                        space_agent: parsed.space_agent,
                     };
                     // Read-your-own-writes: land queued writes for the target
                     // realms first (bounded; no-op when nothing is pending).
@@ -1691,4 +1704,44 @@ pub fn tool_flush_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
         .with_read_only(true)
         .with_concurrency_safe(true),
     )
+}
+
+#[cfg(test)]
+mod space_param_tests {
+    use super::*;
+
+    #[test]
+    fn save_args_map_space_and_writer() {
+        // Explicit space flows to CreateMemory; blank space is dropped.
+        let args: SaveMemoryArgs = serde_json::from_value(json!({
+            "content": "secret note",
+            "space": "private:agentA"
+        }))
+        .unwrap();
+        let cm = create_from_save_args(args);
+        assert_eq!(cm.space.as_deref(), Some("private:agentA"));
+        // No MCP client recorded in this unit test → writer_agent_id is None.
+        assert!(cm.writer_agent_id.is_none());
+
+        let blank: SaveMemoryArgs =
+            serde_json::from_value(json!({ "content": "x", "space": "  " })).unwrap();
+        assert!(create_from_save_args(blank).space.is_none(), "blank space dropped");
+
+        // Omitted space stays public (None).
+        let none: SaveMemoryArgs = serde_json::from_value(json!({ "content": "x" })).unwrap();
+        assert!(create_from_save_args(none).space.is_none());
+    }
+
+    #[test]
+    fn recall_args_deserialize_space_agent() {
+        let r: RecallMemoryArgs =
+            serde_json::from_value(json!({ "query": "q", "space_agent": "agentB" })).unwrap();
+        assert_eq!(r.space_agent.as_deref(), Some("agentB"));
+        let s: MemorySearchArgs =
+            serde_json::from_value(json!({ "query": "q", "space_agent": "agentB" })).unwrap();
+        assert_eq!(s.space_agent.as_deref(), Some("agentB"));
+        // Omitted → None (shared-only), back-compatible with existing callers.
+        let r2: RecallMemoryArgs = serde_json::from_value(json!({ "query": "q" })).unwrap();
+        assert!(r2.space_agent.is_none());
+    }
 }
