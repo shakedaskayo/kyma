@@ -11,6 +11,7 @@ pub mod provider;
 pub mod schema_graph;
 pub mod source;
 pub mod stored_graph;
+mod topo_cache;
 pub mod types;
 
 pub use executor::{GraphQueryExecutor, JsonRow, StoredGraphConfig};
