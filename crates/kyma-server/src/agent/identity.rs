@@ -61,6 +61,13 @@ pub fn writer_json() -> Value {
     })
 }
 
+/// The writing client's advertised name (e.g. `claude-code`), or `None` when no
+/// MCP client has identified itself. Used to attribute a memory's
+/// `writer_agent_id` (S3.3) without threading a request principal everywhere.
+pub fn client_name() -> Option<String> {
+    CLIENT.read().ok().and_then(|c| c.as_ref().map(|(n, _)| n.clone()))
+}
+
 /// Merge the writer identity into a memory's provenance (under `writer`),
 /// preserving whatever provenance the caller already set.
 pub fn stamp_provenance(cm: &mut kyma_memory::CreateMemory) {
