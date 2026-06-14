@@ -270,6 +270,36 @@ impl StoredGraphProvider {
         };
         Ok(GraphPayload { stats, nodes, edges })
     }
+
+    /// Build this graph's CSR topology from a bounded edge scan and persist it
+    /// as an object-store snapshot ([`crate::snapshot`]). The triggered/periodic
+    /// counterpart to the in-process topo cache: a deep traversal after a
+    /// restart, or on another query node, can [`crate::snapshot::load_snapshot`]
+    /// the result instead of rebuilding from a full scan. Keyed by
+    /// `(database, edge_table)`; rebuilds overwrite the latest snapshot.
+    pub async fn build_and_store_snapshot(
+        &self,
+        store: &Arc<dyn object_store::ObjectStore>,
+    ) -> anyhow::Result<()> {
+        let cap = topo_max_edges();
+        let edge_rows = self.rows(edge_sample_sql(&self.cfg, cap + 1)).await?;
+        let all_edges: Vec<GraphRelationship> =
+            edge_rows.iter().map(|r| row_to_edge(&self.cfg, r)).collect();
+        let csr = CsrGraph::build(
+            all_edges
+                .iter()
+                .flat_map(|e| [e.source_id.as_str(), e.target_id.as_str()]),
+            all_edges.iter().map(|e| {
+                (
+                    e.source_id.as_str(),
+                    e.target_id.as_str(),
+                    e.relationship_type.as_str(),
+                )
+            }),
+        );
+        let path = crate::snapshot::snapshot_path(&self.cfg.database, &self.cfg.edge_table);
+        crate::snapshot::store_snapshot(store, &path, &csr).await
+    }
 }
 
 async fn stats_for(p: &StoredGraphProvider) -> anyhow::Result<GraphStats> {
@@ -724,5 +754,29 @@ mod provider_tests {
             1,
             "edge table scanned once; the repeat hit the topo cache"
         );
+    }
+
+    #[tokio::test]
+    async fn build_and_store_snapshot_persists_a_loadable_csr() {
+        use kyma_graph_topo::Direction;
+        let p = deep_provider("snap", Arc::new(AtomicUsize::new(0)));
+        let store: Arc<dyn object_store::ObjectStore> =
+            Arc::new(object_store::memory::InMemory::new());
+
+        p.build_and_store_snapshot(&store).await.unwrap();
+
+        // Loadable at the deterministic key, capturing the whole a→b→c→d→e→f
+        // chain (5-hop reach from a includes f).
+        let path = crate::snapshot::snapshot_path("kg", "snap_edges");
+        let csr = crate::snapshot::load_snapshot(&store, &path)
+            .await
+            .unwrap()
+            .expect("snapshot was written");
+        let reached = csr.k_hop(&["a"], 5, Direction::Both, None);
+        assert!(
+            reached.iter().any(|(_, n, _)| n == "f"),
+            "persisted snapshot captured the full chain: {reached:?}"
+        );
+        assert_eq!(csr.shortest_path_len("a", "f", Direction::Fwd, None), Some(5));
     }
 }
