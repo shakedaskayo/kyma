@@ -19,6 +19,7 @@ export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
 export KYMA_S3_PATH_STYLE="true"
 export KYMA_S3_ALLOW_HTTP="true"
 export KYMA_HTTP_ADDR="127.0.0.1:8080"
+export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
 export KYMA_GRPC_ADDR=off
 export KYMA_OTLP_ADDR=off
 # Staging enabled so multiple HTTP ingests coalesce into a single extent
@@ -63,7 +64,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 section "Create table + ingest multiple batches into a single extent"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name events \
     --schema 'timestamp:timestamp,status:int,region:string,message:string' >/dev/null
 

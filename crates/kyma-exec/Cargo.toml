@@ -15,6 +15,8 @@ kyma-plan.workspace = true
 kyma-storage.workspace = true
 kyma-catalog.workspace = true
 kyma-format-tlm.workspace = true
+kyma-index-vector.workspace = true
+kyma-index-fts.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
@@ -29,4 +31,9 @@ uuid.workspace = true
 chrono.workspace = true
 metrics.workspace = true
 serde_json.workspace = true
+object_store = { workspace = true }
 tonic = { workspace = true }
+
+[dev-dependencies]
+kyma-catalog-sqlite.workspace = true
+tokio = { workspace = true, features = ["full"] }

@@ -97,7 +97,7 @@ info "catalog + bucket reset"
 # Bootstrap table
 # ------------------------------------------------------------------
 section "Bootstrap database + test_a table"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table \
     --db default --name test_a \
     --schema 'timestamp:timestamp,req_id:int,row_id:int,message:string' >/dev/null

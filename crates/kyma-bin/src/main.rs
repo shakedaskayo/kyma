@@ -346,14 +346,25 @@ async fn main() -> Result<()> {
         WritePath::new(catalog.clone(), format.clone()).with_events(ingest_events.clone())
     };
     // Connect self-tracing to storage (drops silently before this point).
-    let _ = self_trace_handle.set(kyma_ingest_otlp::self_export::SelfTraceCtx {
-        catalog: catalog.clone(),
-        write_path: write_path.clone(),
-        database: cli.otlp_database.clone(),
-    });
-    // Pre-create otel_traces so the Traces page never shows a 404 on fresh
-    // install while waiting for the first self-trace batch to flush.
-    kyma_ingest_otlp::ensure_traces_table(&catalog, &cli.otlp_database).await;
+    // `KYMA_SELF_TRACE=off` (or 0/false) leaves the exporter unwired so the
+    // server's own spans are never written to otel_traces — operators who don't
+    // want self-traces consuming their storage, and deterministic tests that
+    // assert exact extent/object counts, both set this.
+    let self_trace_enabled = std::env::var("KYMA_SELF_TRACE")
+        .map(|v| !matches!(v.as_str(), "off" | "0" | "false"))
+        .unwrap_or(true);
+    if self_trace_enabled {
+        let _ = self_trace_handle.set(kyma_ingest_otlp::self_export::SelfTraceCtx {
+            catalog: catalog.clone(),
+            write_path: write_path.clone(),
+            database: cli.otlp_database.clone(),
+        });
+        // Pre-create otel_traces so the Traces page never shows a 404 on fresh
+        // install while waiting for the first self-trace batch to flush.
+        kyma_ingest_otlp::ensure_traces_table(&catalog, &cli.otlp_database).await;
+    } else {
+        info!("self-tracing: disabled (KYMA_SELF_TRACE=off)");
+    }
     let ingest_router = kyma_ingest_rest::router(IngestState {
         catalog: catalog.clone(),
         write_path: write_path.clone(),
@@ -887,6 +898,12 @@ async fn main() -> Result<()> {
         let _ = rx.recv().await;
     }));
 
+    // Index-build activation scheduler: enqueues ivf_rabitq build jobs for
+    // un-indexed vector columns so ANN sidecars actually get created.
+    let index_scheduler = kyma_compaction::IndexScheduler::new(catalog.clone());
+    let index_scheduler_handle =
+        tokio::spawn(index_scheduler.run(shutdown_tx.subscribe()));
+
     // Retention sweeper (soft-delete expired).
     let mut retention = RetentionSweeper::new(catalog.clone());
     if let Ok(s) = std::env::var("KYMA_RETENTION_POLL_SECS")
@@ -1254,6 +1271,27 @@ async fn main() -> Result<()> {
         state: agent_state.clone(),
         worker_id: embedded_worker_id,
     }));
+    // Index-sidecar build jobs: S1.1 ivf_rabitq ANN + S1.4 tantivy_fts BM25.
+    // A job for an unregistered kind fails terminally with a clear
+    // "no builder registered" error.
+    let mut sidecar_builders: std::collections::HashMap<
+        kyma_core::index_sidecar::SidecarKind,
+        Arc<dyn kyma_core::index_sidecar::SidecarBuilder>,
+    > = std::collections::HashMap::new();
+    sidecar_builders.insert(
+        kyma_core::index_sidecar::SidecarKind::IvfRabitq,
+        Arc::new(kyma_index_vector::IvfRabitqBuilder::new()),
+    );
+    sidecar_builders.insert(
+        kyma_core::index_sidecar::SidecarKind::TantivyFts,
+        Arc::new(kyma_index_fts::TantivyFtsBuilder::new()),
+    );
+    exec_registry.register(Arc::new(kyma_jobs::index_build::IndexBuildExecutor::new(
+        catalog.clone(),
+        format.clone(),
+        store.clone(),
+        sidecar_builders,
+    )));
     let mut fabric_runner_handles = Vec::with_capacity(n_fabric_workers);
     for _ in 0..n_fabric_workers {
         let queue = Arc::new(kyma_jobs::PgQueue::new(
@@ -1438,6 +1476,14 @@ async fn main() -> Result<()> {
     write_path.drain_staging().await;
     info!("staging buffer drained");
 
+    // Broadcast the wind-down signal BEFORE joining any task handles. The
+    // grpc/otlp/filedrop/kafka servers and the background workers all run until
+    // they observe this signal (serve_with_shutdown / shutdown_tx.subscribe()),
+    // so awaiting their handles first would deadlock — the task never returns
+    // because the signal that ends it hasn't been sent yet. In production this
+    // manifested as SIGTERM hanging until the k8s grace-period SIGKILL.
+    let _ = shutdown_tx.send(());
+
     if let Some(h) = grpc_handle {
         let _ = h.await;
     }
@@ -1460,9 +1506,9 @@ async fn main() -> Result<()> {
         let _ = h.await;
     }
 
-    // Tell workers to wind down.
-    let _ = shutdown_tx.send(());
+    // Workers were already signaled above; join their handles.
     let _ = worker_handle.await;
+    let _ = index_scheduler_handle.await;
     let _ = scheduler_handle.await;
     let _ = retention_handle.await;
     let _ = gc_handle.await;

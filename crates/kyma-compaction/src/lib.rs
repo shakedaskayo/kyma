@@ -17,9 +17,11 @@
 #![forbid(unsafe_code)]
 
 pub mod artifact_retention;
+pub mod index_scheduler;
 pub mod retention;
 
 pub use artifact_retention::{ArtifactRetentionWorker, ArtifactSweepStats};
+pub use index_scheduler::IndexScheduler;
 pub use retention::{PhysicalDeleteWorker, RetentionSweeper};
 
 use arrow_array::{new_null_array, ArrayRef, RecordBatch};
@@ -235,11 +237,25 @@ impl CompactionWorker {
         self.commit_with_retry(
             table_ref.id,
             new_manifest,
-            source_ids,
+            source_ids.clone(),
             merged_rows,
             input_bytes,
         )
         .await?;
+
+        // 5. Index-sidecar follow-up (best-effort; never fails the merge):
+        //    enqueue an `index_build` job for the new extent for every
+        //    (column, kind) that had sidecars on the inputs. The replaced
+        //    extents keep their sidecar rows — sources are only soft-deleted
+        //    here, in-grace readers may still use them, and the physical-GC
+        //    worker deletes the sidecar objects (rows cascade) when the
+        //    extent rows are hard-deleted after the grace period.
+        if let Err(e) = self
+            .enqueue_sidecar_rebuilds(&table_ref, &source_ids, result.extent_id)
+            .await
+        {
+            warn!(error = %e, table = %table_ref.name, "sidecar rebuild enqueue failed");
+        }
 
         let elapsed = start.elapsed().as_secs_f64();
         let bytes_out = result.byte_size;
@@ -256,6 +272,69 @@ impl CompactionWorker {
         ::metrics::histogram!("kyma_compaction_duration_seconds").record(elapsed);
         ::metrics::histogram!("kyma_compaction_bytes_in").record(input_bytes as f64);
         ::metrics::histogram!("kyma_compaction_bytes_out").record(bytes_out as f64);
+        Ok(())
+    }
+
+    /// For every distinct `(column, kind, model)` sidecar present on the
+    /// replaced extents, enqueue a fabric `index_build` job covering the new
+    /// merged extent so its sidecars get rebuilt.
+    ///
+    /// Fabric enqueue goes through `PgFabricStore`, reached by downcasting
+    /// the catalog (the same phase-C shortcut `retention.rs` uses). On
+    /// non-Postgres catalogs (local SQLite mode) this is a debug-logged
+    /// no-op — local mode runs no index-build workers yet.
+    async fn enqueue_sidecar_rebuilds(
+        &self,
+        table: &TableRef,
+        replaced: &[kyma_core::types::ExtentId],
+        new_extent: kyma_core::types::ExtentId,
+    ) -> Result<()> {
+        let sidecars = self
+            .catalog
+            .list_index_sidecars(kyma_core::DEFAULT_TENANT, table.id, replaced, None)
+            .await?;
+        if sidecars.is_empty() {
+            return Ok(());
+        }
+
+        let any_ref: &dyn std::any::Any = self.catalog.as_ref_any();
+        let Some(pg) = any_ref.downcast_ref::<kyma_catalog::PostgresCatalog>() else {
+            debug!("non-Postgres catalog: skipping sidecar rebuild enqueue");
+            return Ok(());
+        };
+        let fabric = kyma_catalog::PgFabricStore::new(pg.pool().clone());
+
+        // Distinct (column, kind, model) groups; carry one group's params.
+        let mut groups: std::collections::BTreeMap<(String, String, Option<String>), serde_json::Value> =
+            std::collections::BTreeMap::new();
+        for s in sidecars {
+            groups
+                .entry((s.column.clone(), s.kind.as_str().to_string(), s.embedding_model_id.clone()))
+                .or_insert(s.params);
+        }
+        for ((column, kind, _model), params) in groups {
+            let payload = serde_json::json!({
+                "table_id": table.id.as_uuid(),
+                "extent_ids": [new_extent.as_uuid()],
+                "column": column,
+                "kind": kind,
+                "params": params,
+            });
+            let job = kyma_core::fabric::EnqueueJob {
+                kind: kyma_core::fabric::JOB_INDEX_BUILD.to_string(),
+                payload,
+                priority: 0,
+                affinity_worker_id: None,
+                req_capabilities: Vec::new(),
+                label_selector: serde_json::json!({}),
+                max_attempts: 3,
+            };
+            let id = fabric
+                .enqueue_job(kyma_core::DEFAULT_TENANT, &job)
+                .await
+                .map_err(|e| Error::Internal(format!("enqueue index_build: {e}")))?;
+            debug!(job_id = ?id, extent = %new_extent, "enqueued sidecar rebuild");
+        }
         Ok(())
     }
 

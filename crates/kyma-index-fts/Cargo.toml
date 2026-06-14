@@ -1,0 +1,28 @@
+[package]
+name = "kyma-index-fts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Per-extent tantivy BM25 full-text-search index sidecar (build side, S1.4)."
+
+[lints]
+workspace = true
+
+[dependencies]
+kyma-core.workspace = true
+arrow-array.workspace = true
+arrow-schema.workspace = true
+bytes.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+tantivy = "0.22"
+tempfile = "3"
+
+[dev-dependencies]
+tokio = { workspace = true }
+chrono = { workspace = true }

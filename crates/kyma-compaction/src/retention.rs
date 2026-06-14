@@ -211,10 +211,26 @@ impl PhysicalDeleteWorker {
                 .await
                 .map_err(|e| Error::Catalog(CatalogError::Sql(e.to_string())))?;
 
+        // Index sidecars of the doomed extents: collect their object paths
+        // before `delete_extent_rows` cascades the `extent_indexes` rows
+        // away. Same grace period as the extent data — sidecars stay usable
+        // for in-grace readers and vanish with the extent.
+        let sidecar_paths: Vec<(String,)> = sqlx::query_as(
+            "SELECT object_path FROM extent_indexes WHERE extent_id = ANY($1)",
+        )
+        .bind(&uuids)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| Error::Catalog(CatalogError::Sql(e.to_string())))?;
+
         let mut deleted_objects: u64 = 0;
         let mut failed_objects: u64 = 0;
-        for (_, path) in &paths {
-            match self.store.delete(&Path::from(path.as_str())).await {
+        let all_paths = paths
+            .iter()
+            .map(|(_, p)| p.as_str())
+            .chain(sidecar_paths.iter().map(|(p,)| p.as_str()));
+        for path in all_paths {
+            match self.store.delete(&Path::from(path)).await {
                 Ok(()) => {
                     deleted_objects += 1;
                 }

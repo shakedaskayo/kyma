@@ -20,6 +20,7 @@ export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
 export KYMA_S3_PATH_STYLE="true"
 export KYMA_S3_ALLOW_HTTP="true"
 export KYMA_HTTP_ADDR="127.0.0.1:8080"
+export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
 # Disable compaction + retention so the test is deterministic.
 export KYMA_COMPACTION_POLL_SECS="3600"
 export KYMA_RETENTION_POLL_SECS="3600"
@@ -66,7 +67,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 section "Create table with V1 schema (3 cols) and ingest 3 rows"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name evolve \
     --schema 'timestamp:timestamp,status:int,path:string' >/dev/null
 

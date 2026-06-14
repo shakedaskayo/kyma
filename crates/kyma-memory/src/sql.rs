@@ -78,7 +78,10 @@ fn filter_conditions(filter: &RecallFilter, default_non_archived: bool) -> Vec<S
     if !filter.include_invalidated {
         match &filter.as_of {
             Some(t) => {
-                conds.push(format!("(invalid_at IS NULL OR invalid_at > {})", sql_str(t)));
+                conds.push(format!(
+                    "(invalid_at IS NULL OR invalid_at > {})",
+                    sql_str(t)
+                ));
                 conds.push(format!("(valid_at IS NULL OR valid_at <= {})", sql_str(t)));
             }
             None => conds.push("invalid_at IS NULL".to_string()),
@@ -119,6 +122,59 @@ pub fn recall_sql(
            SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, \
                   cosine_distance(embedding, {arr}) AS distance\n  \
            FROM latest WHERE __rn = 1{ann}\n) \
+         SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, distance, \
+                ({rw} * (1 - distance) + {iw} * importance) AS score \
+         FROM scored WHERE {where_clause} ORDER BY score DESC LIMIT {limit}",
+        nt = node_table,
+        arr = arr,
+        where_clause = where_clause,
+        limit = limit,
+        rw = crate::RELEVANCE_WEIGHT,
+        iw = crate::IMPORTANCE_WEIGHT,
+    )
+}
+
+/// Semantic recall restricted to a pre-computed candidate id set.
+///
+/// Identical to [`recall_sql`] in every semantic respect — latest-version
+/// dedup, bi-temporal validity, realm/type/importance/tag filters, and the
+/// blended `relevance·0.7 + importance·0.3` re-rank — but additionally
+/// constrains the scan to `candidate_ids`. The ANN query path (IVF+RaBitQ
+/// sidecars) supplies that id set: it surfaces the nearest memories by cosine
+/// distance, then this SQL re-applies *all* memory semantics over exactly that
+/// pool. An empty `candidate_ids` yields no rows (the caller should fall back
+/// to [`recall_sql`] when there are no ANN candidates). Cosine distance and
+/// the score are still computed in SQL, so ordering/score are byte-identical to
+/// [`recall_sql`] over the same surviving rows.
+pub fn recall_sql_for_ids(
+    node_table: &str,
+    embedding: &[f32],
+    filter: &RecallFilter,
+    limit: usize,
+    candidate_ids: &[String],
+) -> String {
+    let arr = make_array(embedding);
+    let mut conds = filter_conditions(filter, true);
+    let id_list = candidate_ids
+        .iter()
+        .map(|s| sql_str(s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    // Empty set → impossible predicate so the query returns nothing rather than
+    // a syntactically-invalid `IN ()`.
+    if candidate_ids.is_empty() {
+        conds.push("1 = 0".to_string());
+    } else {
+        conds.push(format!("id IN ({id_list})"));
+    }
+    let where_clause = conds.join(" AND ");
+    format!(
+        "WITH latest AS (\n  \
+           SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM {nt}\n), \
+         scored AS (\n  \
+           SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, \
+                  cosine_distance(embedding, {arr}) AS distance\n  \
+           FROM latest WHERE __rn = 1\n) \
          SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, distance, \
                 ({rw} * (1 - distance) + {iw} * importance) AS score \
          FROM scored WHERE {where_clause} ORDER BY score DESC LIMIT {limit}",
@@ -262,7 +318,11 @@ pub fn neighbors_sql(
 /// Fetch the latest versions of specific (currently-valid) memory node ids —
 /// used to materialize graph-pulled neighbour memories. Caller must pass ≥1 id.
 pub fn nodes_by_id_sql(node_table: &str, ids: &[String]) -> String {
-    let idlist = ids.iter().map(|s| sql_str(s)).collect::<Vec<_>>().join(", ");
+    let idlist = ids
+        .iter()
+        .map(|s| sql_str(s))
+        .collect::<Vec<_>>()
+        .join(", ");
     format!(
         "WITH latest AS (\n  \
            SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM {nt}\n) \
@@ -319,7 +379,11 @@ pub fn fold_source_summary(rows: &[Value]) -> Vec<SourceSummary> {
     }
     let mut out: Vec<SourceSummary> = counts
         .into_iter()
-        .map(|((source, realm), count)| SourceSummary { source, realm, count })
+        .map(|((source, realm), count)| SourceSummary {
+            source,
+            realm,
+            count,
+        })
         .collect();
     out.sort_by(|a, b| {
         b.count
@@ -369,6 +433,32 @@ mod tests {
         let s = recall_sql("memory_nodes", &[0.1], &f, 5, None);
         assert!(s.contains("(invalid_at IS NULL OR invalid_at > '2026-01-01T00:00:00Z')"));
         assert!(s.contains("(valid_at IS NULL OR valid_at <= '2026-01-01T00:00:00Z')"));
+    }
+
+    #[test]
+    fn recall_sql_for_ids_restricts_and_keeps_semantics() {
+        let f = RecallFilter {
+            memory_type: Some(MemoryType::Fact),
+            ..Default::default()
+        };
+        let ids = vec!["a".to_string(), "b'c".to_string()];
+        let s = recall_sql_for_ids("memory_nodes", &[0.1, 0.2], &f, 8, &ids);
+        // Same cosine + blended-score semantics as recall_sql.
+        assert!(s.contains("cosine_distance(embedding, make_array(0.1, 0.2))"));
+        assert!(s.contains("0.7 * (1 - distance) + 0.3 * importance"));
+        assert!(s.contains("memory_type = 'fact'"));
+        assert!(s.contains("invalid_at IS NULL"));
+        // The id restriction is present and escaped.
+        assert!(s.contains("id IN ('a', 'b''c')"));
+        assert!(s.trim_end().ends_with("LIMIT 8"));
+    }
+
+    #[test]
+    fn recall_sql_for_ids_empty_set_is_impossible_predicate() {
+        let f = RecallFilter::default();
+        let s = recall_sql_for_ids("memory_nodes", &[0.1], &f, 5, &[]);
+        assert!(s.contains("1 = 0"));
+        assert!(!s.contains("IN ()"));
     }
 
     #[test]
@@ -468,8 +558,16 @@ mod tests {
         assert_eq!(
             out,
             vec![
-                SourceSummary { source: "manual".into(), realm: "default".into(), count: 3 },
-                SourceSummary { source: "claude-code".into(), realm: "kyma".into(), count: 2 },
+                SourceSummary {
+                    source: "manual".into(),
+                    realm: "default".into(),
+                    count: 3
+                },
+                SourceSummary {
+                    source: "claude-code".into(),
+                    realm: "kyma".into(),
+                    count: 2
+                },
             ]
         );
     }
@@ -480,7 +578,11 @@ mod tests {
         let out = fold_source_summary(&rows);
         assert_eq!(
             out,
-            vec![SourceSummary { source: "manual".into(), realm: "default".into(), count: 4 }]
+            vec![SourceSummary {
+                source: "manual".into(),
+                realm: "default".into(),
+                count: 4
+            }]
         );
     }
 
@@ -490,7 +592,11 @@ mod tests {
         let out = fold_source_summary(&rows);
         assert_eq!(
             out,
-            vec![SourceSummary { source: "manual".into(), realm: "kyma".into(), count: 1 }]
+            vec![SourceSummary {
+                source: "manual".into(),
+                realm: "kyma".into(),
+                count: 1
+            }]
         );
     }
 }

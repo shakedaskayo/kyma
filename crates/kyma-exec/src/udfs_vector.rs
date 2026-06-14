@@ -144,6 +144,15 @@ fn extract_f32s(a: &dyn Array) -> DfResult<Vec<f32>> {
     )))
 }
 
+/// Exact cosine distance (`1 − cos(a, b)`, range `[0, 2]`) between two raw
+/// vectors. `None` for mismatched-length, empty, or zero-norm inputs (cosine is
+/// undefined). This is the exact-rerank distance used by the ANN query path
+/// (`crate::ann`), kept identical to the `cosine_distance` UDF so the SQL leg
+/// and the ANN leg rank by the same metric.
+pub fn cosine_distance_vec(a: &[f32], b: &[f32]) -> Option<f64> {
+    cosine(a, b)
+}
+
 fn cosine(a: &[f32], b: &[f32]) -> Option<f64> {
     if a.len() != b.len() || a.is_empty() {
         return None;

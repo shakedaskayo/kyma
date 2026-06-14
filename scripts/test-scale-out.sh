@@ -23,6 +23,7 @@ export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
 export KYMA_S3_PATH_STYLE="true"
 export KYMA_S3_ALLOW_HTTP="true"
 export KYMA_OTLP_ADDR=off
+export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
 export KYMA_STAGING_DISABLED=1
 export KYMA_COMPACTION_POLL_SECS="3600"
 export KYMA_RETENTION_POLL_SECS="3600"
@@ -103,7 +104,7 @@ docker exec kyma-postgres psql -U kyma -d kyma -qc \
      END" >/dev/null 2>&1 || true
 
 section "Create table via A"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name so_events \
     --schema 'timestamp:timestamp,region:string,status:int' >/dev/null
 

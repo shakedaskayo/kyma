@@ -14,6 +14,7 @@ export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
 export KYMA_S3_PATH_STYLE="true"
 export KYMA_S3_ALLOW_HTTP="true"
 export KYMA_HTTP_ADDR="127.0.0.1:8080"
+export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
 export KYMA_GRPC_ADDR="127.0.0.1:9090"
 export KYMA_COMPACTION_POLL_SECS="3600"
 export KYMA_RETENTION_POLL_SECS="3600"
@@ -56,7 +57,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 section "Create table + ingest"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name flight_t \
     --schema 'timestamp:timestamp,n:int,payload:string' >/dev/null
 python3 - <<'PY' > /tmp/flight_data.ndjson

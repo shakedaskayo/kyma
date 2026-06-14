@@ -69,7 +69,7 @@ docker exec kyma-minio mc mb --ignore-existing local/kyma >/dev/null
 
 section "Create Kafka topic + kyma target table"
 docker exec kyma-redpanda rpk topic create "$TOPIC" -p 1 -r 1 >/dev/null
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name kafka_events \
     --schema 'timestamp:timestamp,level:string,message:string' >/dev/null
 ok "topic=$TOPIC, table=default.kafka_events"

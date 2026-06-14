@@ -23,9 +23,14 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
+object_store = { workspace = true }
+bytes = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 testcontainers = { workspace = true }
 testcontainers-modules = { workspace = true }
 sqlx = { workspace = true }
+kyma-catalog-sqlite = { workspace = true }
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true }

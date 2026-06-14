@@ -27,6 +27,7 @@ export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
 export KYMA_S3_PATH_STYLE="true"
 export KYMA_S3_ALLOW_HTTP="true"
 export KYMA_HTTP_ADDR="127.0.0.1:8080"
+export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
 export RUST_LOG="${RUST_LOG:-info,sqlx=warn}"
 
 HTTP_BASE="http://127.0.0.1:8080"
@@ -117,10 +118,14 @@ assert_eq "server /health returns status=ok" '"ok"' "$(echo "$health" | jq .stat
 # Test 1: Bootstrap — create database + two tables
 # ------------------------------------------------------------------
 section "Test 1 — bootstrap: create database + tables"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name http_logs   --schema 'timestamp:timestamp,status:int,path:string,message:string' >/dev/null
 ./target/debug/kyma-cli create-table --db default --name user_events --schema 'timestamp:timestamp,user_id:long,event:string' >/dev/null
-tables_listing=$(./target/debug/kyma-cli list-tables --db default | awk '{print $1}' | sort | tr '\n' ',' | sed 's/,$//')
+# Filter out server-internal tables (e.g. otel_traces, pre-created in `default`
+# for self-tracing) — this test asserts the two tables IT created, not the
+# bootstrap set.
+tables_listing=$(./target/debug/kyma-cli list-tables --db default | awk '{print $1}' \
+    | grep -E '^(http_logs|user_events)$' | sort | tr '\n' ',' | sed 's/,$//')
 assert_eq "two tables created"      "http_logs,user_events" "$tables_listing"
 
 # ------------------------------------------------------------------

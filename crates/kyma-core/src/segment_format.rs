@@ -52,6 +52,18 @@ pub trait SegmentFormat: Send + Sync + 'static {
         schema: SchemaRef,
         target_bytes: u64,
     ) -> Result<Box<dyn ExtentWriter>>;
+
+    /// Borrow the underlying object store, when the format is object-store
+    /// backed.
+    ///
+    /// The ANN query path (`kyma-exec`'s `ann_topk`) needs the raw store to
+    /// fetch per-extent index sidecars (which live next to extents under
+    /// `{tenant}/indexes/…`, not addressed through the format). A format that
+    /// is not object-store backed returns `None`, and callers fall back to the
+    /// SQL/exact path. Default `None` so existing/mock formats need no change.
+    fn object_store(&self) -> Option<Arc<dyn object_store::ObjectStore>> {
+        None
+    }
 }
 
 /// Parameters needed to open an extent for reads.

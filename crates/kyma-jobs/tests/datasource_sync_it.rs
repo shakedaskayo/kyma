@@ -86,7 +86,9 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
     .unwrap();
 
     // The production scheduler enqueues a fabric `datasource_sync` job.
-    let sched = DataSourceScheduler::new(catalog.clone());
+    let sched = DataSourceScheduler::new(Arc::new(
+        kyma_datasources::catalog_trait::PgDataSourceCatalog::from_pg_catalog(&catalog),
+    ));
     sched.tick_once().await.unwrap();
     // Idempotent: a second tick in the same bucket inserts nothing.
     sched.tick_once().await.unwrap();

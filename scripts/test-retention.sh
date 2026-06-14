@@ -20,6 +20,7 @@ export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
 export KYMA_S3_PATH_STYLE="true"
 export KYMA_S3_ALLOW_HTTP="true"
 export KYMA_HTTP_ADDR="127.0.0.1:8080"
+export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
 # Aggressive timings for the test:
 export KYMA_RETENTION_POLL_SECS="2"
 export KYMA_PHYSICAL_GC_POLL_SECS="2"
@@ -69,7 +70,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 section "Create table retention_days=1 + ingest 2-day-old data"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name aged \
     --schema 'timestamp:timestamp,n:int' --retention-days 1 >/dev/null
 ./target/debug/kyma-cli create-table --db default --name fresh \
@@ -100,11 +101,17 @@ curl -s -X POST "$HTTP_BASE/v1/ingest" \
     -H 'X-Database: default' -H 'X-Table: fresh' -H 'Content-Type: application/x-ndjson' \
     --data-binary @/tmp/fresh.ndjson > /dev/null
 
-aged_live_before=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
-    "SELECT COUNT(*) FROM extents WHERE deleted_at IS NULL AND table_id = (SELECT id FROM tables WHERE name='aged')")
+# The aged extent is expired on arrival (2-day-old data, retention_days=1), so
+# the background sweeper (KYMA_RETENTION_POLL_SECS=2) may soft-delete it before
+# this check runs — racing on "live before sweep" is non-deterministic. Assert
+# instead that the ingest CREATED an extent (total count, robust to soft-delete,
+# which only sets deleted_at and keeps the row until physical-gc). The sweep is
+# verified deterministically by the soft-delete wait below.
+aged_total=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+    "SELECT COUNT(*) FROM extents WHERE table_id = (SELECT id FROM tables WHERE name='aged')")
 fresh_live_before=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
     "SELECT COUNT(*) FROM extents WHERE deleted_at IS NULL AND table_id = (SELECT id FROM tables WHERE name='fresh')")
-assert_eq "aged: 1 live extent before sweep"  "1" "$aged_live_before"
+assert_eq "aged: 1 extent created"            "1" "$aged_total"
 assert_eq "fresh: 1 live extent before sweep" "1" "$fresh_live_before"
 
 section "Wait for retention sweep (soft-delete)"

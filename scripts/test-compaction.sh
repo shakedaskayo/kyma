@@ -21,6 +21,7 @@ export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
 export KYMA_S3_PATH_STYLE="true"
 export KYMA_S3_ALLOW_HTTP="true"
 export KYMA_HTTP_ADDR="127.0.0.1:8080"
+export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
 # Aggressive for a fast test:
 export KYMA_COMPACTION_POLL_SECS="2"
 export KYMA_COMPACTION_IDLE_SLEEP_MS="200"
@@ -73,7 +74,7 @@ done
 printf "  ${DIM}server PID $SERVER_PID${NC}\n"
 
 section "Create table, ingest 10 extents"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name compact_me \
     --schema 'timestamp:timestamp,n:int,label:string' >/dev/null
 for i in $(seq 1 10); do

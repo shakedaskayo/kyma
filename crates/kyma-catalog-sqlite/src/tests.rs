@@ -374,3 +374,139 @@ async fn dashboards_round_trip() {
     assert!(cat.delete_dashboard(dash.id).await.unwrap());
     assert!(cat.get_dashboard(dash.id).await.unwrap().is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Index sidecars (extent_indexes) — parallel of kyma-catalog's
+// extent_indexes_it.rs, run against the embedded SQLite catalog.
+// ---------------------------------------------------------------------------
+
+fn sidecar_desc(
+    tref: &TableRef,
+    extent_id: ExtentId,
+    column: &str,
+    kind: kyma_core::index_sidecar::SidecarKind,
+    model: Option<&str>,
+) -> kyma_core::index_sidecar::IndexSidecarDescriptor {
+    kyma_core::index_sidecar::IndexSidecarDescriptor {
+        id: Uuid::new_v4(),
+        extent_id,
+        table_id: tref.id,
+        column: column.to_string(),
+        kind,
+        object_path: format!("{DEFAULT_TENANT}/indexes/{extent_id}/{column}.{}", kind.as_str()),
+        byte_size: 2048,
+        params: serde_json::json!({ "nlist": 16 }),
+        embedding_model_id: model.map(str::to_string),
+        created_at: Utc::now(),
+    }
+}
+
+#[tokio::test]
+async fn index_sidecars_register_list_reregister_delete() {
+    use kyma_core::index_sidecar::SidecarKind;
+
+    let cat = fresh().await;
+    let db = cat.create_database("default").await.unwrap();
+    cat.create_table(db, "logs", sample_schema(), TableConfig::default())
+        .await
+        .unwrap();
+    let tref = cat.lookup_table("default", "logs").await.unwrap();
+
+    // Two committed extents.
+    let m1 = extent_for(&tref, &["info"]);
+    let m2 = extent_for(&tref, &["warn"]);
+    let (e1, e2) = (m1.id, m2.id);
+    for m in [m1, m2] {
+        let mut txn = cat.begin_snapshot(tref.id).await.unwrap();
+        txn.add_extent(m).await.unwrap();
+        txn.commit(SnapshotSummary { operation: "ingest".into(), ..Default::default() })
+            .await
+            .unwrap();
+    }
+
+    // Register: ANN (with model) + FTS (no model) on e1, FTS on e2.
+    let ann = sidecar_desc(&tref, e1, "embedding", SidecarKind::IvfRabitq, Some("m1"));
+    let fts1 = sidecar_desc(&tref, e1, "msg", SidecarKind::TantivyFts, None);
+    let fts2 = sidecar_desc(&tref, e2, "msg", SidecarKind::TantivyFts, None);
+    for d in [&ann, &fts1, &fts2] {
+        cat.register_index_sidecar(DEFAULT_TENANT, d).await.unwrap();
+    }
+
+    // List + kind filter.
+    let all = cat
+        .list_index_sidecars(DEFAULT_TENANT, tref.id, &[e1, e2], None)
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 3);
+    let fts_only = cat
+        .list_index_sidecars(DEFAULT_TENANT, tref.id, &[e1, e2], Some(SidecarKind::TantivyFts))
+        .await
+        .unwrap();
+    assert_eq!(fts_only.len(), 2);
+    assert!(cat
+        .list_index_sidecars(DEFAULT_TENANT, tref.id, &[], None)
+        .await
+        .unwrap()
+        .is_empty());
+
+    // Idempotent re-register: upsert in place (NULL model key included).
+    let mut fts1b = sidecar_desc(&tref, e1, "msg", SidecarKind::TantivyFts, None);
+    fts1b.byte_size = 4242;
+    fts1b.params = serde_json::json!({ "tokenizer": "en_stem" });
+    cat.register_index_sidecar(DEFAULT_TENANT, &fts1b).await.unwrap();
+    let all = cat
+        .list_index_sidecars(DEFAULT_TENANT, tref.id, &[e1, e2], None)
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 3, "re-register must upsert, not duplicate");
+    let updated = all
+        .iter()
+        .find(|d| d.extent_id == e1 && d.kind == SidecarKind::TantivyFts)
+        .unwrap();
+    assert_eq!(updated.byte_size, 4242);
+    assert_eq!(updated.params, serde_json::json!({ "tokenizer": "en_stem" }));
+    assert_eq!(
+        updated.embedding_model_id, None,
+        "model id round-trips as NULL"
+    );
+
+    // A second model on the same column+kind coexists.
+    let ann2 = sidecar_desc(&tref, e1, "embedding", SidecarKind::IvfRabitq, Some("m2"));
+    cat.register_index_sidecar(DEFAULT_TENANT, &ann2).await.unwrap();
+    assert_eq!(
+        cat.list_index_sidecars(DEFAULT_TENANT, tref.id, &[e1], None)
+            .await
+            .unwrap()
+            .len(),
+        3
+    );
+
+    // delete_for_extents returns e1's paths and leaves e2 intact.
+    let mut paths = cat
+        .delete_index_sidecars_for_extents(DEFAULT_TENANT, &[e1])
+        .await
+        .unwrap();
+    paths.sort();
+    let mut expected = vec![
+        ann.object_path.clone(),
+        fts1.object_path.clone(),
+        ann2.object_path.clone(),
+    ];
+    expected.sort();
+    assert_eq!(paths, expected);
+    let left = cat
+        .list_index_sidecars(DEFAULT_TENANT, tref.id, &[e1, e2], None)
+        .await
+        .unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].extent_id, e2);
+
+    // Hard-deleting the extent rows removes the remaining sidecar rows too
+    // (no FK cascade in SQLite — delete_extent_rows does it explicitly).
+    cat.delete_extent_rows(&[e2]).await.unwrap();
+    assert!(cat
+        .list_index_sidecars(DEFAULT_TENANT, tref.id, &[e1, e2], None)
+        .await
+        .unwrap()
+        .is_empty());
+}

@@ -150,4 +150,8 @@ impl SegmentFormat for TelemetryFormat {
         let w = TelemetryExtentWriter::new(self.clone(), schema);
         Ok(Box::new(w))
     }
+
+    fn object_store(&self) -> Option<Arc<dyn ObjectStore>> {
+        Some(self.store.clone())
+    }
 }

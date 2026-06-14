@@ -11,8 +11,12 @@ documentation = "https://shakedaskayo.github.io/kyma/"
 keywords = ["mcp", "memory", "agent", "context", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 
+# Build output is `kyma-cli` so a `cargo build --workspace` does not collide
+# with kyma-bin's `kyma` (the server). Distribution channels that present this
+# CLI to end users as `kyma` (release-cli.yml tarball, install.sh, Dockerfile)
+# rename the artifact themselves.
 [[bin]]
-name = "kyma"
+name = "kyma-cli"
 path = "src/main.rs"
 
 [lints]

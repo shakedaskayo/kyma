@@ -24,6 +24,7 @@ chrono.workspace = true
 bytes.workspace = true
 futures.workspace = true
 arrow-schema.workspace = true
+metrics.workspace = true
 
 [dev-dependencies]
 testcontainers.workspace = true

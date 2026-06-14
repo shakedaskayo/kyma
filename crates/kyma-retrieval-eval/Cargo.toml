@@ -1,0 +1,34 @@
+[package]
+name = "kyma-retrieval-eval"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Retrieval-quality evaluation harness: exact-top-k oracle, datasets, recall/NDCG/MRR metrics, golden-set runner."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+# CLI arg parsing for the two bins — declared directly (same pattern as kyma-cli).
+clap = { version = "4", features = ["derive", "env"] }
+# HTTP client for the bench bin (engine ingest/query) and the local-only
+# LLM-judge tool. Blocking client: these are sequential CLI tools, no tokio.
+reqwest = { workspace = true, features = ["json", "blocking"] }
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile = "3"
+
+[[bin]]
+name = "retrieval_bench"
+path = "src/bin/retrieval_bench.rs"
+
+[[bin]]
+name = "judge_calibrate"
+path = "src/bin/judge_calibrate.rs"

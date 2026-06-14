@@ -109,7 +109,7 @@ curl -fsSL …/install.sh | bash -s -- --yes --serve --plugin   # + server + Cla
 
 # From source (Rust toolchain + pnpm; the CLI embeds the web UI, so build it first):
 git clone https://github.com/shakedaskayo/kyma && cd kyma
-pnpm -C web build && cargo install --path crates/kyma-cli
+pnpm -C web build && cargo install --path crates/kyma-cli   # installs `kyma-cli`; symlink to `kyma` if you like
 
 # Stay current (the web UI ships inside the binary — updating one updates both):
 kyma update          # grab the latest release + restart on the new UI

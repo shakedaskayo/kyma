@@ -23,6 +23,7 @@ export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
 export KYMA_S3_PATH_STYLE="true"
 export KYMA_S3_ALLOW_HTTP="true"
 export KYMA_HTTP_ADDR="127.0.0.1:8080"
+export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
 export KYMA_FILEDROP_ENABLED=1
 export KYMA_FILEDROP_PREFIX=ingest
 export KYMA_FILEDROP_POLL_SECS=2
@@ -72,7 +73,7 @@ else
 fi
 
 section "Create target table (events)"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name events \
     --schema 'timestamp:timestamp,level:string,message:string' >/dev/null
 

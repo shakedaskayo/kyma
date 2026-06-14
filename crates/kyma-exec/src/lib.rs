@@ -16,7 +16,11 @@
 
 #![forbid(unsafe_code)]
 
+pub mod ann;
+pub mod fts;
 pub mod udfs_vector;
+pub use ann::{ann_topk, AnnHit, AnnParams};
+pub use fts::{bm25_topk, FtsHit};
 pub use udfs_vector::register_vector_udfs;
 
 use arrow_array::{new_null_array, RecordBatch};
@@ -215,40 +219,35 @@ impl TableProvider for KymaTable {
         //     consult `list_live_nodes` and split extents between
         //     local-read and peer-fetch via rendezvous hash. Remote reads
         //     happen in parallel via Arrow Flight (`kind:"extent"`).
-        let (local_manifests, remote_fetches) =
-            match (&self.node_id, &self.database_name) {
-                (Some(self_id), Some(db)) => {
-                    let live = self
-                        .catalog
-                        .list_live_nodes(30)
-                        .await
-                        .unwrap_or_default();
-                    let router = router::ReadRouter::new(*self_id, &live);
-                    let (local, remote_by_node) = router::partition(&router, manifests);
-                    let fetches: Vec<_> = remote_by_node
-                        .into_iter()
-                        .map(|(node_id, (endpoint, ms))| {
-                            ::metrics::counter!("kyma_scan_extents_remote_assigned_total")
-                                .increment(ms.len() as u64);
-                            let db = db.clone();
-                            let name = self.table.name.clone();
-                            let endpoint2 = endpoint.clone();
-                            tokio::spawn(async move {
-                                let res = router::fetch_remote_extents(
-                                    endpoint2.clone(),
-                                    db,
-                                    name,
-                                    ms.clone(),
-                                )
-                                .await;
-                                (node_id, endpoint, ms, res)
-                            })
+        let (local_manifests, remote_fetches) = match (&self.node_id, &self.database_name) {
+            (Some(self_id), Some(db)) => {
+                let live = self.catalog.list_live_nodes(30).await.unwrap_or_default();
+                let router = router::ReadRouter::new(*self_id, &live);
+                let (local, remote_by_node) = router::partition(&router, manifests);
+                let fetches: Vec<_> = remote_by_node
+                    .into_iter()
+                    .map(|(node_id, (endpoint, ms))| {
+                        ::metrics::counter!("kyma_scan_extents_remote_assigned_total")
+                            .increment(ms.len() as u64);
+                        let db = db.clone();
+                        let name = self.table.name.clone();
+                        let endpoint2 = endpoint.clone();
+                        tokio::spawn(async move {
+                            let res = router::fetch_remote_extents(
+                                endpoint2.clone(),
+                                db,
+                                name,
+                                ms.clone(),
+                            )
+                            .await;
+                            (node_id, endpoint, ms, res)
                         })
-                        .collect();
-                    (local, fetches)
-                }
-                _ => (manifests, Vec::new()),
-            };
+                    })
+                    .collect();
+                (local, fetches)
+            }
+            _ => (manifests, Vec::new()),
+        };
 
         // 2b. Read local extents. Every extent goes through the same
         //     scan-promote-project pipeline as before.

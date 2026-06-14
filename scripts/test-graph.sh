@@ -22,6 +22,7 @@ export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
 export KYMA_S3_PATH_STYLE="true"
 export KYMA_S3_ALLOW_HTTP="true"
 export KYMA_HTTP_ADDR="127.0.0.1:8080"
+export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
 export KYMA_GRPC_ADDR=off
 export KYMA_OTLP_ADDR=off
 export KYMA_STAGING_DISABLED=1    # one-extent-per-ingest for deterministic pruning metrics
@@ -62,7 +63,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 section "Create edges table (service-dependency graph)"
-./target/debug/kyma-cli create-database default >/dev/null
+./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
 ./target/debug/kyma-cli create-table --db default --name calls \
     --schema 'timestamp:timestamp,caller:string,callee:string,latency_ms:int' >/dev/null
 

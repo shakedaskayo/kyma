@@ -10,11 +10,44 @@ use kyma_core::catalog::{Catalog, TableConfig};
 use kyma_format_tlm::TelemetryFormat;
 use object_store::memory::InMemory;
 use std::sync::Arc;
-use testcontainers::{runners::AsyncRunner, ImageExt};
+use testcontainers::{runners::AsyncRunner, ContainerAsync, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 
 use crate::catalog_handler::SchemaCache;
 use crate::QueryState;
+
+/// Start a Postgres testcontainer, retrying transient startup failures.
+///
+/// Under heavy Docker load (many concurrent containers, a saturated daemon)
+/// the readiness wait can hit `WaitContainer(StartupTimeout)` even though the
+/// image and config are fine. Retrying with backoff absorbs that without
+/// flaking the suite. Returns the running container (the caller MUST keep it
+/// alive for the test's duration) and its mapped 5432 port.
+pub(crate) async fn start_test_postgres() -> (ContainerAsync<Postgres>, u16) {
+    let mut last_err = String::new();
+    for attempt in 1..=4u32 {
+        match Postgres::default()
+            .with_user("kyma")
+            .with_password("kyma_dev")
+            .with_db_name("kyma")
+            .with_name("pgvector/pgvector")
+            .with_tag("pg16")
+            .start()
+            .await
+        {
+            Ok(container) => match container.get_host_port_ipv4(5432).await {
+                Ok(port) => return (container, port),
+                Err(e) => last_err = format!("get_host_port: {e}"),
+            },
+            Err(e) => last_err = format!("start: {e}"),
+        }
+        eprintln!(
+            "testcontainers Postgres start attempt {attempt}/4 failed: {last_err}; retrying"
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(u64::from(2 * attempt))).await;
+    }
+    panic!("testcontainers: failed to start Postgres after 4 attempts: {last_err}");
+}
 
 /// A running test HTTP server bound to an ephemeral port on `127.0.0.1`.
 ///
@@ -46,19 +79,7 @@ impl TestServer {
 ///
 /// Panics on any fixture-setup failure.
 pub async fn seeded_state_empty() -> QueryState {
-    let container = Postgres::default()
-        .with_user("kyma")
-        .with_password("kyma_dev")
-        .with_db_name("kyma")
-        .with_name("pgvector/pgvector")
-        .with_tag("pg16")
-        .start()
-        .await
-        .expect("testcontainers: failed to start Postgres");
-    let port = container
-        .get_host_port_ipv4(5432)
-        .await
-        .expect("testcontainers: failed to get mapped port");
+    let (container, port) = start_test_postgres().await;
     let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
     std::env::set_var("KYMA_TEST_DATABASE_URL", &url);
 
@@ -99,20 +120,8 @@ pub async fn seeded_state_empty() -> QueryState {
 ///
 /// Panics on any fixture-setup failure.
 pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
-    // Spin up Postgres via testcontainers.
-    let container = Postgres::default()
-        .with_user("kyma")
-        .with_password("kyma_dev")
-        .with_db_name("kyma")
-        .with_name("pgvector/pgvector")
-        .with_tag("pg16")
-        .start()
-        .await
-        .expect("testcontainers: failed to start Postgres");
-    let port = container
-        .get_host_port_ipv4(5432)
-        .await
-        .expect("testcontainers: failed to get mapped port");
+    // Spin up Postgres via testcontainers (with startup retry under load).
+    let (container, port) = start_test_postgres().await;
     let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
     std::env::set_var("KYMA_TEST_DATABASE_URL", &url);
 

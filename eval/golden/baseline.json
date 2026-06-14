@@ -1,0 +1,6 @@
+{
+  "mean_ndcg_at_10": 1.0,
+  "mean_mrr": 1.0,
+  "tolerance": 0.02,
+  "notes": "Bootstrap baseline over the example fixtures only (a perfect ranking scores 1.0 on synthetic judgments). Re-capture once real mined queries replace the example-* fixtures."
+}

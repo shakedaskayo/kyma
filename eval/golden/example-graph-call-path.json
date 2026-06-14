@@ -1,0 +1,11 @@
+{
+  "query": "which functions call the ingest write path",
+  "mode": "graph",
+  "judged": [
+    { "key": "graph:code/fn:ingest_batch_inner", "grade": 3 },
+    { "key": "graph:code/fn:ingest_handler", "grade": 3 },
+    { "key": "graph:code/fn:write_path_commit", "grade": 2 },
+    { "key": "graph:code/fn:query_handler", "grade": 0 }
+  ],
+  "notes": "EXAMPLE fixture — synthetic keys, exists only to test the golden-runner wiring. Replace with a query mined from Ask-Kyma traces + frozen LLM-judge grades."
+}

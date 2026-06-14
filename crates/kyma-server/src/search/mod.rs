@@ -152,6 +152,7 @@ pub(crate) async fn search_data(
     catalog: Arc<dyn kyma_core::catalog::Catalog>,
     format: Arc<dyn kyma_core::segment_format::SegmentFormat>,
     node_id: Option<kyma_core::types::NodeId>,
+    tenant: kyma_core::tenant::TenantId,
 ) -> Vec<(String, f64, Value)> {
     // Fan out per source.
     let mut set: JoinSet<Vec<(String, f64, Value)>> = JoinSet::new();
@@ -162,7 +163,17 @@ pub(crate) async fn search_data(
         let qv = qvec.clone();
         let tr = time_range;
         set.spawn(async move {
-            search_one_source(src, &query, qv.as_deref(), tr, catalog, format, node_id).await
+            search_one_source(
+                src,
+                &query,
+                qv.as_deref(),
+                tr,
+                catalog,
+                format,
+                node_id,
+                tenant,
+            )
+            .await
         });
     }
 
@@ -180,6 +191,7 @@ pub(crate) async fn search_data(
 }
 
 /// Run both legs for one source, RRF-fuse, return `(source_key, score, row)`.
+#[allow(clippy::too_many_arguments)]
 async fn search_one_source(
     src: ResolvedSource,
     query: &str,
@@ -188,6 +200,7 @@ async fn search_one_source(
     catalog: Arc<dyn kyma_core::catalog::Catalog>,
     format: Arc<dyn kyma_core::segment_format::SegmentFormat>,
     node_id: Option<kyma_core::types::NodeId>,
+    tenant: kyma_core::tenant::TenantId,
 ) -> Vec<(String, f64, Value)> {
     let source_key = format!("{}.{}", src.db, src.table.name);
     let table_name = src.table.name.clone();
@@ -211,12 +224,16 @@ async fn search_one_source(
     let kt: Arc<KymaTable> = match node_id {
         Some(nid) => Arc::new(KymaTable::with_node_id(
             src.table.clone(),
-            catalog,
-            format,
+            catalog.clone(),
+            format.clone(),
             nid,
             src.db.clone(),
         )),
-        None => Arc::new(KymaTable::new(src.table.clone(), catalog, format)),
+        None => Arc::new(KymaTable::new(
+            src.table.clone(),
+            catalog.clone(),
+            format.clone(),
+        )),
     };
     if ctx.register_table(&table_name, kt).is_err() {
         return Vec::new();
@@ -237,7 +254,9 @@ async fn search_one_source(
         let clauses: Vec<Clause> = if query.trim().is_empty() {
             Vec::new()
         } else {
-            vec![Clause::Substring { value: query.to_string() }]
+            vec![Clause::Substring {
+                value: query.to_string(),
+            }]
         };
         let compiled = compile_for_source(&src.table, &clauses, time_range.as_ref(), PER_LEG_K);
         match kyma_kql::kql_to_sql(&compiled.kql) {
@@ -246,22 +265,44 @@ async fn search_one_source(
         }
     };
 
-    // ── Vector leg (cosine_distance) ──
+    // ── Vector leg (ANN sidecar when available, else SQL cosine_distance) ──
+    //
+    // Capability gate: only switch to the IVF+RaBitQ ANN path when ≥1 sidecar
+    // exists for this table's vector column. Deployments/tests with no sidecars
+    // fall through to the exact SQL `ORDER BY cosine_distance(...)` path,
+    // unchanged — which keeps existing search behaviour and tests intact. Both
+    // paths emit the SAME `(non_vector_cols…, __score)` row shape so downstream
+    // RRF fusion is identical.
     let vector_rows = match (vec_col.as_deref(), qvec) {
         (Some(col), Some(qv)) if !non_vector_cols.is_empty() => {
-            let proj = non_vector_cols
-                .iter()
-                .map(|c| quote_ident(c))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let sql = format!(
-                "SELECT {proj}, cosine_distance({vc}, {arr}) AS __score FROM {tbl} ORDER BY __score ASC LIMIT {k}",
-                vc = quote_ident(&col),
-                arr = make_array(qv),
-                tbl = quote_ident(&table_name),
-                k = PER_LEG_K,
-            );
-            run_rows(&ctx, &sql).await
+            match ann_vector_rows(
+                &catalog,
+                &format,
+                tenant,
+                &src.table,
+                col,
+                qv,
+                &non_vector_cols,
+            )
+            .await
+            {
+                Some(rows) => rows,
+                None => {
+                    let proj = non_vector_cols
+                        .iter()
+                        .map(|c| quote_ident(c))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let sql = format!(
+                        "SELECT {proj}, cosine_distance({vc}, {arr}) AS __score FROM {tbl} ORDER BY __score ASC LIMIT {k}",
+                        vc = quote_ident(col),
+                        arr = make_array(qv),
+                        tbl = quote_ident(&table_name),
+                        k = PER_LEG_K,
+                    );
+                    run_rows(&ctx, &sql).await
+                }
+            }
         }
         _ => Vec::new(),
     };
@@ -308,6 +349,169 @@ async fn run_rows(ctx: &SessionContext, sql: &str) -> Vec<Value> {
     };
     let mut bytes: Vec<u8> = Vec::new();
     for batch in &batches {
+        let mut w = ArrayWriter::new(&mut bytes);
+        if w.write(batch).is_err() || w.finish().is_err() {
+            return Vec::new();
+        }
+    }
+    let mut out: Vec<Value> = Vec::new();
+    let stream = serde_json::Deserializer::from_slice(&bytes).into_iter::<Value>();
+    for arr in stream.flatten() {
+        match arr {
+            Value::Array(rows) => out.extend(rows),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Cosine-distance vector leg over the per-extent IVF+RaBitQ ANN sidecars.
+///
+/// Returns `Some(rows)` — JSON rows shaped exactly like the SQL leg
+/// (`non_vector_cols…` + `__score`, ascending distance) — when the table has at
+/// least one ANN sidecar for `vec_col` AND the format exposes an object store.
+/// Returns `None` to signal the caller to fall back to the exact SQL path
+/// (no sidecar, no store, or a hard error — never a silent empty result that
+/// would defeat fusion).
+async fn ann_vector_rows(
+    catalog: &Arc<dyn kyma_core::catalog::Catalog>,
+    format: &Arc<dyn kyma_core::segment_format::SegmentFormat>,
+    tenant: kyma_core::tenant::TenantId,
+    table: &kyma_core::catalog::TableRef,
+    vec_col: &str,
+    qvec: &[f32],
+    non_vector_cols: &[String],
+) -> Option<Vec<Value>> {
+    use kyma_core::index_sidecar::SidecarKind;
+
+    // Capability gate: need an object store (object-store-backed format) AND at
+    // least one IvfRabitq sidecar on this column. Either missing → SQL path.
+    let store = format.object_store()?;
+
+    let extents = catalog
+        .list_extents_in_tenant(
+            tenant,
+            table.id,
+            table.current_snapshot_id,
+            &kyma_core::catalog::PrunePredicate::default(),
+        )
+        .await
+        .ok()?;
+    if extents.is_empty() {
+        return None;
+    }
+    let extent_ids: Vec<_> = extents.iter().map(|m| m.id).collect();
+    let sidecars = catalog
+        .list_index_sidecars(tenant, table.id, &extent_ids, Some(SidecarKind::IvfRabitq))
+        .await
+        .ok()?;
+    if !sidecars.iter().any(|d| d.column == vec_col) {
+        return None; // no ANN index for this column → SQL fallback
+    }
+
+    let cache = sidecar_cache();
+    let params = kyma_exec::AnnParams::with_k(PER_LEG_K);
+    let hits = match kyma_exec::ann_topk(
+        catalog, tenant, format, &store, cache, table, vec_col, qvec, &params, None,
+    )
+    .await
+    {
+        Ok(h) => h,
+        // Hard error in the ANN path → fall back to SQL rather than drop the leg.
+        Err(_) => return None,
+    };
+
+    // Resolve each hit (extent, block, row) back to its non-vector column values
+    // so the row shape matches the SQL leg exactly. Group by (extent, block) so
+    // each block is read once.
+    let manifest_by_id: std::collections::HashMap<_, _> =
+        extents.iter().map(|m| (m.id, m)).collect();
+    // Column ids to project (positions in the table schema).
+    let proj: Vec<kyma_core::segment_format::ColumnId> = non_vector_cols
+        .iter()
+        .filter_map(|name| {
+            table
+                .schema
+                .fields()
+                .iter()
+                .position(|f| f.name() == name)
+                .map(|i| kyma_core::segment_format::ColumnId(i as u32))
+        })
+        .collect();
+
+    let mut by_block: std::collections::BTreeMap<(String, u32), Vec<(usize, f64)>> =
+        std::collections::BTreeMap::new();
+    for (i, h) in hits.iter().enumerate() {
+        by_block
+            .entry((h.extent_id.to_string(), h.addr.block.0))
+            .or_default()
+            .push((i, h.distance));
+    }
+
+    // hit-index → resolved JSON row (preserves ann_topk's ascending order).
+    let mut resolved: Vec<Option<Value>> = vec![None; hits.len()];
+    let mut readers: std::collections::HashMap<
+        String,
+        Arc<dyn kyma_core::segment_format::ExtentReader>,
+    > = std::collections::HashMap::new();
+
+    for ((extent_str, block), members) in by_block {
+        let Some(hit0) = members.first().map(|(i, _)| &hits[*i]) else {
+            continue;
+        };
+        let Some(manifest) = manifest_by_id.get(&hit0.extent_id) else {
+            continue;
+        };
+        let reader = match readers.get(&extent_str) {
+            Some(r) => r.clone(),
+            None => {
+                let r = format
+                    .open_extent(kyma_core::segment_format::OpenExtentInput {
+                        extent_id: manifest.id,
+                        table_id: manifest.table_id,
+                        schema: table.schema.clone(),
+                        object_path: manifest.object_path.clone(),
+                        byte_size: manifest.byte_size,
+                    })
+                    .await
+                    .ok()?;
+                readers.insert(extent_str.clone(), r.clone());
+                r
+            }
+        };
+        // Read the block projecting the non-vector columns (in table-schema
+        // order, so JSON keys match the SQL leg).
+        let batch = reader
+            .read_block(kyma_core::segment_format::BlockId(block), &proj)
+            .await
+            .ok()?;
+        for (hit_idx, dist) in members {
+            let row = hits[hit_idx].addr.row as usize;
+            if row >= batch.num_rows() {
+                continue;
+            }
+            let one = batch.slice(row, 1);
+            let mut rows = batch_to_json_rows(&one);
+            if let Some(Value::Object(mut map)) = rows.pop() {
+                map.insert("__score".to_string(), serde_json::json!(dist));
+                resolved[hit_idx] = Some(Value::Object(map));
+            }
+        }
+    }
+
+    Some(resolved.into_iter().flatten().collect())
+}
+
+/// Process-shared sidecar disk cache for the ANN query path.
+fn sidecar_cache() -> &'static kyma_storage::sidecar_cache::SidecarCache {
+    static CACHE: OnceLock<kyma_storage::sidecar_cache::SidecarCache> = OnceLock::new();
+    CACHE.get_or_init(kyma_storage::sidecar_cache::SidecarCache::from_env)
+}
+
+/// Convert a single-row `RecordBatch` slice to JSON objects (best-effort).
+fn batch_to_json_rows(batch: &arrow::record_batch::RecordBatch) -> Vec<Value> {
+    let mut bytes: Vec<u8> = Vec::new();
+    {
         let mut w = ArrayWriter::new(&mut bytes);
         if w.write(batch).is_err() || w.finish().is_err() {
             return Vec::new();
@@ -391,7 +595,10 @@ mod tests {
 
     #[test]
     fn make_array_renders_float_literal() {
-        assert_eq!(make_array(&[0.1, 0.2]), "make_array(CAST(0.1 AS REAL), CAST(0.2 AS REAL))");
+        assert_eq!(
+            make_array(&[0.1, 0.2]),
+            "make_array(CAST(0.1 AS REAL), CAST(0.2 AS REAL))"
+        );
     }
 
     #[test]
@@ -410,10 +617,7 @@ mod tests {
             Field::new("msg", DataType::Utf8, true),
             Field::new(
                 "embedding",
-                DataType::FixedSizeList(
-                    Arc::new(Field::new("item", DataType::Float32, true)),
-                    384,
-                ),
+                DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), 384),
                 true,
             ),
         ];

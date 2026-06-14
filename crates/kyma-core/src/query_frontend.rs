@@ -46,6 +46,34 @@ impl Default for QueryBudget {
     }
 }
 
+impl QueryBudget {
+    /// Deployment-wide defaults: `Default` overridden by env vars
+    /// `KYMA_QUERY_MEMORY_BYTES`, `KYMA_QUERY_WALL_MS`, and
+    /// `KYMA_QUERY_OBJECT_STORE_BYTES`. Read once and cached; per-request
+    /// header overrides still apply on top in the server.
+    pub fn from_env() -> Self {
+        static CACHED: std::sync::OnceLock<QueryBudget> = std::sync::OnceLock::new();
+        CACHED
+            .get_or_init(|| {
+                fn parse(key: &str) -> Option<u64> {
+                    std::env::var(key).ok().and_then(|v| v.parse().ok())
+                }
+                let mut b = QueryBudget::default();
+                if let Some(n) = parse("KYMA_QUERY_MEMORY_BYTES") {
+                    b.max_memory_bytes = n.max(1024 * 1024);
+                }
+                if let Some(ms) = parse("KYMA_QUERY_WALL_MS") {
+                    b.max_wall_clock = Duration::from_millis(ms.max(10));
+                }
+                if let Some(n) = parse("KYMA_QUERY_OBJECT_STORE_BYTES") {
+                    b.max_object_store_bytes = n.max(1024 * 1024);
+                }
+                b
+            })
+            .clone()
+    }
+}
+
 /// A query-language frontend. One implementation per language.
 #[async_trait]
 pub trait QueryFrontend: Send + Sync {
