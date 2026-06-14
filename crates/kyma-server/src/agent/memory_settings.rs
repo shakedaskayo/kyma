@@ -13,6 +13,18 @@ use sqlx::PgPool;
 
 use kyma_core::tenant::TenantId;
 
+/// Default visibility policy (S3.3) for newly-written memories in a tenant.
+/// `Public` (default) keeps the pre-feature behavior — every memory is shared.
+/// `Private` defaults new memories to `private:<writer-subject>`, so agents see
+/// only public memories plus their own unless a memory is explicitly shared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryVisibility {
+    #[default]
+    Public,
+    Private,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MemorySettings {
@@ -50,6 +62,37 @@ pub struct MemorySettings {
     /// Approval policy over automatic memory mutations (OFF by default — when
     /// disabled the system behaves exactly as before this feature shipped).
     pub hitl: super::memory_policy::HitlPolicy,
+
+    // ── memory spaces (S3.3) ──────────────────────────────────────────────────
+    /// Default visibility for new memories. `Public` (default) preserves the
+    /// pre-feature shared-memory behavior.
+    pub default_visibility: MemoryVisibility,
+}
+
+impl MemorySettings {
+    /// Resolve the `space` value to store for a memory given an `explicit` space
+    /// (writer-supplied, wins when present), the `writer_subject` (the
+    /// authenticated principal's identity), and this tenant's default policy.
+    ///
+    /// Returns `None` (shared/public — no `space` written) unless the tenant
+    /// defaults to `Private` and a subject is known, in which case new memories
+    /// are scoped to `private:<subject>`. A subject-less write under a private
+    /// default stays public (we never mint an un-attributable private space).
+    pub fn resolve_space(
+        &self,
+        explicit: Option<&str>,
+        writer_subject: Option<&str>,
+    ) -> Option<String> {
+        if let Some(s) = explicit {
+            return Some(s.to_string());
+        }
+        match (self.default_visibility, writer_subject) {
+            (MemoryVisibility::Private, Some(subj)) if !subj.is_empty() => {
+                Some(format!("private:{subj}"))
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Knobs for the scheduled dreaming pipeline — an autonomous agent run that
@@ -123,6 +166,7 @@ impl Default for MemorySettings {
             rrf_k: kyma_memory::RRF_K,
             dreaming: DreamingSettings::default(),
             hitl: super::memory_policy::HitlPolicy::default(),
+            default_visibility: MemoryVisibility::Public,
         }
     }
 }
@@ -231,6 +275,49 @@ mod tests {
         let s: MemorySettings = serde_json::from_value(legacy).unwrap();
         assert!(!s.hitl.enabled, "HITL must default off for legacy rows");
         assert!(s.dreaming.enabled, "existing fields still load");
+        assert_eq!(
+            s.default_visibility,
+            MemoryVisibility::Public,
+            "legacy rows default to public visibility (no behavior change)"
+        );
+    }
+
+    #[test]
+    fn resolve_space_applies_tenant_default() {
+        // Public default → no space (shared), regardless of subject.
+        let public = MemorySettings::default();
+        assert_eq!(public.resolve_space(None, Some("agentA")), None);
+
+        // Private default + known subject → scoped to that subject.
+        let mut private = MemorySettings::default();
+        private.default_visibility = MemoryVisibility::Private;
+        assert_eq!(
+            private.resolve_space(None, Some("agentA")),
+            Some("private:agentA".to_string())
+        );
+        // Private default but no subject → stays public (never mint an
+        // un-attributable private space).
+        assert_eq!(private.resolve_space(None, None), None);
+        assert_eq!(private.resolve_space(None, Some("")), None);
+        // An explicit space always wins, under either policy.
+        assert_eq!(
+            private.resolve_space(Some("public"), Some("agentA")),
+            Some("public".to_string())
+        );
+        assert_eq!(
+            public.resolve_space(Some("private:other"), None),
+            Some("private:other".to_string())
+        );
+    }
+
+    #[test]
+    fn visibility_serde_is_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&MemoryVisibility::Private).unwrap(),
+            "\"private\""
+        );
+        let v: MemoryVisibility = serde_json::from_str("\"public\"").unwrap();
+        assert_eq!(v, MemoryVisibility::Public);
     }
 
     #[test]
