@@ -47,59 +47,55 @@ impl JobQueue for SqliteQueue {
     async fn claim(&self, kinds: &[String], max: usize) -> Result<Vec<ClaimedJob>> {
         let mut out = Vec::new();
         let now_str = chrono::Utc::now().to_rfc3339();
-        let expires_str = (chrono::Utc::now()
-            + chrono::Duration::seconds(self.lease_secs))
-        .to_rfc3339();
+        let expires_str =
+            (chrono::Utc::now() + chrono::Duration::seconds(self.lease_secs)).to_rfc3339();
         let worker_str = self.worker_id.to_string();
 
         for _ in 0..max {
             // Try each accepted kind in turn.
             let mut claimed_one = false;
             'kinds: for kind in kinds {
-                // First: recover expired leases for this kind.
-                let _ = sqlx::query(
-                    "UPDATE jobs SET status = 'pending', claimed_by = NULL, claim_expires_at = NULL,
-                     updated_at = ?
-                     WHERE kind = ? AND status IN ('claimed','running')
-                       AND claim_expires_at < ?",
-                )
-                .bind(&now_str)
-                .bind(kind)
-                .bind(&now_str)
-                .execute(&self.pool)
-                .await;
+                // Read-first claim: select the oldest claimable job — pending, or
+                // one whose lease expired with attempts left. Folding lease
+                // recovery into the SELECT (instead of an unconditional recovery
+                // UPDATE per kind per poll) means an IDLE queue takes no write
+                // lock. In local SQLite mode this is what keeps the background
+                // job poller from contending with foreground catalog writes such
+                // as ingest schema evolution (which otherwise hit SQLITE_BUSY /
+                // BUSY_SNAPSHOT). Mirrors PgFabricStore::claim_job.
+                let row: Option<(String, String, String, String, i64, i64, String)> =
+                    sqlx::query_as(
+                        "SELECT id, tenant_id, kind, payload, attempt, max_attempts, req_capabilities
+                         FROM jobs
+                         WHERE kind = ?
+                           AND (status = 'pending'
+                                OR (status IN ('claimed','running')
+                                    AND claim_expires_at < ?
+                                    AND attempt < max_attempts))
+                         ORDER BY priority DESC, created_at ASC
+                         LIMIT 1",
+                    )
+                    .bind(kind)
+                    .bind(&now_str)
+                    .fetch_optional(&self.pool)
+                    .await?;
 
-                // Check if this worker's capabilities cover the job's requirements.
-                // We pull the oldest pending job and verify req_capabilities inline.
-                let row: Option<(String, String, String, String, i64)> = sqlx::query_as(
-                    "SELECT id, tenant_id, kind, payload, attempt
-                     FROM jobs
-                     WHERE kind = ? AND status = 'pending'
-                     ORDER BY priority DESC, created_at ASC
-                     LIMIT 1",
-                )
-                .bind(kind)
-                .fetch_optional(&self.pool)
-                .await?;
-
-                let Some((id_str, tenant_str, job_kind, payload_str, attempt)) = row else {
+                let Some((
+                    id_str,
+                    tenant_str,
+                    job_kind,
+                    payload_str,
+                    attempt,
+                    max_attempts,
+                    caps_str,
+                )) = row
+                else {
                     continue 'kinds;
                 };
 
-                // Check req_capabilities: load from the row.
-                let req_caps: Vec<String> = {
-                    let caps_str: Option<String> = sqlx::query_scalar(
-                        "SELECT req_capabilities FROM jobs WHERE id = ?",
-                    )
-                    .bind(&id_str)
-                    .fetch_optional(&self.pool)
-                    .await?;
-                    caps_str
-                        .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
-                        .unwrap_or_default()
-                };
-
                 // Worker must advertise all required capabilities.
+                let req_caps: Vec<String> =
+                    serde_json::from_str::<Vec<String>>(&caps_str).unwrap_or_default();
                 if !req_caps
                     .iter()
                     .all(|c| self.capabilities.iter().any(|cap| cap == c))
@@ -107,16 +103,20 @@ impl JobQueue for SqliteQueue {
                     continue 'kinds;
                 }
 
-                // Claim it: atomic UPDATE WHERE status = 'pending' (handles races).
+                // Atomic claim guarded by the same pending-or-expired predicate so
+                // a racing worker (or a just-recovered lease) can't double-claim.
                 let res = sqlx::query(
                     "UPDATE jobs SET status = 'claimed', claimed_by = ?,
                      claim_expires_at = ?, attempt = attempt + 1, updated_at = ?
-                     WHERE id = ? AND status = 'pending'",
+                     WHERE id = ?
+                       AND (status = 'pending'
+                            OR (status IN ('claimed','running') AND claim_expires_at < ?))",
                 )
                 .bind(&worker_str)
                 .bind(&expires_str)
                 .bind(&now_str)
                 .bind(&id_str)
+                .bind(&now_str)
                 .execute(&self.pool)
                 .await?;
 
@@ -126,18 +126,9 @@ impl JobQueue for SqliteQueue {
                 }
 
                 let job_id = Uuid::parse_str(&id_str).unwrap_or(Uuid::nil());
-                let tenant_id: Uuid = tenant_str
-                    .parse()
-                    .unwrap_or(Uuid::nil());
+                let tenant_id: Uuid = tenant_str.parse().unwrap_or(Uuid::nil());
                 let payload: serde_json::Value =
                     serde_json::from_str(&payload_str).unwrap_or(serde_json::Value::Null);
-                let max_attempts: i64 = sqlx::query_scalar(
-                    "SELECT max_attempts FROM jobs WHERE id = ?",
-                )
-                .bind(&id_str)
-                .fetch_optional(&self.pool)
-                .await?
-                .unwrap_or(3);
                 let expire_ts = Utc::now() + chrono::Duration::seconds(self.lease_secs);
 
                 out.push(ClaimedJob {
@@ -201,12 +192,11 @@ impl JobQueue for SqliteQueue {
         let worker_str = self.worker_id.to_string();
         let now_str = chrono::Utc::now().to_rfc3339();
         // Check if we've exhausted attempts.
-        let row: Option<(i64, i64)> = sqlx::query_as(
-            "SELECT attempt, max_attempts FROM jobs WHERE id = ?",
-        )
-        .bind(&id_str)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row: Option<(i64, i64)> =
+            sqlx::query_as("SELECT attempt, max_attempts FROM jobs WHERE id = ?")
+                .bind(&id_str)
+                .fetch_optional(&self.pool)
+                .await?;
         let terminal = row.map_or(true, |(attempt, max)| attempt >= max);
         let new_status = if terminal { "failed" } else { "pending" };
         let res = sqlx::query(
