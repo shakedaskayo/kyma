@@ -38,6 +38,10 @@
 // Casting these `usize` lengths/positions to `u32` is therefore intentional and
 // in-range, not a truncation hazard.
 #![allow(clippy::cast_possible_truncation)]
+// PPR arithmetic divides residual mass by node degree / seed count as `f64`.
+// Graph sizes are far below `f64`'s 2^52 exact-integer range, so these
+// `usize as f64` casts lose no precision in practice.
+#![allow(clippy::cast_precision_loss)]
 
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap, VecDeque};
@@ -329,6 +333,91 @@ impl CsrGraph {
             }
         }
         None
+    }
+
+    /// Approximate personalized `PageRank` from `seeds` via the
+    /// Andersen–Chung–Lang forward-push algorithm (S3.4): the basis for graph
+    /// proximity in memory retrieval, replacing the fixed hop loop.
+    ///
+    /// Returns `(node_id, mass)` for every node with nonzero PPR mass, highest
+    /// first. `alpha` is the teleport/restart probability (≈0.15); `epsilon`
+    /// bounds the approximation — smaller pushes the result toward the exact PPR
+    /// vector (residual-degree threshold `r[u] < epsilon·deg(u)` stops a node).
+    /// Edge multiplicity is a weight (parallel edges raise transition mass);
+    /// `dir` selects the walk's adjacency (`Both` = undirected proximity). A
+    /// sink (no out-neighbors under `dir`) absorbs its residual as terminal
+    /// mass. Unknown seed ids are ignored; all-unknown ⇒ empty.
+    pub fn personalized_pagerank(
+        &self,
+        seeds: &[&str],
+        alpha: f64,
+        epsilon: f64,
+        dir: Direction,
+    ) -> Vec<(String, f64)> {
+        let n = self.ids.len();
+        let seed_idx: Vec<u32> = seeds
+            .iter()
+            .filter_map(|s| self.id_to_idx.get(*s).copied())
+            .collect();
+        if seed_idx.is_empty() || n == 0 {
+            return Vec::new();
+        }
+        let alpha = alpha.clamp(f64::MIN_POSITIVE, 1.0);
+        let eps = epsilon.max(f64::MIN_POSITIVE);
+
+        let mut p = vec![0.0f64; n];
+        let mut r = vec![0.0f64; n];
+        let share = 1.0 / seed_idx.len() as f64;
+        for &si in &seed_idx {
+            r[si as usize] += share;
+        }
+        // Process nodes whose residual may exceed the degree-scaled threshold.
+        // `queued` prevents duplicate enqueues; a node re-enters when a push
+        // grows its residual.
+        let mut queued = vec![false; n];
+        let mut queue: VecDeque<u32> = VecDeque::new();
+        for &si in &seed_idx {
+            if !queued[si as usize] {
+                queued[si as usize] = true;
+                queue.push_back(si);
+            }
+        }
+        let mut nbrs: Vec<u32> = Vec::new();
+        while let Some(u) = queue.pop_front() {
+            queued[u as usize] = false;
+            nbrs.clear();
+            self.step(u, dir, EtypeFilter::Any, &mut nbrs);
+            let deg = nbrs.len();
+            let ru = r[u as usize];
+            if deg == 0 {
+                // Sink: the walk terminates here, so all residual becomes mass.
+                p[u as usize] += ru;
+                r[u as usize] = 0.0;
+                continue;
+            }
+            if ru < eps * deg as f64 {
+                continue; // below threshold — leave the residual
+            }
+            p[u as usize] += alpha * ru;
+            let push = (1.0 - alpha) * ru / deg as f64;
+            r[u as usize] = 0.0;
+            for &v in &nbrs {
+                r[v as usize] += push;
+                if !queued[v as usize] {
+                    queued[v as usize] = true;
+                    queue.push_back(v);
+                }
+            }
+        }
+
+        let mut out: Vec<(String, f64)> = p
+            .iter()
+            .enumerate()
+            .filter(|(_, &m)| m > 0.0)
+            .map(|(i, &m)| (self.ids[i].clone(), m))
+            .collect();
+        out.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        out
     }
 
     /// Serialize to the checksummed `KYCS` single-file layout.
