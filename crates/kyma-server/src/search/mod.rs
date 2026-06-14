@@ -249,19 +249,33 @@ async fn search_one_source(
         .map(|f| f.name().clone())
         .collect();
 
-    // ── Lexical leg (token-index `contains`) ──
-    let lexical_rows = {
-        let clauses: Vec<Clause> = if query.trim().is_empty() {
-            Vec::new()
-        } else {
-            vec![Clause::Substring {
-                value: query.to_string(),
-            }]
-        };
-        let compiled = compile_for_source(&src.table, &clauses, time_range.as_ref(), PER_LEG_K);
-        match kyma_kql::kql_to_sql(&compiled.kql) {
-            Ok(sql) => run_rows(&ctx, &sql).await,
-            Err(_) => Vec::new(),
+    // ── Lexical leg: BM25 over a tantivy FTS sidecar when present, else the
+    //    token-index `contains`/LIKE compile. Capability-gated like the vector
+    //    leg, so tables without FTS sidecars behave exactly as before.
+    let lexical_rows = match bm25_lexical_rows(
+        &catalog,
+        &format,
+        tenant,
+        &src.table,
+        &query,
+        &non_vector_cols,
+    )
+    .await
+    {
+        Some(rows) => rows,
+        None => {
+            let clauses: Vec<Clause> = if query.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![Clause::Substring {
+                    value: query.to_string(),
+                }]
+            };
+            let compiled = compile_for_source(&src.table, &clauses, time_range.as_ref(), PER_LEG_K);
+            match kyma_kql::kql_to_sql(&compiled.kql) {
+                Ok(sql) => run_rows(&ctx, &sql).await,
+                Err(_) => Vec::new(),
+            }
         }
     };
 
@@ -499,6 +513,129 @@ async fn ann_vector_rows(
         }
     }
 
+    Some(resolved.into_iter().flatten().collect())
+}
+
+/// BM25 lexical leg over per-extent tantivy FTS sidecars. Returns `None` when
+/// the table has no FTS sidecar (caller falls back to the token/LIKE path), or
+/// `Some(rows)` ordered by BM25 relevance with a `__score`. Mirrors
+/// [`ann_vector_rows`]: capability-gate on a sidecar, run `bm25_topk`, resolve
+/// each hit's `(extent, block, row)` to the projected non-vector columns.
+async fn bm25_lexical_rows(
+    catalog: &Arc<dyn kyma_core::catalog::Catalog>,
+    format: &Arc<dyn kyma_core::segment_format::SegmentFormat>,
+    tenant: kyma_core::tenant::TenantId,
+    table: &kyma_core::catalog::TableRef,
+    query: &str,
+    non_vector_cols: &[String],
+) -> Option<Vec<Value>> {
+    use kyma_core::index_sidecar::SidecarKind;
+    if query.trim().is_empty() {
+        return None;
+    }
+    let store = format.object_store()?;
+    let extents = catalog
+        .list_extents_in_tenant(
+            tenant,
+            table.id,
+            table.current_snapshot_id,
+            &kyma_core::catalog::PrunePredicate::default(),
+        )
+        .await
+        .ok()?;
+    if extents.is_empty() {
+        return None;
+    }
+    let extent_ids: Vec<_> = extents.iter().map(|m| m.id).collect();
+    let sidecars = catalog
+        .list_index_sidecars(tenant, table.id, &extent_ids, Some(SidecarKind::TantivyFts))
+        .await
+        .ok()?;
+    // The FTS-indexed column (first one with a sidecar). No sidecar → SQL path.
+    let fts_col = sidecars.first().map(|d| d.column.clone())?;
+
+    let cache = sidecar_cache();
+    let hits = match kyma_exec::bm25_topk(
+        catalog, tenant, &store, cache, table, &fts_col, query, PER_LEG_K, None,
+    )
+    .await
+    {
+        Ok(Some(h)) => h,
+        // No coverage or a hard error → SQL fallback rather than dropping the leg.
+        Ok(None) | Err(_) => return None,
+    };
+
+    let manifest_by_id: std::collections::HashMap<_, _> =
+        extents.iter().map(|m| (m.id, m)).collect();
+    let proj: Vec<kyma_core::segment_format::ColumnId> = non_vector_cols
+        .iter()
+        .filter_map(|name| {
+            table
+                .schema
+                .fields()
+                .iter()
+                .position(|f| f.name() == name)
+                .map(|i| kyma_core::segment_format::ColumnId(i as u32))
+        })
+        .collect();
+
+    // Group by (extent, block); preserve BM25 order via the hit index.
+    let mut by_block: std::collections::BTreeMap<(String, u32), Vec<(usize, f32)>> =
+        std::collections::BTreeMap::new();
+    for (i, h) in hits.iter().enumerate() {
+        by_block
+            .entry((h.extent_id.to_string(), h.addr.block.0))
+            .or_default()
+            .push((i, h.score));
+    }
+    let mut resolved: Vec<Option<Value>> = vec![None; hits.len()];
+    let mut readers: std::collections::HashMap<
+        String,
+        Arc<dyn kyma_core::segment_format::ExtentReader>,
+    > = std::collections::HashMap::new();
+    for ((extent_str, block), members) in by_block {
+        let Some(hit0) = members.first().map(|(i, _)| &hits[*i]) else {
+            continue;
+        };
+        let Some(manifest) = manifest_by_id.get(&hit0.extent_id) else {
+            continue;
+        };
+        let reader = match readers.get(&extent_str) {
+            Some(r) => r.clone(),
+            None => {
+                let r = format
+                    .open_extent(kyma_core::segment_format::OpenExtentInput {
+                        extent_id: manifest.id,
+                        table_id: manifest.table_id,
+                        schema: table.schema.clone(),
+                        object_path: manifest.object_path.clone(),
+                        byte_size: manifest.byte_size,
+                    })
+                    .await
+                    .ok()?;
+                readers.insert(extent_str.clone(), r.clone());
+                r
+            }
+        };
+        let batch = reader
+            .read_block(kyma_core::segment_format::BlockId(block), &proj)
+            .await
+            .ok()?;
+        for (hit_idx, score) in members {
+            let row = hits[hit_idx].addr.row as usize;
+            if row >= batch.num_rows() {
+                continue;
+            }
+            let one = batch.slice(row, 1);
+            let mut rows = batch_to_json_rows(&one);
+            if let Some(Value::Object(mut map)) = rows.pop() {
+                map.insert("__score".to_string(), serde_json::json!(score));
+                resolved[hit_idx] = Some(Value::Object(map));
+            }
+        }
+    }
+    // bm25_topk already returns hits in descending BM25 order; keep it (the RRF
+    // fusion ranks by position).
     Some(resolved.into_iter().flatten().collect())
 }
 
