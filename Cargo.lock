@@ -5405,6 +5405,7 @@ dependencies = [
  "kyma-datasources",
  "kyma-embed",
  "kyma-format-tlm",
+ "kyma-index-vector",
  "object_store",
  "serde",
  "serde_json",
