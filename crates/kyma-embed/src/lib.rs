@@ -22,8 +22,11 @@ pub mod openai_compat;
 #[cfg(feature = "gemini")]
 pub mod gemini;
 
+pub mod matryoshka;
+
 pub use config::{EmbeddingConfig, EmbeddingProvider};
 pub use errors::EmbedError;
+pub use matryoshka::MatryoshkaTruncate;
 
 use async_trait::async_trait;
 
