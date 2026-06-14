@@ -40,7 +40,7 @@ export function NodeDetailModal({
         <DialogHeader>
           <DialogTitle className="ky-truncate ky-pr-8">{name}</DialogTitle>
           <div className="ky-text-2xs ky-text-muted-foreground">
-            {node.labels.join(" · ")} · {node.namespace}
+            {[...node.labels, node.namespace].filter(Boolean).join(" · ")}
           </div>
         </DialogHeader>
 
