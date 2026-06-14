@@ -242,6 +242,11 @@ pub struct RecallFilter {
     pub as_of: Option<String>,
     /// Include superseded/invalidated memories (default false). Used for audit.
     pub include_invalidated: bool,
+    /// Visibility scope of the requester. `Some(agent)` restricts recall to
+    /// shared memories (`space` NULL or `public`) plus that agent's own
+    /// `private:<agent>` memories. `None` (default) applies no space filter —
+    /// existing behavior, so callers without an agent context are unchanged.
+    pub space_agent: Option<String>,
 }
 
 #[cfg(test)]

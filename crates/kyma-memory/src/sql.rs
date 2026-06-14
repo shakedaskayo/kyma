@@ -90,6 +90,19 @@ fn filter_conditions(filter: &RecallFilter, default_non_archived: bool) -> Vec<S
     conds
 }
 
+/// Space-visibility predicate (S3.3): when the requester carries an agent
+/// identity, restrict to shared memories (`space` NULL or `'public'`) plus that
+/// agent's own `'private:<agent>'` memories. `None` → no predicate (unchanged
+/// behavior). Requires `space` to be projected by the CTE the predicate filters.
+fn space_condition(filter: &RecallFilter) -> Option<String> {
+    filter.space_agent.as_ref().map(|agent| {
+        format!(
+            "(space IS NULL OR space = 'public' OR space = {})",
+            sql_str(&format!("private:{agent}"))
+        )
+    })
+}
+
 /// Semantic recall: dedup → cosine distance → blended re-rank
 /// (`relevance*0.7 + importance*0.3`) → top `limit`.
 pub fn recall_sql(
@@ -101,6 +114,9 @@ pub fn recall_sql(
 ) -> String {
     let arr = make_array(embedding);
     let mut conds = filter_conditions(filter, true);
+    if let Some(sc) = space_condition(filter) {
+        conds.push(sc);
+    }
     if conds.is_empty() {
         conds.push("1 = 1".to_string());
     }
@@ -119,7 +135,7 @@ pub fn recall_sql(
         "WITH latest AS (\n  \
            SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM {nt}\n), \
          scored AS (\n  \
-           SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, \
+           SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, space, \
                   cosine_distance(embedding, {arr}) AS distance\n  \
            FROM latest WHERE __rn = 1{ann}\n) \
          SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, distance, \
@@ -167,12 +183,15 @@ pub fn recall_sql_for_ids(
     } else {
         conds.push(format!("id IN ({id_list})"));
     }
+    if let Some(sc) = space_condition(filter) {
+        conds.push(sc);
+    }
     let where_clause = conds.join(" AND ");
     format!(
         "WITH latest AS (\n  \
            SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM {nt}\n), \
          scored AS (\n  \
-           SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, \
+           SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, space, \
                   cosine_distance(embedding, {arr}) AS distance\n  \
            FROM latest WHERE __rn = 1\n) \
          SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, distance, \
@@ -271,7 +290,7 @@ pub fn keyword_recall_sql(
         "WITH latest AS (\n  \
            SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM {nt}\n), \
          scored AS (\n  \
-           SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, \
+           SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, space, \
                   ({score}) AS kw_score\n  \
            FROM latest WHERE __rn = 1\n) \
          SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, kw_score \
@@ -310,6 +329,9 @@ pub fn keyword_recall_sql_for_ids(
     } else {
         conds.push(format!("id IN ({id_list})"));
     }
+    if let Some(sc) = space_condition(filter) {
+        conds.push(sc);
+    }
     let where_clause = conds.join(" AND ");
     let score_expr = if tokens.is_empty() {
         "0".to_string()
@@ -331,7 +353,7 @@ pub fn keyword_recall_sql_for_ids(
         "WITH latest AS (\n  \
            SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM {nt}\n), \
          scored AS (\n  \
-           SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, \
+           SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, space, \
                   ({score}) AS kw_score\n  \
            FROM latest WHERE __rn = 1\n) \
          SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, kw_score \
@@ -463,6 +485,27 @@ mod tests {
     #[test]
     fn sql_str_escapes_quotes() {
         assert_eq!(sql_str("a'b"), "'a''b'");
+    }
+
+    #[test]
+    fn recall_sql_space_filter_off_by_default_on_when_agent_set() {
+        // No space_agent → no space predicate (existing behavior).
+        let f = RecallFilter::default();
+        let s = recall_sql("memory_nodes", &[0.1], &f, 8, None);
+        assert!(!s.contains("space = 'public'"), "no space filter by default");
+        // space_agent set → predicate present, and `space` is projected so the
+        // outer WHERE can reference it.
+        let f = RecallFilter {
+            space_agent: Some("agent-7".into()),
+            ..Default::default()
+        };
+        let s = recall_sql("memory_nodes", &[0.1], &f, 8, None);
+        assert!(s.contains("space IS NULL OR space = 'public' OR space = 'private:agent-7'"));
+        assert!(s.contains(", invalid_at, space,"), "space projected in scored CTE");
+        // The same holds for the candidate-id (ANN) recall path.
+        let s2 = recall_sql_for_ids("memory_nodes", &[0.1], &f, 8, &["memory:1".into()]);
+        assert!(s2.contains("space = 'private:agent-7'"));
+        assert!(s2.contains(", invalid_at, space,"));
     }
 
     #[test]
