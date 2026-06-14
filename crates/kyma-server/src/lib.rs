@@ -32,6 +32,7 @@ pub mod graph_handler;
 pub mod graph_layout_cache;
 pub mod flight;
 pub mod capabilities;
+pub mod concurrency;
 mod health;
 pub mod query_multidb;
 pub mod search;
@@ -615,6 +616,22 @@ pub(crate) fn error_response(status: StatusCode, code: &str, message: &str, requ
         .into_response()
 }
 
+/// A `429 Too Many Requests` with a `Retry-After` header, used when query
+/// concurrency admission control (`crate::concurrency`) sheds load.
+pub(crate) fn too_many_requests_response(retry_after_secs: u64, request_id: &str) -> Response {
+    let mut resp = error_response(
+        StatusCode::TOO_MANY_REQUESTS,
+        "too_many_requests",
+        "query concurrency limit reached; retry after the indicated delay",
+        request_id,
+    );
+    if let Ok(v) = axum::http::HeaderValue::from_str(&retry_after_secs.to_string()) {
+        resp.headers_mut()
+            .insert(axum::http::header::RETRY_AFTER, v);
+    }
+    resp
+}
+
 pub(crate) fn resolve_query_budget(headers: &HeaderMap) -> kyma_core::query_frontend::QueryBudget {
     let mut b = kyma_core::query_frontend::QueryBudget::from_env();
     if let Some(v) = headers
@@ -757,6 +774,14 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
     let (parts, body) = req.into_parts();
     let headers: &HeaderMap = &parts.headers;
     let request_id = extract_request_id(headers);
+
+    // Admission control: shed load with 429 + Retry-After rather than let a
+    // burst of heavy queries drive the node into memory pressure. The permit is
+    // held until this handler returns (no-op when KYMA_QUERY_MAX_CONCURRENT=0).
+    let _admission = match crate::concurrency::acquire() {
+        Ok(p) => p,
+        Err(retry) => return too_many_requests_response(retry, &request_id),
+    };
     let db_header = headers.get("x-database").and_then(|v| v.to_str().ok());
     // `x-database: *` (the web "All databases" scope) spans every accessible
     // database; an absent/empty/concrete header keeps the single-database path.
