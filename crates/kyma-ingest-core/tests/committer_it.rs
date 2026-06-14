@@ -143,3 +143,77 @@ async fn stage_then_commit_is_exactly_once() {
     // A second tick with nothing staged is a no-op.
     assert_eq!(committer.tick().await.unwrap(), 0);
 }
+
+#[tokio::test]
+async fn staged_write_path_acks_without_commit_then_committer_commits() {
+    use arrow_array::{Int64Array, RecordBatch};
+    use kyma_core::segment_format::SegmentFormat;
+    use kyma_ingest_core::WritePath;
+    use object_store::memory::InMemory;
+    use object_store::ObjectStore;
+    use std::sync::Arc as StdArc;
+
+    let (catalog, _c) = connect().await;
+    let db = catalog.create_database("default").await.unwrap();
+    let int_schema = StdArc::new(Schema::new(vec![Field::new("id", DataType::Int64, true)]));
+    catalog
+        .create_table(db, "events", int_schema.clone(), TableConfig::default())
+        .await
+        .unwrap();
+    let tref = catalog.lookup_table("default", "events").await.unwrap();
+    let snap_before = tref.current_snapshot_id;
+
+    // Staged WritePath over an InMemory store + TLM format.
+    let store: StdArc<dyn ObjectStore> = StdArc::new(InMemory::new());
+    let format: StdArc<dyn SegmentFormat> =
+        StdArc::new(kyma_format_tlm::TelemetryFormat::new(store.clone(), "kyma"));
+    let catalog_dyn: StdArc<dyn Catalog> = StdArc::new(catalog.clone());
+    let wp = WritePath::new(catalog_dyn.clone(), format).with_staged_mode();
+
+    let batch = RecordBatch::try_new(
+        int_schema.clone(),
+        vec![StdArc::new(Int64Array::from(vec![1, 2, 3]))],
+    )
+    .unwrap();
+    let ack = wp.ingest("default", &tref, vec![batch]).await.unwrap();
+    assert_eq!(ack.rows_ingested, 3);
+    // Staged ack carries the CURRENT snapshot — NOT a new one (not committed yet).
+    assert_eq!(
+        ack.snapshot_id, snap_before,
+        "staged ack = current snapshot"
+    );
+
+    // The extent is staged, the table snapshot is unchanged, and it is NOT yet
+    // visible (read-your-writes is intentionally relaxed in staged mode).
+    assert_eq!(
+        catalog
+            .list_staged_extents(DEFAULT_TENANT, 100)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    let tref_mid = catalog.lookup_table("default", "events").await.unwrap();
+    assert_eq!(
+        tref_mid.current_snapshot_id, snap_before,
+        "no commit at ack time"
+    );
+    assert_eq!(live_extent_count(&catalog, "events").await, 0);
+
+    // The committer commits it; now it is live and destaged.
+    let committer = Committer::new(catalog_dyn, DEFAULT_TENANT);
+    assert_eq!(committer.tick().await.unwrap(), 1);
+    assert_eq!(
+        live_extent_count(&catalog, "events").await,
+        1,
+        "committed + visible"
+    );
+    assert_eq!(
+        catalog
+            .list_staged_extents(DEFAULT_TENANT, 100)
+            .await
+            .unwrap()
+            .len(),
+        0
+    );
+}
