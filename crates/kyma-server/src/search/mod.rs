@@ -12,6 +12,7 @@
 //! Degrades gracefully: no embedder / no vector column → lexical-only; a failing
 //! source is skipped rather than failing the whole request.
 
+pub mod cache;
 pub mod types;
 pub mod unified;
 
