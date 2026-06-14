@@ -39,6 +39,10 @@ pub struct IndexScheduler {
     /// Where build jobs are enqueued. `None` when the catalog has no fabric
     /// queue (`new` over a non-Postgres catalog) — `tick` is then idle.
     enqueuer: Option<Arc<dyn kyma_core::fabric::JobEnqueuer>>,
+    /// Whether to enqueue `ann_maintain` (global centroid tree, S1.3). True in
+    /// server mode (`new`); false in local mode (`with_enqueuer`) — local keeps
+    /// per-extent ANN and never builds a global tree.
+    build_ann_tree: bool,
     /// Sleep between sweeps.
     pub poll_interval: Duration,
     /// Max extents bundled into a single `index_build` job.
@@ -69,6 +73,7 @@ impl IndexScheduler {
         Self {
             catalog,
             enqueuer,
+            build_ann_tree: true,
             poll_interval: Self::default_poll_interval(),
             max_extents_per_job: 32,
         }
@@ -76,6 +81,7 @@ impl IndexScheduler {
 
     /// Explicit-enqueuer constructor for catalogs whose fabric queue isn't
     /// reachable by downcast (local SQLite mode passes a `SqliteEnqueuer`).
+    /// Local mode keeps per-extent ANN and does not build a global tree.
     pub fn with_enqueuer(
         catalog: Arc<dyn Catalog>,
         enqueuer: Arc<dyn kyma_core::fabric::JobEnqueuer>,
@@ -83,6 +89,7 @@ impl IndexScheduler {
         Self {
             catalog,
             enqueuer: Some(enqueuer),
+            build_ann_tree: false,
             poll_interval: Self::default_poll_interval(),
             max_extents_per_job: 32,
         }
@@ -121,6 +128,7 @@ impl IndexScheduler {
             .map_err(|e| Error::Internal(format!("list_databases: {e}")))?;
         let mut embed_jobs = 0usize;
         let mut fts_jobs = 0usize;
+        let mut ann_jobs = 0usize;
         for db in databases {
             let tables = self.catalog.list_tables_in_database(&db).await?;
             for table in tables {
@@ -168,17 +176,104 @@ impl IndexScheduler {
                             0
                         });
                 }
+
+                // (3) ann_maintain: (re)build the global centroid tree (S1.3,
+                //     server mode) when the set of sidecar-bearing extents for a
+                //     column+model changed since the tree was last built.
+                if self.build_ann_tree {
+                    ann_jobs += self
+                        .enqueue_ann_maintain_stale(fabric, DEFAULT_TENANT, &table)
+                        .await
+                        .unwrap_or_else(|e| {
+                            warn!(table = %table.name, error = %e, "ann_maintain enqueue failed");
+                            0
+                        });
+                }
             }
         }
-        if enqueued > 0 || embed_jobs > 0 || fts_jobs > 0 {
+        if enqueued > 0 || embed_jobs > 0 || fts_jobs > 0 || ann_jobs > 0 {
             info!(
                 ivf_rabitq = enqueued,
                 embed_backfill = embed_jobs,
                 tantivy_fts = fts_jobs,
+                ann_maintain = ann_jobs,
                 "index scheduler enqueued build jobs"
             );
         }
-        Ok(enqueued + embed_jobs + fts_jobs)
+        Ok(enqueued + embed_jobs + fts_jobs + ann_jobs)
+    }
+
+    /// Enqueue `ann_maintain` for every `(column, model)` whose live
+    /// sidecar-bearing extent set no longer matches the stored tree's
+    /// fingerprint (or has no tree yet). Debounced: once a tree is rebuilt its
+    /// fingerprint matches and nothing is enqueued until the set changes again.
+    async fn enqueue_ann_maintain_stale(
+        &self,
+        fabric: &dyn kyma_core::fabric::JobEnqueuer,
+        tenant: TenantId,
+        table: &TableRef,
+    ) -> Result<usize> {
+        let extents = self
+            .catalog
+            .list_extents_in_tenant(
+                tenant,
+                table.id,
+                table.current_snapshot_id,
+                &Default::default(),
+            )
+            .await?;
+        if extents.is_empty() {
+            return Ok(0);
+        }
+        let extent_ids: Vec<_> = extents.iter().map(|m| m.id).collect();
+        let sidecars = self
+            .catalog
+            .list_index_sidecars(tenant, table.id, &extent_ids, Some(SidecarKind::IvfRabitq))
+            .await?;
+        // Group sidecar-bearing extents by (column, model).
+        let mut groups: std::collections::HashMap<(String, Option<String>), Vec<uuid::Uuid>> =
+            std::collections::HashMap::new();
+        for d in &sidecars {
+            groups
+                .entry((d.column.clone(), d.embedding_model_id.clone()))
+                .or_default()
+                .push(*d.extent_id.as_uuid());
+        }
+        let mut jobs = 0usize;
+        for ((column, model), ids) in groups {
+            let fp = kyma_index_vector::global_tree::extent_fingerprint(&ids);
+            let fresh = self
+                .catalog
+                .get_ann_tree(tenant, table.id, &column, model.as_deref())
+                .await
+                .ok()
+                .flatten()
+                .map(|t| t.extent_fingerprint == fp)
+                .unwrap_or(false);
+            if fresh {
+                continue;
+            }
+            let job = kyma_core::fabric::EnqueueJob {
+                kind: kyma_core::fabric::JOB_ANN_MAINTAIN.to_string(),
+                payload: serde_json::json!({
+                    "table_id": table.id.as_uuid(),
+                    "column": column,
+                    "embedding_model_id": model,
+                }),
+                priority: 0,
+                affinity_worker_id: None,
+                req_capabilities: Vec::new(),
+                label_selector: serde_json::json!({}),
+                max_attempts: 3,
+            };
+            fabric
+                .enqueue(tenant, &job)
+                .await
+                .map_err(|e| Error::Internal(format!("enqueue ann_maintain: {e}")))?;
+            jobs += 1;
+        }
+        debug!(table = %table.name, jobs, "enqueued ann_maintain");
+        Ok(jobs)
     }
 
     /// Enqueue `tantivy_fts` (BM25) build jobs for the embed config's text

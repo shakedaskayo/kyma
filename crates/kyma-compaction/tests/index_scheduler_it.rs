@@ -136,8 +136,36 @@ async fn enqueues_builds_for_unindexed_vector_extents_only() {
         .unwrap();
     }
 
+    // Now both extents are indexed → no ivf_rabitq jobs, but the global tree
+    // (S1.3) does not exist yet → exactly one ann_maintain job is enqueued.
     let n2 = sched.tick().await.unwrap();
-    assert_eq!(n2, 0, "all vector extents indexed → no new jobs");
+    assert_eq!(n2, 1, "no ivf_rabitq left; one ann_maintain (tree missing)");
+
+    // Register a fresh tree whose fingerprint matches the current sidecar set →
+    // the next tick is fully debounced (no ann_maintain re-enqueue).
+    let fp = kyma_index_vector::global_tree::extent_fingerprint(
+        &[e1, _e2].iter().map(|e| *e.as_uuid()).collect::<Vec<_>>(),
+    );
+    pg.upsert_ann_tree(
+        DEFAULT_TENANT,
+        &kyma_core::index_sidecar::AnnTreeDescriptor {
+            id: Uuid::new_v4(),
+            table_id: vtref.id,
+            column: "embedding".into(),
+            embedding_model_id: Some("test/model".into()),
+            generation: 1,
+            extent_fingerprint: fp,
+            object_path: format!("{DEFAULT_TENANT}/ann_tree/{}/embedding.kygt", vtref.id),
+            byte_size: 10,
+            params: serde_json::json!({}),
+            created_at: chrono::Utc::now(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let n3 = sched.tick().await.unwrap();
+    assert_eq!(n3, 0, "fresh tree fingerprint matches → fully debounced");
 }
 
 /// Register an extent carrying explicit `column_stats`.

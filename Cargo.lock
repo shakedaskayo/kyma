@@ -4985,6 +4985,7 @@ dependencies = [
  "futures",
  "kyma-catalog",
  "kyma-core",
+ "kyma-index-vector",
  "kyma-ingest-core",
  "metrics",
  "object_store",
