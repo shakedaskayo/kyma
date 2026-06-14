@@ -57,7 +57,7 @@ export function InspectorPanel({
         <div className="ky-min-w-0">
           <div className="ky-truncate ky-text-sm ky-font-medium ky-text-foreground">{name}</div>
           <div className="ky-text-2xs ky-text-muted-foreground">
-            {node.labels.join(" · ")} · {node.namespace}
+            {[...node.labels, node.namespace].filter(Boolean).join(" · ")}
           </div>
         </div>
         <button type="button" onClick={() => selectNode(null)} className="ky-text-muted-foreground hover:ky-text-foreground">
