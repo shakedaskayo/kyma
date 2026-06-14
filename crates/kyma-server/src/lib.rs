@@ -805,6 +805,15 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
     let tenant = principal
         .map(|p| p.tenant)
         .unwrap_or(kyma_core::tenant::DEFAULT_TENANT);
+
+    // Per-tenant query admission (S2.6): each tenant has its own concurrency
+    // budget, so one tenant saturating it can't starve another. Held for the
+    // (buffered) execution below. No-op unless KYMA_QUERY_MAX_CONCURRENT_PER_TENANT
+    // is set; complements the process-global cap acquired above.
+    let _tenant_admission = match crate::concurrency::acquire_for_tenant(tenant) {
+        Ok(p) => p,
+        Err(retry) => return too_many_requests_response(retry, &request_id),
+    };
     let allowed_databases: Option<Vec<String>> =
         principal.and_then(|p| p.allowed_databases.clone());
 

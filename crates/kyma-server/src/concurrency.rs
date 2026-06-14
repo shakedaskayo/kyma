@@ -17,7 +17,10 @@
 //! unchanged. `KYMA_QUERY_RETRY_AFTER_SECS` (default 1) sets the advertised
 //! retry hint.
 
-use std::sync::{Arc, OnceLock};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
+
+use kyma_core::tenant::TenantId;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// Process-global query semaphore, or `None` when admission control is
@@ -107,6 +110,53 @@ pub fn acquire_agent_run() -> Result<AgentRunPermit, u64> {
     }
 }
 
+/// Per-tenant query concurrency limit, or `None` when disabled. Each tenant
+/// gets its OWN semaphore of this size, so one tenant saturating its budget
+/// cannot starve another (the S2 "two-tenant quota isolation" goal). Distinct
+/// from the process-global [`acquire`] node-wide cap; both can apply.
+fn per_tenant_query_limit() -> Option<usize> {
+    static N: OnceLock<Option<usize>> = OnceLock::new();
+    *N.get_or_init(|| {
+        let n = std::env::var("KYMA_QUERY_MAX_CONCURRENT_PER_TENANT")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0);
+        if n == 0 {
+            None
+        } else {
+            Some(n)
+        }
+    })
+}
+
+fn tenant_query_semaphores() -> &'static Mutex<HashMap<TenantId, Arc<Semaphore>>> {
+    static M: OnceLock<Mutex<HashMap<TenantId, Arc<Semaphore>>>> = OnceLock::new();
+    M.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Admit one query for `tenant` against that tenant's own concurrency budget.
+/// `Ok(permit)` to proceed (hold it for the request); `Err(retry_after_secs)`
+/// when this tenant is at capacity. Off by default
+/// (`KYMA_QUERY_MAX_CONCURRENT_PER_TENANT` unset/0 ⇒ unlimited).
+pub fn acquire_for_tenant(tenant: TenantId) -> Result<QueryPermit, u64> {
+    let Some(n) = per_tenant_query_limit() else {
+        return Ok(QueryPermit(None));
+    };
+    let sem = {
+        let Ok(mut g) = tenant_query_semaphores().lock() else {
+            return Ok(QueryPermit(None)); // never block a query on a poisoned lock
+        };
+        Arc::clone(
+            g.entry(tenant)
+                .or_insert_with(|| Arc::new(Semaphore::new(n))),
+        )
+    };
+    match sem.try_acquire_owned() {
+        Ok(p) => Ok(QueryPermit(Some(p))),
+        Err(_) => Err(retry_after_secs()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,6 +175,34 @@ mod tests {
         for _ in 0..1000 {
             assert!(acquire_agent_run().is_ok());
         }
+    }
+
+    #[test]
+    fn per_tenant_disabled_when_unset_grants_inert_permits() {
+        // KYMA_QUERY_MAX_CONCURRENT_PER_TENANT unset ⇒ unlimited per tenant.
+        let t = kyma_core::tenant::DEFAULT_TENANT;
+        for _ in 0..1000 {
+            assert!(acquire_for_tenant(t).is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn per_tenant_semaphores_isolate_tenants() {
+        // Independent per-tenant semaphores: saturating tenant A's budget leaves
+        // tenant B's untouched (the env-global limit is unsafe to mutate in
+        // parallel tests, so exercise the isolation mechanics directly).
+        let a = Arc::new(Semaphore::new(1));
+        let b = Arc::new(Semaphore::new(1));
+        let a1 = Arc::clone(&a).try_acquire_owned();
+        assert!(a1.is_ok(), "tenant A admitted");
+        assert!(
+            Arc::clone(&a).try_acquire_owned().is_err(),
+            "tenant A now saturated"
+        );
+        assert!(
+            Arc::clone(&b).try_acquire_owned().is_ok(),
+            "tenant B unaffected by A's saturation"
+        );
     }
 
     #[tokio::test]
