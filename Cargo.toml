@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/kyma-core",
     "crates/kyma-format-tlm",
+    "crates/kyma-format-parquet",
     "crates/kyma-format-stub-vec",
     "crates/kyma-catalog",
     "crates/kyma-catalog-sqlite",
@@ -86,6 +87,7 @@ arrow-array = "53"
 arrow-schema = "53"
 arrow-json = "53"
 arrow-flight = "53"
+parquet = { version = "53", features = ["arrow", "async", "zstd"] }
 datafusion = "44"
 # Query federation (remote subplan pushdown). Pinned: 0.3.5 is the last release
 # on the DataFusion 44 line (0.3.6+ moved to DF 45/46; 0.4/0.5 need newer still).
@@ -157,6 +159,7 @@ fastrand = "2"
 # crates. Kept in lockstep with [workspace.package] version.
 kyma-core              = { path = "crates/kyma-core",            version = "0.0.16" }
 kyma-format-tlm        = { path = "crates/kyma-format-tlm",      version = "0.0.16" }
+kyma-format-parquet    = { path = "crates/kyma-format-parquet",  version = "0.0.16" }
 kyma-format-stub-vec   = { path = "crates/kyma-format-stub-vec", version = "0.0.16" }
 kyma-graph-testkit     = { path = "crates/kyma-graph-testkit",   version = "0.0.16" }
 kyma-catalog           = { path = "crates/kyma-catalog",         version = "0.0.16" }

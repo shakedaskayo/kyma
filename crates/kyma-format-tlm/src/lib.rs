@@ -28,6 +28,7 @@
 #![forbid(unsafe_code)]
 
 pub mod block_stats;
+pub mod column_stats;
 mod reader;
 mod writer;
 

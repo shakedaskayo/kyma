@@ -5145,6 +5145,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyma-format-parquet"
+version = "0.0.16"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "futures",
+ "kyma-core",
+ "kyma-format-tlm",
+ "object_store",
+ "parquet",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "kyma-format-stub-vec"
 version = "0.0.16"
 dependencies = [
