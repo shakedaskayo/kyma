@@ -837,6 +837,20 @@ pub async fn run_serve(
                 let _ = sched_shutdown.send(());
             });
             tokio::spawn(scheduler.run(sched_rx));
+
+            // Graph-snapshot activation scheduler (S3.2): the same refresh loop
+            // the server runs, so local-mode deep-subgraph queries also serve
+            // from a persistent CSR snapshot once a graph's edges change.
+            let graph_snap = kyma_server::graph_snapshot_sched::GraphSnapshotScheduler::new(
+                engine.catalog.clone(),
+                engine.format.clone(),
+            );
+            let (gsnap_shutdown, gsnap_rx) = tokio::sync::broadcast::channel::<()>(1);
+            tokio::spawn(async move {
+                let _ = tokio::signal::ctrl_c().await;
+                let _ = gsnap_shutdown.send(());
+            });
+            tokio::spawn(graph_snap.run(gsnap_rx));
         }
 
         let runner = kyma_jobs::JobRunner::new(queue, exec_reg, 120);

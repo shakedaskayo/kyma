@@ -945,6 +945,17 @@ async fn main() -> Result<()> {
     let index_scheduler = kyma_compaction::IndexScheduler::new(catalog.clone());
     let index_scheduler_handle = tokio::spawn(index_scheduler.run(shutdown_tx.subscribe()));
 
+    // Graph-snapshot activation scheduler: refreshes persistent CSR topology
+    // snapshots (S3.2) after a graph's edges change, so deep-subgraph queries on
+    // large graphs serve from the snapshot instead of a per-hop scan.
+    let graph_snapshot_scheduler =
+        kyma_server::graph_snapshot_sched::GraphSnapshotScheduler::new(
+            catalog.clone(),
+            format.clone(),
+        );
+    let graph_snapshot_scheduler_handle =
+        tokio::spawn(graph_snapshot_scheduler.run(shutdown_tx.subscribe()));
+
     // Retention sweeper (soft-delete expired).
     let mut retention = RetentionSweeper::new(catalog.clone());
     if let Ok(s) = std::env::var("KYMA_RETENTION_POLL_SECS")
@@ -1584,6 +1595,7 @@ async fn main() -> Result<()> {
     // Workers were already signaled above; join their handles.
     let _ = worker_handle.await;
     let _ = index_scheduler_handle.await;
+    let _ = graph_snapshot_scheduler_handle.await;
     let _ = scheduler_handle.await;
     let _ = retention_handle.await;
     let _ = gc_handle.await;

@@ -30,6 +30,7 @@ pub mod discover;
 pub mod fabric_handler;
 pub mod graph_handler;
 pub mod graph_layout_cache;
+pub mod graph_snapshot_sched;
 pub mod flight;
 pub mod capabilities;
 pub mod concurrency;
