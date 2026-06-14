@@ -231,7 +231,9 @@ impl CompactionWorker {
         let result = writer.finish().await?;
 
         // 4. Commit: add new extent, remove sources. Retry on CAS conflict.
-        let new_manifest = new_manifest_from_write(&table_ref, &result, task.attempt);
+        //    The merged extent's level is one above its highest input (LSM-style).
+        let new_manifest =
+            new_manifest_from_write(&table_ref, &result, next_compaction_level(&source_manifests));
         let source_ids: Vec<kyma_core::types::ExtentId> =
             source_manifests.iter().map(|m| m.id).collect();
         self.commit_with_retry(
@@ -403,7 +405,7 @@ fn ratio(a: u64, b: u64) -> f64 {
 fn new_manifest_from_write(
     table: &TableRef,
     w: &kyma_core::segment_format::ExtentWriteResult,
-    attempt: i32,
+    level: u32,
 ) -> ExtentManifest {
     ExtentManifest {
         id: w.extent_id,
@@ -416,9 +418,25 @@ fn new_manifest_from_write(
         max_timestamp: w.max_timestamp_nanos.map(nanos_to_utc),
         column_stats: w.column_stats.clone(),
         present_paths: w.present_paths.clone(),
-        compaction_gen: (attempt as u32).max(1),
+        // `compaction_gen` is the LSM-style level (S2.3): freshly-ingested
+        // extents are level 0, and a merge output sits one level above the
+        // highest of its inputs. This is the tiering signal — size-stratified
+        // candidate selection compacts within a level and promotes upward —
+        // not the task retry count (the previous, incorrect meaning).
+        compaction_gen: level.max(1),
         created_at: chrono::Utc::now(),
     }
+}
+
+/// The level of a merge output: one above the highest input level (L0 ingest →
+/// L1 → L2 …). Pure — unit-tested.
+fn next_compaction_level(sources: &[ExtentManifest]) -> u32 {
+    sources
+        .iter()
+        .map(|m| m.compaction_gen)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1)
 }
 
 fn nanos_to_utc(n: i64) -> chrono::DateTime<chrono::Utc> {
@@ -529,4 +547,38 @@ async fn find_compaction_candidates(
             source_extent_ids: eids.iter().map(|e| *e.as_uuid()).collect(),
         })
         .collect())
+}
+
+#[cfg(test)]
+mod level_tests {
+    use super::next_compaction_level;
+    use kyma_core::catalog::ExtentManifest;
+    use kyma_core::types::{ExtentId, SchemaSnapshotId, TableId};
+
+    fn m(level: u32) -> ExtentManifest {
+        ExtentManifest {
+            id: ExtentId::new(),
+            table_id: TableId::new(),
+            schema_snapshot_id: SchemaSnapshotId::new(),
+            object_path: "x".into(),
+            byte_size: 1,
+            row_count: 1,
+            min_timestamp: None,
+            max_timestamp: None,
+            column_stats: serde_json::json!({}),
+            present_paths: vec![],
+            compaction_gen: level,
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn level_is_one_above_highest_input() {
+        // All L0 inputs → L1 output.
+        assert_eq!(next_compaction_level(&[m(0), m(0), m(0)]), 1);
+        // Mixed levels → one above the max (an L1 re-merged with L0s → L2).
+        assert_eq!(next_compaction_level(&[m(0), m(1), m(0)]), 2);
+        // Empty (defensive) → level 1.
+        assert_eq!(next_compaction_level(&[]), 1);
+    }
 }
