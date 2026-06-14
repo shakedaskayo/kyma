@@ -10,6 +10,7 @@ use kyma_graph_topo::{CsrGraph, Direction as TopoDirection};
 
 use crate::executor::{GraphQueryExecutor, JsonRow, StoredGraphConfig};
 use crate::provider::GraphProvider;
+use crate::topo_cache::{TopoCache, TopoKey, TopoSnapshot};
 use crate::types::{
     Direction, EdgeExpansion, GraphNode, GraphPayload, GraphRelationship, GraphSchema, GraphStats,
     NodeMetadata, Props, SearchHits,
@@ -327,37 +328,64 @@ impl GraphProvider for StoredGraphProvider {
         if depth <= 2 {
             return self.subgraph_per_hop(id, depth).await;
         }
-        // Deep path: if the whole deduped edge set fits the cap, load it in one
-        // scan and BFS in RAM — no per-hop N+1, no practical depth limit.
-        // `cap + 1` lets us detect "too big" in a single query, in which case we
-        // fall back to the bounded per-hop path (large graphs never attempt a
-        // full-topology in-memory build).
+        // Deep path: build (or reuse) a whole-graph CSR and BFS in RAM — no
+        // per-hop N+1, no practical depth limit. A cheap `(node, edge)` count
+        // fingerprint both gates the build (too large → per-hop fallback, so
+        // large graphs never attempt a full-topology build) and keys the topo
+        // cache, so repeated deep queries on an unchanged graph skip the scan +
+        // rebuild entirely.
         let cap = topo_max_edges();
-        let edge_rows = self.rows(edge_sample_sql(&self.cfg, cap + 1)).await?;
-        if edge_rows.len() > cap {
+        let node_count = Self::count_of(&self.rows(count_sql(&node_source(&self.cfg))).await?);
+        let edge_count = Self::count_of(&self.rows(count_sql(&edge_source(&self.cfg))).await?);
+        if edge_count > cap {
             return self.subgraph_per_hop(id, depth).await;
         }
-        let all_edges: Vec<GraphRelationship> =
-            edge_rows.iter().map(|r| row_to_edge(&self.cfg, r)).collect();
-        // CSR over the edge endpoints (+ the seed, so an isolated node still
-        // yields itself). `CsrGraph::build` dedups ids and drops dangling edges;
-        // here every endpoint is a node, so nothing is dropped.
-        let csr = CsrGraph::build(
-            all_edges
-                .iter()
-                .flat_map(|e| [e.source_id.as_str(), e.target_id.as_str()])
-                .chain(std::iter::once(id)),
-            all_edges
-                .iter()
-                .map(|e| (e.source_id.as_str(), e.target_id.as_str(), e.relationship_type.as_str())),
-        );
+        let key = TopoKey {
+            database: self.cfg.database.clone(),
+            node_table: self.cfg.node_table.clone(),
+            edge_table: self.cfg.edge_table.clone(),
+        };
+        let fingerprint = (node_count, edge_count);
+        let snap = match TopoCache::global().get(&key, fingerprint) {
+            Some(s) => s,
+            None => {
+                let edge_rows = self.rows(edge_sample_sql(&self.cfg, cap + 1)).await?;
+                let all_edges: Vec<GraphRelationship> =
+                    edge_rows.iter().map(|r| row_to_edge(&self.cfg, r)).collect();
+                // CSR over the edge endpoints; `CsrGraph::build` dedups ids and
+                // drops dangling edges (here every endpoint is a node).
+                let csr = CsrGraph::build(
+                    all_edges
+                        .iter()
+                        .flat_map(|e| [e.source_id.as_str(), e.target_id.as_str()]),
+                    all_edges.iter().map(|e| {
+                        (
+                            e.source_id.as_str(),
+                            e.target_id.as_str(),
+                            e.relationship_type.as_str(),
+                        )
+                    }),
+                );
+                let snap = std::sync::Arc::new(TopoSnapshot {
+                    fingerprint,
+                    csr,
+                    edges: all_edges,
+                });
+                TopoCache::global().put(key, snap.clone());
+                snap
+            }
+        };
         // Undirected reachability to `depth`, matching the per-hop path's
-        // `Direction::Both`.
-        let reached = csr.k_hop(&[id], depth.max(1), TopoDirection::Both, None);
-        let reached_ids: std::collections::HashSet<&str> =
+        // `Direction::Both`. The cached CSR is seed-independent (built from edge
+        // endpoints only), so an isolated seed with no edges is absent from it;
+        // add the seed back so its own node still appears (a lone-node subgraph).
+        let reached = snap.csr.k_hop(&[id], depth.max(1), TopoDirection::Both, None);
+        let mut reached_ids: std::collections::HashSet<&str> =
             reached.iter().map(|(_, n, _)| n.as_str()).collect();
-        // Induced subgraph: every scanned edge whose endpoints are both reached.
-        let edges: Vec<GraphRelationship> = all_edges
+        reached_ids.insert(id);
+        // Induced subgraph: every edge whose endpoints are both reached.
+        let edges: Vec<GraphRelationship> = snap
+            .edges
             .iter()
             .filter(|e| {
                 reached_ids.contains(e.source_id.as_str())
@@ -597,14 +625,27 @@ mod provider_tests {
         assert_eq!(exp.new_node_ids, vec!["b".to_string()]);
     }
 
-    /// A 5-hop chain a→b→c→d→e→f. Edge queries return the whole chain in one
-    /// shot; node-by-id queries echo the requested id (parsed from the literal).
-    struct DeepChainExec;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// A 5-hop chain a→b→c→d→e→f (6 nodes, 5 edges). Count queries report the
+    /// fixed fingerprint; edge scans return the whole chain (and bump `scans`,
+    /// so tests can prove the topo cache avoided a rescan); node-by-id queries
+    /// echo the requested id. Matches `_edges`/`_nodes` generically so each test
+    /// can use a unique table prefix and thus an isolated topo-cache key.
+    struct DeepChainExec {
+        scans: Arc<AtomicUsize>,
+    }
     #[async_trait]
     impl GraphQueryExecutor for DeepChainExec {
         async fn query(&self, _db: &str, sql: String) -> anyhow::Result<Vec<JsonRow>> {
             let s = sql.to_lowercase();
-            if s.contains("kg_edges") {
+            if s.contains("count(*)") {
+                let n = if s.contains("_nodes") { 6 } else { 5 };
+                return Ok(vec![row(&[("n", serde_json::json!(n))])]);
+            }
+            if s.contains("_edges") {
+                self.scans.fetch_add(1, Ordering::SeqCst);
                 let chain = [("a", "b"), ("b", "c"), ("c", "d"), ("d", "e"), ("e", "f")];
                 return Ok(chain
                     .iter()
@@ -617,7 +658,7 @@ mod provider_tests {
                     })
                     .collect());
             }
-            if s.contains("kg_nodes") {
+            if s.contains("_nodes") {
                 // node_by_id_sql: `... "id" = '<x>' limit 1` → echo <x>.
                 if let Some(idv) = sql.split('\'').nth(1) {
                     return Ok(vec![row(&[
@@ -629,20 +670,24 @@ mod provider_tests {
             Ok(vec![])
         }
     }
-    fn deep_provider() -> StoredGraphProvider {
+    /// Provider over a unique table prefix (→ isolated topo-cache key per test,
+    /// since the cache is process-global).
+    fn deep_provider(prefix: &str, scans: Arc<AtomicUsize>) -> StoredGraphProvider {
         StoredGraphProvider::new(
             StoredGraphConfig {
-                database: "kg".into(), node_table: "kg_nodes".into(), edge_table: "kg_edges".into(),
+                database: "kg".into(),
+                node_table: format!("{prefix}_nodes"),
+                edge_table: format!("{prefix}_edges"),
                 id_col: "id".into(), label_col: "labels".into(), src_col: "src".into(),
                 dst_col: "dst".into(), type_col: "type".into(), realm_col: None,
             },
-            std::sync::Arc::new(DeepChainExec),
+            std::sync::Arc::new(DeepChainExec { scans }),
         )
     }
 
     #[tokio::test]
     async fn subgraph_traverses_beyond_two_hops_in_one_scan() {
-        let p = deep_provider();
+        let p = deep_provider("trav", Arc::new(AtomicUsize::new(0)));
         // depth 5 reaches the whole chain (the old per-hop default capped at 2).
         let g = p.subgraph("a", 5).await.unwrap();
         let ids: std::collections::BTreeSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
@@ -657,10 +702,27 @@ mod provider_tests {
     #[tokio::test]
     async fn subgraph_respects_depth_bound() {
         // depth 3 takes the CSR path (depth > 2) and stops at d on the chain.
-        let p = deep_provider();
+        let p = deep_provider("bound", Arc::new(AtomicUsize::new(0)));
         let g = p.subgraph("a", 3).await.unwrap();
         let ids: std::collections::BTreeSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
         assert_eq!(ids, ["a", "b", "c", "d"].into_iter().collect(), "depth 3 stops at d");
         assert_eq!(g.edges.len(), 3, "only a→b, b→c, c→d are induced");
+    }
+
+    #[tokio::test]
+    async fn subgraph_topo_cache_skips_rescan_on_repeat() {
+        let scans = Arc::new(AtomicUsize::new(0));
+        let p = deep_provider("cache", scans.clone());
+        // First deep query builds the topology (one edge scan); second reuses
+        // the cached CSR (fingerprint unchanged) → no second scan.
+        let g1 = p.subgraph("a", 5).await.unwrap();
+        let g2 = p.subgraph("a", 5).await.unwrap();
+        assert_eq!(g1.nodes.len(), g2.nodes.len(), "identical results across the cache");
+        assert_eq!(g2.edges.len(), 5);
+        assert_eq!(
+            scans.load(Ordering::SeqCst),
+            1,
+            "edge table scanned once; the repeat hit the topo cache"
+        );
     }
 }
