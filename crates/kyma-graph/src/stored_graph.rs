@@ -217,11 +217,25 @@ pub(crate) fn row_to_edge(c: &StoredGraphConfig, row: &JsonRow) -> GraphRelation
 pub struct StoredGraphProvider {
     cfg: StoredGraphConfig,
     exec: Arc<dyn GraphQueryExecutor>,
+    /// Object store for persistent topology snapshots (S3.2). `None` ⇒ the
+    /// snapshot fast-path is skipped (deep traversal falls back to per-hop).
+    store: Option<Arc<dyn object_store::ObjectStore>>,
 }
 
 impl StoredGraphProvider {
     pub fn new(cfg: StoredGraphConfig, exec: Arc<dyn GraphQueryExecutor>) -> Self {
-        Self { cfg, exec }
+        Self {
+            cfg,
+            exec,
+            store: None,
+        }
+    }
+
+    /// Attach an object store so deep traversal of large graphs can reuse a
+    /// persistent [`crate::snapshot`] instead of a per-hop SQL loop.
+    pub fn with_store(mut self, store: Option<Arc<dyn object_store::ObjectStore>>) -> Self {
+        self.store = store;
+        self
     }
     async fn rows(&self, sql: String) -> anyhow::Result<Vec<JsonRow>> {
         self.exec.query(&self.cfg.database, sql).await
@@ -300,6 +314,60 @@ impl StoredGraphProvider {
         let path = crate::snapshot::snapshot_path(&self.cfg.database, &self.cfg.edge_table);
         crate::snapshot::store_snapshot(store, &path, &csr).await
     }
+
+    /// Deep-subgraph fast path for large graphs: if a persistent topology
+    /// snapshot exists, compute reachability from it (one in-RAM BFS, no per-hop
+    /// SQL loop), then fetch the induced edges' properties in a single query and
+    /// the reached nodes' objects. Returns `None` when there is no store or no
+    /// snapshot yet — the caller then falls back to the per-hop path.
+    async fn snapshot_subgraph(
+        &self,
+        id: &str,
+        depth: usize,
+    ) -> anyhow::Result<Option<GraphPayload>> {
+        let Some(store) = &self.store else {
+            return Ok(None);
+        };
+        let path = crate::snapshot::snapshot_path(&self.cfg.database, &self.cfg.edge_table);
+        let Some(csr) = crate::snapshot::load_snapshot(store, &path).await? else {
+            return Ok(None);
+        };
+        // Reachability from the snapshot (undirected, matching the per-hop path).
+        let reached = csr.k_hop(&[id], depth.max(1), TopoDirection::Both, None);
+        let mut reached_ids: Vec<String> = reached.into_iter().map(|(_, n, _)| n).collect();
+        if !reached_ids.iter().any(|n| n == id) {
+            reached_ids.push(id.to_string()); // isolated seed (absent from the CSR)
+        }
+        let reached_set: std::collections::HashSet<&str> =
+            reached_ids.iter().map(String::as_str).collect();
+        // Induced edges (with properties): one neighbors query over the reached
+        // set, kept to edges whose endpoints are both reached.
+        let cap = topo_max_edges();
+        let edge_rows = self
+            .rows(neighbors_sql(&self.cfg, &reached_ids, Direction::Both, cap))
+            .await?;
+        let edges: Vec<GraphRelationship> = edge_rows
+            .iter()
+            .map(|r| row_to_edge(&self.cfg, r))
+            .filter(|e| {
+                reached_set.contains(e.source_id.as_str())
+                    && reached_set.contains(e.target_id.as_str())
+            })
+            .collect();
+        let mut nodes = Vec::new();
+        for nid in &reached_ids {
+            if let Some(n) = self.node(nid).await? {
+                nodes.push(n);
+            }
+        }
+        let stats = GraphStats {
+            total_nodes: nodes.len(),
+            total_relationships: edges.len(),
+            label_counts: BTreeMap::new(),
+            relationship_type_counts: BTreeMap::new(),
+        };
+        Ok(Some(GraphPayload { stats, nodes, edges }))
+    }
 }
 
 async fn stats_for(p: &StoredGraphProvider) -> anyhow::Result<GraphStats> {
@@ -368,6 +436,12 @@ impl GraphProvider for StoredGraphProvider {
         let node_count = Self::count_of(&self.rows(count_sql(&node_source(&self.cfg))).await?);
         let edge_count = Self::count_of(&self.rows(count_sql(&edge_source(&self.cfg))).await?);
         if edge_count > cap {
+            // Large graph: prefer a persistent snapshot (one in-RAM BFS over the
+            // prebuilt CSR) over the per-hop SQL loop; fall back to per-hop when
+            // no snapshot exists yet.
+            if let Some(g) = self.snapshot_subgraph(id, depth).await? {
+                return Ok(g);
+            }
             return self.subgraph_per_hop(id, depth).await;
         }
         let key = TopoKey {
@@ -778,5 +852,35 @@ mod provider_tests {
             "persisted snapshot captured the full chain: {reached:?}"
         );
         assert_eq!(csr.shortest_path_len("a", "f", Direction::Fwd, None), Some(5));
+    }
+
+    #[tokio::test]
+    async fn snapshot_subgraph_serves_deep_query_from_a_persisted_snapshot() {
+        // Build + persist a snapshot, attach the store, then the snapshot
+        // fast-path serves a deep query (reachability from the CSR + induced
+        // edges) without the per-hop loop.
+        let store: Arc<dyn object_store::ObjectStore> =
+            Arc::new(object_store::memory::InMemory::new());
+        let p = deep_provider("snapq", Arc::new(AtomicUsize::new(0)))
+            .with_store(Some(store.clone()));
+        p.build_and_store_snapshot(&store).await.unwrap();
+
+        let g = p
+            .snapshot_subgraph("a", 5)
+            .await
+            .unwrap()
+            .expect("snapshot present → fast path used");
+        let ids: std::collections::BTreeSet<&str> =
+            g.nodes.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["a", "b", "c", "d", "e", "f"].into_iter().collect(),
+            "snapshot reachability covers the chain"
+        );
+        assert_eq!(g.edges.len(), 5, "induced edges fetched with properties");
+
+        // No store → no snapshot fast-path (caller falls back to per-hop).
+        let p2 = deep_provider("snapq2", Arc::new(AtomicUsize::new(0)));
+        assert!(p2.snapshot_subgraph("a", 5).await.unwrap().is_none());
     }
 }
