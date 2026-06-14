@@ -176,6 +176,45 @@ fn ppr_matches_power_iteration() {
 }
 
 #[test]
+fn connected_components_splits_disjoint_and_joins_connected() {
+    // Two disjoint triangles → two weakly-connected components.
+    let mut g = TestGraph::new();
+    for id in ["x0", "x1", "x2", "y0", "y1", "y2"] {
+        g.add_node(id, "N");
+    }
+    for (s, d) in [("x0", "x1"), ("x1", "x2"), ("x2", "x0")] {
+        g.add_edge(s, d, "E");
+    }
+    for (s, d) in [("y0", "y1"), ("y1", "y2"), ("y2", "y0")] {
+        g.add_edge(s, d, "E");
+    }
+    let csr = csr_of(&g);
+    let comp: std::collections::HashMap<String, u32> = csr
+        .connected_components(Direction::Both)
+        .into_iter()
+        .collect();
+    let distinct: std::collections::BTreeSet<u32> = comp.values().copied().collect();
+    assert_eq!(distinct.len(), 2, "two disjoint triangles → 2 components");
+    assert_eq!(comp["x0"], comp["x1"]);
+    assert_eq!(comp["x0"], comp["x2"]);
+    assert_eq!(comp["y0"], comp["y2"]);
+    assert_ne!(
+        comp["x0"], comp["y0"],
+        "the triangles are separate components"
+    );
+
+    // Add a bridge → one component.
+    g.add_edge("x0", "y0", "BRIDGE");
+    let csr2 = csr_of(&g);
+    let one: std::collections::BTreeSet<u32> = csr2
+        .connected_components(Direction::Both)
+        .into_iter()
+        .map(|(_, c)| c)
+        .collect();
+    assert_eq!(one.len(), 1, "a bridge joins them into one component");
+}
+
+#[test]
 fn ppr_unknown_seed_is_empty() {
     let g = synth::grid(3, 3);
     let csr = csr_of(&g);
