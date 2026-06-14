@@ -184,6 +184,59 @@ fn ppr_unknown_seed_is_empty() {
         .is_empty());
 }
 
+/// Two 6-cliques joined by a single bridge — the planted partition that LPA
+/// fails. Modularity-based Louvain must (1) recover the two communities, (2)
+/// score a high modularity well above the all-singletons baseline, and (3) be
+/// deterministic.
+#[test]
+fn louvain_recovers_planted_partition() {
+    let mut g = TestGraph::new();
+    let mut clique = |g: &mut TestGraph, prefix: &str| -> Vec<String> {
+        let ids: Vec<String> = (0..6).map(|i| format!("{prefix}{i}")).collect();
+        for id in &ids {
+            g.add_node(id.clone(), "N");
+        }
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                g.add_edge(ids[i].clone(), ids[j].clone(), "E");
+            }
+        }
+        ids
+    };
+    let a = clique(&mut g, "a");
+    let b = clique(&mut g, "b");
+    g.add_edge(a[0].clone(), b[0].clone(), "BRIDGE");
+
+    let csr = csr_of(&g);
+    let parts = csr.detect_communities(Direction::Both, 50);
+    let comm: std::collections::HashMap<&str, u32> =
+        parts.iter().map(|(id, c)| (id.as_str(), *c)).collect();
+
+    let ca = comm[a[0].as_str()];
+    let cb = comm[b[0].as_str()];
+    assert_ne!(ca, cb, "the two cliques are distinct communities");
+    for id in &a {
+        assert_eq!(comm[id.as_str()], ca, "clique A is one community");
+    }
+    for id in &b {
+        assert_eq!(comm[id.as_str()], cb, "clique B is one community");
+    }
+
+    // Modularity (node-index order) beats the all-singletons baseline and is high.
+    let labels: Vec<u32> = parts.iter().map(|(_, c)| *c).collect();
+    let q = csr.modularity(&labels, Direction::Both);
+    let singletons: Vec<u32> = (0..labels.len() as u32).collect();
+    let q0 = csr.modularity(&singletons, Direction::Both);
+    assert!(q > q0, "partition modularity {q} must beat singletons {q0}");
+    assert!(
+        q > 0.3,
+        "two-clique partition should score high modularity, got {q}"
+    );
+
+    // Deterministic.
+    assert_eq!(parts, csr.detect_communities(Direction::Both, 50));
+}
+
 mod proptests {
     use super::*;
     use proptest::prelude::*;

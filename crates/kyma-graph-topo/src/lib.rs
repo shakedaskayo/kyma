@@ -420,6 +420,140 @@ impl CsrGraph {
         out
     }
 
+    /// Weighted degree (edge multiplicity counts) of every node under `dir`,
+    /// plus `m = Σ deg / 2` (the undirected total edge weight). Shared by
+    /// community detection and modularity.
+    fn degrees(&self, dir: Direction) -> (Vec<f64>, f64) {
+        let n = self.ids.len();
+        let mut deg = vec![0.0f64; n];
+        let mut nbrs: Vec<u32> = Vec::new();
+        let mut total = 0.0;
+        for (u, d) in deg.iter_mut().enumerate() {
+            nbrs.clear();
+            self.step(u as u32, dir, EtypeFilter::Any, &mut nbrs);
+            *d = nbrs.len() as f64;
+            total += *d;
+        }
+        (deg, total / 2.0)
+    }
+
+    /// Newman–Girvan modularity `Q` of a `community`-id labeling under `dir`:
+    /// `Σ_C [ in_C/(2m) − (tot_C/2m)² ]`. Higher = stronger community structure
+    /// (range roughly `[-0.5, 1)`). The independent yardstick for community
+    /// detection.
+    pub fn modularity(&self, community: &[u32], dir: Direction) -> f64 {
+        let n = self.ids.len();
+        if community.len() != n {
+            return 0.0;
+        }
+        let (deg, m) = self.degrees(dir);
+        if m == 0.0 {
+            return 0.0;
+        }
+        let mut in_c: HashMap<u32, f64> = HashMap::new();
+        let mut tot_c: HashMap<u32, f64> = HashMap::new();
+        let mut nbrs: Vec<u32> = Vec::new();
+        for u in 0..n {
+            let cu = community[u];
+            *tot_c.entry(cu).or_insert(0.0) += deg[u];
+            nbrs.clear();
+            self.step(u as u32, dir, EtypeFilter::Any, &mut nbrs);
+            for &v in &nbrs {
+                if community[v as usize] == cu {
+                    *in_c.entry(cu).or_insert(0.0) += 1.0;
+                }
+            }
+        }
+        let two_m = 2.0 * m;
+        tot_c
+            .iter()
+            .map(|(c, &tot)| {
+                let inside = in_c.get(c).copied().unwrap_or(0.0);
+                inside / two_m - (tot / two_m).powi(2)
+            })
+            .sum()
+    }
+
+    /// Detect communities by **single-level Louvain local moving** (S3.4):
+    /// greedily move each node to the neighboring community that most increases
+    /// modularity, swept in index order (ties → smallest community id) until a
+    /// pass makes no move or `max_passes`. Modularity-based, so — unlike label
+    /// propagation — a single bridge does not collapse two dense clusters; the
+    /// hierarchical-Leiden aggregation/refinement layers on top later.
+    /// Deterministic. Returns `(node_id, community_id)` with dense ids.
+    pub fn detect_communities(&self, dir: Direction, max_passes: usize) -> Vec<(String, u32)> {
+        let n = self.ids.len();
+        let (deg, m) = self.degrees(dir);
+        let mut comm: Vec<u32> = (0..n as u32).collect();
+        if m == 0.0 {
+            // No edges → every node is its own community.
+            return self.dense_communities(&comm);
+        }
+        let two_m = 2.0 * m;
+        let mut sigma_tot = deg.clone(); // Σ degrees per community (each node alone)
+        let mut nbrs: Vec<u32> = Vec::new();
+        let mut k_in: HashMap<u32, f64> = HashMap::new();
+
+        for _ in 0..max_passes {
+            let mut moved = false;
+            for u in 0..n {
+                if deg[u] == 0.0 {
+                    continue;
+                }
+                nbrs.clear();
+                self.step(u as u32, dir, EtypeFilter::Any, &mut nbrs);
+                // Edge multiplicity from u into each neighboring community.
+                k_in.clear();
+                for &v in &nbrs {
+                    *k_in.entry(comm[v as usize]).or_insert(0.0) += 1.0;
+                }
+                let cu = comm[u];
+                // Remove u from its community before scoring candidates.
+                sigma_tot[cu as usize] -= deg[u];
+                // Gain of placing u in C ∝ k_in(C) − deg[u]·Σ_tot(C)/(2m).
+                // Staying isolated scores 0; pick the best neighbor community.
+                // Candidates are scored in ascending community-id order with a
+                // strict `>`, so the smallest id wins ties — deterministic
+                // regardless of the hash-map's iteration order.
+                let mut cands: Vec<u32> = k_in.keys().copied().collect();
+                cands.sort_unstable();
+                let mut best_c = cu;
+                let mut best_gain = 0.0f64;
+                for c in cands {
+                    let edges_to_c = k_in[&c];
+                    let gain = edges_to_c - deg[u] * sigma_tot[c as usize] / two_m;
+                    if gain > best_gain {
+                        best_gain = gain;
+                        best_c = c;
+                    }
+                }
+                sigma_tot[best_c as usize] += deg[u];
+                comm[u] = best_c;
+                if best_c != cu {
+                    moved = true;
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+        self.dense_communities(&comm)
+    }
+
+    /// Remap arbitrary community labels to dense `0..k` ids (first-seen order)
+    /// and pair each with its node id.
+    fn dense_communities(&self, comm: &[u32]) -> Vec<(String, u32)> {
+        let mut remap: HashMap<u32, u32> = HashMap::new();
+        comm.iter()
+            .enumerate()
+            .map(|(i, &c)| {
+                let next = remap.len() as u32;
+                let cid = *remap.entry(c).or_insert(next);
+                (self.ids[i].clone(), cid)
+            })
+            .collect()
+    }
+
     /// Serialize to the checksummed `KYCS` single-file layout.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut payload = Vec::new();
