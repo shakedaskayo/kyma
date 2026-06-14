@@ -320,7 +320,9 @@ pub(crate) fn stored_provider(
         catalog: catalog.clone(),
         format: format.clone(),
     });
-    StoredGraphProvider::new(cfg, exec)
+    // Hand the object store to the provider so deep traversal of large graphs
+    // can reuse a persistent topology snapshot (S3.2) instead of a per-hop loop.
+    StoredGraphProvider::new(cfg, exec).with_store(format.object_store())
 }
 
 // ---------------------------------------------------------------------------
