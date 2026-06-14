@@ -13,6 +13,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod cache;
 pub mod sidecar_cache;
 
 use kyma_core::errors::{Result, StorageError};
@@ -45,8 +46,11 @@ pub enum StorageConfig {
 }
 
 /// Construct an `ObjectStore` from configuration.
+///
+/// The base store is wrapped with an in-process read cache when
+/// `KYMA_CACHE_MEM_MB` is set (see [`cache::maybe_wrap`]); off by default.
 pub fn build_object_store(config: &StorageConfig) -> Result<Arc<dyn ObjectStore>> {
-    match config {
+    let inner: Arc<dyn ObjectStore> = match config {
         StorageConfig::S3Compatible {
             endpoint,
             region,
@@ -96,15 +100,16 @@ pub fn build_object_store(config: &StorageConfig) -> Result<Arc<dyn ObjectStore>
             let store = builder
                 .build()
                 .map_err(|e| StorageError::ObjectStore(e.to_string()))?;
-            Ok(Arc::new(store))
+            Arc::new(store)
         }
         StorageConfig::Local { root } => {
             let fs = LocalFileSystem::new_with_prefix(root)
                 .map_err(|e| StorageError::ObjectStore(e.to_string()))?;
-            Ok(Arc::new(fs))
+            Arc::new(fs)
         }
-        StorageConfig::Memory => Ok(Arc::new(InMemory::new())),
-    }
+        StorageConfig::Memory => Arc::new(InMemory::new()),
+    };
+    Ok(cache::maybe_wrap(inner))
 }
 
 /// Resolve the local data root for single-binary mode. Order: `KYMA_LOCAL_DATA`
