@@ -68,6 +68,12 @@ pub struct AnnParams {
     /// threshold (broad / unfiltered queries) the ANN path runs. `0` disables
     /// the exact branch (always ANN where a sidecar exists).
     pub exact_scan_max_rows: u64,
+    /// S1.3 global-tree routing: number of nearest global centroids to expand
+    /// into `(extent, partition)` probes when a fresh tree exists. The tree only
+    /// applies in server mode (it's built by the `ann_maintain` job); with no
+    /// tree the query fans out per-extent and this is unused. Larger values probe
+    /// more partitions (higher recall, more I/O).
+    pub tree_top_p: usize,
 }
 
 impl AnnParams {
@@ -78,6 +84,7 @@ impl AnnParams {
             nprobe: 16,
             rerank_factor: 48,
             exact_scan_max_rows: 50_000,
+            tree_top_p: 32,
         }
     }
 }
@@ -228,6 +235,36 @@ pub async fn ann_topk(
     let manifest_by_extent: HashMap<ExtentId, &ExtentManifest> =
         extents.iter().map(|m| (m.id, m)).collect();
 
+    // (c.5) Global-tree routing (S1.3, server mode). When a fresh tree exists it
+    //       picks the (extent, partition) pairs to probe across all extents;
+    //       sidecar-bearing extents it does not name are skipped, so the query
+    //       no longer fans out to every extent. A missing or stale tree (its
+    //       fingerprint no longer matches the current sidecar set) yields `None`
+    //       → per-extent fan-out below, identical to S1.1. Local mode never has
+    //       a tree. Never load-bearing for correctness — the exact rerank still
+    //       decides results over whatever pool is scanned.
+    let tree_sel: Option<HashMap<ExtentId, Vec<usize>>> = if sidecar_by_extent.is_empty() {
+        None
+    } else {
+        let model = sidecar_by_extent
+            .values()
+            .next()
+            .and_then(|d| d.embedding_model_id.clone());
+        let sidecar_ids: Vec<ExtentId> = sidecar_by_extent.keys().copied().collect();
+        crate::ann_tree::select(
+            catalog,
+            tenant,
+            store,
+            table.id,
+            column,
+            model.as_deref(),
+            &sidecar_ids,
+            &q,
+            params.tree_top_p,
+        )
+        .await
+    };
+
     let mut rotations = RotationCache::default();
     let mut approx: Vec<ApproxCand> = Vec::new();
     // Fallback rows are scored exactly during the scan, so they enter the final
@@ -261,10 +298,28 @@ pub async fn ann_topk(
                 let rotation = rotations.get(dim);
                 let qc = encode_query_rotated(&rotation.apply(&q));
 
-                // Probe a healthy fraction of the partitions; scale with nlist.
-                let nprobe = effective_nprobe(params.nprobe, header.nlist as usize);
-                let probed = file::probe(&bytes, &header, &q, nprobe)
-                    .map_err(|e| AnnError::Sidecar(e.to_string()))?;
+                // Pick partitions to probe: the global tree's selection for this
+                // extent when present, else the nprobe nearest partitions.
+                let probed: Vec<usize> = match &tree_sel {
+                    Some(sel) => match sel.get(&manifest.id) {
+                        // Tree-routed: probe exactly the selected partitions,
+                        // bounds-checked against this sidecar's current nlist (a
+                        // recompacted extent could have fewer partitions).
+                        Some(parts) => parts
+                            .iter()
+                            .copied()
+                            .filter(|&p| p < header.nlist as usize)
+                            .collect(),
+                        // Tree exists but routed away from this extent → skip.
+                        None => continue,
+                    },
+                    None => {
+                        // Probe a healthy fraction of the partitions; scale with nlist.
+                        let nprobe = effective_nprobe(params.nprobe, header.nlist as usize);
+                        file::probe(&bytes, &header, &q, nprobe)
+                            .map_err(|e| AnnError::Sidecar(e.to_string()))?
+                    }
+                };
                 for p in probed {
                     let part = file::read_partition(&bytes, &header, p)
                         .map_err(|e| AnnError::Sidecar(e.to_string()))?;

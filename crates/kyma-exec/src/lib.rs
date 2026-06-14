@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 
 pub mod ann;
+pub mod ann_tree;
 pub mod fts;
 pub mod udfs_vector;
 pub use ann::{ann_topk, AnnHit, AnnParams};

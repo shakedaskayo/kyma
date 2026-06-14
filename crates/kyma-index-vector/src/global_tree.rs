@@ -74,6 +74,21 @@ pub struct GlobalTree {
     pub postings: Vec<Vec<PartitionRef>>,
 }
 
+/// Stable hash of an extent-id set — the staleness signal shared by the
+/// maintenance executor (which stores it on the tree row) and the query path
+/// (which recomputes it from the current sidecar-bearing extents and only uses
+/// the tree when they match). Order-independent: the ids are sorted first, so
+/// any add/remove changes the hash and a reorder does not.
+pub fn extent_fingerprint(extent_ids: &[Uuid]) -> String {
+    let mut ids: Vec<[u8; 16]> = extent_ids.iter().map(|u| *u.as_bytes()).collect();
+    ids.sort_unstable();
+    let mut bytes = Vec::with_capacity(ids.len() * 16);
+    for id in &ids {
+        bytes.extend_from_slice(id);
+    }
+    kyma_core::crypto::content_hash_hex(&bytes)
+}
+
 /// `global_nlist = clamp(round(sqrt(total_partitions)), 16, 4096)`. Enough
 /// centroids that a small top-P covers the relevant partitions, capped so the
 /// tree stays comfortably in RAM. Bounded by the input count.

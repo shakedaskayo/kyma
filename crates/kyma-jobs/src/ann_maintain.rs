@@ -17,7 +17,6 @@ use std::sync::Arc;
 use crate::executor::{JobCtx, JobError, JobExecutor};
 use async_trait::async_trait;
 use kyma_core::catalog::{Catalog, PrunePredicate, TableRef};
-use kyma_core::crypto::content_hash_hex;
 use kyma_core::fabric::JOB_ANN_MAINTAIN;
 use kyma_core::index_sidecar::{AnnTreeDescriptor, SidecarKind};
 use kyma_core::tenant::TenantId;
@@ -84,16 +83,11 @@ impl AnnMaintainExecutor {
     }
 }
 
-/// Stable hash of a sorted extent-id set — the staleness signal. Distinct sets
-/// (any add/remove) hash differently; the same set always hashes identically.
+/// Stable hash of the sorted extent-id set — the staleness signal, shared with
+/// the query path via [`global_tree::extent_fingerprint`].
 fn fingerprint(extent_ids: &[ExtentId]) -> String {
-    let mut ids: Vec<[u8; 16]> = extent_ids.iter().map(|e| *e.as_uuid().as_bytes()).collect();
-    ids.sort_unstable();
-    let mut bytes = Vec::with_capacity(ids.len() * 16);
-    for id in &ids {
-        bytes.extend_from_slice(id);
-    }
-    content_hash_hex(&bytes)
+    let uuids: Vec<Uuid> = extent_ids.iter().map(|e| *e.as_uuid()).collect();
+    global_tree::extent_fingerprint(&uuids)
 }
 
 #[async_trait]
