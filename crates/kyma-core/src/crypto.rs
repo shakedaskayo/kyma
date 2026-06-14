@@ -95,8 +95,7 @@ impl Crypto {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("creating dir {}", parent.display()))?;
         }
-        std::fs::write(path, &key)
-            .with_context(|| format!("writing key file {key_path}"))?;
+        std::fs::write(path, &key).with_context(|| format!("writing key file {key_path}"))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -115,6 +114,22 @@ pub fn generate_key() -> String {
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
     STANDARD.encode(bytes)
+}
+
+/// SHA-256 of `data`, hex-encoded (lowercase, 64 chars). The content-hash key
+/// for the embedding-backfill cache: identical text always maps to the same
+/// hash, so re-ingested or duplicate text is embedded at most once. Stable and
+/// deterministic across processes and platforms.
+pub fn content_hash_hex(data: &[u8]) -> String {
+    let mut h = Sha256::new();
+    h.update(data);
+    let digest = h.finalize();
+    let mut s = String::with_capacity(64);
+    for b in digest {
+        use std::fmt::Write as _;
+        let _ = write!(s, "{b:02x}");
+    }
+    s
 }
 
 #[cfg(test)]
@@ -148,5 +163,27 @@ mod tests {
         let b = c.encrypt(b"x").unwrap();
         // Random nonces → distinct ciphertexts even for the same plaintext.
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn content_hash_is_deterministic_and_known() {
+        // Same input → same hash; different input → different hash.
+        assert_eq!(content_hash_hex(b"hello"), content_hash_hex(b"hello"));
+        assert_ne!(content_hash_hex(b"hello"), content_hash_hex(b"world"));
+        // 64 lowercase hex chars.
+        let h = content_hash_hex(b"hello");
+        assert_eq!(h.len(), 64);
+        assert!(h
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        // Known SHA-256("") and SHA-256("abc") vectors pin the encoding.
+        assert_eq!(
+            content_hash_hex(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            content_hash_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 }

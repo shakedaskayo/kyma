@@ -14,6 +14,7 @@ workspace = true
 kyma-core = { workspace = true }
 kyma-catalog = { workspace = true }
 kyma-datasources = { workspace = true }
+kyma-embed = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }
@@ -25,6 +26,8 @@ chrono = { workspace = true }
 futures = { workspace = true }
 object_store = { workspace = true }
 bytes = { workspace = true }
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
@@ -32,5 +35,4 @@ testcontainers = { workspace = true }
 testcontainers-modules = { workspace = true }
 sqlx = { workspace = true }
 kyma-catalog-sqlite = { workspace = true }
-arrow-array = { workspace = true }
-arrow-schema = { workspace = true }
+kyma-format-tlm = { workspace = true }

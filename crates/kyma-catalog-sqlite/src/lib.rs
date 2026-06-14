@@ -33,10 +33,10 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use kyma_core::catalog::{
     cosine_distance_lower_bound, BackgroundTask, Catalog, CleanupResult, ColumnInfo, ColumnPrune,
-    Dashboard, DashboardPanel, DashboardUpdate, DashboardWithPanels,
-    ExtentManifest, GraphRegistration, GraphSpec, IngestLedgerEntry, LiveNode, NodeInfo, NodeLease,
-    NodeRole, PrunePredicate, RefreshClaim, SnapshotTxn, TableConfig, TableRef, TokenPrincipal,
-    User,
+    Dashboard, DashboardPanel, DashboardUpdate, DashboardWithPanels, ExtentManifest,
+    GraphRegistration, GraphSpec, IngestLedgerEntry, LiveNode, NodeInfo, NodeLease, NodeRole,
+    PrunePredicate, RefreshClaim, SnapshotTxn, TableConfig, TableEmbedConfig, TableRef,
+    TokenPrincipal, User,
 };
 use kyma_core::errors::{CatalogError, Result};
 use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
@@ -502,6 +502,35 @@ CREATE TABLE IF NOT EXISTS workers (
     updated_at     TEXT NOT NULL,
     UNIQUE (tenant_id, name)
 );
+
+-- Async embedding backfill pipeline (S1.5; mirrors Postgres migration 029).
+-- Content-addressed embedding cache: the f32 vector is stored as raw
+-- little-endian bytes (dim*4) in a BLOB. Ids are BLOBs to match the
+-- extents/extent_indexes convention on this pool.
+CREATE TABLE IF NOT EXISTS embedding_cache (
+    tenant_id    BLOB NOT NULL,
+    content_hash TEXT NOT NULL,
+    model_id     TEXT NOT NULL,
+    dim          INTEGER NOT NULL,
+    embedding    BLOB NOT NULL,
+    created_at   TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, content_hash, model_id)
+);
+
+-- Per-table "embed THIS text column INTO THAT vector column with THIS model".
+CREATE TABLE IF NOT EXISTS table_embed_config (
+    tenant_id        BLOB NOT NULL,
+    table_id         BLOB NOT NULL,
+    source_column    TEXT NOT NULL,
+    embedding_column TEXT NOT NULL,
+    model_id         TEXT NOT NULL,
+    dim              INTEGER NOT NULL,
+    auto_embed       INTEGER NOT NULL DEFAULT 1,
+    updated_at       TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, table_id, embedding_column)
+);
+CREATE INDEX IF NOT EXISTS table_embed_config_table_idx
+    ON table_embed_config (tenant_id, table_id);
 "#;
 
 #[async_trait]
@@ -512,11 +541,7 @@ impl Catalog for SqliteCatalog {
 
     // ------------------------- databases & tables -------------------------
 
-    async fn create_database_in_tenant(
-        &self,
-        tenant: TenantId,
-        name: &str,
-    ) -> Result<DatabaseId> {
+    async fn create_database_in_tenant(&self, tenant: TenantId, name: &str) -> Result<DatabaseId> {
         let id = Uuid::new_v4();
         sqlx::query("INSERT INTO databases (id, tenant_id, name, created_at) VALUES (?,?,?,?)")
             .bind(id)
@@ -553,7 +578,8 @@ impl Catalog for SqliteCatalog {
         config: TableConfig,
     ) -> Result<TableId> {
         let schema_json = schema_to_json(&schema)?.to_string();
-        let config_json = serde_json::to_string(&config).map_err(|e| CatalogError::Sql(e.to_string()))?;
+        let config_json =
+            serde_json::to_string(&config).map_err(|e| CatalogError::Sql(e.to_string()))?;
 
         let mut tx = self.pool.begin().await.map_err(ce)?;
 
@@ -564,8 +590,8 @@ impl Catalog for SqliteCatalog {
                 .fetch_optional(&mut *tx)
                 .await
                 .map_err(ce)?;
-        let db_tenant =
-            db_tenant.ok_or_else(|| CatalogError::Sql(format!("database {database_id} not found")))?;
+        let db_tenant = db_tenant
+            .ok_or_else(|| CatalogError::Sql(format!("database {database_id} not found")))?;
         if db_tenant != tenant.as_uuid() {
             return Err(CatalogError::Sql(format!(
                 "database {database_id} does not belong to tenant {tenant}"
@@ -710,7 +736,8 @@ impl Catalog for SqliteCatalog {
 
         let mut out = Vec::with_capacity(rows.len());
         for row in &rows {
-            let current_snapshot_id: Option<Uuid> = row.try_get("current_snapshot_id").map_err(ce)?;
+            let current_snapshot_id: Option<Uuid> =
+                row.try_get("current_snapshot_id").map_err(ce)?;
             let schema_snapshot_id: Option<Uuid> = row.try_get("schema_snapshot_id").map_err(ce)?;
             let schema_str: Option<String> = row.try_get("arrow_schema").map_err(ce)?;
             let config_str: String = row.try_get("config").map_err(ce)?;
@@ -724,7 +751,9 @@ impl Catalog for SqliteCatalog {
             let config: TableConfig = serde_json::from_str(&config_str).unwrap_or_default();
             out.push(TableRef {
                 id: TableId::from_uuid(row.try_get::<Uuid, _>("id").map_err(ce)?),
-                database_id: DatabaseId::from_uuid(row.try_get::<Uuid, _>("database_id").map_err(ce)?),
+                database_id: DatabaseId::from_uuid(
+                    row.try_get::<Uuid, _>("database_id").map_err(ce)?,
+                ),
                 name: row.try_get::<String, _>("name").map_err(ce)?,
                 current_snapshot_id: SnapshotId::from_uuid(current_snapshot_id),
                 schema_snapshot_id: SchemaSnapshotId::from_uuid(schema_snapshot_id),
@@ -864,7 +893,9 @@ impl Catalog for SqliteCatalog {
         let fields = schema_json
             .get("fields")
             .and_then(|v| v.as_array())
-            .ok_or_else(|| CatalogError::Sql("malformed arrow_schema: missing fields array".into()))?;
+            .ok_or_else(|| {
+                CatalogError::Sql("malformed arrow_schema: missing fields array".into())
+            })?;
 
         let mut columns = Vec::with_capacity(fields.len());
         for f in fields {
@@ -921,7 +952,9 @@ impl Catalog for SqliteCatalog {
                 .iter()
                 .any(|f| f.get("name").and_then(|n| n.as_str()) == Some(column_name))
             {
-                return Err(CatalogError::Sql(format!("column {column_name} already exists")).into());
+                return Err(
+                    CatalogError::Sql(format!("column {column_name} already exists")).into(),
+                );
             }
         }
         if let Some(arr) = schema_json.get_mut("fields").and_then(|v| v.as_array_mut()) {
@@ -1059,18 +1092,27 @@ impl Catalog for SqliteCatalog {
             });
         }
         if !prune.required_paths.is_empty() {
-            out.retain(|m| prune.required_paths.iter().all(|p| m.present_paths.contains(p)));
+            out.retain(|m| {
+                prune
+                    .required_paths
+                    .iter()
+                    .all(|p| m.present_paths.contains(p))
+            });
         }
         for (col, pred) in &prune.column_predicates {
             match pred {
-                ColumnPrune::Equals(v) => out.retain(|m| match distinct_array(&m.column_stats, col) {
-                    Some(arr) => arr.iter().any(|x| x == v),
-                    None => true,
-                }),
-                ColumnPrune::InSet(vs) => out.retain(|m| match distinct_array(&m.column_stats, col) {
-                    Some(arr) => vs.iter().any(|v| arr.iter().any(|x| x == v)),
-                    None => true,
-                }),
+                ColumnPrune::Equals(v) => {
+                    out.retain(|m| match distinct_array(&m.column_stats, col) {
+                        Some(arr) => arr.iter().any(|x| x == v),
+                        None => true,
+                    })
+                }
+                ColumnPrune::InSet(vs) => {
+                    out.retain(|m| match distinct_array(&m.column_stats, col) {
+                        Some(arr) => vs.iter().any(|v| arr.iter().any(|x| x == v)),
+                        None => true,
+                    })
+                }
                 ColumnPrune::Between { low, high } => {
                     out.retain(|m| match distinct_array(&m.column_stats, col) {
                         Some(arr) => arr.iter().any(|x| in_range(x, low, high)),
@@ -1280,8 +1322,7 @@ impl Catalog for SqliteCatalog {
         let placeholders = vec!["?"; extents.len()].join(",");
         // Foreign keys are off on this pool, so the extent_indexes rows
         // (Postgres: ON DELETE CASCADE) are deleted explicitly first.
-        let sidecar_sql =
-            format!("DELETE FROM extent_indexes WHERE extent_id IN ({placeholders})");
+        let sidecar_sql = format!("DELETE FROM extent_indexes WHERE extent_id IN ({placeholders})");
         let mut sq = sqlx::query(&sidecar_sql);
         for e in extents {
             sq = sq.bind(*e.as_uuid());
@@ -1317,7 +1358,11 @@ impl Catalog for SqliteCatalog {
         .await
         .map_err(ce)?;
         let Some(table_id) = table_id else {
-            return Ok(CleanupResult { extents_deleted: 0, rows_freed: 0, bytes_freed: 0 });
+            return Ok(CleanupResult {
+                extents_deleted: 0,
+                rows_freed: 0,
+                bytes_freed: 0,
+            });
         };
 
         let agg: Option<(i64, i64, i64)> = sqlx::query_as(
@@ -1387,7 +1432,11 @@ impl Catalog for SqliteCatalog {
         .execute(&self.pool)
         .await
         .map_err(ce)?;
-        Ok(NodeLease { node_id, lease_id, expires_at })
+        Ok(NodeLease {
+            node_id,
+            lease_id,
+            expires_at,
+        })
     }
 
     async fn heartbeat(&self, lease: &NodeLease) -> Result<()> {
@@ -1642,7 +1691,10 @@ impl Catalog for SqliteCatalog {
         .fetch_all(&self.pool)
         .await
         .map_err(ce)?;
-        let panels = panel_rows.iter().map(row_to_panel).collect::<Result<Vec<_>, _>>()?;
+        let panels = panel_rows
+            .iter()
+            .map(row_to_panel)
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Some(DashboardWithPanels { dashboard, panels }))
     }
 
@@ -1684,13 +1736,15 @@ impl Catalog for SqliteCatalog {
                 .map_err(ce)?;
         }
         if let Some(preset) = &patch.time_range_preset {
-            sqlx::query("UPDATE dashboards SET time_range_preset = ? WHERE tenant_id = ? AND id = ?")
-                .bind(preset)
-                .bind(tenant.as_uuid())
-                .bind(id)
-                .execute(&mut *tx)
-                .await
-                .map_err(ce)?;
+            sqlx::query(
+                "UPDATE dashboards SET time_range_preset = ? WHERE tenant_id = ? AND id = ?",
+            )
+            .bind(preset)
+            .bind(tenant.as_uuid())
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(ce)?;
         }
         if let Some(refresh) = &patch.refresh_interval_seconds {
             sqlx::query(
@@ -2305,6 +2359,130 @@ impl Catalog for SqliteCatalog {
             Ok(Some(entry))
         }
     }
+
+    // --- embedding backfill (S1.5) ---
+
+    async fn set_table_embed_config(&self, tenant: TenantId, cfg: &TableEmbedConfig) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO table_embed_config
+                (tenant_id, table_id, source_column, embedding_column, model_id, dim,
+                 auto_embed, updated_at)
+             VALUES (?,?,?,?,?,?,?,?)
+             ON CONFLICT (tenant_id, table_id, embedding_column)
+             DO UPDATE SET source_column = excluded.source_column,
+                           model_id      = excluded.model_id,
+                           dim           = excluded.dim,
+                           auto_embed    = excluded.auto_embed,
+                           updated_at    = excluded.updated_at",
+        )
+        .bind(tenant.as_uuid())
+        .bind(cfg.table_id.as_uuid())
+        .bind(&cfg.source_column)
+        .bind(&cfg.embedding_column)
+        .bind(&cfg.model_id)
+        .bind(cfg.dim as i64)
+        .bind(cfg.auto_embed as i64)
+        .bind(Utc::now())
+        .execute(&self.pool)
+        .await
+        .map_err(ce)?;
+        Ok(())
+    }
+
+    async fn list_table_embed_configs(
+        &self,
+        tenant: TenantId,
+        table_id: TableId,
+    ) -> Result<Vec<TableEmbedConfig>> {
+        let rows = sqlx::query(
+            "SELECT table_id, source_column, embedding_column, model_id, dim, auto_embed
+             FROM table_embed_config
+             WHERE tenant_id = ? AND table_id = ?
+             ORDER BY embedding_column",
+        )
+        .bind(tenant.as_uuid())
+        .bind(table_id.as_uuid())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(ce)?;
+        rows.iter()
+            .map(|r| {
+                Ok(TableEmbedConfig {
+                    table_id: TableId::from_uuid(r.try_get::<Uuid, _>("table_id").map_err(ce)?),
+                    source_column: r.try_get("source_column").map_err(ce)?,
+                    embedding_column: r.try_get("embedding_column").map_err(ce)?,
+                    model_id: r.try_get("model_id").map_err(ce)?,
+                    dim: r.try_get::<i64, _>("dim").map_err(ce)? as u16,
+                    auto_embed: r.try_get::<i64, _>("auto_embed").map_err(ce)? != 0,
+                })
+            })
+            .collect()
+    }
+
+    async fn get_cached_embeddings(
+        &self,
+        tenant: TenantId,
+        model_id: &str,
+        hashes: &[String],
+    ) -> Result<std::collections::HashMap<String, Vec<f32>>> {
+        if hashes.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let placeholders = vec!["?"; hashes.len()].join(",");
+        let sql = format!(
+            "SELECT content_hash, embedding
+             FROM embedding_cache
+             WHERE tenant_id = ? AND model_id = ? AND content_hash IN ({placeholders})"
+        );
+        let mut q = sqlx::query(&sql).bind(tenant.as_uuid()).bind(model_id);
+        for h in hashes {
+            q = q.bind(h);
+        }
+        let rows = q.fetch_all(&self.pool).await.map_err(ce)?;
+        let mut out = std::collections::HashMap::with_capacity(rows.len());
+        for r in &rows {
+            let h: String = r.try_get("content_hash").map_err(ce)?;
+            let bytes: Vec<u8> = r.try_get("embedding").map_err(ce)?;
+            if let Some(v) = kyma_core::catalog::embedding_from_le_bytes(&bytes) {
+                out.insert(h, v);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn put_cached_embeddings(
+        &self,
+        tenant: TenantId,
+        model_id: &str,
+        dim: u16,
+        entries: &[(String, Vec<f32>)],
+    ) -> Result<()> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let now = Utc::now();
+        let mut tx = self.pool.begin().await.map_err(ce)?;
+        for (hash, vec) in entries {
+            let bytes = kyma_core::catalog::embedding_to_le_bytes(vec);
+            sqlx::query(
+                "INSERT INTO embedding_cache
+                    (tenant_id, content_hash, model_id, dim, embedding, created_at)
+                 VALUES (?,?,?,?,?,?)
+                 ON CONFLICT (tenant_id, content_hash, model_id) DO NOTHING",
+            )
+            .bind(tenant.as_uuid())
+            .bind(hash)
+            .bind(model_id)
+            .bind(dim as i64)
+            .bind(bytes)
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(ce)?;
+        }
+        tx.commit().await.map_err(ce)?;
+        Ok(())
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -2430,12 +2608,18 @@ fn str_to_role(s: &str) -> NodeRole {
 /// `column_stats.{col}.distinct` as a JSON array, or `None` (→ keep extent)
 /// when the stat is missing, null, or not an array.
 fn distinct_array<'a>(stats: &'a Json, col: &str) -> Option<&'a Vec<Json>> {
-    stats.get(col).and_then(|c| c.get("distinct")).and_then(Json::as_array)
+    stats
+        .get(col)
+        .and_then(|c| c.get("distinct"))
+        .and_then(Json::as_array)
 }
 
 /// `column_stats.{col}.tokens` as a JSON string array, or `None` (→ keep).
 fn token_array<'a>(stats: &'a Json, col: &str) -> Option<&'a Vec<Json>> {
-    stats.get(col).and_then(|c| c.get("tokens")).and_then(Json::as_array)
+    stats
+        .get(col)
+        .and_then(|c| c.get("tokens"))
+        .and_then(Json::as_array)
 }
 
 /// `low <= x <= high` with numeric or string comparison; incomparable values
@@ -2503,7 +2687,11 @@ fn json_to_schema(json: &Json) -> Result<Arc<arrow_schema::Schema>, CatalogError
             .and_then(Json::as_str)
             .ok_or_else(|| CatalogError::Sql("field missing type".into()))?;
         let nullable = f.get("nullable").and_then(Json::as_bool).unwrap_or(true);
-        out.push(arrow_schema::Field::new(name, string_to_arrow_type(ty)?, nullable));
+        out.push(arrow_schema::Field::new(
+            name,
+            string_to_arrow_type(ty)?,
+            nullable,
+        ));
     }
     Ok(Arc::new(arrow_schema::Schema::new(out)))
 }
@@ -2538,14 +2726,22 @@ fn string_to_arrow_type(s: &str) -> Result<arrow_schema::DataType, CatalogError>
         other if other.starts_with("vector(") && other.ends_with(')') => {
             let inner = &other[7..other.len() - 1];
             let dim: i32 = inner.trim().parse().map_err(|_| {
-                CatalogError::Sql(format!("vector(N): N must be a positive integer, got '{inner}'"))
+                CatalogError::Sql(format!(
+                    "vector(N): N must be a positive integer, got '{inner}'"
+                ))
             })?;
             if dim <= 0 {
-                return Err(CatalogError::Sql(format!("vector(N): N must be > 0, got {dim}")));
+                return Err(CatalogError::Sql(format!(
+                    "vector(N): N must be > 0, got {dim}"
+                )));
             }
             DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, false)), dim)
         }
-        other => return Err(CatalogError::Sql(format!("unsupported column type in schema: {other}"))),
+        other => {
+            return Err(CatalogError::Sql(format!(
+                "unsupported column type in schema: {other}"
+            )))
+        }
     })
 }
 

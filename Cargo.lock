@@ -5402,6 +5402,8 @@ dependencies = [
  "kyma-catalog-sqlite",
  "kyma-core",
  "kyma-datasources",
+ "kyma-embed",
+ "kyma-format-tlm",
  "object_store",
  "serde",
  "serde_json",
