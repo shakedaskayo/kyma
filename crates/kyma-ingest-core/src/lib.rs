@@ -69,6 +69,13 @@ pub struct WritePath {
     format: Arc<dyn SegmentFormat>,
     staging: Option<StagingBuffer>,
     events: Option<IngestEvents>,
+    /// S2.2 staged ingest: when true, the direct path records the written
+    /// extent in `staged_extents` and acks immediately ("S3 is the WAL")
+    /// instead of committing a snapshot inline — the async committer commits it.
+    /// Set via KYMA_INGEST_MODE=staged (server mode). Default false = the
+    /// synchronous, read-your-writes path. A staged WritePath does NOT use a
+    /// StagingBuffer (the committer is the batching layer).
+    staged: bool,
 }
 
 impl std::fmt::Debug for WritePath {
@@ -86,7 +93,16 @@ impl WritePath {
             format,
             staging: None,
             events: None,
+            staged: false,
         }
+    }
+
+    /// Enable S2.2 staged ingest: the direct path stages the extent and acks
+    /// without an inline snapshot commit (the committer commits it async). Use
+    /// with [`WritePath::new`] (no staging buffer) — server mode only.
+    pub fn with_staged_mode(mut self) -> Self {
+        self.staged = true;
+        self
     }
 
     /// Batched write path with a group-commit staging buffer.
@@ -100,6 +116,7 @@ impl WritePath {
             format,
             staging: Some(staging),
             events: None,
+            staged: false,
         }
     }
 
@@ -256,16 +273,29 @@ impl WritePath {
                 writer.append(batch).await?;
             }
             let result: ExtentWriteResult = writer.finish().await?;
+            let manifest = table_result_to_manifest(table, &result);
 
-            // 2. Commit the new extent into a fresh snapshot. On CAS conflict,
-            //    re-read the current snapshot and retry — bounded attempts.
-            let snapshot_id = self
-                .commit_with_retry(
-                    table.id,
-                    &table_result_to_manifest(table, &result),
-                    &table_label,
-                )
-                .await?;
+            // 2. Commit, or (staged mode) stage + ack. Staged: record the
+            //    manifest in staged_extents and ack immediately — the object is
+            //    already durable on storage and the async committer will commit
+            //    it into a snapshot. The ack's snapshot_id is the table's current
+            //    snapshot (the extent will appear in a later one). batch_id is
+            //    the idempotency key when present (so a retried request re-stages
+            //    the same batch as a no-op), else a fresh uuid.
+            let snapshot_id = if self.staged {
+                let batch_id = idempotency_key
+                    .and_then(|k| uuid::Uuid::parse_str(k).ok())
+                    .unwrap_or_else(uuid::Uuid::new_v4);
+                self.catalog
+                    .stage_extent(kyma_core::tenant::DEFAULT_TENANT, batch_id, &manifest)
+                    .await?;
+                table.current_snapshot_id
+            } else {
+                // Commit the new extent into a fresh snapshot. On CAS conflict,
+                // re-read the current snapshot and retry — bounded attempts.
+                self.commit_with_retry(table.id, &manifest, &table_label)
+                    .await?
+            };
 
             metrics::counter!("kyma_ingest_rows_total", "table" => table_label.clone())
                 .increment(rows_ingested);

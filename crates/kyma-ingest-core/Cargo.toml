@@ -35,3 +35,4 @@ sqlx.workspace = true
 [dev-dependencies]
 testcontainers.workspace = true
 testcontainers-modules.workspace = true
+object_store.workspace = true

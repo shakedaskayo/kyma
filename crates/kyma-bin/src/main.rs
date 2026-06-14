@@ -349,8 +349,24 @@ async fn main() -> Result<()> {
     let use_staging = std::env::var("KYMA_STAGING_DISABLED")
         .map(|v| v != "1" && v != "true")
         .unwrap_or(true);
+    // S2.2: staged ingest ("S3 is the WAL"). Routers stage the written extent
+    // and ack; the async committer commits it. Opt-in via KYMA_INGEST_MODE=staged
+    // (default = synchronous read-your-writes). Staged mode bypasses the
+    // group-commit StagingBuffer — the committer is the batching layer.
+    let staged_ingest = std::env::var("KYMA_INGEST_MODE").as_deref() == Ok("staged");
     let ingest_events = IngestEvents::new(256);
-    let write_path: WritePath = if use_staging {
+    let write_path: WritePath = if staged_ingest {
+        info!("ingest mode: staged (router + async committer)");
+        let committer = kyma_ingest_core::committer::Committer::new(
+            catalog.clone(),
+            kyma_core::tenant::DEFAULT_TENANT,
+        );
+        let committer_rx = shutdown_tx.subscribe();
+        tokio::spawn(committer.run(committer_rx));
+        WritePath::new(catalog.clone(), format.clone())
+            .with_staged_mode()
+            .with_events(ingest_events.clone())
+    } else if use_staging {
         // Start the commit coordinator so flushes get group-commit squared.
         let coordinator = CommitCoordinator::spawn(catalog.clone(), CoordinatorConfig::from_env());
         let staging =
