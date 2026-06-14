@@ -795,6 +795,22 @@ async fn ask_handler(
                 .into_response();
         }
     };
+    // Per-tenant agent-run budget (S2.6): one tenant's agent activity can't
+    // starve another's. Off by default (`KYMA_AGENT_MAX_CONCURRENT_PER_TENANT`).
+    let agent_tenant_permit = match crate::concurrency::acquire_agent_run_for_tenant(principal.tenant)
+    {
+        Ok(p) => p,
+        Err(retry) => {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                [(axum::http::header::RETRY_AFTER, retry.to_string())],
+                Json(json!({
+                    "error": "tenant agent-run capacity reached; retry after the indicated delay"
+                })),
+            )
+                .into_response();
+        }
+    };
 
     let run_id = uuid::Uuid::new_v4();
     let include_thinking = body.include_thinking;
@@ -880,9 +896,10 @@ async fn ask_handler(
     let summary_every = summary_every();
 
     tokio::spawn(async move {
-        // Hold the admission permit for the whole run; the slot frees when this
+        // Hold the admission permits for the whole run; the slots free when this
         // task ends (success, error, or early return).
         let _agent_permit = agent_permit;
+        let _agent_tenant_permit = agent_tenant_permit;
         let mut em = Emitter::new(ui, &run_id.to_string());
         let mut tool_calls: u32 = 0;
         let mut last_run_sql: Option<String> = None;

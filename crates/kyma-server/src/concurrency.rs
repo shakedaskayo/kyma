@@ -157,6 +157,52 @@ pub fn acquire_for_tenant(tenant: TenantId) -> Result<QueryPermit, u64> {
     }
 }
 
+/// Per-tenant agent-run concurrency limit, or `None` when disabled. Like
+/// [`per_tenant_query_limit`] but for the heavier agent-run path, so one
+/// tenant's agent activity can't starve another's. `None` = unlimited.
+fn per_tenant_agent_limit() -> Option<usize> {
+    static N: OnceLock<Option<usize>> = OnceLock::new();
+    *N.get_or_init(|| {
+        let n = std::env::var("KYMA_AGENT_MAX_CONCURRENT_PER_TENANT")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0);
+        if n == 0 {
+            None
+        } else {
+            Some(n)
+        }
+    })
+}
+
+fn tenant_agent_semaphores() -> &'static Mutex<HashMap<TenantId, Arc<Semaphore>>> {
+    static M: OnceLock<Mutex<HashMap<TenantId, Arc<Semaphore>>>> = OnceLock::new();
+    M.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Admit one agent run for `tenant` against that tenant's own agent-run budget
+/// (move the permit into the run's spawned task). `Err(retry_after_secs)` when
+/// this tenant is at capacity. Off by default
+/// (`KYMA_AGENT_MAX_CONCURRENT_PER_TENANT` unset/0 ⇒ unlimited).
+pub fn acquire_agent_run_for_tenant(tenant: TenantId) -> Result<AgentRunPermit, u64> {
+    let Some(n) = per_tenant_agent_limit() else {
+        return Ok(AgentRunPermit(None));
+    };
+    let sem = {
+        let Ok(mut g) = tenant_agent_semaphores().lock() else {
+            return Ok(AgentRunPermit(None));
+        };
+        Arc::clone(
+            g.entry(tenant)
+                .or_insert_with(|| Arc::new(Semaphore::new(n))),
+        )
+    };
+    match sem.try_acquire_owned() {
+        Ok(p) => Ok(AgentRunPermit(Some(p))),
+        Err(_) => Err(agent_retry_after_secs()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,6 +229,15 @@ mod tests {
         let t = kyma_core::tenant::DEFAULT_TENANT;
         for _ in 0..1000 {
             assert!(acquire_for_tenant(t).is_ok());
+        }
+    }
+
+    #[test]
+    fn per_tenant_agent_disabled_when_unset_grants_inert_permits() {
+        // KYMA_AGENT_MAX_CONCURRENT_PER_TENANT unset ⇒ unlimited per tenant.
+        let t = kyma_core::tenant::DEFAULT_TENANT;
+        for _ in 0..1000 {
+            assert!(acquire_agent_run_for_tenant(t).is_ok());
         }
     }
 
