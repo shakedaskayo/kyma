@@ -13,14 +13,21 @@ use std::collections::HashMap;
 
 fn sample_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
-        Field::new("ts", DataType::Timestamp(arrow_schema::TimeUnit::Nanosecond, None), true),
+        Field::new(
+            "ts",
+            DataType::Timestamp(arrow_schema::TimeUnit::Nanosecond, None),
+            true,
+        ),
         Field::new("level", DataType::Utf8, true),
         Field::new("msg", DataType::Utf8, true),
     ]))
 }
 
 fn extent_for(tref: &TableRef, distinct_levels: &[&str]) -> ExtentManifest {
-    let levels: Vec<Json> = distinct_levels.iter().map(|s| Json::String((*s).into())).collect();
+    let levels: Vec<Json> = distinct_levels
+        .iter()
+        .map(|s| Json::String((*s).into()))
+        .collect();
     ExtentManifest {
         id: ExtentId::new(),
         table_id: tref.id,
@@ -41,7 +48,9 @@ fn extent_for(tref: &TableRef, distinct_levels: &[&str]) -> ExtentManifest {
 }
 
 async fn fresh() -> SqliteCatalog {
-    SqliteCatalog::connect_in_memory().await.expect("open in-memory catalog")
+    SqliteCatalog::connect_in_memory()
+        .await
+        .expect("open in-memory catalog")
 }
 
 #[tokio::test]
@@ -62,10 +71,16 @@ async fn full_table_snapshot_extent_round_trip() {
 
     // begin snapshot, add two extents, commit
     let mut txn = cat.begin_snapshot(table_id).await.unwrap();
-    txn.add_extent(extent_for(&tref, &["info", "warn"])).await.unwrap();
+    txn.add_extent(extent_for(&tref, &["info", "warn"]))
+        .await
+        .unwrap();
     txn.add_extent(extent_for(&tref, &["error"])).await.unwrap();
     let new_snap = txn
-        .commit(SnapshotSummary { operation: "ingest".into(), rows_added: 200, ..Default::default() })
+        .commit(SnapshotSummary {
+            operation: "ingest".into(),
+            rows_added: 200,
+            ..Default::default()
+        })
         .await
         .unwrap();
 
@@ -75,7 +90,11 @@ async fn full_table_snapshot_extent_round_trip() {
 
     // list all live extents (no prune)
     let all = cat
-        .list_extents(table_id, tref.current_snapshot_id, &PrunePredicate::default())
+        .list_extents(
+            table_id,
+            tref.current_snapshot_id,
+            &PrunePredicate::default(),
+        )
         .await
         .unwrap();
     assert_eq!(all.len(), 2, "both extents visible");
@@ -102,9 +121,13 @@ async fn compaction_candidates_picks_small_extents() {
     for _ in 0..5 {
         txn.add_extent(extent_for(&tref, &["info"])).await.unwrap();
     }
-    txn.commit(SnapshotSummary { operation: "ingest".into(), rows_added: 500, ..Default::default() })
-        .await
-        .unwrap();
+    txn.commit(SnapshotSummary {
+        operation: "ingest".into(),
+        rows_added: 500,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
 
     // ≥3 small extents → the table qualifies; capped to the smallest max_merge=4.
     let groups = cat.compaction_candidates(1_000_000, 3, 4).await.unwrap();
@@ -114,9 +137,17 @@ async fn compaction_candidates_picks_small_extents() {
     assert_eq!(eids.len(), 4, "capped at max_merge");
 
     // Threshold above the extent count → no candidates.
-    assert!(cat.compaction_candidates(1_000_000, 10, 4).await.unwrap().is_empty());
+    assert!(cat
+        .compaction_candidates(1_000_000, 10, 4)
+        .await
+        .unwrap()
+        .is_empty());
     // Byte ceiling below the extent size → no "small" extents qualify.
-    assert!(cat.compaction_candidates(1_000, 3, 4).await.unwrap().is_empty());
+    assert!(cat
+        .compaction_candidates(1_000, 3, 4)
+        .await
+        .unwrap()
+        .is_empty());
 }
 
 #[tokio::test]
@@ -130,21 +161,32 @@ async fn equals_prune_drops_non_matching_extent() {
     let tref = cat.lookup_table("default", "logs").await.unwrap();
 
     let mut txn = cat.begin_snapshot(table_id).await.unwrap();
-    txn.add_extent(extent_for(&tref, &["info", "warn"])).await.unwrap();
-    txn.add_extent(extent_for(&tref, &["error"])).await.unwrap();
-    txn.commit(SnapshotSummary { operation: "ingest".into(), ..Default::default() })
+    txn.add_extent(extent_for(&tref, &["info", "warn"]))
         .await
         .unwrap();
+    txn.add_extent(extent_for(&tref, &["error"])).await.unwrap();
+    txn.commit(SnapshotSummary {
+        operation: "ingest".into(),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
     let tref = cat.lookup_table("default", "logs").await.unwrap();
 
     // Equals("error") should keep only the extent whose distinct set has it.
     let mut preds = HashMap::new();
-    preds.insert("level".to_string(), ColumnPrune::Equals(Json::String("error".into())));
+    preds.insert(
+        "level".to_string(),
+        ColumnPrune::Equals(Json::String("error".into())),
+    );
     let pruned = cat
         .list_extents(
             table_id,
             tref.current_snapshot_id,
-            &PrunePredicate { column_predicates: preds, ..Default::default() },
+            &PrunePredicate {
+                column_predicates: preds,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -152,12 +194,18 @@ async fn equals_prune_drops_non_matching_extent() {
 
     // A value present in neither distinct set drops both.
     let mut preds = HashMap::new();
-    preds.insert("level".to_string(), ColumnPrune::Equals(Json::String("trace".into())));
+    preds.insert(
+        "level".to_string(),
+        ColumnPrune::Equals(Json::String("trace".into())),
+    );
     let none = cat
         .list_extents(
             table_id,
             tref.current_snapshot_id,
-            &PrunePredicate { column_predicates: preds, ..Default::default() },
+            &PrunePredicate {
+                column_predicates: preds,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -183,13 +231,19 @@ async fn vector_distance_prune_uses_centroid_radius() {
     let mut preds = HashMap::new();
     preds.insert(
         "embedding".to_string(),
-        ColumnPrune::VectorDistance { query: vec![1.0, 0.0, 0.0], threshold: 0.5 },
+        ColumnPrune::VectorDistance {
+            query: vec![1.0, 0.0, 0.0],
+            threshold: 0.5,
+        },
     );
     let kept = cat
         .list_extents(
             table_id,
             tref.current_snapshot_id,
-            &PrunePredicate { column_predicates: preds, ..Default::default() },
+            &PrunePredicate {
+                column_predicates: preds,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -199,13 +253,19 @@ async fn vector_distance_prune_uses_centroid_radius() {
     let mut preds = HashMap::new();
     preds.insert(
         "embedding".to_string(),
-        ColumnPrune::VectorDistance { query: vec![-1.0, 0.0, 0.0], threshold: 0.01 },
+        ColumnPrune::VectorDistance {
+            query: vec![-1.0, 0.0, 0.0],
+            threshold: 0.01,
+        },
     );
     let dropped = cat
         .list_extents(
             table_id,
             tref.current_snapshot_id,
-            &PrunePredicate { column_predicates: preds, ..Default::default() },
+            &PrunePredicate {
+                column_predicates: preds,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -221,14 +281,20 @@ async fn alter_table_add_column_evolves_schema() {
         .await
         .unwrap();
 
-    cat.alter_table_add_column(table_id, "trace_id", "string").await.unwrap();
+    cat.alter_table_add_column(table_id, "trace_id", "string")
+        .await
+        .unwrap();
 
     let cols = cat.get_table_columns("default", "logs").await.unwrap();
     assert_eq!(cols.len(), 4);
-    assert!(cols.iter().any(|c| c.name == "trace_id" && c.r#type == "string"));
+    assert!(cols
+        .iter()
+        .any(|c| c.name == "trace_id" && c.r#type == "string"));
 
     // Duplicate add is rejected.
-    let dup = cat.alter_table_add_column(table_id, "trace_id", "string").await;
+    let dup = cat
+        .alter_table_add_column(table_id, "trace_id", "string")
+        .await;
     assert!(dup.is_err(), "duplicate column rejected");
 }
 
@@ -237,12 +303,20 @@ async fn graphs_round_trip() {
     let cat = fresh().await;
     cat.create_database("memory").await.unwrap();
     let reg = cat
-        .create_graph("memory", "mem_graph", GraphSpec::with_defaults("memory_nodes", "memory_edges"))
+        .create_graph(
+            "memory",
+            "mem_graph",
+            GraphSpec::with_defaults("memory_nodes", "memory_edges"),
+        )
         .await
         .unwrap();
     assert_eq!(reg.name, "mem_graph");
 
-    let got = cat.get_graph("memory", "mem_graph").await.unwrap().expect("graph present");
+    let got = cat
+        .get_graph("memory", "mem_graph")
+        .await
+        .unwrap()
+        .expect("graph present");
     assert_eq!(got.node_table, "memory_nodes");
     assert_eq!(got.edge_table, "memory_edges");
 
@@ -250,7 +324,11 @@ async fn graphs_round_trip() {
     assert_eq!(listed.len(), 1);
 
     assert!(cat.drop_graph("memory", "mem_graph").await.unwrap());
-    assert!(cat.get_graph("memory", "mem_graph").await.unwrap().is_none());
+    assert!(cat
+        .get_graph("memory", "mem_graph")
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]
@@ -260,7 +338,11 @@ async fn users_round_trip() {
     cat.create_user("admin", "hash123", "admin").await.unwrap();
     assert_eq!(cat.count_users().await.unwrap(), 1);
 
-    let (user, hash) = cat.get_user_with_hash("admin").await.unwrap().expect("user exists");
+    let (user, hash) = cat
+        .get_user_with_hash("admin")
+        .await
+        .unwrap()
+        .expect("user exists");
     assert_eq!(user.role, "admin");
     assert_eq!(hash, "hash123");
 
@@ -276,14 +358,23 @@ async fn users_round_trip() {
 async fn api_token_lookup_and_revoke() {
     let cat = fresh().await;
     let hash = b"token-hash-bytes";
-    cat.insert_api_token(hash, "admin", Some("svc"), "api", None).await.unwrap();
+    cat.insert_api_token(hash, "admin", Some("svc"), "api", None)
+        .await
+        .unwrap();
 
-    let principal = cat.lookup_api_token(hash).await.unwrap().expect("token resolves");
+    let principal = cat
+        .lookup_api_token(hash)
+        .await
+        .unwrap()
+        .expect("token resolves");
     assert_eq!(principal.role, "admin");
     assert_eq!(principal.subject.as_deref(), Some("svc"));
 
     assert!(cat.revoke_api_token(hash).await.unwrap());
-    assert!(cat.lookup_api_token(hash).await.unwrap().is_none(), "revoked token gone");
+    assert!(
+        cat.lookup_api_token(hash).await.unwrap().is_none(),
+        "revoked token gone"
+    );
 }
 
 #[tokio::test]
@@ -316,7 +407,11 @@ async fn idempotency_ledger_is_write_once() {
         .unwrap();
     assert!(second.is_none(), "duplicate key ignored");
 
-    let looked = cat.lookup_idempotency("k1").await.unwrap().expect("entry present");
+    let looked = cat
+        .lookup_idempotency("k1")
+        .await
+        .unwrap()
+        .expect("entry present");
     assert_eq!(looked.rows_ingested, 10);
 }
 
@@ -324,7 +419,9 @@ async fn idempotency_ledger_is_write_once() {
 async fn background_tasks_claim_complete() {
     let cat = fresh().await;
     let node = NodeId::new();
-    cat.submit_task("compaction", None, serde_json::json!({"x": 1}), 5).await.unwrap();
+    cat.submit_task("compaction", None, serde_json::json!({"x": 1}), 5)
+        .await
+        .unwrap();
 
     let claimed = cat
         .claim_task("compaction", node, chrono::Duration::minutes(5))
@@ -335,8 +432,14 @@ async fn background_tasks_claim_complete() {
     assert_eq!(claimed.attempt, 1);
 
     // Nothing else to claim now.
-    let none = cat.claim_task("compaction", node, chrono::Duration::minutes(5)).await.unwrap();
-    assert!(none.is_none(), "claimed task not re-handed-out before lease expiry");
+    let none = cat
+        .claim_task("compaction", node, chrono::Duration::minutes(5))
+        .await
+        .unwrap();
+    assert!(
+        none.is_none(),
+        "claimed task not re-handed-out before lease expiry"
+    );
 
     cat.complete_task(claimed.id).await.unwrap();
 }
@@ -363,8 +466,15 @@ async fn node_register_heartbeat_list() {
 #[tokio::test]
 async fn dashboards_round_trip() {
     let cat = fresh().await;
-    let dash = cat.create_dashboard("Ops", Some("ops board")).await.unwrap();
-    let with_panels = cat.get_dashboard(dash.id).await.unwrap().expect("dashboard present");
+    let dash = cat
+        .create_dashboard("Ops", Some("ops board"))
+        .await
+        .unwrap();
+    let with_panels = cat
+        .get_dashboard(dash.id)
+        .await
+        .unwrap()
+        .expect("dashboard present");
     assert_eq!(with_panels.dashboard.name, "Ops");
     assert_eq!(with_panels.panels.len(), 0);
 
@@ -393,7 +503,10 @@ fn sidecar_desc(
         table_id: tref.id,
         column: column.to_string(),
         kind,
-        object_path: format!("{DEFAULT_TENANT}/indexes/{extent_id}/{column}.{}", kind.as_str()),
+        object_path: format!(
+            "{DEFAULT_TENANT}/indexes/{extent_id}/{column}.{}",
+            kind.as_str()
+        ),
         byte_size: 2048,
         params: serde_json::json!({ "nlist": 16 }),
         embedding_model_id: model.map(str::to_string),
@@ -419,9 +532,12 @@ async fn index_sidecars_register_list_reregister_delete() {
     for m in [m1, m2] {
         let mut txn = cat.begin_snapshot(tref.id).await.unwrap();
         txn.add_extent(m).await.unwrap();
-        txn.commit(SnapshotSummary { operation: "ingest".into(), ..Default::default() })
-            .await
-            .unwrap();
+        txn.commit(SnapshotSummary {
+            operation: "ingest".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     }
 
     // Register: ANN (with model) + FTS (no model) on e1, FTS on e2.
@@ -439,7 +555,12 @@ async fn index_sidecars_register_list_reregister_delete() {
         .unwrap();
     assert_eq!(all.len(), 3);
     let fts_only = cat
-        .list_index_sidecars(DEFAULT_TENANT, tref.id, &[e1, e2], Some(SidecarKind::TantivyFts))
+        .list_index_sidecars(
+            DEFAULT_TENANT,
+            tref.id,
+            &[e1, e2],
+            Some(SidecarKind::TantivyFts),
+        )
         .await
         .unwrap();
     assert_eq!(fts_only.len(), 2);
@@ -453,7 +574,9 @@ async fn index_sidecars_register_list_reregister_delete() {
     let mut fts1b = sidecar_desc(&tref, e1, "msg", SidecarKind::TantivyFts, None);
     fts1b.byte_size = 4242;
     fts1b.params = serde_json::json!({ "tokenizer": "en_stem" });
-    cat.register_index_sidecar(DEFAULT_TENANT, &fts1b).await.unwrap();
+    cat.register_index_sidecar(DEFAULT_TENANT, &fts1b)
+        .await
+        .unwrap();
     let all = cat
         .list_index_sidecars(DEFAULT_TENANT, tref.id, &[e1, e2], None)
         .await
@@ -464,7 +587,10 @@ async fn index_sidecars_register_list_reregister_delete() {
         .find(|d| d.extent_id == e1 && d.kind == SidecarKind::TantivyFts)
         .unwrap();
     assert_eq!(updated.byte_size, 4242);
-    assert_eq!(updated.params, serde_json::json!({ "tokenizer": "en_stem" }));
+    assert_eq!(
+        updated.params,
+        serde_json::json!({ "tokenizer": "en_stem" })
+    );
     assert_eq!(
         updated.embedding_model_id, None,
         "model id round-trips as NULL"
@@ -472,7 +598,9 @@ async fn index_sidecars_register_list_reregister_delete() {
 
     // A second model on the same column+kind coexists.
     let ann2 = sidecar_desc(&tref, e1, "embedding", SidecarKind::IvfRabitq, Some("m2"));
-    cat.register_index_sidecar(DEFAULT_TENANT, &ann2).await.unwrap();
+    cat.register_index_sidecar(DEFAULT_TENANT, &ann2)
+        .await
+        .unwrap();
     assert_eq!(
         cat.list_index_sidecars(DEFAULT_TENANT, tref.id, &[e1], None)
             .await

@@ -84,14 +84,35 @@ impl IndexScheduler {
             .list_databases()
             .await
             .map_err(|e| Error::Internal(format!("list_databases: {e}")))?;
+        let mut embed_jobs = 0usize;
         for db in databases {
             let tables = self.catalog.list_tables_in_database(&db).await?;
             for table in tables {
-                let cols = Self::vector_columns(&table);
-                if cols.is_empty() {
-                    continue;
+                // (1) embed_backfill: tables configured to auto-embed a text
+                //     column get their un-embedded extents filled first, so the
+                //     ANN pass below has vectors to index.
+                for cfg in self
+                    .catalog
+                    .list_table_embed_configs(DEFAULT_TENANT, table.id)
+                    .await
+                    .unwrap_or_default()
+                {
+                    if !cfg.auto_embed {
+                        continue;
+                    }
+                    embed_jobs += self
+                        .enqueue_embed_missing(&fabric, DEFAULT_TENANT, &table, &cfg)
+                        .await
+                        .unwrap_or_else(|e| {
+                            warn!(table = %table.name, error = %e, "embed enqueue failed");
+                            0
+                        });
                 }
-                for col in cols {
+
+                // (2) ivf_rabitq sidecars for vector columns (incl. ones just
+                //     filled by a prior backfill — their extents now carry vec
+                //     stats and no sidecar yet).
+                for col in Self::vector_columns(&table) {
                     enqueued += self
                         .enqueue_missing(&fabric, DEFAULT_TENANT, &table, &col)
                         .await
@@ -103,13 +124,80 @@ impl IndexScheduler {
                 }
             }
         }
-        if enqueued > 0 {
+        if enqueued > 0 || embed_jobs > 0 {
             info!(
-                jobs = enqueued,
-                "index scheduler enqueued ivf_rabitq build jobs"
+                ivf_rabitq = enqueued,
+                embed_backfill = embed_jobs,
+                "index scheduler enqueued build jobs"
             );
         }
-        Ok(enqueued)
+        Ok(enqueued + embed_jobs)
+    }
+
+    /// Enqueue `embed_backfill` jobs for every live extent of the configured
+    /// table whose embedding column is not yet populated. The cheap signal: the
+    /// TLM writer records per-extent vector stats (`column_stats[col]["vec"]`)
+    /// only when the embedding column has non-null values — so an extent lacking
+    /// those stats still needs embedding. After backfill rewrites the extent the
+    /// stats appear, so it is not re-enqueued.
+    async fn enqueue_embed_missing(
+        &self,
+        fabric: &kyma_catalog::PgFabricStore,
+        tenant: TenantId,
+        table: &TableRef,
+        cfg: &kyma_core::catalog::TableEmbedConfig,
+    ) -> Result<usize> {
+        let extents = self
+            .catalog
+            .list_extents_in_tenant(
+                tenant,
+                table.id,
+                table.current_snapshot_id,
+                &Default::default(),
+            )
+            .await?;
+        let missing: Vec<_> = extents
+            .iter()
+            .filter(|m| m.row_count > 0)
+            .filter(|m| {
+                // Needs embedding iff the embedding column has no vec stats yet.
+                m.column_stats
+                    .get(&cfg.embedding_column)
+                    .and_then(|c| c.get("vec"))
+                    .is_none()
+            })
+            .map(|m| m.id)
+            .collect();
+        if missing.is_empty() {
+            return Ok(0);
+        }
+        let mut jobs = 0usize;
+        for chunk in missing.chunks(self.max_extents_per_job) {
+            let payload = serde_json::json!({
+                "table_id": table.id.as_uuid(),
+                "extent_ids": chunk.iter().map(|e| e.as_uuid()).collect::<Vec<_>>(),
+                "source_column": cfg.source_column,
+                "embedding_column": cfg.embedding_column,
+                "model_id": cfg.model_id,
+            });
+            let job = kyma_core::fabric::EnqueueJob {
+                kind: kyma_core::fabric::JOB_EMBED_BACKFILL.to_string(),
+                payload,
+                priority: 0,
+                affinity_worker_id: None,
+                req_capabilities: Vec::new(),
+                label_selector: serde_json::json!({}),
+                max_attempts: 3,
+            };
+            fabric
+                .enqueue_job(tenant, &job)
+                .await
+                .map_err(|e| Error::Internal(format!("enqueue embed_backfill: {e}")))?;
+            jobs += 1;
+        }
+        debug!(table = %table.name, column = %cfg.embedding_column, jobs,
+               extents = missing.len(), "enqueued embed_backfill");
+        Ok(jobs)
     }
 
     /// Enqueue `index_build` jobs for every live extent of `(table, column)`
@@ -133,17 +221,39 @@ impl IndexScheduler {
         if extents.is_empty() {
             return Ok(0);
         }
-        let extent_ids: Vec<_> = extents.iter().map(|m| m.id).collect();
+        // Only index extents that actually carry vectors: the TLM writer
+        // records `column_stats[col]["vec"]` when the column has non-null
+        // embeddings. An extent without those stats either has no vectors yet
+        // (scalar/un-embedded) or is awaiting embed_backfill — indexing it would
+        // build a degenerate sidecar and be redone once it's embedded.
+        let embedded_ids: Vec<_> = extents
+            .iter()
+            .filter(|m| {
+                m.column_stats
+                    .get(column)
+                    .and_then(|c| c.get("vec"))
+                    .is_some()
+            })
+            .map(|m| m.id)
+            .collect();
+        if embedded_ids.is_empty() {
+            return Ok(0);
+        }
         let have: std::collections::HashSet<_> = self
             .catalog
-            .list_index_sidecars(tenant, table.id, &extent_ids, Some(SidecarKind::IvfRabitq))
+            .list_index_sidecars(
+                tenant,
+                table.id,
+                &embedded_ids,
+                Some(SidecarKind::IvfRabitq),
+            )
             .await?
             .into_iter()
             .filter(|d| d.column == column)
             .map(|d| d.extent_id)
             .collect();
 
-        let missing: Vec<_> = extent_ids
+        let missing: Vec<_> = embedded_ids
             .into_iter()
             .filter(|id| !have.contains(id))
             .collect();

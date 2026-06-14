@@ -145,7 +145,10 @@ pub enum ColumnPrune {
     /// the raw query embedding (normalized internally). Evaluated as a Rust
     /// post-filter (no SQL form); extents lacking a `vec` stat are kept
     /// (exact-scan fallback). See [`cosine_distance_lower_bound`].
-    VectorDistance { query: Vec<f32>, threshold: f64 },
+    VectorDistance {
+        query: Vec<f32>,
+        threshold: f64,
+    },
 }
 
 /// Conservative lower bound on cosine distance from `query` to any row in an
@@ -161,7 +164,11 @@ pub fn cosine_distance_lower_bound(query: &[f32], centroid: &[f64], radius: f64)
     if query.len() != centroid.len() || query.is_empty() {
         return None;
     }
-    let norm = query.iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>().sqrt();
+    let norm = query
+        .iter()
+        .map(|x| (*x as f64) * (*x as f64))
+        .sum::<f64>()
+        .sqrt();
     if norm <= 1e-12 {
         return None;
     }
@@ -468,6 +475,31 @@ impl GraphSpec {
             realm_col: None,
         }
     }
+}
+
+// -------------------- Embedding backfill (S1.5) --------------------
+
+/// Per-table embedding declaration: "embed the text in `source_column` into the
+/// vector `embedding_column` using `model_id`". One row per
+/// `(tenant, table, embedding_column)`. Consulted by the async `embed_backfill`
+/// scheduler (which extents need filling) and executor (how to fill them).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TableEmbedConfig {
+    pub table_id: TableId,
+    /// Text (Utf8) column whose contents are embedded.
+    pub source_column: String,
+    /// Vector (`FixedSizeList<Float32, dim>`) column the embeddings are written
+    /// into.
+    pub embedding_column: String,
+    /// Stable embedding-backend id, e.g. `"fastembed/bge-small-en-v1.5"`. Mixing
+    /// ids across writes to one column is a correctness bug; the executor
+    /// asserts the injected backend's id matches.
+    pub model_id: String,
+    /// Output dimension of `model_id`.
+    pub dim: u16,
+    /// When true, the backfill scheduler auto-enqueues jobs for un-embedded
+    /// extents of this table. When false, backfill is manual-only.
+    pub auto_embed: bool,
 }
 
 /// Result returned by [`Catalog::cleanup_soft_deleted_extents`].
@@ -906,7 +938,8 @@ pub trait Catalog: Send + Sync {
         name: &str,
         spec: GraphSpec,
     ) -> Result<GraphRegistration, CatalogError> {
-        self.create_graph_in_tenant(crate::tenant::DEFAULT_TENANT, database, name, spec).await
+        self.create_graph_in_tenant(crate::tenant::DEFAULT_TENANT, database, name, spec)
+            .await
     }
     async fn create_graph_in_tenant(
         &self,
@@ -918,7 +951,8 @@ pub trait Catalog: Send + Sync {
 
     /// List all graphs registered in `database`.
     async fn list_graphs(&self, database: &str) -> Result<Vec<GraphRegistration>, CatalogError> {
-        self.list_graphs_in_tenant(crate::tenant::DEFAULT_TENANT, database).await
+        self.list_graphs_in_tenant(crate::tenant::DEFAULT_TENANT, database)
+            .await
     }
     async fn list_graphs_in_tenant(
         &self,
@@ -932,7 +966,8 @@ pub trait Catalog: Send + Sync {
         database: &str,
         name: &str,
     ) -> Result<Option<GraphRegistration>, CatalogError> {
-        self.get_graph_in_tenant(crate::tenant::DEFAULT_TENANT, database, name).await
+        self.get_graph_in_tenant(crate::tenant::DEFAULT_TENANT, database, name)
+            .await
     }
     async fn get_graph_in_tenant(
         &self,
@@ -944,7 +979,8 @@ pub trait Catalog: Send + Sync {
     /// Drop a graph registration (does NOT drop the underlying tables).
     /// Returns true if a registration was removed.
     async fn drop_graph(&self, database: &str, name: &str) -> Result<bool, CatalogError> {
-        self.drop_graph_in_tenant(crate::tenant::DEFAULT_TENANT, database, name).await
+        self.drop_graph_in_tenant(crate::tenant::DEFAULT_TENANT, database, name)
+            .await
     }
     async fn drop_graph_in_tenant(
         &self,
@@ -962,13 +998,8 @@ pub trait Catalog: Send + Sync {
         password_hash: &str,
         role: &str,
     ) -> Result<User, CatalogError> {
-        self.create_user_in_tenant(
-            crate::tenant::DEFAULT_TENANT,
-            username,
-            password_hash,
-            role,
-        )
-        .await
+        self.create_user_in_tenant(crate::tenant::DEFAULT_TENANT, username, password_hash, role)
+            .await
     }
 
     /// Tenant-scoped variant of [`create_user`].
@@ -1001,7 +1032,8 @@ pub trait Catalog: Send + Sync {
     /// Count users in the default tenant (used to detect whether seeding is
     /// needed).
     async fn count_users(&self) -> Result<u64, CatalogError> {
-        self.count_users_in_tenant(crate::tenant::DEFAULT_TENANT).await
+        self.count_users_in_tenant(crate::tenant::DEFAULT_TENANT)
+            .await
     }
 
     /// Tenant-scoped variant of [`count_users`].
@@ -1012,7 +1044,8 @@ pub trait Catalog: Send + Sync {
 
     /// List all users in the default tenant (admin user management).
     async fn list_users(&self) -> Result<Vec<User>, CatalogError> {
-        self.list_users_in_tenant(crate::tenant::DEFAULT_TENANT).await
+        self.list_users_in_tenant(crate::tenant::DEFAULT_TENANT)
+            .await
     }
 
     /// Tenant-scoped variant of [`list_users`].
@@ -1227,6 +1260,95 @@ pub trait Catalog: Send + Sync {
         entry: IngestLedgerEntry,
         ttl: chrono::Duration,
     ) -> Result<Option<IngestLedgerEntry>>;
+
+    // --- embedding backfill (S1.5): per-table config + content-hash cache ---
+
+    /// Upsert a per-table embedding config (idempotent on
+    /// `(tenant, table_id, embedding_column)`).
+    async fn set_table_embed_config(
+        &self,
+        tenant: crate::tenant::TenantId,
+        cfg: &TableEmbedConfig,
+    ) -> Result<()>;
+
+    /// List the embedding configs declared for `table_id` (one per
+    /// `embedding_column`).
+    async fn list_table_embed_configs(
+        &self,
+        tenant: crate::tenant::TenantId,
+        table_id: TableId,
+    ) -> Result<Vec<TableEmbedConfig>>;
+
+    /// Batch-lookup cached embeddings by content hash for one `model_id`.
+    /// Returns only the hashes that hit; misses are simply absent. The stored
+    /// blob is `dim*4` little-endian f32 bytes, deserialized back to `Vec<f32>`.
+    async fn get_cached_embeddings(
+        &self,
+        tenant: crate::tenant::TenantId,
+        model_id: &str,
+        hashes: &[String],
+    ) -> Result<HashMap<String, Vec<f32>>>;
+
+    /// Batch-upsert cached embeddings for one `model_id`. Each entry is
+    /// `(content_hash, vector)`; vectors are serialized to little-endian f32
+    /// bytes. Re-inserting an existing key is a no-op (the model is
+    /// deterministic, so the vector is identical).
+    async fn put_cached_embeddings(
+        &self,
+        tenant: crate::tenant::TenantId,
+        model_id: &str,
+        dim: u16,
+        entries: &[(String, Vec<f32>)],
+    ) -> Result<()>;
+}
+
+/// Serialize an f32 vector to little-endian bytes (`len*4` bytes). The on-disk
+/// form of an embedding in [`Catalog`]'s embedding cache.
+pub fn embedding_to_le_bytes(v: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(v.len() * 4);
+    for x in v {
+        out.extend_from_slice(&x.to_le_bytes());
+    }
+    out
+}
+
+/// Inverse of [`embedding_to_le_bytes`]: parse little-endian f32 bytes back to a
+/// vector. Returns `None` if `bytes` is not a whole number of f32s.
+pub fn embedding_from_le_bytes(bytes: &[u8]) -> Option<Vec<f32>> {
+    if bytes.len() % 4 != 0 {
+        return None;
+    }
+    Some(
+        bytes
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod embedding_codec_tests {
+    use super::{embedding_from_le_bytes, embedding_to_le_bytes};
+
+    #[test]
+    fn f32_le_roundtrip() {
+        let v = vec![0.0f32, 1.0, -1.5, 3.14159, f32::MIN_POSITIVE, 12345.678];
+        let bytes = embedding_to_le_bytes(&v);
+        assert_eq!(bytes.len(), v.len() * 4);
+        let back = embedding_from_le_bytes(&bytes).expect("whole f32s");
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn empty_roundtrips() {
+        assert_eq!(embedding_to_le_bytes(&[]), Vec::<u8>::new());
+        assert_eq!(embedding_from_le_bytes(&[]), Some(Vec::new()));
+    }
+
+    #[test]
+    fn ragged_bytes_rejected() {
+        assert!(embedding_from_le_bytes(&[0, 1, 2]).is_none());
+    }
 }
 
 /// A claimed task, ready for execution.

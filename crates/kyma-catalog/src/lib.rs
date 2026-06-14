@@ -34,7 +34,7 @@ use kyma_core::catalog::{
     BackgroundTask, Catalog, CleanupResult, ColumnInfo, ColumnPrune, Dashboard, DashboardPanel,
     DashboardPanelInput, DashboardUpdate, DashboardWithPanels, ExtentManifest, GraphRegistration,
     GraphSpec, IngestLedgerEntry, NodeInfo, NodeLease, NodeRole, PrunePredicate, RefreshClaim,
-    SnapshotTxn, TableConfig, TableRef, TokenPrincipal, User,
+    SnapshotTxn, TableConfig, TableEmbedConfig, TableRef, TokenPrincipal, User,
 };
 use kyma_core::errors::{CatalogError, Result};
 use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
@@ -105,19 +105,14 @@ impl Catalog for PostgresCatalog {
         self
     }
 
-    async fn create_database_in_tenant(
-        &self,
-        tenant: TenantId,
-        name: &str,
-    ) -> Result<DatabaseId> {
-        let row: (Uuid,) = sqlx::query_as(
-            "INSERT INTO databases (tenant_id, name) VALUES ($1, $2) RETURNING id",
-        )
-        .bind(tenant.as_uuid())
-        .bind(name)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+    async fn create_database_in_tenant(&self, tenant: TenantId, name: &str) -> Result<DatabaseId> {
+        let row: (Uuid,) =
+            sqlx::query_as("INSERT INTO databases (tenant_id, name) VALUES ($1, $2) RETURNING id")
+                .bind(tenant.as_uuid())
+                .bind(name)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| CatalogError::Sql(e.to_string()))?;
         Ok(DatabaseId::from_uuid(row.0))
     }
 
@@ -163,9 +158,8 @@ impl Catalog for PostgresCatalog {
                 .fetch_optional(&mut *tx)
                 .await
                 .map_err(|e| CatalogError::Sql(e.to_string()))?;
-        let db_tenant = db_tenant.ok_or_else(|| {
-            CatalogError::Sql(format!("database {} not found", database_id))
-        })?;
+        let db_tenant = db_tenant
+            .ok_or_else(|| CatalogError::Sql(format!("database {} not found", database_id)))?;
         if db_tenant.0 != tenant.as_uuid() {
             return Err(CatalogError::Sql(format!(
                 "database {} does not belong to tenant {}",
@@ -1469,12 +1463,11 @@ impl Catalog for PostgresCatalog {
         &self,
         tenant: TenantId,
     ) -> std::result::Result<u64, CatalogError> {
-        let (count,): (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM users WHERE tenant_id = $1")
-                .bind(tenant.as_uuid())
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE tenant_id = $1")
+            .bind(tenant.as_uuid())
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| CatalogError::Sql(e.to_string()))?;
         Ok(count as u64)
     }
 
@@ -1645,12 +1638,10 @@ impl Catalog for PostgresCatalog {
             .to_owned();
 
         // Fire-and-forget last_used_at update — ignore errors.
-        let _ = sqlx::query(
-            "UPDATE api_tokens SET last_used_at = now() WHERE token_hash = $1",
-        )
-        .bind(token_hash)
-        .execute(&self.pool)
-        .await;
+        let _ = sqlx::query("UPDATE api_tokens SET last_used_at = now() WHERE token_hash = $1")
+            .bind(token_hash)
+            .execute(&self.pool)
+            .await;
 
         Ok(Some(TokenPrincipal {
             tenant: kyma_core::tenant::TenantId::from_uuid(tenant_uuid),
@@ -1659,10 +1650,7 @@ impl Catalog for PostgresCatalog {
         }))
     }
 
-    async fn revoke_api_token(
-        &self,
-        token_hash: &[u8],
-    ) -> std::result::Result<bool, CatalogError> {
+    async fn revoke_api_token(&self, token_hash: &[u8]) -> std::result::Result<bool, CatalogError> {
         let res = sqlx::query(
             "UPDATE api_tokens
              SET revoked_at = now()
@@ -1806,13 +1794,12 @@ impl Catalog for PostgresCatalog {
         &self,
         tenant: TenantId,
     ) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
-        let rows: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM databases WHERE tenant_id = $1 ORDER BY name ASC",
-        )
-        .bind(tenant.as_uuid())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| CatalogError::Sql(e.to_string()))?;
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM databases WHERE tenant_id = $1 ORDER BY name ASC")
+                .bind(tenant.as_uuid())
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| CatalogError::Sql(e.to_string()))?;
         Ok(rows.into_iter().map(|r| r.0).collect())
     }
 
@@ -1910,6 +1897,127 @@ impl Catalog for PostgresCatalog {
         }
         Ok(columns)
     }
+
+    // --- embedding backfill (S1.5) ---
+
+    async fn set_table_embed_config(&self, tenant: TenantId, cfg: &TableEmbedConfig) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO table_embed_config
+                (tenant_id, table_id, source_column, embedding_column, model_id, dim,
+                 auto_embed, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7, now())
+             ON CONFLICT (tenant_id, table_id, embedding_column)
+             DO UPDATE SET source_column = EXCLUDED.source_column,
+                           model_id      = EXCLUDED.model_id,
+                           dim           = EXCLUDED.dim,
+                           auto_embed    = EXCLUDED.auto_embed,
+                           updated_at    = now()",
+        )
+        .bind(tenant.as_uuid())
+        .bind(cfg.table_id.as_uuid())
+        .bind(&cfg.source_column)
+        .bind(&cfg.embedding_column)
+        .bind(&cfg.model_id)
+        .bind(cfg.dim as i32)
+        .bind(cfg.auto_embed)
+        .execute(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(())
+    }
+
+    async fn list_table_embed_configs(
+        &self,
+        tenant: TenantId,
+        table_id: TableId,
+    ) -> Result<Vec<TableEmbedConfig>> {
+        let rows = sqlx::query(
+            "SELECT table_id, source_column, embedding_column, model_id, dim, auto_embed
+             FROM table_embed_config
+             WHERE tenant_id = $1 AND table_id = $2
+             ORDER BY embedding_column",
+        )
+        .bind(tenant.as_uuid())
+        .bind(table_id.as_uuid())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        rows.iter()
+            .map(|r| {
+                Ok(TableEmbedConfig {
+                    table_id: TableId::from_uuid(r.try_get("table_id").map_err(sql_err)?),
+                    source_column: r.try_get("source_column").map_err(sql_err)?,
+                    embedding_column: r.try_get("embedding_column").map_err(sql_err)?,
+                    model_id: r.try_get("model_id").map_err(sql_err)?,
+                    dim: r.try_get::<i32, _>("dim").map_err(sql_err)? as u16,
+                    auto_embed: r.try_get("auto_embed").map_err(sql_err)?,
+                })
+            })
+            .collect()
+    }
+
+    async fn get_cached_embeddings(
+        &self,
+        tenant: TenantId,
+        model_id: &str,
+        hashes: &[String],
+    ) -> Result<std::collections::HashMap<String, Vec<f32>>> {
+        if hashes.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let rows = sqlx::query(
+            "SELECT content_hash, embedding
+             FROM embedding_cache
+             WHERE tenant_id = $1 AND model_id = $2 AND content_hash = ANY($3)",
+        )
+        .bind(tenant.as_uuid())
+        .bind(model_id)
+        .bind(hashes)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        let mut out = std::collections::HashMap::with_capacity(rows.len());
+        for r in &rows {
+            let h: String = r.try_get("content_hash").map_err(sql_err)?;
+            let bytes: Vec<u8> = r.try_get("embedding").map_err(sql_err)?;
+            if let Some(v) = kyma_core::catalog::embedding_from_le_bytes(&bytes) {
+                out.insert(h, v);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn put_cached_embeddings(
+        &self,
+        tenant: TenantId,
+        model_id: &str,
+        dim: u16,
+        entries: &[(String, Vec<f32>)],
+    ) -> Result<()> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await.map_err(sql_err)?;
+        for (hash, vec) in entries {
+            let bytes = kyma_core::catalog::embedding_to_le_bytes(vec);
+            sqlx::query(
+                "INSERT INTO embedding_cache
+                    (tenant_id, content_hash, model_id, dim, embedding)
+                 VALUES ($1,$2,$3,$4,$5)
+                 ON CONFLICT (tenant_id, content_hash, model_id) DO NOTHING",
+            )
+            .bind(tenant.as_uuid())
+            .bind(hash)
+            .bind(model_id)
+            .bind(dim as i32)
+            .bind(bytes)
+            .execute(&mut *tx)
+            .await
+            .map_err(sql_err)?;
+        }
+        tx.commit().await.map_err(sql_err)?;
+        Ok(())
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -1980,7 +2088,9 @@ fn row_to_user(row: &sqlx::postgres::PgRow) -> std::result::Result<User, Catalog
     })
 }
 
-fn row_to_graph(row: &sqlx::postgres::PgRow) -> std::result::Result<GraphRegistration, CatalogError> {
+fn row_to_graph(
+    row: &sqlx::postgres::PgRow,
+) -> std::result::Result<GraphRegistration, CatalogError> {
     use sqlx::Row as _;
     Ok(GraphRegistration {
         id: row.try_get("id").map_err(sql_err)?,

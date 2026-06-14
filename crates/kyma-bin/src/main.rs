@@ -15,14 +15,14 @@ use kyma_compaction::{
     ArtifactRetentionWorker, CompactionScheduler, CompactionWorker, PhysicalDeleteWorker,
     RetentionSweeper,
 };
+use kyma_core::catalog::GraphSpec;
+use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
+use kyma_core::segment_format::SegmentFormat;
 use kyma_datasources::prometheus::PromDataSource;
 use kyma_datasources::registry::DataSourceRegistry;
 use kyma_datasources::scheduler::DataSourceScheduler;
 use kyma_datasources::secrets::EnvSecretStore;
 use kyma_datasources::PgDataSourceCatalog;
-use kyma_core::catalog::GraphSpec;
-use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
-use kyma_core::segment_format::SegmentFormat;
 use kyma_format_tlm::TelemetryFormat;
 use kyma_ingest_core::{
     ensure_table, events::IngestEvents, evolve_schema_for_records, spawn_idempotency_cleanup,
@@ -30,8 +30,8 @@ use kyma_ingest_core::{
 };
 use kyma_ingest_filedrop::{FiledropConfig, FiledropWatcher};
 use kyma_ingest_kafka::{KafkaConsumerConfig, KafkaConsumerWorker};
-use kyma_ingest_otlp::OtlpLogsService;
 use kyma_ingest_otlp::traces::OtlpTraceService;
+use kyma_ingest_otlp::OtlpLogsService;
 use kyma_ingest_rest::IngestState;
 use kyma_server::auth::{
     require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role,
@@ -299,18 +299,17 @@ async fn main() -> Result<()> {
     // JWTs are validated against the listed issuers; non-JWT tokens fall
     // through to the inner backend. When unset, OIDC is disabled and the
     // inner backend handles all auth.
-    let backend: Arc<dyn AuthBackend> =
-        match kyma_server::auth::OidcConfig::from_env() {
-            Some(cfg) => {
-                tracing::info!(
-                    issuers = ?cfg.issuers,
-                    audience = %cfg.audience,
-                    "OIDC auth enabled"
-                );
-                Arc::new(kyma_server::auth::OidcAuthBackend::new(cfg, backend))
-            }
-            None => backend,
-        };
+    let backend: Arc<dyn AuthBackend> = match kyma_server::auth::OidcConfig::from_env() {
+        Some(cfg) => {
+            tracing::info!(
+                issuers = ?cfg.issuers,
+                audience = %cfg.audience,
+                "OIDC auth enabled"
+            );
+            Arc::new(kyma_server::auth::OidcAuthBackend::new(cfg, backend))
+        }
+        None => backend,
+    };
 
     if backend.enabled() {
         info!("auth: bearer-token protection enabled on /v1/ingest (write) + /v1/query (read)");
@@ -480,32 +479,33 @@ async fn main() -> Result<()> {
     // router, and flight router via Arc::clone — they all serve the same node
     // and benefit from a shared schema-doc TTL window.
     let schema_cache = std::sync::Arc::new(kyma_server::catalog_handler::SchemaCache::from_env());
-    let query_router =
-        kyma_server::router_with_agent(
-            QueryState { federation: Some(federation.clone()),
-                catalog: catalog.clone(),
-                format: format.clone(),
-                schema_cache: schema_cache.clone(),
-                node_id: Some(lease.node_id),
-                pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
-                layout_cache: std::sync::Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
-            },
-            agent_state.clone(),
-        )
-        .merge(kyma_server::artifacts_handler::artifacts_router(
-            catalog.clone(),
-            store.clone(),
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            AuthLayerState {
-                backend: backend.clone(),
-                required: Role::Read,
-            },
-            require_role_middleware,
-        ));
+    let query_router = kyma_server::router_with_agent(
+        QueryState {
+            federation: Some(federation.clone()),
+            catalog: catalog.clone(),
+            format: format.clone(),
+            schema_cache: schema_cache.clone(),
+            node_id: Some(lease.node_id),
+            pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
+            layout_cache: std::sync::Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
+        },
+        agent_state.clone(),
+    )
+    .merge(kyma_server::artifacts_handler::artifacts_router(
+        catalog.clone(),
+        store.clone(),
+    ))
+    .layer(axum::middleware::from_fn_with_state(
+        AuthLayerState {
+            backend: backend.clone(),
+            required: Role::Read,
+        },
+        require_role_middleware,
+    ));
 
     // Build MCP state from the same SharedToolCtx the inline /v1/agent endpoint uses.
-    let mcp_shared = kyma_server::agent::SharedToolCtx { federation: Some(federation.clone()),
+    let mcp_shared = kyma_server::agent::SharedToolCtx {
+        federation: Some(federation.clone()),
         catalog: catalog.clone(),
         format: format.clone(),
         pool: Some(pg_pool.clone()),
@@ -783,19 +783,19 @@ async fn main() -> Result<()> {
     let fabric_store = std::sync::Arc::new(kyma_catalog::PgFabricStore::new(pg_pool.clone()));
     let fabric_state = kyma_server::fabric_handler::FabricState::new(fabric_store.clone(), None);
     let fabric_worker_router = kyma_server::fabric_handler::worker_router(fabric_state.clone());
-    let fabric_admin_router = kyma_server::fabric_handler::admin_router(fabric_state.clone()).layer(
-        axum::middleware::from_fn_with_state(
+    let fabric_admin_router = kyma_server::fabric_handler::admin_router(fabric_state.clone())
+        .layer(axum::middleware::from_fn_with_state(
             AuthLayerState {
                 backend: backend.clone(),
                 required: Role::Write,
             },
             require_role_middleware,
-        ),
-    );
+        ));
     // Live-tail WebSocket — mounted WITHOUT auth middleware; the session
     // authenticates via its first message (browsers can't send WS headers).
     let live_router = kyma_server::discover::live::explore_live_router(
-        QueryState { federation: Some(federation.clone()),
+        QueryState {
+            federation: Some(federation.clone()),
             catalog: catalog.clone(),
             format: format.clone(),
             schema_cache: schema_cache.clone(),
@@ -841,29 +841,29 @@ async fn main() -> Result<()> {
     // Auth is enforced the same way as /v1/* (Bearer token, Role::Read required).
     #[cfg(feature = "web-ui")]
     let app = {
-        let flight_router =
-            kyma_server::flight_web_router(kyma_server::QueryState { federation: Some(federation.clone()),
-                catalog: catalog.clone(),
-                format: format.clone(),
-                schema_cache: schema_cache.clone(),
-                node_id: Some(lease.node_id),
-                pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
-                layout_cache: std::sync::Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
-            })
-            // Fail closed: database-scoped tokens cannot use Flight (tickets
-            // address databases internally, bypassing per-handler scope
-            // checks). Layered before auth so it runs AFTER auth populates
-            // the Principal extension (axum layers run outermost-last-added).
-            .layer(axum::middleware::from_fn(
-                kyma_server::scoped_token_guard_middleware,
-            ))
-            .layer(axum::middleware::from_fn_with_state(
-                AuthLayerState {
-                    backend: backend.clone(),
-                    required: kyma_server::auth::Role::Read,
-                },
-                kyma_server::auth::require_role_middleware,
-            ));
+        let flight_router = kyma_server::flight_web_router(kyma_server::QueryState {
+            federation: Some(federation.clone()),
+            catalog: catalog.clone(),
+            format: format.clone(),
+            schema_cache: schema_cache.clone(),
+            node_id: Some(lease.node_id),
+            pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
+            layout_cache: std::sync::Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
+        })
+        // Fail closed: database-scoped tokens cannot use Flight (tickets
+        // address databases internally, bypassing per-handler scope
+        // checks). Layered before auth so it runs AFTER auth populates
+        // the Principal extension (axum layers run outermost-last-added).
+        .layer(axum::middleware::from_fn(
+            kyma_server::scoped_token_guard_middleware,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: kyma_server::auth::Role::Read,
+            },
+            kyma_server::auth::require_role_middleware,
+        ));
         app.merge(flight_router)
     };
 
@@ -901,8 +901,7 @@ async fn main() -> Result<()> {
     // Index-build activation scheduler: enqueues ivf_rabitq build jobs for
     // un-indexed vector columns so ANN sidecars actually get created.
     let index_scheduler = kyma_compaction::IndexScheduler::new(catalog.clone());
-    let index_scheduler_handle =
-        tokio::spawn(index_scheduler.run(shutdown_tx.subscribe()));
+    let index_scheduler_handle = tokio::spawn(index_scheduler.run(shutdown_tx.subscribe()));
 
     // Retention sweeper (soft-delete expired).
     let mut retention = RetentionSweeper::new(catalog.clone());
@@ -1013,7 +1012,8 @@ async fn main() -> Result<()> {
         .unwrap_or(true)
     {
         let mut consolidator = kyma_server::agent::MemoryConsolidator::new(
-            kyma_server::agent::SharedToolCtx { federation: Some(federation.clone()),
+            kyma_server::agent::SharedToolCtx {
+                federation: Some(federation.clone()),
                 catalog: catalog.clone(),
                 format: format.clone(),
                 pool: Some(pg_pool.clone()),
@@ -1050,7 +1050,8 @@ async fn main() -> Result<()> {
         .unwrap_or(true)
     {
         let mut correlator = kyma_server::agent::CiCorrelator::new(
-            kyma_server::agent::SharedToolCtx { federation: Some(federation.clone()),
+            kyma_server::agent::SharedToolCtx {
+                federation: Some(federation.clone()),
                 catalog: catalog.clone(),
                 format: format.clone(),
                 pool: Some(pg_pool.clone()),
@@ -1084,7 +1085,8 @@ async fn main() -> Result<()> {
         .unwrap_or(true)
     {
         let mut promoter = kyma_server::agent::FilePromoter::new(
-            kyma_server::agent::SharedToolCtx { federation: Some(federation.clone()),
+            kyma_server::agent::SharedToolCtx {
+                federation: Some(federation.clone()),
                 catalog: catalog.clone(),
                 format: format.clone(),
                 pool: Some(pg_pool.clone()),
@@ -1292,6 +1294,30 @@ async fn main() -> Result<()> {
         store.clone(),
         sidecar_builders,
     )));
+    // Async embedding backfill (S1.5): fills a configured text column's
+    // embeddings into a vector column by rewriting extents, with a content-hash
+    // cache. Injects the process-wide embedding backend (the same `OnceCell`
+    // memory uses). The executor picks its embedder by asserting
+    // `embedder.id() == payload.model_id` — single-model for now; a per-model
+    // registry is a later step (the scheduler that enqueues these jobs, out of
+    // S1.5 scope, sets `model_id` from the same backend's id). If no backend is
+    // available (provider feature off), the executor is simply not registered;
+    // an enqueued `embed_backfill` job then fails terminally with the fabric's
+    // standard "no executor for kind" error.
+    match kyma_memory::shared_embedding().await {
+        Ok(embedder) => {
+            exec_registry.register(Arc::new(
+                kyma_jobs::embed_backfill::EmbedBackfillExecutor::new(
+                    catalog.clone(),
+                    format.clone(),
+                    embedder,
+                ),
+            ));
+        }
+        Err(e) => {
+            warn!(error = %e, "embedding backend unavailable; embed_backfill executor not registered");
+        }
+    }
     let mut fabric_runner_handles = Vec::with_capacity(n_fabric_workers);
     for _ in 0..n_fabric_workers {
         let queue = Arc::new(kyma_jobs::PgQueue::new(
