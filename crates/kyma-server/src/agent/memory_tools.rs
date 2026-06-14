@@ -637,6 +637,9 @@ pub fn tool_recall_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         include_invalidated: false,
                         limit: parsed.limit,
                         expand_hops: Some(1),
+                        // Populated once agent identity is threaded onto the
+                        // tool ctx (follow-on); None = no space filter.
+                        space_agent: None,
                     };
                     // Read-your-own-writes: land queued writes for the target
                     // realms first (bounded; no-op when nothing is pending).
@@ -714,6 +717,7 @@ pub fn tool_memory_search(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         include_invalidated: false,
                         limit: parsed.limit,
                         expand_hops: parsed.expand_hops,
+                        space_agent: None,
                     };
                     // Read-your-own-writes: land queued writes for the target
                     // realms first (bounded; no-op when nothing is pending).

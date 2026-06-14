@@ -19,7 +19,9 @@ pub mod sql;
 pub mod types;
 mod writer;
 
-pub use embed::{build_embedding_backend, shared_embedding, shared_reranker};
+pub use embed::{
+    build_embedding_backend, shared_embedding, shared_reranker, try_set_shared_embedding,
+};
 pub use error::{MemoryError, Result};
 pub use ingest::{spawn_memory_queue, MemoryIngestConfig, MemoryOp, MemoryQueue};
 pub use types::{CreateMemory, MemoryStatus, MemoryType, RecallFilter, SourceSummary};

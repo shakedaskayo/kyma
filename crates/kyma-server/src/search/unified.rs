@@ -187,6 +187,7 @@ fn memory_request(req: &UnifiedSearchRequest) -> RetrieveRequest {
         include_invalidated: req.include_invalidated.unwrap_or(false),
         limit: req.limit,
         expand_hops: req.expand_hops.map(|h| h as u8),
+        space_agent: None,
     }
 }
 

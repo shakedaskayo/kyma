@@ -266,6 +266,9 @@ pub fn keyword_recall_sql(
     limit: usize,
 ) -> String {
     let mut conds = filter_conditions(filter, true);
+    if let Some(sc) = space_condition(filter) {
+        conds.push(sc);
+    }
     if conds.is_empty() {
         conds.push("1 = 1".to_string());
     }
