@@ -93,7 +93,8 @@ run_step "compile all test targets" \
 run_step "unit suites (no infra)" \
   cargo test --locked \
   -p kyma-core -p kyma-storage -p kyma-kql -p kyma-memory \
-  -p kyma-catalog-sqlite -p kyma-retrieval-eval -p kyma-graph-testkit
+  -p kyma-catalog-sqlite -p kyma-retrieval-eval -p kyma-graph-testkit \
+  -p kyma-graph-topo
 run_step "catalog integration (testcontainers)" \
   cargo test --locked -p kyma-catalog -- --test-threads=2
 run_step "server integration (testcontainers)" \
