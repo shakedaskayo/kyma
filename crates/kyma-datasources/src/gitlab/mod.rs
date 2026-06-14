@@ -68,6 +68,7 @@ impl DataSource for GitlabDataSource {
             brand: "gitlab".into(),
             auth_mode: "pat".into(),
             status: "available".into(),
+            drive_model: "periodic".into(),
             default_schedule_ms: 5 * 60_000,
             fields: vec![
                 CatalogField {

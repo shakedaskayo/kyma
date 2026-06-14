@@ -96,7 +96,9 @@ async fn create(
             &req.target_table,
             req.config,
             req.schedule_ms,
-            "periodic",
+            // Watcher-driven sources (e.g. obsidian) are excluded from the
+            // periodic scheduler; node-local watcher loops run them instead.
+            &c.catalog().drive_model,
         )
         .await;
     match res {
@@ -111,20 +113,24 @@ async fn create(
 
 /// `GET /v1/data-sources/catalog` — the vendor-agnostic catalog that drives the
 /// data sources UI. Merges registered data sources (self-described, status
-/// `"available"`) with the static `coming_soon` list (registered wins on a
-/// `type_id` collision), sorted available-first then by category and label.
+/// `"available"`) with the static `installed` (engine-shipped, no create flow)
+/// and `coming_soon` lists (registered wins on a `type_id` collision), sorted
+/// available/installed-first then by category and label.
 async fn catalog(State(s): State<AdminState>) -> impl IntoResponse {
     let mut entries = s.registry.catalog();
-    let have: std::collections::HashSet<String> =
+    let mut have: std::collections::HashSet<String> =
         entries.iter().map(|e| e.type_id.clone()).collect();
-    for cs in crate::catalog::coming_soon() {
-        if !have.contains(&cs.type_id) {
-            entries.push(cs);
+    for extra in crate::catalog::installed()
+        .into_iter()
+        .chain(crate::catalog::coming_soon())
+    {
+        if have.insert(extra.type_id.clone()) {
+            entries.push(extra);
         }
     }
     entries.sort_by(|a, b| {
-        let av = (a.status != "available", a.category.clone(), a.label.clone());
-        let bv = (b.status != "available", b.category.clone(), b.label.clone());
+        let av = (a.status == "coming_soon", a.category.clone(), a.label.clone());
+        let bv = (b.status == "coming_soon", b.category.clone(), b.label.clone());
         av.cmp(&bv)
     });
     // For OAuth data sources, surface the provider slug + scopes the UI needs to

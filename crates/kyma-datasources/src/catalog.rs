@@ -84,8 +84,12 @@ pub struct CatalogEntry {
     pub brand: String,
     /// `"pat"` | `"oauth"` | `"url"` | `"none"`.
     pub auth_mode: String,
-    /// `"available"` (registered + implemented) | `"coming_soon"`.
+    /// `"available"` (registered + implemented) | `"installed"` (ships with
+    /// the engine, no create flow) | `"coming_soon"`.
     pub status: String,
+    /// `"periodic"` (scheduler-ticked) | `"continuous"` (synced by a
+    /// node-local file watcher; the scheduler never ticks it).
+    pub drive_model: String,
     pub default_schedule_ms: i64,
     pub fields: Vec<CatalogField>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -121,6 +125,7 @@ impl CatalogEntry {
             brand: String::new(),
             auth_mode: "none".into(),
             status: "available".into(),
+            drive_model: "periodic".into(),
             default_schedule_ms: 5 * 60_000,
             fields: Vec::new(),
             resource: None,
@@ -142,6 +147,7 @@ fn soon(type_id: &str, label: &str, category: &str, brand: &str, auth: &str, des
         brand: brand.into(),
         auth_mode: auth.into(),
         status: "coming_soon".into(),
+        drive_model: "periodic".into(),
         default_schedule_ms: 5 * 60_000,
         fields: Vec::new(),
         resource: None,
@@ -150,6 +156,31 @@ fn soon(type_id: &str, label: &str, category: &str, brand: &str, auth: &str, des
         graph_name: None,
         accepted_credential_kinds: Vec::new(),
     }
+}
+
+/// Sources that ship with the engine itself (no create flow). Presented in
+/// the catalog with `status: "installed"` so the UI renders them as
+/// pre-installed rather than creatable. cc-sync is the first: agent-memory
+/// sync kinds (Claude Code today, other coding agents as they land) run as
+/// node-local watchers, not scheduled data sources.
+pub fn installed() -> Vec<CatalogEntry> {
+    vec![CatalogEntry {
+        type_id: "claude_code".into(),
+        label: "Claude Code".into(),
+        category: "knowledge".into(),
+        description: "Claude Code's file-based memory, synced continuously into recallable, graph-linked memory nodes. Pre-installed — runs as a local watcher.".into(),
+        brand: "claude".into(),
+        auth_mode: "none".into(),
+        status: "installed".into(),
+        drive_model: "continuous".into(),
+        default_schedule_ms: 30_000,
+        fields: Vec::new(),
+        resource: None,
+        default_target_table: None,
+        config_defaults: None,
+        graph_name: None,
+        accepted_credential_kinds: Vec::new(),
+    }]
 }
 
 /// Vendors we present in the catalog but haven't implemented yet. These are

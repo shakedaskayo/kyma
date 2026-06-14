@@ -18,7 +18,6 @@ import {
   type DataSourceUpdate,
   type CreateDataSourceBody,
 } from "@/sdk/datasources";
-import { memorySourceSummary } from "@/sdk/memory";
 
 // Query keys are scoped to (endpoint, database) — never the bearer or any PAT.
 const listKey = (endpoint: string, database: string) =>
@@ -86,21 +85,6 @@ export function useUpdateWatcherSettings() {
       void qc.invalidateQueries({ queryKey: ["data-sources", "watchers", endpoint] });
     },
     onError: () => toast.error("Failed to update watcher settings"),
-  });
-}
-
-/**
- * Provenance summary (memories per source × realm) for the Memories tab.
- * Lives in the memory domain (key + endpoint) but is consumed here — the tab
- * shows where memories come from, not the store itself.
- */
-export function useMemorySourceSummary() {
-  const { endpoint, token, database } = useSession();
-  return useQuery({
-    queryKey: ["memory", "source-summary", endpoint],
-    queryFn: () => memorySourceSummary({ endpoint, token, database }),
-    enabled: Boolean(endpoint),
-    staleTime: 30_000,
   });
 }
 

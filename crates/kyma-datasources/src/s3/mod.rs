@@ -68,6 +68,7 @@ impl DataSource for S3DataSource {
             brand: "amazons3".into(),
             auth_mode: "url".into(),
             status: "available".into(),
+            drive_model: "periodic".into(),
             default_schedule_ms: 30 * 60_000,
             fields: vec![
                 CatalogField {

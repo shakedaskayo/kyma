@@ -2,7 +2,7 @@ import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2 } from "l
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { CatalogEntry } from "@/sdk/datasources";
-import { INTERVAL_PRESETS, type KindFormValues } from "./datasource-kinds";
+import { INTERVAL_PRESETS, isWatcherDriven, type KindFormValues } from "./datasource-kinds";
 
 /** Inline token-verification state for token-auth kinds. */
 export interface TokenVerify {
@@ -124,60 +124,72 @@ export function DataSourceConfigForm({
         </div>
       )}
 
-      {/* Sync interval */}
-      <div className="space-y-1">
-        <Label htmlFor="ds-interval">Sync interval</Label>
-        <select
-          id="ds-interval"
-          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          value={values.scheduleMs}
-          onChange={(e) => onChange({ scheduleMs: Number(e.target.value) })}
-        >
-          {INTERVAL_PRESETS.map((p) => (
-            <option key={p.ms} value={p.ms}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* Sync interval — continuous sources sync on file events instead. */}
+      {isWatcherDriven(entry) ? (
+        <div className="space-y-1">
+          <Label>Sync</Label>
+          <p className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+            Continuous — synced by a file watcher as files change.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <Label htmlFor="ds-interval">Sync interval</Label>
+          <select
+            id="ds-interval"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={values.scheduleMs}
+            onChange={(e) => onChange({ scheduleMs: Number(e.target.value) })}
+          >
+            {INTERVAL_PRESETS.map((p) => (
+              <option key={p.ms} value={p.ms}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
-      {/* Advanced (target db/table) */}
-      <div>
-        <button
-          type="button"
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          onClick={onToggleAdvanced}
-        >
-          {advancedOpen ? (
-            <ChevronDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
+      {/* Advanced (target db/table) — continuous sources write to the memory
+          store, so there is no target to override. */}
+      {!isWatcherDriven(entry) && (
+        <div>
+          <button
+            type="button"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            onClick={onToggleAdvanced}
+          >
+            {advancedOpen ? (
+              <ChevronDown className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5" />
+            )}
+            Advanced
+          </button>
+          {advancedOpen && (
+            <div className="mt-2 grid grid-cols-2 gap-2 rounded-md border bg-muted/20 p-3">
+              <div className="space-y-1">
+                <Label htmlFor="ds-db">Target database</Label>
+                <Input
+                  id="ds-db"
+                  value={values.targetDatabase}
+                  onChange={(e) => onChange({ targetDatabase: e.target.value })}
+                  placeholder="(session default)"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="ds-table">Target table</Label>
+                <Input
+                  id="ds-table"
+                  value={values.targetTable}
+                  onChange={(e) => onChange({ targetTable: e.target.value })}
+                  placeholder={entry.default_target_table ?? ""}
+                />
+              </div>
+            </div>
           )}
-          Advanced
-        </button>
-        {advancedOpen && (
-          <div className="mt-2 grid grid-cols-2 gap-2 rounded-md border bg-muted/20 p-3">
-            <div className="space-y-1">
-              <Label htmlFor="ds-db">Target database</Label>
-              <Input
-                id="ds-db"
-                value={values.targetDatabase}
-                onChange={(e) => onChange({ targetDatabase: e.target.value })}
-                placeholder="(session default)"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="ds-table">Target table</Label>
-              <Input
-                id="ds-table"
-                value={values.targetTable}
-                onChange={(e) => onChange({ targetTable: e.target.value })}
-                placeholder={entry.default_target_table ?? ""}
-              />
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

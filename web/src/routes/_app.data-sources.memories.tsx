@@ -1,12 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { MemoriesSummaryTab } from "@/features/datasources/MemoriesSummaryTab";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// Memories tab — provenance summary (memories per source × realm). Header +
-// section tabs live in the layout route.
+// The Memories tab moved to the Memory section.
 export const Route = createFileRoute("/_app/data-sources/memories")({
-  component: () => (
-    <div className="p-6">
-      <MemoriesSummaryTab />
-    </div>
-  ),
+  beforeLoad: () => {
+    throw redirect({ to: "/memory/search" });
+  },
 });
