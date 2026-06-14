@@ -28,8 +28,8 @@ mod scrape;
 mod update;
 mod users;
 use client::{
-    delete_json, effective_config, get_json, load_config, probe_auth, probe_health,
-    save_config, stream_agent_ask, write_skill_file, ClientConfig,
+    delete_json, effective_config, get_json, load_config, probe_auth, probe_health, save_config,
+    stream_agent_ask, write_skill_file, ClientConfig,
 };
 
 use anyhow::{anyhow, Context, Result};
@@ -42,8 +42,7 @@ use std::sync::Arc;
 
 const SKILL_TEMPLATE: &str = include_str!("skill_template.md");
 /// `kyma-deploy` skill — production deployment runbook for coding agents.
-const DEPLOY_SKILL: &str =
-    include_str!("../../../integrations/claude-code/kyma-deploy/SKILL.md");
+const DEPLOY_SKILL: &str = include_str!("../../../integrations/claude-code/kyma-deploy/SKILL.md");
 
 #[derive(Debug, Parser)]
 #[command(name = "kyma", about = "Kyma CLI — client queries + admin operations")]
@@ -63,7 +62,6 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     // ── client subcommands ────────────────────────────────────────────
-
     /// Save a connection to a kyma server.
     Connect {
         /// Server base URL, e.g. http://localhost:8080
@@ -292,7 +290,6 @@ enum Command {
     },
 
     // ── admin subcommands ─────────────────────────────────────────────
-
     /// Create a new database (namespace) — admin, talks to Postgres directly.
     CreateDatabase {
         name: String,
@@ -319,6 +316,30 @@ enum Command {
     ListTables {
         #[arg(long)]
         db: String,
+    },
+    /// Configure auto-embedding for a table: a background job embeds the text
+    /// in `--source-column` into the vector `--embedding-column`. Rows can be
+    /// ingested with the embedding column left NULL; the engine fills it.
+    ConfigureEmbed {
+        #[arg(long)]
+        db: String,
+        #[arg(long)]
+        table: String,
+        /// Utf8 text column whose contents are embedded.
+        #[arg(long)]
+        source_column: String,
+        /// FixedSizeList<Float32, dim> column the embeddings are written into.
+        #[arg(long)]
+        embedding_column: String,
+        /// Embedding-backend id, e.g. "fastembed/bge-small-en-v1.5".
+        #[arg(long)]
+        model: String,
+        /// Embedding dimension (must match the embedding column's list size).
+        #[arg(long)]
+        dim: u32,
+        /// Disable auto-embedding (config kept but the scheduler skips it).
+        #[arg(long)]
+        disable: bool,
     },
     /// Add a nullable column to an existing table — admin.
     AlterTable {
@@ -484,8 +505,9 @@ async fn main() -> Result<()> {
         tracing_subscriber::fmt()
             .with_writer(std::io::stderr)
             .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,sqlx=warn,hyper=warn")),
+                tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                    tracing_subscriber::EnvFilter::new("info,sqlx=warn,hyper=warn")
+                }),
             )
             .with_target(false)
             .try_init()
@@ -558,7 +580,13 @@ async fn main() -> Result<()> {
             kyma_local::run_serve(addr, self_trace_handle).await
         }
         Command::Setup { agent, print } => kyma_local::run_setup(&agent, print),
-        Command::Sync { watch, dry_run, cc_only, cloud_only, project } => {
+        Command::Sync {
+            watch,
+            dry_run,
+            cc_only,
+            cloud_only,
+            project,
+        } => {
             kyma_local::run_sync(kyma_local::SyncOptions {
                 watch,
                 dry_run,
@@ -569,7 +597,11 @@ async fn main() -> Result<()> {
             .await
         }
         Command::Worker { action } => match action {
-            WorkerAction::Install { interval, cc_only, cloud_only } => {
+            WorkerAction::Install {
+                interval,
+                cc_only,
+                cloud_only,
+            } => {
                 kyma_local::worker::install(&kyma_local::worker::WorkerOptions {
                     interval_secs: interval,
                     cc_only,
@@ -638,10 +670,7 @@ async fn main() -> Result<()> {
                         w["name"].as_str().unwrap_or("?"),
                         w["kind"].as_str().unwrap_or("?"),
                         w["status"].as_str().unwrap_or("?"),
-                        w["capabilities"]
-                            .as_array()
-                            .map(|a| a.len())
-                            .unwrap_or(0),
+                        w["capabilities"].as_array().map(|a| a.len()).unwrap_or(0),
                         w["presence"].as_array().map(|a| a.len()).unwrap_or(0),
                         w["last_heartbeat"].as_str().unwrap_or("never"),
                     );
@@ -742,6 +771,60 @@ async fn main() -> Result<()> {
                 .await
                 .with_context(|| format!("creating table {db}.{name}"))?;
             println!("created table {db}.{name} ({id})");
+            Ok(())
+        }
+        Command::ConfigureEmbed {
+            db,
+            table,
+            source_column,
+            embedding_column,
+            model,
+            dim,
+            disable,
+        } => {
+            let catalog = connect_catalog(&cli.catalog_url).await?;
+            let tref = catalog
+                .lookup_table(&db, &table)
+                .await
+                .with_context(|| format!("looking up table {db}.{table}"))?;
+            // Validate the columns exist and have the right shape before saving.
+            let fields = tref.schema.fields();
+            let src_ok = fields.iter().any(|f| {
+                f.name() == &source_column && matches!(f.data_type(), arrow_schema::DataType::Utf8)
+            });
+            if !src_ok {
+                anyhow::bail!("source column '{source_column}' must be a Utf8 (string) column");
+            }
+            let emb_ok = fields.iter().any(|f| {
+                f.name() == &embedding_column
+                    && matches!(f.data_type(),
+                        arrow_schema::DataType::FixedSizeList(inner, n)
+                        if *n == dim as i32 && matches!(inner.data_type(), arrow_schema::DataType::Float32))
+            });
+            if !emb_ok {
+                anyhow::bail!(
+                    "embedding column '{embedding_column}' must be FixedSizeList<Float32, {dim}>"
+                );
+            }
+            catalog
+                .set_table_embed_config(
+                    kyma_core::tenant::DEFAULT_TENANT,
+                    &kyma_core::catalog::TableEmbedConfig {
+                        table_id: tref.id,
+                        source_column: source_column.clone(),
+                        embedding_column: embedding_column.clone(),
+                        model_id: model.clone(),
+                        dim: dim as u16,
+                        auto_embed: !disable,
+                    },
+                )
+                .await
+                .with_context(|| format!("setting embed config for {db}.{table}"))?;
+            println!(
+                "configured auto-embed for {db}.{table}: {source_column} -> {embedding_column} \
+                 via {model} (dim {dim}, auto_embed={})",
+                !disable
+            );
             Ok(())
         }
         Command::AlterTable {
@@ -949,38 +1032,43 @@ async fn cmd_query(
 
     let mut had_error = false;
     let mut new_session_id: Option<String> = None;
-    stream_agent_ask(&cfg, &question, resolved_session.as_deref(), |event, data| {
-        if event == "session" {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
-                if let Some(s) = v.get("session_id").and_then(|s| s.as_str()) {
-                    new_session_id = Some(s.to_string());
-                }
-            }
-        }
-        if json {
-            println!("{}", serde_json::json!({ "event": event, "data": data }));
-            return;
-        }
-        match event {
-            "answer_delta" | "answer_final" => {
+    stream_agent_ask(
+        &cfg,
+        &question,
+        resolved_session.as_deref(),
+        |event, data| {
+            if event == "session" {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
-                    if let Some(t) = v.get("text").and_then(|t| t.as_str()) {
-                        print!("{}", t);
-                        use std::io::Write;
-                        let _ = std::io::stdout().flush();
+                    if let Some(s) = v.get("session_id").and_then(|s| s.as_str()) {
+                        new_session_id = Some(s.to_string());
                     }
                 }
             }
-            "run_error" => {
-                had_error = true;
-                eprintln!("\n[error] {}", data);
+            if json {
+                println!("{}", serde_json::json!({ "event": event, "data": data }));
+                return;
             }
-            "run_finished" => {
-                println!();
+            match event {
+                "answer_delta" | "answer_final" => {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                        if let Some(t) = v.get("text").and_then(|t| t.as_str()) {
+                            print!("{}", t);
+                            use std::io::Write;
+                            let _ = std::io::stdout().flush();
+                        }
+                    }
+                }
+                "run_error" => {
+                    had_error = true;
+                    eprintln!("\n[error] {}", data);
+                }
+                "run_finished" => {
+                    println!();
+                }
+                _ => {}
             }
-            _ => {}
-        }
-    })
+        },
+    )
     .await?;
 
     // Remember the session id so a later `--continue` can resume it.
@@ -1008,7 +1096,10 @@ async fn cmd_sessions(op: SessionsOp) -> Result<()> {
         SessionsOp::List => {
             let v = get_json(&cfg, "/v1/agent/sessions").await?;
             let empty = vec![];
-            let sessions = v.get("sessions").and_then(|s| s.as_array()).unwrap_or(&empty);
+            let sessions = v
+                .get("sessions")
+                .and_then(|s| s.as_array())
+                .unwrap_or(&empty);
             if sessions.is_empty() {
                 println!("(no sessions)");
             } else {
