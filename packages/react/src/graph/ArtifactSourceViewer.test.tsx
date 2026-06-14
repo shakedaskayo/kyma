@@ -68,4 +68,34 @@ describe("ArtifactSourceViewer", () => {
 
     await waitFor(() => expect(screen.getByRole("button", { name: /retry/i })).toBeTruthy());
   });
+
+  it("recovers when Retry succeeds after a failure", async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/v1/artifacts/by-path")) {
+          calls += 1;
+          return Promise.resolve(
+            calls === 1
+              ? new Response("nope", { status: 500 })
+              : windowResponse(0, "recovered", true, 9),
+          );
+        }
+        return Promise.resolve(new Response("", { status: 404 }));
+      }),
+    );
+
+    render(
+      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+        <ArtifactSourceViewer path="artifacts/t/logs/build.log" />
+      </KymaProvider>,
+    );
+
+    const retry = await screen.findByRole("button", { name: /retry/i });
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(screen.getByText((c) => c.includes("recovered"))).toBeTruthy());
+    expect(screen.queryByRole("button", { name: /retry/i })).toBeNull();
+  });
 });

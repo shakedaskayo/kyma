@@ -4,7 +4,7 @@
  * `/v1/artifacts/by-path` API (client.artifacts.fetchArtifactByPath). Monospace,
  * wrap toggle, copy-all, byte counter, "Load more" until EOF, error + retry.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Copy, WrapText } from "lucide-react";
 import { Button } from "../internal/ui/button";
 import { useKymaClient } from "../provider/context";
@@ -18,31 +18,42 @@ export function ArtifactSourceViewer({ path }: { path: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [wrap, setWrap] = useState(true);
+  // Bumped whenever `path` changes. Lets an in-flight fetch detect that it is
+  // stale (the user selected a different node) and drop its result instead of
+  // clobbering the new path's state.
+  const reqRef = useRef(0);
 
   async function fetchWindow(atOffset: number, append: boolean) {
+    const req = reqRef.current;
     setLoading(true);
     setError(null);
     try {
       const w = await client.artifacts.fetchArtifactByPath(path, { offset: atOffset });
+      if (req !== reqRef.current) return; // stale — a newer path superseded this fetch
       setText((prev) => (append ? prev + w.content : w.content));
       setOffset(w.offset + w.returned_bytes);
       setSize(w.size_bytes);
       setEof(w.eof);
     } catch (e) {
+      if (req !== reqRef.current) return;
       setError(e instanceof Error ? e.message : "Failed to load source file.");
     } finally {
-      setLoading(false);
+      if (req === reqRef.current) setLoading(false);
     }
   }
 
-  // Reset and load the first window whenever the path changes.
+  // Reset and load the first window whenever the path changes. Bumping reqRef
+  // invalidates any fetch still in flight for the previous path.
   useEffect(() => {
+    reqRef.current += 1;
     setText("");
     setOffset(0);
     setSize(null);
     setEof(false);
     setError(null);
     void fetchWindow(0, false);
+    // fetchWindow is intentionally omitted from deps: it is recreated each render
+    // and closes over the current path/client; the effect's real deps are below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, client]);
 
