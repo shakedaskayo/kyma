@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../internal/ui
 import { Button } from "../internal/ui/button";
 import { Markdown } from "../internal/ui/markdown";
 import { ArtifactSourceViewer } from "./ArtifactSourceViewer";
-import { nodeContent, nodeSourcePath, orderedProps, formatValue } from "./node-detail";
+import { nodeContent, nodeName, nodeSourcePath, nodeSubtitle, orderedProps, formatValue } from "./node-detail";
 
 export function NodeDetailModal({
   node,
@@ -25,7 +25,7 @@ export function NodeDetailModal({
   const [raw, setRaw] = useState(false);
   if (!node) return null;
 
-  const name = (node.properties?.name as string) || (node.properties?.title as string) || node.id;
+  const name = nodeName(node);
   const content = nodeContent(node);
   const sourcePath = nodeSourcePath(node);
 
@@ -39,9 +39,7 @@ export function NodeDetailModal({
       <DialogContent className="ky-max-w-3xl ky-max-h-[85vh] ky-overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="ky-truncate ky-pr-8">{name}</DialogTitle>
-          <div className="ky-text-2xs ky-text-muted-foreground">
-            {[...node.labels, node.namespace].filter(Boolean).join(" · ")}
-          </div>
+          <div className="ky-text-2xs ky-text-muted-foreground">{nodeSubtitle(node)}</div>
         </DialogHeader>
 
         {content != null && (

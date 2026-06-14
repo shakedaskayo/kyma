@@ -18,6 +18,16 @@ export function nodeSourcePath(node: GraphNode): string | null {
   return typeof p === "string" && p.trim() !== "" ? p : null;
 }
 
+/** Human-readable node title: `name` → `title` → raw id. */
+export function nodeName(node: GraphNode): string {
+  return (node.properties?.name as string) || (node.properties?.title as string) || node.id;
+}
+
+/** Subtitle line: labels joined with the namespace, dropping empty parts. */
+export function nodeSubtitle(node: GraphNode): string {
+  return [...node.labels, node.namespace].filter(Boolean).join(" · ");
+}
+
 export type FormattedValue = { text: string; kind: "scalar" | "json" | "array" };
 
 const COLLAPSE_LEN = 24; // collapse numeric arrays/embeddings longer than this

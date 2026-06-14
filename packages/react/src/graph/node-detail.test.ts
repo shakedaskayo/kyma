@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GraphNode } from "@kyma-ai/client";
-import { nodeContent, nodeSourcePath, formatValue, orderedProps } from "./node-detail";
+import { nodeContent, nodeSourcePath, nodeName, nodeSubtitle, formatValue, orderedProps } from "./node-detail";
 
 function node(properties: Record<string, unknown>, labels: string[] = ["Memory"]): GraphNode {
   return {
@@ -61,5 +61,26 @@ describe("orderedProps", () => {
       node({ status: "active", embedding: "x", title: "T", content: "C", importance: 0.7 }),
     ).map(([k]) => k);
     expect(keys).toEqual(["content", "title", "importance", "status", "embedding"]);
+  });
+});
+
+describe("nodeName", () => {
+  it("prefers name, then title, then id", () => {
+    expect(nodeName(node({ name: "N", title: "T" }))).toBe("N");
+    expect(nodeName(node({ title: "T" }))).toBe("T");
+    expect(nodeName(node({}))).toBe("memory:abc");
+  });
+});
+
+describe("nodeSubtitle", () => {
+  it("joins labels and namespace, dropping empty parts", () => {
+    expect(nodeSubtitle(node({}, ["Memory"]))).toBe("Memory · memory");
+    const noNs: GraphNode = {
+      id: "x",
+      labels: ["File", "Symbol"],
+      properties: {},
+      metadata: { created_at: "", updated_at: "", realm: "default" },
+    };
+    expect(nodeSubtitle(noNs)).toBe("File · Symbol");
   });
 });

@@ -11,7 +11,7 @@ import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
 import { useGraphStore } from "./graph-store";
 import { getRelationshipFamilyColor } from "./graph-style";
 import { NodeDetailModal } from "./NodeDetailModal";
-import { orderedProps, formatValue } from "./node-detail";
+import { nodeName, nodeSubtitle, orderedProps, formatValue } from "./node-detail";
 
 const keyOf = (n: { id: string; namespace?: string }) => `${n.namespace ?? ""}::${n.id}`;
 
@@ -49,16 +49,14 @@ export function InspectorPanel({
 
   if (!node) return null;
   const nodeKey = keyOf(node);
-  const name = (node.properties?.name as string) || (node.properties?.title as string) || node.id;
+  const name = nodeName(node);
 
   return (
     <div className="ky-h-full ky-w-80 ky-max-w-[85vw] ky-shrink-0 ky-overflow-y-auto ky-border-l ky-border-border ky-glass ky-animate-fade-in">
       <div className="ky-flex ky-items-start ky-justify-between ky-border-b ky-border-border ky-p-3">
         <div className="ky-min-w-0">
           <div className="ky-truncate ky-text-sm ky-font-medium ky-text-foreground">{name}</div>
-          <div className="ky-text-2xs ky-text-muted-foreground">
-            {[...node.labels, node.namespace].filter(Boolean).join(" · ")}
-          </div>
+          <div className="ky-text-2xs ky-text-muted-foreground">{nodeSubtitle(node)}</div>
         </div>
         <button type="button" onClick={() => selectNode(null)} className="ky-text-muted-foreground hover:ky-text-foreground">
           <X className="ky-h-4 ky-w-4" />
