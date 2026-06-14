@@ -108,6 +108,82 @@ fn matches_oracle_on_cyclic() {
     assert_matches_oracle(&synth::cyclic(&[30, 25, 40, 15], 50, 7), "cyclic");
 }
 
+/// S3.4 gate: forward-push PPR must match the exact power-iteration PPR vector
+/// (L1 < 1e-3). The reference builds the undirected ("Both") transition matrix
+/// the same way `CsrGraph::step(Both)` enumerates neighbors — each directed
+/// edge `(s,d)` contributes `s→d` and `d→s` — so the two agree by construction
+/// when the approximation is tight.
+#[test]
+fn ppr_matches_power_iteration() {
+    let g = synth::grid(5, 5); // 25 nodes, connected, no sinks under Both
+    let csr = csr_of(&g);
+    let ids: Vec<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
+    let idx: std::collections::HashMap<&str, usize> =
+        ids.iter().enumerate().map(|(i, &s)| (s, i)).collect();
+    let n = ids.len();
+
+    // Both-adjacency mirror of step(Both).
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for e in &g.edges {
+        if let (Some(&s), Some(&d)) = (idx.get(e.src.as_str()), idx.get(e.dst.as_str())) {
+            adj[s].push(d);
+            adj[d].push(s);
+        }
+    }
+
+    let alpha = 0.15;
+    let seed = ids[0];
+    let seed_i = idx[seed];
+
+    // Exact PPR via power iteration: pi = alpha·s + (1-alpha)·Pᵀ·pi.
+    let mut s = vec![0.0f64; n];
+    s[seed_i] = 1.0;
+    let mut pi = s.clone();
+    for _ in 0..5000 {
+        let mut np = vec![0.0f64; n];
+        for u in 0..n {
+            if adj[u].is_empty() {
+                continue;
+            }
+            let share = (1.0 - alpha) * pi[u] / adj[u].len() as f64;
+            for &v in &adj[u] {
+                np[v] += share;
+            }
+        }
+        for v in 0..n {
+            np[v] += alpha * s[v];
+        }
+        let delta: f64 = (0..n).map(|i| (np[i] - pi[i]).abs()).sum();
+        pi = np;
+        if delta < 1e-15 {
+            break;
+        }
+    }
+
+    // Forward-push approximation with a tight epsilon.
+    let approx = csr.personalized_pagerank(&[seed], alpha, 1e-9, Direction::Both);
+    let mut p = vec![0.0f64; n];
+    for (id, m) in &approx {
+        p[idx[id.as_str()]] = *m;
+    }
+    let l1: f64 = (0..n).map(|i| (p[i] - pi[i]).abs()).sum();
+    assert!(
+        l1 < 1e-3,
+        "PPR forward-push vs power-iteration L1={l1} (want <1e-3)"
+    );
+    // The restart seed carries the most mass.
+    assert_eq!(approx.first().map(|(id, _)| id.as_str()), Some(seed));
+}
+
+#[test]
+fn ppr_unknown_seed_is_empty() {
+    let g = synth::grid(3, 3);
+    let csr = csr_of(&g);
+    assert!(csr
+        .personalized_pagerank(&["nope"], 0.15, 1e-6, Direction::Both)
+        .is_empty());
+}
+
 mod proptests {
     use super::*;
     use proptest::prelude::*;
