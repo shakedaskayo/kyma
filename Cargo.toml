@@ -163,6 +163,7 @@ kyma-format-tlm        = { path = "crates/kyma-format-tlm",      version = "0.0.
 kyma-format-parquet    = { path = "crates/kyma-format-parquet",  version = "0.0.16" }
 kyma-format-stub-vec   = { path = "crates/kyma-format-stub-vec", version = "0.0.16" }
 kyma-graph-testkit     = { path = "crates/kyma-graph-testkit",   version = "0.0.16" }
+kyma-graph-topo        = { path = "crates/kyma-graph-topo",      version = "0.0.16" }
 kyma-catalog           = { path = "crates/kyma-catalog",         version = "0.0.16" }
 kyma-catalog-sqlite    = { path = "crates/kyma-catalog-sqlite",  version = "0.0.16" }
 kyma-local             = { path = "crates/kyma-local",           version = "0.0.16" }

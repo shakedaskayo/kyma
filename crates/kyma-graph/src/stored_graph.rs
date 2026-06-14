@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use kyma_graph_topo::{CsrGraph, Direction as TopoDirection};
+
 use crate::executor::{GraphQueryExecutor, JsonRow, StoredGraphConfig};
 use crate::provider::GraphProvider;
 use crate::types::{
@@ -14,6 +16,19 @@ use crate::types::{
 };
 
 const NOW: &str = "1970-01-01T00:00:00Z";
+
+/// Edge ceiling for the in-memory CSR subgraph path. When a graph's deduped
+/// edge set fits under this, `subgraph` builds the whole topology once and does
+/// BFS in RAM (one scan, any depth); above it, the per-hop SQL path is kept so
+/// large graphs never attempt a full-topology load. `KYMA_GRAPH_TOPO_MAX_EDGES`
+/// overrides the default.
+fn topo_max_edges() -> usize {
+    std::env::var("KYMA_GRAPH_TOPO_MAX_EDGES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(200_000)
+}
 
 fn ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
@@ -213,6 +228,47 @@ impl StoredGraphProvider {
     fn count_of(rows: &[JsonRow]) -> usize {
         rows.first().and_then(|r| r.get("n")).and_then(|v| v.as_u64()).unwrap_or(0) as usize
     }
+
+    /// Per-hop SQL BFS — one `neighbors` query per hop. Retained as the
+    /// fallback for graphs whose edge set exceeds [`topo_max_edges`] (where a
+    /// whole-topology in-memory build would be too large): the seed-scoped
+    /// `WHERE src/dst IN frontier` queries stay bounded regardless of graph size.
+    async fn subgraph_per_hop(&self, id: &str, depth: usize) -> anyhow::Result<GraphPayload> {
+        let mut frontier = vec![id.to_string()];
+        let mut all_node_ids: std::collections::HashSet<String> = frontier.iter().cloned().collect();
+        let mut edges: Vec<GraphRelationship> = Vec::new();
+        for _ in 0..depth.max(1) {
+            if frontier.is_empty() {
+                break;
+            }
+            let exp = self.neighbors(&frontier, Direction::Both, true, 500).await?;
+            let mut next = Vec::new();
+            for e in exp.edges {
+                if !edges.iter().any(|k| k.id == e.id) {
+                    edges.push(e);
+                }
+            }
+            for nid in exp.new_node_ids {
+                if all_node_ids.insert(nid.clone()) {
+                    next.push(nid);
+                }
+            }
+            frontier = next;
+        }
+        let mut nodes = Vec::new();
+        for nid in &all_node_ids {
+            if let Some(n) = self.node(nid).await? {
+                nodes.push(n);
+            }
+        }
+        let stats = GraphStats {
+            total_nodes: nodes.len(),
+            total_relationships: edges.len(),
+            label_counts: BTreeMap::new(),
+            relationship_type_counts: BTreeMap::new(),
+        };
+        Ok(GraphPayload { stats, nodes, edges })
+    }
 }
 
 async fn stats_for(p: &StoredGraphProvider) -> anyhow::Result<GraphStats> {
@@ -263,29 +319,55 @@ impl GraphProvider for StoredGraphProvider {
         Ok(EdgeExpansion { edges, new_node_ids: new_ids })
     }
     async fn subgraph(&self, id: &str, depth: usize) -> anyhow::Result<GraphPayload> {
-        let mut frontier = vec![id.to_string()];
-        let mut all_node_ids: std::collections::HashSet<String> = frontier.iter().cloned().collect();
-        let mut edges: Vec<GraphRelationship> = Vec::new();
-        for _ in 0..depth.max(1) {
-            if frontier.is_empty() { break; }
-            let exp = self.neighbors(&frontier, Direction::Both, true, 500).await?;
-            let mut next = Vec::new();
-            for e in exp.edges {
-                if !edges.iter().any(|k| k.id == e.id) { edges.push(e); }
-            }
-            for nid in exp.new_node_ids {
-                if all_node_ids.insert(nid.clone()) { next.push(nid); }
-            }
-            frontier = next;
+        // Fast path: if the whole deduped edge set fits the cap, load it in one
+        // scan and BFS in RAM — no per-hop SQL N+1, no practical depth limit
+        // (the per-hop path below issues `depth` queries and is the historical
+        // 2-hop-ish ceiling). `cap + 1` lets us detect "too big" in one query.
+        let cap = topo_max_edges();
+        let edge_rows = self.rows(edge_sample_sql(&self.cfg, cap + 1)).await?;
+        if edge_rows.len() > cap {
+            return self.subgraph_per_hop(id, depth).await;
         }
-        // fetch node objects for the collected ids
+        let all_edges: Vec<GraphRelationship> =
+            edge_rows.iter().map(|r| row_to_edge(&self.cfg, r)).collect();
+        // CSR over the edge endpoints (+ the seed, so an isolated node still
+        // yields itself). `CsrGraph::build` dedups ids and drops dangling edges;
+        // here every endpoint is a node, so nothing is dropped.
+        let csr = CsrGraph::build(
+            all_edges
+                .iter()
+                .flat_map(|e| [e.source_id.as_str(), e.target_id.as_str()])
+                .chain(std::iter::once(id)),
+            all_edges
+                .iter()
+                .map(|e| (e.source_id.as_str(), e.target_id.as_str(), e.relationship_type.as_str())),
+        );
+        // Undirected reachability to `depth`, matching the per-hop path's
+        // `Direction::Both`.
+        let reached = csr.k_hop(&[id], depth.max(1), TopoDirection::Both, None);
+        let reached_ids: std::collections::HashSet<&str> =
+            reached.iter().map(|(_, n, _)| n.as_str()).collect();
+        // Induced subgraph: every scanned edge whose endpoints are both reached.
+        let edges: Vec<GraphRelationship> = all_edges
+            .iter()
+            .filter(|e| {
+                reached_ids.contains(e.source_id.as_str())
+                    && reached_ids.contains(e.target_id.as_str())
+            })
+            .cloned()
+            .collect();
+        // Materialize node objects (as the per-hop path did).
         let mut nodes = Vec::new();
-        for nid in &all_node_ids {
-            if let Some(n) = self.node(nid).await? { nodes.push(n); }
+        for nid in &reached_ids {
+            if let Some(n) = self.node(nid).await? {
+                nodes.push(n);
+            }
         }
         let stats = GraphStats {
-            total_nodes: nodes.len(), total_relationships: edges.len(),
-            label_counts: BTreeMap::new(), relationship_type_counts: BTreeMap::new(),
+            total_nodes: nodes.len(),
+            total_relationships: edges.len(),
+            label_counts: BTreeMap::new(),
+            relationship_type_counts: BTreeMap::new(),
         };
         Ok(GraphPayload { stats, nodes, edges })
     }
@@ -504,5 +586,71 @@ mod provider_tests {
         let exp = p.neighbors(&["a".into()], Direction::Both, true, 50).await.unwrap();
         assert_eq!(exp.edges.len(), 1);
         assert_eq!(exp.new_node_ids, vec!["b".to_string()]);
+    }
+
+    /// A 5-hop chain a→b→c→d→e→f. Edge queries return the whole chain in one
+    /// shot; node-by-id queries echo the requested id (parsed from the literal).
+    struct DeepChainExec;
+    #[async_trait]
+    impl GraphQueryExecutor for DeepChainExec {
+        async fn query(&self, _db: &str, sql: String) -> anyhow::Result<Vec<JsonRow>> {
+            let s = sql.to_lowercase();
+            if s.contains("kg_edges") {
+                let chain = [("a", "b"), ("b", "c"), ("c", "d"), ("d", "e"), ("e", "f")];
+                return Ok(chain
+                    .iter()
+                    .map(|(src, dst)| {
+                        row(&[
+                            ("src", serde_json::json!(src)),
+                            ("dst", serde_json::json!(dst)),
+                            ("type", serde_json::json!("LINKS")),
+                        ])
+                    })
+                    .collect());
+            }
+            if s.contains("kg_nodes") {
+                // node_by_id_sql: `... "id" = '<x>' limit 1` → echo <x>.
+                if let Some(idv) = sql.split('\'').nth(1) {
+                    return Ok(vec![row(&[
+                        ("id", serde_json::json!(idv)),
+                        ("labels", serde_json::json!("N")),
+                    ])]);
+                }
+            }
+            Ok(vec![])
+        }
+    }
+    fn deep_provider() -> StoredGraphProvider {
+        StoredGraphProvider::new(
+            StoredGraphConfig {
+                database: "kg".into(), node_table: "kg_nodes".into(), edge_table: "kg_edges".into(),
+                id_col: "id".into(), label_col: "labels".into(), src_col: "src".into(),
+                dst_col: "dst".into(), type_col: "type".into(), realm_col: None,
+            },
+            std::sync::Arc::new(DeepChainExec),
+        )
+    }
+
+    #[tokio::test]
+    async fn subgraph_traverses_beyond_two_hops_in_one_scan() {
+        let p = deep_provider();
+        // depth 5 reaches the whole chain (the old per-hop default capped at 2).
+        let g = p.subgraph("a", 5).await.unwrap();
+        let ids: std::collections::BTreeSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["a", "b", "c", "d", "e", "f"].into_iter().collect(),
+            "5-hop reach should include all six nodes"
+        );
+        assert_eq!(g.edges.len(), 5, "all chain edges are induced at depth 5");
+    }
+
+    #[tokio::test]
+    async fn subgraph_respects_depth_bound() {
+        let p = deep_provider();
+        let g = p.subgraph("a", 2).await.unwrap();
+        let ids: std::collections::BTreeSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids, ["a", "b", "c"].into_iter().collect(), "depth 2 stops at c");
+        assert_eq!(g.edges.len(), 2, "only a→b, b→c are induced");
     }
 }

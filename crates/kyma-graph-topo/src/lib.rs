@@ -32,7 +32,14 @@
 //! silent misread.
 
 #![forbid(unsafe_code)]
+// The CSR is u32-indexed by design: node and edge ordinals, offsets, and the
+// dictionary positions are all `u32` (a documented ~4.3B-element ceiling that
+// keeps the arrays half the size of `usize` and the on-disk form compact).
+// Casting these `usize` lengths/positions to `u32` is therefore intentional and
+// in-range, not a truncation hazard.
+#![allow(clippy::cast_possible_truncation)]
 
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::fmt;
 
@@ -46,6 +53,29 @@ pub enum Direction {
     /// Treat every edge as bidirectional (shortest hop count in the underlying
     /// undirected multigraph, after the `etype` filter).
     Both,
+}
+
+/// A resolved edge-type traversal predicate (the dictionary lookup is done
+/// once per query, not per edge).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EtypeFilter {
+    /// No filter — every edge traverses.
+    Any,
+    /// The filter named a type absent from this graph — nothing traverses.
+    Unknown,
+    /// Traverse only edges of this dictionary id.
+    Only(u32),
+}
+
+impl EtypeFilter {
+    #[inline]
+    fn matches(self, etype_id: u32) -> bool {
+        match self {
+            EtypeFilter::Any => true,
+            EtypeFilter::Unknown => false,
+            EtypeFilter::Only(id) => etype_id == id,
+        }
+    }
 }
 
 /// Failure decoding a serialized [`CsrGraph`].
@@ -110,8 +140,8 @@ impl CsrGraph {
         let mut ids: Vec<String> = Vec::new();
         let mut id_to_idx: HashMap<String, u32> = HashMap::new();
         for n in nodes {
-            if !id_to_idx.contains_key(n) {
-                id_to_idx.insert(n.to_string(), ids.len() as u32);
+            if let Entry::Vacant(e) = id_to_idx.entry(n.to_string()) {
+                e.insert(ids.len() as u32);
                 ids.push(n.to_string());
             }
         }
@@ -124,13 +154,12 @@ impl CsrGraph {
             let (Some(&si), Some(&di)) = (id_to_idx.get(s), id_to_idx.get(d)) else {
                 continue;
             };
-            let tid = match etype_to_id.get(t) {
-                Some(&id) => id,
-                None => {
+            let tid = match etype_to_id.entry(t.to_string()) {
+                Entry::Occupied(e) => *e.get(),
+                Entry::Vacant(e) => {
                     let id = etypes.len() as u32;
-                    etype_to_id.insert(t.to_string(), id);
                     etypes.push(t.to_string());
-                    id
+                    *e.insert(id)
                 }
             };
             kept.push((si, di, tid));
@@ -171,38 +200,39 @@ impl CsrGraph {
         self.id_to_idx.contains_key(id)
     }
 
-    /// Resolve an `etype` filter to a traversal predicate over edge-type ids:
-    /// `None` → no filter; `Some(None)` → filter names an unknown type (matches
-    /// nothing); `Some(Some(id))` → match exactly `id`.
-    fn resolve_etype(&self, etype: Option<&str>) -> Option<Option<u32>> {
-        etype.map(|t| self.etypes.iter().position(|e| e == t).map(|p| p as u32))
+    /// Resolve an `etype` filter to a traversal predicate over edge-type ids.
+    fn resolve_etype(&self, etype: Option<&str>) -> EtypeFilter {
+        match etype {
+            None => EtypeFilter::Any,
+            Some(t) => match self.etypes.iter().position(|e| e == t) {
+                Some(p) => EtypeFilter::Only(p as u32),
+                None => EtypeFilter::Unknown,
+            },
+        }
     }
 
     /// Push the dense-index neighbors of `v` under `dir`, honoring the resolved
     /// `etype` predicate, into `out`.
-    fn step(&self, v: u32, dir: Direction, etype: &Option<Option<u32>>, out: &mut Vec<u32>) {
-        let want = |tid: u32| match etype {
-            None => true,
-            Some(None) => false,
-            Some(Some(id)) => tid == *id,
-        };
+    fn step(&self, v: u32, dir: Direction, etype: EtypeFilter, out: &mut Vec<u32>) {
+        let vi = v as usize;
         if matches!(dir, Direction::Fwd | Direction::Both) {
-            let v = v as usize;
-            let (a, b) = (
-                self.out_offsets[v] as usize,
-                self.out_offsets[v + 1] as usize,
+            let (start, end) = (
+                self.out_offsets[vi] as usize,
+                self.out_offsets[vi + 1] as usize,
             );
-            for i in a..b {
-                if want(self.out_etype[i]) {
+            for i in start..end {
+                if etype.matches(self.out_etype[i]) {
                     out.push(self.out_targets[i]);
                 }
             }
         }
         if matches!(dir, Direction::Back | Direction::Both) {
-            let v = v as usize;
-            let (a, b) = (self.in_offsets[v] as usize, self.in_offsets[v + 1] as usize);
-            for i in a..b {
-                if want(self.in_etype[i]) {
+            let (start, end) = (
+                self.in_offsets[vi] as usize,
+                self.in_offsets[vi + 1] as usize,
+            );
+            for i in start..end {
+                if etype.matches(self.in_etype[i]) {
                     out.push(self.in_sources[i]);
                 }
             }
@@ -221,26 +251,26 @@ impl CsrGraph {
     ) -> BTreeSet<(String, String, usize)> {
         let pred = self.resolve_etype(etype);
         let mut out = BTreeSet::new();
-        let mut dist: HashMap<u32, usize> = HashMap::new();
+        let mut depth_of: HashMap<u32, usize> = HashMap::new();
         let mut nbrs: Vec<u32> = Vec::new();
         for &s in sources {
             let Some(&start) = self.id_to_idx.get(s) else {
                 continue; // unknown source contributes nothing
             };
-            dist.clear();
-            dist.insert(start, 0);
+            depth_of.clear();
+            depth_of.insert(start, 0);
             out.insert((s.to_string(), s.to_string(), 0));
             let mut q = VecDeque::from([start]);
             while let Some(cur) = q.pop_front() {
-                let d = dist[&cur];
+                let d = depth_of[&cur];
                 if d == k {
                     continue;
                 }
                 nbrs.clear();
-                self.step(cur, dir, &pred, &mut nbrs);
+                self.step(cur, dir, pred, &mut nbrs);
                 for &nb in &nbrs {
-                    if !dist.contains_key(&nb) {
-                        dist.insert(nb, d + 1);
+                    if let Entry::Vacant(slot) = depth_of.entry(nb) {
+                        slot.insert(d + 1);
                         out.insert((s.to_string(), self.ids[nb as usize].clone(), d + 1));
                         q.push_back(nb);
                     }
@@ -280,20 +310,20 @@ impl CsrGraph {
             return Some(0);
         }
         let pred = self.resolve_etype(etype);
-        let mut dist: HashMap<u32, usize> = HashMap::new();
-        dist.insert(start, 0);
+        let mut depth_of: HashMap<u32, usize> = HashMap::new();
+        depth_of.insert(start, 0);
         let mut q = VecDeque::from([start]);
         let mut nbrs: Vec<u32> = Vec::new();
         while let Some(cur) = q.pop_front() {
-            let d = dist[&cur];
+            let d = depth_of[&cur];
             nbrs.clear();
-            self.step(cur, dir, &pred, &mut nbrs);
+            self.step(cur, dir, pred, &mut nbrs);
             for &nb in &nbrs {
                 if nb == goal {
                     return Some(d + 1);
                 }
-                if !dist.contains_key(&nb) {
-                    dist.insert(nb, d + 1);
+                if let Entry::Vacant(slot) = depth_of.entry(nb) {
+                    slot.insert(d + 1);
                     q.push_back(nb);
                 }
             }
@@ -421,7 +451,7 @@ fn build_csr(
 fn fnv1a(bytes: &[u8]) -> u64 {
     let mut h = 0xcbf2_9ce4_8422_2325u64;
     for &b in bytes {
-        h ^= b as u64;
+        h ^= u64::from(b);
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
     h
