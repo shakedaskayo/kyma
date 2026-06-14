@@ -40,6 +40,7 @@ members = [
     "crates/kyma-retrieval-eval",
     "crates/kyma-graph-testkit",
     "crates/kyma-graph-bench",
+    "crates/kyma-graph-topo",
     "web/src-tauri",
 ]
 

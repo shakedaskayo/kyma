@@ -5239,6 +5239,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyma-graph-topo"
+version = "0.0.16"
+dependencies = [
+ "kyma-graph-testkit",
+ "proptest",
+]
+
+[[package]]
 name = "kyma-index-fts"
 version = "0.0.16"
 dependencies = [
