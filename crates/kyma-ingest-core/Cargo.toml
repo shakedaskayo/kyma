@@ -31,3 +31,7 @@ futures.workspace = true
 fastrand.workspace = true
 metrics.workspace = true
 sqlx.workspace = true
+
+[dev-dependencies]
+testcontainers.workspace = true
+testcontainers-modules.workspace = true

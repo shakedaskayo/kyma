@@ -89,7 +89,7 @@ pub struct FederatedTableSpec {
 // -------------------- Extents --------------------
 
 /// An extent as seen by the planner (manifest row from the catalog).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ExtentManifest {
     pub id: ExtentId,
     pub table_id: TableId,
@@ -103,6 +103,16 @@ pub struct ExtentManifest {
     pub present_paths: Vec<String>,
     pub compaction_gen: u32,
     pub created_at: DateTime<Utc>,
+}
+
+/// A staged-but-not-yet-committed extent (S2.2). The router wrote the object and
+/// recorded its manifest here; the committer drains these and commits them.
+#[derive(Debug, Clone)]
+pub struct StagedExtentRow {
+    /// `staged_extents.id` — the row to delete on commit.
+    pub id: uuid::Uuid,
+    pub table_id: TableId,
+    pub manifest: ExtentManifest,
 }
 
 // -------------------- Pruning --------------------
@@ -824,6 +834,52 @@ pub trait Catalog: Send + Sync {
     ) -> Result<Vec<String>> {
         let _ = (tenant, table_id, column);
         Ok(Vec::new())
+    }
+
+    // --- staged extents (S2.2 router/committer; server mode) ---
+
+    /// Router side: record a freshly-written extent's manifest in `staged_extents`
+    /// and ack — the object is already on storage ("S3 is the WAL"), so the
+    /// committer can commit it to a snapshot asynchronously. Idempotent on
+    /// `batch_id` (a retried request re-stages the same batch as a no-op).
+    /// Returns `true` if a row was inserted, `false` if `batch_id` already staged.
+    /// Default no-op (non-Postgres): staged ingest is server-mode only.
+    async fn stage_extent(
+        &self,
+        tenant: crate::tenant::TenantId,
+        batch_id: uuid::Uuid,
+        manifest: &ExtentManifest,
+    ) -> Result<bool> {
+        let _ = (tenant, batch_id, manifest);
+        Ok(false)
+    }
+
+    /// Committer side: the oldest staged extents (across all tables), up to
+    /// `max`. The caller groups by `table_id` and commits each group.
+    async fn list_staged_extents(
+        &self,
+        tenant: crate::tenant::TenantId,
+        max: i64,
+    ) -> Result<Vec<StagedExtentRow>> {
+        let _ = (tenant, max);
+        Ok(Vec::new())
+    }
+
+    /// Committer side: commit a group of staged manifests for one table as a
+    /// single snapshot AND delete those staged rows — **in one transaction**, so
+    /// commit + destage are exactly-once (a crash rolls back both; a racing
+    /// committer loses the snapshot `(table,sequence)` unique/CAS and, on retry,
+    /// finds the rows already destaged). Returns the new snapshot id, or `None`
+    /// if `staged_ids` is empty. `Conflict` on a lost CAS (caller retries).
+    async fn commit_staged_group(
+        &self,
+        tenant: crate::tenant::TenantId,
+        table_id: TableId,
+        staged_ids: &[uuid::Uuid],
+        manifests: &[ExtentManifest],
+    ) -> Result<Option<SnapshotId>> {
+        let _ = (tenant, table_id, staged_ids, manifests);
+        Ok(None)
     }
 
     // --- garbage collection ---
