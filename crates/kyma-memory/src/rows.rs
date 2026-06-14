@@ -5,7 +5,7 @@
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::types::CreateMemory;
+use crate::types::{CreateMemory, MemoryClass};
 
 /// Max length of the stored content preview.
 const PREVIEW_CHARS: usize = 280;
@@ -53,7 +53,11 @@ pub fn node_row(id: &Uuid, m: &CreateMemory, embedding: &[f32], now: &str) -> Va
         "superseded_by": Value::Null,
         "provenance": m.provenance.as_ref().map(|p| p.to_string()),
         "topic_key": m.topic_key,
-        "memory_class": m.memory_class.map(|c| c.as_str()),
+        // Classify by type when the writer didn't specify (dreaming may
+        // re-classify later). Always populated so the column carries real data.
+        "memory_class": m.memory_class
+            .unwrap_or_else(|| MemoryClass::default_for(m.memory_type))
+            .as_str(),
         "space": m.space,
         "writer_agent_id": m.writer_agent_id,
     })
@@ -107,6 +111,27 @@ mod tests {
         assert_eq!(row["tags"], json!("a,b"));
         assert_eq!(row["embedding"], json!([0.5, 0.25, 0.125]));
         assert_eq!(row["status"], json!("active"));
+    }
+
+    #[test]
+    fn node_row_defaults_memory_class_by_type_but_honors_explicit() {
+        // Default: a Procedure classifies Procedural; a Fact classifies Semantic.
+        let id = Uuid::nil();
+        let mut proc_mem = CreateMemory::new("how to deploy");
+        proc_mem.memory_type = MemoryType::Procedure;
+        let row = node_row(&id, &proc_mem, &[0.0], "2026-06-14T00:00:00Z");
+        assert_eq!(row["memory_class"], json!("procedural"));
+
+        let fact = CreateMemory::new("the sky is blue");
+        let row = node_row(&id, &fact, &[0.0], "2026-06-14T00:00:00Z");
+        assert_eq!(row["memory_class"], json!("semantic"));
+
+        // An explicit class wins over the type-derived default.
+        let mut explicit = CreateMemory::new("an event happened");
+        explicit.memory_type = MemoryType::Fact;
+        explicit.memory_class = Some(crate::types::MemoryClass::Episodic);
+        let row = node_row(&id, &explicit, &[0.0], "2026-06-14T00:00:00Z");
+        assert_eq!(row["memory_class"], json!("episodic"));
     }
 
     #[test]

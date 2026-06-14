@@ -119,6 +119,24 @@ impl MemoryClass {
         }
     }
 
+    /// Default class for a [`MemoryType`] when a writer doesn't specify one.
+    /// The memory engine stores *distilled* memories, so most types are durable
+    /// `Semantic` knowledge; `Procedure` is `Procedural` (how-to, demoted by
+    /// failure) and `Summary` is `Episodic` (a time-bound recap that should fade
+    /// unless reinforced). Dreaming may later re-classify (e.g. consolidate an
+    /// episodic recap into a semantic fact).
+    pub fn default_for(memory_type: MemoryType) -> MemoryClass {
+        match memory_type {
+            MemoryType::Procedure => MemoryClass::Procedural,
+            MemoryType::Summary => MemoryClass::Episodic,
+            MemoryType::Fact
+            | MemoryType::Decision
+            | MemoryType::Preference
+            | MemoryType::Learning
+            | MemoryType::Entity => MemoryClass::Semantic,
+        }
+    }
+
     /// Age-decay half-life in days, or `None` for classes that do not decay with
     /// age (semantic = invalidation-only; procedural = failure-driven).
     pub fn half_life_days(self) -> Option<f64> {
