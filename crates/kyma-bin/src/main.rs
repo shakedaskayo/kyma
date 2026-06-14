@@ -1265,9 +1265,9 @@ async fn main() -> Result<()> {
         state: agent_state.clone(),
         worker_id: embedded_worker_id,
     }));
-    // Index-sidecar build jobs. S1.1 ships the ivf_rabitq ANN builder; the
-    // tantivy_fts builder lands later. A job for an unregistered kind still
-    // fails terminally with a clear "no builder registered" error.
+    // Index-sidecar build jobs: S1.1 ivf_rabitq ANN + S1.4 tantivy_fts BM25.
+    // A job for an unregistered kind fails terminally with a clear
+    // "no builder registered" error.
     let mut sidecar_builders: std::collections::HashMap<
         kyma_core::index_sidecar::SidecarKind,
         Arc<dyn kyma_core::index_sidecar::SidecarBuilder>,
@@ -1275,6 +1275,10 @@ async fn main() -> Result<()> {
     sidecar_builders.insert(
         kyma_core::index_sidecar::SidecarKind::IvfRabitq,
         Arc::new(kyma_index_vector::IvfRabitqBuilder::new()),
+    );
+    sidecar_builders.insert(
+        kyma_core::index_sidecar::SidecarKind::TantivyFts,
+        Arc::new(kyma_index_fts::TantivyFtsBuilder::new()),
     );
     exec_registry.register(Arc::new(kyma_jobs::index_build::IndexBuildExecutor::new(
         catalog.clone(),
