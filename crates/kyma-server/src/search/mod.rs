@@ -184,10 +184,88 @@ pub(crate) async fn search_data(
         }
     }
 
-    // Global ranking by fused score.
+    // Global ranking by fused RRF score.
     hits.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    hits.truncate(limit);
-    hits
+
+    // S1.6 cross-encoder rerank stage (no-op unless a reranker is configured):
+    // re-score the top candidates jointly against the query and re-order. Off by
+    // default (zero overhead), bounded to RERANK_CANDIDATES so latency stays
+    // capped; a rerank failure falls back to RRF order.
+    rerank_stage(query, hits, limit).await
+}
+
+/// Max candidates fed to the cross-encoder (latency cap). The reranker scores
+/// the RRF-top of this many rows; the rest can't beat them on RRF anyway.
+const RERANK_CANDIDATES: usize = 50;
+
+/// Apply the cross-encoder reranker to the RRF-sorted `hits` when one is
+/// configured; otherwise just truncate to `limit`. Pure re-ordering lives in
+/// [`apply_rerank_scores`] for testability.
+async fn rerank_stage(
+    query: &str,
+    mut hits: Vec<(String, f64, Value)>,
+    limit: usize,
+) -> Vec<(String, f64, Value)> {
+    let Some(reranker) = kyma_memory::shared_reranker().await else {
+        hits.truncate(limit);
+        return hits;
+    };
+    let cand = hits.len().min(RERANK_CANDIDATES.max(limit));
+    let head: Vec<(String, f64, Value)> = hits.into_iter().take(cand).collect();
+    let docs: Vec<String> = head.iter().map(|(_, _, row)| row_text(row)).collect();
+    match reranker.rerank(query, &docs).await {
+        Ok(scores) if scores.len() == head.len() => apply_rerank_scores(head, scores, limit),
+        _ => {
+            // Rerank unavailable / shape mismatch → keep RRF order.
+            let mut out = head;
+            out.truncate(limit);
+            out
+        }
+    }
+}
+
+/// Re-order `head` by cross-encoder `scores` (aligned by index), replace each
+/// row's score with its rerank score, and keep the top `limit`. Pure — tested.
+fn apply_rerank_scores(
+    head: Vec<(String, f64, Value)>,
+    scores: Vec<f32>,
+    limit: usize,
+) -> Vec<(String, f64, Value)> {
+    let mut scored: Vec<(f32, (String, f64, Value))> = scores.into_iter().zip(head).collect();
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    scored
+        .into_iter()
+        .take(limit)
+        .map(|(rs, (sk, _rrf, row))| (sk, rs as f64, row))
+        .collect()
+}
+
+/// A doc text for the cross-encoder: the row's non-internal string fields joined,
+/// bounded so a huge row can't blow up tokenization latency.
+fn row_text(row: &Value) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    if let Value::Object(map) = row {
+        for (k, v) in map {
+            if k.starts_with("__") {
+                continue; // internal (__score, etc.)
+            }
+            if let Value::String(s) = v {
+                if !s.is_empty() {
+                    parts.push(s);
+                }
+            }
+        }
+    }
+    let mut text = parts.join(" ");
+    if text.len() > 2000 {
+        // Truncate on a char boundary.
+        let mut end = 2000;
+        while end > 0 && !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    text
 }
 
 /// Run both legs for one source, RRF-fuse, return `(source_key, score, row)`.
@@ -736,6 +814,41 @@ mod tests {
             make_array(&[0.1, 0.2]),
             "make_array(CAST(0.1 AS REAL), CAST(0.2 AS REAL))"
         );
+    }
+
+    #[test]
+    fn apply_rerank_scores_reorders_by_score_and_caps() {
+        // RRF order is a, b, c; the reranker disagrees: c best, then a, then b.
+        let head = vec![
+            ("s".into(), 0.9, json!({"id": "a"})),
+            ("s".into(), 0.8, json!({"id": "b"})),
+            ("s".into(), 0.7, json!({"id": "c"})),
+        ];
+        let out = apply_rerank_scores(head, vec![0.2, 0.1, 0.95], 2);
+        assert_eq!(out.len(), 2, "truncated to limit");
+        assert_eq!(out[0].2["id"], "c", "highest rerank score first");
+        assert_eq!(out[1].2["id"], "a");
+        // The output score is the rerank score, not the old RRF score.
+        assert!((out[0].1 - 0.95).abs() < 1e-6);
+    }
+
+    #[test]
+    fn row_text_joins_strings_skips_internal_and_bounds() {
+        let row = json!({
+            "msg": "connection pool exhausted",
+            "service": "api",
+            "__score": 0.5,
+            "count": 7,
+        });
+        let t = row_text(&row);
+        assert!(t.contains("connection pool exhausted"));
+        assert!(t.contains("api"));
+        assert!(!t.contains("0.5"), "internal __ fields excluded");
+        assert!(!t.contains('7'), "non-string fields excluded");
+
+        // Bounded to 2000 chars on a char boundary.
+        let big = json!({ "body": "x".repeat(5000) });
+        assert!(row_text(&big).len() <= 2000);
     }
 
     #[test]
