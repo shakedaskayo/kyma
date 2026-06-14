@@ -319,10 +319,19 @@ impl GraphProvider for StoredGraphProvider {
         Ok(EdgeExpansion { edges, new_node_ids: new_ids })
     }
     async fn subgraph(&self, id: &str, depth: usize) -> anyhow::Result<GraphPayload> {
-        // Fast path: if the whole deduped edge set fits the cap, load it in one
-        // scan and BFS in RAM — no per-hop SQL N+1, no practical depth limit
-        // (the per-hop path below issues `depth` queries and is the historical
-        // 2-hop-ish ceiling). `cap + 1` lets us detect "too big" in one query.
+        // Shallow traversals stay on the targeted per-hop path: a depth-1/2
+        // explorer click fetches only frontier-adjacent edges (≤2 small
+        // queries), which beats scanning the whole edge table. The CSR win is
+        // at depth ≥ 3, where the per-hop loop's N+1 and the historical ~2-hop
+        // practical ceiling bite.
+        if depth <= 2 {
+            return self.subgraph_per_hop(id, depth).await;
+        }
+        // Deep path: if the whole deduped edge set fits the cap, load it in one
+        // scan and BFS in RAM — no per-hop N+1, no practical depth limit.
+        // `cap + 1` lets us detect "too big" in a single query, in which case we
+        // fall back to the bounded per-hop path (large graphs never attempt a
+        // full-topology in-memory build).
         let cap = topo_max_edges();
         let edge_rows = self.rows(edge_sample_sql(&self.cfg, cap + 1)).await?;
         if edge_rows.len() > cap {
@@ -647,10 +656,11 @@ mod provider_tests {
 
     #[tokio::test]
     async fn subgraph_respects_depth_bound() {
+        // depth 3 takes the CSR path (depth > 2) and stops at d on the chain.
         let p = deep_provider();
-        let g = p.subgraph("a", 2).await.unwrap();
+        let g = p.subgraph("a", 3).await.unwrap();
         let ids: std::collections::BTreeSet<&str> = g.nodes.iter().map(|n| n.id.as_str()).collect();
-        assert_eq!(ids, ["a", "b", "c"].into_iter().collect(), "depth 2 stops at c");
-        assert_eq!(g.edges.len(), 2, "only a→b, b→c are induced");
+        assert_eq!(ids, ["a", "b", "c", "d"].into_iter().collect(), "depth 3 stops at d");
+        assert_eq!(g.edges.len(), 3, "only a→b, b→c, c→d are induced");
     }
 }
