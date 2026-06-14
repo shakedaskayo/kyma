@@ -12,11 +12,11 @@
 //! so a job enqueued twice (e.g. while a prior job is still pending) is
 //! harmless — it just no-ops. Coverage therefore converges monotonically.
 //!
-//! **Scope (v1):** vector columns only. Text-column FTS activation needs a
-//! per-table column policy (which text column to index) and lands with the
-//! embedding-pipeline phase. Enqueue is Postgres-only (the fabric queue lives
-//! in Postgres); a non-Postgres catalog (local SQLite mode) is skipped with a
-//! debug log — local mode builds sidecars inline / on demand instead.
+//! Enqueue targets either the Postgres fabric queue (server) or the local
+//! SQLite `jobs` table (embedded mode) through the [`kyma_core::fabric::JobEnqueuer`]
+//! abstraction: [`IndexScheduler::new`] resolves the Postgres queue by downcast,
+//! and [`IndexScheduler::with_enqueuer`] takes an explicit enqueuer for local
+//! mode. A scheduler with no enqueuer is idle.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,9 +30,15 @@ use kyma_core::DEFAULT_TENANT;
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
-/// Periodically enqueues `index_build` jobs for un-indexed vector columns.
+/// Periodically enqueues `index_build` / `embed_backfill` jobs for un-indexed
+/// vector + text columns. The enqueue target is abstracted
+/// ([`kyma_core::fabric::JobEnqueuer`]) so the same scan logic runs against the
+/// Postgres fabric queue (server) or the local SQLite `jobs` table (embedded).
 pub struct IndexScheduler {
     catalog: Arc<dyn Catalog>,
+    /// Where build jobs are enqueued. `None` when the catalog has no fabric
+    /// queue (`new` over a non-Postgres catalog) — `tick` is then idle.
+    enqueuer: Option<Arc<dyn kyma_core::fabric::JobEnqueuer>>,
     /// Sleep between sweeps.
     pub poll_interval: Duration,
     /// Max extents bundled into a single `index_build` job.
@@ -40,15 +46,44 @@ pub struct IndexScheduler {
 }
 
 impl IndexScheduler {
+    fn default_poll_interval() -> Duration {
+        Duration::from_secs(
+            std::env::var("KYMA_INDEX_SCHED_POLL_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(60),
+        )
+    }
+
+    /// Server constructor: resolves the Postgres fabric queue by downcast. Over
+    /// a non-Postgres catalog the scheduler is idle (local mode uses
+    /// [`IndexScheduler::with_enqueuer`] + a SQLite enqueuer instead).
     pub fn new(catalog: Arc<dyn Catalog>) -> Self {
+        let enqueuer: Option<Arc<dyn kyma_core::fabric::JobEnqueuer>> = catalog
+            .as_ref_any()
+            .downcast_ref::<kyma_catalog::PostgresCatalog>()
+            .map(|pg| {
+                Arc::new(kyma_catalog::PgFabricStore::new(pg.pool().clone()))
+                    as Arc<dyn kyma_core::fabric::JobEnqueuer>
+            });
         Self {
             catalog,
-            poll_interval: Duration::from_secs(
-                std::env::var("KYMA_INDEX_SCHED_POLL_SECS")
-                    .ok()
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(60),
-            ),
+            enqueuer,
+            poll_interval: Self::default_poll_interval(),
+            max_extents_per_job: 32,
+        }
+    }
+
+    /// Explicit-enqueuer constructor for catalogs whose fabric queue isn't
+    /// reachable by downcast (local SQLite mode passes a `SqliteEnqueuer`).
+    pub fn with_enqueuer(
+        catalog: Arc<dyn Catalog>,
+        enqueuer: Arc<dyn kyma_core::fabric::JobEnqueuer>,
+    ) -> Self {
+        Self {
+            catalog,
+            enqueuer: Some(enqueuer),
+            poll_interval: Self::default_poll_interval(),
             max_extents_per_job: 32,
         }
     }
@@ -69,14 +104,14 @@ impl IndexScheduler {
 
     /// Run one sweep across all tables. Returns the number of jobs enqueued.
     pub async fn tick(&self) -> Result<usize> {
-        // The fabric queue is Postgres-backed; resolve it once. Non-PG catalogs
-        // (local SQLite) have no fabric queue — nothing to enqueue.
-        let any_ref: &dyn std::any::Any = self.catalog.as_ref_any();
-        let Some(pg) = any_ref.downcast_ref::<kyma_catalog::PostgresCatalog>() else {
-            debug!("non-Postgres catalog: index scheduler idle");
+        // Resolve the enqueue target once. A catalog with no fabric queue
+        // (`new` over non-Postgres, no explicit enqueuer) leaves the scheduler
+        // idle — nothing to enqueue.
+        let Some(enqueuer) = self.enqueuer.clone() else {
+            debug!("no fabric enqueuer: index scheduler idle");
             return Ok(0);
         };
-        let fabric = kyma_catalog::PgFabricStore::new(pg.pool().clone());
+        let fabric: &dyn kyma_core::fabric::JobEnqueuer = enqueuer.as_ref();
 
         let mut enqueued = 0usize;
         let databases = self
@@ -105,14 +140,14 @@ impl IndexScheduler {
                         continue;
                     }
                     embed_jobs += self
-                        .enqueue_embed_missing(&fabric, DEFAULT_TENANT, &table, &cfg)
+                        .enqueue_embed_missing(fabric, DEFAULT_TENANT, &table, &cfg)
                         .await
                         .unwrap_or_else(|e| {
                             warn!(table = %table.name, error = %e, "embed enqueue failed");
                             0
                         });
                     fts_jobs += self
-                        .enqueue_fts_missing(&fabric, DEFAULT_TENANT, &table, &cfg)
+                        .enqueue_fts_missing(fabric, DEFAULT_TENANT, &table, &cfg)
                         .await
                         .unwrap_or_else(|e| {
                             warn!(table = %table.name, error = %e, "fts enqueue failed");
@@ -125,7 +160,7 @@ impl IndexScheduler {
                 //     stats and no sidecar yet).
                 for col in Self::vector_columns(&table) {
                     enqueued += self
-                        .enqueue_missing(&fabric, DEFAULT_TENANT, &table, &col)
+                        .enqueue_missing(fabric, DEFAULT_TENANT, &table, &col)
                         .await
                         .unwrap_or_else(|e| {
                             warn!(table = %table.name, column = %col, error = %e,
@@ -153,7 +188,7 @@ impl IndexScheduler {
     /// embed_backfill is about to rewrite (which would discard it).
     async fn enqueue_fts_missing(
         &self,
-        fabric: &kyma_catalog::PgFabricStore,
+        fabric: &dyn kyma_core::fabric::JobEnqueuer,
         tenant: TenantId,
         table: &TableRef,
         cfg: &kyma_core::catalog::TableEmbedConfig,
@@ -212,7 +247,7 @@ impl IndexScheduler {
                 max_attempts: 3,
             };
             fabric
-                .enqueue_job(tenant, &job)
+                .enqueue(tenant, &job)
                 .await
                 .map_err(|e| Error::Internal(format!("enqueue tantivy_fts: {e}")))?;
             jobs += 1;
@@ -230,7 +265,7 @@ impl IndexScheduler {
     /// stats appear, so it is not re-enqueued.
     async fn enqueue_embed_missing(
         &self,
-        fabric: &kyma_catalog::PgFabricStore,
+        fabric: &dyn kyma_core::fabric::JobEnqueuer,
         tenant: TenantId,
         table: &TableRef,
         cfg: &kyma_core::catalog::TableEmbedConfig,
@@ -278,7 +313,7 @@ impl IndexScheduler {
                 max_attempts: 3,
             };
             fabric
-                .enqueue_job(tenant, &job)
+                .enqueue(tenant, &job)
                 .await
                 .map_err(|e| Error::Internal(format!("enqueue embed_backfill: {e}")))?;
             jobs += 1;
@@ -292,7 +327,7 @@ impl IndexScheduler {
     /// that lacks an `ivf_rabitq` sidecar. Returns the number of jobs enqueued.
     async fn enqueue_missing(
         &self,
-        fabric: &kyma_catalog::PgFabricStore,
+        fabric: &dyn kyma_core::fabric::JobEnqueuer,
         tenant: TenantId,
         table: &TableRef,
         column: &str,
@@ -368,7 +403,7 @@ impl IndexScheduler {
                 max_attempts: 3,
             };
             fabric
-                .enqueue_job(tenant, &job)
+                .enqueue(tenant, &job)
                 .await
                 .map_err(|e| Error::Internal(format!("enqueue index_build: {e}")))?;
             jobs += 1;

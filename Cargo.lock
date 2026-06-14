@@ -5434,6 +5434,7 @@ name = "kyma-local"
 version = "0.0.16"
 dependencies = [
  "anyhow",
+ "arrow-schema",
  "async-trait",
  "axum",
  "chrono",
@@ -5445,6 +5446,8 @@ dependencies = [
  "kyma-datasources",
  "kyma-embed",
  "kyma-format-tlm",
+ "kyma-index-fts",
+ "kyma-index-vector",
  "kyma-ingest-core",
  "kyma-ingest-otlp",
  "kyma-ingest-rest",

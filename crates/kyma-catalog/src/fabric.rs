@@ -465,6 +465,22 @@ impl PgFabricStore {
     }
 }
 
+/// Portable enqueue so background schedulers can run against Postgres without
+/// downcasting. Delegates to the inherent [`PgFabricStore::enqueue_job`],
+/// mapping its `anyhow` error into the shared `kyma_core` error.
+#[async_trait::async_trait]
+impl kyma_core::fabric::JobEnqueuer for PgFabricStore {
+    async fn enqueue(
+        &self,
+        tenant: TenantId,
+        job: &EnqueueJob,
+    ) -> kyma_core::errors::Result<Option<Uuid>> {
+        self.enqueue_job(tenant, job)
+            .await
+            .map_err(|e| kyma_core::errors::Error::Internal(e.to_string()))
+    }
+}
+
 const JOB_VIEW_SELECT: &str = "SELECT id, kind, status, payload, priority, affinity_worker_id,
         req_capabilities, claimed_by, claim_expires_at, attempt, max_attempts,
         progress, result, dreaming_run_id, last_error, created_at, updated_at
