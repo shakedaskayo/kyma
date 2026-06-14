@@ -825,6 +825,179 @@ impl Catalog for PostgresCatalog {
         Ok(rows.into_iter().map(|(p,)| p).collect())
     }
 
+    async fn stage_extent(
+        &self,
+        tenant: TenantId,
+        batch_id: Uuid,
+        manifest: &ExtentManifest,
+    ) -> Result<bool> {
+        let manifest_json = serde_json::to_value(manifest)
+            .map_err(|e| CatalogError::Sql(format!("serialize manifest: {e}")))?;
+        let res = sqlx::query(
+            "INSERT INTO staged_extents (tenant_id, table_id, batch_id, manifest)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (tenant_id, batch_id) DO NOTHING",
+        )
+        .bind(tenant.as_uuid())
+        .bind(manifest.table_id.as_uuid())
+        .bind(batch_id)
+        .bind(&manifest_json)
+        .execute(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(res.rows_affected() > 0)
+    }
+
+    async fn list_staged_extents(
+        &self,
+        tenant: TenantId,
+        max: i64,
+    ) -> Result<Vec<kyma_core::catalog::StagedExtentRow>> {
+        let rows = sqlx::query(
+            "SELECT id, table_id, manifest FROM staged_extents
+             WHERE tenant_id = $1 ORDER BY created_at ASC LIMIT $2",
+        )
+        .bind(tenant.as_uuid())
+        .bind(max)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        rows.iter()
+            .map(|r| {
+                let manifest_json: Json = r.try_get("manifest").map_err(sql_err)?;
+                let manifest: ExtentManifest = serde_json::from_value(manifest_json)
+                    .map_err(|e| CatalogError::Sql(format!("deserialize staged manifest: {e}")))?;
+                Ok(kyma_core::catalog::StagedExtentRow {
+                    id: r.try_get("id").map_err(sql_err)?,
+                    table_id: TableId::from_uuid(r.try_get("table_id").map_err(sql_err)?),
+                    manifest,
+                })
+            })
+            .collect()
+    }
+
+    async fn commit_staged_group(
+        &self,
+        tenant: TenantId,
+        table_id: TableId,
+        staged_ids: &[Uuid],
+        manifests: &[ExtentManifest],
+    ) -> Result<Option<SnapshotId>> {
+        if manifests.is_empty() {
+            return Ok(None);
+        }
+        let mut tx = self.pool.begin().await.map_err(sql_err)?;
+
+        // Parent = the table's current snapshot; lock its row for the seq read.
+        let parent: Uuid = sqlx::query_scalar(
+            "SELECT current_snapshot_id FROM tables WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(tenant.as_uuid())
+        .bind(table_id.as_uuid())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(sql_err)?
+        .ok_or_else(|| CatalogError::Sql(format!("table {table_id} not found")))?;
+        let (parent_seq, schema_snap): (i64, Uuid) = sqlx::query_as(
+            "SELECT sequence_number, schema_snapshot_id FROM snapshots WHERE id = $1 FOR UPDATE",
+        )
+        .bind(parent)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(sql_err)?
+        .ok_or_else(|| CatalogError::Sql("parent snapshot not found".into()))?;
+
+        let summary = serde_json::json!({
+            "operation": format!("ingest_staged_x{}", manifests.len()),
+            "rows_added": manifests.iter().map(|m| m.row_count as i64).sum::<i64>(),
+            "rows_removed": 0,
+            "bytes_added": manifests.iter().map(|m| m.byte_size as i64).sum::<i64>(),
+            "bytes_removed": 0,
+        });
+
+        // New snapshot. A racing committer that read the same parent loses the
+        // (table_id, sequence_number) unique constraint here → Conflict → retry.
+        let (new_snap,): (Uuid,) = sqlx::query_as(
+            "INSERT INTO snapshots (tenant_id, table_id, parent_id, sequence_number, schema_snapshot_id, summary)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+        )
+        .bind(tenant.as_uuid())
+        .bind(table_id.as_uuid())
+        .bind(parent)
+        .bind(parent_seq + 1)
+        .bind(schema_snap)
+        .bind(&summary)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(conflict_or_sql)?;
+
+        let (manifest_id,): (Uuid,) = sqlx::query_as(
+            "INSERT INTO manifests (tenant_id, snapshot_id, kind, extent_count, byte_size)
+             VALUES ($1, $2, 'data', $3, $4) RETURNING id",
+        )
+        .bind(tenant.as_uuid())
+        .bind(new_snap)
+        .bind(manifests.len() as i32)
+        .bind(manifests.iter().map(|m| m.byte_size as i64).sum::<i64>())
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(sql_err)?;
+
+        for e in manifests {
+            sqlx::query(
+                "INSERT INTO extents (
+                    tenant_id, id, table_id, manifest_id, schema_snapshot_id, object_path, byte_size,
+                    row_count, min_timestamp, max_timestamp, column_stats, present_paths,
+                    compaction_gen, created_at
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
+            )
+            .bind(tenant.as_uuid())
+            .bind(e.id.as_uuid())
+            .bind(e.table_id.as_uuid())
+            .bind(manifest_id)
+            .bind(e.schema_snapshot_id.as_uuid())
+            .bind(&e.object_path)
+            .bind(e.byte_size as i64)
+            .bind(e.row_count as i64)
+            .bind(e.min_timestamp)
+            .bind(e.max_timestamp)
+            .bind(&e.column_stats)
+            .bind(&e.present_paths)
+            .bind(e.compaction_gen as i32)
+            .bind(e.created_at)
+            .execute(&mut *tx)
+            .await
+            .map_err(sql_err)?;
+        }
+
+        // Critical CAS — lost race → Conflict.
+        let swapped = sqlx::query(
+            "UPDATE tables SET current_snapshot_id = $1
+             WHERE tenant_id = $2 AND id = $3 AND current_snapshot_id = $4",
+        )
+        .bind(new_snap)
+        .bind(tenant.as_uuid())
+        .bind(table_id.as_uuid())
+        .bind(parent)
+        .execute(&mut *tx)
+        .await
+        .map_err(sql_err)?;
+        if swapped.rows_affected() != 1 {
+            return Err(CatalogError::Conflict.into());
+        }
+
+        // Destage in the SAME txn → commit + destage are exactly-once.
+        sqlx::query("DELETE FROM staged_extents WHERE tenant_id = $1 AND id = ANY($2)")
+            .bind(tenant.as_uuid())
+            .bind(staged_ids)
+            .execute(&mut *tx)
+            .await
+            .map_err(sql_err)?;
+
+        tx.commit().await.map_err(sql_err)?;
+        Ok(Some(SnapshotId::from_uuid(new_snap)))
+    }
+
     async fn gc_candidates(&self, before: DateTime<Utc>) -> Result<Vec<ExtentId>> {
         let rows: Vec<(Uuid,)> = sqlx::query_as(
             "SELECT id FROM extents WHERE deleted_at IS NOT NULL AND deleted_at < $1",
@@ -2109,6 +2282,18 @@ impl Catalog for PostgresCatalog {
 
 fn sql_err(e: sqlx::Error) -> CatalogError {
     CatalogError::Sql(e.to_string())
+}
+
+/// Map a unique-constraint violation (a racing committer claimed the same
+/// `(table_id, sequence_number)`) to `Conflict` so the caller retries; any other
+/// DB error stays a `Sql` error. Returns the top-level `Error` for `?`.
+fn conflict_or_sql(e: sqlx::Error) -> kyma_core::errors::Error {
+    if let sqlx::Error::Database(db) = &e {
+        if db.kind() == sqlx::error::ErrorKind::UniqueViolation {
+            return kyma_core::errors::Error::Catalog(CatalogError::Conflict);
+        }
+    }
+    kyma_core::errors::Error::Catalog(CatalogError::Sql(e.to_string()))
 }
 
 fn row_to_dashboard(row: &sqlx::postgres::PgRow) -> std::result::Result<Dashboard, CatalogError> {

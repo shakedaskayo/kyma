@@ -23,6 +23,7 @@
 #![forbid(unsafe_code)]
 
 pub mod commit_coordinator;
+pub mod committer;
 pub mod ensure;
 pub mod event_time;
 pub mod events;
