@@ -58,6 +58,16 @@ pub struct AnnParams {
     pub nprobe: usize,
     /// Exact-rerank pool size = `rerank_factor · k` candidates.
     pub rerank_factor: usize,
+    /// Filtered-search planner threshold (S1.2). When the caller's `prefilter`
+    /// prunes the table to at most this many surviving rows (summed over the
+    /// surviving extents' row counts), the query exact-scans the whole filtered
+    /// set instead of probing sidecars. Two reasons: (1) over a small set,
+    /// brute-force is cheaper than IVF probe + rerank, and (2) a selective
+    /// filter leaves so few vectors that approximate probing risks dropping
+    /// true neighbours — exact scan is recall-1.0 by construction. Above the
+    /// threshold (broad / unfiltered queries) the ANN path runs. `0` disables
+    /// the exact branch (always ANN where a sidecar exists).
+    pub exact_scan_max_rows: u64,
 }
 
 impl AnnParams {
@@ -67,6 +77,7 @@ impl AnnParams {
             k,
             nprobe: 16,
             rerank_factor: 48,
+            exact_scan_max_rows: 50_000,
         }
     }
 }
@@ -182,17 +193,37 @@ pub async fn ann_topk(
         return Ok(Vec::new());
     }
 
-    // Which extents carry an IvfRabitq sidecar for this column?
-    let extent_ids: Vec<ExtentId> = extents.iter().map(|m| m.id).collect();
-    let sidecars = catalog
-        .list_index_sidecars(tenant, table.id, &extent_ids, Some(SidecarKind::IvfRabitq))
-        .await
-        .map_err(|e| AnnError::Catalog(e.to_string()))?;
-    let sidecar_by_extent: HashMap<ExtentId, IndexSidecarDescriptor> = sidecars
-        .into_iter()
-        .filter(|d| d.column == column)
-        .map(|d| (d.extent_id, d))
-        .collect();
+    // (c) Filtered-search planner (S1.2): if the prefilter pruned the table to a
+    //     small surviving set, exact-scan it and skip sidecars entirely. The
+    //     row-count sum over surviving extents is an upper bound on the
+    //     candidates to scan; when even that bound is small, brute-force is both
+    //     cheaper than ANN and exactly correct (no approximate recall loss on a
+    //     heavily filtered set). A predicate-free query has every extent survive
+    //     and the sum is the full table, so this only triggers for selective
+    //     filters.
+    let surviving_rows: u64 = extents.iter().map(|m| m.row_count).sum();
+    let force_exact = plan_force_exact(
+        prefilter.is_some(),
+        surviving_rows,
+        params.exact_scan_max_rows,
+    );
+
+    // Which extents carry an IvfRabitq sidecar for this column? (Skipped when
+    // the planner chose the exact branch.)
+    let sidecar_by_extent: HashMap<ExtentId, IndexSidecarDescriptor> = if force_exact {
+        HashMap::new()
+    } else {
+        let extent_ids: Vec<ExtentId> = extents.iter().map(|m| m.id).collect();
+        let sidecars = catalog
+            .list_index_sidecars(tenant, table.id, &extent_ids, Some(SidecarKind::IvfRabitq))
+            .await
+            .map_err(|e| AnnError::Catalog(e.to_string()))?;
+        sidecars
+            .into_iter()
+            .filter(|d| d.column == column)
+            .map(|d| (d.extent_id, d))
+            .collect()
+    };
 
     let manifest_by_extent: HashMap<ExtentId, &ExtentManifest> =
         extents.iter().map(|m| (m.id, m)).collect();
@@ -317,6 +348,13 @@ fn sort_hits(hits: &mut [AnnHit]) {
             .then_with(|| a.addr.block.0.cmp(&b.addr.block.0))
             .then_with(|| a.addr.row.cmp(&b.addr.row))
     });
+}
+
+/// Filtered-search planner decision (S1.2): take the exact-scan branch when a
+/// prefilter is present AND it pruned the table to at most `max_rows` surviving
+/// rows. `max_rows == 0` disables the exact branch. Pure function — unit-tested.
+fn plan_force_exact(has_prefilter: bool, surviving_rows: u64, max_rows: u64) -> bool {
+    has_prefilter && max_rows > 0 && surviving_rows <= max_rows
 }
 
 /// Keep the `pool_size` nearest approximate candidates (ascending estimator
@@ -507,6 +545,19 @@ mod tests {
             !Arc::ptr_eq(&a, &d),
             "different dim is a different Rotation"
         );
+    }
+
+    #[test]
+    fn plan_force_exact_only_for_selective_filtered_queries() {
+        // Selective filter (few surviving rows) → exact scan.
+        assert!(plan_force_exact(true, 1_000, 50_000));
+        assert!(plan_force_exact(true, 50_000, 50_000)); // boundary inclusive
+                                                         // Broad/unfiltered: every extent survives → too many rows → ANN path.
+        assert!(!plan_force_exact(true, 50_001, 50_000));
+        // No prefilter → always ANN, regardless of size.
+        assert!(!plan_force_exact(false, 10, 50_000));
+        // Threshold 0 disables the exact branch.
+        assert!(!plan_force_exact(true, 1, 0));
     }
 
     #[test]
