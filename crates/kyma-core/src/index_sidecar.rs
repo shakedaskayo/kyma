@@ -101,6 +101,32 @@ pub struct IndexSidecarDescriptor {
     pub created_at: DateTime<Utc>,
 }
 
+/// Catalog row describing one global ANN centroid tree (`ann_tree` table, S1.3).
+///
+/// Unlike [`IndexSidecarDescriptor`] (per-extent), a tree is table-wide: one row
+/// per `(table_id, column, embedding_model_id)`. `generation` bumps on every
+/// rebuild and `extent_fingerprint` is a stable hash of the live extent-id set
+/// the tree was built from, so the query path can detect staleness and the
+/// maintenance scheduler can skip rebuilding when nothing changed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AnnTreeDescriptor {
+    pub id: Uuid,
+    pub table_id: TableId,
+    pub column: String,
+    pub embedding_model_id: Option<String>,
+    /// Monotonic rebuild counter.
+    pub generation: i64,
+    /// Stable hash of the source extent-id set (staleness signal).
+    pub extent_fingerprint: String,
+    /// Object-store path of the serialized tree blob
+    /// (convention: `{tenant}/ann_tree/{table_id}/{column}.kygt`).
+    pub object_path: String,
+    pub byte_size: u64,
+    /// Builder-specific parameters (global_nlist, dim, metric, source_extents…).
+    pub params: Json,
+    pub created_at: DateTime<Utc>,
+}
+
 /// A finished sidecar, ready to upload + register.
 #[derive(Debug, Clone)]
 pub struct BuiltSidecar {

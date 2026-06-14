@@ -15,6 +15,7 @@ kyma-core = { workspace = true }
 kyma-catalog = { workspace = true }
 kyma-datasources = { workspace = true }
 kyma-embed = { workspace = true }
+kyma-index-vector = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }

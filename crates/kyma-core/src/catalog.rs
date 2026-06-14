@@ -784,6 +784,48 @@ pub trait Catalog: Send + Sync {
         extent_ids: &[ExtentId],
     ) -> Result<Vec<String>>;
 
+    // --- global ANN centroid tree (S1.3, server mode) ---
+
+    /// Upsert the global ANN tree row for `(table_id, column, embedding_model_id)`.
+    /// Re-registering replaces `generation`, `extent_fingerprint`, `object_path`,
+    /// `byte_size`, and `params` in place. Like sidecars, the blob is uploaded
+    /// **before** this call, so a crash in between leaves only an orphan object.
+    /// Non-Postgres catalogs (local SQLite) may no-op — local mode keeps
+    /// per-extent ANN and never builds a global tree.
+    async fn upsert_ann_tree(
+        &self,
+        tenant: crate::tenant::TenantId,
+        desc: &crate::index_sidecar::AnnTreeDescriptor,
+    ) -> Result<()> {
+        let _ = (tenant, desc);
+        Ok(())
+    }
+
+    /// Fetch the global ANN tree row for `(table_id, column, embedding_model_id)`,
+    /// or `None` if no tree exists (the query path then fans out per-extent).
+    async fn get_ann_tree(
+        &self,
+        tenant: crate::tenant::TenantId,
+        table_id: TableId,
+        column: &str,
+        embedding_model_id: Option<&str>,
+    ) -> Result<Option<crate::index_sidecar::AnnTreeDescriptor>> {
+        let _ = (tenant, table_id, column, embedding_model_id);
+        Ok(None)
+    }
+
+    /// Delete the global ANN tree row for a table+column (all models), returning
+    /// the deleted `object_path`s so the caller can GC the blobs.
+    async fn delete_ann_tree(
+        &self,
+        tenant: crate::tenant::TenantId,
+        table_id: TableId,
+        column: &str,
+    ) -> Result<Vec<String>> {
+        let _ = (tenant, table_id, column);
+        Ok(Vec::new())
+    }
+
     // --- garbage collection ---
 
     async fn gc_candidates(&self, before: DateTime<Utc>) -> Result<Vec<ExtentId>>;

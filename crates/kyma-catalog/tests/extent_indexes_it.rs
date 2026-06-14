@@ -115,11 +115,107 @@ fn desc(
 }
 
 #[tokio::test]
+async fn ann_tree_upsert_get_delete() {
+    use kyma_core::index_sidecar::AnnTreeDescriptor;
+    let fx = fixture().await;
+    let (table_id, _extent) = table_with_extent(&fx.catalog, "default").await;
+
+    let mk = |gen: i64, fp: &str| AnnTreeDescriptor {
+        id: Uuid::new_v4(),
+        table_id,
+        column: "embedding".into(),
+        embedding_model_id: Some("bge@384".into()),
+        generation: gen,
+        extent_fingerprint: fp.into(),
+        object_path: format!("{DEFAULT_TENANT}/ann_tree/{table_id}/embedding.kygt"),
+        byte_size: 4096,
+        params: serde_json::json!({ "global_nlist": 32, "dim": 384 }),
+        created_at: chrono::Utc::now(),
+    };
+
+    // Insert.
+    fx.catalog
+        .upsert_ann_tree(DEFAULT_TENANT, &mk(1, "fp-a"))
+        .await
+        .unwrap();
+    let got = fx
+        .catalog
+        .get_ann_tree(DEFAULT_TENANT, table_id, "embedding", Some("bge@384"))
+        .await
+        .unwrap()
+        .expect("tree row present");
+    assert_eq!(got.generation, 1);
+    assert_eq!(got.extent_fingerprint, "fp-a");
+    assert_eq!(got.byte_size, 4096);
+
+    // Upsert in place (same table/column/model key) bumps generation + fingerprint.
+    fx.catalog
+        .upsert_ann_tree(DEFAULT_TENANT, &mk(2, "fp-b"))
+        .await
+        .unwrap();
+    let got2 = fx
+        .catalog
+        .get_ann_tree(DEFAULT_TENANT, table_id, "embedding", Some("bge@384"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(got2.generation, 2, "upsert replaces, not duplicates");
+    assert_eq!(got2.extent_fingerprint, "fp-b");
+
+    // A different model is a distinct row.
+    let mut other = mk(1, "fp-c");
+    other.embedding_model_id = Some("nomic@768".into());
+    fx.catalog
+        .upsert_ann_tree(DEFAULT_TENANT, &other)
+        .await
+        .unwrap();
+    assert!(fx
+        .catalog
+        .get_ann_tree(DEFAULT_TENANT, table_id, "embedding", Some("nomic@768"))
+        .await
+        .unwrap()
+        .is_some());
+
+    // Missing model → None.
+    assert!(fx
+        .catalog
+        .get_ann_tree(
+            DEFAULT_TENANT,
+            table_id,
+            "embedding",
+            Some("does-not-exist")
+        )
+        .await
+        .unwrap()
+        .is_none());
+
+    // Delete returns both models' object paths.
+    let paths = fx
+        .catalog
+        .delete_ann_tree(DEFAULT_TENANT, table_id, "embedding")
+        .await
+        .unwrap();
+    assert_eq!(paths.len(), 2, "both model rows deleted");
+    assert!(fx
+        .catalog
+        .get_ann_tree(DEFAULT_TENANT, table_id, "embedding", Some("bge@384"))
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
 async fn register_list_and_idempotent_reregister() {
     let fx = fixture().await;
     let (table_id, extent_id) = table_with_extent(&fx.catalog, "default").await;
 
-    let ann = desc(table_id, extent_id, "embedding", SidecarKind::IvfRabitq, Some("m1"));
+    let ann = desc(
+        table_id,
+        extent_id,
+        "embedding",
+        SidecarKind::IvfRabitq,
+        Some("m1"),
+    );
     let fts = desc(table_id, extent_id, "body", SidecarKind::TantivyFts, None);
     fx.catalog
         .register_index_sidecar(DEFAULT_TENANT, &ann)
@@ -141,7 +237,12 @@ async fn register_list_and_idempotent_reregister() {
     // Kind filter narrows to one.
     let only_fts = fx
         .catalog
-        .list_index_sidecars(DEFAULT_TENANT, table_id, &[extent_id], Some(SidecarKind::TantivyFts))
+        .list_index_sidecars(
+            DEFAULT_TENANT,
+            table_id,
+            &[extent_id],
+            Some(SidecarKind::TantivyFts),
+        )
         .await
         .unwrap();
     assert_eq!(only_fts.len(), 1);
@@ -151,7 +252,13 @@ async fn register_list_and_idempotent_reregister() {
 
     // Re-register the same logical sidecar (same extent/column/kind/model,
     // NULL model included) — upsert in place, no duplicate row, new fields win.
-    let mut ann2 = desc(table_id, extent_id, "embedding", SidecarKind::IvfRabitq, Some("m1"));
+    let mut ann2 = desc(
+        table_id,
+        extent_id,
+        "embedding",
+        SidecarKind::IvfRabitq,
+        Some("m1"),
+    );
     ann2.byte_size = 9999;
     ann2.params = serde_json::json!({ "nlist": 64 });
     fx.catalog
@@ -170,15 +277,31 @@ async fn register_list_and_idempotent_reregister() {
         .list_index_sidecars(DEFAULT_TENANT, table_id, &[extent_id], None)
         .await
         .unwrap();
-    assert_eq!(all.len(), 2, "re-register must upsert, not insert duplicates");
-    let ann_row = all.iter().find(|d| d.kind == SidecarKind::IvfRabitq).unwrap();
+    assert_eq!(
+        all.len(),
+        2,
+        "re-register must upsert, not insert duplicates"
+    );
+    let ann_row = all
+        .iter()
+        .find(|d| d.kind == SidecarKind::IvfRabitq)
+        .unwrap();
     assert_eq!(ann_row.byte_size, 9999);
     assert_eq!(ann_row.params, serde_json::json!({ "nlist": 64 }));
-    let fts_row = all.iter().find(|d| d.kind == SidecarKind::TantivyFts).unwrap();
+    let fts_row = all
+        .iter()
+        .find(|d| d.kind == SidecarKind::TantivyFts)
+        .unwrap();
     assert_eq!(fts_row.byte_size, 4242);
 
     // A different model id for the same column+kind is a NEW sidecar.
-    let ann_m2 = desc(table_id, extent_id, "embedding", SidecarKind::IvfRabitq, Some("m2"));
+    let ann_m2 = desc(
+        table_id,
+        extent_id,
+        "embedding",
+        SidecarKind::IvfRabitq,
+        Some("m2"),
+    );
     fx.catalog
         .register_index_sidecar(DEFAULT_TENANT, &ann_m2)
         .await
@@ -226,7 +349,10 @@ async fn cascade_delete_with_extent_row() {
         .list_index_sidecars(DEFAULT_TENANT, table_id, &[extent_id], None)
         .await
         .unwrap();
-    assert!(left.is_empty(), "extent_indexes rows must cascade with extents");
+    assert!(
+        left.is_empty(),
+        "extent_indexes rows must cascade with extents"
+    );
 }
 
 #[tokio::test]
@@ -261,7 +387,13 @@ async fn delete_for_extents_returns_object_paths() {
     .unwrap();
 
     let d1 = desc(table_id, e1, "body", SidecarKind::TantivyFts, None);
-    let d2 = desc(table_id, e1, "embedding", SidecarKind::IvfRabitq, Some("m1"));
+    let d2 = desc(
+        table_id,
+        e1,
+        "embedding",
+        SidecarKind::IvfRabitq,
+        Some("m1"),
+    );
     let d3 = desc(table_id, e2, "body", SidecarKind::TantivyFts, None);
     for d in [&d1, &d2, &d3] {
         fx.catalog

@@ -14,6 +14,7 @@ kyma-core.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true
 bytes.workspace = true
+uuid.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true

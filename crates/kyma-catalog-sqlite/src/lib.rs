@@ -284,6 +284,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS extent_indexes_uniq
 CREATE INDEX IF NOT EXISTS extent_indexes_lookup
     ON extent_indexes (table_id, column_name, kind);
 
+-- Global ANN centroid tree (S1.3). Local mode stores it for parity/tests but
+-- never enqueues the maintenance job — server mode is where fan-out matters.
+CREATE TABLE IF NOT EXISTS ann_tree (
+    id                 BLOB PRIMARY KEY,
+    tenant_id          BLOB NOT NULL,
+    table_id           BLOB NOT NULL,
+    column_name        TEXT NOT NULL,
+    embedding_model_id TEXT,
+    generation         INTEGER NOT NULL DEFAULT 0,
+    extent_fingerprint TEXT NOT NULL,
+    object_path        TEXT NOT NULL,
+    byte_size          INTEGER NOT NULL,
+    params             TEXT NOT NULL DEFAULT '{}',
+    created_at         TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ann_tree_uniq
+    ON ann_tree (table_id, column_name, COALESCE(embedding_model_id, ''));
+
 CREATE TABLE IF NOT EXISTS background_tasks (
     id               BLOB PRIMARY KEY,
     tenant_id        BLOB NOT NULL,
@@ -1249,6 +1267,105 @@ impl Catalog for SqliteCatalog {
             q = q.bind(*e.as_uuid());
         }
         let paths = q.fetch_all(&self.pool).await.map_err(ce)?;
+        Ok(paths)
+    }
+
+    // ----------------------- global ANN centroid tree -----------------------
+
+    async fn upsert_ann_tree(
+        &self,
+        tenant: TenantId,
+        desc: &kyma_core::index_sidecar::AnnTreeDescriptor,
+    ) -> Result<()> {
+        // UPDATE-then-INSERT upsert on (table, column, model) — single-process
+        // local mode makes the window benign (same pattern as sidecars).
+        let updated = sqlx::query(
+            "UPDATE ann_tree
+             SET generation = ?, extent_fingerprint = ?, object_path = ?,
+                 byte_size = ?, params = ?, created_at = ?
+             WHERE tenant_id = ? AND table_id = ? AND column_name = ?
+               AND COALESCE(embedding_model_id, '') = COALESCE(?, '')",
+        )
+        .bind(desc.generation)
+        .bind(&desc.extent_fingerprint)
+        .bind(&desc.object_path)
+        .bind(desc.byte_size as i64)
+        .bind(desc.params.to_string())
+        .bind(desc.created_at)
+        .bind(tenant.as_uuid())
+        .bind(desc.table_id.as_uuid())
+        .bind(&desc.column)
+        .bind(desc.embedding_model_id.as_deref())
+        .execute(&self.pool)
+        .await
+        .map_err(ce)?;
+        if updated.rows_affected() > 0 {
+            return Ok(());
+        }
+        sqlx::query(
+            "INSERT INTO ann_tree
+                (id, tenant_id, table_id, column_name, embedding_model_id,
+                 generation, extent_fingerprint, object_path, byte_size, params, created_at)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        )
+        .bind(desc.id)
+        .bind(tenant.as_uuid())
+        .bind(desc.table_id.as_uuid())
+        .bind(&desc.column)
+        .bind(desc.embedding_model_id.as_deref())
+        .bind(desc.generation)
+        .bind(&desc.extent_fingerprint)
+        .bind(&desc.object_path)
+        .bind(desc.byte_size as i64)
+        .bind(desc.params.to_string())
+        .bind(desc.created_at)
+        .execute(&self.pool)
+        .await
+        .map_err(ce)?;
+        Ok(())
+    }
+
+    async fn get_ann_tree(
+        &self,
+        tenant: TenantId,
+        table_id: TableId,
+        column: &str,
+        embedding_model_id: Option<&str>,
+    ) -> Result<Option<kyma_core::index_sidecar::AnnTreeDescriptor>> {
+        let row = sqlx::query(
+            "SELECT id, table_id, column_name, embedding_model_id, generation,
+                    extent_fingerprint, object_path, byte_size, params, created_at
+             FROM ann_tree
+             WHERE tenant_id = ? AND table_id = ? AND column_name = ?
+               AND COALESCE(embedding_model_id, '') = COALESCE(?, '')",
+        )
+        .bind(tenant.as_uuid())
+        .bind(table_id.as_uuid())
+        .bind(column)
+        .bind(embedding_model_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(ce)?;
+        row.as_ref().map(row_to_ann_tree).transpose()
+    }
+
+    async fn delete_ann_tree(
+        &self,
+        tenant: TenantId,
+        table_id: TableId,
+        column: &str,
+    ) -> Result<Vec<String>> {
+        let paths = sqlx::query_scalar::<_, String>(
+            "DELETE FROM ann_tree
+             WHERE tenant_id = ? AND table_id = ? AND column_name = ?
+             RETURNING object_path",
+        )
+        .bind(tenant.as_uuid())
+        .bind(table_id.as_uuid())
+        .bind(column)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(ce)?;
         Ok(paths)
     }
 
@@ -2583,6 +2700,22 @@ fn row_to_sidecar(row: &SqliteRow) -> Result<IndexSidecarDescriptor> {
         byte_size: row.try_get::<i64, _>("byte_size").map_err(ce)? as u64,
         params: parse_json(&params_str).unwrap_or(Json::Null),
         embedding_model_id: row.try_get("embedding_model_id").map_err(ce)?,
+        created_at: row.try_get("created_at").map_err(ce)?,
+    })
+}
+
+fn row_to_ann_tree(row: &SqliteRow) -> Result<kyma_core::index_sidecar::AnnTreeDescriptor> {
+    let params_str: String = row.try_get("params").map_err(ce)?;
+    Ok(kyma_core::index_sidecar::AnnTreeDescriptor {
+        id: row.try_get("id").map_err(ce)?,
+        table_id: TableId::from_uuid(row.try_get("table_id").map_err(ce)?),
+        column: row.try_get("column_name").map_err(ce)?,
+        embedding_model_id: row.try_get("embedding_model_id").map_err(ce)?,
+        generation: row.try_get("generation").map_err(ce)?,
+        extent_fingerprint: row.try_get("extent_fingerprint").map_err(ce)?,
+        object_path: row.try_get("object_path").map_err(ce)?,
+        byte_size: row.try_get::<i64, _>("byte_size").map_err(ce)? as u64,
+        params: parse_json(&params_str).unwrap_or(Json::Null),
         created_at: row.try_get("created_at").map_err(ce)?,
     })
 }

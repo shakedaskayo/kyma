@@ -1318,6 +1318,13 @@ async fn main() -> Result<()> {
             warn!(error = %e, "embedding backend unavailable; embed_backfill executor not registered");
         }
     }
+    // S1.3 global ANN centroid tree: the ann_maintain executor (re)builds the
+    // table-wide tree from per-extent IVF sidecars. The IndexScheduler enqueues
+    // ann_maintain when the sidecar-bearing extent set changes (server mode).
+    exec_registry.register(Arc::new(kyma_jobs::ann_maintain::AnnMaintainExecutor::new(
+        catalog.clone(),
+        store.clone(),
+    )));
     let mut fabric_runner_handles = Vec::with_capacity(n_fabric_workers);
     for _ in 0..n_fabric_workers {
         let queue = Arc::new(kyma_jobs::PgQueue::new(

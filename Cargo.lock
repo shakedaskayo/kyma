@@ -4985,6 +4985,7 @@ dependencies = [
  "futures",
  "kyma-catalog",
  "kyma-core",
+ "kyma-index-vector",
  "kyma-ingest-core",
  "metrics",
  "object_store",
@@ -5255,6 +5256,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -5404,6 +5406,7 @@ dependencies = [
  "kyma-datasources",
  "kyma-embed",
  "kyma-format-tlm",
+ "kyma-index-vector",
  "object_store",
  "serde",
  "serde_json",

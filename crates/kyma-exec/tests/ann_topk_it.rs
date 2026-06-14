@@ -29,13 +29,14 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use futures::StreamExt;
 use kyma_catalog_sqlite::SqliteCatalog;
 use kyma_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig, TableRef};
+use kyma_core::index_sidecar::AnnTreeDescriptor;
 use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarBuilder, SidecarKind};
 use kyma_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
 use kyma_core::tenant::DEFAULT_TENANT;
 use kyma_core::types::TableId;
 use kyma_exec::{ann_topk, AnnParams};
 use kyma_format_tlm::TelemetryFormat;
-use kyma_index_vector::IvfRabitqBuilder;
+use kyma_index_vector::{file as ivf_file, global_tree, IvfRabitqBuilder};
 use kyma_storage::sidecar_cache::SidecarCache;
 use object_store::path::Path as ObjPath;
 use object_store::{memory::InMemory, ObjectStore};
@@ -428,6 +429,168 @@ async fn ann_topk_falls_back_to_exact_without_sidecar() {
     assert!(
         recall >= 0.99,
         "fallback recall@{k} = {recall:.4} should be ~1.0"
+    );
+
+    let _ = std::fs::remove_dir_all(&cache_root);
+}
+
+/// S1.3: with a global centroid tree, ann_topk probes only the partitions the
+/// tree routes to (a strict subset — top_p < global_nlist here, so extents and
+/// partitions are genuinely pruned) yet still matches the brute-force oracle
+/// within the recall the exact rerank guarantees. Multiple extents, real IVF
+/// sidecars, the tree built inline exactly as the ann_maintain job would.
+#[tokio::test]
+async fn ann_topk_with_global_tree_prunes_and_keeps_recall() {
+    let (catalog, format, store, cache, cache_root) = setup().await;
+    let catalog_dyn: Arc<dyn Catalog> = Arc::new(catalog.clone());
+
+    let db_id = catalog.create_database("default").await.unwrap();
+    let table_id = catalog
+        .create_table(db_id, "vecs", schema(), TableConfig::default())
+        .await
+        .unwrap();
+    let tref = catalog.lookup_table("default", "vecs").await.unwrap();
+
+    // 4 extents × 1000 rows (one 1000-row block each, matching the builder's
+    // block convention). All vectors kept flat for the oracle; each extent's
+    // flat base lets us map an AnnHit back to a global row index.
+    const E: usize = 4;
+    const R: usize = 1000;
+    let (vectors, anchors) = gen_clustered(E * R, 50, 0xA11C_E5_7EE_2026);
+    let mut flat_base: std::collections::HashMap<kyma_core::types::ExtentId, usize> =
+        std::collections::HashMap::new();
+    let mut sidecar_ids: Vec<kyma_core::types::ExtentId> = Vec::new();
+    for e in 0..E {
+        let chunk = &vectors[e * R..(e + 1) * R];
+        let batch = make_batch(chunk, (e * R) as i64, (e * R) as i64);
+        let manifest = write_extent(&catalog, &format, table_id, &tref, vec![batch]).await;
+        build_and_register_sidecar(
+            &catalog,
+            &format,
+            &store,
+            table_id,
+            &tref,
+            &manifest,
+            "embedding",
+        )
+        .await;
+        flat_base.insert(manifest.id, e * R);
+        sidecar_ids.push(manifest.id);
+    }
+
+    // Build the global tree inline (what the ann_maintain executor does): read
+    // each sidecar's centroids, cluster into a global tree with fewer global
+    // centroids than we will probe-expand, upload, and register the row.
+    let mut extent_centroids: Vec<(uuid::Uuid, Vec<Vec<f32>>)> = Vec::new();
+    let mut dim = 0usize;
+    for eid in &sidecar_ids {
+        let path = format!(
+            "{DEFAULT_TENANT}/indexes/{}/embedding.{}",
+            eid.as_uuid(),
+            SidecarKind::IvfRabitq.as_str()
+        );
+        let bytes = store
+            .get(&ObjPath::from(path.as_str()))
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+        let header = ivf_file::read_header(&bytes).unwrap();
+        dim = header.dim as usize;
+        extent_centroids.push((
+            *eid.as_uuid(),
+            ivf_file::read_centroids(&bytes, &header).unwrap(),
+        ));
+    }
+    let total_partitions: usize = extent_centroids.iter().map(|(_, c)| c.len()).sum();
+    let global_nlist = global_tree::choose_global_nlist(total_partitions);
+    let tree = global_tree::build(
+        dim,
+        ivf_file::METRIC_COSINE,
+        Some("test/model".to_string()),
+        &extent_centroids,
+        global_nlist,
+    )
+    .expect("tree built");
+    let tree_path = format!("{DEFAULT_TENANT}/ann_tree/{table_id}/embedding__test_model.kygt");
+    let blob = tree.write();
+    let blen = blob.len() as u64;
+    store
+        .put(&ObjPath::from(tree_path.as_str()), blob.to_vec().into())
+        .await
+        .unwrap();
+    let fp = global_tree::extent_fingerprint(
+        &sidecar_ids.iter().map(|e| *e.as_uuid()).collect::<Vec<_>>(),
+    );
+    catalog
+        .upsert_ann_tree(
+            DEFAULT_TENANT,
+            &AnnTreeDescriptor {
+                id: uuid::Uuid::new_v4(),
+                table_id,
+                column: "embedding".into(),
+                embedding_model_id: Some("test/model".into()),
+                generation: 1,
+                extent_fingerprint: fp,
+                object_path: tree_path,
+                byte_size: blen,
+                params: serde_json::json!({ "global_nlist": global_nlist }),
+                created_at: chrono::Utc::now(),
+            },
+        )
+        .await
+        .unwrap();
+
+    // top_p is HALF the global centroids → the tree prunes (a no-op tree would
+    // need top_p >= global_nlist). Recall must still clear the bar thanks to the
+    // exact rerank over the (smaller) routed pool.
+    let k = 10;
+    let n_queries = 50;
+    let mut params = AnnParams::with_k(k);
+    params.tree_top_p = (global_nlist / 2).max(1);
+    assert!(params.tree_top_p < global_nlist, "test must actually prune");
+
+    let mut qrng = Rng::new(0x5EED_5EED_5EED_5EED);
+    let mut total_recall = 0.0f64;
+    for _ in 0..n_queries {
+        let a = &anchors[(qrng.next_u64() % anchors.len() as u64) as usize];
+        let q = norm(
+            a.iter()
+                .map(|c| c + 0.30 * qrng.gaussian() as f32)
+                .collect(),
+        );
+        let hits = ann_topk(
+            &catalog_dyn,
+            DEFAULT_TENANT,
+            &format,
+            &store,
+            &cache,
+            &tref,
+            "embedding",
+            &q,
+            &params,
+            None,
+        )
+        .await
+        .unwrap();
+        let got: std::collections::HashSet<usize> = hits
+            .iter()
+            .map(|h| flat_base[&h.extent_id] + h.addr.row as usize)
+            .collect();
+        let want: std::collections::HashSet<usize> =
+            exact_topk(&q, &vectors, k).into_iter().collect();
+        total_recall += got.intersection(&want).count() as f64 / k as f64;
+    }
+    let recall = total_recall / n_queries as f64;
+    eprintln!(
+        "ann_topk recall@{k} (global tree, top_p={}/{global_nlist}) = {recall:.4}",
+        params.tree_top_p
+    );
+    assert!(
+        recall >= 0.90,
+        "tree-routed recall@{k} = {recall:.4} below 0.90 (top_p={}/{global_nlist})",
+        params.tree_top_p
     );
 
     let _ = std::fs::remove_dir_all(&cache_root);

@@ -22,6 +22,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod ann_maintain;
 pub mod datasource_sync;
 pub mod embed_backfill;
 pub mod executor;
