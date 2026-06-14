@@ -17,8 +17,10 @@
 #![forbid(unsafe_code)]
 
 pub mod ann;
+pub mod fts;
 pub mod udfs_vector;
 pub use ann::{ann_topk, AnnHit, AnnParams};
+pub use fts::{bm25_topk, FtsHit};
 pub use udfs_vector::register_vector_udfs;
 
 use arrow_array::{new_null_array, RecordBatch};

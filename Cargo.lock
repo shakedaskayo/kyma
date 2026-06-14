@@ -5105,6 +5105,7 @@ dependencies = [
  "kyma-catalog-sqlite",
  "kyma-core",
  "kyma-format-tlm",
+ "kyma-index-fts",
  "kyma-index-vector",
  "kyma-plan",
  "kyma-storage",
