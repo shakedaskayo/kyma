@@ -18,6 +18,7 @@ kyma-catalog-sqlite.workspace = true
 kyma-ingest-otlp.workspace = true
 kyma-storage.workspace = true
 kyma-format-tlm.workspace = true
+kyma-format-parquet.workspace = true
 # Sidecar builders for local-mode ANN + BM25 activation (S1.5).
 kyma-index-vector.workspace = true
 kyma-index-fts.workspace = true
