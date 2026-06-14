@@ -87,7 +87,10 @@ async fn lookup_api_token_returns_none_for_expired_token() {
     let token_hash = sha256(raw_token);
 
     // Insert a token that expired 1 second ago.
-    let past = Utc::now() - chrono::Duration::seconds(1);
+    // Expire well in the past. A tight 1s margin flakes under Docker load:
+    // clock skew between the test process and the Postgres container can make a
+    // just-expired token still look valid.
+    let past = Utc::now() - chrono::Duration::hours(1);
     cat.insert_api_token(&token_hash, "admin", Some("alice"), "session", Some(past))
         .await
         .unwrap();

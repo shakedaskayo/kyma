@@ -77,14 +77,12 @@ docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null || { printf "${R
 ok "stack healthy"
 
 section "Build binaries"
-# kyma-bin and kyma-cli both produce a binary named `kyma` (the CLI installs
-# as `kyma`), so building them together leaves whichever finished last in
-# target/debug. Build sequentially and copy each artifact aside.
+# kyma-bin emits `kyma` (the server); kyma-cli emits `kyma-cli` (the CLI) —
+# distinct names since the binary-collision fix, so no copy-aside dance.
 BIN_DIR="$(mktemp -d -t retrieval-bench-bins.XXXXXX)"
-cargo build -q -p kyma-bin
+cargo build -q -p kyma-bin -p kyma-cli
 cp target/debug/kyma "$BIN_DIR/kyma-engine"
-cargo build -q -p kyma-cli
-cp target/debug/kyma "$BIN_DIR/kyma-ctl"
+cp target/debug/kyma-cli "$BIN_DIR/kyma-ctl"
 cargo build -q --release -p kyma-retrieval-eval --bin retrieval_bench
 ok "built kyma engine, kyma CLI, retrieval_bench"
 
