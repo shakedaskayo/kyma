@@ -261,6 +261,11 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+
+    // 5b. Optional cross-encoder rerank (S1.6): when a reranker is configured,
+    // re-score the top candidates jointly against the query by their content and
+    // reorder. Off by default (zero overhead); a failure keeps the blended order.
+    rerank_memories(&req.query, &mut scored).await;
     scored.truncate(limit);
 
     // Dedup linked resources, cap for compactness.
@@ -356,6 +361,51 @@ async fn graph_expand(
         frontier = next;
         if cands.len() > CAND_K * 4 || linked.len() > limit * 20 {
             break; // fan-out guard
+        }
+    }
+}
+
+// ── reranking ────────────────────────────────────────────────────────────────
+
+/// Candidates fed to the cross-encoder reranker (latency cap).
+const RERANK_CANDIDATES: usize = 50;
+
+/// When a reranker is configured ([`kyma_memory::shared_reranker`]), re-score the
+/// blended top candidates jointly against `query` by their content and reorder
+/// in place. No-op (and zero model overhead) when unset; a rerank error leaves
+/// the blended order untouched.
+async fn rerank_memories(query: &str, scored: &mut Vec<RetrievedMemory>) {
+    let Some(reranker) = kyma_memory::shared_reranker().await else {
+        return;
+    };
+    let cand = scored.len().min(RERANK_CANDIDATES);
+    if cand == 0 {
+        return;
+    }
+    let head: Vec<RetrievedMemory> = scored.drain(..cand).collect();
+    let docs: Vec<String> = head
+        .iter()
+        .map(|m| {
+            let title = m.title.as_deref().unwrap_or("");
+            format!("{title} {}", m.content_preview).trim().to_string()
+        })
+        .collect();
+    match reranker.rerank(query, &docs).await {
+        Ok(rscores) if rscores.len() == head.len() => {
+            let mut ranked: Vec<(f32, RetrievedMemory)> = rscores.into_iter().zip(head).collect();
+            ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            // Reranked head first (cross-encoder order), then any tail beyond the
+            // candidate cap (still in blended order).
+            let reordered: Vec<RetrievedMemory> = ranked.into_iter().map(|(_, m)| m).collect();
+            let mut out = reordered;
+            out.append(scored);
+            *scored = out;
+        }
+        _ => {
+            // Rerank unavailable / shape mismatch → restore blended order.
+            let mut out = head;
+            out.append(scored);
+            *scored = out;
         }
     }
 }
