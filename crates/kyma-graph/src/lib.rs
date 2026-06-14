@@ -9,6 +9,7 @@ pub mod executor;
 pub mod layout;
 pub mod provider;
 pub mod schema_graph;
+pub mod snapshot;
 pub mod source;
 pub mod stored_graph;
 mod topo_cache;
