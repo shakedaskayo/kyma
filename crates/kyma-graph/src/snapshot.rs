@@ -21,6 +21,45 @@ pub fn snapshot_path(database: &str, graph: &str) -> String {
     format!("graphs/{database}/{graph}/topo.csr")
 }
 
+/// Object key for a snapshot's freshness marker, sitting beside the snapshot:
+/// `graphs/<database>/<graph>/topo.csr.meta`. It records the *source* version
+/// the snapshot was built from (the edge table's `current_snapshot_id`), so a
+/// scheduler can debounce rebuilds: if the live source version still matches the
+/// marker, the snapshot is current and no rebuild is needed.
+pub fn meta_path(database: &str, graph: &str) -> String {
+    format!("{}.meta", snapshot_path(database, graph))
+}
+
+/// Record `source_version` (the edge table's snapshot id at build time) at
+/// `path`, overwriting any prior marker. Stored as a raw UTF-8 string.
+pub async fn store_snapshot_meta(
+    store: &Arc<dyn ObjectStore>,
+    path: &str,
+    source_version: &str,
+) -> anyhow::Result<()> {
+    store
+        .put(&Path::from(path), source_version.as_bytes().to_vec().into())
+        .await?;
+    Ok(())
+}
+
+/// Load the source-version marker at `path`, or `None` when no marker exists
+/// yet (no snapshot built, or one built before markers were written → treated
+/// as stale, so the next sweep rebuilds and writes the marker).
+pub async fn load_snapshot_meta(
+    store: &Arc<dyn ObjectStore>,
+    path: &str,
+) -> anyhow::Result<Option<String>> {
+    match store.get(&Path::from(path)).await {
+        Ok(res) => {
+            let bytes = res.bytes().await?;
+            Ok(Some(String::from_utf8_lossy(&bytes).trim().to_string()))
+        }
+        Err(object_store::Error::NotFound { .. }) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
 /// Serialize `csr` and write it to `path` in `store` (overwriting any prior
 /// snapshot at that key).
 pub async fn store_snapshot(
@@ -115,5 +154,31 @@ mod tests {
     #[test]
     fn path_is_deterministic_and_namespaced() {
         assert_eq!(snapshot_path("db1", "memory"), "graphs/db1/memory/topo.csr");
+        assert_eq!(
+            meta_path("db1", "memory"),
+            "graphs/db1/memory/topo.csr.meta"
+        );
+    }
+
+    #[tokio::test]
+    async fn meta_marker_round_trips_and_missing_is_none() {
+        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+        let path = meta_path("default", "memory");
+
+        // No marker yet → None (treated as stale by the scheduler).
+        assert!(load_snapshot_meta(&store, &path).await.unwrap().is_none());
+
+        store_snapshot_meta(&store, &path, "snap-42").await.unwrap();
+        assert_eq!(
+            load_snapshot_meta(&store, &path).await.unwrap().as_deref(),
+            Some("snap-42")
+        );
+
+        // Overwrite with a newer source version.
+        store_snapshot_meta(&store, &path, "snap-43").await.unwrap();
+        assert_eq!(
+            load_snapshot_meta(&store, &path).await.unwrap().as_deref(),
+            Some("snap-43")
+        );
     }
 }
