@@ -21,6 +21,17 @@ pub async fn shared_embedding() -> Result<Arc<dyn EmbeddingBackend>> {
         .map(|b| b.clone())
 }
 
+/// Seed the process-wide embedding backend before first use. Returns `true` if
+/// it was set, `false` if [`shared_embedding`] had already initialized it.
+///
+/// The only caller is tests: it lets an integration test inject a deterministic
+/// mock embedder so the memory recall/retrieve path runs offline without a real
+/// ONNX model. In production nothing calls this, so `shared_embedding` builds
+/// from env exactly as before — zero behavior change.
+pub fn try_set_shared_embedding(backend: Arc<dyn EmbeddingBackend>) -> bool {
+    SHARED.set(backend).is_ok()
+}
+
 /// The process-wide cross-encoder reranker (S1.6), or `None` when reranking is
 /// disabled (the default — zero overhead, no model download). Enable by setting
 /// `KYMA_RERANK_MODEL` (e.g. `"bge-reranker-base"`); `KYMA_RERANK_MODEL_PATH`

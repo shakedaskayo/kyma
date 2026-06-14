@@ -60,6 +60,12 @@ pub struct RetrieveRequest {
     pub limit: Option<usize>,
     #[serde(default)]
     pub expand_hops: Option<u8>,
+    /// Requesting agent's identity for memory-space visibility (S3.3). When set,
+    /// recall returns shared memories (space NULL/public) plus this agent's own
+    /// `private:<agent>` memories. `None` (default) applies no space filter, so
+    /// callers without an agent context are unchanged.
+    #[serde(default)]
+    pub space_agent: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -173,6 +179,7 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
         importance_min: req.importance_min,
         as_of: req.as_of.clone(),
         include_invalidated: req.include_invalidated,
+        space_agent: req.space_agent.clone(),
         ..Default::default()
     };
     let tokens = sql::tokenize_query(&req.query);
