@@ -42,6 +42,7 @@
 pub mod build;
 pub mod builder;
 pub mod file;
+pub mod global_tree;
 pub mod ivf;
 pub mod rabitq;
 pub mod rng;
@@ -49,6 +50,7 @@ pub mod search;
 
 pub use build::build_ivf_rabitq;
 pub use builder::IvfRabitqBuilder;
+pub use global_tree::{GlobalTree, PartitionRef};
 pub use file::{
     probe, read_centroids, read_header, read_partition, Entry, Header, SidecarError,
     FORMAT_VERSION, MAGIC, METRIC_COSINE,

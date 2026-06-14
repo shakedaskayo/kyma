@@ -742,6 +742,89 @@ impl Catalog for PostgresCatalog {
         Ok(rows.into_iter().map(|(p,)| p).collect())
     }
 
+    async fn upsert_ann_tree(
+        &self,
+        tenant: TenantId,
+        desc: &kyma_core::index_sidecar::AnnTreeDescriptor,
+    ) -> Result<()> {
+        // Upsert on (table, column, model) — mirrors the `ann_tree_uniq`
+        // expression index. The tenant guard makes a cross-tenant re-register a
+        // silent no-op rather than an overwrite.
+        sqlx::query(
+            "INSERT INTO ann_tree
+                (id, tenant_id, table_id, column_name, embedding_model_id,
+                 generation, extent_fingerprint, object_path, byte_size, params, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+             ON CONFLICT (table_id, column_name, COALESCE(embedding_model_id, ''))
+             DO UPDATE SET generation         = EXCLUDED.generation,
+                           extent_fingerprint = EXCLUDED.extent_fingerprint,
+                           object_path        = EXCLUDED.object_path,
+                           byte_size          = EXCLUDED.byte_size,
+                           params             = EXCLUDED.params,
+                           created_at         = EXCLUDED.created_at
+             WHERE ann_tree.tenant_id = EXCLUDED.tenant_id",
+        )
+        .bind(desc.id)
+        .bind(tenant.as_uuid())
+        .bind(desc.table_id.as_uuid())
+        .bind(&desc.column)
+        .bind(desc.embedding_model_id.as_deref())
+        .bind(desc.generation)
+        .bind(&desc.extent_fingerprint)
+        .bind(&desc.object_path)
+        .bind(desc.byte_size as i64)
+        .bind(&desc.params)
+        .bind(desc.created_at)
+        .execute(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(())
+    }
+
+    async fn get_ann_tree(
+        &self,
+        tenant: TenantId,
+        table_id: TableId,
+        column: &str,
+        embedding_model_id: Option<&str>,
+    ) -> Result<Option<kyma_core::index_sidecar::AnnTreeDescriptor>> {
+        let row = sqlx::query(
+            "SELECT id, table_id, column_name, embedding_model_id, generation,
+                    extent_fingerprint, object_path, byte_size, params, created_at
+             FROM ann_tree
+             WHERE tenant_id = $1 AND table_id = $2 AND column_name = $3
+               AND COALESCE(embedding_model_id, '') = COALESCE($4, '')",
+        )
+        .bind(tenant.as_uuid())
+        .bind(table_id.as_uuid())
+        .bind(column)
+        .bind(embedding_model_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        row.as_ref().map(row_to_ann_tree).transpose()
+    }
+
+    async fn delete_ann_tree(
+        &self,
+        tenant: TenantId,
+        table_id: TableId,
+        column: &str,
+    ) -> Result<Vec<String>> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "DELETE FROM ann_tree
+             WHERE tenant_id = $1 AND table_id = $2 AND column_name = $3
+             RETURNING object_path",
+        )
+        .bind(tenant.as_uuid())
+        .bind(table_id.as_uuid())
+        .bind(column)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(rows.into_iter().map(|(p,)| p).collect())
+    }
+
     async fn gc_candidates(&self, before: DateTime<Utc>) -> Result<Vec<ExtentId>> {
         let rows: Vec<(Uuid,)> = sqlx::query_as(
             "SELECT id FROM extents WHERE deleted_at IS NOT NULL AND deleted_at < $1",
@@ -2073,6 +2156,24 @@ fn row_to_sidecar(row: &sqlx::postgres::PgRow) -> Result<IndexSidecarDescriptor>
         byte_size: row.try_get::<i64, _>("byte_size").map_err(sql_err)? as u64,
         params: row.try_get("params").map_err(sql_err)?,
         embedding_model_id: row.try_get("embedding_model_id").map_err(sql_err)?,
+        created_at: row.try_get("created_at").map_err(sql_err)?,
+    })
+}
+
+fn row_to_ann_tree(
+    row: &sqlx::postgres::PgRow,
+) -> Result<kyma_core::index_sidecar::AnnTreeDescriptor> {
+    use sqlx::Row as _;
+    Ok(kyma_core::index_sidecar::AnnTreeDescriptor {
+        id: row.try_get("id").map_err(sql_err)?,
+        table_id: TableId::from_uuid(row.try_get("table_id").map_err(sql_err)?),
+        column: row.try_get("column_name").map_err(sql_err)?,
+        embedding_model_id: row.try_get("embedding_model_id").map_err(sql_err)?,
+        generation: row.try_get("generation").map_err(sql_err)?,
+        extent_fingerprint: row.try_get("extent_fingerprint").map_err(sql_err)?,
+        object_path: row.try_get("object_path").map_err(sql_err)?,
+        byte_size: row.try_get::<i64, _>("byte_size").map_err(sql_err)? as u64,
+        params: row.try_get("params").map_err(sql_err)?,
         created_at: row.try_get("created_at").map_err(sql_err)?,
     })
 }
