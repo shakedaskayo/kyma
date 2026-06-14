@@ -147,7 +147,10 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     let started = Instant::now();
     let settings = memory_settings::load(shared.pool.as_ref(), DEFAULT_TENANT).await;
     let limit = req.limit.unwrap_or(settings.default_limit).clamp(1, 100);
-    let hops = req.expand_hops.unwrap_or(settings.default_expand_hops).min(MAX_HOPS);
+    let hops = req
+        .expand_hops
+        .unwrap_or(settings.default_expand_hops)
+        .min(MAX_HOPS);
 
     let writer = match build_writer(shared).await {
         Some(w) => w,
@@ -174,8 +177,19 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     let tokens = sql::tokenize_query(&req.query);
 
     // 1+2. Candidate generation in parallel.
+    //
+    // Vector leg: when the `memory_nodes.embedding` column carries an IVF+RaBitQ
+    // ANN sidecar, retrieve the nearest-memory id set via `ann_topk` and run the
+    // *same* semantic recall SQL restricted to those ids — preserving every
+    // memory semantic (latest-version dedup, bi-temporal validity, realm/type/
+    // importance/tag filters, blended score). With no sidecar (the default, and
+    // every existing test), this is `None` and we use the exact SQL recall
+    // verbatim — so behaviour and tests are unchanged.
     let ann = (settings.ann_threshold > 0.0).then_some(settings.ann_threshold);
-    let vec_sql = sql::recall_sql(NODE_TABLE, &qvec, &filter, CAND_K, ann);
+    let vec_sql = match ann_candidate_ids(shared, &qvec, CAND_K).await {
+        Some(ids) => sql::recall_sql_for_ids(NODE_TABLE, &qvec, &filter, CAND_K, &ids),
+        None => sql::recall_sql(NODE_TABLE, &qvec, &filter, CAND_K, ann),
+    };
     let vec_span = tracing::info_span!(target: "kyma_telemetry", "memory.search.vector");
     let (vec_res, kw_res) = if tokens.is_empty() {
         (
@@ -203,9 +217,9 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     }
     for (rank, row) in rows_of(&kw_res).iter().enumerate() {
         if let Some(id) = get_str(row, "id") {
-            let entry = cands.entry(id.clone()).or_insert_with(|| {
-                Cand::from_row(row).unwrap_or_else(|| empty_cand(&id))
-            });
+            let entry = cands
+                .entry(id.clone())
+                .or_insert_with(|| Cand::from_row(row).unwrap_or_else(|| empty_cand(&id)));
             entry.kw_rank = Some(rank);
             if entry.kw_score.is_none() {
                 entry.kw_score = get_f64(row, "kw_score");
@@ -232,7 +246,11 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
         .into_values()
         .map(|c| finalize(c, kw_norm_denom, &settings))
         .collect();
-    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     scored.truncate(limit);
 
     // Dedup linked resources, cap for compactness.
@@ -257,12 +275,13 @@ async fn graph_expand(
 ) {
     // Seed with the strongest current candidates (by best rank across lists).
     let mut frontier: Vec<String> = {
-        let mut ids: Vec<(&String, usize)> = cands
-            .values()
-            .map(|c| (&c.id, best_rank(c)))
-            .collect();
+        let mut ids: Vec<(&String, usize)> =
+            cands.values().map(|c| (&c.id, best_rank(c))).collect();
         ids.sort_by_key(|(_, r)| *r);
-        ids.into_iter().take(SEED_N).map(|(id, _)| id.clone()).collect()
+        ids.into_iter()
+            .take(SEED_N)
+            .map(|(id, _)| id.clone())
+            .collect()
     };
 
     let mut seen_seed: std::collections::HashSet<String> = frontier.iter().cloned().collect();
@@ -298,10 +317,7 @@ async fn graph_expand(
                     new_mem_ids.push(far.clone());
                     next.push(far.clone());
                     // Stash provenance on a placeholder; filled when materialized.
-                    cands.insert(
-                        far.clone(),
-                        graph_cand(&far, &seed, &etype, depth),
-                    );
+                    cands.insert(far.clone(), graph_cand(&far, &seed, &etype, depth));
                 }
             } else {
                 // Cross-graph endpoint: a catalog resource / trace.
@@ -337,10 +353,16 @@ async fn graph_expand(
 // ── scoring ──────────────────────────────────────────────────────────────────
 
 fn finalize(c: Cand, kw_denom: f64, s: &MemorySettings) -> RetrievedMemory {
-    let rrf = c.vec_rank.map(|r| 1.0 / (s.rrf_k + r as f64)).unwrap_or(0.0)
+    let rrf = c
+        .vec_rank
+        .map(|r| 1.0 / (s.rrf_k + r as f64))
+        .unwrap_or(0.0)
         + c.kw_rank.map(|r| 1.0 / (s.rrf_k + r as f64)).unwrap_or(0.0);
     let semantic = c.distance.map(|d| (1.0 - d).clamp(0.0, 1.0)).unwrap_or(0.0);
-    let keyword = c.kw_score.map(|k| (k / kw_denom).clamp(0.0, 1.0)).unwrap_or(0.0);
+    let keyword = c
+        .kw_score
+        .map(|k| (k / kw_denom).clamp(0.0, 1.0))
+        .unwrap_or(0.0);
     let recency = c
         .created_at
         .as_deref()
@@ -371,19 +393,165 @@ fn finalize(c: Cand, kw_denom: f64, s: &MemorySettings) -> RetrievedMemory {
 
 /// `exp(-ln2 * age_days / half_life_days)`, clamped to [0,1]. Unparseable → 0.5.
 fn recency_decay(created_at: &str, half_life_days: f64) -> f64 {
-    let hl = if half_life_days > 0.0 { half_life_days } else { 30.0 };
+    let hl = if half_life_days > 0.0 {
+        half_life_days
+    } else {
+        30.0
+    };
     match chrono::DateTime::parse_from_rfc3339(created_at) {
         Ok(dt) => {
-            let age_days =
-                (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_seconds() as f64 / 86_400.0;
+            let age_days = (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_seconds()
+                as f64
+                / 86_400.0;
             if age_days <= 0.0 {
                 1.0
             } else {
-                (-std::f64::consts::LN_2 * age_days / hl).exp().clamp(0.0, 1.0)
+                (-std::f64::consts::LN_2 * age_days / hl)
+                    .exp()
+                    .clamp(0.0, 1.0)
             }
         }
         Err(_) => 0.5,
     }
+}
+
+// ── ANN candidate retrieval ───────────────────────────────────────────────────
+
+/// Over-fetch factor: ANN retrieves `OVERSAMPLE · k` candidate ids so the
+/// downstream filter+dedup SQL has enough survivors to fill `k`.
+const ANN_OVERSAMPLE: usize = 4;
+
+/// When the `memory_nodes.embedding` column has an IVF+RaBitQ ANN sidecar,
+/// return the candidate memory ids nearest to `qvec` (over-fetched). The caller
+/// re-applies all memory semantics via [`sql::recall_sql_for_ids`]. Returns
+/// `None` when there is no object store, no sidecar, or any hard error — the
+/// caller then uses the exact SQL recall unchanged.
+async fn ann_candidate_ids(shared: &SharedToolCtx, qvec: &[f32], k: usize) -> Option<Vec<String>> {
+    let store = shared.format.object_store()?;
+    let tref = shared
+        .catalog
+        .lookup_table_in_tenant(DEFAULT_TENANT, DEFAULT_DATABASE, NODE_TABLE)
+        .await
+        .ok()?;
+
+    // Capability gate: ≥1 IvfRabitq sidecar on the embedding column.
+    let extents = shared
+        .catalog
+        .list_extents_in_tenant(
+            DEFAULT_TENANT,
+            tref.id,
+            tref.current_snapshot_id,
+            &kyma_core::catalog::PrunePredicate::default(),
+        )
+        .await
+        .ok()?;
+    if extents.is_empty() {
+        return None;
+    }
+    let extent_ids: Vec<_> = extents.iter().map(|m| m.id).collect();
+    let sidecars = shared
+        .catalog
+        .list_index_sidecars(
+            DEFAULT_TENANT,
+            tref.id,
+            &extent_ids,
+            Some(kyma_core::index_sidecar::SidecarKind::IvfRabitq),
+        )
+        .await
+        .ok()?;
+    if !sidecars.iter().any(|d| d.column == "embedding") {
+        return None;
+    }
+
+    let cache = ann_sidecar_cache();
+    let params = kyma_exec::AnnParams::with_k(k.saturating_mul(ANN_OVERSAMPLE).max(k));
+    let hits = kyma_exec::ann_topk(
+        &shared.catalog,
+        DEFAULT_TENANT,
+        &shared.format,
+        &store,
+        cache,
+        &tref,
+        "embedding",
+        qvec,
+        &params,
+        None,
+    )
+    .await
+    .ok()?;
+    if hits.is_empty() {
+        // Sidecar exists but nothing came back (e.g. empty table) — let the SQL
+        // path run rather than forcing an empty id-restricted result.
+        return None;
+    }
+
+    // Resolve each hit's `id` column value by reading its block once.
+    let manifest_by_id: HashMap<_, _> = extents.iter().map(|m| (m.id, m)).collect();
+    let id_col = kyma_core::segment_format::ColumnId(
+        tref.schema.fields().iter().position(|f| f.name() == "id")? as u32,
+    );
+    let mut by_block: HashMap<(kyma_core::types::ExtentId, u32), Vec<u32>> = HashMap::new();
+    for h in &hits {
+        by_block
+            .entry((h.extent_id, h.addr.block.0))
+            .or_default()
+            .push(h.addr.row);
+    }
+    let mut ids: Vec<String> = Vec::with_capacity(hits.len());
+    let mut readers: HashMap<
+        kyma_core::types::ExtentId,
+        std::sync::Arc<dyn kyma_core::segment_format::ExtentReader>,
+    > = HashMap::new();
+    for ((extent_id, block), rows) in by_block {
+        let manifest = manifest_by_id.get(&extent_id)?;
+        let reader = match readers.get(&extent_id) {
+            Some(r) => r.clone(),
+            None => {
+                let r = shared
+                    .format
+                    .open_extent(kyma_core::segment_format::OpenExtentInput {
+                        extent_id,
+                        table_id: manifest.table_id,
+                        schema: tref.schema.clone(),
+                        object_path: manifest.object_path.clone(),
+                        byte_size: manifest.byte_size,
+                    })
+                    .await
+                    .ok()?;
+                readers.insert(extent_id, r.clone());
+                r
+            }
+        };
+        let batch = reader
+            .read_block(kyma_core::segment_format::BlockId(block), &[id_col])
+            .await
+            .ok()?;
+        use arrow_array::Array as _;
+        let col = batch.column(0);
+        let arr = col.as_any().downcast_ref::<arrow_array::StringArray>();
+        for row in rows {
+            let r = row as usize;
+            if r >= batch.num_rows() {
+                continue;
+            }
+            if let Some(a) = arr {
+                if !a.is_null(r) {
+                    ids.push(a.value(r).to_string());
+                }
+            }
+        }
+    }
+    if ids.is_empty() {
+        return None;
+    }
+    Some(ids)
+}
+
+/// Process-shared sidecar disk cache for the memory ANN path.
+fn ann_sidecar_cache() -> &'static kyma_storage::sidecar_cache::SidecarCache {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<kyma_storage::sidecar_cache::SidecarCache> = OnceLock::new();
+    CACHE.get_or_init(kyma_storage::sidecar_cache::SidecarCache::from_env)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -398,7 +566,10 @@ async fn build_writer(shared: &SharedToolCtx) -> Option<MemoryWriter> {
 }
 
 fn rows_of(v: &Value) -> Vec<Value> {
-    v.get("rows").and_then(Value::as_array).cloned().unwrap_or_default()
+    v.get("rows")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
 }
 
 fn get_str(row: &Value, key: &str) -> Option<String> {
@@ -456,7 +627,11 @@ fn hydrate(c: &mut Cand, row: &Value) {
     c.invalid_at = get_str(row, "invalid_at");
 }
 
-fn done(memories: Vec<RetrievedMemory>, linked: Vec<LinkedResource>, started: Instant) -> RetrieveResult {
+fn done(
+    memories: Vec<RetrievedMemory>,
+    linked: Vec<LinkedResource>,
+    started: Instant,
+) -> RetrieveResult {
     let context = build_context(&memories, &linked);
     RetrieveResult {
         memories,

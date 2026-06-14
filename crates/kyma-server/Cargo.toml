@@ -18,6 +18,7 @@ kyma-exec.workspace = true
 kyma-federation.workspace = true
 kyma-kql.workspace = true
 kyma-catalog.workspace = true
+kyma-storage.workspace = true
 kyma-datasources.workspace = true
 kyma-memory.workspace = true
 kyma-artifact-graph.workspace = true
