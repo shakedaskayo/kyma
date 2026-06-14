@@ -216,18 +216,39 @@ impl SnapshotTxn for SqliteSnapshotTxn {
     }
 }
 
+/// True for a transient SQLite lock (`SQLITE_BUSY` / `SQLITE_BUSY_SNAPSHOT`).
+/// WAL + `busy_timeout` handles plain BUSY, but BUSY_SNAPSHOT (a write-write
+/// serialization conflict under concurrent in-process writers — the local
+/// engine has several background pollers) is NOT covered by busy_timeout and
+/// surfaces here. It is genuinely retryable, so we map it to `Conflict` and let
+/// the ingest commit-retry loop re-run the transaction.
+fn is_transient_lock(e: &sqlx::Error) -> bool {
+    if let sqlx::Error::Database(db) = e {
+        let m = db.message();
+        return m.contains("database is locked") || m.contains("database table is locked");
+    }
+    false
+}
+
 fn ce(e: sqlx::Error) -> CatalogError {
+    if is_transient_lock(&e) {
+        return CatalogError::Conflict;
+    }
     CatalogError::Sql(e.to_string())
 }
 
 /// Unique-constraint violations on the snapshots table are conflicts — another
 /// writer committed a child snapshot with the same sequence number in the
-/// window between our `SELECT` and our `INSERT`.
+/// window between our `SELECT` and our `INSERT`. A transient lock is likewise
+/// a retryable conflict.
 fn sql_err_or_conflict(e: sqlx::Error) -> Error {
     if let sqlx::Error::Database(db_err) = &e {
         if db_err.kind() == ErrorKind::UniqueViolation {
             return Error::Catalog(CatalogError::Conflict);
         }
+    }
+    if is_transient_lock(&e) {
+        return Error::Catalog(CatalogError::Conflict);
     }
     Error::Catalog(CatalogError::Sql(e.to_string()))
 }

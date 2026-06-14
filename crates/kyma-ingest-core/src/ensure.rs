@@ -51,11 +51,7 @@ pub const MAX_NEW_COLUMNS_PER_REQUEST: usize = 32;
 /// columns are never altered.
 pub fn default_table_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
-        Field::new(
-            "at",
-            DataType::Timestamp(TimeUnit::Nanosecond, None),
-            true,
-        ),
+        Field::new("at", DataType::Timestamp(TimeUnit::Nanosecond, None), true),
         Field::new("label", DataType::Utf8, true),
         Field::new("body", DataType::Utf8, true),
         // Dynamic / catch-all column. The NDJSON parser stores arbitrary JSON
@@ -77,11 +73,7 @@ pub fn default_table_schema() -> SchemaRef {
 /// the catalog's own constraints; the caller will see one CREATE succeed and
 /// the racing creator's CREATE return a `Conflict` which we silently swallow
 /// and re-look up.
-pub async fn ensure_table(
-    catalog: &dyn Catalog,
-    database: &str,
-    table: &str,
-) -> Result<TableRef> {
+pub async fn ensure_table(catalog: &dyn Catalog, database: &str, table: &str) -> Result<TableRef> {
     if let Ok(t) = catalog.lookup_table(database, table).await {
         return Ok(t);
     }
@@ -217,16 +209,28 @@ pub async fn evolve_schema_for_records(
     let mut last_err: Option<Error> = None;
     for col in &to_add {
         // `column_type` is the catalog's canonical type name. Utf8 ⇒ "string".
-        match catalog
-            .alter_table_add_column(table_id, col, "string")
-            .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                // Don't bail the whole request — log and keep going. The
-                // missing column ends up in `props` for that field.
-                warn!(column = %col, error = %e, "evolve_schema: alter failed; field will land in `props`");
-                last_err = Some(e);
+        // Retry on a transient SQLite lock (local mode runs several background
+        // pollers that briefly hold the write lock at startup) before degrading
+        // — otherwise the column silently lands in `props` and typed queries on
+        // it miss. busy_timeout doesn't cover BUSY_SNAPSHOT, so retry here.
+        let mut attempt = 0;
+        loop {
+            match catalog
+                .alter_table_add_column(table_id, col, "string")
+                .await
+            {
+                Ok(_) => break,
+                Err(e) if e.to_string().contains("database is locked") && attempt < 10 => {
+                    attempt += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(5 * attempt)).await;
+                }
+                Err(e) => {
+                    // Don't bail the whole request — log and keep going. The
+                    // missing column ends up in `props` for that field.
+                    warn!(column = %col, error = %e, "evolve_schema: alter failed; field will land in `props`");
+                    last_err = Some(e);
+                    break;
+                }
             }
         }
     }
