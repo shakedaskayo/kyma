@@ -241,6 +241,10 @@ async fn enqueues_embed_backfill_for_unembedded_extents_only() {
 
     let sched2 = IndexScheduler::new(Arc::new(pg.clone()) as Arc<dyn Catalog>);
     let n2 = sched2.tick().await.unwrap();
-    // e1 still needs embed (1) + e2 needs ivf_rabitq (1) = 2.
-    assert_eq!(n2, 2, "embed for e1 + ivf_rabitq for the embedded e2");
+    // e1 still needs embed (1); the embedded e2 gets BOTH ivf_rabitq (1) on the
+    // embedding column AND tantivy_fts (1) on the source text column = 3.
+    assert_eq!(
+        n2, 3,
+        "embed for e1 + ivf_rabitq + tantivy_fts for the embedded e2"
+    );
 }

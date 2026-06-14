@@ -85,12 +85,16 @@ impl IndexScheduler {
             .await
             .map_err(|e| Error::Internal(format!("list_databases: {e}")))?;
         let mut embed_jobs = 0usize;
+        let mut fts_jobs = 0usize;
         for db in databases {
             let tables = self.catalog.list_tables_in_database(&db).await?;
             for table in tables {
                 // (1) embed_backfill: tables configured to auto-embed a text
                 //     column get their un-embedded extents filled first, so the
-                //     ANN pass below has vectors to index.
+                //     ANN pass below has vectors to index. (2b) the SAME text
+                //     column also gets a BM25 FTS index on embedded extents —
+                //     configuring a table for semantic search enables lexical
+                //     search on the same text for free.
                 for cfg in self
                     .catalog
                     .list_table_embed_configs(DEFAULT_TENANT, table.id)
@@ -107,9 +111,16 @@ impl IndexScheduler {
                             warn!(table = %table.name, error = %e, "embed enqueue failed");
                             0
                         });
+                    fts_jobs += self
+                        .enqueue_fts_missing(&fabric, DEFAULT_TENANT, &table, &cfg)
+                        .await
+                        .unwrap_or_else(|e| {
+                            warn!(table = %table.name, error = %e, "fts enqueue failed");
+                            0
+                        });
                 }
 
-                // (2) ivf_rabitq sidecars for vector columns (incl. ones just
+                // (2a) ivf_rabitq sidecars for vector columns (incl. ones just
                 //     filled by a prior backfill — their extents now carry vec
                 //     stats and no sidecar yet).
                 for col in Self::vector_columns(&table) {
@@ -124,14 +135,91 @@ impl IndexScheduler {
                 }
             }
         }
-        if enqueued > 0 || embed_jobs > 0 {
+        if enqueued > 0 || embed_jobs > 0 || fts_jobs > 0 {
             info!(
                 ivf_rabitq = enqueued,
                 embed_backfill = embed_jobs,
+                tantivy_fts = fts_jobs,
                 "index scheduler enqueued build jobs"
             );
         }
-        Ok(enqueued + embed_jobs)
+        Ok(enqueued + embed_jobs + fts_jobs)
+    }
+
+    /// Enqueue `tantivy_fts` (BM25) build jobs for the embed config's text
+    /// source column, on extents that are already embedded (vec stats present
+    /// on the embedding column) and lack an FTS sidecar. Gating on
+    /// embedded-and-stable avoids building an FTS index on an extent that
+    /// embed_backfill is about to rewrite (which would discard it).
+    async fn enqueue_fts_missing(
+        &self,
+        fabric: &kyma_catalog::PgFabricStore,
+        tenant: TenantId,
+        table: &TableRef,
+        cfg: &kyma_core::catalog::TableEmbedConfig,
+    ) -> Result<usize> {
+        let extents = self
+            .catalog
+            .list_extents_in_tenant(
+                tenant,
+                table.id,
+                table.current_snapshot_id,
+                &Default::default(),
+            )
+            .await?;
+        // Only stable (already-embedded) extents.
+        let ready: Vec<_> = extents
+            .iter()
+            .filter(|m| {
+                m.column_stats
+                    .get(&cfg.embedding_column)
+                    .and_then(|c| c.get("vec"))
+                    .is_some()
+            })
+            .map(|m| m.id)
+            .collect();
+        if ready.is_empty() {
+            return Ok(0);
+        }
+        let have: std::collections::HashSet<_> = self
+            .catalog
+            .list_index_sidecars(tenant, table.id, &ready, Some(SidecarKind::TantivyFts))
+            .await?
+            .into_iter()
+            .filter(|d| d.column == cfg.source_column)
+            .map(|d| d.extent_id)
+            .collect();
+        let missing: Vec<_> = ready.into_iter().filter(|id| !have.contains(id)).collect();
+        if missing.is_empty() {
+            return Ok(0);
+        }
+        let mut jobs = 0usize;
+        for chunk in missing.chunks(self.max_extents_per_job) {
+            let payload = serde_json::json!({
+                "table_id": table.id.as_uuid(),
+                "extent_ids": chunk.iter().map(|e| e.as_uuid()).collect::<Vec<_>>(),
+                "column": cfg.source_column,
+                "kind": SidecarKind::TantivyFts.as_str(),
+                "params": {},
+            });
+            let job = kyma_core::fabric::EnqueueJob {
+                kind: kyma_core::fabric::JOB_INDEX_BUILD.to_string(),
+                payload,
+                priority: 0,
+                affinity_worker_id: None,
+                req_capabilities: Vec::new(),
+                label_selector: serde_json::json!({}),
+                max_attempts: 3,
+            };
+            fabric
+                .enqueue_job(tenant, &job)
+                .await
+                .map_err(|e| Error::Internal(format!("enqueue tantivy_fts: {e}")))?;
+            jobs += 1;
+        }
+        debug!(table = %table.name, column = %cfg.source_column, jobs,
+               extents = missing.len(), "enqueued tantivy_fts");
+        Ok(jobs)
     }
 
     /// Enqueue `embed_backfill` jobs for every live extent of the configured
