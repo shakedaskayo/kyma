@@ -106,6 +106,10 @@ pub struct UnifiedSearchRequest {
     pub mode: SearchMode,
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Cursor pagination (S1.7): skip this many of the top-ranked data hits
+    /// before returning `limit`. Simple offset cursor — `offset += limit` pages.
+    #[serde(default)]
+    pub offset: Option<usize>,
     #[serde(default)]
     pub scope: Option<Scope>,
     #[serde(default)]
@@ -310,8 +314,29 @@ pub async fn unified_search(
 
     match req.mode {
         SearchMode::Data => {
-            let time_range = parse_time_range(req.time_range.as_ref(), request_id)?;
             let scope = req.scope.clone().unwrap_or(Scope::All);
+            let offset = req.offset.unwrap_or(0);
+
+            // S1.7 result cache: a repeat of the same (tenant, query, scope,
+            // page, time-range) within the short TTL is a map lookup. Per-tenant
+            // key so isolation holds.
+            let ckey = super::cache::key(
+                &ctx.tenant.to_string(),
+                &req.query,
+                &format!("{scope:?}"),
+                limit,
+                offset,
+                &format!("{:?}", req.time_range),
+            );
+            if let Some((rows, sources_searched)) = super::cache::get(&ckey) {
+                return Ok(data_response(
+                    rows,
+                    sources_searched,
+                    start.elapsed().as_millis() as u64,
+                ));
+            }
+
+            let time_range = parse_time_range(req.time_range.as_ref(), request_id)?;
             let max_sources = std::env::var("KYMA_DISCOVER_MAX_SOURCES")
                 .ok()
                 .and_then(|s| s.parse().ok())
@@ -337,19 +362,29 @@ pub async fn unified_search(
 
             let qvec = embed_query(&req.query).await;
             let sources_searched = sources.len();
-            let rows = search_data(
+            // Fetch enough to cover the requested page (offset + limit), then
+            // slice. Bounded so a huge offset can't request unbounded work.
+            let fetch_n = offset
+                .saturating_add(limit)
+                .min(MAX_LIMIT.saturating_mul(4));
+            let mut rows = search_data(
                 sources,
                 &req.query,
                 qvec,
                 time_range,
-                limit,
+                fetch_n,
                 ctx.catalog.clone(),
                 ctx.format.clone(),
                 ctx.node_id,
                 ctx.tenant,
             )
             .await;
+            if offset > 0 {
+                rows = rows.into_iter().skip(offset).collect();
+            }
+            rows.truncate(limit);
 
+            super::cache::put(ckey, rows.clone(), sources_searched);
             Ok(data_response(
                 rows,
                 sources_searched,
