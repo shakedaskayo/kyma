@@ -158,6 +158,23 @@ fn default_max_attempts() -> i32 {
     3
 }
 
+/// The enqueue side of the worker fabric, abstracted so background schedulers
+/// (index build, embed backfill, FTS) can target either the Postgres fabric
+/// queue (server mode) or the local SQLite `jobs` table (embedded mode) without
+/// knowing which. The *claim* side stays catalog-specific (`PgFabricStore` /
+/// `SqliteQueue`); only enqueue needs to be portable for the schedulers to run
+/// in local mode. The method is named `enqueue` (not `enqueue_job`) so impls on
+/// types that already have an inherent `enqueue_job` — like `PgFabricStore` —
+/// don't shadow it.
+#[async_trait::async_trait]
+pub trait JobEnqueuer: Send + Sync {
+    async fn enqueue(
+        &self,
+        tenant: crate::tenant::TenantId,
+        job: &EnqueueJob,
+    ) -> crate::errors::Result<Option<Uuid>>;
+}
+
 /// A job handed to a worker by a successful claim.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClaimedJob {

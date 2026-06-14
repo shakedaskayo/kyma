@@ -8,8 +8,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
+use kyma_core::fabric::{ClaimedJob, EnqueueJob, JobEnqueuer};
+use kyma_core::tenant::TenantId;
 use kyma_jobs::JobQueue;
-use kyma_core::fabric::ClaimedJob;
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -261,5 +262,65 @@ impl JobQueue for SqliteQueue {
 
     async fn link_dreaming_run(&self, _job_id: Uuid, _run_id: Uuid) -> Result<()> {
         Ok(())
+    }
+}
+
+/// SQLite enqueue side of the worker fabric — the local counterpart to
+/// `PgFabricStore::enqueue`. Lets the [`kyma_compaction::IndexScheduler`] insert
+/// `index_build` / `embed_backfill` jobs into the same `jobs` table that
+/// [`SqliteQueue`] claims from, so local (embedded) mode builds ANN + FTS
+/// sidecars through the exact pipeline the server uses.
+///
+/// The `jobs` table has no `affinity_worker_id` / `label_selector` columns
+/// (these job kinds set neither), so they're dropped. There is no idempotency
+/// index for these kinds — duplicate enqueues across ticks are harmless because
+/// the `IndexBuildExecutor` / `EmbedBackfillExecutor` skip already-done extents,
+/// and the scheduler's own sidecar gate stops re-enqueuing once a sidecar lands.
+#[derive(Clone)]
+pub struct SqliteEnqueuer {
+    pool: SqlitePool,
+}
+
+impl SqliteEnqueuer {
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl JobEnqueuer for SqliteEnqueuer {
+    async fn enqueue(
+        &self,
+        tenant: TenantId,
+        job: &EnqueueJob,
+    ) -> kyma_core::errors::Result<Option<Uuid>> {
+        use kyma_core::errors::Error;
+        let id = Uuid::new_v4();
+        let id_str = id.to_string();
+        let tenant_str = tenant.as_uuid().to_string();
+        let payload_str = serde_json::to_string(&job.payload)
+            .map_err(|e| Error::Internal(format!("serialize job payload: {e}")))?;
+        let caps_str = serde_json::to_string(&job.req_capabilities)
+            .map_err(|e| Error::Internal(format!("serialize job capabilities: {e}")))?;
+        let now = Utc::now().to_rfc3339();
+        let res = sqlx::query(
+            "INSERT INTO jobs (id, tenant_id, kind, payload, priority, req_capabilities,
+                               max_attempts, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(&id_str)
+        .bind(&tenant_str)
+        .bind(&job.kind)
+        .bind(&payload_str)
+        .bind(job.priority)
+        .bind(&caps_str)
+        .bind(job.max_attempts)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Internal(format!("insert job: {e}")))?;
+        Ok((res.rows_affected() > 0).then_some(id))
     }
 }

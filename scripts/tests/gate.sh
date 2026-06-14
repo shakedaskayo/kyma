@@ -102,6 +102,16 @@ run_step "mcp integration (testcontainers)" \
   cargo test --locked -p kyma-mcp --features "kyma-server/test-support" -- --test-threads=2
 run_step "jobs integration (testcontainers)" \
   cargo test --locked -p kyma-jobs -- --test-threads=2
+# Retrieval engine: ANN recall-vs-oracle (ann_topk_it, testcontainers), BM25
+# round-trip (bm25_topk_it), and the S1 BM25-vs-LIKE NDCG@10 gate.
+run_step "exec retrieval (testcontainers)" \
+  cargo test --locked -p kyma-exec -- --test-threads=2
+# Index-build activation scheduler (index_scheduler_it, testcontainers).
+run_step "compaction integration (testcontainers)" \
+  cargo test --locked -p kyma-compaction -- --test-threads=2
+# Local-mode (SQLite) ANN + BM25 sidecar activation parity.
+run_step "local index activation (sqlite)" \
+  cargo test --locked -p kyma-local --test local_index_activation_it
 
 # Each integration script boots its own server(s) and resets the shared
 # Postgres+MinIO stack. A prior script's server can still be draining (and

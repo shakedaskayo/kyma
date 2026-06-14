@@ -283,6 +283,66 @@ pub fn keyword_recall_sql(
     )
 }
 
+/// Keyword recall restricted to a BM25-selected candidate id set. Mirrors
+/// [`keyword_recall_sql`] but, instead of letting the columnar `LIKE` token-set
+/// scan generate the candidates, takes the ids a tantivy BM25 sidecar already
+/// ranked and re-applies all memory semantics (latest-version dedup, filters,
+/// validity) over just those rows. The same token-overlap `kw_score` is still
+/// computed so the blend's keyword weight is populated, but rows are NOT dropped
+/// on `kw_score = 0`: BM25 membership is the inclusion signal (our crude LIKE
+/// tokenizer can miss a stemmed match the index found), and such rows still earn
+/// RRF credit by their rank in the lexical list.
+pub fn keyword_recall_sql_for_ids(
+    node_table: &str,
+    tokens: &[String],
+    filter: &RecallFilter,
+    limit: usize,
+    candidate_ids: &[String],
+) -> String {
+    let mut conds = filter_conditions(filter, true);
+    let id_list = candidate_ids
+        .iter()
+        .map(|s| sql_str(s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if candidate_ids.is_empty() {
+        conds.push("1 = 0".to_string());
+    } else {
+        conds.push(format!("id IN ({id_list})"));
+    }
+    let where_clause = conds.join(" AND ");
+    let score_expr = if tokens.is_empty() {
+        "0".to_string()
+    } else {
+        tokens
+            .iter()
+            .map(|t| {
+                let needle = sql_str(&format!("%{}%", t.replace('%', "").replace('_', "")));
+                format!(
+                    "(CASE WHEN lower(content) LIKE {n} OR lower(title) LIKE {n} \
+                       OR lower(tags) LIKE {n} THEN 1 ELSE 0 END)",
+                    n = needle
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" + ")
+    };
+    format!(
+        "WITH latest AS (\n  \
+           SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM {nt}\n), \
+         scored AS (\n  \
+           SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, \
+                  ({score}) AS kw_score\n  \
+           FROM latest WHERE __rn = 1\n) \
+         SELECT id, memory_type, title, content, content_preview, tags, importance, status, realm, created_at, valid_at, invalid_at, kw_score \
+         FROM scored WHERE {where_clause} ORDER BY kw_score DESC, importance DESC LIMIT {limit}",
+        nt = node_table,
+        score = score_expr,
+        where_clause = where_clause,
+        limit = limit,
+    )
+}
+
 /// One-hop neighbour edges for a set of seed node ids (both directions), used
 /// to graph-expand a contextual subgraph. Returns edge rows; the orchestrator
 /// derives the far endpoint per seed and follows `target_namespace` for
@@ -511,6 +571,37 @@ mod tests {
         assert!(s.contains("kw_score > 0"));
         assert!(s.contains("invalid_at IS NULL")); // validity guard threads through
         assert!(s.contains("realm IN ('proj')"));
+    }
+
+    #[test]
+    fn keyword_recall_for_ids_restricts_without_dropping_zero_score() {
+        let toks = tokenize_query("pgvector index");
+        let f = RecallFilter {
+            realms: vec!["proj".into()],
+            ..Default::default()
+        };
+        let ids = vec!["a".to_string(), "b'c".to_string()];
+        let s = keyword_recall_sql_for_ids("memory_nodes", &toks, &f, 10, &ids);
+        // Same token-overlap kw_score is computed.
+        assert!(s.contains("lower(content) LIKE '%pgvector%'"));
+        assert!(s.contains("AS kw_score"));
+        // BM25-selected ids restrict the set, escaped.
+        assert!(s.contains("id IN ('a', 'b''c')"));
+        // Filters + validity still thread through.
+        assert!(s.contains("realm IN ('proj')"));
+        assert!(s.contains("invalid_at IS NULL"));
+        // Unlike keyword_recall_sql, rows are NOT dropped on kw_score = 0.
+        assert!(!s.contains("kw_score > 0"));
+        assert!(s.trim_end().ends_with("LIMIT 10"));
+    }
+
+    #[test]
+    fn keyword_recall_for_ids_empty_set_is_impossible_predicate() {
+        let toks = tokenize_query("anything");
+        let f = RecallFilter::default();
+        let s = keyword_recall_sql_for_ids("memory_nodes", &toks, &f, 5, &[]);
+        assert!(s.contains("1 = 0"));
+        assert!(!s.contains("IN ()"));
     }
 
     #[test]

@@ -4,8 +4,9 @@
 //! Pipeline (all over kyma's own engine):
 //! 1. embed the query once;
 //! 2. generate candidates two ways IN PARALLEL — semantic (vector
-//!    `cosine_distance`) and keyword (token-set `LIKE`, which the columnar
-//!    engine prunes via `column_stats`);
+//!    `cosine_distance`, accelerated by an IVF+RaBitQ ANN sidecar when present)
+//!    and keyword (tantivy BM25 over an FTS sidecar when present, else the
+//!    columnar token-set `LIKE` pruned via `column_stats`);
 //! 3. fuse the ranked lists with Reciprocal Rank Fusion (RRF);
 //! 4. graph-expand the top seeds 1–2 hops over `memory_edges` to pull in
 //!    connected memories AND linked catalog resources/traces (cross-graph
@@ -199,7 +200,16 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
             json!({ "rows": [] }),
         )
     } else {
-        let kw_sql = sql::keyword_recall_sql(NODE_TABLE, &tokens, &filter, CAND_K);
+        // Keyword leg: when a tantivy BM25 sidecar covers the memory text column,
+        // generate candidates by BM25 and re-apply keyword semantics over just
+        // those ids; with no sidecar (the default, and every existing test) fall
+        // back to the columnar `LIKE` token-set recall unchanged.
+        let kw_sql = match bm25_candidate_ids(shared, &req.query, CAND_K).await {
+            Some(ids) => {
+                sql::keyword_recall_sql_for_ids(NODE_TABLE, &tokens, &filter, CAND_K, &ids)
+            }
+            None => sql::keyword_recall_sql(NODE_TABLE, &tokens, &filter, CAND_K),
+        };
         let kw_span = tracing::info_span!(target: "kyma_telemetry", "memory.search.keyword");
         tokio::join!(
             execute_sql(shared, DEFAULT_DATABASE, &vec_sql, CAND_K).instrument(vec_span),
@@ -486,18 +496,109 @@ async fn ann_candidate_ids(shared: &SharedToolCtx, qvec: &[f32], k: usize) -> Op
     }
 
     // Resolve each hit's `id` column value by reading its block once.
+    let addrs: Vec<_> = hits
+        .iter()
+        .map(|h| (h.extent_id, h.addr.block.0, h.addr.row))
+        .collect();
+    resolve_addr_ids(shared, &tref, &extents, &addrs).await
+}
+
+// ── BM25 candidate retrieval ──────────────────────────────────────────────────
+
+/// When the memory text column carries a tantivy BM25 (`TantivyFts`) sidecar,
+/// return the candidate memory ids ranked by BM25 for `query` (over-fetched by
+/// [`ANN_OVERSAMPLE`]). The caller re-applies all memory semantics via
+/// [`sql::keyword_recall_sql_for_ids`]. Returns `None` when there is no object
+/// store, no sidecar, an empty query, or any hard error — the caller then uses
+/// the columnar `LIKE` keyword recall verbatim, so behaviour and every existing
+/// test (no sidecar) are unchanged.
+async fn bm25_candidate_ids(shared: &SharedToolCtx, query: &str, k: usize) -> Option<Vec<String>> {
+    if query.trim().is_empty() {
+        return None;
+    }
+    let store = shared.format.object_store()?;
+    let tref = shared
+        .catalog
+        .lookup_table_in_tenant(DEFAULT_TENANT, DEFAULT_DATABASE, NODE_TABLE)
+        .await
+        .ok()?;
+
+    // Capability gate: ≥1 TantivyFts sidecar (first indexed text column).
+    let extents = shared
+        .catalog
+        .list_extents_in_tenant(
+            DEFAULT_TENANT,
+            tref.id,
+            tref.current_snapshot_id,
+            &kyma_core::catalog::PrunePredicate::default(),
+        )
+        .await
+        .ok()?;
+    if extents.is_empty() {
+        return None;
+    }
+    let extent_ids: Vec<_> = extents.iter().map(|m| m.id).collect();
+    let sidecars = shared
+        .catalog
+        .list_index_sidecars(
+            DEFAULT_TENANT,
+            tref.id,
+            &extent_ids,
+            Some(kyma_core::index_sidecar::SidecarKind::TantivyFts),
+        )
+        .await
+        .ok()?;
+    let fts_col = sidecars.first().map(|d| d.column.clone())?;
+
+    let cache = ann_sidecar_cache();
+    let hits = match kyma_exec::bm25_topk(
+        &shared.catalog,
+        DEFAULT_TENANT,
+        &store,
+        cache,
+        &tref,
+        &fts_col,
+        query,
+        k.saturating_mul(ANN_OVERSAMPLE).max(k),
+        None,
+    )
+    .await
+    {
+        Ok(Some(h)) => h,
+        // No coverage or a hard error → LIKE fallback rather than an empty set.
+        Ok(None) | Err(_) => return None,
+    };
+    if hits.is_empty() {
+        return None;
+    }
+
+    let addrs: Vec<_> = hits
+        .iter()
+        .map(|h| (h.extent_id, h.addr.block.0, h.addr.row))
+        .collect();
+    resolve_addr_ids(shared, &tref, &extents, &addrs).await
+}
+
+/// Resolve the `id` column value for a set of `(extent, block, row)` addresses,
+/// reading each referenced block once. Order-agnostic: both candidate-id callers
+/// re-rank in SQL ([`sql::recall_sql_for_ids`] by distance,
+/// [`sql::keyword_recall_sql_for_ids`] by kw_score), so only set membership
+/// matters. Returns `None` on any hard error or an empty result.
+async fn resolve_addr_ids(
+    shared: &SharedToolCtx,
+    tref: &kyma_core::catalog::TableRef,
+    extents: &[kyma_core::catalog::ExtentManifest],
+    addrs: &[(kyma_core::types::ExtentId, u32, u32)],
+) -> Option<Vec<String>> {
     let manifest_by_id: HashMap<_, _> = extents.iter().map(|m| (m.id, m)).collect();
     let id_col = kyma_core::segment_format::ColumnId(
         tref.schema.fields().iter().position(|f| f.name() == "id")? as u32,
     );
     let mut by_block: HashMap<(kyma_core::types::ExtentId, u32), Vec<u32>> = HashMap::new();
-    for h in &hits {
-        by_block
-            .entry((h.extent_id, h.addr.block.0))
-            .or_default()
-            .push(h.addr.row);
+    for (eid, block, row) in addrs {
+        by_block.entry((*eid, *block)).or_default().push(*row);
     }
-    let mut ids: Vec<String> = Vec::with_capacity(hits.len());
+    let mut ids: Vec<String> = Vec::with_capacity(addrs.len());
     let mut readers: HashMap<
         kyma_core::types::ExtentId,
         std::sync::Arc<dyn kyma_core::segment_format::ExtentReader>,
@@ -542,9 +643,10 @@ async fn ann_candidate_ids(shared: &SharedToolCtx, qvec: &[f32], k: usize) -> Op
         }
     }
     if ids.is_empty() {
-        return None;
+        None
+    } else {
+        Some(ids)
     }
-    Some(ids)
 }
 
 /// Process-shared sidecar disk cache for the memory ANN path.

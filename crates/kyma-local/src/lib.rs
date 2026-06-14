@@ -29,7 +29,7 @@ mod cli_config_heal;
 mod cred_store;
 mod datasource_catalog;
 mod setup;
-mod sqlite_queue;
+pub mod sqlite_queue;
 mod sync;
 mod watcher_settings;
 pub mod node;
@@ -752,7 +752,10 @@ pub async fn run_serve(
         info!("local data source scheduler running");
     }
 
-    // ── Fabric worker: claims + executes data_source_sync jobs ──────────────
+    // ── Fabric worker: claims + executes data_source_sync, plus (S1.5) the
+    //    index_build + embed_backfill jobs that activate local-mode ANN + BM25
+    //    retrieval — every server retrieval capability except the global
+    //    centroid tree, which is server-only by design. ────────────────────────
     {
         let worker_id = uuid::Uuid::new_v4();
         let queue = Arc::new(sqlite_queue::SqliteQueue::new(
@@ -765,6 +768,66 @@ pub async fn run_serve(
         exec_reg.register(Arc::new(
             kyma_jobs::datasource_sync::DataSourceSyncExecutor::new(tick_deps),
         ));
+
+        // Register the sidecar-building executors + start the activation
+        // scheduler. Gated on an object store (always present for the local TLM
+        // format); the scheduler enqueues into the same SQLite `jobs` table this
+        // worker drains.
+        let mut indexing_kinds = "data_source_sync";
+        if let Some(store) = engine.format.object_store() {
+            let mut builders: std::collections::HashMap<
+                kyma_core::index_sidecar::SidecarKind,
+                Arc<dyn kyma_core::index_sidecar::SidecarBuilder>,
+            > = std::collections::HashMap::new();
+            builders.insert(
+                kyma_core::index_sidecar::SidecarKind::IvfRabitq,
+                Arc::new(kyma_index_vector::IvfRabitqBuilder::new()),
+            );
+            builders.insert(
+                kyma_core::index_sidecar::SidecarKind::TantivyFts,
+                Arc::new(kyma_index_fts::TantivyFtsBuilder::new()),
+            );
+            exec_reg.register(Arc::new(kyma_jobs::index_build::IndexBuildExecutor::new(
+                engine.catalog.clone(),
+                engine.format.clone(),
+                store,
+                builders,
+            )));
+            // The embed_backfill executor needs the process embedding backend.
+            // If unavailable (provider feature off) only ANN/FTS over already-
+            // embedded data activate; embeddings stay as ingested.
+            match kyma_memory::shared_embedding().await {
+                Ok(embedder) => {
+                    exec_reg.register(Arc::new(
+                        kyma_jobs::embed_backfill::EmbedBackfillExecutor::new(
+                            engine.catalog.clone(),
+                            engine.format.clone(),
+                            embedder,
+                        ),
+                    ));
+                    indexing_kinds = "data_source_sync + index_build + embed_backfill";
+                }
+                Err(e) => {
+                    warn!(error = %e, "embedding backend unavailable; local embed_backfill disabled");
+                    indexing_kinds = "data_source_sync + index_build";
+                }
+            }
+
+            // Activation scheduler: enqueue missing index_build / embed_backfill
+            // jobs over the SQLite jobs table. Same scan logic the server runs;
+            // stops on Ctrl-C like the other local loops.
+            let scheduler = kyma_compaction::IndexScheduler::with_enqueuer(
+                engine.catalog.clone(),
+                Arc::new(sqlite_queue::SqliteEnqueuer::new(pool.clone())),
+            );
+            let (sched_shutdown, sched_rx) = tokio::sync::broadcast::channel::<()>(1);
+            tokio::spawn(async move {
+                let _ = tokio::signal::ctrl_c().await;
+                let _ = sched_shutdown.send(());
+            });
+            tokio::spawn(scheduler.run(sched_rx));
+        }
+
         let runner = kyma_jobs::JobRunner::new(queue, exec_reg, 120);
         tokio::spawn(async move {
             runner
@@ -773,7 +836,7 @@ pub async fn run_serve(
                 })
                 .await;
         });
-        info!(%worker_id, "local fabric worker running (data_source_sync)");
+        info!(%worker_id, kinds = indexing_kinds, "local fabric worker running");
     }
 
     // Optional in-process dreaming scheduler — only fires when dreaming is
