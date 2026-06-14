@@ -82,6 +82,63 @@ impl MemoryStatus {
     }
 }
 
+/// Memory class (agentcy / HippoRAG taxonomy) governing retention and
+/// consolidation, orthogonal to [`MemoryType`] (the content kind):
+/// - `Episodic` — time-stamped events; decays with age (finite half-life) so
+///   stale episodes fade unless reinforced.
+/// - `Semantic` — distilled, durable facts; no age decay, superseded only by
+///   bi-temporal invalidation.
+/// - `Procedural` — how-to knowledge; demoted by repeated failure, not by age.
+///
+/// A memory may start `Episodic` when captured and become `Semantic` once the
+/// dreaming consolidation stage distills it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryClass {
+    Episodic,
+    Semantic,
+    Procedural,
+}
+
+impl MemoryClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MemoryClass::Episodic => "episodic",
+            MemoryClass::Semantic => "semantic",
+            MemoryClass::Procedural => "procedural",
+        }
+    }
+
+    /// Parse loosely; unrecognized → `None` (the class is optional metadata).
+    pub fn parse(s: &str) -> Option<MemoryClass> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "episodic" => Some(MemoryClass::Episodic),
+            "semantic" => Some(MemoryClass::Semantic),
+            "procedural" => Some(MemoryClass::Procedural),
+            _ => None,
+        }
+    }
+
+    /// Age-decay half-life in days, or `None` for classes that do not decay with
+    /// age (semantic = invalidation-only; procedural = failure-driven).
+    pub fn half_life_days(self) -> Option<f64> {
+        match self {
+            MemoryClass::Episodic => Some(7.0),
+            MemoryClass::Semantic | MemoryClass::Procedural => None,
+        }
+    }
+
+    /// Recency-decay multiplier in `[0, 1]` for a memory `age_days` old:
+    /// exponential (halving once per half-life) for decaying classes, `1.0` for
+    /// non-decaying ones. A scoring boost, never an eviction trigger.
+    pub fn decay_weight(self, age_days: f64) -> f64 {
+        match self.half_life_days() {
+            Some(hl) if hl > 0.0 => 0.5_f64.powf(age_days.max(0.0) / hl),
+            _ => 1.0,
+        }
+    }
+}
+
 /// Input to [`crate::MemoryWriter::save`].
 ///
 /// Serializable so queued saves can be persisted to the durable job store
@@ -106,6 +163,15 @@ pub struct CreateMemory {
     /// save with the same `(realm, topic_key)` updates the existing memory in
     /// place instead of creating a new one. `None` = always create.
     pub topic_key: Option<String>,
+    /// Retention/consolidation class (see [`MemoryClass`]). `None` until a
+    /// writer or the dreaming consolidation stage assigns one.
+    pub memory_class: Option<MemoryClass>,
+    /// Visibility scope: `None`/`"public"` is shared; `"private:<agent>"` is
+    /// readable only by that agent. Enforced in recall (later increment).
+    pub space: Option<String>,
+    /// The agent that wrote this memory (provenance for space scoping and
+    /// per-agent attribution). `None` for un-attributed/manual writes.
+    pub writer_agent_id: Option<String>,
 }
 
 impl CreateMemory {
@@ -123,6 +189,9 @@ impl CreateMemory {
             valid_at: None,
             provenance: None,
             topic_key: None,
+            memory_class: None,
+            space: None,
+            writer_agent_id: None,
         }
     }
 }
@@ -155,4 +224,43 @@ pub struct RecallFilter {
     pub as_of: Option<String>,
     /// Include superseded/invalidated memories (default false). Used for audit.
     pub include_invalidated: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn memory_class_roundtrips_and_parses_loosely() {
+        for c in [
+            MemoryClass::Episodic,
+            MemoryClass::Semantic,
+            MemoryClass::Procedural,
+        ] {
+            assert_eq!(MemoryClass::parse(c.as_str()), Some(c));
+        }
+        assert_eq!(MemoryClass::parse("  Episodic "), Some(MemoryClass::Episodic));
+        assert_eq!(MemoryClass::parse("nonsense"), None);
+    }
+
+    #[test]
+    fn only_episodic_decays_with_age() {
+        // Episodic halves every 7 days; others never decay with age.
+        let ep = MemoryClass::Episodic;
+        assert!((ep.decay_weight(0.0) - 1.0).abs() < 1e-9);
+        assert!((ep.decay_weight(7.0) - 0.5).abs() < 1e-9);
+        assert!((ep.decay_weight(14.0) - 0.25).abs() < 1e-9);
+        assert_eq!(MemoryClass::Semantic.half_life_days(), None);
+        assert_eq!(MemoryClass::Procedural.half_life_days(), None);
+        assert_eq!(MemoryClass::Semantic.decay_weight(365.0), 1.0);
+        assert_eq!(MemoryClass::Procedural.decay_weight(365.0), 1.0);
+    }
+
+    #[test]
+    fn create_memory_class_fields_default_none() {
+        let m = CreateMemory::new("hi");
+        assert!(m.memory_class.is_none());
+        assert!(m.space.is_none());
+        assert!(m.writer_agent_id.is_none());
+    }
 }

@@ -113,12 +113,16 @@ impl MemoryWriter {
         Ok(())
     }
 
-    /// Add any bi-temporal columns missing from an already-provisioned
-    /// `memory_nodes` table. Stores created before bi-temporal support keep
-    /// their extents; the new nullable columns read as NULL ("always valid"),
-    /// which the recall validity guard treats correctly. Idempotent.
+    /// Add any nullable columns missing from an already-provisioned
+    /// `memory_nodes` table — bi-temporal validity and the memory-class model
+    /// (S3.3). Stores created before these features keep their extents; the new
+    /// nullable columns read as NULL (treated correctly by the recall guards).
+    /// Idempotent.
     async fn ensure_bitemporal_columns(&self, tref: &TableRef) -> Result<()> {
-        for col in schema::BITEMPORAL_COLUMNS {
+        for col in schema::BITEMPORAL_COLUMNS
+            .iter()
+            .chain(schema::MEMORY_CLASS_COLUMNS)
+        {
             if tref.schema.field_with_name(col).is_ok() {
                 continue;
             }
