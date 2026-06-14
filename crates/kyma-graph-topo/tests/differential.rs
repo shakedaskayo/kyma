@@ -175,6 +175,65 @@ fn ppr_matches_power_iteration() {
     assert_eq!(approx.first().map(|(id, _)| id.as_str()), Some(seed));
 }
 
+/// Hierarchical Louvain on four cliques wired into two super-clusters: it must
+/// recover communities, score modularity at least as high as the single-level
+/// pass, and stay deterministic.
+#[test]
+fn hierarchical_louvain_at_least_matches_single_level() {
+    let mut g = TestGraph::new();
+    let mut clique = |g: &mut TestGraph, prefix: &str| -> Vec<String> {
+        let ids: Vec<String> = (0..5).map(|i| format!("{prefix}{i}")).collect();
+        for id in &ids {
+            g.add_node(id.clone(), "N");
+        }
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                g.add_edge(ids[i].clone(), ids[j].clone(), "E");
+            }
+        }
+        ids
+    };
+    let a = clique(&mut g, "a");
+    let b = clique(&mut g, "b");
+    let c = clique(&mut g, "c");
+    let d = clique(&mut g, "d");
+    // Two super-clusters: (a,b) and (c,d), each joined by one weak bridge.
+    g.add_edge(a[0].clone(), b[0].clone(), "BR");
+    g.add_edge(c[0].clone(), d[0].clone(), "BR");
+
+    let csr = csr_of(&g);
+    let hier = csr.detect_communities_hierarchical(Direction::Both, 50, 10);
+    let single = csr.detect_communities(Direction::Both, 50);
+
+    let labels = |parts: &[(String, u32)]| -> Vec<u32> { parts.iter().map(|(_, c)| *c).collect() };
+    let q_hier = csr.modularity(&labels(&hier), Direction::Both);
+    let q_single = csr.modularity(&labels(&single), Direction::Both);
+    assert!(
+        q_hier >= q_single - 1e-9,
+        "hierarchical modularity {q_hier} must be >= single-level {q_single}"
+    );
+    assert!(
+        q_hier > 0.3,
+        "clustered graph should score high modularity, got {q_hier}"
+    );
+
+    // Each clique stays internally agreed (no clique is split across communities).
+    let comm: std::collections::HashMap<&str, u32> =
+        hier.iter().map(|(id, c)| (id.as_str(), *c)).collect();
+    for clq in [&a, &b, &c, &d] {
+        let first = comm[clq[0].as_str()];
+        for id in clq {
+            assert_eq!(comm[id.as_str()], first, "a clique is never split");
+        }
+    }
+
+    // Deterministic.
+    assert_eq!(
+        hier,
+        csr.detect_communities_hierarchical(Direction::Both, 50, 10)
+    );
+}
+
 #[test]
 fn connected_components_splits_disjoint_and_joins_connected() {
     // Two disjoint triangles → two weakly-connected components.

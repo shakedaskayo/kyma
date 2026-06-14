@@ -591,6 +591,55 @@ impl CsrGraph {
             .collect()
     }
 
+    /// Build the weighted adjacency (edge multiplicity as weight) the
+    /// hierarchical Louvain operates on — `adj[u][v] = w(u→v)` under `dir`.
+    fn weighted_adjacency(&self, dir: Direction) -> Vec<HashMap<usize, f64>> {
+        let n = self.ids.len();
+        let mut adj: Vec<HashMap<usize, f64>> = vec![HashMap::new(); n];
+        let mut nbrs: Vec<u32> = Vec::new();
+        for (u, row) in adj.iter_mut().enumerate() {
+            nbrs.clear();
+            self.step(u as u32, dir, EtypeFilter::Any, &mut nbrs);
+            for &v in &nbrs {
+                *row.entry(v as usize).or_insert(0.0) += 1.0;
+            }
+        }
+        adj
+    }
+
+    /// **Hierarchical** (multi-level) Louvain community detection (S3.4): run
+    /// local moving, aggregate each community into a super-node, and recurse on
+    /// the aggregated weighted graph until no level merges further. Refines the
+    /// single-level [`Self::detect_communities`] — modularity is monotonically
+    /// non-decreasing across levels — and yields the coarser communities that
+    /// drive LazyGraphRAG-style summaries. Uses an internal weighted adjacency
+    /// (built from the CSR), so the topology struct + serialization are
+    /// unchanged. Deterministic. Returns `(node_id, community_id)`, dense ids.
+    pub fn detect_communities_hierarchical(
+        &self,
+        dir: Direction,
+        max_passes_per_level: usize,
+        max_levels: usize,
+    ) -> Vec<(String, u32)> {
+        let n = self.ids.len();
+        let mut adj = self.weighted_adjacency(dir);
+        // original node → its node index at the current (aggregated) level.
+        let mut node_comm: Vec<usize> = (0..n).collect();
+        for _ in 0..max_levels.max(1) {
+            let raw = louvain_local_moving(&adj, max_passes_per_level);
+            let (dense, k) = densify(&raw);
+            for nc in &mut node_comm {
+                *nc = dense[*nc];
+            }
+            if k == adj.len() {
+                break; // a level that merges nothing → converged
+            }
+            adj = aggregate(&adj, &dense, k);
+        }
+        let labels: Vec<u32> = node_comm.iter().map(|&c| c as u32).collect();
+        self.dense_communities(&labels)
+    }
+
     /// Serialize to the checksummed `KYCS` single-file layout.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut payload = Vec::new();
@@ -678,6 +727,90 @@ impl CsrGraph {
             in_etype,
         })
     }
+}
+
+/// One level of Louvain local moving over a weighted adjacency
+/// (`adj[u][v] = w(u→v)`): greedily place each node in the neighboring community
+/// that most raises modularity, swept in index order to a fixed point (or
+/// `max_passes`). Self-loops (`v == u`) are always internal and excluded from
+/// the move decision. Deterministic: candidates scored in ascending
+/// community-id order with strict `>`. Returns a (non-dense) community per node.
+fn louvain_local_moving(adj: &[HashMap<usize, f64>], max_passes: usize) -> Vec<usize> {
+    let n = adj.len();
+    let deg: Vec<f64> = adj.iter().map(|a| a.values().sum()).collect();
+    let m = deg.iter().sum::<f64>() / 2.0;
+    let mut comm: Vec<usize> = (0..n).collect();
+    if m == 0.0 {
+        return comm;
+    }
+    let two_m = 2.0 * m;
+    let mut sigma_tot = deg.clone();
+    let mut k_in: HashMap<usize, f64> = HashMap::new();
+    for _ in 0..max_passes.max(1) {
+        let mut moved = false;
+        for u in 0..n {
+            if deg[u] == 0.0 {
+                continue;
+            }
+            k_in.clear();
+            for (&v, &w) in &adj[u] {
+                if v == u {
+                    continue;
+                }
+                *k_in.entry(comm[v]).or_insert(0.0) += w;
+            }
+            let cu = comm[u];
+            sigma_tot[cu] -= deg[u];
+            let mut cands: Vec<usize> = k_in.keys().copied().collect();
+            cands.sort_unstable();
+            let mut best_c = cu;
+            let mut best_gain = 0.0f64;
+            for c in cands {
+                let gain = k_in[&c] - deg[u] * sigma_tot[c] / two_m;
+                if gain > best_gain {
+                    best_gain = gain;
+                    best_c = c;
+                }
+            }
+            sigma_tot[best_c] += deg[u];
+            comm[u] = best_c;
+            if best_c != cu {
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+    comm
+}
+
+/// Remap arbitrary labels to dense `0..k` ids (first-seen order); returns the
+/// dense labeling and `k`.
+fn densify(raw: &[usize]) -> (Vec<usize>, usize) {
+    let mut remap: HashMap<usize, usize> = HashMap::new();
+    let dense: Vec<usize> = raw
+        .iter()
+        .map(|&c| {
+            let next = remap.len();
+            *remap.entry(c).or_insert(next)
+        })
+        .collect();
+    (dense, remap.len())
+}
+
+/// Collapse `adj` by the dense `comm` labeling into a `k`-node super-graph:
+/// `sup[ci][cj] = Σ adj[u][v]` over `u∈ci, v∈cj` (intra-community weight becomes
+/// a super-node self-loop). Degrees and total weight are preserved.
+fn aggregate(adj: &[HashMap<usize, f64>], comm: &[usize], k: usize) -> Vec<HashMap<usize, f64>> {
+    let mut sup: Vec<HashMap<usize, f64>> = vec![HashMap::new(); k];
+    for (u, row) in adj.iter().enumerate() {
+        let cu = comm[u];
+        for (&v, &w) in row {
+            *sup[cu].entry(comm[v]).or_insert(0.0) += w;
+        }
+    }
+    sup
 }
 
 /// Build CSR arrays `(offsets, targets, etype)` for `n` nodes from
