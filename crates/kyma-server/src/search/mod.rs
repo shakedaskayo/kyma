@@ -82,6 +82,13 @@ pub async fn search_handler(State(state): State<QueryState>, req: Request<Body>)
     let (parts, body) = req.into_parts();
     let request_id = crate::extract_request_id(&parts.headers);
 
+    // Shared query admission control (see `crate::concurrency`); permit held for
+    // the duration of the search. No-op unless KYMA_QUERY_MAX_CONCURRENT is set.
+    let _admission = match crate::concurrency::acquire() {
+        Ok(p) => p,
+        Err(retry) => return crate::too_many_requests_response(retry, &request_id),
+    };
+
     let body_bytes: Bytes = match axum::body::to_bytes(body, MAX_BODY_BYTES).await {
         Ok(b) => b,
         Err(e) => {
