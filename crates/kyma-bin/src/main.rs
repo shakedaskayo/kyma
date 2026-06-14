@@ -195,11 +195,37 @@ async fn main() -> Result<()> {
     // one-time path-layout shift: pre-Slice-0 extents stay at their
     // catalog-stored `object_path` (read by exact match), new extents get
     // the tenant segment.
-    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::with_tenant(
+    // S2.1: per-extent format dispatch. Both TLM and Parquet are registered as
+    // readers (a Parquet object starts `PAR1`, a TLM object `KYMA…`, so reads
+    // pick the decoder by magic); new extents use the format named by
+    // KYMA_WRITE_FORMAT (default "tlm" — flip to "parquet" once baked in, and
+    // compaction migrates old extents organically). Old TLM extents stay
+    // readable forever either way.
+    let tenant = kyma_core::tenant::DEFAULT_TENANT;
+    let tlm_fmt: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::with_tenant(
         store.clone(),
         cli.path_prefix.clone(),
-        kyma_core::tenant::DEFAULT_TENANT,
+        tenant,
     ));
+    let parquet_fmt: Arc<dyn SegmentFormat> = Arc::new(
+        kyma_format_parquet::ParquetFormat::with_tenant(
+            store.clone(),
+            cli.path_prefix.clone(),
+            tenant,
+        ),
+    );
+    let write_format = std::env::var("KYMA_WRITE_FORMAT").unwrap_or_else(|_| "tlm".into());
+    let format: Arc<dyn SegmentFormat> = match write_format.as_str() {
+        "parquet" => Arc::new(kyma_core::segment_format::FormatRegistry::new(
+            parquet_fmt,
+            vec![tlm_fmt],
+        )),
+        _ => Arc::new(kyma_core::segment_format::FormatRegistry::new(
+            tlm_fmt,
+            vec![parquet_fmt],
+        )),
+    };
+    info!(write_format = %write_format, "segment format registry: TLM + Parquet readers");
 
     // 3. Register this node in the catalog.
     let lease = catalog

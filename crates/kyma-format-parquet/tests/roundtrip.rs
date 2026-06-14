@@ -15,6 +15,7 @@ use std::sync::Arc;
 use arrow_array::builder::{FixedSizeListBuilder, Float32Builder};
 use arrow_array::{Int64Array, RecordBatch, StringArray, TimestampNanosecondArray};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
+use kyma_core::segment_format::FormatRegistry;
 use kyma_core::segment_format::{BlockPredicate, ColumnId, OpenExtentInput, SegmentFormat};
 use kyma_core::types::SchemaRef;
 use kyma_format_parquet::ParquetFormat;
@@ -158,4 +159,57 @@ async fn parquet_roundtrip_matches_tlm_stats_and_compresses() {
 
 fn blocks_first() -> kyma_core::segment_format::BlockId {
     kyma_core::segment_format::BlockId(0)
+}
+
+#[tokio::test]
+async fn format_registry_dispatches_by_magic() {
+    let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+    let tlm: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "kyma"));
+    let pq: Arc<dyn SegmentFormat> = Arc::new(ParquetFormat::new(store.clone(), "kyma"));
+
+    // One extent in each format, same store.
+    let batches = vec![make_batch(0, 500)];
+    let (tlm_path, tlm_bytes, _, _, _) = write_all(tlm.as_ref(), &batches).await;
+    let (pq_path, pq_bytes, _, _, _) = write_all(pq.as_ref(), &batches).await;
+
+    // A registry whose WRITE format is Parquet but which also reads TLM.
+    let registry = FormatRegistry::new(pq.clone(), vec![tlm.clone()]);
+
+    // The TLM (KYMA…) object is dispatched to the TLM reader…
+    let r_tlm = registry
+        .open_extent(OpenExtentInput {
+            extent_id: kyma_core::types::ExtentId::new(),
+            table_id: kyma_core::types::TableId::new(),
+            schema: schema(),
+            object_path: tlm_path,
+            byte_size: tlm_bytes,
+        })
+        .await
+        .expect("registry reads TLM by magic");
+    assert_eq!(r_tlm.metadata().row_count, 500);
+
+    // …and the Parquet (PAR1) object to the Parquet reader, through one registry.
+    let r_pq = registry
+        .open_extent(OpenExtentInput {
+            extent_id: kyma_core::types::ExtentId::new(),
+            table_id: kyma_core::types::TableId::new(),
+            schema: schema(),
+            object_path: pq_path,
+            byte_size: pq_bytes,
+        })
+        .await
+        .expect("registry reads Parquet by magic");
+    assert_eq!(r_pq.metadata().row_count, 500);
+    assert_eq!(
+        r_pq.metadata().format_version,
+        kyma_format_parquet::CURRENT_VERSION
+    );
+
+    // start_extent uses the write format (Parquet) → new object begins PAR1.
+    let (new_path, _, _, _, _) = write_all(&registry, &batches).await;
+    let head = store
+        .get_range(&object_store::path::Path::from(new_path.as_str()), 0..4)
+        .await
+        .unwrap();
+    assert_eq!(&head[..], b"PAR1", "registry writes the configured format");
 }

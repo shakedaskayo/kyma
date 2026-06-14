@@ -193,3 +193,89 @@ pub struct ExtentWriteResult {
     /// pruning. Unknown keys in this field are ignored by the engine.
     pub column_stats: serde_json::Value,
 }
+
+/// Per-extent format dispatch over several [`SegmentFormat`] impls.
+///
+/// The engine threads a single `Arc<dyn SegmentFormat>` everywhere; wrapping the
+/// formats in a `FormatRegistry` (which itself *is* a `SegmentFormat`) keeps that
+/// surface unchanged while letting new extents use one format and reads pick the
+/// right decoder per object:
+///
+/// - `start_extent` always delegates to the configured **write** format
+///   (`KYMA_WRITE_FORMAT`), so writes flip wholesale.
+/// - `open_extent` sniffs the object's first 4 magic bytes and delegates to
+///   whichever registered reader claims them (`magic()[..4]`). TLM (`KYMA…`,
+///   both v1/v2) and Parquet (`PAR1`) coexist, so old extents stay readable
+///   forever and compaction migrates formats organically.
+///
+/// On a sniff failure (tiny/unreadable head) it falls back to the write format —
+/// correctness is preserved because a wrong guess just fails the subsequent
+/// decode loudly rather than silently mis-reading.
+pub struct FormatRegistry {
+    write: Arc<dyn SegmentFormat>,
+    readers: Vec<Arc<dyn SegmentFormat>>,
+}
+
+impl FormatRegistry {
+    /// `write` is used for new extents and is also a reader. `extra_readers` are
+    /// additional decoders (e.g. the legacy TLM format when writing Parquet).
+    pub fn new(write: Arc<dyn SegmentFormat>, extra_readers: Vec<Arc<dyn SegmentFormat>>) -> Self {
+        let mut readers = Vec::with_capacity(1 + extra_readers.len());
+        readers.push(write.clone());
+        readers.extend(extra_readers);
+        Self { write, readers }
+    }
+
+    /// The reader whose magic prefix matches `head` (first 4 bytes of an object).
+    fn reader_for_magic(&self, head: &[u8]) -> Option<&Arc<dyn SegmentFormat>> {
+        self.readers.iter().find(|f| {
+            let m = f.magic();
+            m.len() >= 4 && head.len() >= 4 && m[..4] == head[..4]
+        })
+    }
+}
+
+#[async_trait]
+impl SegmentFormat for FormatRegistry {
+    fn name(&self) -> &'static str {
+        "format-registry"
+    }
+    fn magic(&self) -> &'static [u8] {
+        self.write.magic()
+    }
+    fn current_version(&self) -> u32 {
+        self.write.current_version()
+    }
+    fn max_readable_version(&self) -> u32 {
+        self.write.max_readable_version()
+    }
+
+    async fn open_extent(&self, input: OpenExtentInput) -> Result<Arc<dyn ExtentReader>> {
+        // Sniff the object's first 4 bytes to pick the decoder. Use any reader's
+        // object store (they share one). Fall back to the write format if we
+        // can't sniff (e.g. no store, tiny object).
+        if self.readers.len() > 1 {
+            if let Some(store) = self.write.object_store() {
+                let path = object_store::path::Path::from(input.object_path.as_str());
+                if let Ok(head) = store.get_range(&path, 0..4).await {
+                    if let Some(fmt) = self.reader_for_magic(&head) {
+                        return fmt.open_extent(input).await;
+                    }
+                }
+            }
+        }
+        self.write.open_extent(input).await
+    }
+
+    async fn start_extent(
+        &self,
+        schema: SchemaRef,
+        target_bytes: u64,
+    ) -> Result<Box<dyn ExtentWriter>> {
+        self.write.start_extent(schema, target_bytes).await
+    }
+
+    fn object_store(&self) -> Option<Arc<dyn object_store::ObjectStore>> {
+        self.write.object_store()
+    }
+}

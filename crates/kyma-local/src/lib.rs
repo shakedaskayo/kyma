@@ -176,8 +176,19 @@ async fn open_engine(paths: &Paths) -> Result<Engine> {
         root: paths.data_root.clone(),
     })
     .context("building local object store")?;
-    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store, "kyma-local"));
-    info!(data = %paths.data_root, "local object store ready");
+    // S2.1: per-extent format dispatch (TLM + Parquet readers). Local writes use
+    // KYMA_WRITE_FORMAT (default "tlm"); both formats stay readable so a local
+    // store can mix them.
+    let tlm_fmt: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "kyma-local"));
+    let parquet_fmt: Arc<dyn SegmentFormat> =
+        Arc::new(kyma_format_parquet::ParquetFormat::new(store, "kyma-local"));
+    let format: Arc<dyn SegmentFormat> =
+        if std::env::var("KYMA_WRITE_FORMAT").as_deref() == Ok("parquet") {
+            Arc::new(kyma_core::segment_format::FormatRegistry::new(parquet_fmt, vec![tlm_fmt]))
+        } else {
+            Arc::new(kyma_core::segment_format::FormatRegistry::new(tlm_fmt, vec![parquet_fmt]))
+        };
+    info!(data = %paths.data_root, "local object store ready (TLM + Parquet readers)");
 
     Ok(Engine {
         sqlite,
