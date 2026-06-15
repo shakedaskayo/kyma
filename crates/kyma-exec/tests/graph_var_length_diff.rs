@@ -345,3 +345,63 @@ async fn multi_segment_star_graph_match_executes_correctly() {
     }
     assert_eq!(got, want, "star-pattern join = cartesian product of a's neighbours");
 }
+
+/// Run `(a)-[r]->(b), OPTIONAL (b)-[s]->(c)` and collect `(a, b, Option<c>)`.
+async fn optional_rows(g: &TestGraph) -> Vec<(String, String, Option<String>)> {
+    let ctx = nodes_and_edges_ctx(g);
+    let kql = "edges | make-graph src --> dst with nodes on id \
+               | graph-match (a)-[r]->(b), OPTIONAL (b)-[s]->(c) \
+               project a.id as a_id, b.id as b_id, c.id as c_id";
+    let sql = kql_to_sql(kql).expect("lower OPTIONAL graph-match");
+    let batches = ctx.sql(&sql).await.expect("plan").collect().await.expect("exec");
+    let mut rows = Vec::new();
+    for bt in &batches {
+        let a = bt.column_by_name("a_id").unwrap().as_any().downcast_ref::<StringArray>().unwrap();
+        let b = bt.column_by_name("b_id").unwrap().as_any().downcast_ref::<StringArray>().unwrap();
+        let c = bt.column_by_name("c_id").unwrap().as_any().downcast_ref::<StringArray>().unwrap();
+        for i in 0..bt.num_rows() {
+            rows.push((
+                a.value(i).to_string(),
+                b.value(i).to_string(),
+                if c.is_null(i) { None } else { Some(c.value(i).to_string()) },
+            ));
+        }
+    }
+    rows.sort();
+    rows
+}
+
+#[tokio::test]
+async fn optional_match_left_joins_with_nulls() {
+    // b has no outgoing edge → the OPTIONAL leg is unmatched → c is NULL, but
+    // the (a, b) row survives (LEFT JOIN, not inner).
+    let mut g = TestGraph::new();
+    for id in ["a", "b"] {
+        g.add_node(id, "N");
+    }
+    g.add_edge("a", "b", "R");
+    assert_eq!(
+        optional_rows(&g).await,
+        vec![("a".into(), "b".into(), None)],
+        "unmatched OPTIONAL ⇒ NULL c, row preserved"
+    );
+
+    // Add b→c. The mandatory (a)-[r]->(b) now matches BOTH edges (a,b are
+    // unbound): a→b then b→c matches the OPTIONAL leg (c present); b→c then c
+    // has no outgoing edge (c NULL). Both rows survive — exactly OPTIONAL's
+    // matched-and-unmatched-in-one-query semantics.
+    let mut g2 = TestGraph::new();
+    for id in ["a", "b", "c"] {
+        g2.add_node(id, "N");
+    }
+    g2.add_edge("a", "b", "R");
+    g2.add_edge("b", "c", "R");
+    assert_eq!(
+        optional_rows(&g2).await,
+        vec![
+            ("a".into(), "b".into(), Some("c".into())),
+            ("b".into(), "c".into(), None),
+        ],
+        "matched leg ⇒ c present; unmatched leg ⇒ NULL c"
+    );
+}
