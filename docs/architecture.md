@@ -176,6 +176,10 @@ for the retrieval + scale subsystems and their config. Honest status:
 - **Vector ANN** — per-extent IVF + 1-bit RaBitQ sidecars (`kyma-index-vector`,
   `kyma_exec::ann::ann_topk`), wired into unified search + agent memory
   retrieval, with exact-cosine rerank and the brute-force UDF as fallback/oracle.
+- **Global centroid tree (SPANN, server mode)** — `kyma-index-vector::global_tree`
+  + the `ann_tree` catalog table (migration 030); `ann_topk` routes through the
+  tree (`ann_tree::select`) when a fresh one exists and falls back to per-extent
+  fan-out otherwise, so it is a pure latency optimization, never load-bearing.
 - **BM25 full-text** — per-extent Tantivy sidecars (`kyma-index-fts`,
   `kyma_exec::fts::bm25_topk`) replacing the `LIKE`/token-set lexical leg.
 - **Index sidecar contract** — `index_sidecar.rs` + `extent_indexes` catalog
@@ -185,20 +189,24 @@ for the retrieval + scale subsystems and their config. Honest status:
   tables stay readable.
 - **Staged ingest + committer** — `KYMA_INGEST_MODE=staged` + `staged_extents`
   + `committer.rs`; object storage as the WAL, atomic group commit.
-- **Query admission control** — per-process concurrency cap with `429` +
-  `Retry-After` (`concurrency.rs`).
-- **Cypher writes** — `CREATE`/`MERGE` → append via `WritePath`, write-role
-  gated (`retrieval.md`).
+- **Graph traversal** — `kyma-graph-topo` CSR is used in the live retrieval
+  path; the Cypher dialect (`kyma-kql`) supports multi-hop chains,
+  variable-length `-[*M..N]->`, and `shortestPath`, plus `CREATE`/`MERGE`
+  writes (write-role gated). The memory-expansion default is capped at
+  `MAX_HOPS = 2` — a product choice for agent recall, not an engine limit.
+- **Ops hardening** — per-process **and** per-tenant query/agent concurrency
+  isolation (`concurrency.rs`, each tenant its own semaphore) + token-bucket
+  **ingest** rate limiting (`kyma-ingest-rest::rate_limit`), all with `429` +
+  `Retry-After`. Off by default (env-gated).
 
-**Foundation laid, not yet wired into the live path**
+**Remaining (foundation present; would extend, not block, the above)**
 
-- **Global centroid tree (SPANN)** — per-extent ANN is the complete story
-  today; the cross-extent tree for server-mode scale-out is not yet wired.
-- **CSR graph topology** — `kyma-graph-topo` builds an immutable CSR + BFS, but
-  there is no `graph_snapshots` persistence/refresh job yet, so agent traversal
-  still uses the SQL hop loop capped at `MAX_HOPS = 2`.
-- **Per-tenant quotas** — only the per-process query limiter exists; per-tenant
-  token buckets are not implemented.
+- **Catalog-driven per-tenant quota config** — limits today are env-global
+  (one value, per-tenant-isolated); a `tenant_quotas` table with per-tenant
+  configurable values is a managed-SaaS (Cloud-track) addition, not yet built.
+- **Persisted graph snapshots** — the CSR is built from a table scan rather
+  than persisted as a `graph_snapshots` artifact with an incremental refresh
+  job; this is a build-latency optimization, not a correctness gap.
 
 **Infra-gated (validated by design + small-scale tests; full numbers require
 representative hardware)** — 100M/1B-scale ANN + graph tiers, multi-machine

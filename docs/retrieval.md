@@ -59,9 +59,14 @@ Query side — `kyma_exec::ann::ann_topk` (`crates/kyma-exec/src/ann.rs`):
 (`crates/kyma-server/src/agent/memory_retrieve.rs`). The SQL/UDF cosine path
 remains as the fallback for unindexed extents and as the CI recall oracle.
 
-Local mode (SQLite catalog) builds and queries per-extent ANN sidecars
-identically; only the cross-extent global centroid tree is server-only (and is
-roadmap, not yet wired — see `architecture.md`).
+For server-mode scale-out across many extents, a **global centroid tree**
+(SPANN-style, `kyma-index-vector::global_tree` + the `ann_tree` catalog table)
+fixes the per-extent fan-out: `ann_topk` routes the query through the tree's
+selected partitions (`ann_tree::select`) when a fresh tree exists, and falls
+back to per-extent fan-out otherwise — so the tree is a pure latency
+optimization, never load-bearing for correctness. Local mode (SQLite catalog)
+builds and queries per-extent ANN sidecars identically; the global tree is the
+one server-only piece.
 
 ---
 
@@ -136,11 +141,19 @@ feature).
 | `KYMA_PG_MAX_CONNS` | `16` | Postgres catalog pool size (min 1). |
 | `KYMA_CACHE_DIR` | `~/.kyma/cache` | On-disk sidecar/extent cache root. |
 | `KYMA_QUERY_MAX_CONCURRENT` | `0` (unlimited) | Per-process cap on in-flight `/v1/query` + `/v1/search`; over the cap returns `429` + `Retry-After`. |
+| `KYMA_QUERY_MAX_CONCURRENT_PER_TENANT` | `0` (unlimited) | Per-tenant concurrency cap — each tenant gets its own semaphore, so one tenant saturating its budget can't starve another. |
 | `KYMA_QUERY_RETRY_AFTER_SECS` | `1` | `Retry-After` value sent with the 429. |
+| `KYMA_AGENT_MAX_CONCURRENT` / `_PER_TENANT` | `0` (unlimited) | Same, for the heavier agent-run path. |
+| `KYMA_INGEST_RATE_RPS` | `0` (unlimited) | Token-bucket ingest rate limit (refill/sec), keyed by database; empty bucket → `429` + `Retry-After`. |
+| `KYMA_INGEST_RATE_BURST` | `2×rps` | Ingest token-bucket burst cap. |
 
-Admission control lives in `crates/kyma-server/src/concurrency.rs` and is wired
-into the query/search handlers. (Per-tenant token-bucket quotas are roadmap —
-the current limiter is per-process, not per-tenant.)
+Query/agent admission lives in `crates/kyma-server/src/concurrency.rs` (per-
+process and per-tenant semaphores); ingest rate limiting lives in
+`crates/kyma-ingest-rest/src/rate_limit.rs` — all wired and off by default.
+What is **not** yet present is a catalog-driven `tenant_quotas` table for
+per-tenant *configurable* limits (today the env value applies uniformly, with
+per-tenant isolation); per-customer configurable quotas are a managed-SaaS
+(Cloud-track) addition.
 
 ---
 
