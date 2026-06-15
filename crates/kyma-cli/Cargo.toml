@@ -56,5 +56,14 @@ notify = "6"
 # `kyma deploy`: PKCE verifiers + generated passwords.
 rand = "0.8"
 
+# Linux release binaries are cross-compiled (release-cli.yml: `cross build` for
+# aarch64/x86_64-unknown-linux-gnu). openssl-sys is pulled in transitively +
+# Linux-only through native-tls (fastembed → hf-hub, and the agent SDK's
+# reqwest), and the cross sysroot ships no target libssl, so the build can't find
+# OpenSSL. Vendoring builds OpenSSL from source for the target — no system/sysroot
+# lib needed. Linux-gated so macOS (where the system lib is found) is unchanged.
+[target.'cfg(target_os = "linux")'.dependencies]
+openssl = { version = "0.10", features = ["vendored"] }
+
 [dev-dependencies]
 wiremock = "0.6"
