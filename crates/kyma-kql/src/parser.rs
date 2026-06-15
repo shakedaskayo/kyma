@@ -393,6 +393,7 @@ impl<'s> Parser<'s> {
             "count" => self.op_count(),
             "distinct" => self.op_distinct(),
             "graph-traverse" => self.op_graph_traverse(),
+            "graph-var-length" => self.op_graph_var_length(),
             "graph-shortest-path" => self.op_graph_shortest_path(),
             "make-graph" => self.op_make_graph(),
             "graph-match" => self.op_graph_match(),
@@ -724,6 +725,165 @@ impl<'s> Parser<'s> {
             .ctes
             .push(("_gt_result".to_string(), result_body, false));
         self.state.table = "_gt_result".to_string();
+        Ok(())
+    }
+
+    /// `graph-var-length source <seed[s]> from <src> to <dst> min-hops M max-hops N [direction forward|backward|both] [edge-type "T"]`
+    ///
+    /// Variable-length reachability that PRESERVES THE ORIGIN endpoint. Unlike
+    /// `graph-traverse` (whose result is keyed only by the reached node), this
+    /// carries the originating seed through the recursion, so the result is the
+    /// set of `(src, dst)` endpoint PAIRS where `dst` is reachable from `src` at
+    /// a shortest distance `d` with `min-hops ≤ d ≤ max-hops`. That pair binding
+    /// is exactly what a Cypher `MATCH (a)-[*M..N]->(b) RETURN a.…, b.…`
+    /// lowering needs (graph-traverse can't supply it — it drops the origin).
+    ///
+    /// Semantics match the CSR `var_length` primitive + the petgraph oracle:
+    /// each reached node is reported once at its SHORTEST depth, then filtered
+    /// to `[min,max]`. So the lowering mirrors `graph-traverse`'s three CTEs:
+    ///  - `_vl(origin, node, depth)` — recursive walk enumeration bounded by
+    ///    `depth < max-hops` (terminates on cycles: depth strictly increases).
+    ///  - `_vl_min` — `MIN(depth)` per `(origin, node)` = the shortest distance.
+    ///  - `_vl_result(src, dst, depth)` — shortest-distance pairs filtered to
+    ///    `min-hops ≤ depth ≤ max-hops`. The active table.
+    ///
+    /// Taking `MIN` over ALL walks up to `max` and filtering by `min` AFTER —
+    /// rather than filtering walks by `[min,max]` first — is what makes it agree
+    /// with the oracle: a node whose shortest path is below `min` is excluded
+    /// even if a longer walk reaches it inside the window.
+    fn op_graph_var_length(&mut self) -> Result<(), ParseError> {
+        self.expect_ident_eq("source")?;
+        let seeds = self.parse_source_seeds()?;
+        self.expect_ident_eq("from")?;
+        let src_col = match self.bump()? {
+            Token::Ident(s) => quote_ident(&s),
+            other => {
+                return Err(ParseError(format!(
+                    "expected `from` column name, got {other:?}"
+                )))
+            }
+        };
+        self.expect_ident_eq("to")?;
+        let dst_col = match self.bump()? {
+            Token::Ident(s) => quote_ident(&s),
+            other => {
+                return Err(ParseError(format!("expected `to` column name, got {other:?}")))
+            }
+        };
+        self.expect_ident_eq("min-hops")?;
+        let min_hops = match self.bump()? {
+            Token::Int(n) if n >= 0 => n as u64,
+            other => {
+                return Err(ParseError(format!(
+                    "expected non-negative integer after `min-hops`, got {other:?}"
+                )))
+            }
+        };
+        self.expect_ident_eq("max-hops")?;
+        let max_hops = match self.bump()? {
+            Token::Int(n) if n >= 0 => n as u64,
+            other => {
+                return Err(ParseError(format!(
+                    "expected non-negative integer after `max-hops`, got {other:?}"
+                )))
+            }
+        };
+        if max_hops == 0 {
+            return Err(ParseError("graph-var-length: max-hops must be ≥ 1".into()));
+        }
+        if min_hops > max_hops {
+            return Err(ParseError(format!(
+                "graph-var-length: min-hops ({min_hops}) must be ≤ max-hops ({max_hops})"
+            )));
+        }
+        let direction = if matches!(self.peek(), Some(Token::Ident(s)) if s == "direction") {
+            self.pos += 1;
+            match self.bump()? {
+                Token::Ident(s) => match s.as_str() {
+                    "forward" => GraphDirection::Forward,
+                    "backward" => GraphDirection::Backward,
+                    "both" => GraphDirection::Both,
+                    other => return Err(ParseError(format!("unknown direction: {other}"))),
+                },
+                other => {
+                    return Err(ParseError(format!(
+                        "expected direction keyword, got {other:?}"
+                    )))
+                }
+            }
+        } else {
+            GraphDirection::Forward
+        };
+        let edge_type: Option<String> =
+            if matches!(self.peek(), Some(Token::Ident(s)) if s == "edge-type") {
+                self.pos += 1; // consume 'edge-type'
+                Some(self.parse_scalar_literal()?)
+            } else {
+                None
+            };
+        let type_filter = match &edge_type {
+            Some(v) => format!(r#" AND e."type" = {v}"#),
+            None => String::new(),
+        };
+
+        let edge_table = self.state.table.clone();
+
+        // Anchor: each seed is its own origin at depth 0.
+        let anchor = if seeds.len() == 1 {
+            let s = &seeds[0];
+            format!(
+                "SELECT CAST({s} AS VARCHAR) AS origin, CAST({s} AS VARCHAR) AS node, 0 AS depth"
+            )
+        } else {
+            let values = seeds
+                .iter()
+                .map(|s| format!("(CAST({s} AS VARCHAR))"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("SELECT node AS origin, node, 0 AS depth FROM (VALUES {values}) AS _seeds(node)")
+        };
+        // Next-hop node + the join condition, both direction-aware.
+        let next_node = match direction {
+            GraphDirection::Forward => format!("e.{dst_col}"),
+            GraphDirection::Backward => format!("e.{src_col}"),
+            GraphDirection::Both => {
+                format!("CASE WHEN e.{src_col} = v.node THEN e.{dst_col} ELSE e.{src_col} END")
+            }
+        };
+        let join_cond = match direction {
+            GraphDirection::Forward => format!("e.{src_col} = v.node"),
+            GraphDirection::Backward => format!("e.{dst_col} = v.node"),
+            GraphDirection::Both => format!("(e.{src_col} = v.node OR e.{dst_col} = v.node)"),
+        };
+        let body = format!(
+            "{anchor} \
+             UNION ALL \
+             SELECT v.origin, {next_node}, v.depth + 1 \
+             FROM _vl v \
+             JOIN {edge_table} e ON {join_cond} \
+             WHERE v.depth < {max_hops}{type_filter}"
+        );
+        self.state
+            .ctes
+            .push(("_vl(origin, node, depth)".to_string(), body, true));
+
+        // Shortest depth per (origin, node) — BFS-dedup over the enumerated
+        // walks. DataFusion needs the aggregation in its own non-recursive CTE
+        // before the range filter (same split as graph-traverse's _gt_min).
+        let min_body = "SELECT origin, node, MIN(depth) AS depth FROM _vl GROUP BY origin, node";
+        self.state
+            .ctes
+            .push(("_vl_min".to_string(), min_body.to_string(), false));
+
+        let result_body = format!(
+            "SELECT origin AS src, node AS dst, depth \
+             FROM _vl_min \
+             WHERE depth >= {min_hops} AND depth <= {max_hops}"
+        );
+        self.state
+            .ctes
+            .push(("_vl_result".to_string(), result_body, false));
+        self.state.table = "_vl_result".to_string();
         Ok(())
     }
 
@@ -1728,6 +1888,73 @@ mod tests {
     fn graph_traverse_multi_source_and_edge_type_compose() {
         let sql = kql_to_sql(r#"e | graph-traverse source ("a","b") from src to dst max-hops 2 edge-type "X""#).expect("parse");
         assert!(sql.to_uppercase().contains("VALUES") && sql.contains(r#"e."type" = 'X'"#), "got: {sql}");
+    }
+
+    // ---- graph-var-length (endpoint-preserving reachability) -----------
+    #[test]
+    fn graph_var_length_emits_origin_preserving_three_cte_shape() {
+        let sql = kql_to_sql(
+            r#"e | graph-var-length source "a" from src to dst min-hops 2 max-hops 4"#,
+        )
+        .expect("parse");
+        // Origin carried through the recursion (the pair binding graph-traverse lacks).
+        assert!(sql.contains("AS origin"), "origin column expected, got: {sql}");
+        assert!(sql.contains("v.origin"), "origin carried in recursive step, got: {sql}");
+        // Shortest-depth dedup, THEN the [min,max] window (oracle semantics).
+        assert!(
+            sql.contains("MIN(depth)") && sql.contains("GROUP BY origin, node"),
+            "shortest-depth dedup expected, got: {sql}"
+        );
+        assert!(
+            sql.contains("depth >= 2 AND depth <= 4"),
+            "range filter applied after MIN, got: {sql}"
+        );
+        // Forward by default: step forward along src→dst, recursion bounded by max.
+        assert!(sql.contains("v.depth < 4"), "recursion bounded by max-hops, got: {sql}");
+        assert!(sql.contains("AS src") && sql.contains("AS dst"), "endpoint pair output, got: {sql}");
+    }
+
+    #[test]
+    fn graph_var_length_backward_and_both_directions() {
+        // Backward steps along dst→src and joins on the dst endpoint.
+        let back = kql_to_sql(
+            r#"e | graph-var-length source "a" from src to dst min-hops 1 max-hops 3 direction backward"#,
+        )
+        .expect("parse");
+        assert!(back.contains("e.dst = v.node"), "backward join on dst, got: {back}");
+        // Both expands either endpoint via CASE.
+        let both = kql_to_sql(
+            r#"e | graph-var-length source "a" from src to dst min-hops 1 max-hops 3 direction both"#,
+        )
+        .expect("parse");
+        assert!(
+            both.contains("CASE WHEN e.src = v.node") && both.contains("OR e.dst = v.node"),
+            "both-direction CASE + OR join, got: {both}"
+        );
+    }
+
+    #[test]
+    fn graph_var_length_multi_seed_and_edge_type_compose() {
+        let sql = kql_to_sql(
+            r#"e | graph-var-length source ("a","b") from src to dst min-hops 1 max-hops 2 edge-type "CALLS""#,
+        )
+        .expect("parse");
+        assert!(sql.to_uppercase().contains("VALUES"), "multi-seed VALUES anchor, got: {sql}");
+        assert!(sql.contains(r#"e."type" = 'CALLS'"#), "per-hop edge-type filter, got: {sql}");
+    }
+
+    #[test]
+    fn graph_var_length_rejects_bad_bounds() {
+        assert!(
+            kql_to_sql(r#"e | graph-var-length source "a" from src to dst min-hops 3 max-hops 1"#)
+                .is_err(),
+            "min > max must be rejected"
+        );
+        assert!(
+            kql_to_sql(r#"e | graph-var-length source "a" from src to dst min-hops 0 max-hops 0"#)
+                .is_err(),
+            "max-hops 0 must be rejected"
+        );
     }
 
     #[test]
