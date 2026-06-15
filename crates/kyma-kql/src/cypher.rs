@@ -1400,6 +1400,107 @@ fn segment_patterns(nodes: &[NodePat], rels: &[RelPat]) -> Result<Vec<String>, P
     }
 }
 
+/// Build the `make-graph | graph-match … project <proj>` KQL prefix for the
+/// query's pattern: a general multi-segment join (star / tree / disjoint /
+/// backward-in-multihop), a single variable-length hop, or a fixed-length
+/// linear chain. Shared by [`emit`] and [`emit_with`].
+fn graph_match_prefix(q: &Query, g: &GraphBinding, proj_list: &str) -> Result<String, ParseError> {
+    let rel_pat = |r: &RelPat| match &r.rel_type {
+        Some(t) => format!("[{}:{}]", r.var, t),
+        None => format!("[{}]", r.var),
+    };
+    // Multi-segment (star / tree / disjoint) patterns lower to a general
+    // `graph-match` over comma-separated segments; a single variable-length hop
+    // to `graph-var-match`; everything else to the fixed-length linear chain.
+    // A backward hop inside a multi-hop chain is also lowered via the general
+    // join (the linear matcher is forward-only), by decomposing into single-hop
+    // segments.
+    let primary_backward_multihop =
+        q.rels.len() > 1 && q.rels.iter().any(|r| r.direction == Direction::Backward);
+    let kql = if !q.extra_segments.is_empty() || primary_backward_multihop {
+        let mut segs = segment_patterns(&q.nodes, &q.rels)?;
+        for (sn, sr, opt) in &q.extra_segments {
+            for p in segment_patterns(sn, sr)? {
+                segs.push(if *opt { format!("OPTIONAL {p}") } else { p });
+            }
+        }
+        format!(
+            "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
+             | graph-match {pattern} project {proj}",
+            edges = g.edge_table,
+            src = g.src_col,
+            dst = g.dst_col,
+            nodes = g.node_table,
+            id = g.id_col,
+            pattern = segs.join(", "),
+            proj = proj_list,
+        )
+    } else if q.rels.len() == 1 && q.rels[0].var_length.is_some() {
+        let r = &q.rels[0];
+        let (min, max) = r.var_length.unwrap();
+        // `a` is the left node, `b` the right; the arrow direction drives the
+        // traversal (no endpoint swap — graph-var-match takes `direction`).
+        let a = &q.nodes[0].var;
+        let b = &q.nodes[1].var;
+        let dir_kw = match r.direction {
+            Direction::Forward => "forward",
+            Direction::Backward => "backward",
+            Direction::Undirected => "both",
+        };
+        format!(
+            "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
+             | graph-var-match ({a})-{rel}->({b}) min-hops {min} max-hops {max} \
+             direction {dir_kw} project {proj}",
+            edges = g.edge_table,
+            src = g.src_col,
+            dst = g.dst_col,
+            nodes = g.node_table,
+            id = g.id_col,
+            rel = rel_pat(r),
+            proj = proj_list,
+        )
+    } else {
+        // Fixed-length chain. A single hop preserves the backward-swap so the
+        // forward-only matcher is correct; a multi-hop pattern emits a forward
+        // chain and rejects a backward (or variable-length) hop, which would
+        // break the linear node order the matcher expects.
+        let pattern = if q.rels.len() == 1 {
+            let (left, right) = match q.rels[0].direction {
+                Direction::Backward => (&q.nodes[1].var, &q.nodes[0].var),
+                _ => (&q.nodes[0].var, &q.nodes[1].var),
+            };
+            format!("({left})-{}->({right})", rel_pat(&q.rels[0]))
+        } else {
+            let mut p = format!("({})", q.nodes[0].var);
+            for (i, r) in q.rels.iter().enumerate() {
+                if r.var_length.is_some() {
+                    return Err(unsupported(
+                        "variable-length relationship inside a multi-hop pattern",
+                    ));
+                }
+                if r.direction == Direction::Backward {
+                    return Err(unsupported(
+                        "backward `<-` relationship in a multi-hop pattern",
+                    ));
+                }
+                p.push_str(&format!("-{}->({})", rel_pat(r), q.nodes[i + 1].var));
+            }
+            p
+        };
+        format!(
+            "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
+             | graph-match {pattern} project {proj}",
+            edges = g.edge_table,
+            src = g.src_col,
+            dst = g.dst_col,
+            nodes = g.node_table,
+            id = g.id_col,
+            proj = proj_list,
+        )
+    };
+    Ok(kql)
+}
+
 fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     // shortestPath queries have their own lowering onto `graph-shortest-path`.
     if let Some(path_var) = &q.shortest_path {
@@ -1559,100 +1660,7 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
         .collect::<Vec<_>>()
         .join(", ");
 
-    let rel_pat = |r: &RelPat| match &r.rel_type {
-        Some(t) => format!("[{}:{}]", r.var, t),
-        None => format!("[{}]", r.var),
-    };
-
-    // Multi-segment (star / tree / disjoint) patterns lower to a general
-    // `graph-match` over comma-separated segments; a single variable-length hop
-    // to `graph-var-match`; everything else to the fixed-length linear chain.
-    // A backward hop inside a multi-hop chain is also lowered via the general
-    // join (the linear matcher is forward-only), by decomposing into single-hop
-    // segments.
-    let primary_backward_multihop =
-        q.rels.len() > 1 && q.rels.iter().any(|r| r.direction == Direction::Backward);
-    let mut kql = if !q.extra_segments.is_empty() || primary_backward_multihop {
-        let mut segs = segment_patterns(&q.nodes, &q.rels)?;
-        for (sn, sr, opt) in &q.extra_segments {
-            for p in segment_patterns(sn, sr)? {
-                segs.push(if *opt { format!("OPTIONAL {p}") } else { p });
-            }
-        }
-        format!(
-            "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
-             | graph-match {pattern} project {proj}",
-            edges = g.edge_table,
-            src = g.src_col,
-            dst = g.dst_col,
-            nodes = g.node_table,
-            id = g.id_col,
-            pattern = segs.join(", "),
-            proj = proj_list,
-        )
-    } else if q.rels.len() == 1 && q.rels[0].var_length.is_some() {
-        let r = &q.rels[0];
-        let (min, max) = r.var_length.unwrap();
-        // `a` is the left node, `b` the right; the arrow direction drives the
-        // traversal (no endpoint swap — graph-var-match takes `direction`).
-        let a = &q.nodes[0].var;
-        let b = &q.nodes[1].var;
-        let dir_kw = match r.direction {
-            Direction::Forward => "forward",
-            Direction::Backward => "backward",
-            Direction::Undirected => "both",
-        };
-        format!(
-            "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
-             | graph-var-match ({a})-{rel}->({b}) min-hops {min} max-hops {max} \
-             direction {dir_kw} project {proj}",
-            edges = g.edge_table,
-            src = g.src_col,
-            dst = g.dst_col,
-            nodes = g.node_table,
-            id = g.id_col,
-            rel = rel_pat(r),
-            proj = proj_list,
-        )
-    } else {
-        // Fixed-length chain. A single hop preserves the backward-swap so the
-        // forward-only matcher is correct; a multi-hop pattern emits a forward
-        // chain and rejects a backward (or variable-length) hop, which would
-        // break the linear node order the matcher expects.
-        let pattern = if q.rels.len() == 1 {
-            let (left, right) = match q.rels[0].direction {
-                Direction::Backward => (&q.nodes[1].var, &q.nodes[0].var),
-                _ => (&q.nodes[0].var, &q.nodes[1].var),
-            };
-            format!("({left})-{}->({right})", rel_pat(&q.rels[0]))
-        } else {
-            let mut p = format!("({})", q.nodes[0].var);
-            for (i, r) in q.rels.iter().enumerate() {
-                if r.var_length.is_some() {
-                    return Err(unsupported(
-                        "variable-length relationship inside a multi-hop pattern",
-                    ));
-                }
-                if r.direction == Direction::Backward {
-                    return Err(unsupported(
-                        "backward `<-` relationship in a multi-hop pattern",
-                    ));
-                }
-                p.push_str(&format!("-{}->({})", rel_pat(r), q.nodes[i + 1].var));
-            }
-            p
-        };
-        format!(
-            "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
-             | graph-match {pattern} project {proj}",
-            edges = g.edge_table,
-            src = g.src_col,
-            dst = g.dst_col,
-            nodes = g.node_table,
-            id = g.id_col,
-            proj = proj_list,
-        )
-    };
+    let mut kql = graph_match_prefix(q, g, &proj_list)?;
 
     // Label filters + WHERE predicates run against the flat `_gm_result` columns.
     // Label filters are always AND (one `| where` each). WHERE comparisons are
