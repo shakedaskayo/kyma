@@ -2213,6 +2213,19 @@ mod tests {
     }
 
     #[test]
+    fn docs_graph_md_cypher_example_compiles() {
+        // The exact example published in docs/site/query/graph.md must parse +
+        // lower + compile to SQL — combines anonymous typed var-length, label,
+        // STARTS WITH, parens + NOT WHERE, ORDER BY, LIMIT.
+        let kql = tr(
+            "MATCH (a:service)-[:CALLS*1..3]->(b) \
+             WHERE a.name STARTS WITH 'api-' AND (b.tier = 'db' OR NOT b.healthy = 'true') \
+             RETURN a.name, b.name ORDER BY a.name LIMIT 50",
+        );
+        crate::kql_to_sql(&kql).expect("docs graph.md cypher example must compile to SQL");
+    }
+
+    #[test]
     fn where_parenthesized_group_overrides_precedence() {
         // `a AND (b OR c)` keeps the OR grouped — distinct from `a AND b OR c`.
         let kql = tr(
