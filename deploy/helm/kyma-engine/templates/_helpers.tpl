@@ -37,3 +37,50 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "default" .Values.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
+
+{{- /* Selector labels for one role deployment (adds kyma.io/role). Arg: dict
+       "ctx" $ "role" "<role>". */ -}}
+{{- define "kyma-engine.roleSelectorLabels" -}}
+{{ include "kyma-engine.selectorLabels" .ctx }}
+kyma.io/role: {{ .role }}
+{{- end -}}
+
+{{- /* The shared engine container for a role deployment, with KYMA_ROLE injected
+       ahead of the configured env (which the engine's role_components() honors).
+       Arg: dict "ctx" $ "role" "<role>". */ -}}
+{{- define "kyma-engine.roleContainer" -}}
+{{- $ctx := .ctx -}}
+- name: kyma-engine
+  image: "{{ $ctx.Values.image.repository }}:{{ $ctx.Values.image.tag }}"
+  imagePullPolicy: {{ $ctx.Values.image.pullPolicy }}
+  ports:
+    - name: http
+      containerPort: 8080
+      protocol: TCP
+  env:
+    - name: KYMA_ROLE
+      value: {{ .role | quote }}
+    {{- range $k, $v := $ctx.Values.env }}
+    - name: {{ $k }}
+      value: {{ $v | quote }}
+    {{- end }}
+  {{- if $ctx.Values.secretEnv }}
+  envFrom:
+    - secretRef:
+        name: {{ include "kyma-engine.fullname" $ctx }}-env
+  {{- end }}
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 20
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  resources:
+    {{- toYaml $ctx.Values.resources | nindent 4 }}
+{{- end -}}

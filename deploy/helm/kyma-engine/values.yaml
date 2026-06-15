@@ -41,3 +41,23 @@ env:
 # Secret engine environment (KYMA_CATALOG_URL, KYMA_AUTH_TOKENS, S3 keys, …).
 # Rendered into a Kubernetes Secret and injected via envFrom.
 secretEnv: {}
+
+# Role split (S2.4/S2.6). Disabled by default → the single all-in-one Deployment
+# above. When enabled, three role Deployments run instead (each sets KYMA_ROLE,
+# which the engine honors): stateless `edge` nodes (query+ingest, RollingUpdate,
+# optional HPA) behind the Service, a single `committer` (Recreate + PDB), and a
+# `worker` for background jobs (compaction/index/graph/retention). For the split
+# to actually offload commits, set KYMA_INGEST_MODE=staged in `env`.
+roles:
+  enabled: false
+  edge:
+    replicas: 2
+    autoscaling:
+      enabled: false
+      minReplicas: 2
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 70
+  committer:
+    pdb: true
+  worker:
+    replicas: 1
