@@ -9,10 +9,14 @@ _Last measured: 2026-04-19. Hardware: 1× macOS laptop, Docker-hosted Postgres +
 > dispatch), **per-extent IVF + RaBitQ ANN** + **Tantivy BM25** sidecars + a
 > cross-encoder reranker (so "vector search = stub" is obsolete), **staged
 > ingest** (router → object store → lease-elected committer), the **Helm role
-> split** (edge / committer / worker), a **CSR graph engine** with a full Cypher
-> dialect (read + CREATE/MERGE writes), and per-tenant **rate-limit / query-admission**
-> ops hardening. The section-1 ingest numbers below predate this and are **not**
-> re-measured here. Release-tier throughput/latency at 100M-row / 1B-edge /
+> split** (edge / committer / worker), a **CSR graph traversal engine**
+> (`kyma-graph-topo`, benchmarked below) plus a Cypher dialect extended with
+> CREATE/MERGE writes, and **query-admission** ops hardening (per-process
+> concurrency cap → `429` + `Retry-After`). The section-1 ingest numbers below
+> predate this and are **not** re-measured here. See `retrieval.md` for the
+> wired-vs-foundation status of each subsystem (e.g. the global SPANN centroid
+> tree, CSR live-traversal activation, and per-tenant quotas are foundation-only
+> today). Release-tier throughput/latency at 100M-row / 1B-edge /
 > multi-node / soak scale is pending representative infrastructure; the
 > deterministic **correctness** gates (ANN-recall-vs-oracle, graph
 > differential-vs-petgraph) and the CI-tier **graph-traversal** perf below were
@@ -20,6 +24,17 @@ _Last measured: 2026-04-19. Hardware: 1× macOS laptop, Docker-hosted Postgres +
 > re-validated in-session on an isolated throwaway stack: two stateless query
 > nodes over one shared catalog + object store, 20 split ingests → both nodes
 > agree `COUNT(*)=100` / `DISTINCT req_id=20` (no loss, no duplication).**
+>
+> **Test gates (in-session, 2026-06-15).** The full `gauntlet --tier=nightly`
+> is GREEN end-to-end — `property-fuzz` (differential-vs-petgraph + CSR topo +
+> retrieval recall/NDCG-vs-oracle), `sim` (embedded-engine /v1/query
+> round-trips incl. Cypher writes), `chaos` (2-node node-loss: survivor serves
+> every committed row, fresh node rejoins), `soak` (sustained ingest+query, 0
+> errors, no loss), and `perf-regression` (scan-aggregate latency under a
+> ceiling) — each over a throwaway isolated stack, zero container leak. The
+> local fresh-install acceptance gate (`scripts/fresh-install-validate.sh`,
+> SQLite + local FS, empty data dir) is GREEN (11/11). Both are wired into CI
+> (`.github/workflows/gauntlet-*.yml`, `fresh-install.yml`).
 >
 > **Graph traversal engine (S3.1/S3.2) — `kyma-graph-bench`, CI tier, dev laptop
 > under load (orders of magnitude, not absolute ceilings):**
