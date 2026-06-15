@@ -108,6 +108,39 @@ The result is a row per reachable node with its hop depth. Add `| where` and
 
 See [KQL](/query/kql) for the broader operator reference.
 
+### Cypher
+
+For graph-shaped queries you can send **Cypher** instead of KQL. `POST /v1/query`
+with `Content-Type: application/x-cypher`, the raw Cypher as the body, and an
+`X-Graph` header naming the graph (`"<db>/<graph>"`, or just `"<graph>"` when it
+falls back to `X-Database`). Cypher is translated to KQL and runs through the
+same Arrow execution path — so it inherits the [pruning cascade](/concepts/the-pruning-cascade)
+and the persisted CSR snapshot for deep traversals.
+
+```bash
+curl -sS localhost:8080/v1/query \
+  -H 'Content-Type: application/x-cypher' \
+  -H 'X-Graph: obs/kg' \
+  --data-binary "MATCH (a:service)-[:CALLS*1..3]->(b)
+                 WHERE a.name STARTS WITH 'api-' AND (b.tier = 'db' OR NOT b.healthy = 'true')
+                 RETURN a.name, b.name ORDER BY a.name LIMIT 50"
+```
+
+Supported surface:
+
+| Area | Supported |
+| --- | --- |
+| **Patterns** | `MATCH` with forward `-->`, backward `<--`, and undirected hops; multi-hop chains; comma-separated and multiple `MATCH` clauses (star / tree / disjoint, joined on shared variables); relationship type + node label filters (`-[r:CALLS]->`, `(a:service)`). |
+| **Variable length** | `-[r*min..max]->` (bounded), lowered to a depth-bounded recursive traversal that preserves both endpoints. |
+| **Paths** | `shortestPath((a)-[*..n]->(b))` with `length(p)`; endpoints pinned by `WHERE` id equality. |
+| **Optional** | `OPTIONAL MATCH` (lowered as a LEFT JOIN). |
+| **WHERE** | `=`, `<>`, `<`, `>`, `<=`, `>=`; `IN [..]`; `STARTS WITH` / `ENDS WITH` / `CONTAINS`; `AND` / `OR` / `NOT` with parentheses and correct precedence. |
+| **RETURN** | properties, `AS` aliases, `DISTINCT`, aggregates `count(*)` / `count(x)` / `sum` / `min` / `max`, `ORDER BY … [ASC\|DESC]`, `LIMIT`. |
+
+Not yet supported (returns `400` with the parse error): `WITH`, write clauses
+(`CREATE` / `MERGE` / `SET` / `DELETE`), `RETURN *`, and arbitrary expressions in
+`RETURN`. Use KQL for anything outside this surface.
+
 ### MCP tools
 
 When querying through the MCP server, two graph tools are available:
@@ -131,6 +164,12 @@ is selected with the `X-Database` header on every request. The short list:
 - `GET /v1/graph/:graph/nodes/:id/subgraph` — node + neighbourhood.
 - `POST /v1/graph/:graph/search` — predicate-filtered node search.
 - `POST /v1/graph/:graph/neighbors` — neighbours of a node.
+- `GET /v1/graph/:graph/analytics` — whole-graph analytics over the persisted
+  CSR topology (stored graphs only). `?kind=pagerank|communities|components`;
+  `pagerank` also takes `&seeds=<id,id,…>` (empty ⇒ global PageRank) and
+  `&limit=N` (top-N by score, default 100). Returns
+  `{"kind", "count", "results":[{"id", "value"}]}` — `value` is the PageRank
+  score, community id, or component id.
 
 ## The graph in the web UI
 
