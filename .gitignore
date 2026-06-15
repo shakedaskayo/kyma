@@ -28,3 +28,4 @@ storybook-static/
 read_only_token
 *.pat
 .superpowers/
+gauntlet-results.json
