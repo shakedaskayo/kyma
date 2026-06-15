@@ -198,8 +198,19 @@ carry an inline `id`. Ack:
 ## Test gates
 
 The retrieval/scale work is guarded by the gauntlet
-(`scripts/gauntlet.sh --tier=pr|nightly|weekly`) and the fresh-install
-acceptance gate (`scripts/fresh-install-validate.sh`), both wired into CI
-(`.github/workflows/gauntlet-*.yml`, `.github/workflows/fresh-install.yml`).
-See `benchmarks.md` for the measured numbers and the deterministic correctness
-oracles (recall-vs-exact, differential-vs-petgraph).
+(`scripts/gauntlet.sh --tier=pr|nightly|weekly`) and two fresh-install
+acceptance gates:
+
+- **Local single-binary** — `scripts/fresh-install-validate.sh` (SQLite + local
+  FS, `cargo build`), wired into CI as `fresh-install.yml`.
+- **Docker container** — `scripts/compose-smoke.sh` builds the image from the
+  Dockerfile and brings up the full `docker-compose` stack (Postgres + MinIO +
+  engine) on an isolated project/ports (`scripts/compose.smoke-override.yml`, so
+  it never collides with a running default-named dev stack), then asserts
+  health/login/ingest/query/search and tears down. Wired into CI as
+  `compose-smoke.yml` (runs on push to main + on demand).
+
+Both, plus the gauntlet, are wired into CI (`.github/workflows/gauntlet-*.yml`,
+`fresh-install.yml`, `compose-smoke.yml`). See `benchmarks.md` for the measured
+numbers and the deterministic correctness oracles (recall-vs-exact,
+differential-vs-petgraph).
