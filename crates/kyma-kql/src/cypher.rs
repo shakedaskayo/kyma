@@ -19,6 +19,11 @@
 //!   (`-[r]->`, `<-[r]-`) and undirected (`-[r]-`, treated as forward); a
 //!   multi-hop chain is forward-only (a backward `<-` hop is rejected, as it
 //!   would break the linear node order the matcher needs).
+//! - A **single variable-length** hop `-[r*M..N]->` (also `*`, `*N`, `*..N`,
+//!   `*M..`) lowers to `graph-var-match`, binding the `(a, b)` endpoint pair
+//!   over a bounded recursive traversal. Directed and undirected; an open
+//!   upper bound is capped at [`DEFAULT_VAR_LENGTH_MAX`]. The relationship
+//!   variable denotes a whole path, so projecting `r.*` is rejected.
 //! - Node `:Label` → `| where <var>_<label_col> == 'Label'` after the match.
 //! - Rel `:TYPE` → the `graph-match` `[r:TYPE]` edge filter.
 //! - `WHERE` simple comparisons (`= <> < > <= >=`) on `<var>.<prop>` vs a
@@ -37,8 +42,8 @@
 //!
 //! # Deferred constructs (rejected with a precise error)
 //!
-//! Variable-length `-[*..]->`, backward hops inside a multi-hop chain,
-//! `OPTIONAL MATCH`, multiple `MATCH`, `WITH`, `ORDER BY`, aggregation,
+//! Variable-length inside a multi-hop chain, backward hops inside a multi-hop
+//! chain, `OPTIONAL MATCH`, multiple `MATCH`, `WITH`, `ORDER BY`, aggregation,
 //! `CREATE/SET/DELETE/MERGE`, `shortestPath`, `RETURN *`.
 
 use crate::ParseError;
@@ -269,7 +274,16 @@ struct RelPat {
     var: String,
     rel_type: Option<String>,
     direction: Direction,
+    /// `Some((min, max))` for a variable-length relationship `-[*min..max]-`;
+    /// `None` for an ordinary single hop.
+    var_length: Option<(u64, u64)>,
 }
+
+/// Upper bound substituted for an open variable-length range (`[*]`, `[*N..]`).
+/// The engine lowers var-length to a `max`-bounded recursive CTE that must
+/// terminate, so an unbounded Cypher range is capped here. Generous enough for
+/// realistic graph queries; an explicit `[*min..max]` overrides it.
+const DEFAULT_VAR_LENGTH_MAX: u64 = 10;
 
 #[derive(Debug, Clone)]
 struct Comparison {
@@ -511,14 +525,77 @@ impl Parser {
             "r".to_string()
         };
 
-        // `:TYPE` filter, or variable-length `*` (unsupported).
+        // `:TYPE` filter.
         let mut rel_type = None;
         if self.eat(&Tok::Colon) {
             rel_type = Some(self.expect_word()?);
         }
-        if matches!(self.peek(), Some(Tok::Star)) {
-            return Err(unsupported("variable-length relationship `-[*..]->`"));
-        }
+
+        // Variable-length spec `*`, `*N`, `*M..N`, `*M..`, `*..N` (openCypher:
+        // `*` ⇒ 1..∞, `*N` ⇒ exactly N, `*..N` ⇒ 1..N, `*M..` ⇒ M..∞). The
+        // number lexer greedily eats `.`, so a present lower bound arrives fused
+        // with the range dots — `*1..3` lexes as `Star Num("1..3")`, `*1..` as
+        // `Star Num("1..")`, `*N` as `Star Num("N")` — while an absent lower
+        // bound keeps the dots separate — `*..3` is `Star Dot Dot Num("3")`. We
+        // split the fused token on `..`. Unbounded upper bounds are capped at
+        // [`DEFAULT_VAR_LENGTH_MAX`] so the recursive lowering terminates.
+        let var_length = if self.eat(&Tok::Star) {
+            let parse_bound = |s: &str| -> Result<u64, ParseError> {
+                s.parse::<u64>()
+                    .map_err(|_| ParseError(format!("cypher: invalid variable-length bound `{s}`")))
+            };
+            let (min, max) = if matches!(self.peek(), Some(Tok::Num(_))) {
+                let raw = match self.bump() {
+                    Some(Tok::Num(s)) => s,
+                    _ => unreachable!("peeked a Num"),
+                };
+                if let Some(idx) = raw.find("..") {
+                    let lo = &raw[..idx];
+                    let hi = &raw[idx + 2..];
+                    let min = if lo.is_empty() { 1 } else { parse_bound(lo)? };
+                    let max = if hi.is_empty() {
+                        DEFAULT_VAR_LENGTH_MAX
+                    } else {
+                        parse_bound(hi)?
+                    };
+                    (min, max)
+                } else {
+                    let n = parse_bound(&raw)?; // `*N` ⇒ exactly N
+                    (n, n)
+                }
+            } else if self.eat(&Tok::Dot) {
+                // `*..N` / `*..` — lower bound omitted (defaults to 1).
+                if !self.eat(&Tok::Dot) {
+                    return Err(ParseError(
+                        "cypher: expected `..` in variable-length relationship".to_string(),
+                    ));
+                }
+                let max = if matches!(self.peek(), Some(Tok::Num(_))) {
+                    match self.bump() {
+                        Some(Tok::Num(s)) => parse_bound(&s)?,
+                        _ => unreachable!("peeked a Num"),
+                    }
+                } else {
+                    DEFAULT_VAR_LENGTH_MAX
+                };
+                (1, max)
+            } else {
+                (1, DEFAULT_VAR_LENGTH_MAX) // bare `*` ⇒ 1..cap
+            };
+            if max == 0 {
+                return Err(ParseError(
+                    "cypher: variable-length max must be ≥ 1".to_string(),
+                ));
+            }
+            if min > max {
+                return Err(ParseError(format!(
+                    "cypher: variable-length min ({min}) must be ≤ max ({max})"
+                )));
+            }
+            Some((min, max))
+        } else {
+            None
+        };
 
         if !self.eat(&Tok::RBracket) {
             return Err(ParseError(
@@ -552,6 +629,7 @@ impl Parser {
             var: rel_var,
             rel_type,
             direction,
+            var_length,
         })
     }
 
@@ -787,51 +865,84 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
         ));
     }
 
-    // ---- graph-match pattern: a forward chain of one or more hops. ----
-    // A single hop preserves the backward-swap so the forward-only matcher is
-    // correct. A multi-hop pattern emits a forward chain and rejects a backward
-    // hop, which would break the linear node order the matcher expects.
-    let rel_pat = |r: &RelPat| match &r.rel_type {
-        Some(t) => format!("[{}:{}]", r.var, t),
-        None => format!("[{}]", r.var),
-    };
-    let pattern = if q.rels.len() == 1 {
-        let (left, right) = match q.rels[0].direction {
-            Direction::Backward => (&q.nodes[1].var, &q.nodes[0].var),
-            _ => (&q.nodes[0].var, &q.nodes[1].var),
-        };
-        format!("({left})-{}->({right})", rel_pat(&q.rels[0]))
-    } else {
-        let mut p = format!("({})", q.nodes[0].var);
-        for (i, r) in q.rels.iter().enumerate() {
-            if r.direction == Direction::Backward {
-                return Err(unsupported(
-                    "backward `<-` relationship in a multi-hop pattern",
-                ));
-            }
-            p.push_str(&format!("-{}->({})", rel_pat(r), q.nodes[i + 1].var));
-        }
-        p
-    };
-
-    // ---- project list ----
+    // ---- project list ---- (shared by the graph-match and graph-var-match arms)
     let proj_list = projections
         .iter()
         .map(|p| format!("{}.{} as {}", p.var, p.col, p.alias))
         .collect::<Vec<_>>()
         .join(", ");
 
-    // ---- assemble pipeline ----
-    let mut kql = format!(
-        "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
-         | graph-match {pattern} project {proj}",
-        edges = g.edge_table,
-        src = g.src_col,
-        dst = g.dst_col,
-        nodes = g.node_table,
-        id = g.id_col,
-        proj = proj_list,
-    );
+    let rel_pat = |r: &RelPat| match &r.rel_type {
+        Some(t) => format!("[{}:{}]", r.var, t),
+        None => format!("[{}]", r.var),
+    };
+
+    // A single variable-length hop lowers to `graph-var-match` (endpoint-pair
+    // binding over a bounded recursive traversal); everything else is the
+    // fixed-length `graph-match` chain.
+    let mut kql = if q.rels.len() == 1 && q.rels[0].var_length.is_some() {
+        let r = &q.rels[0];
+        let (min, max) = r.var_length.unwrap();
+        // `a` is the left node, `b` the right; the arrow direction drives the
+        // traversal (no endpoint swap — graph-var-match takes `direction`).
+        let a = &q.nodes[0].var;
+        let b = &q.nodes[1].var;
+        let dir_kw = match r.direction {
+            Direction::Forward => "forward",
+            Direction::Backward => "backward",
+            Direction::Undirected => "both",
+        };
+        format!(
+            "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
+             | graph-var-match ({a})-{rel}->({b}) min-hops {min} max-hops {max} \
+             direction {dir_kw} project {proj}",
+            edges = g.edge_table,
+            src = g.src_col,
+            dst = g.dst_col,
+            nodes = g.node_table,
+            id = g.id_col,
+            rel = rel_pat(r),
+            proj = proj_list,
+        )
+    } else {
+        // Fixed-length chain. A single hop preserves the backward-swap so the
+        // forward-only matcher is correct; a multi-hop pattern emits a forward
+        // chain and rejects a backward (or variable-length) hop, which would
+        // break the linear node order the matcher expects.
+        let pattern = if q.rels.len() == 1 {
+            let (left, right) = match q.rels[0].direction {
+                Direction::Backward => (&q.nodes[1].var, &q.nodes[0].var),
+                _ => (&q.nodes[0].var, &q.nodes[1].var),
+            };
+            format!("({left})-{}->({right})", rel_pat(&q.rels[0]))
+        } else {
+            let mut p = format!("({})", q.nodes[0].var);
+            for (i, r) in q.rels.iter().enumerate() {
+                if r.var_length.is_some() {
+                    return Err(unsupported(
+                        "variable-length relationship inside a multi-hop pattern",
+                    ));
+                }
+                if r.direction == Direction::Backward {
+                    return Err(unsupported(
+                        "backward `<-` relationship in a multi-hop pattern",
+                    ));
+                }
+                p.push_str(&format!("-{}->({})", rel_pat(r), q.nodes[i + 1].var));
+            }
+            p
+        };
+        format!(
+            "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
+             | graph-match {pattern} project {proj}",
+            edges = g.edge_table,
+            src = g.src_col,
+            dst = g.dst_col,
+            nodes = g.node_table,
+            id = g.id_col,
+            proj = proj_list,
+        )
+    };
 
     // Label filters + WHERE predicates run against the flat `_gm_result` columns.
     let mut filters: Vec<String> = Vec::new();
@@ -892,6 +1003,70 @@ mod tests {
             kql.contains("project a.name as a_name, b.name as b_name"),
             "{kql}"
         );
+    }
+
+    // ---- variable-length relationships --------------------------------
+    fn tr_err(cypher: &str) -> String {
+        cypher_to_kql(cypher, &binding())
+            .expect_err("should be rejected")
+            .0
+    }
+
+    #[test]
+    fn var_length_forward_lowers_to_graph_var_match() {
+        let kql = tr("MATCH (a)-[r*1..3]->(b) RETURN a.name, b.name");
+        assert!(
+            kql.contains("graph-var-match (a)-[r]->(b) min-hops 1 max-hops 3 direction forward"),
+            "{kql}"
+        );
+        assert!(
+            kql.contains("project a.name as a_name, b.name as b_name"),
+            "{kql}"
+        );
+        // still goes through make-graph so the operator can join node columns
+        assert!(kql.contains("make-graph src --> dst with github_nodes on id"), "{kql}");
+    }
+
+    #[test]
+    fn var_length_typed_and_directions() {
+        // typed relationship is carried into the operator pattern
+        let kql = tr("MATCH (a)-[r:CALLS*2..4]->(b) RETURN a.name");
+        assert!(kql.contains("graph-var-match (a)-[r:CALLS]->(b) min-hops 2 max-hops 4 direction forward"), "{kql}");
+        // backward: direction backward, no endpoint swap
+        let back = tr("MATCH (a)<-[r*1..2]-(b) RETURN a.name, b.name");
+        assert!(back.contains("graph-var-match (a)-[r]->(b) min-hops 1 max-hops 2 direction backward"), "{back}");
+        // undirected: direction both
+        let undir = tr("MATCH (a)-[r*1..2]-(b) RETURN a.name");
+        assert!(undir.contains("direction both"), "{undir}");
+    }
+
+    #[test]
+    fn var_length_bound_forms() {
+        // bare `*` ⇒ 1..cap(10)
+        assert!(tr("MATCH (a)-[r*]->(b) RETURN a.name").contains("min-hops 1 max-hops 10"));
+        // `*N` ⇒ exactly N
+        assert!(tr("MATCH (a)-[r*3]->(b) RETURN a.name").contains("min-hops 3 max-hops 3"));
+        // `*..N` ⇒ 1..N
+        assert!(tr("MATCH (a)-[r*..4]->(b) RETURN a.name").contains("min-hops 1 max-hops 4"));
+        // `*M..` ⇒ M..cap
+        assert!(tr("MATCH (a)-[r*2..]->(b) RETURN a.name").contains("min-hops 2 max-hops 10"));
+    }
+
+    #[test]
+    fn var_length_rejections() {
+        // Projecting the relationship var is rejected by the graph-var-match
+        // operator (a path has no edge columns) — surfaces at KQL→SQL, since
+        // cypher_to_kql happily emits the project list.
+        let kql = tr("MATCH (a)-[r*1..3]->(b) RETURN r.type");
+        let err = crate::kql_to_sql(&kql).expect_err("r.* in a var-length match must be rejected");
+        assert!(err.0.contains("no columns"), "{}", err.0);
+        // var-length inside a multi-hop pattern is unsupported (cypher lowering).
+        assert!(
+            tr_err("MATCH (a)-[r*1..2]->(b)-[s]->(c) RETURN a.name").contains("multi-hop"),
+            "expected multi-hop rejection"
+        );
+        // min > max (cypher parse).
+        assert!(tr_err("MATCH (a)-[r*3..1]->(b) RETURN a.name").contains("min"));
     }
 
     // ---- node :Label filter -------------------------------------------
@@ -1026,10 +1201,12 @@ mod tests {
     }
 
     #[test]
-    fn variable_length_rejected() {
-        let err = cypher_to_kql("MATCH (a)-[r*1..3]->(b) RETURN a.name", &binding());
-        let msg = err.unwrap_err().0;
-        assert!(msg.contains("variable-length"), "{msg}");
+    fn variable_length_now_supported() {
+        // Regression guard: a single var-length hop used to be rejected; it now
+        // lowers to graph-var-match (see var_length_* tests above).
+        let kql = cypher_to_kql("MATCH (a)-[r*1..3]->(b) RETURN a.name", &binding())
+            .expect("single var-length hop is supported");
+        assert!(kql.contains("graph-var-match"), "{kql}");
     }
 
     #[test]

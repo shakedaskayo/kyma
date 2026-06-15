@@ -394,6 +394,7 @@ impl<'s> Parser<'s> {
             "distinct" => self.op_distinct(),
             "graph-traverse" => self.op_graph_traverse(),
             "graph-var-length" => self.op_graph_var_length(),
+            "graph-var-match" => self.op_graph_var_match(),
             "graph-shortest-path" => self.op_graph_shortest_path(),
             "make-graph" => self.op_make_graph(),
             "graph-match" => self.op_graph_match(),
@@ -884,6 +885,191 @@ impl<'s> Parser<'s> {
             .ctes
             .push(("_vl_result".to_string(), result_body, false));
         self.state.table = "_vl_result".to_string();
+        Ok(())
+    }
+
+    /// `graph-var-match (a)-[r[:T]]->(b) min-hops M max-hops N [direction forward|backward|both] project <var>.<col> [as <alias>], …`
+    ///
+    /// The variable-length analogue of `graph-match`: binds the `(a, b)`
+    /// endpoint pair of a single variable-length relationship and projects
+    /// `a.*` / `b.*` node columns. Requires a preceding `make-graph`. This is
+    /// what Cypher `MATCH (a)-[*M..N]->(b) RETURN a.…, b.…` lowers onto — the
+    /// pair binding `graph-var-length` produces, joined back to the node table
+    /// on both endpoints.
+    ///
+    /// Unlike `graph-var-length` (seeded), `a` ranges over EVERY node (the
+    /// anchor scans the node table), matching open Cypher semantics. The
+    /// recursion + shortest-depth dedup + `[min,max]` window are identical to
+    /// `graph-var-length`; the result CTE additionally joins the node table on
+    /// `origin` (alias `a`) and the reached node (alias `b`). The relationship
+    /// variable has no per-edge columns (it denotes a whole path), so projecting
+    /// `r.*` is rejected.
+    fn op_graph_var_match(&mut self) -> Result<(), ParseError> {
+        let def = self
+            .state
+            .graph_def
+            .clone()
+            .ok_or_else(|| ParseError("graph-var-match requires a preceding make-graph".into()))?;
+
+        // Pattern: ( a ) -[ r [:T] ]-> ( b ) — a single forward var-length hop.
+        self.expect(&Token::LParen, "(")?;
+        let a_var = self.expect_ident()?;
+        self.expect(&Token::RParen, ")")?;
+        self.expect(&Token::Minus, "-")?;
+        self.expect(&Token::LBracket, "[")?;
+        let rel_var = self.expect_ident()?;
+        let edge_type = if self.eat(&Token::Colon) {
+            Some(self.expect_ident()?)
+        } else {
+            None
+        };
+        self.expect(&Token::RBracket, "]")?;
+        self.expect(&Token::RightArrow, "->")?;
+        self.expect(&Token::LParen, "(")?;
+        let b_var = self.expect_ident()?;
+        self.expect(&Token::RParen, ")")?;
+
+        self.expect_ident_eq("min-hops")?;
+        let min_hops = match self.bump()? {
+            Token::Int(n) if n >= 0 => n as u64,
+            other => {
+                return Err(ParseError(format!(
+                    "expected non-negative integer after `min-hops`, got {other:?}"
+                )))
+            }
+        };
+        self.expect_ident_eq("max-hops")?;
+        let max_hops = match self.bump()? {
+            Token::Int(n) if n >= 0 => n as u64,
+            other => {
+                return Err(ParseError(format!(
+                    "expected non-negative integer after `max-hops`, got {other:?}"
+                )))
+            }
+        };
+        if max_hops == 0 {
+            return Err(ParseError("graph-var-match: max-hops must be ≥ 1".into()));
+        }
+        if min_hops > max_hops {
+            return Err(ParseError(format!(
+                "graph-var-match: min-hops ({min_hops}) must be ≤ max-hops ({max_hops})"
+            )));
+        }
+        let direction = if matches!(self.peek(), Some(Token::Ident(s)) if s == "direction") {
+            self.pos += 1;
+            match self.bump()? {
+                Token::Ident(s) => match s.as_str() {
+                    "forward" => GraphDirection::Forward,
+                    "backward" => GraphDirection::Backward,
+                    "both" => GraphDirection::Both,
+                    other => return Err(ParseError(format!("unknown direction: {other}"))),
+                },
+                other => {
+                    return Err(ParseError(format!(
+                        "expected direction keyword, got {other:?}"
+                    )))
+                }
+            }
+        } else {
+            GraphDirection::Forward
+        };
+
+        // project <var>.<col> [as <alias>], … — only a / b node vars.
+        self.expect_ident_eq("project")?;
+        let mut select_items: Vec<String> = Vec::new();
+        loop {
+            let var = self.expect_ident()?;
+            self.expect(&Token::Dot, ".")?;
+            let col = self.expect_ident()?;
+            let alias_tbl = if var == a_var {
+                "a"
+            } else if var == b_var {
+                "b"
+            } else if var == rel_var {
+                return Err(ParseError(format!(
+                    "graph-var-match project: relationship `{rel_var}` has no columns in a variable-length match"
+                )));
+            } else {
+                return Err(ParseError(format!(
+                    "graph-var-match project: unknown variable `{var}`"
+                )));
+            };
+            let out_alias = if self.eat_ident_eq("as") {
+                self.expect_ident()?
+            } else {
+                format!("{var}_{col}")
+            };
+            select_items.push(format!(
+                "{alias_tbl}.{} AS {}",
+                quote_ident(&col),
+                quote_ident(&out_alias)
+            ));
+            if !self.eat(&Token::Comma) {
+                break;
+            }
+        }
+        if select_items.is_empty() {
+            return Err(ParseError(
+                "graph-var-match: project must list at least one column".into(),
+            ));
+        }
+
+        let edges_tbl = &def.edge_table;
+        let nodes_tbl = &def.node_table;
+        let src = quote_ident(&def.src_col);
+        let dst = quote_ident(&def.dst_col);
+        let id = quote_ident(&def.id_col);
+        let type_filter = match &edge_type {
+            Some(t) => format!(r#" AND e."type" = '{}'"#, t.replace('\'', "''")),
+            None => String::new(),
+        };
+
+        // Anchor: every node is a candidate `a` (open Cypher: `a` is unbound).
+        let anchor = format!(
+            "SELECT CAST({id} AS VARCHAR) AS origin, CAST({id} AS VARCHAR) AS node, 0 AS depth \
+             FROM {nodes_tbl}"
+        );
+        let next_node = match direction {
+            GraphDirection::Forward => format!("e.{dst}"),
+            GraphDirection::Backward => format!("e.{src}"),
+            GraphDirection::Both => {
+                format!("CASE WHEN e.{src} = v.node THEN e.{dst} ELSE e.{src} END")
+            }
+        };
+        let join_cond = match direction {
+            GraphDirection::Forward => format!("e.{src} = v.node"),
+            GraphDirection::Backward => format!("e.{dst} = v.node"),
+            GraphDirection::Both => format!("(e.{src} = v.node OR e.{dst} = v.node)"),
+        };
+        let body = format!(
+            "{anchor} \
+             UNION ALL \
+             SELECT v.origin, {next_node}, v.depth + 1 \
+             FROM _vm v \
+             JOIN {edges_tbl} e ON {join_cond} \
+             WHERE v.depth < {max_hops}{type_filter}"
+        );
+        self.state
+            .ctes
+            .push(("_vm(origin, node, depth)".to_string(), body, true));
+
+        let min_body = "SELECT origin, node, MIN(depth) AS depth FROM _vm GROUP BY origin, node";
+        self.state
+            .ctes
+            .push(("_vm_min".to_string(), min_body.to_string(), false));
+
+        // Bind both endpoints back to the node table, then project + window.
+        let sel = select_items.join(", ");
+        let result_body = format!(
+            "SELECT {sel} FROM _vm_min m \
+             JOIN {nodes_tbl} a ON m.origin = a.{id} \
+             JOIN {nodes_tbl} b ON m.node = b.{id} \
+             WHERE m.depth >= {min_hops} AND m.depth <= {max_hops}"
+        );
+        self.state
+            .ctes
+            .push(("_vm_result".to_string(), result_body, false));
+        self.state.table = "_vm_result".to_string();
         Ok(())
     }
 
