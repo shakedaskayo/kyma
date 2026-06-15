@@ -20,6 +20,25 @@ ISO_NODE_A=""; ISO_NODE_B=""
 ISO_PID_A=""; ISO_PID_B=""
 ISO_LOG_A=""; ISO_LOG_B=""
 ISO_ROOT=""
+# Resolved binary paths (release-first, debug fallback) — exported so family
+# scripts (e.g. chaos's replacement node) reuse the same binary the stack ran.
+ISO_KYMA=""; ISO_KYMA_CLI=""
+
+# _iso_resolve_bins — locate the engine + CLI binaries, preferring an
+# optimized release build (what CI builds) but falling back to debug (local
+# dev). Returns non-zero with a build hint if either is missing.
+_iso_resolve_bins() {
+  local p
+  for p in target/release/kyma target/debug/kyma; do
+    [ -x "$p" ] && { ISO_KYMA="$p"; break; }
+  done
+  for p in target/release/kyma-cli target/debug/kyma-cli; do
+    [ -x "$p" ] && { ISO_KYMA_CLI="$p"; break; }
+  done
+  [ -n "$ISO_KYMA" ] || { echo "iso: kyma binary not found (build: cargo build [--release] -p kyma-bin)" >&2; return 1; }
+  [ -n "$ISO_KYMA_CLI" ] || { echo "iso: kyma-cli binary not found (build: cargo build [--release] -p kyma-cli)" >&2; return 1; }
+  return 0
+}
 
 iso_down() {
   [ -n "${ISO_PID_A:-}" ] && kill -9 "$ISO_PID_A" 2>/dev/null || true
@@ -35,6 +54,7 @@ iso_up() {
   local n="${1:-1}"
   ISO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   cd "$ISO_ROOT"
+  _iso_resolve_bins || return 9
   ISO_SUF="g$$_$RANDOM"
   ISO_PG="kyma-gaunt-pg-$ISO_SUF"; ISO_MINIO="kyma-gaunt-minio-$ISO_SUF"
   ISO_PGPORT=$(( 5500 + (RANDOM % 400) ))
@@ -71,17 +91,17 @@ iso_up() {
   export RUST_LOG="${RUST_LOG:-warn}"
 
   # Bootstrap catalog (migrates the fresh PG) + the standard load table.
-  ./target/debug/kyma-cli create-database default --if-not-exists >/dev/null 2>&1 || return 13
-  ./target/debug/kyma-cli create-table --db default --name soak \
+  "$ISO_KYMA_CLI" create-database default --if-not-exists >/dev/null 2>&1 || return 13
+  "$ISO_KYMA_CLI" create-table --db default --name soak \
     --schema 'timestamp:timestamp,req_id:int,row_id:int,message:string' >/dev/null 2>&1 || true
 
   # `disown` so the shell doesn't print a job-control "Killed: 9" line to stderr
   # when iso_down kills the node — that line would otherwise become the family
   # script's last output and clobber the JSON the gauntlet parses (`2>&1|tail -1`).
-  KYMA_HTTP_ADDR="$ISO_NODE_A" ./target/debug/kyma >"$ISO_LOG_A" 2>&1 & ISO_PID_A=$!
+  KYMA_HTTP_ADDR="$ISO_NODE_A" "$ISO_KYMA" >"$ISO_LOG_A" 2>&1 & ISO_PID_A=$!
   disown "$ISO_PID_A" 2>/dev/null || true
   if [ "$n" -ge 2 ]; then
-    KYMA_HTTP_ADDR="$ISO_NODE_B" ./target/debug/kyma >"$ISO_LOG_B" 2>&1 & ISO_PID_B=$!
+    KYMA_HTTP_ADDR="$ISO_NODE_B" "$ISO_KYMA" >"$ISO_LOG_B" 2>&1 & ISO_PID_B=$!
     disown "$ISO_PID_B" 2>/dev/null || true
   fi
   _iso_wait "$ISO_NODE_A" || { echo "iso: node A unhealthy" >&2; tail -15 "$ISO_LOG_A" >&2; return 14; }
