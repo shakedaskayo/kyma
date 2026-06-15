@@ -36,4 +36,6 @@ tonic = { workspace = true }
 
 [dev-dependencies]
 kyma-catalog-sqlite.workspace = true
+kyma-kql.workspace = true
+kyma-graph-testkit.workspace = true
 tokio = { workspace = true, features = ["full"] }
