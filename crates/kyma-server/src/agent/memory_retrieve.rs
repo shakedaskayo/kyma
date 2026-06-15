@@ -24,6 +24,7 @@ use serde_json::{json, Value};
 use tracing::Instrument as _;
 
 use kyma_core::tenant::DEFAULT_TENANT;
+use kyma_graph_topo::{CsrGraph, Direction as TopoDir};
 use kyma_memory::types::{MemoryType, RecallFilter};
 use kyma_memory::{sql, MemoryWriter, DEFAULT_DATABASE, EDGE_TABLE, NODE_TABLE};
 
@@ -257,6 +258,13 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
             .await;
     }
 
+    // 4b. Optional PPR rescoring (S3.4): replace the hop-decay graph_proximity
+    // with personalized-PageRank mass over the candidate-induced memory
+    // subgraph, seeded by the top fused candidates. Default-off
+    // (KYMA_MEMORY_PPR) → candidates keep their hop-decay proximity and recall
+    // is byte-identical to the pre-PPR behaviour.
+    ppr_rescore(shared, &mut cands, &filter.realms).await;
+
     // 5. Final blend + sort.
     let kw_norm_denom = tokens.len().max(1) as f64;
     let mut scored: Vec<RetrievedMemory> = cands
@@ -368,6 +376,86 @@ async fn graph_expand(
         frontier = next;
         if cands.len() > CAND_K * 4 || linked.len() > limit * 20 {
             break; // fan-out guard
+        }
+    }
+}
+
+// ── PPR graph proximity (S3.4) ────────────────────────────────────────────────
+
+/// PPR restart probability and residual-stop threshold.
+const PPR_ALPHA: f64 = 0.15;
+const PPR_EPSILON: f64 = 1e-5;
+
+/// Whether PPR graph-proximity rescoring is enabled. Off unless
+/// `KYMA_MEMORY_PPR` is `1`/`true` — so the default recall path is unchanged
+/// and every existing test/deployment is byte-identical.
+fn ppr_enabled() -> bool {
+    std::env::var("KYMA_MEMORY_PPR")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+/// Personalized-PageRank proximity over a small edge set, seeded by `seeds`.
+/// Returns each reached node's PageRank mass, max-normalized to `[0, 1]`. Pure
+/// (no IO) so the proximity contract is unit-testable apart from the SQL glue.
+fn ppr_proximity(
+    edges: &[(String, String, String)],
+    seeds: &[String],
+) -> HashMap<String, f64> {
+    let mut out = HashMap::new();
+    if edges.is_empty() || seeds.is_empty() {
+        return out;
+    }
+    let csr = CsrGraph::build(
+        edges.iter().flat_map(|(s, d, _)| [s.as_str(), d.as_str()]),
+        edges.iter().map(|(s, d, t)| (s.as_str(), d.as_str(), t.as_str())),
+    );
+    let seed_refs: Vec<&str> = seeds.iter().map(String::as_str).collect();
+    let mass = csr.personalized_pagerank(&seed_refs, PPR_ALPHA, PPR_EPSILON, TopoDir::Both);
+    let max = mass.iter().map(|(_, m)| *m).fold(0.0f64, f64::max);
+    if max <= 0.0 {
+        return out;
+    }
+    for (id, m) in mass {
+        out.insert(id, m / max);
+    }
+    out
+}
+
+/// Replace each candidate's hop-decay `graph_proximity` with its normalized PPR
+/// mass over the candidate-induced memory subgraph, seeded by the top fused
+/// candidates. A no-op when disabled, with fewer than two candidates, or when
+/// the candidates have no internal edges (then the hop-decay proximity stands).
+async fn ppr_rescore(shared: &SharedToolCtx, cands: &mut HashMap<String, Cand>, realms: &[String]) {
+    if !ppr_enabled() || cands.len() < 2 {
+        return;
+    }
+    let ids: Vec<String> = cands.keys().cloned().collect();
+    let sql = sql::neighbors_sql(EDGE_TABLE, &ids, realms, EXPAND_CAP * 4);
+    let res = execute_sql(shared, DEFAULT_DATABASE, &sql, EXPAND_CAP * 4).await;
+    let cand_set: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
+    let mut edges: Vec<(String, String, String)> = Vec::new();
+    for row in rows_of(&res) {
+        let src = get_str(&row, "src").unwrap_or_default();
+        let dst = get_str(&row, "dst").unwrap_or_default();
+        if cand_set.contains(src.as_str()) && cand_set.contains(dst.as_str()) {
+            let t = get_str(&row, "type").unwrap_or_default();
+            edges.push((src, dst, t));
+        }
+    }
+    if edges.is_empty() {
+        return;
+    }
+    // Seeds: the top fused candidates by best rank (same as graph_expand's).
+    let seed_ids: Vec<String> = {
+        let mut s: Vec<(&String, usize)> = cands.values().map(|c| (&c.id, best_rank(c))).collect();
+        s.sort_by_key(|(_, r)| *r);
+        s.iter().take(SEED_N).map(|(id, _)| (*id).clone()).collect()
+    };
+    let prox = ppr_proximity(&edges, &seed_ids);
+    for c in cands.values_mut() {
+        if let Some(&m) = prox.get(&c.id) {
+            c.graph_proximity = m;
         }
     }
 }
@@ -843,5 +931,46 @@ impl RetrieveResult {
             "context": self.context,
             "took_ms": self.took_ms,
         })
+    }
+}
+
+#[cfg(test)]
+mod ppr_tests {
+    use super::*;
+
+    #[test]
+    fn ppr_proximity_concentrates_near_the_seed() {
+        let edges = vec![
+            ("a".to_string(), "b".to_string(), "R".to_string()),
+            ("b".to_string(), "c".to_string(), "R".to_string()),
+            ("c".to_string(), "d".to_string(), "R".to_string()),
+        ];
+        let prox = ppr_proximity(&edges, &["a".to_string()]);
+        // Every node reached, normalized into [0, 1] with a max of exactly 1.0.
+        assert_eq!(prox.len(), 4, "{prox:?}");
+        assert!(prox.values().all(|m| (0.0..=1.0).contains(m)), "{prox:?}");
+        assert!(
+            (prox.values().cloned().fold(0.0_f64, f64::max) - 1.0).abs() < 1e-9,
+            "max-normalized: {prox:?}"
+        );
+        // The seed carries more mass than the farthest node.
+        assert!(prox["a"] > prox["d"], "seed-local mass: {prox:?}");
+    }
+
+    #[test]
+    fn ppr_proximity_empty_inputs_are_empty() {
+        assert!(ppr_proximity(&[], &["a".to_string()]).is_empty());
+        assert!(ppr_proximity(
+            &[("a".to_string(), "b".to_string(), "R".to_string())],
+            &[]
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn ppr_disabled_by_default() {
+        // The default recall path must be unchanged: PPR only runs when the
+        // env flag is explicitly set (not set in the test environment).
+        assert!(!ppr_enabled());
     }
 }
