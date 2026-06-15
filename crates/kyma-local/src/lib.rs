@@ -460,6 +460,10 @@ pub fn build_local_app(
         .merge(kyma_server::cleanup_write_router(catalog.clone()))
         .merge(kyma_server::compact_write_router(catalog.clone()))
         .layer(write_mw());
+    // Keep the per-tenant quota cache (S2.6) fresh so the admission limiter and
+    // the /v1/admin/tenant-quotas endpoint work in local mode too. No-op when the
+    // tenant_quotas table is empty (the single-tenant default).
+    let _quota_refresh_handle = kyma_server::quota_cache::spawn_refresh(catalog.clone());
     let admin_users_router =
         kyma_server::admin_handler::admin_users_router(catalog.clone()).layer(admin_mw());
     let session_router =

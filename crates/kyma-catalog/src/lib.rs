@@ -825,6 +825,69 @@ impl Catalog for PostgresCatalog {
         Ok(rows.into_iter().map(|(p,)| p).collect())
     }
 
+    async fn upsert_tenant_quota(
+        &self,
+        quota: &kyma_core::catalog::TenantQuota,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO tenant_quotas
+                (tenant_id, max_query_concurrent, max_agent_concurrent, updated_at)
+             VALUES ($1, $2, $3, now())
+             ON CONFLICT (tenant_id)
+             DO UPDATE SET max_query_concurrent = EXCLUDED.max_query_concurrent,
+                           max_agent_concurrent = EXCLUDED.max_agent_concurrent,
+                           updated_at           = now()",
+        )
+        .bind(quota.tenant.as_uuid())
+        .bind(quota.max_query_concurrent.map(|v| v as i32))
+        .bind(quota.max_agent_concurrent.map(|v| v as i32))
+        .execute(&self.pool)
+        .await
+        .map_err(sql_err)?;
+        Ok(())
+    }
+
+    async fn get_tenant_quota(
+        &self,
+        tenant: TenantId,
+    ) -> Result<Option<kyma_core::catalog::TenantQuota>> {
+        let row: Option<(Option<i32>, Option<i32>, chrono::DateTime<chrono::Utc>)> =
+            sqlx::query_as(
+                "SELECT max_query_concurrent, max_agent_concurrent, updated_at
+                 FROM tenant_quotas WHERE tenant_id = $1",
+            )
+            .bind(tenant.as_uuid())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(sql_err)?;
+        Ok(row.map(|(q, a, updated_at)| kyma_core::catalog::TenantQuota {
+            tenant,
+            max_query_concurrent: q.map(|v| v.max(0) as u32),
+            max_agent_concurrent: a.map(|v| v.max(0) as u32),
+            updated_at,
+        }))
+    }
+
+    async fn list_tenant_quotas(&self) -> Result<Vec<kyma_core::catalog::TenantQuota>> {
+        let rows: Vec<(uuid::Uuid, Option<i32>, Option<i32>, chrono::DateTime<chrono::Utc>)> =
+            sqlx::query_as(
+                "SELECT tenant_id, max_query_concurrent, max_agent_concurrent, updated_at
+                 FROM tenant_quotas",
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(sql_err)?;
+        Ok(rows
+            .into_iter()
+            .map(|(t, q, a, updated_at)| kyma_core::catalog::TenantQuota {
+                tenant: TenantId::from_uuid(t),
+                max_query_concurrent: q.map(|v| v.max(0) as u32),
+                max_agent_concurrent: a.map(|v| v.max(0) as u32),
+                updated_at,
+            })
+            .collect())
+    }
+
     async fn stage_extent(
         &self,
         tenant: TenantId,

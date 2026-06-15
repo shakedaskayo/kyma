@@ -197,13 +197,14 @@ for the retrieval + scale subsystems and their config. Honest status:
 - **Ops hardening** — per-process **and** per-tenant query/agent concurrency
   isolation (`concurrency.rs`, each tenant its own semaphore) + token-bucket
   **ingest** rate limiting (`kyma-ingest-rest::rate_limit`), all with `429` +
-  `Retry-After`. Off by default (env-gated).
+  `Retry-After`. Off by default (env-gated). Per-tenant limits are also
+  **catalog-configurable** via the `tenant_quotas` table (migration 032 +
+  SQLite mirror) and the admin `PUT/GET /v1/admin/tenant-quotas` endpoint, read
+  through an in-RAM cache (`quota_cache.rs`) — a configured value overrides the
+  env default for that tenant; unset falls back to the env default.
 
 **Remaining (foundation present; would extend, not block, the above)**
 
-- **Catalog-driven per-tenant quota config** — limits today are env-global
-  (one value, per-tenant-isolated); a `tenant_quotas` table with per-tenant
-  configurable values is a managed-SaaS (Cloud-track) addition, not yet built.
 - **Persisted graph snapshots** — the CSR is built from a table scan rather
   than persisted as a `graph_snapshots` artifact with an incremental refresh
   job; this is a build-latency optimization, not a correctness gap.

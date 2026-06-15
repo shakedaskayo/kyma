@@ -302,6 +302,16 @@ CREATE TABLE IF NOT EXISTS ann_tree (
 CREATE UNIQUE INDEX IF NOT EXISTS ann_tree_uniq
     ON ann_tree (table_id, column_name, COALESCE(embedding_model_id, ''));
 
+-- Per-tenant resource quotas (S2.6; mirrors Postgres migration 032). Local mode
+-- is typically single-tenant, but the table exists for parity + tests so the
+-- quota cache resolves identically across catalogs.
+CREATE TABLE IF NOT EXISTS tenant_quotas (
+    tenant_id            BLOB PRIMARY KEY,
+    max_query_concurrent INTEGER,
+    max_agent_concurrent INTEGER,
+    updated_at           TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS background_tasks (
     id               BLOB PRIMARY KEY,
     tenant_id        BLOB NOT NULL,
@@ -1367,6 +1377,82 @@ impl Catalog for SqliteCatalog {
         .await
         .map_err(ce)?;
         Ok(paths)
+    }
+
+    // ------------------------- per-tenant quotas (S2.6) -------------------------
+
+    async fn upsert_tenant_quota(
+        &self,
+        quota: &kyma_core::catalog::TenantQuota,
+    ) -> Result<()> {
+        let now = Utc::now();
+        let updated = sqlx::query(
+            "UPDATE tenant_quotas
+             SET max_query_concurrent = ?, max_agent_concurrent = ?, updated_at = ?
+             WHERE tenant_id = ?",
+        )
+        .bind(quota.max_query_concurrent.map(|v| v as i64))
+        .bind(quota.max_agent_concurrent.map(|v| v as i64))
+        .bind(now)
+        .bind(quota.tenant.as_uuid())
+        .execute(&self.pool)
+        .await
+        .map_err(ce)?;
+        if updated.rows_affected() > 0 {
+            return Ok(());
+        }
+        sqlx::query(
+            "INSERT INTO tenant_quotas
+                (tenant_id, max_query_concurrent, max_agent_concurrent, updated_at)
+             VALUES (?,?,?,?)",
+        )
+        .bind(quota.tenant.as_uuid())
+        .bind(quota.max_query_concurrent.map(|v| v as i64))
+        .bind(quota.max_agent_concurrent.map(|v| v as i64))
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .map_err(ce)?;
+        Ok(())
+    }
+
+    async fn get_tenant_quota(
+        &self,
+        tenant: TenantId,
+    ) -> Result<Option<kyma_core::catalog::TenantQuota>> {
+        let row: Option<(Option<i64>, Option<i64>, DateTime<Utc>)> = sqlx::query_as(
+            "SELECT max_query_concurrent, max_agent_concurrent, updated_at
+             FROM tenant_quotas WHERE tenant_id = ?",
+        )
+        .bind(tenant.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(ce)?;
+        Ok(row.map(|(q, a, updated_at)| kyma_core::catalog::TenantQuota {
+            tenant,
+            max_query_concurrent: q.map(|v| v.max(0) as u32),
+            max_agent_concurrent: a.map(|v| v.max(0) as u32),
+            updated_at,
+        }))
+    }
+
+    async fn list_tenant_quotas(&self) -> Result<Vec<kyma_core::catalog::TenantQuota>> {
+        let rows: Vec<(Uuid, Option<i64>, Option<i64>, DateTime<Utc>)> = sqlx::query_as(
+            "SELECT tenant_id, max_query_concurrent, max_agent_concurrent, updated_at
+             FROM tenant_quotas",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(ce)?;
+        Ok(rows
+            .into_iter()
+            .map(|(t, q, a, updated_at)| kyma_core::catalog::TenantQuota {
+                tenant: TenantId::from_uuid(t),
+                max_query_concurrent: q.map(|v| v.max(0) as u32),
+                max_agent_concurrent: a.map(|v| v.max(0) as u32),
+                updated_at,
+            })
+            .collect())
     }
 
     // ------------------------- garbage collection -------------------------

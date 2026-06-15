@@ -115,6 +115,23 @@ pub struct StagedExtentRow {
     pub manifest: ExtentManifest,
 }
 
+/// Per-tenant resource quota (S2.6 ops hardening). A catalog row that lets an
+/// operator configure DIFFERENT admission limits per tenant — overriding the
+/// process-global `KYMA_*_MAX_CONCURRENT[_PER_TENANT]` env defaults for that one
+/// tenant. Each field is `None` when that dimension is not configured for the
+/// tenant (the env default applies). Only the dimensions that carry a tenant on
+/// their request path are configurable here (query + agent concurrency); ingest
+/// rate limiting keys by database and stays env/per-db.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TenantQuota {
+    pub tenant: crate::tenant::TenantId,
+    /// Max in-flight `/v1/query` + `/v1/search` for this tenant (None = env default).
+    pub max_query_concurrent: Option<u32>,
+    /// Max in-flight agent runs for this tenant (None = env default).
+    pub max_agent_concurrent: Option<u32>,
+    pub updated_at: DateTime<Utc>,
+}
+
 // -------------------- Pruning --------------------
 
 /// A predicate the catalog can evaluate against manifest-level stats.
@@ -833,6 +850,30 @@ pub trait Catalog: Send + Sync {
         column: &str,
     ) -> Result<Vec<String>> {
         let _ = (tenant, table_id, column);
+        Ok(Vec::new())
+    }
+
+    // --- per-tenant quotas (S2.6 ops hardening) ---
+
+    /// Upsert the quota row for a tenant (per-tenant admission overrides).
+    /// Default no-op for catalogs that don't implement it (the engine then uses
+    /// the env-global limits everywhere).
+    async fn upsert_tenant_quota(&self, quota: &TenantQuota) -> Result<()> {
+        let _ = quota;
+        Ok(())
+    }
+
+    /// Fetch one tenant's quota row, or `None` when unset (env default applies).
+    async fn get_tenant_quota(
+        &self,
+        tenant: crate::tenant::TenantId,
+    ) -> Result<Option<TenantQuota>> {
+        let _ = tenant;
+        Ok(None)
+    }
+
+    /// All configured tenant quotas — the quota cache loads these on refresh.
+    async fn list_tenant_quotas(&self) -> Result<Vec<TenantQuota>> {
         Ok(Vec::new())
     }
 

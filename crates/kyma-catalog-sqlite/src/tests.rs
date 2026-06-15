@@ -638,3 +638,45 @@ async fn index_sidecars_register_list_reregister_delete() {
         .unwrap()
         .is_empty());
 }
+
+#[tokio::test]
+async fn tenant_quota_round_trip_and_upsert_in_place() {
+    let cat = fresh().await;
+    let t = DEFAULT_TENANT;
+
+    // Default: no row ⇒ None / empty (the env-global limits apply).
+    assert!(cat.get_tenant_quota(t).await.unwrap().is_none());
+    assert!(cat.list_tenant_quotas().await.unwrap().is_empty());
+
+    // Insert.
+    cat.upsert_tenant_quota(&kyma_core::catalog::TenantQuota {
+        tenant: t,
+        max_query_concurrent: Some(5),
+        max_agent_concurrent: None,
+        updated_at: chrono::Utc::now(),
+    })
+    .await
+    .unwrap();
+    let got = cat.get_tenant_quota(t).await.unwrap().expect("quota present");
+    assert_eq!(got.max_query_concurrent, Some(5));
+    assert_eq!(got.max_agent_concurrent, None);
+    assert_eq!(cat.list_tenant_quotas().await.unwrap().len(), 1);
+
+    // Upsert again updates IN PLACE (no duplicate PK row).
+    cat.upsert_tenant_quota(&kyma_core::catalog::TenantQuota {
+        tenant: t,
+        max_query_concurrent: Some(10),
+        max_agent_concurrent: Some(2),
+        updated_at: chrono::Utc::now(),
+    })
+    .await
+    .unwrap();
+    let got = cat.get_tenant_quota(t).await.unwrap().unwrap();
+    assert_eq!(got.max_query_concurrent, Some(10));
+    assert_eq!(got.max_agent_concurrent, Some(2));
+    assert_eq!(
+        cat.list_tenant_quotas().await.unwrap().len(),
+        1,
+        "upsert must update in place, not insert a second row"
+    );
+}

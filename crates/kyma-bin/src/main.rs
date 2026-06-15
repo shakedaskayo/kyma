@@ -1020,6 +1020,13 @@ async fn main() -> Result<()> {
         None
     };
 
+    // Per-tenant quota cache refresh (S2.6): keeps the in-RAM tenant_quotas
+    // snapshot fresh for the admission limiter. NOT gated on run_jobs — the
+    // limiter runs in the query/agent HTTP handlers on every serving node, so the
+    // cache must be populated there too. Cheap + read-only (one catalog list per
+    // KYMA_QUOTA_REFRESH_SECS); a no-op when the table is empty (the default).
+    let _quota_refresh_handle = kyma_server::quota_cache::spawn_refresh(catalog.clone());
+
     // Data-lifecycle workers (retention soft-delete, physical-delete GC, artifact
     // GC) are background jobs — gated on run_jobs. Stateless query nodes and the
     // committer never sweep; only all_in_one / worker roles do. GC is the one way

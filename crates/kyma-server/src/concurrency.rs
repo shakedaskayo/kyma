@@ -129,27 +129,53 @@ fn per_tenant_query_limit() -> Option<usize> {
     })
 }
 
-fn tenant_query_semaphores() -> &'static Mutex<HashMap<TenantId, Arc<Semaphore>>> {
-    static M: OnceLock<Mutex<HashMap<TenantId, Arc<Semaphore>>>> = OnceLock::new();
+// Each tenant's semaphore is stored alongside the limit it was built with, so a
+// quota change (cache refresh) rebuilds the semaphore at the new size rather than
+// silently keeping the old one. In-flight permits on a replaced semaphore finish
+// on it; new requests use the new size — converges within one request cycle.
+fn tenant_query_semaphores() -> &'static Mutex<HashMap<TenantId, (usize, Arc<Semaphore>)>> {
+    static M: OnceLock<Mutex<HashMap<TenantId, (usize, Arc<Semaphore>)>>> = OnceLock::new();
     M.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Resolve a tenant's effective semaphore: a per-tenant catalog quota override
+/// (from the in-RAM cache) wins; otherwise the env-global default. `None` ⇒
+/// unlimited for this tenant. Rebuilds the stored semaphore if the effective
+/// limit changed since it was created.
+fn effective_tenant_semaphore(
+    tenant: TenantId,
+    override_limit: Option<u32>,
+    env_default: Option<usize>,
+    map: &'static Mutex<HashMap<TenantId, (usize, Arc<Semaphore>)>>,
+) -> Option<Arc<Semaphore>> {
+    let n = override_limit.map(|v| v as usize).or(env_default)?;
+    let Ok(mut g) = map.lock() else {
+        return None; // never block on a poisoned lock ⇒ treat as unlimited
+    };
+    match g.get(&tenant) {
+        Some((size, sem)) if *size == n => Some(Arc::clone(sem)),
+        _ => {
+            let sem = Arc::new(Semaphore::new(n));
+            g.insert(tenant, (n, Arc::clone(&sem)));
+            Some(sem)
+        }
+    }
 }
 
 /// Admit one query for `tenant` against that tenant's own concurrency budget.
 /// `Ok(permit)` to proceed (hold it for the request); `Err(retry_after_secs)`
-/// when this tenant is at capacity. Off by default
-/// (`KYMA_QUERY_MAX_CONCURRENT_PER_TENANT` unset/0 ⇒ unlimited).
+/// when this tenant is at capacity. The limit is the tenant's `tenant_quotas`
+/// override if configured, else `KYMA_QUERY_MAX_CONCURRENT_PER_TENANT` (with no
+/// override and unset/0 ⇒ unlimited).
 pub fn acquire_for_tenant(tenant: TenantId) -> Result<QueryPermit, u64> {
-    let Some(n) = per_tenant_query_limit() else {
-        return Ok(QueryPermit(None));
-    };
-    let sem = {
-        let Ok(mut g) = tenant_query_semaphores().lock() else {
-            return Ok(QueryPermit(None)); // never block a query on a poisoned lock
-        };
-        Arc::clone(
-            g.entry(tenant)
-                .or_insert_with(|| Arc::new(Semaphore::new(n))),
-        )
+    let sem = match effective_tenant_semaphore(
+        tenant,
+        crate::quota_cache::query_limit_override(tenant),
+        per_tenant_query_limit(),
+        tenant_query_semaphores(),
+    ) {
+        Some(s) => s,
+        None => return Ok(QueryPermit(None)),
     };
     match sem.try_acquire_owned() {
         Ok(p) => Ok(QueryPermit(Some(p))),
@@ -175,27 +201,25 @@ fn per_tenant_agent_limit() -> Option<usize> {
     })
 }
 
-fn tenant_agent_semaphores() -> &'static Mutex<HashMap<TenantId, Arc<Semaphore>>> {
-    static M: OnceLock<Mutex<HashMap<TenantId, Arc<Semaphore>>>> = OnceLock::new();
+fn tenant_agent_semaphores() -> &'static Mutex<HashMap<TenantId, (usize, Arc<Semaphore>)>> {
+    static M: OnceLock<Mutex<HashMap<TenantId, (usize, Arc<Semaphore>)>>> = OnceLock::new();
     M.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Admit one agent run for `tenant` against that tenant's own agent-run budget
 /// (move the permit into the run's spawned task). `Err(retry_after_secs)` when
-/// this tenant is at capacity. Off by default
-/// (`KYMA_AGENT_MAX_CONCURRENT_PER_TENANT` unset/0 ⇒ unlimited).
+/// this tenant is at capacity. The limit is the tenant's `tenant_quotas` override
+/// if configured, else `KYMA_AGENT_MAX_CONCURRENT_PER_TENANT` (with no override
+/// and unset/0 ⇒ unlimited).
 pub fn acquire_agent_run_for_tenant(tenant: TenantId) -> Result<AgentRunPermit, u64> {
-    let Some(n) = per_tenant_agent_limit() else {
-        return Ok(AgentRunPermit(None));
-    };
-    let sem = {
-        let Ok(mut g) = tenant_agent_semaphores().lock() else {
-            return Ok(AgentRunPermit(None));
-        };
-        Arc::clone(
-            g.entry(tenant)
-                .or_insert_with(|| Arc::new(Semaphore::new(n))),
-        )
+    let sem = match effective_tenant_semaphore(
+        tenant,
+        crate::quota_cache::agent_limit_override(tenant),
+        per_tenant_agent_limit(),
+        tenant_agent_semaphores(),
+    ) {
+        Some(s) => s,
+        None => return Ok(AgentRunPermit(None)),
     };
     match sem.try_acquire_owned() {
         Ok(p) => Ok(AgentRunPermit(Some(p))),
@@ -230,6 +254,33 @@ mod tests {
         for _ in 0..1000 {
             assert!(acquire_for_tenant(t).is_ok());
         }
+    }
+
+    #[test]
+    fn tenant_quota_override_caps_query_without_env() {
+        // A per-tenant catalog quota override alone (no env set) enables the cap:
+        // exercises quota_cache override → effective_tenant_semaphore → admission.
+        // Uses a unique tenant so it can't collide with the other tests' default.
+        let t = TenantId::from_uuid(uuid::Uuid::from_u128(0x9e57_0000_0000_0000_0000_0000_0000_0001));
+        crate::quota_cache::clear_for_test();
+        crate::quota_cache::set_for_test(kyma_core::catalog::TenantQuota {
+            tenant: t,
+            max_query_concurrent: Some(1),
+            max_agent_concurrent: None,
+            updated_at: chrono::Utc::now(),
+        });
+        let p1 = acquire_for_tenant(t);
+        assert!(p1.is_ok(), "first query admitted under the tenant's quota of 1");
+        assert!(
+            acquire_for_tenant(t).is_err(),
+            "second query rejected — tenant at its configured quota of 1"
+        );
+        drop(p1);
+        assert!(
+            acquire_for_tenant(t).is_ok(),
+            "slot frees when the first permit drops"
+        );
+        crate::quota_cache::clear_for_test();
     }
 
     #[test]
