@@ -303,7 +303,9 @@ struct Comparison {
     var: String,
     prop: String,
     op: CmpOp,
-    /// Already SQL/KQL-ready literal text (string literals are single-quoted).
+    /// Already SQL/KQL-ready RHS text. For scalar ops this is a single literal
+    /// (string literals single-quoted); for `In` it is a parenthesized list
+    /// `(v1, v2, …)` so emission produces a valid KQL `col in (…)` expression.
     literal: String,
 }
 
@@ -315,10 +317,14 @@ enum CmpOp {
     Gt,
     Le,
     Ge,
+    /// `n.prop IN [a, b, c]` — set membership; the RHS literal is a list.
+    In,
 }
 
 impl CmpOp {
-    /// KQL operator text. `=`→`==`, `<>`→`!=`; the rest pass through.
+    /// KQL operator text. `=`→`==`, `<>`→`!=`; the rest pass through. `In`
+    /// lowers to the KQL `in` operator, which the KQL→SQL stage turns into a
+    /// SQL `IN (…)`.
     fn kql(self) -> &'static str {
         match self {
             CmpOp::Eq => "==",
@@ -327,6 +333,7 @@ impl CmpOp {
             CmpOp::Gt => ">",
             CmpOp::Le => "<=",
             CmpOp::Ge => ">=",
+            CmpOp::In => "in",
         }
     }
 }
@@ -858,6 +865,16 @@ impl Parser {
             ));
         }
         let prop = self.expect_word()?;
+        // `<var>.<prop> IN [a, b, c]` — set membership over a literal list.
+        if self.eat_kw("IN") {
+            let literal = self.parse_in_list()?;
+            return Ok(Comparison {
+                var,
+                prop,
+                op: CmpOp::In,
+                literal,
+            });
+        }
         let op = match self.bump() {
             Some(Tok::Eq) => CmpOp::Eq,
             Some(Tok::Ne) => CmpOp::Ne,
@@ -878,6 +895,30 @@ impl Parser {
             op,
             literal,
         })
+    }
+
+    /// Parse `[lit, lit, …]` after `IN`, returning a KQL-ready parenthesized
+    /// list `(lit, lit, …)`. An empty list is a parse error (the first
+    /// `parse_literal` rejects `]`).
+    fn parse_in_list(&mut self) -> Result<String, ParseError> {
+        if !self.eat(&Tok::LBracket) {
+            return Err(ParseError(
+                "cypher: expected `[` after IN, e.g. n.x IN [1, 2, 3]".to_string(),
+            ));
+        }
+        let mut items = Vec::new();
+        loop {
+            items.push(self.parse_literal()?);
+            if !self.eat(&Tok::Comma) {
+                break;
+            }
+        }
+        if !self.eat(&Tok::RBracket) {
+            return Err(ParseError(
+                "cypher: expected `]` to close the IN list".to_string(),
+            ));
+        }
+        Ok(format!("({})", items.join(", ")))
     }
 
     /// A string or numeric literal, rendered as KQL-ready text.
@@ -1735,6 +1776,39 @@ mod tests {
         let kql = tr("MATCH (a)-[r]->(b) WHERE a.n <= 5 AND b.m >= 2 RETURN a.n, b.m");
         assert!(kql.contains("a_n <= 5"), "{kql}");
         assert!(kql.contains("b_m >= 2"), "{kql}");
+    }
+
+    #[test]
+    fn where_in_list_lowers_to_kql_in_and_compiles() {
+        // String list.
+        let kql = tr("MATCH (a)-[r]->(b) WHERE a.kind IN ['x', 'y', 'z'] RETURN a.kind");
+        assert!(kql.contains("| where a_kind in ('x', 'y', 'z')"), "{kql}");
+        // The lowered KQL must compile all the way to SQL `IN (…)` — the
+        // string-shape check alone misses invalid-KQL / invalid-plan bugs.
+        let sql = crate::kql_to_sql(&kql).expect("IN-list KQL must compile to SQL");
+        assert!(sql.to_uppercase().contains(" IN ("), "{sql}");
+        // Numeric list.
+        let kqln = tr("MATCH (a)-[r]->(b) WHERE b.n IN [1, 2, 3] RETURN b.n");
+        assert!(kqln.contains("| where b_n in (1, 2, 3)"), "{kqln}");
+        crate::kql_to_sql(&kqln).expect("numeric IN-list KQL must compile to SQL");
+    }
+
+    #[test]
+    fn where_in_list_combines_with_and() {
+        let kql =
+            tr("MATCH (a)-[r]->(b) WHERE a.kind IN ['x', 'y'] AND b.n > 3 RETURN a.kind, b.n");
+        assert!(kql.contains("a_kind in ('x', 'y')"), "{kql}");
+        assert!(kql.contains("b_n > 3"), "{kql}");
+        crate::kql_to_sql(&kql).expect("IN + AND KQL must compile to SQL");
+    }
+
+    #[test]
+    fn where_empty_in_list_is_rejected() {
+        let g = binding();
+        assert!(
+            cypher_to_kql("MATCH (a)-[r]->(b) WHERE a.kind IN [] RETURN a.kind", &g).is_err(),
+            "empty IN list must be a parse error"
+        );
     }
 
     // ---- RETURN AS alias ----------------------------------------------
