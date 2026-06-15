@@ -1,6 +1,6 @@
 ---
 title: Storage format
-description: kyma-format-tlm — the on-disk format for telemetry extents. Magic-framed Arrow IPC body, JSON-tail block-stats footer, per-column distinct sets, token index, and the SegmentFormat trait it implements.
+description: The on-disk extent formats — kyma-format-tlm (magic-framed Arrow IPC body, JSON-tail block-stats footer, per-column distinct sets, token index) and kyma-format-parquet (ZSTD Parquet), the SegmentFormat trait they implement, and per-extent format dispatch via KYMA_WRITE_FORMAT.
 ---
 
 # Storage format
@@ -172,30 +172,32 @@ the extent*. The catalog manifest carries a `present_paths` bitmap
 per extent; a query like `where attributes["error.code"] == "X"`
 skips every extent that never wrote `error.code`.
 
-Phase A — the format that ships today — does not yet populate
-`present_paths`; the field exists in `ExtentWriteResult` and
-returns an empty list. Phase B replaces the Arrow IPC body with
-custom column encoders and lights up path tracking as a first-class
-writer pass. The catalog shape is final; only the writer's
-contribution to it changes.
+The TLM writer does not populate `present_paths`; the field exists in
+`ExtentWriteResult` and returns an empty list. Path tracking is a writer
+concern independent of the catalog shape (which is final) — a future writer
+pass can light it up without any catalog change.
 
-## Phase B — the custom column format
+## A second format: Parquet
 
-The trait contract and the magic-framed envelope are stable. What
-will change is the body between the magic markers. Phase B replaces
-Arrow IPC with per-type column encoders:
+`SegmentFormat` is a trait precisely so a denser format can slot in beside TLM,
+and one has: **`kyma-format-parquet`** is a second shipping implementation.
+Rather than a bespoke encoder, it writes standard Apache Parquet so the bytes
+are readable by any Parquet tool:
 
-- Delta-of-delta for nanosecond timestamps.
-- Gorilla compression for floats.
-- Inverted-index posting lists for tokenized string columns —
-  promoting the current per-extent token set to a per-block
-  posting list, which lights up stage 3 of the pruning cascade.
-- CBOR + path bitmap for `dynamic` columns.
+- ZSTD compression; `DELTA_BINARY_PACKED` for timestamps; `BYTE_STREAM_SPLIT`
+  for floats; dictionary encoding for strings.
+- Bloom filters on identifier columns (`trace_id` / `span_id`) and the page
+  index, so needle lookups skip row groups and pages.
+- It emits the *same* block-stats footer payload as TLM, so catalog pruning and
+  the `BlockPredicate` lowering are unchanged — the format maps the predicate
+  onto row-group / page / bloom skipping internally.
 
-The footer grows to carry block offsets per *column* (not per row
-group, as in Arrow IPC), so projections do bytes-precise range-GETs.
-The trailing magic and the JSON stats footer survive — keeping the
-"walk the file end-to-start" reader logic unchanged.
+A `FormatRegistry` chooses the writer by `KYMA_WRITE_FORMAT` (`tlm` default, or
+`parquet`). Reads dispatch **per extent** on the `extents.format` catalog
+column, so a table can hold a mix of TLM and Parquet extents — old extents stay
+readable forever and compaction migrates them to the configured format
+organically. Vector / BM25 sidecars are keyed by extent id and are
+format-agnostic, so they work the same over either.
 
 ## What the catalog gets back from `finish()`
 
@@ -208,7 +210,7 @@ catalog. Every field below is consumed by manifest insert:
 - `byte_size` — total object size; used for compaction sizing.
 - `row_count`, `block_count` — extent-level counters.
 - `min_timestamp_nanos`, `max_timestamp_nanos` — time bounds.
-- `present_paths` — dynamic-column path bitmap (Phase B).
+- `present_paths` — dynamic-column path bitmap (not yet populated by the TLM writer).
 - `column_stats` — the JSON described above; stored verbatim in
   the manifest's `column_stats jsonb` column.
 
@@ -218,10 +220,9 @@ work-unit will eventually sweep.
 
 ## Where to go next
 
-- The trait definitions: `crates/kyma-core/src/segment_format.rs`.
-- The format implementation: `crates/kyma-format-tlm/src/`.
+- The trait definitions (+ `FormatRegistry`): `crates/kyma-core/src/segment_format.rs`.
+- The format implementations: `crates/kyma-format-tlm/src/` (Arrow IPC) and
+  `crates/kyma-format-parquet/src/` (Parquet). Select with `KYMA_WRITE_FORMAT`.
 - The query side that consumes these footers:
   [The pruning cascade](/concepts/the-pruning-cascade) and
   [Pruning and performance](/query/pruning-and-performance).
-- The roadmap that ties Phase B to a delivery slice:
-  [Slice roadmap](/architecture/slice-roadmap).
