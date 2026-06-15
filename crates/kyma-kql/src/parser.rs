@@ -1329,13 +1329,23 @@ impl<'s> Parser<'s> {
         for n in &nodes {
             push_node(&mut node_vars, n);
         }
-        let mut edge_list: Vec<(String, Option<String>, String, String)> = Vec::new();
+        // Edge: (var, type, src_var, dst_var, optional). The first segment is
+        // always mandatory (inner join).
+        let mut edge_list: Vec<(String, Option<String>, String, String, bool)> = Vec::new();
         for (i, (ev, et)) in edges.iter().enumerate() {
-            edge_list.push((ev.clone(), et.clone(), nodes[i].clone(), nodes[i + 1].clone()));
+            edge_list.push((
+                ev.clone(),
+                et.clone(),
+                nodes[i].clone(),
+                nodes[i + 1].clone(),
+                false,
+            ));
         }
 
-        // Parse the remaining `, (x)-[e]->(y)…` segments.
+        // Parse the remaining `[OPTIONAL] (x)-[e]->(y)…` segments. An `OPTIONAL`
+        // keyword before a segment makes it a LEFT JOIN.
         while self.eat(&Token::Comma) {
+            let seg_optional = self.eat_ident_eq("OPTIONAL");
             self.expect(&Token::LParen, "(")?;
             let mut prev = self.expect_ident()?;
             self.expect(&Token::RParen, ")")?;
@@ -1355,7 +1365,7 @@ impl<'s> Parser<'s> {
                 let nxt = self.expect_ident()?;
                 self.expect(&Token::RParen, ")")?;
                 push_node(&mut node_vars, &nxt);
-                edge_list.push((ev, et, prev.clone(), nxt.clone()));
+                edge_list.push((ev, et, prev.clone(), nxt.clone(), seg_optional));
                 prev = nxt;
                 if !self.eat(&Token::Minus) {
                     break;
@@ -1366,7 +1376,7 @@ impl<'s> Parser<'s> {
         // project <var>.<col> [as <alias>], … — node vars → `gn{i}`, edges → `ge{i}`.
         self.expect_ident_eq("project")?;
         let npos = |v: &str| node_vars.iter().position(|x| x == v);
-        let epos = |v: &str| edge_list.iter().position(|(e, _, _, _)| e == v);
+        let epos = |v: &str| edge_list.iter().position(|(e, _, _, _, _)| e == v);
         let mut select_items: Vec<String> = Vec::new();
         loop {
             let var = self.expect_ident()?;
@@ -1411,10 +1421,12 @@ impl<'s> Parser<'s> {
         // Join incrementally over edges, materializing a node alias the first
         // time an incident edge is joined. An edge whose endpoints are both
         // already joined just closes the cycle; one sharing nothing yet is a
-        // CROSS JOIN.
+        // CROSS JOIN. An OPTIONAL segment's edges + their new nodes are LEFT
+        // joined (so unmatched rows survive with NULLs), and an optional edge's
+        // `:TYPE` filter goes in the ON (a WHERE would null-prune the row).
         let mut joined: std::collections::HashSet<usize> = std::collections::HashSet::new();
         let mut from = String::new();
-        for (ei, (_ev, _et, sv, dv)) in edge_list.iter().enumerate() {
+        for (ei, (_ev, et, sv, dv, optional)) in edge_list.iter().enumerate() {
             let si = npos(sv).expect("edge src var is a known node");
             let di = npos(dv).expect("edge dst var is a known node");
             if ei == 0 {
@@ -1427,6 +1439,7 @@ impl<'s> Parser<'s> {
                 joined.insert(di);
                 continue;
             }
+            let jk = if *optional { "LEFT JOIN" } else { "JOIN" };
             let mut conds: Vec<String> = Vec::new();
             if joined.contains(&si) {
                 conds.push(format!("ge{ei}.{src} = gn{si}.{id}"));
@@ -1434,32 +1447,45 @@ impl<'s> Parser<'s> {
             if joined.contains(&di) {
                 conds.push(format!("ge{ei}.{dst} = gn{di}.{id}"));
             }
+            if *optional {
+                if let Some(t) = et {
+                    conds.push(format!(r#"ge{ei}."type" = '{}'"#, t.replace('\'', "''")));
+                }
+            }
             if conds.is_empty() {
-                from.push_str(&format!(" CROSS JOIN {edges_tbl} ge{ei}"));
+                if *optional {
+                    from.push_str(&format!(" LEFT JOIN {edges_tbl} ge{ei} ON true"));
+                } else {
+                    from.push_str(&format!(" CROSS JOIN {edges_tbl} ge{ei}"));
+                }
             } else {
                 from.push_str(&format!(
-                    " JOIN {edges_tbl} ge{ei} ON {}",
+                    " {jk} {edges_tbl} ge{ei} ON {}",
                     conds.join(" AND ")
                 ));
             }
             if !joined.contains(&si) {
                 from.push_str(&format!(
-                    " JOIN {nodes_tbl} gn{si} ON ge{ei}.{src} = gn{si}.{id}"
+                    " {jk} {nodes_tbl} gn{si} ON ge{ei}.{src} = gn{si}.{id}"
                 ));
                 joined.insert(si);
             }
             if !joined.contains(&di) {
                 from.push_str(&format!(
-                    " JOIN {nodes_tbl} gn{di} ON ge{ei}.{dst} = gn{di}.{id}"
+                    " {jk} {nodes_tbl} gn{di} ON ge{ei}.{dst} = gn{di}.{id}"
                 ));
                 joined.insert(di);
             }
         }
 
+        // Only MANDATORY edges' type filters go in WHERE (optional ones are in
+        // their ON, above).
         let mut wheres: Vec<String> = Vec::new();
-        for (ei, (_ev, et, _sv, _dv)) in edge_list.iter().enumerate() {
-            if let Some(t) = et {
-                wheres.push(format!(r#"ge{ei}."type" = '{}'"#, t.replace('\'', "''")));
+        for (ei, (_ev, et, _sv, _dv, optional)) in edge_list.iter().enumerate() {
+            if !optional {
+                if let Some(t) = et {
+                    wheres.push(format!(r#"ge{ei}."type" = '{}'"#, t.replace('\'', "''")));
+                }
             }
         }
         let where_clause = if wheres.is_empty() {

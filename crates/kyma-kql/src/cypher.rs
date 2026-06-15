@@ -363,10 +363,10 @@ struct Query {
     /// emits `graph-shortest-path` instead of `graph-match`.
     shortest_path: Option<String>,
     /// Additional pattern segments that don't continue the primary chain (star /
-    /// tree / disjoint), each `(nodes, rels)`. Empty for a single linear
-    /// pattern; non-empty ⇒ the lowering emits a multi-segment `graph-match`
-    /// (general join over shared variables).
-    extra_segments: Vec<(Vec<NodePat>, Vec<RelPat>)>,
+    /// tree / disjoint), each `(nodes, rels, optional)`. `optional` marks an
+    /// `OPTIONAL MATCH` segment (lowered as a LEFT JOIN). Empty for a single
+    /// linear pattern; non-empty ⇒ a multi-segment `graph-match` join.
+    extra_segments: Vec<(Vec<NodePat>, Vec<RelPat>, bool)>,
 }
 
 // =====================================================================
@@ -487,13 +487,26 @@ impl Parser {
         // `(a)-[r]->(b)-[s]->(c)`); any other segment (star / tree / disjoint)
         // is kept separate and lowered via a general multi-segment join.
         // shortestPath is single-pattern, so this only applies to plain MATCH.
-        let mut extra_segments: Vec<(Vec<NodePat>, Vec<RelPat>)> = Vec::new();
+        let mut extra_segments: Vec<(Vec<NodePat>, Vec<RelPat>, bool)> = Vec::new();
         if shortest_path.is_none() {
+            // `clause_optional` tracks whether the current clause is an
+            // `OPTIONAL MATCH` (LEFT JOIN); a `,` continues the current clause.
+            let mut clause_optional = false;
             loop {
                 let cont = if self.eat(&Tok::Comma) {
                     true
+                } else if self.peek_kw("OPTIONAL") {
+                    self.eat_kw("OPTIONAL");
+                    if !self.eat_kw("MATCH") {
+                        return Err(ParseError(
+                            "cypher: expected MATCH after OPTIONAL".to_string(),
+                        ));
+                    }
+                    clause_optional = true;
+                    true
                 } else if self.peek_kw("MATCH") {
                     self.eat_kw("MATCH");
+                    clause_optional = false;
                     true
                 } else {
                     false
@@ -512,19 +525,20 @@ impl Parser {
                     }
                 }
                 let primary_tail = nodes.last().map(|n| n.var.clone()).unwrap_or_default();
-                if extra_segments.is_empty() && seg_nodes[0].var == primary_tail {
-                    // Continues the primary chain → merge (skip the shared node).
+                if extra_segments.is_empty() && !clause_optional && seg_nodes[0].var == primary_tail
+                {
+                    // Mandatory continuation of the primary chain → merge.
                     rels.extend(seg_rels);
                     nodes.extend(seg_nodes.into_iter().skip(1));
                 } else {
-                    extra_segments.push((seg_nodes, seg_rels));
+                    extra_segments.push((seg_nodes, seg_rels, clause_optional));
                 }
             }
         }
 
-        // OPTIONAL MATCH, a trailing MATCH after shortestPath, or WITH ⇒ unsupported.
+        // A trailing MATCH/OPTIONAL after shortestPath, or WITH ⇒ unsupported.
         if self.peek_kw("OPTIONAL") || self.peek_kw("MATCH") {
-            return Err(unsupported("OPTIONAL MATCH / non-chain multiple MATCH"));
+            return Err(unsupported("MATCH / OPTIONAL MATCH after shortestPath"));
         }
         if self.peek_kw("WITH") {
             return Err(unsupported("WITH"));
@@ -1047,7 +1061,7 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
         .iter()
         .map(|n| n.var.as_str())
         .chain(q.rels.iter().map(|r| r.var.as_str()))
-        .chain(q.extra_segments.iter().flat_map(|(ns, rs)| {
+        .chain(q.extra_segments.iter().flat_map(|(ns, rs, _)| {
             ns.iter()
                 .map(|n| n.var.as_str())
                 .chain(rs.iter().map(|r| r.var.as_str()))
@@ -1103,7 +1117,7 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     let all_nodes = q
         .nodes
         .iter()
-        .chain(q.extra_segments.iter().flat_map(|(ns, _)| ns.iter()));
+        .chain(q.extra_segments.iter().flat_map(|(ns, _, _)| ns.iter()));
     for node in all_nodes {
         if let Some(label) = &node.label {
             let alias = format!("{}_{}", node.var, g.label_col);
@@ -1144,8 +1158,9 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     // to `graph-var-match`; everything else to the fixed-length linear chain.
     let mut kql = if !q.extra_segments.is_empty() {
         let mut segs = vec![segment_pattern(&q.nodes, &q.rels)?];
-        for (sn, sr) in &q.extra_segments {
-            segs.push(segment_pattern(sn, sr)?);
+        for (sn, sr, opt) in &q.extra_segments {
+            let p = segment_pattern(sn, sr)?;
+            segs.push(if *opt { format!("OPTIONAL {p}") } else { p });
         }
         format!(
             "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
@@ -1316,18 +1331,30 @@ mod tests {
     }
 
     #[test]
-    fn multi_pattern_rejections() {
-        // OPTIONAL MATCH is still unsupported.
+    fn optional_match_lowers_to_left_join_segment() {
+        // OPTIONAL MATCH → a LEFT-joined segment in the multi-segment graph-match.
+        let kql = tr("MATCH (a)-[r]->(b) OPTIONAL MATCH (b)-[s]->(c) RETURN a.name, c.name");
         assert!(
-            tr_err("MATCH (a)-[r]->(b) OPTIONAL MATCH (b)-[s]->(c) RETURN a.name")
-                .contains("OPTIONAL"),
-            "OPTIONAL MATCH should be rejected"
+            kql.contains("graph-match (a)-[r]->(b), OPTIONAL (b)-[s]->(c)"),
+            "OPTIONAL segment marked: {kql}"
         );
+        let sql = crate::kql_to_sql(&kql).expect("OPTIONAL KQL must compile");
+        assert!(sql.contains("LEFT JOIN"), "optional segment is a LEFT JOIN: {sql}");
+    }
+
+    #[test]
+    fn multi_pattern_rejections() {
         // Variable-length inside a multi-segment pattern is unsupported.
         assert!(
             tr_err("MATCH (a)-[r*1..2]->(b), (a)-[s]->(c) RETURN a.name")
                 .contains("variable-length"),
             "var-length in a multi-segment pattern should be rejected"
+        );
+        // OPTIONAL without MATCH is a parse error.
+        assert!(
+            tr_err("MATCH (a)-[r]->(b) OPTIONAL (b)-[s]->(c) RETURN a.name")
+                .contains("MATCH"),
+            "OPTIONAL must be followed by MATCH"
         );
     }
 
