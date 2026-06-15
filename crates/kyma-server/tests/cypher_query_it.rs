@@ -184,6 +184,41 @@ async fn cypher_multi_hop_match_is_supported() {
 }
 
 #[tokio::test]
+async fn graph_analytics_endpoint_dispatches_by_kind() {
+    // The schema-only graph has no edges, so every analytic returns an empty
+    // result — enough to validate the route + resolve + JSON envelope. (Algorithm
+    // correctness is differentially covered in kyma-graph-topo / kyma-graph.)
+    let state = seeded_state_with_graph().await;
+    let app = kyma_server::router(state);
+
+    for kind in ["components", "communities", "pagerank"] {
+        let req = Request::builder()
+            .method("GET")
+            .uri(format!("/v1/graph/kg/analytics?kind={kind}"))
+            .header("x-database", "obs")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        let status = resp.status();
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert_eq!(status, StatusCode::OK, "kind={kind} body: {body}");
+        assert!(body.contains(&format!("\"kind\":\"{kind}\"")), "kind={kind} body: {body}");
+        assert!(body.contains("\"results\""), "kind={kind} body: {body}");
+    }
+
+    // Unknown kind → 400.
+    let bad = Request::builder()
+        .method("GET")
+        .uri("/v1/graph/kg/analytics?kind=bogus")
+        .header("x-database", "obs")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(bad).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn cypher_variable_length_match_is_supported() {
     let state = seeded_state_with_graph().await;
     // Regression guard: `-[*M..N]->` was a 400 ("variable-length not

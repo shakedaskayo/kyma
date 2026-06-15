@@ -622,6 +622,102 @@ async fn neighbors(
     }
 }
 
+#[derive(Deserialize)]
+struct AnalyticsQuery {
+    /// `pagerank` | `communities` | `components`.
+    kind: String,
+    /// PageRank restart seeds (comma-separated node ids). Empty ⇒ global
+    /// PageRank (every node a restart source). Ignored by the other kinds.
+    #[serde(default)]
+    seeds: Option<String>,
+    /// Top-N for `pagerank` (descending score). Ignored by the other kinds.
+    #[serde(default = "default_analytics_limit")]
+    limit: usize,
+}
+fn default_analytics_limit() -> usize {
+    100
+}
+
+/// Whole-graph analytics over the persisted CSR topology (reuses a snapshot
+/// when present, else a bounded edge scan): PageRank centrality, modularity
+/// community detection, and weakly-connected components. Read-only; stored
+/// graphs only (the schema graph has no analytics).
+async fn analytics(
+    State(state): State<QueryState>,
+    principal: Option<Extension<crate::auth::Principal>>,
+    Path(graph): Path<String>,
+    Query(q): Query<AnalyticsQuery>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    let db = db_from_headers(&headers);
+    if let Err(r) = enforce_scope(principal.as_deref(), &db) {
+        return r;
+    }
+    let allowed = principal.as_deref().and_then(|p| p.allowed_databases.clone());
+    let provider = match resolve(&state, &graph, &db, allowed).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    let sp = match provider {
+        ResolvedProvider::Stored(sp) => sp,
+        ResolvedProvider::Schema(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": {"code": "graph",
+                    "message": "analytics is only available on stored graphs"}})),
+            )
+                .into_response()
+        }
+    };
+    let limit = q.limit.clamp(1, 100_000);
+    let pairs: anyhow::Result<Vec<(String, serde_json::Value)>> = match q.kind.as_str() {
+        "components" => sp
+            .components()
+            .await
+            .map(|v| v.into_iter().map(|(id, c)| (id, c.into())).collect()),
+        "communities" => sp
+            .communities()
+            .await
+            .map(|v| v.into_iter().map(|(id, c)| (id, c.into())).collect()),
+        "pagerank" => {
+            let seeds: Vec<String> = q
+                .seeds
+                .as_deref()
+                .unwrap_or("")
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect();
+            sp.pagerank(&seeds, limit)
+                .await
+                .map(|v| v.into_iter().map(|(id, s)| (id, s.into())).collect())
+        }
+        other => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": {"code": "graph",
+                    "message": format!("unknown analytics kind `{other}` (pagerank|communities|components)")}})),
+            )
+                .into_response()
+        }
+    };
+    match pairs {
+        Ok(items) => {
+            let results: Vec<serde_json::Value> = items
+                .into_iter()
+                .map(|(id, value)| serde_json::json!({"id": id, "value": value}))
+                .collect();
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"kind": q.kind, "count": results.len(), "results": results})),
+            )
+                .into_response()
+        }
+        Err(e) => err500(e),
+    }
+}
+
 /// "Fetch everything" limit for full-graph export. NOT `usize::MAX`: the
 /// stored-graph provider folds the limit into a SQL `LIMIT`, and DataFusion
 /// rejects values that don't fit an `Int64` cast.
@@ -784,6 +880,7 @@ pub fn graph_router(state: QueryState) -> Router {
         .route("/v1/graph/:graph/nodes/:id/subgraph", get(subgraph))
         .route("/v1/graph/:graph/search", post(search))
         .route("/v1/graph/:graph/neighbors", post(neighbors))
+        .route("/v1/graph/:graph/analytics", get(analytics))
         .route("/v1/graph/:graph/export", get(export))
         .with_state(state)
 }

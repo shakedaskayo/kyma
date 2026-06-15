@@ -295,11 +295,20 @@ impl StoredGraphProvider {
         &self,
         store: &Arc<dyn object_store::ObjectStore>,
     ) -> anyhow::Result<()> {
+        let csr = self.scan_csr().await?;
+        let path = crate::snapshot::snapshot_path(&self.cfg.database, &self.cfg.edge_table);
+        crate::snapshot::store_snapshot(store, &path, &csr).await
+    }
+
+    /// Scan this graph's edges (bounded by [`topo_max_edges`]) and build an
+    /// in-memory CSR topology. The shared core of snapshot building and the
+    /// analytics methods below.
+    async fn scan_csr(&self) -> anyhow::Result<CsrGraph> {
         let cap = topo_max_edges();
         let edge_rows = self.rows(edge_sample_sql(&self.cfg, cap + 1)).await?;
         let all_edges: Vec<GraphRelationship> =
             edge_rows.iter().map(|r| row_to_edge(&self.cfg, r)).collect();
-        let csr = CsrGraph::build(
+        Ok(CsrGraph::build(
             all_edges
                 .iter()
                 .flat_map(|e| [e.source_id.as_str(), e.target_id.as_str()]),
@@ -310,9 +319,62 @@ impl StoredGraphProvider {
                     e.relationship_type.as_str(),
                 )
             }),
-        );
-        let path = crate::snapshot::snapshot_path(&self.cfg.database, &self.cfg.edge_table);
-        crate::snapshot::store_snapshot(store, &path, &csr).await
+        ))
+    }
+
+    /// Build (or load) the whole-graph CSR for analytics: reuse a persisted
+    /// topology snapshot when one exists (no scan), else scan + build.
+    async fn build_full_csr(&self) -> anyhow::Result<CsrGraph> {
+        if let Some(store) = &self.store {
+            let path = crate::snapshot::snapshot_path(&self.cfg.database, &self.cfg.edge_table);
+            if let Some(csr) = crate::snapshot::load_snapshot(store, &path).await? {
+                return Ok(csr);
+            }
+        }
+        self.scan_csr().await
+    }
+
+    /// Weakly-connected components over the whole graph: `(node_id, component)`
+    /// for every node, components labeled by first appearance.
+    pub async fn components(&self) -> anyhow::Result<Vec<(String, u32)>> {
+        Ok(self
+            .build_full_csr()
+            .await?
+            .connected_components(TopoDirection::Both))
+    }
+
+    /// Community detection (modularity Louvain, undirected): `(node_id,
+    /// community)` for every node.
+    pub async fn communities(&self) -> anyhow::Result<Vec<(String, u32)>> {
+        Ok(self
+            .build_full_csr()
+            .await?
+            .detect_communities(TopoDirection::Both, 20))
+    }
+
+    /// Personalized-PageRank centrality. With `seeds`, mass concentrates near
+    /// them; with no seeds every node is a restart source (global PageRank).
+    /// Returns the top-`limit` `(node_id, score)` in descending score order
+    /// (ties broken by id for determinism).
+    pub async fn pagerank(
+        &self,
+        seeds: &[String],
+        limit: usize,
+    ) -> anyhow::Result<Vec<(String, f64)>> {
+        let csr = self.build_full_csr().await?;
+        let seed_refs: Vec<&str> = if seeds.is_empty() {
+            csr.node_ids()
+        } else {
+            seeds.iter().map(String::as_str).collect()
+        };
+        let mut ranked = csr.personalized_pagerank(&seed_refs, 0.15, 1e-6, TopoDirection::Both);
+        ranked.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        ranked.truncate(limit);
+        Ok(ranked)
     }
 
     /// Deep-subgraph fast path for large graphs: if a persistent topology
@@ -801,6 +863,38 @@ mod provider_tests {
             "5-hop reach should include all six nodes"
         );
         assert_eq!(g.edges.len(), 5, "all chain edges are induced at depth 5");
+    }
+
+    #[tokio::test]
+    async fn analytics_over_the_chain_wires_csr_algorithms() {
+        let p = deep_provider("analytics", Arc::new(AtomicUsize::new(0)));
+
+        // The a→…→f chain is one weakly-connected component covering all nodes.
+        let comps = p.components().await.unwrap();
+        let ids: std::collections::BTreeSet<&str> = comps.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(ids, ["a", "b", "c", "d", "e", "f"].into_iter().collect());
+        let labels: std::collections::BTreeSet<u32> = comps.iter().map(|(_, c)| *c).collect();
+        assert_eq!(labels.len(), 1, "a connected chain is a single component");
+
+        // Communities label every node (exact count is algorithm-dependent).
+        let comms = p.communities().await.unwrap();
+        assert_eq!(comms.len(), 6);
+
+        // Seeded PageRank: results descending, seed-local mass concentrated near
+        // `a`, the farthest node `f` lowest. (Exact ordering of a vs its single
+        // neighbor b is a property of the walk, not asserted.)
+        let pr = p.pagerank(&["a".to_string()], 10).await.unwrap();
+        assert!(pr.windows(2).all(|w| w[0].1 >= w[1].1), "descending: {pr:?}");
+        let top2: std::collections::BTreeSet<&str> =
+            pr.iter().take(2).map(|(id, _)| id.as_str()).collect();
+        assert!(top2.contains("a"), "seed carries high mass: {pr:?}");
+        assert_eq!(
+            pr.last().map(|(id, _)| id.as_str()),
+            Some("f"),
+            "farthest node has the least mass: {pr:?}"
+        );
+        // Global PageRank (no seeds) ranks every node.
+        assert_eq!(p.pagerank(&[], 10).await.unwrap().len(), 6);
     }
 
     #[tokio::test]
