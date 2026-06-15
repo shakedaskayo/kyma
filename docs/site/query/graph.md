@@ -137,6 +137,7 @@ Supported surface:
 | **WHERE** | `=`, `<>`, `<`, `>`, `<=`, `>=`; `IN [..]`; `STARTS WITH` / `ENDS WITH` / `CONTAINS`; `IS NULL` / `IS NOT NULL`; `AND` / `OR` / `NOT` with parentheses and correct precedence. |
 | **RETURN** | properties, `AS` aliases, `DISTINCT`, aggregates `count(*)` / `count(x)` / `sum` / `avg` / `min` / `max` / `collect(x)`, `ORDER BY … [ASC\|DESC]`, `LIMIT`. |
 | **WITH** | aggregation + HAVING: `WITH <keys>, <agg> AS <alias> [WHERE <pred on alias>] RETURN …` — group, filter on the aggregate, then project/order/limit. Grouping keys are `n.prop` (no `AS`); bare-variable passthrough is not supported. |
+| **Computed RETURN** | arithmetic over properties + numeric literals: `RETURN a.score + b.score AS total` (`+ - * /`, parentheses, standard precedence). The expression must start with `<var>.<prop>` and requires `AS <alias>`. |
 
 Example HAVING — services with more than five callers:
 
@@ -148,9 +149,11 @@ RETURN b.name, callers ORDER BY callers DESC LIMIT 20
 ```
 
 Not yet supported (returns `400` with the parse error): write clauses
-(`CREATE` / `MERGE` / `SET` / `DELETE`), `RETURN *`, arbitrary expressions in
-`RETURN`, and WITH node-variable passthrough. Use KQL for anything outside this
-surface.
+(`CREATE` / `MERGE` / `SET` / `DELETE`) — the graph is a read-only view over
+append-only tables, so you add data by ingesting rows, not by Cypher writes —
+plus `RETURN *`, RETURN expressions that don't begin with `<var>.<prop>` (e.g. a
+leading literal or `(`), string/function expressions, and WITH node-variable
+passthrough. Use KQL for anything outside this surface.
 
 ### MCP tools
 

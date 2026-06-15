@@ -112,6 +112,10 @@ enum Tok {
     Comma,
     Colon,
     Star,
+    /// `+`
+    Plus,
+    /// `/`
+    Slash,
     /// `-`
     Dash,
     /// `->`
@@ -171,6 +175,14 @@ fn tokenize(src: &str) -> Result<Vec<Tok>, ParseError> {
             }
             '*' => {
                 out.push(Tok::Star);
+                i += 1;
+            }
+            '+' => {
+                out.push(Tok::Plus);
+                i += 1;
+            }
+            '/' => {
+                out.push(Tok::Slash);
                 i += 1;
             }
             '-' => {
@@ -453,6 +465,15 @@ enum ReturnItem {
         func: String,
         target: AggTarget,
         alias: Option<String>,
+    },
+    /// An arithmetic expression over node properties + numeric literals, e.g.
+    /// `RETURN a.x + b.y AS total`. `kql_expr` is already lowered to the flat
+    /// `{var}_{prop}` aliases; `leaves` are the props to project; `alias` is the
+    /// (required) output column name.
+    Expr {
+        kql_expr: String,
+        leaves: Vec<(String, String)>,
+        alias: String,
     },
 }
 
@@ -1297,6 +1318,97 @@ impl Parser {
         Ok(format!("({})", items.join(", ")))
     }
 
+    /// A RETURN arithmetic atom: `<var>.<prop>` (→ flat alias `var_prop`, leaf
+    /// recorded), a numeric literal, or a parenthesized sub-expression.
+    fn parse_ret_atom(&mut self, leaves: &mut Vec<(String, String)>) -> Result<String, ParseError> {
+        match self.peek() {
+            Some(Tok::LParen) => {
+                self.eat(&Tok::LParen);
+                let e = self.parse_ret_arith(leaves)?;
+                if !self.eat(&Tok::RParen) {
+                    return Err(ParseError(
+                        "cypher: expected `)` in RETURN expression".to_string(),
+                    ));
+                }
+                Ok(format!("({e})"))
+            }
+            Some(Tok::Num(_)) => match self.bump() {
+                Some(Tok::Num(n)) => Ok(n),
+                _ => unreachable!(),
+            },
+            Some(Tok::Word(_)) => {
+                let v = self.expect_word()?;
+                if !self.eat(&Tok::Dot) {
+                    return Err(ParseError(
+                        "cypher: a RETURN expression term must be `<var>.<prop>`, a number, or `(…)`"
+                            .to_string(),
+                    ));
+                }
+                let p = self.expect_word()?;
+                leaves.push((v.clone(), p.clone()));
+                Ok(format!("{v}_{p}"))
+            }
+            other => Err(ParseError(format!(
+                "cypher: expected a RETURN expression term, got {other:?}"
+            ))),
+        }
+    }
+
+    /// `*` / `/` precedence level.
+    fn parse_ret_mul(&mut self, leaves: &mut Vec<(String, String)>) -> Result<String, ParseError> {
+        let first = self.parse_ret_atom(leaves)?;
+        self.parse_ret_mul_after(first, leaves)
+    }
+
+    /// Continue a `*`/`/` chain from an already-parsed first factor.
+    fn parse_ret_mul_after(
+        &mut self,
+        first: String,
+        leaves: &mut Vec<(String, String)>,
+    ) -> Result<String, ParseError> {
+        let mut e = first;
+        loop {
+            let op = match self.peek() {
+                Some(Tok::Star) => "*",
+                Some(Tok::Slash) => "/",
+                _ => break,
+            };
+            self.bump();
+            let r = self.parse_ret_atom(leaves)?;
+            e = format!("{e} {op} {r}");
+        }
+        Ok(e)
+    }
+
+    /// `+` / `-` precedence level (the full RETURN arithmetic expression).
+    fn parse_ret_arith(&mut self, leaves: &mut Vec<(String, String)>) -> Result<String, ParseError> {
+        let first = self.parse_ret_mul(leaves)?;
+        self.parse_ret_arith_after(first, leaves)
+    }
+
+    /// Continue a full arithmetic expression from an already-parsed first
+    /// `<var>.<prop>` factor (the common case: the parser consumed `a.x` before
+    /// it knew an operator followed).
+    fn parse_ret_arith_after(
+        &mut self,
+        first: String,
+        leaves: &mut Vec<(String, String)>,
+    ) -> Result<String, ParseError> {
+        let term = self.parse_ret_mul_after(first, leaves)?;
+        let mut e = term;
+        loop {
+            let op = match self.peek() {
+                Some(Tok::Plus) => "+",
+                Some(Tok::Dash) => "-",
+                _ => break,
+            };
+            self.bump();
+            let r = self.parse_ret_mul(leaves)?;
+            e = format!("{e} {op} {r}");
+        }
+        Ok(e)
+    }
+
     /// A string or numeric literal, rendered as KQL-ready text.
     fn parse_literal(&mut self) -> Result<String, ParseError> {
         match self.bump() {
@@ -1384,12 +1496,35 @@ impl Parser {
             }
             if self.eat(&Tok::Dot) {
                 let prop = self.expect_word()?;
-                let alias = if self.eat_kw("AS") {
-                    Some(self.expect_word()?)
+                // Arithmetic expression? `a.x + b.y`, `a.score * 2`, … — an arith
+                // operator right after `<var>.<prop>` means this item is computed.
+                if matches!(
+                    self.peek(),
+                    Some(Tok::Plus | Tok::Dash | Tok::Star | Tok::Slash)
+                ) {
+                    let mut leaves = vec![(var.clone(), prop.clone())];
+                    let first = format!("{var}_{prop}");
+                    let kql_expr = self.parse_ret_arith_after(first, &mut leaves)?;
+                    if !self.eat_kw("AS") {
+                        return Err(ParseError(
+                            "cypher: a computed RETURN expression requires `AS <alias>`"
+                                .to_string(),
+                        ));
+                    }
+                    let alias = self.expect_word()?;
+                    items.push(ReturnItem::Expr {
+                        kql_expr,
+                        leaves,
+                        alias,
+                    });
                 } else {
-                    None
-                };
-                items.push(ReturnItem::Prop { var, prop, alias });
+                    let alias = if self.eat_kw("AS") {
+                        Some(self.expect_word()?)
+                    } else {
+                        None
+                    };
+                    items.push(ReturnItem::Prop { var, prop, alias });
+                }
             } else {
                 // Bare `RETURN <var>` — `AS` not meaningful, reject if present
                 // for clarity.
@@ -1734,13 +1869,19 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     //    both projected columns and the GROUP BY keys.
     let mut aggregates: Vec<String> = Vec::new();
     let mut group_keys: Vec<String> = Vec::new();
+    // Computed RETURN expressions: `(alias, kql_expr)` lowered to `| extend`,
+    // plus the ordered final output columns when any expression is present.
+    let mut extends: Vec<(String, String)> = Vec::new();
+    let mut expr_output: Vec<String> = Vec::new();
+    let has_expr = q.returns.iter().any(|i| matches!(i, ReturnItem::Expr { .. }));
     for item in &q.returns {
         match item {
             ReturnItem::Prop { var, prop, alias } => {
                 check_var(var)?;
                 let out = alias.clone().unwrap_or_else(|| format!("{var}_{prop}"));
                 push_proj(var, prop, out.clone());
-                group_keys.push(out);
+                group_keys.push(out.clone());
+                expr_output.push(out);
             }
             ReturnItem::Var { var } => {
                 check_var(var)?;
@@ -1749,6 +1890,21 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
                 push_proj(var, &g.label_col, format!("{var}_label"));
                 group_keys.push(format!("{var}_id"));
                 group_keys.push(format!("{var}_label"));
+                expr_output.push(format!("{var}_id"));
+                expr_output.push(format!("{var}_label"));
+            }
+            ReturnItem::Expr {
+                kql_expr,
+                leaves,
+                alias,
+            } => {
+                // Project every leaf prop so the extend can reference it.
+                for (v, p) in leaves {
+                    check_var(v)?;
+                    push_proj(v, p, format!("{v}_{p}"));
+                }
+                extends.push((alias.clone(), kql_expr.clone()));
+                expr_output.push(alias.clone());
             }
             ReturnItem::Aggregate { func, target, alias } => {
                 let out = alias.clone().unwrap_or_else(|| func.clone());
@@ -1863,6 +2019,22 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     }
     for f in filters {
         kql.push_str(&format!(" | where {f}"));
+    }
+
+    // Computed RETURN expressions: add each as an `| extend`, then a final
+    // `| project` that emits the RETURN columns in order (dropping the helper
+    // leaf columns). Gated on has_expr so plain-projection queries are
+    // unchanged. Mixing an expression with an aggregate is unsupported.
+    if has_expr {
+        if !aggregates.is_empty() {
+            return Err(unsupported(
+                "a computed RETURN expression together with an aggregate",
+            ));
+        }
+        for (alias, expr) in &extends {
+            kql.push_str(&format!(" | extend {alias} = {expr}"));
+        }
+        kql.push_str(&format!(" | project {}", expr_output.join(", ")));
     }
 
     // count(...) aggregates run after the row filters: group the non-aggregate
@@ -2492,6 +2664,40 @@ mod tests {
         assert!(
             tr_err("MATCH (a)-[r]->(b) RETURN avg(b)").contains("property argument"),
             "avg(<var>) rejected"
+        );
+    }
+
+    // ---- RETURN arithmetic expressions -----------------------------------
+    #[test]
+    fn return_arithmetic_expression_lowers_and_compiles() {
+        let kql = tr("MATCH (a)-[r]->(b) RETURN a.name, a.x + b.y AS total");
+        // Leaf props projected, computed via extend, final project drops helpers.
+        assert!(kql.contains("a.x as a_x"), "{kql}");
+        assert!(kql.contains("b.y as b_y"), "{kql}");
+        assert!(kql.contains("| extend total = a_x + b_y"), "{kql}");
+        assert!(kql.contains("| project a_name, total"), "{kql}");
+        crate::kql_to_sql(&kql).expect("RETURN expression must compile to SQL");
+    }
+
+    #[test]
+    fn return_expression_precedence_and_parens() {
+        // `*` binds tighter than `+`; parens (in a tail atom) override.
+        let p = tr("MATCH (a)-[r]->(b) RETURN a.x + b.y * a.z AS r");
+        assert!(p.contains("| extend r = a_x + b_y * a_z"), "{p}");
+        crate::kql_to_sql(&p).expect("precedence expr compiles");
+        // The expression must start with `<var>.<prop>`; parens are supported in
+        // a following operand.
+        let g = tr("MATCH (a)-[r]->(b) RETURN a.z / (a.x + b.y) AS r");
+        assert!(g.contains("| extend r = a_z / (a_x + b_y)"), "{g}");
+        crate::kql_to_sql(&g).expect("paren expr compiles");
+    }
+
+    #[test]
+    fn return_expression_requires_alias() {
+        let g = binding();
+        assert!(
+            cypher_to_kql("MATCH (a)-[r]->(b) RETURN a.x + b.y", &g).is_err(),
+            "a computed RETURN expression without AS must be rejected"
         );
     }
 
