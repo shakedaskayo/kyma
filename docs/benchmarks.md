@@ -2,6 +2,37 @@
 
 _Last measured: 2026-04-19. Hardware: 1× macOS laptop, Docker-hosted Postgres + MinIO on loopback. Dev build (`cargo build`, not `--release`). Phase-A format (Arrow IPC wrapper)._
 
+> **Update — Scale & Production-Readiness program (2026-06-15).** The "Phase D" /
+> "Phase B follow-on" work referenced throughout sections 1–7 below has since
+> **shipped** and supersedes those "future work" notes: a **Parquet** segment
+> format (ZSTD + encodings + blooms + page index; `KYMA_WRITE_FORMAT`, per-extent
+> dispatch), **per-extent IVF + RaBitQ ANN** + **Tantivy BM25** sidecars + a
+> cross-encoder reranker (so "vector search = stub" is obsolete), **staged
+> ingest** (router → object store → lease-elected committer), the **Helm role
+> split** (edge / committer / worker), a **CSR graph engine** with a full Cypher
+> dialect (read + CREATE/MERGE writes), and per-tenant **rate-limit / query-admission**
+> ops hardening. The section-1 ingest numbers below predate this and are **not**
+> re-measured here. Release-tier throughput/latency at 100M-row / 1B-edge /
+> multi-node / soak scale is pending representative infrastructure; the
+> deterministic **correctness** gates (ANN-recall-vs-oracle, graph
+> differential-vs-petgraph) and the CI-tier **graph-traversal** perf below were
+> validated in-session.
+>
+> **Graph traversal engine (S3.1/S3.2) — `kyma-graph-bench`, CI tier, dev laptop
+> under load (orders of magnitude, not absolute ceilings):**
+>
+> | Operation | 10k edges | 100k edges |
+> |---|---|---|
+> | CSR build (power-law) | ~5 ms | ~47 ms |
+> | k-hop (k=3) forward | ~5 µs | ~2.5 µs |
+> | k-hop (k=3) backward (hub fan-in, worst case) | ~4 ms | ~35 ms |
+> | unweighted shortest-path | ~1.2 µs | ~1.2 µs |
+>
+> Forward traversal + shortest-path are microseconds and scale-independent
+> (bounded fan-out from the seed over the immutable CSR); only worst-case
+> backward hub fan-in grows with graph size. Correctness is gated against a
+> petgraph oracle (`kyma-graph-testkit` / `kyma-graph-topo`, all green).
+
 Our stated goal (plan §1) is to beat existing unified-observability solutions on a real production workload. This doc quantifies where we are **today**, compares honestly to published numbers for the closest industry peers, and lists the specific engineering work that closes each remaining gap.
 
 ---
