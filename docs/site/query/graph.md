@@ -134,8 +134,8 @@ Supported surface:
 | **Variable length** | `-[r*min..max]->` (bounded), lowered to a depth-bounded recursive traversal that preserves both endpoints. |
 | **Paths** | `shortestPath((a)-[*..n]->(b))` with `length(p)`; endpoints pinned by `WHERE` id equality. |
 | **Optional** | `OPTIONAL MATCH` (lowered as a LEFT JOIN). |
-| **WHERE** | `=`, `<>`, `<`, `>`, `<=`, `>=`; `IN [..]`; `STARTS WITH` / `ENDS WITH` / `CONTAINS`; `AND` / `OR` / `NOT` with parentheses and correct precedence. |
-| **RETURN** | properties, `AS` aliases, `DISTINCT`, aggregates `count(*)` / `count(x)` / `sum` / `min` / `max`, `ORDER BY … [ASC\|DESC]`, `LIMIT`. |
+| **WHERE** | `=`, `<>`, `<`, `>`, `<=`, `>=`; `IN [..]`; `STARTS WITH` / `ENDS WITH` / `CONTAINS`; `IS NULL` / `IS NOT NULL`; `AND` / `OR` / `NOT` with parentheses and correct precedence. |
+| **RETURN** | properties, `AS` aliases, `DISTINCT`, aggregates `count(*)` / `count(x)` / `sum` / `avg` / `min` / `max` / `collect(x)`, `ORDER BY … [ASC\|DESC]`, `LIMIT`. |
 
 Not yet supported (returns `400` with the parse error): `WITH`, write clauses
 (`CREATE` / `MERGE` / `SET` / `DELETE`), `RETURN *`, and arbitrary expressions in
