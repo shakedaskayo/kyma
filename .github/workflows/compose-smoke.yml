@@ -1,0 +1,27 @@
+name: compose-smoke
+
+# Validates the SHIPPED CONTAINER path: build the kyma image from the Dockerfile
+# and bring up the full docker-compose stack (Postgres + MinIO + engine), then
+# assert the engine serves over HTTP from a clean state (health, admin login,
+# ingest, query, search) via scripts/compose-smoke.sh. This is the
+# docker-compose analogue of the local single-binary fresh-install gate.
+#
+# The image build (pnpm web + Rust release) is expensive, so this runs on push
+# to main + on demand — not on every PR. GitHub-hosted runners have Docker +
+# Compose and a clean port space, so the stack comes up without collision.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  compose-smoke:
+    name: docker-compose fresh-install smoke
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docker compose smoke (build + up + assert + down)
+        run: scripts/compose-smoke.sh

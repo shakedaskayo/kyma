@@ -1,0 +1,40 @@
+# Isolation override for the docker-compose fresh-install smoke test
+# (scripts/compose-smoke.sh). Renames every container and remaps every HOST port
+# so the smoke stack can run alongside a developer's live `docker compose up`
+# (whose containers are named kyma-postgres/kyma-minio/… on the default ports)
+# without a name or port collision. Internal service DNS (postgres:5432,
+# minio:9000) is unchanged, so the engine config in the base file still resolves.
+#
+# `ports: !override` REPLACES the base port list rather than merging (compose
+# concatenates arrays by default — without !override the base :9000/:8080/:5433
+# would still be published and collide with a running default-named stack).
+#
+# Used with a dedicated project name: `docker compose -p kyma-smoke -f
+# docker-compose.yml -f scripts/compose.smoke-override.yml ...`.
+
+services:
+  postgres:
+    container_name: kyma-smoke-pg
+    ports: !override
+      - "5434:5432"
+
+  minio:
+    container_name: kyma-smoke-minio
+    ports: !override
+      - "9100:9000"
+      - "9101:9001"
+
+  minio-init:
+    container_name: kyma-smoke-minio-init
+
+  redpanda:
+    container_name: kyma-smoke-redpanda
+    ports: !override
+      - "9093:9092"
+      - "9645:9644"
+
+  kyma:
+    container_name: kyma-smoke-engine
+    ports: !override
+      - "18090:8080"
+      - "19090:9090"
