@@ -79,6 +79,40 @@ struct Cli {
     path_prefix: String,
 }
 
+/// Which background components a node runs, selected by `KYMA_ROLE` (S2.4/S2.6
+/// role split). The HTTP API (query + ingest) is always served; only background
+/// work is gated, so stateless roles can be horizontally scaled.
+struct RoleComponents {
+    /// Run the staged-ingest committer loop (the PG lease still elects one).
+    run_committer: bool,
+    /// Run heavy background jobs (compaction worker + scheduler).
+    run_jobs: bool,
+}
+
+/// Map `KYMA_ROLE` → components. `all_in_one` (default / unknown) runs
+/// everything (single-node, unchanged). `query`/`ingest`/`edge` are stateless
+/// HTTP nodes; `committer` runs the commit lease; `worker`/`compaction` run jobs.
+fn role_components(role: &str) -> RoleComponents {
+    match role.trim().to_ascii_lowercase().as_str() {
+        "query" | "ingest" | "edge" => RoleComponents {
+            run_committer: false,
+            run_jobs: false,
+        },
+        "committer" => RoleComponents {
+            run_committer: true,
+            run_jobs: false,
+        },
+        "worker" | "compaction" => RoleComponents {
+            run_committer: false,
+            run_jobs: true,
+        },
+        _ => RoleComponents {
+            run_committer: true,
+            run_jobs: true,
+        },
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     use opentelemetry::trace::TracerProvider as _;
@@ -349,6 +383,15 @@ async fn main() -> Result<()> {
     let use_staging = std::env::var("KYMA_STAGING_DISABLED")
         .map(|v| v != "1" && v != "true")
         .unwrap_or(true);
+    // S2.4/S2.6 role split: KYMA_ROLE selects which background work this node
+    // runs. `all_in_one` (default) runs everything (single-node, unchanged).
+    // `query`/`ingest`/`edge` are stateless HTTP nodes (no committer, no
+    // compaction) and so HPA-safe; `committer` runs the commit lease;
+    // `worker`/`compaction` run the heavy background jobs.
+    let role = std::env::var("KYMA_ROLE").unwrap_or_else(|_| "all_in_one".to_string());
+    let rc = role_components(&role);
+    info!(role = %role, run_committer = rc.run_committer, run_jobs = rc.run_jobs, "node role");
+
     // S2.2: staged ingest ("S3 is the WAL"). Routers stage the written extent
     // and ack; the async committer commits it. Opt-in via KYMA_INGEST_MODE=staged
     // (default = synchronous read-your-writes). Staged mode bypasses the
@@ -357,12 +400,16 @@ async fn main() -> Result<()> {
     let ingest_events = IngestEvents::new(256);
     let write_path: WritePath = if staged_ingest {
         info!("ingest mode: staged (router + async committer)");
-        let committer = kyma_ingest_core::committer::Committer::new(
-            catalog.clone(),
-            kyma_core::tenant::DEFAULT_TENANT,
-        );
-        let committer_rx = shutdown_tx.subscribe();
-        tokio::spawn(committer.run(committer_rx));
+        // Every staged node stages + acks; only committer-eligible roles run the
+        // committer loop (the PG-advisory-lock lease still elects a single one).
+        if rc.run_committer {
+            let committer = kyma_ingest_core::committer::Committer::new(
+                catalog.clone(),
+                kyma_core::tenant::DEFAULT_TENANT,
+            );
+            let committer_rx = shutdown_tx.subscribe();
+            tokio::spawn(committer.run(committer_rx));
+        }
         WritePath::new(catalog.clone(), format.clone())
             .with_staged_mode()
             .with_events(ingest_events.clone())
@@ -929,16 +976,24 @@ async fn main() -> Result<()> {
     {
         scheduler.min_extents_to_compact = n;
     }
-    let worker_rx = shutdown_tx.subscribe();
-    let scheduler_rx = shutdown_tx.subscribe();
-    let worker_handle = tokio::spawn(worker.run(async move {
-        let mut rx = worker_rx;
-        let _ = rx.recv().await;
-    }));
-    let scheduler_handle = tokio::spawn(scheduler.run(async move {
-        let mut rx = scheduler_rx;
-        let _ = rx.recv().await;
-    }));
+    // Compaction is heavy background work — only on job-running roles
+    // (all_in_one / worker). Stateless query/ingest nodes skip it (HPA-safe).
+    let (worker_handle, scheduler_handle) = if rc.run_jobs {
+        let worker_rx = shutdown_tx.subscribe();
+        let scheduler_rx = shutdown_tx.subscribe();
+        (
+            Some(tokio::spawn(worker.run(async move {
+                let mut rx = worker_rx;
+                let _ = rx.recv().await;
+            }))),
+            Some(tokio::spawn(scheduler.run(async move {
+                let mut rx = scheduler_rx;
+                let _ = rx.recv().await;
+            }))),
+        )
+    } else {
+        (None, None)
+    };
 
     // Index-build activation scheduler: enqueues ivf_rabitq build jobs for
     // un-indexed vector columns so ANN sidecars actually get created.
@@ -1593,10 +1648,14 @@ async fn main() -> Result<()> {
     }
 
     // Workers were already signaled above; join their handles.
-    let _ = worker_handle.await;
+    if let Some(h) = worker_handle {
+        let _ = h.await;
+    }
     let _ = index_scheduler_handle.await;
     let _ = graph_snapshot_scheduler_handle.await;
-    let _ = scheduler_handle.await;
+    if let Some(h) = scheduler_handle {
+        let _ = h.await;
+    }
     let _ = retention_handle.await;
     let _ = gc_handle.await;
     let _ = artifact_gc_handle.await;
@@ -1694,5 +1753,30 @@ impl kyma_jobs::JobExecutor for DreamingExecutor {
             "run_id": run_id,
             "stats": outcome,
         }))
+    }
+}
+
+#[cfg(test)]
+mod role_tests {
+    use super::role_components;
+
+    #[test]
+    fn role_components_map_correctly() {
+        // Default / unknown → all_in_one (everything).
+        for r in ["all_in_one", "", "bogus", "ALL_IN_ONE"] {
+            let c = role_components(r);
+            assert!(c.run_committer && c.run_jobs, "{r} should run everything");
+        }
+        // Stateless HTTP nodes: no committer, no jobs (HPA-safe).
+        for r in ["query", "ingest", "edge", "Query", " edge "] {
+            let c = role_components(r);
+            assert!(!c.run_committer && !c.run_jobs, "{r} should be stateless");
+        }
+        // Committer node: commit lease only.
+        let c = role_components("committer");
+        assert!(c.run_committer && !c.run_jobs);
+        // Worker node: jobs only.
+        let w = role_components("worker");
+        assert!(!w.run_committer && w.run_jobs);
     }
 }
