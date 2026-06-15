@@ -141,12 +141,26 @@ impl QueryState {
                 }
             }
             items.join(", ")
+        } else if !self.select.is_empty() {
+            // Explicit projection (`project`). A selected column that names an
+            // `extend` alias renders as the computed expression; other extends
+            // were dropped by the projection (KQL `extend … | project` keeps
+            // only the projected columns).
+            self.select
+                .iter()
+                .map(|col| {
+                    if let Some((_, expr)) = self.extend.iter().find(|(n, _)| n == col) {
+                        format!("({expr}) AS {col}")
+                    } else {
+                        col.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
         } else {
             let mut items = Vec::new();
-            if self.select.is_empty() && self.exclude.is_empty() {
+            if self.exclude.is_empty() {
                 items.push("*".to_string());
-            } else if !self.select.is_empty() {
-                items.extend(self.select.iter().cloned());
             } else {
                 // project-away — DataFusion supports the `* EXCEPT (...)`
                 // wildcard option, so excluded columns are actually dropped.
@@ -154,6 +168,7 @@ impl QueryState {
                 // search previews and broke unified-search RRF dedup.)
                 items.push(format!("* EXCEPT ({})", self.exclude.join(", ")));
             }
+            // No explicit projection → extends add columns alongside `*`.
             for (name, expr) in &self.extend {
                 items.push(format!("({expr}) AS {name}"));
             }
