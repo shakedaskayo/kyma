@@ -194,6 +194,12 @@ impl CsrGraph {
         self.ids.len()
     }
 
+    /// The node ids, in dense-index order. Useful for seeding a global
+    /// PageRank (every node a restart source) or enumerating the vertex set.
+    pub fn node_ids(&self) -> Vec<&str> {
+        self.ids.iter().map(String::as_str).collect()
+    }
+
     /// Number of retained (non-dangling) directed edges.
     pub fn num_edges(&self) -> usize {
         self.out_targets.len()

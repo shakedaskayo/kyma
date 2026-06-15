@@ -1611,9 +1611,9 @@ async fn test_engine(
             .generate_content(req, false)
             .await
             .map_err(|e| format!("provider: {e:?}"))?;
-        while let Some(item) = stream.next().await {
+        // Probe only the first streamed item (provider reachability/auth check).
+        if let Some(item) = stream.next().await {
             item.map_err(|e| format!("stream: {e:?}"))?;
-            break;
         }
         Ok::<(), String>(())
     })
