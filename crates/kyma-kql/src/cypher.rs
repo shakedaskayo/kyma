@@ -44,7 +44,12 @@
 //!
 //! Variable-length inside a multi-hop chain, backward hops inside a multi-hop
 //! chain, `OPTIONAL MATCH`, multiple `MATCH`, `WITH`, `ORDER BY`, aggregation,
-//! `CREATE/SET/DELETE/MERGE`, `shortestPath`, `RETURN *`.
+//! `CREATE/SET/DELETE/MERGE`, `RETURN *`.
+//!
+//! `shortestPath` IS supported in the form
+//! `MATCH p = shortestPath((a)-[*..N]->(b)) WHERE a.<id> = '…' AND b.<id> = '…'
+//! RETURN length(p)` — it lowers to the `graph-shortest-path` operator (both
+//! endpoints must be pinned by id in WHERE; the only projection is `length(p)`).
 
 use crate::ParseError;
 
@@ -328,6 +333,12 @@ enum ReturnItem {
     },
     /// `RETURN <var>` (bare) — expands to id + label columns.
     Var { var: String },
+    /// `RETURN length(<path>) [AS <alias>]` — only valid in a `shortestPath`
+    /// query; projects the shortest-path hop count.
+    PathLength {
+        path_var: String,
+        alias: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -339,6 +350,10 @@ struct Query {
     where_preds: Vec<Comparison>,
     returns: Vec<ReturnItem>,
     limit: Option<i64>,
+    /// `Some(path_var)` when the MATCH is `<path_var> = shortestPath((a)-[…]->(b))`.
+    /// The single hop in `nodes`/`rels` is the wrapped pattern; the lowering
+    /// emits `graph-shortest-path` instead of `graph-match`.
+    shortest_path: Option<String>,
 }
 
 // =====================================================================
@@ -411,6 +426,28 @@ impl Parser {
             ));
         }
 
+        // Optional `<path> = shortestPath( <pattern> )` wrapper. Detected by a
+        // bareword immediately followed by `=`.
+        let mut shortest_path: Option<String> = None;
+        if matches!(self.peek(), Some(Tok::Word(_)))
+            && matches!(self.toks.get(self.pos + 1), Some(Tok::Eq))
+        {
+            let pvar = self.expect_word()?;
+            self.eat(&Tok::Eq); // consume `=`
+            let func = self.expect_word()?;
+            if !func.eq_ignore_ascii_case("shortestPath") {
+                return Err(unsupported(&format!(
+                    "path function `{func}` (only shortestPath is supported)"
+                )));
+            }
+            if !self.eat(&Tok::LParen) {
+                return Err(ParseError(
+                    "cypher: expected `(` after shortestPath".to_string(),
+                ));
+            }
+            shortest_path = Some(pvar);
+        }
+
         // Pattern chain: node ( rel node )+ — one or more hops.
         let mut nodes = vec![self.parse_node()?];
         let mut rels: Vec<RelPat> = Vec::new();
@@ -421,6 +458,13 @@ impl Parser {
             if !matches!(self.peek(), Some(Tok::Dash | Tok::ArrowL)) {
                 break;
             }
+        }
+
+        // Close the `shortestPath( … )` wrapper.
+        if shortest_path.is_some() && !self.eat(&Tok::RParen) {
+            return Err(ParseError(
+                "cypher: expected `)` to close shortestPath(...)".to_string(),
+            ));
         }
 
         // A second MATCH / OPTIONAL MATCH / WITH before RETURN ⇒ unsupported.
@@ -475,6 +519,7 @@ impl Parser {
             where_preds,
             returns,
             limit,
+            shortest_path,
         })
     }
 
@@ -728,7 +773,27 @@ impl Parser {
         let mut items = Vec::new();
         loop {
             let var = self.expect_word()?;
-            // Reject aggregation like count(...) / collect(...).
+            // `length(<path>)` — the only supported function (shortestPath length).
+            if var.eq_ignore_ascii_case("length") && matches!(self.peek(), Some(Tok::LParen)) {
+                self.eat(&Tok::LParen);
+                let path_var = self.expect_word()?;
+                if !self.eat(&Tok::RParen) {
+                    return Err(ParseError(
+                        "cypher: expected `)` after length(<path>)".to_string(),
+                    ));
+                }
+                let alias = if self.eat_kw("AS") {
+                    Some(self.expect_word()?)
+                } else {
+                    None
+                };
+                items.push(ReturnItem::PathLength { path_var, alias });
+                if !self.eat(&Tok::Comma) {
+                    break;
+                }
+                continue;
+            }
+            // Reject other aggregation / function calls like count(...) / collect(...).
             if matches!(self.peek(), Some(Tok::LParen)) {
                 return Err(unsupported("aggregation / function call in RETURN"));
             }
@@ -790,7 +855,100 @@ struct Projection {
     alias: String,
 }
 
+/// Lower `<path> = shortestPath((a)-[…]->(b))` onto the `graph-shortest-path`
+/// KQL operator. Both endpoints must be pinned by `<var>.<id_col> = '…'` in
+/// WHERE (that's how the operator gets its source/target), and the only
+/// supported projection is `length(<path>)` (the hop count).
+fn emit_shortest_path(q: &Query, g: &GraphBinding, path_var: &str) -> Result<String, ParseError> {
+    if q.rels.len() != 1 {
+        return Err(unsupported("shortestPath over a multi-hop pattern"));
+    }
+    let a = q.nodes[0].var.as_str();
+    let b = q.nodes[1].var.as_str();
+    // Both endpoints pinned by `<var>.<id_col> = '<lit>'` in WHERE.
+    let pin = |var: &str| -> Option<&str> {
+        q.where_preds
+            .iter()
+            .find(|p| p.var == var && p.prop == g.id_col && matches!(p.op, CmpOp::Eq))
+            .map(|p| p.literal.as_str())
+    };
+    let (src, tgt) = match (pin(a), pin(b)) {
+        (Some(s), Some(t)) => (s, t),
+        _ => {
+            return Err(ParseError(format!(
+                "cypher: shortestPath requires both endpoints pinned by `{id}` equality \
+                 (e.g. WHERE {a}.{id} = '…' AND {b}.{id} = '…')",
+                id = g.id_col
+            )));
+        }
+    };
+    // Every WHERE predicate must be one of the two endpoint pins.
+    let pins = q
+        .where_preds
+        .iter()
+        .filter(|p| p.prop == g.id_col && matches!(p.op, CmpOp::Eq) && (p.var == a || p.var == b))
+        .count();
+    if q.where_preds.len() != pins {
+        return Err(unsupported(
+            "WHERE predicates other than the two endpoint id pins in a shortestPath query",
+        ));
+    }
+    let max = q
+        .rels
+        .first()
+        .and_then(|r| r.var_length.map(|(_, m)| m))
+        .unwrap_or(DEFAULT_VAR_LENGTH_MAX);
+    let dir_kw = match q.rels[0].direction {
+        Direction::Forward => "forward",
+        Direction::Backward => "backward",
+        Direction::Undirected => "both",
+    };
+    // RETURN must be a single `length(<path>)`. The graph-shortest-path operator
+    // yields the length in a `depth` column, which we project as-is. An `AS`
+    // alias is rejected for now: KQL `project` is a bare column list (no `as`),
+    // and `extend`-renaming does not compose with the operator's CTEs.
+    if q.returns.len() != 1 {
+        return Err(unsupported(
+            "shortestPath RETURN must be a single length(<path>)",
+        ));
+    }
+    match &q.returns[0] {
+        ReturnItem::PathLength {
+            path_var: pv,
+            alias,
+        } => {
+            if pv != path_var {
+                return Err(ParseError(format!(
+                    "cypher: length() of unknown path `{pv}` (the path is `{path_var}`)"
+                )));
+            }
+            if alias.is_some() {
+                return Err(unsupported(
+                    "AS alias on length(<path>) (the shortest-path length is returned in the `depth` column)",
+                ));
+            }
+        }
+        _ => {
+            return Err(unsupported(
+                "shortestPath RETURN supports only length(<path>)",
+            ));
+        }
+    }
+    Ok(format!(
+        "{edges} | graph-shortest-path source {src} target {tgt} \
+         from {srccol} to {dstcol} max-hops {max} direction {dir_kw} | project depth",
+        edges = g.edge_table,
+        srccol = g.src_col,
+        dstcol = g.dst_col,
+    ))
+}
+
 fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
+    // shortestPath queries have their own lowering onto `graph-shortest-path`.
+    if let Some(path_var) = &q.shortest_path {
+        return emit_shortest_path(q, g, path_var);
+    }
+
     // Validate that all referenced variables are one of the two node vars or
     // the relationship var. `graph-match` would reject unknown vars anyway, but
     // a Cypher-level message is friendlier.
@@ -836,6 +994,11 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
                 // Bare var → id + label columns.
                 push_proj(var, &g.id_col, format!("{var}_id"));
                 push_proj(var, &g.label_col, format!("{var}_label"));
+            }
+            ReturnItem::PathLength { .. } => {
+                // `length(<path>)` is only meaningful in a shortestPath query,
+                // which is lowered before reaching here.
+                return Err(unsupported("length(<path>) outside a shortestPath query"));
             }
         }
     }
@@ -1050,6 +1213,77 @@ mod tests {
         assert!(tr("MATCH (a)-[r*..4]->(b) RETURN a.name").contains("min-hops 1 max-hops 4"));
         // `*M..` ⇒ M..cap
         assert!(tr("MATCH (a)-[r*2..]->(b) RETURN a.name").contains("min-hops 2 max-hops 10"));
+    }
+
+    // ---- shortestPath ------------------------------------------------
+    #[test]
+    fn shortest_path_lowers_to_graph_shortest_path() {
+        let kql = tr(
+            "MATCH p = shortestPath((a)-[r*1..5]->(b)) WHERE a.id = 'x' AND b.id = 'y' \
+             RETURN length(p)",
+        );
+        assert!(
+            kql.contains(
+                "graph-shortest-path source 'x' target 'y' from src to dst max-hops 5 \
+                 direction forward"
+            ),
+            "{kql}"
+        );
+        // Length is returned in the natural `depth` column.
+        assert!(kql.contains("| project depth"), "{kql}");
+        // The emitted KQL must actually compile to SQL (guards against invalid
+        // operator syntax — e.g. `project depth as d`, which KQL rejects).
+        crate::kql_to_sql(&kql).expect("shortestPath KQL must compile to SQL");
+    }
+
+    #[test]
+    fn shortest_path_alias_directions_and_open_bound() {
+        // Undirected ⇒ direction both; bare `*` ⇒ max-hops cap (10).
+        let both = tr(
+            "MATCH p = shortestPath((a)-[*]-(b)) WHERE a.id='x' AND b.id='y' RETURN length(p)",
+        );
+        assert!(
+            both.contains("max-hops 10 direction both"),
+            "{both}"
+        );
+        // Backward.
+        let back = tr(
+            "MATCH p = shortestPath((a)<-[*1..4]-(b)) WHERE a.id='x' AND b.id='y' RETURN length(p)",
+        );
+        assert!(back.contains("direction backward"), "{back}");
+    }
+
+    #[test]
+    fn shortest_path_rejections() {
+        // Missing one endpoint pin.
+        assert!(
+            tr_err("MATCH p = shortestPath((a)-[*]->(b)) WHERE a.id='x' RETURN length(p)")
+                .contains("both endpoints pinned"),
+            "expected endpoint-pin rejection"
+        );
+        // length() outside a shortestPath query.
+        assert!(
+            tr_err("MATCH (a)-[r]->(b) RETURN length(a)").contains("shortestPath"),
+            "length() must require shortestPath"
+        );
+        // AS alias on length() is not supported yet.
+        assert!(
+            tr_err(
+                "MATCH p = shortestPath((a)-[*]->(b)) WHERE a.id='x' AND b.id='y' \
+                 RETURN length(p) AS d"
+            )
+            .contains("alias"),
+            "AS alias on length() should be rejected"
+        );
+        // Extra WHERE predicate beyond the two pins.
+        assert!(
+            tr_err(
+                "MATCH p = shortestPath((a)-[*]->(b)) WHERE a.id='x' AND b.id='y' AND a.name='z' \
+                 RETURN length(p)"
+            )
+            .contains("WHERE"),
+            "extra WHERE predicate should be rejected"
+        );
     }
 
     #[test]

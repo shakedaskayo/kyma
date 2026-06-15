@@ -12,7 +12,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use arrow_array::{Int64Array, RecordBatch, StringArray};
+use arrow_array::{Array, Int64Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use datafusion::datasource::MemTable;
 use datafusion::prelude::SessionContext;
@@ -240,4 +240,68 @@ async fn var_match_on_cycles_matches_oracle() {
     let g = synth::cyclic(&[5, 4], 2, 7);
     assert_varmatch(&g, 1, 8, Direction::Fwd, "forward", None).await;
     assert_varmatch(&g, 2, 4, Direction::Both, "both", None).await;
+}
+
+// =====================================================================
+// graph-shortest-path: the operator Cypher `shortestPath(...)` lowers onto.
+// Differential vs oracle::shortest_path_len over node pairs.
+// =====================================================================
+
+use kyma_graph_testkit::oracle::shortest_path_len;
+
+/// Shortest-path length `src`→`tgt` via the operator (None when no path within
+/// `max` hops).
+async fn engine_sp(
+    g: &TestGraph,
+    src: &str,
+    tgt: &str,
+    max: usize,
+    dir_kw: &str,
+) -> Option<i64> {
+    let ctx = edges_ctx(g);
+    let kql = format!(
+        "edges | graph-shortest-path source \"{src}\" target \"{tgt}\" \
+         from src to dst max-hops {max} direction {dir_kw} | project depth"
+    );
+    let sql = kql_to_sql(&kql).expect("lower graph-shortest-path");
+    let batches = ctx.sql(&sql).await.expect("plan").collect().await.expect("exec");
+    for b in &batches {
+        if b.num_rows() == 0 {
+            continue;
+        }
+        let d = b.column_by_name("depth").unwrap().as_any().downcast_ref::<Int64Array>().unwrap();
+        return if d.is_null(0) { None } else { Some(d.value(0)) };
+    }
+    None
+}
+
+/// With `max` large enough that every reachable pair is within it, the engine
+/// distance equals the oracle for all node pairs (and None ⇔ unreachable).
+async fn assert_sp_all_pairs(g: &TestGraph, max: usize, dir: Direction, dir_kw: &str) {
+    for s in &g.nodes {
+        for t in &g.nodes {
+            let got = engine_sp(g, &s.id, &t.id, max, dir_kw).await.map(|d| d as usize);
+            let want = shortest_path_len(g, &s.id, &t.id, dir, None);
+            assert_eq!(
+                got, want,
+                "shortest-path {}→{} dir={dir_kw}: engine {got:?} vs oracle {want:?}",
+                s.id, t.id
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn shortest_path_matches_oracle_on_grid() {
+    let g = synth::grid(3, 3);
+    // max=8 exceeds the grid diameter, so reachable ⇔ within max.
+    assert_sp_all_pairs(&g, 8, Direction::Fwd, "forward").await;
+    assert_sp_all_pairs(&g, 8, Direction::Both, "both").await;
+}
+
+#[tokio::test]
+async fn shortest_path_matches_oracle_on_cycle() {
+    let g = synth::cyclic(&[5], 0, 1);
+    assert_sp_all_pairs(&g, 12, Direction::Fwd, "forward").await;
+    assert_sp_all_pairs(&g, 12, Direction::Both, "both").await;
 }
