@@ -34,6 +34,7 @@ pub mod graph_snapshot_sched;
 pub mod flight;
 pub mod capabilities;
 pub mod concurrency;
+pub mod quota_cache;
 mod health;
 pub mod query_multidb;
 pub mod search;

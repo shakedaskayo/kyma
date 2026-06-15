@@ -20,7 +20,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, patch},
+    routing::{get, patch, put},
     Json, Router,
 };
 use kyma_core::catalog::Catalog;
@@ -218,7 +218,77 @@ async fn delete_user_handler(
     }
 }
 
-/// Build the `/v1/admin/users` router. Mount behind
+// --- per-tenant quotas (S2.6 ops hardening) ---
+
+#[derive(Debug, Deserialize)]
+pub struct UpsertQuotaRequest {
+    /// Max in-flight `/v1/query` + `/v1/search` for the tenant (null = no override).
+    #[serde(default)]
+    pub max_query_concurrent: Option<u32>,
+    /// Max in-flight agent runs for the tenant (null = no override).
+    #[serde(default)]
+    pub max_agent_concurrent: Option<u32>,
+}
+
+async fn list_quotas_handler(State(state): State<AdminState>) -> Response {
+    match state.catalog.list_tenant_quotas().await {
+        Ok(quotas) => {
+            let body: Vec<_> = quotas
+                .into_iter()
+                .map(|q| {
+                    json!({
+                        "tenant": q.tenant.to_string(),
+                        "max_query_concurrent": q.max_query_concurrent,
+                        "max_agent_concurrent": q.max_agent_concurrent,
+                        "updated_at": q.updated_at.to_rfc3339(),
+                    })
+                })
+                .collect();
+            (StatusCode::OK, Json(json!({ "quotas": body }))).into_response()
+        }
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, "catalog", &e.to_string()),
+    }
+}
+
+async fn upsert_quota_handler(
+    State(state): State<AdminState>,
+    Path(tenant): Path<String>,
+    Json(body): Json<UpsertQuotaRequest>,
+) -> Response {
+    let tenant_id = match tenant.parse::<kyma_core::tenant::TenantId>() {
+        Ok(t) => t,
+        Err(_) => {
+            return err(
+                StatusCode::BAD_REQUEST,
+                "invalid_tenant",
+                "tenant must be a UUID",
+            )
+        }
+    };
+    let quota = kyma_core::catalog::TenantQuota {
+        tenant: tenant_id,
+        max_query_concurrent: body.max_query_concurrent,
+        max_agent_concurrent: body.max_agent_concurrent,
+        updated_at: chrono::Utc::now(),
+    };
+    if let Err(e) = state.catalog.upsert_tenant_quota(&quota).await {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, "catalog", &e.to_string());
+    }
+    // Refresh the in-RAM cache so the new limit applies immediately (rather than
+    // waiting for the next periodic refresh).
+    crate::quota_cache::refresh(&state.catalog).await;
+    (
+        StatusCode::OK,
+        Json(json!({
+            "tenant": tenant_id.to_string(),
+            "max_query_concurrent": quota.max_query_concurrent,
+            "max_agent_concurrent": quota.max_agent_concurrent,
+        })),
+    )
+        .into_response()
+}
+
+/// Build the `/v1/admin/users` + `/v1/admin/tenant-quotas` router. Mount behind
 /// `require_role_middleware` at [`Role::Admin`].
 pub fn admin_users_router(catalog: Arc<dyn Catalog>) -> Router {
     Router::new()
@@ -230,6 +300,8 @@ pub fn admin_users_router(catalog: Arc<dyn Catalog>) -> Router {
             "/v1/admin/users/:username",
             patch(update_user_handler).delete(delete_user_handler),
         )
+        .route("/v1/admin/tenant-quotas", get(list_quotas_handler))
+        .route("/v1/admin/tenant-quotas/:tenant", put(upsert_quota_handler))
         .with_state(AdminState { catalog })
 }
 

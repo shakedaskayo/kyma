@@ -146,14 +146,28 @@ feature).
 | `KYMA_AGENT_MAX_CONCURRENT` / `_PER_TENANT` | `0` (unlimited) | Same, for the heavier agent-run path. |
 | `KYMA_INGEST_RATE_RPS` | `0` (unlimited) | Token-bucket ingest rate limit (refill/sec), keyed by database; empty bucket → `429` + `Retry-After`. |
 | `KYMA_INGEST_RATE_BURST` | `2×rps` | Ingest token-bucket burst cap. |
+| `KYMA_QUOTA_REFRESH_SECS` | `30` | How often the per-tenant quota cache reloads from the `tenant_quotas` catalog table. |
 
 Query/agent admission lives in `crates/kyma-server/src/concurrency.rs` (per-
 process and per-tenant semaphores); ingest rate limiting lives in
 `crates/kyma-ingest-rest/src/rate_limit.rs` — all wired and off by default.
-What is **not** yet present is a catalog-driven `tenant_quotas` table for
-per-tenant *configurable* limits (today the env value applies uniformly, with
-per-tenant isolation); per-customer configurable quotas are a managed-SaaS
-(Cloud-track) addition.
+
+**Per-tenant configurable quotas.** Beyond the env-global defaults above, an
+operator can set DIFFERENT query/agent concurrency limits per tenant via the
+`tenant_quotas` catalog table (PG migration 032 + SQLite mirror), managed by an
+admin endpoint:
+
+```
+PUT /v1/admin/tenant-quotas/<tenant-uuid>   {"max_query_concurrent": 10, "max_agent_concurrent": 2}
+GET /v1/admin/tenant-quotas
+```
+
+Both require an admin token. A configured value overrides the env default for
+that tenant; an unset field (or no row) falls back to the env default. The
+limiter reads an in-RAM cache (`quota_cache.rs`) refreshed every
+`KYMA_QUOTA_REFRESH_SECS`, so there is no per-request catalog hit; an upsert
+also refreshes the cache immediately. Ingest rate limiting stays per-database
+(the ingest path carries a database, not a tenant).
 
 ---
 
