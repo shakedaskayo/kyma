@@ -259,6 +259,20 @@ async fn cypher_where_in_list_is_supported() {
 }
 
 #[tokio::test]
+async fn cypher_mixed_precedence_where_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // Parens + mixed AND/OR + NOT → boolean-tree lowering to a single
+    // precedence-correct `| where (...)`; must plan + execute end-to-end.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r]->(b) WHERE a.name = 'x' AND (b.name = 'y' OR NOT b.name = 'z') RETURN a.name",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::OK, "mixed-precedence WHERE cypher, body: {body}");
+}
+
+#[tokio::test]
 async fn cypher_string_operators_are_supported() {
     let state = seeded_state_with_graph().await;
     // STARTS WITH / ENDS WITH / CONTAINS → KQL startswith/endswith/contains →
