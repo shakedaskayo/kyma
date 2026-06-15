@@ -41,6 +41,9 @@ async fn seeded_state_with_graph() -> kyma_server::QueryState {
     let node_schema = Arc::new(Schema::new(vec![
         Field::new("id", DataType::Utf8, false),
         Field::new("name", DataType::Utf8, true),
+        // The conventional label column (GraphSpec default `labels`); real node
+        // tables always have it, and bare-`RETURN a` / WITH-passthrough project it.
+        Field::new("labels", DataType::Utf8, true),
         // Numeric column so RETURN-expression tests have something to compute on.
         Field::new("weight", DataType::Float64, true),
     ]));
@@ -314,6 +317,20 @@ async fn cypher_return_arithmetic_expression_is_supported() {
     );
     let (status, body) = run(state, req).await;
     assert_eq!(status, StatusCode::OK, "RETURN expression cypher, body: {body}");
+}
+
+#[tokio::test]
+async fn cypher_with_node_passthrough_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // Carry node `a` through WITH, then access a.name after aggregation — a.name
+    // is added as a grouping key. Must plan + execute end-to-end.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r]->(b) WITH a, count(b) AS deg WHERE deg > 0 RETURN a.name, deg ORDER BY deg DESC LIMIT 10",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::OK, "WITH node-passthrough cypher, body: {body}");
 }
 
 #[tokio::test]

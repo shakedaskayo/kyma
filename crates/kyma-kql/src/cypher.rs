@@ -1056,9 +1056,12 @@ impl Parser {
     /// exists below KQL) and aggregates `f(n.prop) AS alias`. References after
     /// WITH are either a key (`n.prop` → `n_prop`) or an aggregate alias.
     fn parse_with_tail(&mut self) -> Result<(Vec<ReturnItem>, WithClause), ParseError> {
-        let items = self.parse_return()?;
+        let mut items = self.parse_return()?;
         let mut keys: Vec<(String, String)> = Vec::new(); // ("var.prop", "var_prop")
         let mut aggs: Vec<String> = Vec::new();
+        // Bare-variable WITH items (`WITH a, …`) carry the node through: any
+        // `a.prop` referenced downstream is added as a grouping key on the fly.
+        let mut carried: Vec<String> = Vec::new();
         for it in &items {
             match it {
                 ReturnItem::Prop { var, prop, alias } => {
@@ -1072,9 +1075,12 @@ impl Parser {
                 ReturnItem::Aggregate { func, alias, .. } => {
                     aggs.push(alias.clone().unwrap_or_else(|| func.clone()));
                 }
+                ReturnItem::Var { var } => {
+                    carried.push(var.clone());
+                }
                 _ => {
                     return Err(unsupported(
-                        "WITH item must be a grouping key `n.prop` or an aggregate `f(n.prop) AS x`",
+                        "WITH item must be `n` (carried node), `n.prop` (grouping key), or an aggregate `f(n.prop) AS x`",
                     ));
                 }
             }
@@ -1090,7 +1096,7 @@ impl Parser {
         if self.eat_kw("WHERE") {
             let (mut saw_and, mut saw_or) = (false, false);
             loop {
-                let col = self.resolve_with_ref(&keys, &aggs)?;
+                let col = self.resolve_with_ref(&mut items, &mut keys, &aggs, &carried)?;
                 let op = match self.bump() {
                     Some(Tok::Eq) => CmpOp::Eq,
                     Some(Tok::Ne) => CmpOp::Ne,
@@ -1126,7 +1132,8 @@ impl Parser {
         let distinct = self.eat_kw("DISTINCT");
         let mut ret_cols: Vec<String> = Vec::new();
         loop {
-            ret_cols.push(self.resolve_with_ref(&keys, &aggs)?);
+            let col = self.resolve_with_ref(&mut items, &mut keys, &aggs, &carried)?;
+            ret_cols.push(col);
             if !self.eat(&Tok::Comma) {
                 break;
             }
@@ -1138,7 +1145,7 @@ impl Parser {
                 return Err(ParseError("cypher: expected BY after ORDER".to_string()));
             }
             loop {
-                let col = self.resolve_with_ref(&keys, &aggs)?;
+                let col = self.resolve_with_ref(&mut items, &mut keys, &aggs, &carried)?;
                 let desc = if self.eat_kw("DESC") {
                     true
                 } else {
@@ -1170,31 +1177,44 @@ impl Parser {
         ))
     }
 
-    /// Resolve a post-WITH reference to its post-`summarize` column name: a
-    /// grouping key `var.prop` → `var_prop` (must be a WITH key), or a bare word
-    /// → an aggregate alias (must be a WITH aggregate output).
+    /// Resolve a post-WITH reference to its post-`summarize` column name: an
+    /// explicit grouping key `var.prop` → `var_prop`, an aggregate alias, or
+    /// `<carried>.prop` — a property of a carried node (`WITH a, …`), which is
+    /// added as a grouping key (synthetic `Prop` item + `keys` entry) on first
+    /// reference so the `summarize` carries it.
     fn resolve_with_ref(
         &mut self,
-        keys: &[(String, String)],
+        items: &mut Vec<ReturnItem>,
+        keys: &mut Vec<(String, String)>,
         aggs: &[String],
+        carried: &[String],
     ) -> Result<String, ParseError> {
         let w = self.expect_word()?;
         if self.eat(&Tok::Dot) {
             let p = self.expect_word()?;
             let key = format!("{w}.{p}");
-            keys.iter()
-                .find(|(k, _)| *k == key)
-                .map(|(_, col)| col.clone())
-                .ok_or_else(|| {
-                    ParseError(format!(
-                        "cypher: `{key}` is not a WITH grouping key (carry it through WITH first)"
-                    ))
-                })
+            if let Some((_, col)) = keys.iter().find(|(k, _)| *k == key) {
+                return Ok(col.clone());
+            }
+            if carried.iter().any(|c| c == &w) {
+                // Passthrough property of a carried node → new grouping key.
+                let col = format!("{w}_{p}");
+                keys.push((key, col.clone()));
+                items.push(ReturnItem::Prop {
+                    var: w.clone(),
+                    prop: p.clone(),
+                    alias: None,
+                });
+                return Ok(col);
+            }
+            Err(ParseError(format!(
+                "cypher: `{key}` is not available after WITH (carry `{w}` or `{key}` through WITH first)"
+            )))
         } else if aggs.iter().any(|a| a == &w) {
             Ok(w)
         } else {
             Err(ParseError(format!(
-                "cypher: `{w}` is not a WITH output (a grouping key `n.prop` or an aggregate alias)"
+                "cypher: `{w}` is not a WITH output (a grouping key, a carried node's property, or an aggregate alias)"
             )))
         }
     }
@@ -2756,16 +2776,11 @@ mod tests {
                 .is_err(),
             "AS on a WITH key must be rejected"
         );
-        // Bare-variable WITH item (node passthrough) unsupported.
-        assert!(
-            cypher_to_kql("MATCH (a)-[r]->(b) WITH a, count(b) AS d RETURN d", &g).is_err(),
-            "bare-var WITH item must be rejected"
-        );
-        // RETURN references something not carried through WITH.
+        // RETURN a property of a node that was NOT carried through WITH.
         assert!(
             cypher_to_kql("MATCH (a)-[r]->(b) WITH a.name, count(b) AS d RETURN b.name", &g)
                 .is_err(),
-            "RETURN of a non-WITH-output must be rejected"
+            "RETURN of a non-carried node's property must be rejected"
         );
         // HAVING on a non-output reference.
         assert!(
@@ -2864,12 +2879,18 @@ mod tests {
     }
 
     #[test]
-    fn with_bare_variable_passthrough_rejected() {
-        // WITH is supported for aggregation + HAVING, but carrying a bare node
-        // variable through (`WITH a`) — node passthrough — is not.
-        let err = cypher_to_kql("MATCH (a)-[r]->(b) WITH a RETURN a.name", &binding());
-        let msg = err.unwrap_err().0;
-        assert!(msg.contains("grouping key") || msg.contains("aggregate"), "{msg}");
+    fn with_node_passthrough_lowers_and_compiles() {
+        // Carrying a bare node `a` through WITH, then accessing `a.name` after
+        // aggregation: `a.name` becomes a grouping key alongside the node id.
+        let kql = tr(
+            "MATCH (a)-[r]->(b) WITH a, count(b) AS deg WHERE deg > 5 RETURN a.name, deg ORDER BY deg DESC",
+        );
+        assert!(kql.contains("deg = count(b_id)"), "{kql}");
+        // a.name carried as a group key (a_name), id/label also grouped.
+        assert!(kql.contains("a_name"), "{kql}");
+        assert!(kql.contains("| where deg > 5"), "{kql}");
+        assert!(kql.contains("| project a_name, deg"), "{kql}");
+        crate::kql_to_sql(&kql).expect("WITH node passthrough must compile to SQL");
     }
 
     // ---- compile-through: emitted KQL must lower to SQL ----------------
