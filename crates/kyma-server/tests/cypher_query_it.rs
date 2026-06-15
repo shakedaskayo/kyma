@@ -320,6 +320,95 @@ async fn cypher_return_arithmetic_expression_is_supported() {
 }
 
 #[tokio::test]
+async fn cypher_create_node_is_supported() {
+    let state = seeded_state_with_graph().await;
+    let (status, body) = run(
+        state,
+        cypher_req(
+            Some("obs/kg"),
+            "obs",
+            "CREATE (n:Service {id: 'svc-create', name: 'A', weight: 3})",
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "CREATE node, body: {body}");
+    assert!(body.contains("\"nodes\":1"), "ack should report 1 node: {body}");
+}
+
+#[tokio::test]
+async fn cypher_create_edge_round_trips_through_match() {
+    let state = seeded_state_with_graph().await;
+    // CREATE a path → 2 nodes + 1 edge appended to the graph tables.
+    let (s1, b1) = run(
+        state.clone(),
+        cypher_req(
+            Some("obs/kg"),
+            "obs",
+            "CREATE (a:Service {id:'rt-1'})-[:CALLS]->(b:Service {id:'rt-2'})",
+        ),
+    )
+    .await;
+    assert_eq!(s1, StatusCode::OK, "CREATE edge, body: {b1}");
+    assert!(b1.contains("\"nodes\":2") && b1.contains("\"edges\":1"), "ack: {b1}");
+    // Read it back via MATCH — proves the appended rows are queryable.
+    let (s2, b2) = run(
+        state,
+        cypher_req(Some("obs/kg"), "obs", "MATCH (x)-[r]->(y) RETURN x.id, y.id"),
+    )
+    .await;
+    assert_eq!(s2, StatusCode::OK, "MATCH back, body: {b2}");
+    assert!(b2.contains("rt-1") && b2.contains("rt-2"), "round-trip: {b2}");
+}
+
+#[tokio::test]
+async fn cypher_merge_is_idempotent() {
+    let state = seeded_state_with_graph().await;
+    let q = "MERGE (n:Service {id: 'merge-1', name: 'M'})";
+    let (s1, b1) = run(state.clone(), cypher_req(Some("obs/kg"), "obs", q)).await;
+    assert_eq!(s1, StatusCode::OK, "first MERGE, body: {b1}");
+    assert!(b1.contains("\"nodes\":1"), "first MERGE creates: {b1}");
+    // Second MERGE of the same id finds it → creates 0, merged_existing 1.
+    let (s2, b2) = run(state, cypher_req(Some("obs/kg"), "obs", q)).await;
+    assert_eq!(s2, StatusCode::OK, "second MERGE, body: {b2}");
+    assert!(
+        b2.contains("\"nodes\":0") && b2.contains("\"merged_existing\":1"),
+        "second MERGE is a no-op: {b2}"
+    );
+}
+
+#[tokio::test]
+async fn cypher_write_requires_write_role() {
+    let state = seeded_state_with_graph().await;
+    let mut req = cypher_req(Some("obs/kg"), "obs", "CREATE (n:Service {id:'x'})");
+    // A read-only principal must be rejected on a write.
+    req.extensions_mut().insert(kyma_server::auth::Principal {
+        tenant: kyma_core::tenant::DEFAULT_TENANT,
+        role: kyma_server::auth::Role::Read,
+        subject: None,
+        allowed_databases: None,
+    });
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "read role on write, body: {body}");
+}
+
+#[tokio::test]
+async fn cypher_set_delete_are_rejected() {
+    let state = seeded_state_with_graph().await;
+    let (s1, _) = run(
+        state.clone(),
+        cypher_req(Some("obs/kg"), "obs", "MATCH (n) SET n.name = 'x'"),
+    )
+    .await;
+    assert_eq!(s1, StatusCode::BAD_REQUEST, "SET must be rejected");
+    let (s2, _) = run(
+        state,
+        cypher_req(Some("obs/kg"), "obs", "MATCH (n) DELETE n"),
+    )
+    .await;
+    assert_eq!(s2, StatusCode::BAD_REQUEST, "DELETE must be rejected");
+}
+
+#[tokio::test]
 async fn cypher_with_node_passthrough_is_supported() {
     let state = seeded_state_with_graph().await;
     // Carry node `a` through WITH, then access a.name after aggregation — a.name

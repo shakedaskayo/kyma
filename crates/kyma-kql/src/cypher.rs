@@ -93,6 +93,61 @@ pub fn cypher_to_kql(cypher: &str, g: &GraphBinding) -> Result<String, ParseErro
 }
 
 // =====================================================================
+// Write surface — CREATE / MERGE lowered to row appends (ingestion).
+// =====================================================================
+
+/// A property-literal value in a `CREATE`/`MERGE` map: a string or a number,
+/// kept as written so the server can build a JSON row for the ingest path.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PropLit {
+    Str(String),
+    Num(String),
+}
+
+/// One node/edge append produced by a `CREATE`/`MERGE` statement. `merge` marks
+/// an upsert (insert-if-absent); the server runs an existence check first.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CypherWriteOp {
+    /// A node row: `{label_col: label, ...props}` keyed by the node-id property.
+    Node {
+        merge: bool,
+        label: Option<String>,
+        props: Vec<(String, PropLit)>,
+    },
+    /// An edge row between two inline-id endpoints: `{src_col, dst_col, type_col,
+    /// ...props}`. The endpoints are also emitted as `Node` ops.
+    Edge {
+        merge: bool,
+        rel_type: String,
+        src_id: PropLit,
+        dst_id: PropLit,
+        props: Vec<(String, PropLit)>,
+    },
+}
+
+/// The parsed write plan: an ordered list of node/edge appends.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CypherWrite {
+    pub ops: Vec<CypherWriteOp>,
+}
+
+/// Parse a Cypher `CREATE` / `MERGE` write statement into a list of row appends.
+///
+/// Returns `Ok(None)` when the statement is a **read** query (first keyword is
+/// not `CREATE`/`MERGE`) so the caller falls through to [`cypher_to_kql`].
+/// Returns `Err` for in-place mutation (`SET`/`DELETE`/`REMOVE`), read+write
+/// combinations (`MATCH … CREATE`), and id-less endpoints — none of which fit
+/// the append-only graph model.
+///
+/// `id_col` is the graph's node-id column (`GraphBinding::id_col`): an edge's
+/// endpoints must each carry it inline so the edge's src/dst can reference them.
+pub fn parse_cypher_write(src: &str, id_col: &str) -> Result<Option<CypherWrite>, ParseError> {
+    let toks = tokenize(src)?;
+    let mut p = Parser::new(toks);
+    p.parse_write(id_col)
+}
+
+// =====================================================================
 // Tokenizer (self-contained — deliberately not the KQL lexer)
 // =====================================================================
 
@@ -108,6 +163,10 @@ enum Tok {
     RParen,
     LBracket,
     RBracket,
+    /// `{`
+    LBrace,
+    /// `}`
+    RBrace,
     Dot,
     Comma,
     Colon,
@@ -159,6 +218,14 @@ fn tokenize(src: &str) -> Result<Vec<Tok>, ParseError> {
             }
             ']' => {
                 out.push(Tok::RBracket);
+                i += 1;
+            }
+            '{' => {
+                out.push(Tok::LBrace);
+                i += 1;
+            }
+            '}' => {
+                out.push(Tok::RBrace);
                 i += 1;
             }
             '.' => {
@@ -1217,6 +1284,207 @@ impl Parser {
                 "cypher: `{w}` is not a WITH output (a grouping key, a carried node's property, or an aggregate alias)"
             )))
         }
+    }
+
+    // --- write statements (CREATE / MERGE → row appends) ------------------
+
+    fn parse_write(&mut self, id_col: &str) -> Result<Option<CypherWrite>, ParseError> {
+        let lead = match self.peek() {
+            Some(Tok::Word(w)) => w.to_ascii_uppercase(),
+            _ => return Ok(None),
+        };
+        match lead.as_str() {
+            "CREATE" | "MERGE" => {}
+            "SET" | "DELETE" | "REMOVE" => {
+                return Err(unsupported(&format!(
+                    "{lead} — in-place mutation; the graph is a read-only view over append-only tables (add data by ingesting rows)"
+                )));
+            }
+            _ => {
+                // A read statement (MATCH/RETURN/…). Reject only if it also tries
+                // to write; otherwise fall through to the read path.
+                if self.has_write_clause() {
+                    return Err(unsupported(
+                        "combining MATCH with CREATE/MERGE/SET/DELETE in one statement",
+                    ));
+                }
+                return Ok(None);
+            }
+        }
+
+        let mut ops = Vec::new();
+        loop {
+            let merge = if self.eat_kw("MERGE") {
+                true
+            } else if self.eat_kw("CREATE") {
+                false
+            } else {
+                break;
+            };
+            loop {
+                self.parse_write_pattern(merge, id_col, &mut ops)?;
+                if !self.eat(&Tok::Comma) {
+                    break;
+                }
+            }
+        }
+        if self.pos != self.toks.len() {
+            return Err(unsupported(
+                "clauses after CREATE/MERGE (e.g. RETURN / WHERE)",
+            ));
+        }
+        if ops.is_empty() {
+            return Err(ParseError(
+                "cypher: CREATE/MERGE produced no node or edge".to_string(),
+            ));
+        }
+        Ok(Some(CypherWrite { ops }))
+    }
+
+    /// Any write keyword anywhere in the token stream (used to reject
+    /// MATCH-led read+write combinations).
+    fn has_write_clause(&self) -> bool {
+        self.toks.iter().any(|t| {
+            matches!(t, Tok::Word(w)
+                if matches!(w.to_ascii_uppercase().as_str(),
+                    "CREATE" | "MERGE" | "SET" | "DELETE" | "REMOVE"))
+        })
+    }
+
+    /// One `CREATE`/`MERGE` pattern: a node, or a forward single-hop path
+    /// `(a {id})-[:T {props}]->(b {id})` (endpoints fully specified inline).
+    fn parse_write_pattern(
+        &mut self,
+        merge: bool,
+        id_col: &str,
+        ops: &mut Vec<CypherWriteOp>,
+    ) -> Result<(), ParseError> {
+        let (a_label, a_props) = self.parse_write_node()?;
+        if matches!(self.peek(), Some(Tok::ArrowL)) {
+            return Err(unsupported("backward `<-` relationship in CREATE (write the edge forward)"));
+        }
+        if !matches!(self.peek(), Some(Tok::Dash)) {
+            // Node-only pattern.
+            ops.push(CypherWriteOp::Node {
+                merge,
+                label: a_label,
+                props: a_props,
+            });
+            return Ok(());
+        }
+        // Forward relationship `-[:TYPE {props}]->`.
+        self.eat(&Tok::Dash);
+        if !self.eat(&Tok::LBracket) {
+            return Err(unsupported("CREATE relationship without an explicit `[:TYPE]`"));
+        }
+        if !self.eat(&Tok::Colon) {
+            return Err(unsupported("CREATE relationship without a type, e.g. `[:CALLS]`"));
+        }
+        let rel_type = self.expect_word()?;
+        let edge_props = if matches!(self.peek(), Some(Tok::LBrace)) {
+            self.parse_prop_map()?
+        } else {
+            Vec::new()
+        };
+        if !self.eat(&Tok::RBracket) {
+            return Err(ParseError("cypher: expected `]` after relationship".to_string()));
+        }
+        if !self.eat(&Tok::ArrowR) {
+            return Err(unsupported("CREATE relationship must be forward `-[:TYPE]->`"));
+        }
+        let (b_label, b_props) = self.parse_write_node()?;
+        let find_id = |props: &[(String, PropLit)]| {
+            props.iter().find(|(k, _)| k == id_col).map(|(_, v)| v.clone())
+        };
+        let src_id = find_id(&a_props)
+            .ok_or_else(|| unsupported("CREATE relationship source without an inline id property"))?;
+        let dst_id = find_id(&b_props)
+            .ok_or_else(|| unsupported("CREATE relationship target without an inline id property"))?;
+        ops.push(CypherWriteOp::Node {
+            merge,
+            label: a_label,
+            props: a_props,
+        });
+        ops.push(CypherWriteOp::Node {
+            merge,
+            label: b_label,
+            props: b_props,
+        });
+        ops.push(CypherWriteOp::Edge {
+            merge,
+            rel_type,
+            src_id,
+            dst_id,
+            props: edge_props,
+        });
+        Ok(())
+    }
+
+    /// `( [var] [:Label] [{props}] )` — the variable name is consumed but
+    /// unused (writes reference endpoints by inline id, not variable).
+    fn parse_write_node(&mut self) -> Result<(Option<String>, Vec<(String, PropLit)>), ParseError> {
+        if !self.eat(&Tok::LParen) {
+            return Err(ParseError(
+                "cypher: CREATE pattern must start with `(`".to_string(),
+            ));
+        }
+        if matches!(self.peek(), Some(Tok::Word(_))) {
+            let _var = self.expect_word()?;
+        }
+        let label = if self.eat(&Tok::Colon) {
+            Some(self.expect_word()?)
+        } else {
+            None
+        };
+        let props = if matches!(self.peek(), Some(Tok::LBrace)) {
+            self.parse_prop_map()?
+        } else {
+            Vec::new()
+        };
+        if !self.eat(&Tok::RParen) {
+            return Err(ParseError(
+                "cypher: expected `)` to close the CREATE node".to_string(),
+            ));
+        }
+        Ok((label, props))
+    }
+
+    /// `{ key: value, … }` — string/number property literals.
+    fn parse_prop_map(&mut self) -> Result<Vec<(String, PropLit)>, ParseError> {
+        if !self.eat(&Tok::LBrace) {
+            return Err(ParseError("cypher: expected `{` for a property map".to_string()));
+        }
+        let mut props = Vec::new();
+        if self.eat(&Tok::RBrace) {
+            return Ok(props); // empty map
+        }
+        loop {
+            let key = self.expect_word()?;
+            if !self.eat(&Tok::Colon) {
+                return Err(ParseError(
+                    "cypher: expected `:` after a property key".to_string(),
+                ));
+            }
+            let val = match self.bump() {
+                Some(Tok::Str(s)) => PropLit::Str(s),
+                Some(Tok::Num(n)) => PropLit::Num(n),
+                other => {
+                    return Err(ParseError(format!(
+                        "cypher: property value must be a string or number, got {other:?}"
+                    )));
+                }
+            };
+            props.push((key, val));
+            if !self.eat(&Tok::Comma) {
+                break;
+            }
+        }
+        if !self.eat(&Tok::RBrace) {
+            return Err(ParseError(
+                "cypher: expected `}` to close the property map".to_string(),
+            ));
+        }
+        Ok(props)
     }
 
     fn parse_comparison(&mut self) -> Result<Comparison, ParseError> {
@@ -2719,6 +2987,91 @@ mod tests {
             cypher_to_kql("MATCH (a)-[r]->(b) RETURN a.x + b.y", &g).is_err(),
             "a computed RETURN expression without AS must be rejected"
         );
+    }
+
+    // ---- CREATE / MERGE write parsing ------------------------------------
+    #[test]
+    fn parse_write_returns_none_for_read_queries() {
+        // Read queries fall through (Ok(None)) to the read path.
+        assert_eq!(
+            parse_cypher_write("MATCH (a)-[r]->(b) RETURN a.name", "id").unwrap(),
+            None
+        );
+        assert_eq!(parse_cypher_write("MATCH (n) RETURN n", "id").unwrap(), None);
+    }
+
+    #[test]
+    fn parse_write_create_node() {
+        let w = parse_cypher_write("CREATE (n:Service {id: 'svc-a', name: 'A', weight: 3})", "id")
+            .unwrap()
+            .unwrap();
+        assert_eq!(w.ops.len(), 1);
+        match &w.ops[0] {
+            CypherWriteOp::Node { merge, label, props } => {
+                assert!(!merge);
+                assert_eq!(label.as_deref(), Some("Service"));
+                assert_eq!(props.len(), 3);
+                assert_eq!(props[0], ("id".to_string(), PropLit::Str("svc-a".to_string())));
+                assert_eq!(props[2], ("weight".to_string(), PropLit::Num("3".to_string())));
+            }
+            other => panic!("expected Node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_write_create_multiple_nodes() {
+        let w = parse_cypher_write("CREATE (a:S {id:'x'}), (b:S {id:'y'})", "id")
+            .unwrap()
+            .unwrap();
+        assert_eq!(w.ops.len(), 2);
+        assert!(matches!(w.ops[0], CypherWriteOp::Node { .. }));
+        assert!(matches!(w.ops[1], CypherWriteOp::Node { .. }));
+    }
+
+    #[test]
+    fn parse_write_inline_edge() {
+        let w = parse_cypher_write(
+            "CREATE (a:S {id:'x'})-[:CALLS {weight: 5}]->(b:S {id:'y'})",
+            "id",
+        )
+        .unwrap()
+        .unwrap();
+        // two endpoint nodes + one edge.
+        assert_eq!(w.ops.len(), 3);
+        match &w.ops[2] {
+            CypherWriteOp::Edge {
+                rel_type,
+                src_id,
+                dst_id,
+                props,
+                ..
+            } => {
+                assert_eq!(rel_type, "CALLS");
+                assert_eq!(*src_id, PropLit::Str("x".to_string()));
+                assert_eq!(*dst_id, PropLit::Str("y".to_string()));
+                assert_eq!(props[0], ("weight".to_string(), PropLit::Num("5".to_string())));
+            }
+            other => panic!("expected Edge, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_write_merge_sets_flag() {
+        let w = parse_cypher_write("MERGE (n:S {id:'x'})", "id").unwrap().unwrap();
+        assert!(matches!(w.ops[0], CypherWriteOp::Node { merge: true, .. }));
+    }
+
+    #[test]
+    fn parse_write_rejections() {
+        // In-place mutation is out of scope (append-only graph).
+        assert!(parse_cypher_write("MATCH (n) SET n.x = 1", "id").is_err());
+        assert!(parse_cypher_write("MATCH (n) DELETE n", "id").is_err());
+        // MATCH … CREATE (read+write combo).
+        assert!(parse_cypher_write("MATCH (a) CREATE (b:S {id:'x'})", "id").is_err());
+        // Edge endpoint without an inline id.
+        assert!(parse_cypher_write("CREATE (a:S)-[:T]->(b:S {id:'y'})", "id").is_err());
+        // Trailing clause after CREATE.
+        assert!(parse_cypher_write("CREATE (n:S {id:'x'}) RETURN n", "id").is_err());
     }
 
     // ---- WITH: aggregation + HAVING --------------------------------------
