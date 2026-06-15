@@ -10,8 +10,11 @@ The `kyma-engine` chart at
 runs the engine on any Kubernetes cluster (EKS, GKE, AKS, k3s, …). It's the same
 chart the [EKS path](./kubernetes) installs after provisioning a cluster.
 
-The engine is **single-writer per catalog** — the chart pins `replicaCount: 1`
-with a `Recreate` strategy. Don't scale it up.
+By default the engine runs **all-in-one** — a single pod (`replicaCount: 1`,
+`Recreate`) that serves queries, ingests, commits, and runs every background
+job. It is single-writer per catalog; don't raise `replicaCount`. To scale past
+one pod, use the [role split](#scaling-out-the-role-split) instead, which runs
+stateless query/ingest pods behind the Service and a single committer.
 
 ## Via `kyma deploy`
 
@@ -57,6 +60,11 @@ helm upgrade --install kyma deploy/helm/kyma-engine \
 | `env` | engine `KYMA_*` defaults | Non-secret env (`KYMA_AUTH_BACKEND`, `KYMA_S3_*`, …) — container `env`. |
 | `secretEnv` | `{}` | Secret env (`KYMA_CATALOG_URL`, `KYMA_AUTH_TOKENS`, S3 keys) — rendered into a `Secret` and injected via `envFrom`. |
 | `resources` | `{}` | Pod resource requests/limits. |
+| `roles.enabled` | `false` | Turn on the [role split](#scaling-out-the-role-split). When `true`, the single all-in-one Deployment is replaced by `edge` / `committer` / `worker` Deployments. |
+| `roles.edge.replicas` | `2` | Stateless edge (query + ingest) pod count when autoscaling is off. |
+| `roles.edge.autoscaling.enabled` / `.minReplicas` / `.maxReplicas` / `.targetCPUUtilizationPercentage` | `false` / `2` / `6` / `70` | HPA for the edge Deployment (replaces `replicas`). |
+| `roles.committer.pdb` | `true` | Render a `maxUnavailable: 1` PodDisruptionBudget for the committer. |
+| `roles.worker.replicas` | `1` | Background-job worker pod count. |
 
 ## Auth on Kubernetes
 
@@ -64,6 +72,43 @@ helm upgrade --install kyma deploy/helm/kyma-engine \
 - **oidc** — `env.KYMA_AUTH_BACKEND=oidc` + `env.KYMA_OIDC_ISSUER` + `env.KYMA_OIDC_CLIENT_ID`.
 - **supabase** — `env.KYMA_AUTH_BACKEND=supabase` + `KYMA_SUPABASE_URL`/`KYMA_SUPABASE_ANON_KEY`
   (the wizard provisions these when you pick `--database supabase`).
+
+## Scaling out: the role split
+
+The all-in-one pod can't scale horizontally — only one pod may commit to a
+catalog at a time. To run many pods, set `roles.enabled=true`. The chart then
+drops the single Deployment and renders three roles, each setting the `KYMA_ROLE`
+env the engine reads to decide which components to run:
+
+| Role | `KYMA_ROLE` | Runs | Strategy / scaling |
+| ---- | ----------- | ---- | ------------------ |
+| **edge** | `edge` | HTTP only — queries + ingest staging. No committer, no background jobs. | `RollingUpdate`, behind the Service, optional HPA. Scale freely. |
+| **committer** | `committer` | The commit loop only — drains staged extents into the catalog. | `replicas: 1`, `Recreate`. A Postgres advisory-lock lease elects the single active committer, so failover is fast; the optional PDB keeps a node drain from evicting more than one committer pod at a time. |
+| **worker** | `worker` | Background jobs only — compaction, index/graph builds, retention, GC. Jobs are claimed with `SKIP LOCKED`. | `RollingUpdate`, scales horizontally. |
+
+The Service selects only `edge` pods, so all client traffic lands on the
+stateless tier. `KYMA_ROLE` values map as: `edge`/`query`/`ingest` → stateless;
+`committer` → commit only; `worker`/`compaction` → jobs only; anything else
+(including unset) → all-in-one.
+
+**The role split requires staged ingest.** Edge pods stage writes to object
+storage and ack; the committer drains them. Set `env.KYMA_INGEST_MODE=staged` —
+without it edge pods have nothing to hand off and the committer sits idle.
+
+```sh
+helm upgrade --install kyma deploy/helm/kyma-engine \
+  -n kyma --create-namespace \
+  --set roles.enabled=true \
+  --set env.KYMA_INGEST_MODE=staged \
+  --set roles.edge.autoscaling.enabled=true \
+  --set roles.edge.autoscaling.minReplicas=2 --set roles.edge.autoscaling.maxReplicas=8 \
+  --set roles.worker.replicas=2 \
+  # …plus the image / catalog / storage / auth values from "Manual install" above
+```
+
+All three roles share the same image, `env`, and `secretEnv`, so point them at
+the same catalog and object store. Local mode (`kyma serve`) is always
+all-in-one and ignores `KYMA_ROLE`.
 
 ## Reaching the engine
 
