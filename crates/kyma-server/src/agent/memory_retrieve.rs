@@ -25,7 +25,7 @@ use tracing::Instrument as _;
 
 use kyma_core::tenant::DEFAULT_TENANT;
 use kyma_graph_topo::{CsrGraph, Direction as TopoDir};
-use kyma_memory::types::{MemoryType, RecallFilter};
+use kyma_memory::types::{MemoryClass, MemoryType, RecallFilter};
 use kyma_memory::{sql, MemoryWriter, DEFAULT_DATABASE, EDGE_TABLE, NODE_TABLE};
 
 use super::memory_settings::{self, MemorySettings};
@@ -518,11 +518,22 @@ fn finalize(c: Cand, kw_denom: f64, s: &MemorySettings) -> RetrievedMemory {
         .kw_score
         .map(|k| (k / kw_denom).clamp(0.0, 1.0))
         .unwrap_or(0.0);
-    let recency = c
-        .created_at
-        .as_deref()
-        .map(|t| recency_decay(t, s.half_life_days))
-        .unwrap_or(0.5);
+    // Recency term: class-aware decay when enabled (episodic memories fade with
+    // a 7-day half-life; semantic/procedural don't decay → 1.0), else the global
+    // half-life recency. Default-off ⇒ unchanged ranking.
+    let recency = if class_decay_enabled() {
+        let class = MemoryClass::default_for(MemoryType::parse(&c.memory_type));
+        c.created_at
+            .as_deref()
+            .and_then(age_days)
+            .map(|a| class.decay_weight(a))
+            .unwrap_or(1.0)
+    } else {
+        c.created_at
+            .as_deref()
+            .map(|t| recency_decay(t, s.half_life_days))
+            .unwrap_or(0.5)
+    };
     let score = s.w_rrf * rrf
         + s.w_semantic * semantic
         + s.w_keyword * keyword
@@ -544,6 +555,23 @@ fn finalize(c: Cand, kw_denom: f64, s: &MemorySettings) -> RetrievedMemory {
         invalid_at: c.invalid_at,
         via: c.via,
     }
+}
+
+/// Whether class-aware recency decay is enabled. Off unless
+/// `KYMA_MEMORY_CLASS_DECAY` is `1`/`true` — so the default recency term (a
+/// uniform half-life) is unchanged and every existing test/deployment matches.
+fn class_decay_enabled() -> bool {
+    std::env::var("KYMA_MEMORY_CLASS_DECAY")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+/// Age in days from an RFC3339 timestamp (`>= 0`); `None` if unparseable.
+fn age_days(created_at: &str) -> Option<f64> {
+    chrono::DateTime::parse_from_rfc3339(created_at).ok().map(|dt| {
+        ((chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_seconds() as f64 / 86_400.0)
+            .max(0.0)
+    })
 }
 
 /// `exp(-ln2 * age_days / half_life_days)`, clamped to [0,1]. Unparseable → 0.5.
@@ -972,5 +1000,35 @@ mod ppr_tests {
         // The default recall path must be unchanged: PPR only runs when the
         // env flag is explicitly set (not set in the test environment).
         assert!(!ppr_enabled());
+    }
+
+    #[test]
+    fn class_decay_disabled_by_default() {
+        // The recency term keeps its uniform half-life unless the flag is set.
+        assert!(!class_decay_enabled());
+    }
+
+    #[test]
+    fn age_days_parses_rfc3339_and_rejects_garbage() {
+        let past = (chrono::Utc::now() - chrono::Duration::days(2)).to_rfc3339();
+        let a = age_days(&past).expect("parses");
+        assert!((1.9..2.1).contains(&a), "≈2 days, got {a}");
+        assert!(age_days("not-a-date").is_none());
+    }
+
+    #[test]
+    fn class_aware_decay_fades_episodic_not_semantic() {
+        // The contract the recency term uses when enabled: episodic memories
+        // (e.g. Summary) decay with a 7-day half-life; semantic ones (Fact) do
+        // not. (default_for/decay_weight live in kyma-memory; this pins the
+        // mapping the scorer relies on.)
+        let episodic = MemoryClass::default_for(MemoryType::parse("summary"));
+        let semantic = MemoryClass::default_for(MemoryType::parse("fact"));
+        assert!(
+            (episodic.decay_weight(7.0) - 0.5).abs() < 1e-9,
+            "episodic at one half-life → 0.5"
+        );
+        assert_eq!(semantic.decay_weight(7.0), 1.0, "semantic never decays");
+        assert_eq!(episodic.decay_weight(0.0), 1.0, "age 0 → full weight");
     }
 }
