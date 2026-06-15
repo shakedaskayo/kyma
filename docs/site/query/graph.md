@@ -148,12 +148,32 @@ WHERE callers > 5
 RETURN b.name, callers ORDER BY callers DESC LIMIT 20
 ```
 
-Not yet supported (returns `400` with the parse error): write clauses
-(`CREATE` / `MERGE` / `SET` / `DELETE`) — the graph is a read-only view over
-append-only tables, so you add data by ingesting rows, not by Cypher writes —
-plus `RETURN *`, RETURN expressions that don't begin with `<var>.<prop>` (e.g. a
-leading literal or `(`), and string/function expressions. Use KQL for anything
-outside this surface.
+### Writes — CREATE / MERGE
+
+`CREATE` and `MERGE` **append rows** to the graph's node/edge tables via the
+ingest path (the graph is a view over append-only tables, so a write is an
+append, not an in-place edit). Send them to `POST /v1/query` exactly like a read,
+with `Content-Type: application/x-cypher` and the `X-Graph` header; they require
+the **write** role. The response is a write-ack, e.g.
+`{"created":{"nodes":2,"edges":1},"merged_existing":0}`.
+
+```cypher
+CREATE (a:Service {id:'svc-a', name:'A'})-[:CALLS {weight:5}]->(b:Service {id:'svc-b'})
+```
+
+- **Nodes**: `CREATE (n:Label {id:'x', …})` — one or more comma-separated. The
+  `id` property (the graph's id column) is required.
+- **Inline edges**: `(a {id:'x'})-[:TYPE {props}]->(b {id:'y'})` — both endpoints
+  fully specified inline (no `MATCH` binding); appends 2 node rows + 1 edge row.
+- **`MERGE`**: insert-if-absent — an existence check on the id (node) or
+  (src, dst, type) (edge); already-present rows are skipped (`merged_existing`).
+
+Not supported (returns `400`): **in-place mutation** `SET` / `DELETE` / `REMOVE`
+(append-only graph — there is nothing to mutate in place), `MATCH … CREATE`
+(read+write in one statement), edge endpoints without an inline id; plus the read
+gaps `RETURN *`, RETURN expressions that don't begin with `<var>.<prop>`, and
+string/function expressions. Use KQL or the ingest API for anything outside this
+surface.
 
 ### MCP tools
 

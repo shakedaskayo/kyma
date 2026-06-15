@@ -53,5 +53,7 @@ mod lexer;
 mod parser;
 mod state;
 
-pub use cypher::{cypher_to_kql, GraphBinding};
+pub use cypher::{
+    cypher_to_kql, parse_cypher_write, CypherWrite, CypherWriteOp, GraphBinding, PropLit,
+};
 pub use parser::{kql_to_sql, kql_to_sql_with_schemas, ParseError, SchemaMap};

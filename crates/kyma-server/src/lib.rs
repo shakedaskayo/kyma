@@ -770,6 +770,204 @@ pub(crate) async fn resolve_graph_binding(
     })
 }
 
+/// Render a `CREATE`/`MERGE` property literal as a JSON value: numbers parse to
+/// int/float, everything else stays a string (the NDJSON coercer maps it onto
+/// the column's Arrow type).
+fn cypher_lit_to_json(l: &kyma_kql::PropLit) -> serde_json::Value {
+    match l {
+        kyma_kql::PropLit::Str(s) => serde_json::Value::String(s.clone()),
+        kyma_kql::PropLit::Num(n) => n
+            .parse::<i64>()
+            .map(serde_json::Value::from)
+            .or_else(|_| n.parse::<f64>().map(serde_json::Value::from))
+            .unwrap_or_else(|_| serde_json::Value::String(n.clone())),
+    }
+}
+
+fn cypher_lit_str(l: &kyma_kql::PropLit) -> String {
+    match l {
+        kyma_kql::PropLit::Str(s) => s.clone(),
+        kyma_kql::PropLit::Num(n) => n.clone(),
+    }
+}
+
+/// Coerce JSON rows to the table's schema (reusing the ingest NDJSON path) and
+/// append them as one extent. Returns the row count, or an error response.
+async fn cypher_ingest_rows(
+    state: &QueryState,
+    write_path: &kyma_ingest_core::WritePath,
+    database: &str,
+    table_name: &str,
+    rows: &[serde_json::Value],
+    request_id: &str,
+) -> Result<usize, Response> {
+    let table_ref = state
+        .catalog
+        .lookup_table(database, table_name)
+        .await
+        .map_err(|e| {
+            error_response(
+                StatusCode::NOT_FOUND,
+                "table_not_found",
+                &format!("graph table `{table_name}`: {e}"),
+                request_id,
+            )
+        })?;
+    let ndjson = rows
+        .iter()
+        .map(|r| r.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let batches = kyma_ingest_core::ndjson::parse_ndjson(ndjson.as_bytes(), table_ref.schema.clone())
+        .map_err(|e| {
+            error_response(
+                StatusCode::BAD_REQUEST,
+                "bad_request_body",
+                &format!("build CREATE rows for `{table_name}`: {e}"),
+                request_id,
+            )
+        })?;
+    write_path
+        .ingest(database, &table_ref, batches)
+        .await
+        .map_err(|e| {
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "ingest_failed",
+                &format!("ingest into `{table_name}`: {e}"),
+                request_id,
+            )
+        })?;
+    Ok(rows.len())
+}
+
+/// Execute a Cypher `CREATE`/`MERGE` write: build node/edge rows and append them
+/// via the ingest path. `MERGE` ops first run an existence check (over the graph
+/// provider) and skip already-present nodes/edges. Returns a write-ack JSON.
+async fn handle_cypher_write(
+    state: &QueryState,
+    database: &str,
+    binding: &kyma_kql::GraphBinding,
+    write: kyma_kql::CypherWrite,
+    request_id: &str,
+) -> Response {
+    use kyma_graph::GraphProvider;
+    use kyma_kql::CypherWriteOp;
+
+    // Provider is only needed for MERGE existence checks — build it lazily.
+    let need_provider = write.ops.iter().any(|op| match op {
+        CypherWriteOp::Node { merge, .. } | CypherWriteOp::Edge { merge, .. } => *merge,
+    });
+    let provider = need_provider
+        .then(|| crate::graph_handler::stored_provider_from_binding(&state.catalog, &state.format, database, binding));
+
+    let mut node_rows: Vec<serde_json::Value> = Vec::new();
+    let mut edge_rows: Vec<serde_json::Value> = Vec::new();
+    let mut merged_existing = 0usize;
+
+    for op in &write.ops {
+        match op {
+            CypherWriteOp::Node { merge, label, props } => {
+                if *merge {
+                    if let Some(prov) = &provider {
+                        if let Some((_, idv)) = props.iter().find(|(k, _)| *k == binding.id_col) {
+                            match prov.node(&cypher_lit_str(idv)).await {
+                                Ok(Some(_)) => {
+                                    merged_existing += 1;
+                                    continue;
+                                }
+                                Ok(None) => {}
+                                Err(e) => {
+                                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "graph_query_error", &e.to_string(), request_id);
+                                }
+                            }
+                        }
+                    }
+                }
+                let mut obj = serde_json::Map::new();
+                for (k, v) in props {
+                    obj.insert(k.clone(), cypher_lit_to_json(v));
+                }
+                if let Some(lbl) = label {
+                    obj.insert(
+                        binding.label_col.clone(),
+                        serde_json::Value::String(lbl.clone()),
+                    );
+                }
+                node_rows.push(serde_json::Value::Object(obj));
+            }
+            CypherWriteOp::Edge {
+                merge,
+                rel_type,
+                src_id,
+                dst_id,
+                props,
+            } => {
+                if *merge {
+                    if let Some(prov) = &provider {
+                        let src = cypher_lit_str(src_id);
+                        let dst = cypher_lit_str(dst_id);
+                        // Edges from `src` (to external nodes ⇒ only_internal=false).
+                        match prov
+                            .neighbors(&[src], kyma_graph::Direction::Forward, false, 100_000)
+                            .await
+                        {
+                            Ok(exp) => {
+                                if exp.edges.iter().any(|e| {
+                                    e.target_id == dst && e.relationship_type == *rel_type
+                                }) {
+                                    merged_existing += 1;
+                                    continue;
+                                }
+                            }
+                            Err(e) => {
+                                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "graph_query_error", &e.to_string(), request_id);
+                                }
+                        }
+                    }
+                }
+                let mut obj = serde_json::Map::new();
+                obj.insert(binding.src_col.clone(), cypher_lit_to_json(src_id));
+                obj.insert(binding.dst_col.clone(), cypher_lit_to_json(dst_id));
+                obj.insert(
+                    binding.type_col.clone(),
+                    serde_json::Value::String(rel_type.clone()),
+                );
+                for (k, v) in props {
+                    obj.insert(k.clone(), cypher_lit_to_json(v));
+                }
+                edge_rows.push(serde_json::Value::Object(obj));
+            }
+        }
+    }
+
+    let write_path = kyma_ingest_core::WritePath::new(state.catalog.clone(), state.format.clone());
+    let mut created_nodes = 0usize;
+    let mut created_edges = 0usize;
+    if !node_rows.is_empty() {
+        match cypher_ingest_rows(state, &write_path, database, &binding.node_table, &node_rows, request_id).await {
+            Ok(n) => created_nodes = n,
+            Err(resp) => return resp,
+        }
+    }
+    if !edge_rows.is_empty() {
+        match cypher_ingest_rows(state, &write_path, database, &binding.edge_table, &edge_rows, request_id).await {
+            Ok(n) => created_edges = n,
+            Err(resp) => return resp,
+        }
+    }
+
+    (
+        StatusCode::OK,
+        axum::Json(serde_json::json!({
+            "created": { "nodes": created_nodes, "edges": created_edges },
+            "merged_existing": merged_existing,
+            "request_id": request_id,
+        })),
+    )
+        .into_response()
+}
+
 async fn query_handler(State(state): State<QueryState>, req: Request) -> Response {
     let start = std::time::Instant::now();
     let (parts, body) = req.into_parts();
@@ -944,6 +1142,30 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
                 Ok(b) => b,
                 Err((code, msg)) => return error_response(code, "graph_resolution_error", &msg, &request_id),
             };
+        // CREATE / MERGE → append rows via the ingest path (write). Detected
+        // before lowering to read SQL; MATCH/RETURN queries fall through.
+        match kyma_kql::parse_cypher_write(&raw, &binding.id_col) {
+            Ok(Some(write)) => {
+                if principal.map(|p| p.role < crate::auth::Role::Write).unwrap_or(false) {
+                    return error_response(
+                        StatusCode::FORBIDDEN,
+                        "forbidden",
+                        "Cypher CREATE/MERGE requires write role",
+                        &request_id,
+                    );
+                }
+                return handle_cypher_write(&state, &database, &binding, write, &request_id).await;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "cypher_parse_error",
+                    &format!("Cypher parse: {e}"),
+                    &request_id,
+                );
+            }
+        }
         // Both `cypher_to_kql` and `kql_to_sql_with_schemas` return
         // `Result<_, ParseError>`, so the two stages chain via `and_then`.
         match kyma_kql::cypher_to_kql(&raw, &binding)

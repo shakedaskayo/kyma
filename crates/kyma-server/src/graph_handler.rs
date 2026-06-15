@@ -325,6 +325,34 @@ pub(crate) fn stored_provider(
     StoredGraphProvider::new(cfg, exec).with_store(format.object_store())
 }
 
+/// Build a stored-graph provider from a resolved [`kyma_kql::GraphBinding`] +
+/// database, without re-resolving the registration. Used by the Cypher
+/// CREATE/MERGE write path for existence checks (realm scoping not needed there,
+/// so `realm_col` is dropped).
+pub(crate) fn stored_provider_from_binding(
+    catalog: &Arc<dyn kyma_core::catalog::Catalog>,
+    format: &Arc<dyn kyma_core::segment_format::SegmentFormat>,
+    database: &str,
+    binding: &kyma_kql::GraphBinding,
+) -> StoredGraphProvider {
+    let cfg = kyma_graph::StoredGraphConfig {
+        database: database.to_string(),
+        node_table: binding.node_table.clone(),
+        edge_table: binding.edge_table.clone(),
+        id_col: binding.id_col.clone(),
+        label_col: binding.label_col.clone(),
+        src_col: binding.src_col.clone(),
+        dst_col: binding.dst_col.clone(),
+        type_col: binding.type_col.clone(),
+        realm_col: None,
+    };
+    let exec = Arc::new(QueryEngineExecutor {
+        catalog: catalog.clone(),
+        format: format.clone(),
+    });
+    StoredGraphProvider::new(cfg, exec).with_store(format.object_store())
+}
+
 // ---------------------------------------------------------------------------
 // Query-param structs
 // ---------------------------------------------------------------------------
