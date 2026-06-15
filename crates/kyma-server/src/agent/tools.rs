@@ -926,6 +926,109 @@ pub fn tool_graph_traverse(ctx: SharedToolCtx) -> Arc<dyn Tool> {
 }
 
 // ---------------------------------------------------------------------------
+// Tool: graph_analytics — PageRank centrality / communities / components
+// ---------------------------------------------------------------------------
+
+const GRAPH_ANALYTICS_DESC: &str =
+    "Whole-graph analytics over a registered graph's topology: PageRank centrality, \
+     community detection (modularity), or weakly-connected components. Read-only. Use to \
+     find the most central memories/entities, cluster related context, or spot disconnected \
+     sub-graphs. Returns {kind, count, results:[{id, value}]}.";
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct GraphAnalyticsArgs {
+    /// Database the graph is registered in.
+    database: String,
+    /// Registered graph name.
+    graph: String,
+    /// "pagerank" (centrality), "communities", or "components".
+    kind: String,
+    /// PageRank restart seeds (node ids). Empty ⇒ global PageRank (every node a
+    /// restart source). Ignored by communities / components.
+    #[serde(default)]
+    seeds: Vec<String>,
+    /// Top-N results for pagerank (descending score). Default 50, cap 100000.
+    #[serde(default = "default_analytics_limit")]
+    limit: usize,
+}
+
+fn default_analytics_limit() -> usize {
+    50
+}
+
+pub fn tool_graph_analytics(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "graph_analytics",
+            GRAPH_ANALYTICS_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: GraphAnalyticsArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    // Resolve the registered graph by (database, name).
+                    let regs = shared
+                        .catalog
+                        .list_graphs(&parsed.database)
+                        .await
+                        .unwrap_or_default();
+                    let Some(reg) = regs.into_iter().find(|r| r.name == parsed.graph) else {
+                        return Ok(json!({
+                            "error": format!("graph not found: {}/{}", parsed.database, parsed.graph),
+                        }));
+                    };
+                    let provider = crate::graph_handler::stored_provider(
+                        &shared.catalog,
+                        &shared.format,
+                        reg,
+                    );
+                    let limit = parsed.limit.clamp(1, 100_000);
+                    let pairs: anyhow::Result<Vec<(String, Value)>> = match parsed.kind.as_str() {
+                        "components" => provider
+                            .components()
+                            .await
+                            .map(|v| v.into_iter().map(|(id, c)| (id, json!(c))).collect()),
+                        "communities" => provider
+                            .communities()
+                            .await
+                            .map(|v| v.into_iter().map(|(id, c)| (id, json!(c))).collect()),
+                        "pagerank" => provider
+                            .pagerank(&parsed.seeds, limit)
+                            .await
+                            .map(|v| v.into_iter().map(|(id, s)| (id, json!(s))).collect()),
+                        other => {
+                            return Ok(json!({
+                                "error": format!(
+                                    "unknown kind `{other}` (pagerank|communities|components)"
+                                ),
+                            }));
+                        }
+                    };
+                    match pairs {
+                        Ok(items) => {
+                            let results: Vec<Value> = items
+                                .into_iter()
+                                .map(|(id, value)| json!({"id": id, "value": value}))
+                                .collect();
+                            Ok(json!({
+                                "kind": parsed.kind, "count": results.len(), "results": results,
+                            }))
+                        }
+                        Err(e) => Ok(json!({"error": format!("analytics: {e}")})),
+                    }
+                }
+            },
+        )
+        .with_parameters_schema::<GraphAnalyticsArgs>()
+        .with_read_only(true)
+        .with_concurrency_safe(true),
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Tool: retrieve_artifact — fetch a byte window of a stored log/file blob
 // ---------------------------------------------------------------------------
 

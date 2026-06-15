@@ -4,7 +4,8 @@ use adk_rust::tool::SimpleToolContext;
 use adk_rust::Tool;
 use kyma_server::agent::{
     tool_contribute_file, tool_describe_file, tool_describe_table, tool_explore_schema,
-    tool_file_neighbors, tool_find_references_to, tool_flush_memory, tool_graph_traverse,
+    tool_file_neighbors, tool_find_references_to, tool_flush_memory, tool_graph_analytics,
+    tool_graph_traverse,
     tool_ingest_entity, tool_link_memory_to_entity, tool_list_databases, tool_list_memories,
     tool_memory_compare, tool_memory_judge, tool_memory_search, tool_memory_session_summary,
     tool_graph_search, tool_recall_file, tool_recall_memory, tool_retrieve_artifact, tool_run_kql,
@@ -36,6 +37,7 @@ impl ToolDispatch {
             tool_find_references_to(shared.clone()),
         );
         map.insert("graph_traverse", tool_graph_traverse(shared.clone()));
+        map.insert("graph_analytics", tool_graph_analytics(shared.clone()));
         // Unified `/v1/search` substrate exposed to agents: hybrid lexical+vector
         // data search + cross-graph node search (the same dispatcher behind
         // POST /v1/search and the Explore UI). Memory mode is intentionally not

@@ -66,7 +66,7 @@ async fn tools_list_returns_all() {
     let app = build_app().await;
     let resp = jsonrpc(app, json!({"jsonrpc":"2.0","id":2,"method":"tools/list"})).await;
     let tools = resp["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 27);
+    assert_eq!(tools.len(), 28);
 }
 
 #[tokio::test]
