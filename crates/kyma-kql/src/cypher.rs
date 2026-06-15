@@ -319,12 +319,19 @@ enum CmpOp {
     Ge,
     /// `n.prop IN [a, b, c]` — set membership; the RHS literal is a list.
     In,
+    /// `n.prop STARTS WITH 'p'` — prefix match.
+    StartsWith,
+    /// `n.prop ENDS WITH 's'` — suffix match.
+    EndsWith,
+    /// `n.prop CONTAINS 's'` — substring match.
+    Contains,
 }
 
 impl CmpOp {
     /// KQL operator text. `=`→`==`, `<>`→`!=`; the rest pass through. `In`
-    /// lowers to the KQL `in` operator, which the KQL→SQL stage turns into a
-    /// SQL `IN (…)`.
+    /// lowers to the KQL `in` operator, and the string ops to KQL
+    /// `startswith`/`endswith`/`contains`, which the KQL→SQL stage turns into a
+    /// SQL `IN (…)` / `LIKE` respectively.
     fn kql(self) -> &'static str {
         match self {
             CmpOp::Eq => "==",
@@ -334,6 +341,9 @@ impl CmpOp {
             CmpOp::Le => "<=",
             CmpOp::Ge => ">=",
             CmpOp::In => "in",
+            CmpOp::StartsWith => "startswith",
+            CmpOp::EndsWith => "endswith",
+            CmpOp::Contains => "contains",
         }
     }
 }
@@ -872,6 +882,42 @@ impl Parser {
                 var,
                 prop,
                 op: CmpOp::In,
+                literal,
+            });
+        }
+        // String operators: `STARTS WITH` / `ENDS WITH` / `CONTAINS 'lit'`.
+        if self.eat_kw("STARTS") {
+            if !self.eat_kw("WITH") {
+                return Err(ParseError(
+                    "cypher: expected WITH after STARTS".to_string(),
+                ));
+            }
+            let literal = self.parse_literal()?;
+            return Ok(Comparison {
+                var,
+                prop,
+                op: CmpOp::StartsWith,
+                literal,
+            });
+        }
+        if self.eat_kw("ENDS") {
+            if !self.eat_kw("WITH") {
+                return Err(ParseError("cypher: expected WITH after ENDS".to_string()));
+            }
+            let literal = self.parse_literal()?;
+            return Ok(Comparison {
+                var,
+                prop,
+                op: CmpOp::EndsWith,
+                literal,
+            });
+        }
+        if self.eat_kw("CONTAINS") {
+            let literal = self.parse_literal()?;
+            return Ok(Comparison {
+                var,
+                prop,
+                op: CmpOp::Contains,
                 literal,
             });
         }
@@ -1809,6 +1855,43 @@ mod tests {
             cypher_to_kql("MATCH (a)-[r]->(b) WHERE a.kind IN [] RETURN a.kind", &g).is_err(),
             "empty IN list must be a parse error"
         );
+    }
+
+    #[test]
+    fn where_string_operators_lower_to_kql_and_compile() {
+        // STARTS WITH → KQL startswith → SQL LIKE 'p%'.
+        let sw = tr("MATCH (a)-[r]->(b) WHERE a.name STARTS WITH 'pre' RETURN a.name");
+        assert!(sw.contains("| where a_name startswith 'pre'"), "{sw}");
+        let sql = crate::kql_to_sql(&sw).expect("STARTS WITH KQL must compile to SQL");
+        assert!(sql.to_uppercase().contains("LIKE"), "{sql}");
+        // ENDS WITH → endswith → LIKE '%s'.
+        let ew = tr("MATCH (a)-[r]->(b) WHERE a.name ENDS WITH 'suf' RETURN a.name");
+        assert!(ew.contains("| where a_name endswith 'suf'"), "{ew}");
+        crate::kql_to_sql(&ew).expect("ENDS WITH KQL must compile to SQL");
+        // CONTAINS → contains → LIKE '%sub%'.
+        let ct = tr("MATCH (a)-[r]->(b) WHERE a.name CONTAINS 'sub' RETURN a.name");
+        assert!(ct.contains("| where a_name contains 'sub'"), "{ct}");
+        crate::kql_to_sql(&ct).expect("CONTAINS KQL must compile to SQL");
+    }
+
+    #[test]
+    fn where_starts_without_with_is_rejected() {
+        let g = binding();
+        assert!(
+            cypher_to_kql("MATCH (a)-[r]->(b) WHERE a.name STARTS 'pre' RETURN a.name", &g)
+                .is_err(),
+            "STARTS without WITH must be a parse error"
+        );
+    }
+
+    #[test]
+    fn where_string_op_combines_with_and() {
+        let kql = tr(
+            "MATCH (a)-[r]->(b) WHERE a.name STARTS WITH 'p' AND b.n > 3 RETURN a.name, b.n",
+        );
+        assert!(kql.contains("a_name startswith 'p'"), "{kql}");
+        assert!(kql.contains("b_n > 3"), "{kql}");
+        crate::kql_to_sql(&kql).expect("string-op + AND KQL must compile to SQL");
     }
 
     // ---- RETURN AS alias ----------------------------------------------

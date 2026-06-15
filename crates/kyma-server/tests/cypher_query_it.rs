@@ -259,6 +259,20 @@ async fn cypher_where_in_list_is_supported() {
 }
 
 #[tokio::test]
+async fn cypher_string_operators_are_supported() {
+    let state = seeded_state_with_graph().await;
+    // STARTS WITH / ENDS WITH / CONTAINS → KQL startswith/endswith/contains →
+    // SQL LIKE; must plan + execute end-to-end.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r]->(b) WHERE a.name STARTS WITH 'p' AND b.name CONTAINS 'x' RETURN a.name",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::OK, "string-operator cypher, body: {body}");
+}
+
+#[tokio::test]
 async fn cypher_count_aggregation_is_supported() {
     let state = seeded_state_with_graph().await;
     // Grouped count → | summarize n = count(*) by a_name; must plan + execute.
