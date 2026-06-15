@@ -1,3 +1,5 @@
+{{- /* All-in-one Deployment. Disabled when roles.enabled — see roles.yaml. */ -}}
+{{- if not .Values.roles.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -52,3 +54,4 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+{{- end }}
