@@ -305,3 +305,43 @@ async fn shortest_path_matches_oracle_on_cycle() {
     assert_sp_all_pairs(&g, 12, Direction::Fwd, "forward").await;
     assert_sp_all_pairs(&g, 12, Direction::Both, "both").await;
 }
+
+// =====================================================================
+// Multi-segment graph-match: non-linear (star) pattern join.
+// =====================================================================
+
+#[tokio::test]
+async fn multi_segment_star_graph_match_executes_correctly() {
+    // Star from `a`: (a)-[r]->(b), (a)-[s]->(c). With a's out-neighbours
+    // {b, c, d}, the result is their cartesian product on (b, c).
+    let mut g = TestGraph::new();
+    for id in ["a", "b", "c", "d"] {
+        g.add_node(id, "N");
+    }
+    g.add_edge("a", "b", "R");
+    g.add_edge("a", "c", "R");
+    g.add_edge("a", "d", "R");
+
+    let ctx = nodes_and_edges_ctx(&g);
+    let kql = "edges | make-graph src --> dst with nodes on id \
+               | graph-match (a)-[r]->(b), (a)-[s]->(c) \
+               project a.id as a_id, b.id as b_id, c.id as c_id";
+    let sql = kql_to_sql(kql).expect("lower multi-segment graph-match");
+    let batches = ctx.sql(&sql).await.expect("plan").collect().await.expect("exec");
+    let mut got: BTreeSet<(String, String, String)> = BTreeSet::new();
+    for bt in &batches {
+        let a = bt.column_by_name("a_id").unwrap().as_any().downcast_ref::<StringArray>().unwrap();
+        let b = bt.column_by_name("b_id").unwrap().as_any().downcast_ref::<StringArray>().unwrap();
+        let c = bt.column_by_name("c_id").unwrap().as_any().downcast_ref::<StringArray>().unwrap();
+        for i in 0..bt.num_rows() {
+            got.insert((a.value(i).into(), b.value(i).into(), c.value(i).into()));
+        }
+    }
+    let mut want: BTreeSet<(String, String, String)> = BTreeSet::new();
+    for x in ["b", "c", "d"] {
+        for y in ["b", "c", "d"] {
+            want.insert(("a".into(), x.into(), y.into()));
+        }
+    }
+    assert_eq!(got, want, "star-pattern join = cartesian product of a's neighbours");
+}
