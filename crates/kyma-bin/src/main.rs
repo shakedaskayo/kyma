@@ -996,71 +996,95 @@ async fn main() -> Result<()> {
     };
 
     // Index-build activation scheduler: enqueues ivf_rabitq build jobs for
-    // un-indexed vector columns so ANN sidecars actually get created.
-    let index_scheduler = kyma_compaction::IndexScheduler::new(catalog.clone());
-    let index_scheduler_handle = tokio::spawn(index_scheduler.run(shutdown_tx.subscribe()));
+    // un-indexed vector columns so ANN sidecars actually get created. Job
+    // production is background work — gated on run_jobs (off for query/committer).
+    let index_scheduler_handle = if rc.run_jobs {
+        let index_scheduler = kyma_compaction::IndexScheduler::new(catalog.clone());
+        Some(tokio::spawn(index_scheduler.run(shutdown_tx.subscribe())))
+    } else {
+        None
+    };
 
     // Graph-snapshot activation scheduler: refreshes persistent CSR topology
     // snapshots (S3.2) after a graph's edges change, so deep-subgraph queries on
-    // large graphs serve from the snapshot instead of a per-hop scan.
-    let graph_snapshot_scheduler =
-        kyma_server::graph_snapshot_sched::GraphSnapshotScheduler::new(
-            catalog.clone(),
-            format.clone(),
-        );
-    let graph_snapshot_scheduler_handle =
-        tokio::spawn(graph_snapshot_scheduler.run(shutdown_tx.subscribe()));
+    // large graphs serve from the snapshot instead of a per-hop scan. Query nodes
+    // read snapshots but never build them — gated on run_jobs.
+    let graph_snapshot_scheduler_handle = if rc.run_jobs {
+        let graph_snapshot_scheduler =
+            kyma_server::graph_snapshot_sched::GraphSnapshotScheduler::new(
+                catalog.clone(),
+                format.clone(),
+            );
+        Some(tokio::spawn(graph_snapshot_scheduler.run(shutdown_tx.subscribe())))
+    } else {
+        None
+    };
 
-    // Retention sweeper (soft-delete expired).
-    let mut retention = RetentionSweeper::new(catalog.clone());
-    if let Ok(s) = std::env::var("KYMA_RETENTION_POLL_SECS")
-        .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
-    {
-        retention.poll_interval = std::time::Duration::from_secs(s);
-    }
-    let retention_rx = shutdown_tx.subscribe();
-    let retention_handle = tokio::spawn(retention.run(async move {
-        let mut rx = retention_rx;
-        let _ = rx.recv().await;
-    }));
+    // Data-lifecycle workers (retention soft-delete, physical-delete GC, artifact
+    // GC) are background jobs — gated on run_jobs. Stateless query nodes and the
+    // committer never sweep; only all_in_one / worker roles do. GC is the one way
+    // this architecture can lose data, so it stays on a job-running role only.
+    let retention_handle = if rc.run_jobs {
+        let mut retention = RetentionSweeper::new(catalog.clone());
+        if let Ok(s) = std::env::var("KYMA_RETENTION_POLL_SECS")
+            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        {
+            retention.poll_interval = std::time::Duration::from_secs(s);
+        }
+        let retention_rx = shutdown_tx.subscribe();
+        Some(tokio::spawn(retention.run(async move {
+            let mut rx = retention_rx;
+            let _ = rx.recv().await;
+        })))
+    } else {
+        None
+    };
 
     // Physical-delete worker (remove bytes after grace).
-    let mut gc = PhysicalDeleteWorker::new(catalog.clone(), store.clone());
-    if let Ok(s) = std::env::var("KYMA_PHYSICAL_GC_POLL_SECS")
-        .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
-    {
-        gc.poll_interval = std::time::Duration::from_secs(s);
-    }
-    if let Ok(s) = std::env::var("KYMA_PHYSICAL_GC_GRACE_SECS")
-        .and_then(|v| v.parse::<i64>().map_err(|_| std::env::VarError::NotPresent))
-    {
-        gc.grace_period = chrono::Duration::seconds(s);
-    }
-    let gc_rx = shutdown_tx.subscribe();
-    let gc_handle = tokio::spawn(gc.run(async move {
-        let mut rx = gc_rx;
-        let _ = rx.recv().await;
-    }));
+    let gc_handle = if rc.run_jobs {
+        let mut gc = PhysicalDeleteWorker::new(catalog.clone(), store.clone());
+        if let Ok(s) = std::env::var("KYMA_PHYSICAL_GC_POLL_SECS")
+            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        {
+            gc.poll_interval = std::time::Duration::from_secs(s);
+        }
+        if let Ok(s) = std::env::var("KYMA_PHYSICAL_GC_GRACE_SECS")
+            .and_then(|v| v.parse::<i64>().map_err(|_| std::env::VarError::NotPresent))
+        {
+            gc.grace_period = chrono::Duration::seconds(s);
+        }
+        let gc_rx = shutdown_tx.subscribe();
+        Some(tokio::spawn(gc.run(async move {
+            let mut rx = gc_rx;
+            let _ = rx.recv().await;
+        })))
+    } else {
+        None
+    };
 
     // Artifact-retention worker — sweeps expired object-store artifacts (CI job
     // logs, contributed files, fs-watch snapshots) that live outside the
     // columnar extents, on the same soft-delete + grace pattern.
-    let mut artifact_gc = ArtifactRetentionWorker::new(catalog.clone(), store.clone());
-    if let Ok(s) = std::env::var("KYMA_ARTIFACT_GC_POLL_SECS")
-        .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
-    {
-        artifact_gc.poll_interval = std::time::Duration::from_secs(s);
-    }
-    if let Ok(s) = std::env::var("KYMA_ARTIFACT_GC_GRACE_SECS")
-        .and_then(|v| v.parse::<i64>().map_err(|_| std::env::VarError::NotPresent))
-    {
-        artifact_gc.grace_period = chrono::Duration::seconds(s);
-    }
-    let artifact_gc_rx = shutdown_tx.subscribe();
-    let artifact_gc_handle = tokio::spawn(artifact_gc.run(async move {
-        let mut rx = artifact_gc_rx;
-        let _ = rx.recv().await;
-    }));
+    let artifact_gc_handle = if rc.run_jobs {
+        let mut artifact_gc = ArtifactRetentionWorker::new(catalog.clone(), store.clone());
+        if let Ok(s) = std::env::var("KYMA_ARTIFACT_GC_POLL_SECS")
+            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        {
+            artifact_gc.poll_interval = std::time::Duration::from_secs(s);
+        }
+        if let Ok(s) = std::env::var("KYMA_ARTIFACT_GC_GRACE_SECS")
+            .and_then(|v| v.parse::<i64>().map_err(|_| std::env::VarError::NotPresent))
+        {
+            artifact_gc.grace_period = chrono::Duration::seconds(s);
+        }
+        let artifact_gc_rx = shutdown_tx.subscribe();
+        Some(tokio::spawn(artifact_gc.run(async move {
+            let mut rx = artifact_gc_rx;
+            let _ = rx.recv().await;
+        })))
+    } else {
+        None
+    };
 
     // Catch-all artifact-graph sync — materializes graph nodes for artifacts
     // that have no producer-graph node (object-store blobs, contributed files,
@@ -1070,54 +1094,60 @@ async fn main() -> Result<()> {
     // wiring here is the least-invasive correct seam. Runs an immediate startup
     // backfill, then re-syncs on the artifact-GC cadence. Postgres-only: a safe
     // no-op (Ok(0)) under `kyma local` (sqlite has no artifacts catalog).
-    let artifact_graph_poll = std::env::var("KYMA_ARTIFACT_GC_POLL_SECS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .map(std::time::Duration::from_secs)
-        .unwrap_or_else(|| std::time::Duration::from_secs(300));
-    let artifact_graph_catalog = catalog.clone();
-    let artifact_graph_format = format.clone();
-    // Object-store handle for the content indexer: artifact blobs are fetched,
-    // chunked + embedded into `artifacts.artifact_chunks` on the same cadence.
-    let artifact_graph_store = store.clone();
-    let mut artifact_graph_rx = shutdown_tx.subscribe();
-    let artifact_graph_handle = tokio::spawn(async move {
-        // Startup backfill for all tenants.
-        if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes_all_tenants(
-            artifact_graph_catalog.clone(),
-            artifact_graph_format.clone(),
-            Some(artifact_graph_store.clone()),
-        )
-        .await
-        {
-            warn!(error = %e, "artifact-graph backfill failed");
-        }
-        loop {
-            tokio::select! {
-                biased;
-                _ = artifact_graph_rx.recv() => return,
-                _ = tokio::time::sleep(artifact_graph_poll) => {
-                    if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes_all_tenants(
-                        artifact_graph_catalog.clone(),
-                        artifact_graph_format.clone(),
-                        Some(artifact_graph_store.clone()),
-                    )
-                    .await
-                    {
-                        warn!(error = %e, "artifact-graph sync failed");
+    // Background sync/index work — gated on run_jobs.
+    let artifact_graph_handle = if rc.run_jobs {
+        let artifact_graph_poll = std::env::var("KYMA_ARTIFACT_GC_POLL_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(std::time::Duration::from_secs)
+            .unwrap_or_else(|| std::time::Duration::from_secs(300));
+        let artifact_graph_catalog = catalog.clone();
+        let artifact_graph_format = format.clone();
+        // Object-store handle for the content indexer: artifact blobs are fetched,
+        // chunked + embedded into `artifacts.artifact_chunks` on the same cadence.
+        let artifact_graph_store = store.clone();
+        let mut artifact_graph_rx = shutdown_tx.subscribe();
+        Some(tokio::spawn(async move {
+            // Startup backfill for all tenants.
+            if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes_all_tenants(
+                artifact_graph_catalog.clone(),
+                artifact_graph_format.clone(),
+                Some(artifact_graph_store.clone()),
+            )
+            .await
+            {
+                warn!(error = %e, "artifact-graph backfill failed");
+            }
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = artifact_graph_rx.recv() => return,
+                    _ = tokio::time::sleep(artifact_graph_poll) => {
+                        if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes_all_tenants(
+                            artifact_graph_catalog.clone(),
+                            artifact_graph_format.clone(),
+                            Some(artifact_graph_store.clone()),
+                        )
+                        .await
+                        {
+                            warn!(error = %e, "artifact-graph sync failed");
+                        }
                     }
                 }
             }
-        }
-    });
+        }))
+    } else {
+        None
+    };
 
     // Memory consolidation ("dreaming") pipeline — periodically distills new
     // conversation-firehose activity into durable summary memories and records
     // each run in `memory_pipeline_runs`. On by default; set
     // KYMA_MEMORY_CONSOLIDATION=0 to disable.
-    let memory_consolidator_handle = if std::env::var("KYMA_MEMORY_CONSOLIDATION")
-        .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
-        .unwrap_or(true)
+    let memory_consolidator_handle = if rc.run_jobs
+        && std::env::var("KYMA_MEMORY_CONSOLIDATION")
+            .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+            .unwrap_or(true)
     {
         let mut consolidator = kyma_server::agent::MemoryConsolidator::new(
             kyma_server::agent::SharedToolCtx {
@@ -1153,9 +1183,10 @@ async fn main() -> Result<()> {
     // CI failure-correlation ("dreaming") pipeline — scans the github_job_logs
     // failure signal for recurring failures and writes durable incident
     // memories. On by default; set KYMA_CI_CORRELATE=0 to disable.
-    let ci_correlate_handle = if std::env::var("KYMA_CI_CORRELATE")
-        .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
-        .unwrap_or(true)
+    let ci_correlate_handle = if rc.run_jobs
+        && std::env::var("KYMA_CI_CORRELATE")
+            .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+            .unwrap_or(true)
     {
         let mut correlator = kyma_server::agent::CiCorrelator::new(
             kyma_server::agent::SharedToolCtx {
@@ -1188,9 +1219,10 @@ async fn main() -> Result<()> {
     // scraped candidate File nodes to their live upstream repo File nodes and
     // stitches them with cross-graph SAME_AS edges. On by default; set
     // KYMA_FILE_PROMOTE=0 to disable.
-    let file_promote_handle = if std::env::var("KYMA_FILE_PROMOTE")
-        .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
-        .unwrap_or(true)
+    let file_promote_handle = if rc.run_jobs
+        && std::env::var("KYMA_FILE_PROMOTE")
+            .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+            .unwrap_or(true)
     {
         let mut promoter = kyma_server::agent::FilePromoter::new(
             kyma_server::agent::SharedToolCtx {
@@ -1300,21 +1332,35 @@ async fn main() -> Result<()> {
     };
 
     // DataSource scheduler — enqueues datasource_sync jobs on the worker fabric.
-    let conn_sched = DataSourceScheduler::new(pg_ds_catalog.clone());
-    let conn_sched_rx = shutdown_tx.subscribe();
-    let conn_sched_handle = tokio::spawn(conn_sched.run(async move {
-        let mut rx = conn_sched_rx;
-        let _ = rx.recv().await;
-    }));
+    // Job production is background work — gated on run_jobs.
+    let conn_sched_handle = if rc.run_jobs {
+        let conn_sched = DataSourceScheduler::new(pg_ds_catalog.clone());
+        let conn_sched_rx = shutdown_tx.subscribe();
+        Some(tokio::spawn(conn_sched.run(async move {
+            let mut rx = conn_sched_rx;
+            let _ = rx.recv().await;
+        })))
+    } else {
+        None
+    };
 
     // Embedded fabric worker — the server's in-process compute identity. It
     // registers in the workers table (visible in GET /v1/workers next to any
     // remote daemons) and runs N job-runner loops claiming fabric jobs.
-    let n_fabric_workers = std::env::var("KYMA_FABRIC_WORKERS")
-        .or_else(|_| std::env::var("KYMA_DATA_SOURCE_WORKERS"))
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(4);
+    // On job-running roles, run N fabric runner loops; on stateless query /
+    // committer roles, register the worker identity with zero capacity so it
+    // claims no jobs (the `for _ in 0..0` below spawns no runners). Keeping the
+    // registration preserves embedded_worker_id for the shutdown-offline call
+    // and the DreamingExecutor.
+    let n_fabric_workers = if rc.run_jobs {
+        std::env::var("KYMA_FABRIC_WORKERS")
+            .or_else(|_| std::env::var("KYMA_DATA_SOURCE_WORKERS"))
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(4)
+    } else {
+        0
+    };
     // Shared object-store artifact capability for data sources that persist
     // full-file blobs (e.g. GitHub Actions job logs) — threaded into the fabric
     // data source executor via `tick_deps` below.
@@ -1499,26 +1545,39 @@ async fn main() -> Result<()> {
     );
 
     // Dreaming scheduler — enqueues agentic memory-housekeeping jobs on the
-    // fabric when enabled in memory settings (OFF by default).
-    let dreaming_sched = kyma_server::agent::dreaming::DreamingScheduler::new(
-        agent_state.clone(),
-        fabric_store.clone(),
-    );
-    let dreaming_sched_rx = shutdown_tx.subscribe();
-    let dreaming_sched_handle = tokio::spawn(dreaming_sched.run(async move {
-        let mut rx = dreaming_sched_rx;
-        let _ = rx.recv().await;
-    }));
+    // fabric when enabled in memory settings (OFF by default). Job production is
+    // background work — gated on run_jobs.
+    let dreaming_sched_handle = if rc.run_jobs {
+        let dreaming_sched = kyma_server::agent::dreaming::DreamingScheduler::new(
+            agent_state.clone(),
+            fabric_store.clone(),
+        );
+        let dreaming_sched_rx = shutdown_tx.subscribe();
+        Some(tokio::spawn(dreaming_sched.run(async move {
+            let mut rx = dreaming_sched_rx;
+            let _ = rx.recv().await;
+        })))
+    } else {
+        None
+    };
 
     // Idempotency ledger cleanup — runs every hour, deletes entries older
-    // than 25 hours (1-hour grace beyond the 24-hour TTL).
-    let idem_rx = shutdown_tx.subscribe();
-    let idem_cleanup_handle = spawn_idempotency_cleanup(catalog.clone(), async move {
-        let mut rx = idem_rx;
-        let _ = rx.recv().await;
-    });
+    // than 25 hours (1-hour grace beyond the 24-hour TTL). Background — run_jobs.
+    let idem_cleanup_handle = if rc.run_jobs {
+        let idem_rx = shutdown_tx.subscribe();
+        Some(spawn_idempotency_cleanup(catalog.clone(), async move {
+            let mut rx = idem_rx;
+            let _ = rx.recv().await;
+        }))
+    } else {
+        None
+    };
 
-    info!("background workers started (compaction, retention, physical-gc, idempotency-cleanup)");
+    if rc.run_jobs {
+        info!("background workers started (compaction, retention, physical-gc, idempotency-cleanup)");
+    } else {
+        info!(role = %role, "background jobs skipped on this role (run_jobs=false)");
+    }
 
     // 6. Arrow Flight gRPC server (optional — set KYMA_GRPC_ADDR=off).
     let grpc_handle = if cli.grpc_addr.eq_ignore_ascii_case("off") {
@@ -1647,21 +1706,38 @@ async fn main() -> Result<()> {
         let _ = h.await;
     }
 
-    // Workers were already signaled above; join their handles.
+    // Workers were already signaled above; join their handles. Background-job
+    // handles are None on stateless query / committer roles (run_jobs=false).
     if let Some(h) = worker_handle {
         let _ = h.await;
     }
-    let _ = index_scheduler_handle.await;
-    let _ = graph_snapshot_scheduler_handle.await;
+    if let Some(h) = index_scheduler_handle {
+        let _ = h.await;
+    }
+    if let Some(h) = graph_snapshot_scheduler_handle {
+        let _ = h.await;
+    }
     if let Some(h) = scheduler_handle {
         let _ = h.await;
     }
-    let _ = retention_handle.await;
-    let _ = gc_handle.await;
-    let _ = artifact_gc_handle.await;
-    let _ = artifact_graph_handle.await;
-    let _ = conn_sched_handle.await;
-    let _ = idem_cleanup_handle.await;
+    if let Some(h) = retention_handle {
+        let _ = h.await;
+    }
+    if let Some(h) = gc_handle {
+        let _ = h.await;
+    }
+    if let Some(h) = artifact_gc_handle {
+        let _ = h.await;
+    }
+    if let Some(h) = artifact_graph_handle {
+        let _ = h.await;
+    }
+    if let Some(h) = conn_sched_handle {
+        let _ = h.await;
+    }
+    if let Some(h) = idem_cleanup_handle {
+        let _ = h.await;
+    }
     if let Some((_, h)) = memory_queue {
         let _ = h.await;
     }
@@ -1669,7 +1745,9 @@ async fn main() -> Result<()> {
         let _ = h.await;
     }
     let _ = fabric_housekeeping.await;
-    let _ = dreaming_sched_handle.await;
+    if let Some(h) = dreaming_sched_handle {
+        let _ = h.await;
+    }
     // Mark the embedded worker offline so discovery doesn't show a ghost.
     if let Err(e) = fabric_store
         .set_worker_status(embedded_worker_id, kyma_core::fabric::WorkerStatus::Offline)
