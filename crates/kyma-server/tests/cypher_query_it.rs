@@ -233,6 +233,20 @@ async fn cypher_chain_continuation_multi_pattern_is_supported() {
 }
 
 #[tokio::test]
+async fn cypher_backward_hop_in_multihop_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // Mixed-direction chain (a)-[r]->(b)<-[s]-(c) → decomposed single-hop
+    // segments joined on b; must plan + execute end-to-end.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r]->(b)<-[s]-(c) RETURN a.name, c.name LIMIT 5",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::OK, "mixed-direction chain cypher, body: {body}");
+}
+
+#[tokio::test]
 async fn cypher_optional_match_is_supported() {
     let state = seeded_state_with_graph().await;
     // OPTIONAL MATCH → a LEFT-joined segment; must plan + execute end-to-end.

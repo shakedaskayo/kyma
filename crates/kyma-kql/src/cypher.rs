@@ -42,9 +42,9 @@
 //!
 //! # Deferred constructs (rejected with a precise error)
 //!
-//! Variable-length inside a multi-hop chain, backward hops inside a multi-hop
-//! chain, `OPTIONAL MATCH`, `WITH`, `ORDER BY`, aggregation,
-//! `CREATE/SET/DELETE/MERGE`, `RETURN *`.
+//! Variable-length inside a multi-hop chain, `WITH`, `ORDER BY`, aggregation,
+//! `CREATE/SET/DELETE/MERGE`, `RETURN *`. (Backward hops inside a multi-hop
+//! chain and `OPTIONAL MATCH` ARE supported — see below.)
 //!
 //! Multiple patterns — comma-separated or in successive `MATCH` clauses — ARE
 //! supported, including non-linear (star / tree / cyclic) and disjoint shapes:
@@ -1047,6 +1047,24 @@ fn segment_pattern(nodes: &[NodePat], rels: &[RelPat]) -> Result<String, ParseEr
     }
 }
 
+/// One or more `graph-match` segment patterns for `(nodes, rels)`. A forward
+/// (or single-hop) chain is one segment; a multi-hop chain containing a backward
+/// hop is decomposed into single-hop forward segments (each backward hop swapped
+/// by [`segment_pattern`]) that the general join re-stitches via shared vars —
+/// so `(a)-[r]->(b)<-[s]-(c)` becomes `(a)-[r]->(b), (c)-[s]->(b)`.
+fn segment_patterns(nodes: &[NodePat], rels: &[RelPat]) -> Result<Vec<String>, ParseError> {
+    if rels.len() > 1 && rels.iter().any(|r| r.direction == Direction::Backward) {
+        let mut out = Vec::with_capacity(rels.len());
+        for i in 0..rels.len() {
+            // One hop: nodes[i]→nodes[i+1] joined by the single rel rels[i].
+            out.push(segment_pattern(&nodes[i..=i + 1], &rels[i..=i])?);
+        }
+        Ok(out)
+    } else {
+        Ok(vec![segment_pattern(nodes, rels)?])
+    }
+}
+
 fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     // shortestPath queries have their own lowering onto `graph-shortest-path`.
     if let Some(path_var) = &q.shortest_path {
@@ -1156,11 +1174,17 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     // Multi-segment (star / tree / disjoint) patterns lower to a general
     // `graph-match` over comma-separated segments; a single variable-length hop
     // to `graph-var-match`; everything else to the fixed-length linear chain.
-    let mut kql = if !q.extra_segments.is_empty() {
-        let mut segs = vec![segment_pattern(&q.nodes, &q.rels)?];
+    // A backward hop inside a multi-hop chain is also lowered via the general
+    // join (the linear matcher is forward-only), by decomposing into single-hop
+    // segments.
+    let primary_backward_multihop =
+        q.rels.len() > 1 && q.rels.iter().any(|r| r.direction == Direction::Backward);
+    let mut kql = if !q.extra_segments.is_empty() || primary_backward_multihop {
+        let mut segs = segment_patterns(&q.nodes, &q.rels)?;
         for (sn, sr, opt) in &q.extra_segments {
-            let p = segment_pattern(sn, sr)?;
-            segs.push(if *opt { format!("OPTIONAL {p}") } else { p });
+            for p in segment_patterns(sn, sr)? {
+                segs.push(if *opt { format!("OPTIONAL {p}") } else { p });
+            }
         }
         format!(
             "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
@@ -1340,6 +1364,18 @@ mod tests {
         );
         let sql = crate::kql_to_sql(&kql).expect("OPTIONAL KQL must compile");
         assert!(sql.contains("LEFT JOIN"), "optional segment is a LEFT JOIN: {sql}");
+    }
+
+    #[test]
+    fn backward_hop_in_multihop_decomposes_to_general_join() {
+        // `(a)-[r]->(b)<-[s]-(c)` (mixed direction) → single-hop segments joined
+        // on the shared `b` (the backward hop swapped to forward `(c)-[s]->(b)`).
+        let kql = tr("MATCH (a)-[r]->(b)<-[s]-(c) RETURN a.name, c.name");
+        assert!(
+            kql.contains("graph-match (a)-[r]->(b), (c)-[s]->(b)"),
+            "mixed-direction chain decomposes: {kql}"
+        );
+        crate::kql_to_sql(&kql).expect("decomposed mixed-direction KQL must compile");
     }
 
     #[test]
@@ -1606,12 +1642,16 @@ mod tests {
     }
 
     #[test]
-    fn multi_hop_backward_hop_rejected() {
-        // A backward hop inside a multi-hop chain breaks the linear node order
-        // the forward-only matcher needs — v1 rejects it with a clear message.
-        let err = cypher_to_kql("MATCH (a)-[r1]->(b)<-[r2]-(c) RETURN a.name", &binding());
-        let msg = err.unwrap_err().0;
-        assert!(msg.contains("backward") && msg.contains("multi-hop"), "{msg}");
+    fn multi_hop_backward_hop_now_decomposes() {
+        // Regression guard: a backward hop in a multi-hop chain used to be
+        // rejected; it now decomposes into single-hop segments joined on the
+        // shared node (see backward_hop_in_multihop_decomposes_to_general_join).
+        let kql = cypher_to_kql("MATCH (a)-[r1]->(b)<-[r2]-(c) RETURN a.name", &binding())
+            .expect("mixed-direction multi-hop is supported");
+        assert!(
+            kql.contains("graph-match (a)-[r1]->(b), (c)-[r2]->(b)"),
+            "{kql}"
+        );
     }
 
     // ---- unsupported constructs → Err ---------------------------------
