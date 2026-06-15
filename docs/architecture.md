@@ -156,11 +156,53 @@ The Claude Code integration hooks write `~/.kyma/capture-health.json` on every f
 
 ## Slice roadmap
 
-| Slice | Scope | Duration |
+| Slice | Scope | Status |
 |---|---|---|
-| 1 | Single-node, distribution-ready affordances | 12-24mo |
-| 2 | Read scale-out | ~3-6mo |
-| 3 | Ingest scale-out | ~6mo |
-| 4 | Multi-region / multi-cluster federation | 12+mo |
+| 1 | Single-node, distribution-ready affordances | shipped |
+| 2 | Read scale-out (rendezvous read router, sidecar caching) | partial — see scale program |
+| 3 | Ingest scale-out (staged ingest + committer split) | partial — see scale program |
+| 4 | Multi-region / multi-cluster federation | future |
+
+---
+
+## Scale program status
+
+The scale program (S-series) evolves the engine toward petabyte scale as trait
+impls and sidecars, never a rewrite. `retrieval.md` is the developer reference
+for the retrieval + scale subsystems and their config. Honest status:
+
+**Wired and active**
+
+- **Vector ANN** — per-extent IVF + 1-bit RaBitQ sidecars (`kyma-index-vector`,
+  `kyma_exec::ann::ann_topk`), wired into unified search + agent memory
+  retrieval, with exact-cosine rerank and the brute-force UDF as fallback/oracle.
+- **BM25 full-text** — per-extent Tantivy sidecars (`kyma-index-fts`,
+  `kyma_exec::fts::bm25_topk`) replacing the `LIKE`/token-set lexical leg.
+- **Index sidecar contract** — `index_sidecar.rs` + `extent_indexes` catalog
+  table (+ SQLite mirror); format-agnostic, embedding-model-pinned.
+- **Parquet at rest** — `kyma-format-parquet` + `FormatRegistry` magic-byte
+  read dispatch; `KYMA_WRITE_FORMAT` selects the write format; mixed-format
+  tables stay readable.
+- **Staged ingest + committer** — `KYMA_INGEST_MODE=staged` + `staged_extents`
+  + `committer.rs`; object storage as the WAL, atomic group commit.
+- **Query admission control** — per-process concurrency cap with `429` +
+  `Retry-After` (`concurrency.rs`).
+- **Cypher writes** — `CREATE`/`MERGE` → append via `WritePath`, write-role
+  gated (`retrieval.md`).
+
+**Foundation laid, not yet wired into the live path**
+
+- **Global centroid tree (SPANN)** — per-extent ANN is the complete story
+  today; the cross-extent tree for server-mode scale-out is not yet wired.
+- **CSR graph topology** — `kyma-graph-topo` builds an immutable CSR + BFS, but
+  there is no `graph_snapshots` persistence/refresh job yet, so agent traversal
+  still uses the SQL hop loop capped at `MAX_HOPS = 2`.
+- **Per-tenant quotas** — only the per-process query limiter exists; per-tenant
+  token buckets are not implemented.
+
+**Infra-gated (validated by design + small-scale tests; full numbers require
+representative hardware)** — 100M/1B-scale ANN + graph tiers, multi-machine
+cluster failover, 1-hour soak, and LLM-judged memory benchmarks run from
+`scripts/` on real infra, not in CI.
 
 Each subsequent slice gets its own plan once the previous one ships.
