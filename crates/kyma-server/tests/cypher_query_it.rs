@@ -182,3 +182,23 @@ async fn cypher_multi_hop_match_is_supported() {
     let (status, body) = run(state, req).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
 }
+
+#[tokio::test]
+async fn cypher_variable_length_match_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // Regression guard: `-[*M..N]->` was a 400 ("variable-length not
+    // supported") before kyma-kql learned graph-var-match. The full HTTP path
+    // (cypher → graph-var-match → recursive-CTE SQL → DataFusion) must plan and
+    // execute to 200 (schema-only tables ⇒ 0 rows, still a 200).
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r*1..3]->(b) RETURN a.name, b.name LIMIT 5",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "variable-length cypher should plan + execute, body: {body}"
+    );
+}
