@@ -43,14 +43,16 @@
 //! # Deferred constructs (rejected with a precise error)
 //!
 //! Variable-length inside a multi-hop chain, backward hops inside a multi-hop
-//! chain, `OPTIONAL MATCH`, non-chain (star / disjoint) multi-pattern MATCH,
-//! `WITH`, `ORDER BY`, aggregation, `CREATE/SET/DELETE/MERGE`, `RETURN *`.
+//! chain, `OPTIONAL MATCH`, `WITH`, `ORDER BY`, aggregation,
+//! `CREATE/SET/DELETE/MERGE`, `RETURN *`.
 //!
 //! Multiple patterns — comma-separated or in successive `MATCH` clauses — ARE
-//! supported when each continues the chain (its first node is the previous
-//! pattern's last node), e.g. `MATCH (a)-[r]->(b), (b)-[s]->(c)` ≡ the chain
-//! `(a)-[r]->(b)-[s]->(c)`. Disjoint / star multi-patterns need a join and stay
-//! deferred.
+//! supported, including non-linear (star / tree / cyclic) and disjoint shapes:
+//! a continuation that extends the chain merges into it (`(a)-[r]->(b),
+//! (b)-[s]->(c)` ≡ `(a)-[r]->(b)-[s]->(c)`), while any other segment lowers to a
+//! general multi-segment `graph-match` join over the shared variables (a
+//! segment sharing nothing is a cartesian product). Variable-length is
+//! single-pattern only.
 //!
 //! `shortestPath` IS supported in the form
 //! `MATCH p = shortestPath((a)-[*..N]->(b)) WHERE a.<id> = '…' AND b.<id> = '…'
@@ -360,6 +362,11 @@ struct Query {
     /// The single hop in `nodes`/`rels` is the wrapped pattern; the lowering
     /// emits `graph-shortest-path` instead of `graph-match`.
     shortest_path: Option<String>,
+    /// Additional pattern segments that don't continue the primary chain (star /
+    /// tree / disjoint), each `(nodes, rels)`. Empty for a single linear
+    /// pattern; non-empty ⇒ the lowering emits a multi-segment `graph-match`
+    /// (general join over shared variables).
+    extra_segments: Vec<(Vec<NodePat>, Vec<RelPat>)>,
 }
 
 // =====================================================================
@@ -473,12 +480,14 @@ impl Parser {
             ));
         }
 
-        // Additional patterns — via `,` or a subsequent `MATCH` clause — are
-        // supported when they CONTINUE the chain: the new pattern's first node
-        // is the current last node, e.g. `(a)-[r]->(b), (b)-[s]->(c)` which is
-        // the chain `(a)-[r]->(b)-[s]->(c)`. Non-chain (star / disjoint)
-        // multi-patterns need a join and stay unsupported. shortestPath is
-        // single-pattern, so chaining only applies to the plain MATCH form.
+        // Additional patterns — via `,` or a subsequent `MATCH` clause. A
+        // continuation that extends the primary chain (its first node is the
+        // primary's tail) merges into it (keeping pure chains on the efficient
+        // single-segment path, e.g. `(a)-[r]->(b), (b)-[s]->(c)` ≡ the chain
+        // `(a)-[r]->(b)-[s]->(c)`); any other segment (star / tree / disjoint)
+        // is kept separate and lowered via a general multi-segment join.
+        // shortestPath is single-pattern, so this only applies to plain MATCH.
+        let mut extra_segments: Vec<(Vec<NodePat>, Vec<RelPat>)> = Vec::new();
         if shortest_path.is_none() {
             loop {
                 let cont = if self.eat(&Tok::Comma) {
@@ -492,22 +501,23 @@ impl Parser {
                 if !cont {
                     break;
                 }
-                let first = self.parse_node()?;
-                let last_var = nodes.last().map(|n| n.var.clone()).unwrap_or_default();
-                if first.var != last_var {
-                    return Err(unsupported(
-                        "non-chain multi-pattern MATCH (patterns must share the connecting node, \
-                         e.g. `(a)-[r]->(b), (b)-[s]->(c)`)",
-                    ));
-                }
-                // Append the continuation hops; the shared first node is already
-                // the chain's tail, so it is not pushed again.
+                // Parse this segment fully: node ( rel node )+.
+                let mut seg_nodes = vec![self.parse_node()?];
+                let mut seg_rels: Vec<RelPat> = Vec::new();
                 loop {
-                    rels.push(self.parse_rel()?);
-                    nodes.push(self.parse_node()?);
+                    seg_rels.push(self.parse_rel()?);
+                    seg_nodes.push(self.parse_node()?);
                     if !matches!(self.peek(), Some(Tok::Dash | Tok::ArrowL)) {
                         break;
                     }
+                }
+                let primary_tail = nodes.last().map(|n| n.var.clone()).unwrap_or_default();
+                if extra_segments.is_empty() && seg_nodes[0].var == primary_tail {
+                    // Continues the primary chain → merge (skip the shared node).
+                    rels.extend(seg_rels);
+                    nodes.extend(seg_nodes.into_iter().skip(1));
+                } else {
+                    extra_segments.push((seg_nodes, seg_rels));
                 }
             }
         }
@@ -565,6 +575,7 @@ impl Parser {
             returns,
             limit,
             shortest_path,
+            extra_segments,
         })
     }
 
@@ -988,6 +999,40 @@ fn emit_shortest_path(q: &Query, g: &GraphBinding, path_var: &str) -> Result<Str
     ))
 }
 
+/// Render one pattern segment as a forward `graph-match` chain `(n0)-[e0]->(n1)…`.
+/// A single backward hop swaps endpoints (the matcher is forward-only); backward
+/// inside a multi-hop segment, and any variable-length hop, are rejected (the
+/// multi-segment join is fixed-length).
+fn segment_pattern(nodes: &[NodePat], rels: &[RelPat]) -> Result<String, ParseError> {
+    let rel_pat = |r: &RelPat| match &r.rel_type {
+        Some(t) => format!("[{}:{}]", r.var, t),
+        None => format!("[{}]", r.var),
+    };
+    if rels.iter().any(|r| r.var_length.is_some()) {
+        return Err(unsupported(
+            "variable-length relationship in a multi-pattern MATCH",
+        ));
+    }
+    if rels.len() == 1 {
+        let (left, right) = match rels[0].direction {
+            Direction::Backward => (&nodes[1].var, &nodes[0].var),
+            _ => (&nodes[0].var, &nodes[1].var),
+        };
+        Ok(format!("({left})-{}->({right})", rel_pat(&rels[0])))
+    } else {
+        let mut p = format!("({})", nodes[0].var);
+        for (i, r) in rels.iter().enumerate() {
+            if r.direction == Direction::Backward {
+                return Err(unsupported(
+                    "backward `<-` relationship in a multi-hop segment",
+                ));
+            }
+            p.push_str(&format!("-{}->({})", rel_pat(r), nodes[i + 1].var));
+        }
+        Ok(p)
+    }
+}
+
 fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     // shortestPath queries have their own lowering onto `graph-shortest-path`.
     if let Some(path_var) = &q.shortest_path {
@@ -1002,6 +1047,11 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
         .iter()
         .map(|n| n.var.as_str())
         .chain(q.rels.iter().map(|r| r.var.as_str()))
+        .chain(q.extra_segments.iter().flat_map(|(ns, rs)| {
+            ns.iter()
+                .map(|n| n.var.as_str())
+                .chain(rs.iter().map(|r| r.var.as_str()))
+        }))
         .collect();
     let check_var = |v: &str| -> Result<(), ParseError> {
         if known.iter().any(|k| *k == v) {
@@ -1048,9 +1098,13 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
         }
     }
 
-    // 2) Node-label filters need the label column projected.
+    // 2) Node-label filters need the label column projected (across all segments).
     let mut label_filters: Vec<(String, String)> = Vec::new(); // (alias, label)
-    for node in &q.nodes {
+    let all_nodes = q
+        .nodes
+        .iter()
+        .chain(q.extra_segments.iter().flat_map(|(ns, _)| ns.iter()));
+    for node in all_nodes {
         if let Some(label) = &node.label {
             let alias = format!("{}_{}", node.var, g.label_col);
             push_proj(&node.var, &g.label_col, alias.clone());
@@ -1085,10 +1139,26 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
         None => format!("[{}]", r.var),
     };
 
-    // A single variable-length hop lowers to `graph-var-match` (endpoint-pair
-    // binding over a bounded recursive traversal); everything else is the
-    // fixed-length `graph-match` chain.
-    let mut kql = if q.rels.len() == 1 && q.rels[0].var_length.is_some() {
+    // Multi-segment (star / tree / disjoint) patterns lower to a general
+    // `graph-match` over comma-separated segments; a single variable-length hop
+    // to `graph-var-match`; everything else to the fixed-length linear chain.
+    let mut kql = if !q.extra_segments.is_empty() {
+        let mut segs = vec![segment_pattern(&q.nodes, &q.rels)?];
+        for (sn, sr) in &q.extra_segments {
+            segs.push(segment_pattern(sn, sr)?);
+        }
+        format!(
+            "{edges} | make-graph {src} --> {dst} with {nodes} on {id} \
+             | graph-match {pattern} project {proj}",
+            edges = g.edge_table,
+            src = g.src_col,
+            dst = g.dst_col,
+            nodes = g.node_table,
+            id = g.id_col,
+            pattern = segs.join(", "),
+            proj = proj_list,
+        )
+    } else if q.rels.len() == 1 && q.rels[0].var_length.is_some() {
         let r = &q.rels[0];
         let (min, max) = r.var_length.unwrap();
         // `a` is the left node, `b` the right; the arrow direction drives the
@@ -1231,17 +1301,33 @@ mod tests {
     }
 
     #[test]
-    fn multi_pattern_rejections() {
-        // Non-chain (disjoint / star) multi-patterns need a join — unsupported.
+    fn star_multi_pattern_lowers_to_multi_segment_graph_match() {
+        // Shared START var `a` (not a chain) → multi-segment graph-match.
+        let kql = tr("MATCH (a)-[r]->(b), (a)-[s]->(c) RETURN a.name, b.name, c.name");
         assert!(
-            tr_err("MATCH (a)-[r]->(b), (c)-[s]->(d) RETURN a.name").contains("non-chain"),
-            "disjoint multi-pattern should be rejected"
+            kql.contains("graph-match (a)-[r]->(b), (a)-[s]->(c)"),
+            "star → comma-separated segments: {kql}"
         );
-        // OPTIONAL MATCH still unsupported.
+        crate::kql_to_sql(&kql).expect("star multi-pattern KQL must compile");
+        // Disjoint patterns are a valid (cartesian) multi-segment match too.
+        let disj = tr("MATCH (a)-[r]->(b), (c)-[s]->(d) RETURN a.name, d.name");
+        assert!(disj.contains("graph-match (a)-[r]->(b), (c)-[s]->(d)"), "{disj}");
+        crate::kql_to_sql(&disj).expect("disjoint multi-pattern KQL must compile");
+    }
+
+    #[test]
+    fn multi_pattern_rejections() {
+        // OPTIONAL MATCH is still unsupported.
         assert!(
             tr_err("MATCH (a)-[r]->(b) OPTIONAL MATCH (b)-[s]->(c) RETURN a.name")
                 .contains("OPTIONAL"),
             "OPTIONAL MATCH should be rejected"
+        );
+        // Variable-length inside a multi-segment pattern is unsupported.
+        assert!(
+            tr_err("MATCH (a)-[r*1..2]->(b), (a)-[s]->(c) RETURN a.name")
+                .contains("variable-length"),
+            "var-length in a multi-segment pattern should be rejected"
         );
     }
 

@@ -233,6 +233,20 @@ async fn cypher_chain_continuation_multi_pattern_is_supported() {
 }
 
 #[tokio::test]
+async fn cypher_star_multi_pattern_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // Star pattern (shared start `a`, not a chain) → multi-segment graph-match
+    // (general join). Must plan + execute end-to-end.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r]->(b), (a)-[s]->(c) RETURN a.name, b.name, c.name LIMIT 5",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::OK, "star multi-pattern cypher, body: {body}");
+}
+
+#[tokio::test]
 async fn cypher_shortest_path_is_supported() {
     let state = seeded_state_with_graph().await;
     // Full path: cypher shortestPath → graph-shortest-path → recursive-CTE SQL →
