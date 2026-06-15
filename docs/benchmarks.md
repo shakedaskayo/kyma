@@ -13,10 +13,12 @@ _Last measured: 2026-04-19. Hardware: 1× macOS laptop, Docker-hosted Postgres +
 > (`kyma-graph-topo`, benchmarked below) plus a Cypher dialect extended with
 > CREATE/MERGE writes, and **query-admission** ops hardening (per-process
 > concurrency cap → `429` + `Retry-After`). The section-1 ingest numbers below
-> predate this and are **not** re-measured here. See `retrieval.md` for the
-> wired-vs-foundation status of each subsystem (e.g. the global SPANN centroid
-> tree, CSR live-traversal activation, and per-tenant quotas are foundation-only
-> today). Release-tier throughput/latency at 100M-row / 1B-edge /
+> predate this and are **not** re-measured here. See `retrieval.md` and
+> `architecture.md` for the per-subsystem status; the global SPANN centroid
+> tree, the CSR-backed graph traversal (var-length + shortestPath), and
+> per-tenant query/agent concurrency + ingest rate limiting are all wired, while
+> a catalog-driven per-tenant quota table and persisted graph snapshots remain.
+> Release-tier throughput/latency at 100M-row / 1B-edge /
 > multi-node / soak scale is pending representative infrastructure; the
 > deterministic **correctness** gates (ANN-recall-vs-oracle, graph
 > differential-vs-petgraph) and the CI-tier **graph-traversal** perf below were
