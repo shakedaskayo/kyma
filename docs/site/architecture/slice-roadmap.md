@@ -47,14 +47,19 @@ units. No clustering, no fan-out, no remote nodes.
 
 **What's still being decided in Slice 1.** Compaction policy
 (specifically: target extent size and merge-tree fan-in) tunes
-against the benchmark suite as it grows. The Phase B custom
-on-disk format — see [Storage format](/architecture/storage-format) —
-replaces the Arrow IPC body inside the existing extent frame; the
-trait contract and the catalog shape don't change.
+against the benchmark suite as it grows. A denser **Parquet** segment
+format has since landed as a second `SegmentFormat` alongside the
+Arrow-IPC TLM format — see [Storage format](/architecture/storage-format) —
+selected with `KYMA_WRITE_FORMAT` and dispatched per extent, so the
+trait contract and the catalog shape are unchanged.
 
 ## Slice 2 — read scale-out
 
-**Status:** committed direction. Trait surface present in Slice 1.
+**Status:** partially landed. Stateless query nodes ship today via the
+[Helm role split](/deploy/helm#scaling-out-the-role-split) (`KYMA_ROLE=edge`)
+behind one catalog and bucket, with snapshot/footer caching. The remaining work
+is cross-node *partial-plan* fan-out (scan + partial-aggregate below the
+exchange boundary) and its multi-node validation at scale.
 
 **Scope.** Multiple stateless query nodes behind a single catalog
 and bucket. The planner assigns per-extent scans across the live
@@ -89,7 +94,12 @@ correctness requirement (Invariant 2).
 
 ## Slice 3 — ingest scale-out
 
-**Status:** committed direction. Router trait present in Slice 1.
+**Status:** partially landed. Staged ingest ships today — set
+`KYMA_INGEST_MODE=staged` and any node stages writes to object storage and acks
+immediately, while a lease-elected **committer** drains the staged extents into
+the catalog in one transaction (deployed as a dedicated role via the
+[Helm role split](/deploy/helm#scaling-out-the-role-split)). The remaining work
+is the multi-node consistent-hash router below and its at-scale validation.
 
 **Scope.** Multiple ingest nodes sharing the same catalog and bucket.
 A consistent-hash router maps each incoming write to the node
