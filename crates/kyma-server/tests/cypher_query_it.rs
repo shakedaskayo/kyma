@@ -246,6 +246,19 @@ async fn cypher_where_or_is_supported() {
 }
 
 #[tokio::test]
+async fn cypher_where_in_list_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // `IN [..]` → KQL `col in (..)` → SQL `IN (..)`; must plan + execute.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r]->(b) WHERE a.name IN ['x', 'y', 'z'] RETURN a.name",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::OK, "WHERE IN-list cypher, body: {body}");
+}
+
+#[tokio::test]
 async fn cypher_count_aggregation_is_supported() {
     let state = seeded_state_with_graph().await;
     // Grouped count → | summarize n = count(*) by a_name; must plan + execute.
