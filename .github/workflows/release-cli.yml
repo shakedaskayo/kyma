@@ -75,16 +75,25 @@ jobs:
             ${{ matrix.artifact }}.tar.gz.sha256
 
   # ── Linux builds (cross-compilation via cross) ───────────────────────────────
+  # Native builds on GitHub's x64 + ARM Linux runners — NOT cross-compilation.
+  # Cross-compiling failed at link time: the C++ ONNX Runtime (ort/fastembed)
+  # and a glibc ≥2.32 symbol (`__libc_single_threaded`) couldn't be satisfied by
+  # cross-rs's older sysroot. A native runner has a current glibc + libstdc++ and
+  # `ort` fetches a matching prebuilt, so the link resolves. OpenSSL is still
+  # vendored (see kyma-cli/Cargo.toml) for a self-contained binary.
   build-linux:
     name: "build (${{ matrix.target }})"
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             artifact: kyma-linux-x64
+            runner: ubuntu-24.04
           - target: aarch64-unknown-linux-gnu
             artifact: kyma-linux-arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
@@ -109,18 +118,19 @@ jobs:
           pnpm --filter @kyma-ai/react build
           pnpm --filter kyma-web build
 
-      - name: Install Rust target + cross
-        run: |
-          rustup target add ${{ matrix.target }}
-          cargo install cross --git https://github.com/cross-rs/cross
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libssl-dev libsasl2-dev libcurl4-openssl-dev zlib1g-dev libzstd-dev protobuf-compiler
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
 
-      - name: Build CLI (cross)
-        run: cross build -p kyma-cli --release --target ${{ matrix.target }}
+      - name: Build CLI
+        run: cargo build -p kyma-cli --release --target ${{ matrix.target }}
 
       - name: Package
         run: |
