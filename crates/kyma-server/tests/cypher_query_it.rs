@@ -219,6 +219,20 @@ async fn graph_analytics_endpoint_dispatches_by_kind() {
 }
 
 #[tokio::test]
+async fn cypher_chain_continuation_multi_pattern_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // `(a)-[r]->(b), (b)-[s]->(c)` continues the chain → merges into one
+    // multi-hop graph-match and must plan + execute (200) end-to-end.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r]->(b), (b)-[s]->(c) RETURN a.name, c.name LIMIT 5",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::OK, "chain-continuation cypher, body: {body}");
+}
+
+#[tokio::test]
 async fn cypher_shortest_path_is_supported() {
     let state = seeded_state_with_graph().await;
     // Full path: cypher shortestPath → graph-shortest-path → recursive-CTE SQL →

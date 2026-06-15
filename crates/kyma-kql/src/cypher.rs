@@ -43,8 +43,14 @@
 //! # Deferred constructs (rejected with a precise error)
 //!
 //! Variable-length inside a multi-hop chain, backward hops inside a multi-hop
-//! chain, `OPTIONAL MATCH`, multiple `MATCH`, `WITH`, `ORDER BY`, aggregation,
-//! `CREATE/SET/DELETE/MERGE`, `RETURN *`.
+//! chain, `OPTIONAL MATCH`, non-chain (star / disjoint) multi-pattern MATCH,
+//! `WITH`, `ORDER BY`, aggregation, `CREATE/SET/DELETE/MERGE`, `RETURN *`.
+//!
+//! Multiple patterns — comma-separated or in successive `MATCH` clauses — ARE
+//! supported when each continues the chain (its first node is the previous
+//! pattern's last node), e.g. `MATCH (a)-[r]->(b), (b)-[s]->(c)` ≡ the chain
+//! `(a)-[r]->(b)-[s]->(c)`. Disjoint / star multi-patterns need a join and stay
+//! deferred.
 //!
 //! `shortestPath` IS supported in the form
 //! `MATCH p = shortestPath((a)-[*..N]->(b)) WHERE a.<id> = '…' AND b.<id> = '…'
@@ -467,9 +473,48 @@ impl Parser {
             ));
         }
 
-        // A second MATCH / OPTIONAL MATCH / WITH before RETURN ⇒ unsupported.
-        if self.peek_kw("MATCH") || self.peek_kw("OPTIONAL") {
-            return Err(unsupported("multiple MATCH clauses"));
+        // Additional patterns — via `,` or a subsequent `MATCH` clause — are
+        // supported when they CONTINUE the chain: the new pattern's first node
+        // is the current last node, e.g. `(a)-[r]->(b), (b)-[s]->(c)` which is
+        // the chain `(a)-[r]->(b)-[s]->(c)`. Non-chain (star / disjoint)
+        // multi-patterns need a join and stay unsupported. shortestPath is
+        // single-pattern, so chaining only applies to the plain MATCH form.
+        if shortest_path.is_none() {
+            loop {
+                let cont = if self.eat(&Tok::Comma) {
+                    true
+                } else if self.peek_kw("MATCH") {
+                    self.eat_kw("MATCH");
+                    true
+                } else {
+                    false
+                };
+                if !cont {
+                    break;
+                }
+                let first = self.parse_node()?;
+                let last_var = nodes.last().map(|n| n.var.clone()).unwrap_or_default();
+                if first.var != last_var {
+                    return Err(unsupported(
+                        "non-chain multi-pattern MATCH (patterns must share the connecting node, \
+                         e.g. `(a)-[r]->(b), (b)-[s]->(c)`)",
+                    ));
+                }
+                // Append the continuation hops; the shared first node is already
+                // the chain's tail, so it is not pushed again.
+                loop {
+                    rels.push(self.parse_rel()?);
+                    nodes.push(self.parse_node()?);
+                    if !matches!(self.peek(), Some(Tok::Dash | Tok::ArrowL)) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // OPTIONAL MATCH, a trailing MATCH after shortestPath, or WITH ⇒ unsupported.
+        if self.peek_kw("OPTIONAL") || self.peek_kw("MATCH") {
+            return Err(unsupported("OPTIONAL MATCH / non-chain multiple MATCH"));
         }
         if self.peek_kw("WITH") {
             return Err(unsupported("WITH"));
@@ -1165,6 +1210,38 @@ mod tests {
         assert!(
             kql.contains("project a.name as a_name, b.name as b_name"),
             "{kql}"
+        );
+    }
+
+    // ---- multi-pattern / multiple MATCH (chain continuation) ----------
+    #[test]
+    fn comma_pattern_continuing_the_chain_merges_into_one_match() {
+        let kql = tr("MATCH (a)-[r]->(b), (b)-[s]->(c) RETURN a.name, c.name");
+        assert!(
+            kql.contains("graph-match (a)-[r]->(b)-[s]->(c)"),
+            "comma-continued chain should merge: {kql}"
+        );
+        crate::kql_to_sql(&kql).expect("merged chain KQL must compile");
+    }
+
+    #[test]
+    fn second_match_clause_continuing_the_chain_merges() {
+        let kql = tr("MATCH (a)-[r]->(b) MATCH (b)-[s]->(c) RETURN a.name");
+        assert!(kql.contains("graph-match (a)-[r]->(b)-[s]->(c)"), "{kql}");
+    }
+
+    #[test]
+    fn multi_pattern_rejections() {
+        // Non-chain (disjoint / star) multi-patterns need a join — unsupported.
+        assert!(
+            tr_err("MATCH (a)-[r]->(b), (c)-[s]->(d) RETURN a.name").contains("non-chain"),
+            "disjoint multi-pattern should be rejected"
+        );
+        // OPTIONAL MATCH still unsupported.
+        assert!(
+            tr_err("MATCH (a)-[r]->(b) OPTIONAL MATCH (b)-[s]->(c) RETURN a.name")
+                .contains("OPTIONAL"),
+            "OPTIONAL MATCH should be rejected"
         );
     }
 
