@@ -219,6 +219,25 @@ async fn graph_analytics_endpoint_dispatches_by_kind() {
 }
 
 #[tokio::test]
+async fn cypher_shortest_path_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // Full path: cypher shortestPath → graph-shortest-path → recursive-CTE SQL →
+    // DataFusion. Schema-only tables ⇒ no path ⇒ null length, still a 200.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH p = shortestPath((a)-[r*1..4]->(b)) WHERE a.id = 'x' AND b.id = 'y' \
+         RETURN length(p)",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "shortestPath cypher should plan + execute, body: {body}"
+    );
+}
+
+#[tokio::test]
 async fn cypher_variable_length_match_is_supported() {
     let state = seeded_state_with_graph().await;
     // Regression guard: `-[*M..N]->` was a 400 ("variable-length not
