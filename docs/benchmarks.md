@@ -16,7 +16,10 @@ _Last measured: 2026-04-19. Hardware: 1× macOS laptop, Docker-hosted Postgres +
 > multi-node / soak scale is pending representative infrastructure; the
 > deterministic **correctness** gates (ANN-recall-vs-oracle, graph
 > differential-vs-petgraph) and the CI-tier **graph-traversal** perf below were
-> validated in-session.
+> validated in-session. **Multi-node read scale-out (S2.4) correctness was
+> re-validated in-session on an isolated throwaway stack: two stateless query
+> nodes over one shared catalog + object store, 20 split ingests → both nodes
+> agree `COUNT(*)=100` / `DISTINCT req_id=20` (no loss, no duplication).**
 >
 > **Graph traversal engine (S3.1/S3.2) — `kyma-graph-bench`, CI tier, dev laptop
 > under load (orders of magnitude, not absolute ceilings):**
