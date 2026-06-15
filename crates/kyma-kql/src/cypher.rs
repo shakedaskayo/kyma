@@ -347,13 +347,22 @@ enum ReturnItem {
         path_var: String,
         alias: Option<String>,
     },
-    /// `RETURN count(*) [AS <alias>]` or `count(<var>) [AS <alias>]` — an
-    /// aggregate; other RETURN items become GROUP BY keys.
-    Count {
-        /// `None` for `count(*)`; `Some(var)` for `count(<var>)`.
-        arg: Option<String>,
+    /// An aggregate `RETURN count(*)|count(<v>)|sum(<v>.<p>)|avg|min|max(…)
+    /// [AS <alias>]`. Other RETURN items become GROUP BY keys.
+    Aggregate {
+        func: String,
+        target: AggTarget,
         alias: Option<String>,
     },
+}
+
+/// The argument of an aggregate: `count(*)`, `count(<var>)`, or
+/// `<func>(<var>.<prop>)`.
+#[derive(Debug, Clone)]
+enum AggTarget {
+    Star,
+    Var(String),
+    Prop(String, String),
 }
 
 #[derive(Debug, Clone)]
@@ -898,29 +907,48 @@ impl Parser {
                 }
                 continue;
             }
-            // `count(*)` / `count(<var>)` — an aggregate.
-            if var.eq_ignore_ascii_case("count") && matches!(self.peek(), Some(Tok::LParen)) {
+            // Aggregates: count(*) | count(<v>) | <func>(<v>.<p>) for
+            // count/sum/avg/min/max.
+            let lf = var.to_ascii_lowercase();
+            if matches!(lf.as_str(), "count" | "sum" | "avg" | "min" | "max")
+                && matches!(self.peek(), Some(Tok::LParen))
+            {
                 self.eat(&Tok::LParen);
-                let arg = if self.eat(&Tok::Star) {
-                    None
+                let target = if self.eat(&Tok::Star) {
+                    AggTarget::Star
                 } else {
-                    Some(self.expect_word()?)
+                    let v = self.expect_word()?;
+                    if self.eat(&Tok::Dot) {
+                        AggTarget::Prop(v, self.expect_word()?)
+                    } else {
+                        AggTarget::Var(v)
+                    }
                 };
                 if !self.eat(&Tok::RParen) {
-                    return Err(ParseError("cypher: expected `)` after count(…)".to_string()));
+                    return Err(ParseError(format!("cypher: expected `)` after {lf}(…)")));
+                }
+                // sum/avg/min/max need a column; only count takes `*` or a bare var.
+                if lf != "count" && !matches!(target, AggTarget::Prop(_, _)) {
+                    return Err(unsupported(&format!(
+                        "{lf}(…) requires a property argument, e.g. {lf}(a.weight)"
+                    )));
                 }
                 let alias = if self.eat_kw("AS") {
                     Some(self.expect_word()?)
                 } else {
                     None
                 };
-                items.push(ReturnItem::Count { arg, alias });
+                items.push(ReturnItem::Aggregate {
+                    func: lf,
+                    target,
+                    alias,
+                });
                 if !self.eat(&Tok::Comma) {
                     break;
                 }
                 continue;
             }
-            // Reject other aggregation / function calls like collect(...) / sum(...).
+            // Reject other aggregation / function calls like collect(...).
             if matches!(self.peek(), Some(Tok::LParen)) {
                 return Err(unsupported("aggregation / function call in RETURN"));
             }
@@ -1186,15 +1214,21 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
                 group_keys.push(format!("{var}_id"));
                 group_keys.push(format!("{var}_label"));
             }
-            ReturnItem::Count { arg, alias } => {
-                let out = alias.clone().unwrap_or_else(|| "count".to_string());
-                let expr = match arg {
-                    None => "count(*)".to_string(),
-                    Some(v) => {
+            ReturnItem::Aggregate { func, target, alias } => {
+                let out = alias.clone().unwrap_or_else(|| func.clone());
+                let expr = match target {
+                    AggTarget::Star => format!("{func}(*)"),
+                    AggTarget::Var(v) => {
                         check_var(v)?;
                         let a = format!("{v}_id");
                         push_proj(v, &g.id_col, a.clone());
-                        format!("count({a})")
+                        format!("{func}({a})")
+                    }
+                    AggTarget::Prop(v, p) => {
+                        check_var(v)?;
+                        let a = format!("{v}_{p}");
+                        push_proj(v, p, a.clone());
+                        format!("{func}({a})")
                     }
                 };
                 aggregates.push(format!("{out} = {expr}"));
@@ -1824,6 +1858,29 @@ mod tests {
         let cv = tr("MATCH (a)-[r]->(b) RETURN a.name, count(b) AS bs");
         assert!(cv.contains("| summarize bs = count(b_id) by a_name"), "{cv}");
         crate::kql_to_sql(&cv).expect("count(var) compiles");
+    }
+
+    #[test]
+    fn sum_avg_min_max_aggregates_over_a_property() {
+        // sum/avg/min/max take a property and group by the non-aggregate items.
+        let s = tr("MATCH (a)-[r]->(b) RETURN a.name, sum(b.weight) AS w");
+        assert!(s.contains("| summarize w = sum(b_weight) by a_name"), "{s}");
+        crate::kql_to_sql(&s).expect("sum compiles");
+        let m = tr("MATCH (a)-[r]->(b) RETURN min(b.weight) AS lo, max(b.weight) AS hi");
+        assert!(
+            m.contains("| summarize lo = min(b_weight), hi = max(b_weight)"),
+            "{m}"
+        );
+        crate::kql_to_sql(&m).expect("min/max compiles");
+        // sum/avg/min/max need a property — sum(*) / sum(<var>) are rejected.
+        assert!(
+            tr_err("MATCH (a)-[r]->(b) RETURN sum(*)").contains("property argument"),
+            "sum(*) rejected"
+        );
+        assert!(
+            tr_err("MATCH (a)-[r]->(b) RETURN avg(b)").contains("property argument"),
+            "avg(<var>) rejected"
+        );
     }
 
     #[test]
