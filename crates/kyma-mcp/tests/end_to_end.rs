@@ -85,7 +85,13 @@ async fn full_mcp_handshake_against_seeded_server() {
         .await
         .unwrap();
     let tools = list["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 27);
+    assert_eq!(tools.len(), 28);
+    assert!(
+        tools
+            .iter()
+            .any(|t| t["name"].as_str() == Some("graph_analytics")),
+        "graph_analytics should be exposed"
+    );
 
     // 4. tools/call list_databases
     let call: Value = client
@@ -106,6 +112,28 @@ async fn full_mcp_handshake_against_seeded_server() {
         .as_array()
         .unwrap();
     assert!(dbs.iter().any(|v| v.as_str() == Some("obs")));
+
+    // 5. tools/call graph_analytics — no graph registered in `obs`, so the tool
+    //    dispatches + resolves and returns a structured "graph not found" (proves
+    //    the wiring end-to-end without needing an ingested graph).
+    let ga: Value = client
+        .post(&base)
+        .bearer_auth("mcp-token")
+        .json(&json!({
+            "jsonrpc":"2.0","id":4,"method":"tools/call",
+            "params":{"name":"graph_analytics",
+                      "arguments":{"database":"obs","graph":"nope","kind":"pagerank"}}
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let ga_err = ga["result"]["structuredContent"]["error"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(ga_err.contains("graph not found"), "got: {ga:?}");
 }
 
 #[tokio::test]
