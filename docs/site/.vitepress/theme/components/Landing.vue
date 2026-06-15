@@ -555,6 +555,10 @@ otel_logs
           <h3>Data Sources</h3>
           <p>Postgres, MySQL, MongoDB. Federate live, or sync via CDC.</p>
         </a>
+        <a class="kyma-section-card" :href="withBase('/deploy/')">
+          <h3>Deploy to production</h3>
+          <p>One binary locally, or scale out on AWS/EKS, Kubernetes (Helm), Terraform, or Pulumi — via <code>kyma deploy</code>.</p>
+        </a>
         <a class="kyma-section-card" :href="withBase('/architecture/architecture')">
           <h3>Architecture</h3>
           <p>The five invariants and how they hold the engine together.</p>

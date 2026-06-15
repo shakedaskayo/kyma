@@ -43,18 +43,33 @@ export default withMermaid(defineConfig({
   themeConfig: {
     logo: '/icons/kyma-mark.svg',
     siteTitle: 'kyma',
+    // Five scannable top-level entries. The capability pages (ingest/query/
+    // data-sources/agent/embed) collapse into a "Guides" dropdown and the
+    // learning material into "Learn", so the two things an operator looks for —
+    // getting started and shipping to production — stay as prominent standalone
+    // items (Quickstart, Deploy) rather than getting lost in a long flat bar.
     nav: [
       { text: 'Quickstart', link: '/quickstart/' },
-      { text: 'Concepts', link: '/concepts/' },
-      { text: 'Ingest', link: '/ingest/' },
-      { text: 'Query', link: '/query/' },
-      { text: 'Data Sources', link: '/data-sources/' },
+      {
+        text: 'Guides',
+        items: [
+          { text: 'Ingest data',     link: '/ingest/' },
+          { text: 'Query',           link: '/query/' },
+          { text: 'Data sources',    link: '/data-sources/' },
+          { text: 'Agent & memory',  link: '/agent/' },
+          { text: 'Embed (React SDK)', link: '/embed/' },
+        ],
+      },
       { text: 'Deploy', link: '/deploy/' },
-      { text: 'Agent', link: '/agent/' },
-      { text: 'Embed', link: '/embed/' },
       { text: 'Reference', link: '/reference/' },
-      { text: 'Architecture', link: '/architecture/' },
-      { text: 'Use cases', link: '/use-cases/' },
+      {
+        text: 'Learn',
+        items: [
+          { text: 'Concepts',     link: '/concepts/' },
+          { text: 'Architecture', link: '/architecture/' },
+          { text: 'Use cases',    link: '/use-cases/' },
+        ],
+      },
     ],
     sidebar: {
       '/quickstart/':    [{ text: 'Quickstart',    items: [
