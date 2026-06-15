@@ -1,6 +1,6 @@
 ---
 title: Environment variables
-description: Every KYMA_* environment variable the binary reads, grouped by area — catalog, storage, HTTP, gRPC, OTLP, auth, staging, compaction, data sources, agent, local engine, node daemon, memory, cloud sync.
+description: Every KYMA_* environment variable the binary reads, grouped by area — catalog, roles & scale-out, query limits & admission control, storage, HTTP, gRPC, OTLP, auth, staging, rate limiting, compaction, data sources, agent, local engine, node daemon, memory, cloud sync.
 ---
 
 # Environment variables
@@ -19,6 +19,19 @@ engine / node daemon; **SC** = both.
 | Name                      | Side | Default                                              | Purpose                                                                            |
 | ------------------------- | ---- | ---------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `KYMA_CATALOG_URL`        | SC   | `postgres://kyma:kyma_dev@localhost:5433/kyma`       | Postgres connection URL for the catalog. Used by `kyma-bin` and admin subcommands. |
+| `KYMA_PG_MAX_CONNS`       | S    | `16`                                                 | Catalog connection-pool size. Raise for many concurrent query/ingest nodes against one catalog. |
+| `KYMA_PG_ACQUIRE_TIMEOUT_SECS` | S | `10`                                               | How long a request waits for a free pool connection before erroring.               |
+
+## Roles and scale-out
+
+Knobs for running more than one engine pod against a catalog. By default a node
+is `all_in_one` (single-writer); see [Deploy with Helm → role split](/deploy/helm#scaling-out-the-role-split).
+
+| Name                 | Side | Default      | Purpose                                                                                              |
+| -------------------- | ---- | ------------ | ---------------------------------------------------------------------------------------------------- |
+| `KYMA_ROLE`          | S    | `all_in_one` | Which components this node runs. `all_in_one` (or unset/unknown) = everything; `edge`/`query`/`ingest` = stateless HTTP only (no committer, no background jobs); `committer` = the commit loop only; `worker`/`compaction` = background jobs only. |
+| `KYMA_INGEST_MODE`   | S    | _sync_       | Set to `staged` to stage writes to object storage and ack immediately, leaving the commit to the (possibly separate) committer node. Required for the role split to offload commits. |
+| `KYMA_WRITE_FORMAT`  | S    | `tlm`        | Segment format for newly written extents: `tlm` (Arrow IPC) or `parquet` (ZSTD + encodings + blooms). Reads dispatch per-extent, so old extents stay readable after a flip; compaction migrates them. |
 
 ## HTTP server
 
@@ -28,6 +41,26 @@ engine / node daemon; **SC** = both.
 | `KYMA_LOCAL_HTTP_ADDR`       | C    | `127.0.0.1:7777`       | Listen address for `kyma serve` (local single-binary).   |
 | `KYMA_SCHEMA_CACHE_TTL_SECS` | S    | `5`                    | TTL for the `GET /v1/catalog/schema` server-side cache.  |
 | `KYMA_CORS_ALLOWED_ORIGINS`  | S    | _permissive (dev)_     | Comma-separated allowed origins for CORS. Unset → permissive (dev only); always set in production. |
+
+## Query limits & admission control
+
+Per-query resource ceilings and node-level backpressure. The budget caps are
+deployment-wide defaults; per-request headers may lower them further. Admission
+limits are **off by default** (unset/`0` ⇒ unlimited) — set them to convert
+overload into a fast `429 Too Many Requests` + `Retry-After` instead of OOM or
+latency collapse.
+
+| Name                                  | Side | Default        | Purpose                                                                                |
+| ------------------------------------- | ---- | -------------- | -------------------------------------------------------------------------------------- |
+| `KYMA_QUERY_MEMORY_BYTES`             | S    | `4294967296` (4 GiB) | Per-query DataFusion memory pool. Over-budget queries spill instead of OOM-ing.   |
+| `KYMA_QUERY_WALL_MS`                  | S    | `300000` (5 min) | Per-query wall-clock deadline (ms).                                                  |
+| `KYMA_QUERY_OBJECT_STORE_BYTES`       | S    | `10737418240` (10 GiB) | Per-query cap on bytes fetched from object storage.                            |
+| `KYMA_QUERY_MAX_CONCURRENT`           | S    | `0` (unlimited) | Max in-flight queries on this node. Excess → `429` + `Retry-After`.                   |
+| `KYMA_QUERY_RETRY_AFTER_SECS`         | S    | `1`            | `Retry-After` advertised when query admission rejects.                                 |
+| `KYMA_QUERY_MAX_CONCURRENT_PER_TENANT`| S    | `0` (unlimited) | Per-tenant in-flight query cap — one tenant saturating its budget can't starve others. |
+| `KYMA_AGENT_MAX_CONCURRENT`           | S    | `0` (unlimited) | Max concurrent agent runs on this node.                                               |
+| `KYMA_AGENT_RETRY_AFTER_SECS`         | S    | `1`            | `Retry-After` advertised when agent-run admission rejects.                             |
+| `KYMA_AGENT_MAX_CONCURRENT_PER_TENANT`| S    | `0` (unlimited) | Per-tenant concurrent agent-run cap.                                                   |
 
 ## gRPC (Arrow Flight)
 
@@ -132,6 +165,16 @@ Keycloak, etc.) and maps claims to kyma roles.
 | `KYMA_COMMIT_WINDOW_MS`    | S    | `5`            | Commit-coordinator window. Flushes within this window land in one snapshot.              |
 | `KYMA_COMMIT_MAX_EXTENTS`  | S    | `128`          | Maximum extents the coordinator collapses into a single snapshot.                        |
 
+### Ingest rate limiting
+
+Per-database token bucket on the ingest path. Off by default — set the rate to
+turn ingest overload into a `429` + `Retry-After` instead of unbounded queueing.
+
+| Name                     | Side | Default        | Purpose                                                                                  |
+| ------------------------ | ---- | -------------- | ---------------------------------------------------------------------------------------- |
+| `KYMA_INGEST_RATE_RPS`   | S    | `0` (off)      | Steady-state requests/sec per database. `0` or unset ⇒ unlimited.                        |
+| `KYMA_INGEST_RATE_BURST` | S    | `2 × rps`      | Token-bucket burst cap (min 1). Only meaningful when `KYMA_INGEST_RATE_RPS` is set.      |
+
 ## Compaction, retention, GC
 
 | Name                              | Side | Default       | Purpose                                                                       |
@@ -142,6 +185,11 @@ Keycloak, etc.) and maps claims to kyma roles.
 | `KYMA_RETENTION_POLL_SECS`        | S    | _bin default_ | Retention sweeper poll interval (seconds).                                    |
 | `KYMA_PHYSICAL_GC_POLL_SECS`      | S    | _bin default_ | Physical-delete worker poll interval (seconds).                               |
 | `KYMA_PHYSICAL_GC_GRACE_SECS`     | S    | _bin default_ | Grace period between soft-delete and hard-delete (seconds).                   |
+| `KYMA_ARTIFACT_GC_POLL_SECS`      | S    | `300`         | Poll interval for the artifact-retention sweeper + artifact-graph/content-index sync. |
+| `KYMA_ARTIFACT_GC_GRACE_SECS`     | S    | _bin default_ | Grace period before expired object-store artifacts are physically deleted.    |
+
+All of these run only on job-running roles (`all_in_one` / `worker`); see
+[Roles & scale-out](#roles-and-scale-out).
 
 ## File-drop
 
@@ -250,6 +298,15 @@ deduplication / staleness review).
 | `KYMA_MEMORY_CONSOLIDATION`       | S    | `1` (on)  | `0` disables the background memory-consolidation worker.                                   |
 | `KYMA_MEMORY_CONSOLIDATION_POLL_SECS` | S | _bin default_ | Poll interval for the memory consolidation background task.                           |
 | `KYMA_SESSION_SUMMARY_EVERY`      | S    | `12`      | Refresh the rolling session summary every N turns.                                         |
+| `KYMA_CI_CORRELATE`               | S    | `1` (on)  | `0` disables the CI failure-correlation pipeline (writes recurring-failure memories).      |
+| `KYMA_CI_CORRELATE_POLL_SECS`     | S    | _bin default_ | Poll interval for the CI-correlation pipeline.                                         |
+| `KYMA_FILE_PROMOTE`               | S    | `1` (on)  | `0` disables the file-candidate promotion pipeline (stitches contributed File nodes to live repo nodes). |
+| `KYMA_FILE_PROMOTE_POLL_SECS`     | S    | _bin default_ | Poll interval for the file-promotion pipeline.                                         |
+| `KYMA_MEMORY_PPR`                 | S    | `0` (off) | `1`/`true` rescores recall with personalized PageRank over the memory graph (else hop-decay proximity). Capability is shipped; enabling-by-default is gated on benchmark uplift. |
+| `KYMA_MEMORY_CLASS_DECAY`         | S    | `0` (off) | `1`/`true` applies memory-class-aware recency decay (episodic short half-life, semantic invalidation-only). Default keeps the uniform recency term. |
+
+The consolidation / CI-correlate / file-promote pipelines run only on
+job-running roles (`all_in_one` / `worker`); see [Roles & scale-out](#roles-and-scale-out).
 
 ## Agent
 
