@@ -233,6 +233,19 @@ async fn cypher_chain_continuation_multi_pattern_is_supported() {
 }
 
 #[tokio::test]
+async fn cypher_count_aggregation_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // Grouped count → | summarize n = count(*) by a_name; must plan + execute.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r]->(b) RETURN a.name, count(*) AS n",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::OK, "count aggregation cypher, body: {body}");
+}
+
+#[tokio::test]
 async fn cypher_order_by_and_distinct_are_supported() {
     let state = seeded_state_with_graph().await;
     // RETURN DISTINCT + ORDER BY + LIMIT → | distinct | sort by | take; must

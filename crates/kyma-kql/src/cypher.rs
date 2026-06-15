@@ -347,6 +347,13 @@ enum ReturnItem {
         path_var: String,
         alias: Option<String>,
     },
+    /// `RETURN count(*) [AS <alias>]` or `count(<var>) [AS <alias>]` — an
+    /// aggregate; other RETURN items become GROUP BY keys.
+    Count {
+        /// `None` for `count(*)`; `Some(var)` for `count(<var>)`.
+        arg: Option<String>,
+        alias: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -891,7 +898,29 @@ impl Parser {
                 }
                 continue;
             }
-            // Reject other aggregation / function calls like count(...) / collect(...).
+            // `count(*)` / `count(<var>)` — an aggregate.
+            if var.eq_ignore_ascii_case("count") && matches!(self.peek(), Some(Tok::LParen)) {
+                self.eat(&Tok::LParen);
+                let arg = if self.eat(&Tok::Star) {
+                    None
+                } else {
+                    Some(self.expect_word()?)
+                };
+                if !self.eat(&Tok::RParen) {
+                    return Err(ParseError("cypher: expected `)` after count(…)".to_string()));
+                }
+                let alias = if self.eat_kw("AS") {
+                    Some(self.expect_word()?)
+                } else {
+                    None
+                };
+                items.push(ReturnItem::Count { arg, alias });
+                if !self.eat(&Tok::Comma) {
+                    break;
+                }
+                continue;
+            }
+            // Reject other aggregation / function calls like collect(...) / sum(...).
             if matches!(self.peek(), Some(Tok::LParen)) {
                 return Err(unsupported("aggregation / function call in RETURN"));
             }
@@ -1137,18 +1166,38 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     };
 
     // 1) RETURN items first, so user-facing columns come first in `_gm_result`.
+    //    `count(...)` items become summarize aggregates; the other items become
+    //    both projected columns and the GROUP BY keys.
+    let mut aggregates: Vec<String> = Vec::new();
+    let mut group_keys: Vec<String> = Vec::new();
     for item in &q.returns {
         match item {
             ReturnItem::Prop { var, prop, alias } => {
                 check_var(var)?;
                 let out = alias.clone().unwrap_or_else(|| format!("{var}_{prop}"));
-                push_proj(var, prop, out);
+                push_proj(var, prop, out.clone());
+                group_keys.push(out);
             }
             ReturnItem::Var { var } => {
                 check_var(var)?;
                 // Bare var → id + label columns.
                 push_proj(var, &g.id_col, format!("{var}_id"));
                 push_proj(var, &g.label_col, format!("{var}_label"));
+                group_keys.push(format!("{var}_id"));
+                group_keys.push(format!("{var}_label"));
+            }
+            ReturnItem::Count { arg, alias } => {
+                let out = alias.clone().unwrap_or_else(|| "count".to_string());
+                let expr = match arg {
+                    None => "count(*)".to_string(),
+                    Some(v) => {
+                        check_var(v)?;
+                        let a = format!("{v}_id");
+                        push_proj(v, &g.id_col, a.clone());
+                        format!("count({a})")
+                    }
+                };
+                aggregates.push(format!("{out} = {expr}"));
             }
             ReturnItem::PathLength { .. } => {
                 // `length(<path>)` is only meaningful in a shortestPath query,
@@ -1191,9 +1240,18 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     }
 
     if projections.is_empty() {
-        return Err(ParseError(
-            "cypher: RETURN must project at least one column".to_string(),
-        ));
+        if aggregates.is_empty() {
+            return Err(ParseError(
+                "cypher: RETURN must project at least one column".to_string(),
+            ));
+        }
+        // `count(*)` with no group keys: the graph-match still needs a column,
+        // so project the first node's id (the summarize ignores it).
+        projections.push(Projection {
+            var: q.nodes[0].var.clone(),
+            col: g.id_col.clone(),
+            alias: format!("{}_id", q.nodes[0].var),
+        });
     }
 
     // ---- project list ---- (shared by the graph-match and graph-var-match arms)
@@ -1306,6 +1364,20 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     filters.extend(where_clauses);
     for f in filters {
         kql.push_str(&format!(" | where {f}"));
+    }
+
+    // count(...) aggregates run after the row filters: group the non-aggregate
+    // RETURN items, count per group (or globally when there are no group keys).
+    if !aggregates.is_empty() {
+        if group_keys.is_empty() {
+            kql.push_str(&format!(" | summarize {}", aggregates.join(", ")));
+        } else {
+            kql.push_str(&format!(
+                " | summarize {} by {}",
+                aggregates.join(", "),
+                group_keys.join(", ")
+            ));
+        }
     }
 
     // RETURN DISTINCT → distinct rows; ORDER BY → sort; LIMIT → take. Distinct
@@ -1730,6 +1802,28 @@ mod tests {
         let err = cypher_to_kql("OPTIONAL MATCH (a)-[r]->(b) RETURN a.name", &binding());
         let msg = err.unwrap_err().0;
         assert!(msg.contains("OPTIONAL MATCH"), "{msg}");
+    }
+
+    #[test]
+    fn count_aggregation_lowers_to_summarize() {
+        // Grouped count: non-aggregate items become GROUP BY keys.
+        let grouped = tr("MATCH (a)-[r]->(b) RETURN a.name, count(*) AS n");
+        assert!(
+            grouped.contains("| summarize n = count(*) by a_name"),
+            "grouped count: {grouped}"
+        );
+        crate::kql_to_sql(&grouped).expect("grouped count compiles");
+        // Global count: no group keys, throwaway projection keeps graph-match valid.
+        let global = tr("MATCH (a)-[r]->(b) RETURN count(*)");
+        assert!(
+            global.contains("| summarize count = count(*)") && !global.contains("count = count(*) by"),
+            "global count: {global}"
+        );
+        crate::kql_to_sql(&global).expect("global count compiles");
+        // count(<var>) counts that var's id.
+        let cv = tr("MATCH (a)-[r]->(b) RETURN a.name, count(b) AS bs");
+        assert!(cv.contains("| summarize bs = count(b_id) by a_name"), "{cv}");
+        crate::kql_to_sql(&cv).expect("count(var) compiles");
     }
 
     #[test]
