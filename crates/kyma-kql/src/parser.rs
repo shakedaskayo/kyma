@@ -1193,6 +1193,14 @@ impl<'s> Parser<'s> {
                 break;
             }
         }
+
+        // A following comma starts another pattern segment → general (possibly
+        // non-linear: star / tree / cyclic / disjoint) join over shared node
+        // variables. Single-segment patterns keep the historical linear lowering
+        // below, emitted byte-for-byte.
+        if matches!(self.peek(), Some(Token::Comma)) {
+            return self.emit_general_graph_match(&def, nodes, edges);
+        }
         let single = edges.len() == 1;
 
         // Required: project <var>.<col> [as <alias>], …
@@ -1291,6 +1299,175 @@ impl<'s> Parser<'s> {
             };
             format!("SELECT {sel} FROM {from}{where_clause}")
         };
+        self.state
+            .ctes
+            .push(("_gm_result".to_string(), body, false));
+        self.state.table = "_gm_result".to_string();
+        Ok(())
+    }
+
+    /// Multi-segment `graph-match`: `(a)-[r]->(b), (b)-[s]->(c)` and friends.
+    /// Builds a general join over the pattern's node + edge variables — same var
+    /// ⇒ same table alias ⇒ the join expresses arbitrary topology (star, tree,
+    /// cyclic). A segment that shares no variable becomes a `CROSS JOIN`
+    /// (Cypher's cartesian-product semantics for disjoint patterns). The first
+    /// segment is already parsed and handed in as `nodes` + `edges`.
+    fn emit_general_graph_match(
+        &mut self,
+        def: &crate::state::GraphDef,
+        nodes: Vec<String>,
+        edges: Vec<(String, Option<String>)>,
+    ) -> Result<(), ParseError> {
+        // General representation: unique node vars (first-seen) + edges carrying
+        // their endpoint variable names.
+        let mut node_vars: Vec<String> = Vec::new();
+        fn push_node(nv: &mut Vec<String>, v: &str) {
+            if !nv.iter().any(|x| x == v) {
+                nv.push(v.to_string());
+            }
+        }
+        for n in &nodes {
+            push_node(&mut node_vars, n);
+        }
+        let mut edge_list: Vec<(String, Option<String>, String, String)> = Vec::new();
+        for (i, (ev, et)) in edges.iter().enumerate() {
+            edge_list.push((ev.clone(), et.clone(), nodes[i].clone(), nodes[i + 1].clone()));
+        }
+
+        // Parse the remaining `, (x)-[e]->(y)…` segments.
+        while self.eat(&Token::Comma) {
+            self.expect(&Token::LParen, "(")?;
+            let mut prev = self.expect_ident()?;
+            self.expect(&Token::RParen, ")")?;
+            push_node(&mut node_vars, &prev);
+            self.expect(&Token::Minus, "-")?;
+            loop {
+                self.expect(&Token::LBracket, "[")?;
+                let ev = self.expect_ident()?;
+                let et = if self.eat(&Token::Colon) {
+                    Some(self.expect_ident()?)
+                } else {
+                    None
+                };
+                self.expect(&Token::RBracket, "]")?;
+                self.expect(&Token::RightArrow, "->")?;
+                self.expect(&Token::LParen, "(")?;
+                let nxt = self.expect_ident()?;
+                self.expect(&Token::RParen, ")")?;
+                push_node(&mut node_vars, &nxt);
+                edge_list.push((ev, et, prev.clone(), nxt.clone()));
+                prev = nxt;
+                if !self.eat(&Token::Minus) {
+                    break;
+                }
+            }
+        }
+
+        // project <var>.<col> [as <alias>], … — node vars → `gn{i}`, edges → `ge{i}`.
+        self.expect_ident_eq("project")?;
+        let npos = |v: &str| node_vars.iter().position(|x| x == v);
+        let epos = |v: &str| edge_list.iter().position(|(e, _, _, _)| e == v);
+        let mut select_items: Vec<String> = Vec::new();
+        loop {
+            let var = self.expect_ident()?;
+            self.expect(&Token::Dot, ".")?;
+            let col = self.expect_ident()?;
+            let alias_tbl = if let Some(i) = npos(&var) {
+                format!("gn{i}")
+            } else if let Some(i) = epos(&var) {
+                format!("ge{i}")
+            } else {
+                return Err(ParseError(format!(
+                    "graph-match project: unknown variable `{var}`"
+                )));
+            };
+            let out_alias = if self.eat_ident_eq("as") {
+                self.expect_ident()?
+            } else {
+                format!("{var}_{col}")
+            };
+            select_items.push(format!(
+                "{alias_tbl}.{} AS {}",
+                quote_ident(&col),
+                quote_ident(&out_alias)
+            ));
+            if !self.eat(&Token::Comma) {
+                break;
+            }
+        }
+        if select_items.is_empty() {
+            return Err(ParseError(
+                "graph-match: project must list at least one column".into(),
+            ));
+        }
+
+        let sel = select_items.join(", ");
+        let edges_tbl = &def.edge_table;
+        let nodes_tbl = &def.node_table;
+        let src = quote_ident(&def.src_col);
+        let dst = quote_ident(&def.dst_col);
+        let id = quote_ident(&def.id_col);
+
+        // Join incrementally over edges, materializing a node alias the first
+        // time an incident edge is joined. An edge whose endpoints are both
+        // already joined just closes the cycle; one sharing nothing yet is a
+        // CROSS JOIN.
+        let mut joined: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        let mut from = String::new();
+        for (ei, (_ev, _et, sv, dv)) in edge_list.iter().enumerate() {
+            let si = npos(sv).expect("edge src var is a known node");
+            let di = npos(dv).expect("edge dst var is a known node");
+            if ei == 0 {
+                from = format!(
+                    "{edges_tbl} ge0 \
+                     JOIN {nodes_tbl} gn{si} ON ge0.{src} = gn{si}.{id} \
+                     JOIN {nodes_tbl} gn{di} ON ge0.{dst} = gn{di}.{id}"
+                );
+                joined.insert(si);
+                joined.insert(di);
+                continue;
+            }
+            let mut conds: Vec<String> = Vec::new();
+            if joined.contains(&si) {
+                conds.push(format!("ge{ei}.{src} = gn{si}.{id}"));
+            }
+            if joined.contains(&di) {
+                conds.push(format!("ge{ei}.{dst} = gn{di}.{id}"));
+            }
+            if conds.is_empty() {
+                from.push_str(&format!(" CROSS JOIN {edges_tbl} ge{ei}"));
+            } else {
+                from.push_str(&format!(
+                    " JOIN {edges_tbl} ge{ei} ON {}",
+                    conds.join(" AND ")
+                ));
+            }
+            if !joined.contains(&si) {
+                from.push_str(&format!(
+                    " JOIN {nodes_tbl} gn{si} ON ge{ei}.{src} = gn{si}.{id}"
+                ));
+                joined.insert(si);
+            }
+            if !joined.contains(&di) {
+                from.push_str(&format!(
+                    " JOIN {nodes_tbl} gn{di} ON ge{ei}.{dst} = gn{di}.{id}"
+                ));
+                joined.insert(di);
+            }
+        }
+
+        let mut wheres: Vec<String> = Vec::new();
+        for (ei, (_ev, et, _sv, _dv)) in edge_list.iter().enumerate() {
+            if let Some(t) = et {
+                wheres.push(format!(r#"ge{ei}."type" = '{}'"#, t.replace('\'', "''")));
+            }
+        }
+        let where_clause = if wheres.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", wheres.join(" AND "))
+        };
+        let body = format!("SELECT {sel} FROM {from}{where_clause}");
         self.state
             .ctes
             .push(("_gm_result".to_string(), body, false));
@@ -2225,6 +2402,31 @@ mod tests {
         ).expect("1-hop parse");
         assert!(sql.contains("e.caller = a.id") && sql.contains("e.callee = b.id"), "single-hop aliases e/a/b: {sql}");
         assert!(!sql.contains("ed0") && !sql.contains("n0"), "single-hop must NOT use positional aliases: {sql}");
+    }
+
+    #[test]
+    fn multi_segment_graph_match_builds_a_shared_var_join() {
+        // Star pattern: (a)-[r]->(b), (a)-[s]->(c) — `a` is shared, so both
+        // edges' src endpoints must join the SAME node alias.
+        let sql = kql_to_sql(
+            r#"e | make-graph src --> dst with nodes on id | graph-match (a)-[r]->(b), (a)-[s]->(c) project a.id, b.id, c.id"#
+        ).expect("multi-segment parse");
+        // a → gn0, b → gn1, c → gn2; r → ge0, s → ge1.
+        assert!(sql.contains("ge0.src = gn0.id"), "edge0 src joins a: {sql}");
+        assert!(sql.contains("ge1.src = gn0.id"), "edge1 src ALSO joins shared a: {sql}");
+        assert!(sql.contains("ge0.dst = gn1.id") && sql.contains("ge1.dst = gn2.id"), "{sql}");
+    }
+
+    #[test]
+    fn multi_segment_graph_match_typed_and_cyclic_compile() {
+        // Cyclic pattern (a)-[r]->(b), (b)-[s]->(a) with a type filter must
+        // close the cycle and compile to valid SQL.
+        let sql = kql_to_sql(
+            r#"e | make-graph src --> dst with nodes on id | graph-match (a)-[r:KNOWS]->(b), (b)-[s]->(a) project a.id, b.id"#
+        ).expect("cyclic parse + compile");
+        assert!(sql.contains(r#"ge0."type" = 'KNOWS'"#), "type filter on ge0: {sql}");
+        // The second edge's endpoints are both already joined → it closes the cycle.
+        assert!(sql.contains("ge1.src = gn1.id") && sql.contains("ge1.dst = gn0.id"), "{sql}");
     }
 
     #[test]
