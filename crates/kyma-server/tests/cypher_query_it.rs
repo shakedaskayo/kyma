@@ -301,6 +301,20 @@ async fn cypher_string_operators_are_supported() {
 }
 
 #[tokio::test]
+async fn cypher_collect_aggregation_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // collect(prop) → KQL make_list → SQL array_agg, grouped by a.name;
+    // must plan + execute end-to-end.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r]->(b) RETURN a.name, collect(b.name) AS bs",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::OK, "collect aggregation cypher, body: {body}");
+}
+
+#[tokio::test]
 async fn cypher_count_aggregation_is_supported() {
     let state = seeded_state_with_graph().await;
     // Grouped count → | summarize n = count(*) by a_name; must plan + execute.

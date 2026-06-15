@@ -1153,9 +1153,9 @@ impl Parser {
                 continue;
             }
             // Aggregates: count(*) | count(<v>) | <func>(<v>.<p>) for
-            // count/sum/avg/min/max.
+            // count/sum/avg/min/max, plus collect(<v>.<p>) → list aggregation.
             let lf = var.to_ascii_lowercase();
-            if matches!(lf.as_str(), "count" | "sum" | "avg" | "min" | "max")
+            if matches!(lf.as_str(), "count" | "sum" | "avg" | "min" | "max" | "collect")
                 && matches!(self.peek(), Some(Tok::LParen))
             {
                 self.eat(&Tok::LParen);
@@ -1466,19 +1466,22 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
             }
             ReturnItem::Aggregate { func, target, alias } => {
                 let out = alias.clone().unwrap_or_else(|| func.clone());
+                // Cypher `collect` → KQL `make_list` (→ SQL `array_agg`); the
+                // rest share their name with the KQL/SQL aggregate.
+                let kfn = if func == "collect" { "make_list" } else { func.as_str() };
                 let expr = match target {
-                    AggTarget::Star => format!("{func}(*)"),
+                    AggTarget::Star => format!("{kfn}(*)"),
                     AggTarget::Var(v) => {
                         check_var(v)?;
                         let a = format!("{v}_id");
                         push_proj(v, &g.id_col, a.clone());
-                        format!("{func}({a})")
+                        format!("{kfn}({a})")
                     }
                     AggTarget::Prop(v, p) => {
                         check_var(v)?;
                         let a = format!("{v}_{p}");
                         push_proj(v, p, a.clone());
-                        format!("{func}({a})")
+                        format!("{kfn}({a})")
                     }
                 };
                 aggregates.push(format!("{out} = {expr}"));
@@ -2243,6 +2246,15 @@ mod tests {
             "{m}"
         );
         crate::kql_to_sql(&m).expect("min/max compiles");
+        // collect(prop) → KQL make_list → SQL array_agg, grouped by the keys.
+        let c = tr("MATCH (a)-[r]->(b) RETURN a.name, collect(b.name) AS bs");
+        assert!(c.contains("| summarize bs = make_list(b_name) by a_name"), "{c}");
+        crate::kql_to_sql(&c).expect("collect compiles to array_agg");
+        // collect needs a property argument (like sum/avg/min/max).
+        assert!(
+            tr_err("MATCH (a)-[r]->(b) RETURN collect(b)").contains("property argument"),
+            "collect(<var>) rejected"
+        );
         // sum/avg/min/max need a property — sum(*) / sum(<var>) are rejected.
         assert!(
             tr_err("MATCH (a)-[r]->(b) RETURN sum(*)").contains("property argument"),
