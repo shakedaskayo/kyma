@@ -330,6 +330,18 @@ embedding backend at startup.
 
 `gemini` reads the API key from `GOOGLE_API_KEY` (fixed).
 
+### Cross-encoder reranker
+
+Optional final reranking stage for hybrid search + memory recall. Off unless
+`KYMA_RERANK_MODEL` is set; when configured, the top fused results are re-scored
+by a cross-encoder before returning.
+
+| Name                    | Side | Default | Purpose                                                                            |
+| ----------------------- | ---- | ------- | ---------------------------------------------------------------------------------- |
+| `KYMA_RERANK_MODEL`     | SC   | _unset_ | fastembed reranker model id (e.g. `bge-reranker-base`). Unset ⇒ no reranking.      |
+| `KYMA_RERANK_MODEL_PATH`| SC   | _unset_ | Local model path override for the reranker.                                        |
+| `KYMA_RERANK_POOL_SIZE` | SC   | `1`     | Number of reranker inference instances (parallel ONNX sessions).                   |
+
 ## UI / icon gallery
 
 | Name                | Side | Default | Purpose                                                                                      |

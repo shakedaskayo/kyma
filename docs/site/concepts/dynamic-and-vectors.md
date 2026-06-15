@@ -100,8 +100,10 @@ kyma-cli create-table embeddings \
 ### Storage
 
 Vectors are stored as Arrow `FixedSizeList<Float32, N>`. Per-extent
-column statistics include centroid, bounding box, and (when an ANN
-index is built — see roadmap) HNSW or IVF metadata.
+column statistics include centroid and bounding box. An IVF + RaBitQ
+**ANN sidecar** is built per extent automatically (see below); it lives
+beside the extent as a separate object keyed by extent id, so it works
+identically over both the TLM and Parquet segment formats.
 
 ### Distance UDFs
 
@@ -125,16 +127,34 @@ Available UDFs:
 
 Dimensions are checked at query time; mismatches fail loudly.
 
-### Without an ANN index
+### Exact search and the ANN index
 
-Today, vector search is exact: every candidate row gets a distance
-calculation. With time-range and metadata filters, this is usually
-fast enough — pruning eliminates most extents before any vector math
-runs.
+The distance UDFs above are always **exact** — every candidate row gets a
+real distance calculation. With time-range and metadata filters that's often
+fast enough on its own: the [pruning cascade](/query/pruning-and-performance)
+eliminates most extents before any vector math runs, and the exact path is also
+the correctness oracle.
 
-For tables with millions of vectors and no good prefilter, exact search
-becomes the bottleneck. ANN indices (HNSW) land in a later milestone;
-the trait surface (`SegmentFormat::vector_index`) is already in place.
+For high-recall top-k over large tables, each extent also carries an **IVF +
+RaBitQ ANN sidecar**, built automatically:
+
+- A background job builds an `ivf_rabitq` sidecar for any vector column whose
+  extent doesn't have one yet (the same scheduler also builds Tantivy BM25
+  sidecars for text columns). This runs on job-running nodes in server mode and
+  in-process under `kyma serve` — **local mode has the full ANN story**; only
+  the cross-node global centroid tree is server-only.
+- Each sidecar holds `nlist = clamp(round(√rows), 16, 256)` IVF centroids plus
+  1-bit RaBitQ codes with correction factors.
+- A top-k vector query probes the nearest centroids, scans the compact RaBitQ
+  codes, then **re-ranks the candidate pool with the exact distance** — so the
+  index accelerates recall without changing the final ordering. Extents without
+  a sidecar (just-written, or below the build threshold) fall back to the exact
+  scan, so results are always correct while sidecars catch up.
+
+Hybrid search (`POST /v1/search`) fuses the vector leg with the BM25 lexical leg
+(RRF), and — when a [cross-encoder reranker](/reference/env#embeddings) is
+configured (`KYMA_RERANK_MODEL`) — adds a final reranking stage over the fused
+top results.
 
 ### Loading vectors
 
