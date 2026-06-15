@@ -301,6 +301,22 @@ async fn cypher_string_operators_are_supported() {
 }
 
 #[tokio::test]
+async fn cypher_with_aggregation_having_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // WITH drives the summarize; the WITH WHERE is a HAVING on the aggregate;
+    // RETURN/ORDER BY/LIMIT reference the post-summarize columns. Must plan +
+    // execute end-to-end.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r]->(b) WITH a.name, count(b) AS deg WHERE deg > 1 \
+         RETURN a.name, deg ORDER BY deg DESC LIMIT 10",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::OK, "WITH aggregation+HAVING cypher, body: {body}");
+}
+
+#[tokio::test]
 async fn cypher_collect_aggregation_is_supported() {
     let state = seeded_state_with_graph().await;
     // collect(prop) → KQL make_list → SQL array_agg, grouped by a.name;

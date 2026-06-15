@@ -499,6 +499,32 @@ struct Query {
     /// `ORDER BY <var>.<prop> [ASC|DESC]` items (`desc` true ⇒ descending) →
     /// a trailing `| sort by …`.
     order_by: Vec<(String, String, bool)>,
+    /// `WITH <keys/aggregates> [WHERE <having>] RETURN …` — when present, the
+    /// `returns` field holds the WITH projection (driving the same
+    /// projection/summarize lowering as an aggregate RETURN), and this clause
+    /// adds the post-aggregation HAVING + final RETURN projection + ORDER BY /
+    /// LIMIT, all referencing the post-summarize columns. `distinct`/`order_by`/
+    /// `limit` above stay empty in this case — the clause carries its own.
+    with_clause: Option<WithClause>,
+}
+
+/// The post-aggregation tail of a `WITH … RETURN …` query. All column names are
+/// resolved at parse time to the post-`summarize` columns: a grouping key
+/// `a.name` resolves to `a_name`; an aggregate resolves to its alias.
+#[derive(Debug, Clone)]
+struct WithClause {
+    /// HAVING predicates on WITH outputs: `(column, op, literal)`.
+    having: Vec<(String, CmpOp, String)>,
+    /// `true` ⇒ HAVING predicates are OR-joined; `false` ⇒ AND.
+    having_or: bool,
+    /// Final `RETURN` projection: resolved post-summarize column names.
+    ret_cols: Vec<String>,
+    /// `RETURN DISTINCT`.
+    distinct: bool,
+    /// `ORDER BY`: `(column, desc)` over post-summarize columns.
+    order_by: Vec<(String, bool)>,
+    /// `LIMIT`.
+    limit: Option<i64>,
 }
 
 // =====================================================================
@@ -672,9 +698,8 @@ impl Parser {
         if self.peek_kw("OPTIONAL") || self.peek_kw("MATCH") {
             return Err(unsupported("MATCH / OPTIONAL MATCH after shortestPath"));
         }
-        if self.peek_kw("WITH") {
-            return Err(unsupported("WITH"));
-        }
+        // (WITH is handled after the pre-aggregation WHERE below — Cypher orders
+        // it `MATCH … [WHERE <pre>] WITH … [WHERE <having>] RETURN …`.)
 
         let (where_preds, where_or, where_tree) = if self.eat_kw("WHERE") {
             let tree = self.parse_where_expr()?;
@@ -688,50 +713,56 @@ impl Parser {
             (Vec::new(), false, None)
         };
 
-        if !self.eat_kw("RETURN") {
-            return Err(ParseError(
-                "cypher: expected RETURN".to_string(),
-            ));
-        }
-        let distinct = self.eat_kw("DISTINCT");
-        let returns = self.parse_return()?;
+        // `WITH <items> [WHERE <having>]` before RETURN drives the aggregation
+        // lowering via `returns`, with the post-aggregation tail in `with_clause`.
+        // Otherwise parse a plain RETURN / ORDER BY / LIMIT.
+        let (returns, distinct, order_by, limit, with_clause) = if self.eat_kw("WITH") {
+            let (items, wc) = self.parse_with_tail()?;
+            (items, false, Vec::new(), None, Some(wc))
+        } else {
+            if !self.eat_kw("RETURN") {
+                return Err(ParseError("cypher: expected RETURN".to_string()));
+            }
+            let distinct = self.eat_kw("DISTINCT");
+            let returns = self.parse_return()?;
 
-        // ORDER BY <var>.<prop> [ASC|DESC], …
-        let mut order_by: Vec<(String, String, bool)> = Vec::new();
-        if self.eat_kw("ORDER") {
-            if !self.eat_kw("BY") {
-                return Err(ParseError("cypher: expected BY after ORDER".to_string()));
-            }
-            loop {
-                let var = self.expect_word()?;
-                if !self.eat(&Tok::Dot) {
-                    return Err(ParseError(
-                        "cypher: ORDER BY expects `<var>.<prop>`".to_string(),
-                    ));
+            // ORDER BY <var>.<prop> [ASC|DESC], …
+            let mut order_by: Vec<(String, String, bool)> = Vec::new();
+            if self.eat_kw("ORDER") {
+                if !self.eat_kw("BY") {
+                    return Err(ParseError("cypher: expected BY after ORDER".to_string()));
                 }
-                let prop = self.expect_word()?;
-                let desc = if self.eat_kw("DESC") {
-                    true
-                } else {
-                    self.eat_kw("ASC");
-                    false
-                };
-                order_by.push((var, prop, desc));
-                if !self.eat(&Tok::Comma) {
-                    break;
+                loop {
+                    let var = self.expect_word()?;
+                    if !self.eat(&Tok::Dot) {
+                        return Err(ParseError(
+                            "cypher: ORDER BY expects `<var>.<prop>`".to_string(),
+                        ));
+                    }
+                    let prop = self.expect_word()?;
+                    let desc = if self.eat_kw("DESC") {
+                        true
+                    } else {
+                        self.eat_kw("ASC");
+                        false
+                    };
+                    order_by.push((var, prop, desc));
+                    if !self.eat(&Tok::Comma) {
+                        break;
+                    }
                 }
             }
-        }
+            let limit = if self.eat_kw("LIMIT") {
+                Some(self.parse_limit()?)
+            } else {
+                None
+            };
+            (returns, distinct, order_by, limit, None)
+        };
+
         if self.peek_kw("SKIP") {
             return Err(unsupported("SKIP"));
         }
-
-        let limit = if self.eat_kw("LIMIT") {
-            Some(self.parse_limit()?)
-        } else {
-            None
-        };
-
         if self.peek_kw("UNION") {
             return Err(unsupported("UNION"));
         }
@@ -755,6 +786,7 @@ impl Parser {
             extra_segments,
             distinct,
             order_by,
+            with_clause,
         })
     }
 
@@ -991,6 +1023,159 @@ impl Parser {
             return Ok(inner);
         }
         Ok(WhereExpr::Cmp(self.parse_comparison()?))
+    }
+
+    /// Parse the `WITH <items> [WHERE <having>] RETURN <cols> [ORDER BY …]
+    /// [LIMIT n]` tail. The WITH items become the query's `returns` (driving the
+    /// same projection + summarize lowering as an aggregate RETURN); the
+    /// returned [`WithClause`] holds the post-aggregation HAVING + RETURN +
+    /// ORDER BY / LIMIT, every reference resolved to a post-summarize column.
+    ///
+    /// Supported WITH items: grouping keys `n.prop` (no `AS` — no rename layer
+    /// exists below KQL) and aggregates `f(n.prop) AS alias`. References after
+    /// WITH are either a key (`n.prop` → `n_prop`) or an aggregate alias.
+    fn parse_with_tail(&mut self) -> Result<(Vec<ReturnItem>, WithClause), ParseError> {
+        let items = self.parse_return()?;
+        let mut keys: Vec<(String, String)> = Vec::new(); // ("var.prop", "var_prop")
+        let mut aggs: Vec<String> = Vec::new();
+        for it in &items {
+            match it {
+                ReturnItem::Prop { var, prop, alias } => {
+                    if alias.is_some() {
+                        return Err(unsupported(
+                            "AS alias on a WITH grouping key (reference the property directly)",
+                        ));
+                    }
+                    keys.push((format!("{var}.{prop}"), format!("{var}_{prop}")));
+                }
+                ReturnItem::Aggregate { func, alias, .. } => {
+                    aggs.push(alias.clone().unwrap_or_else(|| func.clone()));
+                }
+                _ => {
+                    return Err(unsupported(
+                        "WITH item must be a grouping key `n.prop` or an aggregate `f(n.prop) AS x`",
+                    ));
+                }
+            }
+        }
+        if items.is_empty() {
+            return Err(ParseError("cypher: WITH must project at least one item".to_string()));
+        }
+
+        // Optional HAVING (`WITH … WHERE <pred on outputs>`). Scalar comparisons,
+        // flat single connective (all-AND or all-OR), like a graph WHERE.
+        let mut having: Vec<(String, CmpOp, String)> = Vec::new();
+        let mut having_or = false;
+        if self.eat_kw("WHERE") {
+            let (mut saw_and, mut saw_or) = (false, false);
+            loop {
+                let col = self.resolve_with_ref(&keys, &aggs)?;
+                let op = match self.bump() {
+                    Some(Tok::Eq) => CmpOp::Eq,
+                    Some(Tok::Ne) => CmpOp::Ne,
+                    Some(Tok::Lt) => CmpOp::Lt,
+                    Some(Tok::Gt) => CmpOp::Gt,
+                    Some(Tok::Le) => CmpOp::Le,
+                    Some(Tok::Ge) => CmpOp::Ge,
+                    other => {
+                        return Err(ParseError(format!(
+                            "cypher: HAVING after WITH supports only scalar comparisons, got {other:?}"
+                        )));
+                    }
+                };
+                let lit = self.parse_literal()?;
+                having.push((col, op, lit));
+                if self.eat_kw("AND") {
+                    saw_and = true;
+                } else if self.eat_kw("OR") {
+                    saw_or = true;
+                } else {
+                    break;
+                }
+            }
+            if saw_and && saw_or {
+                return Err(unsupported("mixed AND/OR in a WITH … WHERE (HAVING)"));
+            }
+            having_or = saw_or;
+        }
+
+        if !self.eat_kw("RETURN") {
+            return Err(ParseError("cypher: expected RETURN after WITH".to_string()));
+        }
+        let distinct = self.eat_kw("DISTINCT");
+        let mut ret_cols: Vec<String> = Vec::new();
+        loop {
+            ret_cols.push(self.resolve_with_ref(&keys, &aggs)?);
+            if !self.eat(&Tok::Comma) {
+                break;
+            }
+        }
+
+        let mut order_by: Vec<(String, bool)> = Vec::new();
+        if self.eat_kw("ORDER") {
+            if !self.eat_kw("BY") {
+                return Err(ParseError("cypher: expected BY after ORDER".to_string()));
+            }
+            loop {
+                let col = self.resolve_with_ref(&keys, &aggs)?;
+                let desc = if self.eat_kw("DESC") {
+                    true
+                } else {
+                    self.eat_kw("ASC");
+                    false
+                };
+                order_by.push((col, desc));
+                if !self.eat(&Tok::Comma) {
+                    break;
+                }
+            }
+        }
+        let limit = if self.eat_kw("LIMIT") {
+            Some(self.parse_limit()?)
+        } else {
+            None
+        };
+
+        Ok((
+            items,
+            WithClause {
+                having,
+                having_or,
+                ret_cols,
+                distinct,
+                order_by,
+                limit,
+            },
+        ))
+    }
+
+    /// Resolve a post-WITH reference to its post-`summarize` column name: a
+    /// grouping key `var.prop` → `var_prop` (must be a WITH key), or a bare word
+    /// → an aggregate alias (must be a WITH aggregate output).
+    fn resolve_with_ref(
+        &mut self,
+        keys: &[(String, String)],
+        aggs: &[String],
+    ) -> Result<String, ParseError> {
+        let w = self.expect_word()?;
+        if self.eat(&Tok::Dot) {
+            let p = self.expect_word()?;
+            let key = format!("{w}.{p}");
+            keys.iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, col)| col.clone())
+                .ok_or_else(|| {
+                    ParseError(format!(
+                        "cypher: `{key}` is not a WITH grouping key (carry it through WITH first)"
+                    ))
+                })
+        } else if aggs.iter().any(|a| a == &w) {
+            Ok(w)
+        } else {
+            Err(ParseError(format!(
+                "cypher: `{w}` is not a WITH output (a grouping key `n.prop` or an aggregate alias)"
+            )))
+        }
     }
 
     fn parse_comparison(&mut self) -> Result<Comparison, ParseError> {
@@ -1695,7 +1880,8 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     }
 
     // RETURN DISTINCT → distinct rows; ORDER BY → sort; LIMIT → take. Distinct
-    // before sort so the ordering applies to the de-duplicated rows.
+    // before sort so the ordering applies to the de-duplicated rows. (In the
+    // WITH case these are empty — the post-aggregation tail below carries them.)
     if q.distinct {
         kql.push_str(" | distinct");
     }
@@ -1704,6 +1890,41 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     }
     if let Some(n) = q.limit {
         kql.push_str(&format!(" | take {n}"));
+    }
+
+    // WITH post-aggregation tail: HAVING on the post-`summarize` columns, then
+    // the final RETURN projection, DISTINCT, ORDER BY, and LIMIT — all over the
+    // resolved post-summarize column names (grouping keys + aggregate aliases).
+    if let Some(wc) = &q.with_clause {
+        if !wc.having.is_empty() {
+            let preds: Vec<String> = wc
+                .having
+                .iter()
+                .map(|(col, op, lit)| format!("{col} {} {lit}", op.kql()))
+                .collect();
+            if wc.having_or {
+                kql.push_str(&format!(" | where ({})", preds.join(" or ")));
+            } else {
+                for p in preds {
+                    kql.push_str(&format!(" | where {p}"));
+                }
+            }
+        }
+        kql.push_str(&format!(" | project {}", wc.ret_cols.join(", ")));
+        if wc.distinct {
+            kql.push_str(" | distinct");
+        }
+        if !wc.order_by.is_empty() {
+            let s: Vec<String> = wc
+                .order_by
+                .iter()
+                .map(|(c, d)| format!("{c} {}", if *d { "desc" } else { "asc" }))
+                .collect();
+            kql.push_str(&format!(" | sort by {}", s.join(", ")));
+        }
+        if let Some(n) = wc.limit {
+            kql.push_str(&format!(" | take {n}"));
+        }
     }
 
     Ok(kql)
@@ -2274,6 +2495,83 @@ mod tests {
         );
     }
 
+    // ---- WITH: aggregation + HAVING --------------------------------------
+    #[test]
+    fn with_aggregate_having_lowers_and_compiles() {
+        let kql = tr(
+            "MATCH (a)-[r]->(b) WITH a.name, count(b) AS deg WHERE deg > 5 RETURN a.name, deg",
+        );
+        // WITH items drive the summarize; HAVING + RETURN are the post-agg tail.
+        assert!(kql.contains("| summarize deg = count(b_id) by a_name"), "{kql}");
+        assert!(kql.contains("| where deg > 5"), "{kql}");
+        assert!(kql.contains("| project a_name, deg"), "{kql}");
+        crate::kql_to_sql(&kql).expect("WITH aggregate+HAVING must compile to SQL");
+    }
+
+    #[test]
+    fn with_order_by_and_limit_over_alias() {
+        let kql = tr(
+            "MATCH (a)-[r]->(b) WITH a.name, count(b) AS deg RETURN a.name, deg ORDER BY deg DESC LIMIT 3",
+        );
+        assert!(kql.contains("| summarize deg = count(b_id) by a_name"), "{kql}");
+        assert!(kql.contains("| project a_name, deg"), "{kql}");
+        assert!(kql.contains("| sort by deg desc"), "{kql}");
+        assert!(kql.contains("| take 3"), "{kql}");
+        crate::kql_to_sql(&kql).expect("WITH + ORDER BY/LIMIT must compile to SQL");
+    }
+
+    #[test]
+    fn with_collect_aggregate() {
+        let kql = tr("MATCH (a)-[r]->(b) WITH a.name, collect(b.name) AS bs RETURN a.name, bs");
+        assert!(kql.contains("| summarize bs = make_list(b_name) by a_name"), "{kql}");
+        assert!(kql.contains("| project a_name, bs"), "{kql}");
+        crate::kql_to_sql(&kql).expect("WITH collect must compile to SQL");
+    }
+
+    #[test]
+    fn with_pre_match_where_then_having() {
+        // A WHERE before WITH filters rows pre-aggregation; the WITH WHERE is HAVING.
+        let kql = tr(
+            "MATCH (a)-[r]->(b) WHERE a.active = 'true' WITH a.name, count(b) AS deg WHERE deg >= 2 RETURN a.name",
+        );
+        assert!(kql.contains("| where a_active == 'true'"), "pre-filter: {kql}");
+        assert!(kql.contains("| summarize deg = count(b_id) by a_name"), "{kql}");
+        assert!(kql.contains("| where deg >= 2"), "having: {kql}");
+        assert!(kql.contains("| project a_name"), "{kql}");
+        crate::kql_to_sql(&kql).expect("WITH pre-filter + HAVING must compile to SQL");
+    }
+
+    #[test]
+    fn with_rejections() {
+        let g = binding();
+        // AS alias on a grouping key (no rename layer).
+        assert!(
+            cypher_to_kql("MATCH (a)-[r]->(b) WITH a.name AS n, count(b) AS d RETURN n, d", &g)
+                .is_err(),
+            "AS on a WITH key must be rejected"
+        );
+        // Bare-variable WITH item (node passthrough) unsupported.
+        assert!(
+            cypher_to_kql("MATCH (a)-[r]->(b) WITH a, count(b) AS d RETURN d", &g).is_err(),
+            "bare-var WITH item must be rejected"
+        );
+        // RETURN references something not carried through WITH.
+        assert!(
+            cypher_to_kql("MATCH (a)-[r]->(b) WITH a.name, count(b) AS d RETURN b.name", &g)
+                .is_err(),
+            "RETURN of a non-WITH-output must be rejected"
+        );
+        // HAVING on a non-output reference.
+        assert!(
+            cypher_to_kql(
+                "MATCH (a)-[r]->(b) WITH a.name, count(b) AS d WHERE x > 1 RETURN a.name",
+                &g
+            )
+            .is_err(),
+            "HAVING on an unknown reference must be rejected"
+        );
+    }
+
     #[test]
     fn where_or_and_and_join_correctly() {
         // OR → one parenthesized `| where (… or …)`.
@@ -2360,13 +2658,12 @@ mod tests {
     }
 
     #[test]
-    fn with_rejected() {
-        let err = cypher_to_kql(
-            "MATCH (a)-[r]->(b) WITH a RETURN a.name",
-            &binding(),
-        );
+    fn with_bare_variable_passthrough_rejected() {
+        // WITH is supported for aggregation + HAVING, but carrying a bare node
+        // variable through (`WITH a`) — node passthrough — is not.
+        let err = cypher_to_kql("MATCH (a)-[r]->(b) WITH a RETURN a.name", &binding());
         let msg = err.unwrap_err().0;
-        assert!(msg.contains("WITH"), "{msg}");
+        assert!(msg.contains("grouping key") || msg.contains("aggregate"), "{msg}");
     }
 
     // ---- compile-through: emitted KQL must lower to SQL ----------------

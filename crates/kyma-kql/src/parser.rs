@@ -406,12 +406,21 @@ impl<'s> Parser<'s> {
     // Operator handlers
     // -----------------------------------------------------------------
     fn op_where(&mut self) -> Result<(), ParseError> {
+        // A `where` after `summarize` is a HAVING — it filters the aggregated
+        // rows, so seal the aggregation into a CTE first and filter over it.
+        if self.state.aggregated {
+            self.state.rebase_aggregation();
+        }
         let e = self.parse_expr()?;
         self.state.where_clauses.push(e);
         Ok(())
     }
 
     fn op_project(&mut self, away: bool) -> Result<(), ParseError> {
+        // A `project` after `summarize` selects from the aggregated result.
+        if self.state.aggregated {
+            self.state.rebase_aggregation();
+        }
         let mut cols = Vec::new();
         loop {
             match self.bump()? {
@@ -481,6 +490,8 @@ impl<'s> Parser<'s> {
                 }
             }
         }
+        // A following `where`/`project` now operates on the aggregated result.
+        self.state.aggregated = true;
         Ok(())
     }
 
