@@ -1,0 +1,38 @@
+name: k8s-smoke
+
+# Validates the SHIPPED HELM CHART path on a throwaway kind cluster: build the
+# engine image, then run scripts/fresh-install-validate-k8s.sh — which creates a
+# kind cluster, deploys in-cluster Postgres + MinIO, helm-installs the chart from
+# the built image, waits for rollout, and asserts health/login/ingest/query/
+# search before tearing the cluster down. The k8s analogue of the local and
+# docker-compose fresh-install gates.
+#
+# The image build is expensive, so this runs on push to main + on demand.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  k8s-smoke:
+    name: kind + Helm fresh-install smoke
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build engine image
+        run: docker build -t kyma-smoke-kyma:latest .
+
+      - name: install kind + helm
+        run: |
+          curl -fsSL -o /usr/local/bin/kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+          chmod +x /usr/local/bin/kind
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          # kubectl is preinstalled on ubuntu-22.04 runners.
+
+      - name: k8s fresh-install smoke (kind + helm)
+        env:
+          KYMA_IMAGE: kyma-smoke-kyma:latest
+        run: scripts/fresh-install-validate-k8s.sh

@@ -209,8 +209,14 @@ acceptance gates:
   it never collides with a running default-named dev stack), then asserts
   health/login/ingest/query/search and tears down. Wired into CI as
   `compose-smoke.yml` (runs on push to main + on demand).
+- **Kubernetes / Helm** — `scripts/fresh-install-validate-k8s.sh` spins a
+  throwaway `kind` cluster, deploys in-cluster Postgres + MinIO, helm-installs
+  the chart (`deploy/helm/kyma-engine`) from the built image, waits for the pod
+  rollout, then asserts health/login/ingest/query/search over a port-forward and
+  deletes the cluster. Wired into CI as `k8s-smoke.yml` (push to main + on
+  demand).
 
-Both, plus the gauntlet, are wired into CI (`.github/workflows/gauntlet-*.yml`,
-`fresh-install.yml`, `compose-smoke.yml`). See `benchmarks.md` for the measured
-numbers and the deterministic correctness oracles (recall-vs-exact,
-differential-vs-petgraph).
+All three fresh-install gates, plus the gauntlet, are wired into CI
+(`.github/workflows/gauntlet-*.yml`, `fresh-install.yml`, `compose-smoke.yml`,
+`k8s-smoke.yml`). See `benchmarks.md` for the measured numbers and the
+deterministic correctness oracles (recall-vs-exact, differential-vs-petgraph).
