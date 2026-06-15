@@ -233,6 +233,20 @@ async fn cypher_chain_continuation_multi_pattern_is_supported() {
 }
 
 #[tokio::test]
+async fn cypher_order_by_and_distinct_are_supported() {
+    let state = seeded_state_with_graph().await;
+    // RETURN DISTINCT + ORDER BY + LIMIT → | distinct | sort by | take; must
+    // plan + execute end-to-end.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r]->(b) RETURN DISTINCT a.name ORDER BY a.name DESC LIMIT 5",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::OK, "ORDER BY + DISTINCT cypher, body: {body}");
+}
+
+#[tokio::test]
 async fn cypher_backward_hop_in_multihop_is_supported() {
     let state = seeded_state_with_graph().await;
     // Mixed-direction chain (a)-[r]->(b)<-[s]-(c) → decomposed single-hop

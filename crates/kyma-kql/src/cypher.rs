@@ -367,6 +367,11 @@ struct Query {
     /// `OPTIONAL MATCH` segment (lowered as a LEFT JOIN). Empty for a single
     /// linear pattern; non-empty ⇒ a multi-segment `graph-match` join.
     extra_segments: Vec<(Vec<NodePat>, Vec<RelPat>, bool)>,
+    /// `RETURN DISTINCT` → a trailing `| distinct`.
+    distinct: bool,
+    /// `ORDER BY <var>.<prop> [ASC|DESC]` items (`desc` true ⇒ descending) →
+    /// a trailing `| sort by …`.
+    order_by: Vec<(String, String, bool)>,
 }
 
 // =====================================================================
@@ -555,11 +560,34 @@ impl Parser {
                 "cypher: expected RETURN".to_string(),
             ));
         }
+        let distinct = self.eat_kw("DISTINCT");
         let returns = self.parse_return()?;
 
-        // Post-RETURN tail: only LIMIT is allowed.
-        if self.peek_kw("ORDER") {
-            return Err(unsupported("ORDER BY"));
+        // ORDER BY <var>.<prop> [ASC|DESC], …
+        let mut order_by: Vec<(String, String, bool)> = Vec::new();
+        if self.eat_kw("ORDER") {
+            if !self.eat_kw("BY") {
+                return Err(ParseError("cypher: expected BY after ORDER".to_string()));
+            }
+            loop {
+                let var = self.expect_word()?;
+                if !self.eat(&Tok::Dot) {
+                    return Err(ParseError(
+                        "cypher: ORDER BY expects `<var>.<prop>`".to_string(),
+                    ));
+                }
+                let prop = self.expect_word()?;
+                let desc = if self.eat_kw("DESC") {
+                    true
+                } else {
+                    self.eat_kw("ASC");
+                    false
+                };
+                order_by.push((var, prop, desc));
+                if !self.eat(&Tok::Comma) {
+                    break;
+                }
+            }
         }
         if self.peek_kw("SKIP") {
             return Err(unsupported("SKIP"));
@@ -590,6 +618,8 @@ impl Parser {
             limit,
             shortest_path,
             extra_segments,
+            distinct,
+            order_by,
         })
     }
 
@@ -836,9 +866,7 @@ impl Parser {
         if matches!(self.peek(), Some(Tok::Star)) {
             return Err(unsupported("RETURN *"));
         }
-        if self.peek_kw("DISTINCT") {
-            return Err(unsupported("RETURN DISTINCT"));
-        }
+        // `RETURN DISTINCT` is consumed by the caller (parse_query) before this.
 
         let mut items = Vec::new();
         loop {
@@ -1153,6 +1181,15 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
         where_clauses.push(format!("{} {} {}", alias, pred.op.kql(), pred.literal));
     }
 
+    // 4) ORDER BY props need their column projected; collect the sort items.
+    let mut sort_items: Vec<String> = Vec::new();
+    for (var, prop, desc) in &q.order_by {
+        check_var(var)?;
+        let alias = format!("{var}_{prop}");
+        push_proj(var, prop, alias.clone());
+        sort_items.push(format!("{alias} {}", if *desc { "desc" } else { "asc" }));
+    }
+
     if projections.is_empty() {
         return Err(ParseError(
             "cypher: RETURN must project at least one column".to_string(),
@@ -1271,6 +1308,14 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
         kql.push_str(&format!(" | where {f}"));
     }
 
+    // RETURN DISTINCT → distinct rows; ORDER BY → sort; LIMIT → take. Distinct
+    // before sort so the ordering applies to the de-duplicated rows.
+    if q.distinct {
+        kql.push_str(" | distinct");
+    }
+    if !sort_items.is_empty() {
+        kql.push_str(&format!(" | sort by {}", sort_items.join(", ")));
+    }
     if let Some(n) = q.limit {
         kql.push_str(&format!(" | take {n}"));
     }
@@ -1688,13 +1733,19 @@ mod tests {
     }
 
     #[test]
-    fn order_by_rejected() {
-        let err = cypher_to_kql(
-            "MATCH (a)-[r]->(b) RETURN a.name ORDER BY a.name",
-            &binding(),
+    fn order_by_and_distinct_lower_to_sort_and_distinct() {
+        // Regression: ORDER BY + RETURN DISTINCT used to be rejected.
+        let kql = tr("MATCH (a)-[r]->(b) RETURN DISTINCT a.name ORDER BY a.name DESC");
+        assert!(kql.contains("| distinct"), "DISTINCT → | distinct: {kql}");
+        assert!(kql.contains("| sort by a_name desc"), "ORDER BY DESC → sort: {kql}");
+        crate::kql_to_sql(&kql).expect("DISTINCT + ORDER BY KQL must compile");
+
+        // Default ASC; multiple sort keys; ORDER BY then LIMIT (top-k).
+        let multi = tr("MATCH (a)-[r]->(b) RETURN a.name, b.name ORDER BY a.name, b.name DESC LIMIT 3");
+        assert!(
+            multi.contains("| sort by a_name asc, b_name desc") && multi.contains("| take 3"),
+            "{multi}"
         );
-        let msg = err.unwrap_err().0;
-        assert!(msg.contains("ORDER BY"), "{msg}");
     }
 
     #[test]
