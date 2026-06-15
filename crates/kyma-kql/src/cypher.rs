@@ -309,6 +309,71 @@ struct Comparison {
     literal: String,
 }
 
+/// A boolean WHERE expression tree, used only for mixed-precedence predicates
+/// (parens / mixed AND-OR / NOT). Leaves are [`Comparison`]s; `And`/`Or` are
+/// n-ary. Rendered to a single parenthesized KQL `where` expression — KQL's
+/// own `or`/`and`/`not` parser then re-establishes precedence from the parens.
+#[derive(Debug, Clone)]
+enum WhereExpr {
+    Cmp(Comparison),
+    Not(Box<WhereExpr>),
+    And(Vec<WhereExpr>),
+    Or(Vec<WhereExpr>),
+}
+
+impl WhereExpr {
+    /// Render to a KQL boolean expression over the flat `{var}_{prop}` aliases.
+    fn render_kql(&self) -> String {
+        match self {
+            WhereExpr::Cmp(c) => format!("{}_{} {} {}", c.var, c.prop, c.op.kql(), c.literal),
+            WhereExpr::Not(inner) => format!("not ({})", inner.render_kql()),
+            WhereExpr::And(terms) => {
+                let parts: Vec<String> = terms.iter().map(WhereExpr::render_kql).collect();
+                format!("({})", parts.join(" and "))
+            }
+            WhereExpr::Or(terms) => {
+                let parts: Vec<String> = terms.iter().map(WhereExpr::render_kql).collect();
+                format!("({})", parts.join(" or "))
+            }
+        }
+    }
+
+    /// Collect every leaf comparison's `(var, prop)` for projection.
+    fn collect_leaves<'a>(&'a self, out: &mut Vec<(&'a str, &'a str)>) {
+        match self {
+            WhereExpr::Cmp(c) => out.push((c.var.as_str(), c.prop.as_str())),
+            WhereExpr::Not(inner) => inner.collect_leaves(out),
+            WhereExpr::And(terms) | WhereExpr::Or(terms) => {
+                for t in terms {
+                    t.collect_leaves(out);
+                }
+            }
+        }
+    }
+}
+
+/// If `e` is a flat single-connective conjunction/disjunction of plain
+/// comparisons (no NOT, no nesting), return the flat predicate list + whether
+/// it is OR-joined. Otherwise `None` (the caller keeps the tree). This is what
+/// lets the common case reuse the unchanged flat lowering + shortestPath pins.
+fn try_flatten_where(e: &WhereExpr) -> Option<(Vec<Comparison>, bool)> {
+    match e {
+        WhereExpr::Cmp(c) => Some((vec![c.clone()], false)),
+        WhereExpr::And(terms) | WhereExpr::Or(terms) => {
+            let or = matches!(e, WhereExpr::Or(_));
+            let mut preds = Vec::with_capacity(terms.len());
+            for t in terms {
+                match t {
+                    WhereExpr::Cmp(c) => preds.push(c.clone()),
+                    _ => return None,
+                }
+            }
+            Some((preds, or))
+        }
+        WhereExpr::Not(_) => None,
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum CmpOp {
     Eq,
@@ -388,9 +453,18 @@ struct Query {
     nodes: Vec<NodePat>,
     /// Pattern relationships `r0 … r{N-1}`; `rels[i]` connects `nodes[i]`→`nodes[i+1]`.
     rels: Vec<RelPat>,
+    /// Flat WHERE: a single connective (all-AND or all-OR) of plain
+    /// comparisons. Populated for the common case so the existing lowering +
+    /// the shortestPath endpoint-pin extraction keep working unchanged. Empty
+    /// when the WHERE needs the boolean tree (`where_tree`) instead.
     where_preds: Vec<Comparison>,
-    /// `true` ⇒ the WHERE comparisons are OR-joined; `false` ⇒ AND-joined.
+    /// `true` ⇒ the flat WHERE comparisons are OR-joined; `false` ⇒ AND-joined.
     where_or: bool,
+    /// Mixed-precedence WHERE (parentheses, mixed AND/OR, or NOT) that cannot be
+    /// expressed as a flat single connective. When `Some`, it drives a single
+    /// `| where (<rendered>)` and `where_preds` is empty. KQL's own
+    /// precedence-correct `where` parser handles the rendered parens.
+    where_tree: Option<WhereExpr>,
     returns: Vec<ReturnItem>,
     limit: Option<i64>,
     /// `Some(path_var)` when the MATCH is `<path_var> = shortestPath((a)-[…]->(b))`.
@@ -584,10 +658,16 @@ impl Parser {
             return Err(unsupported("WITH"));
         }
 
-        let (where_preds, where_or) = if self.eat_kw("WHERE") {
-            self.parse_where()?
+        let (where_preds, where_or, where_tree) = if self.eat_kw("WHERE") {
+            let tree = self.parse_where_expr()?;
+            match try_flatten_where(&tree) {
+                // Flat single-connective of plain comparisons → existing lowering.
+                Some((preds, or)) => (preds, or, None),
+                // Parens / mixed AND-OR / NOT → drive the tree lowering instead.
+                None => (Vec::new(), false, Some(tree)),
+            }
         } else {
-            (Vec::new(), false)
+            (Vec::new(), false, None)
         };
 
         if !self.eat_kw("RETURN") {
@@ -650,6 +730,7 @@ impl Parser {
             rels,
             where_preds,
             where_or,
+            where_tree,
             returns,
             limit,
             shortest_path,
@@ -841,30 +922,57 @@ impl Parser {
         Ok(NodePat { var, label })
     }
 
-    /// AND-joined comparisons. `OR` and parenthesized predicates are deferred.
-    /// Returns the comparison list and whether they are OR-joined (`true`) or
-    /// AND-joined (`false`). A single flat connective: `a AND b AND c` or
-    /// `a OR b OR c`; mixing AND and OR (which needs precedence/parens) is
-    /// rejected.
-    fn parse_where(&mut self) -> Result<(Vec<Comparison>, bool), ParseError> {
-        let mut preds = vec![self.parse_comparison()?];
-        let (mut saw_and, mut saw_or) = (false, false);
-        loop {
-            if self.eat_kw("AND") {
-                saw_and = true;
-            } else if self.eat_kw("OR") {
-                saw_or = true;
-            } else {
-                break;
+    /// Parse a full boolean WHERE expression with standard precedence
+    /// (`OR` < `AND` < `NOT` < atom), where an atom is a comparison or a
+    /// parenthesized sub-expression. The caller flattens the common
+    /// single-connective case back into `where_preds` via [`try_flatten_where`];
+    /// genuinely mixed/parenthesized/negated expressions keep the tree.
+    fn parse_where_expr(&mut self) -> Result<WhereExpr, ParseError> {
+        self.parse_or_expr()
+    }
+
+    fn parse_or_expr(&mut self) -> Result<WhereExpr, ParseError> {
+        let mut terms = vec![self.parse_and_expr()?];
+        while self.eat_kw("OR") {
+            terms.push(self.parse_and_expr()?);
+        }
+        Ok(if terms.len() == 1 {
+            terms.pop().unwrap()
+        } else {
+            WhereExpr::Or(terms)
+        })
+    }
+
+    fn parse_and_expr(&mut self) -> Result<WhereExpr, ParseError> {
+        let mut terms = vec![self.parse_not_expr()?];
+        while self.eat_kw("AND") {
+            terms.push(self.parse_not_expr()?);
+        }
+        Ok(if terms.len() == 1 {
+            terms.pop().unwrap()
+        } else {
+            WhereExpr::And(terms)
+        })
+    }
+
+    fn parse_not_expr(&mut self) -> Result<WhereExpr, ParseError> {
+        if self.eat_kw("NOT") {
+            return Ok(WhereExpr::Not(Box::new(self.parse_not_expr()?)));
+        }
+        self.parse_atom_expr()
+    }
+
+    fn parse_atom_expr(&mut self) -> Result<WhereExpr, ParseError> {
+        if self.eat(&Tok::LParen) {
+            let inner = self.parse_or_expr()?;
+            if !self.eat(&Tok::RParen) {
+                return Err(ParseError(
+                    "cypher: expected `)` to close a WHERE group".to_string(),
+                ));
             }
-            preds.push(self.parse_comparison()?);
+            return Ok(inner);
         }
-        if saw_and && saw_or {
-            return Err(unsupported(
-                "mixed AND/OR in WHERE (use all AND or all OR)",
-            ));
-        }
-        Ok((preds, saw_or))
+        Ok(WhereExpr::Cmp(self.parse_comparison()?))
     }
 
     fn parse_comparison(&mut self) -> Result<Comparison, ParseError> {
@@ -1367,6 +1475,17 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
         let alias = format!("{}_{}", pred.var, pred.prop);
         push_proj(&pred.var, &pred.prop, alias.clone());
         where_clauses.push(format!("{} {} {}", alias, pred.op.kql(), pred.literal));
+    }
+    // Mixed-precedence WHERE: project every leaf prop, then render the tree to
+    // one parenthesized clause (KQL re-derives precedence from the parens).
+    if let Some(tree) = &q.where_tree {
+        let mut leaves = Vec::new();
+        tree.collect_leaves(&mut leaves);
+        for (var, prop) in leaves {
+            check_var(var)?;
+            push_proj(var, prop, format!("{var}_{prop}"));
+        }
+        where_clauses.push(tree.render_kql());
     }
 
     // 4) ORDER BY props need their column projected; collect the sort items.
@@ -2081,11 +2200,44 @@ mod tests {
             and.contains("| where a_name == 'x'") && and.contains("| where b_name == 'y'"),
             "AND-joined: {and}"
         );
-        // Mixed AND/OR is rejected (needs precedence/parens).
+        // Mixed AND/OR now lowers via the boolean tree with standard precedence:
+        // `a AND b OR c` ⇒ `((a and b) or c)`.
+        let mixed = tr(
+            "MATCH (a)-[r]->(b) WHERE a.name='x' AND b.name='y' OR a.name='z' RETURN a.name",
+        );
         assert!(
-            tr_err("MATCH (a)-[r]->(b) WHERE a.name='x' AND b.name='y' OR a.name='z' RETURN a.name")
-                .contains("mixed"),
-            "mixed AND/OR rejected"
+            mixed.contains("| where ((a_name == 'x' and b_name == 'y') or a_name == 'z')"),
+            "mixed AND/OR precedence: {mixed}"
+        );
+        crate::kql_to_sql(&mixed).expect("mixed AND/OR where compiles");
+    }
+
+    #[test]
+    fn where_parenthesized_group_overrides_precedence() {
+        // `a AND (b OR c)` keeps the OR grouped — distinct from `a AND b OR c`.
+        let kql = tr(
+            "MATCH (a)-[r]->(b) WHERE a.k = 'x' AND (b.n = 1 OR b.n = 2) RETURN a.k",
+        );
+        assert!(
+            kql.contains("| where (a_k == 'x' and (b_n == 1 or b_n == 2))"),
+            "{kql}"
+        );
+        crate::kql_to_sql(&kql).expect("parenthesized WHERE must compile to SQL");
+    }
+
+    #[test]
+    fn where_not_negation_lowers_and_compiles() {
+        let kql = tr("MATCH (a)-[r]->(b) WHERE NOT a.name CONTAINS 'tmp' RETURN a.name");
+        assert!(kql.contains("| where not (a_name contains 'tmp')"), "{kql}");
+        crate::kql_to_sql(&kql).expect("NOT WHERE must compile to SQL");
+    }
+
+    #[test]
+    fn where_unclosed_group_is_rejected() {
+        let g = binding();
+        assert!(
+            cypher_to_kql("MATCH (a)-[r]->(b) WHERE (a.k = 1 AND b.n = 2 RETURN a.k", &g).is_err(),
+            "unclosed WHERE group must be a parse error"
         );
     }
 
