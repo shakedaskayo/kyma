@@ -259,6 +259,20 @@ async fn cypher_where_in_list_is_supported() {
 }
 
 #[tokio::test]
+async fn cypher_is_null_predicate_is_supported() {
+    let state = seeded_state_with_graph().await;
+    // IS NULL / IS NOT NULL → KQL isnull()/isnotnull() → SQL IS [NOT] NULL.
+    // The natural companion to OPTIONAL MATCH; must plan + execute.
+    let req = cypher_req(
+        Some("obs/kg"),
+        "obs",
+        "MATCH (a)-[r]->(b) OPTIONAL MATCH (b)-[s]->(c) WHERE c.name IS NULL RETURN a.name",
+    );
+    let (status, body) = run(state, req).await;
+    assert_eq!(status, StatusCode::OK, "IS NULL cypher, body: {body}");
+}
+
+#[tokio::test]
 async fn cypher_mixed_precedence_where_is_supported() {
     let state = seeded_state_with_graph().await;
     // Parens + mixed AND/OR + NOT → boolean-tree lowering to a single

@@ -325,7 +325,7 @@ impl WhereExpr {
     /// Render to a KQL boolean expression over the flat `{var}_{prop}` aliases.
     fn render_kql(&self) -> String {
         match self {
-            WhereExpr::Cmp(c) => format!("{}_{} {} {}", c.var, c.prop, c.op.kql(), c.literal),
+            WhereExpr::Cmp(c) => c.op.render_clause(&format!("{}_{}", c.var, c.prop), &c.literal),
             WhereExpr::Not(inner) => format!("not ({})", inner.render_kql()),
             WhereExpr::And(terms) => {
                 let parts: Vec<String> = terms.iter().map(WhereExpr::render_kql).collect();
@@ -390,13 +390,17 @@ enum CmpOp {
     EndsWith,
     /// `n.prop CONTAINS 's'` — substring match.
     Contains,
+    /// `n.prop IS NULL` — null test (no RHS literal).
+    IsNull,
+    /// `n.prop IS NOT NULL` — non-null test (no RHS literal).
+    IsNotNull,
 }
 
 impl CmpOp {
-    /// KQL operator text. `=`→`==`, `<>`→`!=`; the rest pass through. `In`
-    /// lowers to the KQL `in` operator, and the string ops to KQL
-    /// `startswith`/`endswith`/`contains`, which the KQL→SQL stage turns into a
-    /// SQL `IN (…)` / `LIKE` respectively.
+    /// KQL operator text for the infix operators. `=`→`==`, `<>`→`!=`; the rest
+    /// pass through. `In` → KQL `in`; the string ops → `startswith`/`endswith`/
+    /// `contains`. The null ops are unary functions, not infix — see
+    /// [`CmpOp::render_clause`] — so their text here is only for completeness.
     fn kql(self) -> &'static str {
         match self {
             CmpOp::Eq => "==",
@@ -409,6 +413,20 @@ impl CmpOp {
             CmpOp::StartsWith => "startswith",
             CmpOp::EndsWith => "endswith",
             CmpOp::Contains => "contains",
+            CmpOp::IsNull => "isnull",
+            CmpOp::IsNotNull => "isnotnull",
+        }
+    }
+
+    /// Render the full KQL predicate over a flat `{var}_{prop}` `alias`. Most
+    /// ops are infix (`alias op literal`); the null ops lower to the KQL
+    /// `isnull(...)` / `isnotnull(...)` functions (no RHS), which the KQL→SQL
+    /// stage turns into SQL `IS [NOT] NULL`.
+    fn render_clause(self, alias: &str, literal: &str) -> String {
+        match self {
+            CmpOp::IsNull => format!("isnull({alias})"),
+            CmpOp::IsNotNull => format!("isnotnull({alias})"),
+            _ => format!("{alias} {} {literal}", self.kql()),
         }
     }
 }
@@ -1029,6 +1047,25 @@ impl Parser {
                 literal,
             });
         }
+        // `<var>.<prop> IS [NOT] NULL` — null test (no RHS).
+        if self.eat_kw("IS") {
+            let negated = self.eat_kw("NOT");
+            if !self.eat_kw("NULL") {
+                return Err(ParseError(
+                    "cypher: expected NULL after IS [NOT]".to_string(),
+                ));
+            }
+            return Ok(Comparison {
+                var,
+                prop,
+                op: if negated {
+                    CmpOp::IsNotNull
+                } else {
+                    CmpOp::IsNull
+                },
+                literal: String::new(),
+            });
+        }
         let op = match self.bump() {
             Some(Tok::Eq) => CmpOp::Eq,
             Some(Tok::Ne) => CmpOp::Ne,
@@ -1474,7 +1511,7 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
         check_var(&pred.var)?;
         let alias = format!("{}_{}", pred.var, pred.prop);
         push_proj(&pred.var, &pred.prop, alias.clone());
-        where_clauses.push(format!("{} {} {}", alias, pred.op.kql(), pred.literal));
+        where_clauses.push(pred.op.render_clause(&alias, &pred.literal));
     }
     // Mixed-precedence WHERE: project every leaf prop, then render the tree to
     // one parenthesized clause (KQL re-derives precedence from the parens).
@@ -2000,6 +2037,38 @@ mod tests {
             cypher_to_kql("MATCH (a)-[r]->(b) WHERE a.name STARTS 'pre' RETURN a.name", &g)
                 .is_err(),
             "STARTS without WITH must be a parse error"
+        );
+    }
+
+    #[test]
+    fn where_is_null_and_is_not_null_lower_and_compile() {
+        let n = tr("MATCH (a)-[r]->(b) WHERE a.deleted IS NULL RETURN a.name");
+        assert!(n.contains("| where isnull(a_deleted)"), "{n}");
+        let sql = crate::kql_to_sql(&n).expect("IS NULL KQL must compile to SQL");
+        assert!(sql.to_uppercase().contains("IS NULL"), "{sql}");
+        let nn = tr("MATCH (a)-[r]->(b) WHERE a.deleted IS NOT NULL RETURN a.name");
+        assert!(nn.contains("| where isnotnull(a_deleted)"), "{nn}");
+        let sql2 = crate::kql_to_sql(&nn).expect("IS NOT NULL KQL must compile to SQL");
+        assert!(sql2.to_uppercase().contains("IS NOT NULL"), "{sql2}");
+    }
+
+    #[test]
+    fn where_is_null_in_tree_and_with_optional() {
+        // Companion to OPTIONAL MATCH (which yields NULLs): combine in a tree.
+        let kql = tr(
+            "MATCH (a)-[r]->(b) OPTIONAL MATCH (b)-[s]->(c) \
+             WHERE a.k = 'x' AND (c.id IS NULL OR c.k = 'y') RETURN a.k",
+        );
+        assert!(kql.contains("(a_k == 'x' and (isnull(c_id) or c_k == 'y'))"), "{kql}");
+        crate::kql_to_sql(&kql).expect("IS NULL in tree must compile to SQL");
+    }
+
+    #[test]
+    fn where_is_without_null_is_rejected() {
+        let g = binding();
+        assert!(
+            cypher_to_kql("MATCH (a)-[r]->(b) WHERE a.k IS 'x' RETURN a.k", &g).is_err(),
+            "IS without NULL must be a parse error"
         );
     }
 
