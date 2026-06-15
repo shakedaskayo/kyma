@@ -372,6 +372,8 @@ struct Query {
     /// Pattern relationships `r0 … r{N-1}`; `rels[i]` connects `nodes[i]`→`nodes[i+1]`.
     rels: Vec<RelPat>,
     where_preds: Vec<Comparison>,
+    /// `true` ⇒ the WHERE comparisons are OR-joined; `false` ⇒ AND-joined.
+    where_or: bool,
     returns: Vec<ReturnItem>,
     limit: Option<i64>,
     /// `Some(path_var)` when the MATCH is `<path_var> = shortestPath((a)-[…]->(b))`.
@@ -565,10 +567,10 @@ impl Parser {
             return Err(unsupported("WITH"));
         }
 
-        let where_preds = if self.eat_kw("WHERE") {
+        let (where_preds, where_or) = if self.eat_kw("WHERE") {
             self.parse_where()?
         } else {
-            Vec::new()
+            (Vec::new(), false)
         };
 
         if !self.eat_kw("RETURN") {
@@ -630,6 +632,7 @@ impl Parser {
             nodes,
             rels,
             where_preds,
+            where_or,
             returns,
             limit,
             shortest_path,
@@ -822,19 +825,29 @@ impl Parser {
     }
 
     /// AND-joined comparisons. `OR` and parenthesized predicates are deferred.
-    fn parse_where(&mut self) -> Result<Vec<Comparison>, ParseError> {
-        let mut preds = Vec::new();
+    /// Returns the comparison list and whether they are OR-joined (`true`) or
+    /// AND-joined (`false`). A single flat connective: `a AND b AND c` or
+    /// `a OR b OR c`; mixing AND and OR (which needs precedence/parens) is
+    /// rejected.
+    fn parse_where(&mut self) -> Result<(Vec<Comparison>, bool), ParseError> {
+        let mut preds = vec![self.parse_comparison()?];
+        let (mut saw_and, mut saw_or) = (false, false);
         loop {
-            preds.push(self.parse_comparison()?);
             if self.eat_kw("AND") {
-                continue;
+                saw_and = true;
+            } else if self.eat_kw("OR") {
+                saw_or = true;
+            } else {
+                break;
             }
-            if self.peek_kw("OR") {
-                return Err(unsupported("OR in WHERE"));
-            }
-            break;
+            preds.push(self.parse_comparison()?);
         }
-        Ok(preds)
+        if saw_and && saw_or {
+            return Err(unsupported(
+                "mixed AND/OR in WHERE (use all AND or all OR)",
+            ));
+        }
+        Ok((preds, saw_or))
     }
 
     fn parse_comparison(&mut self) -> Result<Comparison, ParseError> {
@@ -1017,6 +1030,11 @@ struct Projection {
 fn emit_shortest_path(q: &Query, g: &GraphBinding, path_var: &str) -> Result<String, ParseError> {
     if q.rels.len() != 1 {
         return Err(unsupported("shortestPath over a multi-hop pattern"));
+    }
+    // The endpoint pins are AND-ed id equalities; an OR-joined WHERE can't pin
+    // both endpoints.
+    if q.where_or {
+        return Err(unsupported("OR in WHERE with shortestPath"));
     }
     let a = q.nodes[0].var.as_str();
     let b = q.nodes[1].var.as_str();
@@ -1391,11 +1409,19 @@ fn emit(q: &Query, g: &GraphBinding) -> Result<String, ParseError> {
     };
 
     // Label filters + WHERE predicates run against the flat `_gm_result` columns.
+    // Label filters are always AND (one `| where` each). WHERE comparisons are
+    // OR-joined into a single parenthesized clause when `where_or`, else AND.
     let mut filters: Vec<String> = Vec::new();
     for (alias, label) in &label_filters {
         filters.push(format!("{} == '{}'", alias, label.replace('\'', "''")));
     }
-    filters.extend(where_clauses);
+    if !where_clauses.is_empty() {
+        if q.where_or {
+            filters.push(format!("({})", where_clauses.join(" or ")));
+        } else {
+            filters.extend(where_clauses);
+        }
+    }
     for f in filters {
         kql.push_str(&format!(" | where {f}"));
     }
@@ -1880,6 +1906,29 @@ mod tests {
         assert!(
             tr_err("MATCH (a)-[r]->(b) RETURN avg(b)").contains("property argument"),
             "avg(<var>) rejected"
+        );
+    }
+
+    #[test]
+    fn where_or_and_and_join_correctly() {
+        // OR → one parenthesized `| where (… or …)`.
+        let or = tr("MATCH (a)-[r]->(b) WHERE a.name = 'x' OR b.name = 'y' RETURN a.name");
+        assert!(
+            or.contains("| where (a_name == 'x' or b_name == 'y')"),
+            "OR-joined: {or}"
+        );
+        crate::kql_to_sql(&or).expect("OR where compiles");
+        // AND → separate `| where` per predicate (unchanged).
+        let and = tr("MATCH (a)-[r]->(b) WHERE a.name = 'x' AND b.name = 'y' RETURN a.name");
+        assert!(
+            and.contains("| where a_name == 'x'") && and.contains("| where b_name == 'y'"),
+            "AND-joined: {and}"
+        );
+        // Mixed AND/OR is rejected (needs precedence/parens).
+        assert!(
+            tr_err("MATCH (a)-[r]->(b) WHERE a.name='x' AND b.name='y' OR a.name='z' RETURN a.name")
+                .contains("mixed"),
+            "mixed AND/OR rejected"
         );
     }
 
