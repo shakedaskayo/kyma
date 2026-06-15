@@ -1755,6 +1755,8 @@ impl<'s> Parser<'s> {
             ("avg", [x]) => Ok(format!("avg({x})")),
             ("min", [x]) => Ok(format!("min({x})")),
             ("max", [x]) => Ok(format!("max({x})")),
+            // List aggregation (Kusto `make_list`) → DataFusion `array_agg`.
+            ("make_list", [x]) => Ok(format!("array_agg({x})")),
             ("dcount", [x]) => Ok(format!("count(DISTINCT {x})")),
             ("dcountif", [x, c]) => Ok(format!(
                 "count(DISTINCT CASE WHEN {c} THEN {x} ELSE NULL END)"
