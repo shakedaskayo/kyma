@@ -54,6 +54,13 @@ pub(crate) struct QueryState {
     /// Graph operators (`graph-traverse`, `graph-shortest-path`) populate
     /// these; regular operators leave them empty and the SQL stays flat.
     pub ctes: Vec<(String, String, bool)>,
+    /// Set by `summarize`. While true, a following `where` (HAVING) or `project`
+    /// (post-aggregation projection) must run against the aggregated result, not
+    /// the pre-aggregation rows — so those operators first
+    /// [`rebase_aggregation`](Self::rebase_aggregation) to read from a sealed CTE.
+    pub aggregated: bool,
+    /// Monotonic suffix for the sealed-aggregation CTE names (`_agg0`, …).
+    pub agg_seq: u32,
 }
 
 impl QueryState {
@@ -70,6 +77,40 @@ impl QueryState {
     /// independent of any CTE reassignment of `table` by graph operators.
     pub(crate) fn root_table(&self) -> &str {
         &self.root
+    }
+
+    /// Seal the current aggregation (`summarize`) as a top-level CTE and reset
+    /// the state to read from it, so a following `where`/`project`/`sort`/`take`
+    /// builds a flat SELECT over the aggregated columns (HAVING + post-agg
+    /// projection). Keeps any graph-operator CTEs alongside the new `_aggN` —
+    /// no nesting. Idempotent per aggregation: clears `aggregated`.
+    pub(crate) fn rebase_aggregation(&mut self) {
+        let mut items: Vec<String> = self.group_by.clone();
+        items.extend(self.aggregates.iter().cloned());
+        let mut body = format!("SELECT {} FROM {}", items.join(", "), self.table);
+        if !self.where_clauses.is_empty() {
+            body.push_str(" WHERE ");
+            body.push_str(&self.where_clauses.join(" AND "));
+        }
+        if !self.group_by.is_empty() {
+            body.push_str(" GROUP BY ");
+            body.push_str(&self.group_by.join(", "));
+        }
+        let name = format!("_agg{}", self.agg_seq);
+        self.agg_seq += 1;
+        self.ctes.push((name.clone(), body, false));
+        // Read from the sealed CTE; subsequent operators are flat over it.
+        self.table = name;
+        self.select.clear();
+        self.exclude.clear();
+        self.extend.clear();
+        self.where_clauses.clear();
+        self.group_by.clear();
+        self.aggregates.clear();
+        self.order_by.clear();
+        self.limit = None;
+        self.distinct = false;
+        self.aggregated = false;
     }
 
     pub(crate) fn to_sql(&self) -> String {
