@@ -587,6 +587,9 @@ async fn main() -> Result<()> {
         catalog.clone(),
         store.clone(),
     ))
+    .merge(
+        kyma_server::discover::consumers_live::consumers_emit_router(Some(consumer_events.clone())),
+    )
     .layer(axum::middleware::from_fn_with_state(
         AuthLayerState {
             backend: backend.clone(),
@@ -597,10 +600,12 @@ async fn main() -> Result<()> {
 
     // Build MCP state from the same SharedToolCtx the inline /v1/agent endpoint uses.
     let mcp_shared = kyma_server::agent::SharedToolCtx {
-        consumer_sink: Some(kyma_server::agent::ConsumerSink {
-            events: consumer_events.clone(),
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
-        }),
+        consumer_sink: Some(std::sync::Arc::new(
+            kyma_server::agent::LocalConsumerPublisher {
+                events: consumer_events.clone(),
+                tenant: kyma_core::tenant::DEFAULT_TENANT,
+            },
+        )),
         federation: Some(federation.clone()),
         catalog: catalog.clone(),
         format: format.clone(),

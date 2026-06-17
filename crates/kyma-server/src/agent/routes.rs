@@ -506,10 +506,10 @@ async fn memory_query_handler(
     async move {
         let shared = SharedToolCtx {
             consumer_sink: state.consumer_events.clone().map(|events| {
-                crate::agent::tools::ConsumerSink {
+                std::sync::Arc::new(crate::agent::tools::LocalConsumerPublisher {
                     events,
                     tenant: state.tenant,
-                }
+                }) as crate::agent::tools::ConsumerSink
             }),
             federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
             catalog: state.catalog.clone(),
@@ -545,7 +545,7 @@ async fn memory_query_handler(
                 .or_else(|| pid.map(|p| p.to_string()))
                 .or_else(|| ip.clone())
                 .unwrap_or_else(|| "anon".into());
-            sink.events.publish(kyma_ingest_core::ConsumerActivity {
+            sink.publish(kyma_ingest_core::ConsumerActivity {
                 consumer_id: format!("{kind}:{ident}"),
                 label: principal.subject.clone().unwrap_or_else(|| kind.clone()),
                 kind,

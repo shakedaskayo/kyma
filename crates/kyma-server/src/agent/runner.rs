@@ -141,10 +141,10 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
 
     let shared = SharedToolCtx {
         consumer_sink: state.consumer_events.clone().map(|events| {
-            crate::agent::tools::ConsumerSink {
+            std::sync::Arc::new(crate::agent::tools::LocalConsumerPublisher {
                 events,
                 tenant: state.tenant,
-            }
+            }) as crate::agent::tools::ConsumerSink
         }),
         federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),

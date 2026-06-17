@@ -61,7 +61,8 @@ pub use state::AgentState;
 pub use tools::{
     execute_sql, tool_describe_table, tool_explore_schema, tool_find_references_to,
     tool_graph_analytics, tool_graph_traverse, tool_list_databases, tool_retrieve_artifact,
-    tool_run_kql, tool_run_sql, tool_sample_rows, ConsumerSink, SharedToolCtx,
+    tool_run_kql, tool_run_sql, tool_sample_rows, ConsumerPublisher, ConsumerSink,
+    LocalConsumerPublisher, SharedToolCtx,
 };
 
 /// Build the `/v1/agent/*` sub-router. Caller typically mounts it under
