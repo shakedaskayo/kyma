@@ -15,6 +15,21 @@ export {
 } from "./graph-store";
 export { SigmaCanvas, type SigmaCanvasProps } from "./SigmaCanvas";
 export { HullsLayer } from "./HullsLayer";
+export { ConsumerBeamsLayer } from "./ConsumerBeamsLayer";
+export { ConsumerDock } from "./ConsumerDock";
+export {
+  resolveConsumerKind,
+  consumerIcon,
+  consumerColor,
+} from "./consumer-style";
+export type {
+  ConsumerKind,
+  ConsumerVerb,
+  ConsumerStatus,
+  LiveConsumer,
+  ConsumerBeam,
+  LiveConsumersData,
+} from "./consumer-types";
 export type {
   GraphNode,
   GraphRelationship,

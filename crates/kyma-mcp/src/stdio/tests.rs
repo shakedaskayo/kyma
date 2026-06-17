@@ -24,7 +24,9 @@ async fn db_free_dispatch() -> (ToolDispatch, ServerInfo) {
             .expect("sqlite catalog"),
     );
     // Local mode: no Postgres pool at all.
-    let shared = SharedToolCtx { federation: None,
+    let shared = SharedToolCtx {
+        consumer_sink: None,
+        federation: None,
         catalog,
         format,
         pool: None,

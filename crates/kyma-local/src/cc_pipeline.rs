@@ -53,7 +53,9 @@ pub(crate) async fn run_pass(
     let sync = cc_sync::run_once(engine, writer, &opts.sync).await?;
     let mut curated = Vec::new();
     if opts.curate {
-        let shared = SharedToolCtx { federation: None,
+        let shared = SharedToolCtx {
+            consumer_sink: None,
+            federation: None,
             catalog: engine.catalog.clone(),
             format: engine.format.clone(),
             pool: None,

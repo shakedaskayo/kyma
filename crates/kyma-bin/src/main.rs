@@ -241,13 +241,12 @@ async fn main() -> Result<()> {
         cli.path_prefix.clone(),
         tenant,
     ));
-    let parquet_fmt: Arc<dyn SegmentFormat> = Arc::new(
-        kyma_format_parquet::ParquetFormat::with_tenant(
+    let parquet_fmt: Arc<dyn SegmentFormat> =
+        Arc::new(kyma_format_parquet::ParquetFormat::with_tenant(
             store.clone(),
             cli.path_prefix.clone(),
             tenant,
-        ),
-    );
+        ));
     let write_format = std::env::var("KYMA_WRITE_FORMAT").unwrap_or_else(|_| "tlm".into());
     let format: Arc<dyn SegmentFormat> = match write_format.as_str() {
         "parquet" => Arc::new(kyma_core::segment_format::FormatRegistry::new(
@@ -398,6 +397,9 @@ async fn main() -> Result<()> {
     // group-commit StagingBuffer — the committer is the batching layer.
     let staged_ingest = std::env::var("KYMA_INGEST_MODE").as_deref() == Ok("staged");
     let ingest_events = IngestEvents::new(256);
+    // Live consumer-activity bus — fed by the memory tool paths, subscribed by
+    // the /v1/consumers/live WebSocket that drives the graph explorer overlay.
+    let consumer_events = kyma_ingest_core::ConsumerEvents::new(256);
     let write_path: WritePath = if staged_ingest {
         info!("ingest mode: staged (router + async committer)");
         // Every staged node stages + acks; only committer-eligible roles run the
@@ -563,6 +565,7 @@ async fn main() -> Result<()> {
         // the degraded local store. Settings live in the `memory_settings` row.
         local_dreaming: None,
         memory_settings_path: None,
+        consumer_events: Some(consumer_events.clone()),
     };
     // Build the SchemaCache once and share it across the query router, live
     // router, and flight router via Arc::clone — they all serve the same node
@@ -594,6 +597,10 @@ async fn main() -> Result<()> {
 
     // Build MCP state from the same SharedToolCtx the inline /v1/agent endpoint uses.
     let mcp_shared = kyma_server::agent::SharedToolCtx {
+        consumer_sink: Some(kyma_server::agent::ConsumerSink {
+            events: consumer_events.clone(),
+            tenant: kyma_core::tenant::DEFAULT_TENANT,
+        }),
         federation: Some(federation.clone()),
         catalog: catalog.clone(),
         format: format.clone(),
@@ -895,6 +902,22 @@ async fn main() -> Result<()> {
         backend.clone(),
         Some(ingest_events),
     );
+    // Live consumers WebSocket — backfills recent memory spans from the OTLP
+    // self-trace database (KYMA_OTLP_DATABASE), then tails the consumer bus.
+    let consumers_router = kyma_server::discover::consumers_live::consumers_live_router(
+        QueryState {
+            federation: Some(federation.clone()),
+            catalog: catalog.clone(),
+            format: format.clone(),
+            schema_cache: schema_cache.clone(),
+            node_id: Some(lease.node_id),
+            pg_pool: Some(std::sync::Arc::new(pg_pool.clone())),
+            layout_cache: std::sync::Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
+        },
+        backend.clone(),
+        Some(consumer_events),
+        cli.otlp_database.clone(),
+    );
     let app = ingest_router
         .merge(query_router)
         .merge(mcp_router)
@@ -914,7 +937,8 @@ async fn main() -> Result<()> {
         .merge(auth_session_router)
         .merge(fabric_worker_router)
         .merge(fabric_admin_router)
-        .merge(live_router);
+        .merge(live_router)
+        .merge(consumers_router);
 
     let app = app.merge(github_repos_router);
     #[cfg(feature = "web-ui")]
@@ -1015,7 +1039,9 @@ async fn main() -> Result<()> {
                 catalog.clone(),
                 format.clone(),
             );
-        Some(tokio::spawn(graph_snapshot_scheduler.run(shutdown_tx.subscribe())))
+        Some(tokio::spawn(
+            graph_snapshot_scheduler.run(shutdown_tx.subscribe()),
+        ))
     } else {
         None
     };
@@ -1116,12 +1142,13 @@ async fn main() -> Result<()> {
         let mut artifact_graph_rx = shutdown_tx.subscribe();
         Some(tokio::spawn(async move {
             // Startup backfill for all tenants.
-            if let Err(e) = kyma_server::agent::artifact_graph_sync::sync_artifact_nodes_all_tenants(
-                artifact_graph_catalog.clone(),
-                artifact_graph_format.clone(),
-                Some(artifact_graph_store.clone()),
-            )
-            .await
+            if let Err(e) =
+                kyma_server::agent::artifact_graph_sync::sync_artifact_nodes_all_tenants(
+                    artifact_graph_catalog.clone(),
+                    artifact_graph_format.clone(),
+                    Some(artifact_graph_store.clone()),
+                )
+                .await
             {
                 warn!(error = %e, "artifact-graph backfill failed");
             }
@@ -1158,6 +1185,7 @@ async fn main() -> Result<()> {
     {
         let mut consolidator = kyma_server::agent::MemoryConsolidator::new(
             kyma_server::agent::SharedToolCtx {
+                consumer_sink: None,
                 federation: Some(federation.clone()),
                 catalog: catalog.clone(),
                 format: format.clone(),
@@ -1197,6 +1225,7 @@ async fn main() -> Result<()> {
     {
         let mut correlator = kyma_server::agent::CiCorrelator::new(
             kyma_server::agent::SharedToolCtx {
+                consumer_sink: None,
                 federation: Some(federation.clone()),
                 catalog: catalog.clone(),
                 format: format.clone(),
@@ -1233,6 +1262,7 @@ async fn main() -> Result<()> {
     {
         let mut promoter = kyma_server::agent::FilePromoter::new(
             kyma_server::agent::SharedToolCtx {
+                consumer_sink: None,
                 federation: Some(federation.clone()),
                 catalog: catalog.clone(),
                 format: format.clone(),
@@ -1581,7 +1611,9 @@ async fn main() -> Result<()> {
     };
 
     if rc.run_jobs {
-        info!("background workers started (compaction, retention, physical-gc, idempotency-cleanup)");
+        info!(
+            "background workers started (compaction, retention, physical-gc, idempotency-cleanup)"
+        );
     } else {
         info!(role = %role, "background jobs skipped on this role (run_jobs=false)");
     }

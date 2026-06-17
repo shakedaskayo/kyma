@@ -15,6 +15,7 @@ import {
   Eye,
   EyeOff,
   Layers,
+  Radio,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
@@ -70,6 +71,8 @@ export function LegendDock(props: {
   const toggleSizeByDegree = useGraphStore((s) => s.toggleSizeByDegree);
   const showEdgeLabels = useGraphStore((s) => s.showEdgeLabels);
   const toggleEdgeLabels = useGraphStore((s) => s.toggleEdgeLabels);
+  const showLiveConsumers = useGraphStore((s) => s.showLiveConsumers);
+  const toggleLiveConsumers = useGraphStore((s) => s.toggleLiveConsumers);
 
   const labelEntries = useMemo(() => {
     if (!props.stats) return [] as [string, number][];
@@ -232,6 +235,7 @@ export function LegendDock(props: {
               <StyleToggle icon={LayoutGrid} label="Clusters" on={communityHulls} onClick={toggleCommunityHulls} title="Translucent community hulls" />
               <StyleToggle icon={CircleIcon} label="Size" on={sizeByDegree} onClick={toggleSizeByDegree} title="Size nodes by degree" />
               <StyleToggle icon={TagIcon} label="Labels" on={showEdgeLabels} onClick={toggleEdgeLabels} title="Relationship labels on edges" />
+              <StyleToggle icon={Radio} label="Live" on={showLiveConsumers} onClick={toggleLiveConsumers} title="Show live consumers — agents reading/writing memory in realtime" />
             </div>
           </div>
 

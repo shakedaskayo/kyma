@@ -22,18 +22,18 @@
 pub mod agent_sources;
 mod cc_pipeline;
 mod cc_sync;
-mod source_watchers;
-mod vault_sync;
 mod cc_writeback;
 mod cli_config_heal;
 mod cred_store;
 mod datasource_catalog;
-mod setup;
-pub mod sqlite_queue;
-mod sync;
-mod watcher_settings;
 pub mod node;
 pub mod server_service;
+mod setup;
+mod source_watchers;
+pub mod sqlite_queue;
+mod sync;
+mod vault_sync;
+mod watcher_settings;
 pub mod watcher_status;
 pub mod worker;
 
@@ -60,25 +60,25 @@ use std::sync::{Arc, OnceLock};
 use anyhow::{Context, Result};
 use kyma_catalog_sqlite::SqliteCatalog;
 use kyma_core::catalog::Catalog;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_format_tlm::TelemetryFormat;
-use kyma_ingest_core::events::IngestEvents;
-use kyma_ingest_core::WritePath;
-use kyma_ingest_otlp::self_export::{SelfTraceCtx, SelfTraceExporter};
-use kyma_ingest_rest::IngestState;
-use kyma_mcp::{serve_stdio, McpState, ServerInfo, ToolDispatch};
 use kyma_core::credentials::CredentialStore;
 use kyma_core::crypto::Crypto;
+use kyma_core::segment_format::SegmentFormat;
 use kyma_datasources::admin::AdminState as DataSourceAdminState;
 use kyma_datasources::catalog_trait::DataSourceCatalog;
 use kyma_datasources::registry::DataSourceRegistry;
 use kyma_datasources::runner::{DataSourceTickDeps, GraphRegisterFn, RowSink};
 use kyma_datasources::scheduler::DataSourceScheduler;
 use kyma_datasources::secrets::EnvSecretStore;
+use kyma_format_tlm::TelemetryFormat;
+use kyma_ingest_core::events::IngestEvents;
+use kyma_ingest_core::WritePath;
+use kyma_ingest_otlp::self_export::{SelfTraceCtx, SelfTraceExporter};
+use kyma_ingest_rest::IngestState;
+use kyma_mcp::{serve_stdio, McpState, ServerInfo, ToolDispatch};
 use kyma_server::agent::local::{
     FileEnabledSkillsStore, FileEnginePreferenceStore, NullCredentialStore,
 };
-use kyma_server::agent::{AgentState, SharedToolCtx};
+use kyma_server::agent::{AgentState, ConsumerSink, SharedToolCtx};
 use kyma_server::auth::{
     require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role, SessionAuthBackend,
 };
@@ -179,14 +179,21 @@ async fn open_engine(paths: &Paths) -> Result<Engine> {
     // S2.1: per-extent format dispatch (TLM + Parquet readers). Local writes use
     // KYMA_WRITE_FORMAT (default "tlm"); both formats stay readable so a local
     // store can mix them.
-    let tlm_fmt: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "kyma-local"));
+    let tlm_fmt: Arc<dyn SegmentFormat> =
+        Arc::new(TelemetryFormat::new(store.clone(), "kyma-local"));
     let parquet_fmt: Arc<dyn SegmentFormat> =
         Arc::new(kyma_format_parquet::ParquetFormat::new(store, "kyma-local"));
     let format: Arc<dyn SegmentFormat> =
         if std::env::var("KYMA_WRITE_FORMAT").as_deref() == Ok("parquet") {
-            Arc::new(kyma_core::segment_format::FormatRegistry::new(parquet_fmt, vec![tlm_fmt]))
+            Arc::new(kyma_core::segment_format::FormatRegistry::new(
+                parquet_fmt,
+                vec![tlm_fmt],
+            ))
         } else {
-            Arc::new(kyma_core::segment_format::FormatRegistry::new(tlm_fmt, vec![parquet_fmt]))
+            Arc::new(kyma_core::segment_format::FormatRegistry::new(
+                tlm_fmt,
+                vec![parquet_fmt],
+            ))
         };
     info!(data = %paths.data_root, "local object store ready (TLM + Parquet readers)");
 
@@ -199,7 +206,9 @@ async fn open_engine(paths: &Paths) -> Result<Engine> {
 
 fn mcp_state(engine: &Engine, memory: Option<kyma_memory::MemoryQueue>) -> McpState {
     // No Postgres pool in local mode — recall/save run over the engine.
-    let shared = SharedToolCtx { federation: None,
+    let shared = SharedToolCtx {
+        consumer_sink: None,
+        federation: None,
         catalog: engine.catalog.clone(),
         format: engine.format.clone(),
         pool: None,
@@ -337,7 +346,8 @@ pub fn build_local_app(
     watcher_status: watcher_status::LocalWatcherStatus,
 ) -> (axum::Router, AgentState) {
     let schema_cache = Arc::new(SchemaCache::from_env());
-    let query_state = QueryState { federation: None,
+    let query_state = QueryState {
+        federation: None,
         catalog: catalog.clone(),
         format: format.clone(),
         schema_cache: schema_cache.clone(),
@@ -356,6 +366,9 @@ pub fn build_local_app(
     let resolved_cred_store: Arc<dyn CredentialStore> = cred_store
         .clone()
         .unwrap_or_else(|| Arc::new(NullCredentialStore));
+    // Live consumer-activity bus — fed by the memory tool paths, subscribed by
+    // the /v1/consumers/live WebSocket that drives the graph explorer overlay.
+    let consumer_events = kyma_ingest_core::ConsumerEvents::new(256);
     let agent_state = AgentState {
         catalog: catalog.clone(),
         format: format.clone(),
@@ -379,10 +392,11 @@ pub fn build_local_app(
         memory_settings_path: Some(std::path::PathBuf::from(std::format!(
             "{kyma_home}/memory-settings.json"
         ))),
+        consumer_events: Some(consumer_events.clone()),
     };
     let ingest_events = IngestEvents::new(256);
-    let write_path = WritePath::new(catalog.clone(), format.clone())
-        .with_events(ingest_events.clone());
+    let write_path =
+        WritePath::new(catalog.clone(), format.clone()).with_events(ingest_events.clone());
     let ingest_state = IngestState {
         catalog: catalog.clone(),
         write_path,
@@ -425,7 +439,8 @@ pub fn build_local_app(
     // SPA fallback 404s unknown /v1/* paths instead of serving HTML.
     // (agent_state is cloned: the KYMA_CC_WATCH watcher in run_serve keeps one.)
     // Build a second QueryState for the live router sharing the same schema_cache.
-    let query_state_for_live = QueryState { federation: None,
+    let query_state_for_live = QueryState {
+        federation: None,
         catalog: catalog.clone(),
         format: format.clone(),
         schema_cache,
@@ -435,7 +450,12 @@ pub fn build_local_app(
     };
     // Build McpState from the same catalog + format the rest of the app uses.
     let mcp = McpState {
-        dispatch: ToolDispatch::new(SharedToolCtx { federation: None,
+        dispatch: ToolDispatch::new(SharedToolCtx {
+            consumer_sink: Some(ConsumerSink {
+                events: consumer_events.clone(),
+                tenant: kyma_core::tenant::DEFAULT_TENANT,
+            }),
+            federation: None,
             catalog: catalog.clone(),
             format: format.clone(),
             pool: None,
@@ -471,6 +491,15 @@ pub fn build_local_app(
 
     // Live-tail WebSocket — mounted WITHOUT auth middleware; the session
     // authenticates via its first message (browsers can't send WS headers).
+    // Live consumers WebSocket — same auth-by-first-message pattern as the
+    // live-tail router. Backfills recent memory spans from the local `otel`
+    // self-trace DB (matches the frontend's OPS_DB).
+    let consumers_router = kyma_server::discover::consumers_live::consumers_live_router(
+        query_state_for_live.clone(),
+        backend.clone(),
+        Some(consumer_events),
+        "otel".to_string(),
+    );
     let live_router = kyma_server::discover::live::explore_live_router(
         query_state_for_live,
         backend.clone(),
@@ -515,9 +544,12 @@ pub fn build_local_app(
         .merge(admin_users_router)
         .merge(session_router)
         .merge(workers_router)
-        .merge(kyma_server::auth_handler::auth_login_router(catalog.clone()))
+        .merge(kyma_server::auth_handler::auth_login_router(
+            catalog.clone(),
+        ))
         .merge(kyma_server::health_router())
         .merge(live_router)
+        .merge(consumers_router)
         .merge(kyma_server::web_ui::router())
         .merge(watcher_settings_router);
     if let Some(r) = watchers_router {
@@ -608,8 +640,9 @@ pub async fn run_serve(
 
     // Degraded local-mode dreaming state: in-memory ring hydrated from the
     // embedded SQLite catalog. Inline runs + the dreaming HTTP handlers read it.
-    let local_dreaming =
-        Some(kyma_server::agent::dreaming_local::LocalDreamingStore::new(engine.catalog.clone()).await);
+    let local_dreaming = Some(
+        kyma_server::agent::dreaming_local::LocalDreamingStore::new(engine.catalog.clone()).await,
+    );
     // Loopback URL for this serve's own MCP endpoint, so the ClaudeCli engine
     // can reach the local memory/data tools during a dreaming run. When bound
     // to all interfaces (0.0.0.0 / ::), dial 127.0.0.1 instead — the unspecified
@@ -661,7 +694,9 @@ pub async fn run_serve(
         datasource_catalog::SqliteDataSourceCatalog::new(pool.clone())
             .with_watcher_status(watcher_status.clone()),
     );
-    let ds_control = Arc::new(datasource_catalog::SqliteDataSourceControl::new(pool.clone()));
+    let ds_control = Arc::new(datasource_catalog::SqliteDataSourceControl::new(
+        pool.clone(),
+    ));
 
     let mut conn_reg = DataSourceRegistry::new();
     // Register all supported connectors (same set as the hosted server).
@@ -688,17 +723,22 @@ pub async fn run_serve(
     let conn_sink: RowSink = Arc::new(
         move |db: String, tbl: String, rows: Vec<serde_json::Value>, idem: Option<String>| {
             let catalog = catalog_for_sink.clone();
-            let write_path = kyma_ingest_core::WritePath::new(catalog.clone(), format_for_sink.clone());
+            let write_path =
+                kyma_ingest_core::WritePath::new(catalog.clone(), format_for_sink.clone());
             Box::pin(async move {
                 let table = kyma_ingest_core::ensure_table(catalog.as_ref(), &db, &tbl)
                     .await
                     .map_err(|e| anyhow::anyhow!("ensure_table: {e}"))?;
-                let table = kyma_ingest_core::evolve_schema_for_records(catalog.as_ref(), &db, table, &rows)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("evolve_schema: {e}"))?;
-                let batches =
-                    kyma_datasources::arrow_coerce::rows_to_batches(&table.schema, rows)
-                        .map_err(|e| anyhow::anyhow!("arrow coerce: {e}"))?;
+                let table = kyma_ingest_core::evolve_schema_for_records(
+                    catalog.as_ref(),
+                    &db,
+                    table,
+                    &rows,
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("evolve_schema: {e}"))?;
+                let batches = kyma_datasources::arrow_coerce::rows_to_batches(&table.schema, rows)
+                    .map_err(|e| anyhow::anyhow!("arrow coerce: {e}"))?;
                 write_path
                     .ingest_with_idempotency(&db, &table, batches, idem.as_deref())
                     .await
@@ -710,25 +750,29 @@ pub async fn run_serve(
 
     // ── GraphRegisterFn: create property graph binding after ingest ─────────
     let catalog_for_graph = engine.catalog.clone();
-    let graph_register: GraphRegisterFn = Arc::new(move |db: String, hint: kyma_datasources::GraphHint| {
-        let catalog = catalog_for_graph.clone();
-        Box::pin(async move {
-            let spec = kyma_core::catalog::GraphSpec::with_defaults(hint.node_table.clone(), hint.edge_table.clone());
-            match catalog.create_graph(&db, &hint.graph_name, spec).await {
-                Ok(_) => {}
-                Err(e) => {
-                    let msg = e.to_string();
-                    if !msg.contains("already exists")
-                        && !msg.contains("duplicate")
-                        && !msg.contains("23505")
-                    {
-                        tracing::warn!(db=%db, graph=%hint.graph_name, "graph register: {e}");
+    let graph_register: GraphRegisterFn =
+        Arc::new(move |db: String, hint: kyma_datasources::GraphHint| {
+            let catalog = catalog_for_graph.clone();
+            Box::pin(async move {
+                let spec = kyma_core::catalog::GraphSpec::with_defaults(
+                    hint.node_table.clone(),
+                    hint.edge_table.clone(),
+                );
+                match catalog.create_graph(&db, &hint.graph_name, spec).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        let msg = e.to_string();
+                        if !msg.contains("already exists")
+                            && !msg.contains("duplicate")
+                            && !msg.contains("23505")
+                        {
+                            tracing::warn!(db=%db, graph=%hint.graph_name, "graph register: {e}");
+                        }
                     }
                 }
-            }
-            Ok(())
-        })
-    });
+                Ok(())
+            })
+        });
 
     let tick_deps = DataSourceTickDeps {
         control: ds_control.clone(),
@@ -983,7 +1027,10 @@ pub async fn run_serve(
         });
         let enabled = watcher_status.cc_sync_enabled();
         if enabled {
-            info!("cc-sync watcher running (every {:?}; toggle in UI or KYMA_CC_WATCH=0 to disable)", poll);
+            info!(
+                "cc-sync watcher running (every {:?}; toggle in UI or KYMA_CC_WATCH=0 to disable)",
+                poll
+            );
         } else {
             info!("cc-sync watcher spawned but disabled via settings (enable in UI)");
         }
@@ -1048,7 +1095,10 @@ fn first_admin_token() -> Option<String> {
 
 fn env_secs(key: &str, default: u64) -> std::time::Duration {
     std::time::Duration::from_secs(
-        std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default),
+        std::env::var(key)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default),
     )
 }
 
@@ -1066,8 +1116,7 @@ fn claude_home() -> std::path::PathBuf {
 /// Assemble the file-phase options from env + CLI options.
 fn cc_pipeline_options(opts: &SyncOptions) -> cc_pipeline::CcPipelineOptions {
     let cc = claude_home();
-    let kyma_home =
-        std::env::var("KYMA_HOME").unwrap_or_else(|_| format!("{}/.kyma", home_dir()));
+    let kyma_home = std::env::var("KYMA_HOME").unwrap_or_else(|_| format!("{}/.kyma", home_dir()));
     cc_pipeline::CcPipelineOptions {
         sync: cc_sync::CcSyncOptions {
             projects_dir: cc.join("projects"),
@@ -1133,12 +1182,10 @@ async fn run_cc_phase(
         report.sync.projects.len(),
         if opts.dry_run { " (dry run)" } else { "" },
     );
-    Ok(report
-        .sync
-        .last_scan_value(
-            u64::try_from(pass_start.elapsed().as_millis()).unwrap_or(u64::MAX),
-            wall_start,
-        ))
+    Ok(report.sync.last_scan_value(
+        u64::try_from(pass_start.elapsed().as_millis()).unwrap_or(u64::MAX),
+        wall_start,
+    ))
 }
 
 /// `kyma sync` — sync memory with Claude Code's file memory (always, when
@@ -1160,8 +1207,12 @@ pub async fn run_sync(opts: SyncOptions) -> Result<()> {
                 Ok(cloud_url) if !cloud_url.is_empty() => {
                     let cfg = sync::SyncConfig {
                         cloud_url,
-                        token: std::env::var("KYMA_CLOUD_TOKEN").ok().filter(|s| !s.is_empty()),
-                        realm: std::env::var("KYMA_SYNC_REALM").ok().filter(|s| !s.is_empty()),
+                        token: std::env::var("KYMA_CLOUD_TOKEN")
+                            .ok()
+                            .filter(|s| !s.is_empty()),
+                        realm: std::env::var("KYMA_SYNC_REALM")
+                            .ok()
+                            .filter(|s| !s.is_empty()),
                         now: chrono::Utc::now().to_rfc3339(),
                     };
                     sync::run(&engine, cfg).await?;
@@ -1198,7 +1249,11 @@ pub fn print_info() {
     eprintln!("  mcp     : kyma mcp           (stdio MCP; memory + data + graph)");
     eprintln!("  serve   : kyma serve         (web UI + HTTP API + ingest, zero-auth)");
     eprintln!("  setup   : kyma setup <agent> (wire claude-code/cursor/windsurf to mcp)");
-    eprintln!("  sync    : kyma sync          (Claude Code file memory + KYMA_CLOUD_URL push/pull)");
+    eprintln!(
+        "  sync    : kyma sync          (Claude Code file memory + KYMA_CLOUD_URL push/pull)"
+    );
     eprintln!("            --watch --dry-run --cc-only --cloud-only --project <path>");
-    eprintln!("  worker  : kyma worker install|uninstall|status (background sync as an OS user service)");
+    eprintln!(
+        "  worker  : kyma worker install|uninstall|status (background sync as an OS user service)"
+    );
 }

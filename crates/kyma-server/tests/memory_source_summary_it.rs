@@ -74,6 +74,7 @@ fn agent_app(catalog: CatalogArc, format: FormatArc) -> axum::Router {
         memory: None,
         local_dreaming: None,
         memory_settings_path: None,
+        consumer_events: None,
     };
     let backend: Arc<dyn AuthBackend> = Arc::new(EnvAuthBackend::from_str("read-token:read"));
     kyma_server::agent::router(agent_state).layer(axum::middleware::from_fn_with_state(
@@ -116,7 +117,11 @@ async fn source_summary_groups_by_provenance_source_and_realm() {
         .await
         .expect("save manual memory");
     // One dreaming memory whose LATEST version is archived → excluded entirely.
-    let dreamed = memory("dreamed memory", "kyma", Some(json!({"source": "dreaming"})));
+    let dreamed = memory(
+        "dreamed memory",
+        "kyma",
+        Some(json!({"source": "dreaming"})),
+    );
     let id = writer.save(&dreamed).await.expect("save dreaming memory");
     let emb = writer.embed_one(&dreamed.content).await.expect("embed");
     let mut archived = kyma_memory::rows::node_row(&id, &dreamed, &emb, "2999-01-01T00:00:00Z");
@@ -133,7 +138,9 @@ async fn source_summary_groups_by_provenance_source_and_realm() {
         .unwrap();
     let res = agent_app(catalog, format).oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 1 << 20)
+        .await
+        .unwrap();
     let body: Value = serde_json::from_slice(&bytes).unwrap();
 
     assert_eq!(

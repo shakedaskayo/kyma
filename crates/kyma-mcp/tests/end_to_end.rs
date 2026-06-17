@@ -14,7 +14,9 @@ async fn full_mcp_handshake_against_seeded_server() {
     let state = seeded_state_with_obs_otel_logs().await;
     let url = std::env::var("KYMA_TEST_DATABASE_URL").expect("KYMA_TEST_DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
-    let shared = SharedToolCtx { federation: None,
+    let shared = SharedToolCtx {
+        consumer_sink: None,
+        federation: None,
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: Some(pool),
@@ -141,7 +143,9 @@ async fn rejects_request_without_bearer_token() {
     let state = seeded_state_with_obs_otel_logs().await;
     let url = std::env::var("KYMA_TEST_DATABASE_URL").expect("KYMA_TEST_DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
-    let shared = SharedToolCtx { federation: None,
+    let shared = SharedToolCtx {
+        consumer_sink: None,
+        federation: None,
         catalog: state.catalog,
         format: state.format,
         pool: Some(pool),

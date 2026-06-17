@@ -46,7 +46,9 @@ async fn engine_at(tmp: &Path) -> (Engine, MemoryWriter, SharedToolCtx) {
         engine.format.clone(),
         Arc::new(TestEmbed),
     );
-    let shared = SharedToolCtx { federation: None,
+    let shared = SharedToolCtx {
+        consumer_sink: None,
+        federation: None,
         catalog: engine.catalog.clone(),
         format: engine.format.clone(),
         pool: None,
@@ -220,7 +222,8 @@ async fn deleted_file_archives_node_and_reappearance_restores_it() {
 
     let projects = tmp.path().join("projects");
     let mem = projects.join("-tmp-proj").join("memory");
-    let auth = "---\nname: auth-model\ndescription: Auth\nmetadata:\n  type: project\n---\n\nTokens.\n";
+    let auth =
+        "---\nname: auth-model\ndescription: Auth\nmetadata:\n  type: project\n---\n\nTokens.\n";
     write(&mem.join("auth-model.md"), auth);
     write(
         &mem.join("build-notes.md"),
@@ -283,7 +286,8 @@ async fn rename_with_stable_name_keeps_the_node() {
 
     let projects = tmp.path().join("projects");
     let mem = projects.join("-tmp-proj").join("memory");
-    let auth = "---\nname: auth-model\ndescription: Auth\nmetadata:\n  type: project\n---\n\nTokens.\n";
+    let auth =
+        "---\nname: auth-model\ndescription: Auth\nmetadata:\n  type: project\n---\n\nTokens.\n";
     write(&mem.join("auth-model.md"), auth);
     let claude_json = tmp.path().join("claude.json");
     write(&claude_json, r#"{"projects": {"/tmp/proj": {}}}"#);
@@ -332,7 +336,10 @@ async fn kyma_authored_files_skip_then_update_on_user_edit() {
     let front = format!(
         "---\nname: promoted-note\nmetadata:\n  type: reference\n  source: kyma\n  kyma_memory_id: memory:{id}\n  content_hash: {h}\n---\n\n"
     );
-    write(&mem.join("kyma-promoted-note.md"), &format!("{front}{body}"));
+    write(
+        &mem.join("kyma-promoted-note.md"),
+        &format!("{front}{body}"),
+    );
     let claude_json = tmp.path().join("claude.json");
     write(&claude_json, r#"{"projects": {"/tmp/proj": {}}}"#);
     let opts = CcSyncOptions {

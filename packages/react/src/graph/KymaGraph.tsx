@@ -18,12 +18,13 @@
  * renderer prop: "webgl" (Sigma.js) or "canvas" (ForceGraph2D fallback).
  *   Default: auto-detected via webglAvailable() — tries webgl2 then webgl.
  */
-import { useCallback, useEffect, useRef, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useRef, type JSX } from "react";
 import type { GraphNode } from "@kyma-ai/client";
 import { KymaErrorBoundary } from "../internal/KymaErrorBoundary";
 import { GraphStoreContext, createGraphStore } from "./graph-store";
 import type { GraphStore } from "./graph-store";
 import { GraphView } from "./GraphView";
+import type { LiveConsumersData } from "./consumer-types";
 import type { LayoutAlgorithm } from "@kyma-ai/client";
 // Re-export so embedders can query the renderer without rendering.
 export { webglAvailable } from "./GraphView";
@@ -76,6 +77,17 @@ export interface KymaGraphProps {
    * Wired the same way as onNodeClick via store subscription.
    */
   onSelectionChange?: (nodes: GraphNode[]) => void;
+  /**
+   * Live-consumers overlay snapshot, owned by the host app's WebSocket hook.
+   * The SDK renders this data (beams + dock); it never opens a socket. Omit to
+   * leave the overlay inert.
+   */
+  liveConsumers?: LiveConsumersData;
+  /**
+   * Fired when the in-graph "Live" checkbox toggles. The host uses this to
+   * tear down / re-open its socket so OFF saves resources.
+   */
+  onLiveConsumersToggle?: (enabled: boolean) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -103,14 +115,36 @@ export function KymaGraph(props: KymaGraphProps): JSX.Element {
     fallback,
     onNodeClick,
     onSelectionChange,
+    liveConsumers,
+    onLiveConsumersToggle,
   } = props;
 
   // One store per mounted instance — never recreated on re-render.
   const storeRef = useRef<GraphStore | null>(null);
   if (!storeRef.current) {
-    storeRef.current = createGraphStore({ layout });
+    storeRef.current = createGraphStore({
+      layout,
+      showLiveConsumers: liveConsumers?.enabled ?? true,
+    });
   }
   const store = storeRef.current;
+
+  // Push the host's live-consumer snapshot into the store on every tick (the
+  // hook hands a fresh object each update). The SDK renders from the store.
+  useEffect(() => {
+    if (liveConsumers) store.getState().setLiveConsumers(liveConsumers);
+  }, [store, liveConsumers]);
+
+  // Bridge the in-graph "Live" toggle back to the host so it can close/open the
+  // socket. Fires only on actual changes to showLiveConsumers.
+  useEffect(() => {
+    if (!onLiveConsumersToggle) return;
+    return store.subscribe((s, prev) => {
+      if (s.showLiveConsumers !== prev.showLiveConsumers) {
+        onLiveConsumersToggle(s.showLiveConsumers);
+      }
+    });
+  }, [store, onLiveConsumersToggle]);
 
   // Seed the initial search query once, after mount.
   useEffect(() => {
@@ -138,6 +172,38 @@ export function KymaGraph(props: KymaGraphProps): JSX.Element {
   // chrome prop overrides the legacy toolbar/sidebar combo.
   const showChrome = (chrome ?? true) && sidebar && toolbar;
 
+  // Memoize the GraphView subtree so high-frequency store updates (the live
+  // consumers stream ticks several times a second via setLiveConsumers) never
+  // re-render the WebGL graph — re-rendering it churns the Sigma instance and
+  // blanks the canvas. The consumer overlay reads its data straight from the
+  // store, so the graph itself only needs to re-render on its own inputs.
+  const graphView = useMemo(
+    () => (
+      <GraphView
+        graphs={graphs}
+        discover={discover}
+        realm={realm}
+        renderer={renderer}
+        showChrome={showChrome}
+        focusNodeId={focusNodeId}
+        onSelectedNodeChange={
+          onNodeClick || onSelectionChange ? handleSelectedNodeChange : undefined
+        }
+      />
+    ),
+    [
+      graphs,
+      discover,
+      realm,
+      renderer,
+      showChrome,
+      focusNodeId,
+      onNodeClick,
+      onSelectionChange,
+      handleSelectedNodeChange,
+    ],
+  );
+
   return (
     <KymaErrorBoundary fallback={fallback}>
       <GraphStoreContext.Provider value={store}>
@@ -145,17 +211,7 @@ export function KymaGraph(props: KymaGraphProps): JSX.Element {
           className={className}
           style={{ height, width: "100%", position: "relative", ...style }}
         >
-          <GraphView
-            graphs={graphs}
-            discover={discover}
-            realm={realm}
-            renderer={renderer}
-            showChrome={showChrome}
-            focusNodeId={focusNodeId}
-            onSelectedNodeChange={
-              onNodeClick || onSelectionChange ? handleSelectedNodeChange : undefined
-            }
-          />
+          {graphView}
         </div>
       </GraphStoreContext.Provider>
     </KymaErrorBoundary>

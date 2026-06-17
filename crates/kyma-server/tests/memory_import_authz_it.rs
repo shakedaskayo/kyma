@@ -38,6 +38,7 @@ fn agent_app(state: &kyma_server::QueryState) -> axum::Router {
         memory: None,
         local_dreaming: None,
         memory_settings_path: None,
+        consumer_events: None,
     };
     let backend: Arc<dyn AuthBackend> = Arc::new(EnvAuthBackend::from_str(
         "read-token:read,write-token:write",

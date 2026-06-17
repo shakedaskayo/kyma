@@ -15,11 +15,40 @@ use serde_json::{json, Value};
 
 use super::memory_gate::{self, OpPayload};
 use super::memory_policy::MemoryOp;
-use super::memory_retrieve::{retrieve, RetrieveRequest};
+use super::memory_retrieve::{retrieve, RetrieveRequest, RetrieveResult};
 use super::tools::{execute_sql, SharedToolCtx};
+use kyma_ingest_core::ConsumerAction;
 
 fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339()
+}
+
+/// Touched node ids + namespaces from a recall result, for the live consumer
+/// overlay (memory ids first, then linked-resource node ids).
+fn recall_targets(result: &RetrieveResult) -> (Vec<String>, Vec<String>) {
+    let mut node_ids: Vec<String> = result.memories.iter().map(|m| m.id.clone()).collect();
+    node_ids.extend(result.linked.iter().map(|l| l.node_id.clone()));
+    let mut namespaces: Vec<String> = result.memories.iter().map(|m| m.realm.clone()).collect();
+    namespaces.extend(
+        result
+            .linked
+            .iter()
+            .filter_map(|l| l.target_namespace.clone()),
+    );
+    namespaces.sort();
+    namespaces.dedup();
+    (node_ids, namespaces)
+}
+
+/// Announce a memory write on the live consumer bus (best-effort; no-op without
+/// a wired sink).
+fn emit_remember(shared: &SharedToolCtx, node_id: String, realm: &str) {
+    shared.emit_consumer(
+        ConsumerAction::Remember,
+        vec![node_id],
+        vec![realm.to_string()],
+        None,
+    );
 }
 
 /// Normalize a memory reference (uuid or `memory:<uuid>`) to a node id.
@@ -41,7 +70,9 @@ fn row_realm(row: &Value) -> String {
 
 /// Build a [`MemoryWriter`] from the shared tool context + the process-wide
 /// embedding backend. Returns a JSON error payload on failure.
-pub(crate) async fn build_writer(shared: &SharedToolCtx) -> std::result::Result<MemoryWriter, Value> {
+pub(crate) async fn build_writer(
+    shared: &SharedToolCtx,
+) -> std::result::Result<MemoryWriter, Value> {
     let embed = kyma_memory::shared_embedding()
         .await
         .map_err(|e| json!({"error": format!("embedding backend: {e}")}))?;
@@ -235,6 +266,9 @@ pub fn tool_save_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     if !sync && shared.memory.is_some() {
                         let upsert = resolve_upsert_target(&shared, &cm).await;
                         if let Some(out) = try_queue_save(&shared, &cm, upsert).await {
+                            if let Some(nid) = out.get("node_id").and_then(|v| v.as_str()) {
+                                emit_remember(&shared, nid.to_string(), &cm.realm);
+                            }
                             return Ok(out);
                         }
                     }
@@ -254,22 +288,29 @@ pub fn tool_save_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                             let uuid_part = existing.strip_prefix("memory:").unwrap_or(&existing);
                             if let Ok(u) = uuid::Uuid::parse_str(uuid_part) {
                                 return Ok(match writer.save_as(u, &cm).await {
-                                    Ok(()) => json!({
-                                        "saved": true, "upserted": true,
-                                        "id": u.to_string(), "node_id": existing,
-                                        "topic_key": tk,
-                                    }),
+                                    Ok(()) => {
+                                        emit_remember(&shared, existing.clone(), &cm.realm);
+                                        json!({
+                                            "saved": true, "upserted": true,
+                                            "id": u.to_string(), "node_id": existing,
+                                            "topic_key": tk,
+                                        })
+                                    }
                                     Err(e) => json!({"error": format!("upsert: {e}")}),
                                 });
                             }
                         }
                     }
                     match writer.save(&cm).await {
-                        Ok(id) => Ok(json!({
-                            "saved": true,
-                            "id": id.to_string(),
-                            "node_id": format!("memory:{id}"),
-                        })),
+                        Ok(id) => {
+                            let node_id = format!("memory:{id}");
+                            emit_remember(&shared, node_id.clone(), &cm.realm);
+                            Ok(json!({
+                                "saved": true,
+                                "id": id.to_string(),
+                                "node_id": node_id,
+                            }))
+                        }
                         Err(e) => Ok(json!({"error": format!("save_memory: {e}")})),
                     }
                 }
@@ -653,7 +694,16 @@ pub fn tool_recall_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     // Read-your-own-writes: land queued writes for the target
                     // realms first (bounded; no-op when nothing is pending).
                     shared.memory_barrier(&req.realms).await;
-                    Ok(retrieve(&shared, &req).await.to_json())
+                    let query_preview: String = req.query.chars().take(200).collect();
+                    let result = retrieve(&shared, &req).await;
+                    let (node_ids, namespaces) = recall_targets(&result);
+                    shared.emit_consumer(
+                        ConsumerAction::Recall,
+                        node_ids,
+                        namespaces,
+                        Some(query_preview),
+                    );
+                    Ok(result.to_json())
                 }
             },
         )
@@ -735,7 +785,16 @@ pub fn tool_memory_search(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     // Read-your-own-writes: land queued writes for the target
                     // realms first (bounded; no-op when nothing is pending).
                     shared.memory_barrier(&req.realms).await;
-                    Ok(retrieve(&shared, &req).await.to_json())
+                    let query_preview: String = req.query.chars().take(200).collect();
+                    let result = retrieve(&shared, &req).await;
+                    let (node_ids, namespaces) = recall_targets(&result);
+                    shared.emit_consumer(
+                        ConsumerAction::Search,
+                        node_ids,
+                        namespaces,
+                        Some(query_preview),
+                    );
+                    Ok(result.to_json())
                 }
             },
         )
@@ -1725,7 +1784,10 @@ mod space_param_tests {
 
         let blank: SaveMemoryArgs =
             serde_json::from_value(json!({ "content": "x", "space": "  " })).unwrap();
-        assert!(create_from_save_args(blank).space.is_none(), "blank space dropped");
+        assert!(
+            create_from_save_args(blank).space.is_none(),
+            "blank space dropped"
+        );
 
         // Omitted space stays public (None).
         let none: SaveMemoryArgs = serde_json::from_value(json!({ "content": "x" })).unwrap();

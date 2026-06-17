@@ -58,7 +58,9 @@ async fn engine() -> (tempfile::TempDir, MemoryWriter, SharedToolCtx) {
     .expect("store");
     let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store, "kyma-test"));
     let writer = MemoryWriter::new(catalog.clone(), format.clone(), Arc::new(TestEmbed));
-    let shared = SharedToolCtx { federation: None,
+    let shared = SharedToolCtx {
+        consumer_sink: None,
+        federation: None,
         catalog,
         format,
         pool: None,
@@ -113,7 +115,10 @@ async fn invalidate(writer: &MemoryWriter, shared: &SharedToolCtx, id: Uuid) {
     let now = chrono::Utc::now().to_rfc3339();
     row["invalid_at"] = json!(now);
     row["updated_at"] = json!(now);
-    writer.append_node_rows(vec![row]).await.expect("invalidate");
+    writer
+        .append_node_rows(vec![row])
+        .await
+        .expect("invalidate");
 }
 
 fn input(now: &str) -> CurationInput<'_> {
@@ -165,9 +170,7 @@ fn index_entries(actions: &[FileAction]) -> Vec<super::cc_curate::IndexEntry> {
 fn parses_curation_decisions_tolerantly() {
     use super::cc_curate::{parse_curation_decision, CurationOp};
 
-    let d = parse_curation_decision(
-        r#"{"op": "ARCHIVE", "reason": "obsolete since the rewrite"}"#,
-    );
+    let d = parse_curation_decision(r#"{"op": "ARCHIVE", "reason": "obsolete since the rewrite"}"#);
     assert_eq!(d.op, CurationOp::Archive);
     assert_eq!(d.reason.as_deref(), Some("obsolete since the rewrite"));
 
@@ -176,7 +179,10 @@ fn parses_curation_decisions_tolerantly() {
         "```json\n{\"op\": \"refresh\", \"refreshed_description\": \"clearer one-liner\"}\n```",
     );
     assert_eq!(d.op, CurationOp::Refresh);
-    assert_eq!(d.refreshed_description.as_deref(), Some("clearer one-liner"));
+    assert_eq!(
+        d.refreshed_description.as_deref(),
+        Some("clearer one-liner")
+    );
 
     // Garbage degrades to the safe default: KEEP.
     let d = parse_curation_decision("I think we should probably keep it?");
@@ -208,7 +214,10 @@ fn staleness_respects_age_and_review_stamps() {
         !is_stale(old, Some(fresh), now, 90),
         "recently reviewed → not re-questioned"
     );
-    assert!(is_stale(old, Some(old), now, 90), "stale review re-questions");
+    assert!(
+        is_stale(old, Some(old), now, 90),
+        "stale review re-questions"
+    );
 }
 
 #[tokio::test]
@@ -322,10 +331,19 @@ async fn promotes_top_memories_capped_ordered_and_idempotent() {
     assert_eq!(node_id, &format!("memory:{id_decision}"));
     let parsed = kyma_ccmem::frontmatter::parse(content).expect("rendered file parses");
     assert!(parsed.is_kyma_authored());
-    assert_eq!(parsed.front.name.as_deref(), Some("kyma-auth-model-decision"));
+    assert_eq!(
+        parsed.front.name.as_deref(),
+        Some("kyma-auth-model-decision")
+    );
     assert_eq!(parsed.front.cc_type.as_deref(), Some("project")); // decision → project
-    assert_eq!(parsed.front.kyma_memory_id.as_deref(), Some(node_id.as_str()));
-    assert_eq!(parsed.front.content_hash.as_deref(), Some(content_hash.as_str()));
+    assert_eq!(
+        parsed.front.kyma_memory_id.as_deref(),
+        Some(node_id.as_str())
+    );
+    assert_eq!(
+        parsed.front.content_hash.as_deref(),
+        Some(content_hash.as_str())
+    );
     assert!(parsed.body.contains("session tokens over JWTs"));
     // The stamped hash matches a recompute over the rendered file.
     let recomputed = kyma_ccmem::hash::content_hash(
@@ -422,14 +440,10 @@ async fn excludes_file_born_and_user_owned_from_promotion() {
     .await;
 
     let now = chrono::Utc::now().to_rfc3339();
-    let (actions, _stamps, _) = plan_curation(
-        &shared,
-        &writer,
-        &input(&now),
-        &CurationConfig::default(),
-    )
-    .await
-    .expect("plan");
+    let (actions, _stamps, _) =
+        plan_curation(&shared, &writer, &input(&now), &CurationConfig::default())
+            .await
+            .expect("plan");
 
     assert!(
         writes(&actions).is_empty(),
@@ -493,7 +507,10 @@ async fn superseded_file_born_archives_its_file_once() {
     let (actions2, _, _) = plan_curation(&shared, &writer, &input(&now2), &cfg)
         .await
         .expect("plan 2");
-    assert!(archives(&actions2).is_empty(), "archive emitted exactly once");
+    assert!(
+        archives(&actions2).is_empty(),
+        "archive emitted exactly once"
+    );
 }
 
 #[tokio::test]
@@ -523,14 +540,10 @@ async fn exact_duplicate_file_born_memories_merge() {
     .await;
 
     let now = chrono::Utc::now().to_rfc3339();
-    let (actions, _stamps, outcome) = plan_curation(
-        &shared,
-        &writer,
-        &input(&now),
-        &CurationConfig::default(),
-    )
-    .await
-    .expect("plan");
+    let (actions, _stamps, outcome) =
+        plan_curation(&shared, &writer, &input(&now), &CurationConfig::default())
+            .await
+            .expect("plan");
 
     let arch = archives(&actions);
     assert_eq!(arch.len(), 1);

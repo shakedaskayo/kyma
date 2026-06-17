@@ -47,6 +47,7 @@ async fn engine_at(tmp: &Path) -> (Engine, MemoryWriter, SharedToolCtx) {
         Arc::new(TestEmbed),
     );
     let shared = SharedToolCtx {
+        consumer_sink: None,
         federation: None,
         catalog: engine.catalog.clone(),
         format: engine.format.clone(),

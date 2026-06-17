@@ -41,7 +41,9 @@ pub struct SyncConfig {
 pub async fn run(engine: &Engine, cfg: SyncConfig) -> Result<()> {
     let base = cfg.cloud_url.trim_end_matches('/').to_string();
     let client = reqwest::Client::new();
-    let shared = SharedToolCtx { federation: None,
+    let shared = SharedToolCtx {
+        consumer_sink: None,
+        federation: None,
         catalog: engine.catalog.clone(),
         format: engine.format.clone(),
         pool: None,
