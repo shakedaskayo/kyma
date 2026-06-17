@@ -1046,13 +1046,18 @@ pub async fn run_serve(
     if password == "admin" {
         warn!("using the default local password 'admin' — set KYMA_LOCAL_PASSWORD to change it");
     }
-    let served = axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-            info!("shutdown signal received");
-        })
-        .await
-        .context("http server");
+    // `into_make_service_with_connect_info` so handlers can read the peer addr
+    // (the live-consumers overlay records the connecting agent's ip/pid).
+    let served = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        let _ = tokio::signal::ctrl_c().await;
+        info!("shutdown signal received");
+    })
+    .await
+    .context("http server");
     // Land queued memories before exiting (Ctrl-C path).
     if let Some(memq) = memq {
         memq.shutdown().await;

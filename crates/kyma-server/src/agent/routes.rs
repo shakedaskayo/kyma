@@ -484,8 +484,14 @@ struct MemoryQueryRequest {
 async fn memory_query_handler(
     State(state): State<AgentState>,
     Extension(principal): Extension<Principal>,
+    peer: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
     Json(body): Json<MemoryQueryRequest>,
 ) -> Json<Value> {
+    // Record the connecting peer (ip only — keep the recall hot path cheap; pid
+    // is resolved on MCP initialize) for the live-consumers overlay.
+    if let Some(axum::extract::ConnectInfo(addr)) = peer {
+        crate::agent::identity::record_peer(addr, false);
+    }
     let query_preview: String = body.retrieve.query.chars().take(200).collect();
     let span = tracing::info_span!(
         target: "kyma_telemetry",
@@ -531,8 +537,16 @@ async fn memory_query_handler(
             namespaces.sort();
             namespaces.dedup();
             let kind = crate::agent::identity::consumer_kind();
+            let ip = crate::agent::identity::peer_ip();
+            let pid = crate::agent::identity::peer_pid();
+            let ident = principal
+                .subject
+                .clone()
+                .or_else(|| pid.map(|p| p.to_string()))
+                .or_else(|| ip.clone())
+                .unwrap_or_else(|| "anon".into());
             sink.events.publish(kyma_ingest_core::ConsumerActivity {
-                consumer_id: format!("{kind}:{}", principal.subject.as_deref().unwrap_or("anon")),
+                consumer_id: format!("{kind}:{ident}"),
                 label: principal.subject.clone().unwrap_or_else(|| kind.clone()),
                 kind,
                 subject: principal.subject.clone(),
@@ -542,6 +556,11 @@ async fn memory_query_handler(
                 namespaces,
                 query_preview: Some(query_preview.clone()),
                 ts: chrono::Utc::now().timestamp_millis(),
+                host: Some(crate::agent::identity::host_name()),
+                client_version: crate::agent::identity::client_version(),
+                transport: crate::agent::identity::transport(),
+                ip,
+                pid,
             });
         }
         let mut out = result.to_json();

@@ -11,7 +11,7 @@
 //! existing `require_role_middleware(Role::Read)` layer.
 
 use axum::body::{Body, Bytes};
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -20,6 +20,7 @@ use axum::{Json, Router};
 use futures::stream::{self, Stream};
 use serde_json::{json, Value};
 use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use crate::dispatch::dispatch_request;
@@ -42,11 +43,22 @@ pub fn router(state: McpState) -> Router {
         .with_state(state)
 }
 
-async fn handle_post(State(state): State<McpState>, body: Bytes) -> Response {
+async fn handle_post(
+    State(state): State<McpState>,
+    // Optional so tests (which don't serve with connect-info) still work.
+    peer: Option<ConnectInfo<SocketAddr>>,
+    body: Bytes,
+) -> Response {
     let envelope = match parse_envelope(&body) {
         Ok(env) => env,
         Err(err) => return parse_error_response_with_obj(err),
     };
+    // Record the connecting peer for the live-consumers overlay. Resolve the
+    // (best-effort, loopback-only) pid only on `initialize`, to amortize the
+    // lsof cost across the session.
+    if let Some(ConnectInfo(addr)) = peer {
+        kyma_server::agent::identity::record_peer(addr, envelope_has_initialize(&envelope));
+    }
     match envelope {
         RequestEnvelope::Single(req) => match dispatch_one(&state, req).await {
             Some(resp) => Json(resp).into_response(),
@@ -65,6 +77,14 @@ async fn handle_post(State(state): State<McpState>, body: Bytes) -> Response {
                 Json(out).into_response()
             }
         }
+    }
+}
+
+/// True when the envelope contains an `initialize` request (worth the pid lookup).
+fn envelope_has_initialize(env: &RequestEnvelope) -> bool {
+    match env {
+        RequestEnvelope::Single(r) => r.method == "initialize",
+        RequestEnvelope::Batch(rs) => rs.iter().any(|r| r.method == "initialize"),
     }
 }
 

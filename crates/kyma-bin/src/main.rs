@@ -1693,7 +1693,13 @@ async fn main() -> Result<()> {
         .with_context(|| format!("binding {}", cli.http_addr))?;
     info!(addr = %cli.http_addr, "http server listening");
     let shutdown = shutdown_signal();
-    let serve = axum::serve(listener, app).with_graceful_shutdown(shutdown);
+    // connect-info make-service so handlers can read the peer addr (the
+    // live-consumers overlay records the connecting agent's ip).
+    let serve = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown);
     if let Err(e) = serve.await {
         error!(error = %e, "http server terminated with error");
     }

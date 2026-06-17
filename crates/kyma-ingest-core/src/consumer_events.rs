@@ -57,6 +57,23 @@ pub struct ConsumerActivity {
     pub query_preview: Option<String>,
     /// Milliseconds since the Unix epoch.
     pub ts: i64,
+    // ── connection / process detail (best-effort; for the dock's expanded row) ──
+    /// Host machine name (the server; = the client's machine in local mode).
+    #[serde(default)]
+    pub host: Option<String>,
+    /// MCP client version (`clientInfo.version`), when advertised.
+    #[serde(default)]
+    pub client_version: Option<String>,
+    /// Transport/entry point: `local-serve` | `server` | `mcp-stdio`.
+    #[serde(default)]
+    pub transport: Option<String>,
+    /// Peer IP of the connection (loopback in local mode, the agent's IP in
+    /// server mode), when captured.
+    #[serde(default)]
+    pub ip: Option<String>,
+    /// Best-effort local process id of the consumer (loopback connections only).
+    #[serde(default)]
+    pub pid: Option<u32>,
 }
 
 /// In-process broadcast bus for [`ConsumerActivity`]. Cloneable handle around a
@@ -96,6 +113,11 @@ mod tests {
             namespaces: vec!["kyma".into()],
             query_preview: Some("auth flow".into()),
             ts: 1_700_000_000_000,
+            host: Some("ws-mbp".into()),
+            client_version: Some("1.0".into()),
+            transport: Some("local-serve".into()),
+            ip: Some("127.0.0.1".into()),
+            pid: Some(4242),
         }
     }
 

@@ -97,8 +97,15 @@ impl SharedToolCtx {
             return;
         };
         let kind = super::identity::consumer_kind();
+        let ip = super::identity::peer_ip();
+        let pid = super::identity::peer_pid();
+        // Distinguish distinct client processes when we can (pid, else ip).
+        let ident = pid
+            .map(|p| p.to_string())
+            .or_else(|| ip.clone())
+            .unwrap_or_else(|| "anon".into());
         sink.events.publish(ConsumerActivity {
-            consumer_id: format!("{kind}:anon"),
+            consumer_id: format!("{kind}:{ident}"),
             label: kind.clone(),
             kind,
             subject: None,
@@ -108,6 +115,11 @@ impl SharedToolCtx {
             namespaces,
             query_preview,
             ts: chrono::Utc::now().timestamp_millis(),
+            host: Some(super::identity::host_name()),
+            client_version: super::identity::client_version(),
+            transport: super::identity::transport(),
+            ip,
+            pid,
         });
     }
 }

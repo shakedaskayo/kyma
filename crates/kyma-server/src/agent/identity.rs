@@ -15,11 +15,16 @@
 //!   clients share the process.
 
 use serde_json::{json, Value};
+use std::net::SocketAddr;
 use std::sync::{OnceLock, RwLock};
 
 static HOST: OnceLock<String> = OnceLock::new();
 static SOURCE: OnceLock<String> = OnceLock::new();
 static CLIENT: RwLock<Option<(String, String)>> = RwLock::new(None);
+/// The connecting peer `(ip, best-effort local pid)`, recorded at MCP
+/// `initialize` and the HTTP recall handler. Process-global latest-wins (the
+/// HTTP transport shares one process); exact for single-user local mode.
+static PEER: RwLock<Option<(String, Option<u32>)>> = RwLock::new(None);
 
 /// Set the process's write source once (first call wins): the transport or
 /// entry point memories are produced through.
@@ -32,6 +37,92 @@ pub fn record_client(name: &str, version: &str) {
     if let Ok(mut slot) = CLIENT.write() {
         *slot = Some((name.to_string(), version.to_string()));
     }
+}
+
+/// Record the connecting peer's address. `resolve_pid` triggers a best-effort
+/// local socket→process lookup (loopback only) — do this sparingly (at MCP
+/// `initialize`), NOT on every request, since it shells out to `lsof`.
+pub fn record_peer(addr: SocketAddr, resolve_pid: bool) {
+    let ip = addr.ip().to_string();
+    let pid = if resolve_pid {
+        resolve_local_pid(&addr)
+    } else {
+        None
+    };
+    if let Ok(mut slot) = PEER.write() {
+        // Keep an existing pid if this call didn't resolve one (e.g. a recall
+        // request after the initialize already resolved it for this session).
+        let keep_pid = match (&*slot, pid) {
+            (Some((_, prev)), None) => *prev,
+            (_, p) => p,
+        };
+        *slot = Some((ip, keep_pid));
+    }
+}
+
+/// Best-effort: the local process that owns a loopback peer socket. Returns
+/// `None` for non-loopback peers, or when `lsof` is unavailable / unparseable.
+fn resolve_local_pid(addr: &SocketAddr) -> Option<u32> {
+    if !addr.ip().is_loopback() {
+        return None;
+    }
+    let me = std::process::id();
+    // `-iTCP:<port>` matches both ends of the loopback connection (the client
+    // owns the ephemeral port locally; our server has it as a remote port), so
+    // pick the pid that isn't us.
+    let out = std::process::Command::new("lsof")
+        .args([
+            "-nP",
+            &format!("-iTCP:{}", addr.port()),
+            "-sTCP:ESTABLISHED",
+            "-Fp",
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            l.strip_prefix('p')
+                .and_then(|p| p.trim().parse::<u32>().ok())
+        })
+        .find(|&pid| pid != me)
+}
+
+/// The recorded peer ip, if any.
+pub fn peer_ip() -> Option<String> {
+    PEER.read()
+        .ok()
+        .and_then(|s| s.as_ref().map(|(ip, _)| ip.clone()))
+}
+
+/// The recorded peer pid, if resolved.
+pub fn peer_pid() -> Option<u32> {
+    PEER.read()
+        .ok()
+        .and_then(|s| s.as_ref().and_then(|(_, pid)| *pid))
+}
+
+/// The MCP client's advertised version, if recorded.
+pub fn client_version() -> Option<String> {
+    CLIENT
+        .read()
+        .ok()
+        .and_then(|c| c.as_ref().map(|(_, v)| v.clone()))
+        .filter(|v| !v.is_empty())
+}
+
+/// The transport/source this process serves through (`local-serve`, `server`,
+/// `mcp-stdio`), if set.
+pub fn transport() -> Option<String> {
+    SOURCE.get().cloned()
+}
+
+/// The server/host machine name.
+pub fn host_name() -> String {
+    host().to_string()
 }
 
 fn host() -> &'static str {
