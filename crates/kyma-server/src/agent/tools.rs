@@ -71,17 +71,35 @@ pub struct SharedToolCtx {
     pub consumer_sink: Option<ConsumerSink>,
 }
 
-/// Pairs the consumer-activity broadcast bus with the tenant to stamp on
-/// tool-path emits. The tool layer runs below the auth middleware, so there is
-/// no `Principal` here — the tenant travels with the bus handle instead.
-#[derive(Clone)]
-pub struct ConsumerSink {
+/// Where a consumer-activity event goes. The `kyma serve` process publishes to
+/// its in-process broadcast bus; a separate `kyma mcp` (stdio) process — which
+/// can't reach that bus — forwards events over HTTP to a running serve instead.
+pub trait ConsumerPublisher: Send + Sync {
+    /// Tenant stamped onto emitted activity (the tool layer has no `Principal`).
+    fn tenant(&self) -> TenantId;
+    fn publish(&self, activity: ConsumerActivity);
+}
+
+/// A shareable consumer-activity sink (local bus or remote forwarder).
+pub type ConsumerSink = std::sync::Arc<dyn ConsumerPublisher>;
+
+/// Publishes to the in-process [`ConsumerEvents`] broadcast bus (serve process).
+pub struct LocalConsumerPublisher {
     pub events: ConsumerEvents,
     pub tenant: TenantId,
 }
 
+impl ConsumerPublisher for LocalConsumerPublisher {
+    fn tenant(&self) -> TenantId {
+        self.tenant
+    }
+    fn publish(&self, activity: ConsumerActivity) {
+        self.events.publish(activity);
+    }
+}
+
 impl SharedToolCtx {
-    /// Publish a consumer-activity event to the live bus, if one is wired.
+    /// Publish a consumer-activity event to the live sink, if one is wired.
     /// Best-effort and lossy — never blocks or fails the calling tool. The
     /// consumer `kind` is resolved from the process-global MCP client identity
     /// (`claude-code`, `cursor`, …), so even without an auth subject the
@@ -104,12 +122,12 @@ impl SharedToolCtx {
             .map(|p| p.to_string())
             .or_else(|| ip.clone())
             .unwrap_or_else(|| "anon".into());
-        sink.events.publish(ConsumerActivity {
+        sink.publish(ConsumerActivity {
             consumer_id: format!("{kind}:{ident}"),
             label: kind.clone(),
             kind,
             subject: None,
-            tenant: sink.tenant.to_string(),
+            tenant: sink.tenant().to_string(),
             action,
             node_ids,
             namespaces,

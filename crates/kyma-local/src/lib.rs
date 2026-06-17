@@ -78,7 +78,9 @@ use kyma_mcp::{serve_stdio, McpState, ServerInfo, ToolDispatch};
 use kyma_server::agent::local::{
     FileEnabledSkillsStore, FileEnginePreferenceStore, NullCredentialStore,
 };
-use kyma_server::agent::{AgentState, ConsumerSink, SharedToolCtx};
+use kyma_server::agent::{
+    AgentState, ConsumerPublisher, ConsumerSink, LocalConsumerPublisher, SharedToolCtx,
+};
 use kyma_server::auth::{
     require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role, SessionAuthBackend,
 };
@@ -204,10 +206,64 @@ async fn open_engine(paths: &Paths) -> Result<Engine> {
     })
 }
 
+/// Forwards consumer activity to a running `kyma serve` over HTTP. Used by the
+/// standalone `kyma mcp` (stdio) process, which has no access to the serve's
+/// in-process bus, so the agent driving it still shows in the live overlay.
+/// Best-effort + fire-and-forget; with no serve up the POST just fails silently.
+struct RemoteConsumerPublisher {
+    endpoint: String,
+    token: String,
+    client: reqwest::Client,
+}
+
+impl ConsumerPublisher for RemoteConsumerPublisher {
+    fn tenant(&self) -> kyma_core::tenant::TenantId {
+        kyma_core::tenant::DEFAULT_TENANT
+    }
+    fn publish(&self, activity: kyma_ingest_core::ConsumerActivity) {
+        let url = format!("{}/v1/consumers/emit", self.endpoint.trim_end_matches('/'));
+        let token = self.token.clone();
+        let client = self.client.clone();
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let _ = client
+                    .post(url)
+                    .bearer_auth(token)
+                    .json(&activity)
+                    .timeout(std::time::Duration::from_secs(2))
+                    .send()
+                    .await;
+            });
+        }
+    }
+}
+
+/// Build a forwarder to a running serve from `${KYMA_HOME}/config.json`, if it
+/// exists with an endpoint + token. `None` ⇒ `kyma mcp` runs standalone (no
+/// overlay forwarding), exactly as before.
+fn remote_consumer_sink() -> Option<ConsumerSink> {
+    let home = std::env::var("KYMA_HOME")
+        .ok()
+        .or_else(|| std::env::var("HOME").ok().map(|h| format!("{h}/.kyma")))?;
+    let raw = std::fs::read_to_string(format!("{home}/config.json")).ok()?;
+    let cfg: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let endpoint = cfg.get("endpoint")?.as_str()?.trim().to_string();
+    let token = cfg.get("token")?.as_str()?.trim().to_string();
+    if endpoint.is_empty() || token.is_empty() {
+        return None;
+    }
+    Some(std::sync::Arc::new(RemoteConsumerPublisher {
+        endpoint,
+        token,
+        client: reqwest::Client::new(),
+    }))
+}
+
 fn mcp_state(engine: &Engine, memory: Option<kyma_memory::MemoryQueue>) -> McpState {
     // No Postgres pool in local mode — recall/save run over the engine.
     let shared = SharedToolCtx {
-        consumer_sink: None,
+        // Forward to a running serve so stdio agents appear in the live overlay.
+        consumer_sink: remote_consumer_sink(),
         federation: None,
         catalog: engine.catalog.clone(),
         format: engine.format.clone(),
@@ -451,10 +507,10 @@ pub fn build_local_app(
     // Build McpState from the same catalog + format the rest of the app uses.
     let mcp = McpState {
         dispatch: ToolDispatch::new(SharedToolCtx {
-            consumer_sink: Some(ConsumerSink {
+            consumer_sink: Some(std::sync::Arc::new(LocalConsumerPublisher {
                 events: consumer_events.clone(),
                 tenant: kyma_core::tenant::DEFAULT_TENANT,
-            }),
+            })),
             federation: None,
             catalog: catalog.clone(),
             format: format.clone(),
@@ -472,6 +528,13 @@ pub fn build_local_app(
         .merge(kyma_server::capabilities::router(
             kyma_server::capabilities::Capabilities::LOCAL,
         ))
+        // POST /v1/consumers/emit — separate kyma mcp (stdio) processes forward
+        // their consumer activity here so they show in the live overlay.
+        .merge(
+            kyma_server::discover::consumers_live::consumers_emit_router(Some(
+                consumer_events.clone(),
+            )),
+        )
         .layer(read_mw());
     let ingest_router = kyma_ingest_rest::router(ingest_state).layer(write_mw());
     // Dashboards + table cleanup write over the Catalog trait — fully

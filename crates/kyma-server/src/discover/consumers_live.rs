@@ -22,8 +22,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
-use axum::routing::get;
-use axum::Router;
+use axum::routing::{get, post};
+use axum::{Extension, Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::broadcast;
@@ -71,6 +71,31 @@ pub fn consumers_live_router(
             let deps = deps.clone();
             async move { ws.on_upgrade(move |sock| session(sock, deps)) }
         }),
+    )
+}
+
+/// Authenticated `POST /v1/consumers/emit` — lets a separate `kyma mcp` (stdio)
+/// process forward its consumer activity into THIS serve's live bus, so coding
+/// agents that don't share the serve's process still appear in the overlay. The
+/// tenant is stamped from the caller's principal (the body's value is ignored).
+/// Mount UNDER the read-auth middleware so `Principal` is present.
+pub fn consumers_emit_router(events: Option<ConsumerEvents>) -> Router {
+    Router::new().route(
+        "/v1/consumers/emit",
+        post(
+            move |Extension(principal): Extension<Principal>,
+                  Json(activity): Json<ConsumerActivity>| {
+                let events = events.clone();
+                async move {
+                    if let Some(bus) = events {
+                        let mut a = activity;
+                        a.tenant = principal.tenant.to_string();
+                        bus.publish(a);
+                    }
+                    axum::http::StatusCode::ACCEPTED
+                }
+            },
+        ),
     )
 }
 
