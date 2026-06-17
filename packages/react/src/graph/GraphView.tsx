@@ -14,6 +14,8 @@ import { LegendDock } from "./LegendDock";
 import { BreadcrumbTrail } from "./BreadcrumbTrail";
 import { Minimap } from "./Minimap";
 import { HullsLayer } from "./HullsLayer";
+import { ConsumerBeamsLayer } from "./ConsumerBeamsLayer";
+import { ConsumerDock } from "./ConsumerDock";
 import { useKeyboardWalk } from "./useKeyboardWalk";
 import type { UseKymaGraphArgs } from "../hooks/useKymaGraph";
 
@@ -106,6 +108,7 @@ export function GraphView({
   const focusModeId = useGraphStore((s) => s.focusModeId);
   const setFocusMode = useGraphStore((s) => s.setFocusMode);
   const pushTrail = useGraphStore((s) => s.pushTrail);
+  const showLiveConsumers = useGraphStore((s) => s.showLiveConsumers);
 
   const { isDark } = useKymaContext();
 
@@ -341,6 +344,9 @@ export function GraphView({
         }}
       />
 
+      {/* Live-consumer beams — composited above the WebGL canvas, WebGL only */}
+      {useWebGL && showLiveConsumers && <ConsumerBeamsLayer sigma={sigma} />}
+
       {/* Layout computing pill */}
       {exp.layoutComputing && nodes.length > 0 && (
         <div className="ky-absolute ky-left-1/2 ky-top-3 ky-z-10 -ky-translate-x-1/2">
@@ -415,6 +421,9 @@ export function GraphView({
         </>
       )}
       </div>
+
+      {/* Live-consumers dock — docks beside the canvas (left of the inspector) */}
+      {showChrome && showLiveConsumers && <ConsumerDock />}
 
       {/* Docked inspector — sits beside the canvas, never over it */}
       {showChrome && (

@@ -24,18 +24,20 @@
 
 pub mod commit_coordinator;
 pub mod committer;
+pub mod consumer_events;
 pub mod ensure;
 pub mod event_time;
 pub mod events;
 pub mod ndjson;
 pub mod staging;
 pub use commit_coordinator::{CommitCoordinator, CoordinatorConfig};
+pub use consumer_events::{ConsumerAction, ConsumerActivity, ConsumerEvents};
 pub use ensure::{
     default_table_schema, ensure_table, evolve_schema_for_records, MAX_NEW_COLUMNS_PER_REQUEST,
 };
+pub use events::{IngestEvents, RowsAppended};
 pub use ndjson::{parse_ndjson, NdjsonError};
 pub use staging::{FlushOutcome, StagingBuffer, StagingConfig};
-pub use events::{IngestEvents, RowsAppended};
 
 use chrono::{DateTime, Utc};
 use kyma_core::catalog::{Catalog, ExtentManifest, IngestLedgerEntry, SnapshotSummary, TableRef};
@@ -466,9 +468,7 @@ pub fn spawn_idempotency_cleanup(
                     Err(e) => tracing::warn!("idempotency cleanup failed: {e}"),
                 }
             } else {
-                tracing::warn!(
-                    "idempotency cleanup: catalog is not PostgresCatalog; skipping"
-                );
+                tracing::warn!("idempotency cleanup: catalog is not PostgresCatalog; skipping");
             }
         }
     })

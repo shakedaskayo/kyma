@@ -65,7 +65,20 @@ pub fn writer_json() -> Value {
 /// MCP client has identified itself. Used to attribute a memory's
 /// `writer_agent_id` (S3.3) without threading a request principal everywhere.
 pub fn client_name() -> Option<String> {
-    CLIENT.read().ok().and_then(|c| c.as_ref().map(|(n, _)| n.clone()))
+    CLIENT
+        .read()
+        .ok()
+        .and_then(|c| c.as_ref().map(|(n, _)| n.clone()))
+}
+
+/// Best-effort consumer kind for live consumer-activity attribution: the MCP
+/// client name when known (`claude-code`, `cursor`, …), else the transport
+/// source (`local-serve`, `server`, `mcp-stdio`), else `"unknown"`. The graph
+/// explorer overlay maps this to an icon + colour.
+pub fn consumer_kind() -> String {
+    client_name()
+        .or_else(|| SOURCE.get().cloned())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 /// Merge the writer identity into a memory's provenance (under `writer`),

@@ -231,11 +231,7 @@ impl Tool for BudgetedTool {
     fn is_concurrency_safe(&self) -> bool {
         self.inner.is_concurrency_safe()
     }
-    async fn execute(
-        &self,
-        ctx: Arc<dyn ToolContext>,
-        args: Value,
-    ) -> adk_rust::Result<Value> {
+    async fn execute(&self, ctx: Arc<dyn ToolContext>, args: Value) -> adk_rust::Result<Value> {
         if !self.budget.take() {
             return Ok(json!({"error": format!(
                 "mutation budget exhausted for this dreaming run (cap {}) — stop mutating and \
@@ -556,7 +552,6 @@ impl LocalRecorder {
     pub fn new(store: Arc<LocalDreamingStore>) -> Self {
         Self { store }
     }
-
 }
 
 #[adk_rust::async_trait]
@@ -702,14 +697,22 @@ pub async fn run_dreaming_with(
     let started_at = Utc::now();
     let start = Instant::now();
     let wall_clock = Duration::from_secs(settings.wall_clock_secs.max(30));
-    let system_prompt =
-        dreaming_prompt(&mode, req.focus.as_deref(), &settings.realm_scope, &settings);
+    let system_prompt = dreaming_prompt(
+        &mode,
+        req.focus.as_deref(),
+        &settings.realm_scope,
+        &settings,
+    );
 
     let mut outcome = DreamingOutcome::default();
     let mut trace: Vec<Value> = Vec::new();
     let run_result: Result<(), String> = if engine_cfg.kind == EngineKind::ClaudeCli {
-        let skill_trigger =
-            dreaming_trigger_prompt(&mode, req.focus.as_deref(), &settings.realm_scope, &settings);
+        let skill_trigger = dreaming_trigger_prompt(
+            &mode,
+            req.focus.as_deref(),
+            &settings.realm_scope,
+            &settings,
+        );
         run_via_claude_cli(
             state,
             &engine_cfg.model,
@@ -845,7 +848,10 @@ async fn observe_tool_call(
         }
         "data_source_read" => {
             outcome.data_source_reads += 1;
-            let op = args.get("operation").and_then(|v| v.as_str()).unwrap_or("read");
+            let op = args
+                .get("operation")
+                .and_then(|v| v.as_str())
+                .unwrap_or("read");
             ("🔌", format!("Data source read: {op}"))
         }
         "list_data_sources" => ("🔌", "Listing data sources".to_string()),
@@ -890,12 +896,16 @@ async fn run_via_adk(
         .get()
         .await
         .map_err(|e| format!("engine: {e}"))?;
-    let resolver =
-        super::engine::CredentialResolver::new(state.credentials.clone(), state.tenant);
-    let key = resolver.resolve(&cfg).await.map_err(|e| format!("creds: {e}"))?;
+    let resolver = super::engine::CredentialResolver::new(state.credentials.clone(), state.tenant);
+    let key = resolver
+        .resolve(&cfg)
+        .await
+        .map_err(|e| format!("creds: {e}"))?;
     let llm = super::engine::build_engine(&cfg, key).map_err(|e| format!("engine: {e}"))?;
 
-    let shared = super::tools::SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+    let shared = super::tools::SharedToolCtx {
+        consumer_sink: None,
+        federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
@@ -924,11 +934,8 @@ async fn run_via_adk(
     for tool in dreaming_toolset(&shared, data_source_ctx, &mutation_budget, mode) {
         builder = builder.tool(tool);
     }
-    let agent: Arc<dyn adk_rust::Agent> = Arc::new(
-        builder
-            .build()
-            .map_err(|e| format!("agent build: {e:?}"))?,
-    );
+    let agent: Arc<dyn adk_rust::Agent> =
+        Arc::new(builder.build().map_err(|e| format!("agent build: {e:?}"))?);
 
     let sessions_svc: Arc<dyn SessionService> = Arc::new(InMemorySessionService::new());
     sessions_svc
@@ -1093,8 +1100,7 @@ async fn gather_dreaming_skills(state: &AgentState) -> Vec<super::skill_delivery
     if enabled.is_empty() {
         return skills;
     }
-    let enabled_set: std::collections::HashSet<&str> =
-        enabled.iter().map(String::as_str).collect();
+    let enabled_set: std::collections::HashSet<&str> = enabled.iter().map(String::as_str).collect();
     let discovered = crate::agent::skills::discover_all();
     let tenant_skills: Vec<_> = discovered
         .into_iter()
@@ -1142,7 +1148,9 @@ async fn run_via_claude_cli(
     // CLAUDE.md / .claude settings out of the headless agent's context (it must
     // see the memory store through kyma's tools, not the operator's checkout).
     let skills = gather_dreaming_skills(state).await;
-    let delivered = super::skill_delivery::deliver_to_workdir(&skills).await.ok();
+    let delivered = super::skill_delivery::deliver_to_workdir(&skills)
+        .await
+        .ok();
 
     let scratch = std::env::temp_dir().join("kyma-dreaming");
     let (cwd, prompt) = match &delivered {
@@ -1162,14 +1170,9 @@ async fn run_via_claude_cli(
 
     // The CLI takes one prompt. `delivered` (the temp workdir) is held in scope
     // through the whole event loop so its `.claude/skills` survives the run.
-    let (mut events, pid) = claude_cli::run_stream_with_pid(
-        &prompt,
-        Some(model),
-        None,
-        Some(&cwd),
-        mcp.as_ref(),
-    )
-    .map_err(|e| format!("claude spawn: {e}"))?;
+    let (mut events, pid) =
+        claude_cli::run_stream_with_pid(&prompt, Some(model), None, Some(&cwd), mcp.as_ref())
+            .map_err(|e| format!("claude spawn: {e}"))?;
 
     let mut answer = String::new();
     let deadline = tokio::time::Instant::now() + wall_clock;
@@ -1210,7 +1213,9 @@ async fn run_via_claude_cli(
                 let short = name.rsplit("__").next().unwrap_or(&name).to_string();
                 observe_tool_call(outcome, activity, &short, &input).await;
             }
-            claude_cli::ClaudeEvent::ToolResult { output, is_error, .. } => {
+            claude_cli::ClaudeEvent::ToolResult {
+                output, is_error, ..
+            } => {
                 trace.push(json!({"event": "tool_result", "data": {
                     "tool": "", "result": output, "is_error": is_error
                 }}));
@@ -1260,7 +1265,9 @@ impl DreamingScheduler {
         let Some(pool) = self.state.pool.as_ref() else {
             return Ok(());
         };
-        let settings = memory_settings::load(Some(pool), self.state.tenant).await.dreaming;
+        let settings = memory_settings::load(Some(pool), self.state.tenant)
+            .await
+            .dreaming;
         if !settings.enabled {
             return Ok(());
         }
@@ -1361,8 +1368,7 @@ pub fn spawn_local_run(
             worker_id: None,
         };
         // Guard against a panic in the run leaving the in-flight flag stuck.
-        let result =
-            run_dreaming_with(&state, &recorder, ids, progress, req).await;
+        let result = run_dreaming_with(&state, &recorder, ids, progress, req).await;
         store.release();
         match result {
             Ok((rid, outcome)) => info!(
@@ -1538,13 +1544,14 @@ pub async fn get_run_handler(
     if let Some(store) = state.local_dreaming.as_ref() {
         return match store.get_run(id) {
             Some(run) => (StatusCode::OK, Json(run)).into_response(),
-            None => {
-                (StatusCode::NOT_FOUND, Json(json!({"error": "no such run"}))).into_response()
-            }
+            None => (StatusCode::NOT_FOUND, Json(json!({"error": "no such run"}))).into_response(),
         };
     }
     let Some(pool) = state.pool.as_ref() else {
-        return (StatusCode::NOT_FOUND, Json(json!({"error": "no runs in local mode"})))
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "no runs in local mode"})),
+        )
             .into_response();
     };
     let row = sqlx::query(&format!("{RUN_SELECT} WHERE tenant_id = $1 AND id = $2"))
@@ -1559,12 +1566,11 @@ pub async fn get_run_handler(
             use sqlx::Row as _;
             if body.get("status").and_then(|s| s.as_str()) == Some("running") {
                 if let Some(job_id) = r.get::<Option<Uuid>, _>("job_id") {
-                    if let Ok(Some(p)) = sqlx::query_scalar::<_, Value>(
-                        "SELECT progress FROM jobs WHERE id = $1",
-                    )
-                    .bind(job_id)
-                    .fetch_optional(pool)
-                    .await
+                    if let Ok(Some(p)) =
+                        sqlx::query_scalar::<_, Value>("SELECT progress FROM jobs WHERE id = $1")
+                            .bind(job_id)
+                            .fetch_optional(pool)
+                            .await
                     {
                         body["progress"] = p;
                     }
@@ -1608,7 +1614,13 @@ pub async fn trigger_run_handler(
                 .into_response();
         }
         let job_id = Uuid::new_v4(); // synthetic id so the UI gets a 202 it can toast
-        spawn_local_run(state.clone(), store, body0.mode, body0.focus, Trigger::Manual);
+        spawn_local_run(
+            state.clone(),
+            store,
+            body0.mode,
+            body0.focus,
+            Trigger::Manual,
+        );
         return (StatusCode::ACCEPTED, Json(json!({ "job_id": job_id }))).into_response();
     }
     let Some(pool) = state.pool.clone() else {
@@ -1651,11 +1663,9 @@ pub async fn trigger_run_handler(
         )
         .await
     {
-        Ok(Some(job_id)) => (
-            StatusCode::ACCEPTED,
-            Json(json!({ "job_id": job_id })),
-        )
-            .into_response(),
+        Ok(Some(job_id)) => {
+            (StatusCode::ACCEPTED, Json(json!({ "job_id": job_id }))).into_response()
+        }
         Ok(None) => (
             StatusCode::OK,
             Json(json!({ "job_id": Value::Null, "deduped": true,
@@ -1691,7 +1701,10 @@ mod trigger_tests {
         assert!(p.contains("Mutation cap"));
         // The thin trigger must NOT inline the full phase procedure — that lives
         // in the skill now.
-        assert!(!p.contains("PHASE 3"), "procedure lives in the skill, not the trigger");
+        assert!(
+            !p.contains("PHASE 3"),
+            "procedure lives in the skill, not the trigger"
+        );
     }
 
     #[test]
@@ -1713,7 +1726,13 @@ mod trigger_tests {
             name: "kyma-dreaming".to_string(),
             body: crate::agent::dreaming_skill::kyma_dreaming_skill().to_string(),
         };
-        assert_eq!(first.name, "kyma-dreaming", "first skill must always be kyma-dreaming");
-        assert!(!first.body.is_empty(), "kyma-dreaming body must be non-empty");
+        assert_eq!(
+            first.name, "kyma-dreaming",
+            "first skill must always be kyma-dreaming"
+        );
+        assert!(
+            !first.body.is_empty(),
+            "kyma-dreaming body must be non-empty"
+        );
     }
 }

@@ -46,4 +46,9 @@ pub struct AgentState {
     /// `None` in server mode, where settings live in the Postgres `memory_settings`
     /// row.
     pub memory_settings_path: Option<std::path::PathBuf>,
+    /// Live consumer-activity broadcast bus. Flows into the [`super::SharedToolCtx`]
+    /// of every interactive memory tool path (as a [`super::tools::ConsumerSink`])
+    /// and is subscribed by the `GET /v1/consumers/live` WebSocket that drives the
+    /// graph explorer's realtime overlay. `None` ⇒ the overlay has no live feed.
+    pub consumer_events: Option<kyma_ingest_core::ConsumerEvents>,
 }

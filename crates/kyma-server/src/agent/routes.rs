@@ -21,8 +21,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::types::Json as SqlxJson;
 use sqlx::PgPool;
-use tracing::{debug, error, info, warn};
 use tracing::Instrument as _;
+use tracing::{debug, error, info, warn};
 
 use super::engine::{
     build_engine, claude_cli, engine_catalogue, CredentialResolver, EngineConfig, EngineKind,
@@ -165,7 +165,8 @@ async fn import_memory_handler(
                 return Json(json!({ "error": format!("embedding backend: {e}") })).into_response()
             }
         };
-        let writer = kyma_memory::MemoryWriter::new(state.catalog.clone(), state.format.clone(), embed);
+        let writer =
+            kyma_memory::MemoryWriter::new(state.catalog.clone(), state.format.clone(), embed);
         let mut applied_nodes = 0usize;
         let mut applied_edges = 0usize;
         let mut errors: Vec<String> = Vec::new();
@@ -220,7 +221,9 @@ async fn changes_memory_handler(
     State(state): State<AgentState>,
     axum::extract::Query(params): axum::extract::Query<ChangesParams>,
 ) -> Json<Value> {
-    let shared = SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+    let shared = SharedToolCtx {
+        consumer_sink: None,
+        federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
@@ -277,7 +280,7 @@ async fn export_memory_handler(
         memory.exported = tracing::field::Empty,
     );
     async move {
-        let shared = SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+        let shared = SharedToolCtx { consumer_sink: None, federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
             catalog: state.catalog.clone(),
             format: state.format.clone(),
             pool: state.pool.clone(),
@@ -489,12 +492,20 @@ async fn memory_query_handler(
         "memory.recall",
         kyma.subject = principal.subject.as_deref().unwrap_or(""),
         kyma.tenant = %principal.tenant,
+        kyma.client = %crate::agent::identity::consumer_kind(),
         memory.query = %query_preview,
         memory.results = tracing::field::Empty,
         memory.took_ms = tracing::field::Empty,
     );
     async move {
-        let shared = SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+        let shared = SharedToolCtx {
+            consumer_sink: state.consumer_events.clone().map(|events| {
+                crate::agent::tools::ConsumerSink {
+                    events,
+                    tenant: state.tenant,
+                }
+            }),
+            federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
             catalog: state.catalog.clone(),
             format: state.format.clone(),
             pool: state.pool.clone(),
@@ -504,6 +515,35 @@ async fn memory_query_handler(
         let result = retrieve(&shared, &body.retrieve).await;
         tracing::Span::current().record("memory.results", result.memories.len());
         tracing::Span::current().record("memory.took_ms", result.took_ms);
+        // Live consumer overlay: announce this recall (who, and which memory /
+        // linked-resource nodes it touched) on the broadcast bus. Best-effort.
+        if let Some(sink) = &shared.consumer_sink {
+            let mut node_ids: Vec<String> = result.memories.iter().map(|m| m.id.clone()).collect();
+            node_ids.extend(result.linked.iter().map(|l| l.node_id.clone()));
+            let mut namespaces: Vec<String> =
+                result.memories.iter().map(|m| m.realm.clone()).collect();
+            namespaces.extend(
+                result
+                    .linked
+                    .iter()
+                    .filter_map(|l| l.target_namespace.clone()),
+            );
+            namespaces.sort();
+            namespaces.dedup();
+            let kind = crate::agent::identity::consumer_kind();
+            sink.events.publish(kyma_ingest_core::ConsumerActivity {
+                consumer_id: format!("{kind}:{}", principal.subject.as_deref().unwrap_or("anon")),
+                label: principal.subject.clone().unwrap_or_else(|| kind.clone()),
+                kind,
+                subject: principal.subject.clone(),
+                tenant: principal.tenant.to_string(),
+                action: kyma_ingest_core::ConsumerAction::Recall,
+                node_ids,
+                namespaces,
+                query_preview: Some(query_preview.clone()),
+                ts: chrono::Utc::now().timestamp_millis(),
+            });
+        }
         let mut out = result.to_json();
         if body.mode.as_deref() == Some("agentic") && !result.context.is_empty() {
             let prompt = format!("Question: {}\n\n{}", body.retrieve.query, result.context);
@@ -797,11 +837,11 @@ async fn ask_handler(
     };
     // Per-tenant agent-run budget (S2.6): one tenant's agent activity can't
     // starve another's. Off by default (`KYMA_AGENT_MAX_CONCURRENT_PER_TENANT`).
-    let agent_tenant_permit = match crate::concurrency::acquire_agent_run_for_tenant(principal.tenant)
-    {
-        Ok(p) => p,
-        Err(retry) => {
-            return (
+    let agent_tenant_permit =
+        match crate::concurrency::acquire_agent_run_for_tenant(principal.tenant) {
+            Ok(p) => p,
+            Err(retry) => {
+                return (
                 StatusCode::TOO_MANY_REQUESTS,
                 [(axum::http::header::RETRY_AFTER, retry.to_string())],
                 Json(json!({
@@ -809,8 +849,8 @@ async fn ask_handler(
                 })),
             )
                 .into_response();
-        }
-    };
+            }
+        };
 
     let run_id = uuid::Uuid::new_v4();
     let include_thinking = body.include_thinking;
@@ -895,192 +935,195 @@ async fn ask_handler(
     let summary_state = state.clone();
     let summary_every = summary_every();
 
-    tokio::spawn(async move {
-        // Hold the admission permits for the whole run; the slots free when this
-        // task ends (success, error, or early return).
-        let _agent_permit = agent_permit;
-        let _agent_tenant_permit = agent_tenant_permit;
-        let mut em = Emitter::new(ui, &run_id.to_string());
-        let mut tool_calls: u32 = 0;
-        let mut last_run_sql: Option<String> = None;
-        let mut final_text: String = String::new();
+    tokio::spawn(
+        async move {
+            // Hold the admission permits for the whole run; the slots free when this
+            // task ends (success, error, or early return).
+            let _agent_permit = agent_permit;
+            let _agent_tenant_permit = agent_tenant_permit;
+            let mut em = Emitter::new(ui, &run_id.to_string());
+            let mut tool_calls: u32 = 0;
+            let mut last_run_sql: Option<String> = None;
+            let mut final_text: String = String::new();
 
-        // Surface the session id first so the client can capture it even if
-        // the run errors mid-stream.
-        em.session(&session_id_str);
-        em.run_started(&run_id.to_string(), &model, &question);
+            // Surface the session id first so the client can capture it even if
+            // the run errors mid-stream.
+            em.session(&session_id_str);
+            em.run_started(&run_id.to_string(), &model, &question);
 
-        let content = Content::new("user").with_text(&question);
+            let content = Content::new("user").with_text(&question);
 
-        let user_id = match UserId::new(ANON_USER) {
-            Ok(u) => u,
-            Err(e) => {
-                em.run_error("internal", &format!("user_id: {e}"));
-                finish_and_persist(
-                    pool.as_ref(),
-                    &mut em,
-                    run_id,
-                    &question,
-                    &model,
-                    tenant_uuid,
-                    Some(session_uuid),
-                    started_at,
-                    start,
-                    tool_calls,
-                    "error",
-                )
-                .await;
-                return;
-            }
-        };
-        let session_id = match SessionId::new(&session_id_str) {
-            Ok(s) => s,
-            Err(e) => {
-                em.run_error("internal", &format!("session_id: {e}"));
-                finish_and_persist(
-                    pool.as_ref(),
-                    &mut em,
-                    run_id,
-                    &question,
-                    &model,
-                    tenant_uuid,
-                    Some(session_uuid),
-                    started_at,
-                    start,
-                    tool_calls,
-                    "error",
-                )
-                .await;
-                return;
-            }
-        };
-
-        let run_future = async {
-            let mut stream = match runner.run(user_id, session_id, content).await {
+            let user_id = match UserId::new(ANON_USER) {
+                Ok(u) => u,
+                Err(e) => {
+                    em.run_error("internal", &format!("user_id: {e}"));
+                    finish_and_persist(
+                        pool.as_ref(),
+                        &mut em,
+                        run_id,
+                        &question,
+                        &model,
+                        tenant_uuid,
+                        Some(session_uuid),
+                        started_at,
+                        start,
+                        tool_calls,
+                        "error",
+                    )
+                    .await;
+                    return;
+                }
+            };
+            let session_id = match SessionId::new(&session_id_str) {
                 Ok(s) => s,
                 Err(e) => {
-                    return Err(format!("runner.run: {e}"));
+                    em.run_error("internal", &format!("session_id: {e}"));
+                    finish_and_persist(
+                        pool.as_ref(),
+                        &mut em,
+                        run_id,
+                        &question,
+                        &model,
+                        tenant_uuid,
+                        Some(session_uuid),
+                        started_at,
+                        start,
+                        tool_calls,
+                        "error",
+                    )
+                    .await;
+                    return;
                 }
             };
 
-            while let Some(ev_result) = stream.next().await {
-                let ev = match ev_result {
-                    Ok(e) => e,
-                    Err(e) => return Err(format!("event: {e}")),
+            let run_future = async {
+                let mut stream = match runner.run(user_id, session_id, content).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        return Err(format!("runner.run: {e}"));
+                    }
                 };
 
-                let partial = ev.llm_response.partial;
-                let parts_iter = ev
-                    .llm_response
-                    .content
-                    .iter()
-                    .flat_map(|c| c.parts.iter().cloned())
-                    .collect::<Vec<Part>>();
+                while let Some(ev_result) = stream.next().await {
+                    let ev = match ev_result {
+                        Ok(e) => e,
+                        Err(e) => return Err(format!("event: {e}")),
+                    };
 
-                for part in parts_iter {
-                    match part {
-                        Part::Text { text } => {
-                            // Non-partial Text means we have the complete
-                            // (possibly aggregated) turn answer — stash it for
-                            // the session record. Either way it streams as a
-                            // text delta.
-                            if !partial {
-                                final_text.push_str(&text);
+                    let partial = ev.llm_response.partial;
+                    let parts_iter = ev
+                        .llm_response
+                        .content
+                        .iter()
+                        .flat_map(|c| c.parts.iter().cloned())
+                        .collect::<Vec<Part>>();
+
+                    for part in parts_iter {
+                        match part {
+                            Part::Text { text } => {
+                                // Non-partial Text means we have the complete
+                                // (possibly aggregated) turn answer — stash it for
+                                // the session record. Either way it streams as a
+                                // text delta.
+                                if !partial {
+                                    final_text.push_str(&text);
+                                }
+                                em.answer_delta(&text);
                             }
-                            em.answer_delta(&text);
-                        }
-                        Part::Thinking { thinking, .. } => {
-                            if include_thinking {
-                                em.thinking_delta(&thinking);
-                            }
-                        }
-                        Part::FunctionCall { name, args, .. } => {
-                            tool_calls += 1;
-                            if name == "run_sql" {
-                                if let Some(s) = args.get("sql").and_then(|v| v.as_str()) {
-                                    last_run_sql = Some(s.to_string());
+                            Part::Thinking { thinking, .. } => {
+                                if include_thinking {
+                                    em.thinking_delta(&thinking);
                                 }
                             }
-                            em.tool_call(&name, args, tool_calls);
-                            if tool_calls > MAX_TOOL_CALLS {
-                                return Err(format!("tool_loop:{}", tool_calls));
+                            Part::FunctionCall { name, args, .. } => {
+                                tool_calls += 1;
+                                if name == "run_sql" {
+                                    if let Some(s) = args.get("sql").and_then(|v| v.as_str()) {
+                                        last_run_sql = Some(s.to_string());
+                                    }
+                                }
+                                em.tool_call(&name, args, tool_calls);
+                                if tool_calls > MAX_TOOL_CALLS {
+                                    return Err(format!("tool_loop:{}", tool_calls));
+                                }
                             }
+                            Part::FunctionResponse {
+                                function_response, ..
+                            } => {
+                                em.tool_result(&function_response.name, function_response.response);
+                            }
+                            _ => {}
                         }
-                        Part::FunctionResponse {
-                            function_response, ..
-                        } => {
-                            em.tool_result(&function_response.name, function_response.response);
-                        }
-                        _ => {}
+                    }
+
+                    if ev.is_final_response() {
+                        // Fold in any final text even if it arrived as a
+                        // non-partial full text part above. Nothing to do
+                        // here — we've already pushed it to `final_text`.
+                        debug!(run_id = %run_id, "agent emitted is_final_response");
                     }
                 }
+                Ok::<(), String>(())
+            };
 
-                if ev.is_final_response() {
-                    // Fold in any final text even if it arrived as a
-                    // non-partial full text part above. Nothing to do
-                    // here — we've already pushed it to `final_text`.
-                    debug!(run_id = %run_id, "agent emitted is_final_response");
+            let outcome = tokio::time::timeout(RUN_WALL_CLOCK, run_future).await;
+
+            let (status, status_str): (&str, &str) = match outcome {
+                Ok(Ok(())) => ("success", "success"),
+                Ok(Err(msg)) if msg.starts_with("tool_loop:") => {
+                    em.run_error("tool_loop", &msg);
+                    ("budget_exceeded", "budget_exceeded")
                 }
-            }
-            Ok::<(), String>(())
-        };
+                Ok(Err(msg)) => {
+                    em.run_error("runner_error", &msg);
+                    ("error", "error")
+                }
+                Err(_elapsed) => {
+                    warn!(run_id = %run_id, "agent run exceeded 60s wall clock");
+                    em.run_error(
+                        "timeout",
+                        &format!(
+                            "agent run exceeded {}s wall clock budget",
+                            RUN_WALL_CLOCK.as_secs()
+                        ),
+                    );
+                    ("budget_exceeded", "budget_exceeded")
+                }
+            };
 
-        let outcome = tokio::time::timeout(RUN_WALL_CLOCK, run_future).await;
+            if status == "success" {
+                em.answer_final(&final_text, last_run_sql.as_deref(), None);
+                // Record the assistant turn, then refresh the rolling summary.
+                sessions::persist_turn(
+                    pool.as_ref(),
+                    session_uuid,
+                    tenant_uuid,
+                    assistant_turn_index,
+                    "assistant",
+                    &final_text,
+                    None,
+                )
+                .await;
+                sessions::maybe_summarize_detached(summary_state, session_uuid, summary_every);
+            }
 
-        let (status, status_str): (&str, &str) = match outcome {
-            Ok(Ok(())) => ("success", "success"),
-            Ok(Err(msg)) if msg.starts_with("tool_loop:") => {
-                em.run_error("tool_loop", &msg);
-                ("budget_exceeded", "budget_exceeded")
-            }
-            Ok(Err(msg)) => {
-                em.run_error("runner_error", &msg);
-                ("error", "error")
-            }
-            Err(_elapsed) => {
-                warn!(run_id = %run_id, "agent run exceeded 60s wall clock");
-                em.run_error(
-                    "timeout",
-                    &format!(
-                        "agent run exceeded {}s wall clock budget",
-                        RUN_WALL_CLOCK.as_secs()
-                    ),
-                );
-                ("budget_exceeded", "budget_exceeded")
-            }
-        };
-
-        if status == "success" {
-            em.answer_final(&final_text, last_run_sql.as_deref(), None);
-            // Record the assistant turn, then refresh the rolling summary.
-            sessions::persist_turn(
+            finish_and_persist(
                 pool.as_ref(),
-                session_uuid,
+                &mut em,
+                run_id,
+                &question,
+                &model,
                 tenant_uuid,
-                assistant_turn_index,
-                "assistant",
-                &final_text,
-                None,
+                Some(session_uuid),
+                started_at,
+                start,
+                tool_calls,
+                status_str,
             )
             .await;
-            sessions::maybe_summarize_detached(summary_state, session_uuid, summary_every);
         }
-
-        finish_and_persist(
-            pool.as_ref(),
-            &mut em,
-            run_id,
-            &question,
-            &model,
-            tenant_uuid,
-            Some(session_uuid),
-            started_at,
-            start,
-            tool_calls,
-            status_str,
-        )
-        .await;
-    }.instrument(agent_span));
+        .instrument(agent_span),
+    );
 
     ui_stream::response(rx)
 }

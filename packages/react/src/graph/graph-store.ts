@@ -10,6 +10,12 @@ import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { createContext, useContext } from "react";
 import type { LayoutAlgorithm } from "@kyma-ai/client";
+import type {
+  ConsumerBeam,
+  ConsumerStatus,
+  LiveConsumer,
+  LiveConsumersData,
+} from "./consumer-types";
 
 // ── State shape ───────────────────────────────────────────────────────────────
 
@@ -60,6 +66,20 @@ export type GraphStoreState = {
   focusModeId: string | null;
   commandBarOpen: boolean;
 
+  // ── Live consumers overlay ───────────────────────────────────────────────
+  /** Master toggle (the "Live" checkbox). Default on. */
+  showLiveConsumers: boolean;
+  /** Agents currently reading/writing memory (host-streamed snapshot). */
+  liveConsumers: LiveConsumer[];
+  /** In-flight beams the canvas overlay animates. */
+  consumerBeams: ConsumerBeam[];
+  consumerStatus: ConsumerStatus;
+  consumerEventsPerMin: number;
+  /** Dock row hovered → highlight its touched node on the canvas. */
+  hoveredConsumerId: string | null;
+  /** Dock row pinned → keep its beams alive ("watch this agent"). */
+  pinnedConsumerId: string | null;
+
   pushTrail(id: string): void;
   jumpTrail(index: number): void;
   clearTrail(): void;
@@ -87,6 +107,11 @@ export type GraphStoreState = {
   toggleCurvedEdges(): void;
   toggleCommunityHulls(): void;
   setOverview(v: boolean): void;
+  toggleLiveConsumers(): void;
+  /** Ingest a fresh host snapshot (consumers + beams + status + rate). */
+  setLiveConsumers(data: LiveConsumersData): void;
+  hoverConsumer(id: string | null): void;
+  pinConsumer(id: string | null): void;
   reset(): void;
 };
 
@@ -114,6 +139,13 @@ export const initialGraphState = {
   trail: [] as string[],
   focusModeId: null as string | null,
   commandBarOpen: false,
+  showLiveConsumers: true,
+  liveConsumers: [] as LiveConsumer[],
+  consumerBeams: [] as ConsumerBeam[],
+  consumerStatus: "idle" as ConsumerStatus,
+  consumerEventsPerMin: 0,
+  hoveredConsumerId: null as string | null,
+  pinnedConsumerId: null as string | null,
 };
 
 // ── Factory ───────────────────────────────────────────────────────────────────
@@ -177,6 +209,17 @@ export function createGraphStore(overrides?: Partial<typeof initialGraphState>) 
     toggleCurvedEdges: () => set((s) => ({ curvedEdges: !s.curvedEdges })),
     toggleCommunityHulls: () => set((s) => ({ communityHulls: !s.communityHulls })),
     setOverview: (v) => set({ overview: v }),
+    toggleLiveConsumers: () => set((s) => ({ showLiveConsumers: !s.showLiveConsumers })),
+    setLiveConsumers: (data) =>
+      set({
+        liveConsumers: data.consumers,
+        consumerBeams: data.beams,
+        consumerStatus: data.status,
+        consumerEventsPerMin: data.eventsPerMin,
+      }),
+    hoverConsumer: (id) => set({ hoveredConsumerId: id }),
+    pinConsumer: (id) =>
+      set((s) => ({ pinnedConsumerId: s.pinnedConsumerId === id ? null : id })),
     reset: () => set({ ...initial }),
   }));
 }

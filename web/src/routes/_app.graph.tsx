@@ -1,5 +1,7 @@
+import { useCallback, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { KymaGraph } from "@kyma-ai/react/graph";
+import { useConsumerStream } from "@/features/graph/useConsumerStream";
 
 /**
  * Graph route — renders the embeddable KymaGraph component across all databases.
@@ -32,6 +34,10 @@ export const Route = createFileRoute("/_app/graph")({
 
 function GraphPage() {
   const { graph, focus } = Route.useSearch();
+  // The in-graph "Live" checkbox drives this; OFF tears down the WebSocket.
+  const [liveEnabled, setLiveEnabled] = useState(true);
+  const liveConsumers = useConsumerStream({ enabled: liveEnabled });
+  const onLiveConsumersToggle = useCallback((enabled: boolean) => setLiveEnabled(enabled), []);
   return (
     <div className="flex h-full w-full">
       <KymaGraph
@@ -39,6 +45,8 @@ function GraphPage() {
         height="100%"
         focusQuery={graph}
         focusNodeId={focus}
+        liveConsumers={liveConsumers}
+        onLiveConsumersToggle={onLiveConsumersToggle}
       />
     </div>
   );

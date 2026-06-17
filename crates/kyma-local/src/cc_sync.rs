@@ -143,10 +143,7 @@ pub(crate) async fn run_once(
     opts: &CcSyncOptions,
 ) -> Result<CcSyncReport> {
     let known_paths = known_project_paths(opts.claude_json.as_deref());
-    let only_slug = opts
-        .project
-        .as_deref()
-        .map(|p| slug::path_slug(p));
+    let only_slug = opts.project.as_deref().map(|p| slug::path_slug(p));
 
     let mut slug_dirs: Vec<PathBuf> = Vec::new();
     let entries = match std::fs::read_dir(&opts.projects_dir) {
@@ -192,7 +189,9 @@ async fn sync_project(
         .unwrap_or_default()
         .to_string();
     let (realm, project_path) = resolve_realm(slug_dir, &slug, known_paths);
-    let shared = SharedToolCtx { federation: None,
+    let shared = SharedToolCtx {
+        consumer_sink: None,
+        federation: None,
         catalog: engine.catalog.clone(),
         format: engine.format.clone(),
         pool: None,
@@ -385,9 +384,16 @@ async fn sync_project(
     }
 
     report.edges_added = link_wikilinks(writer, &shared, &entries, &realm, &now).await?;
-    report.archived =
-        archive_deleted(engine, writer, &shared, &old_manifest, &manifest, &memory_dir, &now)
-            .await?;
+    report.archived = archive_deleted(
+        engine,
+        writer,
+        &shared,
+        &old_manifest,
+        &manifest,
+        &memory_dir,
+        &now,
+    )
+    .await?;
 
     engine
         .sqlite
@@ -413,8 +419,7 @@ async fn link_wikilinks(
         .filter(|e| e.changed)
         .map(|e| e.name.as_str())
         .collect();
-    let by_name: HashMap<&str, &ScanEntry> =
-        entries.iter().map(|e| (e.name.as_str(), e)).collect();
+    let by_name: HashMap<&str, &ScanEntry> = entries.iter().map(|e| (e.name.as_str(), e)).collect();
 
     // (src, dst) name pairs worth emitting this run.
     let mut pairs: Vec<(&str, &str)> = Vec::new();
@@ -698,7 +703,10 @@ fn known_project_paths(claude_json: Option<&Path>) -> Vec<String> {
 
 /// Find the live node carrying a topic key. Keys embed the project slug, so
 /// they are globally unique — no realm filter (rename-safe).
-pub(crate) async fn node_id_by_topic_key(shared: &SharedToolCtx, topic_key: &str) -> Option<String> {
+pub(crate) async fn node_id_by_topic_key(
+    shared: &SharedToolCtx,
+    topic_key: &str,
+) -> Option<String> {
     let q = format!(
         "WITH latest AS (SELECT id, topic_key, \
            row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS rn FROM {nt}) \

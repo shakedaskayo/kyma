@@ -4,6 +4,7 @@
 //! sections 4 + 5 for the full contract.
 
 pub mod compile;
+pub mod consumers_live;
 pub mod fanout;
 pub mod frames;
 pub mod grammar;

@@ -22,7 +22,9 @@ use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use kyma_core::catalog::Catalog;
 use kyma_core::segment_format::SegmentFormat;
+use kyma_core::tenant::TenantId;
 use kyma_exec::KymaTable;
+use kyma_ingest_core::{ConsumerAction, ConsumerActivity, ConsumerEvents};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -62,6 +64,52 @@ pub struct SharedToolCtx {
     /// ⇒ `run_sql` against a database containing federated tables returns a
     /// clear error instead of empty results.
     pub federation: Option<std::sync::Arc<kyma_federation::FederationRuntime>>,
+    /// Live consumer-activity sink. `Some` only on the interactive memory tool
+    /// paths (MCP recall/search/remember, the HTTP memory routes) so the graph
+    /// explorer's realtime overlay can see which agents touch which memories.
+    /// `None` everywhere else (tests, sync jobs) — emits become no-ops.
+    pub consumer_sink: Option<ConsumerSink>,
+}
+
+/// Pairs the consumer-activity broadcast bus with the tenant to stamp on
+/// tool-path emits. The tool layer runs below the auth middleware, so there is
+/// no `Principal` here — the tenant travels with the bus handle instead.
+#[derive(Clone)]
+pub struct ConsumerSink {
+    pub events: ConsumerEvents,
+    pub tenant: TenantId,
+}
+
+impl SharedToolCtx {
+    /// Publish a consumer-activity event to the live bus, if one is wired.
+    /// Best-effort and lossy — never blocks or fails the calling tool. The
+    /// consumer `kind` is resolved from the process-global MCP client identity
+    /// (`claude-code`, `cursor`, …), so even without an auth subject the
+    /// overlay can attribute activity to the right agent.
+    pub fn emit_consumer(
+        &self,
+        action: ConsumerAction,
+        node_ids: Vec<String>,
+        namespaces: Vec<String>,
+        query_preview: Option<String>,
+    ) {
+        let Some(sink) = &self.consumer_sink else {
+            return;
+        };
+        let kind = super::identity::consumer_kind();
+        sink.events.publish(ConsumerActivity {
+            consumer_id: format!("{kind}:anon"),
+            label: kind.clone(),
+            kind,
+            subject: None,
+            tenant: sink.tenant.to_string(),
+            action,
+            node_ids,
+            namespaces,
+            query_preview,
+            ts: chrono::Utc::now().timestamp_millis(),
+        });
+    }
 }
 
 impl SharedToolCtx {
@@ -285,12 +333,8 @@ pub fn tool_run_kql(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     // Compile KQL → SQL with full schema context so that
                     // `union` can compute the column superset; surface parse
                     // errors to the model so it can self-correct the syntax.
-                    let sql = match kql_to_sql_for_database(
-                        &shared,
-                        &parsed.database,
-                        &parsed.kql,
-                    )
-                    .await
+                    let sql = match kql_to_sql_for_database(&shared, &parsed.database, &parsed.kql)
+                        .await
                     {
                         Ok(s) => s,
                         Err(e) => return Ok(e),
@@ -894,13 +938,7 @@ pub fn tool_graph_traverse(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         hops,
                         dir,
                     );
-                    let sql = match kql_to_sql_for_database(
-                        &shared,
-                        &parsed.database,
-                        &kql,
-                    )
-                    .await
-                    {
+                    let sql = match kql_to_sql_for_database(&shared, &parsed.database, &kql).await {
                         Ok(s) => s,
                         Err(e) => {
                             let mut err = e;
@@ -1123,7 +1161,10 @@ mod retrieve_artifact_tests {
     async fn reads_window_guards_prefix_and_handles_missing() {
         let store: Arc<dyn object_store::ObjectStore> = Arc::new(InMemory::new());
         store
-            .put(&ObjPath::from("artifacts/t/x.log"), b"0123456789".to_vec().into())
+            .put(
+                &ObjPath::from("artifacts/t/x.log"),
+                b"0123456789".to_vec().into(),
+            )
             .await
             .unwrap();
         let tool = tool_retrieve_artifact(store);
@@ -1154,7 +1195,10 @@ mod retrieve_artifact_tests {
 
         // Prefix guard: only the artifact namespace is readable.
         let bad = tool
-            .execute(ctx.clone(), json!({"object_path": "extents/secret-segment"}))
+            .execute(
+                ctx.clone(),
+                json!({"object_path": "extents/secret-segment"}),
+            )
             .await
             .unwrap();
         assert!(bad["error"].as_str().unwrap().contains("artifacts/"));
