@@ -28,8 +28,13 @@ export function dedupKey(a: ConsumerActivityFrame): string {
   return `${a.ts}|${a.consumer_id}|${a.action}|${a.node_ids.join(",")}`;
 }
 
-/** Build/refresh a `LiveConsumer` from an activity frame. */
-export function toConsumer(a: ConsumerActivityFrame, active: boolean): LiveConsumer {
+/** Build/refresh a `LiveConsumer` from an activity frame, carrying forward
+ *  detail fields a given frame may omit and accumulating the op count. */
+export function toConsumer(
+  a: ConsumerActivityFrame,
+  active: boolean,
+  prev?: LiveConsumer,
+): LiveConsumer {
   return {
     id: a.consumer_id,
     kind: resolveConsumerKind(a.kind),
@@ -40,6 +45,16 @@ export function toConsumer(a: ConsumerActivityFrame, active: boolean): LiveConsu
     lastTargetCount: a.node_ids.length,
     lastNamespaces: a.namespaces,
     active,
+    lastQuery: a.query_preview ?? prev?.lastQuery ?? null,
+    host: a.host ?? prev?.host ?? null,
+    clientVersion: a.client_version ?? prev?.clientVersion ?? null,
+    transport: a.transport ?? prev?.transport ?? null,
+    ip: a.ip ?? prev?.ip ?? null,
+    pid: a.pid ?? prev?.pid ?? null,
+    subject: a.subject ?? prev?.subject ?? null,
+    tenant: a.tenant ?? prev?.tenant ?? null,
+    opsCount: (prev?.opsCount ?? 0) + 1,
+    firstTs: prev?.firstTs ?? a.ts,
   };
 }
 

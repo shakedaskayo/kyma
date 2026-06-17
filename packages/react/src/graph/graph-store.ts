@@ -79,6 +79,10 @@ export type GraphStoreState = {
   hoveredConsumerId: string | null;
   /** Dock row pinned → keep its beams alive ("watch this agent"). */
   pinnedConsumerId: string | null;
+  /** Live consumers dock collapsed to a thin rail. */
+  consumerDockCollapsed: boolean;
+  /** Dock row expanded to show connection/process detail. */
+  expandedConsumerId: string | null;
 
   pushTrail(id: string): void;
   jumpTrail(index: number): void;
@@ -112,6 +116,8 @@ export type GraphStoreState = {
   setLiveConsumers(data: LiveConsumersData): void;
   hoverConsumer(id: string | null): void;
   pinConsumer(id: string | null): void;
+  toggleConsumerDock(): void;
+  expandConsumer(id: string | null): void;
   reset(): void;
 };
 
@@ -146,6 +152,8 @@ export const initialGraphState = {
   consumerEventsPerMin: 0,
   hoveredConsumerId: null as string | null,
   pinnedConsumerId: null as string | null,
+  consumerDockCollapsed: false,
+  expandedConsumerId: null as string | null,
 };
 
 // ── Factory ───────────────────────────────────────────────────────────────────
@@ -220,6 +228,9 @@ export function createGraphStore(overrides?: Partial<typeof initialGraphState>) 
     hoverConsumer: (id) => set({ hoveredConsumerId: id }),
     pinConsumer: (id) =>
       set((s) => ({ pinnedConsumerId: s.pinnedConsumerId === id ? null : id })),
+    toggleConsumerDock: () => set((s) => ({ consumerDockCollapsed: !s.consumerDockCollapsed })),
+    expandConsumer: (id) =>
+      set((s) => ({ expandedConsumerId: s.expandedConsumerId === id ? null : id })),
     reset: () => set({ ...initial }),
   }));
 }

@@ -303,6 +303,12 @@ fn backfill_row_to_activity(row: &Value, tenant: &str) -> Option<ConsumerActivit
         namespaces: Vec::new(),
         query_preview,
         ts,
+        // otel backfill rows don't carry connection/process detail.
+        host: None,
+        client_version: None,
+        transport: None,
+        ip: None,
+        pid: None,
     })
 }
 

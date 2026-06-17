@@ -21,6 +21,11 @@ export interface ConsumerActivityFrame {
   namespaces: string[];
   query_preview: string | null;
   ts: number;
+  host?: string | null;
+  client_version?: string | null;
+  transport?: string | null;
+  ip?: string | null;
+  pid?: number | null;
 }
 
 type ConsumerFrame =

@@ -42,6 +42,30 @@ export interface LiveConsumer {
   lastNamespaces: string[];
   /** False once past the idle threshold — the dock fades it before removal. */
   active: boolean;
+  /** Last query text (recall/search), for the expanded detail row. */
+  lastQuery: string | null;
+
+  // ── connection / process detail (best-effort; shown in the expanded row) ──
+  /** Host machine (the server; = the client machine in local mode). */
+  host: string | null;
+  /** MCP client version, when advertised. */
+  clientVersion: string | null;
+  /** Transport: `local-serve` | `server` | `mcp-stdio`. */
+  transport: string | null;
+  /** Peer IP (loopback locally, the agent's IP in server mode). */
+  ip: string | null;
+  /** Best-effort local process id (loopback connections only). */
+  pid: number | null;
+  /** Auth subject, when present. */
+  subject: string | null;
+  /** Tenant id. */
+  tenant: string | null;
+
+  // ── session accumulation (tracked by the host hook) ──
+  /** Total operations observed for this consumer this session. */
+  opsCount: number;
+  /** Millis when this consumer was first seen. */
+  firstTs: number;
 }
 
 /** A single in-flight beam from a consumer to a node it touched. The node id is

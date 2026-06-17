@@ -53,7 +53,8 @@ export function useConsumerStream(opts?: {
     // Backfill rows are historic — old at arrival, so they enter the list
     // already inactive (faded) and never spawn beams.
     const active = !backfill && now - a.ts < ACTIVE_MS;
-    consumersRef.current.set(a.consumer_id, toConsumer(a, active));
+    const prev = consumersRef.current.get(a.consumer_id);
+    consumersRef.current.set(a.consumer_id, toConsumer(a, active, prev));
     setConsumers([...consumersRef.current.values()]);
 
     if (!backfill) {
