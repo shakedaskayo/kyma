@@ -3,9 +3,7 @@
 use comfy_table::{Cell, Color, ContentArrangement, Table};
 
 /// Returns a table pre-configured with kyma's standard look: rounded
-/// UTF-8 borders (comfy-table falls back to ASCII automatically on
-/// terminals that report no UTF-8 support), dynamic content arrangement,
-/// and the given header row.
+/// UTF-8 borders, dynamic content arrangement, and the given header row.
 pub(crate) fn table(headers: Vec<&str>) -> Table {
     let mut t = Table::new();
     t.load_preset(comfy_table::presets::UTF8_FULL_CONDENSED)

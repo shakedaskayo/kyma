@@ -3,7 +3,7 @@
 //! to a single plain message line when stderr isn't a terminal, so CI
 //! logs and piped output don't fill up with spinner frames.
 
-use console::Term;
+use console::{Style, Term};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 
@@ -36,7 +36,11 @@ fn build_spinner(msg: String, interactive: bool) -> Spinner {
 impl Spinner {
     /// Stops the spinner and prints a final success line.
     pub(crate) fn finish_success(&self, msg: &str) {
-        let line = theme::success(&format!("{} {msg}", theme::CHECK));
+        let line = theme::apply(
+            &format!("{} {msg}", theme::CHECK),
+            Style::new().green(),
+            theme::stderr_color_enabled(),
+        );
         match &self.bar {
             Some(bar) => bar.finish_with_message(line),
             None => eprintln!("{line}"),
@@ -45,7 +49,11 @@ impl Spinner {
 
     /// Stops the spinner and prints a final failure line.
     pub(crate) fn finish_error(&self, msg: &str) {
-        let line = theme::error(&format!("{} {msg}", theme::CROSS));
+        let line = theme::apply(
+            &format!("{} {msg}", theme::CROSS),
+            Style::new().red().bold(),
+            theme::stderr_color_enabled(),
+        );
         match &self.bar {
             Some(bar) => bar.finish_with_message(line),
             None => eprintln!("{line}"),

@@ -11,7 +11,7 @@ use super::theme;
 /// an actionable hint appended for a handful of well-known failure
 /// signatures.
 pub(crate) fn print_error(err: &anyhow::Error) {
-    eprint!("{}", render_error(err, theme::color_enabled()));
+    eprint!("{}", render_error(err, theme::stderr_color_enabled()));
 }
 
 fn render_error(err: &anyhow::Error, color: bool) -> String {
