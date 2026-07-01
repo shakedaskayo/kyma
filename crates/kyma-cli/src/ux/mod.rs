@@ -6,3 +6,4 @@ pub(crate) mod theme;
 pub(crate) mod format;
 pub(crate) mod table;
 pub(crate) mod spinner;
+pub(crate) mod error;
