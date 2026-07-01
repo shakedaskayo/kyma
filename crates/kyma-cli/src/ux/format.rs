@@ -27,9 +27,16 @@ pub(crate) fn truncate(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_string();
     }
-    let truncated: String = text.chars().take(max_chars).collect();
-    let cut = truncated.rfind(' ').unwrap_or(truncated.len());
-    format!("{}…", &truncated[..cut])
+    let window: String = text.chars().take(max_chars).collect();
+    match window.rfind(' ') {
+        Some(cut) => format!("{}…", &window[..cut]),
+        None => {
+            // No word boundary in the window — reserve one char for the
+            // ellipsis so the result still fits within `max_chars`.
+            let short: String = text.chars().take(max_chars.saturating_sub(1)).collect();
+            format!("{short}…")
+        }
+    }
 }
 
 /// Maps a similarity/relevance score in `[0.0, 1.0]` to a semantic color:
@@ -86,6 +93,13 @@ mod tests {
     #[test]
     fn truncate_breaks_on_word_boundary() {
         assert_eq!(truncate("hello there world", 12), "hello there…");
+    }
+
+    #[test]
+    fn truncate_no_word_boundary_still_fits_max_chars() {
+        let result = truncate("abcdefghij", 5);
+        assert_eq!(result.chars().count(), 5);
+        assert_eq!(result, "abcd…");
     }
 
     #[test]
