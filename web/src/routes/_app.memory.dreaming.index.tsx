@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { DreamingPanel } from "@/features/dreaming/DreamingPanel";
+import { RunDetailEmpty } from "@/features/dreaming/RunDetailEmpty";
 
 export const Route = createFileRoute("/_app/memory/dreaming/")({
-  component: DreamingPanel,
+  component: RunDetailEmpty,
 });

@@ -93,9 +93,12 @@ function NodeCard({ worker }: { worker: Worker }) {
           ))}
           {overflow > 0 && (
             <SimpleTooltip label={caps.slice(3).join(", ")}>
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              <button
+                type="button"
+                className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
                 +{overflow}
-              </span>
+              </button>
             </SimpleTooltip>
           )}
         </div>
@@ -116,7 +119,8 @@ function NodeCard({ worker }: { worker: Worker }) {
       <div className="mt-auto flex items-center justify-between text-[10px] text-muted-foreground">
         {activeSessions > 0 ? (
           <span className="text-violet-500">
-            ● {activeSessions} active session{activeSessions === 1 ? "" : "s"}
+            ● {activeSessions}
+            {worker.max_concurrent > 0 ? `/${worker.max_concurrent}` : ""} active
           </span>
         ) : (
           <span>no active sessions</span>
