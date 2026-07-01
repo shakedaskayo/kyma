@@ -3,3 +3,4 @@
 //! spinners, and error rendering stay consistent across every subcommand.
 
 pub(crate) mod theme;
+pub(crate) mod format;
