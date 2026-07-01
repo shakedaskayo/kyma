@@ -27,6 +27,7 @@ mod plugin;
 mod scrape;
 mod update;
 mod users;
+mod ux;
 use client::{
     delete_json, effective_config, get_json, load_config, probe_auth, probe_health, save_config,
     stream_agent_ask, write_skill_file, ClientConfig,

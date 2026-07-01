@@ -41,6 +41,10 @@ arrow-schema.workspace = true
 sqlx.workspace = true
 # clap will be needed for subcommands — adding directly here since only kyma-cli uses it
 clap = { version = "4", features = ["derive", "env"] }
+# Terminal UX toolkit (crates/kyma-cli/src/ux/): color/TTY detection, tables, spinners.
+console = "0.15"
+comfy-table = "7"
+indicatif = "0.17"
 reqwest = { workspace = true, features = ["json"] }
 futures-util = "0.3"
 directories = "5"
@@ -67,3 +71,4 @@ openssl = { version = "0.10", features = ["vendored"] }
 
 [dev-dependencies]
 wiremock = "0.6"
+insta = "1"
