@@ -4,3 +4,4 @@
 
 pub(crate) mod theme;
 pub(crate) mod format;
+pub(crate) mod table;
