@@ -92,6 +92,7 @@ async fn dispatch_with_queue() -> (ToolDispatch, Arc<MockEmbed>) {
         pool: None,
         memory: Some(queue),
         hitl: None,
+        memory_settings_path: None,
     };
     (ToolDispatch::new(shared), embed)
 }

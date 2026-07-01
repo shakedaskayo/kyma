@@ -61,6 +61,7 @@ pub(crate) async fn run_pass(
             pool: None,
             memory: None,
             hitl: None,
+            memory_settings_path: None,
         };
         let now = chrono::Utc::now().to_rfc3339();
         // Dry-run is decided once (writeback) and forced onto the planners,

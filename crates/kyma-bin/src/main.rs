@@ -612,6 +612,7 @@ async fn main() -> Result<()> {
         pool: Some(pg_pool.clone()),
         memory: memory.clone(),
         hitl: None,
+        memory_settings_path: None,
     };
     // Read-only data source access over MCP: lets MCP-driven agents (notably
     // Claude CLI dreaming runs) fill memory gaps from configured sources.
@@ -1197,6 +1198,7 @@ async fn main() -> Result<()> {
                 pool: Some(pg_pool.clone()),
                 memory: memory.clone(),
                 hitl: None,
+                memory_settings_path: None,
             },
             pg_pool.clone(),
             kyma_core::tenant::DEFAULT_TENANT,
@@ -1237,6 +1239,7 @@ async fn main() -> Result<()> {
                 pool: Some(pg_pool.clone()),
                 memory: memory.clone(),
                 hitl: None,
+                memory_settings_path: None,
             },
             pg_pool.clone(),
             kyma_core::tenant::DEFAULT_TENANT,
@@ -1274,6 +1277,7 @@ async fn main() -> Result<()> {
                 pool: Some(pg_pool.clone()),
                 memory: memory.clone(),
                 hitl: None,
+                memory_settings_path: None,
             },
             pg_pool.clone(),
             kyma_core::tenant::DEFAULT_TENANT,

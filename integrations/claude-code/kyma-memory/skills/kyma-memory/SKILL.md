@@ -43,6 +43,14 @@ Two more tools sit on the unified `/v1/search` substrate:
 - `search` — one hybrid lexical+vector query across all data sources in scope; returns ranked hits with `db.table` provenance + the row. Use for a fast broad sweep before narrowing with `run_kql`/`run_sql`.
 - `graph_search` — find graph nodes by text/label across one named graph or every graph; returns nodes with `<db>/<graph>` provenance and ids you can feed to `graph_traverse`.
 
+## Closing the loop
+
+After you act on a memory `recall_memory`/`memory_search` surfaced, call `reinforce_memory`
+once you know the outcome: `outcome="helpful"` if it was correct/useful, `outcome="not_helpful"`
+if it was wrong, outdated, or irrelevant. This is telemetry about the memory, not a content
+edit — it never requires approval, and it's how recall gets better at surfacing what actually
+helps over time. Skip it when you genuinely don't know whether a memory mattered; don't guess.
+
 ## Enriching the graph
 
 Call `ingest_entity` (MCP server `kyma`) to mint a **virtual resource/entity** — a service,

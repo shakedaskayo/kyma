@@ -197,6 +197,7 @@ async fn sync_project(
         pool: None,
         memory: None,
         hitl: None,
+        memory_settings_path: None,
     };
     let mut report = ProjectSyncReport {
         slug: slug.clone(),

@@ -18,11 +18,12 @@ async fn list_returns_all_named_tools() {
         pool: Some(pool),
         memory: None,
         hitl: None,
+        memory_settings_path: None,
     };
     let dispatch = ToolDispatch::new(shared);
     let listed = dispatch.list();
     let names: Vec<_> = listed.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names.len(), 28);
+    assert_eq!(names.len(), 30);
     for expected in [
         "list_databases",
         "describe_table",
@@ -52,6 +53,8 @@ async fn list_returns_all_named_tools() {
         "describe_file",
         "file_neighbors",
         "recall_file",
+        "reinforce_memory",
+        "list_memory_usage",
     ] {
         assert!(names.contains(&expected), "missing tool: {expected}");
     }
@@ -73,6 +76,7 @@ async fn list_entries_have_inputschema_objects() {
         pool: Some(pool),
         memory: None,
         hitl: None,
+        memory_settings_path: None,
     };
     let dispatch = ToolDispatch::new(shared);
     for tool in dispatch.list() {

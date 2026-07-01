@@ -22,6 +22,7 @@ async fn full_mcp_handshake_against_seeded_server() {
         pool: Some(pool),
         memory: None,
         hitl: None,
+        memory_settings_path: None,
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),
@@ -87,7 +88,7 @@ async fn full_mcp_handshake_against_seeded_server() {
         .await
         .unwrap();
     let tools = list["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 28);
+    assert_eq!(tools.len(), 30);
     assert!(
         tools
             .iter()
@@ -151,6 +152,7 @@ async fn rejects_request_without_bearer_token() {
         pool: Some(pool),
         memory: None,
         hitl: None,
+        memory_settings_path: None,
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),

@@ -49,6 +49,7 @@ pub async fn run(engine: &Engine, cfg: SyncConfig) -> Result<()> {
         pool: None,
         memory: None,
         hitl: None,
+        memory_settings_path: None,
     };
     let realm_sql = cfg
         .realm

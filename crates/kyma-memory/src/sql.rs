@@ -418,6 +418,70 @@ pub fn nodes_by_id_sql(node_table: &str, ids: &[String]) -> String {
     )
 }
 
+/// Fetch embeddings for specific node ids — MMR re-ranking's (M8.3a) only
+/// consumer. Kept separate from [`nodes_by_id_sql`] so the default
+/// (non-MMR) recall path never pays for the embedding payload. Caller must
+/// pass ≥1 id.
+pub fn embeddings_by_id_sql(node_table: &str, ids: &[String]) -> String {
+    let idlist = ids
+        .iter()
+        .map(|s| sql_str(s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "WITH latest AS (\n  \
+           SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn FROM {nt}\n) \
+         SELECT id, embedding FROM latest WHERE __rn = 1 AND id IN ({idlist})",
+        nt = node_table,
+        idlist = idlist,
+    )
+}
+
+/// Worked-example ("precedent") nearest-activity query (M8.2). Activities are
+/// write-once (no bi-temporal/latest-wins dedup needed, unlike `recall_sql`).
+/// Only realm- and distance-filtered — no other predicates, since a precedent
+/// means "near-duplicate past input," not "topically related": callers pass a
+/// much tighter `max_distance` than ordinary semantic recall.
+pub fn nearest_activity_sql(
+    node_table: &str,
+    embedding: &[f32],
+    realms: &[String],
+    max_distance: f64,
+    limit: usize,
+) -> String {
+    let arr = make_array(embedding);
+    let mut conds = vec![format!(
+        "cosine_distance(embedding, {arr}) < {max_distance}"
+    )];
+    if !realms.is_empty() {
+        let list = realms
+            .iter()
+            .map(|r| sql_str(r))
+            .collect::<Vec<_>>()
+            .join(", ");
+        conds.push(format!("realm IN ({list})"));
+    }
+    format!(
+        "SELECT id, content_preview, created_at, cosine_distance(embedding, {arr}) AS distance \
+         FROM {nt} WHERE {wc} ORDER BY distance ASC LIMIT {limit}",
+        nt = node_table,
+        wc = conds.join(" AND "),
+        limit = limit,
+    )
+}
+
+/// Edges of a specific `rel_type` pointing INTO `dst_id` — used to fetch the
+/// memories an Activity produced (`DERIVED_FROM` edges: memory → activity).
+pub fn edges_into_sql(edge_table: &str, dst_id: &str, rel_type: &str, limit: usize) -> String {
+    format!(
+        "SELECT src FROM {et} WHERE dst = {d} AND type = {t} LIMIT {limit}",
+        et = edge_table,
+        d = sql_str(dst_id),
+        t = sql_str(rel_type),
+        limit = limit,
+    )
+}
+
 /// Counts per (provenance blob, realm) over the latest, non-archived node
 /// versions — the raw input to the Data Sources "where do memories come from"
 /// summary. `provenance` is an opaque JSON string column and the engine has no
@@ -651,6 +715,30 @@ mod tests {
     }
 
     #[test]
+    fn nearest_activity_sql_uses_distance_cutoff_and_realm() {
+        let s = nearest_activity_sql("memory_nodes", &[0.1, 0.2], &["proj".into()], 0.15, 1);
+        assert!(s.contains("cosine_distance(embedding, make_array(0.1, 0.2)) < 0.15"));
+        assert!(s.contains("realm IN ('proj')"));
+        assert!(s.trim_end().ends_with("LIMIT 1"));
+        // No latest-wins dedup — Activities are write-once.
+        assert!(!s.contains("row_number()"));
+    }
+
+    #[test]
+    fn nearest_activity_sql_omits_realm_clause_when_empty() {
+        let s = nearest_activity_sql("memory_nodes", &[0.1], &[], 0.15, 5);
+        assert!(!s.contains("realm IN"));
+    }
+
+    #[test]
+    fn edges_into_sql_filters_dst_and_type() {
+        let s = edges_into_sql("memory_edges", "activity:a", "DERIVED_FROM", 20);
+        assert!(s.contains("dst = 'activity:a'"));
+        assert!(s.contains("type = 'DERIVED_FROM'"));
+        assert!(s.trim_end().ends_with("LIMIT 20"));
+    }
+
+    #[test]
     fn neighbors_sql_both_directions_and_realm() {
         let s = neighbors_sql(
             "memory_edges",
@@ -669,6 +757,18 @@ mod tests {
         let s = nodes_by_id_sql("memory_nodes", &["memory:a".into()]);
         assert!(s.contains("id IN ('memory:a')"));
         assert!(s.contains("invalid_at IS NULL"));
+    }
+
+    #[test]
+    fn embeddings_by_id_sql_projects_only_id_and_embedding() {
+        let s = embeddings_by_id_sql("memory_nodes", &["memory:a".into(), "memory:b".into()]);
+        assert!(s.contains("id IN ('memory:a', 'memory:b')"));
+        assert!(s.starts_with("WITH latest AS ("));
+        assert!(s.contains("SELECT id, embedding FROM latest"));
+        assert!(
+            !s.contains("content_preview"),
+            "must not project unrelated columns"
+        );
     }
 
     #[test]

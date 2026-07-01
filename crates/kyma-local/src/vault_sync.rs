@@ -197,6 +197,7 @@ pub(crate) async fn run_once(
         pool: None,
         memory: None,
         hitl: None,
+        memory_settings_path: None,
     };
     let mut report = VaultSyncReport::default();
     let files = walk_vault(&opts.vault_path)?;

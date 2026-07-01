@@ -407,6 +407,7 @@ pub async fn unified_search(
                 // Unified search is read-only — no autonomous memory mutations,
                 // so no HITL approval gate (added to SharedToolCtx on main).
                 hitl: None,
+                memory_settings_path: None,
             };
             let req = memory_request(&req);
             let result = retrieve(&shared, &req).await;
@@ -722,6 +723,7 @@ mod tests {
                 edge_type: "REFERENCES".to_string(),
                 depth: 1,
             }],
+            precedent: None,
             context: "Relevant memories:\n- ...".to_string(),
             took_ms: 42,
         };

@@ -19,6 +19,7 @@ async fn build() -> String {
         pool: Some(pool),
         memory: None,
         hitl: None,
+        memory_settings_path: None,
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),

@@ -1,0 +1,42 @@
+{
+  "tier": "pr",
+  "engine_url": "http://localhost:8080",
+  "overall_pass": false,
+  "results": [
+    {
+      "family": "property-fuzz",
+      "tier": "pr",
+      "started_at": "2026-05-20T00:27:39Z",
+      "finished_at": "2026-05-20T00:27:39Z",
+      "pass": false,
+      "observations": [
+        "not yet implemented in F2.1 placeholder; F2.2 will implement"
+      ]
+    },
+    {
+      "family": "sim",
+      "tier": "pr",
+      "started_at": "2026-05-20T00:27:39Z",
+      "finished_at": "2026-05-20T00:27:39Z",
+      "pass": false,
+      "observations": [
+        "not yet implemented in F2.1 placeholder; F2.3 will implement"
+      ]
+    },
+    {
+      "family": "chaos",
+      "tier": "pr",
+      "skipped": true
+    },
+    {
+      "family": "soak",
+      "tier": "pr",
+      "skipped": true
+    },
+    {
+      "family": "perf-regression",
+      "tier": "pr",
+      "skipped": true
+    }
+  ]
+}

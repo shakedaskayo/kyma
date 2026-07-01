@@ -35,12 +35,16 @@ pub enum MemoryOp {
     RelationshipWrite,
     /// Promote a file/symbol candidate node into the live graph.
     PromoteFileCandidate,
+    /// A synthesized generalization (M8.4 schema/procedure induction) — a
+    /// `procedure` memory abstracted from multiple supporting observations,
+    /// riskier than a verbatim extracted fact.
+    InduceSchema,
 }
 
 impl MemoryOp {
     /// Every op class, in a stable order — used to seed default settings and
     /// to render the per-op controls in the UI.
-    pub const ALL: [MemoryOp; 8] = [
+    pub const ALL: [MemoryOp; 9] = [
         MemoryOp::Add,
         MemoryOp::Update,
         MemoryOp::Invalidate,
@@ -49,6 +53,7 @@ impl MemoryOp {
         MemoryOp::LinkEntityCrossRealm,
         MemoryOp::RelationshipWrite,
         MemoryOp::PromoteFileCandidate,
+        MemoryOp::InduceSchema,
     ];
 
     /// Stable `snake_case` wire string (matches the serde representation) —
@@ -63,6 +68,7 @@ impl MemoryOp {
             MemoryOp::LinkEntityCrossRealm => "link_entity_cross_realm",
             MemoryOp::RelationshipWrite => "relationship_write",
             MemoryOp::PromoteFileCandidate => "promote_file_candidate",
+            MemoryOp::InduceSchema => "induce_schema",
         }
     }
 
@@ -131,6 +137,7 @@ impl Default for HitlPolicy {
             (LinkEntityCrossRealm, Gate),
             (RelationshipWrite, PostHoc),
             (PromoteFileCandidate, Auto),
+            (InduceSchema, Gate),
         ]);
         Self {
             enabled: false,

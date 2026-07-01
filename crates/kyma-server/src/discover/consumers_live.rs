@@ -257,6 +257,7 @@ async fn load_backfill(deps: &Deps, tenant: &str) -> Vec<ConsumerActivity> {
         pool: None,
         memory: None,
         hitl: None,
+        memory_settings_path: None,
     };
     let tenant_esc = tenant.replace('\'', "''");
     let sql = format!(

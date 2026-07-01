@@ -270,6 +270,7 @@ fn mcp_state(engine: &Engine, memory: Option<kyma_memory::MemoryQueue>) -> McpSt
         pool: None,
         memory,
         hitl: None,
+        memory_settings_path: None,
     };
     McpState {
         dispatch: ToolDispatch::new(shared),
@@ -517,6 +518,7 @@ pub fn build_local_app(
             pool: None,
             memory: memory.clone(),
             hitl: None,
+            memory_settings_path: agent_state.memory_settings_path.clone(),
         }),
         server_info: ServerInfo {
             name: "kyma".into(),

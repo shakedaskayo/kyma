@@ -28,9 +28,10 @@ use super::engine::EngineKind;
 use super::memory_conflict::{self, ConflictTally};
 use super::memory_gate::HitlGate;
 use super::memory_queue_store::QueueStore;
+use super::memory_settings::ValidityGateSettings;
 use super::state::AgentState;
 use super::tools::{execute_sql, SharedToolCtx};
-use super::{memory_extract, memory_resolve, memory_settings};
+use super::{memory_extract, memory_resolve, memory_settings, memory_validity_gate};
 
 const FIREHOSE_DB: &str = "default";
 const MEMORY_DB: &str = kyma_memory::DEFAULT_DATABASE; // "memory"
@@ -71,6 +72,7 @@ fn shared_from(state: &AgentState) -> SharedToolCtx {
         pool: state.pool.clone(),
         memory: state.memory.clone(),
         hitl: None,
+        memory_settings_path: state.memory_settings_path.clone(),
     }
 }
 
@@ -394,7 +396,14 @@ impl MemoryConsolidator {
             }
             if let Some(state) = engine {
                 match self
-                    .extract_realm(state, &writer, realm, ts_filter, gate.as_ref())
+                    .extract_realm(
+                        state,
+                        &writer,
+                        realm,
+                        ts_filter,
+                        gate.as_ref(),
+                        &settings.validity_gate,
+                    )
                     .await
                 {
                     Ok(partial) => {
@@ -432,6 +441,7 @@ impl MemoryConsolidator {
         realm: &str,
         ts_filter: &str,
         gate: Option<&HitlGate>,
+        validity_gate: &ValidityGateSettings,
     ) -> anyhow::Result<ConsolidateOutcome> {
         let window = self.fetch_window(realm, ts_filter).await;
         let mut out = ConsolidateOutcome::default();
@@ -442,6 +452,31 @@ impl MemoryConsolidator {
         if bundle.is_empty() {
             return Ok(out);
         }
+
+        // M8.2: capture the raw window as an Activity before writing any
+        // memories, so each one can link back to it (worked-example /
+        // precedent retrieval). Best-effort — extraction still proceeds
+        // without a precedent link if capture fails.
+        let activity_id = self.capture_activity(realm, &window).await;
+
+        // M8.3b: drop trivial/filler candidates before they're even
+        // considered for entity linking or conflict resolution. Off by
+        // default — a disabled gate never rejects anything.
+        let mut rejected_trivial = 0i64;
+        let memories: Vec<_> = bundle
+            .memories
+            .into_iter()
+            .filter(
+                |m| match memory_validity_gate::extraction_reject(m, validity_gate) {
+                    Some(_) => {
+                        rejected_trivial += 1;
+                        false
+                    }
+                    None => true,
+                },
+            )
+            .collect();
+
         let resolved = memory_resolve::resolve_and_link(
             &self.shared,
             writer,
@@ -453,7 +488,7 @@ impl MemoryConsolidator {
         out.entities += resolved.entities_written;
         out.relationships += resolved.relationships_written;
 
-        for m in &bundle.memories {
+        for m in &memories {
             let refs: Vec<String> = m
                 .entity_mentions
                 .iter()
@@ -474,12 +509,40 @@ impl MemoryConsolidator {
                 refs,
                 provenance,
                 gate,
+                activity_id.as_deref(),
             )
             .await;
             out.tally.merge(&t);
         }
+        out.tally.rejected_trivial += rejected_trivial;
         out.written += out.tally.written();
         Ok(out)
+    }
+
+    /// Capture `window` as an Activity (M8.2) in the isolated `activities`
+    /// database. Returns its node id, or `None` on any failure (embedding
+    /// backend unavailable, provisioning error, …) — callers proceed without
+    /// a precedent link rather than failing extraction over this.
+    async fn capture_activity(&self, realm: &str, window: &str) -> Option<String> {
+        let embed = kyma_memory::shared_embedding().await.ok()?;
+        let awriter = MemoryWriter::new(
+            self.shared.catalog.clone(),
+            self.shared.format.clone(),
+            embed,
+        )
+        .with_database(kyma_memory::activities::ACTIVITIES_DB);
+        let activity = kyma_memory::activities::RawActivity {
+            text: window.to_string(),
+            realm: realm.to_string(),
+            source: "claude-code".to_string(),
+        };
+        match kyma_memory::activities::capture(&awriter, &activity).await {
+            Ok(id) => Some(kyma_memory::activities::activity_node_id(&id)),
+            Err(e) => {
+                tracing::debug!(error = %e, "activity capture failed");
+                None
+            }
+        }
     }
 
     /// Build a compact transcript of a realm's new firehose activity (oldest

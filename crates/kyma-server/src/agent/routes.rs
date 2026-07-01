@@ -229,6 +229,7 @@ async fn changes_memory_handler(
         pool: state.pool.clone(),
         memory: state.memory.clone(),
         hitl: None,
+        memory_settings_path: state.memory_settings_path.clone(),
     };
     let since = params
         .since
@@ -286,6 +287,7 @@ async fn export_memory_handler(
             pool: state.pool.clone(),
             memory: state.memory.clone(),
             hitl: None,
+            memory_settings_path: state.memory_settings_path.clone(),
         };
         let realm_filter = params
             .realm
@@ -517,6 +519,7 @@ async fn memory_query_handler(
             pool: state.pool.clone(),
             memory: state.memory.clone(),
             hitl: None,
+            memory_settings_path: state.memory_settings_path.clone(),
         };
         let result = retrieve(&shared, &body.retrieve).await;
         tracing::Span::current().record("memory.results", result.memories.len());

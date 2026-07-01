@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
 import { Activity } from "lucide-react";
 import { relTime } from "@/lib/time";
+import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import type { ProgressActivity } from "@/sdk/dreaming";
 import { activityIcon } from "./activityIcons";
@@ -19,12 +19,7 @@ export function ActivityFeed({
   live?: boolean;
   className?: string;
 }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!live) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [live]);
+  const now = useNow(Boolean(live));
 
   if (!items || items.length === 0) {
     return (

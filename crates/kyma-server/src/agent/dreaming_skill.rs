@@ -29,6 +29,15 @@ budgets for this run; honor them.
   streamed from connected coding agents: recent sessions, what the user worked
   on), plus any memory files synced from your nodes' coding agents already in the
   store.
+- Reinforcement backstop: call `list_memory_usage` to see memories that have
+  been recalled but never explicitly judged. Cross-reference each against the
+  session activity you just surveyed — if the memory was clearly acted on
+  successfully, call `reinforce_memory(outcome="helpful")`; if it was
+  contradicted, ignored, or caused a wrong turn, call
+  `reinforce_memory(outcome="not_helpful")`. This is a soft, best-effort
+  backstop for agents that don't call `reinforce_memory` themselves — skip a
+  memory rather than guessing when the activity log doesn't make the outcome
+  clear.
 
 ## PHASE 2 — GAP-FILL (READ-ONLY, within the provided data-source-read budget)
 - When a memory references something with missing or stale context, use
@@ -75,6 +84,28 @@ but have no single deterministic row.
 - Spend the provided mutation budget on wiring quality, not volume.
 - (Skip this phase when the run mode is sources-only.)
 
+## PHASE 4 — SCHEMA INDUCTION (optional; only when the trigger says it's enabled)
+- Skip this phase entirely if the run context doesn't mention schema induction,
+  or if it says induction isn't due yet.
+- Check whether induction is actually due: `list_memories(memory_type="procedure",
+  limit=1)` sorted newest-first — if the most recent one is younger than the
+  configured interval, skip. When in doubt, skip rather than guess.
+- Look for a cluster of similar `fact`/`learning` memories in scope that share a
+  repeatable pattern ("when X happens, do Y") — self-join `run_sql` on
+  `cosine_distance(embedding, embedding)` within a realm + memory_type, or
+  `memory_search` over a candidate topic. You need at least the configured
+  minimum number of supporting examples; fewer than that is not induction, it's
+  a coincidence.
+- Generalize a genuine cluster into ONE new `save_memory(memory_type="procedure",
+  ...)` whose content states the pattern in reusable form: named slots, when it
+  applies, and any known exceptions.
+- Link every supporting memory: `link_memory_to_entity(memory_id=<procedure>,
+  target_node_id=<supporting memory id>, relationship_type="GENERALIZES_FROM")`
+  — this is what makes the induced pattern traceable back to its evidence, and
+  it's what a human reviewer checks first.
+- A missed induction costs nothing; a wrong one pollutes the store with a
+  plausible-sounding rule nobody asked for. Bias toward not inducing.
+
 ## FINAL PHASE — SUMMARY
 End with a concise report of what you reviewed, what you changed and why (cite
 memory ids), and anything that needs human attention. This is your last message.
@@ -103,6 +134,8 @@ mod tests {
         assert!(lower.contains("merge_memories"));
         assert!(lower.contains("memory_judge"));
         assert!(lower.contains("link_memory_to_entity"));
+        assert!(lower.contains("phase 4 — schema induction"));
+        assert!(lower.contains("generalizes_from"));
     }
 
     #[test]

@@ -69,6 +69,11 @@ pub struct SharedToolCtx {
     /// explorer's realtime overlay can see which agents touch which memories.
     /// `None` everywhere else (tests, sync jobs) — emits become no-ops.
     pub consumer_sink: Option<ConsumerSink>,
+    /// Local single-binary mode's memory-settings file path, threaded through
+    /// so [`super::memory_usage_store::UsageStore`] can fall back to a JSON
+    /// file beside it when `pool` is `None` (mirrors how
+    /// [`super::memory_queue_store::QueueStore`] picks its backend).
+    pub memory_settings_path: Option<std::path::PathBuf>,
 }
 
 /// Where a consumer-activity event goes. The `kyma serve` process publishes to
@@ -155,6 +160,24 @@ impl SharedToolCtx {
                 );
             }
         }
+    }
+
+    /// Build the usage-stats backend for this context (Postgres, or a local
+    /// JSON file, or `None` when neither is available). Cheap; callers hold
+    /// the result only for the duration of one request.
+    pub fn usage_store(&self) -> Option<super::memory_usage_store::UsageStore> {
+        if let Some(pool) = self.pool.as_ref() {
+            return Some(super::memory_usage_store::UsageStore::Pg {
+                pool: pool.clone(),
+                tenant: kyma_core::tenant::DEFAULT_TENANT,
+            });
+        }
+        let path = self.memory_settings_path.as_ref()?;
+        let path = path
+            .parent()
+            .map(|d| d.join("memory-usage-stats.json"))
+            .unwrap_or_else(|| std::path::PathBuf::from("memory-usage-stats.json"));
+        Some(super::memory_usage_store::UsageStore::Local { path })
     }
 }
 

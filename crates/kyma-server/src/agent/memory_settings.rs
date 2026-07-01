@@ -53,6 +53,26 @@ pub struct MemorySettings {
     pub half_life_days: f64,
     /// Reciprocal-rank-fusion constant `1/(rrf_k + rank)`.
     pub rrf_k: f64,
+    /// Usage-based reinforcement blend weight (see `memory_retrieve::finalize`
+    /// and [`ReinforcementSettings`]). Defaults to 0 — disabled — so enabling
+    /// it is an explicit operator decision; existing rankings never silently
+    /// shift on upgrade.
+    pub w_reinforcement: f64,
+
+    // ── usage-based reinforcement (M8.1) ──────────────────────────────────────
+    pub reinforcement: ReinforcementSettings,
+
+    // ── worked-example precedent retrieval (M8.2) ─────────────────────────────
+    pub precedent: PrecedentSettings,
+
+    // ── MMR diversity re-ranking + validity gate (M8.3) ───────────────────────
+    pub mmr: MmrSettings,
+    pub validity_gate: ValidityGateSettings,
+
+    // ── schema/procedure induction (M8.4) ─────────────────────────────────────
+    /// Folded into the existing dreaming pipeline as an extra phase (no
+    /// separate scheduler/job) — see `dreaming_skill`'s PHASE 4.
+    pub schema_induction: SchemaInductionSettings,
 
     // ── dreaming ────────────────────────────────────────────────────────────
     /// Scheduled agentic memory housekeeping (OFF by default).
@@ -132,6 +152,143 @@ pub struct DreamingSettings {
     pub mutation_cap: u32,
 }
 
+/// Knobs for the usage-based reinforcement loop (M8.1) — hit/miss tracking +
+/// forgetting-curve decay layered on top of the existing recall blend. See
+/// [`kyma_memory::reinforcement`]. `#[serde(default)]` keeps older settings
+/// rows loading with the feature off.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ReinforcementSettings {
+    /// Master switch. When `false`, `w_reinforcement` is ignored regardless
+    /// of its configured value — defense in depth alongside the 0.0 default.
+    pub enabled: bool,
+    /// Reinforced-hit boost / missed-hit penalty on the effective half-life.
+    pub hit_weight: f64,
+    pub miss_penalty: f64,
+    /// Half-life (days) for the usage-decay term (independent of the
+    /// recency-decay `half_life_days` above).
+    pub half_life_days: f64,
+}
+
+impl Default for ReinforcementSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            hit_weight: kyma_memory::REINFORCEMENT_HIT_WEIGHT,
+            miss_penalty: kyma_memory::REINFORCEMENT_MISS_PENALTY,
+            half_life_days: kyma_memory::HALF_LIFE_DAYS,
+        }
+    }
+}
+
+/// Knobs for worked-example ("precedent") retrieval (M8.2) — see
+/// [`kyma_memory::activities`]. Purely additive to a recall response (a new
+/// `precedent` field, never blended into ranking), so unlike
+/// [`ReinforcementSettings`] this defaults *on*.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PrecedentSettings {
+    pub enabled: bool,
+    /// Cosine-distance cutoff for "this looks like the same input we saw
+    /// before" — much stricter than ordinary semantic recall.
+    pub max_distance: f64,
+    /// Max memories attached per precedent activity.
+    pub memory_limit: usize,
+}
+
+impl Default for PrecedentSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_distance: kyma_memory::PRECEDENT_MAX_DISTANCE,
+            memory_limit: 20,
+        }
+    }
+}
+
+/// Knobs for MMR (Maximal Marginal Relevance) diversity re-ranking (M8.3a) —
+/// see `memory_retrieve::mmr_rerank`. Off by default: it's a ranking change,
+/// so — like [`ReinforcementSettings`] — enabling it is an explicit operator
+/// decision.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MmrSettings {
+    pub enabled: bool,
+    /// Relevance/diversity trade-off in `[0, 1]`: 1.0 = pure relevance (no
+    /// diversity effect), lower values favor spreading out near-duplicates.
+    pub lambda: f64,
+    /// How many top-blended candidates to consider for re-ranking, as a
+    /// multiple of the requested `limit`. Bounds the extra embedding fetch —
+    /// the default (non-MMR) recall path never pays for it.
+    pub pool_multiplier: usize,
+}
+
+impl Default for MmrSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            lambda: 0.7,
+            pool_multiplier: 3,
+        }
+    }
+}
+
+/// Knobs for the optional validity gate (M8.3b) — see
+/// [`super::memory_validity_gate`]. Off by default: rejecting content is a
+/// behavior change (fewer memories saved), so it's opt-in.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ValidityGateSettings {
+    pub enabled: bool,
+    /// Escalate borderline (heuristic-flagged) content to a second-opinion
+    /// LLM judge rather than trusting the heuristic alone. Costs one extra
+    /// LLM turn per flagged candidate.
+    pub llm_escalation_enabled: bool,
+    /// Extraction-confidence floor (realtime pipeline only — reuses the
+    /// extractor's own score, no extra LLM call).
+    pub min_confidence: f32,
+    /// Minimum content length (chars) below which content is rejected as
+    /// too trivial to be a durable memory.
+    pub min_content_chars: usize,
+}
+
+impl Default for ValidityGateSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            llm_escalation_enabled: false,
+            min_confidence: 0.35,
+            min_content_chars: 12,
+        }
+    }
+}
+
+/// Knobs for schema/procedure induction (M8.4) — see [`super::dreaming_skill`]
+/// PHASE 4. Off by default. Deliberately no separate scheduling cadence: the
+/// dreaming trigger prompt embeds `interval_days`/`min_examples` as numbers
+/// and the skill itself checks (via `list_memories`) whether induction is due
+/// before attempting it, riding dreaming's own scheduled cadence rather than
+/// a dedicated job/scheduler.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SchemaInductionSettings {
+    pub enabled: bool,
+    /// Minimum similar supporting memories required before generalizing.
+    pub min_examples: u32,
+    /// Minimum days since the last induced procedure before trying again.
+    pub interval_days: u32,
+}
+
+impl Default for SchemaInductionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            min_examples: 3,
+            interval_days: 7,
+        }
+    }
+}
+
 impl Default for DreamingSettings {
     fn default() -> Self {
         Self {
@@ -164,6 +321,12 @@ impl Default for MemorySettings {
             w_recency: kyma_memory::W_RECENCY,
             half_life_days: kyma_memory::HALF_LIFE_DAYS,
             rrf_k: kyma_memory::RRF_K,
+            w_reinforcement: kyma_memory::W_REINFORCEMENT,
+            reinforcement: ReinforcementSettings::default(),
+            precedent: PrecedentSettings::default(),
+            mmr: MmrSettings::default(),
+            validity_gate: ValidityGateSettings::default(),
+            schema_induction: SchemaInductionSettings::default(),
             dreaming: DreamingSettings::default(),
             hitl: super::memory_policy::HitlPolicy::default(),
             default_visibility: MemoryVisibility::Public,
@@ -340,6 +503,128 @@ mod tests {
         let v = serde_json::to_value(&s).unwrap();
         assert!(v["dreaming"].get("connector_read_budget").is_none());
         assert_eq!(v["dreaming"]["data_source_read_budget"], 7);
+    }
+
+    #[test]
+    fn legacy_settings_row_without_reinforcement_loads_default_off() {
+        // A settings row written before M8.1 shipped must still load, with
+        // the reinforcement blend defaulting off (zero behavior change).
+        let legacy = serde_json::json!({
+            "extraction_enabled": true,
+            "min_events": 1
+        });
+        let s: MemorySettings = serde_json::from_value(legacy).unwrap();
+        assert!(
+            !s.reinforcement.enabled,
+            "reinforcement must default off for legacy rows"
+        );
+        assert_eq!(s.w_reinforcement, 0.0);
+    }
+
+    #[test]
+    fn reinforcement_roundtrips_through_settings_json() {
+        let mut s = MemorySettings::default();
+        s.reinforcement.enabled = true;
+        s.reinforcement.hit_weight = 0.5;
+        s.w_reinforcement = 0.2;
+        let v = serde_json::to_value(&s).unwrap();
+        let back: MemorySettings = serde_json::from_value(v).unwrap();
+        assert!(back.reinforcement.enabled);
+        assert_eq!(back.reinforcement.hit_weight, 0.5);
+        assert_eq!(back.w_reinforcement, 0.2);
+    }
+
+    #[test]
+    fn legacy_settings_row_without_precedent_loads_default_on() {
+        // Precedent surfacing is purely additive (new response field, no
+        // ranking change), so unlike reinforcement it defaults on even for a
+        // settings row written before M8.2 shipped.
+        let legacy = serde_json::json!({
+            "extraction_enabled": true,
+            "min_events": 1
+        });
+        let s: MemorySettings = serde_json::from_value(legacy).unwrap();
+        assert!(s.precedent.enabled);
+        assert_eq!(
+            s.precedent.max_distance,
+            kyma_memory::PRECEDENT_MAX_DISTANCE
+        );
+    }
+
+    #[test]
+    fn precedent_roundtrips_through_settings_json() {
+        let mut s = MemorySettings::default();
+        s.precedent.enabled = false;
+        s.precedent.max_distance = 0.05;
+        let v = serde_json::to_value(&s).unwrap();
+        let back: MemorySettings = serde_json::from_value(v).unwrap();
+        assert!(!back.precedent.enabled);
+        assert_eq!(back.precedent.max_distance, 0.05);
+    }
+
+    #[test]
+    fn legacy_settings_row_without_mmr_or_validity_gate_loads_default_off() {
+        // Both are ranking/behavior changes, so — unlike precedent — a
+        // settings row written before M8.3 shipped must load with both off.
+        let legacy = serde_json::json!({
+            "extraction_enabled": true,
+            "min_events": 1
+        });
+        let s: MemorySettings = serde_json::from_value(legacy).unwrap();
+        assert!(!s.mmr.enabled);
+        assert!(!s.validity_gate.enabled);
+        assert!(!s.validity_gate.llm_escalation_enabled);
+    }
+
+    #[test]
+    fn mmr_roundtrips_through_settings_json() {
+        let mut s = MemorySettings::default();
+        s.mmr.enabled = true;
+        s.mmr.lambda = 0.5;
+        s.mmr.pool_multiplier = 5;
+        let v = serde_json::to_value(&s).unwrap();
+        let back: MemorySettings = serde_json::from_value(v).unwrap();
+        assert!(back.mmr.enabled);
+        assert_eq!(back.mmr.lambda, 0.5);
+        assert_eq!(back.mmr.pool_multiplier, 5);
+    }
+
+    #[test]
+    fn validity_gate_roundtrips_through_settings_json() {
+        let mut s = MemorySettings::default();
+        s.validity_gate.enabled = true;
+        s.validity_gate.llm_escalation_enabled = true;
+        s.validity_gate.min_confidence = 0.5;
+        let v = serde_json::to_value(&s).unwrap();
+        let back: MemorySettings = serde_json::from_value(v).unwrap();
+        assert!(back.validity_gate.enabled);
+        assert!(back.validity_gate.llm_escalation_enabled);
+        assert_eq!(back.validity_gate.min_confidence, 0.5);
+    }
+
+    #[test]
+    fn legacy_settings_row_without_schema_induction_loads_default_off() {
+        let legacy = serde_json::json!({
+            "extraction_enabled": true,
+            "min_events": 1
+        });
+        let s: MemorySettings = serde_json::from_value(legacy).unwrap();
+        assert!(!s.schema_induction.enabled);
+        assert_eq!(s.schema_induction.min_examples, 3);
+        assert_eq!(s.schema_induction.interval_days, 7);
+    }
+
+    #[test]
+    fn schema_induction_roundtrips_through_settings_json() {
+        let mut s = MemorySettings::default();
+        s.schema_induction.enabled = true;
+        s.schema_induction.min_examples = 5;
+        s.schema_induction.interval_days = 14;
+        let v = serde_json::to_value(&s).unwrap();
+        let back: MemorySettings = serde_json::from_value(v).unwrap();
+        assert!(back.schema_induction.enabled);
+        assert_eq!(back.schema_induction.min_examples, 5);
+        assert_eq!(back.schema_induction.interval_days, 14);
     }
 
     #[test]

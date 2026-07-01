@@ -59,6 +59,7 @@ fn ctx(catalog: CatalogArc, format: FormatArc) -> SharedToolCtx {
         memory: None,
         hitl: None,
         federation: None,
+        memory_settings_path: None,
     }
 }
 

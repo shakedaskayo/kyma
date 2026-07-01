@@ -235,6 +235,7 @@ mod tests {
             memory: None,
             // read-only test ctx — no HITL approval gate.
             hitl: None,
+            memory_settings_path: None,
         }
     }
 

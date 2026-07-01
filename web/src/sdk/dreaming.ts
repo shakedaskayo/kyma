@@ -22,6 +22,8 @@ export interface RunStats {
   entities_linked: number;
   data_source_reads: number;
   tool_calls: number;
+  /** Reusable "procedure" memories generalized from repeated patterns (M8.4). */
+  schemas_induced: number;
   summary: string;
 }
 

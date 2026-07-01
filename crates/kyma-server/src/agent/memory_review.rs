@@ -166,6 +166,7 @@ async fn build_gate(
         pool: state.pool.clone(),
         memory: state.memory.clone(),
         hitl: None,
+        memory_settings_path: state.memory_settings_path.clone(),
     };
     Some((gate, shared))
 }

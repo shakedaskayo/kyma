@@ -25,6 +25,7 @@ async fn build_app() -> axum::Router {
         pool: Some(pool),
         memory: None,
         hitl: None,
+        memory_settings_path: None,
     };
     router(McpState {
         dispatch: ToolDispatch::new(shared),
@@ -68,7 +69,7 @@ async fn tools_list_returns_all() {
     let app = build_app().await;
     let resp = jsonrpc(app, json!({"jsonrpc":"2.0","id":2,"method":"tools/list"})).await;
     let tools = resp["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 28);
+    assert_eq!(tools.len(), 30);
 }
 
 #[tokio::test]
