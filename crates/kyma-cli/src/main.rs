@@ -46,7 +46,11 @@ const SKILL_TEMPLATE: &str = include_str!("skill_template.md");
 const DEPLOY_SKILL: &str = include_str!("../../../integrations/claude-code/kyma-deploy/SKILL.md");
 
 #[derive(Debug, Parser)]
-#[command(name = "kyma", about = "Kyma CLI — client queries + admin operations")]
+#[command(
+    name = "kyma",
+    about = "Kyma CLI — client queries + admin operations",
+    styles = clap::builder::Styles::styled()
+)]
 struct Cli {
     /// Postgres connection URL (admin subcommands only).
     #[arg(
@@ -55,6 +59,10 @@ struct Cli {
         default_value = "postgres://kyma:kyma_dev@localhost:5433/kyma"
     )]
     catalog_url: String,
+
+    /// Disable colored/styled output (also respects NO_COLOR and non-TTY stdout).
+    #[arg(long, global = true)]
+    no_color: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -493,9 +501,16 @@ enum SessionsOp {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     let cli = Cli::parse();
+    ux::theme::init(cli.no_color);
+    if let Err(err) = run(cli).await {
+        ux::error::print_error(&err);
+        std::process::exit(1);
+    }
+}
 
+async fn run(cli: Cli) -> Result<()> {
     // `kyma serve` sets up a richer subscriber that includes the OTel self-trace
     // layer; all other subcommands use a plain fmt subscriber.
     let self_trace_handle = if matches!(cli.command, Command::Serve { .. }) {
