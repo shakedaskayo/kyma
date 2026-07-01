@@ -9,10 +9,13 @@
 //!
 //! See `docs/superpowers/specs/2026-05-31-agentic-memory-design.md` (M1).
 
+pub mod activities;
 pub mod embed;
 pub mod error;
 pub mod file_candidates;
 pub mod ingest;
+pub mod reinforcement;
+pub mod rerank;
 pub mod rows;
 pub mod schema;
 pub mod sql;
@@ -48,15 +51,21 @@ pub const IMPORTANCE_WEIGHT: f64 = 0.3;
 ///   node it denotes (carries `target_namespace` for cross-graph stitching).
 /// - [`EDGE_RELATES_TO`]: entity ↔ entity, with the predicate in `props`.
 /// - [`EDGE_DERIVED_FROM`]: a memory → the source firehose/data source row it was
-///   extracted from (provenance edge).
+///   extracted from (provenance edge). Also used memory → [`activities`] Activity
+///   node (the raw input window it was extracted from, M8.2).
 /// - [`EDGE_INVALIDATES`]: a new memory → the memory it supersedes (bi-temporal).
 /// - [`EDGE_MERGED_INTO`]: a memory → the memory it was merged into.
+/// - [`EDGE_GENERALIZES_FROM`]: an induced `procedure` memory (M8.4 schema
+///   induction) → each supporting memory it was generalized from. Distinct
+///   from `DERIVED_FROM`: that's raw-input provenance, this is abstraction
+///   provenance (many supporting memories → one generalized pattern).
 pub const EDGE_REFERENCES: &str = "REFERENCES";
 pub const EDGE_RESOLVES_TO: &str = "RESOLVES_TO";
 pub const EDGE_RELATES_TO: &str = "RELATES_TO";
 pub const EDGE_DERIVED_FROM: &str = "DERIVED_FROM";
 pub const EDGE_INVALIDATES: &str = "INVALIDATES";
 pub const EDGE_MERGED_INTO: &str = "MERGED_INTO";
+pub const EDGE_GENERALIZES_FROM: &str = "GENERALIZES_FROM";
 
 /// Graph-aware hybrid recall blend. The final score fuses reciprocal-rank
 /// fusion (RRF) of the vector + keyword candidate lists with semantic
@@ -72,3 +81,15 @@ pub const W_RECENCY: f64 = 0.3;
 pub const RRF_K: f64 = 60.0;
 /// Half-life (days) for recency decay `exp(-ln2 * age_days / HALF_LIFE_DAYS)`.
 pub const HALF_LIFE_DAYS: f64 = 30.0;
+
+/// Usage-based reinforcement blend weight (M8.1, see [`reinforcement`]).
+/// Defaults to 0 — disabled — so enabling it is an explicit operator decision
+/// and existing rankings never silently shift on upgrade.
+pub const W_REINFORCEMENT: f64 = 0.0;
+pub const REINFORCEMENT_HIT_WEIGHT: f64 = 0.3;
+pub const REINFORCEMENT_MISS_PENALTY: f64 = 0.3;
+
+/// Worked-example ("precedent") retrieval default (M8.2, see [`activities`]).
+/// Much stricter than ordinary recall's semantic threshold — a precedent
+/// means "near-duplicate past input," not "topically related."
+pub const PRECEDENT_MAX_DISTANCE: f64 = 0.15;

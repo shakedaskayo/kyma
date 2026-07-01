@@ -62,6 +62,11 @@ pub struct SharedToolCtx {
     /// ⇒ `run_sql` against a database containing federated tables returns a
     /// clear error instead of empty results.
     pub federation: Option<std::sync::Arc<kyma_federation::FederationRuntime>>,
+    /// Local single-binary mode's memory-settings file path, threaded through
+    /// so [`super::memory_usage_store::UsageStore`] can fall back to a JSON
+    /// file beside it when `pool` is `None` (mirrors how
+    /// [`super::memory_queue_store::QueueStore`] picks its backend).
+    pub memory_settings_path: Option<std::path::PathBuf>,
 }
 
 impl SharedToolCtx {
@@ -77,6 +82,24 @@ impl SharedToolCtx {
                 );
             }
         }
+    }
+
+    /// Build the usage-stats backend for this context (Postgres, or a local
+    /// JSON file, or `None` when neither is available). Cheap; callers hold
+    /// the result only for the duration of one request.
+    pub fn usage_store(&self) -> Option<super::memory_usage_store::UsageStore> {
+        if let Some(pool) = self.pool.as_ref() {
+            return Some(super::memory_usage_store::UsageStore::Pg {
+                pool: pool.clone(),
+                tenant: kyma_core::tenant::DEFAULT_TENANT,
+            });
+        }
+        let path = self.memory_settings_path.as_ref()?;
+        let path = path
+            .parent()
+            .map(|d| d.join("memory-usage-stats.json"))
+            .unwrap_or_else(|| std::path::PathBuf::from("memory-usage-stats.json"));
+        Some(super::memory_usage_store::UsageStore::Local { path })
     }
 }
 
@@ -285,12 +308,8 @@ pub fn tool_run_kql(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     // Compile KQL → SQL with full schema context so that
                     // `union` can compute the column superset; surface parse
                     // errors to the model so it can self-correct the syntax.
-                    let sql = match kql_to_sql_for_database(
-                        &shared,
-                        &parsed.database,
-                        &parsed.kql,
-                    )
-                    .await
+                    let sql = match kql_to_sql_for_database(&shared, &parsed.database, &parsed.kql)
+                        .await
                     {
                         Ok(s) => s,
                         Err(e) => return Ok(e),
@@ -894,13 +913,7 @@ pub fn tool_graph_traverse(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         hops,
                         dir,
                     );
-                    let sql = match kql_to_sql_for_database(
-                        &shared,
-                        &parsed.database,
-                        &kql,
-                    )
-                    .await
-                    {
+                    let sql = match kql_to_sql_for_database(&shared, &parsed.database, &kql).await {
                         Ok(s) => s,
                         Err(e) => {
                             let mut err = e;
@@ -1020,7 +1033,10 @@ mod retrieve_artifact_tests {
     async fn reads_window_guards_prefix_and_handles_missing() {
         let store: Arc<dyn object_store::ObjectStore> = Arc::new(InMemory::new());
         store
-            .put(&ObjPath::from("artifacts/t/x.log"), b"0123456789".to_vec().into())
+            .put(
+                &ObjPath::from("artifacts/t/x.log"),
+                b"0123456789".to_vec().into(),
+            )
             .await
             .unwrap();
         let tool = tool_retrieve_artifact(store);
@@ -1051,7 +1067,10 @@ mod retrieve_artifact_tests {
 
         // Prefix guard: only the artifact namespace is readable.
         let bad = tool
-            .execute(ctx.clone(), json!({"object_path": "extents/secret-segment"}))
+            .execute(
+                ctx.clone(),
+                json!({"object_path": "extents/secret-segment"}),
+            )
             .await
             .unwrap();
         assert!(bad["error"].as_str().unwrap().contains("artifacts/"));

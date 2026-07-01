@@ -18,8 +18,8 @@ use crate::agent::engine::{build_engine, CredentialResolver};
 use super::memory_tools::{
     tool_flush_memory, tool_ingest_entity, tool_link_memory_to_entity, tool_list_memories,
     tool_memory_compare, tool_memory_judge, tool_memory_search, tool_memory_session_summary,
-    tool_merge_memories, tool_recall_memory, tool_save_memories, tool_save_memory,
-    tool_update_memory_importance, tool_update_memory_status,
+    tool_merge_memories, tool_recall_memory, tool_reinforce_memory, tool_save_memories,
+    tool_save_memory, tool_update_memory_importance, tool_update_memory_status,
 };
 use super::sessions::Turn;
 use super::state::AgentState;
@@ -139,12 +139,14 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
     let key = resolver.resolve(&cfg).await?;
     let llm = build_engine(&cfg, key)?;
 
-    let shared = SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+    let shared = SharedToolCtx {
+        federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
         hitl: None,
+        memory_settings_path: state.memory_settings_path.clone(),
     };
 
     let agent = LlmAgentBuilder::new(AGENT_NAME)
@@ -175,7 +177,10 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
         .tool(tool_merge_memories(shared.clone()))
         .tool(tool_memory_compare(shared.clone()))
         .tool(tool_memory_judge(shared.clone()))
-        .tool(tool_memory_session_summary(shared))
+        .tool(tool_memory_session_summary(shared.clone()))
+        // Usage-based reinforcement (M8.1): report whether a recalled memory
+        // actually helped so recall can learn from it.
+        .tool(tool_reinforce_memory(shared))
         .build()
         .map_err(|e| anyhow::anyhow!("agent build failed: {e:?}"))?;
 

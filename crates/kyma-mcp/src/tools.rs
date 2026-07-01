@@ -4,12 +4,13 @@ use adk_rust::tool::SimpleToolContext;
 use adk_rust::Tool;
 use kyma_server::agent::{
     tool_contribute_file, tool_describe_file, tool_describe_table, tool_explore_schema,
-    tool_file_neighbors, tool_find_references_to, tool_flush_memory, tool_graph_traverse,
-    tool_ingest_entity, tool_link_memory_to_entity, tool_list_databases, tool_list_memories,
-    tool_memory_compare, tool_memory_judge, tool_memory_search, tool_memory_session_summary,
-    tool_graph_search, tool_recall_file, tool_recall_memory, tool_retrieve_artifact, tool_run_kql,
-    tool_run_sql, tool_sample_rows, tool_save_memories, tool_save_memory, tool_search,
-    tool_update_memory_importance, tool_update_memory_status, SharedToolCtx,
+    tool_file_neighbors, tool_find_references_to, tool_flush_memory, tool_graph_search,
+    tool_graph_traverse, tool_ingest_entity, tool_link_memory_to_entity, tool_list_databases,
+    tool_list_memories, tool_list_memory_usage, tool_memory_compare, tool_memory_judge,
+    tool_memory_search, tool_memory_session_summary, tool_recall_file, tool_recall_memory,
+    tool_reinforce_memory, tool_retrieve_artifact, tool_run_kql, tool_run_sql, tool_sample_rows,
+    tool_save_memories, tool_save_memory, tool_search, tool_update_memory_importance,
+    tool_update_memory_status, SharedToolCtx,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -82,8 +83,12 @@ impl ToolDispatch {
         // Structured end-of-session capture.
         map.insert(
             "memory_session_summary",
-            tool_memory_session_summary(shared),
+            tool_memory_session_summary(shared.clone()),
         );
+        // Usage-based reinforcement (M8.1): report whether a recalled memory
+        // actually helped, and list the reinforcement backstop worklist.
+        map.insert("reinforce_memory", tool_reinforce_memory(shared.clone()));
+        map.insert("list_memory_usage", tool_list_memory_usage(shared));
         Self {
             by_name: Arc::new(map),
         }
@@ -93,10 +98,7 @@ impl ToolDispatch {
     /// (coding agents) can fetch byte windows of stored log/file artifacts by
     /// `object_path`. Kept off the base [`SharedToolCtx`] so only deployments
     /// with an object store wire it (the server binary; not local-mode tests).
-    pub fn with_artifact_store(
-        mut self,
-        store: Arc<dyn object_store::ObjectStore>,
-    ) -> Self {
+    pub fn with_artifact_store(mut self, store: Arc<dyn object_store::ObjectStore>) -> Self {
         let mut map = (*self.by_name).clone();
         map.insert("retrieve_artifact", tool_retrieve_artifact(store));
         self.by_name = Arc::new(map);

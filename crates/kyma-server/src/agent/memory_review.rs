@@ -93,7 +93,15 @@ pub async fn resolve_review(
         Some(g) => g,
         None => return unavailable("no approval queue in this mode"),
     };
-    match memory_gate::resolve(&gate, &shared, id, act, body.payload, body.comment.as_deref()).await
+    match memory_gate::resolve(
+        &gate,
+        &shared,
+        id,
+        act,
+        body.payload,
+        body.comment.as_deref(),
+    )
+    .await
     {
         Ok(row) => Json(json!({ "ok": true, "row": row })).into_response(),
         Err(e) => bad_request(&e.to_string()),
@@ -126,8 +134,7 @@ pub async fn bulk_review(
     };
     let mut results = Vec::with_capacity(body.ids.len());
     for id in body.ids {
-        let r =
-            memory_gate::resolve(&gate, &shared, id, act, None, body.comment.as_deref()).await;
+        let r = memory_gate::resolve(&gate, &shared, id, act, None, body.comment.as_deref()).await;
         results.push(match r {
             Ok(row) => json!({ "id": id.to_string(), "ok": true, "status": row.status }),
             Err(e) => json!({ "id": id.to_string(), "ok": false, "error": e.to_string() }),
@@ -151,12 +158,14 @@ async fn build_gate(
         source: "review",
         source_run_id: None,
     };
-    let shared = SharedToolCtx { federation: None,
+    let shared = SharedToolCtx {
+        federation: None,
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
         hitl: None,
+        memory_settings_path: state.memory_settings_path.clone(),
     };
     Some((gate, shared))
 }
@@ -168,10 +177,18 @@ fn bad_request(msg: &str) -> Response {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": msg }))).into_response()
 }
 fn unavailable(msg: &str) -> Response {
-    (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": msg }))).into_response()
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({ "error": msg })),
+    )
+        .into_response()
 }
 fn internal(msg: String) -> Response {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": msg }))).into_response()
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": msg })),
+    )
+        .into_response()
 }
 
 #[cfg(test)]

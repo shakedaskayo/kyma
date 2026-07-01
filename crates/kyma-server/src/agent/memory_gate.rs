@@ -53,12 +53,16 @@ pub struct GateCtx {
 }
 
 /// What [`dispatch`] did.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct GateOutcome {
     /// True if the mutation was actually written (Apply or PostHoc).
     pub applied: bool,
     /// The queue row id, when one was written (PostHoc or Gate).
     pub queued_id: Option<Uuid>,
+    /// The node [`apply_op`] created (Add, or an Invalidate replacement), when
+    /// the op actually applied. `None` for Gate (deferred, nothing created
+    /// yet) and for ops that don't create a node (Update/Merge/Archive/…).
+    pub created_node_id: Option<String>,
 }
 
 // ── op payloads ──────────────────────────────────────────────────────────────
@@ -153,12 +157,20 @@ pub struct AppliedRef {
 #[serde(tag = "inv", rename_all = "snake_case")]
 pub enum Inverse {
     /// Hide a created node (undo Add / Invalidate replacement).
-    ArchiveNode { node_id: String },
+    ArchiveNode {
+        node_id: String,
+    },
     /// Re-append prior latest rows so latest-wins restores their state.
-    RestoreRows { rows: Vec<Value> },
+    RestoreRows {
+        rows: Vec<Value>,
+    },
     /// Append audit tombstones for edges (append-only store: provenance kept).
-    RemoveEdges { edges: Vec<EdgeRef> },
-    Multi { steps: Vec<Inverse> },
+    RemoveEdges {
+        edges: Vec<EdgeRef>,
+    },
+    Multi {
+        steps: Vec<Inverse>,
+    },
 }
 
 // ── dispatch ─────────────────────────────────────────────────────────────────
@@ -185,10 +197,11 @@ where
     );
     match disp {
         Disposition::Apply => {
-            apply().await?;
+            let applied = apply().await?;
             Ok(GateOutcome {
                 applied: true,
                 queued_id: None,
+                created_node_id: applied.created_node_id,
             })
         }
         Disposition::PostHoc => {
@@ -211,6 +224,7 @@ where
             Ok(GateOutcome {
                 applied: true,
                 queued_id: Some(id),
+                created_node_id: applied.created_node_id,
             })
         }
         Disposition::Gate => {
@@ -231,6 +245,7 @@ where
             Ok(GateOutcome {
                 applied: false,
                 queued_id: Some(id),
+                created_node_id: None,
             })
         }
     }
@@ -251,10 +266,11 @@ where
     match gate {
         Some(g) => dispatch(g, ctx, payload, apply).await,
         None => {
-            apply().await?;
+            let applied = apply().await?;
             Ok(GateOutcome {
                 applied: true,
                 queued_id: None,
+                created_node_id: applied.created_node_id,
             })
         }
     }
@@ -302,7 +318,9 @@ pub async fn gate_tool_op(
 /// Compute the undo for an applied op. Pure — drives the unit tests.
 pub fn inverse_of(op: MemoryOp, _payload: &OpPayload, applied: &AppliedRef) -> Option<Inverse> {
     match op {
-        MemoryOp::Add | MemoryOp::PromoteFileCandidate => applied
+        // InduceSchema is carried as an OpPayload::Add (a synthesized
+        // procedure is still, mechanically, a new node) — same inverse.
+        MemoryOp::Add | MemoryOp::PromoteFileCandidate | MemoryOp::InduceSchema => applied
             .created_node_id
             .clone()
             .map(|node_id| Inverse::ArchiveNode { node_id }),
@@ -421,7 +439,13 @@ pub async fn apply_op(shared: &SharedToolCtx, payload: &OpPayload) -> anyhow::Re
             row["updated_at"] = json!(now);
             writer.append_node_rows(vec![row]).await?;
             let _ = writer
-                .link(&new_id, target_id, EDGE_INVALIDATES, &replacement.realm, None)
+                .link(
+                    &new_id,
+                    target_id,
+                    EDGE_INVALIDATES,
+                    &replacement.realm,
+                    None,
+                )
                 .await;
             Ok(AppliedRef {
                 created_node_id: Some(new_id.clone()),
@@ -486,7 +510,8 @@ pub async fn apply_op(shared: &SharedToolCtx, payload: &OpPayload) -> anyhow::Re
                 row["status"] = json!("archived");
                 row["updated_at"] = json!(now);
                 writer.append_node_rows(vec![row]).await?;
-                let edge = rows::edge_row(from, into_id, EDGE_MERGED_INTO, &realm, None, None, &now);
+                let edge =
+                    rows::edge_row(from, into_id, EDGE_MERGED_INTO, &realm, None, None, &now);
                 writer.append_edge_rows(vec![edge]).await?;
                 prior_rows.push(prior);
                 edges.push(EdgeRef {
@@ -751,6 +776,7 @@ mod tests {
         .unwrap();
         assert!(out.applied);
         assert!(out.queued_id.is_none());
+        assert_eq!(out.created_node_id, Some("memory:new".to_string()));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert!(store.list(&Default::default()).await.unwrap().is_empty());
     }
@@ -782,6 +808,10 @@ mod tests {
         .unwrap();
         assert!(!out.applied);
         assert!(out.queued_id.is_some());
+        assert!(
+            out.created_node_id.is_none(),
+            "nothing applied yet — no node created"
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 0, "gate must not apply");
         let rows = store.list(&Default::default()).await.unwrap();
         assert_eq!(rows.len(), 1);
@@ -814,6 +844,7 @@ mod tests {
         .await
         .unwrap();
         assert!(out.applied);
+        assert_eq!(out.created_node_id, Some("memory:new".to_string()));
         let rows = store.list(&Default::default()).await.unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].status, "auto_applied");

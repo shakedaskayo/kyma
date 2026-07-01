@@ -30,10 +30,12 @@ pub mod memory_gate;
 pub mod memory_policy;
 pub mod memory_queue_store;
 pub mod memory_resolve;
-pub mod memory_review;
 pub mod memory_retrieve;
+pub mod memory_review;
 pub mod memory_settings;
 pub mod memory_tools;
+pub mod memory_usage_store;
+pub mod memory_validity_gate;
 pub mod routes;
 pub mod runner;
 pub mod search_tools;
@@ -50,13 +52,13 @@ pub use file_tools::{
     tool_contribute_file, tool_describe_file, tool_file_neighbors, tool_recall_file,
 };
 pub use memory::MemoryConsolidator;
-pub use search_tools::{tool_graph_search, tool_search};
 pub use memory_tools::{
     tool_flush_memory, tool_ingest_entity, tool_link_memory_to_entity, tool_list_memories,
-    tool_memory_compare, tool_memory_judge, tool_memory_search, tool_memory_session_summary,
-    tool_recall_memory, tool_save_memories, tool_save_memory, tool_update_memory_importance,
-    tool_update_memory_status,
+    tool_list_memory_usage, tool_memory_compare, tool_memory_judge, tool_memory_search,
+    tool_memory_session_summary, tool_recall_memory, tool_reinforce_memory, tool_save_memories,
+    tool_save_memory, tool_update_memory_importance, tool_update_memory_status,
 };
+pub use search_tools::{tool_graph_search, tool_search};
 pub use state::AgentState;
 pub use tools::{
     execute_sql, tool_describe_table, tool_explore_schema, tool_find_references_to,

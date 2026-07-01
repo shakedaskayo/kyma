@@ -91,6 +91,11 @@ pub struct DreamingOutcome {
     pub entities_linked: u32,
     pub data_source_reads: u32,
     pub tool_calls: u32,
+    /// `save_memory`/`save_memories` calls with `memory_type: "procedure"`
+    /// (M8.4) — counted separately from `memories_created` (which still
+    /// includes them) because a generalized procedure is a qualitatively
+    /// different kind of write than a verbatim extracted fact.
+    pub schemas_induced: u32,
     pub summary: String,
 }
 
@@ -160,6 +165,7 @@ impl Activity {
             "entities_linked": outcome.entities_linked,
             "data_source_reads": outcome.data_source_reads,
             "tool_calls": outcome.tool_calls,
+            "schemas_induced": outcome.schemas_induced,
         });
     }
 
@@ -231,11 +237,7 @@ impl Tool for BudgetedTool {
     fn is_concurrency_safe(&self) -> bool {
         self.inner.is_concurrency_safe()
     }
-    async fn execute(
-        &self,
-        ctx: Arc<dyn ToolContext>,
-        args: Value,
-    ) -> adk_rust::Result<Value> {
+    async fn execute(&self, ctx: Arc<dyn ToolContext>, args: Value) -> adk_rust::Result<Value> {
         if !self.budget.take() {
             return Ok(json!({"error": format!(
                 "mutation budget exhausted for this dreaming run (cap {}) — stop mutating and \
@@ -247,6 +249,115 @@ impl Tool for BudgetedTool {
     }
 }
 
+/// Delegating wrapper that rejects trivial/filler content before it reaches
+/// `save_memory`/`save_memories` (M8.3b). Dreaming's `save_memory` calls have
+/// no extraction `confidence` score to reuse (unlike the realtime pipeline),
+/// so this always falls through to the heuristic, then an optional LLM
+/// second opinion — see [`super::memory_validity_gate`].
+struct ValidityGatedTool {
+    inner: Arc<dyn Tool>,
+    state: AgentState,
+    settings: super::memory_settings::ValidityGateSettings,
+}
+
+impl ValidityGatedTool {
+    /// Every `content` string this call would write — the top-level
+    /// `save_memory` field, or each entry in `save_memories`' `memories`
+    /// array. Conservatively rejects the WHOLE call if any one fails, rather
+    /// than surgically filtering the batch — dreaming can retry without the
+    /// offending item.
+    fn contents(args: &Value) -> Vec<String> {
+        if let Some(c) = args.get("content").and_then(Value::as_str) {
+            return vec![c.to_string()];
+        }
+        args.get("memories")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|m| m.get("content").and_then(Value::as_str).map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
+#[adk_rust::async_trait]
+impl Tool for ValidityGatedTool {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+    fn description(&self) -> &str {
+        self.inner.description()
+    }
+    fn declaration(&self) -> Value {
+        self.inner.declaration()
+    }
+    fn is_long_running(&self) -> bool {
+        self.inner.is_long_running()
+    }
+    fn parameters_schema(&self) -> Option<Value> {
+        self.inner.parameters_schema()
+    }
+    fn response_schema(&self) -> Option<Value> {
+        self.inner.response_schema()
+    }
+    fn is_read_only(&self) -> bool {
+        self.inner.is_read_only()
+    }
+    fn is_concurrency_safe(&self) -> bool {
+        self.inner.is_concurrency_safe()
+    }
+    async fn execute(&self, ctx: Arc<dyn ToolContext>, args: Value) -> adk_rust::Result<Value> {
+        if self.settings.enabled {
+            for content in Self::contents(&args) {
+                if let Some(reason) = super::memory_validity_gate::tool_reject_reason(
+                    &self.state,
+                    &content,
+                    &self.settings,
+                )
+                .await
+                {
+                    return Ok(json!({
+                        "error": format!("validity gate rejected: {reason}"),
+                        "rejected_content_preview": content.chars().take(80).collect::<String>(),
+                    }));
+                }
+            }
+        }
+        self.inner.execute(ctx, args).await
+    }
+}
+
+#[cfg(test)]
+mod validity_gated_tool_tests {
+    use super::*;
+
+    #[test]
+    fn contents_extracts_single_save_memory_content() {
+        let args = json!({"content": "kyma uses DataFusion", "memory_type": "fact"});
+        assert_eq!(
+            ValidityGatedTool::contents(&args),
+            vec!["kyma uses DataFusion".to_string()]
+        );
+    }
+
+    #[test]
+    fn contents_extracts_every_item_in_save_memories_batch() {
+        let args = json!({"memories": [{"content": "a"}, {"content": "b"}]});
+        assert_eq!(
+            ValidityGatedTool::contents(&args),
+            vec!["a".to_string(), "b".to_string()]
+        );
+    }
+
+    #[test]
+    fn contents_empty_when_neither_shape_matches() {
+        let args = json!({"memory_id": "memory:x", "status": "archived"});
+        assert!(ValidityGatedTool::contents(&args).is_empty());
+    }
+}
+
 // ── prompt ───────────────────────────────────────────────────────────────────
 
 fn dreaming_prompt(
@@ -254,6 +365,7 @@ fn dreaming_prompt(
     focus: Option<&str>,
     realm_scope: &[String],
     s: &DreamingSettings,
+    schema_induction: &super::memory_settings::SchemaInductionSettings,
 ) -> String {
     let scope = if realm_scope.is_empty() {
         "all realms".to_string()
@@ -327,6 +439,29 @@ Mutation cap for this run: {} — spend it on wiring quality, not volume.
             s.mutation_cap
         ));
     }
+    if schema_induction.enabled {
+        p.push_str(&format!(
+            "
+PHASE 4 — SCHEMA INDUCTION (optional; only if due):
+- Check whether induction is due: list_memories(memory_type=\"procedure\", limit=1) sorted \
+newest-first (or run_sql ordering by created_at) — skip this phase if the most recent one is \
+younger than {} day(s), or if you have no evidence either way, err toward skipping.
+- Look for a cluster of ≥{} similar fact/learning memories in scope that share a repeatable \
+pattern (\"when X happens, do Y\") — use run_sql with a self-join on cosine_distance(embedding, \
+embedding) within a realm+memory_type, or memory_search over a candidate topic.
+- If you find one, generalize it into ONE new save_memory(memory_type=\"procedure\", ...) whose \
+content states the pattern in reusable form (named slots, when it applies, known exceptions).
+- Link every supporting memory with link_memory_to_entity(memory_id=<procedure>, \
+target_node_id=<supporting memory id>, relationship_type=\"GENERALIZES_FROM\") so the induced \
+pattern stays traceable to its evidence.
+- Do not induce from fewer than {} examples, and do not force a pattern that isn't genuinely \
+repeatable — a missed induction is fine; a wrong one pollutes the store.
+",
+            schema_induction.interval_days,
+            schema_induction.min_examples,
+            schema_induction.min_examples
+        ));
+    }
     p.push_str(
         "
 FINAL PHASE — SUMMARY: end with a concise report of what you reviewed, what you changed and \
@@ -351,6 +486,7 @@ fn dreaming_trigger_prompt(
     focus: Option<&str>,
     realm_scope: &[String],
     s: &DreamingSettings,
+    schema_induction: &super::memory_settings::SchemaInductionSettings,
 ) -> String {
     let scope = if realm_scope.is_empty() {
         "all realms".to_string()
@@ -358,6 +494,14 @@ fn dreaming_trigger_prompt(
         realm_scope.join(", ")
     };
     let focus_line = focus.map(|f| format!("\n- Focus: {f}")).unwrap_or_default();
+    let schema_line = if schema_induction.enabled {
+        format!(
+            "\n- Schema induction: enabled, min {} examples, every {} day(s)",
+            schema_induction.min_examples, schema_induction.interval_days
+        )
+    } else {
+        String::new()
+    };
     format!(
         "You are kyma's Dreaming agent — an autonomous background pass that housekeeps the user's \
 long-term memory store. Nobody is watching live; your final message becomes the run summary shown \
@@ -367,7 +511,7 @@ Run context:\n\
 - Mode: {mode}\n\
 - Scope: {scope}\n\
 - Data-source-read budget (READ-ONLY): {}\n\
-- Mutation cap: {}{focus_line}\n\n\
+- Mutation cap: {}{schema_line}{focus_line}\n\n\
 Begin the dreaming pass now; end with the run summary as your final message.",
         s.data_source_read_budget, s.mutation_cap
     )
@@ -556,7 +700,6 @@ impl LocalRecorder {
     pub fn new(store: Arc<LocalDreamingStore>) -> Self {
         Self { store }
     }
-
 }
 
 #[adk_rust::async_trait]
@@ -676,6 +819,8 @@ pub async fn run_dreaming_with(
     } else {
         None
     };
+    let validity_gate = full_settings.validity_gate.clone();
+    let schema_induction = full_settings.schema_induction.clone();
     let settings = full_settings.dreaming;
     let mode = req.mode.clone().unwrap_or_else(|| settings.mode.clone());
     let engine_cfg = state.engines.get().await?;
@@ -702,14 +847,24 @@ pub async fn run_dreaming_with(
     let started_at = Utc::now();
     let start = Instant::now();
     let wall_clock = Duration::from_secs(settings.wall_clock_secs.max(30));
-    let system_prompt =
-        dreaming_prompt(&mode, req.focus.as_deref(), &settings.realm_scope, &settings);
+    let system_prompt = dreaming_prompt(
+        &mode,
+        req.focus.as_deref(),
+        &settings.realm_scope,
+        &settings,
+        &schema_induction,
+    );
 
     let mut outcome = DreamingOutcome::default();
     let mut trace: Vec<Value> = Vec::new();
     let run_result: Result<(), String> = if engine_cfg.kind == EngineKind::ClaudeCli {
-        let skill_trigger =
-            dreaming_trigger_prompt(&mode, req.focus.as_deref(), &settings.realm_scope, &settings);
+        let skill_trigger = dreaming_trigger_prompt(
+            &mode,
+            req.focus.as_deref(),
+            &settings.realm_scope,
+            &settings,
+            &schema_induction,
+        );
         run_via_claude_cli(
             state,
             &engine_cfg.model,
@@ -735,6 +890,7 @@ pub async fn run_dreaming_with(
             &mut outcome,
             &mut trace,
             hitl_gate.clone(),
+            &validity_gate,
         )
         .await
     };
@@ -809,6 +965,21 @@ async fn observe_tool_call(
     let (icon, text) = match tool {
         "save_memory" | "save_memories" => {
             outcome.memories_created += 1;
+            // M8.4: a procedure-type save is (or may be) an induced schema —
+            // tracked separately. Checks both save_memory's top-level
+            // `memory_type` and save_memories' per-item `memories[].memory_type`.
+            let is_procedure = args.get("memory_type").and_then(Value::as_str) == Some("procedure")
+                || args
+                    .get("memories")
+                    .and_then(Value::as_array)
+                    .is_some_and(|items| {
+                        items.iter().any(|m| {
+                            m.get("memory_type").and_then(Value::as_str) == Some("procedure")
+                        })
+                    });
+            if is_procedure {
+                outcome.schemas_induced += 1;
+            }
             let title: String = args
                 .get("title")
                 .and_then(|v| v.as_str())
@@ -817,7 +988,8 @@ async fn observe_tool_call(
                 .chars()
                 .take(80)
                 .collect();
-            ("🧠", format!("Saving: {title}"))
+            let icon = if is_procedure { "🧩" } else { "🧠" };
+            (icon, format!("Saving: {title}"))
         }
         "merge_memories" => {
             outcome.memories_merged += 1;
@@ -845,7 +1017,10 @@ async fn observe_tool_call(
         }
         "data_source_read" => {
             outcome.data_source_reads += 1;
-            let op = args.get("operation").and_then(|v| v.as_str()).unwrap_or("read");
+            let op = args
+                .get("operation")
+                .and_then(|v| v.as_str())
+                .unwrap_or("read");
             ("🔌", format!("Data source read: {op}"))
         }
         "list_data_sources" => ("🔌", "Listing data sources".to_string()),
@@ -880,6 +1055,7 @@ async fn run_via_adk(
     outcome: &mut DreamingOutcome,
     trace: &mut Vec<Value>,
     hitl: Option<std::sync::Arc<super::memory_gate::HitlGate>>,
+    validity_gate: &super::memory_settings::ValidityGateSettings,
 ) -> Result<(), String> {
     use adk_rust::agent::LlmAgentBuilder;
     use adk_rust::runner::{Runner, RunnerConfig};
@@ -890,17 +1066,21 @@ async fn run_via_adk(
         .get()
         .await
         .map_err(|e| format!("engine: {e}"))?;
-    let resolver =
-        super::engine::CredentialResolver::new(state.credentials.clone(), state.tenant);
-    let key = resolver.resolve(&cfg).await.map_err(|e| format!("creds: {e}"))?;
+    let resolver = super::engine::CredentialResolver::new(state.credentials.clone(), state.tenant);
+    let key = resolver
+        .resolve(&cfg)
+        .await
+        .map_err(|e| format!("creds: {e}"))?;
     let llm = super::engine::build_engine(&cfg, key).map_err(|e| format!("engine: {e}"))?;
 
-    let shared = super::tools::SharedToolCtx { federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+    let shared = super::tools::SharedToolCtx {
+        federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
         memory: state.memory.clone(),
         hitl,
+        memory_settings_path: state.memory_settings_path.clone(),
     };
     let mutation_budget = Arc::new(MutationBudget::new(settings.mutation_cap));
     let read_budget = Arc::new(DataSourceReadBudget::new(
@@ -921,14 +1101,18 @@ async fn run_via_adk(
         .description("Kyma dreaming agent — autonomous memory housekeeping.")
         .instruction(system_prompt)
         .model(llm);
-    for tool in dreaming_toolset(&shared, data_source_ctx, &mutation_budget, mode) {
+    for tool in dreaming_toolset(
+        &shared,
+        data_source_ctx,
+        &mutation_budget,
+        mode,
+        state,
+        validity_gate,
+    ) {
         builder = builder.tool(tool);
     }
-    let agent: Arc<dyn adk_rust::Agent> = Arc::new(
-        builder
-            .build()
-            .map_err(|e| format!("agent build: {e:?}"))?,
-    );
+    let agent: Arc<dyn adk_rust::Agent> =
+        Arc::new(builder.build().map_err(|e| format!("agent build: {e:?}"))?);
 
     let sessions_svc: Arc<dyn SessionService> = Arc::new(InMemorySessionService::new());
     sessions_svc
@@ -1025,12 +1209,16 @@ async fn run_via_adk(
 }
 
 /// The dreaming toolset: every interactive tool, with mutating memory tools
-/// wrapped in the run's [`MutationBudget`], plus the data source read tools.
+/// wrapped in the run's [`MutationBudget`] — and `save_memory`/`save_memories`
+/// additionally wrapped in the optional validity gate (M8.3b) — plus the data
+/// source read tools.
 fn dreaming_toolset(
     shared: &super::tools::SharedToolCtx,
     data_source_ctx: DataSourceToolCtx,
     mutation_budget: &Arc<MutationBudget>,
     mode: &str,
+    state: &AgentState,
+    validity_gate: &super::memory_settings::ValidityGateSettings,
 ) -> Vec<Arc<dyn Tool>> {
     use super::memory_tools::*;
     use super::tools::*;
@@ -1049,6 +1237,13 @@ fn dreaming_toolset(
         tool_list_memories(shared.clone()),
         tool_memory_compare(shared.clone()),
         tool_flush_memory(shared.clone()),
+        // Usage-based reinforcement (M8.1): telemetry about a memory, not a
+        // content mutation, so both stay outside the mutation budget below —
+        // they shouldn't compete with real housekeeping mutations for it.
+        // `list_memory_usage` is dreaming's backstop worklist (Phase 1
+        // Review): memories surfaced but never explicitly judged.
+        tool_reinforce_memory(shared.clone()),
+        tool_list_memory_usage(shared.clone()),
     ];
     for mutating in [
         tool_save_memory(shared.clone()),
@@ -1060,8 +1255,20 @@ fn dreaming_toolset(
         tool_merge_memories(shared.clone()),
         tool_memory_judge(shared.clone()),
     ] {
+        // save_memory/save_memories get an extra validity-gate layer, inside
+        // the budget check (a rejected attempt still counts against it, but
+        // never reaches the store). The decorator itself no-ops when the
+        // gate is disabled, so this is safe to always apply.
+        let inner: Arc<dyn Tool> = match mutating.name() {
+            "save_memory" | "save_memories" => Arc::new(ValidityGatedTool {
+                inner: mutating,
+                state: state.clone(),
+                settings: validity_gate.clone(),
+            }),
+            _ => mutating,
+        };
         tools.push(Arc::new(BudgetedTool {
-            inner: mutating,
+            inner,
             budget: mutation_budget.clone(),
         }));
     }
@@ -1093,8 +1300,7 @@ async fn gather_dreaming_skills(state: &AgentState) -> Vec<super::skill_delivery
     if enabled.is_empty() {
         return skills;
     }
-    let enabled_set: std::collections::HashSet<&str> =
-        enabled.iter().map(String::as_str).collect();
+    let enabled_set: std::collections::HashSet<&str> = enabled.iter().map(String::as_str).collect();
     let discovered = crate::agent::skills::discover_all();
     let tenant_skills: Vec<_> = discovered
         .into_iter()
@@ -1142,7 +1348,9 @@ async fn run_via_claude_cli(
     // CLAUDE.md / .claude settings out of the headless agent's context (it must
     // see the memory store through kyma's tools, not the operator's checkout).
     let skills = gather_dreaming_skills(state).await;
-    let delivered = super::skill_delivery::deliver_to_workdir(&skills).await.ok();
+    let delivered = super::skill_delivery::deliver_to_workdir(&skills)
+        .await
+        .ok();
 
     let scratch = std::env::temp_dir().join("kyma-dreaming");
     let (cwd, prompt) = match &delivered {
@@ -1162,14 +1370,9 @@ async fn run_via_claude_cli(
 
     // The CLI takes one prompt. `delivered` (the temp workdir) is held in scope
     // through the whole event loop so its `.claude/skills` survives the run.
-    let (mut events, pid) = claude_cli::run_stream_with_pid(
-        &prompt,
-        Some(model),
-        None,
-        Some(&cwd),
-        mcp.as_ref(),
-    )
-    .map_err(|e| format!("claude spawn: {e}"))?;
+    let (mut events, pid) =
+        claude_cli::run_stream_with_pid(&prompt, Some(model), None, Some(&cwd), mcp.as_ref())
+            .map_err(|e| format!("claude spawn: {e}"))?;
 
     let mut answer = String::new();
     let deadline = tokio::time::Instant::now() + wall_clock;
@@ -1210,7 +1413,9 @@ async fn run_via_claude_cli(
                 let short = name.rsplit("__").next().unwrap_or(&name).to_string();
                 observe_tool_call(outcome, activity, &short, &input).await;
             }
-            claude_cli::ClaudeEvent::ToolResult { output, is_error, .. } => {
+            claude_cli::ClaudeEvent::ToolResult {
+                output, is_error, ..
+            } => {
                 trace.push(json!({"event": "tool_result", "data": {
                     "tool": "", "result": output, "is_error": is_error
                 }}));
@@ -1260,7 +1465,9 @@ impl DreamingScheduler {
         let Some(pool) = self.state.pool.as_ref() else {
             return Ok(());
         };
-        let settings = memory_settings::load(Some(pool), self.state.tenant).await.dreaming;
+        let settings = memory_settings::load(Some(pool), self.state.tenant)
+            .await
+            .dreaming;
         if !settings.enabled {
             return Ok(());
         }
@@ -1361,8 +1568,7 @@ pub fn spawn_local_run(
             worker_id: None,
         };
         // Guard against a panic in the run leaving the in-flight flag stuck.
-        let result =
-            run_dreaming_with(&state, &recorder, ids, progress, req).await;
+        let result = run_dreaming_with(&state, &recorder, ids, progress, req).await;
         store.release();
         match result {
             Ok((rid, outcome)) => info!(
@@ -1538,13 +1744,14 @@ pub async fn get_run_handler(
     if let Some(store) = state.local_dreaming.as_ref() {
         return match store.get_run(id) {
             Some(run) => (StatusCode::OK, Json(run)).into_response(),
-            None => {
-                (StatusCode::NOT_FOUND, Json(json!({"error": "no such run"}))).into_response()
-            }
+            None => (StatusCode::NOT_FOUND, Json(json!({"error": "no such run"}))).into_response(),
         };
     }
     let Some(pool) = state.pool.as_ref() else {
-        return (StatusCode::NOT_FOUND, Json(json!({"error": "no runs in local mode"})))
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "no runs in local mode"})),
+        )
             .into_response();
     };
     let row = sqlx::query(&format!("{RUN_SELECT} WHERE tenant_id = $1 AND id = $2"))
@@ -1559,12 +1766,11 @@ pub async fn get_run_handler(
             use sqlx::Row as _;
             if body.get("status").and_then(|s| s.as_str()) == Some("running") {
                 if let Some(job_id) = r.get::<Option<Uuid>, _>("job_id") {
-                    if let Ok(Some(p)) = sqlx::query_scalar::<_, Value>(
-                        "SELECT progress FROM jobs WHERE id = $1",
-                    )
-                    .bind(job_id)
-                    .fetch_optional(pool)
-                    .await
+                    if let Ok(Some(p)) =
+                        sqlx::query_scalar::<_, Value>("SELECT progress FROM jobs WHERE id = $1")
+                            .bind(job_id)
+                            .fetch_optional(pool)
+                            .await
                     {
                         body["progress"] = p;
                     }
@@ -1608,7 +1814,13 @@ pub async fn trigger_run_handler(
                 .into_response();
         }
         let job_id = Uuid::new_v4(); // synthetic id so the UI gets a 202 it can toast
-        spawn_local_run(state.clone(), store, body0.mode, body0.focus, Trigger::Manual);
+        spawn_local_run(
+            state.clone(),
+            store,
+            body0.mode,
+            body0.focus,
+            Trigger::Manual,
+        );
         return (StatusCode::ACCEPTED, Json(json!({ "job_id": job_id }))).into_response();
     }
     let Some(pool) = state.pool.clone() else {
@@ -1651,11 +1863,9 @@ pub async fn trigger_run_handler(
         )
         .await
     {
-        Ok(Some(job_id)) => (
-            StatusCode::ACCEPTED,
-            Json(json!({ "job_id": job_id })),
-        )
-            .into_response(),
+        Ok(Some(job_id)) => {
+            (StatusCode::ACCEPTED, Json(json!({ "job_id": job_id }))).into_response()
+        }
         Ok(None) => (
             StatusCode::OK,
             Json(json!({ "job_id": Value::Null, "deduped": true,
@@ -1677,11 +1887,13 @@ mod trigger_tests {
     #[test]
     fn trigger_references_skill_and_carries_run_context() {
         let s = DreamingSettings::default();
+        let si = super::super::memory_settings::SchemaInductionSettings::default();
         let p = dreaming_trigger_prompt(
             "housekeeping",
             Some("auth refactor"),
             &["proj".to_string()],
             &s,
+            &si,
         );
         assert!(p.contains("kyma-dreaming"), "references the skill");
         assert!(p.contains("Mode: housekeeping"));
@@ -1689,15 +1901,32 @@ mod trigger_tests {
         assert!(p.contains("auth refactor"), "carries focus");
         assert!(p.contains("Data-source-read budget"));
         assert!(p.contains("Mutation cap"));
+        // Disabled by default — the schema-induction line must not appear.
+        assert!(!p.contains("Schema induction"));
         // The thin trigger must NOT inline the full phase procedure — that lives
         // in the skill now.
-        assert!(!p.contains("PHASE 3"), "procedure lives in the skill, not the trigger");
+        assert!(
+            !p.contains("PHASE 3"),
+            "procedure lives in the skill, not the trigger"
+        );
+    }
+
+    #[test]
+    fn trigger_includes_schema_induction_line_when_enabled() {
+        let s = DreamingSettings::default();
+        let mut si = super::super::memory_settings::SchemaInductionSettings::default();
+        si.enabled = true;
+        si.min_examples = 4;
+        si.interval_days = 10;
+        let p = dreaming_trigger_prompt("full", None, &[], &s, &si);
+        assert!(p.contains("Schema induction: enabled, min 4 examples, every 10 day(s)"));
     }
 
     #[test]
     fn trigger_defaults_scope_to_all_realms() {
         let s = DreamingSettings::default();
-        let p = dreaming_trigger_prompt("full", None, &[], &s);
+        let si = super::super::memory_settings::SchemaInductionSettings::default();
+        let p = dreaming_trigger_prompt("full", None, &[], &s, &si);
         assert!(p.contains("all realms"));
     }
 
@@ -1713,7 +1942,13 @@ mod trigger_tests {
             name: "kyma-dreaming".to_string(),
             body: crate::agent::dreaming_skill::kyma_dreaming_skill().to_string(),
         };
-        assert_eq!(first.name, "kyma-dreaming", "first skill must always be kyma-dreaming");
-        assert!(!first.body.is_empty(), "kyma-dreaming body must be non-empty");
+        assert_eq!(
+            first.name, "kyma-dreaming",
+            "first skill must always be kyma-dreaming"
+        );
+        assert!(
+            !first.body.is_empty(),
+            "kyma-dreaming body must be non-empty"
+        );
     }
 }

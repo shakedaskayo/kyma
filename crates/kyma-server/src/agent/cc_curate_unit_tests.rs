@@ -64,6 +64,7 @@ async fn engine() -> (tempfile::TempDir, MemoryWriter, SharedToolCtx) {
         pool: None,
         memory: None,
         hitl: None,
+        memory_settings_path: None,
     };
     (tmp, writer, shared)
 }

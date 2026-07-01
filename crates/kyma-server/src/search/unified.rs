@@ -360,7 +360,8 @@ pub async fn unified_search(
         // share one retrieval path — full recall quality (RRF + semantic +
         // keyword + graph-expansion + bi-temporal validity) is preserved.
         SearchMode::Memory => {
-            let shared = SharedToolCtx { federation: None,
+            let shared = SharedToolCtx {
+                federation: None,
                 catalog: ctx.catalog.clone(),
                 format: ctx.format.clone(),
                 pool: ctx.pool.as_deref().cloned(),
@@ -368,6 +369,7 @@ pub async fn unified_search(
                 // Unified search is read-only — no autonomous memory mutations,
                 // so no HITL approval gate (added to SharedToolCtx on main).
                 hitl: None,
+                memory_settings_path: None,
             };
             let req = memory_request(&req);
             let result = retrieve(&shared, &req).await;
@@ -469,7 +471,11 @@ async fn graph_search(
     }
 
     // Global re-rank (descending score) + truncate, mirroring the data arm.
-    all.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    all.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     all.truncate(limit);
     (all, searched)
 }
@@ -679,6 +685,7 @@ mod tests {
                 edge_type: "REFERENCES".to_string(),
                 depth: 1,
             }],
+            precedent: None,
             context: "Relevant memories:\n- ...".to_string(),
             took_ms: 42,
         };
@@ -696,7 +703,7 @@ mod tests {
         assert_eq!(h0.source, "proj"); // source = realm for memory hits
         assert_eq!(h0.score, 0.9);
         assert_eq!(h0.row, None); // memory hits never carry a row
-        // order matches retrieve()'s ranked order.
+                                  // order matches retrieve()'s ranked order.
         assert_eq!(resp.hits[1].id.as_deref(), Some("memory:b"));
 
         // context echoed through verbatim.
@@ -742,7 +749,8 @@ mod tests {
             root: tmp.to_string_lossy().to_string(),
         })
         .unwrap();
-        let format: Arc<dyn SegmentFormat> = Arc::new(kyma_format_tlm::TelemetryFormat::new(store, "test"));
+        let format: Arc<dyn SegmentFormat> =
+            Arc::new(kyma_format_tlm::TelemetryFormat::new(store, "test"));
         SearchCtx {
             catalog,
             format,
@@ -773,7 +781,10 @@ mod tests {
         assert_eq!(resp.mode.as_deref(), Some("memory"));
         assert!(resp.hits.is_empty(), "empty store ⇒ no hits");
         // Every hit (if any were present) would carry kind:"memory".
-        assert!(resp.hits.iter().all(|h| h.kind.as_deref() == Some("memory")));
+        assert!(resp
+            .hits
+            .iter()
+            .all(|h| h.kind.as_deref() == Some("memory")));
     }
 
     // ── graph arm: mapping unit test ───────────────────────────────────────
@@ -890,7 +901,10 @@ mod tests {
             .expect("create kg_edges");
 
         // Ingest node rows via the real write path.
-        let tref = catalog.lookup_table("kg", "kg_nodes").await.expect("lookup kg_nodes");
+        let tref = catalog
+            .lookup_table("kg", "kg_nodes")
+            .await
+            .expect("lookup kg_nodes");
         let batches = kyma_ingest_core::parse_ndjson(node_ndjson.as_bytes(), tref.schema.clone())
             .expect("parse ndjson");
         kyma_ingest_core::WritePath::new(catalog.clone(), format.clone())
@@ -950,7 +964,10 @@ mod tests {
         assert_eq!(hit.title.as_deref(), Some("alpha-service"));
         assert_eq!(hit.source, "kg/kg", "source is <db>/<graph>");
         // The non-matching node must not surface for the 'alpha' query.
-        assert!(resp.hits.iter().all(|h| h.id.as_deref() != Some("svc:beta")));
+        assert!(resp
+            .hits
+            .iter()
+            .all(|h| h.id.as_deref() != Some("svc:beta")));
     }
 
     #[tokio::test]
@@ -971,7 +988,10 @@ mod tests {
             .await
             .expect("graph arm returns Ok");
         assert_eq!(resp.sources_searched, 1);
-        assert!(resp.hits.iter().any(|h| h.id.as_deref() == Some("svc:alpha")));
+        assert!(resp
+            .hits
+            .iter()
+            .any(|h| h.id.as_deref() == Some("svc:alpha")));
         assert!(resp.hits.iter().all(|h| h.source == "kg/kg"));
     }
 

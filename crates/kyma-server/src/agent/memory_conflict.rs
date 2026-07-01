@@ -27,6 +27,9 @@ pub struct ConflictTally {
     pub invalidated: i64,
     /// Decisions deferred to the HITL approval queue (not applied).
     pub gated: i64,
+    /// Rejected by the validity gate (M8.3b) before ever reaching a conflict
+    /// decision — trivial/filler content or below the confidence floor.
+    pub rejected_trivial: i64,
 }
 
 impl ConflictTally {
@@ -39,6 +42,7 @@ impl ConflictTally {
         self.noop += other.noop;
         self.invalidated += other.invalidated;
         self.gated += other.gated;
+        self.rejected_trivial += other.rejected_trivial;
     }
     pub fn to_json(&self) -> Value {
         json!({
@@ -47,6 +51,7 @@ impl ConflictTally {
             "noop": self.noop,
             "invalidated": self.invalidated,
             "gated": self.gated,
+            "rejected_trivial": self.rejected_trivial,
         })
     }
 }
@@ -58,8 +63,11 @@ const NEIGHBOURS: usize = 5;
 /// ids the memory is about (become `REFERENCES` edges); `provenance` records
 /// how it was formed. `gate` is the optional HITL chokepoint — when its policy
 /// gates/flags an op the mutation is deferred/recorded instead of (or in
-/// addition to) being applied. Never errors out the pipeline — failures degrade
-/// to a no-op for that candidate and are logged.
+/// addition to) being applied. `activity_id` (M8.2), when set, is the raw
+/// input's Activity node id — a successfully-applied Add/Update/Invalidate
+/// gets a `DERIVED_FROM` edge back to it, so recall can later surface "we saw
+/// this input before" as a worked-example precedent. Never errors out the
+/// pipeline — failures degrade to a no-op for that candidate and are logged.
 pub async fn consolidate_memory(
     state: &AgentState,
     shared: &SharedToolCtx,
@@ -69,6 +77,7 @@ pub async fn consolidate_memory(
     references: Vec<String>,
     provenance: Value,
     gate: Option<&HitlGate>,
+    activity_id: Option<&str>,
 ) -> ConflictTally {
     let mut tally = ConflictTally::default();
     let content = m.content.trim();
@@ -158,16 +167,36 @@ pub async fn consolidate_memory(
     .await;
 
     match outcome {
-        Ok(o) if o.applied => match op {
-            MemoryOp::Add => tally.added += 1,
-            MemoryOp::Update => tally.updated += 1,
-            MemoryOp::Invalidate => {
-                tally.added += 1; // replacement created
-                tally.invalidated += 1; // target superseded
+        Ok(o) => {
+            if o.applied {
+                match op {
+                    MemoryOp::Add => tally.added += 1,
+                    MemoryOp::Update => tally.updated += 1,
+                    MemoryOp::Invalidate => {
+                        tally.added += 1; // replacement created
+                        tally.invalidated += 1; // target superseded
+                    }
+                    _ => {}
+                }
+                // M8.2: link the written memory back to its source Activity
+                // (worked-example precedent retrieval). Best-effort — a failed
+                // link never fails consolidation.
+                if let (Some(activity), Some(new_id)) = (activity_id, o.created_node_id.as_deref())
+                {
+                    let _ = writer
+                        .link(
+                            new_id,
+                            activity,
+                            kyma_memory::EDGE_DERIVED_FROM,
+                            realm,
+                            Some(kyma_memory::activities::ACTIVITIES_NAMESPACE),
+                        )
+                        .await;
+                }
+            } else {
+                tally.gated += 1; // deferred to the approval queue
             }
-            _ => {}
-        },
-        Ok(_) => tally.gated += 1, // deferred to the approval queue
+        }
         Err(e) => tracing::debug!(error = %e, op = ?op, "consolidate apply failed"),
     }
     tally
@@ -214,3 +243,55 @@ async fn nearest(
 // live in one place — `memory_gate::apply_op` — so a deferred op approved later
 // re-runs exactly the same write. `consolidate_memory` just builds the payload
 // and routes it through the gate.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_sums_every_field_including_rejected_trivial() {
+        let mut a = ConflictTally {
+            added: 1,
+            updated: 2,
+            noop: 3,
+            invalidated: 4,
+            gated: 5,
+            rejected_trivial: 6,
+        };
+        let b = ConflictTally {
+            added: 10,
+            updated: 20,
+            noop: 30,
+            invalidated: 40,
+            gated: 50,
+            rejected_trivial: 60,
+        };
+        a.merge(&b);
+        assert_eq!(a.added, 11);
+        assert_eq!(a.updated, 22);
+        assert_eq!(a.noop, 33);
+        assert_eq!(a.invalidated, 44);
+        assert_eq!(a.gated, 55);
+        assert_eq!(a.rejected_trivial, 66);
+    }
+
+    #[test]
+    fn written_excludes_rejected_trivial() {
+        let t = ConflictTally {
+            added: 2,
+            updated: 3,
+            rejected_trivial: 100,
+            ..Default::default()
+        };
+        assert_eq!(t.written(), 5, "rejected_trivial never counts as written");
+    }
+
+    #[test]
+    fn to_json_includes_rejected_trivial_key() {
+        let t = ConflictTally {
+            rejected_trivial: 7,
+            ..Default::default()
+        };
+        assert_eq!(t.to_json()["rejected_trivial"], json!(7));
+    }
+}

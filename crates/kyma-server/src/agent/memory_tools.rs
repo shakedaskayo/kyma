@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::memory_gate::{self, OpPayload};
+use super::memory_gate::{self, AddSpec, OpPayload};
 use super::memory_policy::MemoryOp;
 use super::memory_retrieve::{retrieve, RetrieveRequest};
 use super::tools::{execute_sql, SharedToolCtx};
@@ -41,7 +41,9 @@ fn row_realm(row: &Value) -> String {
 
 /// Build a [`MemoryWriter`] from the shared tool context + the process-wide
 /// embedding backend. Returns a JSON error payload on failure.
-pub(crate) async fn build_writer(shared: &SharedToolCtx) -> std::result::Result<MemoryWriter, Value> {
+pub(crate) async fn build_writer(
+    shared: &SharedToolCtx,
+) -> std::result::Result<MemoryWriter, Value> {
     let embed = kyma_memory::shared_embedding()
         .await
         .map_err(|e| json!({"error": format!("embedding backend: {e}")}))?;
@@ -220,6 +222,35 @@ pub fn tool_save_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     };
                     let sync = parsed.sync.unwrap_or(false);
                     let cm = create_from_save_args(parsed);
+
+                    // M8.4: a `procedure` memory is a generalization, riskier
+                    // than a verbatim extracted fact — gate it as InduceSchema
+                    // (distinct from Add's usual disposition) when HITL is on.
+                    // Every other memory_type is unaffected (unchanged from
+                    // before this feature: save_memory is otherwise ungated).
+                    if cm.memory_type == MemoryType::Procedure && shared.hitl.is_some() {
+                        let payload = OpPayload::Add(AddSpec {
+                            content: cm.content.clone(),
+                            title: cm.title.clone(),
+                            memory_type: cm.memory_type.as_str().to_string(),
+                            realm: cm.realm.clone(),
+                            importance: cm.importance,
+                            references: cm.references.clone(),
+                            valid_at: cm.valid_at.clone(),
+                            provenance: cm.provenance.clone().unwrap_or(Value::Null),
+                        });
+                        if let Some(out) = memory_gate::gate_tool_op(
+                            &shared,
+                            MemoryOp::InduceSchema,
+                            &cm.realm,
+                            None,
+                            payload,
+                        )
+                        .await
+                        {
+                            return Ok(out);
+                        }
+                    }
 
                     // Async-by-default: resolve the upsert target (behind a
                     // realm barrier), enqueue, and return the final id
@@ -1684,6 +1715,145 @@ pub fn tool_flush_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
             },
         )
         .with_parameters_schema::<FlushMemoryArgs>()
+        .with_read_only(true)
+        .with_concurrency_safe(true),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// reinforce_memory / list_memory_usage — usage-based reinforcement (M8.1)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct ReinforceMemoryArgs {
+    /// The memory you previously recalled (uuid or `memory:<uuid>`).
+    memory_id: String,
+    /// Whether acting on this memory actually helped: "helpful" | "not_helpful".
+    outcome: String,
+    /// Optional short rationale (logged, not stored on the memory content).
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+const REINFORCE_MEMORY_DESC: &str = "Report whether a memory you previously \
+recalled and acted on was actually helpful. Call this AFTER using a recalled \
+memory, once you know the outcome — 'helpful' if it was correct/useful, \
+'not_helpful' if it was wrong/outdated/irrelevant. This records usage \
+telemetry (not a content edit) and never requires approval. The reinforcement \
+blend must be enabled in Memory Settings to affect ranking; counts are \
+recorded either way.";
+
+pub fn tool_reinforce_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "reinforce_memory",
+            REINFORCE_MEMORY_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: ReinforceMemoryArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    let outcome = match super::memory_usage_store::Outcome::parse(&parsed.outcome) {
+                        Some(o) => o,
+                        None => return Ok(json!({"error": "outcome must be helpful|not_helpful"})),
+                    };
+                    let Some(store) = shared.usage_store() else {
+                        return Ok(json!({
+                            "error": "usage store unavailable (no Postgres pool and no local settings path)"
+                        }));
+                    };
+                    let node_id = node_id_of(&parsed.memory_id);
+                    // Resolve the memory's realm so counters partition correctly;
+                    // fall back to default rather than failing outright if the
+                    // memory can't be read (still worth recording the signal).
+                    let realm = match fetch_latest_node(&shared, &node_id).await {
+                        Ok(row) => row_realm(&row),
+                        Err(_) => DEFAULT_REALM.to_string(),
+                    };
+                    if let Some(reason) = parsed.reason.as_deref() {
+                        tracing::debug!(memory_id = %node_id, outcome = %parsed.outcome, reason, "reinforce_memory");
+                    }
+                    match store.record_feedback(&node_id, &realm, outcome).await {
+                        Ok(stats) => Ok(json!({
+                            "ok": true,
+                            "memory_id": node_id,
+                            "hit_count": stats.hit_count,
+                            "reinforced_count": stats.reinforced_count,
+                            "miss_count": stats.miss_count,
+                        })),
+                        Err(e) => Ok(json!({"error": format!("reinforce_memory: {e}")})),
+                    }
+                }
+            },
+        )
+        .with_parameters_schema::<ReinforceMemoryArgs>()
+        .with_read_only(false),
+    )
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct ListMemoryUsageArgs {
+    /// Restrict to one realm. Omit for all realms.
+    #[serde(default)]
+    realm: Option<String>,
+    /// Max rows to return (default 50).
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+const LIST_MEMORY_USAGE_DESC: &str = "List memories that have been recalled \
+(hit_count > 0) but never explicitly judged with reinforce_memory — the \
+reinforcement backstop worklist. Cross-reference against recent session \
+activity and call reinforce_memory with an inferred verdict for memories you \
+can tell were or weren't useful. Use during dreaming housekeeping for agents \
+that don't call reinforce_memory themselves.";
+
+pub fn tool_list_memory_usage(ctx: SharedToolCtx) -> Arc<dyn Tool> {
+    let shared = ctx;
+    Arc::new(
+        FunctionTool::new(
+            "list_memory_usage",
+            LIST_MEMORY_USAGE_DESC,
+            move |_tc: Arc<dyn ToolContext>, args: Value| {
+                let shared = shared.clone();
+                async move {
+                    let parsed: ListMemoryUsageArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(json!({"error": format!("args: {e}")})),
+                    };
+                    let Some(store) = shared.usage_store() else {
+                        return Ok(json!({"memories": []}));
+                    };
+                    let limit = parsed.limit.unwrap_or(50);
+                    match store
+                        .list_unreinforced(parsed.realm.as_deref(), limit)
+                        .await
+                    {
+                        Ok(rows) => {
+                            let memories: Vec<Value> = rows
+                                .into_iter()
+                                .map(|(id, s)| {
+                                    json!({
+                                        "memory_id": id,
+                                        "hit_count": s.hit_count,
+                                        "reinforced_count": s.reinforced_count,
+                                        "miss_count": s.miss_count,
+                                        "last_surfaced_at": s.last_surfaced_at,
+                                        "last_reinforced_at": s.last_reinforced_at,
+                                    })
+                                })
+                                .collect();
+                            Ok(json!({"memories": memories}))
+                        }
+                        Err(e) => Ok(json!({"error": format!("list_memory_usage: {e}")})),
+                    }
+                }
+            },
+        )
+        .with_parameters_schema::<ListMemoryUsageArgs>()
         .with_read_only(true)
         .with_concurrency_safe(true),
     )

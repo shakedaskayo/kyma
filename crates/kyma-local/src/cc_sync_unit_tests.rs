@@ -52,6 +52,7 @@ async fn engine_at(tmp: &Path) -> (Engine, MemoryWriter, SharedToolCtx) {
         pool: None,
         memory: None,
         hitl: None,
+        memory_settings_path: None,
     };
     (engine, writer, shared)
 }

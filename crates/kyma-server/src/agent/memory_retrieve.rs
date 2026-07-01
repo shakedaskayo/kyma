@@ -23,10 +23,13 @@ use serde_json::{json, Value};
 use tracing::Instrument as _;
 
 use kyma_core::tenant::DEFAULT_TENANT;
+use kyma_memory::reinforcement::{decayed_salience, UsageStats};
+use kyma_memory::rerank::mmr_select;
 use kyma_memory::types::{MemoryType, RecallFilter};
 use kyma_memory::{sql, MemoryWriter, DEFAULT_DATABASE, EDGE_TABLE, NODE_TABLE};
 
-use super::memory_settings::{self, MemorySettings};
+use super::memory_settings::{self, MemorySettings, MmrSettings};
+use super::memory_usage_store::UsageHit;
 use super::tools::{execute_sql, SharedToolCtx};
 
 /// Candidates pulled per modality before fusion (oversample for RRF).
@@ -87,10 +90,24 @@ pub struct LinkedResource {
     pub depth: u8,
 }
 
+/// A worked-example precedent (M8.2): the query resembles a past raw input
+/// closely enough that the memories it produced are attached as-is, rather
+/// than blended into the score — "we saw this before, here's what we learned."
+#[derive(Debug, Clone, Serialize)]
+pub struct PrecedentBlock {
+    pub activity_id: String,
+    pub activity_preview: String,
+    pub activity_created_at: Option<String>,
+    /// `1 - distance`, higher is closer.
+    pub similarity: f64,
+    pub memory_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct RetrieveResult {
     pub memories: Vec<RetrievedMemory>,
     pub linked: Vec<LinkedResource>,
+    pub precedent: Option<PrecedentBlock>,
     pub context: String,
     pub took_ms: u128,
 }
@@ -147,19 +164,22 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     let started = Instant::now();
     let settings = memory_settings::load(shared.pool.as_ref(), DEFAULT_TENANT).await;
     let limit = req.limit.unwrap_or(settings.default_limit).clamp(1, 100);
-    let hops = req.expand_hops.unwrap_or(settings.default_expand_hops).min(MAX_HOPS);
+    let hops = req
+        .expand_hops
+        .unwrap_or(settings.default_expand_hops)
+        .min(MAX_HOPS);
 
     let writer = match build_writer(shared).await {
         Some(w) => w,
-        None => return done(Vec::new(), Vec::new(), started),
+        None => return done(Vec::new(), Vec::new(), None, started),
     };
     if writer.ensure_provisioned().await.is_err() {
-        return done(Vec::new(), Vec::new(), started);
+        return done(Vec::new(), Vec::new(), None, started);
     }
     let embed_span = tracing::info_span!(target: "kyma_telemetry", "memory.embed");
     let qvec = match writer.embed_one(&req.query).instrument(embed_span).await {
         Ok(v) => v,
-        Err(_) => return done(Vec::new(), Vec::new(), started),
+        Err(_) => return done(Vec::new(), Vec::new(), None, started),
     };
 
     let filter = RecallFilter {
@@ -173,25 +193,36 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     };
     let tokens = sql::tokenize_query(&req.query);
 
-    // 1+2. Candidate generation in parallel.
+    // 1+2. Candidate generation, and the worked-example precedent lookup
+    // (M8.2) — independent of candidate generation, so run alongside it.
     let ann = (settings.ann_threshold > 0.0).then_some(settings.ann_threshold);
     let vec_sql = sql::recall_sql(NODE_TABLE, &qvec, &filter, CAND_K, ann);
     let vec_span = tracing::info_span!(target: "kyma_telemetry", "memory.search.vector");
-    let (vec_res, kw_res) = if tokens.is_empty() {
-        (
-            execute_sql(shared, DEFAULT_DATABASE, &vec_sql, CAND_K)
-                .instrument(vec_span)
-                .await,
-            json!({ "rows": [] }),
-        )
-    } else {
-        let kw_sql = sql::keyword_recall_sql(NODE_TABLE, &tokens, &filter, CAND_K);
-        let kw_span = tracing::info_span!(target: "kyma_telemetry", "memory.search.keyword");
-        tokio::join!(
-            execute_sql(shared, DEFAULT_DATABASE, &vec_sql, CAND_K).instrument(vec_span),
-            execute_sql(shared, DEFAULT_DATABASE, &kw_sql, CAND_K).instrument(kw_span),
-        )
+    let candidates_fut = async {
+        if tokens.is_empty() {
+            (
+                execute_sql(shared, DEFAULT_DATABASE, &vec_sql, CAND_K)
+                    .instrument(vec_span)
+                    .await,
+                json!({ "rows": [] }),
+            )
+        } else {
+            let kw_sql = sql::keyword_recall_sql(NODE_TABLE, &tokens, &filter, CAND_K);
+            let kw_span = tracing::info_span!(target: "kyma_telemetry", "memory.search.keyword");
+            tokio::join!(
+                execute_sql(shared, DEFAULT_DATABASE, &vec_sql, CAND_K).instrument(vec_span),
+                execute_sql(shared, DEFAULT_DATABASE, &kw_sql, CAND_K).instrument(kw_span),
+            )
+        }
     };
+    let precedent_fut = async {
+        if settings.precedent.enabled {
+            find_precedent(shared, &qvec, &req.realms, &settings).await
+        } else {
+            None
+        }
+    };
+    let ((vec_res, kw_res), precedent) = tokio::join!(candidates_fut, precedent_fut);
 
     // 3. Merge into a candidate map, recording each list's rank.
     let mut cands: HashMap<String, Cand> = HashMap::new();
@@ -203,9 +234,9 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     }
     for (rank, row) in rows_of(&kw_res).iter().enumerate() {
         if let Some(id) = get_str(row, "id") {
-            let entry = cands.entry(id.clone()).or_insert_with(|| {
-                Cand::from_row(row).unwrap_or_else(|| empty_cand(&id))
-            });
+            let entry = cands
+                .entry(id.clone())
+                .or_insert_with(|| Cand::from_row(row).unwrap_or_else(|| empty_cand(&id)));
             entry.kw_rank = Some(rank);
             if entry.kw_score.is_none() {
                 entry.kw_score = get_f64(row, "kw_score");
@@ -226,21 +257,117 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
             .await;
     }
 
-    // 5. Final blend + sort.
+    // 5. Final blend + sort. Usage stats (M8.1) are fetched only when the
+    // reinforcement blend is enabled — most deployments never pay this query.
     let kw_norm_denom = tokens.len().max(1) as f64;
+    let usage_map: HashMap<String, UsageStats> = if settings.reinforcement.enabled {
+        match shared.usage_store() {
+            Some(store) => {
+                let ids: Vec<String> = cands.keys().cloned().collect();
+                store.get_many(&ids).await.unwrap_or_default()
+            }
+            None => HashMap::new(),
+        }
+    } else {
+        HashMap::new()
+    };
     let mut scored: Vec<RetrievedMemory> = cands
         .into_values()
-        .map(|c| finalize(c, kw_norm_denom, &settings))
+        .map(|c| {
+            let usage = usage_map.get(&c.id);
+            finalize(c, kw_norm_denom, &settings, usage)
+        })
         .collect();
-    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // MMR diversity re-ranking (M8.3a): re-order the top pool so near-duplicate
+    // memories don't crowd out diverse ones, then truncate. Off by default —
+    // most deployments never pay for the extra embedding fetch.
+    if settings.mmr.enabled {
+        mmr_rerank(shared, &mut scored, limit, &settings.mmr).await;
+    }
     scored.truncate(limit);
+
+    // Passive reinforcement signal (M8.1): bump hit_count/last_surfaced_at for
+    // every memory this call is about to return — always on, regardless of
+    // whether the reinforcement blend is enabled, so counts already exist
+    // once an operator turns it on. Detached: a slow/failed write must never
+    // delay or break this response.
+    if let Some(store) = shared.usage_store() {
+        let hits: Vec<UsageHit> = scored
+            .iter()
+            .map(|m| UsageHit {
+                memory_id: m.id.clone(),
+                realm: m.realm.clone(),
+            })
+            .collect();
+        tokio::spawn(async move {
+            if let Err(e) = store.record_surfaced(&hits).await {
+                tracing::debug!(error = %e, "record_surfaced failed");
+            }
+        });
+    }
 
     // Dedup linked resources, cap for compactness.
     linked.sort_by(|a, b| a.depth.cmp(&b.depth));
     linked.dedup_by(|a, b| a.node_id == b.node_id);
     linked.truncate(50);
 
-    done(scored, linked, started)
+    done(scored, linked, precedent, started)
+}
+
+/// Worked-example precedent lookup (M8.2): a tight-threshold nearest-activity
+/// match against the already-computed query embedding, then the memories it
+/// produced via `DERIVED_FROM` edges. `None` on any miss/error/empty-link —
+/// this is additive context, never a hard requirement for recall to work.
+async fn find_precedent(
+    shared: &SharedToolCtx,
+    qvec: &[f32],
+    realms: &[String],
+    settings: &MemorySettings,
+) -> Option<PrecedentBlock> {
+    let sql =
+        sql::nearest_activity_sql(NODE_TABLE, qvec, realms, settings.precedent.max_distance, 1);
+    let res = execute_sql(shared, kyma_memory::activities::ACTIVITIES_DB, &sql, 1).await;
+    let row = rows_of(&res).into_iter().next()?;
+    let activity_id = get_str(&row, "id")?;
+    let activity_preview = get_str(&row, "content_preview").unwrap_or_default();
+    let activity_created_at = get_str(&row, "created_at");
+    let similarity = get_f64(&row, "distance")
+        .map(|d| (1.0 - d).clamp(0.0, 1.0))
+        .unwrap_or(0.0);
+
+    let edge_sql = sql::edges_into_sql(
+        EDGE_TABLE,
+        &activity_id,
+        kyma_memory::EDGE_DERIVED_FROM,
+        settings.precedent.memory_limit,
+    );
+    let edge_res = execute_sql(
+        shared,
+        DEFAULT_DATABASE,
+        &edge_sql,
+        settings.precedent.memory_limit,
+    )
+    .await;
+    let memory_ids: Vec<String> = rows_of(&edge_res)
+        .iter()
+        .filter_map(|r| get_str(r, "src"))
+        .collect();
+    if memory_ids.is_empty() {
+        return None; // an activity with nothing linked isn't a useful precedent
+    }
+    Some(PrecedentBlock {
+        activity_id,
+        activity_preview,
+        activity_created_at,
+        similarity,
+        memory_ids,
+    })
 }
 
 /// Expand `cands` with graph neighbours over `memory_edges`, up to `hops`.
@@ -257,12 +384,13 @@ async fn graph_expand(
 ) {
     // Seed with the strongest current candidates (by best rank across lists).
     let mut frontier: Vec<String> = {
-        let mut ids: Vec<(&String, usize)> = cands
-            .values()
-            .map(|c| (&c.id, best_rank(c)))
-            .collect();
+        let mut ids: Vec<(&String, usize)> =
+            cands.values().map(|c| (&c.id, best_rank(c))).collect();
         ids.sort_by_key(|(_, r)| *r);
-        ids.into_iter().take(SEED_N).map(|(id, _)| id.clone()).collect()
+        ids.into_iter()
+            .take(SEED_N)
+            .map(|(id, _)| id.clone())
+            .collect()
     };
 
     let mut seen_seed: std::collections::HashSet<String> = frontier.iter().cloned().collect();
@@ -298,10 +426,7 @@ async fn graph_expand(
                     new_mem_ids.push(far.clone());
                     next.push(far.clone());
                     // Stash provenance on a placeholder; filled when materialized.
-                    cands.insert(
-                        far.clone(),
-                        graph_cand(&far, &seed, &etype, depth),
-                    );
+                    cands.insert(far.clone(), graph_cand(&far, &seed, &etype, depth));
                 }
             } else {
                 // Cross-graph endpoint: a catalog resource / trace.
@@ -336,22 +461,49 @@ async fn graph_expand(
 
 // ── scoring ──────────────────────────────────────────────────────────────────
 
-fn finalize(c: Cand, kw_denom: f64, s: &MemorySettings) -> RetrievedMemory {
-    let rrf = c.vec_rank.map(|r| 1.0 / (s.rrf_k + r as f64)).unwrap_or(0.0)
+fn finalize(
+    c: Cand,
+    kw_denom: f64,
+    s: &MemorySettings,
+    usage: Option<&UsageStats>,
+) -> RetrievedMemory {
+    let rrf = c
+        .vec_rank
+        .map(|r| 1.0 / (s.rrf_k + r as f64))
+        .unwrap_or(0.0)
         + c.kw_rank.map(|r| 1.0 / (s.rrf_k + r as f64)).unwrap_or(0.0);
     let semantic = c.distance.map(|d| (1.0 - d).clamp(0.0, 1.0)).unwrap_or(0.0);
-    let keyword = c.kw_score.map(|k| (k / kw_denom).clamp(0.0, 1.0)).unwrap_or(0.0);
+    let keyword = c
+        .kw_score
+        .map(|k| (k / kw_denom).clamp(0.0, 1.0))
+        .unwrap_or(0.0);
     let recency = c
         .created_at
         .as_deref()
         .map(|t| recency_decay(t, s.half_life_days))
         .unwrap_or(0.5);
+    // Usage-based reinforcement (M8.1): a never-surfaced memory has no signal
+    // yet, so it defaults to fully "fresh" (1.0) rather than being punished by
+    // a blend term nobody has had a chance to reinforce.
+    let reinforcement = usage
+        .map(|u| {
+            decayed_salience(
+                u,
+                c.created_at.as_deref().unwrap_or(""),
+                chrono::Utc::now(),
+                s.reinforcement.half_life_days,
+                s.reinforcement.hit_weight,
+                s.reinforcement.miss_penalty,
+            )
+        })
+        .unwrap_or(1.0);
     let score = s.w_rrf * rrf
         + s.w_semantic * semantic
         + s.w_keyword * keyword
         + s.w_graph * c.graph_proximity
         + s.w_importance * c.importance
-        + s.w_recency * recency;
+        + s.w_recency * recency
+        + s.w_reinforcement * reinforcement;
     RetrievedMemory {
         id: c.id,
         memory_type: c.memory_type,
@@ -371,19 +523,79 @@ fn finalize(c: Cand, kw_denom: f64, s: &MemorySettings) -> RetrievedMemory {
 
 /// `exp(-ln2 * age_days / half_life_days)`, clamped to [0,1]. Unparseable → 0.5.
 fn recency_decay(created_at: &str, half_life_days: f64) -> f64 {
-    let hl = if half_life_days > 0.0 { half_life_days } else { 30.0 };
+    let hl = if half_life_days > 0.0 {
+        half_life_days
+    } else {
+        30.0
+    };
     match chrono::DateTime::parse_from_rfc3339(created_at) {
         Ok(dt) => {
-            let age_days =
-                (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_seconds() as f64 / 86_400.0;
+            let age_days = (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_seconds()
+                as f64
+                / 86_400.0;
             if age_days <= 0.0 {
                 1.0
             } else {
-                (-std::f64::consts::LN_2 * age_days / hl).exp().clamp(0.0, 1.0)
+                (-std::f64::consts::LN_2 * age_days / hl)
+                    .exp()
+                    .clamp(0.0, 1.0)
             }
         }
         Err(_) => 0.5,
     }
+}
+
+/// MMR diversity re-ranking (M8.3a): fetch embeddings for the top
+/// `limit * pool_multiplier` blended candidates and reorder `scored` in
+/// place to `mmr_select`'s order — items outside the pool are dropped (they
+/// would have been truncated away anyway). A fetch/parse failure degrades to
+/// a no-op (the existing relevance order stands) rather than losing results.
+async fn mmr_rerank(
+    shared: &SharedToolCtx,
+    scored: &mut Vec<RetrievedMemory>,
+    limit: usize,
+    mmr: &MmrSettings,
+) {
+    let pool_size = (limit * mmr.pool_multiplier.max(1)).min(scored.len());
+    if pool_size == 0 {
+        return;
+    }
+    let pool: Vec<RetrievedMemory> = scored.drain(..pool_size).collect();
+    let ids: Vec<String> = pool.iter().map(|m| m.id.clone()).collect();
+    let emb_sql = sql::embeddings_by_id_sql(NODE_TABLE, &ids);
+    let res = execute_sql(shared, DEFAULT_DATABASE, &emb_sql, ids.len()).await;
+    let embeddings: HashMap<String, Vec<f32>> = rows_of(&res)
+        .into_iter()
+        .filter_map(|r| {
+            let id = get_str(&r, "id")?;
+            let emb = r.get("embedding")?.as_array()?;
+            let v: Vec<f32> = emb
+                .iter()
+                .filter_map(|x| x.as_f64())
+                .map(|x| x as f32)
+                .collect();
+            Some((id, v))
+        })
+        .collect();
+
+    let items: Vec<(String, Option<Vec<f32>>, f64)> = pool
+        .iter()
+        .map(|m| (m.id.clone(), embeddings.get(&m.id).cloned(), m.score))
+        .collect();
+    // Select exactly `limit` diverse items from the wider pool — passing
+    // `pool_size` here would make `mmr_select`'s "pool already <= k" fast
+    // path fire immediately and skip reordering entirely.
+    let order = mmr_select(&items, mmr.lambda, limit);
+
+    let mut by_id: HashMap<String, RetrievedMemory> =
+        pool.into_iter().map(|m| (m.id.clone(), m)).collect();
+    let mut reordered: Vec<RetrievedMemory> = order
+        .into_iter()
+        .filter_map(|id| by_id.remove(&id))
+        .collect();
+    // Splice the MMR-ordered pool back in front of anything beyond it.
+    reordered.append(scored);
+    *scored = reordered;
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -398,7 +610,10 @@ async fn build_writer(shared: &SharedToolCtx) -> Option<MemoryWriter> {
 }
 
 fn rows_of(v: &Value) -> Vec<Value> {
-    v.get("rows").and_then(Value::as_array).cloned().unwrap_or_default()
+    v.get("rows")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
 }
 
 fn get_str(row: &Value, key: &str) -> Option<String> {
@@ -456,11 +671,17 @@ fn hydrate(c: &mut Cand, row: &Value) {
     c.invalid_at = get_str(row, "invalid_at");
 }
 
-fn done(memories: Vec<RetrievedMemory>, linked: Vec<LinkedResource>, started: Instant) -> RetrieveResult {
-    let context = build_context(&memories, &linked);
+fn done(
+    memories: Vec<RetrievedMemory>,
+    linked: Vec<LinkedResource>,
+    precedent: Option<PrecedentBlock>,
+    started: Instant,
+) -> RetrieveResult {
+    let context = build_context(&memories, &linked, precedent.as_ref());
     RetrieveResult {
         memories,
         linked,
+        precedent,
         context,
         took_ms: started.elapsed().as_millis(),
     }
@@ -468,27 +689,43 @@ fn done(memories: Vec<RetrievedMemory>, linked: Vec<LinkedResource>, started: In
 
 /// Compact, deterministic, citation-rich context block — LLM-free, suitable
 /// for injecting into an agent prompt or a Claude Code SessionStart hook.
-fn build_context(memories: &[RetrievedMemory], linked: &[LinkedResource]) -> String {
-    if memories.is_empty() {
+fn build_context(
+    memories: &[RetrievedMemory],
+    linked: &[LinkedResource],
+    precedent: Option<&PrecedentBlock>,
+) -> String {
+    if memories.is_empty() && precedent.is_none() {
         return String::new();
     }
-    let mut out = String::from("Relevant memories:\n");
-    for m in memories {
-        let validity = match (&m.invalid_at, &m.valid_at) {
-            (Some(inv), _) => format!(" (invalidated {inv})"),
-            (None, Some(v)) => format!(" (since {v})"),
-            _ => String::new(),
-        };
-        let via = m
-            .via
-            .as_ref()
-            .and_then(|v| v.get("type").and_then(Value::as_str))
-            .map(|t| format!(" [via {t}]"))
-            .unwrap_or_default();
+    let mut out = String::new();
+    if let Some(p) = precedent {
         out.push_str(&format!(
-            "- [{}] {}{}{} (score {:.2}) {}\n",
-            m.memory_type, m.content_preview, validity, via, m.score, m.id
+            "Precedent — a similar input was seen before (similarity {:.2}): \"{}\"\n\
+             Memories from that occasion: {}\n\n",
+            p.similarity,
+            p.activity_preview,
+            p.memory_ids.join(", "),
         ));
+    }
+    if !memories.is_empty() {
+        out.push_str("Relevant memories:\n");
+        for m in memories {
+            let validity = match (&m.invalid_at, &m.valid_at) {
+                (Some(inv), _) => format!(" (invalidated {inv})"),
+                (None, Some(v)) => format!(" (since {v})"),
+                _ => String::new(),
+            };
+            let via = m
+                .via
+                .as_ref()
+                .and_then(|v| v.get("type").and_then(Value::as_str))
+                .map(|t| format!(" [via {t}]"))
+                .unwrap_or_default();
+            out.push_str(&format!(
+                "- [{}] {}{}{} (score {:.2}) {}\n",
+                m.memory_type, m.content_preview, validity, via, m.score, m.id
+            ));
+        }
     }
     if !linked.is_empty() {
         out.push_str("\nConnected resources/traces:\n");
@@ -506,8 +743,63 @@ impl RetrieveResult {
         json!({
             "memories": self.memories,
             "linked": self.linked,
+            "precedent": self.precedent,
             "context": self.context,
             "took_ms": self.took_ms,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn precedent() -> PrecedentBlock {
+        PrecedentBlock {
+            activity_id: "activity:a".into(),
+            activity_preview: "how do I fix the flaky auth test".into(),
+            activity_created_at: Some("2026-06-01T00:00:00Z".into()),
+            similarity: 0.97,
+            memory_ids: vec!["memory:x".into(), "memory:y".into()],
+        }
+    }
+
+    #[test]
+    fn build_context_empty_when_no_memories_and_no_precedent() {
+        assert_eq!(build_context(&[], &[], None), "");
+    }
+
+    #[test]
+    fn build_context_renders_precedent_even_with_no_current_memories() {
+        // A precedent's memory_ids are from a PAST occasion — they need not
+        // overlap the current (possibly empty) recall result at all.
+        let ctx = build_context(&[], &[], Some(&precedent()));
+        assert!(ctx.contains("Precedent"));
+        assert!(ctx.contains("memory:x, memory:y"));
+        assert!(ctx.contains("how do I fix the flaky auth test"));
+        assert!(!ctx.contains("Relevant memories:"));
+    }
+
+    #[test]
+    fn build_context_precedent_comes_before_relevant_memories() {
+        let m = RetrievedMemory {
+            id: "memory:z".into(),
+            memory_type: "fact".into(),
+            title: None,
+            content_preview: "kyma uses DataFusion".into(),
+            score: 0.8,
+            distance: Some(0.1),
+            kw_score: None,
+            graph_proximity: 0.0,
+            importance: 0.5,
+            realm: "default".into(),
+            valid_at: None,
+            invalid_at: None,
+            via: None,
+        };
+        let ctx = build_context(&[m], &[], Some(&precedent()));
+        let precedent_pos = ctx.find("Precedent").unwrap();
+        let memories_pos = ctx.find("Relevant memories:").unwrap();
+        assert!(precedent_pos < memories_pos);
     }
 }

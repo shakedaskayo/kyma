@@ -234,6 +234,7 @@ mod tests {
             memory: None,
             // read-only test ctx — no HITL approval gate.
             hitl: None,
+            memory_settings_path: None,
         }
     }
 
@@ -246,7 +247,10 @@ mod tests {
         let shared = rt.block_on(empty_shared());
         let ctx = search_ctx_from_shared(&shared);
         assert_eq!(ctx.tenant, kyma_core::tenant::DEFAULT_TENANT);
-        assert!(ctx.allowed_databases.is_none(), "no RBAC allow-list ⇒ all pass");
+        assert!(
+            ctx.allowed_databases.is_none(),
+            "no RBAC allow-list ⇒ all pass"
+        );
         assert!(ctx.node_id.is_none());
         assert!(ctx.pool.is_none());
     }
@@ -364,10 +368,7 @@ mod tests {
             hits.iter().any(|h| h["id"] == json!("svc:alpha")),
             "expected svc:alpha node hit, got {out}"
         );
-        let alpha = hits
-            .iter()
-            .find(|h| h["id"] == json!("svc:alpha"))
-            .unwrap();
+        let alpha = hits.iter().find(|h| h["id"] == json!("svc:alpha")).unwrap();
         assert_eq!(alpha["kind"], json!("node"));
         assert_eq!(alpha["source"], json!("kg/kg"));
         assert_eq!(alpha["title"], json!("alpha-service"));
