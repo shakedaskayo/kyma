@@ -17,6 +17,7 @@ use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 
 use crate::client::{self, ClientConfig};
+use crate::ux;
 
 // ── ingest push ──────────────────────────────────────────────────────────────
 
@@ -229,11 +230,12 @@ fn render_memory_line(row: &Value) -> String {
         .or_else(|| row.get("content").and_then(Value::as_str))
         .unwrap_or("")
         .trim();
-    let body: String = body.chars().take(280).collect();
-    match score {
-        Some(s) => format!("- [{mtype} {:.2}] {body}", s),
-        None => format!("- [{mtype}] {body}"),
-    }
+    let body = ux::format::truncate(body, 280);
+    let prefix = match score {
+        Some(s) => ux::format::score_style(s as f32, &format!("[{mtype} {s:.2}]")),
+        None => ux::theme::muted(&format!("[{mtype}]")),
+    };
+    format!("{} {prefix} {body}", ux::theme::BULLET)
 }
 
 /// Issue a single stateless MCP `tools/call` and return its `structuredContent`.
@@ -498,3 +500,51 @@ fn set_private(path: &Path) {
 }
 #[cfg(not(unix))]
 fn set_private(_path: &Path) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_memory_line_includes_type_and_body() {
+        let row = json!({
+            "memory_type": "decision",
+            "score": 0.92,
+            "content": "use worktrees for all branch work",
+        });
+        let line = render_memory_line(&row);
+        assert!(line.contains("decision"));
+        assert!(line.contains("0.92"));
+        assert!(line.contains("use worktrees for all branch work"));
+    }
+
+    #[test]
+    fn render_memory_line_falls_back_to_title_then_preview_then_content() {
+        let row = json!({
+            "memory_type": "fact",
+            "title": "preferred title",
+            "content_preview": "should not appear",
+            "content": "should not appear either",
+        });
+        let line = render_memory_line(&row);
+        assert!(line.contains("preferred title"));
+        assert!(!line.contains("should not appear"));
+    }
+
+    #[test]
+    fn render_memory_line_handles_missing_score() {
+        let row = json!({ "memory_type": "learning", "content": "no score here" });
+        let line = render_memory_line(&row);
+        assert!(line.contains("learning"));
+        assert!(line.contains("no score here"));
+        assert!(!line.contains("0."));
+    }
+
+    #[test]
+    fn render_memory_line_truncates_long_body_with_ellipsis() {
+        let long_body = "word ".repeat(100); // 500 chars, trims to 499
+        let row = json!({ "memory_type": "fact", "content": long_body });
+        let line = render_memory_line(&row);
+        assert!(line.contains('…'));
+    }
+}
