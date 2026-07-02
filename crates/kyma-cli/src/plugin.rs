@@ -291,7 +291,10 @@ const DISTILL_MAX_CHARS: usize = 60_000;
 
 /// Read a session transcript from stdin and hand it to the kyma agent (which
 /// owns `save_memory`) with an extraction instruction. The agent persists the
-/// durable memories; we stay quiet unless `KYMA_DISTILL_VERBOSE` is set.
+/// durable memories. Shows a progress spinner while waiting (silent plain
+/// fallback when stderr isn't a terminal — e.g. when a hook pipes it to a
+/// log file); stays quiet about the *extracted memories themselves* unless
+/// `KYMA_DISTILL_VERBOSE` is set.
 pub(crate) async fn distill(_session: Option<String>, realm: Option<String>) -> Result<()> {
     let cfg = client::effective_config()?;
     let mut transcript = String::new();
@@ -319,7 +322,8 @@ you saved.\n\n--- SESSION TRANSCRIPT ---\n{transcript}"
     );
 
     let verbose = std::env::var_os("KYMA_DISTILL_VERBOSE").is_some();
-    client::stream_agent_ask(&cfg, &instruction, None, |event, data| {
+    let spinner = (!verbose).then(|| ux::spinner::spinner("distilling memories"));
+    let result = client::stream_agent_ask(&cfg, &instruction, None, |event, data| {
         if !verbose {
             return;
         }
@@ -333,8 +337,17 @@ you saved.\n\n--- SESSION TRANSCRIPT ---\n{transcript}"
             }
         }
     })
-    .await?;
-    Ok(())
+    .await;
+    if let Some(s) = &spinner {
+        match &result {
+            Ok(()) => s.finish_success("distilled memories"),
+            // Deliberately short — the full cause chain + hint is printed by
+            // main()'s unified error handler once this Err propagates; a
+            // second copy of the same text here would just be noise.
+            Err(_) => s.finish_error("distill failed"),
+        }
+    }
+    result
 }
 
 // ── install-plugin ───────────────────────────────────────────────────────────
