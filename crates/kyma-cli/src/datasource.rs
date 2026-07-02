@@ -17,8 +17,10 @@
 //!   4. (future) `gh auth token` shell-out if `gh` is on PATH
 
 use crate::client::{self, ClientConfig};
+use crate::ux;
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Args, Subcommand};
+use comfy_table::Cell;
 use serde_json::{json, Value};
 
 // ── argument parsing ─────────────────────────────────────────────────────────
@@ -298,26 +300,46 @@ async fn cmd_list(cfg: &ClientConfig) -> Result<()> {
         println!("(no data sources registered)");
         return Ok(());
     }
-    println!(
-        "{:<14}  {:<22}  {:<10}  {}",
-        "TYPE", "NAME", "STATUS", "LAST"
-    );
-    for c in items {
-        let kind = c.get("type").and_then(Value::as_str).unwrap_or("?");
-        let name = c.get("name").and_then(Value::as_str).unwrap_or("?");
-        let status = if c.get("enabled").and_then(Value::as_bool).unwrap_or(true) {
-            "enabled"
-        } else {
-            "paused"
-        };
-        let last = c
-            .get("last_success_at")
-            .and_then(Value::as_str)
-            .or_else(|| c.get("last_run_at").and_then(Value::as_str))
-            .unwrap_or("never");
-        println!("{kind:<14}  {name:<22}  {status:<10}  {last}");
+    let mut t = ux::table::table(vec!["TYPE", "NAME", "STATUS", "LAST"]);
+    for c in &items {
+        let [kind, name, status, last] = data_source_row(c);
+        t.add_row(vec![
+            Cell::new(kind),
+            Cell::new(name),
+            ux::table::status_cell(&status),
+            Cell::new(last),
+        ]);
     }
+    println!("{t}");
     Ok(())
+}
+
+/// Extracts the four display fields for one `datasource list` row. Pure and
+/// tested directly — `cmd_list` just formats what this returns.
+fn data_source_row(c: &Value) -> [String; 4] {
+    let kind = c
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_string();
+    let name = c
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_string();
+    let status = if c.get("enabled").and_then(Value::as_bool).unwrap_or(true) {
+        "enabled"
+    } else {
+        "paused"
+    }
+    .to_string();
+    let last = c
+        .get("last_success_at")
+        .and_then(Value::as_str)
+        .or_else(|| c.get("last_run_at").and_then(Value::as_str))
+        .unwrap_or("never")
+        .to_string();
+    [kind, name, status, last]
 }
 
 // ── add ─────────────────────────────────────────────────────────────────────
@@ -822,4 +844,61 @@ async fn http_delete(cfg: &ClientConfig, path: &str) -> Result<()> {
         bail!("DELETE {path}: {status}: {body}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn data_source_row_enabled_with_last_success() {
+        let c = json!({
+            "type": "github",
+            "name": "kyma",
+            "enabled": true,
+            "last_success_at": "2026-07-01T00:00:00Z",
+        });
+        assert_eq!(
+            data_source_row(&c),
+            [
+                "github".to_string(),
+                "kyma".to_string(),
+                "enabled".to_string(),
+                "2026-07-01T00:00:00Z".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn data_source_row_paused_falls_back_to_last_run() {
+        let c = json!({
+            "type": "gitlab",
+            "name": "proj",
+            "enabled": false,
+            "last_run_at": "2026-06-01T00:00:00Z",
+        });
+        assert_eq!(
+            data_source_row(&c),
+            [
+                "gitlab".to_string(),
+                "proj".to_string(),
+                "paused".to_string(),
+                "2026-06-01T00:00:00Z".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn data_source_row_missing_fields_use_placeholders() {
+        let c = json!({});
+        assert_eq!(
+            data_source_row(&c),
+            [
+                "?".to_string(),
+                "?".to_string(),
+                "enabled".to_string(),
+                "never".to_string(),
+            ]
+        );
+    }
 }
