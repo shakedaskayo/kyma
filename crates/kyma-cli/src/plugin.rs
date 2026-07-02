@@ -386,6 +386,11 @@ const PLUGIN_FILES: &[(&str, &str, bool)] = &[
         false,
     ),
     (
+        "commands/kyma-ingest.md",
+        include_str!("../../../integrations/claude-code/kyma-memory/commands/kyma-ingest.md"),
+        false,
+    ),
+    (
         "skills/kyma-memory/SKILL.md",
         include_str!("../../../integrations/claude-code/kyma-memory/skills/kyma-memory/SKILL.md"),
         false,

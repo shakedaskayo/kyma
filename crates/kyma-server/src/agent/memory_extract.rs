@@ -138,7 +138,7 @@ Return STRICT JSON (no prose, no markdown fences) with this exact shape:
   "memories": [
     {
       "content": "self-contained statement; resolve pronouns and 'it'/'the project' to concrete names",
-      "title": "short label (optional)",
+      "title": "REQUIRED — a short 3-8 word human-scannable headline, distinct from content (not just its first few words)",
       "kind": "fact | decision | preference | learning | procedure",
       "importance": 0.0-1.0,
       "valid_at": "RFC3339 timestamp if the moment it became true is knowable, else omit",

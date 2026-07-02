@@ -665,13 +665,57 @@ impl Node {
     }
 
     fn display_title(&self) -> String {
-        self.title.clone().unwrap_or_else(|| {
-            self.content
-                .split_whitespace()
-                .take(6)
-                .collect::<Vec<_>>()
-                .join(" ")
-        })
+        self.title
+            .clone()
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_else(|| synthesize_title(&self.content))
+    }
+}
+
+/// Derive a clean, human-scannable title from memory content when none was
+/// supplied. Stops at the first sentence boundary (or a word boundary within
+/// [`TITLE_MAX_LEN`]) rather than a hard character cut, so a synthesized
+/// title never looks like a truncated dump of the content it's titling — the
+/// failure mode this replaces (`content.split_whitespace().take(6)`) produced
+/// a title identical to the frontmatter description derived from the same
+/// content, since both used the same raw prefix.
+const TITLE_MAX_LEN: usize = 72;
+
+pub(crate) fn synthesize_title(content: &str) -> String {
+    let trimmed = content.trim();
+    let first_line = trimmed.lines().next().unwrap_or(trimmed).trim();
+    let sentence_end = first_line
+        .char_indices()
+        .find(|(_, c)| matches!(c, '.' | '!' | '?'))
+        .map(|(i, _)| i);
+    let candidate = match sentence_end {
+        // Only treat it as a sentence boundary past a minimal length —
+        // otherwise "e.g. foo bar" would title itself "e".
+        Some(end) if end >= 8 => first_line[..end].trim(),
+        _ => first_line,
+    };
+    if candidate.is_empty() {
+        return "Untitled memory".to_string();
+    }
+    if candidate.chars().count() <= TITLE_MAX_LEN {
+        return candidate.to_string();
+    }
+    let mut out = String::new();
+    for word in candidate.split_whitespace() {
+        let would_be = out.chars().count() + usize::from(!out.is_empty()) + word.chars().count();
+        if would_be > TITLE_MAX_LEN.saturating_sub(1) {
+            break;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(word);
+    }
+    if out.is_empty() {
+        clip(candidate, TITLE_MAX_LEN)
+    } else {
+        out.push('…');
+        out
     }
 }
 

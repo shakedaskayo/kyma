@@ -1252,10 +1252,38 @@ async fn run_cc_phase(
         report.sync.projects.len(),
         if opts.dry_run { " (dry run)" } else { "" },
     );
+    write_cc_sync_health(true, None);
     Ok(report.sync.last_scan_value(
         u64::try_from(pass_start.elapsed().as_millis()).unwrap_or(u64::MAX),
         wall_start,
     ))
+}
+
+/// Path to the cc-sync health marker `kyma status` reads. Fixed under
+/// `$HOME/.kyma`, not `KYMA_HOME`-relative, matching the hook-side
+/// `capture-health.json` convention so both processes agree on the path.
+fn cc_sync_health_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME")
+        .map(|h| std::path::PathBuf::from(h).join(".kyma").join("cc-sync-health.json"))
+}
+
+/// Record the outcome of a cc-sync pass so `kyma status` can report sync
+/// freshness instead of it being invisible between session-boundary hook
+/// runs (which run this detached, fire-and-forget). Best-effort: a failure
+/// to write the marker never fails the sync itself.
+fn write_cc_sync_health(ok: bool, detail: Option<&str>) {
+    let Some(path) = cc_sync_health_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let body = serde_json::json!({
+        "ts": chrono::Utc::now().to_rfc3339(),
+        "status": if ok { "ok" } else { "error" },
+        "detail": detail,
+    });
+    let _ = std::fs::write(&path, body.to_string());
 }
 
 /// `kyma sync` — sync memory with Claude Code's file memory (always, when
@@ -1269,6 +1297,7 @@ pub async fn run_sync(opts: SyncOptions) -> Result<()> {
         if !opts.cloud_only && env_flag("KYMA_CC_FILE_SYNC", true) {
             if let Err(e) = run_cc_phase(&engine, None, &opts).await {
                 eprintln!("cc-sync failed (continuing): {e}");
+                write_cc_sync_health(false, Some(&e.to_string()));
             }
         }
         // ── Phase 2: control plane (only when configured). ──

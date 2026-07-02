@@ -36,4 +36,20 @@ recap="$(kyma recall "open threads, recent decisions, preferences and convention
 if [ -n "$recap" ]; then
   printf '🧠 Kyma memory — relevant context for "%s":\n%s\n' "$realm" "$recap"
 fi
+
+# 4) standing context, injected once per session: how the native memory files
+# and kyma relate, and when to reach for the MCP tools instead of relying on
+# this auto-injected recap alone.
+printf '\n📎 How this fits together: your `~/.claude/projects/*/memory/*.md` files ARE\n'
+printf 'kyma'"'"'s synced memory (see `kyma sync`) — writing them already reaches kyma,\n'
+printf 'no separate save path needed for routine notes. The recap above is only the\n'
+printf 'top %s recalled matches for this project. Call `recall_memory` / `memory_search`\n' "$KYMA_CC_RECALL_LIMIT"
+printf '(MCP server `kyma`) directly for anything deeper — older history, live\n'
+printf 'data/logs/traces, or the code graph — and `save_memory` for anything you want\n'
+printf 'durable and recallable *this session*, rather than waiting on the next sync.\n'
+if kyma worker status 2>&1 | grep -q "worker: not installed"; then
+  printf '\n⚠️  No background sync worker is installed (`kyma worker install`) — local↔kyma\n'
+  printf 'sync currently only runs at session start/end, so mid-session file writes are\n'
+  printf 'not durable in kyma until this session ends cleanly.\n'
+fi
 exit 0
