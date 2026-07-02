@@ -614,3 +614,74 @@ async fn demoted_promotion_is_archived_and_unstamped() {
         .expect("plan 2");
     assert!(archives(&actions2).is_empty());
 }
+
+#[test]
+fn synthesize_title_prefers_first_sentence() {
+    let t = super::cc_curate::synthesize_title(
+        "We chose session tokens over JWTs because of revocation. Some more detail follows.",
+    );
+    assert_eq!(t, "We chose session tokens over JWTs because of revocation");
+}
+
+#[test]
+fn synthesize_title_clips_long_single_sentence_at_word_boundary() {
+    let content = "This is a very long single sentence with no punctuation to stop at \
+        so it just keeps going and going and going without ever ending at all";
+    let t = super::cc_curate::synthesize_title(content);
+    assert!(t.chars().count() <= 72, "clipped to the length cap: {t:?}");
+    assert!(t.ends_with('…'), "marks that it was clipped: {t:?}");
+    assert!(!t.contains("  "), "no doubled whitespace from the clip: {t:?}");
+    // Clipped at a word boundary, not mid-word.
+    assert!(content.starts_with(t.trim_end_matches('…').trim_end()));
+}
+
+#[test]
+fn synthesize_title_falls_back_on_empty_content() {
+    assert_eq!(super::cc_curate::synthesize_title("   "), "Untitled memory");
+}
+
+/// Regression test for the promoted-memory quality bug: a memory saved
+/// without a `title` (exactly what `save_memory`/extraction used to produce
+/// before this fix) used to promote with a mangled title — the raw first six
+/// words of `content`, reused verbatim as *both* the link label and the
+/// frontmatter description, with no regard for word or sentence boundaries.
+#[tokio::test]
+async fn promotion_synthesizes_a_clean_title_when_none_was_saved() {
+    let (_tmp, writer, shared) = engine().await;
+    // Bypass `seed()` (which always sets a title) — this is exactly the
+    // shape `CreateMemory::new` produces when a caller omits `title`.
+    let content =
+        "Decision: build S3 native graph engine, do NOT add an external graph DB.";
+    let mut cm = CreateMemory::new(content);
+    cm.memory_type = MemoryType::Decision;
+    cm.realm = "proj".to_string();
+    cm.importance = 0.9;
+    writer.save(&cm).await.expect("seed untitled");
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let (actions, _stamps, outcome) =
+        plan_curation(&shared, &writer, &input(&now), &CurationConfig::default())
+            .await
+            .expect("plan");
+    assert_eq!(outcome.promoted, 1);
+
+    let w = writes(&actions);
+    let FileAction::WriteMemoryFile {
+        file: _,
+        content: file_content,
+        ..
+    } = w[0]
+    else {
+        unreachable!()
+    };
+    let parsed = kyma_ccmem::frontmatter::parse(file_content).expect("rendered file parses");
+    let desc = parsed.front.description.clone().unwrap_or_default();
+    let old_buggy: String = content.split_whitespace().take(6).collect::<Vec<_>>().join(" ");
+
+    assert!(!desc.is_empty());
+    assert_ne!(desc, old_buggy, "must not reproduce the raw 6-word fallback");
+    assert!(
+        content.starts_with(desc.trim_end_matches('…').trim_end()),
+        "synthesized title should be a clean prefix of the content, not a mid-word cut: {desc:?}"
+    );
+}

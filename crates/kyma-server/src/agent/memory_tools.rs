@@ -111,7 +111,9 @@ async fn find_by_topic_key(shared: &SharedToolCtx, realm: &str, topic_key: &str)
 struct SaveMemoryArgs {
     /// The memory content — a self-contained, durable fact/decision/preference/learning.
     content: String,
-    /// Short descriptive title (optional).
+    /// Short 3-8 word human-scannable headline, distinct from content. Strongly
+    /// recommended — a clean title is synthesized from content when omitted,
+    /// but it won't be as good as one you write.
     #[serde(default)]
     title: Option<String>,
     /// One of: fact, decision, preference, learning, summary. Defaults to fact.
@@ -155,12 +157,16 @@ struct SaveMemoryArgs {
 
 /// Fold a [`SaveMemoryArgs`] into the [`CreateMemory`] the writer/queue takes.
 fn create_from_save_args(parsed: SaveMemoryArgs) -> CreateMemory {
+    let title = parsed
+        .title
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| super::cc_curate::synthesize_title(&parsed.content));
     let mut content = parsed.content;
     append_field(&mut content, "Why", &parsed.why);
     append_field(&mut content, "Where", &parsed.where_);
     append_field(&mut content, "Learned", &parsed.learned);
     let mut cm = CreateMemory::new(content);
-    cm.title = parsed.title;
+    cm.title = Some(title);
     cm.memory_type = parsed
         .memory_type
         .as_deref()
@@ -238,10 +244,13 @@ fn append_field(content: &mut String, label: &str, val: &Option<String>) {
 
 const SAVE_MEMORY_DESC: &str = "Persist a durable memory (fact, decision, \
 preference, learning, or summary) so it can be recalled in later sessions. \
-Optionally link it to graph entities it's about via `references` (node ids). \
-Pass a stable `topic_key` (e.g. \"architecture/auth-model\") to upsert — a \
-later save with the same realm+topic_key updates the memory in place instead \
-of duplicating. Use this when the user states something worth remembering.";
+Always pass `title` — a short 3-8 word human-scannable headline, distinct \
+from `content` (not just its first few words) — it's what shows up in lists \
+and recall previews. Optionally link it to graph entities it's about via \
+`references` (node ids). Pass a stable `topic_key` (e.g. \
+\"architecture/auth-model\") to upsert — a later save with the same \
+realm+topic_key updates the memory in place instead of duplicating. Use \
+this when the user states something worth remembering.";
 
 pub fn tool_save_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
     let shared = ctx;
@@ -1821,6 +1830,41 @@ mod space_param_tests {
         // Omitted space stays public (None).
         let none: SaveMemoryArgs = serde_json::from_value(json!({ "content": "x" })).unwrap();
         assert!(create_from_save_args(none).space.is_none());
+    }
+
+    #[test]
+    fn save_args_synthesizes_title_when_omitted() {
+        // Explicit title passes through untouched.
+        let titled: SaveMemoryArgs = serde_json::from_value(json!({
+            "content": "We chose session tokens over JWTs.",
+            "title": "Auth model decision"
+        }))
+        .unwrap();
+        assert_eq!(
+            create_from_save_args(titled).title.as_deref(),
+            Some("Auth model decision")
+        );
+
+        // Omitted title is never left `None` in storage — a caller that
+        // skips it (as extraction used to) still gets a real, non-empty title.
+        let untitled: SaveMemoryArgs = serde_json::from_value(json!({
+            "content": "We chose session tokens over JWTs because of revocation."
+        }))
+        .unwrap();
+        let cm = create_from_save_args(untitled);
+        assert_eq!(
+            cm.title.as_deref(),
+            Some("We chose session tokens over JWTs because of revocation")
+        );
+
+        // Blank title is treated the same as omitted, not saved verbatim.
+        let blank: SaveMemoryArgs =
+            serde_json::from_value(json!({ "content": "Something happened.", "title": "  " }))
+                .unwrap();
+        assert_eq!(
+            create_from_save_args(blank).title.as_deref(),
+            Some("Something happened")
+        );
     }
 
     #[test]

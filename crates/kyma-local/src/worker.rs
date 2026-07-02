@@ -265,8 +265,20 @@ pub fn uninstall() -> Result<()> {
     Ok(())
 }
 
-/// Report whether the worker is installed/running and where it logs.
-pub fn status() -> Result<()> {
+/// Installed/running state of the background worker — the programmatic form
+/// of [`status`], reused by `kyma status` (top-level) so worker state isn't
+/// only discoverable via the separate `kyma worker status` command.
+#[derive(Debug, Clone, Default)]
+pub struct WorkerState {
+    /// `None` on platforms without a service installer.
+    pub installed: Option<bool>,
+    pub running: bool,
+    /// Where the service definition lives (plist/unit path), when supported.
+    pub service_path: Option<PathBuf>,
+}
+
+/// Probe the current OS's service manager for the worker's state.
+pub fn probe() -> WorkerState {
     match std::env::consts::OS {
         "macos" => {
             let path = plist_path(&home());
@@ -280,25 +292,37 @@ pub fn status() -> Result<()> {
                         && String::from_utf8_lossy(&o.stdout).contains("state = running")
                 })
                 .unwrap_or(false);
-            eprintln!(
-                "worker: {} ({}), {}",
-                if installed { "installed" } else { "not installed" },
-                path.display(),
-                if running { "running" } else { "not running" },
-            );
+            WorkerState {
+                installed: Some(installed),
+                running,
+                service_path: Some(path),
+            }
         }
         "linux" => {
             let path = unit_path(&home());
             let installed = path.exists();
             let running = run("systemctl", &["--user", "is-active", "--quiet", UNIT]);
-            eprintln!(
-                "worker: {} ({}), {}",
-                if installed { "installed" } else { "not installed" },
-                path.display(),
-                if running { "running" } else { "not running" },
-            );
+            WorkerState {
+                installed: Some(installed),
+                running,
+                service_path: Some(path),
+            }
         }
-        other => eprintln!("no service installer for {other}"),
+        _ => WorkerState::default(),
+    }
+}
+
+/// Report whether the worker is installed/running and where it logs.
+pub fn status() -> Result<()> {
+    let state = probe();
+    match (state.installed, &state.service_path) {
+        (Some(installed), Some(path)) => eprintln!(
+            "worker: {} ({}), {}",
+            if installed { "installed" } else { "not installed" },
+            path.display(),
+            if state.running { "running" } else { "not running" },
+        ),
+        _ => eprintln!("no service installer for {}", std::env::consts::OS),
     }
     eprintln!("logs: {}", log_path());
     Ok(())

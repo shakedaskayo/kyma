@@ -1046,6 +1046,45 @@ async fn cmd_status() -> Result<()> {
                         ))
                     );
                 }
+
+                // cc-sync freshness (written by `run_cc_phase` on every pass —
+                // hook-triggered, worker-driven, or manual `kyma sync`).
+                let sp = dir.join("cc-sync-health.json");
+                if let Ok(raw) = std::fs::read_to_string(&sp) {
+                    let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+                    let ts = v["ts"].as_str().unwrap_or("?");
+                    if v["status"].as_str() == Some("ok") {
+                        println!("Sync:      last cc-sync ok at {ts}");
+                    } else {
+                        println!(
+                            "Sync:      LAST CC-SYNC FAILED at {ts} — {}",
+                            v["detail"].as_str().unwrap_or("unknown error"),
+                        );
+                    }
+                } else {
+                    println!(
+                        "Sync:      no recorded cc-sync yet (runs automatically at Claude Code \
+                         session start/end, or via `kyma sync`)"
+                    );
+                }
+            }
+
+            // Background worker (`kyma worker install`) — sync otherwise only
+            // runs at session-boundary hooks or manual `kyma sync` calls.
+            let w = kyma_local::worker::probe();
+            match w.installed {
+                Some(true) if w.running => {
+                    println!("Worker:    installed, running (continuous `kyma sync --watch`)");
+                }
+                Some(true) => println!(
+                    "Worker:    installed but not running — see ~/.kyma/logs/worker.log, or \
+                     `kyma worker install` again"
+                ),
+                Some(false) => println!(
+                    "Worker:    not installed — sync only runs at session start/end \
+                     (`kyma worker install` for continuous sync)"
+                ),
+                None => {}
             }
         }
         Err(_) => {

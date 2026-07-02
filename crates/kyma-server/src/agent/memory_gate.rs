@@ -555,7 +555,12 @@ pub async fn apply_op(shared: &SharedToolCtx, payload: &OpPayload) -> anyhow::Re
 /// Persist an [`AddSpec`] as a new memory; returns its `memory:<uuid>` node id.
 async fn add_spec(writer: &kyma_memory::MemoryWriter, spec: &AddSpec) -> anyhow::Result<String> {
     let mut cm = CreateMemory::new(spec.content.clone());
-    cm.title = spec.title.clone();
+    cm.title = Some(
+        spec.title
+            .clone()
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_else(|| super::cc_curate::synthesize_title(&spec.content)),
+    );
     cm.memory_type = MemoryType::parse(&spec.memory_type);
     cm.realm = spec.realm.clone();
     cm.importance = spec.importance.clamp(0.0, 1.0);
