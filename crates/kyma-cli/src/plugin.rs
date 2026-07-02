@@ -94,10 +94,14 @@ pub(crate) async fn recall(
         return Ok(());
     }
     // The graph-aware recall returns a ready-to-inject `context` block (memories
-    // + connected resources, citation-rich). Prefer it for hook injection.
+    // + connected resources, citation-rich). Prefer it for hook injection. The
+    // block itself is shared verbatim with hook/agent-prompt consumers (see
+    // `render_context_block`'s doc comment) — only this human-facing print
+    // path applies terminal styling.
     if let Some(ctx) = result.get("context").and_then(Value::as_str) {
-        if !ctx.trim().is_empty() {
-            println!("{}", ctx.trim());
+        let ctx = ctx.trim();
+        if !ctx.is_empty() {
+            println!("{}", render_context_block(ctx));
             return Ok(());
         }
     }
@@ -251,6 +255,56 @@ fn render_memory_line(row: &Value) -> String {
         None => ux::theme::muted(&format!("[{mtype}]")),
     };
     format!("{} {prefix} {body}", ux::theme::BULLET)
+}
+
+/// Adds terminal styling to the server's plain-text `context` block. That
+/// block is shared verbatim with hook/agent-prompt consumers (see
+/// `build_context()` in kyma-server), where ANSI codes would be harmful —
+/// this transform is purely for the interactive `recall` command's
+/// human-facing output and never touches the underlying string other
+/// consumers see.
+fn render_context_block(ctx: &str) -> String {
+    ctx.lines()
+        .map(render_context_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Style one line of the `context` block. Any line shape not specifically
+/// recognized passes through unchanged, so the transform can never corrupt
+/// or drop information if the server's wording changes later.
+fn render_context_line(line: &str) -> String {
+    if line.is_empty() {
+        return String::new();
+    }
+    if line == "Relevant memories:"
+        || line == "Connected resources/traces:"
+        || line.starts_with("Precedent —")
+    {
+        return ux::theme::accent(line);
+    }
+    if let Some(body) = line.strip_prefix("- ") {
+        if body.starts_with('[') {
+            // Memory bullet: "[type] content... (score N.NN) memory:xxx"
+            if let Some(score_pos) = body.rfind("(score ") {
+                let (head, tail) = body.split_at(score_pos);
+                let score: f32 = tail
+                    .strip_prefix("(score ")
+                    .and_then(|s| s.split(')').next())
+                    .and_then(|s| s.trim().parse().ok())
+                    .unwrap_or(0.0);
+                return format!(
+                    "{} {} {}",
+                    ux::theme::BULLET,
+                    ux::format::score_style(score, head.trim_end()),
+                    ux::theme::muted(tail)
+                );
+            }
+        }
+        // Connected-resource bullet (or any other "- " line without a score).
+        return format!("{} {}", ux::theme::BULLET, ux::theme::muted(body));
+    }
+    line.to_string()
 }
 
 /// Issue a single stateless MCP `tools/call` and return its `structuredContent`.
@@ -579,6 +633,47 @@ mod tests {
         let row = json!({ "memory_type": "fact", "content": long_body });
         let line = render_memory_line(&row);
         assert!(line.contains('…'));
+    }
+
+    #[test]
+    fn render_context_line_styles_memory_bullet() {
+        let line = render_context_line("- [fact] some content (score 0.92) memory:abc-123");
+        assert!(line.contains("some content"));
+        assert!(line.contains("memory:abc-123"));
+        assert!(line.contains(ux::theme::BULLET));
+    }
+
+    #[test]
+    fn render_context_line_styles_section_headers() {
+        let line = render_context_line("Relevant memories:");
+        assert!(line.contains("Relevant memories:"));
+    }
+
+    #[test]
+    fn render_context_line_styles_connected_resource_bullet() {
+        let line = render_context_line(
+            "- cand:file:default::foo.tsx (file_candidates/default) via REFERENCES",
+        );
+        assert!(line.contains("cand:file:default::foo.tsx"));
+        assert!(line.contains(ux::theme::BULLET));
+    }
+
+    #[test]
+    fn render_context_line_passes_through_unrecognized_lines() {
+        assert_eq!(render_context_line(""), "");
+        assert_eq!(
+            render_context_line("Memories from that occasion: id1, id2"),
+            "Memories from that occasion: id1, id2"
+        );
+    }
+
+    #[test]
+    fn render_context_block_joins_multiple_lines() {
+        let ctx = "Relevant memories:\n- [fact] hello (score 0.9) memory:x\n\nConnected resources/traces:\n- foo (ns) via REFERENCES";
+        let out = render_context_block(ctx);
+        assert!(out.contains("hello"));
+        assert!(out.contains("foo"));
+        assert_eq!(out.lines().count(), ctx.lines().count());
     }
 
     #[test]
