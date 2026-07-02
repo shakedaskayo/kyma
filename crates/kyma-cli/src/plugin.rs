@@ -142,8 +142,14 @@ pub(crate) async fn remember(
     } else {
         "saved"
     };
-    println!("{verb} memory {id}");
+    println!("{}", remember_success_line(verb, id));
     Ok(())
+}
+
+/// Builds the one-line success message for `remember`: a green check mark
+/// followed by plain-colored text.
+fn remember_success_line(verb: &str, id: &str) -> String {
+    format!("{} {verb} memory {id}", ux::theme::success(ux::theme::CHECK))
 }
 
 // ── entity ─────────────────────────────────────────────────────────────────
@@ -207,8 +213,17 @@ pub(crate) async fn entity(
     } else {
         "created"
     };
-    println!("{verb} entity {id} ({n} links)");
+    println!("{}", entity_success_line(verb, id, n));
     Ok(())
+}
+
+/// Builds the one-line success message for `entity`: a green check mark
+/// followed by plain-colored text.
+fn entity_success_line(verb: &str, id: &str, n: u64) -> String {
+    format!(
+        "{} {verb} entity {id} ({n} links)",
+        ux::theme::success(ux::theme::CHECK)
+    )
 }
 
 /// Render one recalled memory row as a single compact line. Tolerant of which
@@ -546,5 +561,19 @@ mod tests {
         let row = json!({ "memory_type": "fact", "content": long_body });
         let line = render_memory_line(&row);
         assert!(line.contains('…'));
+    }
+
+    #[test]
+    fn remember_success_line_includes_verb_and_id() {
+        let line = remember_success_line("saved", "abc-123");
+        assert!(line.contains("saved memory abc-123"));
+        assert!(line.contains(ux::theme::CHECK));
+    }
+
+    #[test]
+    fn entity_success_line_includes_verb_id_and_link_count() {
+        let line = entity_success_line("created", "xyz-789", 3);
+        assert!(line.contains("created entity xyz-789 (3 links)"));
+        assert!(line.contains(ux::theme::CHECK));
     }
 }
