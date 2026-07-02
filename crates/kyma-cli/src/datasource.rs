@@ -328,7 +328,7 @@ fn data_source_row(c: &Value) -> [String; 4] {
         .unwrap_or("?")
         .to_string();
     let status = if c.get("enabled").and_then(Value::as_bool).unwrap_or(true) {
-        "enabled"
+        "active"
     } else {
         "paused"
     }
@@ -851,7 +851,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn data_source_row_enabled_with_last_success() {
+    fn data_source_row_active_with_last_success() {
         let c = json!({
             "type": "github",
             "name": "kyma",
@@ -863,7 +863,7 @@ mod tests {
             [
                 "github".to_string(),
                 "kyma".to_string(),
-                "enabled".to_string(),
+                "active".to_string(),
                 "2026-07-01T00:00:00Z".to_string(),
             ]
         );
@@ -896,7 +896,7 @@ mod tests {
             [
                 "?".to_string(),
                 "?".to_string(),
-                "enabled".to_string(),
+                "active".to_string(),
                 "never".to_string(),
             ]
         );
