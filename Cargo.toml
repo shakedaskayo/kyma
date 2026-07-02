@@ -45,7 +45,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.21"
+version = "0.0.22"
 edition = "2021"
 rust-version = "1.95"
 license = "MIT"
@@ -158,43 +158,43 @@ fastrand = "2"
 # `version` alongside `path` so the closure is publishable to crates.io: cargo
 # uses the path for workspace builds and the version requirement for published
 # crates. Kept in lockstep with [workspace.package] version.
-kyma-core              = { path = "crates/kyma-core",            version = "0.0.21" }
-kyma-format-tlm        = { path = "crates/kyma-format-tlm",      version = "0.0.21" }
-kyma-format-parquet    = { path = "crates/kyma-format-parquet",  version = "0.0.21" }
-kyma-format-stub-vec   = { path = "crates/kyma-format-stub-vec", version = "0.0.21" }
-kyma-graph-testkit     = { path = "crates/kyma-graph-testkit",   version = "0.0.21" }
-kyma-graph-topo        = { path = "crates/kyma-graph-topo",      version = "0.0.21" }
-kyma-catalog           = { path = "crates/kyma-catalog",         version = "0.0.21" }
-kyma-catalog-sqlite    = { path = "crates/kyma-catalog-sqlite",  version = "0.0.21" }
-kyma-local             = { path = "crates/kyma-local",           version = "0.0.21" }
-kyma-storage           = { path = "crates/kyma-storage",         version = "0.0.21" }
-kyma-ingest-core       = { path = "crates/kyma-ingest-core",     version = "0.0.21" }
-kyma-ingest-rest       = { path = "crates/kyma-ingest-rest",     version = "0.0.21" }
-kyma-ingest-filedrop   = { path = "crates/kyma-ingest-filedrop", version = "0.0.21" }
-kyma-ingest-otlp       = { path = "crates/kyma-ingest-otlp",     version = "0.0.21" }
-kyma-ingest-kafka      = { path = "crates/kyma-ingest-kafka",    version = "0.0.21" }
-kyma-graph             = { path = "crates/kyma-graph",           version = "0.0.21" }
-kyma-kql               = { path = "crates/kyma-kql",             version = "0.0.21" }
-kyma-compaction        = { path = "crates/kyma-compaction",      version = "0.0.21" }
-kyma-datasources        = { path = "crates/kyma-datasources",      version = "0.0.21" }
-kyma-datasource-core    = { path = "crates/kyma-datasource-core",  version = "0.0.21" }
-kyma-codeparse         = { path = "crates/kyma-codeparse",       version = "0.0.21" }
-kyma-jobs              = { path = "crates/kyma-jobs",            version = "0.0.21" }
-kyma-index-vector      = { path = "crates/kyma-index-vector",    version = "0.0.21" }
-kyma-index-fts         = { path = "crates/kyma-index-fts",        version = "0.0.21" }
-kyma-plan              = { path = "crates/kyma-plan",            version = "0.0.21" }
-kyma-exec              = { path = "crates/kyma-exec",            version = "0.0.21" }
-kyma-federation        = { path = "crates/kyma-federation",      version = "0.0.21" }
-kyma-server            = { path = "crates/kyma-server",          version = "0.0.21" }
-kyma-cli               = { path = "crates/kyma-cli",             version = "0.0.21" }
-kyma-web-assets        = { path = "crates/kyma-web-assets",      version = "0.0.21" }
-kyma-embed             = { path = "crates/kyma-embed",           version = "0.0.21" }
-kyma-memory            = { path = "crates/kyma-memory",          version = "0.0.21" }
-kyma-artifact-graph    = { path = "crates/kyma-artifact-graph",  version = "0.0.21" }
-kyma-mcp               = { path = "crates/kyma-mcp",             version = "0.0.21" }
-kyma-queue             = { path = "crates/kyma-queue",           version = "0.0.21" }
-kyma-redact            = { path = "crates/kyma-redact",          version = "0.0.21" }
-kyma-ccmem             = { path = "crates/kyma-ccmem",           version = "0.0.21" }
+kyma-core              = { path = "crates/kyma-core",            version = "0.0.22" }
+kyma-format-tlm        = { path = "crates/kyma-format-tlm",      version = "0.0.22" }
+kyma-format-parquet    = { path = "crates/kyma-format-parquet",  version = "0.0.22" }
+kyma-format-stub-vec   = { path = "crates/kyma-format-stub-vec", version = "0.0.22" }
+kyma-graph-testkit     = { path = "crates/kyma-graph-testkit",   version = "0.0.22" }
+kyma-graph-topo        = { path = "crates/kyma-graph-topo",      version = "0.0.22" }
+kyma-catalog           = { path = "crates/kyma-catalog",         version = "0.0.22" }
+kyma-catalog-sqlite    = { path = "crates/kyma-catalog-sqlite",  version = "0.0.22" }
+kyma-local             = { path = "crates/kyma-local",           version = "0.0.22" }
+kyma-storage           = { path = "crates/kyma-storage",         version = "0.0.22" }
+kyma-ingest-core       = { path = "crates/kyma-ingest-core",     version = "0.0.22" }
+kyma-ingest-rest       = { path = "crates/kyma-ingest-rest",     version = "0.0.22" }
+kyma-ingest-filedrop   = { path = "crates/kyma-ingest-filedrop", version = "0.0.22" }
+kyma-ingest-otlp       = { path = "crates/kyma-ingest-otlp",     version = "0.0.22" }
+kyma-ingest-kafka      = { path = "crates/kyma-ingest-kafka",    version = "0.0.22" }
+kyma-graph             = { path = "crates/kyma-graph",           version = "0.0.22" }
+kyma-kql               = { path = "crates/kyma-kql",             version = "0.0.22" }
+kyma-compaction        = { path = "crates/kyma-compaction",      version = "0.0.22" }
+kyma-datasources        = { path = "crates/kyma-datasources",      version = "0.0.22" }
+kyma-datasource-core    = { path = "crates/kyma-datasource-core",  version = "0.0.22" }
+kyma-codeparse         = { path = "crates/kyma-codeparse",       version = "0.0.22" }
+kyma-jobs              = { path = "crates/kyma-jobs",            version = "0.0.22" }
+kyma-index-vector      = { path = "crates/kyma-index-vector",    version = "0.0.22" }
+kyma-index-fts         = { path = "crates/kyma-index-fts",        version = "0.0.22" }
+kyma-plan              = { path = "crates/kyma-plan",            version = "0.0.22" }
+kyma-exec              = { path = "crates/kyma-exec",            version = "0.0.22" }
+kyma-federation        = { path = "crates/kyma-federation",      version = "0.0.22" }
+kyma-server            = { path = "crates/kyma-server",          version = "0.0.22" }
+kyma-cli               = { path = "crates/kyma-cli",             version = "0.0.22" }
+kyma-web-assets        = { path = "crates/kyma-web-assets",      version = "0.0.22" }
+kyma-embed             = { path = "crates/kyma-embed",           version = "0.0.22" }
+kyma-memory            = { path = "crates/kyma-memory",          version = "0.0.22" }
+kyma-artifact-graph    = { path = "crates/kyma-artifact-graph",  version = "0.0.22" }
+kyma-mcp               = { path = "crates/kyma-mcp",             version = "0.0.22" }
+kyma-queue             = { path = "crates/kyma-queue",           version = "0.0.22" }
+kyma-redact            = { path = "crates/kyma-redact",          version = "0.0.22" }
+kyma-ccmem             = { path = "crates/kyma-ccmem",           version = "0.0.22" }
 
 # Auth
 jsonwebtoken = "9"
