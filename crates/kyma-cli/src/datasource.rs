@@ -491,7 +491,7 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
         .ok_or_else(|| anyhow!("server didn't return an id: {resp}"))?
         .to_string();
 
-    println!("Created data source {name} ({kind}) → id={id}");
+    println!("{}", add_success_line(&name, kind, &id));
     println!("  database:      {db}");
     println!("  credential:    {credential_id}");
     println!("  schedule:      every {}ms", schedule_ms);
@@ -504,6 +504,12 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
         println!("\nRun `kyma datasource trigger {id}` to start a manual tick.");
     }
     Ok(())
+}
+
+/// Builds the headline success message for `datasource add`. Pure and
+/// tested directly.
+fn add_success_line(name: &str, kind: &str, id: &str) -> String {
+    ux::theme::ok(&format!("Created data source {name} ({kind}) → id={id}"))
 }
 
 fn default_name(prefix: &str, items_csv: &str) -> String {
@@ -900,5 +906,12 @@ mod tests {
                 "never".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn add_success_line_includes_name_kind_and_id() {
+        let line = add_success_line("kyma", "github", "abc-123");
+        assert!(line.contains("Created data source kyma (github) → id=abc-123"));
+        assert!(line.contains(ux::theme::CHECK));
     }
 }
