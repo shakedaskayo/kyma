@@ -20,7 +20,7 @@ use crate::client::{self, ClientConfig};
 use crate::ux;
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Args, Subcommand};
-use comfy_table::Cell;
+use comfy_table::{Cell, Color};
 use serde_json::{json, Value};
 
 // ── argument parsing ─────────────────────────────────────────────────────────
@@ -685,22 +685,55 @@ async fn cmd_ingest_status(cfg: &ClientConfig, only: Option<&str>) -> Result<()>
         println!("(no data sources)");
         return Ok(());
     }
-    println!(
-        "{:<22}  {:<14}  {:<30}  {:<30}  {}",
-        "NAME", "TYPE", "LAST_RUN", "LAST_SUCCESS", "LAST_ERROR"
-    );
-    for c in items {
-        let name = c.get("name").and_then(Value::as_str).unwrap_or("?");
-        let kind = c.get("type").and_then(Value::as_str).unwrap_or("?");
-        let lr = c.get("last_run_at").and_then(Value::as_str).unwrap_or("-");
-        let ls = c
-            .get("last_success_at")
-            .and_then(Value::as_str)
-            .unwrap_or("-");
-        let le = c.get("last_error").and_then(Value::as_str).unwrap_or("-");
-        println!("{name:<22}  {kind:<14}  {lr:<30}  {ls:<30}  {le}");
+    let mut t = ux::table::table(vec!["NAME", "TYPE", "LAST_RUN", "LAST_SUCCESS", "LAST_ERROR"]);
+    for c in &items {
+        let [name, kind, lr, ls, le] = ingest_status_row(c);
+        let le_cell = if le == "-" {
+            Cell::new(le)
+        } else {
+            Cell::new(le).fg(Color::Red)
+        };
+        t.add_row(vec![
+            Cell::new(name),
+            Cell::new(kind),
+            Cell::new(lr),
+            Cell::new(ls),
+            le_cell,
+        ]);
     }
+    println!("{t}");
     Ok(())
+}
+
+/// Extracts the five display fields for one `ingest status` row. Pure and
+/// tested directly.
+fn ingest_status_row(c: &Value) -> [String; 5] {
+    let name = c
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_string();
+    let kind = c
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_string();
+    let lr = c
+        .get("last_run_at")
+        .and_then(Value::as_str)
+        .unwrap_or("-")
+        .to_string();
+    let ls = c
+        .get("last_success_at")
+        .and_then(Value::as_str)
+        .unwrap_or("-")
+        .to_string();
+    let le = c
+        .get("last_error")
+        .and_then(Value::as_str)
+        .unwrap_or("-")
+        .to_string();
+    [name, kind, lr, ls, le]
 }
 
 async fn cmd_ingest_tail(
@@ -938,5 +971,41 @@ mod tests {
     fn simple_op_success_line_trigger() {
         let line = simple_op_success_line("trigger", "abc");
         assert!(line.contains("triggered a run for data source abc"));
+    }
+
+    #[test]
+    fn ingest_status_row_extracts_all_fields() {
+        let c = json!({
+            "name": "kyma",
+            "type": "github",
+            "last_run_at": "t1",
+            "last_success_at": "t2",
+            "last_error": "boom",
+        });
+        assert_eq!(
+            ingest_status_row(&c),
+            [
+                "kyma".to_string(),
+                "github".to_string(),
+                "t1".to_string(),
+                "t2".to_string(),
+                "boom".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn ingest_status_row_missing_fields_use_placeholders() {
+        let c = json!({});
+        assert_eq!(
+            ingest_status_row(&c),
+            [
+                "?".to_string(),
+                "?".to_string(),
+                "-".to_string(),
+                "-".to_string(),
+                "-".to_string(),
+            ]
+        );
     }
 }
