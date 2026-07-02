@@ -766,14 +766,20 @@ async fn cmd_ingest_tail(
             let prev = last_seen.get(&id).cloned();
             if prev.as_ref() != Some(&(lr.clone(), le.clone())) && !lr.is_empty() {
                 last_seen.insert(id.clone(), (lr.clone(), le.clone()));
-                if le.is_empty() {
-                    println!("[{lr}] {name}: ok");
-                } else {
-                    println!("[{lr}] {name}: ERROR {le}");
-                }
+                println!("{}", tail_line(&lr, name, &le));
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
+    }
+}
+
+/// Builds one `ingest tail` line: green "ok" or red "ERROR {msg}". Pure and
+/// tested directly.
+fn tail_line(lr: &str, name: &str, err: &str) -> String {
+    if err.is_empty() {
+        ux::theme::ok(&format!("[{lr}] {name}: ok"))
+    } else {
+        ux::theme::bad(&format!("[{lr}] {name}: ERROR {err}"))
     }
 }
 
@@ -1007,5 +1013,19 @@ mod tests {
                 "-".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn tail_line_ok_when_no_error() {
+        let line = tail_line("2026-07-01T00:00:00Z", "kyma", "");
+        assert!(line.contains("[2026-07-01T00:00:00Z] kyma: ok"));
+        assert!(line.contains(ux::theme::CHECK));
+    }
+
+    #[test]
+    fn tail_line_error_includes_message() {
+        let line = tail_line("2026-07-01T00:00:00Z", "kyma", "connection refused");
+        assert!(line.contains("[2026-07-01T00:00:00Z] kyma: ERROR connection refused"));
+        assert!(line.contains(ux::theme::CROSS));
     }
 }
