@@ -17,8 +17,10 @@
 //!   4. (future) `gh auth token` shell-out if `gh` is on PATH
 
 use crate::client::{self, ClientConfig};
+use crate::ux;
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Args, Subcommand};
+use comfy_table::{Cell, Color};
 use serde_json::{json, Value};
 
 // ── argument parsing ─────────────────────────────────────────────────────────
@@ -298,26 +300,46 @@ async fn cmd_list(cfg: &ClientConfig) -> Result<()> {
         println!("(no data sources registered)");
         return Ok(());
     }
-    println!(
-        "{:<14}  {:<22}  {:<10}  {}",
-        "TYPE", "NAME", "STATUS", "LAST"
-    );
-    for c in items {
-        let kind = c.get("type").and_then(Value::as_str).unwrap_or("?");
-        let name = c.get("name").and_then(Value::as_str).unwrap_or("?");
-        let status = if c.get("enabled").and_then(Value::as_bool).unwrap_or(true) {
-            "enabled"
-        } else {
-            "paused"
-        };
-        let last = c
-            .get("last_success_at")
-            .and_then(Value::as_str)
-            .or_else(|| c.get("last_run_at").and_then(Value::as_str))
-            .unwrap_or("never");
-        println!("{kind:<14}  {name:<22}  {status:<10}  {last}");
+    let mut t = ux::table::table(vec!["TYPE", "NAME", "STATUS", "LAST"]);
+    for c in &items {
+        let [kind, name, status, last] = data_source_row(c);
+        t.add_row(vec![
+            Cell::new(kind),
+            Cell::new(name),
+            ux::table::status_cell(&status),
+            Cell::new(last),
+        ]);
     }
+    println!("{t}");
     Ok(())
+}
+
+/// Extracts the four display fields for one `datasource list` row. Pure and
+/// tested directly — `cmd_list` just formats what this returns.
+fn data_source_row(c: &Value) -> [String; 4] {
+    let kind = c
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_string();
+    let name = c
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_string();
+    let status = if c.get("enabled").and_then(Value::as_bool).unwrap_or(true) {
+        "active"
+    } else {
+        "paused"
+    }
+    .to_string();
+    let last = c
+        .get("last_success_at")
+        .and_then(Value::as_str)
+        .or_else(|| c.get("last_run_at").and_then(Value::as_str))
+        .unwrap_or("never")
+        .to_string();
+    [kind, name, status, last]
 }
 
 // ── add ─────────────────────────────────────────────────────────────────────
@@ -469,7 +491,7 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
         .ok_or_else(|| anyhow!("server didn't return an id: {resp}"))?
         .to_string();
 
-    println!("Created data source {name} ({kind}) → id={id}");
+    println!("{}", add_success_line(&name, kind, &id));
     println!("  database:      {db}");
     println!("  credential:    {credential_id}");
     println!("  schedule:      every {}ms", schedule_ms);
@@ -482,6 +504,12 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
         println!("\nRun `kyma datasource trigger {id}` to start a manual tick.");
     }
     Ok(())
+}
+
+/// Builds the headline success message for `datasource add`. Pure and
+/// tested directly.
+fn add_success_line(name: &str, kind: &str, id: &str) -> String {
+    ux::theme::ok(&format!("Created data source {name} ({kind}) → id={id}"))
 }
 
 fn default_name(prefix: &str, items_csv: &str) -> String {
@@ -596,6 +624,13 @@ async fn cmd_show(cfg: &ClientConfig, name_or_id: &str) -> Result<()> {
 async fn cmd_simple_op(cfg: &ClientConfig, name_or_id: &str, op: &str) -> Result<()> {
     let id = resolve_id(cfg, name_or_id).await?;
     http_post(cfg, &format!("/v1/data-sources/{id}/{op}"), &json!({})).await?;
+    println!("{}", simple_op_success_line(op, &id));
+    Ok(())
+}
+
+/// Builds the success message for pause/resume/trigger. Pure and tested
+/// directly.
+fn simple_op_success_line(op: &str, id: &str) -> String {
     // Past-tense per op — "{op}d" only reads right for pause/resume.
     let past = match op {
         "trigger" => "triggered a run for",
@@ -603,8 +638,7 @@ async fn cmd_simple_op(cfg: &ClientConfig, name_or_id: &str, op: &str) -> Result
         "resume" => "resumed",
         other => other,
     };
-    println!("{past} data source {id}");
-    Ok(())
+    ux::theme::ok(&format!("{past} data source {id}"))
 }
 
 async fn cmd_remove(cfg: &ClientConfig, name_or_id: &str, yes: bool) -> Result<()> {
@@ -616,12 +650,12 @@ async fn cmd_remove(cfg: &ClientConfig, name_or_id: &str, yes: bool) -> Result<(
         let mut s = String::new();
         stdin().read_line(&mut s).ok();
         if !matches!(s.trim().to_lowercase().as_str(), "y" | "yes") {
-            println!("aborted");
+            println!("{}", ux::theme::muted("aborted"));
             return Ok(());
         }
     }
     http_delete(cfg, &format!("/v1/data-sources/{id}")).await?;
-    println!("removed data source {id}");
+    println!("{}", ux::theme::ok(&format!("removed data source {id}")));
     Ok(())
 }
 
@@ -651,22 +685,55 @@ async fn cmd_ingest_status(cfg: &ClientConfig, only: Option<&str>) -> Result<()>
         println!("(no data sources)");
         return Ok(());
     }
-    println!(
-        "{:<22}  {:<14}  {:<30}  {:<30}  {}",
-        "NAME", "TYPE", "LAST_RUN", "LAST_SUCCESS", "LAST_ERROR"
-    );
-    for c in items {
-        let name = c.get("name").and_then(Value::as_str).unwrap_or("?");
-        let kind = c.get("type").and_then(Value::as_str).unwrap_or("?");
-        let lr = c.get("last_run_at").and_then(Value::as_str).unwrap_or("-");
-        let ls = c
-            .get("last_success_at")
-            .and_then(Value::as_str)
-            .unwrap_or("-");
-        let le = c.get("last_error").and_then(Value::as_str).unwrap_or("-");
-        println!("{name:<22}  {kind:<14}  {lr:<30}  {ls:<30}  {le}");
+    let mut t = ux::table::table(vec!["NAME", "TYPE", "LAST_RUN", "LAST_SUCCESS", "LAST_ERROR"]);
+    for c in &items {
+        let [name, kind, lr, ls, le] = ingest_status_row(c);
+        let le_cell = if le == "-" {
+            Cell::new(le)
+        } else {
+            Cell::new(le).fg(Color::Red)
+        };
+        t.add_row(vec![
+            Cell::new(name),
+            Cell::new(kind),
+            Cell::new(lr),
+            Cell::new(ls),
+            le_cell,
+        ]);
     }
+    println!("{t}");
     Ok(())
+}
+
+/// Extracts the five display fields for one `ingest status` row. Pure and
+/// tested directly.
+fn ingest_status_row(c: &Value) -> [String; 5] {
+    let name = c
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_string();
+    let kind = c
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_string();
+    let lr = c
+        .get("last_run_at")
+        .and_then(Value::as_str)
+        .unwrap_or("-")
+        .to_string();
+    let ls = c
+        .get("last_success_at")
+        .and_then(Value::as_str)
+        .unwrap_or("-")
+        .to_string();
+    let le = c
+        .get("last_error")
+        .and_then(Value::as_str)
+        .unwrap_or("-")
+        .to_string();
+    [name, kind, lr, ls, le]
 }
 
 async fn cmd_ingest_tail(
@@ -699,14 +766,20 @@ async fn cmd_ingest_tail(
             let prev = last_seen.get(&id).cloned();
             if prev.as_ref() != Some(&(lr.clone(), le.clone())) && !lr.is_empty() {
                 last_seen.insert(id.clone(), (lr.clone(), le.clone()));
-                if le.is_empty() {
-                    println!("[{lr}] {name}: ok");
-                } else {
-                    println!("[{lr}] {name}: ERROR {le}");
-                }
+                println!("{}", tail_line(&lr, name, &le));
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
+    }
+}
+
+/// Builds one `ingest tail` line: green "ok" or red "ERROR {msg}". Pure and
+/// tested directly.
+fn tail_line(lr: &str, name: &str, err: &str) -> String {
+    if err.is_empty() {
+        ux::theme::ok(&format!("[{lr}] {name}: ok"))
+    } else {
+        ux::theme::bad(&format!("[{lr}] {name}: ERROR {err}"))
     }
 }
 
@@ -822,4 +895,137 @@ async fn http_delete(cfg: &ClientConfig, path: &str) -> Result<()> {
         bail!("DELETE {path}: {status}: {body}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn data_source_row_active_with_last_success() {
+        let c = json!({
+            "type": "github",
+            "name": "kyma",
+            "enabled": true,
+            "last_success_at": "2026-07-01T00:00:00Z",
+        });
+        assert_eq!(
+            data_source_row(&c),
+            [
+                "github".to_string(),
+                "kyma".to_string(),
+                "active".to_string(),
+                "2026-07-01T00:00:00Z".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn data_source_row_paused_falls_back_to_last_run() {
+        let c = json!({
+            "type": "gitlab",
+            "name": "proj",
+            "enabled": false,
+            "last_run_at": "2026-06-01T00:00:00Z",
+        });
+        assert_eq!(
+            data_source_row(&c),
+            [
+                "gitlab".to_string(),
+                "proj".to_string(),
+                "paused".to_string(),
+                "2026-06-01T00:00:00Z".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn data_source_row_missing_fields_use_placeholders() {
+        let c = json!({});
+        assert_eq!(
+            data_source_row(&c),
+            [
+                "?".to_string(),
+                "?".to_string(),
+                "active".to_string(),
+                "never".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn add_success_line_includes_name_kind_and_id() {
+        let line = add_success_line("kyma", "github", "abc-123");
+        assert!(line.contains("Created data source kyma (github) → id=abc-123"));
+        assert!(line.contains(ux::theme::CHECK));
+    }
+
+    #[test]
+    fn simple_op_success_line_pause() {
+        let line = simple_op_success_line("pause", "abc");
+        assert!(line.contains("paused data source abc"));
+        assert!(line.contains(ux::theme::CHECK));
+    }
+
+    #[test]
+    fn simple_op_success_line_resume() {
+        let line = simple_op_success_line("resume", "abc");
+        assert!(line.contains("resumed data source abc"));
+    }
+
+    #[test]
+    fn simple_op_success_line_trigger() {
+        let line = simple_op_success_line("trigger", "abc");
+        assert!(line.contains("triggered a run for data source abc"));
+    }
+
+    #[test]
+    fn ingest_status_row_extracts_all_fields() {
+        let c = json!({
+            "name": "kyma",
+            "type": "github",
+            "last_run_at": "t1",
+            "last_success_at": "t2",
+            "last_error": "boom",
+        });
+        assert_eq!(
+            ingest_status_row(&c),
+            [
+                "kyma".to_string(),
+                "github".to_string(),
+                "t1".to_string(),
+                "t2".to_string(),
+                "boom".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn ingest_status_row_missing_fields_use_placeholders() {
+        let c = json!({});
+        assert_eq!(
+            ingest_status_row(&c),
+            [
+                "?".to_string(),
+                "?".to_string(),
+                "-".to_string(),
+                "-".to_string(),
+                "-".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn tail_line_ok_when_no_error() {
+        let line = tail_line("2026-07-01T00:00:00Z", "kyma", "");
+        assert!(line.contains("[2026-07-01T00:00:00Z] kyma: ok"));
+        assert!(line.contains(ux::theme::CHECK));
+    }
+
+    #[test]
+    fn tail_line_error_includes_message() {
+        let line = tail_line("2026-07-01T00:00:00Z", "kyma", "connection refused");
+        assert!(line.contains("[2026-07-01T00:00:00Z] kyma: ERROR connection refused"));
+        assert!(line.contains(ux::theme::CROSS));
+    }
 }

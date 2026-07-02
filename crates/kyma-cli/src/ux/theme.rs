@@ -72,6 +72,14 @@ pub(crate) fn accent(text: &str) -> String {
     apply(text, Style::new().magenta().bold(), color_enabled())
 }
 
+pub(crate) fn ok(text: &str) -> String {
+    success(&format!("{CHECK} {text}"))
+}
+
+pub(crate) fn bad(text: &str) -> String {
+    error(&format!("{CROSS} {text}"))
+}
+
 pub(crate) const CHECK: &str = "✓";
 pub(crate) const CROSS: &str = "✗";
 pub(crate) const ARROW: &str = "→";
@@ -103,5 +111,21 @@ mod tests {
     #[test]
     fn stderr_color_enabled_defaults_true_when_uninitialized() {
         assert!(stderr_color_enabled());
+    }
+
+    #[test]
+    fn ok_prefixes_check_glyph_and_matches_success_styling() {
+        let line = ok("done");
+        assert!(line.contains("done"));
+        assert!(line.contains(CHECK));
+        assert_eq!(line, success(&format!("{CHECK} done")));
+    }
+
+    #[test]
+    fn bad_prefixes_cross_glyph_and_matches_error_styling() {
+        let line = bad("failed");
+        assert!(line.contains("failed"));
+        assert!(line.contains(CROSS));
+        assert_eq!(line, error(&format!("{CROSS} failed")));
     }
 }
