@@ -17,6 +17,7 @@ use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 
 use crate::client::{self, ClientConfig};
+use crate::ux;
 
 // ── ingest push ──────────────────────────────────────────────────────────────
 
@@ -141,8 +142,14 @@ pub(crate) async fn remember(
     } else {
         "saved"
     };
-    println!("{verb} memory {id}");
+    println!("{}", remember_success_line(verb, id));
     Ok(())
+}
+
+/// Builds the one-line success message for `remember`: a green check mark
+/// followed by plain-colored text.
+fn remember_success_line(verb: &str, id: &str) -> String {
+    format!("{} {verb} memory {id}", ux::theme::success(ux::theme::CHECK))
 }
 
 // ── entity ─────────────────────────────────────────────────────────────────
@@ -206,8 +213,17 @@ pub(crate) async fn entity(
     } else {
         "created"
     };
-    println!("{verb} entity {id} ({n} links)");
+    println!("{}", entity_success_line(verb, id, n));
     Ok(())
+}
+
+/// Builds the one-line success message for `entity`: a green check mark
+/// followed by plain-colored text.
+fn entity_success_line(verb: &str, id: &str, n: u64) -> String {
+    format!(
+        "{} {verb} entity {id} ({n} links)",
+        ux::theme::success(ux::theme::CHECK)
+    )
 }
 
 /// Render one recalled memory row as a single compact line. Tolerant of which
@@ -229,11 +245,12 @@ fn render_memory_line(row: &Value) -> String {
         .or_else(|| row.get("content").and_then(Value::as_str))
         .unwrap_or("")
         .trim();
-    let body: String = body.chars().take(280).collect();
-    match score {
-        Some(s) => format!("- [{mtype} {:.2}] {body}", s),
-        None => format!("- [{mtype}] {body}"),
-    }
+    let body = ux::format::truncate(body, 280);
+    let prefix = match score {
+        Some(s) => ux::format::score_style(s as f32, &format!("[{mtype} {s:.2}]")),
+        None => ux::theme::muted(&format!("[{mtype}]")),
+    };
+    format!("{} {prefix} {body}", ux::theme::BULLET)
 }
 
 /// Issue a single stateless MCP `tools/call` and return its `structuredContent`.
@@ -274,7 +291,10 @@ const DISTILL_MAX_CHARS: usize = 60_000;
 
 /// Read a session transcript from stdin and hand it to the kyma agent (which
 /// owns `save_memory`) with an extraction instruction. The agent persists the
-/// durable memories; we stay quiet unless `KYMA_DISTILL_VERBOSE` is set.
+/// durable memories. Shows a progress spinner while waiting (silent plain
+/// fallback when stderr isn't a terminal — e.g. when a hook pipes it to a
+/// log file); stays quiet about the *extracted memories themselves* unless
+/// `KYMA_DISTILL_VERBOSE` is set.
 pub(crate) async fn distill(_session: Option<String>, realm: Option<String>) -> Result<()> {
     let cfg = client::effective_config()?;
     let mut transcript = String::new();
@@ -302,7 +322,8 @@ you saved.\n\n--- SESSION TRANSCRIPT ---\n{transcript}"
     );
 
     let verbose = std::env::var_os("KYMA_DISTILL_VERBOSE").is_some();
-    client::stream_agent_ask(&cfg, &instruction, None, |event, data| {
+    let spinner = (!verbose).then(|| ux::spinner::spinner("distilling memories"));
+    let result = client::stream_agent_ask(&cfg, &instruction, None, |event, data| {
         if !verbose {
             return;
         }
@@ -316,8 +337,17 @@ you saved.\n\n--- SESSION TRANSCRIPT ---\n{transcript}"
             }
         }
     })
-    .await?;
-    Ok(())
+    .await;
+    if let Some(s) = &spinner {
+        match &result {
+            Ok(()) => s.finish_success("distilled memories"),
+            // Deliberately short — the full cause chain + hint is printed by
+            // main()'s unified error handler once this Err propagates; a
+            // second copy of the same text here would just be noise.
+            Err(_) => s.finish_error("distill failed"),
+        }
+    }
+    result
 }
 
 // ── install-plugin ───────────────────────────────────────────────────────────
@@ -498,3 +528,65 @@ fn set_private(path: &Path) {
 }
 #[cfg(not(unix))]
 fn set_private(_path: &Path) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_memory_line_includes_type_and_body() {
+        let row = json!({
+            "memory_type": "decision",
+            "score": 0.92,
+            "content": "use worktrees for all branch work",
+        });
+        let line = render_memory_line(&row);
+        assert!(line.contains("decision"));
+        assert!(line.contains("0.92"));
+        assert!(line.contains("use worktrees for all branch work"));
+    }
+
+    #[test]
+    fn render_memory_line_falls_back_to_title_then_preview_then_content() {
+        let row = json!({
+            "memory_type": "fact",
+            "title": "preferred title",
+            "content_preview": "should not appear",
+            "content": "should not appear either",
+        });
+        let line = render_memory_line(&row);
+        assert!(line.contains("preferred title"));
+        assert!(!line.contains("should not appear"));
+    }
+
+    #[test]
+    fn render_memory_line_handles_missing_score() {
+        let row = json!({ "memory_type": "learning", "content": "no score here" });
+        let line = render_memory_line(&row);
+        assert!(line.contains("learning"));
+        assert!(line.contains("no score here"));
+        assert!(!line.contains("0."));
+    }
+
+    #[test]
+    fn render_memory_line_truncates_long_body_with_ellipsis() {
+        let long_body = "word ".repeat(100); // 500 chars, trims to 499
+        let row = json!({ "memory_type": "fact", "content": long_body });
+        let line = render_memory_line(&row);
+        assert!(line.contains('…'));
+    }
+
+    #[test]
+    fn remember_success_line_includes_verb_and_id() {
+        let line = remember_success_line("saved", "abc-123");
+        assert!(line.contains("saved memory abc-123"));
+        assert!(line.contains(ux::theme::CHECK));
+    }
+
+    #[test]
+    fn entity_success_line_includes_verb_id_and_link_count() {
+        let line = entity_success_line("created", "xyz-789", 3);
+        assert!(line.contains("created entity xyz-789 (3 links)"));
+        assert!(line.contains(ux::theme::CHECK));
+    }
+}

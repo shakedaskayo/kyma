@@ -986,28 +986,42 @@ async fn cmd_status() -> Result<()> {
     match load_config() {
         Ok(cfg) => {
             println!("Endpoint:  {}", cfg.endpoint);
-            println!(
-                "Token:     {}",
-                if cfg.token.is_some() {
-                    "configured"
-                } else {
-                    "not set"
-                }
-            );
+            let token_line = if cfg.token.is_some() {
+                ux::theme::success(&format!("{} configured", ux::theme::CHECK))
+            } else {
+                ux::theme::muted(&format!("{} not set", ux::theme::CROSS))
+            };
+            println!("Token:     {token_line}");
             // Use effective_config for probes so KYMA_SERVER_URL/KYMA_TOKEN env
             // overrides are honoured; fall back to the on-disk config if it fails.
             let probe_cfg = effective_config().unwrap_or_else(|_| cfg.clone());
             match probe_health(&probe_cfg).await {
-                Ok(body) => println!("Health:    {}", body.trim()),
-                Err(e) => println!("Health:    error — {e}"),
+                Ok(body) => println!(
+                    "Health:    {}",
+                    ux::theme::success(&format!("{} {}", ux::theme::CHECK, body.trim()))
+                ),
+                Err(e) => println!(
+                    "Health:    {}",
+                    ux::theme::error(&format!("{} error — {e}", ux::theme::CROSS))
+                ),
             }
             match probe_auth(&probe_cfg).await {
-                Ok(true) => println!("Auth:      ok (token accepted)"),
-                Ok(false) => println!(
-                    "Auth:      TOKEN REJECTED — the server does not accept the configured token.\n           Fix: re-run the installer, or `kyma service install --addr <addr> --token <tok>`,\n           or `kyma connect {} --token <tok>` with the server's real token.",
-                    probe_cfg.endpoint
+                Ok(true) => println!(
+                    "Auth:      {}",
+                    ux::theme::success(&format!("{} ok (token accepted)", ux::theme::CHECK))
                 ),
-                Err(e) => println!("Auth:      probe error — {e}"),
+                Ok(false) => println!(
+                    "Auth:      {}",
+                    ux::theme::warn(&format!(
+                        "{} TOKEN REJECTED — the server does not accept the configured token.\n           Fix: re-run the installer, or `kyma service install --addr <addr> --token <tok>`,\n           or `kyma connect {} --token <tok>` with the server's real token.",
+                        ux::theme::CROSS,
+                        probe_cfg.endpoint
+                    ))
+                ),
+                Err(e) => println!(
+                    "Auth:      {}",
+                    ux::theme::error(&format!("{} probe error — {e}", ux::theme::CROSS))
+                ),
             }
             // Hook-side capture health (written by the kyma-memory plugin hooks).
             if let Ok(dir) = client::config_dir() {
@@ -1015,17 +1029,30 @@ async fn cmd_status() -> Result<()> {
                 if let Ok(raw) = std::fs::read_to_string(&p) {
                     let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
                     println!(
-                        "Capture:   LAST INGEST FAILED at {} — {}",
-                        v["ts"].as_str().unwrap_or("?"),
-                        v["detail"].as_str().unwrap_or("unknown error"),
+                        "Capture:   {}",
+                        ux::theme::error(&format!(
+                            "{} LAST INGEST FAILED at {} — {}",
+                            ux::theme::CROSS,
+                            v["ts"].as_str().unwrap_or("?"),
+                            v["detail"].as_str().unwrap_or("unknown error"),
+                        ))
                     );
                 } else {
-                    println!("Capture:   ok (no recorded hook failures)");
+                    println!(
+                        "Capture:   {}",
+                        ux::theme::success(&format!(
+                            "{} ok (no recorded hook failures)",
+                            ux::theme::CHECK
+                        ))
+                    );
                 }
             }
         }
         Err(_) => {
-            println!("No config found. Run `kyma connect <url>` first.");
+            println!(
+                "{}",
+                ux::theme::muted("No config found. Run `kyma connect <url>` first.")
+            );
         }
     }
     Ok(())
