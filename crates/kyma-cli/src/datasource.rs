@@ -624,6 +624,13 @@ async fn cmd_show(cfg: &ClientConfig, name_or_id: &str) -> Result<()> {
 async fn cmd_simple_op(cfg: &ClientConfig, name_or_id: &str, op: &str) -> Result<()> {
     let id = resolve_id(cfg, name_or_id).await?;
     http_post(cfg, &format!("/v1/data-sources/{id}/{op}"), &json!({})).await?;
+    println!("{}", simple_op_success_line(op, &id));
+    Ok(())
+}
+
+/// Builds the success message for pause/resume/trigger. Pure and tested
+/// directly.
+fn simple_op_success_line(op: &str, id: &str) -> String {
     // Past-tense per op — "{op}d" only reads right for pause/resume.
     let past = match op {
         "trigger" => "triggered a run for",
@@ -631,8 +638,7 @@ async fn cmd_simple_op(cfg: &ClientConfig, name_or_id: &str, op: &str) -> Result
         "resume" => "resumed",
         other => other,
     };
-    println!("{past} data source {id}");
-    Ok(())
+    ux::theme::ok(&format!("{past} data source {id}"))
 }
 
 async fn cmd_remove(cfg: &ClientConfig, name_or_id: &str, yes: bool) -> Result<()> {
@@ -644,12 +650,12 @@ async fn cmd_remove(cfg: &ClientConfig, name_or_id: &str, yes: bool) -> Result<(
         let mut s = String::new();
         stdin().read_line(&mut s).ok();
         if !matches!(s.trim().to_lowercase().as_str(), "y" | "yes") {
-            println!("aborted");
+            println!("{}", ux::theme::muted("aborted"));
             return Ok(());
         }
     }
     http_delete(cfg, &format!("/v1/data-sources/{id}")).await?;
-    println!("removed data source {id}");
+    println!("{}", ux::theme::ok(&format!("removed data source {id}")));
     Ok(())
 }
 
@@ -913,5 +919,24 @@ mod tests {
         let line = add_success_line("kyma", "github", "abc-123");
         assert!(line.contains("Created data source kyma (github) → id=abc-123"));
         assert!(line.contains(ux::theme::CHECK));
+    }
+
+    #[test]
+    fn simple_op_success_line_pause() {
+        let line = simple_op_success_line("pause", "abc");
+        assert!(line.contains("paused data source abc"));
+        assert!(line.contains(ux::theme::CHECK));
+    }
+
+    #[test]
+    fn simple_op_success_line_resume() {
+        let line = simple_op_success_line("resume", "abc");
+        assert!(line.contains("resumed data source abc"));
+    }
+
+    #[test]
+    fn simple_op_success_line_trigger() {
+        let line = simple_op_success_line("trigger", "abc");
+        assert!(line.contains("triggered a run for data source abc"));
     }
 }
