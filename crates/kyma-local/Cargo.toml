@@ -27,6 +27,7 @@ kyma-server = { workspace = true, features = ["web-ui"] }
 kyma-mcp.workspace = true
 kyma-memory.workspace = true
 kyma-ccmem.workspace = true
+kyma-brain.workspace = true
 kyma-ingest-rest.workspace = true
 kyma-ingest-core.workspace = true
 tokio.workspace = true

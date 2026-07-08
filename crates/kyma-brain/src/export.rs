@@ -62,6 +62,16 @@ pub async fn run_export(
 
     let VaultPlan { mut files, manifest, note_count } = plan_vault(cfg, &prior, nodes, edges)?;
 
+    // Paths whose pushed file was already ingested into memory (topic_key
+    // `brain:<name>:<path>`, minted by push-ingest for new files). The
+    // canonical note now renders under notes/… so the original pushed file
+    // (e.g. in inbox/) is re-filed, not preserved.
+    let ingested_prefix = crate::topic_key(&cfg.name, "");
+    let ingested_paths: std::collections::BTreeSet<&str> = nodes
+        .iter()
+        .filter_map(|n| n.topic_key.as_deref()?.strip_prefix(ingested_prefix.as_str()))
+        .collect();
+
     // Preserve everything in HEAD that the previous export didn't own.
     let mut preserved = 0u64;
     if let Some(head) = &head {
@@ -69,7 +79,10 @@ pub async fn run_export(
         let generated: std::collections::BTreeSet<String> =
             files.iter().map(|f| f.path.clone()).collect();
         for path in git.ls_tree_paths(repo, head).await? {
-            if owned_prev.contains(&path) || generated.contains(&path) {
+            if owned_prev.contains(&path)
+                || generated.contains(&path)
+                || ingested_paths.contains(path.as_str())
+            {
                 continue;
             }
             let bytes = git.cat_file(repo, head, &path).await?;

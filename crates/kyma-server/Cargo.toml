@@ -26,6 +26,9 @@ kyma-artifact-graph.workspace = true
 kyma-embed.workspace = true
 kyma-redact.workspace = true
 kyma-ccmem.workspace = true
+kyma-brain.workspace = true
+# Git clients gzip upload-pack negotiation bodies (brain smart-HTTP).
+flate2 = "1"
 # Local degraded-mode dreaming persists finished runs into the embedded SQLite
 # catalog (dreaming_local.rs downcasts the Catalog to SqliteCatalog).
 kyma-catalog-sqlite.workspace = true

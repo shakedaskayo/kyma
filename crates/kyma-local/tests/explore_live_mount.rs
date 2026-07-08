@@ -40,7 +40,7 @@ async fn local_app() -> axum::Router {
     // return 401.
     let backend: Arc<dyn kyma_server::auth::AuthBackend> =
         Arc::new(EnvAuthBackend::from_str("test-token:read"));
-    let (app, _agent_state) = build_local_app(catalog, format, backend, None, None, None, None, None, kyma_local::watcher_status::LocalWatcherStatus::default());
+    let (app, _agent_state) = build_local_app(catalog, format, backend, None, None, None, None, None, kyma_local::watcher_status::LocalWatcherStatus::default(), None);
     app
 }
 
