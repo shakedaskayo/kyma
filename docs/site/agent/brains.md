@@ -108,6 +108,24 @@ Git speaks HTTP Basic: the kyma API token rides as the password (username is ign
 | `kyma brain url <name> [--with-token]` | print the clone URL |
 | `kyma brain delete <name> [--yes]` | remove repo + registry entry (memories untouched) |
 
+## Importing an existing vault (the other direction)
+
+Brains *publish* memory as a vault. To go the other way — pull an existing
+Obsidian vault (including a team's shared git repo) *into* memory — add an
+**Obsidian data source**. It takes either a local folder or a git URL:
+
+```bash
+kyma datasource add   # → pick Obsidian, or via the web UI: Data Sources → Add
+# fields: git_url = https://github.com/org/team-vault.git
+#         git_token (private repos), branch, vault name (→ realm)
+```
+
+kyma clones the repo into `${KYMA_HOME}/vaults/<id>`, ingests every note
+(wikilinks become graph edges, deleted notes archive), and pulls it again on
+the source's schedule so the memory stays fresh. Local-folder vaults are
+watched live by the file watcher instead. This is the inverse of a brain: the
+imported notes become recallable memory, which a brain can then re-publish.
+
 ## Operations
 
 - Repos live at `${KYMA_HOME}/brain/<name>.git` (local mode) or `KYMA_BRAIN_DIR` (hosted, default `/var/lib/kyma/brain` — mount a persistent volume).
