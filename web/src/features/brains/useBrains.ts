@@ -5,6 +5,8 @@ import {
   createBrain,
   deleteBrain,
   getBrain,
+  getBrainFile,
+  getBrainTree,
   listBrains,
   triggerBrainExport,
   triggerBrainGardener,
@@ -98,6 +100,26 @@ export function useTriggerExport(name: string) {
       );
     },
     onError: (e) => toast.error(`Export failed: ${(e as Error).message}`),
+  });
+}
+
+export function useBrainTree(name: string | null) {
+  const { endpoint, token, database } = useSession();
+  return useQuery({
+    queryKey: ["brains", "tree", endpoint, database, name ?? ""],
+    queryFn: () => getBrainTree({ endpoint, token, database, name: name! }),
+    enabled: Boolean(endpoint && name),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useBrainFile(name: string | null, path: string | null) {
+  const { endpoint, token, database } = useSession();
+  return useQuery({
+    queryKey: ["brains", "file", endpoint, database, name ?? "", path ?? ""],
+    queryFn: () => getBrainFile({ endpoint, token, database, name: name!, path: path! }),
+    enabled: Boolean(endpoint && name && path),
+    staleTime: 10_000,
   });
 }
 

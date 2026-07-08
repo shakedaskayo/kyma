@@ -7,5 +7,9 @@ export const Route = createFileRoute("/_app/brains/$name")({
 
 function BrainDetailPage() {
   const { name } = Route.useParams();
-  return <BrainDetail name={name} />;
+  return (
+    <div className="mx-auto h-full w-full max-w-6xl">
+      <BrainDetail name={name} />
+    </div>
+  );
 }

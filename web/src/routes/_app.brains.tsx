@@ -28,10 +28,8 @@ function BrainsLayout() {
           </div>
         </div>
       </header>
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-6xl px-6 py-5">
-          <Outlet />
-        </div>
+      <div className="min-h-0 flex-1">
+        <Outlet />
       </div>
     </div>
   );

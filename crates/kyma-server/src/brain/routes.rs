@@ -33,6 +33,8 @@ pub fn brain_router(state: BrainState) -> axum::Router {
         .route("/v1/brain/:name/garden", post(garden_handler))
         .route("/v1/brain/:name/runs", get(runs_handler))
         .route("/v1/brain/:name/clone-info", get(clone_info_handler))
+        .route("/v1/brain/:name/tree", get(tree_handler))
+        .route("/v1/brain/:name/file", get(file_handler))
         .with_state(state)
 }
 
@@ -418,6 +420,84 @@ async fn runs_handler(State(state): State<BrainState>, Path(name): Path<String>)
         Ok(Some(rec)) => Json(json!({ "runs": rec.runtime.runs })).into_response(),
         Ok(None) => err(StatusCode::NOT_FOUND, format!("brain `{name}` not found")),
         Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+/// Resolve a brain to (git, repo dir, HEAD sha) for the read-only browse
+/// endpoints. 404s cover unknown brains and never-exported repos alike.
+async fn browse_repo(
+    state: &BrainState,
+    name: &str,
+) -> Result<(std::sync::Arc<kyma_brain::gitbin::GitBin>, std::path::PathBuf, String), Response> {
+    let Some(git) = state.git.clone() else {
+        return Err(err(StatusCode::SERVICE_UNAVAILABLE, "git binary not found on server host"));
+    };
+    match state.registry.get(name).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return Err(err(StatusCode::NOT_FOUND, format!("brain `{name}` not found"))),
+        Err(e) => return Err(err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+    let dir = state.repo_dir(name);
+    let head = match git.rev_parse(&dir, &format!("refs/heads/{}", kyma_brain::BRAIN_BRANCH)).await
+    {
+        Ok(Some(h)) => h,
+        Ok(None) => return Err(err(StatusCode::NOT_FOUND, "brain has no exports yet")),
+        Err(e) => return Err(err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    };
+    Ok((git, dir, head))
+}
+
+/// `GET /v1/brain/:name/tree` — every path in the vault at HEAD, for the
+/// web UI's Obsidian-style browser. Titles are derived client-side from
+/// filenames (no per-blob reads — trees stay O(1) git calls).
+async fn tree_handler(State(state): State<BrainState>, Path(name): Path<String>) -> Response {
+    let (git, dir, head) = match browse_repo(&state, &name).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    match git.ls_tree_paths(&dir, &head).await {
+        Ok(paths) => Json(json!({ "head": head, "paths": paths })).into_response(),
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct FileParams {
+    path: String,
+}
+
+/// Max blob size served through the browse endpoint (the UI renders notes,
+/// not packfiles).
+const MAX_BROWSE_BYTES: usize = 2 * 1024 * 1024;
+
+/// `GET /v1/brain/:name/file?path=…` — one blob at HEAD as JSON
+/// `{path, head, content}` (UTF-8 only; binary → 415).
+async fn file_handler(
+    State(state): State<BrainState>,
+    Path(name): Path<String>,
+    Query(params): Query<FileParams>,
+) -> Response {
+    let path = params.path;
+    if path.is_empty()
+        || path.starts_with('/')
+        || path.split('/').any(|seg| seg.is_empty() || seg == "." || seg == "..")
+    {
+        return err(StatusCode::BAD_REQUEST, "invalid path");
+    }
+    let (git, dir, head) = match browse_repo(&state, &name).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    match git.cat_file(&dir, &head, &path).await {
+        Ok(bytes) if bytes.len() > MAX_BROWSE_BYTES => {
+            err(StatusCode::PAYLOAD_TOO_LARGE, "file too large to preview")
+        }
+        Ok(bytes) => match String::from_utf8(bytes) {
+            Ok(content) => Json(json!({ "path": path, "head": head, "content": content }))
+                .into_response(),
+            Err(_) => err(StatusCode::UNSUPPORTED_MEDIA_TYPE, "binary file"),
+        },
+        Err(_) => err(StatusCode::NOT_FOUND, format!("no file at {path}")),
     }
 }
 

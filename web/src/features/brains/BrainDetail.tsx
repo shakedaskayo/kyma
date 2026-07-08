@@ -7,6 +7,8 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/ui/status";
 import { realmsLabel, type BrainRunRecord } from "@/sdk/brains";
 import { relTime } from "@/lib/time";
+import { cn } from "@/lib/utils";
+import { BrainBrowser } from "./BrainBrowser";
 import { CloneInstructions } from "./CloneInstructions";
 import {
   useBrain,
@@ -35,6 +37,7 @@ export function BrainDetail({ name }: { name: string }) {
   const del = useDeleteBrain();
   const navigate = useNavigate();
   const [confirming, setConfirming] = useState(false);
+  const [tab, setTab] = useState<"browse" | "overview">("browse");
 
   if (isLoading) return <SkeletonRows rows={4} className="py-2" />;
   if (error || !brain) {
@@ -47,8 +50,8 @@ export function BrainDetail({ name }: { name: string }) {
   const { config, runtime } = brain;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 px-6 pt-5">
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
           <GitBranch className="h-4.5 w-4.5" />
         </span>
@@ -91,6 +94,33 @@ export function BrainDetail({ name }: { name: string }) {
         </div>
       </div>
 
+      <div className="mt-4 flex shrink-0 gap-1 border-b px-6">
+        {(["browse", "overview"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            className={cn(
+              "border-b-2 px-3 py-1.5 text-xs font-medium capitalize",
+              tab === t
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => setTab(t)}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab === "browse" && (
+        <div className="min-h-0 flex-1 px-6 py-4">
+          <BrainBrowser name={config.name} />
+        </div>
+      )}
+
+      {tab === "overview" && (
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex flex-col gap-4">
       <CloneInstructions name={config.name} />
 
       <section>
@@ -153,6 +183,9 @@ export function BrainDetail({ name }: { name: string }) {
           )}
         </div>
       </section>
+        </div>
+        </div>
+      )}
     </div>
   );
 }

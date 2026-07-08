@@ -191,6 +191,35 @@ export async function listBrainRuns(
   return handleResponse(res);
 }
 
+export interface BrainTree {
+  head: string;
+  paths: string[];
+}
+
+export interface BrainFile {
+  path: string;
+  head: string;
+  content: string;
+}
+
+export async function getBrainTree(args: BaseArgs & { name: string }): Promise<BrainTree> {
+  const res = await fetch(
+    `${base(args.endpoint)}/v1/brain/${encodeURIComponent(args.name)}/tree`,
+    { headers: headers(args.token, args.database) },
+  );
+  return handleResponse<BrainTree>(res);
+}
+
+export async function getBrainFile(
+  args: BaseArgs & { name: string; path: string },
+): Promise<BrainFile> {
+  const res = await fetch(
+    `${base(args.endpoint)}/v1/brain/${encodeURIComponent(args.name)}/file?path=${encodeURIComponent(args.path)}`,
+    { headers: headers(args.token, args.database) },
+  );
+  return handleResponse<BrainFile>(res);
+}
+
 /** The clone URL for a brain against the connected endpoint. */
 export function cloneUrl(endpoint: string, name: string): string {
   return `${base(endpoint)}/git/${name}.git`;
