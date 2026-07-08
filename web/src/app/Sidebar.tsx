@@ -8,6 +8,7 @@ import {
   KeyRound,
   Sparkles,
   Brain,
+  BookOpenText,
   Activity,
   Cloud,
   Settings as SettingsIcon,
@@ -57,6 +58,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { to: "/agent", label: "Agent", icon: Sparkles },
       { to: "/memory", label: "Memory", icon: Brain },
+      { to: "/brains", label: "Brains", icon: BookOpenText },
     ],
   },
   {

@@ -4875,6 +4875,7 @@ dependencies = [
  "clap",
  "futures",
  "hostname",
+ "kyma-brain",
  "kyma-catalog",
  "kyma-compaction",
  "kyma-core",
@@ -4910,6 +4911,22 @@ dependencies = [
  "tracing-opentelemetry 0.28.0",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "kyma-brain"
+version = "0.0.22"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "kyma-ccmem",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -5514,6 +5531,7 @@ dependencies = [
  "axum",
  "chrono",
  "hostname",
+ "kyma-brain",
  "kyma-catalog-sqlite",
  "kyma-ccmem",
  "kyma-compaction",
@@ -5681,11 +5699,13 @@ dependencies = [
  "chrono",
  "claude-code-agent-sdk",
  "datafusion",
+ "flate2",
  "futures",
  "hex",
  "http-body-util",
  "jsonwebtoken",
  "kyma-artifact-graph",
+ "kyma-brain",
  "kyma-catalog",
  "kyma-catalog-sqlite",
  "kyma-ccmem",

@@ -59,6 +59,7 @@ pub async fn serve_spa_fallback(uri: Uri) -> Response {
     let is_api = p.starts_with("/v1/")
         || p.starts_with("/flight")
         || p.starts_with("/mcp")
+        || p.starts_with("/git/")
         || p == "/metrics"
         || p == "/health";
     if is_api {

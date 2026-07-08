@@ -151,6 +151,7 @@ export default withMermaid(defineConfig({
           { text: 'Coding agents',       link: '/agent/coding-agents' },
           { text: 'Agentic Memory',      link: '/agent/memory' },
           { text: 'Dreaming',            link: '/agent/dreaming' },
+          { text: 'Brain repos',         link: '/agent/brains' },
           { text: 'Workers & nodes',     link: '/agent/workers' },
           { text: 'Engines',             link: '/agent/engines' },
           { text: 'Claude Code engine',  link: '/agent/claude-cli' },

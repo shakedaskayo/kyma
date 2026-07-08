@@ -20,6 +20,7 @@
 #![forbid(unsafe_code)]
 
 pub mod agent_sources;
+pub mod brain_registry;
 mod cc_pipeline;
 mod cc_sync;
 mod cc_writeback;
@@ -401,7 +402,11 @@ pub fn build_local_app(
     // In-process watcher status — created before SqliteDataSourceCatalog and
     // injected into it so list_watchers() returns cc-sync heartbeats.
     watcher_status: watcher_status::LocalWatcherStatus,
-) -> (axum::Router, AgentState) {
+    // Located `git` binary — mounts the brain repos surface (`/v1/brain` +
+    // `/git/<name>.git`). `None` ⇒ management API reports git_available:false
+    // and repo-touching endpoints answer 503.
+    brain_git: Option<Arc<kyma_brain::gitbin::GitBin>>,
+) -> (axum::Router, AgentState, kyma_server::brain::BrainState) {
     let schema_cache = Arc::new(SchemaCache::from_env());
     let query_state = QueryState {
         federation: None,
@@ -603,6 +608,28 @@ pub fn build_local_app(
         .layer(write_mw())
     });
 
+    // Brain repos: /v1/brain management (read-mounted; mutating handlers gate
+    // Write/Admin in-handler) + /git/<name>.git smart HTTP with Basic auth.
+    let brain_state = kyma_server::brain::BrainState::new(
+        Arc::new(brain_registry::LocalBrainRegistry::new(std::format!(
+            "{kyma_home}/brains.json"
+        ))),
+        brain_git,
+        std::path::PathBuf::from(std::format!("{kyma_home}/brain")),
+        agent_state.clone(),
+    );
+    let brain_mgmt_router =
+        kyma_server::brain::routes::brain_router(brain_state.clone()).layer(read_mw());
+    let brain_git_router = kyma_server::brain::git_http::git_http_router(brain_state.clone()).layer(
+        axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Read,
+            },
+            kyma_server::auth::require_git_auth_middleware,
+        ),
+    );
+
     let mut app = read_router
         .merge(ingest_router)
         .merge(local_write_router)
@@ -616,7 +643,9 @@ pub fn build_local_app(
         .merge(live_router)
         .merge(consumers_router)
         .merge(kyma_server::web_ui::router())
-        .merge(watcher_settings_router);
+        .merge(watcher_settings_router)
+        .merge(brain_mgmt_router)
+        .merge(brain_git_router);
     if let Some(r) = watchers_router {
         app = app.merge(r);
     }
@@ -627,7 +656,7 @@ pub fn build_local_app(
         app = app.merge(r);
     }
     let app = kyma_server::with_permissive_cors(app);
-    (app, agent_state)
+    (app, agent_state, brain_state)
 }
 
 /// `kyma serve` — serve the web UI + full HTTP API on `addr`, over the embedded
@@ -851,7 +880,10 @@ pub async fn run_serve(
         catalog: Some(engine.catalog.clone()),
     };
 
-    let (app, agent_state) = build_local_app(
+    // Brain repos need the git binary; absent ⇒ the surface degrades to 503s.
+    let brain_git = kyma_brain::gitbin::GitBin::detect().await.map(Arc::new);
+
+    let (app, agent_state, brain_state) = build_local_app(
         engine.catalog.clone(),
         engine.format.clone(),
         backend,
@@ -861,6 +893,7 @@ pub async fn run_serve(
         Some(cred_store),
         Some((ds_catalog.clone(), conn_registry.clone())),
         watcher_status.clone(),
+        brain_git,
     );
 
     // ── Data source scheduler: periodic tick + trigger enqueue ──────────────
@@ -983,6 +1016,20 @@ pub async fn run_serve(
     if let Some(store) = local_dreaming {
         let scheduler =
             kyma_server::agent::dreaming::LocalDreamingScheduler::new(agent_state.clone(), store);
+        tokio::spawn(async move {
+            scheduler
+                .run(async {
+                    let _ = tokio::signal::ctrl_c().await;
+                })
+                .await;
+        });
+    }
+
+    // In-process brain-export scheduler — exports each brain on its own
+    // interval (per-brain `export_interval_secs`; 0 = manual only). Shares
+    // the app's BrainState so exports serialize against pushes.
+    {
+        let scheduler = kyma_server::brain::scheduler::LocalBrainScheduler::new(brain_state);
         tokio::spawn(async move {
             scheduler
                 .run(async {

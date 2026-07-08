@@ -2,6 +2,7 @@
 
 mod backend;
 mod env_backend;
+mod git_middleware;
 mod middleware;
 pub mod oidc_backend;
 pub mod passwords;
@@ -14,6 +15,7 @@ mod db_backend;
 
 pub use backend::{AuthBackend, AuthError, Principal, Role};
 pub use env_backend::EnvAuthBackend;
+pub use git_middleware::require_git_auth_middleware;
 pub use middleware::{require_role_middleware, AuthLayerState};
 pub use oidc_backend::{OidcAuthBackend, OidcConfig};
 pub use scope::check_database_scope;

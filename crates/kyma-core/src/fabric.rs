@@ -25,6 +25,9 @@ pub const JOB_ANN_MAINTAIN: &str = "ann_maintain";
 /// Backfill embeddings for rows ingested before a vector column/model was
 /// configured. S1 executor.
 pub const JOB_EMBED_BACKFILL: &str = "embed_backfill";
+/// Export one brain repo (memory → Obsidian-vault git commit). Payload
+/// `{ "brain": <name> }` — see `kyma-server::brain::executor`.
+pub const JOB_BRAIN_EXPORT: &str = "brain_export";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

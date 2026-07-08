@@ -21,6 +21,7 @@ pub mod agent;
 pub mod artifacts_handler;
 pub mod auth;
 pub mod auth_handler;
+pub mod brain;
 pub mod catalog_handler;
 pub mod cleanup_handler;
 pub mod compact_handler;

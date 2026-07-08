@@ -37,6 +37,7 @@ members = [
     "crates/kyma-queue",
     "crates/kyma-redact",
     "crates/kyma-ccmem",
+    "crates/kyma-brain",
     "crates/kyma-retrieval-eval",
     "crates/kyma-graph-testkit",
     "crates/kyma-graph-bench",
@@ -195,6 +196,7 @@ kyma-mcp               = { path = "crates/kyma-mcp",             version = "0.0.
 kyma-queue             = { path = "crates/kyma-queue",           version = "0.0.22" }
 kyma-redact            = { path = "crates/kyma-redact",          version = "0.0.22" }
 kyma-ccmem             = { path = "crates/kyma-ccmem",           version = "0.0.22" }
+kyma-brain             = { path = "crates/kyma-brain",           version = "0.0.22" }
 
 # Auth
 jsonwebtoken = "9"
