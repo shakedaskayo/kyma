@@ -1,0 +1,25 @@
+{
+  "projectId": "dd8367e9-c3b7-4597-8a66-97466962bba6",
+  "shape": "storybook",
+  "pkg": "@kyma-ai/react",
+  "storybookConfigDir": "packages/react/.storybook",
+  "storybookStatic": ".design-sync/sb-reference",
+  "buildCmd": "pnpm -F \"@kyma-ai/react...\" build",
+  "readmeHeader": ".design-sync/conventions.md",
+  "extraEntries": [
+    "./dist/graph.js",
+    "./dist/query.js",
+    "./dist/discover.js",
+    "./dist/explore.js",
+    "./dist/dashboards.js",
+    "./dist/agent.js"
+  ],
+  "titleMap": {
+    "Playground": "KymaProvider"
+  },
+  "overrides": {
+    "KymaDashboard": { "cardMode": "column" },
+    "KymaQueryEditor": { "cardMode": "single" },
+    "KymaProvider": { "cardMode": "single" }
+  }
+}

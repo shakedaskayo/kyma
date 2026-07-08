@@ -1,0 +1,20 @@
+# design-sync notes — @kyma-ai/react
+
+- [GENERAL] Components live on subpath exports (`./graph`, `./query`, `./discover`, `./explore`, `./dashboards`, `./agent`), not the root entry → `cfg.extraEntries` points at the built `./dist/<sub>.js` files so they merge onto `window.KymaAiReact`. Root entry only exports provider + hooks.
+- [GENERAL] Storybook title `Theme/Playground` ≠ any export → `titleMap {"Playground": "KymaProvider"}` (the story demonstrates theming via KymaProvider + KymaQueryEditor).
+- [GENERAL] `.storybook/preview.tsx` used a deep-path import (`../src/provider/KymaProvider`) which the decorator bundler can't shim to the bundle global → second React context → every component threw "must be rendered inside <KymaProvider>". Fixed in repo source: preview.tsx now imports `{ KymaProvider, kymaDark, kymaLight }` from `../src` (package root), which the decorator bundle shims to `window.KymaAiReact`. Behavior-identical for the real storybook.
+- [GENERAL] The preview decorator module also installs a module-scope `window.fetch` override routing `/v1/*` Kyma API calls to in-repo fixtures — the data-driven components depend on it. Do NOT set `cfg.provider` (it would skip decorator bundling entirely and lose the fetch fixture shim).
+- `--kyma-*` CSS custom properties are injected at runtime by KymaProvider (`themeToCssVars`), not defined in shipped stylesheets → `[TOKENS_MISSING]` warn is expected; check rendered previews instead.
+- Build from repo root: `pnpm -F "@kyma-ai/react..." build`; converter needs `--entry packages/react/dist/index.js` (own-source repo, no node_modules/@kyma-ai/react) and `--node-modules packages/react/node_modules`.
+- Repo bug found + fixed during first sync (2026-07-08): `GraphView` loads via `GET /v1/graph/:g/export` (useGraphExport) but preview.tsx's fixture router had no `/export` branch — it fell through to the list fixture and every KymaGraph story showed "Failed to load graph: nodes is not iterable" in the repo's own storybook. Fixed by adding `GRAPH_EXPORT_FIXTURE` (positioned nodes) to `__fixtures__/graph.ts` + an `/export` route in preview.tsx.
+- `[ASSETS_BLOCKED] kyma.demo` from compare is a false alarm in this repo: `.demo` is not a real TLD — it's the placeholder endpoint in preview.tsx whose `/v1/*` calls the fixture fetch intercepts identically on both panels in every environment. Don't chase it.
+- Cards: `KymaDashboard` cardMode column ([GRID_OVERFLOW] wide); `KymaQueryEditor` + `KymaProvider` cardMode single ([PORTAL?]).
+
+## Re-sync risks
+
+- **KymaGraph icon-glyph capture race**: landmark node icons load via sigma's async image textures; under compare's frozen-clock stabilization either panel can screenshot before the icon repaint, so captures nondeterministically show circles vs icon glyphs (content otherwise identical). Verified 2026-07-08 with an unfrozen 8s-settle probe that BOTH the reference storybook and the preview render icons. If a future re-grade sees icon-vs-circle pairing on KymaGraph Radial Layout / Explicit Graph, it's this race, not a regression.
+- **Fixture router staleness**: any new API endpoint a component starts fetching must be added to preview.tsx's fetch override, or the component breaks in storybook AND previews (see the /export incident above). If a re-sync shows a red error state on both panels, check for a new unrouted `/v1/*` path first.
+- **`[TOKENS_MISSING]` warn is permanent by design**: all `--kyma-*` vars are injected at runtime by KymaProvider (`themeToCssVars`); `--tw-*` are Tailwind internals. Triaged; not a defect.
+- **Story caps**: no component exceeds the 6-story capture cap (max is 5); nothing verified-by-trust beyond the §4 sibling rule (all stories were image-judged this run).
+- **conventions.md prop lists** name real props verified against dist `.d.ts` 2026-07-08 (`defaultQuery`/`scope` on Discover, `sidebar`/`toolbar` on Graph, `placeholder` on AgentChat); re-validate them if the component APIs change.
+- Toolchain assumed: node 26 / pnpm 11; capture chromium via playwright in `.ds-sync/`.

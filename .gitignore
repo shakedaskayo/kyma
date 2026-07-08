@@ -29,3 +29,12 @@ read_only_token
 *.pat
 .superpowers/
 gauntlet-results.json
+
+# design-sync transient state
+.design-sync/sb-reference/
+.design-sync/sb-build.log
+.design-sync/learnings/
+.design-sync/.cache/
+.design-sync/node_modules
+.ds-sync/
+ds-bundle/
