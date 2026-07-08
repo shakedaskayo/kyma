@@ -35,6 +35,8 @@ mod vault_unit_tests;
 
 pub mod moc;
 
+pub mod gardener;
+
 pub mod gitbin;
 
 #[cfg(test)]

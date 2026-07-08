@@ -15,6 +15,7 @@ export * from "./capabilities";
 export * from "./agent-engine";
 export * from "./agent-skills";
 export * from "./memory";
+export * from "./brains";
 export * from "./datasources";
 export * from "./credentials";
 export * from "./setup";

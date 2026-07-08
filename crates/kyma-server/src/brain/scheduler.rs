@@ -18,20 +18,24 @@ use kyma_brain::registry::BrainRecord;
 
 use super::BrainState;
 
-fn due(rec: &BrainRecord) -> bool {
-    if rec.config.export_interval_secs == 0 {
+fn interval_due(interval_secs: u64, last: Option<&str>) -> bool {
+    if interval_secs == 0 {
         return false;
     }
-    let Some(last) = rec
-        .runtime
-        .last_export_at
-        .as_deref()
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-    else {
+    let Some(last) = last.and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()) else {
         return true;
     };
     let elapsed = Utc::now().signed_duration_since(last.with_timezone(&Utc));
-    elapsed.num_seconds() >= rec.config.export_interval_secs as i64
+    elapsed.num_seconds() >= interval_secs as i64
+}
+
+fn due(rec: &BrainRecord) -> bool {
+    interval_due(rec.config.export_interval_secs, rec.runtime.last_export_at.as_deref())
+}
+
+fn gardener_due(rec: &BrainRecord) -> bool {
+    rec.config.gardener.enabled
+        && interval_due(rec.config.gardener.interval_secs, rec.runtime.last_gardener_at.as_deref())
 }
 
 /// Hosted-mode scheduler: enqueues fabric jobs on an interval.
@@ -51,6 +55,12 @@ impl BrainScheduler {
             return Ok(());
         }
         for rec in self.state.registry.list().await? {
+            if gardener_due(&rec) {
+                match super::routes::trigger_gardener(&self.state, &rec.config).await {
+                    Ok(v) => info!(brain = %rec.config.name, result = %v, "gardener run scheduled"),
+                    Err(e) => warn!(brain = %rec.config.name, error = %e, "gardener trigger failed"),
+                }
+            }
             if !due(&rec) {
                 continue;
             }
@@ -116,7 +126,16 @@ impl LocalBrainScheduler {
                 return;
             }
         };
-        for rec in brains.into_iter().filter(due) {
+        for rec in brains {
+            if gardener_due(&rec) {
+                match super::routes::trigger_gardener(&self.state, &rec.config).await {
+                    Ok(v) => info!(brain = %rec.config.name, result = %v, "gardener run scheduled"),
+                    Err(e) => warn!(brain = %rec.config.name, error = %e, "gardener trigger failed"),
+                }
+            }
+            if !due(&rec) {
+                continue;
+            }
             let state = self.state.clone();
             tokio::spawn(async move {
                 match super::routes::run_export_now(&state, &rec.config).await {

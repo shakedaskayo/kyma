@@ -38,6 +38,8 @@ pub(crate) enum Op {
     Show { name: String },
     /// Trigger an export now.
     Export { name: String },
+    /// Kick off a wiki-gardener run (agentic curation of wiki/ pages).
+    Garden { name: String },
     /// Recent export / push-ingest runs.
     Runs {
         name: String,
@@ -224,6 +226,17 @@ pub(crate) async fn run(op: Op) -> Result<()> {
                     sp.finish_error("export failed");
                     return Err(e);
                 }
+            }
+        }
+        Op::Garden { name } => {
+            let resp = client::post_json(&cfg, &format!("/v1/brain/{name}/garden"), json!({})).await?;
+            if resp["deduped"].as_bool().unwrap_or(false) {
+                println!("{}", ux::theme::warn("a dreaming run is already in flight — try again later"));
+            } else {
+                println!(
+                    "{} gardener run started — watch it under Memory → Dreaming; wiki/ updates land on the next export",
+                    ux::theme::success("✓")
+                );
             }
         }
         Op::Runs { name, limit } => {

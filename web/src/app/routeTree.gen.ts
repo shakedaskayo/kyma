@@ -24,10 +24,12 @@ import { Route as AppDiscoverRouteImport } from './../routes/_app.discover'
 import { Route as AppDataSourcesRouteImport } from './../routes/_app.data-sources'
 import { Route as AppDashboardsRouteImport } from './../routes/_app.dashboards'
 import { Route as AppCredentialsRouteImport } from './../routes/_app.credentials'
+import { Route as AppBrainsRouteImport } from './../routes/_app.brains'
 import { Route as AppAgentRouteImport } from './../routes/_app.agent'
 import { Route as AppMemoryIndexRouteImport } from './../routes/_app.memory.index'
 import { Route as AppDataSourcesIndexRouteImport } from './../routes/_app.data-sources.index'
 import { Route as AppDashboardsIndexRouteImport } from './../routes/_app.dashboards.index'
+import { Route as AppBrainsIndexRouteImport } from './../routes/_app.brains.index'
 import { Route as AppMemorySettingsRouteImport } from './../routes/_app.memory.settings'
 import { Route as AppMemorySearchRouteImport } from './../routes/_app.memory.search'
 import { Route as AppMemoryReviewRouteImport } from './../routes/_app.memory.review'
@@ -38,6 +40,7 @@ import { Route as AppDataSourcesSyncRouteImport } from './../routes/_app.data-so
 import { Route as AppDataSourcesMemoriesRouteImport } from './../routes/_app.data-sources.memories'
 import { Route as AppDataSourcesIdRouteImport } from './../routes/_app.data-sources.$id'
 import { Route as AppDashboardsIdRouteImport } from './../routes/_app.dashboards.$id'
+import { Route as AppBrainsNameRouteImport } from './../routes/_app.brains.$name'
 import { Route as AppMemoryReviewIndexRouteImport } from './../routes/_app.memory.review.index'
 import { Route as AppMemoryDreamingIndexRouteImport } from './../routes/_app.memory.dreaming.index'
 import { Route as AppMemoryDreamingRunIdRouteImport } from './../routes/_app.memory.dreaming.$runId'
@@ -116,6 +119,11 @@ const AppCredentialsRoute = AppCredentialsRouteImport.update({
   path: '/credentials',
   getParentRoute: () => AppRoute,
 } as any)
+const AppBrainsRoute = AppBrainsRouteImport.update({
+  id: '/brains',
+  path: '/brains',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAgentRoute = AppAgentRouteImport.update({
   id: '/agent',
   path: '/agent',
@@ -135,6 +143,11 @@ const AppDashboardsIndexRoute = AppDashboardsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppDashboardsRoute,
+} as any)
+const AppBrainsIndexRoute = AppBrainsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppBrainsRoute,
 } as any)
 const AppMemorySettingsRoute = AppMemorySettingsRouteImport.update({
   id: '/settings',
@@ -186,6 +199,11 @@ const AppDashboardsIdRoute = AppDashboardsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AppDashboardsRoute,
 } as any)
+const AppBrainsNameRoute = AppBrainsNameRouteImport.update({
+  id: '/$name',
+  path: '/$name',
+  getParentRoute: () => AppBrainsRoute,
+} as any)
 const AppMemoryReviewIndexRoute = AppMemoryReviewIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -209,6 +227,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/agent': typeof AppAgentRoute
+  '/brains': typeof AppBrainsRouteWithChildren
   '/credentials': typeof AppCredentialsRoute
   '/dashboards': typeof AppDashboardsRouteWithChildren
   '/data-sources': typeof AppDataSourcesRouteWithChildren
@@ -218,6 +237,7 @@ export interface FileRoutesByFullPath {
   '/memory': typeof AppMemoryRouteWithChildren
   '/query': typeof AppQueryRoute
   '/traces': typeof AppTracesRoute
+  '/brains/$name': typeof AppBrainsNameRoute
   '/dashboards/$id': typeof AppDashboardsIdRoute
   '/data-sources/$id': typeof AppDataSourcesIdRoute
   '/data-sources/memories': typeof AppDataSourcesMemoriesRoute
@@ -228,6 +248,7 @@ export interface FileRoutesByFullPath {
   '/memory/review': typeof AppMemoryReviewRouteWithChildren
   '/memory/search': typeof AppMemorySearchRoute
   '/memory/settings': typeof AppMemorySettingsRoute
+  '/brains/': typeof AppBrainsIndexRoute
   '/dashboards/': typeof AppDashboardsIndexRoute
   '/data-sources/': typeof AppDataSourcesIndexRoute
   '/memory/': typeof AppMemoryIndexRoute
@@ -248,6 +269,7 @@ export interface FileRoutesByTo {
   '/graph': typeof AppGraphRoute
   '/query': typeof AppQueryRoute
   '/traces': typeof AppTracesRoute
+  '/brains/$name': typeof AppBrainsNameRoute
   '/dashboards/$id': typeof AppDashboardsIdRoute
   '/data-sources/$id': typeof AppDataSourcesIdRoute
   '/data-sources/memories': typeof AppDataSourcesMemoriesRoute
@@ -256,6 +278,7 @@ export interface FileRoutesByTo {
   '/memory/overview': typeof AppMemoryOverviewRoute
   '/memory/search': typeof AppMemorySearchRoute
   '/memory/settings': typeof AppMemorySettingsRoute
+  '/brains': typeof AppBrainsIndexRoute
   '/dashboards': typeof AppDashboardsIndexRoute
   '/data-sources': typeof AppDataSourcesIndexRoute
   '/memory': typeof AppMemoryIndexRoute
@@ -272,6 +295,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/_app/agent': typeof AppAgentRoute
+  '/_app/brains': typeof AppBrainsRouteWithChildren
   '/_app/credentials': typeof AppCredentialsRoute
   '/_app/dashboards': typeof AppDashboardsRouteWithChildren
   '/_app/data-sources': typeof AppDataSourcesRouteWithChildren
@@ -281,6 +305,7 @@ export interface FileRoutesById {
   '/_app/memory': typeof AppMemoryRouteWithChildren
   '/_app/query': typeof AppQueryRoute
   '/_app/traces': typeof AppTracesRoute
+  '/_app/brains/$name': typeof AppBrainsNameRoute
   '/_app/dashboards/$id': typeof AppDashboardsIdRoute
   '/_app/data-sources/$id': typeof AppDataSourcesIdRoute
   '/_app/data-sources/memories': typeof AppDataSourcesMemoriesRoute
@@ -291,6 +316,7 @@ export interface FileRoutesById {
   '/_app/memory/review': typeof AppMemoryReviewRouteWithChildren
   '/_app/memory/search': typeof AppMemorySearchRoute
   '/_app/memory/settings': typeof AppMemorySettingsRoute
+  '/_app/brains/': typeof AppBrainsIndexRoute
   '/_app/dashboards/': typeof AppDashboardsIndexRoute
   '/_app/data-sources/': typeof AppDataSourcesIndexRoute
   '/_app/memory/': typeof AppMemoryIndexRoute
@@ -307,6 +333,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/agent'
+    | '/brains'
     | '/credentials'
     | '/dashboards'
     | '/data-sources'
@@ -316,6 +343,7 @@ export interface FileRouteTypes {
     | '/memory'
     | '/query'
     | '/traces'
+    | '/brains/$name'
     | '/dashboards/$id'
     | '/data-sources/$id'
     | '/data-sources/memories'
@@ -326,6 +354,7 @@ export interface FileRouteTypes {
     | '/memory/review'
     | '/memory/search'
     | '/memory/settings'
+    | '/brains/'
     | '/dashboards/'
     | '/data-sources/'
     | '/memory/'
@@ -346,6 +375,7 @@ export interface FileRouteTypes {
     | '/graph'
     | '/query'
     | '/traces'
+    | '/brains/$name'
     | '/dashboards/$id'
     | '/data-sources/$id'
     | '/data-sources/memories'
@@ -354,6 +384,7 @@ export interface FileRouteTypes {
     | '/memory/overview'
     | '/memory/search'
     | '/memory/settings'
+    | '/brains'
     | '/dashboards'
     | '/data-sources'
     | '/memory'
@@ -369,6 +400,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/_app/agent'
+    | '/_app/brains'
     | '/_app/credentials'
     | '/_app/dashboards'
     | '/_app/data-sources'
@@ -378,6 +410,7 @@ export interface FileRouteTypes {
     | '/_app/memory'
     | '/_app/query'
     | '/_app/traces'
+    | '/_app/brains/$name'
     | '/_app/dashboards/$id'
     | '/_app/data-sources/$id'
     | '/_app/data-sources/memories'
@@ -388,6 +421,7 @@ export interface FileRouteTypes {
     | '/_app/memory/review'
     | '/_app/memory/search'
     | '/_app/memory/settings'
+    | '/_app/brains/'
     | '/_app/dashboards/'
     | '/_app/data-sources/'
     | '/_app/memory/'
@@ -512,6 +546,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCredentialsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/brains': {
+      id: '/_app/brains'
+      path: '/brains'
+      fullPath: '/brains'
+      preLoaderRoute: typeof AppBrainsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/agent': {
       id: '/_app/agent'
       path: '/agent'
@@ -539,6 +580,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/dashboards/'
       preLoaderRoute: typeof AppDashboardsIndexRouteImport
       parentRoute: typeof AppDashboardsRoute
+    }
+    '/_app/brains/': {
+      id: '/_app/brains/'
+      path: '/'
+      fullPath: '/brains/'
+      preLoaderRoute: typeof AppBrainsIndexRouteImport
+      parentRoute: typeof AppBrainsRoute
     }
     '/_app/memory/settings': {
       id: '/_app/memory/settings'
@@ -610,6 +658,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardsIdRouteImport
       parentRoute: typeof AppDashboardsRoute
     }
+    '/_app/brains/$name': {
+      id: '/_app/brains/$name'
+      path: '/$name'
+      fullPath: '/brains/$name'
+      preLoaderRoute: typeof AppBrainsNameRouteImport
+      parentRoute: typeof AppBrainsRoute
+    }
     '/_app/memory/review/': {
       id: '/_app/memory/review/'
       path: '/'
@@ -633,6 +688,20 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface AppBrainsRouteChildren {
+  AppBrainsNameRoute: typeof AppBrainsNameRoute
+  AppBrainsIndexRoute: typeof AppBrainsIndexRoute
+}
+
+const AppBrainsRouteChildren: AppBrainsRouteChildren = {
+  AppBrainsNameRoute: AppBrainsNameRoute,
+  AppBrainsIndexRoute: AppBrainsIndexRoute,
+}
+
+const AppBrainsRouteWithChildren = AppBrainsRoute._addFileChildren(
+  AppBrainsRouteChildren,
+)
 
 interface AppDashboardsRouteChildren {
   AppDashboardsIdRoute: typeof AppDashboardsIdRoute
@@ -717,6 +786,7 @@ const AppMemoryRouteWithChildren = AppMemoryRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppAgentRoute: typeof AppAgentRoute
+  AppBrainsRoute: typeof AppBrainsRouteWithChildren
   AppCredentialsRoute: typeof AppCredentialsRoute
   AppDashboardsRoute: typeof AppDashboardsRouteWithChildren
   AppDataSourcesRoute: typeof AppDataSourcesRouteWithChildren
@@ -730,6 +800,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAgentRoute: AppAgentRoute,
+  AppBrainsRoute: AppBrainsRouteWithChildren,
   AppCredentialsRoute: AppCredentialsRoute,
   AppDashboardsRoute: AppDashboardsRouteWithChildren,
   AppDataSourcesRoute: AppDataSourcesRouteWithChildren,

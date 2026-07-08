@@ -30,6 +30,7 @@ pub fn brain_router(state: BrainState) -> axum::Router {
         )
         .route("/v1/brain/:name", put(update_handler))
         .route("/v1/brain/:name/export", post(export_handler))
+        .route("/v1/brain/:name/garden", post(garden_handler))
         .route("/v1/brain/:name/runs", get(runs_handler))
         .route("/v1/brain/:name/clone-info", get(clone_info_handler))
         .with_state(state)
@@ -331,6 +332,84 @@ async fn export_handler(
     match run_export_now(&state, &rec.config).await {
         Ok(v) => Json(v).into_response(),
         Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e),
+    }
+}
+
+/// Kick off a wiki-gardener run for this brain: a dreaming run whose focus
+/// is [`kyma_brain::gardener::gardener_focus`]. Local mode runs it inline
+/// (dreaming store guard dedupes); hosted mode enqueues a `dreaming` fabric
+/// job. The gardener writes wiki memories; the next export renders them.
+pub async fn trigger_gardener(state: &BrainState, cfg: &kyma_brain::registry::BrainConfig) -> Result<Value, String> {
+    let focus = kyma_brain::gardener::gardener_focus(cfg);
+    let result = if let Some(store) = state.agent.local_dreaming.clone() {
+        if !store.try_acquire() {
+            return Ok(json!({ "deduped": true, "detail": "a dreaming run is already in flight" }));
+        }
+        crate::agent::dreaming::spawn_local_run(
+            state.agent.clone(),
+            store,
+            None,
+            Some(focus),
+            crate::agent::dreaming::Trigger::Manual,
+        );
+        json!({ "started": true, "mode": "local" })
+    } else if let Some(pool) = state.agent.pool.clone() {
+        let fabric = kyma_catalog::PgFabricStore::new(pool);
+        let payload = serde_json::to_value(crate::agent::dreaming::DreamingRequest {
+            trigger: crate::agent::dreaming::Trigger::Manual,
+            mode: None,
+            focus: Some(focus),
+            job_id: None,
+            worker_id: None,
+        })
+        .map_err(|e| e.to_string())?;
+        let enqueued = fabric
+            .enqueue_job(
+                state.agent.tenant,
+                &kyma_core::fabric::EnqueueJob {
+                    kind: kyma_core::fabric::JOB_DREAMING.to_string(),
+                    payload,
+                    priority: 5,
+                    affinity_worker_id: None,
+                    req_capabilities: vec!["dreaming".into()],
+                    label_selector: json!({}),
+                    max_attempts: 1,
+                },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        match enqueued {
+            Some(job_id) => json!({ "started": true, "mode": "fabric", "job_id": job_id }),
+            None => json!({ "deduped": true, "detail": "a dreaming run is already in flight" }),
+        }
+    } else {
+        return Err("gardener requires the local dreaming store or Postgres".to_string());
+    };
+    // Stamp last_gardener_at so the scheduler's interval check advances even
+    // when the run itself is recorded in the dreaming surface.
+    if let Ok(Some(mut rec)) = state.registry.get(&cfg.name).await {
+        rec.runtime.last_gardener_at = Some(Utc::now().to_rfc3339());
+        let _ = state.registry.update_runtime(&cfg.name, &rec.runtime).await;
+    }
+    Ok(result)
+}
+
+async fn garden_handler(
+    State(state): State<BrainState>,
+    Path(name): Path<String>,
+    Extension(principal): Extension<Principal>,
+) -> Response {
+    if let Some(r) = require_role(&principal, Role::Write, "brain garden") {
+        return r;
+    }
+    let rec = match state.registry.get(&name).await {
+        Ok(Some(r)) => r,
+        Ok(None) => return err(StatusCode::NOT_FOUND, format!("brain `{name}` not found")),
+        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    };
+    match trigger_gardener(&state, &rec.config).await {
+        Ok(v) => (StatusCode::ACCEPTED, Json(v)).into_response(),
+        Err(e) => err(StatusCode::BAD_REQUEST, e),
     }
 }
 
