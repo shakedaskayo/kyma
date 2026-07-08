@@ -240,8 +240,8 @@ async fn delete_handler(
 }
 
 /// Run one export pass under the brain lock and record the run. Shared by
-/// the create/export handlers (and later, the schedulers).
-pub(crate) async fn run_export_now(state: &BrainState, cfg: &BrainConfig) -> Result<Value, String> {
+/// the create/export handlers, the schedulers, and the fabric executor.
+pub async fn run_export_now(state: &BrainState, cfg: &BrainConfig) -> Result<Value, String> {
     let Some(git) = state.git.clone() else {
         return Err("git binary not found on server host".to_string());
     };

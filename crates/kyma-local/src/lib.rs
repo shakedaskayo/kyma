@@ -406,7 +406,7 @@ pub fn build_local_app(
     // `/git/<name>.git`). `None` ⇒ management API reports git_available:false
     // and repo-touching endpoints answer 503.
     brain_git: Option<Arc<kyma_brain::gitbin::GitBin>>,
-) -> (axum::Router, AgentState) {
+) -> (axum::Router, AgentState, kyma_server::brain::BrainState) {
     let schema_cache = Arc::new(SchemaCache::from_env());
     let query_state = QueryState {
         federation: None,
@@ -620,7 +620,7 @@ pub fn build_local_app(
     );
     let brain_mgmt_router =
         kyma_server::brain::routes::brain_router(brain_state.clone()).layer(read_mw());
-    let brain_git_router = kyma_server::brain::git_http::git_http_router(brain_state).layer(
+    let brain_git_router = kyma_server::brain::git_http::git_http_router(brain_state.clone()).layer(
         axum::middleware::from_fn_with_state(
             AuthLayerState {
                 backend: backend.clone(),
@@ -656,7 +656,7 @@ pub fn build_local_app(
         app = app.merge(r);
     }
     let app = kyma_server::with_permissive_cors(app);
-    (app, agent_state)
+    (app, agent_state, brain_state)
 }
 
 /// `kyma serve` — serve the web UI + full HTTP API on `addr`, over the embedded
@@ -883,7 +883,7 @@ pub async fn run_serve(
     // Brain repos need the git binary; absent ⇒ the surface degrades to 503s.
     let brain_git = kyma_brain::gitbin::GitBin::detect().await.map(Arc::new);
 
-    let (app, agent_state) = build_local_app(
+    let (app, agent_state, brain_state) = build_local_app(
         engine.catalog.clone(),
         engine.format.clone(),
         backend,
@@ -1016,6 +1016,20 @@ pub async fn run_serve(
     if let Some(store) = local_dreaming {
         let scheduler =
             kyma_server::agent::dreaming::LocalDreamingScheduler::new(agent_state.clone(), store);
+        tokio::spawn(async move {
+            scheduler
+                .run(async {
+                    let _ = tokio::signal::ctrl_c().await;
+                })
+                .await;
+        });
+    }
+
+    // In-process brain-export scheduler — exports each brain on its own
+    // interval (per-brain `export_interval_secs`; 0 = manual only). Shares
+    // the app's BrainState so exports serialize against pushes.
+    {
+        let scheduler = kyma_server::brain::scheduler::LocalBrainScheduler::new(brain_state);
         tokio::spawn(async move {
             scheduler
                 .run(async {

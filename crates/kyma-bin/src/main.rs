@@ -924,6 +924,52 @@ async fn main() -> Result<()> {
         Some(consumer_events),
         cli.otlp_database.clone(),
     );
+    // Brain repos — /v1/brain management + /git/<name>.git smart HTTP. The
+    // bare repos live on a mounted volume (KYMA_BRAIN_DIR); no git binary or
+    // unwritable dir ⇒ the surface stays mounted but answers 503 / reports
+    // git_available:false.
+    let brain_state = {
+        let brain_dir = std::path::PathBuf::from(
+            std::env::var("KYMA_BRAIN_DIR").unwrap_or_else(|_| "/var/lib/kyma/brain".to_string()),
+        );
+        let mut brain_git = kyma_brain::gitbin::GitBin::detect().await.map(std::sync::Arc::new);
+        if brain_git.is_some() {
+            if let Err(e) = std::fs::create_dir_all(&brain_dir) {
+                tracing::warn!(dir = %brain_dir.display(), error = %e,
+                    "KYMA_BRAIN_DIR not writable — brain repos disabled");
+                brain_git = None;
+            }
+        }
+        kyma_server::brain::BrainState::new(
+            std::sync::Arc::new(kyma_server::brain::pg_registry::PgBrainRegistry::new(
+                pg_pool.clone(),
+                kyma_core::tenant::DEFAULT_TENANT,
+            )),
+            brain_git,
+            brain_dir,
+            agent_state.clone(),
+        )
+    };
+    let brain_mgmt_router = kyma_server::brain::routes::brain_router(brain_state.clone()).layer(
+        axum::middleware::from_fn_with_state(
+            AuthLayerState {
+                backend: backend.clone(),
+                required: Role::Read,
+            },
+            require_role_middleware,
+        ),
+    );
+    let brain_git_router =
+        kyma_server::brain::git_http::git_http_router(brain_state.clone()).layer(
+            axum::middleware::from_fn_with_state(
+                AuthLayerState {
+                    backend: backend.clone(),
+                    required: Role::Read,
+                },
+                kyma_server::auth::require_git_auth_middleware,
+            ),
+        );
+
     let app = ingest_router
         .merge(query_router)
         .merge(mcp_router)
@@ -944,7 +990,9 @@ async fn main() -> Result<()> {
         .merge(fabric_worker_router)
         .merge(fabric_admin_router)
         .merge(live_router)
-        .merge(consumers_router);
+        .merge(consumers_router)
+        .merge(brain_mgmt_router)
+        .merge(brain_git_router);
 
     let app = app.merge(github_repos_router);
     #[cfg(feature = "web-ui")]
@@ -1423,6 +1471,10 @@ async fn main() -> Result<()> {
         .iter()
         .map(|s| s.to_string())
         .collect();
+    // Brain exports need the git binary + the brain volume on this worker.
+    if brain_state.git.is_some() {
+        embedded_caps.push("brain".to_string());
+    }
     // Advertise the Claude CLI when the binary is present — dreaming jobs
     // running on the ClaudeCli engine require it.
     if kyma_server::agent::engine::claude_cli::locate_binary().is_some() {
@@ -1472,6 +1524,9 @@ async fn main() -> Result<()> {
     exec_registry.register(Arc::new(DreamingExecutor {
         state: agent_state.clone(),
         worker_id: embedded_worker_id,
+    }));
+    exec_registry.register(Arc::new(BrainExportExecutor {
+        state: brain_state.clone(),
     }));
     // Index-sidecar build jobs: S1.1 ivf_rabitq ANN + S1.4 tantivy_fts BM25.
     // A job for an unregistered kind fails terminally with a clear
@@ -1601,6 +1656,22 @@ async fn main() -> Result<()> {
         let dreaming_sched_rx = shutdown_tx.subscribe();
         Some(tokio::spawn(dreaming_sched.run(async move {
             let mut rx = dreaming_sched_rx;
+            let _ = rx.recv().await;
+        })))
+    } else {
+        None
+    };
+
+    // Brain export scheduler — enqueues brain_export fabric jobs per due
+    // brain (interval per brain config). Background — run_jobs.
+    let brain_sched_handle = if rc.run_jobs {
+        let brain_sched = kyma_server::brain::scheduler::BrainScheduler::new(
+            brain_state.clone(),
+            fabric_store.clone(),
+        );
+        let brain_sched_rx = shutdown_tx.subscribe();
+        Some(tokio::spawn(brain_sched.run(async move {
+            let mut rx = brain_sched_rx;
             let _ = rx.recv().await;
         })))
     } else {
@@ -1802,6 +1873,9 @@ async fn main() -> Result<()> {
     if let Some(h) = dreaming_sched_handle {
         let _ = h.await;
     }
+    if let Some(h) = brain_sched_handle {
+        let _ = h.await;
+    }
     // Mark the embedded worker offline so discovery doesn't show a ghost.
     if let Err(e) = fabric_store
         .set_worker_status(embedded_worker_id, kyma_core::fabric::WorkerStatus::Offline)
@@ -1885,6 +1959,60 @@ impl kyma_jobs::JobExecutor for DreamingExecutor {
             "run_id": run_id,
             "stats": outcome,
         }))
+    }
+}
+
+/// Fabric executor for `brain_export` jobs: one export pass for the named
+/// brain on this worker. Requires the git binary and the brain volume
+/// (`KYMA_BRAIN_DIR`) — jobs land here only on workers advertising the
+/// `brain` capability; a missing repo dir fails as Config so the operator
+/// sees a clear signal instead of a silent re-init on the wrong replica.
+struct BrainExportExecutor {
+    state: kyma_server::brain::BrainState,
+}
+
+#[async_trait::async_trait]
+impl kyma_jobs::JobExecutor for BrainExportExecutor {
+    fn kind(&self) -> &'static str {
+        kyma_core::fabric::JOB_BRAIN_EXPORT
+    }
+
+    async fn run(
+        &self,
+        ctx: &kyma_jobs::JobCtx,
+        job: &kyma_core::fabric::ClaimedJob,
+    ) -> Result<serde_json::Value, kyma_jobs::JobError> {
+        let name = job
+            .payload
+            .get("brain")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| kyma_jobs::JobError::Permanent("payload missing `brain`".into()))?;
+        if self.state.git.is_none() {
+            return Err(kyma_jobs::JobError::Config(
+                "git binary not found on this worker".into(),
+            ));
+        }
+        let rec = self
+            .state
+            .registry
+            .get(name)
+            .await
+            .map_err(|e| kyma_jobs::JobError::Transient(e.to_string()))?
+            .ok_or_else(|| {
+                kyma_jobs::JobError::Permanent(format!("brain `{name}` not found"))
+            })?;
+        if !self.state.repo_dir(name).exists() {
+            return Err(kyma_jobs::JobError::Config(format!(
+                "brain repo dir missing on this worker (KYMA_BRAIN_DIR volume?): {}",
+                self.state.repo_dir(name).display()
+            )));
+        }
+        ctx.progress
+            .push(serde_json::json!({ "current_phase": "export", "brain": name }))
+            .await;
+        kyma_server::brain::routes::run_export_now(&self.state, &rec.config)
+            .await
+            .map_err(kyma_jobs::JobError::Transient)
     }
 }
 

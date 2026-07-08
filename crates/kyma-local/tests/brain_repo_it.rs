@@ -120,7 +120,7 @@ async fn brain_clone_push_ingest_round_trip() {
     );
     let brain_git = kyma_brain::gitbin::GitBin::detect().await.map(Arc::new);
     assert!(brain_git.is_some(), "git detected above, GitBin::detect must succeed");
-    let (app, _agent_state) = build_local_app(
+    let (app, _agent_state, _brain_state) = build_local_app(
         catalog.clone(),
         format.clone(),
         backend,

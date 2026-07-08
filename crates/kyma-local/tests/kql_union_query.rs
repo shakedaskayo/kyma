@@ -31,7 +31,7 @@ async fn local_app() -> axum::Router {
     // Mint two tokens: one for writing (ingest), one for reading (query).
     let backend: Arc<dyn kyma_server::auth::AuthBackend> =
         Arc::new(EnvAuthBackend::from_str("write-token:write,read-token:read"));
-    let (app, _agent_state) = build_local_app(catalog, format, backend, None, None, None, None, None, kyma_local::watcher_status::LocalWatcherStatus::default(), None);
+    let (app, _agent_state, _brain_state) = build_local_app(catalog, format, backend, None, None, None, None, None, kyma_local::watcher_status::LocalWatcherStatus::default(), None);
     app
 }
 

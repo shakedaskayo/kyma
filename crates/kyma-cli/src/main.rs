@@ -21,6 +21,7 @@
 //!   version
 
 mod client;
+mod brain;
 mod datasource;
 mod deploy;
 mod plugin;
@@ -147,6 +148,19 @@ enum Command {
     DataSource {
         #[command(subcommand)]
         op: datasource::Op,
+    },
+    /// Publish memory as Git-clonable Obsidian vaults ("brains") — create,
+    /// list, export, clone. See `kyma brain --help`.
+    Brain {
+        #[command(subcommand)]
+        op: brain::Op,
+    },
+    /// Git credential helper for brain clones (used via
+    /// `credential.helper=!kyma git-credential`; not for interactive use).
+    #[command(name = "git-credential", hide = true)]
+    GitCredential {
+        /// The credential action git invokes: get | store | erase.
+        action: Option<String>,
     },
     /// Deploy kyma to production (AWS Fargate + S3 + Supabase) or run a
     /// Supabase-backed local test drive. See `kyma deploy --help`.
@@ -561,6 +575,8 @@ async fn run(cli: Cli) -> Result<()> {
             which,
         } => cmd_install_skill(target, also_link_claude, which).await,
         Command::DataSource { op } => datasource::run(op).await,
+        Command::Brain { op } => brain::run(op).await,
+        Command::GitCredential { action } => brain::run_git_credential(action).await,
         Command::Deploy { op } => deploy::run(op).await,
         Command::Ingest { op } => datasource::run_ingest(op).await,
         Command::Recall {

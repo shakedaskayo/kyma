@@ -4875,6 +4875,7 @@ dependencies = [
  "clap",
  "futures",
  "hostname",
+ "kyma-brain",
  "kyma-catalog",
  "kyma-compaction",
  "kyma-core",

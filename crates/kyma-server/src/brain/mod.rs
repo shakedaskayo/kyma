@@ -17,7 +17,9 @@ use crate::agent::state::AgentState;
 
 pub mod fetch;
 pub mod git_http;
+pub mod pg_registry;
 pub mod routes;
+pub mod scheduler;
 
 /// Shared state for the brain routers.
 #[derive(Clone)]
