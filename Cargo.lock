@@ -4913,6 +4913,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyma-brain"
+version = "0.0.22"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "kyma-ccmem",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "kyma-catalog"
 version = "0.0.22"
 dependencies = [
