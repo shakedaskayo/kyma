@@ -12,6 +12,7 @@
  * URL routing covers:
  *   /v1/capabilities        → capabilities fixture (JSON)
  *   /v1/graph               → graph list fixture  (JSON)
+ *   /v1/graph/:g/export     → positioned export page (JSON)
  *   /v1/graph/:db/:g/overview  → graph fixture    (JSON)
  *   /v1/graph/:db/:g/neighbors → empty neighbors  (JSON)
  *   /v1/graph/:db/:g/search    → search fixture   (JSON)
@@ -25,13 +26,16 @@
 
 import React from "react";
 import type { Preview, Decorator } from "@storybook/react";
-import { KymaProvider } from "../src/provider/KymaProvider";
-import { kymaDark, kymaLight } from "../src/theme/presets";
+// Import from the package root so tooling that maps the package entry to the
+// built bundle resolves the SAME KymaProvider instance the components use —
+// a deep-path import compiles a second copy whose React context the bundled
+// components can't see.
+import { KymaProvider, kymaDark, kymaLight } from "../src";
 import type { KymaTheme } from "../src/theme/tokens";
 
 // fixtures
 import { CAPABILITIES_FIXTURE } from "../src/__fixtures__/capabilities";
-import { GRAPH_FIXTURE, GRAPH_LIST_FIXTURE, NEIGHBORS_FIXTURE, SEARCH_FIXTURE } from "../src/__fixtures__/graph";
+import { GRAPH_EXPORT_FIXTURE, GRAPH_FIXTURE, GRAPH_LIST_FIXTURE, NEIGHBORS_FIXTURE, SEARCH_FIXTURE } from "../src/__fixtures__/graph";
 import { SCHEMA_FIXTURE } from "../src/__fixtures__/schema";
 import { QUERY_ROWS, makeNdjsonBody } from "../src/__fixtures__/query";
 import { DISCOVER_FRAMES } from "../src/__fixtures__/discover";
@@ -87,6 +91,10 @@ window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response>
   }
 
   if (url.includes("/v1/graph")) {
+    // /v1/graph/:name/export — paged, server-laid-out graph (GraphView's load path)
+    if (url.includes("/export")) {
+      return Promise.resolve(jsonResp(GRAPH_EXPORT_FIXTURE));
+    }
     // /v1/graph/:db/:name/neighbors
     if (url.includes("/neighbors")) {
       return Promise.resolve(jsonResp(NEIGHBORS_FIXTURE));

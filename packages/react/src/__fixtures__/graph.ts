@@ -1,4 +1,4 @@
-import type { GraphPayload } from "@kyma-ai/client";
+import type { GraphExportPage, GraphPayload } from "@kyma-ai/client";
 
 const META = { created_at: "2025-01-01T00:00:00Z", updated_at: "2025-06-01T00:00:00Z", realm: "default" };
 
@@ -39,6 +39,33 @@ export const GRAPH_FIXTURE: GraphPayload = {
     { id: "e13", source_id: "u-2",   target_id: "svc-2", relationship_type: "CALLS",     properties: {} },
     { id: "e14", source_id: "u-3",   target_id: "svc-2", relationship_type: "CALLS",     properties: {} },
   ],
+};
+
+// Server-side layout positions for the export endpoint — a hand-placed spread
+// that reads well at the default zoom (gateway left, services center, stores
+// and queues right, users below).
+const EXPORT_POSITIONS: Record<string, { x: number; y: number }> = {
+  "gw-1":  { x: -420, y: 0 },
+  "svc-1": { x: -140, y: -160 },
+  "svc-2": { x: -100, y: 80 },
+  "svc-3": { x: 180, y: 200 },
+  "svc-4": { x: 160, y: -60 },
+  "db-1":  { x: 180, y: -240 },
+  "db-2":  { x: 460, y: 120 },
+  "q-1":   { x: 430, y: -140 },
+  "q-2":   { x: 460, y: 320 },
+  "u-1":   { x: -380, y: -320 },
+  "u-2":   { x: -420, y: 220 },
+  "u-3":   { x: -300, y: 340 },
+};
+
+export const GRAPH_EXPORT_FIXTURE: GraphExportPage = {
+  layout_status: "ready",
+  layout_id: "fixture-layout-1",
+  total_nodes: GRAPH_FIXTURE.nodes.length,
+  total_edges: GRAPH_FIXTURE.edges.length,
+  nodes: GRAPH_FIXTURE.nodes.map((n) => ({ ...n, ...(EXPORT_POSITIONS[n.id] ?? { x: 0, y: 0 }) })),
+  edges: GRAPH_FIXTURE.edges,
 };
 
 export const GRAPH_LIST_FIXTURE = [
