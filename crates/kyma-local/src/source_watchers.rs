@@ -30,16 +30,28 @@ const DEBOUNCE: Duration = Duration::from_secs(2);
 /// Floor for the periodic full-scan fallback.
 const MIN_SCAN_INTERVAL: Duration = Duration::from_secs(30);
 
+/// A git-hosted vault to clone/pull before each sync pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GitVault {
+    pub url: String,
+    pub branch: Option<String>,
+    pub token: Option<String>,
+}
+
 /// What a continuous-drive row needs to run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesiredSource {
     pub id: String,
     /// Detects config edits → restart (config + schedule + name).
     pub fingerprint: String,
+    /// Local folder synced into memory. For a git-hosted vault this is the
+    /// managed clone dir (`${KYMA_HOME}/vaults/<id>`).
     pub vault_path: PathBuf,
     pub realm: String,
     pub scan_interval: Duration,
     pub tenant: String,
+    /// `Some` when the vault is imported from a git repo.
+    pub git: Option<GitVault>,
 }
 
 /// One reconciliation step.
@@ -81,6 +93,15 @@ fn expand_home(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
+/// `${KYMA_HOME}/vaults` — where git-hosted Obsidian imports are cloned.
+fn vaults_root() -> PathBuf {
+    let home = std::env::var("KYMA_HOME").unwrap_or_else(|_| {
+        let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        format!("{base}/.kyma")
+    });
+    PathBuf::from(home).join("vaults")
+}
+
 /// Desired sources from the `data_sources` table. Unparseable rows are
 /// skipped with a warning — one broken config must not stall the others.
 async fn desired_sources(pool: &SqlitePool) -> Vec<DesiredSource> {
@@ -105,23 +126,40 @@ async fn desired_sources(pool: &SqlitePool) -> Vec<DesiredSource> {
             let config_str: String = r.get("config_json");
             let schedule_ms: i64 = r.get("schedule_ms");
             let config: Value = serde_json::from_str(&config_str).ok()?;
-            let raw_path = config.get("vault_path").and_then(Value::as_str)?.trim();
-            if raw_path.is_empty() {
-                tracing::warn!(source = %id, "vault watchers: empty vault_path, skipping");
-                return None;
-            }
-            let vault_path = expand_home(raw_path);
-            let realm = config
-                .get("vault_name")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
+            let field = |k: &str| {
+                config.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty())
+            };
+            let git_url = field("git_url").map(str::to_string);
+            // Git-hosted vaults are cloned into a managed dir; local vaults use
+            // the given path.
+            let (vault_path, git) = match &git_url {
+                Some(url) => {
+                    let dir = vaults_root().join(&id);
+                    let git = GitVault {
+                        url: url.clone(),
+                        branch: field("git_branch").map(str::to_string),
+                        token: field("git_token").map(str::to_string),
+                    };
+                    (dir, Some(git))
+                }
+                None => {
+                    let raw_path = field("vault_path")?;
+                    (expand_home(raw_path), None)
+                }
+            };
+            let repo_name = git_url.as_deref().map(|u| {
+                u.trim_end_matches('/')
+                    .trim_end_matches(".git")
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("vault")
+                    .to_string()
+            });
+            let realm = field("vault_name")
                 .map(str::to_string)
+                .or(repo_name)
                 .or_else(|| {
-                    vault_path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .map(str::to_string)
+                    vault_path.file_name().and_then(|n| n.to_str()).map(str::to_string)
                 })
                 .unwrap_or_else(|| name.clone());
             let scan_interval = Duration::from_millis(u64::try_from(schedule_ms).unwrap_or(60_000))
@@ -133,6 +171,7 @@ async fn desired_sources(pool: &SqlitePool) -> Vec<DesiredSource> {
                 realm,
                 scan_interval,
                 tenant,
+                git,
             })
         })
         .collect()
@@ -292,11 +331,22 @@ async fn run_source_loop(
     }
 }
 
-/// One sync pass: fresh writer (shared embedding backend) + vault_sync.
+/// One sync pass: (for git vaults) clone/pull the repo, then a fresh writer
+/// (shared embedding backend) + vault_sync over the working tree.
 async fn run_pass(
     engine: &Engine,
     src: &DesiredSource,
 ) -> anyhow::Result<vault_sync::VaultSyncReport> {
+    if let Some(git) = &src.git {
+        let bin = kyma_brain::gitbin::GitBin::detect()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("git binary not found — cannot import a git-hosted vault"))?;
+        let head = bin
+            .clone_or_pull(&git.url, &src.vault_path, git.branch.as_deref(), git.token.as_deref())
+            .await
+            .map_err(|e| anyhow::anyhow!("git import: {e}"))?;
+        tracing::debug!(source = %src.id, head = %head, "git vault synced to HEAD");
+    }
     let embed = kyma_memory::shared_embedding()
         .await
         .map_err(|e| anyhow::anyhow!("embedding backend: {e}"))?;
@@ -322,6 +372,7 @@ mod tests {
             realm: "v".into(),
             scan_interval: Duration::from_secs(60),
             tenant: "00000000-0000-0000-0000-000000000000".into(),
+            git: None,
         }
     }
 

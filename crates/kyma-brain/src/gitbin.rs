@@ -162,6 +162,97 @@ impl GitBin {
         self.run(repo, &["config", key, val], PLUMBING_TIMEOUT).await.map(|_| ())
     }
 
+    /// Clone `url` into `dir` (working tree, depth 1) or fast-forward it if it
+    /// already exists — for importing an external Obsidian vault git repo.
+    /// A `token` is injected into an https URL as `x-access-token:<token>@`
+    /// (GitHub/GitLab-compatible) and never persisted to the repo config.
+    /// Returns the HEAD sha after the operation.
+    pub async fn clone_or_pull(
+        &self,
+        url: &str,
+        dir: &Path,
+        branch: Option<&str>,
+        token: Option<&str>,
+    ) -> Result<String, BrainError> {
+        let auth_url = match token {
+            Some(t) if url.starts_with("https://") && !url.contains('@') => {
+                format!("https://x-access-token:{t}@{}", &url["https://".len()..])
+            }
+            _ => url.to_string(),
+        };
+        let dir_s = dir.to_str().ok_or_else(|| BrainError::InvalidPath(dir.display().to_string()))?;
+        let exists = dir.join(".git").exists();
+        if !exists {
+            if let Some(parent) = dir.parent() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+            let mut args = vec!["clone", "--depth", "1", "--single-branch"];
+            if let Some(b) = branch {
+                args.push("--branch");
+                args.push(b);
+            }
+            args.push(&auth_url);
+            args.push(dir_s);
+            self.run_no_gitdir(&args, IMPORT_TIMEOUT).await?;
+        } else {
+            // Fetch + hard reset to the remote tip (the vault is read-only to
+            // us; a divergent local tree should never block the next import).
+            // Working-tree ops use `git -C <dir>` (no GIT_DIR override).
+            self.run_no_gitdir(&["-C", dir_s, "remote", "set-url", "origin", &auth_url], PLUMBING_TIMEOUT)
+                .await?;
+            self.run_no_gitdir(&["-C", dir_s, "fetch", "--depth", "1", "origin"], IMPORT_TIMEOUT)
+                .await?;
+            let head_ref = match branch {
+                Some(b) => format!("origin/{b}"),
+                None => {
+                    let out = self
+                        .run_no_gitdir(&["-C", dir_s, "rev-parse", "--abbrev-ref", "origin/HEAD"], PLUMBING_TIMEOUT)
+                        .await
+                        .unwrap_or_default();
+                    let s = String::from_utf8_lossy(&out).trim().to_string();
+                    if s.is_empty() { "origin/HEAD".to_string() } else { s }
+                }
+            };
+            self.run_no_gitdir(&["-C", dir_s, "reset", "--hard", &head_ref], PLUMBING_TIMEOUT)
+                .await?;
+        }
+        // Scrub the token back out of the stored remote URL.
+        if token.is_some() {
+            let _ = self
+                .run_no_gitdir(&["-C", dir_s, "remote", "set-url", "origin", url], PLUMBING_TIMEOUT)
+                .await;
+        }
+        let out = self
+            .run_no_gitdir(&["-C", dir_s, "rev-parse", "HEAD"], PLUMBING_TIMEOUT)
+            .await?;
+        Ok(String::from_utf8_lossy(&out).trim().to_string())
+    }
+
+    /// Run a git command that takes its target as an argument (clone), with a
+    /// clean env and no `GIT_DIR`.
+    async fn run_no_gitdir(&self, args: &[&str], timeout: Duration) -> Result<Vec<u8>, BrainError> {
+        let mut cmd = Command::new(&self.program);
+        cmd.env_clear();
+        if let Ok(path) = std::env::var("PATH") {
+            cmd.env("PATH", path);
+        }
+        cmd.env("GIT_CONFIG_NOSYSTEM", "1");
+        cmd.env("GIT_TERMINAL_PROMPT", "0");
+        cmd.kill_on_drop(true);
+        cmd.args(args);
+        cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let out = tokio::time::timeout(timeout, cmd.output())
+            .await
+            .map_err(|_| BrainError::Git { op: "timeout", detail: format!("git {args:?}") })??;
+        if !out.status.success() {
+            return Err(BrainError::Git {
+                op: "clone",
+                detail: String::from_utf8_lossy(&out.stderr).trim().to_string(),
+            });
+        }
+        Ok(out.stdout)
+    }
+
     /// Resolve a rev to a full sha; `None` when it doesn't exist (fresh repo).
     pub async fn rev_parse(&self, repo: &Path, rev: &str) -> Result<Option<String>, BrainError> {
         match self.run(repo, &["rev-parse", "--verify", "--quiet", rev], PLUMBING_TIMEOUT).await {

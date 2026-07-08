@@ -24,6 +24,43 @@ fn files(pairs: &[(&str, &str)]) -> Vec<VaultFile> {
 }
 
 #[tokio::test]
+async fn clone_or_pull_imports_and_updates() {
+    let git = require_git!();
+    let dir = tempfile::tempdir().unwrap();
+    // A bare "remote" seeded via fast-import (the source vault).
+    let remote = dir.path().join("remote.git");
+    git.init_bare(&remote).await.unwrap();
+    let c1 = git
+        .fast_import_commit(&remote, "main", &files(&[("note.md", "v1\n")]), None, "one", 1)
+        .await
+        .unwrap();
+    let remote_url = format!("file://{}", remote.display());
+
+    // First call clones the working tree.
+    let work = dir.path().join("work");
+    let head = git.clone_or_pull(&remote_url, &work, Some("main"), None).await.unwrap();
+    assert_eq!(head, c1.commit);
+    assert_eq!(std::fs::read_to_string(work.join("note.md")).unwrap(), "v1\n");
+
+    // Advance the remote, then pull: the working tree hard-resets to the tip.
+    let c2 = git
+        .fast_import_commit(
+            &remote,
+            "main",
+            &files(&[("note.md", "v2\n"), ("new.md", "x\n")]),
+            Some(&c1.commit),
+            "two",
+            2,
+        )
+        .await
+        .unwrap();
+    let head2 = git.clone_or_pull(&remote_url, &work, Some("main"), None).await.unwrap();
+    assert_eq!(head2, c2.commit);
+    assert_eq!(std::fs::read_to_string(work.join("note.md")).unwrap(), "v2\n");
+    assert!(work.join("new.md").exists());
+}
+
+#[tokio::test]
 async fn init_commit_read_roundtrip() {
     let git = require_git!();
     let dir = tempfile::tempdir().unwrap();

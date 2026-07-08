@@ -18,24 +18,41 @@ impl DataSource for ObsidianDataSource {
     }
 
     fn catalog(&self) -> CatalogEntry {
+        let mut path = CatalogField::text("vault_path", "Vault path", "~/Documents/MyVault");
+        path.required = false;
+        path.help = Some("Local folder to sync. Leave blank to import a git-hosted vault instead.".into());
+        let mut git_url = CatalogField::text(
+            "git_url",
+            "Git URL (optional)",
+            "https://github.com/org/team-vault.git",
+        );
+        git_url.required = false;
+        git_url.help =
+            Some("Import an existing Obsidian vault from a git repo — kyma clones/pulls it and ingests the notes.".into());
+        let mut git_token = CatalogField::secret(
+            "git_token",
+            "Git token (private repos)",
+            "ghp_… / glpat-…",
+            "Personal access token for a private git-hosted vault. Public repos need none.",
+        );
+        git_token.required = false;
+        let mut git_branch = CatalogField::text("git_branch", "Branch (optional)", "main");
+        git_branch.required = false;
         let mut name = CatalogField::text("vault_name", "Vault name", "my-vault");
         name.required = false;
-        name.help = Some("Realm the notes land in — defaults to the vault folder name.".into());
+        name.help = Some("Realm the notes land in — defaults to the vault/repo name.".into());
         CatalogEntry {
             type_id: "obsidian".into(),
             label: "Obsidian".into(),
             category: "knowledge".into(),
-            description: "Notes from a local Obsidian vault, synced continuously by a file watcher — wikilinks become graph edges, deleted notes archive.".into(),
+            description: "Notes from an Obsidian vault — a local folder or a git-hosted repo — synced continuously; wikilinks become graph edges, deleted notes archive.".into(),
             brand: "obsidian".into(),
             auth_mode: "none".into(),
             status: "available".into(),
             drive_model: "continuous".into(),
             // Full-scan fallback interval; fs events trigger syncs in between.
             default_schedule_ms: 60_000,
-            fields: vec![
-                CatalogField::text("vault_path", "Vault path", "~/Documents/MyVault"),
-                name,
-            ],
+            fields: vec![path, git_url, git_token, git_branch, name],
             resource: None,
             default_target_table: None,
             config_defaults: None,
@@ -45,12 +62,20 @@ impl DataSource for ObsidianDataSource {
     }
 
     fn validate_config(&self, cfg: &Value) -> Result<(), ConfigError> {
-        let path = cfg
-            .get("vault_path")
-            .and_then(Value::as_str)
-            .map_or("", str::trim);
-        if path.is_empty() {
-            return Err(ConfigError("vault_path is required".into()));
+        let field = |k: &str| cfg.get(k).and_then(Value::as_str).map_or("", str::trim);
+        let path = field("vault_path");
+        let git_url = field("git_url");
+        if path.is_empty() && git_url.is_empty() {
+            return Err(ConfigError("provide a vault_path or a git_url".into()));
+        }
+        if !git_url.is_empty()
+            && !(git_url.starts_with("https://")
+                || git_url.starts_with("http://")
+                || git_url.starts_with("git@")
+                || git_url.starts_with("ssh://")
+                || git_url.starts_with("file://"))
+        {
+            return Err(ConfigError("git_url must be an http(s), ssh, or file git URL".into()));
         }
         Ok(())
     }
@@ -79,11 +104,14 @@ mod tests {
         assert_eq!(c.drive_model, "continuous");
         assert_eq!(c.status, "available");
         assert_eq!(c.brand, "obsidian");
-        assert!(c.fields.iter().any(|f| f.key == "vault_path" && f.required));
+        // Both a local path and a git URL are offered; neither is hard-required
+        // on its own (validate enforces the either/or).
+        assert!(c.fields.iter().any(|f| f.key == "vault_path"));
+        assert!(c.fields.iter().any(|f| f.key == "git_url"));
     }
 
     #[test]
-    fn validate_requires_vault_path() {
+    fn validate_requires_path_or_git_url() {
         assert!(ObsidianDataSource.validate_config(&json!({})).is_err());
         assert!(ObsidianDataSource
             .validate_config(&json!({ "vault_path": "  " }))
@@ -91,5 +119,13 @@ mod tests {
         assert!(ObsidianDataSource
             .validate_config(&json!({ "vault_path": "~/Vault" }))
             .is_ok());
+        // Git-hosted import: URL alone is enough.
+        assert!(ObsidianDataSource
+            .validate_config(&json!({ "git_url": "https://github.com/org/vault.git" }))
+            .is_ok());
+        // A bad URL scheme is rejected.
+        assert!(ObsidianDataSource
+            .validate_config(&json!({ "git_url": "s3://not-git" }))
+            .is_err());
     }
 }
