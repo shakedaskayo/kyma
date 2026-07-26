@@ -1,0 +1,69 @@
+name: Publish to Agentic OS ECR
+#
+# workflow_dispatch-only: builds and publishes ONE pinned commit's engine
+# image to Agentic OS's own ECR repo (a different platform, agentic-os,
+# that hosts this project as an internal service — infra/components/kyma.ts
+# there). No long-lived AWS keys are ever stored in this repo: the AWS
+# credentials step below assumes an IAM role via OIDC
+# (token.actions.githubusercontent.com), scoped to
+# `repo:shakedaskayo/kyma:*` on the agentic-os side.
+#
+# Deployment cadence:
+#   1. gh workflow run publish-to-agentic-ecr.yml -f sha=<full 40-char commit SHA> --repo shakedaskayo/kyma
+#   2. Confirm the image landed:
+#      aws ecr describe-images --repository-name agentic-os-agentcylabs-kyma-engine --image-ids imageTag=<sha>
+#   3. On the agentic-os side: pulumi config set product:kyma.imageTag <sha>, then pulumi up.
+#
+# Tagged with the FULL commit SHA (not GitHub's 8-char short form some of
+# this repo's other workflows use) — simpler and unambiguous for a
+# workflow_dispatch input where there's no `github.sha` to derive a short
+# form from automatically.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA to build and publish (full 40-char SHA)"
+        required: true
+
+permissions:
+  id-token: write # required for OIDC
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Configure AWS credentials (OIDC — no long-lived keys)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::468582173863:role/agentic-os-agentcylabs-kyma-github-actions
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.ecr-login.outputs.registry }}/agentic-os-agentcylabs-kyma-engine:${{ github.event.inputs.sha }}
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Summary
+        run: |
+          echo "Pushed:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.ecr-login.outputs.registry }}/agentic-os-agentcylabs-kyma-engine:${{ github.event.inputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
