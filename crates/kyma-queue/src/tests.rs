@@ -82,9 +82,15 @@ fn spawn_in_memory(name: &str, handler: Arc<TestHandler>) -> (Queue, tokio::task
     let (_shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     // Leak the sender so the shutdown future stays pending for the test's life.
     std::mem::forget(_shutdown_tx);
-    spawn(test_cfg(name), None, handler, async move {
-        let _ = shutdown_rx.await;
-    })
+    spawn(
+        test_cfg(name),
+        None,
+        handler,
+        kyma_core::types::NodeId::new(),
+        async move {
+            let _ = shutdown_rx.await;
+        },
+    )
 }
 
 /// Poll until `cond` or `timeout`. Returns whether the condition was reached.
@@ -169,9 +175,15 @@ async fn shutdown_drains_pending_jobs() {
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     let mut cfg = test_cfg("t_drain");
     cfg.linger = Duration::from_millis(500);
-    let (queue, handle) = spawn(cfg, None, handler.clone(), async move {
-        let _ = shutdown_rx.await;
-    });
+    let (queue, handle) = spawn(
+        cfg,
+        None,
+        handler.clone(),
+        kyma_core::types::NodeId::new(),
+        async move {
+            let _ = shutdown_rx.await;
+        },
+    );
 
     for i in 0..3 {
         queue.submit("a", json!(i), false).await.expect("submit");
@@ -207,6 +219,7 @@ async fn durable_submit_survives_and_completes() {
         test_cfg("t_durable"),
         Some(catalog.clone()),
         handler.clone(),
+        kyma_core::types::NodeId::new(),
         async move {
             let _ = rx.await;
         },
@@ -255,6 +268,7 @@ async fn durable_jobs_replay_after_crash() {
         test_cfg("t_replay"),
         Some(catalog),
         handler.clone(),
+        kyma_core::types::NodeId::new(),
         async move {
             let _ = rx.await;
         },
@@ -277,9 +291,15 @@ async fn failed_durable_job_requeues_via_store() {
     cfg.max_retries = 0; // park to the store immediately
     let (_tx, rx) = tokio::sync::oneshot::channel::<()>();
     std::mem::forget(_tx);
-    let (queue, _h) = spawn(cfg, Some(catalog), handler.clone(), async move {
-        let _ = rx.await;
-    });
+    let (queue, _h) = spawn(
+        cfg,
+        Some(catalog),
+        handler.clone(),
+        kyma_core::types::NodeId::new(),
+        async move {
+            let _ = rx.await;
+        },
+    );
 
     queue
         .submit("a", json!("poison"), true)

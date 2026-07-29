@@ -533,6 +533,7 @@ async fn main() -> Result<()> {
                     format.clone(),
                     embed,
                     cfg,
+                    lease.node_id,
                     async move {
                         let _ = mem_rx.recv().await;
                     },

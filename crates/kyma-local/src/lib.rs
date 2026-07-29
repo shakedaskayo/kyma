@@ -325,11 +325,16 @@ async fn spawn_local_memory_queue(engine: &Engine) -> Option<LocalMemoryQueue> {
     };
     let cfg = kyma_memory::MemoryIngestConfig::from_env(false);
     let (stop, stop_rx) = tokio::sync::oneshot::channel::<()>();
+    // Local/embedded mode has no cluster node registration (no `nodes` row to
+    // reuse) — a fresh id is fine here: the embedded SQLite catalog's
+    // `background_tasks.claimed_by` carries no foreign key to `nodes`, unlike
+    // the Postgres catalog used by the server binary.
     let (queue, worker) = kyma_memory::spawn_memory_queue(
         engine.catalog.clone(),
         engine.format.clone(),
         embed,
         cfg,
+        kyma_core::types::NodeId::new(),
         async move {
             let _ = stop_rx.await;
         },
