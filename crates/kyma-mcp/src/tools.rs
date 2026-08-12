@@ -18,13 +18,40 @@ use std::sync::Arc;
 
 use crate::jsonrpc::{ErrorCode, ErrorObject};
 
+/// Tools that can address arbitrary databases/realms and therefore bypass the
+/// memory realm model (raw SQL/KQL, cross-realm graph traversal, unified
+/// search, realm-blind file recall, catalog/datasource reads). They are NOT
+/// registered for realm-restricted callers, and [`ToolDispatch::call`] names
+/// the policy rather than returning "unknown tool".
+pub const REALM_RESTRICTED_TOOLS: &[&str] = &[
+    "list_databases",
+    "describe_table",
+    "run_sql",
+    "run_kql",
+    "sample_rows",
+    "explore_schema",
+    "find_references_to",
+    "graph_traverse",
+    "graph_analytics",
+    "search",
+    "graph_search",
+    "recall_file",
+    "retrieve_artifact",
+    "list_data_sources",
+    "data_source_read",
+];
+
 #[derive(Clone)]
 pub struct ToolDispatch {
     by_name: Arc<HashMap<&'static str, Arc<dyn Tool>>>,
+    /// When true, the escape-hatch tools in [`REALM_RESTRICTED_TOOLS`] were
+    /// withheld from this dispatch and [`Self::call`] denies them explicitly.
+    realm_restricted: bool,
 }
 
 impl ToolDispatch {
     pub fn new(shared: SharedToolCtx) -> Self {
+        let restricted = shared.realm_scope.is_restricted();
         let mut map: HashMap<&'static str, Arc<dyn Tool>> = HashMap::with_capacity(20);
         map.insert("list_databases", tool_list_databases(shared.clone()));
         map.insert("describe_table", tool_describe_table(shared.clone()));
@@ -90,8 +117,15 @@ impl ToolDispatch {
         // actually helped, and list the reinforcement backstop worklist.
         map.insert("reinforce_memory", tool_reinforce_memory(shared.clone()));
         map.insert("list_memory_usage", tool_list_memory_usage(shared));
+        // Realm-restricted callers never see the escape-hatch tools — so
+        // `tools/list` doesn't advertise a tool they can't call, and there is
+        // no way to reach cross-realm data through raw query/graph/search.
+        if restricted {
+            map.retain(|name, _| !REALM_RESTRICTED_TOOLS.contains(name));
+        }
         Self {
             by_name: Arc::new(map),
+            realm_restricted: restricted,
         }
     }
 
@@ -125,6 +159,7 @@ impl ToolDispatch {
         );
         Self {
             by_name: Arc::new(map),
+            realm_restricted: self.realm_restricted,
         }
     }
 
@@ -150,6 +185,14 @@ impl ToolDispatch {
 
     /// Invoke a tool by name. Translates ADK errors into JSON-RPC errors.
     pub async fn call(&self, name: &str, arguments: Value) -> Result<Value, ErrorObject> {
+        // Realm-scoped tokens: name the policy instead of a bare "unknown tool"
+        // when they reach for a withheld escape-hatch tool.
+        if self.realm_restricted && REALM_RESTRICTED_TOOLS.contains(&name) {
+            return Err(ErrorObject::new(
+                ErrorCode::InvalidParams as i64,
+                format!("tool `{name}` is not available to realm-scoped tokens"),
+            ));
+        }
         let Some(tool) = self.by_name.get(name).cloned() else {
             return Err(ErrorObject::new(
                 ErrorCode::MethodNotFound as i64,
@@ -178,5 +221,41 @@ impl ToolDispatch {
                 format!("tool {name}: {e}"),
             )),
         }
+    }
+}
+
+/// The ingredients needed to rebuild a [`ToolDispatch`] per request with a
+/// caller-specific [`RealmScope`](kyma_server::auth::RealmScope). Held in
+/// `McpState` so the server-mode MCP transport can serve realm-restricted
+/// tokens a scoped tool set without disturbing the startup-built fast path used
+/// by the (overwhelming majority) unrestricted callers.
+///
+/// `None` in local/stdio mode: there is no per-request `Principal` there, so
+/// no scoped dispatch is ever needed.
+#[derive(Clone)]
+pub struct DispatchBuilder {
+    pub shared: SharedToolCtx,
+    pub artifact_store: Option<Arc<dyn object_store::ObjectStore>>,
+    pub datasource_ctx: Option<kyma_server::agent::datasource_tools::DataSourceToolCtx>,
+}
+
+impl DispatchBuilder {
+    /// Build a dispatch for a caller with the given realm scope. For an
+    /// unrestricted scope this reproduces the full tool set (including the
+    /// artifact/datasource extensions); for a restricted scope the escape-hatch
+    /// tools are withheld and the extensions are skipped entirely.
+    pub fn build(&self, scope: kyma_server::auth::RealmScope) -> ToolDispatch {
+        let mut shared = self.shared.clone();
+        shared.realm_scope = scope.clone();
+        let mut d = ToolDispatch::new(shared);
+        if !scope.is_restricted() {
+            if let Some(s) = &self.artifact_store {
+                d = d.with_artifact_store(s.clone());
+            }
+            if let Some(c) = &self.datasource_ctx {
+                d = d.with_datasource_tools(c.clone());
+            }
+        }
+        d
     }
 }

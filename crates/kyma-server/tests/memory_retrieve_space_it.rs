@@ -52,6 +52,7 @@ async fn embedded_engine(root: &std::path::Path) -> (CatalogArc, FormatArc) {
 
 fn ctx(catalog: CatalogArc, format: FormatArc) -> SharedToolCtx {
     SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         catalog,
         format,

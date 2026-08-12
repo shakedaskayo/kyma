@@ -26,6 +26,7 @@ pub struct OidcConfig {
     pub role_claim: String,      // default "kyma_role"
     pub subject_claim: String,   // default "sub"
     pub databases_claim: String, // default "kyma_databases"
+    pub realms_claim: String,    // default "kyma_realms"
 }
 
 impl OidcConfig {
@@ -50,6 +51,8 @@ impl OidcConfig {
                 .unwrap_or_else(|_| "sub".into()),
             databases_claim: std::env::var("KYMA_OIDC_DATABASES_CLAIM")
                 .unwrap_or_else(|_| "kyma_databases".into()),
+            realms_claim: std::env::var("KYMA_OIDC_REALMS_CLAIM")
+                .unwrap_or_else(|_| "kyma_realms".into()),
         })
     }
 }
@@ -289,6 +292,38 @@ impl OidcAuthBackend {
                     .collect::<Vec<_>>()
             });
 
+        // Realms claim: absent → None (unrestricted). Present but malformed
+        // (not a JSON array, or any element not a non-empty string) → REJECT
+        // the token (fail closed). This deliberately differs from the
+        // databases claim above, which silently maps a non-array to None — a
+        // fail-open footgun we do not replicate for a security boundary.
+        let allowed_realms = match claims.get(&self.cfg.realms_claim) {
+            None => None,
+            Some(serde_json::Value::Array(arr)) => {
+                let mut out = Vec::with_capacity(arr.len());
+                for x in arr {
+                    match x.as_str().map(str::trim) {
+                        Some(s) if !s.is_empty() => out.push(s.to_owned()),
+                        _ => {
+                            tracing::warn!(
+                                claim = %self.cfg.realms_claim,
+                                "rejecting token: realms claim element is not a non-empty string"
+                            );
+                            return Err(AuthError::UnknownToken);
+                        }
+                    }
+                }
+                Some(out)
+            }
+            Some(_) => {
+                tracing::warn!(
+                    claim = %self.cfg.realms_claim,
+                    "rejecting token: realms claim is not a JSON array"
+                );
+                return Err(AuthError::UnknownToken);
+            }
+        };
+
         // NOTE: multi-tenant claim mapping (e.g. a `kyma_tenant` claim that
         // picks the TenantId) is a cloud-track follow-up. Self-hosted always
         // uses DEFAULT_TENANT.
@@ -297,6 +332,7 @@ impl OidcAuthBackend {
             role,
             subject,
             allowed_databases,
+            allowed_realms,
         })
     }
 
@@ -442,6 +478,7 @@ mod tests {
             role_claim: "kyma_role".into(),
             subject_claim: "sub".into(),
             databases_claim: "kyma_databases".into(),
+            realms_claim: "kyma_realms".into(),
         }
     }
 
@@ -475,6 +512,7 @@ mod tests {
                 role: Role::Read,
                 subject: Some("stub-subject".into()),
                 allowed_databases: None,
+                allowed_realms: None,
             },
         })
     }

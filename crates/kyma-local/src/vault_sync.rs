@@ -190,6 +190,7 @@ pub(crate) async fn run_once(
     opts: &VaultSyncOptions,
 ) -> Result<VaultSyncReport> {
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: engine.catalog.clone(),

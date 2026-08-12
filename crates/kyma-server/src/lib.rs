@@ -307,6 +307,9 @@ pub fn router_with_agent(state: QueryState, agent_state: agent::AgentState) -> R
     router(state).nest(
         "/v1/agent",
         agent::router(agent_state)
+            // Realm-scoped tokens: only /memory/query (retrieve() enforces
+            // realms). Layered inside scoped_token_guard so both run.
+            .layer(axum::middleware::from_fn(agent_realm_guard_middleware))
             .layer(axum::middleware::from_fn(scoped_token_guard_middleware)),
     )
 }
@@ -413,6 +416,65 @@ pub async fn scoped_token_guard_middleware(
         }
     }
 
+    next.run(req).await
+}
+
+/// Axum middleware that rejects **realm-scoped** principals on surfaces that
+/// have no realm model at all: Arrow Flight (`/flight/*`) and generic ingest
+/// (`POST /v1/ingest`, which can inject `memory_nodes` rows with any realm).
+/// Realm-scoped tokens carry `allowed_databases: None`, so they pass
+/// [`scoped_token_guard_middleware`]; this closes the realm hole. Unrestricted
+/// principals (and auth-disabled deployments) are unaffected.
+pub async fn realm_token_guard_middleware(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if let Some(principal) = req.extensions().get::<crate::auth::Principal>() {
+        if principal.allowed_realms.is_some() {
+            let request_id = extract_request_id(req.headers());
+            return error_response(
+                axum::http::StatusCode::FORBIDDEN,
+                "forbidden",
+                "realm-scoped tokens cannot use this interface",
+                &request_id,
+            );
+        }
+    }
+    next.run(req).await
+}
+
+/// Path (as seen on the pre-nest `/v1/agent` router) that a realm-scoped token
+/// is allowed to reach. `/memory/query` runs through `retrieve()`, which
+/// enforces realms; every other agent surface (`/ask`'s identity-blind tool
+/// loop, sessions, engines, skills, dreaming, review, import/export/changes,
+/// files/contribute) is refused for restricted tokens.
+const AGENT_REALM_ALLOWED_PATHS: &[&str] = &["/memory/query"];
+
+/// Axum middleware layered on the `/v1/agent` router: a realm-scoped principal
+/// may reach only [`AGENT_REALM_ALLOWED_PATHS`]; everything else 403s without
+/// entering the handler. Layered before the nest, so `req.uri().path()` is the
+/// in-nest path (e.g. `/memory/query`).
+pub async fn agent_realm_guard_middleware(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let restricted = req
+        .extensions()
+        .get::<crate::auth::Principal>()
+        .map(|p| p.allowed_realms.is_some())
+        .unwrap_or(false);
+    if restricted {
+        let path = req.uri().path();
+        if !AGENT_REALM_ALLOWED_PATHS.contains(&path) {
+            let request_id = extract_request_id(req.headers());
+            return error_response(
+                axum::http::StatusCode::FORBIDDEN,
+                "forbidden",
+                "realm-scoped tokens may only call /v1/agent/memory/query on this surface",
+                &request_id,
+            );
+        }
+    }
     next.run(req).await
 }
 
@@ -536,6 +598,7 @@ mod scoped_token_guard_tests {
             subject: None,
             allowed_databases: allowed
                 .map(|v| v.into_iter().map(String::from).collect()),
+            allowed_realms: None,
         }
     }
 

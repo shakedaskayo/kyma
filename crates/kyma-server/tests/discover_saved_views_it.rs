@@ -38,6 +38,7 @@ impl AuthBackend for TestAuth {
             role: Role::Admin,
             subject: Some("test-user".to_string()),
             allowed_databases: None,
+            allowed_realms: None,
         })
     }
 }

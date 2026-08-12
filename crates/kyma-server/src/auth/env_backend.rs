@@ -74,6 +74,7 @@ impl AuthBackend for EnvAuthBackend {
             role,
             subject: None,
             allowed_databases: None,
+            allowed_realms: None,
         })
     }
 }

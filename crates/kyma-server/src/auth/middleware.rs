@@ -66,6 +66,7 @@ pub async fn require_role_middleware(
             role: Role::Admin,
             subject: None,
             allowed_databases: None,
+            allowed_realms: None,
         }
     };
 

@@ -11,6 +11,7 @@ async fn list_returns_all_named_tools() {
     .await
     .unwrap();
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: state.catalog.clone(),
@@ -69,6 +70,7 @@ async fn list_entries_have_inputschema_objects() {
     .await
     .unwrap();
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: state.catalog.clone(),

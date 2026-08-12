@@ -191,6 +191,7 @@ impl AuthBackend for OpaqueInner {
                 role: Role::Read,
                 subject: Some("opaque-subject".into()),
                 allowed_databases: None,
+                allowed_realms: None,
             })
         } else {
             Err(AuthError::UnknownToken)
@@ -213,6 +214,7 @@ fn make_cfg(issuer_url: &str) -> OidcConfig {
         role_claim: "kyma_role".into(),
         subject_claim: "sub".into(),
         databases_claim: "kyma_databases".into(),
+        realms_claim: "kyma_realms".into(),
     }
 }
 
@@ -332,6 +334,7 @@ async fn opaque_token_chains_to_inner_backend() {
         role_claim: "kyma_role".into(),
         subject_claim: "sub".into(),
         databases_claim: "kyma_databases".into(),
+        realms_claim: "kyma_realms".into(),
     };
     let backend = OidcAuthBackend::new(cfg, opaque_inner());
 

@@ -18,7 +18,10 @@ pub use env_backend::EnvAuthBackend;
 pub use git_middleware::require_git_auth_middleware;
 pub use middleware::{require_role_middleware, AuthLayerState};
 pub use oidc_backend::{OidcAuthBackend, OidcConfig};
-pub use scope::check_database_scope;
+pub use scope::{
+    check_database_scope, check_realm_scope, intersect_realms, is_memory_internal_db,
+    EffectiveRealms, RealmScope,
+};
 pub use session_backend::{hash_token, SessionAuthBackend};
 pub use supabase_backend::{SupabaseAuthBackend, SupabaseAuthConfig};
 

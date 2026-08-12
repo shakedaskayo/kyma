@@ -140,6 +140,7 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
     let llm = build_engine(&cfg, key)?;
 
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: state.consumer_events.clone().map(|events| {
             std::sync::Arc::new(crate::agent::tools::LocalConsumerPublisher {
                 events,

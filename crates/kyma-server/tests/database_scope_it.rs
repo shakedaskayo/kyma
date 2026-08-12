@@ -38,6 +38,7 @@ impl AuthBackend for ScopedAuth {
             role: Role::Admin,
             subject: Some("test-scoped-user".to_string()),
             allowed_databases: Some(vec!["allowed_db".to_string()]),
+            allowed_realms: None,
         })
     }
 }

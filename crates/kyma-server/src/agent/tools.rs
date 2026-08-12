@@ -74,6 +74,13 @@ pub struct SharedToolCtx {
     /// file beside it when `pool` is `None` (mirrors how
     /// [`super::memory_queue_store::QueueStore`] picks its backend).
     pub memory_settings_path: Option<std::path::PathBuf>,
+    /// Token realm scope for this context. `Default` (unrestricted) everywhere
+    /// except request-scoped contexts built from a realm-restricted
+    /// [`crate::auth::Principal`] (see the MCP `DispatchBuilder` and the
+    /// `/v1/agent/memory/query` handler). Internal contexts — dreaming, the
+    /// queue worker, cc-curation, brain — stay unrestricted by construction, so
+    /// internal recall/consolidation is never realm-limited.
+    pub realm_scope: crate::auth::RealmScope,
 }
 
 /// Where a consumer-activity event goes. The `kyma serve` process publishes to
@@ -104,6 +111,20 @@ impl ConsumerPublisher for LocalConsumerPublisher {
 }
 
 impl SharedToolCtx {
+    /// Write-site deny check for realm-scoped tokens. Returns `Some(error
+    /// payload)` when the token's scope excludes `realm` — tool closures
+    /// return it directly (tool errors are data, never `Err`). `None` (allow)
+    /// for unrestricted contexts and permitted realms.
+    pub fn check_realm_write(&self, realm: &str) -> Option<Value> {
+        if self.realm_scope.allows(realm) {
+            return None;
+        }
+        Some(json!({
+            "error": format!("token not scoped to realm `{realm}`"),
+            "code": "realm_forbidden",
+        }))
+    }
+
     /// Publish a consumer-activity event to the live sink, if one is wired.
     /// Best-effort and lossy — never blocks or fails the calling tool. The
     /// consumer `kind` is resolved from the process-global MCP client identity

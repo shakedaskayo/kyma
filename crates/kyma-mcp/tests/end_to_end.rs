@@ -15,6 +15,7 @@ async fn full_mcp_handshake_against_seeded_server() {
     let url = std::env::var("KYMA_TEST_DATABASE_URL").expect("KYMA_TEST_DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: state.catalog.clone(),
@@ -26,6 +27,7 @@ async fn full_mcp_handshake_against_seeded_server() {
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),
+        builder: None,
         server_info: ServerInfo {
             name: "kyma".into(),
             version: "test".into(),
@@ -145,6 +147,7 @@ async fn rejects_request_without_bearer_token() {
     let url = std::env::var("KYMA_TEST_DATABASE_URL").expect("KYMA_TEST_DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: state.catalog,
@@ -156,6 +159,7 @@ async fn rejects_request_without_bearer_token() {
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),
+        builder: None,
         server_info: ServerInfo {
             name: "kyma".into(),
             version: "test".into(),

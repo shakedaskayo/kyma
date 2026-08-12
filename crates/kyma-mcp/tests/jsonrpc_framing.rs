@@ -12,6 +12,7 @@ async fn build() -> String {
     let url = std::env::var("KYMA_TEST_DATABASE_URL").expect("KYMA_TEST_DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: state.catalog,
@@ -23,6 +24,7 @@ async fn build() -> String {
     };
     let mcp_state = McpState {
         dispatch: ToolDispatch::new(shared),
+        builder: None,
         server_info: ServerInfo {
             name: "kyma".into(),
             version: "test".into(),

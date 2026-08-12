@@ -459,6 +459,11 @@ async fn main() -> Result<()> {
         catalog: catalog.clone(),
         write_path: write_path.clone(),
     })
+    // Realm-scoped tokens have no realm control over raw ingest (a write could
+    // inject memory_nodes rows with any realm) — fail closed.
+    .layer(axum::middleware::from_fn(
+        kyma_server::realm_token_guard_middleware,
+    ))
     // Database scope check runs after auth middleware injects Principal.
     .layer(axum::middleware::from_fn(
         kyma_server::database_scope_middleware,
@@ -600,6 +605,7 @@ async fn main() -> Result<()> {
 
     // Build MCP state from the same SharedToolCtx the inline /v1/agent endpoint uses.
     let mcp_shared = kyma_server::agent::SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: Some(std::sync::Arc::new(
             kyma_server::agent::LocalConsumerPublisher {
                 events: consumer_events.clone(),
@@ -626,10 +632,18 @@ async fn main() -> Result<()> {
             kyma_server::agent::datasource_tools::DataSourceReadBudget::new(10_000, u64::MAX),
         ),
     };
+    // Per-request rebuild ingredients for realm-restricted tokens (server mode
+    // only). Cloned before the base dispatch consumes the originals.
+    let mcp_builder = kyma_mcp::DispatchBuilder {
+        shared: mcp_shared.clone(),
+        artifact_store: Some(store.clone()),
+        datasource_ctx: Some(mcp_data_source_ctx.clone()),
+    };
     let mcp_state = kyma_mcp::McpState {
         dispatch: kyma_mcp::ToolDispatch::new(mcp_shared)
             .with_artifact_store(store.clone())
             .with_datasource_tools(mcp_data_source_ctx),
+        builder: Some(mcp_builder),
         server_info: kyma_mcp::ServerInfo {
             name: "kyma".into(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -1024,6 +1038,10 @@ async fn main() -> Result<()> {
         .layer(axum::middleware::from_fn(
             kyma_server::scoped_token_guard_middleware,
         ))
+        // Realm-scoped tokens likewise cannot use Flight (no realm model).
+        .layer(axum::middleware::from_fn(
+            kyma_server::realm_token_guard_middleware,
+        ))
         .layer(axum::middleware::from_fn_with_state(
             AuthLayerState {
                 backend: backend.clone(),
@@ -1239,6 +1257,7 @@ async fn main() -> Result<()> {
     {
         let mut consolidator = kyma_server::agent::MemoryConsolidator::new(
             kyma_server::agent::SharedToolCtx {
+                realm_scope: Default::default(),
                 consumer_sink: None,
                 federation: Some(federation.clone()),
                 catalog: catalog.clone(),
@@ -1280,6 +1299,7 @@ async fn main() -> Result<()> {
     {
         let mut correlator = kyma_server::agent::CiCorrelator::new(
             kyma_server::agent::SharedToolCtx {
+                realm_scope: Default::default(),
                 consumer_sink: None,
                 federation: Some(federation.clone()),
                 catalog: catalog.clone(),
@@ -1318,6 +1338,7 @@ async fn main() -> Result<()> {
     {
         let mut promoter = kyma_server::agent::FilePromoter::new(
             kyma_server::agent::SharedToolCtx {
+                realm_scope: Default::default(),
                 consumer_sink: None,
                 federation: Some(federation.clone()),
                 catalog: catalog.clone(),

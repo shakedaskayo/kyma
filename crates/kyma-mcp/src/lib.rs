@@ -36,4 +36,4 @@ pub use dispatch::dispatch_request;
 pub use initialize::ServerInfo;
 pub use router::{router, McpState};
 pub use stdio::{serve as serve_stdio_loop, serve_stdio};
-pub use tools::ToolDispatch;
+pub use tools::{DispatchBuilder, ToolDispatch};

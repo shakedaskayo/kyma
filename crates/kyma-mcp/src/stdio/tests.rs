@@ -25,6 +25,7 @@ async fn db_free_dispatch() -> (ToolDispatch, ServerInfo) {
     );
     // Local mode: no Postgres pool at all.
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog,

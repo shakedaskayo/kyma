@@ -222,6 +222,7 @@ async fn changes_memory_handler(
     axum::extract::Query(params): axum::extract::Query<ChangesParams>,
 ) -> Json<Value> {
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
@@ -281,7 +282,7 @@ async fn export_memory_handler(
         memory.exported = tracing::field::Empty,
     );
     async move {
-        let shared = SharedToolCtx { consumer_sink: None, federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+        let shared = SharedToolCtx { realm_scope: Default::default(), consumer_sink: None, federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
             catalog: state.catalog.clone(),
             format: state.format.clone(),
             pool: state.pool.clone(),
@@ -507,6 +508,9 @@ async fn memory_query_handler(
     );
     async move {
         let shared = SharedToolCtx {
+            // Carry the caller's realm scope so retrieve() enforces realms on
+            // the REST /v1/agent/memory/query path exactly as it does over MCP.
+            realm_scope: crate::auth::RealmScope::from_principal(&principal),
             consumer_sink: state.consumer_events.clone().map(|events| {
                 std::sync::Arc::new(crate::agent::tools::LocalConsumerPublisher {
                     events,

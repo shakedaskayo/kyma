@@ -398,6 +398,7 @@ pub async fn unified_search(
         // keyword + graph-expansion + bi-temporal validity) is preserved.
         SearchMode::Memory => {
             let shared = SharedToolCtx {
+                realm_scope: Default::default(),
                 consumer_sink: None,
                 federation: None,
                 catalog: ctx.catalog.clone(),

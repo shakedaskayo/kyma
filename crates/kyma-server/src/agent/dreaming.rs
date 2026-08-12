@@ -1074,6 +1074,7 @@ async fn run_via_adk(
     let llm = super::engine::build_engine(&cfg, key).map_err(|e| format!("engine: {e}"))?;
 
     let shared = super::tools::SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),

@@ -38,6 +38,11 @@ pub struct Principal {
     /// Databases this principal may touch. `None` = unrestricted (the default
     /// for all pre-existing backends; only OIDC claims populate this).
     pub allowed_databases: Option<Vec<String>>,
+    /// Memory realms this principal may read/write. `None` = unrestricted (the
+    /// default for all pre-existing backends and the auth-disabled synthetic
+    /// principal; only an OIDC `kyma_realms` claim populates this). See
+    /// [`super::scope::RealmScope`] / [`super::scope::intersect_realms`].
+    pub allowed_realms: Option<Vec<String>>,
 }
 
 #[derive(Debug, thiserror::Error)]
