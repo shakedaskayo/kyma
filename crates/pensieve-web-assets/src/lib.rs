@@ -1,6 +1,6 @@
 //! Embedded Web UI assets — compiled into the binary at build time.
 //!
-//! The caller (kyma-server) iterates these behind the `web-ui` feature.
+//! The caller (pensieve-server) iterates these behind the `web-ui` feature.
 #![forbid(unsafe_code)]
 
 use include_dir::{include_dir, Dir};

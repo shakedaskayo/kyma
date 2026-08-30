@@ -2,7 +2,7 @@
 
 use crate::executor::{JobCtx, JobError, JobExecutor, ProgressSink};
 use crate::queue::JobQueue;
-use kyma_core::fabric::ClaimedJob;
+use pensieve_core::fabric::ClaimedJob;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;

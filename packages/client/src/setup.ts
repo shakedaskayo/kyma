@@ -2,9 +2,9 @@
 // `/v1/auth/signup`, `/v1/setup/probe`). The first three functions are
 // unauthenticated — they power the onboarding wizard before any user/token
 // exists, so they take `endpoint: string` and use plain fetch.
-// `ingestSample` requires a Bearer token and uses a KymaTransport.
+// `ingestSample` requires a Bearer token and uses a PensieveTransport.
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import { errorFromResponse } from "./errors";
 import type { TokenPair } from "./auth";
 
@@ -69,7 +69,7 @@ export async function signup(args: {
 
 /** Ingest a small sample telemetry dataset so the instance is immediately useful. */
 export async function ingestSample(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { database: string; table: string },
 ): Promise<void> {
   const now = Date.now();

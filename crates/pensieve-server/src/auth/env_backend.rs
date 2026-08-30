@@ -1,14 +1,14 @@
 //! Self-hosted auth backend: bearer tokens loaded from the
-//! `KYMA_AUTH_TOKENS` env var. Empty/unset ⇒ auth disabled.
+//! `PENSIEVE_AUTH_TOKENS` env var. Empty/unset ⇒ auth disabled.
 //!
 //! Format: comma-separated list of `token:role` pairs, e.g.
 //! ```text
-//! KYMA_AUTH_TOKENS=alice-tok:admin,bob-tok:write,reader-tok:read
+//! PENSIEVE_AUTH_TOKENS=alice-tok:admin,bob-tok:write,reader-tok:read
 //! ```
 
 use super::backend::{AuthBackend, AuthError, Principal, Role};
 use async_trait::async_trait;
-use kyma_core::tenant::DEFAULT_TENANT;
+use pensieve_core::tenant::DEFAULT_TENANT;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -25,9 +25,9 @@ struct EnvInner {
 }
 
 impl EnvAuthBackend {
-    /// Load configuration from the `KYMA_AUTH_TOKENS` env var.
+    /// Load configuration from the `PENSIEVE_AUTH_TOKENS` env var.
     pub fn from_env() -> Self {
-        let raw = std::env::var("KYMA_AUTH_TOKENS").unwrap_or_default();
+        let raw = std::env::var("PENSIEVE_AUTH_TOKENS").unwrap_or_default();
         Self::from_str(&raw)
     }
 
@@ -102,7 +102,7 @@ mod tests {
     async fn principal_is_default_tenant() {
         let b = EnvAuthBackend::from_str("alice:admin");
         let p = b.authenticate("alice").await.unwrap();
-        assert_eq!(p.tenant, kyma_core::tenant::DEFAULT_TENANT);
+        assert_eq!(p.tenant, pensieve_core::tenant::DEFAULT_TENANT);
     }
 
     #[tokio::test]

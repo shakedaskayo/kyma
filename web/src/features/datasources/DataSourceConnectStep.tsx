@@ -69,7 +69,7 @@ export function DataSourceConnectStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Authorize Kyma to read your {entry.label} data. A secure window opens to {entry.label};
+        Authorize Pensieve to read your {entry.label} data. A secure window opens to {entry.label};
         nothing is stored until you approve.
       </p>
 

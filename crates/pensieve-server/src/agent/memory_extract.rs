@@ -195,7 +195,7 @@ pub async fn extract(
     input.push_str(&format!("NEW ACTIVITY in project '{realm}':\n{window}\n"));
     let text = runner::run_oneshot(
         state,
-        "kyma-memory-extractor",
+        "pensieve-memory-extractor",
         "Extracts durable memories, entities, and relationships from activity.",
         EXTRACTION_SYSTEM,
         &input,
@@ -228,7 +228,7 @@ pub async fn decide_conflict(
     }
     let text = runner::run_oneshot(
         state,
-        "kyma-memory-conflict",
+        "pensieve-memory-conflict",
         "Decides ADD/UPDATE/NOOP/INVALIDATE for a candidate memory.",
         CONFLICT_SYSTEM,
         &input,
@@ -303,12 +303,12 @@ mod tests {
 
     #[test]
     fn parses_plain_bundle() {
-        let s = r#"{"memories":[{"content":"kyma uses pgvector","kind":"fact","entity_mentions":["kyma"]}],"entities":[{"name":"kyma","kind":"repo"}],"relationships":[]}"#;
+        let s = r#"{"memories":[{"content":"pensieve uses pgvector","kind":"fact","entity_mentions":["pensieve"]}],"entities":[{"name":"pensieve","kind":"repo"}],"relationships":[]}"#;
         let b = parse_bundle(s).unwrap();
         assert_eq!(b.memories.len(), 1);
         assert_eq!(b.memories[0].kind, "fact");
         assert_eq!(b.memories[0].importance, 0.5); // default applied
-        assert_eq!(b.entities[0].name, "kyma");
+        assert_eq!(b.entities[0].name, "pensieve");
     }
 
     #[test]

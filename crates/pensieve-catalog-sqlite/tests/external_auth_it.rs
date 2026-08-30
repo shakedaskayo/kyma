@@ -3,9 +3,9 @@
 //! on: create on first sight, refresh on later sights, keyed by
 //! (auth_provider, external_id), never duplicating users.
 
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_core::catalog::Catalog;
-use kyma_core::tenant::DEFAULT_TENANT;
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::tenant::DEFAULT_TENANT;
 
 #[tokio::test]
 async fn upsert_external_user_creates_then_refreshes() {
@@ -86,14 +86,14 @@ async fn external_users_coexist_with_password_users() {
         .unwrap()
         .expect("external user visible to user lookups");
     assert!(
-        kyma_server_test_helpers::phc_parse_fails(&hash),
+        pensieve_server_test_helpers::phc_parse_fails(&hash),
         "external-user sentinel hash must not be a valid PHC string"
     );
 }
 
 /// Tiny local helper namespace so the test reads clearly without depending on
-/// kyma-server: a valid argon2 PHC string starts with `$argon2`.
-mod kyma_server_test_helpers {
+/// pensieve-server: a valid argon2 PHC string starts with `$argon2`.
+mod pensieve_server_test_helpers {
     pub fn phc_parse_fails(hash: &str) -> bool {
         !hash.starts_with("$argon2")
     }

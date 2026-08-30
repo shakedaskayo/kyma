@@ -1,6 +1,6 @@
 //! Session-based auth backend: validates bearer tokens against the
 //! `api_tokens` catalog table, with a fallback to [`EnvAuthBackend`] so that
-//! static `KYMA_AUTH_TOKENS` API keys keep working alongside session tokens
+//! static `PENSIEVE_AUTH_TOKENS` API keys keep working alongside session tokens
 //! issued by `POST /v1/auth/login`.
 //!
 //! # Authentication flow
@@ -15,7 +15,7 @@
 use super::backend::{AuthBackend, AuthError, Principal, Role};
 use super::env_backend::EnvAuthBackend;
 use async_trait::async_trait;
-use kyma_core::catalog::Catalog;
+use pensieve_core::catalog::Catalog;
 use std::sync::Arc;
 
 /// SHA-256 hash of a bearer token string.
@@ -37,7 +37,7 @@ pub struct SessionAuthBackend {
     env: EnvAuthBackend,
     /// Cached at construction time: `true` if there is at least one user row.
     /// Used by `enabled()` so callers know auth is live even when
-    /// `KYMA_AUTH_TOKENS` is empty.
+    /// `PENSIEVE_AUTH_TOKENS` is empty.
     users_exist: bool,
 }
 
@@ -45,7 +45,7 @@ impl SessionAuthBackend {
     /// Create a new backend.
     ///
     /// * `catalog` – used for [`Catalog::lookup_api_token`].
-    /// * `env` – static token fallback (from `KYMA_AUTH_TOKENS`).
+    /// * `env` – static token fallback (from `PENSIEVE_AUTH_TOKENS`).
     /// * `users_exist` – pass `count_users() > 0`; determines `enabled()`.
     pub fn new(catalog: Arc<dyn Catalog>, env: EnvAuthBackend, users_exist: bool) -> Self {
         Self {

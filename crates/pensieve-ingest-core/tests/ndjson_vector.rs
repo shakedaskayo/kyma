@@ -1,6 +1,6 @@
 use arrow_array::{cast::AsArray, Array, FixedSizeListArray, Float32Array};
 use arrow_schema::{DataType, Field, Schema};
-use kyma_ingest_core::parse_ndjson;
+use pensieve_ingest_core::parse_ndjson;
 use std::sync::Arc;
 
 fn schema_with_vector(dim: i32) -> Arc<Schema> {

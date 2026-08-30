@@ -3,12 +3,12 @@
 #
 # Prerequisites:
 #   * docker-compose up (postgres + minio + redpanda)
-#   * kyma binary running on $KYMA_HTTP (default http://127.0.0.1:8080)
+#   * pensieve binary running on $PENSIEVE_HTTP (default http://127.0.0.1:8080)
 #   * python3 available for the mock /metrics server
 
 set -euo pipefail
 
-HTTP="${KYMA_HTTP:-http://127.0.0.1:8080}"
+HTTP="${PENSIEVE_HTTP:-http://127.0.0.1:8080}"
 MOCK_PORT="${MOCK_PORT:-19191}"
 FIXTURE="$(dirname "$0")/fixtures/prom-metrics.txt"
 
@@ -100,7 +100,7 @@ for _ in $(seq 1 20); do
     STATUS=$(curl -sS "$HTTP/v1/data-sources/$CONN_ID" 2>/dev/null || echo '')
     if echo "$STATUS" | grep -q '"enabled":true'; then
         ROWS=$(curl -sS "$HTTP/metrics" \
-            | grep -E "kyma_data_source_rows_ingested_total\\{.*data_source_id=\"$CONN_ID\"" \
+            | grep -E "pensieve_data_source_rows_ingested_total\\{.*data_source_id=\"$CONN_ID\"" \
             | awk '{print $NF}' | head -1 || echo 0)
         if [[ "${ROWS:-0}" -gt 0 ]]; then break; fi
     fi
@@ -167,7 +167,7 @@ HTTPServer(('127.0.0.1', ${MOCK_PORT}), H).serve_forever()
 MOCK_PID=$!
 sleep 4
 ERR=$(curl -sS "$HTTP/metrics" \
-    | grep -E 'kyma_data_source_errors_total.*reason="transient"' \
+    | grep -E 'pensieve_data_source_errors_total.*reason="transient"' \
     | awk '{print $NF}' | head -1 || echo 0)
 if [[ "${ERR%.*}" -gt 0 ]] 2>/dev/null; then ok "transient errors counted ($ERR)"
 else nope "errors_total transient" "ERR=${ERR:-0}"; fi

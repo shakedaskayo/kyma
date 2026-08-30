@@ -1,7 +1,7 @@
 # module: supabase-project
 
 Provisions one Supabase project via the official `supabase/supabase` provider.
-Kyma Cloud uses two instances of this module (decision #4): **A** for the
+Pensieve Cloud uses two instances of this module (decision #4): **A** for the
 control-plane DB and **B** for the engine catalog — separate projects so a
 catalog migration or restore can never touch billing/identity data.
 

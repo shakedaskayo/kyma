@@ -102,7 +102,7 @@ function NavLinkRow({
       <Icon className={cn("h-[1.05rem] w-[1.05rem] shrink-0", active && "text-primary")} />
       {!collapsed && <span className="truncate">{item.label}</span>}
       {!collapsed && cloudOnly && (
-        <SimpleTooltip label="Runs on the kyma control plane" side="right">
+        <SimpleTooltip label="Runs on the pensieve control plane" side="right">
           <Cloud className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
         </SimpleTooltip>
       )}
@@ -138,8 +138,8 @@ export function Sidebar() {
     >
       {/* Brand */}
       <div className={cn("flex h-14 items-center gap-2 px-3", collapsed && "justify-center px-0")}>
-        <img src="/icons/kyma-mark.svg" alt="kyma" className="h-7 w-7 shrink-0" />
-        {!collapsed && <span className="text-base font-semibold tracking-tight">kyma</span>}
+        <img src="/icons/pensieve-mark.svg" alt="pensieve" className="h-7 w-7 shrink-0" />
+        {!collapsed && <span className="text-base font-semibold tracking-tight">pensieve</span>}
       </div>
 
       {/* Nav groups */}

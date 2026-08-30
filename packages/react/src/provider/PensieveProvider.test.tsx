@@ -1,72 +1,72 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
-import { KymaProvider } from "./KymaProvider";
-import { useKymaClient } from "./context";
+import { PensieveProvider } from "./PensieveProvider";
+import { usePensieveClient } from "./context";
 
 function Probe() {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   return <div data-testid="ep">{client.transport.endpoint}</div>;
 }
 
 afterEach(() => cleanup());
 
-describe("KymaProvider", () => {
-  it("provides a client and renders a kyma-root with theme vars", () => {
+describe("PensieveProvider", () => {
+  it("provides a client and renders a pensieve-root with theme vars", () => {
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }}>
         <Probe />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
-    expect(screen.getByTestId("ep").textContent).toBe("https://kyma.test");
-    const root = document.querySelector(".kyma-root") as HTMLElement;
+    expect(screen.getByTestId("ep").textContent).toBe("https://pensieve.test");
+    const root = document.querySelector(".pensieve-root") as HTMLElement;
     expect(root).toBeTruthy();
-    expect(root.style.getPropertyValue("--kyma-background")).not.toBe("");
+    expect(root.style.getPropertyValue("--pensieve-background")).not.toBe("");
   });
 
   it("throws a descriptive error when hooks are used outside the provider", () => {
     // silence React error boundary console noise
     const orig = console.error;
     console.error = () => {};
-    expect(() => render(<Probe />)).toThrow(/KymaProvider/);
+    expect(() => render(<Probe />)).toThrow(/PensieveProvider/);
     console.error = orig;
   });
 
-  it("inherit mode sets no inline --kyma-background var", () => {
+  it("inherit mode sets no inline --pensieve-background var", () => {
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} theme="inherit">
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} theme="inherit">
         <Probe />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
     // In inherit mode no inline vars should be set on the root
-    const roots = document.querySelectorAll(".kyma-root");
-    // Check the first root element (the outer .kyma-root div)
+    const roots = document.querySelectorAll(".pensieve-root");
+    // Check the first root element (the outer .pensieve-root div)
     const outerRoot = roots[0] as HTMLElement;
-    expect(outerRoot.style.getPropertyValue("--kyma-background")).toBe("");
+    expect(outerRoot.style.getPropertyValue("--pensieve-background")).toBe("");
   });
 
   it("custom partial theme overrides one var", () => {
     render(
-      <KymaProvider
-        endpoint="https://kyma.test"
+      <PensieveProvider
+        endpoint="https://pensieve.test"
         auth={{ token: "t" }}
         theme={{ background: "0 0% 50%" }}
       >
         <Probe />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
-    const root = document.querySelector(".kyma-root") as HTMLElement;
-    expect(root.style.getPropertyValue("--kyma-background")).toBe("0 0% 50%");
+    const root = document.querySelector(".pensieve-root") as HTMLElement;
+    expect(root.style.getPropertyValue("--pensieve-background")).toBe("0 0% 50%");
   });
 
   it("host queryClient is used when provided", () => {
     const hostQC = new QueryClient();
     // Should not throw and client should be accessible
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={hostQC}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={hostQC}>
         <Probe />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
-    expect(screen.getByTestId("ep").textContent).toBe("https://kyma.test");
+    expect(screen.getByTestId("ep").textContent).toBe("https://pensieve.test");
   });
 });

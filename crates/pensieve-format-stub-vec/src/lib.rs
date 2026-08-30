@@ -1,7 +1,7 @@
 //! Stub vector / ANN storage-format implementation.
 //!
 //! This crate intentionally has no real implementation. Its _sole_ purpose
-//! is to be a second consumer of the [`kyma_core::segment_format::SegmentFormat`]
+//! is to be a second consumer of the [`pensieve_core::segment_format::SegmentFormat`]
 //! trait, so that abstractions baked into the trait during slice 1 are
 //! exercised against two concrete shapes rather than one. Abstraction leaks
 //! surface here first.

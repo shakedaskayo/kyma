@@ -2,7 +2,7 @@
 //! messages via tonic and verifies the rows land in the `otel_logs` table.
 //!
 //! Ignored by default — exercised via `scripts/test-otlp.sh` which
-//! boots a live `kyma` server on port 4317.
+//! boots a live `pensieve` server on port 4317.
 
 use opentelemetry_proto::tonic::collector::logs::v1::logs_service_client::LogsServiceClient;
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
@@ -21,7 +21,7 @@ fn kv(key: &str, value: &str) -> KeyValue {
 }
 
 #[tokio::test]
-#[ignore = "requires a live kyma OTLP server on 127.0.0.1:4317"]
+#[ignore = "requires a live pensieve OTLP server on 127.0.0.1:4317"]
 async fn otlp_export_logs() {
     let mut client = LogsServiceClient::connect("http://127.0.0.1:4317")
         .await
@@ -90,7 +90,7 @@ async fn otlp_export_logs() {
 }
 
 #[tokio::test]
-#[ignore = "requires a live kyma OTLP server on 127.0.0.1:4317"]
+#[ignore = "requires a live pensieve OTLP server on 127.0.0.1:4317"]
 async fn otlp_export_traces() {
     use opentelemetry_proto::tonic::collector::trace::v1::trace_service_client::TraceServiceClient;
     use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
@@ -119,7 +119,7 @@ async fn otlp_export_traces() {
                     kind: span::SpanKind::Server as i32,
                     start_time_unix_nano: now - 50_000_000,
                     end_time_unix_nano: now,
-                    attributes: vec![kv("kyma.subject", "smoke-test")],
+                    attributes: vec![kv("pensieve.subject", "smoke-test")],
                     status: Some(Status { message: String::new(), code: 1 }),
                     ..Default::default()
                 }],

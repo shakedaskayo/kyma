@@ -1,13 +1,13 @@
 //! Integration tests for the filedrop scan counters and the scan hook:
 //! `tick()` returns per-cycle `FiledropScan` stats, and `run()` hands each
-//! cycle's stats to the optional hook (the bridge kyma-bin uses to heartbeat
-//! the watcher registry without this crate depending on kyma-datasources).
+//! cycle's stats to the optional hook (the bridge pensieve-bin uses to heartbeat
+//! the watcher registry without this crate depending on pensieve-datasources).
 
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_core::catalog::Catalog;
-use kyma_format_tlm::TelemetryFormat;
-use kyma_ingest_core::WritePath;
-use kyma_ingest_filedrop::{FiledropConfig, FiledropScan, FiledropWatcher};
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_core::catalog::Catalog;
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_ingest_core::WritePath;
+use pensieve_ingest_filedrop::{FiledropConfig, FiledropScan, FiledropWatcher};
 use object_store::memory::InMemory;
 use object_store::path::Path;
 use object_store::ObjectStore;
@@ -21,7 +21,7 @@ async fn watcher_fixture(config: FiledropConfig) -> (FiledropWatcher, Arc<InMemo
             .expect("sqlite catalog"),
     );
     let store = Arc::new(InMemory::new());
-    let format = Arc::new(TelemetryFormat::new(store.clone(), "kyma-test"));
+    let format = Arc::new(TelemetryFormat::new(store.clone(), "pensieve-test"));
     let write_path = WritePath::new(catalog.clone(), format);
     let watcher = FiledropWatcher::new(catalog, store.clone(), write_path, config);
     (watcher, store)

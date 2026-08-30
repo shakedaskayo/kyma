@@ -2,14 +2,14 @@
 //! the `/v1/auth/tokens` API-token CRUD (the CLI/MCP auth story when
 //! Supabase is the primary login).
 //!
-//! Requires `--features kyma-server/test-support`. Each test spins up an
+//! Requires `--features pensieve-server/test-support`. Each test spins up an
 //! isolated Postgres container via testcontainers.
 
 #![cfg(feature = "test-support")]
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use kyma_server::auth::{
+use pensieve_server::auth::{
     passwords::hash_password, AuthLayerState, EnvAuthBackend, Role, SessionAuthBackend,
 };
 use serde_json::Value;
@@ -19,7 +19,7 @@ use tower::ServiceExt;
 // Tower services are consumed by `oneshot`; build a fresh app per request
 // (same pattern as auth_handler_it.rs).
 fn build_auth_app(
-    state: &kyma_server::QueryState,
+    state: &pensieve_server::QueryState,
 ) -> impl tower::Service<
     Request<Body>,
     Response = axum::http::Response<Body>,
@@ -29,25 +29,25 @@ fn build_auth_app(
     >,
 > {
     let catalog = state.catalog.clone();
-    let backend: Arc<dyn kyma_server::auth::AuthBackend> = Arc::new(SessionAuthBackend::new(
+    let backend: Arc<dyn pensieve_server::auth::AuthBackend> = Arc::new(SessionAuthBackend::new(
         catalog.clone(),
         EnvAuthBackend::from_str(""),
         true,
     ));
-    let login_router = kyma_server::auth_handler::auth_login_router(catalog.clone());
-    let session_router = kyma_server::auth_handler::auth_session_router(catalog.clone()).layer(
+    let login_router = pensieve_server::auth_handler::auth_login_router(catalog.clone());
+    let session_router = pensieve_server::auth_handler::auth_session_router(catalog.clone()).layer(
         axum::middleware::from_fn_with_state(
             AuthLayerState {
                 backend,
                 required: Role::Read,
             },
-            kyma_server::auth::require_role_middleware,
+            pensieve_server::auth::require_role_middleware,
         ),
     );
     login_router.merge(session_router)
 }
 
-async fn send(state: &kyma_server::QueryState, req: Request<Body>) -> axum::http::Response<Body> {
+async fn send(state: &pensieve_server::QueryState, req: Request<Body>) -> axum::http::Response<Body> {
     build_auth_app(state).oneshot(req).await.unwrap()
 }
 
@@ -58,7 +58,7 @@ async fn body_json(resp: axum::http::Response<Body>) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn login(state: &kyma_server::QueryState, username: &str, password: &str) -> String {
+async fn login(state: &pensieve_server::QueryState, username: &str, password: &str) -> String {
     let body = serde_json::json!({ "username": username, "password": password });
     let req = Request::builder()
         .method("POST")
@@ -91,7 +91,7 @@ fn authed(method: &str, uri: &str, token: &str, body: Option<Value>) -> Request<
 /// `GET /v1/auth/config` defaults to password mode (no Supabase env).
 #[tokio::test]
 async fn auth_config_defaults_to_password_provider() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
 
     let req = Request::builder()
         .uri("/v1/auth/config")
@@ -108,7 +108,7 @@ async fn auth_config_defaults_to_password_provider() {
 /// the token stops working. Role capping: a write user cannot mint admin.
 #[tokio::test]
 async fn api_token_lifecycle_and_role_capping() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let cat = &state.catalog;
     cat.create_user("dev", &hash_password("pw123").unwrap(), "write")
         .await

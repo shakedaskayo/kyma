@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Make the Context Graph *visible* in the kyma web app — an `@xyflow/react` canvas rendering the schema-graph from G1c.1's data layer, with a custom node, a node-detail panel, a legend, a layout toolbar, the `GraphView` orchestrator, a `/graph` route, and a shell nav link.
+**Goal:** Make the Context Graph *visible* in the pensieve web app — an `@xyflow/react` canvas rendering the schema-graph from G1c.1's data layer, with a custom node, a node-detail panel, a legend, a layout toolbar, the `GraphView` orchestrator, a `/graph` route, and a shell nav link.
 
-**Architecture:** A new `features/graph/` view tier on top of G1c.1. `GraphView` loads the overview via `useGraphOverview`, holds the working node/edge set in local state (merging neighbor-expansion results), reads UI state from `useGraphStore`, and composes `GraphCanvas` + `NodeDetailPanel` + `GraphLegend` + `CanvasToolbar`. The canvas, custom node, and panels are ported from the agentcy project; the orchestrator, route, nav, and `badge` primitive are kyma-specific and given in full.
+**Architecture:** A new `features/graph/` view tier on top of G1c.1. `GraphView` loads the overview via `useGraphOverview`, holds the working node/edge set in local state (merging neighbor-expansion results), reads UI state from `useGraphStore`, and composes `GraphCanvas` + `NodeDetailPanel` + `GraphLegend` + `CanvasToolbar`. The canvas, custom node, and panels are ported from the agentcy project; the orchestrator, route, nav, and `badge` primitive are pensieve-specific and given in full.
 
 **Tech Stack:** React 18, `@xyflow/react` (new dep, added via **pnpm** — web is a pnpm workspace package; never npm), TanStack Router (file-based), Tailwind tokens, lucide-react.
 
@@ -13,7 +13,7 @@
 - Port sources (read these): `/Users/shakedaskayo/shaked/projects/agentcylabs/agentcy/frontend/components/graph/{graph-canvas,graph-node,node-detail-panel,graph-legend,canvas-toolbar}.tsx`.
 - Web conventions: components in `web/src/components/ui/`, `cn` at `@/lib/utils`, route convention `web/src/routes/_app.<name>.tsx` → `createFileRoute("/_app/<name>")`, shell nav in `web/src/app/shell.tsx`, Tailwind tokens (`bg-background`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-accent`, `bg-muted`), dark mode class-based.
 
-**Working dir:** worktree `/Users/shakedaskayo/shaked/projects/kyma/.claude/worktrees/feature+graph-layer`, web under `web/`. Run `cd web && npx tsc --noEmit`, `cd web && npx vitest run`, `cd web && npm run build` (vite). **Use pnpm for deps.**
+**Working dir:** worktree `/Users/shakedaskayo/shaked/projects/pensieve/.claude/worktrees/feature+graph-layer`, web under `web/`. Run `cd web && npx tsc --noEmit`, `cd web && npx vitest run`, `cd web && npm run build` (vite). **Use pnpm for deps.**
 
 ---
 
@@ -109,7 +109,7 @@ export function Badge({ className, variant, ...props }: BadgeProps) {
 ```
 NOTE: confirm `class-variance-authority` is a dependency (it is — `button.tsx` uses it). Confirm `cn` exists at `@/lib/utils`.
 
-- [ ] **Step 3: custom node** — `web/src/features/graph/GraphNodeView.tsx`. PORT from agentcy `graph-node.tsx`, but SIMPLIFY: drop `framer-motion` (use a CSS transition), drop `SourceIcon`/provider-badge entirely (kyma's schema-graph has no connector brands), drop the abbreviation logic if you like (showing the full short label is fine). Keep: 4 invisible `Handle`s (top/bottom/left/right), a colored circle (44px, 52px when selected) using the node's `color` with a radial-gradient/border like the original, the display label below, `opacity` driven by `isDimmed`. Use `memo`. Reference shape:
+- [ ] **Step 3: custom node** — `web/src/features/graph/GraphNodeView.tsx`. PORT from agentcy `graph-node.tsx`, but SIMPLIFY: drop `framer-motion` (use a CSS transition), drop `SourceIcon`/provider-badge entirely (pensieve's schema-graph has no connector brands), drop the abbreviation logic if you like (showing the full short label is fine). Keep: 4 invisible `Handle`s (top/bottom/left/right), a colored circle (44px, 52px when selected) using the node's `color` with a radial-gradient/border like the original, the display label below, `opacity` driven by `isDimmed`. Use `memo`. Reference shape:
 
 ```tsx
 import { memo } from "react";
@@ -334,7 +334,7 @@ export const Route = createFileRoute("/_app/graph")({
 ```
 (The TanStackRouterVite plugin regenerates `routeTree.gen.ts` automatically when the dev server / build runs. If `npm run build` complains the route isn't in the generated tree, run the dev server once or `cd web && npx tsc` after `npm run dev` has regenerated it — confirm by checking `routeTree.gen.ts` includes `/_app/graph`. Do NOT hand-edit the generated file unless the plugin fails.)
 
-- [ ] **Step 3: nav link** — in `web/src/app/shell.tsx`, add `Network` (or `Workflow`) to the `lucide-react` import, and add a `<Link>` after the "Ask Kyma" link:
+- [ ] **Step 3: nav link** — in `web/src/app/shell.tsx`, add `Network` (or `Workflow`) to the `lucide-react` import, and add a `<Link>` after the "Ask Pensieve" link:
 ```tsx
 <Link to="/graph" className={btn(active.startsWith("/graph"))}>
   <Network className="h-4 w-4" /> Graph

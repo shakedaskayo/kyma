@@ -11,7 +11,7 @@ The always-on deterministic consolidation pipeline (cheap firehose rollups) keep
 Dreaming is disabled until you flip `enabled`. Set it via the UI (**Settings → Memory → Dreaming**) or the API:
 
 ```bash
-curl -X PUT $KYMA/v1/agent/memory/settings \
+curl -X PUT $PENSIEVE/v1/agent/memory/settings \
   -H 'content-type: application/json' \
   -d '{"dreaming":{"enabled":true}}'
 ```
@@ -41,7 +41,7 @@ All dreaming knobs live under the `dreaming` key in `/v1/agent/memory/settings`.
 Trigger on demand from the UI (**Memory → Dreaming → Dream now**) or via API:
 
 ```bash
-curl -X POST $KYMA/v1/agent/memory/dreaming/run \
+curl -X POST $PENSIEVE/v1/agent/memory/dreaming/run \
   -H 'content-type: application/json' \
   -d '{"mode":"full"}'
 ```
@@ -96,7 +96,7 @@ A run works in four phases, bounded by the wall-clock and budget knobs above:
 
 Dreaming runs are `dreaming` **jobs** on the worker fabric. The scheduler only enqueues; a worker claims the job under a lease and executes it. The server's embedded worker handles them by default.
 
-When the engine is the Claude CLI, the headless agent is sandboxed: it sees **only kyma's MCP server** (`--strict-mcp-config`), runs in a scratch directory, and is killed at `wall_clock_secs`.
+When the engine is the Claude CLI, the headless agent is sandboxed: it sees **only pensieve's MCP server** (`--strict-mcp-config`), runs in a scratch directory, and is killed at `wall_clock_secs`.
 
 > **Roadmap:** Remote execution of dreaming on daemon workers is planned. The fabric claim/lease surface already supports it; executor dispatch is the follow-up work.
 

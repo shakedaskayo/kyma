@@ -5,7 +5,7 @@
 //! - `FixedSizeList<Float32, N>` (vector columns) — upstream arrow-json rejects these.
 //! - `Binary` (dynamic columns) — arrow-json's JSON reader cannot decode Binary.
 //!   Binary/dynamic columns are read from the NDJSON as either a JSON string (stored
-//!   as UTF-8 bytes) or any other value serialized to JSON bytes. This matches kyma's
+//!   as UTF-8 bytes) or any other value serialized to JSON bytes. This matches pensieve's
 //!   `dynamic` column semantic: the stored value is the raw JSON representation.
 //!
 //! Used by every ingest frontend so vector and dynamic columns work the same way
@@ -156,7 +156,7 @@ pub fn parse_ndjson(bytes: &[u8], schema: SchemaRef) -> Result<Vec<RecordBatch>,
     // ---- Build binary (dynamic) arrays ----
     // For each Binary column, the JSON value is encoded as its UTF-8 JSON
     // representation (or the raw string bytes if the value is a JSON string).
-    // This matches kyma's `dynamic` semantic: the stored bytes are the JSON.
+    // This matches pensieve's `dynamic` semantic: the stored bytes are the JSON.
     for (pos, name) in &binary_cols {
         let mut bufs: Vec<Option<Vec<u8>>> = Vec::with_capacity(rows.len());
         for row in &rows {

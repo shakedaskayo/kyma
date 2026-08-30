@@ -5,9 +5,9 @@ use serde_json::Value;
 
 use crate::vault_sync::{run_once, VaultSyncOptions};
 use crate::{open_engine, Engine, Paths};
-use kyma_embed::{EmbedError, EmbeddingBackend};
-use kyma_memory::MemoryWriter;
-use kyma_server::agent::{execute_sql, SharedToolCtx};
+use pensieve_embed::{EmbedError, EmbeddingBackend};
+use pensieve_memory::MemoryWriter;
+use pensieve_server::agent::{execute_sql, SharedToolCtx};
 
 /// Deterministic in-process embedding stub (dim 8) — no model downloads.
 #[derive(Debug)]
@@ -66,7 +66,7 @@ fn write(p: &Path, content: &str) {
 }
 
 async fn rows(shared: &SharedToolCtx, sql: &str) -> Vec<Value> {
-    let res = execute_sql(shared, kyma_memory::DEFAULT_DATABASE, sql, 10_000).await;
+    let res = execute_sql(shared, pensieve_memory::DEFAULT_DATABASE, sql, 10_000).await;
     res.get("rows")
         .and_then(Value::as_array)
         .cloned()

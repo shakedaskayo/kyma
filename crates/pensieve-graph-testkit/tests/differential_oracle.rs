@@ -6,11 +6,11 @@
 
 use std::collections::BTreeSet;
 
-use kyma_graph_testkit::model::TestGraph;
-use kyma_graph_testkit::oracle::{
+use pensieve_graph_testkit::model::TestGraph;
+use pensieve_graph_testkit::oracle::{
     k_hop, match_chain, shortest_path_len, var_length, ChainPattern, Direction,
 };
-use kyma_graph_testkit::synth;
+use pensieve_graph_testkit::synth;
 
 fn triples(
     items: &[(&str, &str, usize)],

@@ -1,10 +1,10 @@
 //! Integration test (testcontainers) for the scheduler.
 
-use kyma_catalog::PostgresCatalog;
-use kyma_datasources::catalog_sql;
-use kyma_datasources::catalog_trait::{DataSourceCatalog, PgDataSourceCatalog};
-use kyma_datasources::scheduler::DataSourceScheduler;
-use kyma_core::tenant::DEFAULT_TENANT;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_datasources::catalog_sql;
+use pensieve_datasources::catalog_trait::{DataSourceCatalog, PgDataSourceCatalog};
+use pensieve_datasources::scheduler::DataSourceScheduler;
+use pensieve_core::tenant::DEFAULT_TENANT;
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;

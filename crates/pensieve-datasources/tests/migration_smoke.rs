@@ -1,6 +1,6 @@
 //! Smoke test: migrations apply cleanly and creates expected objects.
 
-use kyma_catalog::PostgresCatalog;
+use pensieve_catalog::PostgresCatalog;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 

@@ -1,6 +1,6 @@
 // Gate for control-plane-only surfaces (data sources, credentials, OAuth).
 //
-// Local mode (`kyma serve`, single binary over SQLite) covers memory, data,
+// Local mode (`pensieve serve`, single binary over SQLite) covers memory, data,
 // graph, and dashboards; data-source + credential management run on the hosted
 // control plane. When the connected server reports a capability as off, the
 // page renders this explainer instead of firing requests that 404.
@@ -34,13 +34,13 @@ export function ControlPlaneGate({
         icon={Cloud}
         title={`${title} run on the control plane`}
         description={
-          "This kyma is the local single binary — memory, data, graph, and dashboards, zero infra. " +
-          `${title} (continuous ingestion from your sources) need a hosted kyma server; ` +
-          "point this CLI at one with `kyma connect <url>` or sync up with `kyma sync`."
+          "This pensieve is the local single binary — memory, data, graph, and dashboards, zero infra. " +
+          `${title} (continuous ingestion from your sources) need a hosted pensieve server; ` +
+          "point this CLI at one with `pensieve connect <url>` or sync up with `pensieve sync`."
         }
         action={
           <Button variant="outline" size="sm" asChild>
-            <a href="https://shakedaskayo.github.io/kyma/" target="_blank" rel="noreferrer">
+            <a href="https://shakedaskayo.github.io/pensieve/" target="_blank" rel="noreferrer">
               <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Two-tier setup docs
             </a>
           </Button>

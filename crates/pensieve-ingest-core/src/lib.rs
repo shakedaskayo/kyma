@@ -40,10 +40,10 @@ pub use ndjson::{parse_ndjson, NdjsonError};
 pub use staging::{FlushOutcome, StagingBuffer, StagingConfig};
 
 use chrono::{DateTime, Utc};
-use kyma_core::catalog::{Catalog, ExtentManifest, IngestLedgerEntry, SnapshotSummary, TableRef};
-use kyma_core::errors::{CatalogError, Error, Result};
-use kyma_core::segment_format::{ExtentWriteResult, SegmentFormat};
-use kyma_core::types::{SnapshotId, TableId};
+use pensieve_core::catalog::{Catalog, ExtentManifest, IngestLedgerEntry, SnapshotSummary, TableRef};
+use pensieve_core::errors::{CatalogError, Error, Result};
+use pensieve_core::segment_format::{ExtentWriteResult, SegmentFormat};
+use pensieve_core::types::{SnapshotId, TableId};
 use std::sync::Arc;
 use tracing::instrument;
 
@@ -74,7 +74,7 @@ pub struct WritePath {
     /// S2.2 staged ingest: when true, the direct path records the written
     /// extent in `staged_extents` and acks immediately ("S3 is the WAL")
     /// instead of committing a snapshot inline — the async committer commits it.
-    /// Set via KYMA_INGEST_MODE=staged (server mode). Default false = the
+    /// Set via PENSIEVE_INGEST_MODE=staged (server mode). Default false = the
     /// synchronous, read-your-writes path. A staged WritePath does NOT use a
     /// StagingBuffer (the committer is the batching layer).
     staged: bool,
@@ -197,7 +197,7 @@ impl WritePath {
                     "idempotency hit: replaying cached ack"
                 );
                 metrics::counter!(
-                    "kyma_ingest_idempotency_hits_total",
+                    "pensieve_ingest_idempotency_hits_total",
                     "table" => table_label.clone()
                 )
                 .increment(1);
@@ -240,9 +240,9 @@ impl WritePath {
                 bytes_written: outcome.byte_size,
                 replayed: false,
             };
-            metrics::counter!("kyma_ingest_rows_total", "table" => table_label.clone())
+            metrics::counter!("pensieve_ingest_rows_total", "table" => table_label.clone())
                 .increment(ack.rows_ingested);
-            metrics::histogram!("kyma_ingest_duration_seconds", "table" => table_label.clone())
+            metrics::histogram!("pensieve_ingest_duration_seconds", "table" => table_label.clone())
                 .record(start.elapsed().as_secs_f64());
             if let Some(key) = idempotency_key {
                 let entry = IngestLedgerEntry {
@@ -289,7 +289,7 @@ impl WritePath {
                     .and_then(|k| uuid::Uuid::parse_str(k).ok())
                     .unwrap_or_else(uuid::Uuid::new_v4);
                 self.catalog
-                    .stage_extent(kyma_core::tenant::DEFAULT_TENANT, batch_id, &manifest)
+                    .stage_extent(pensieve_core::tenant::DEFAULT_TENANT, batch_id, &manifest)
                     .await?;
                 table.current_snapshot_id
             } else {
@@ -299,11 +299,11 @@ impl WritePath {
                     .await?
             };
 
-            metrics::counter!("kyma_ingest_rows_total", "table" => table_label.clone())
+            metrics::counter!("pensieve_ingest_rows_total", "table" => table_label.clone())
                 .increment(rows_ingested);
-            metrics::counter!("kyma_ingest_bytes_total", "table" => table_label.clone())
+            metrics::counter!("pensieve_ingest_bytes_total", "table" => table_label.clone())
                 .increment(result.byte_size);
-            metrics::histogram!("kyma_ingest_duration_seconds", "table" => table_label.clone())
+            metrics::histogram!("pensieve_ingest_duration_seconds", "table" => table_label.clone())
                 .record(start.elapsed().as_secs_f64());
 
             // Record the idempotency key after successful commit.
@@ -325,7 +325,7 @@ impl WritePath {
                         "idempotency race: a concurrent request won the ledger insert; both ingests committed extents (accept minor duplicate)"
                     );
                     metrics::counter!(
-                        "kyma_ingest_idempotency_races_total",
+                        "pensieve_ingest_idempotency_races_total",
                         "table" => table_label
                     )
                     .increment(1);
@@ -386,7 +386,7 @@ impl WritePath {
                 Ok(id) => return Ok(id),
                 Err(Error::Catalog(CatalogError::Conflict)) => {
                     metrics::counter!(
-                        "kyma_catalog_cas_conflicts_total",
+                        "pensieve_catalog_cas_conflicts_total",
                         "table" => table_label.to_owned()
                     )
                     .increment(1);
@@ -433,7 +433,7 @@ fn table_result_to_manifest(table: &TableRef, result: &ExtentWriteResult) -> Ext
 ///
 /// The task shuts down when `shutdown` resolves.
 pub fn spawn_idempotency_cleanup(
-    catalog: Arc<dyn kyma_core::catalog::Catalog>,
+    catalog: Arc<dyn pensieve_core::catalog::Catalog>,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> tokio::task::JoinHandle<()> {
     use std::any::Any;
@@ -454,7 +454,7 @@ pub fn spawn_idempotency_cleanup(
             }
             // Downcast to PostgresCatalog to access the pool.
             let any_ref: &dyn Any = catalog.as_ref_any();
-            if let Some(pg) = any_ref.downcast_ref::<kyma_catalog::PostgresCatalog>() {
+            if let Some(pg) = any_ref.downcast_ref::<pensieve_catalog::PostgresCatalog>() {
                 match sqlx::query(
                     "DELETE FROM ingest_ledger WHERE ttl_expires_at < now() - INTERVAL '1 hour'",
                 )

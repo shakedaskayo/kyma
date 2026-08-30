@@ -1,5 +1,5 @@
 /**
- * useKymaDiscover tests.
+ * usePensieveDiscover tests.
  *
  * searchDiscover is an async generator over NDJSON frames (Frame union type).
  * We stub fetch to return a Response with a ReadableStream body.
@@ -8,9 +8,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderHook, cleanup, waitFor, act } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import React from "react";
-import { KymaProvider } from "../provider/KymaProvider";
-import { useKymaDiscover } from "./useKymaDiscover";
-import type { Frame } from "@kyma-ai/client";
+import { PensieveProvider } from "../provider/PensieveProvider";
+import { usePensieveDiscover } from "./usePensieveDiscover";
+import type { Frame } from "@pensieve-ai/client";
 
 afterEach(() => {
   cleanup();
@@ -23,9 +23,9 @@ function makeQC() {
 
 function wrapper(qc: QueryClient) {
   return ({ children }: { children: React.ReactNode }) => (
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
       {children}
-    </KymaProvider>
+    </PensieveProvider>
   );
 }
 
@@ -53,12 +53,12 @@ const SAMPLE_FRAMES: Frame[] = [
   { type: "done", elapsed_ms: 42 },
 ];
 
-describe("useKymaDiscover", () => {
+describe("usePensieveDiscover", () => {
   it("starts in idle state", () => {
     const qc = makeQC();
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
 
-    const { result } = renderHook(() => useKymaDiscover(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveDiscover(), { wrapper: wrapper(qc) });
 
     expect(result.current.frames).toEqual([]);
     expect(result.current.isStreaming).toBe(false);
@@ -71,7 +71,7 @@ describe("useKymaDiscover", () => {
       vi.fn().mockReturnValue(Promise.resolve(frameStream(SAMPLE_FRAMES))),
     );
 
-    const { result } = renderHook(() => useKymaDiscover(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveDiscover(), { wrapper: wrapper(qc) });
 
     await act(async () => {
       await result.current.search({ query: "error", scope: { kind: "all" } });
@@ -108,7 +108,7 @@ describe("useKymaDiscover", () => {
       }),
     );
 
-    const { result } = renderHook(() => useKymaDiscover(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveDiscover(), { wrapper: wrapper(qc) });
 
     act(() => {
       void result.current.search({ query: "all", scope: { kind: "all" } });
@@ -137,7 +137,7 @@ describe("useKymaDiscover", () => {
       }),
     );
 
-    const { result } = renderHook(() => useKymaDiscover(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveDiscover(), { wrapper: wrapper(qc) });
 
     await act(async () => {
       await result.current.search({ query: "q1", scope: { kind: "all" } });
@@ -166,7 +166,7 @@ describe("useKymaDiscover", () => {
       ),
     );
 
-    const { result } = renderHook(() => useKymaDiscover(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveDiscover(), { wrapper: wrapper(qc) });
 
     await act(async () => {
       try {

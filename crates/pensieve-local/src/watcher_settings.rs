@@ -1,6 +1,6 @@
 //! Persistent user-tunable settings for local-mode watchers (cc-sync, etc.).
 //!
-//! Settings are stored as JSON at `~/.kyma/watcher-settings.json`. Missing
+//! Settings are stored as JSON at `~/.pensieve/watcher-settings.json`. Missing
 //! file or parse error falls back to `Default` (everything enabled).
 
 use serde::{Deserialize, Serialize};
@@ -26,7 +26,7 @@ impl WatcherSettings {
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_else(|_| ".".to_string());
         std::path::PathBuf::from(home)
-            .join(".kyma")
+            .join(".pensieve")
             .join("watcher-settings.json")
     }
 

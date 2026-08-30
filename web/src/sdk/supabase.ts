@@ -1,10 +1,10 @@
 // Lazy Supabase client + session helpers.
 //
 // The client is created on demand from the project URL + anon key persisted
-// in the kyma session store (put there by the login page after
+// in the pensieve session store (put there by the login page after
 // `fetchAuthConfig`). supabase-js persists its own refresh token in
 // localStorage, so a page reload can refresh the access token without
-// re-login. Background auto-refresh is disabled — kyma's fetch wrapper
+// re-login. Background auto-refresh is disabled — pensieve's fetch wrapper
 // drives refresh on 401 instead (see auth-fetch.ts).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -36,7 +36,7 @@ export async function getSupabase(): Promise<SupabaseClient | null> {
 
 /**
  * Refresh the Supabase access token (refreshing the underlying session if
- * expired), push it into the kyma session store, and return it.
+ * expired), push it into the pensieve session store, and return it.
  * Returns null when there is no recoverable Supabase session.
  */
 export async function refreshSupabaseToken(): Promise<string | null> {
@@ -51,7 +51,7 @@ export async function refreshSupabaseToken(): Promise<string | null> {
   return token;
 }
 
-/** Sign out of Supabase (best-effort) — callers also reset the kyma session. */
+/** Sign out of Supabase (best-effort) — callers also reset the pensieve session. */
 export async function supabaseSignOut(): Promise<void> {
   const sb = await getSupabase();
   if (!sb) return;

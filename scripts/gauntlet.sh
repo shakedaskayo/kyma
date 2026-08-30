@@ -13,7 +13,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 TIER=""
-ENGINE_URL="${KYMA_HTTP_ADDR:-http://localhost:8080}"
+ENGINE_URL="${PENSIEVE_HTTP_ADDR:-http://localhost:8080}"
 RESULTS="$ROOT/gauntlet-results.json"
 
 for arg in "$@"; do
@@ -35,7 +35,7 @@ case "$TIER" in
   *) echo "invalid tier: $TIER (must be pr|nightly|weekly)" >&2; exit 2 ;;
 esac
 
-export KYMA_HTTP_ADDR="$ENGINE_URL"
+export PENSIEVE_HTTP_ADDR="$ENGINE_URL"
 
 # ---------------------------------------------------------------------------
 # Tier definitions: which families to run per tier.

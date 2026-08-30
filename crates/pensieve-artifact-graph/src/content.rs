@@ -11,11 +11,11 @@
 use std::sync::Arc;
 
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
-use kyma_catalog::artifacts::ArtifactRecord;
-use kyma_core::catalog::{Catalog, TableConfig};
-use kyma_core::segment_format::SegmentFormat;
-use kyma_embed::EmbeddingBackend;
-use kyma_ingest_core::WritePath;
+use pensieve_catalog::artifacts::ArtifactRecord;
+use pensieve_core::catalog::{Catalog, TableConfig};
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_embed::EmbeddingBackend;
+use pensieve_ingest_core::WritePath;
 use object_store::path::Path as ObjPath;
 use object_store::ObjectStore;
 use serde_json::{json, Value};
@@ -221,7 +221,7 @@ impl ArtifactContentIndexer {
 
     async fn index_one(&self, rec: &ArtifactRecord, key: &str) -> anyhow::Result<usize> {
         let path = ObjPath::from(rec.object_path.as_str());
-        let Some(bytes) = kyma_storage::get_artifact(&self.store, &path)
+        let Some(bytes) = pensieve_storage::get_artifact(&self.store, &path)
             .await
             .map_err(|e| anyhow::anyhow!("artifact fetch: {e}"))?
         else {
@@ -257,7 +257,7 @@ impl ArtifactContentIndexer {
             serde_json::to_writer(&mut buf, r)?;
             buf.push(b'\n');
         }
-        let batches = kyma_ingest_core::parse_ndjson(&buf, tref.schema.clone())?;
+        let batches = pensieve_ingest_core::parse_ndjson(&buf, tref.schema.clone())?;
         self.write
             .ingest_with_idempotency(ARTIFACTS_DB, &tref, batches, Some(key))
             .await?;
@@ -320,7 +320,7 @@ mod tests {
     fn chunk_row_matches_schema_columns() {
         let rec = ArtifactRecord {
             id: Some(uuid::Uuid::nil()),
-            tenant_id: kyma_core::tenant::DEFAULT_TENANT,
+            tenant_id: pensieve_core::tenant::DEFAULT_TENANT,
             object_path: "artifacts/x/y.log".into(),
             source: "fswatch".into(),
             artifact_class: "log".into(),
@@ -346,7 +346,7 @@ mod tests {
     fn idempotency_key_is_stable_and_content_addressed() {
         let mut rec = ArtifactRecord {
             id: Some(uuid::Uuid::nil()),
-            tenant_id: kyma_core::tenant::DEFAULT_TENANT,
+            tenant_id: pensieve_core::tenant::DEFAULT_TENANT,
             object_path: "a/b.log".into(),
             source: "fswatch".into(),
             artifact_class: "log".into(),

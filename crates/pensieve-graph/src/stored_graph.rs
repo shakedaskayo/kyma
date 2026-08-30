@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use kyma_graph_topo::{CsrGraph, Direction as TopoDirection};
+use pensieve_graph_topo::{CsrGraph, Direction as TopoDirection};
 
 use crate::executor::{GraphQueryExecutor, JsonRow, StoredGraphConfig};
 use crate::provider::GraphProvider;
@@ -21,10 +21,10 @@ const NOW: &str = "1970-01-01T00:00:00Z";
 /// Edge ceiling for the in-memory CSR subgraph path. When a graph's deduped
 /// edge set fits under this, `subgraph` builds the whole topology once and does
 /// BFS in RAM (one scan, any depth); above it, the per-hop SQL path is kept so
-/// large graphs never attempt a full-topology load. `KYMA_GRAPH_TOPO_MAX_EDGES`
+/// large graphs never attempt a full-topology load. `PENSIEVE_GRAPH_TOPO_MAX_EDGES`
 /// overrides the default.
 fn topo_max_edges() -> usize {
-    std::env::var("KYMA_GRAPH_TOPO_MAX_EDGES")
+    std::env::var("PENSIEVE_GRAPH_TOPO_MAX_EDGES")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .filter(|&n| n > 0)
@@ -114,7 +114,7 @@ fn parse_labels(v: Option<&serde_json::Value>) -> Vec<String> {
     }
 }
 
-/// The conventional dynamic-JSON catch-all column (see kyma's default table
+/// The conventional dynamic-JSON catch-all column (see pensieve's default table
 /// schema). Data sources stash entity-specific fields here as a JSON blob.
 const PROPS_COL: &str = "props";
 
@@ -926,7 +926,7 @@ mod provider_tests {
 
     #[tokio::test]
     async fn build_and_store_snapshot_persists_a_loadable_csr() {
-        use kyma_graph_topo::Direction;
+        use pensieve_graph_topo::Direction;
         let p = deep_provider("snap", Arc::new(AtomicUsize::new(0)));
         let store: Arc<dyn object_store::ObjectStore> =
             Arc::new(object_store::memory::InMemory::new());

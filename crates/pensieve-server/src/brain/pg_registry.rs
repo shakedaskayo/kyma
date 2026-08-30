@@ -1,9 +1,9 @@
 //! Hosted-mode brain registry over Postgres (`brain_repos`, migration 034).
 
 use async_trait::async_trait;
-use kyma_brain::registry::{BrainConfig, BrainRecord, BrainRegistry, BrainRuntime};
-use kyma_brain::BrainError;
-use kyma_core::tenant::TenantId;
+use pensieve_brain::registry::{BrainConfig, BrainRecord, BrainRegistry, BrainRuntime};
+use pensieve_brain::BrainError;
+use pensieve_core::tenant::TenantId;
 use sqlx::PgPool;
 
 pub struct PgBrainRegistry {

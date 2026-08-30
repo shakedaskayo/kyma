@@ -19,11 +19,11 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use futures::future::BoxFuture;
-use kyma_catalog::{PgFabricStore, WorkerAuth};
-use kyma_core::fabric::{
+use pensieve_catalog::{PgFabricStore, WorkerAuth};
+use pensieve_core::fabric::{
     ClaimedJob, EnqueueJob, Heartbeat, WorkerRegistration, WorkerStatus,
 };
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 use serde::Deserialize;
 use serde_json::{json, Value as Json_};
 use std::sync::Arc;
@@ -33,7 +33,7 @@ use uuid::Uuid;
 
 /// Optional claim-time enrichment: resolve per-job secrets/runspecs for
 /// REMOTE workers (e.g. a datasource_sync claim carries the decrypted
-/// credential so the daemon never needs `KYMA_SECRET_KEY`). Wired by kyma-bin.
+/// credential so the daemon never needs `PENSIEVE_SECRET_KEY`). Wired by pensieve-bin.
 pub type ClaimEnricher =
     Arc<dyn Fn(ClaimedJob) -> BoxFuture<'static, anyhow::Result<ClaimedJob>> + Send + Sync>;
 
@@ -49,7 +49,7 @@ pub struct FabricState {
 
 impl FabricState {
     pub fn new(store: Arc<PgFabricStore>, enricher: Option<ClaimEnricher>) -> Self {
-        let lease_secs = std::env::var("KYMA_FABRIC_LEASE_SECS")
+        let lease_secs = std::env::var("PENSIEVE_FABRIC_LEASE_SECS")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(300);
@@ -113,7 +113,7 @@ pub async fn require_worker_middleware(
 fn unauthorized(msg: &str) -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        [(header::WWW_AUTHENTICATE, r#"Bearer realm="kyma-fabric""#)],
+        [(header::WWW_AUTHENTICATE, r#"Bearer realm="pensieve-fabric""#)],
         msg.to_owned(),
     )
         .into_response()
@@ -380,7 +380,7 @@ fn lease_lost() -> Response {
 
 // ── admin/operator router ────────────────────────────────────────────────────
 
-/// Mounted behind the regular bearer middleware (Role::Write) by kyma-bin.
+/// Mounted behind the regular bearer middleware (Role::Write) by pensieve-bin.
 pub fn admin_router(state: FabricState) -> Router {
     Router::new()
         .route("/v1/workers", post(create_worker).get(list_workers))

@@ -1,13 +1,13 @@
 //! Degraded local-mode state for dreaming runs.
 //!
-//! In `kyma serve` (single-binary local mode) there is no Postgres and no
+//! In `pensieve serve` (single-binary local mode) there is no Postgres and no
 //! worker fabric: dreaming runs execute INLINE as a tokio task in the serve
 //! process. This module holds the state those inline runs read and write —
 //! the same Run JSON shape the HTTP layer serves from Postgres, plus the live
 //! progress snapshot and the per-run conversation trace.
 //!
 //! Durability: finished runs are persisted into the embedded SQLite catalog's
-//! `local_dreaming_runs` table (via [`kyma_catalog_sqlite::SqliteCatalog`]),
+//! `local_dreaming_runs` table (via [`pensieve_catalog_sqlite::SqliteCatalog`]),
 //! and the in-memory ring is hydrated from it on startup. When the catalog is
 //! not a `SqliteCatalog` (e.g. some test catalogs), the store degrades to
 //! in-memory-only — the ring still serves the UI for the process lifetime, but
@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use kyma_core::catalog::Catalog;
+use pensieve_core::catalog::Catalog;
 
 /// How many finished runs to keep in the in-memory ring (and hydrate on boot).
 const RUN_RING: usize = 50;
@@ -66,10 +66,10 @@ impl LocalDreamingStore {
         store
     }
 
-    fn sqlite(&self) -> Option<&kyma_catalog_sqlite::SqliteCatalog> {
+    fn sqlite(&self) -> Option<&pensieve_catalog_sqlite::SqliteCatalog> {
         self.catalog
             .as_ref_any()
-            .downcast_ref::<kyma_catalog_sqlite::SqliteCatalog>()
+            .downcast_ref::<pensieve_catalog_sqlite::SqliteCatalog>()
     }
 
     /// Load the most recent runs from SQLite into the ring (newest first).
@@ -256,7 +256,7 @@ impl LocalDreamingStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kyma_catalog_sqlite::SqliteCatalog;
+    use pensieve_catalog_sqlite::SqliteCatalog;
 
     async fn store() -> Arc<LocalDreamingStore> {
         let cat: Arc<dyn Catalog> = Arc::new(SqliteCatalog::connect_in_memory().await.unwrap());

@@ -1,7 +1,7 @@
 //! `ann_maintain` executor: (re)build the global ANN centroid tree (S1.3).
 //!
 //! Reads every live extent's IVF sidecar centroids for the configured column,
-//! clusters them into a global tree ([`kyma_index_vector::global_tree`]),
+//! clusters them into a global tree ([`pensieve_index_vector::global_tree`]),
 //! uploads the serialized tree, and upserts the `ann_tree` catalog row. The
 //! debounced scheduler enqueues this whenever the set of sidecar-bearing extents
 //! changes; the executor is idempotent — if the live extent set still hashes to
@@ -16,12 +16,12 @@ use std::sync::Arc;
 
 use crate::executor::{JobCtx, JobError, JobExecutor};
 use async_trait::async_trait;
-use kyma_core::catalog::{Catalog, PrunePredicate, TableRef};
-use kyma_core::fabric::JOB_ANN_MAINTAIN;
-use kyma_core::index_sidecar::{AnnTreeDescriptor, SidecarKind};
-use kyma_core::tenant::TenantId;
-use kyma_core::types::{ExtentId, TableId};
-use kyma_index_vector::{file as ivf_file, global_tree};
+use pensieve_core::catalog::{Catalog, PrunePredicate, TableRef};
+use pensieve_core::fabric::JOB_ANN_MAINTAIN;
+use pensieve_core::index_sidecar::{AnnTreeDescriptor, SidecarKind};
+use pensieve_core::tenant::TenantId;
+use pensieve_core::types::{ExtentId, TableId};
+use pensieve_index_vector::{file as ivf_file, global_tree};
 use object_store::{path::Path as ObjPath, ObjectStore};
 use serde::Deserialize;
 use serde_json::{json, Value as Json};
@@ -99,7 +99,7 @@ impl JobExecutor for AnnMaintainExecutor {
     async fn run(
         &self,
         ctx: &JobCtx,
-        job: &kyma_core::fabric::ClaimedJob,
+        job: &pensieve_core::fabric::ClaimedJob,
     ) -> Result<Json, JobError> {
         let payload: Payload = serde_json::from_value(job.payload.clone())
             .map_err(|e| JobError::Config(format!("bad ann_maintain payload: {e}")))?;

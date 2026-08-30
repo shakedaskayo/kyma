@@ -1,4 +1,4 @@
-kyma-engine is deploying.
+pensieve-engine is deploying.
 
 {{- if .Values.ingress.enabled }}
 
@@ -7,16 +7,16 @@ kyma-engine is deploying.
 
   No ingress is enabled. Reach the engine by port-forwarding:
 
-    kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "kyma-engine.fullname" . }} 8080:{{ .Values.service.port }}
+    kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "pensieve-engine.fullname" . }} 8080:{{ .Values.service.port }}
 
   then open http://localhost:8080
 {{- end }}
 
 Check rollout:
 
-  kubectl --namespace {{ .Release.Namespace }} rollout status deploy/{{ include "kyma-engine.fullname" . }}
+  kubectl --namespace {{ .Release.Namespace }} rollout status deploy/{{ include "pensieve-engine.fullname" . }}
 
 Connect the CLI (mint an API token in the web UI under Settings → API tokens,
 or use the admin token you set at deploy time):
 
-  kyma connect <engine-url> --token <api-token>
+  pensieve connect <engine-url> --token <api-token>

@@ -7,7 +7,7 @@
  * - Hub/leaf distinction: landmark = top-decile degree.
  */
 import Graph from "graphology";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
 import { getRelationshipFamilyColor, radiusForDegree } from "./graph-style";
 import { getIconDataUrl, resolveGraphIcon, resolveNodeColor } from "./graph-icons";
 

@@ -14,10 +14,10 @@ Branch: `feat/unified-sources-obsidian` (off main `d549d226`).
 
 ---
 
-### Task 1: Obsidian wikilink normalization (kyma-ccmem)
+### Task 1: Obsidian wikilink normalization (pensieve-ccmem)
 
 **Files:**
-- Modify: `crates/kyma-ccmem/src/wikilink.rs`
+- Modify: `crates/pensieve-ccmem/src/wikilink.rs`
 
 - [ ] **Step 1: Write failing tests** — append to the module (or its existing `#[cfg(test)]` block; create one if absent):
 
@@ -44,7 +44,7 @@ mod normalized_tests {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — `cargo test -p kyma-ccmem normalized` → FAIL (`extract_normalized` not found).
+- [ ] **Step 2: Run to verify failure** — `cargo test -p pensieve-ccmem normalized` → FAIL (`extract_normalized` not found).
 
 - [ ] **Step 3: Implement** — add to `wikilink.rs`:
 
@@ -69,7 +69,7 @@ pub fn extract_normalized(body: &str) -> Vec<String> {
 }
 ```
 
-- [ ] **Step 4: Run** — `cargo test -p kyma-ccmem` → PASS.
+- [ ] **Step 4: Run** — `cargo test -p pensieve-ccmem` → PASS.
 - [ ] **Step 5: Commit** — `feat(ccmem): obsidian-flavored wikilink normalization`
 
 ---
@@ -77,10 +77,10 @@ pub fn extract_normalized(body: &str) -> Vec<String> {
 ### Task 2: `drive_model` on `CatalogEntry` + create honors it + `installed` Claude Code entry
 
 **Files:**
-- Modify: `crates/kyma-datasources/src/catalog.rs`
-- Modify: `crates/kyma-datasources/src/admin.rs` (create handler line ~99; catalog handler merge)
+- Modify: `crates/pensieve-datasources/src/catalog.rs`
+- Modify: `crates/pensieve-datasources/src/admin.rs` (create handler line ~99; catalog handler merge)
 - Modify: every `CatalogEntry { … }` literal in data source impls (compiler-driven: add `drive_model: "periodic".into(),`)
-- Test: `crates/kyma-datasources/tests/admin_it.rs` (existing patterns)
+- Test: `crates/pensieve-datasources/tests/admin_it.rs` (existing patterns)
 
 - [ ] **Step 1: Add the field** in `catalog.rs`:
 
@@ -125,7 +125,7 @@ pub fn installed() -> Vec<CatalogEntry> {
 
 - [ ] **Step 4: Tests** — in `admin_it.rs` add assertions to the existing catalog test (or a new `#[tokio::test]` following its setup pattern): response items include `claude_code` with `status == "installed"`, every item carries a non-empty `drive_model`, and creating a source still works (existing create test passes drive_model implicitly).
 
-- [ ] **Step 5: Run** — `cargo test -p kyma-datasources` (testcontainers; requires Docker). Expected: PASS.
+- [ ] **Step 5: Run** — `cargo test -p pensieve-datasources` (testcontainers; requires Docker). Expected: PASS.
 - [ ] **Step 6: Commit** — `feat(datasources): drive_model on catalog entries + installed claude_code entry`
 
 ---
@@ -133,9 +133,9 @@ pub fn installed() -> Vec<CatalogEntry> {
 ### Task 3: `ObsidianDataSource`
 
 **Files:**
-- Create: `crates/kyma-datasources/src/obsidian.rs`
-- Modify: `crates/kyma-datasources/src/lib.rs` (add `pub mod obsidian;`)
-- Modify: `crates/kyma-local/src/lib.rs` (~line 661: register alongside the others)
+- Create: `crates/pensieve-datasources/src/obsidian.rs`
+- Modify: `crates/pensieve-datasources/src/lib.rs` (add `pub mod obsidian;`)
+- Modify: `crates/pensieve-local/src/lib.rs` (~line 661: register alongside the others)
 
 - [ ] **Step 1: Test first** (inline `#[cfg(test)]` in `obsidian.rs`):
 
@@ -167,7 +167,7 @@ mod tests {
 ```rust
 //! Obsidian vault data source — catalog/validation only. Watcher-driven
 //! (`drive_model = "watcher"`): the local engine's vault watcher performs the
-//! actual sync (`kyma-local/src/vault_sync.rs`); the periodic scheduler never
+//! actual sync (`pensieve-local/src/vault_sync.rs`); the periodic scheduler never
 //! ticks these rows, and `run_once` refuses defensively.
 
 use async_trait::async_trait;
@@ -237,8 +237,8 @@ impl DataSource for ObsidianDataSource {
 
 (Adjust the `types` import path/`ConfigError` constructor to the actual definitions in `types.rs` — `ConfigError(pub String)` per `admin.rs` usage `e.0`.)
 
-- [ ] **Step 3: Register** — in `kyma-local/src/lib.rs` next to msfabric: `conn_reg.register(Arc::new(kyma_datasources::obsidian::ObsidianDataSource));`
-- [ ] **Step 4: Run** — `cargo test -p kyma-datasources obsidian` → PASS; `cargo build -p kyma-local` → OK.
+- [ ] **Step 3: Register** — in `pensieve-local/src/lib.rs` next to msfabric: `conn_reg.register(Arc::new(pensieve_datasources::obsidian::ObsidianDataSource));`
+- [ ] **Step 4: Run** — `cargo test -p pensieve-datasources obsidian` → PASS; `cargo build -p pensieve-local` → OK.
 - [ ] **Step 5: Commit** — `feat(datasources): obsidian vault source (catalog + validation, watcher-driven)`
 
 ---
@@ -246,10 +246,10 @@ impl DataSource for ObsidianDataSource {
 ### Task 4: Vault sync engine
 
 **Files:**
-- Create: `crates/kyma-local/src/vault_sync.rs`
-- Create: `crates/kyma-local/src/vault_sync_unit_tests.rs` (wired like `cc_sync_unit_tests.rs` — check how it's included from lib.rs and mirror)
-- Modify: `crates/kyma-local/src/lib.rs` (`mod vault_sync;` + test module include)
-- Modify: `crates/kyma-local/src/cc_sync.rs` (make `node_id_by_topic_key`, `archive_node` `pub(crate)` for reuse)
+- Create: `crates/pensieve-local/src/vault_sync.rs`
+- Create: `crates/pensieve-local/src/vault_sync_unit_tests.rs` (wired like `cc_sync_unit_tests.rs` — check how it's included from lib.rs and mirror)
+- Modify: `crates/pensieve-local/src/lib.rs` (`mod vault_sync;` + test module include)
+- Modify: `crates/pensieve-local/src/cc_sync.rs` (make `node_id_by_topic_key`, `archive_node` `pub(crate)` for reuse)
 
 **Engine contract** (mirror `cc_sync.rs` structure and invariants):
 
@@ -298,9 +298,9 @@ pub(crate) async fn run_once(engine: &Engine, writer: &MemoryWriter, opts: &Vaul
 
 Implementation rules:
 - **Walk**: iterative directory stack from `vault_path`; skip any directory whose name starts with `.` (covers `.obsidian`, `.trash`); collect files with extension `md`. Rel path = path relative to root with `/` separators. Sort for determinism. Unreadable file → `errors += 1`, continue.
-- **Frontmatter (optional)**: if the file starts with `---\n`, find the next line that is exactly `---`; YAML-parse the block (reuse what `kyma_ccmem::frontmatter` uses; if its parser demands CC-specific shape, parse leniently here with `serde_yaml::Value`). Extract `tags` (string → split on `,`/whitespace; sequence → strings) and `title`/`name` if present. Body = content after the block (whole file when no frontmatter or parse fails).
+- **Frontmatter (optional)**: if the file starts with `---\n`, find the next line that is exactly `---`; YAML-parse the block (reuse what `pensieve_ccmem::frontmatter` uses; if its parser demands CC-specific shape, parse leniently here with `serde_yaml::Value`). Extract `tags` (string → split on `,`/whitespace; sequence → strings) and `title`/`name` if present. Body = content after the block (whole file when no frontmatter or parse fails).
 - **Note name** = file stem. Title = frontmatter title, else note name.
-- **Hash/skip**: `kyma_ccmem::hash::content_hash(&note_name, None, &body)`; sync_state key `obsidian:hash:<source_id>:<rel_path>` — equal → `skipped`, still push a `ScanEntry`-like record (name, topic_key, wikilinks, changed=false) for the edge pass + manifest.
+- **Hash/skip**: `pensieve_ccmem::hash::content_hash(&note_name, None, &body)`; sync_state key `obsidian:hash:<source_id>:<rel_path>` — equal → `skipped`, still push a `ScanEntry`-like record (name, topic_key, wikilinks, changed=false) for the edge pass + manifest.
 - **Upsert**: `topic_key = format!("obsidian:{}/{}", source_id, rel_path)`; `CreateMemory` with realm, `MemoryType::Fact`, `importance 0.6`, tags `["obsidian"] + fm_tags`, provenance `{"source":"obsidian","source_id":…,"vault_path":…,"rel_path":…,"content_hash":…,"ingested_at":…}`. Existing node by topic key → `writer.save_as(uuid, &cm)`; else `writer.save(&cm)`. Reuse `cc_sync::node_id_by_topic_key`.
 - **Edges**: `wikilink::extract_normalized(&body)`; resolution map keyed by **lowercase** note name (Obsidian is case-insensitive); emit pairs only when either endpoint changed (cc_sync's exact algorithm) with props `{"via": "obsidian-wikilink"}`.
 - **Deletions**: manifest (`obsidian:manifest:<source_id>`, JSON array of `{rel_path, topic_key}`) diffed old→new; gone → `cc_sync::archive_node` + reset hash key (so reappearing files re-ingest); count archived.
@@ -312,9 +312,9 @@ Implementation rules:
   4. `wikilinks_become_edges` — `Alpha.md` body `links to [[beta|B]] and ![[Gamma]]`; with `Beta.md`, `Gamma.md` present; assert 2 RELATES_TO edges (case-insensitive resolution), props via obsidian-wikilink. Self/unresolved links dropped.
   5. `deleted_note_archives_and_reappearing_unarchives` — delete Beta.md, rerun → archived 1, node status archived; recreate, rerun → upserted, status live again.
   6. `dot_dirs_excluded` — note under `.obsidian/templates/T.md` and `.trash/Old.md` never ingest.
-- [ ] **Step 2: Run to verify failure** — `cargo test -p kyma-local vault_sync` → compile FAIL.
+- [ ] **Step 2: Run to verify failure** — `cargo test -p pensieve-local vault_sync` → compile FAIL.
 - [ ] **Step 3: Implement `vault_sync.rs`** per the contract above.
-- [ ] **Step 4: Run** — `cargo test -p kyma-local vault_sync` → PASS (6 tests).
+- [ ] **Step 4: Run** — `cargo test -p pensieve-local vault_sync` → PASS (6 tests).
 - [ ] **Step 5: Commit** — `feat(local): obsidian vault sync engine — notes→memory nodes, wikilink edges, archive-on-delete`
 
 ---
@@ -322,9 +322,9 @@ Implementation rules:
 ### Task 5: Watcher manager (reconciler + notify loops)
 
 **Files:**
-- Create: `crates/kyma-local/src/source_watchers.rs`
-- Modify: `crates/kyma-local/src/lib.rs` (`mod source_watchers;` + spawn in `serve()` after the cc-sync block)
-- Modify: `crates/kyma-local/Cargo.toml` (`notify = "6"`)
+- Create: `crates/pensieve-local/src/source_watchers.rs`
+- Modify: `crates/pensieve-local/src/lib.rs` (`mod source_watchers;` + spawn in `serve()` after the cc-sync block)
+- Modify: `crates/pensieve-local/Cargo.toml` (`notify = "6"`)
 
 **Shape:**
 
@@ -364,9 +364,9 @@ Manager (`pub(crate) async fn run_manager(engine: Engine, status: LocalWatcherSt
 - `run_source_loop(engine, status, control, src)`:
   - register `notify::recommended_watcher` (RecursiveMode) on `vault_path`, forwarding only events whose paths have `.md` extension and no dot-dir component to a `tokio::sync::mpsc` channel (use `std::sync::mpsc`→tokio bridge or `futures` channel per notify docs; events sent from notify's thread via `blocking_send`/`try_send`).
   - loop: `tokio::select!` on `rx.recv()` (then drain + `sleep(2s)` debounce) and `interval(scan_interval)` tick → run a pass.
-  - pass: build writer (`kyma_memory::shared_embedding()` + `MemoryWriter::new`, like `run_cc_phase`); `vault_sync::run_once`; on Ok: `control.mark_run_success(tenant, id, upserted as i64)`; on Err: `control.mark_run_failure(tenant, id, &msg)`; either way upsert `LocalWatcher { id: format!("obsidian:{id}"), kind: "obsidian", config: json!({"root": vault_path, "poll_secs": scan_interval.as_secs()}), last_scan, … }` with fresh heartbeat (errors land in `last_scan.errors`? keep `last_scan` from last success; heartbeat always bumps).
+  - pass: build writer (`pensieve_memory::shared_embedding()` + `MemoryWriter::new`, like `run_cc_phase`); `vault_sync::run_once`; on Ok: `control.mark_run_success(tenant, id, upserted as i64)`; on Err: `control.mark_run_failure(tenant, id, &msg)`; either way upsert `LocalWatcher { id: format!("obsidian:{id}"), kind: "obsidian", config: json!({"root": vault_path, "poll_secs": scan_interval.as_secs()}), last_scan, … }` with fresh heartbeat (errors land in `last_scan.errors`? keep `last_scan` from last success; heartbeat always bumps).
   - vault path missing → `mark_run_failure` with a clear message; keep looping (it may appear).
-  - tenant = `kyma_core::tenant::DEFAULT_TENANT` (single-tenant local mode; lib.rs:351 precedent).
+  - tenant = `pensieve_core::tenant::DEFAULT_TENANT` (single-tenant local mode; lib.rs:351 precedent).
 
 - [ ] **Step 1: Tests first** (inline `#[cfg(test)]` in `source_watchers.rs`) for `reconcile_plan`:
 
@@ -379,7 +379,7 @@ Manager (`pub(crate) async fn run_manager(engine: Engine, status: LocalWatcherSt
 
 (Write the four with real literals — `DesiredSource { id: "a".into(), fingerprint: "f1".into(), vault_path: "/v".into(), realm: "v".into(), scan_interval: Duration::from_secs(60) }` etc.)
 
-- [ ] **Step 2: Run → FAIL**, **Step 3: implement `reconcile_plan` + manager + loop**, **Step 4: `cargo test -p kyma-local source_watchers` → PASS; `cargo build -p kyma-local` OK.**
+- [ ] **Step 2: Run → FAIL**, **Step 3: implement `reconcile_plan` + manager + loop**, **Step 4: `cargo test -p pensieve-local source_watchers` → PASS; `cargo build -p pensieve-local` OK.**
 - [ ] **Step 5: Spawn in `serve()`** (after the cc-sync watcher block, lib.rs ~878):
 
 ```rust
@@ -403,13 +403,13 @@ Manager (`pub(crate) async fn run_manager(engine: Engine, status: LocalWatcherSt
 
 ---
 
-### Task 6: SDK type updates (@kyma-ai/client)
+### Task 6: SDK type updates (@pensieve-ai/client)
 
 **Files:**
 - Modify: `packages/client/src/datasources.ts`
 
 - [ ] **Step 1:** `CatalogEntry`: add `drive_model: "periodic" | "watcher" | string;` and widen `status: "available" | "coming_soon" | "installed";`. `DataSourceWatcher`: widen `kind: "filedrop" | "cc_sync" | "obsidian" | string;`.
-- [ ] **Step 2:** Build the package: `pnpm --filter @kyma-ai/client build` (verify script name in `packages/client/package.json`). Expected: clean.
+- [ ] **Step 2:** Build the package: `pnpm --filter @pensieve-ai/client build` (verify script name in `packages/client/package.json`). Expected: clean.
 - [ ] **Step 3: Commit** — `feat(sdk): drive_model + installed status + obsidian watcher kind`
 
 ---
@@ -519,10 +519,10 @@ it("watcher-driven entries skip the interval picker", () => {
 
 ---
 
-### Task 11: Live end-to-end verification (kyma serve + real vault)
+### Task 11: Live end-to-end verification (pensieve serve + real vault)
 
-- [ ] **Step 1:** Build with fresh embedded UI: `pnpm --dir web build && cargo build -p kyma-bin` (confirm kyma-web-assets picks up `web/dist`; check its build.rs/include path).
-- [ ] **Step 2:** Temp env: `KYMA_HOME=$(mktemp -d) KYMA_LOCAL_DB=… kyma serve` on a free port; temp vault dir with `Alpha.md`, `Beta.md` (`[[Alpha|link]]`), `.obsidian/app.json`.
+- [ ] **Step 1:** Build with fresh embedded UI: `pnpm --dir web build && cargo build -p pensieve-bin` (confirm pensieve-web-assets picks up `web/dist`; check its build.rs/include path).
+- [ ] **Step 2:** Temp env: `PENSIEVE_HOME=$(mktemp -d) PENSIEVE_LOCAL_DB=… pensieve serve` on a free port; temp vault dir with `Alpha.md`, `Beta.md` (`[[Alpha|link]]`), `.obsidian/app.json`.
 - [ ] **Step 3:** Via API: create the obsidian source (`POST /v1/data-sources` type obsidian, vault_path) → within ~20s assert: `/v1/data-sources/watchers` has `obsidian:<id>` non-stale; detail shows `last_success_at` + rows; memory_nodes contain both notes (query via the SQL endpoint); RELATES_TO edge exists.
 - [ ] **Step 4:** Mutations: edit Alpha.md (watch loop picks it up — new version), add `Gamma.md` (appears), delete Beta.md (archived). Pause source → watcher row disappears; resume → returns.
 - [ ] **Step 5:** UI: screenshot `/data-sources` (browser-harness) — single page, Claude row with real icon + expandable realms, obsidian row Continuous + Live, no tabs; catalog wizard shows Obsidian (no interval) + Claude Code "Installed".
@@ -532,7 +532,7 @@ it("watcher-driven entries skip the interval picker", () => {
 
 ### Task 12: Merge
 
-- [ ] `git checkout main`-equivalent merge: main is checked out at `/private/tmp/kyma-main-demo`; merge from there or temporarily detach. Use: `git fetch origin && git merge --no-ff feat/unified-sources-obsidian` on main, then `git push origin main` (user's preferred local-merge flow). Resolve the worktree constraint by running the merge in `/private/tmp/kyma-main-demo` after `git pull`.
+- [ ] `git checkout main`-equivalent merge: main is checked out at `/private/tmp/pensieve-main-demo`; merge from there or temporarily detach. Use: `git fetch origin && git merge --no-ff feat/unified-sources-obsidian` on main, then `git push origin main` (user's preferred local-merge flow). Resolve the worktree constraint by running the merge in `/private/tmp/pensieve-main-demo` after `git pull`.
 - [ ] Update memory (MEMORY.md + project file) with the shipped state.
 
 ---

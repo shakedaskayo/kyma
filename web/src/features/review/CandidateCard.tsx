@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { relTime } from "@/lib/time";
 import type { ReviewAction, ReviewItem } from "@/sdk/review";
-import type { MemoryOp } from "@kyma-ai/client";
+import type { MemoryOp } from "@pensieve-ai/client";
 
 const OP_LABEL: Record<MemoryOp, string> = {
   add: "Add",

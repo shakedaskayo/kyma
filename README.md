@@ -1,17 +1,17 @@
 <p align="center">
-  <a href="https://shakedaskayo.github.io/kyma/">
-    <img src="docs/site/public/icons/kyma-mark.svg" alt="kyma" width="120" height="120" />
+  <a href="https://shakedaskayo.github.io/pensieve/">
+    <img src="docs/site/public/icons/pensieve-mark.svg" alt="pensieve" width="120" height="120" />
   </a>
 </p>
 
-<h1 align="center">kyma</h1>
+<h1 align="center">pensieve</h1>
 
 <p align="center"><strong>The context engine for coding agents.</strong></p>
 
 <p align="center">
   Your coding agent forgets everything when the session ends — and even mid-session it
   can't see your logs, your traces, or how today's decision relates to the service it's
-  about. <strong>kyma is the one place it gets all three: durable memory, live data
+  about. <strong>pensieve is the one place it gets all three: durable memory, live data
   (logs, traces, code — queried in KQL/SQL), and the graph that links them</strong> —
   over a real columnar engine, not a key-value store.<br/>
   Wire it in with a <strong>Claude Code plugin</strong>, a <strong>CLI</strong>, or
@@ -19,8 +19,8 @@
 </p>
 
 <p align="center">
-  <a href="https://shakedaskayo.github.io/kyma/"><img alt="Docs" src="https://img.shields.io/badge/docs-github%20pages-7ed957?style=flat-square" /></a>
-  <a href="https://shakedaskayo.github.io/kyma/agent/memory"><img alt="Context engine" src="https://img.shields.io/badge/context%20engine-memory%20%2B%20data%20%2B%20graph-7c3aed?style=flat-square" /></a>
+  <a href="https://shakedaskayo.github.io/pensieve/"><img alt="Docs" src="https://img.shields.io/badge/docs-github%20pages-7ed957?style=flat-square" /></a>
+  <a href="https://shakedaskayo.github.io/pensieve/agent/memory"><img alt="Context engine" src="https://img.shields.io/badge/context%20engine-memory%20%2B%20data%20%2B%20graph-7c3aed?style=flat-square" /></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-1.95%2B-orange?style=flat-square" />
   <img alt="Status" src="https://img.shields.io/badge/status-pre--alpha-yellow?style=flat-square" />
@@ -30,7 +30,7 @@
   <a href="#quickstart-local-zero-infra">Quickstart</a> ·
   <a href="#what-your-agent-gets">Tools</a> ·
   <a href="#the-numbers">Numbers</a> ·
-  <a href="#why-kyma">Why kyma</a> ·
+  <a href="#why-pensieve">Why pensieve</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#two-tiers-local-binary--control-plane">Tiers</a>
 </p>
@@ -38,7 +38,7 @@
 ---
 
 <p align="center">
-  <img src="docs/images/graph-tour.gif" alt="Kyma's Context Graph — one canvas merging the deterministic code graph (functions, files, modules from connected repos), durable memories, logical entities, and live agent activity, clustered and wired by relationship-family edges." width="1000" />
+  <img src="docs/images/graph-tour.gif" alt="Pensieve's Context Graph — one canvas merging the deterministic code graph (functions, files, modules from connected repos), durable memories, logical entities, and live agent activity, clustered and wired by relationship-family edges." width="1000" />
 </p>
 <p align="center"><em>Your services, infra, repos, people — and your agent's memories — as one living, typed knowledge graph.</em></p>
 
@@ -47,7 +47,7 @@
 > **A memory store remembers what you told it. A context engine also knows your live
 > systems and how everything connects.**
 
-Most memory tools give your agent *facts*. kyma gives it the facts, the **live logs,
+Most memory tools give your agent *facts*. pensieve gives it the facts, the **live logs,
 traces, and code those facts are about**, and the **graph** that ties a decision to the
 service it concerns — one query surface, one MCP server. Recall *plus* live context
 *plus* relationships, however your agent connects.
@@ -58,43 +58,43 @@ plane** so memory stays coherent across your machines and team. The Claude Code 
 goes further: it captures each session and injects the right memories into **every
 prompt automatically** — not just when the agent makes a tool call.
 
-![kyma fan-in: your stack and your memory to kyma to your agents](docs/images/fan-in.svg)
+![pensieve fan-in: your stack and your memory to pensieve to your agents](docs/images/fan-in.svg)
 
 ---
 
 ## Quickstart (local, zero infra)
 
-**One command.** Installs the `kyma` binary, then a wizard starts the local server,
+**One command.** Installs the `pensieve` binary, then a wizard starts the local server,
 connects the CLI, and wires your coding agent. Embedded SQLite + local files, installed
 to `~/.local/bin` — no Postgres, no Docker, no sudo:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/pensieve/main/install.sh | bash
 ```
 
 You're now running. The wizard leaves you with:
 
 - **Web UI + API** → **http://localhost:7777** (Graph Explorer · Memory · KQL/SQL workbench) — your first visit creates the admin user
-- the server runs as a **background service** (starts at login, restarts on crash) — `kyma service status`
-- **Claude Code plugin** installed → restart Claude Code, run **`/kyma-status`**
-- the **`kyma` CLI** on your `$PATH`
+- the server runs as a **background service** (starts at login, restarts on crash) — `pensieve service status`
+- **Claude Code plugin** installed → restart Claude Code, run **`/pensieve-status`**
+- the **`pensieve` CLI** on your `$PATH`
 
 **Try it** — a memory round-trips through the same engine the UI and your agent use:
 
 ```bash
-kyma remember "payments-svc deploys behind the Aurora gateway; error budget is 0.1%."
-kyma recall   "how do we deploy payments and what's the error budget?"
+pensieve remember "payments-svc deploys behind the Aurora gateway; error budget is 0.1%."
+pensieve recall   "how do we deploy payments and what's the error budget?"
 # → returns the memory, scored by vector + keyword + graph
 ```
 
 > **Windows**: install inside [WSL2](https://learn.microsoft.com/windows/wsl/install) — the same one-liner works in the WSL shell. Native Windows support is tracked but not there yet.
 >
-> **Uninstall**: `curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash -s -- --uninstall` (add `--purge` to also delete `~/.kyma`).
+> **Uninstall**: `curl -fsSL https://raw.githubusercontent.com/shakedaskayo/pensieve/main/install.sh | bash -s -- --uninstall` (add `--purge` to also delete `~/.pensieve`).
 
 **Wire any agent over MCP** (zero server, zero auth — stdio):
 
 ```bash
-kyma setup claude-code      # or: cursor · windsurf — writes the agent's MCP config to launch `kyma mcp`
+pensieve setup claude-code      # or: cursor · windsurf — writes the agent's MCP config to launch `pensieve mcp`
 ```
 
 Restart the agent and it has the full toolset (memory + data + graph).
@@ -108,16 +108,16 @@ curl -fsSL …/install.sh | bash -s -- --yes                    # binary only
 curl -fsSL …/install.sh | bash -s -- --yes --serve --plugin   # + server + Claude Code plugin
 
 # From source (Rust toolchain + pnpm; the CLI embeds the web UI, so build it first):
-git clone https://github.com/shakedaskayo/kyma && cd kyma
-pnpm -C web build && cargo install --path crates/kyma-cli   # installs `kyma-cli`; symlink to `kyma` if you like
+git clone https://github.com/shakedaskayo/pensieve && cd pensieve
+pnpm -C web build && cargo install --path crates/pensieve-cli   # installs `pensieve-cli`; symlink to `pensieve` if you like
 
 # Stay current (the web UI ships inside the binary — updating one updates both):
-kyma update          # grab the latest release + restart on the new UI
-kyma update --check  # just tell me if I'm behind
+pensieve update          # grab the latest release + restart on the new UI
+pensieve update --check  # just tell me if I'm behind
 ```
 
-`kyma version` / `kyma serve` also nudge once a day when a newer release exists
-(`KYMA_NO_UPDATE_CHECK=1` to opt out).
+`pensieve version` / `pensieve serve` also nudge once a day when a newer release exists
+(`PENSIEVE_NO_UPDATE_CHECK=1` to opt out).
 
 </details>
 
@@ -144,14 +144,14 @@ Plugin slash commands, the CLI, or MCP tools all hit the same engine:
 
 **Three ways to connect, same engine underneath:**
 
-- **Claude Code plugin** (`kyma install-plugin`) — *automatic*. Hooks inject the most
-  relevant memories into every prompt with no tool call, plus `/kyma-recall`,
-  `/kyma-remember`, `/kyma-ask`, `/kyma-ingest`, `/kyma-status`. The "it just remembers" path.
-- **CLI, for any agent** (`kyma recall "…"` · `kyma query "…"`) — Cursor, Aider, Continue,
-  or any shell-tool agent shells out; **`kyma install-skill`** teaches it *when* to reach for kyma.
-- **MCP** — stdio (`kyma setup <agent>`) or HTTP (`/mcp/v1`) for native MCP clients.
+- **Claude Code plugin** (`pensieve install-plugin`) — *automatic*. Hooks inject the most
+  relevant memories into every prompt with no tool call, plus `/pensieve-recall`,
+  `/pensieve-remember`, `/pensieve-ask`, `/pensieve-ingest`, `/pensieve-status`. The "it just remembers" path.
+- **CLI, for any agent** (`pensieve recall "…"` · `pensieve query "…"`) — Cursor, Aider, Continue,
+  or any shell-tool agent shells out; **`pensieve install-skill`** teaches it *when* to reach for pensieve.
+- **MCP** — stdio (`pensieve setup <agent>`) or HTTP (`/mcp/v1`) for native MCP clients.
 
-![The kyma context loop — agent sessions and your stack feed the memory + knowledge graph; recall, graph traversal and KQL feed every next prompt automatically.](docs/images/context-loop.svg)
+![The pensieve context loop — agent sessions and your stack feed the memory + knowledge graph; recall, graph traversal and KQL feed every next prompt automatically.](docs/images/context-loop.svg)
 
 ---
 
@@ -177,13 +177,13 @@ exploratory questions per prompt without melting a card. Measured on a dev-build
 
 ---
 
-## Why kyma
+## Why pensieve
 
-kyma's memory layer synthesizes the strongest open-source patterns and runs them over its
+pensieve's memory layer synthesizes the strongest open-source patterns and runs them over its
 own columnar engine, so recall is near-realtime at scale — then it adds the half no
 memory tool has: your live data and the graph linking it.
 
-|  | memory-only tools | **kyma** |
+|  | memory-only tools | **pensieve** |
 |---|---|---|
 | Local single binary, zero infra | ✅ | ✅ |
 | stdio MCP, agent-agnostic `setup <agent>` | ✅ | ✅ |
@@ -218,13 +218,13 @@ What makes the recall best-in-class:
 
 </details>
 
-See **[Agentic Memory](https://shakedaskayo.github.io/kyma/agent/memory)** for the full design.
+See **[Agentic Memory](https://shakedaskayo.github.io/pensieve/agent/memory)** for the full design.
 
 ---
 
 ## How it works
 
-Most agent-memory tools sit on SQLite or a vector DB. kyma's live-data half is a columnar
+Most agent-memory tools sit on SQLite or a vector DB. pensieve's live-data half is a columnar
 engine in the spirit of Azure Data Explorer (Kusto) — built so agents can query in bursts:
 
 - **Ingests every signal** your stack emits — logs, traces, metrics, tool calls, prompt /
@@ -267,7 +267,7 @@ sub-second — not a support ticket.
 
 </details>
 
-![kyma internal architecture — ingest path, shared storage, query path](docs/images/architecture.svg)
+![pensieve internal architecture — ingest path, shared storage, query path](docs/images/architecture.svg)
 
 Two lanes (ingest and query) share a stateless spine: object storage (the only source of
 truth) and a catalog (Iceberg-style manifests, per-column stats, CAS commits) — Postgres
@@ -276,7 +276,7 @@ source of truth, compute is stateless, catalog is externalized, format is plugga
 is pluggable — are enforced by architectural tests. See [`docs/architecture.md`](docs/architecture.md).
 
 **Your data stays yours.** Extents live on your object store, memory in your catalog.
-Local-first, sync opt-in. Agents ask in bursts — one prompt → twenty queries — and kyma's
+Local-first, sync opt-in. Agents ask in bursts — one prompt → twenty queries — and pensieve's
 Flight gRPC is streaming and Arrow-native, priced at your object-storage cost, not per-query
 vendor fees.
 
@@ -287,20 +287,20 @@ vendor fees.
 The same context engine, two ways to run it — pick per machine; memory stays coherent
 across both via sync.
 
-![kyma two tiers — the local single binary and the team control plane, kept coherent with incremental push/pull sync.](docs/images/two-tier.svg)
+![pensieve two tiers — the local single binary and the team control plane, kept coherent with incremental push/pull sync.](docs/images/two-tier.svg)
 
-| | **`kyma` (local mode)** | **kyma server** (control plane) |
+| | **`pensieve` (local mode)** | **pensieve server** (control plane) |
 |---|---|---|
 | Infra | none — embedded SQLite + local files | Postgres + object store (S3/MinIO) |
 | Use | per-developer, offline, instant | team, always-on, shared |
 | Memory | ✅ save / recall / graph | ✅ + background consolidation ("dreaming") |
 | Live data | ✅ on-demand ingest + query | ✅ + **data sources** (GitHub, Prometheus, …) on a schedule |
-| Web UI | ✅ `kyma serve` | ✅ Graph Explorer · Memory · Discover · Agent |
-| Sync | ✅ `kyma sync` → control plane | ✅ receives + reconciles |
+| Web UI | ✅ `pensieve serve` | ✅ Graph Explorer · Memory · Discover · Agent |
+| Sync | ✅ `pensieve sync` → control plane | ✅ receives + reconciles |
 
 ```bash
 # Keep a machine's memory coherent with the team's control plane (push + pull, incremental)
-KYMA_CLOUD_URL=https://kyma.your-co.dev KYMA_CLOUD_TOKEN=… kyma sync
+PENSIEVE_CLOUD_URL=https://pensieve.your-co.dev PENSIEVE_CLOUD_TOKEN=… pensieve sync
 ```
 
 ---
@@ -318,7 +318,7 @@ communities are detected and shaded, and the focused neighbourhood lights up wit
 
 ![Function-level detail — every node is a real function, file, or module from the connected repository, wired to the memories and entities that reference it.](docs/images/graph-explorer-detail.png)
 
-The web app (hosted server, or `kyma serve`) has four first-class surfaces:
+The web app (hosted server, or `pensieve serve`) has four first-class surfaces:
 
 - **`/graph`** — the cross-database **unified graph**: every property graph merged onto one
   canvas, with typed brand-marked nodes, force/tree/radial/grid layouts, search, namespace +
@@ -334,7 +334,7 @@ The web app (hosted server, or `kyma serve`) has four first-class surfaces:
 ## Status
 
 **Pre-alpha.** The design is stable; the surface is not — expect schema churn and API breaks.
-Shipping today: local mode in the `kyma` CLI (`mcp` · `serve` · `setup` · `sync`), the
+Shipping today: local mode in the `pensieve` CLI (`mcp` · `serve` · `setup` · `sync`), the
 agentic-memory stack (hybrid + graph recall, bi-temporal, A.U.D.N., topic-key upsert, conflict
 tools, provenance, export/import), the MCP server (stdio + HTTP), REST/OTLP/Kafka/file-drop
 ingest, scheduled data sources, KQL + SQL over Arrow Flight, the 3-level pruning cascade, the web
@@ -349,26 +349,26 @@ docker-compose dev stack (`docker compose up -d`) for the full server tier.
 
 ```
 crates/
-  kyma-core/            traits + types; the architectural contract
-  kyma-catalog/         Postgres-backed catalog (Iceberg-mirroring metadata)
-  kyma-catalog-sqlite/  embedded SQLite catalog (powers local mode)
-  kyma-storage/         object_store wrapper + local-FS auto-select
-  kyma-format-tlm/      telemetry storage format (Arrow + stats + token index)
-  kyma-ingest-*/        staging/commit write path + REST/OTLP/Kafka/file-drop frontends
-  kyma-kql/ kyma-plan/ kyma-exec/   KQL → unified plan → DataFusion execution
-  kyma-memory/          agentic memory: schema, writer, hybrid+graph recall
-  kyma-mcp/             MCP server — stdio + HTTP transports, shared dispatch
-  kyma-server/          HTTP + Flight gRPC API, agent surface, auth, web UI
-  kyma-datasources/     data source framework (GitHub, Prometheus, SaaS, …)
-  kyma-compaction/      background compaction, retention, physical GC
-  kyma-local/           local-engine library behind `kyma` mcp · serve · setup · sync
-  kyma-cli/             the `kyma` CLI — client + admin + local engine (one binary)
-  kyma-bin/             the full server binary (the docker/control-plane tier)
+  pensieve-core/            traits + types; the architectural contract
+  pensieve-catalog/         Postgres-backed catalog (Iceberg-mirroring metadata)
+  pensieve-catalog-sqlite/  embedded SQLite catalog (powers local mode)
+  pensieve-storage/         object_store wrapper + local-FS auto-select
+  pensieve-format-tlm/      telemetry storage format (Arrow + stats + token index)
+  pensieve-ingest-*/        staging/commit write path + REST/OTLP/Kafka/file-drop frontends
+  pensieve-kql/ pensieve-plan/ pensieve-exec/   KQL → unified plan → DataFusion execution
+  pensieve-memory/          agentic memory: schema, writer, hybrid+graph recall
+  pensieve-mcp/             MCP server — stdio + HTTP transports, shared dispatch
+  pensieve-server/          HTTP + Flight gRPC API, agent surface, auth, web UI
+  pensieve-datasources/     data source framework (GitHub, Prometheus, SaaS, …)
+  pensieve-compaction/      background compaction, retention, physical GC
+  pensieve-local/           local-engine library behind `pensieve` mcp · serve · setup · sync
+  pensieve-cli/             the `pensieve` CLI — client + admin + local engine (one binary)
+  pensieve-bin/             the full server binary (the docker/control-plane tier)
 ```
 
 </details>
 
-Full docs at **[the kyma docs site](https://shakedaskayo.github.io/kyma/)**.
+Full docs at **[the pensieve docs site](https://shakedaskayo.github.io/pensieve/)**.
 
 ---
 

@@ -10,7 +10,7 @@
 //! `dropped_clauses` field on `source_done`).
 
 use arrow_schema::DataType;
-use kyma_core::catalog::TableRef;
+use pensieve_core::catalog::TableRef;
 use serde::Serialize;
 
 use super::grammar::{Clause, CmpOp};
@@ -233,7 +233,7 @@ pub struct TsColumn {
 }
 
 /// The reserved auto-time column created by the default ingest schema
-/// (`kyma_ingest_core::ensure::default_table_schema`). Ingest only fills it
+/// (`pensieve_ingest_core::ensure::default_table_schema`). Ingest only fills it
 /// from the aliases `timestamp` / `time_unix_nano` / `observed_time_unix_nano`,
 /// so a client that writes its event time under a different field name (e.g. a
 /// firehose writing `ts`) leaves `at` NULL for every row — which makes a
@@ -342,8 +342,8 @@ fn escape_str(s: &str) -> String {
 mod tests {
     use super::*;
     use arrow_schema::{DataType, Field, Schema as ArrowSchema, TimeUnit};
-    use kyma_core::catalog::{TableConfig, TableRef};
-    use kyma_core::types::{DatabaseId, SchemaSnapshotId, SnapshotId, TableId};
+    use pensieve_core::catalog::{TableConfig, TableRef};
+    use pensieve_core::types::{DatabaseId, SchemaSnapshotId, SnapshotId, TableId};
     use std::sync::Arc;
 
     fn table(name: &str, fields: &[(&str, DataType)]) -> TableRef {

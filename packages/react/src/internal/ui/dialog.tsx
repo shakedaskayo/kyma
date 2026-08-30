@@ -1,7 +1,7 @@
 /**
- * Internal Dialog primitive — wraps @radix-ui/react-dialog with Kyma ky-
+ * Internal Dialog primitive — wraps @radix-ui/react-dialog with Pensieve ky-
  * class prefix so it is isolated from the host app's CSS. Portal targets
- * usePortalContainer() so it stays inside .kyma-root CSS variable scope.
+ * usePortalContainer() so it stays inside .pensieve-root CSS variable scope.
  * NOT exported from the public package surface.
  */
 

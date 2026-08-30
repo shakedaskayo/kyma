@@ -4,25 +4,25 @@
 //!   - **Pg** — the `memory_usage_stats` table (server / worker-fabric mode),
 //!     tenant-scoped on every query.
 //!   - **Local** — a JSON file next to the local memory-settings file
-//!     (`kyma serve` single-binary mode, no Postgres).
+//!     (`pensieve serve` single-binary mode, no Postgres).
 //!
 //! Counters live here, not on `memory_nodes` rows, because every mutation to
 //! `memory_nodes` re-embeds and appends a whole new versioned row (see
-//! [`kyma_memory::MemoryWriter::save_as`]) — bumping a counter that way on
+//! [`pensieve_memory::MemoryWriter::save_as`]) — bumping a counter that way on
 //! every recall hit would mean paying a full embedding rewrite per hit. This
-//! store is dumb (record/fetch); [`kyma_memory::reinforcement::decayed_salience`]
+//! store is dumb (record/fetch); [`pensieve_memory::reinforcement::decayed_salience`]
 //! turns the counters into a score.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chrono::Utc;
-use kyma_memory::reinforcement::UsageStats;
+use pensieve_memory::reinforcement::UsageStats;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use tokio::sync::Mutex;
 
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 
 use super::state::AgentState;
 

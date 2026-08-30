@@ -1,5 +1,5 @@
 /**
- * Internal Badge primitive with Kyma ky- class prefix.
+ * Internal Badge primitive with Pensieve ky- class prefix.
  * NOT exported from the public package surface.
  */
 import * as React from "react";

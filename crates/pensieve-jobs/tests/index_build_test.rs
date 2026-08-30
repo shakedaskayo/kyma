@@ -9,19 +9,19 @@ use arrow_schema::{DataType, Field, Schema};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig};
-use kyma_core::errors::Result as KymaResult;
-use kyma_core::fabric::{ClaimedJob, JOB_INDEX_BUILD};
-use kyma_core::index_sidecar::{BatchStream, BuiltSidecar, SidecarBuilder, SidecarKind};
-use kyma_core::segment_format::{
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig};
+use pensieve_core::errors::Result as PensieveResult;
+use pensieve_core::fabric::{ClaimedJob, JOB_INDEX_BUILD};
+use pensieve_core::index_sidecar::{BatchStream, BuiltSidecar, SidecarBuilder, SidecarKind};
+use pensieve_core::segment_format::{
     BlockId, BlockPredicate, ColumnId, ExtentMetadata, ExtentReader, ExtentWriter,
     OpenExtentInput, SegmentFormat,
 };
-use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_core::types::SchemaRef;
-use kyma_jobs::index_build::IndexBuildExecutor;
-use kyma_jobs::{JobCtx, JobError, JobExecutor, JobQueue, ProgressSink};
+use pensieve_core::tenant::DEFAULT_TENANT;
+use pensieve_core::types::SchemaRef;
+use pensieve_jobs::index_build::IndexBuildExecutor;
+use pensieve_jobs::{JobCtx, JobError, JobExecutor, JobQueue, ProgressSink};
 use object_store::memory::InMemory;
 use object_store::ObjectStore;
 use serde_json::{json, Value as Json};
@@ -58,10 +58,10 @@ impl ExtentReader for StubReader {
     fn metadata(&self) -> &ExtentMetadata {
         &self.meta
     }
-    async fn pruned_blocks(&self, _predicate: &BlockPredicate) -> KymaResult<Vec<BlockId>> {
+    async fn pruned_blocks(&self, _predicate: &BlockPredicate) -> PensieveResult<Vec<BlockId>> {
         Ok(vec![BlockId(0), BlockId(1)])
     }
-    async fn read_block(&self, block: BlockId, _projection: &[ColumnId]) -> KymaResult<RecordBatch> {
+    async fn read_block(&self, block: BlockId, _projection: &[ColumnId]) -> PensieveResult<RecordBatch> {
         Ok(match block {
             BlockId(0) => sample_batch(&["alpha", "beta"]),
             _ => sample_batch(&["gamma"]),
@@ -83,7 +83,7 @@ impl SegmentFormat for StubFormat {
     fn max_readable_version(&self) -> u32 {
         1
     }
-    async fn open_extent(&self, input: OpenExtentInput) -> KymaResult<Arc<dyn ExtentReader>> {
+    async fn open_extent(&self, input: OpenExtentInput) -> PensieveResult<Arc<dyn ExtentReader>> {
         Ok(Arc::new(StubReader {
             meta: ExtentMetadata {
                 row_count: 3,
@@ -98,7 +98,7 @@ impl SegmentFormat for StubFormat {
         &self,
         _schema: SchemaRef,
         _target_bytes: u64,
-    ) -> KymaResult<Box<dyn ExtentWriter>> {
+    ) -> PensieveResult<Box<dyn ExtentWriter>> {
         unimplemented!("stub format is read-only")
     }
 }
@@ -118,7 +118,7 @@ impl SidecarBuilder for NoopBuilder {
         _extent: &ExtentManifest,
         column: &str,
         mut batches: BatchStream<'_>,
-    ) -> KymaResult<BuiltSidecar> {
+    ) -> PensieveResult<BuiltSidecar> {
         let mut rows = 0usize;
         while let Some(batch) = batches.next().await {
             rows += batch?.num_rows();
@@ -180,7 +180,7 @@ fn ctx_and_job(payload: Json) -> (JobCtx, ClaimedJob) {
 }
 
 /// In-memory catalog with one table and two committed extents.
-async fn catalog_with_extents() -> (Arc<dyn Catalog>, kyma_core::types::TableId, Vec<Uuid>) {
+async fn catalog_with_extents() -> (Arc<dyn Catalog>, pensieve_core::types::TableId, Vec<Uuid>) {
     let cat = SqliteCatalog::connect_in_memory().await.unwrap();
     let db = cat.create_database("default").await.unwrap();
     let table_id = cat
@@ -192,7 +192,7 @@ async fn catalog_with_extents() -> (Arc<dyn Catalog>, kyma_core::types::TableId,
     let mut extent_ids = Vec::new();
     for _ in 0..2 {
         let m = ExtentManifest {
-            id: kyma_core::types::ExtentId::new(),
+            id: pensieve_core::types::ExtentId::new(),
             table_id,
             schema_snapshot_id: tref.schema_snapshot_id,
             object_path: format!("test/extents/{}.stub", Uuid::new_v4()),
@@ -251,9 +251,9 @@ async fn builds_uploads_registers_and_reruns_idempotently() {
     assert_eq!(builder.builds.load(Ordering::SeqCst), 2);
 
     // Objects landed at the documented path convention, with builder bytes.
-    let typed_ids: Vec<kyma_core::types::ExtentId> = extent_ids
+    let typed_ids: Vec<pensieve_core::types::ExtentId> = extent_ids
         .iter()
-        .map(|u| kyma_core::types::ExtentId::from_uuid(*u))
+        .map(|u| pensieve_core::types::ExtentId::from_uuid(*u))
         .collect();
     for eid in &typed_ids {
         let path = IndexBuildExecutor::object_path(
@@ -296,7 +296,7 @@ async fn builds_uploads_registers_and_reruns_idempotently() {
 async fn missing_builder_fails_with_clear_config_error() {
     let (catalog, table_id, extent_ids) = catalog_with_extents().await;
     let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-    // Empty builder map — the S0 wiring in kyma-bin.
+    // Empty builder map — the S0 wiring in pensieve-bin.
     let exec = IndexBuildExecutor::new(
         catalog,
         Arc::new(StubFormat),

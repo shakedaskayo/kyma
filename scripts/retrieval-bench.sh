@@ -18,23 +18,23 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-export KYMA_CATALOG_URL="postgres://kyma:kyma_dev@localhost:5433/kyma"
-export KYMA_S3_ENDPOINT="http://localhost:9000"
-export KYMA_S3_BUCKET="kyma"
-export KYMA_S3_ACCESS_KEY_ID="kyma_admin"
-export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
-export KYMA_S3_PATH_STYLE="true"
-export KYMA_S3_ALLOW_HTTP="true"
-export KYMA_HTTP_ADDR="127.0.0.1:8080"
-export KYMA_COMPACTION_POLL_SECS="3600"
-export KYMA_RETENTION_POLL_SECS="3600"
-export KYMA_PHYSICAL_GC_POLL_SECS="3600"
+export PENSIEVE_CATALOG_URL="postgres://pensieve:pensieve_dev@localhost:5433/pensieve"
+export PENSIEVE_S3_ENDPOINT="http://localhost:9000"
+export PENSIEVE_S3_BUCKET="pensieve"
+export PENSIEVE_S3_ACCESS_KEY_ID="pensieve_admin"
+export PENSIEVE_S3_SECRET_ACCESS_KEY="pensieve_admin_dev"
+export PENSIEVE_S3_PATH_STYLE="true"
+export PENSIEVE_S3_ALLOW_HTTP="true"
+export PENSIEVE_HTTP_ADDR="127.0.0.1:8080"
+export PENSIEVE_COMPACTION_POLL_SECS="3600"
+export PENSIEVE_RETENTION_POLL_SECS="3600"
+export PENSIEVE_PHYSICAL_GC_POLL_SECS="3600"
 # Credential-store encryption key (required at boot; bench never stores creds).
-export KYMA_SECRET_KEY="${KYMA_SECRET_KEY:-kyma-bench-secret-not-for-production}"
+export PENSIEVE_SECRET_KEY="${PENSIEVE_SECRET_KEY:-pensieve-bench-secret-not-for-production}"
 export RUST_LOG="${RUST_LOG:-warn}"
 
 HTTP_BASE="http://127.0.0.1:8080"
-LOG_FILE="/tmp/kyma-retrieval-bench.log"
+LOG_FILE="/tmp/pensieve-retrieval-bench.log"
 SERVER_PID=""
 TIER="${TIER:-pr}"
 QUERIES="${QUERIES:-100}"
@@ -62,36 +62,36 @@ cleanup() {
 trap cleanup EXIT
 
 section "Docker stack (Postgres 5433 + MinIO 9000)"
-if ! docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1; then
+if ! docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null 2>&1; then
     info "stack not up — starting docker compose"
     docker compose up -d --quiet-pull >/dev/null 2>&1 || docker-compose up -d --quiet-pull >/dev/null 2>&1
     for _ in $(seq 1 60); do
-        if docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1 &&
-           docker exec kyma-minio mc ready local >/dev/null 2>&1; then
+        if docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null 2>&1 &&
+           docker exec pensieve-minio mc ready local >/dev/null 2>&1; then
             break
         fi
         sleep 1
     done
 fi
-docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null || { printf "${RED}postgres not healthy${NC}\n"; exit 2; }
+docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null || { printf "${RED}postgres not healthy${NC}\n"; exit 2; }
 ok "stack healthy"
 
 section "Build binaries"
-# kyma-bin emits `kyma` (the server); kyma-cli emits `kyma-cli` (the CLI) —
+# pensieve-bin emits `pensieve` (the server); pensieve-cli emits `pensieve-cli` (the CLI) —
 # distinct names since the binary-collision fix, so no copy-aside dance.
 BIN_DIR="$(mktemp -d -t retrieval-bench-bins.XXXXXX)"
-cargo build -q -p kyma-bin -p kyma-cli
-cp target/debug/kyma "$BIN_DIR/kyma-engine"
-cp target/debug/kyma-cli "$BIN_DIR/kyma-ctl"
-cargo build -q --release -p kyma-retrieval-eval --bin retrieval_bench
-ok "built kyma engine, kyma CLI, retrieval_bench"
+cargo build -q -p pensieve-bin -p pensieve-cli
+cp target/debug/pensieve "$BIN_DIR/pensieve-engine"
+cp target/debug/pensieve-cli "$BIN_DIR/pensieve-ctl"
+cargo build -q --release -p pensieve-retrieval-eval --bin retrieval_bench
+ok "built pensieve engine, pensieve CLI, retrieval_bench"
 
-section "Reset + start kyma"
-docker exec kyma-postgres psql -U kyma -d kyma -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
-docker exec kyma-minio mc alias set local http://localhost:9000 kyma_admin kyma_admin_dev >/dev/null 2>&1 || true
-docker exec kyma-minio mc rm --recursive --force local/kyma >/dev/null 2>&1 || true
-docker exec kyma-minio mc mb --ignore-existing local/kyma >/dev/null
-"$BIN_DIR/kyma-engine" >"$LOG_FILE" 2>&1 &
+section "Reset + start pensieve"
+docker exec pensieve-postgres psql -U pensieve -d pensieve -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
+docker exec pensieve-minio mc alias set local http://localhost:9000 pensieve_admin pensieve_admin_dev >/dev/null 2>&1 || true
+docker exec pensieve-minio mc rm --recursive --force local/pensieve >/dev/null 2>&1 || true
+docker exec pensieve-minio mc mb --ignore-existing local/pensieve >/dev/null
+"$BIN_DIR/pensieve-engine" >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 1 40); do
     if curl -sf "$HTTP_BASE/health" >/dev/null 2>&1; then break; fi
@@ -101,8 +101,8 @@ curl -sf "$HTTP_BASE/health" >/dev/null || { printf "${RED}server did not become
 ok "server up on 8080"
 
 section "Provision vector table ($DB.$TABLE, dim=$DIM)"
-"$BIN_DIR/kyma-ctl" create-database "$DB" >/dev/null
-"$BIN_DIR/kyma-ctl" create-table --db "$DB" --name "$TABLE" \
+"$BIN_DIR/pensieve-ctl" create-database "$DB" >/dev/null
+"$BIN_DIR/pensieve-ctl" create-table --db "$DB" --name "$TABLE" \
     --schema "id:string,text:string,embedding:vector($DIM)" >/dev/null
 ok "table created"
 

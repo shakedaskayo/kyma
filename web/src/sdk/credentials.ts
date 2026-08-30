@@ -1,14 +1,14 @@
-// Shim: backwards-compatible wrappers around @kyma-ai/client credentials functions.
+// Shim: backwards-compatible wrappers around @pensieve-ai/client credentials functions.
 
 export type {
   CredentialKind,
   CredentialValue,
   CredentialSummary,
   CreateCredentialBody,
-} from "@kyma-ai/client";
-export { credentialKindLabel } from "@kyma-ai/client";
+} from "@pensieve-ai/client";
+export { credentialKindLabel } from "@pensieve-ai/client";
 
-import type { CreateCredentialBody } from "@kyma-ai/client";
+import type { CreateCredentialBody } from "@pensieve-ai/client";
 import { sessionClient } from "./client";
 
 type Base = { endpoint: string; token: string; database?: string };

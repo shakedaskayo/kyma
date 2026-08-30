@@ -33,8 +33,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER="${1:-http://127.0.0.1:8080}"
 DB="obs"
-CLI="${ROOT}/target/release/kyma-cli"
-[[ -x "$CLI" ]] || CLI="${ROOT}/target/debug/kyma-cli"
+CLI="${ROOT}/target/release/pensieve-cli"
+[[ -x "$CLI" ]] || CLI="${ROOT}/target/debug/pensieve-cli"
 
 if [[ -t 1 ]]; then
   GRN="\033[32m"; BLU="\033[34m"; DIM="\033[2m"; NC="\033[0m"
@@ -45,7 +45,7 @@ info()    { printf "  ${DIM}%s${NC}\n" "$*"; }
 success() { printf "  ${GRN}%s${NC}\n" "$*"; }
 header()  { printf "\n${BLU}==> %s${NC}\n" "$*"; }
 
-# ── bootstrap schema (idempotent: kyma-cli create-* are safe to re-run
+# ── bootstrap schema (idempotent: pensieve-cli create-* are safe to re-run
 #    because duplicate db/table names are handled via ON CONFLICT in the
 #    catalog layer — in practice they'll error once and continue) ──────
 header "Bootstrap tables"
@@ -70,7 +70,7 @@ success "schema ready"
 
 # ── generate deterministic data via python3 ──────────────────────────────
 header "Generate data (python3)"
-TMP=$(mktemp -d /tmp/kyma-rich.XXXXXX)
+TMP=$(mktemp -d /tmp/pensieve-rich.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
 
 TMP_FOR_PY="$TMP" python3 - <<'PY' > /dev/null
@@ -359,13 +359,13 @@ ingest() {
   local sent=0
   for b in "$file".batch.*; do
     local code
-    code=$(curl -s -o /tmp/kyma-ing-err -w '%{http_code}' \
+    code=$(curl -s -o /tmp/pensieve-ing-err -w '%{http_code}' \
       -X POST "${SERVER}/v1/ingest" \
       -H "X-Database: ${DB}" -H "X-Table: ${table}" \
       -H 'Content-Type: application/x-ndjson' \
       --data-binary "@${b}")
     if [[ "$code" != 2* ]]; then
-      printf "ingest %s failed (http %s):\n%s\n" "$table" "$code" "$(cat /tmp/kyma-ing-err)" >&2
+      printf "ingest %s failed (http %s):\n%s\n" "$table" "$code" "$(cat /tmp/pensieve-ing-err)" >&2
       return 1
     fi
     sent=$((sent + $(wc -l < "$b" | tr -d ' ')))
@@ -383,7 +383,7 @@ ingest api_calls      "$TMP/api_calls.ndjson"
 ingest llm_memos      "$TMP/llm_memos.ndjson"
 
 header "Done"
-TOTAL=$(docker exec kyma-postgres psql -U kyma -d kyma -tA \
+TOTAL=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tA \
   -c "SELECT SUM((column_stats->>'_row_count')::int) FROM extents" 2>/dev/null \
   || echo "?")
 success "Rich seed complete. 5 new tables with ~63 000 rows."

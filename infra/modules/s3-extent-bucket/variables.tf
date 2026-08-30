@@ -1,6 +1,6 @@
 variable "bucket_name" {
   type        = string
-  description = "Globally-unique bucket name, e.g. kyma-dev-extents."
+  description = "Globally-unique bucket name, e.g. pensieve-dev-extents."
 }
 
 variable "env" {

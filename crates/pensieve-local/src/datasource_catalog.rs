@@ -9,10 +9,10 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use kyma_datasources::catalog_sql::DataSourceRow;
-use kyma_datasources::catalog_trait::DataSourceCatalog;
-use kyma_datasources::runner::DataSourceControl;
-use kyma_core::tenant::TenantId;
+use pensieve_datasources::catalog_sql::DataSourceRow;
+use pensieve_datasources::catalog_trait::DataSourceCatalog;
+use pensieve_datasources::runner::DataSourceControl;
+use pensieve_core::tenant::TenantId;
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 

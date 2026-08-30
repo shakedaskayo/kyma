@@ -1,14 +1,14 @@
-//! Writes memory nodes/edges to Kyma columnar storage and registers the
+//! Writes memory nodes/edges to Pensieve columnar storage and registers the
 //! `memory` graph. Append-only: mutations (status/importance/merge) write a new
 //! version row; recall dedups to the latest by `updated_at`.
 
 use std::sync::Arc;
 
-use kyma_core::catalog::{Catalog, GraphSpec, TableConfig, TableRef};
-use kyma_core::segment_format::SegmentFormat;
-use kyma_core::types::DatabaseId;
-use kyma_embed::EmbeddingBackend;
-use kyma_ingest_core::WritePath;
+use pensieve_core::catalog::{Catalog, GraphSpec, TableConfig, TableRef};
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_core::types::DatabaseId;
+use pensieve_embed::EmbeddingBackend;
+use pensieve_ingest_core::WritePath;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -29,7 +29,7 @@ pub struct MemoryWriter {
 impl MemoryWriter {
     /// Build a writer over the catalog + format engine. Backend-agnostic — works
     /// over the Postgres catalog (server) or the embedded SQLite catalog
-    /// (`kyma local`); no direct DB pool is required.
+    /// (`pensieve local`); no direct DB pool is required.
     pub fn new(
         catalog: Arc<dyn Catalog>,
         format: Arc<dyn SegmentFormat>,
@@ -308,7 +308,7 @@ impl MemoryWriter {
             serde_json::to_writer(&mut buf, r).map_err(|e| MemoryError::Ingest(e.to_string()))?;
             buf.push(b'\n');
         }
-        let batches = kyma_ingest_core::parse_ndjson(&buf, tref.schema.clone())
+        let batches = pensieve_ingest_core::parse_ndjson(&buf, tref.schema.clone())
             .map_err(|e| MemoryError::Ingest(e.to_string()))?;
         self.write
             .ingest_with_idempotency(&self.database, &tref, batches, key)

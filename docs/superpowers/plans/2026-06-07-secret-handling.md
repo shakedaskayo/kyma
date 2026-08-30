@@ -4,7 +4,7 @@
 
 **Goal:** Secrets (provider keys, connector credentials, bearer tokens, foreign tokens in user data) never reach model context, persisted transcripts, logs, or the web UI — masked as `[REDACTED:<kind>]` with audit events.
 
-**Architecture:** A new dependency-light `kyma-redact` crate provides a process-global `SecretGuard` (known-value Aho-Corasick matcher + curated regex patterns), a `StreamScrubber` for delta streams, and a `ScrubWriter` for logs. Choke points: tool results (via a `RedactingTool` decorator wrapped around every agent/MCP tool), the `Emitter` trace/UI stream, `persist_run`/`persist_turn`, memory writes, the tracing writer, and the Claude CLI subprocess env. Defense-in-depth: web UI display masking + a one-time DB backfill.
+**Architecture:** A new dependency-light `pensieve-redact` crate provides a process-global `SecretGuard` (known-value Aho-Corasick matcher + curated regex patterns), a `StreamScrubber` for delta streams, and a `ScrubWriter` for logs. Choke points: tool results (via a `RedactingTool` decorator wrapped around every agent/MCP tool), the `Emitter` trace/UI stream, `persist_run`/`persist_turn`, memory writes, the tracing writer, and the Claude CLI subprocess env. Defense-in-depth: web UI display masking + a one-time DB backfill.
 
 **Tech Stack:** Rust (axum, adk-rust 0.6, sqlx, tokio), `regex` + `aho-corasick` crates, React/TypeScript web UI, PostgreSQL.
 
@@ -16,16 +16,16 @@
 
 ---
 
-### Task 1: `kyma-redact` crate — pattern detection + `redact_text`
+### Task 1: `pensieve-redact` crate — pattern detection + `redact_text`
 
 **Files:**
 - Modify: `Cargo.toml` (workspace root — members + dependencies)
-- Create: `crates/kyma-redact/Cargo.toml`
-- Create: `crates/kyma-redact/src/lib.rs`
+- Create: `crates/pensieve-redact/Cargo.toml`
+- Create: `crates/pensieve-redact/src/lib.rs`
 
 - [ ] **Step 1: Add workspace member and dependencies**
 
-In root `Cargo.toml`, add `"crates/kyma-redact",` to `members` (alphabetical position, near `"crates/kyma-queue"`). In `[workspace.dependencies]` add (near the `chumsky` "Parser" block):
+In root `Cargo.toml`, add `"crates/pensieve-redact",` to `members` (alphabetical position, near `"crates/pensieve-queue"`). In `[workspace.dependencies]` add (near the `chumsky` "Parser" block):
 
 ```toml
 # Secret detection / redaction
@@ -33,19 +33,19 @@ regex = "1"
 aho-corasick = "1"
 ```
 
-And in the workspace-deps section where sibling crates are declared (search for `kyma-queue = { path =` to find the block), add:
+And in the workspace-deps section where sibling crates are declared (search for `pensieve-queue = { path =` to find the block), add:
 
 ```toml
-kyma-redact = { path = "crates/kyma-redact" }
+pensieve-redact = { path = "crates/pensieve-redact" }
 ```
 
 - [ ] **Step 2: Create the crate manifest**
 
-`crates/kyma-redact/Cargo.toml`:
+`crates/pensieve-redact/Cargo.toml`:
 
 ```toml
 [package]
-name = "kyma-redact"
+name = "pensieve-redact"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -62,11 +62,11 @@ serde_json.workspace = true
 tracing.workspace = true
 ```
 
-(If sibling crates don't use `version.workspace = true`, copy the exact `[package]` style from `crates/kyma-kql/Cargo.toml`.)
+(If sibling crates don't use `version.workspace = true`, copy the exact `[package]` style from `crates/pensieve-kql/Cargo.toml`.)
 
 - [ ] **Step 3: Write failing tests for pattern redaction**
 
-`crates/kyma-redact/src/lib.rs` — start with the test module at the bottom; the implementation in Step 5 goes above it:
+`crates/pensieve-redact/src/lib.rs` — start with the test module at the bottom; the implementation in Step 5 goes above it:
 
 ```rust
 #[cfg(test)]
@@ -122,8 +122,8 @@ mod tests {
 
     #[test]
     fn redacts_url_password_only() {
-        let (out, f) = guard().redact_text("postgres://kyma:s3cretPW@db.host:5432/kyma");
-        assert_eq!(out, "postgres://kyma:[REDACTED:url-credential]@db.host:5432/kyma");
+        let (out, f) = guard().redact_text("postgres://pensieve:s3cretPW@db.host:5432/pensieve");
+        assert_eq!(out, "postgres://pensieve:[REDACTED:url-credential]@db.host:5432/pensieve");
         assert_eq!(f[0].kind, "url-credential");
     }
 
@@ -168,12 +168,12 @@ mod tests {
 
 - [ ] **Step 4: Run tests to verify they fail to compile (no implementation yet)**
 
-Run: `cargo test -p kyma-redact`
+Run: `cargo test -p pensieve-redact`
 Expected: compile error — `SecretGuard` not found.
 
 - [ ] **Step 5: Implement `SecretGuard` pattern matching**
 
-Above the test module in `crates/kyma-redact/src/lib.rs`:
+Above the test module in `crates/pensieve-redact/src/lib.rs`:
 
 ```rust
 //! Secret detection + redaction.
@@ -369,14 +369,14 @@ pub fn register_env_secrets() {
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `cargo test -p kyma-redact`
+Run: `cargo test -p pensieve-redact`
 Expected: all tests PASS.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add Cargo.toml crates/kyma-redact
-git commit -m "feat(redact): kyma-redact crate — pattern-based secret detection + redaction"
+git add Cargo.toml crates/pensieve-redact
+git commit -m "feat(redact): pensieve-redact crate — pattern-based secret detection + redaction"
 ```
 
 ---
@@ -384,7 +384,7 @@ git commit -m "feat(redact): kyma-redact crate — pattern-based secret detectio
 ### Task 2: Known-value matching tests + `redact_json` deep walk
 
 **Files:**
-- Modify: `crates/kyma-redact/src/lib.rs`
+- Modify: `crates/pensieve-redact/src/lib.rs`
 
 - [ ] **Step 1: Write failing tests (append inside `mod tests`)**
 
@@ -429,7 +429,7 @@ git commit -m "feat(redact): kyma-redact crate — pattern-based secret detectio
 
 - [ ] **Step 2: Run to verify the json test fails**
 
-Run: `cargo test -p kyma-redact`
+Run: `cargo test -p pensieve-redact`
 Expected: FAIL — `redact_json` not found (known-value tests pass already).
 
 - [ ] **Step 3: Implement `redact_json` (add to `impl SecretGuard`)**
@@ -482,13 +482,13 @@ Note: key scanning calls `scan` then `redact_text` (two passes) — keys are sho
 
 - [ ] **Step 4: Run tests**
 
-Run: `cargo test -p kyma-redact`
+Run: `cargo test -p pensieve-redact`
 Expected: all PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-redact/src/lib.rs
+git add crates/pensieve-redact/src/lib.rs
 git commit -m "feat(redact): known-value registry + JSON deep-walk redaction"
 ```
 
@@ -497,7 +497,7 @@ git commit -m "feat(redact): known-value registry + JSON deep-walk redaction"
 ### Task 3: `StreamScrubber` for delta streams
 
 **Files:**
-- Modify: `crates/kyma-redact/src/lib.rs`
+- Modify: `crates/pensieve-redact/src/lib.rs`
 
 - [ ] **Step 1: Write failing tests (append inside `mod tests`)**
 
@@ -542,7 +542,7 @@ git commit -m "feat(redact): known-value registry + JSON deep-walk redaction"
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p kyma-redact`
+Run: `cargo test -p pensieve-redact`
 Expected: compile FAIL — `StreamScrubber` not found.
 
 - [ ] **Step 3: Implement `StreamScrubber` (top-level, after `SecretGuard` impl)**
@@ -606,13 +606,13 @@ impl StreamScrubber {
 
 - [ ] **Step 4: Run tests**
 
-Run: `cargo test -p kyma-redact`
+Run: `cargo test -p pensieve-redact`
 Expected: all PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-redact/src/lib.rs
+git add crates/pensieve-redact/src/lib.rs
 git commit -m "feat(redact): StreamScrubber — holdback-window scrubbing for delta streams"
 ```
 
@@ -621,11 +621,11 @@ git commit -m "feat(redact): StreamScrubber — holdback-window scrubbing for de
 ### Task 4: `ScrubWriter` + scrubbed logging in both binaries
 
 **Files:**
-- Modify: `crates/kyma-redact/src/lib.rs`
-- Modify: `crates/kyma-bin/src/main.rs:80-93`
-- Modify: `crates/kyma-bin/Cargo.toml`
-- Modify: `crates/kyma-cli/src/main.rs:385-395`
-- Modify: `crates/kyma-cli/Cargo.toml`
+- Modify: `crates/pensieve-redact/src/lib.rs`
+- Modify: `crates/pensieve-bin/src/main.rs:80-93`
+- Modify: `crates/pensieve-bin/Cargo.toml`
+- Modify: `crates/pensieve-cli/src/main.rs:385-395`
+- Modify: `crates/pensieve-cli/Cargo.toml`
 
 - [ ] **Step 1: Write failing test (append inside `mod tests`)**
 
@@ -648,7 +648,7 @@ git commit -m "feat(redact): StreamScrubber — holdback-window scrubbing for de
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p kyma-redact`
+Run: `cargo test -p pensieve-redact`
 Expected: compile FAIL — `ScrubWriter` not found.
 
 - [ ] **Step 3: Implement `ScrubWriter`**
@@ -689,14 +689,14 @@ impl<W: std::io::Write> std::io::Write for ScrubWriter<W> {
 
 - [ ] **Step 4: Run tests**
 
-Run: `cargo test -p kyma-redact`
+Run: `cargo test -p pensieve-redact`
 Expected: all PASS.
 
-- [ ] **Step 5: Wire into `kyma-bin`**
+- [ ] **Step 5: Wire into `pensieve-bin`**
 
-Add `kyma-redact.workspace = true` to `crates/kyma-bin/Cargo.toml` `[dependencies]`.
+Add `pensieve-redact.workspace = true` to `crates/pensieve-bin/Cargo.toml` `[dependencies]`.
 
-In `crates/kyma-bin/src/main.rs` (current lines 82-89), change:
+In `crates/pensieve-bin/src/main.rs` (current lines 82-89), change:
 
 ```rust
     tracing_subscriber::fmt()
@@ -714,7 +714,7 @@ to:
 ```rust
     // Register secret-bearing env values BEFORE the first log line, then
     // route all log output through the scrubbing writer.
-    kyma_redact::register_env_secrets();
+    pensieve_redact::register_env_secrets();
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -722,30 +722,30 @@ to:
             }),
         )
         .with_target(true)
-        .with_writer(|| kyma_redact::ScrubWriter::new(std::io::stdout()))
+        .with_writer(|| pensieve_redact::ScrubWriter::new(std::io::stdout()))
         .init();
 ```
 
-- [ ] **Step 6: Wire into `kyma-cli`**
+- [ ] **Step 6: Wire into `pensieve-cli`**
 
-Add `kyma-redact.workspace = true` to `crates/kyma-cli/Cargo.toml` `[dependencies]`.
+Add `pensieve-redact.workspace = true` to `crates/pensieve-cli/Cargo.toml` `[dependencies]`.
 
-In `crates/kyma-cli/src/main.rs` (current lines ~387-394), the fmt builder uses `.with_writer(std::io::stderr)`. Insert `kyma_redact::register_env_secrets();` immediately before the `tracing_subscriber::fmt()` statement and replace the writer line:
+In `crates/pensieve-cli/src/main.rs` (current lines ~387-394), the fmt builder uses `.with_writer(std::io::stderr)`. Insert `pensieve_redact::register_env_secrets();` immediately before the `tracing_subscriber::fmt()` statement and replace the writer line:
 
 ```rust
-        .with_writer(|| kyma_redact::ScrubWriter::new(std::io::stderr()))
+        .with_writer(|| pensieve_redact::ScrubWriter::new(std::io::stderr()))
 ```
 
 - [ ] **Step 7: Build both binaries**
 
-Run: `cargo build -p kyma-bin -p kyma-cli`
+Run: `cargo build -p pensieve-bin -p pensieve-cli`
 Expected: clean build.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add crates/kyma-redact crates/kyma-bin crates/kyma-cli
-git commit -m "feat(redact): ScrubWriter — secret-scrubbed log output in kyma-bin and kyma-cli"
+git add crates/pensieve-redact crates/pensieve-bin crates/pensieve-cli
+git commit -m "feat(redact): ScrubWriter — secret-scrubbed log output in pensieve-bin and pensieve-cli"
 ```
 
 ---
@@ -753,9 +753,9 @@ git commit -m "feat(redact): ScrubWriter — secret-scrubbed log output in kyma-
 ### Task 5: `RedactingTool` decorator + credential registration decorator
 
 **Files:**
-- Create: `crates/kyma-server/src/agent/redacting.rs`
-- Modify: `crates/kyma-server/src/agent/mod.rs` (module + re-exports)
-- Modify: `crates/kyma-server/Cargo.toml` (add `kyma-redact.workspace = true`)
+- Create: `crates/pensieve-server/src/agent/redacting.rs`
+- Modify: `crates/pensieve-server/src/agent/mod.rs` (module + re-exports)
+- Modify: `crates/pensieve-server/Cargo.toml` (add `pensieve-redact.workspace = true`)
 
 - [ ] **Step 1: Write the failing test (bottom of the new `redacting.rs`)**
 
@@ -784,8 +784,8 @@ mod tests {
 
     #[test]
     fn register_credential_covers_every_variant() {
-        use kyma_core::credentials::CredentialValue;
-        let g = kyma_redact::SecretGuard::new();
+        use pensieve_core::credentials::CredentialValue;
+        let g = pensieve_redact::SecretGuard::new();
         register_credential(
             &g,
             &CredentialValue::Basic {
@@ -807,20 +807,20 @@ mod tests {
 }
 ```
 
-(If `SimpleToolContext::new` has a different signature, copy the construction from `crates/kyma-mcp/src/tools.rs:106`.)
+(If `SimpleToolContext::new` has a different signature, copy the construction from `crates/pensieve-mcp/src/tools.rs:106`.)
 
 - [ ] **Step 2: Implement the decorators (top of `redacting.rs`)**
 
 ```rust
 //! Redaction decorators: wrap tools so results are scrubbed before they
 //! reach model context, and wrap the credential store so every decrypted
-//! value is registered with the global [`kyma_redact::SecretGuard`].
+//! value is registered with the global [`pensieve_redact::SecretGuard`].
 
 use adk_rust::{Tool, ToolContext};
 use async_trait::async_trait;
-use kyma_core::credentials::{Credential, CredentialStore, CredentialValue};
-use kyma_core::tenant::TenantId;
-use kyma_redact::SecretGuard;
+use pensieve_core::credentials::{Credential, CredentialStore, CredentialValue};
+use pensieve_core::tenant::TenantId;
+use pensieve_redact::SecretGuard;
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::warn;
@@ -832,7 +832,7 @@ use uuid::Uuid;
 pub fn redacted(inner: Arc<dyn Tool>) -> Arc<dyn Tool> {
     Arc::new(RedactingTool {
         inner,
-        guard: kyma_redact::global(),
+        guard: pensieve_redact::global(),
     })
 }
 
@@ -897,7 +897,7 @@ impl Tool for RedactingTool {
 pub fn registering(inner: Arc<dyn CredentialStore>) -> Arc<dyn CredentialStore> {
     Arc::new(RegisteringCredentialStore {
         inner,
-        guard: kyma_redact::global(),
+        guard: pensieve_redact::global(),
     })
 }
 
@@ -962,11 +962,11 @@ fn register_credential(guard: &SecretGuard, v: &CredentialValue) {
 }
 ```
 
-(Verify the `CredentialStore` trait import path: `state.rs:6` uses `kyma_core::credentials::CredentialStore`. If `adk_rust::Result` is not the trait's return type, match whatever `crates/kyma-mcp/src/tools.rs` sees from `tool.execute(...)`.)
+(Verify the `CredentialStore` trait import path: `state.rs:6` uses `pensieve_core::credentials::CredentialStore`. If `adk_rust::Result` is not the trait's return type, match whatever `crates/pensieve-mcp/src/tools.rs` sees from `tool.execute(...)`.)
 
 - [ ] **Step 3: Register the module and re-export**
 
-In `crates/kyma-server/src/agent/mod.rs`, add alongside the other module declarations:
+In `crates/pensieve-server/src/agent/mod.rs`, add alongside the other module declarations:
 
 ```rust
 pub mod redacting;
@@ -978,17 +978,17 @@ and to the re-export block (near `pub use state::AgentState;` at line 40):
 pub use redacting::{redacted, registering};
 ```
 
-Add `kyma-redact.workspace = true` to `crates/kyma-server/Cargo.toml` `[dependencies]`.
+Add `pensieve-redact.workspace = true` to `crates/pensieve-server/Cargo.toml` `[dependencies]`.
 
 - [ ] **Step 4: Run tests**
 
-Run: `cargo test -p kyma-server redacting`
+Run: `cargo test -p pensieve-server redacting`
 Expected: both tests PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-server
+git add crates/pensieve-server
 git commit -m "feat(agent): RedactingTool + credential-registering store decorators"
 ```
 
@@ -997,14 +997,14 @@ git commit -m "feat(agent): RedactingTool + credential-registering store decorat
 ### Task 6: Wrap every tool registration + credential store construction
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/runner.rs:155-175` (the `.tool(...)` chain)
-- Modify: `crates/kyma-mcp/src/tools.rs:25-79` (`ToolDispatch::new`)
-- Modify: `crates/kyma-bin/src/main.rs` (cred store construction + AgentState at :381)
-- Modify: `crates/kyma-local/src/lib.rs` (AgentState at :264, ToolDispatch at :333)
+- Modify: `crates/pensieve-server/src/agent/runner.rs:155-175` (the `.tool(...)` chain)
+- Modify: `crates/pensieve-mcp/src/tools.rs:25-79` (`ToolDispatch::new`)
+- Modify: `crates/pensieve-bin/src/main.rs` (cred store construction + AgentState at :381)
+- Modify: `crates/pensieve-local/src/lib.rs` (AgentState at :264, ToolDispatch at :333)
 
 - [ ] **Step 1: Wrap ADK runner tools**
 
-In `crates/kyma-server/src/agent/runner.rs`, add the import:
+In `crates/pensieve-server/src/agent/runner.rs`, add the import:
 
 ```rust
 use super::redacting::redacted;
@@ -1020,7 +1020,7 @@ Then wrap every `.tool(tool_x(shared.clone()))` call in the builder chain (lines
 
 - [ ] **Step 2: Wrap MCP dispatch tools**
 
-In `crates/kyma-mcp/src/tools.rs`, extend the existing `use kyma_server::agent::{...}` import list with `redacted`. Then in `ToolDispatch::new`, wrap every inserted tool, e.g.:
+In `crates/pensieve-mcp/src/tools.rs`, extend the existing `use pensieve_server::agent::{...}` import list with `redacted`. Then in `ToolDispatch::new`, wrap every inserted tool, e.g.:
 
 ```rust
         map.insert("list_databases", redacted(tool_list_databases(shared.clone())));
@@ -1032,25 +1032,25 @@ Apply to ALL `map.insert` lines in the function.
 
 - [ ] **Step 3: Wrap credential stores at construction**
 
-In `crates/kyma-bin/src/main.rs`, find the `let cred_store =` construction (search `cred_store`); wrap the constructed value:
+In `crates/pensieve-bin/src/main.rs`, find the `let cred_store =` construction (search `cred_store`); wrap the constructed value:
 
 ```rust
-    let cred_store = kyma_server::agent::registering(cred_store);
+    let cred_store = pensieve_server::agent::registering(cred_store);
 ```
 
-placed immediately after the original construction so connectors AND the agent both go through the registering wrapper. (If the variable is used as a concrete type somewhere, instead wrap only at the `AgentState { credentials: ... }` field: `credentials: kyma_server::agent::registering(cred_store.clone()),`.)
+placed immediately after the original construction so connectors AND the agent both go through the registering wrapper. (If the variable is used as a concrete type somewhere, instead wrap only at the `AgentState { credentials: ... }` field: `credentials: pensieve_server::agent::registering(cred_store.clone()),`.)
 
-In `crates/kyma-local/src/lib.rs:264`, apply the same wrap to the `credentials:` field of its `AgentState`, and add `kyma_redact::register_env_secrets();` near the start of the serve entry point (the function containing line 264). Add `kyma-redact.workspace = true` to `crates/kyma-local/Cargo.toml` `[dependencies]`.
+In `crates/pensieve-local/src/lib.rs:264`, apply the same wrap to the `credentials:` field of its `AgentState`, and add `pensieve_redact::register_env_secrets();` near the start of the serve entry point (the function containing line 264). Add `pensieve-redact.workspace = true` to `crates/pensieve-local/Cargo.toml` `[dependencies]`.
 
 - [ ] **Step 4: Build + run existing agent tests**
 
-Run: `cargo build --workspace && cargo test -p kyma-server -p kyma-mcp -p kyma-local`
+Run: `cargo build --workspace && cargo test -p pensieve-server -p pensieve-mcp -p pensieve-local`
 Expected: clean build; pre-existing tests still pass (the decorator is behavior-preserving for secret-free results).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-server crates/kyma-mcp crates/kyma-bin crates/kyma-local
+git add crates/pensieve-server crates/pensieve-mcp crates/pensieve-bin crates/pensieve-local
 git commit -m "feat(agent): scrub all tool results before model context; register decrypted credentials"
 ```
 
@@ -1059,8 +1059,8 @@ git commit -m "feat(agent): scrub all tool results before model context; registe
 ### Task 7: Emitter integration + `persist_run`/`persist_turn` scrub (ADK path)
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/routes.rs` (Emitter at :358-523, `persist_run` at :879, callers unchanged)
-- Modify: `crates/kyma-server/src/agent/sessions.rs` (`persist_turn` at :114)
+- Modify: `crates/pensieve-server/src/agent/routes.rs` (Emitter at :358-523, `persist_run` at :879, callers unchanged)
+- Modify: `crates/pensieve-server/src/agent/sessions.rs` (`persist_turn` at :114)
 
 - [ ] **Step 1: Write the failing test (append to `routes.rs` test module, or create `mod emitter_redact_tests` near the Emitter)**
 
@@ -1102,7 +1102,7 @@ mod emitter_redact_tests {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p kyma-server emitter_redact`
+Run: `cargo test -p pensieve-server emitter_redact`
 Expected: FAIL — raw secret present / `security_event` missing.
 
 - [ ] **Step 3: Extend the `Emitter` struct and constructor (routes.rs:358-387)**
@@ -1113,17 +1113,17 @@ Add fields:
 struct Emitter {
     // ... existing fields unchanged ...
     /// Shared secret guard — every recorded/streamed payload passes through it.
-    guard: std::sync::Arc<kyma_redact::SecretGuard>,
+    guard: std::sync::Arc<pensieve_redact::SecretGuard>,
     /// Incremental scrubbers for the open answer/reasoning blocks.
-    answer_scrub: Option<kyma_redact::StreamScrubber>,
-    reasoning_scrub: Option<kyma_redact::StreamScrubber>,
+    answer_scrub: Option<pensieve_redact::StreamScrubber>,
+    reasoning_scrub: Option<pensieve_redact::StreamScrubber>,
 }
 ```
 
 In `Emitter::new`, initialize:
 
 ```rust
-            guard: kyma_redact::global(),
+            guard: pensieve_redact::global(),
             answer_scrub: None,
             reasoning_scrub: None,
 ```
@@ -1132,7 +1132,7 @@ In `Emitter::new`, initialize:
 
 ```rust
     /// Record + surface a redaction audit event. Never carries the value.
-    fn security(&mut self, surface: &'static str, findings: &[kyma_redact::Finding]) {
+    fn security(&mut self, surface: &'static str, findings: &[pensieve_redact::Finding]) {
         if findings.is_empty() {
             return;
         }
@@ -1193,7 +1193,7 @@ Note: `args`/`result` params become `mut`; the `json!` now embeds the redacted v
         let guard = self.guard.clone();
         let safe = self
             .answer_scrub
-            .get_or_insert_with(|| kyma_redact::StreamScrubber::new(guard))
+            .get_or_insert_with(|| pensieve_redact::StreamScrubber::new(guard))
             .push(text);
         if safe.is_empty() {
             return;
@@ -1216,7 +1216,7 @@ Note: `args`/`result` params become `mut`; the `json!` now embeds the redacted v
         let guard = self.guard.clone();
         let safe = self
             .reasoning_scrub
-            .get_or_insert_with(|| kyma_redact::StreamScrubber::new(guard))
+            .get_or_insert_with(|| pensieve_redact::StreamScrubber::new(guard))
             .push(text);
         if safe.is_empty() {
             return;
@@ -1329,7 +1329,7 @@ In `persist_run`, after the `let Some(pool) = pool else ...` line, insert:
 ```rust
     // Belt-and-braces: nothing secret-bearing is persisted even if an
     // upstream scrub was missed (e.g. error paths that build traces by hand).
-    let guard = kyma_redact::global();
+    let guard = pensieve_redact::global();
     let (question, _) = guard.redact_text(question);
     let mut trace_json = trace_json.clone();
     let _ = guard.redact_json(&mut trace_json);
@@ -1342,19 +1342,19 @@ In `persist_run`, after the `let Some(pool) = pool else ...` line, insert:
 In `sessions.rs` `persist_turn`, after the `let Some(pool) = pool else ...` line, insert:
 
 ```rust
-    let (text, _) = kyma_redact::global().redact_text(text);
+    let (text, _) = pensieve_redact::global().redact_text(text);
     let text = text.as_str();
 ```
 
 - [ ] **Step 9: Run tests**
 
-Run: `cargo test -p kyma-server`
+Run: `cargo test -p pensieve-server`
 Expected: new emitter tests PASS; existing tests PASS. The most likely breakage: tests asserting exact trace shapes for streamed deltas (deltas are now coalesced by the holdback window). Fix such tests by asserting on concatenated delta text rather than per-delta equality.
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git add crates/kyma-server
+git add crates/pensieve-server
 git commit -m "feat(agent): scrub Emitter trace/UI stream + persisted runs and turns"
 ```
 
@@ -1363,13 +1363,13 @@ git commit -m "feat(agent): scrub Emitter trace/UI stream + persisted runs and t
 ### Task 8: Scrub the Claude CLI route (`ask_via_claude_cli`)
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/routes.rs:1446-1608`
+- Modify: `crates/pensieve-server/src/agent/routes.rs:1446-1608`
 
 - [ ] **Step 1: Add a security data-part helper near `ask_via_claude_cli`**
 
 ```rust
 /// Surface a redaction audit event on the CLI-path UI stream.
-fn emit_security(ui: &ui_stream::UiStream, surface: &str, findings: &[kyma_redact::Finding]) {
+fn emit_security(ui: &ui_stream::UiStream, surface: &str, findings: &[pensieve_redact::Finding]) {
     if findings.is_empty() {
         return;
     }
@@ -1387,9 +1387,9 @@ fn emit_security(ui: &ui_stream::UiStream, surface: &str, findings: &[kyma_redac
 Inside the `tokio::spawn` in `ask_via_claude_cli` (after `let mut claude_session = ...`), add:
 
 ```rust
-        let guard = kyma_redact::global();
+        let guard = pensieve_redact::global();
         // Per-block scrubbers: text/thinking blocks stream independently.
-        let mut scrubs: HashMap<String, kyma_redact::StreamScrubber> = HashMap::new();
+        let mut scrubs: HashMap<String, pensieve_redact::StreamScrubber> = HashMap::new();
 ```
 
 Replace the matching event arms (current lines 1518-1548):
@@ -1399,7 +1399,7 @@ Replace the matching event arms (current lines 1518-1548):
                 claude_cli::ClaudeEvent::TextDelta { block_id, text } => {
                     let safe = scrubs
                         .entry(block_id.clone())
-                        .or_insert_with(|| kyma_redact::StreamScrubber::new(guard.clone()))
+                        .or_insert_with(|| pensieve_redact::StreamScrubber::new(guard.clone()))
                         .push(&text);
                     if !safe.is_empty() {
                         answer.push_str(&safe);
@@ -1423,7 +1423,7 @@ Replace the matching event arms (current lines 1518-1548):
                 claude_cli::ClaudeEvent::ThinkingDelta { block_id, text } => {
                     let safe = scrubs
                         .entry(block_id.clone())
-                        .or_insert_with(|| kyma_redact::StreamScrubber::new(guard.clone()))
+                        .or_insert_with(|| pensieve_redact::StreamScrubber::new(guard.clone()))
                         .push(&text);
                     if !safe.is_empty() {
                         ui.reasoning_delta(&block_id, &safe);
@@ -1474,7 +1474,7 @@ In `ask_handler` (routes.rs:549-552), immediately after `auth_header` is extract
 ```rust
             if let Some(h) = &auth_header {
                 let token = h.trim_start_matches("Bearer ").trim();
-                kyma_redact::global().register_value("bearer", token);
+                pensieve_redact::global().register_value("bearer", token);
             }
 ```
 
@@ -1482,13 +1482,13 @@ In `ask_handler` (routes.rs:549-552), immediately after `auth_header` is extract
 
 - [ ] **Step 4: Build + test**
 
-Run: `cargo build -p kyma-server && cargo test -p kyma-server`
+Run: `cargo build -p pensieve-server && cargo test -p pensieve-server`
 Expected: clean.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/routes.rs
+git add crates/pensieve-server/src/agent/routes.rs
 git commit -m "feat(agent): scrub claude_cli stream — deltas, tool I/O, audit data parts"
 ```
 
@@ -1497,7 +1497,7 @@ git commit -m "feat(agent): scrub claude_cli stream — deltas, tool I/O, audit 
 ### Task 9: Claude CLI subprocess containment (env allowlist + stdin question)
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/engine/claude_cli.rs:134-196` (+ tests at bottom)
+- Modify: `crates/pensieve-server/src/agent/engine/claude_cli.rs:134-196` (+ tests at bottom)
 
 - [ ] **Step 1: Write the failing env-filter test (append to the existing `mod tests`)**
 
@@ -1510,9 +1510,9 @@ git commit -m "feat(agent): scrub claude_cli stream — deltas, tool I/O, audit 
             ("ANTHROPIC_API_KEY".to_string(), "sk-ant-xyz".to_string()),
             ("CLAUDE_CODE_FOO".to_string(), "1".to_string()),
             ("LC_ALL".to_string(), "en_US.UTF-8".to_string()),
-            ("KYMA_SECRET_KEY".to_string(), "supersecret".to_string()),
+            ("PENSIEVE_SECRET_KEY".to_string(), "supersecret".to_string()),
             ("OPENAI_API_KEY".to_string(), "sk-openai".to_string()),
-            ("KYMA_SUPABASE_JWT_SECRET".to_string(), "jwt".to_string()),
+            ("PENSIEVE_SUPABASE_JWT_SECRET".to_string(), "jwt".to_string()),
         ];
         let kept = filter_child_env(vars.into_iter());
         let names: Vec<&str> = kept.iter().map(|(k, _)| k.as_str()).collect();
@@ -1521,22 +1521,22 @@ git commit -m "feat(agent): scrub claude_cli stream — deltas, tool I/O, audit 
         assert!(names.contains(&"ANTHROPIC_API_KEY"), "the CLI's own auth must pass");
         assert!(names.contains(&"CLAUDE_CODE_FOO"));
         assert!(names.contains(&"LC_ALL"));
-        assert!(!names.contains(&"KYMA_SECRET_KEY"));
+        assert!(!names.contains(&"PENSIEVE_SECRET_KEY"));
         assert!(!names.contains(&"OPENAI_API_KEY"));
-        assert!(!names.contains(&"KYMA_SUPABASE_JWT_SECRET"));
+        assert!(!names.contains(&"PENSIEVE_SUPABASE_JWT_SECRET"));
     }
 ```
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p kyma-server claude_cli`
+Run: `cargo test -p pensieve-server claude_cli`
 Expected: compile FAIL — `filter_child_env` not found.
 
 - [ ] **Step 3: Implement env filtering (above `run_stream`)**
 
 ```rust
 /// Env vars the spawned `claude` subprocess is allowed to inherit. Everything
-/// else — `KYMA_SECRET_KEY`, provider keys, Supabase secrets — is withheld so
+/// else — `PENSIEVE_SECRET_KEY`, provider keys, Supabase secrets — is withheld so
 /// a CLI-side tool can never `echo` them into the transcript.
 const CHILD_ENV_ALLOWLIST: &[&str] = &[
     "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "LANG", "TMPDIR",
@@ -1590,7 +1590,7 @@ After `let mut child = cmd.spawn()...` and the stdout/stderr takes, add:
 
 - [ ] **Step 5: Run tests + manual smoke (if a Claude CLI is installed)**
 
-Run: `cargo test -p kyma-server claude_cli`
+Run: `cargo test -p pensieve-server claude_cli`
 Expected: all PASS (existing stream-parsing tests don't spawn the binary).
 
 Smoke (optional, requires `claude` on PATH and a configured engine): start the server, `POST /v1/agent/ask` with the ClaudeCli engine selected, confirm a normal answer streams back (stdin prompt path works).
@@ -1598,7 +1598,7 @@ Smoke (optional, requires `claude` on PATH and a configured engine): start the s
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/engine/claude_cli.rs
+git add crates/pensieve-server/src/agent/engine/claude_cli.rs
 git commit -m "feat(agent): claude_cli containment — env allowlist + stdin prompt"
 ```
 
@@ -1607,8 +1607,8 @@ git commit -m "feat(agent): claude_cli containment — env allowlist + stdin pro
 ### Task 10: Memory writer auto-redaction
 
 **Files:**
-- Modify: `crates/kyma-memory/Cargo.toml` (add `kyma-redact.workspace = true`)
-- Modify: `crates/kyma-memory/src/writer.rs:315-322` (`redact_create`)
+- Modify: `crates/pensieve-memory/Cargo.toml` (add `pensieve-redact.workspace = true`)
+- Modify: `crates/pensieve-memory/src/writer.rs:315-322` (`redact_create`)
 
 - [ ] **Step 1: Write the failing test (append to the existing `mod redact_tests` in writer.rs)**
 
@@ -1629,11 +1629,11 @@ git commit -m "feat(agent): claude_cli containment — env allowlist + stdin pro
     }
 ```
 
-(If `CreateMemory` doesn't implement `Default`, construct it the way the existing tests in `crates/kyma-memory` do — copy a construction from `ingest.rs` tests.)
+(If `CreateMemory` doesn't implement `Default`, construct it the way the existing tests in `crates/pensieve-memory` do — copy a construction from `ingest.rs` tests.)
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p kyma-memory redact`
+Run: `cargo test -p pensieve-memory redact`
 Expected: FAIL — content unchanged.
 
 - [ ] **Step 3: Extend `redact_create`**
@@ -1658,7 +1658,7 @@ pub fn redact_create(m: &CreateMemory) -> CreateMemory {
 
 /// Auto-detect secrets (known values + patterns) in memory text.
 fn redact_secrets(s: &str) -> String {
-    let (red, findings) = kyma_redact::global().redact_text(s);
+    let (red, findings) = pensieve_redact::global().redact_text(s);
     if !findings.is_empty() {
         tracing::warn!(
             count = findings.len(),
@@ -1671,13 +1671,13 @@ fn redact_secrets(s: &str) -> String {
 
 - [ ] **Step 4: Run tests**
 
-Run: `cargo test -p kyma-memory`
+Run: `cargo test -p pensieve-memory`
 Expected: all PASS (existing `<private>` tests unchanged).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-memory
+git add crates/pensieve-memory
 git commit -m "feat(memory): auto-redact detected secrets on memory save"
 ```
 
@@ -1686,14 +1686,14 @@ git commit -m "feat(memory): auto-redact detected secrets on memory save"
 ### Task 11: One-time trace backfill
 
 **Files:**
-- Create: `crates/kyma-catalog/migrations/022_maintenance_flags.sql`
-- Create: `crates/kyma-server/src/agent/backfill.rs`
-- Modify: `crates/kyma-server/src/agent/mod.rs` (add `pub mod backfill;`)
-- Modify: `crates/kyma-bin/src/main.rs` (spawn after AgentState at :381)
+- Create: `crates/pensieve-catalog/migrations/022_maintenance_flags.sql`
+- Create: `crates/pensieve-server/src/agent/backfill.rs`
+- Modify: `crates/pensieve-server/src/agent/mod.rs` (add `pub mod backfill;`)
+- Modify: `crates/pensieve-bin/src/main.rs` (spawn after AgentState at :381)
 
 - [ ] **Step 1: Migration**
 
-`crates/kyma-catalog/migrations/022_maintenance_flags.sql`:
+`crates/pensieve-catalog/migrations/022_maintenance_flags.sql`:
 
 ```sql
 -- One-shot maintenance task markers (e.g. the redaction backfill). A row's
@@ -1709,7 +1709,7 @@ CREATE TABLE maintenance_flags (
 
 - [ ] **Step 2: Backfill module**
 
-`crates/kyma-server/src/agent/backfill.rs`:
+`crates/pensieve-server/src/agent/backfill.rs`:
 
 ```rust
 //! One-time redaction backfill: re-scrub `agent_runs.trace_json` /
@@ -1747,7 +1747,7 @@ async fn run(pool: &PgPool) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let guard = kyma_redact::global();
+    let guard = pensieve_redact::global();
     let mut updated = 0u64;
 
     let rows = sqlx::query("SELECT run_id, question, trace_json FROM agent_runs")
@@ -1802,28 +1802,28 @@ async fn run(pool: &PgPool) -> anyhow::Result<()> {
 }
 ```
 
-Add `pub mod backfill;` to `crates/kyma-server/src/agent/mod.rs`.
+Add `pub mod backfill;` to `crates/pensieve-server/src/agent/mod.rs`.
 
 - [ ] **Step 3: Spawn at server start**
 
-In `crates/kyma-bin/src/main.rs`, right after the `agent_state` construction (line ~391):
+In `crates/pensieve-bin/src/main.rs`, right after the `agent_state` construction (line ~391):
 
 ```rust
     // One-time scrub of traces written before the redaction layer existed.
-    kyma_server::agent::backfill::spawn(pg_pool.clone());
+    pensieve_server::agent::backfill::spawn(pg_pool.clone());
 ```
 
-(`kyma-local` has no Postgres pool — nothing to backfill there.)
+(`pensieve-local` has no Postgres pool — nothing to backfill there.)
 
 - [ ] **Step 4: Build + migration smoke**
 
-Run: `cargo build -p kyma-server -p kyma-bin`
+Run: `cargo build -p pensieve-server -p pensieve-bin`
 Expected: clean. If a local dev database is configured, boot the server once and confirm the log line `redaction backfill complete`; a second boot must log nothing (flag claimed). If no dev DB is available, rely on `cargo build` + the migration being picked up by the existing sqlx migration runner.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-catalog/migrations/022_maintenance_flags.sql crates/kyma-server crates/kyma-bin
+git add crates/pensieve-catalog/migrations/022_maintenance_flags.sql crates/pensieve-server crates/pensieve-bin
 git commit -m "feat(agent): one-time redaction backfill for historic traces"
 ```
 
@@ -1853,8 +1853,8 @@ describe("redactDisplay", () => {
   });
 
   it("masks only the password in a connection URL", () => {
-    expect(redactDisplay("postgres://kyma:s3cretPW@db:5432/k")).toBe(
-      "postgres://kyma:[REDACTED:url-credential]@db:5432/k",
+    expect(redactDisplay("postgres://pensieve:s3cretPW@db:5432/k")).toBe(
+      "postgres://pensieve:[REDACTED:url-credential]@db:5432/k",
     );
   });
 
@@ -1887,7 +1887,7 @@ Expected: FAIL — module not found.
 /**
  * Client-side display masking — last line of defense for sessions persisted
  * before server-side redaction existed (the server scrubs at the source for
- * new runs). Mirrors the pattern list in crates/kyma-redact/src/lib.rs;
+ * new runs). Mirrors the pattern list in crates/pensieve-redact/src/lib.rs;
  * keep the two in sync when adding kinds.
  */
 type Pattern = { kind: string; re: RegExp; keepGroup1?: boolean };
@@ -2014,7 +2014,7 @@ Expected: empty output (file is untracked). If NOT empty, STOP and tell the user
 - [ ] **Step 2: Delete the file and extend .gitignore**
 
 ```bash
-rm /Users/shakedaskayo/shaked/projects/kyma/read_only_token
+rm /Users/shakedaskayo/shaked/projects/pensieve/read_only_token
 ```
 
 Append to `.gitignore` (after the `.env.local` line):

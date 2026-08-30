@@ -1,5 +1,5 @@
 /**
- * KymaDiscover tests.
+ * PensieveDiscover tests.
  *
  * DiscoverPage renders a full search UI. We stub fetch to deliver NDJSON frames
  * so rows appear, then check callback wiring and instance isolation.
@@ -11,9 +11,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, cleanup, waitFor, fireEvent, act } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import React from "react";
-import { KymaProvider } from "../provider/KymaProvider";
-import { KymaDiscover } from "./KymaDiscover";
-import type { Frame } from "@kyma-ai/client";
+import { PensieveProvider } from "../provider/PensieveProvider";
+import { PensieveDiscover } from "./PensieveDiscover";
+import type { Frame } from "@pensieve-ai/client";
 
 afterEach(() => {
   cleanup();
@@ -26,9 +26,9 @@ function makeQC() {
 
 function wrapper(qc: QueryClient) {
   return ({ children }: { children: React.ReactNode }) => (
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
       {children}
-    </KymaProvider>
+    </PensieveProvider>
   );
 }
 
@@ -58,12 +58,12 @@ const SAMPLE_FRAMES: Frame[] = [
 
 // ── Smoke render ──────────────────────────────────────────────────────────────
 
-describe("KymaDiscover", () => {
+describe("PensieveDiscover", () => {
   it("smoke renders without crashing", () => {
     const qc = makeQC();
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
 
-    const { container } = render(<KymaDiscover />, { wrapper: wrapper(qc) });
+    const { container } = render(<PensieveDiscover />, { wrapper: wrapper(qc) });
     // The component should mount a container div
     expect(container.firstChild).not.toBeNull();
   });
@@ -75,7 +75,7 @@ describe("KymaDiscover", () => {
       vi.fn().mockImplementation(() => Promise.resolve(frameStream(SAMPLE_FRAMES))),
     );
 
-    render(<KymaDiscover />, { wrapper: wrapper(qc) });
+    render(<PensieveDiscover />, { wrapper: wrapper(qc) });
 
     // Wait for "hello world" from the row to appear in the stream view
     await waitFor(
@@ -96,7 +96,7 @@ describe("KymaDiscover", () => {
     );
 
     const onRowOpen = vi.fn();
-    render(<KymaDiscover onRowOpen={onRowOpen} />, { wrapper: wrapper(qc) });
+    render(<PensieveDiscover onRowOpen={onRowOpen} />, { wrapper: wrapper(qc) });
 
     // Wait for rows to render — "hello world" appears in the StreamView
     await waitFor(() => expect(screen.getByText(/hello world/)).toBeTruthy(), { timeout: 3000 });
@@ -129,7 +129,7 @@ describe("KymaDiscover", () => {
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
 
     const onSearchChange = vi.fn();
-    render(<KymaDiscover onSearchChange={onSearchChange} />, { wrapper: wrapper(qc) });
+    render(<PensieveDiscover onSearchChange={onSearchChange} />, { wrapper: wrapper(qc) });
 
     // Find the QueryBar input (a text input)
     const input = document.querySelector("input[type='text'], input:not([type]), textarea");
@@ -154,7 +154,7 @@ describe("KymaDiscover", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<KymaDiscover database="staging" />, { wrapper: wrapper(qc) });
+    render(<PensieveDiscover database="staging" />, { wrapper: wrapper(qc) });
 
     // Wait for the search to be called
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
@@ -185,8 +185,8 @@ describe("KymaDiscover", () => {
 
     render(
       <>
-        <KymaDiscover defaultQuery="instance-one" onSearchChange={onChange1} />
-        <KymaDiscover defaultQuery="instance-two" onSearchChange={onChange2} />
+        <PensieveDiscover defaultQuery="instance-one" onSearchChange={onChange1} />
+        <PensieveDiscover defaultQuery="instance-two" onSearchChange={onChange2} />
       </>,
       { wrapper: wrapper(qc) },
     );

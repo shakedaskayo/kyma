@@ -14,8 +14,8 @@ import Sigma from "sigma";
 import { createNodeImageProgram } from "@sigma/node-image";
 import { EdgeCurvedArrowProgram } from "@sigma/edge-curve";
 import { EdgeArrowProgram, EdgeLineProgram } from "sigma/rendering";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
-import { useKymaContext } from "../provider/context";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
+import { usePensieveContext } from "../provider/context";
 import { useGraphStore } from "./graph-store";
 import { edgeDisplay, lodTier, nodeDisplay, type DisplayCtx } from "./graph-display";
 import { makeDrawNodeHover } from "./graph-hover-draw";
@@ -93,7 +93,7 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
   // Camera continuity across per-chunk sigma rebuilds (see restore below).
   const savedCameraRef = useRef<{ x: number; y: number; ratio: number; angle: number } | null>(null);
   const userMovedCameraRef = useRef(false);
-  const { isDark } = useKymaContext();
+  const { isDark } = usePensieveContext();
 
   // Store state.
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);

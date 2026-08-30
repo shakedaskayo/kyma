@@ -1,4 +1,4 @@
-import type { Capabilities } from "@kyma-ai/client";
+import type { Capabilities } from "@pensieve-ai/client";
 
 export const CAPABILITIES_FIXTURE: Capabilities = {
   mode: "server",

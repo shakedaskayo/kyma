@@ -7,7 +7,7 @@
  */
 
 import { Trash2, Settings } from "lucide-react";
-import type { DashboardPanel } from "@kyma-ai/client";
+import type { DashboardPanel } from "@pensieve-ai/client";
 import type { TimeRange } from "../query/time-range/time-range-types";
 import { ChartPanelViz } from "./panels/ChartPanelViz";
 import { TablePanelViz } from "./panels/TablePanelViz";
@@ -31,7 +31,7 @@ export function PanelCard({ panel, timeRange, editable, onDelete, onEdit, onPane
     >
       {/* Title bar — also serves as drag handle when editable */}
       <div
-        className={`ky-flex ky-items-center ky-justify-between ky-border-b ky-bg-muted/30 ky-px-3 ky-py-1.5 ky-text-xs ky-font-medium ky-select-none kyma-panel-drag-handle ${
+        className={`ky-flex ky-items-center ky-justify-between ky-border-b ky-bg-muted/30 ky-px-3 ky-py-1.5 ky-text-xs ky-font-medium ky-select-none pensieve-panel-drag-handle ${
           editable ? "ky-cursor-grab active:ky-cursor-grabbing" : ""
         }`}
       >

@@ -1,12 +1,12 @@
 //! Differential validation of [`CsrGraph`] against the petgraph reference
-//! oracle (`kyma_graph_testkit::oracle`). The oracle's doc comments are the
+//! oracle (`pensieve_graph_testkit::oracle`). The oracle's doc comments are the
 //! normative spec; this test asserts CSR traversal matches it set-for-set over
 //! every generator topology — including cyclic — and a proptest sweep.
 
-use kyma_graph_testkit::model::TestGraph;
-use kyma_graph_testkit::oracle::{Direction as ODir, Oracle};
-use kyma_graph_testkit::synth;
-use kyma_graph_topo::{CsrGraph, Direction};
+use pensieve_graph_testkit::model::TestGraph;
+use pensieve_graph_testkit::oracle::{Direction as ODir, Oracle};
+use pensieve_graph_testkit::synth;
+use pensieve_graph_topo::{CsrGraph, Direction};
 
 fn csr_of(g: &TestGraph) -> CsrGraph {
     CsrGraph::build(

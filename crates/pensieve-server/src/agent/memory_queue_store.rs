@@ -5,7 +5,7 @@
 //!   - **Pg** — the `memory_approval_queue` table (server / worker-fabric mode),
 //!     tenant-scoped on every query.
 //!   - **Local** — a JSON file next to the local memory-settings file
-//!     (`kyma serve` single-binary mode, no Postgres).
+//!     (`pensieve serve` single-binary mode, no Postgres).
 //!
 //! The store is dumb: it inserts, lists, gets, counts, and flips status. All
 //! policy + apply/inverse logic lives in [`super::memory_gate`].
@@ -19,7 +19,7 @@ use sqlx::{PgPool, Row};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 
 use super::memory_policy::MemoryOp;
 use super::state::AgentState;

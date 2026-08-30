@@ -1,5 +1,5 @@
 [package]
-name = "kyma-compaction"
+name = "pensieve-compaction"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,10 +10,10 @@ description = "Background compaction worker + scheduler. Merges small extents in
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
-kyma-catalog.workspace = true
-kyma-index-vector.workspace = true
-kyma-ingest-core.workspace = true
+pensieve-core.workspace = true
+pensieve-catalog.workspace = true
+pensieve-index-vector.workspace = true
+pensieve-ingest-core.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

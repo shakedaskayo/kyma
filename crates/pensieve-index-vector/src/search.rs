@@ -12,7 +12,7 @@
 
 use crate::file::Entry;
 use crate::rabitq::{estimate_distance, QueryCode};
-use kyma_core::index_sidecar::RowAddress;
+use pensieve_core::index_sidecar::RowAddress;
 
 /// Estimate the cosine distance from `query` to every entry in `partition`,
 /// returning `(address, approx_distance)` pairs in the partition's stored
@@ -30,7 +30,7 @@ mod tests {
     use crate::file::Entry;
     use crate::rabitq::{encode_query_rotated, encode_rotated, Rotation};
     use crate::rng::SplitMix64;
-    use kyma_core::segment_format::BlockId;
+    use pensieve_core::segment_format::BlockId;
 
     fn norm(mut v: Vec<f32>) -> Vec<f32> {
         let n = (v.iter().map(|x| x * x).sum::<f32>()).sqrt();

@@ -1,5 +1,5 @@
 [package]
-name = "kyma-artifact-graph"
+name = "pensieve-artifact-graph"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,11 +10,11 @@ description = "Catch-all property-graph writer that mirrors the artifacts catalo
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
-kyma-catalog.workspace = true
-kyma-embed = { workspace = true, default-features = false }
-kyma-ingest-core.workspace = true
-kyma-storage.workspace = true
+pensieve-core.workspace = true
+pensieve-catalog.workspace = true
+pensieve-embed = { workspace = true, default-features = false }
+pensieve-ingest-core.workspace = true
+pensieve-storage.workspace = true
 arrow-schema.workspace = true
 chrono.workspace = true
 object_store.workspace = true
@@ -23,9 +23,9 @@ tracing.workspace = true
 anyhow.workspace = true
 
 [dev-dependencies]
-kyma-catalog-sqlite.workspace = true
-kyma-exec.workspace = true
-kyma-format-tlm.workspace = true
+pensieve-catalog-sqlite.workspace = true
+pensieve-exec.workspace = true
+pensieve-format-tlm.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 arrow-array.workspace = true
 async-trait.workspace = true

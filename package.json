@@ -1,5 +1,5 @@
 {
-  "name": "kyma-workspace",
+  "name": "pensieve-workspace",
   "private": true,
   "scripts": {
     "dev": "pnpm -C web dev",
@@ -8,8 +8,8 @@
     "test:scripts": "node --test scripts/ky-prefix.test.mjs",
     "typecheck": "pnpm -C web typecheck",
     "lint": "pnpm -C web lint",
-    "build:packages": "pnpm --filter @kyma-ai/client build && pnpm --filter @kyma-ai/react build",
-    "test:packages": "pnpm --filter @kyma-ai/client test && pnpm --filter @kyma-ai/react test",
+    "build:packages": "pnpm --filter @pensieve-ai/client build && pnpm --filter @pensieve-ai/react build",
+    "test:packages": "pnpm --filter @pensieve-ai/client test && pnpm --filter @pensieve-ai/react test",
     "typecheck:all": "pnpm -r --filter './packages/*' --filter './web' --filter './examples/*' typecheck"
   },
   "engines": {

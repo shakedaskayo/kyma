@@ -1,19 +1,19 @@
 [package]
-name = "kyma-format-parquet"
+name = "pensieve-format-parquet"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Parquet SegmentFormat for kyma — ZSTD columnar extents at rest (S2.1)."
+description = "Parquet SegmentFormat for pensieve — ZSTD columnar extents at rest (S2.1)."
 
 [lints]
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
+pensieve-core.workspace = true
 # Shared per-extent column-stats contract (distinct/tokens/vec) so Parquet
 # extents prune + activate identically to TLM extents.
-kyma-format-tlm.workspace = true
+pensieve-format-tlm.workspace = true
 arrow.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true

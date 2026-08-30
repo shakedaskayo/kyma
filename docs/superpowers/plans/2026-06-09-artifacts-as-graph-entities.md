@@ -6,7 +6,7 @@
 
 **Architecture:** Two materialization paths feeding one node contract. (A) *Producer-attached* — the github connector's existing `LogFile` node is relabeled to `Artifact`, carries its catalog `artifact_id`, and its edge becomes `HAS_ARTIFACT` (works in local + server mode). (B) *Catch-all* — a new server-only `ArtifactGraphWriter` mirrors the `artifacts` Postgres catalog into a registered `artifacts` graph for sources with no producer node. The inline log/file preview already exists in the graph sidebar (`LogFileViewer`); its trigger is widened to the `Artifact` label.
 
-**Tech Stack:** Rust (`kyma-connectors`, `kyma-catalog`, new `kyma-artifact-graph` crate, `kyma-ingest-core` `WritePath`, `arrow-schema`, `sqlx`), React + TypeScript (`@kyma-ai/react`, vitest).
+**Tech Stack:** Rust (`pensieve-connectors`, `pensieve-catalog`, new `pensieve-artifact-graph` crate, `pensieve-ingest-core` `WritePath`, `arrow-schema`, `sqlx`), React + TypeScript (`@pensieve-ai/react`, vitest).
 
 **Spec:** `docs/superpowers/specs/2026-06-09-artifacts-as-graph-entities-design.md`
 
@@ -19,12 +19,12 @@
 ### Task 1: Relabel the CI log node to `Artifact`, thread `artifact_id`, standardize the edge
 
 **Files:**
-- Modify: `crates/kyma-connectors/src/github/transform.rs` (`log_file_rows`, ~257-288; add a unit test)
-- Modify: `crates/kyma-connectors/src/github/joblogs.rs` (capture the `put_and_register` uuid ~161-196; update the integration test ~346-368)
+- Modify: `crates/pensieve-connectors/src/github/transform.rs` (`log_file_rows`, ~257-288; add a unit test)
+- Modify: `crates/pensieve-connectors/src/github/joblogs.rs` (capture the `put_and_register` uuid ~161-196; update the integration test ~346-368)
 
 - [ ] **Step 1: Write the failing unit test for the new node shape**
 
-Add to the bottom of `crates/kyma-connectors/src/github/transform.rs` (create a `#[cfg(test)] mod tests { … }` block if none exists; otherwise add the fn inside it):
+Add to the bottom of `crates/pensieve-connectors/src/github/transform.rs` (create a `#[cfg(test)] mod tests { … }` block if none exists; otherwise add the fn inside it):
 
 ```rust
 #[cfg(test)]
@@ -74,7 +74,7 @@ mod artifact_node_tests {
 
 - [ ] **Step 2: Run the test — verify it fails to compile (signature mismatch)**
 
-Run: `cargo test -p kyma-connectors --features github log_file_rows_emits_artifact`
+Run: `cargo test -p pensieve-connectors --features github log_file_rows_emits_artifact`
 Expected: FAIL — compile error, `log_file_rows` takes 8 args not 9 / does not accept the `Option<&str>`.
 
 - [ ] **Step 3: Update `log_file_rows` to the new shape**
@@ -126,7 +126,7 @@ pub fn log_file_rows(
 
 - [ ] **Step 4: Thread the catalog uuid through in `joblogs.rs`**
 
-In `crates/kyma-connectors/src/github/joblogs.rs`, change the `put_and_register` block (~161-182) to capture the returned id, then pass it into `log_file_rows` (~184-194):
+In `crates/pensieve-connectors/src/github/joblogs.rs`, change the `put_and_register` block (~161-182) to capture the returned id, then pass it into `log_file_rows` (~184-194):
 
 ```rust
             let mut artifact_id: Option<String> = None;
@@ -206,13 +206,13 @@ In `joblogs.rs` `capture_redacts_secrets_before_storing` (~346-368), update the 
 
 - [ ] **Step 6: Run the connector tests — verify they pass**
 
-Run: `cargo test -p kyma-connectors --features github`
+Run: `cargo test -p pensieve-connectors --features github`
 Expected: PASS — `log_file_rows_*` unit tests and `capture_redacts_secrets_before_storing` all green.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/kyma-connectors/src/github/transform.rs crates/kyma-connectors/src/github/joblogs.rs
+git add crates/pensieve-connectors/src/github/transform.rs crates/pensieve-connectors/src/github/joblogs.rs
 git commit -m "feat(connectors): CI logs become Artifact nodes (HAS_ARTIFACT + artifact_id)"
 ```
 
@@ -266,12 +266,12 @@ describe("artifactViewerPath", () => {
 
 - [ ] **Step 2: Run the test — verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/GraphSidebar.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/GraphSidebar.test.tsx`
 Expected: FAIL — `artifactViewerPath` is not exported.
 
 - [ ] **Step 3: Extract + widen the trigger**
 
-In `packages/react/src/graph/GraphSidebar.tsx`, add an exported helper just below `objectPathOf` (~449), importing `GraphNode` (already imported at the top from `@kyma-ai/client`):
+In `packages/react/src/graph/GraphSidebar.tsx`, add an exported helper just below `objectPathOf` (~449), importing `GraphNode` (already imported at the top from `@pensieve-ai/client`):
 
 ```tsx
 /** object_path for a node that should show the inline artifact viewer — any
@@ -298,12 +298,12 @@ Then in `NodeInspector`, replace the `logPath` memo (~531-534) with a call to th
 
 - [ ] **Step 4: Run the test — verify it passes**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/GraphSidebar.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/GraphSidebar.test.tsx`
 Expected: PASS — all five cases green.
 
 - [ ] **Step 5: Run the package test + typecheck**
 
-Run: `pnpm --filter @kyma-ai/react test`
+Run: `pnpm --filter @pensieve-ai/react test`
 Expected: PASS — no regressions in the graph suite.
 
 - [ ] **Step 6: Commit**
@@ -319,30 +319,30 @@ git commit -m "feat(react): inline artifact viewer fires for Artifact-labeled no
 
 ## Phase 2 — Catch-all `artifacts` graph (server / Postgres only)
 
-> The `artifacts` catalog table exists only on `PostgresCatalog` (artifacts.rs header). So this phase materializes catalog artifacts that have **no** producer node (object-store blobs, agent-contributed files, fs-watch snapshots) into a dedicated `artifacts` graph. In `kyma local` (sqlite) there is no artifacts catalog, so nothing to sync — Phase 1 still works there.
+> The `artifacts` catalog table exists only on `PostgresCatalog` (artifacts.rs header). So this phase materializes catalog artifacts that have **no** producer node (object-store blobs, agent-contributed files, fs-watch snapshots) into a dedicated `artifacts` graph. In `pensieve local` (sqlite) there is no artifacts catalog, so nothing to sync — Phase 1 still works there.
 
-### Task 3: New crate `kyma-artifact-graph` — the node contract + writer (provision + write)
+### Task 3: New crate `pensieve-artifact-graph` — the node contract + writer (provision + write)
 
 **Files:**
-- Create: `crates/kyma-artifact-graph/Cargo.toml`
-- Create: `crates/kyma-artifact-graph/src/lib.rs`
-- Create: `crates/kyma-artifact-graph/tests/writer_it.rs`
+- Create: `crates/pensieve-artifact-graph/Cargo.toml`
+- Create: `crates/pensieve-artifact-graph/src/lib.rs`
+- Create: `crates/pensieve-artifact-graph/tests/writer_it.rs`
 - Modify: `Cargo.toml` (workspace `members`)
 
 - [ ] **Step 1: Scaffold the crate manifest**
 
-Create `crates/kyma-artifact-graph/Cargo.toml` (mirror `crates/kyma-memory/Cargo.toml` deps; copy exact versions from there):
+Create `crates/pensieve-artifact-graph/Cargo.toml` (mirror `crates/pensieve-memory/Cargo.toml` deps; copy exact versions from there):
 
 ```toml
 [package]
-name = "kyma-artifact-graph"
+name = "pensieve-artifact-graph"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-kyma-core = { path = "../kyma-core" }
-kyma-catalog = { path = "../kyma-catalog" }
-kyma-ingest-core = { path = "../kyma-ingest-core" }
+pensieve-core = { path = "../pensieve-core" }
+pensieve-catalog = { path = "../pensieve-catalog" }
+pensieve-ingest-core = { path = "../pensieve-ingest-core" }
 arrow-schema = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
@@ -351,40 +351,40 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 
 [dev-dependencies]
-kyma-catalog-sqlite = { path = "../kyma-catalog-sqlite" }
-kyma-format-tlm = { path = "../kyma-format-tlm" }
-kyma-storage = { path = "../kyma-storage" }
+pensieve-catalog-sqlite = { path = "../pensieve-catalog-sqlite" }
+pensieve-format-tlm = { path = "../pensieve-format-tlm" }
+pensieve-storage = { path = "../pensieve-storage" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 ```
 
-(If `arrow-schema` / a dep is not declared `workspace = true` in the root `Cargo.toml`, copy the concrete version string used in `crates/kyma-memory/Cargo.toml`.)
+(If `arrow-schema` / a dep is not declared `workspace = true` in the root `Cargo.toml`, copy the concrete version string used in `crates/pensieve-memory/Cargo.toml`.)
 
 - [ ] **Step 2: Register the crate in the workspace**
 
-In the root `/Users/shakedaskayo/shaked/projects/kyma/Cargo.toml`, add `"crates/kyma-artifact-graph"` to `[workspace] members` (keep the list sorted as the file is).
+In the root `/Users/shakedaskayo/shaked/projects/pensieve/Cargo.toml`, add `"crates/pensieve-artifact-graph"` to `[workspace] members` (keep the list sorted as the file is).
 
 - [ ] **Step 3: Write the failing integration test**
 
-Create `crates/kyma-artifact-graph/tests/writer_it.rs` (harness copied from `crates/kyma-memory/tests/file_candidates_it.rs:38-52`):
+Create `crates/pensieve-artifact-graph/tests/writer_it.rs` (harness copied from `crates/pensieve-memory/tests/file_candidates_it.rs:38-52`):
 
 ```rust
 use std::sync::Arc;
 
 use chrono::Utc;
-use kyma_artifact_graph::{artifact_node_row, ArtifactGraphWriter, ARTIFACTS_DB, GRAPH_NAME};
-use kyma_catalog::artifacts::ArtifactRecord;
-use kyma_core::catalog::{Catalog, GraphSpec};
-use kyma_core::segment_format::SegmentFormat;
-use kyma_core::tenant::TenantId;
-use kyma_format_tlm::TelemetryFormat;
-use kyma_storage::{build_object_store, StorageConfig};
+use pensieve_artifact_graph::{artifact_node_row, ArtifactGraphWriter, ARTIFACTS_DB, GRAPH_NAME};
+use pensieve_catalog::artifacts::ArtifactRecord;
+use pensieve_core::catalog::{Catalog, GraphSpec};
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_core::tenant::TenantId;
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_storage::{build_object_store, StorageConfig};
 use uuid::Uuid;
 
 async fn writer() -> (Arc<dyn Catalog>, ArtifactGraphWriter) {
     let catalog: Arc<dyn Catalog> = Arc::new(
-        kyma_catalog_sqlite::SqliteCatalog::connect_in_memory().await.unwrap(),
+        pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory().await.unwrap(),
     );
-    let tmp = std::env::temp_dir().join(format!("kyma-ag-{}", Uuid::new_v4()));
+    let tmp = std::env::temp_dir().join(format!("pensieve-ag-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&tmp).unwrap();
     let store = build_object_store(&StorageConfig::Local {
         root: tmp.to_string_lossy().to_string(),
@@ -454,12 +454,12 @@ async fn provision_then_sync_registers_graph_and_writes_nodes() {
 
 - [ ] **Step 4: Run the test — verify it fails**
 
-Run: `cargo test -p kyma-artifact-graph`
+Run: `cargo test -p pensieve-artifact-graph`
 Expected: FAIL — crate has no `lib.rs` symbols.
 
 - [ ] **Step 5: Implement `lib.rs`**
 
-Create `crates/kyma-artifact-graph/src/lib.rs`:
+Create `crates/pensieve-artifact-graph/src/lib.rs`:
 
 ```rust
 //! Catch-all `artifacts` property-graph: mirrors the Postgres `artifacts`
@@ -467,16 +467,16 @@ Create `crates/kyma-artifact-graph/src/lib.rs`:
 //! (object-store blobs, agent files, fs-watch snapshots). github CI-log
 //! artifacts are already nodes in the `github` graph and are skipped here.
 //!
-//! Modeled on `kyma_memory::MemoryWriter` (provision-on-demand + WritePath
+//! Modeled on `pensieve_memory::MemoryWriter` (provision-on-demand + WritePath
 //! append) but without embeddings — artifact nodes are plain Utf8 rows.
 
 use std::sync::Arc;
 
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
-use kyma_catalog::artifacts::ArtifactRecord;
-use kyma_core::catalog::{Catalog, GraphSpec, TableConfig};
-use kyma_core::segment_format::SegmentFormat;
-use kyma_ingest_core::WritePath;
+use pensieve_catalog::artifacts::ArtifactRecord;
+use pensieve_core::catalog::{Catalog, GraphSpec, TableConfig};
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_ingest_core::WritePath;
 use serde_json::{json, Map, Value};
 
 /// Database + graph that hold the catch-all artifact nodes.
@@ -615,7 +615,7 @@ impl ArtifactGraphWriter {
         }
         // Idempotency key over the row payload: identical re-syncs are no-ops.
         let key = format!("artifacts:{:x}", seahash_like(&buf));
-        let batches = kyma_ingest_core::parse_ndjson(&buf, tref.schema.clone())?;
+        let batches = pensieve_ingest_core::parse_ndjson(&buf, tref.schema.clone())?;
         self.write
             .ingest_with_idempotency(ARTIFACTS_DB, &tref, batches, Some(&key))
             .await?;
@@ -632,17 +632,17 @@ fn seahash_like(bytes: &[u8]) -> u64 {
 }
 ```
 
-> If `WritePath::ingest_with_idempotency` has a different signature than the memory writer uses (`crates/kyma-memory/src/writer.rs:309-312`), match that call exactly — copy the argument order from there.
+> If `WritePath::ingest_with_idempotency` has a different signature than the memory writer uses (`crates/pensieve-memory/src/writer.rs:309-312`), match that call exactly — copy the argument order from there.
 
 - [ ] **Step 6: Run the test — verify it passes**
 
-Run: `cargo test -p kyma-artifact-graph`
+Run: `cargo test -p pensieve-artifact-graph`
 Expected: PASS — node-shape and provision/sync tests green.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/kyma-artifact-graph Cargo.toml
+git add crates/pensieve-artifact-graph Cargo.toml
 git commit -m "feat(artifact-graph): catch-all Artifact node writer + graph provisioner"
 ```
 
@@ -651,11 +651,11 @@ git commit -m "feat(artifact-graph): catch-all Artifact node writer + graph prov
 ### Task 4: `list_live_artifacts` on `PostgresCatalog`
 
 **Files:**
-- Modify: `crates/kyma-catalog/src/artifacts.rs` (add the method ~123)
+- Modify: `crates/pensieve-catalog/src/artifacts.rs` (add the method ~123)
 
 - [ ] **Step 1: Add the method**
 
-In `crates/kyma-catalog/src/artifacts.rs`, inside `impl PostgresCatalog`, add after `get_artifact_in_tenant`:
+In `crates/pensieve-catalog/src/artifacts.rs`, inside `impl PostgresCatalog`, add after `get_artifact_in_tenant`:
 
 ```rust
     /// All live (not soft-deleted) artifacts for `tenant`, newest first. Used by
@@ -678,14 +678,14 @@ In `crates/kyma-catalog/src/artifacts.rs`, inside `impl PostgresCatalog`, add af
 
 - [ ] **Step 2: Verify it compiles**
 
-Run: `cargo build -p kyma-catalog`
+Run: `cargo build -p pensieve-catalog`
 Expected: PASS — compiles clean.
 
 - [ ] **Step 3: Add a Postgres-gated integration test**
 
 Locate the crate's existing Postgres test harness first:
 
-Run: `grep -rln "register_artifact\|PgPool\|#\\[ignore\\]\|KYMA_TEST_PG\|connect(" crates/kyma-catalog/tests crates/kyma-catalog/src/artifacts.rs`
+Run: `grep -rln "register_artifact\|PgPool\|#\\[ignore\\]\|PENSIEVE_TEST_PG\|connect(" crates/pensieve-catalog/tests crates/pensieve-catalog/src/artifacts.rs`
 
 Then add a test that follows that harness (e.g. a `#[tokio::test]` gated on the same env/`#[ignore]` convention the crate already uses for Postgres). The test:
 
@@ -698,13 +698,13 @@ Mirror the exact connection setup the crate's other Postgres tests use (do not i
 
 - [ ] **Step 4: Run the test (or build if PG-gated/ignored)**
 
-Run: `cargo test -p kyma-catalog list_live_artifacts` (add the crate's PG env var if its harness requires one)
+Run: `cargo test -p pensieve-catalog list_live_artifacts` (add the crate's PG env var if its harness requires one)
 Expected: PASS, or correctly SKIPPED under the crate's existing `#[ignore]`/env gate.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-catalog/src/artifacts.rs crates/kyma-catalog/tests
+git add crates/pensieve-catalog/src/artifacts.rs crates/pensieve-catalog/tests
 git commit -m "feat(catalog): list_live_artifacts for the artifact-graph sync"
 ```
 
@@ -719,14 +719,14 @@ git commit -m "feat(catalog): list_live_artifacts for the artifact-graph sync"
 
 Run:
 ```bash
-grep -rn "ArtifactRetentionWorker\|soft_delete_expired_artifacts\|artifact_gc_candidates" crates/kyma-server/src crates/kyma-bin/src
-grep -rn "shared.format\|shared.catalog\|MemoryWriter::new" crates/kyma-server/src/agent | head
+grep -rn "ArtifactRetentionWorker\|soft_delete_expired_artifacts\|artifact_gc_candidates" crates/pensieve-server/src crates/pensieve-bin/src
+grep -rn "shared.format\|shared.catalog\|MemoryWriter::new" crates/pensieve-server/src/agent | head
 ```
 This gives the worker's tick loop and the `catalog` + `format` (`SegmentFormat`) handles needed to build an `ArtifactGraphWriter`.
 
 - [ ] **Step 2: Add a free function the worker and startup both call**
 
-Create `crates/kyma-server/src/agent/artifact_graph_sync.rs`:
+Create `crates/pensieve-server/src/agent/artifact_graph_sync.rs`:
 
 ```rust
 //! Drives the catch-all `artifacts` graph: reads the Postgres artifact catalog
@@ -734,11 +734,11 @@ Create `crates/kyma-server/src/agent/artifact_graph_sync.rs`:
 
 use std::sync::Arc;
 
-use kyma_artifact_graph::ArtifactGraphWriter;
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::Catalog;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_core::tenant::TenantId;
+use pensieve_artifact_graph::ArtifactGraphWriter;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_core::tenant::TenantId;
 
 /// Materialize artifact nodes for one tenant. No-op when the catalog is not
 /// Postgres (local mode has no artifacts table). Returns nodes written.
@@ -759,13 +759,13 @@ pub async fn sync_artifact_nodes(
 
 > Use the **same** `as_ref_any().downcast_ref::<PostgresCatalog>()` accessor the retention worker already uses to reach the Postgres-only artifact methods (the artifacts.rs header documents this path). Copy its exact form from the worker located in Step 1.
 
-Register the module: add `pub mod artifact_graph_sync;` to `crates/kyma-server/src/agent/mod.rs` (next to the other `pub mod` lines).
+Register the module: add `pub mod artifact_graph_sync;` to `crates/pensieve-server/src/agent/mod.rs` (next to the other `pub mod` lines).
 
 - [ ] **Step 3: Add a dependency on the new crate**
 
-In `crates/kyma-server/Cargo.toml` `[dependencies]`, add:
+In `crates/pensieve-server/Cargo.toml` `[dependencies]`, add:
 ```toml
-kyma-artifact-graph = { path = "../kyma-artifact-graph" }
+pensieve-artifact-graph = { path = "../pensieve-artifact-graph" }
 ```
 
 - [ ] **Step 4: Call it from the retention worker tick + once at startup**
@@ -782,13 +782,13 @@ Use the worker's existing `catalog`/`format`/`tenant` bindings (match their name
 
 - [ ] **Step 5: Verify it compiles**
 
-Run: `cargo build -p kyma-server`
+Run: `cargo build -p pensieve-server`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/artifact_graph_sync.rs crates/kyma-server/src/agent/mod.rs crates/kyma-server/Cargo.toml crates/kyma-server/src
+git add crates/pensieve-server/src/agent/artifact_graph_sync.rs crates/pensieve-server/src/agent/mod.rs crates/pensieve-server/Cargo.toml crates/pensieve-server/src
 git commit -m "feat(server): drive catch-all artifact-graph sync from the retention worker"
 ```
 
@@ -821,7 +821,7 @@ it("resolves an icon for the Artifact label", () => {
 
 - [ ] **Step 3: Run — verify it fails only if no fallback**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/GraphSidebar.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/GraphSidebar.test.tsx`
 Expected: If `resolveGraphIcon` already returns a non-null fallback for unknown labels, this PASSES immediately — then make the change cosmetic (map `artifact` → `ScrollText`/`FileBox`) for a nicer glyph and keep the test green. If it returns null for unknown labels, it FAILS first.
 
 - [ ] **Step 4: Add the mapping**
@@ -830,7 +830,7 @@ In `graph-icons.tsx`, add a case mapping the lowercased label `artifact` (and ke
 
 - [ ] **Step 5: Run — verify pass**
 
-Run: `pnpm --filter @kyma-ai/react test`
+Run: `pnpm --filter @pensieve-ai/react test`
 Expected: PASS.
 
 - [ ] **Step 6: Manual discovery/search smoke check (documented, not automated)**

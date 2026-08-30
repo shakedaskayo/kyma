@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # sim.sh — end-to-end engine simulation family.
 #
-# Drives the embedded-engine HTTP simulation suite: an in-process kyma engine
+# Drives the embedded-engine HTTP simulation suite: an in-process pensieve engine
 # (SQLite catalog + local object store, no external infra) seeded with graphs,
 # then exercised through the real /v1/query HTTP path — Cypher pattern matching,
 # the full WHERE surface, aggregates, WITH, and CREATE/MERGE write → MATCH
@@ -19,7 +19,7 @@ cd "$ROOT"
 
 START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 LOG="$(mktemp)"
-if cargo test --quiet -p kyma-server --features test-support \
+if cargo test --quiet -p pensieve-server --features test-support \
      --test cypher_query_it >"$LOG" 2>&1; then
   PASS=true
   N="$(grep -oE '[0-9]+ passed' "$LOG" | head -1 | grep -oE '[0-9]+' || echo '?')"

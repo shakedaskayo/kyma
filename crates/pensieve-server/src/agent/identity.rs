@@ -174,7 +174,7 @@ pub fn consumer_kind() -> String {
 
 /// Merge the writer identity into a memory's provenance (under `writer`),
 /// preserving whatever provenance the caller already set.
-pub fn stamp_provenance(cm: &mut kyma_memory::CreateMemory) {
+pub fn stamp_provenance(cm: &mut pensieve_memory::CreateMemory) {
     let writer = writer_json();
     match &mut cm.provenance {
         Some(Value::Object(obj)) => {

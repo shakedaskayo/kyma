@@ -32,12 +32,12 @@ pub async fn dispatch_request(
                 let arguments = p.get("arguments").cloned().unwrap_or(json!({}));
                 match name {
                     Some(n) => {
-                        ::metrics::counter!("kyma_mcp_tool_calls_total", "tool" => n.clone())
+                        ::metrics::counter!("pensieve_mcp_tool_calls_total", "tool" => n.clone())
                             .increment(1);
                         let outcome = dispatch.call(&n, arguments).await;
                         let result_label = if outcome.is_ok() { "ok" } else { "error" };
                         ::metrics::counter!(
-                            "kyma_mcp_tool_results_total",
+                            "pensieve_mcp_tool_results_total",
                             "tool" => n.clone(),
                             "result" => result_label
                         )

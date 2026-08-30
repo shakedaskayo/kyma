@@ -40,8 +40,8 @@
 
 use crate::rabitq::{code_len, VectorCode};
 use bytes::Bytes;
-use kyma_core::index_sidecar::RowAddress;
-use kyma_core::segment_format::BlockId;
+use pensieve_core::index_sidecar::RowAddress;
+use pensieve_core::segment_format::BlockId;
 use thiserror::Error;
 
 /// 4-byte magic at the head and tail of the sidecar blob.

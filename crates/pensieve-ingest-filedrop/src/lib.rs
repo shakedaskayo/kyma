@@ -20,9 +20,9 @@
 use arrow_array::RecordBatch;
 use arrow_schema::Schema;
 use futures::StreamExt;
-use kyma_core::catalog::Catalog;
-use kyma_core::errors::{Error, Result};
-use kyma_ingest_core::{ensure_table, evolve_schema_for_records, WritePath};
+use pensieve_core::catalog::Catalog;
+use pensieve_core::errors::{Error, Result};
+use pensieve_ingest_core::{ensure_table, evolve_schema_for_records, WritePath};
 use object_store::path::Path;
 use object_store::ObjectStore;
 use sha2::{Digest, Sha256};
@@ -38,7 +38,7 @@ pub struct FiledropConfig {
     /// match the `{prefix}/{database}/{table}/...` path convention.
     ///
     /// Default: `["ingest"]`, preserving the original single-prefix
-    /// behavior. Multiple prefixes let one kyma instance host watchers for
+    /// behavior. Multiple prefixes let one pensieve instance host watchers for
     /// many independent pipelines without spawning N separate watcher tasks.
     pub prefixes: Vec<String>,
     /// How often to scan each prefix. The same interval applies to all.
@@ -71,9 +71,9 @@ impl Default for FiledropConfig {
 impl FiledropConfig {
     pub fn from_env() -> Self {
         let mut d = Self::default();
-        // KYMA_FILEDROP_PREFIXES wins if set (comma-separated). Otherwise
-        // KYMA_FILEDROP_PREFIX (legacy single-prefix) wins.
-        if let Ok(v) = std::env::var("KYMA_FILEDROP_PREFIXES") {
+        // PENSIEVE_FILEDROP_PREFIXES wins if set (comma-separated). Otherwise
+        // PENSIEVE_FILEDROP_PREFIX (legacy single-prefix) wins.
+        if let Ok(v) = std::env::var("PENSIEVE_FILEDROP_PREFIXES") {
             let prefixes: Vec<String> = v
                 .split(',')
                 .map(|s| s.trim().to_string())
@@ -82,23 +82,23 @@ impl FiledropConfig {
             if !prefixes.is_empty() {
                 d.prefixes = prefixes;
             }
-        } else if let Ok(v) = std::env::var("KYMA_FILEDROP_PREFIX") {
+        } else if let Ok(v) = std::env::var("PENSIEVE_FILEDROP_PREFIX") {
             if !v.is_empty() {
                 d.prefixes = vec![v];
             }
         }
-        if let Ok(v) = std::env::var("KYMA_FILEDROP_POLL_SECS")
+        if let Ok(v) = std::env::var("PENSIEVE_FILEDROP_POLL_SECS")
             .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
         {
             d.poll_interval = Duration::from_secs(v);
         }
-        if let Ok(v) = std::env::var("KYMA_FILEDROP_DELETE_AFTER_INGEST") {
+        if let Ok(v) = std::env::var("PENSIEVE_FILEDROP_DELETE_AFTER_INGEST") {
             d.delete_after_ingest = v == "1" || v.eq_ignore_ascii_case("true");
         }
-        if let Ok(v) = std::env::var("KYMA_FILEDROP_AUTO_CREATE") {
+        if let Ok(v) = std::env::var("PENSIEVE_FILEDROP_AUTO_CREATE") {
             d.auto_create = !(v == "0" || v.eq_ignore_ascii_case("false"));
         }
-        if let Ok(v) = std::env::var("KYMA_FILEDROP_SCHEMA_EVOLVE") {
+        if let Ok(v) = std::env::var("PENSIEVE_FILEDROP_SCHEMA_EVOLVE") {
             d.schema_evolve = !(v == "0" || v.eq_ignore_ascii_case("false"));
         }
         d
@@ -122,7 +122,7 @@ pub struct FiledropScan {
 /// Callback invoked after every poll cycle with that cycle's [`FiledropScan`].
 ///
 /// This is how the binary bridges the watcher into the watcher registry
-/// (heartbeats) without this crate depending on `kyma-datasources`. Runs on
+/// (heartbeats) without this crate depending on `pensieve-datasources`. Runs on
 /// the watcher's task inside the tokio runtime, so implementations may
 /// `tokio::spawn`.
 pub type ScanHook = std::sync::Arc<dyn Fn(FiledropScan) + Send + Sync>;
@@ -321,7 +321,7 @@ impl FiledropWatcher {
                 .catalog
                 .record_idempotency(
                     &idem_key,
-                    kyma_core::catalog::IngestLedgerEntry {
+                    pensieve_core::catalog::IngestLedgerEntry {
                         table_id: table_ref.id,
                         snapshot_id: table_ref.current_snapshot_id,
                         rows_ingested: 0,
@@ -342,10 +342,10 @@ impl FiledropWatcher {
             .ingest_with_idempotency(&database, &table_ref, batches, Some(&idem_key))
             .await?;
 
-        ::metrics::counter!("kyma_filedrop_objects_processed_total",
+        ::metrics::counter!("pensieve_filedrop_objects_processed_total",
             "replayed" => ack.replayed.to_string())
         .increment(1);
-        ::metrics::counter!("kyma_filedrop_rows_total", "table" => table.clone())
+        ::metrics::counter!("pensieve_filedrop_rows_total", "table" => table.clone())
             .increment(ack.rows_ingested);
 
         if self.config.delete_after_ingest && !ack.replayed {
@@ -385,16 +385,16 @@ fn split_path(prefix: &str, path: &Path) -> Option<(String, String, String)> {
 }
 
 /// Parse an NDJSON body into `RecordBatch`es according to the table's schema.
-/// Delegates to the shared `kyma_ingest_core::parse_ndjson`, which handles
+/// Delegates to the shared `pensieve_ingest_core::parse_ndjson`, which handles
 /// primitive columns via arrow-json and adds `FixedSizeList<Float32>`
 /// (vector-column) support — the same path REST and Kafka ingest use.
 fn parse_ndjson(bytes: &[u8], schema: &Arc<Schema>) -> Result<Vec<RecordBatch>> {
-    kyma_ingest_core::parse_ndjson(bytes, schema.clone())
+    pensieve_ingest_core::parse_ndjson(bytes, schema.clone())
         .map_err(|e| Error::Internal(format!("filedrop ndjson: {e}")))
 }
 
 /// Cheap NDJSON pre-scan that yields the same `serde_json::Value`s the
-/// schema-evolve helper expects. Mirrors the helper in kyma-ingest-rest;
+/// schema-evolve helper expects. Mirrors the helper in pensieve-ingest-rest;
 /// kept duplicated for now to avoid a new shared utility crate over a
 /// 12-line function. If a third frontend grows this, hoist it.
 fn parse_records_for_inspection(

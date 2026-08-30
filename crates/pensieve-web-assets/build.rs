@@ -29,8 +29,8 @@ fn main() {
         let _ = fs::write(
             embedded.join("index.html"),
             "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
-             <title>kyma</title></head><body style=\"font-family:sans-serif;padding:2rem\">\
-             <h1>kyma</h1><p>The web UI was not built. Run <code>pnpm -C web build</code> \
+             <title>pensieve</title></head><body style=\"font-family:sans-serif;padding:2rem\">\
+             <h1>pensieve</h1><p>The web UI was not built. Run <code>pnpm -C web build</code> \
              and rebuild to embed the interface.</p></body></html>",
         );
     }

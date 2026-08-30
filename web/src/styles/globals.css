@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* ──────────────────────────────────────────────────────────────────────────
- * kyma design tokens — "synapse" teal-cyan, dark-first.
+ * pensieve design tokens — "synapse" teal-cyan, dark-first.
  *
  * The whole app reads these HSL CSS variables through Tailwind (`hsl(var(--x))`)
  * and the shadcn component layer, so retuning them here reskins every surface.

@@ -20,14 +20,14 @@ macro_rules! require_git {
 }
 
 fn cfg() -> BrainConfig {
-    BrainConfig::new("team", RealmSelector::Realms(vec!["kyma".into()]), "2026-07-08T00:00:00Z")
+    BrainConfig::new("team", RealmSelector::Realms(vec!["pensieve".into()]), "2026-07-08T00:00:00Z")
         .unwrap()
 }
 
 fn node(id: &str, title: &str) -> NoteRow {
     NoteRow {
         id: id.into(),
-        realm: "kyma".into(),
+        realm: "pensieve".into(),
         memory_type: "fact".into(),
         title: title.into(),
         content: format!("Body of {title}."),
@@ -67,7 +67,7 @@ async fn first_export_seeds_and_commits_vault() {
         "README.md",
         "CONTRIBUTING.md",
         "index.md",
-        ".kyma/manifest.json",
+        ".pensieve/manifest.json",
         ".gitignore",
         ".obsidian/graph.json",
         "inbox/README.md",

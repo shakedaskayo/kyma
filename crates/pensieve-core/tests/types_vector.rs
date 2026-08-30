@@ -1,4 +1,4 @@
-use kyma_core::types::DataType;
+use pensieve_core::types::DataType;
 
 #[test]
 fn vector_datatype_roundtrips_through_serde() {

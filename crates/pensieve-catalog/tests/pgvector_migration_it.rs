@@ -3,7 +3,7 @@
 
 #![cfg(test)]
 
-use kyma_core::tenant::DEFAULT_TENANT;
+use pensieve_core::tenant::DEFAULT_TENANT;
 use sqlx::{Pool, Postgres};
 use testcontainers::{runners::AsyncRunner, ContainerAsync, ImageExt};
 use testcontainers_modules::postgres::Postgres as PgContainer;

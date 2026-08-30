@@ -16,9 +16,9 @@ use arrow_array::builder::{
 };
 use arrow_array::{Array, ArrayRef, RecordBatch};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
-use kyma_core::segment_format::{ColumnId, OpenExtentInput, SegmentFormat};
-use kyma_core::types::TableId;
-use kyma_format_tlm::TelemetryFormat;
+use pensieve_core::segment_format::{ColumnId, OpenExtentInput, SegmentFormat};
+use pensieve_core::types::TableId;
+use pensieve_format_tlm::TelemetryFormat;
 use object_store::memory::InMemory;
 use proptest::prelude::*;
 use std::sync::Arc;
@@ -156,7 +156,7 @@ async fn roundtrip(batches: Vec<RecordBatch>) -> Result<(), String> {
         .map_err(|e| format!("open_extent: {e}"))?;
 
     let blocks = reader
-        .pruned_blocks(&kyma_core::segment_format::BlockPredicate::All)
+        .pruned_blocks(&pensieve_core::segment_format::BlockPredicate::All)
         .await
         .map_err(|e| format!("pruned_blocks: {e}"))?;
 

@@ -27,17 +27,17 @@ fn link(path: &str, title: &str) -> String {
 pub fn render_readme(cfg: &BrainConfig) -> String {
     format!(
         "# {name}\n\n\
-        This repository is a kyma **brain**: an Obsidian vault rendered from kyma's \
+        This repository is a pensieve **brain**: an Obsidian vault rendered from pensieve's \
         agentic memory (realms: {realms}), regenerated automatically. Clone it, read it, \
         grep it, open it in Obsidian — and push edits back.\n\n\
         ```\n\
-        git clone <server>/git/{name}.git    # password = your kyma API token\n\
+        git clone <server>/git/{name}.git    # password = your pensieve API token\n\
         git pull                             # pick up new exports\n\
-        git push                             # edits flow back into kyma memory\n\
+        git push                             # edits flow back into pensieve memory\n\
         ```\n\n\
         Start at [[index]]. Editing rules live in [[CONTRIBUTING]].\n\n\
         Pushed files are normalized on the next export (canonical frontmatter and \
-        formatting), and notes are addressed by the `kyma_memory_id` in their \
+        formatting), and notes are addressed by the `pensieve_memory_id` in their \
         frontmatter — not by filename. Git history is the changelog and the archive.\n",
         name = cfg.name,
         realms = realms_label(cfg),
@@ -51,18 +51,18 @@ pub fn render_contributing(cfg: &BrainConfig) -> String {
         ## Edit a note\n\
         Edit the body (and `tags` / `importance` frontmatter) of any note under \
         `notes/`, `entities/`, or `wiki/`, then `git push`. The edit updates the same \
-        kyma memory (keyed by `kyma_memory_id`); the next export re-renders the note \
+        pensieve memory (keyed by `pensieve_memory_id`); the next export re-renders the note \
         canonically.\n\n\
         ## Add a note\n\
         Drop a markdown file in `inbox/` — frontmatter optional (`title`, `type`, \
         `realm`, `tags`). On push it becomes a new memory; the next export re-files it \
         under `notes/`.\n\n\
         ## Delete a note\n\
-        `git rm` + push archives the memory in kyma (never destroys it) and the file \
+        `git rm` + push archives the memory in pensieve (never destroys it) and the file \
         stays gone.\n\n\
         ## Hands off\n\
-        Do not edit `index.md`, realm indexes, `.kyma/`, `kyma_memory_id` fields, or \
-        the `<!-- kyma:related -->` blocks — they are regenerated every export.\n\n\
+        Do not edit `index.md`, realm indexes, `.pensieve/`, `pensieve_memory_id` fields, or \
+        the `<!-- pensieve:related -->` blocks — they are regenerated every export.\n\n\
         `wiki/` pages are co-owned: the gardener agent curates them, your edits are \
         kept and merged.\n",
         name = cfg.name,

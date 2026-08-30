@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use kyma_mcp::ToolDispatch;
-use kyma_server::agent::SharedToolCtx;
+use pensieve_mcp::ToolDispatch;
+use pensieve_server::agent::SharedToolCtx;
 use serde_json::{json, Value};
 
 #[derive(Debug)]
@@ -20,15 +20,15 @@ struct MockEmbed {
 }
 
 #[async_trait::async_trait]
-impl kyma_embed::EmbeddingBackend for MockEmbed {
+impl pensieve_embed::EmbeddingBackend for MockEmbed {
     fn id(&self) -> &str {
         "mock/e2e"
     }
     fn dimension(&self) -> u16 {
         4
     }
-    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, kyma_embed::EmbedError> {
-        if !(texts.len() == 1 && texts[0] == "kyma memory warmup") {
+    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, pensieve_embed::EmbedError> {
+        if !(texts.len() == 1 && texts[0] == "pensieve memory warmup") {
             self.calls.fetch_add(1, Ordering::SeqCst);
             self.batch_sizes.lock().unwrap().push(texts.len());
         }
@@ -40,26 +40,26 @@ impl kyma_embed::EmbeddingBackend for MockEmbed {
 }
 
 async fn dispatch_with_queue() -> (ToolDispatch, Arc<MockEmbed>) {
-    let catalog: Arc<dyn kyma_core::catalog::Catalog> = Arc::new(
-        kyma_catalog_sqlite::SqliteCatalog::connect_in_memory()
+    let catalog: Arc<dyn pensieve_core::catalog::Catalog> = Arc::new(
+        pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory()
             .await
             .expect("in-memory catalog"),
     );
-    let tmp = std::env::temp_dir().join(format!("kyma-mcp-asyncmem-{}", uuid::Uuid::new_v4()));
+    let tmp = std::env::temp_dir().join(format!("pensieve-mcp-asyncmem-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&tmp).expect("tmp dir");
-    let store = kyma_storage::build_object_store(&kyma_storage::StorageConfig::Local {
+    let store = pensieve_storage::build_object_store(&pensieve_storage::StorageConfig::Local {
         root: tmp.to_string_lossy().to_string(),
     })
     .expect("local store");
-    let format: Arc<dyn kyma_core::segment_format::SegmentFormat> =
-        Arc::new(kyma_format_tlm::TelemetryFormat::new(store, "test"));
+    let format: Arc<dyn pensieve_core::segment_format::SegmentFormat> =
+        Arc::new(pensieve_format_tlm::TelemetryFormat::new(store, "test"));
 
     let embed = Arc::new(MockEmbed {
         calls: AtomicU32::new(0),
         batch_sizes: Mutex::new(Vec::new()),
     });
-    let cfg = kyma_memory::MemoryIngestConfig {
-        queue: kyma_queue::QueueConfig {
+    let cfg = pensieve_memory::MemoryIngestConfig {
+        queue: pensieve_queue::QueueConfig {
             name: "memory_ops_e2e".into(),
             max_batch: 64,
             linger: Duration::from_millis(25),
@@ -74,7 +74,7 @@ async fn dispatch_with_queue() -> (ToolDispatch, Arc<MockEmbed>) {
     };
     let (_stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     std::mem::forget(_stop_tx);
-    let (queue, _worker) = kyma_memory::spawn_memory_queue(
+    let (queue, _worker) = pensieve_memory::spawn_memory_queue(
         catalog.clone(),
         format.clone(),
         embed.clone(),
@@ -114,7 +114,7 @@ async fn queued_saves_batch_flush_and_become_visible() {
                 {"content": "fact one about the system", "realm": "e2e"},
                 {"content": "decision two about the system", "memory_type": "decision", "realm": "e2e"},
                 {"content": "learning three about the system", "memory_type": "learning", "realm": "e2e",
-                 "references": ["default::repo:kyma"]},
+                 "references": ["default::repo:pensieve"]},
             ]}),
         )
         .await

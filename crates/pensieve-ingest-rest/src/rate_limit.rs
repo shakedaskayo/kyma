@@ -7,9 +7,9 @@
 //! `Retry-After`. Keyed by database (the available isolation unit on the ingest
 //! path today; a per-tenant key lands when multi-tenant ingest does).
 //!
-//! Off by default: `KYMA_INGEST_RATE_RPS` unset or `0` ⇒ unlimited (every
+//! Off by default: `PENSIEVE_INGEST_RATE_RPS` unset or `0` ⇒ unlimited (every
 //! request allowed), so existing deployments + the fresh-install are unchanged.
-//! Set it to enable; `KYMA_INGEST_RATE_BURST` overrides the burst cap (default
+//! Set it to enable; `PENSIEVE_INGEST_RATE_BURST` overrides the burst cap (default
 //! `2×rps`, min 1).
 
 use std::collections::HashMap;
@@ -23,14 +23,14 @@ struct Limits {
 }
 
 fn limits() -> Option<Limits> {
-    let rps = std::env::var("KYMA_INGEST_RATE_RPS")
+    let rps = std::env::var("PENSIEVE_INGEST_RATE_RPS")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(0.0);
     if rps <= 0.0 {
         return None; // disabled
     }
-    let burst = std::env::var("KYMA_INGEST_RATE_BURST")
+    let burst = std::env::var("PENSIEVE_INGEST_RATE_BURST")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(rps * 2.0)

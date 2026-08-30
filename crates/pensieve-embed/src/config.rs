@@ -39,27 +39,27 @@ impl EmbeddingConfig {
         }
     }
 
-    /// Load from env vars: `KYMA_EMBED_PROVIDER`, `KYMA_EMBED_MODEL_ID`,
-    /// `KYMA_EMBED_BASE_URL`, `KYMA_EMBED_MODEL_PATH`. Returns the default
+    /// Load from env vars: `PENSIEVE_EMBED_PROVIDER`, `PENSIEVE_EMBED_MODEL_ID`,
+    /// `PENSIEVE_EMBED_BASE_URL`, `PENSIEVE_EMBED_MODEL_PATH`. Returns the default
     /// fastembed config when none are set.
     pub fn from_env() -> Self {
-        let provider = std::env::var("KYMA_EMBED_PROVIDER").ok();
-        let id = std::env::var("KYMA_EMBED_MODEL_ID").ok();
+        let provider = std::env::var("PENSIEVE_EMBED_PROVIDER").ok();
+        let id = std::env::var("PENSIEVE_EMBED_MODEL_ID").ok();
         match provider.as_deref() {
             Some("ollama") => Self {
                 provider: EmbeddingProvider::Ollama {
                     id: id.unwrap_or_else(|| "nomic-embed-text".into()),
-                    base_url: std::env::var("KYMA_EMBED_BASE_URL")
+                    base_url: std::env::var("PENSIEVE_EMBED_BASE_URL")
                         .unwrap_or_else(|_| "http://localhost:11434".into()),
                 },
             },
             Some("openai-compat") => Self {
                 provider: EmbeddingProvider::OpenAICompat {
                     id: id.unwrap_or_else(|| "text-embedding-3-small".into()),
-                    base_url: std::env::var("KYMA_EMBED_BASE_URL")
+                    base_url: std::env::var("PENSIEVE_EMBED_BASE_URL")
                         .unwrap_or_else(|_| "https://api.openai.com/v1".into()),
                     api_key_env: Some(
-                        std::env::var("KYMA_EMBED_API_KEY_ENV")
+                        std::env::var("PENSIEVE_EMBED_API_KEY_ENV")
                             .unwrap_or_else(|_| "OPENAI_API_KEY".into()),
                     ),
                 },
@@ -73,7 +73,7 @@ impl EmbeddingConfig {
             Some("fastembed") => Self {
                 provider: EmbeddingProvider::Fastembed {
                     id: id.unwrap_or_else(|| "bge-small-en-v1.5".into()),
-                    model_path: std::env::var("KYMA_EMBED_MODEL_PATH").ok(),
+                    model_path: std::env::var("PENSIEVE_EMBED_MODEL_PATH").ok(),
                 },
             },
             _ => Self::default_fastembed(),

@@ -1,6 +1,6 @@
 //! Arrow schemas for the columnar memory tables.
 //!
-//! `memory_nodes` / `memory_edges` are ordinary Kyma columnar tables, written
+//! `memory_nodes` / `memory_edges` are ordinary Pensieve columnar tables, written
 //! through the ingest `WritePath` and registered as the `memory` graph. They
 //! must be created with an EXPLICIT schema (auto-provisioning can't declare the
 //! `embedding` vector column). Timestamps are stored as RFC3339 strings so

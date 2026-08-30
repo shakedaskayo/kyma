@@ -1,9 +1,9 @@
 //! Slice 0 verification gate: cross-tenant isolation.
 
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::Catalog;
-use kyma_core::errors::{CatalogError, Error};
-use kyma_core::tenant::TenantId;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::errors::{CatalogError, Error};
+use pensieve_core::tenant::TenantId;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 use uuid::Uuid;
@@ -48,7 +48,7 @@ async fn same_database_name_under_two_tenants_does_not_cross() {
 #[tokio::test]
 async fn lookup_table_never_crosses_tenants() {
     use arrow_schema::{DataType, Field, Schema};
-    use kyma_core::catalog::TableConfig;
+    use pensieve_core::catalog::TableConfig;
     use std::sync::Arc;
 
     let (catalog, _container) = fixture().await;

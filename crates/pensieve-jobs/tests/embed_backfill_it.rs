@@ -30,20 +30,20 @@ use arrow_array::types::Float32Type;
 use arrow_array::{Array, Int64Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use async_trait::async_trait;
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_core::catalog::{
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_core::catalog::{
     Catalog, ExtentManifest, PrunePredicate, SnapshotSummary, TableConfig, TableEmbedConfig,
     TableRef,
 };
-use kyma_core::crypto::content_hash_hex;
-use kyma_core::fabric::{ClaimedJob, JOB_EMBED_BACKFILL};
-use kyma_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
-use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_core::types::{SchemaRef, TableId};
-use kyma_embed::{EmbedError, EmbeddingBackend};
-use kyma_format_tlm::TelemetryFormat;
-use kyma_jobs::embed_backfill::EmbedBackfillExecutor;
-use kyma_jobs::{JobCtx, JobExecutor, JobQueue, ProgressSink};
+use pensieve_core::crypto::content_hash_hex;
+use pensieve_core::fabric::{ClaimedJob, JOB_EMBED_BACKFILL};
+use pensieve_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
+use pensieve_core::tenant::DEFAULT_TENANT;
+use pensieve_core::types::{SchemaRef, TableId};
+use pensieve_embed::{EmbedError, EmbeddingBackend};
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_jobs::embed_backfill::EmbedBackfillExecutor;
+use pensieve_jobs::{JobCtx, JobExecutor, JobQueue, ProgressSink};
 use object_store::memory::InMemory;
 use object_store::ObjectStore;
 use serde_json::{json, Value as Json};
@@ -295,7 +295,7 @@ impl JobQueue for StubQueue {
 async fn embed_backfill_fills_embeddings_and_caches() {
     let catalog = SqliteCatalog::connect_in_memory().await.unwrap();
     let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "kyma"));
+    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "pensieve"));
 
     let db = catalog.create_database("default").await.unwrap();
     let table_id = catalog
@@ -477,7 +477,7 @@ async fn embed_backfill_cache_hit_skips_backend_across_extents() {
     // texts. Validates the content-hash cache across extents/jobs.
     let catalog = SqliteCatalog::connect_in_memory().await.unwrap();
     let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "kyma"));
+    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "pensieve"));
 
     let db = catalog.create_database("default").await.unwrap();
     let table_id = catalog
@@ -544,7 +544,7 @@ async fn embed_backfill_rejects_model_id_mismatch() {
     // from the payload model_id — never writing mismatched-model vectors.
     let catalog = SqliteCatalog::connect_in_memory().await.unwrap();
     let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "kyma"));
+    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "pensieve"));
     let db = catalog.create_database("default").await.unwrap();
     let table_id = catalog
         .create_table(db, "msgs", schema(), TableConfig::default())

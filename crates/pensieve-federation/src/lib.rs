@@ -1,15 +1,15 @@
-//! kyma-federation — federated (live-proxied) external data sources.
+//! pensieve-federation — federated (live-proxied) external data sources.
 //!
 //! External data platforms (Microsoft Fabric, and later Databricks, Snowflake,
-//! BigQuery) hold data kyma should never ingest wholesale. Instead, a
-//! *federated data source* (e.g. `msfabric` in `kyma-datasources`) syncs only
+//! BigQuery) hold data pensieve should never ingest wholesale. Instead, a
+//! *federated data source* (e.g. `msfabric` in `pensieve-datasources`) syncs only
 //! table **schemas** into the catalog — marking each table with
 //! [`FederatedTableSpec`] in its `TableConfig` — and this crate turns those
 //! metadata-only tables into live remote scans at query time.
 //!
 //! Mechanism: each federated table is registered in the DataFusion
 //! `SessionContext` as a [`datafusion_federation::FederatedTableProviderAdaptor`]
-//! instead of a `KymaTable`. The `FederationOptimizerRule` then carves out the
+//! instead of a `PensieveTable`. The `FederationOptimizerRule` then carves out the
 //! largest subplans whose tables share a remote source, unparses them back to
 //! SQL in the platform's dialect, and ships the whole subplan (filters, joins
 //! between two remote tables, aggregates) to the platform for execution.
@@ -36,9 +36,9 @@ use datafusion_federation::{
     FederatedQueryPlanner, FederatedTableProviderAdaptor, FederatedTableSource,
     FederationOptimizerRule,
 };
-use kyma_core::catalog::{FederatedTableSpec, TableRef};
-use kyma_core::credentials::{CredentialStore, CredentialValue};
-use kyma_core::tenant::TenantId;
+use pensieve_core::catalog::{FederatedTableSpec, TableRef};
+use pensieve_core::credentials::{CredentialStore, CredentialValue};
+use pensieve_core::tenant::TenantId;
 
 pub mod dialect;
 pub mod msfabric;
@@ -71,16 +71,16 @@ impl Default for FederationGuardrails {
 }
 
 impl FederationGuardrails {
-    /// Defaults overridable via `KYMA_FEDERATION_TIMEOUT_MS`,
-    /// `KYMA_FEDERATION_MAX_ROWS`, `KYMA_FEDERATION_MAX_CONCURRENT`.
+    /// Defaults overridable via `PENSIEVE_FEDERATION_TIMEOUT_MS`,
+    /// `PENSIEVE_FEDERATION_MAX_ROWS`, `PENSIEVE_FEDERATION_MAX_CONCURRENT`.
     pub fn from_env() -> Self {
         let env_u64 = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<u64>().ok());
         let d = Self::default();
         Self {
-            remote_timeout: env_u64("KYMA_FEDERATION_TIMEOUT_MS")
+            remote_timeout: env_u64("PENSIEVE_FEDERATION_TIMEOUT_MS")
                 .map_or(d.remote_timeout, Duration::from_millis),
-            max_rows: env_u64("KYMA_FEDERATION_MAX_ROWS").map_or(d.max_rows, |v| v as usize),
-            max_concurrent_per_source: env_u64("KYMA_FEDERATION_MAX_CONCURRENT")
+            max_rows: env_u64("PENSIEVE_FEDERATION_MAX_ROWS").map_or(d.max_rows, |v| v as usize),
+            max_concurrent_per_source: env_u64("PENSIEVE_FEDERATION_MAX_CONCURRENT")
                 .map_or(d.max_concurrent_per_source, |v| v as usize),
         }
     }
@@ -141,7 +141,7 @@ impl FederationRuntime {
 
     /// Build a live `TableProvider` per federated table in `tables`
     /// (non-federated tables are ignored). Returned pairs are
-    /// `(kyma table name, provider)`, ready for
+    /// `(pensieve table name, provider)`, ready for
     /// `SessionContext::register_table`.
     ///
     /// Tables on the same source share one `SQLFederationProvider`, so joins

@@ -7,7 +7,7 @@
  */
 import { useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Copy, Crosshair, Maximize2, X } from "lucide-react";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
 import { useGraphStore } from "./graph-store";
 import { getRelationshipFamilyColor } from "./graph-style";
 import { NodeDetailModal } from "./NodeDetailModal";

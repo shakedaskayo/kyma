@@ -3,7 +3,7 @@
 //! This is S1.1 Part B's query side. Part A built the sidecars (one immutable
 //! IVF+RaBitQ blob per extent, stored next to the extent under
 //! `{tenant}/indexes/{extent}/{column}.ivf_rabitq`; see
-//! [`kyma_index_vector`] and [`kyma_core::index_sidecar`]). Here we read them.
+//! [`pensieve_index_vector`] and [`pensieve_core::index_sidecar`]). Here we read them.
 //!
 //! For a query embedding `qvec` and a vector column, [`ann_topk`]:
 //!
@@ -30,25 +30,25 @@
 //! 5. Returns the global top-`k` by exact cosine distance.
 //!
 //! The probe→scan→rerank recipe mirrors the validated sequence in
-//! `kyma-index-vector/tests/recall.rs` (recall@10 = 0.976 at dim=384).
+//! `pensieve-index-vector/tests/recall.rs` (recall@10 = 0.976 at dim=384).
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow_array::{Array, FixedSizeListArray, Float32Array, RecordBatch};
-use kyma_core::catalog::{Catalog, ExtentManifest, PrunePredicate, TableRef};
-use kyma_core::index_sidecar::{IndexSidecarDescriptor, RowAddress, SidecarKind};
-use kyma_core::segment_format::{BlockId, BlockPredicate, OpenExtentInput, SegmentFormat};
-use kyma_core::tenant::TenantId;
-use kyma_core::types::ExtentId;
-use kyma_index_vector::{encode_query_rotated, file, read_header, scan_partition, Rotation};
-use kyma_storage::sidecar_cache::{SidecarCache, SidecarCacheKey};
+use pensieve_core::catalog::{Catalog, ExtentManifest, PrunePredicate, TableRef};
+use pensieve_core::index_sidecar::{IndexSidecarDescriptor, RowAddress, SidecarKind};
+use pensieve_core::segment_format::{BlockId, BlockPredicate, OpenExtentInput, SegmentFormat};
+use pensieve_core::tenant::TenantId;
+use pensieve_core::types::ExtentId;
+use pensieve_index_vector::{encode_query_rotated, file, read_header, scan_partition, Rotation};
+use pensieve_storage::sidecar_cache::{SidecarCache, SidecarCacheKey};
 use object_store::ObjectStore;
 
 use crate::udfs_vector::cosine_distance_vec;
 
 /// Tunable knobs for the ANN query path. Defaults match the validated recall
-/// sweep (`kyma-index-vector/tests/recall.rs`): `nprobe = 16`,
+/// sweep (`pensieve-index-vector/tests/recall.rs`): `nprobe = 16`,
 /// `rerank_factor = 48`.
 #[derive(Debug, Clone, Copy)]
 pub struct AnnParams {
@@ -445,7 +445,7 @@ async fn exact_rerank(
 
     // Cache one opened reader per extent so multiple probed blocks of the same
     // extent share a single `open_extent`.
-    let mut readers: HashMap<ExtentId, Arc<dyn kyma_core::segment_format::ExtentReader>> =
+    let mut readers: HashMap<ExtentId, Arc<dyn pensieve_core::segment_format::ExtentReader>> =
         HashMap::new();
     let mut out: Vec<AnnHit> = Vec::with_capacity(cands.len());
 
@@ -565,7 +565,7 @@ fn sanitize_prune(prefilter: Option<&PrunePredicate>) -> PrunePredicate {
     let column_predicates = p
         .column_predicates
         .iter()
-        .filter(|(_, v)| !matches!(v, kyma_core::catalog::ColumnPrune::VectorDistance { .. }))
+        .filter(|(_, v)| !matches!(v, pensieve_core::catalog::ColumnPrune::VectorDistance { .. }))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     PrunePredicate {
@@ -578,7 +578,7 @@ fn sanitize_prune(prefilter: Option<&PrunePredicate>) -> PrunePredicate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kyma_core::segment_format::BlockId;
+    use pensieve_core::segment_format::BlockId;
 
     #[test]
     fn l2_normalize_makes_unit_and_preserves_zero() {
@@ -671,7 +671,7 @@ mod tests {
 
     #[test]
     fn sanitize_prune_drops_vector_distance_keeps_others() {
-        use kyma_core::catalog::ColumnPrune;
+        use pensieve_core::catalog::ColumnPrune;
         let mut cp = HashMap::new();
         cp.insert(
             "embedding".to_string(),

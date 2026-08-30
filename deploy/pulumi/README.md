@@ -1,4 +1,4 @@
-# Deploying kyma with Pulumi
+# Deploying pensieve with Pulumi
 
 The Terraform stack in [`../terraform/stack`](../terraform/stack) is the
 single source of truth; Pulumi consumes it through the official
@@ -6,7 +6,7 @@ single source of truth; Pulumi consumes it through the official
 — no re-implementation, identical resources, Pulumi-native state/config/secrets.
 
 > The bridge is maintained by Pulumi but younger than core IaC providers.
-> Terraform remains kyma's primary supported path; if you hit a bridge issue,
+> Terraform remains pensieve's primary supported path; if you hit a bridge issue,
 > the same stack applies cleanly with plain Terraform.
 
 ## Setup
@@ -19,14 +19,14 @@ pulumi stack init prod
 
 # Generate the local SDK wrapping ../../terraform/stack (the provider-free
 # module — NOT ../../terraform, whose provider blocks confuse the bridge):
-pulumi package add terraform-module ../../terraform/stack kymaengine
+pulumi package add terraform-module ../../terraform/stack pensieveengine
 ```
 
 If `package add` prints a pnpm `pkg set` error after "Successfully generated
 an SDK", the SDK is fine — link it manually:
 
 ```sh
-npm pkg set 'dependencies.@pulumi/kymaengine=file:sdks/kymaengine'
+npm pkg set 'dependencies.@pulumi/pensieveengine=file:sdks/pensieveengine'
 npm install
 ```
 
@@ -46,7 +46,7 @@ pulumi config set --secret supabaseDbPassword "$(openssl rand -base64 24)"
 pulumi config set adminEmails '["you@company.com"]'
 pulumi config set allowedEmailDomains '["company.com"]'
 # optional:
-# pulumi config set domain kyma.company.com
+# pulumi config set domain pensieve.company.com
 # pulumi config set route53ZoneId Z0123456789ABC
 # pulumi config set imageTag v0.1.0
 ```
@@ -58,7 +58,7 @@ pulumi up
 pulumi stack output engineUrl
 ```
 
-Then `kyma connect "$(pulumi stack output engineUrl)" --token <api-token>`
+Then `pensieve connect "$(pulumi stack output engineUrl)" --token <api-token>`
 (mint the token under Settings → API tokens after signing in).
 
 Teardown: `pulumi destroy`.

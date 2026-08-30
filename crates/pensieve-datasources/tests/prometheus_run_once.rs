@@ -1,10 +1,10 @@
 //! Exercises PromDataSource::run_once against an in-process HTTP server.
 
-use kyma_datasources::metrics::DataSourceMetrics;
-use kyma_datasources::prometheus::PromDataSource;
-use kyma_datasources::runner::NoopCredentialStore;
-use kyma_datasources::secrets::EnvSecretStore;
-use kyma_datasources::{DataSource, DataSourceCtx};
+use pensieve_datasources::metrics::DataSourceMetrics;
+use pensieve_datasources::prometheus::PromDataSource;
+use pensieve_datasources::runner::NoopCredentialStore;
+use pensieve_datasources::secrets::EnvSecretStore;
+use pensieve_datasources::{DataSource, DataSourceCtx};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -36,7 +36,7 @@ async fn spawn_mock(body: &'static str, status: u16) -> String {
 fn ctx() -> DataSourceCtx {
     DataSourceCtx {
         data_source_id: uuid::Uuid::new_v4(),
-        tenant: kyma_core::tenant::DEFAULT_TENANT,
+        tenant: pensieve_core::tenant::DEFAULT_TENANT,
         http: reqwest::Client::new(),
         secrets: Arc::new(EnvSecretStore),
         credentials: Arc::new(NoopCredentialStore),
@@ -78,7 +78,7 @@ async fn http_5xx_is_transient() {
         .await
         .unwrap_err();
     match err {
-        kyma_datasources::DataSourceError::Transient(_) => {}
+        pensieve_datasources::DataSourceError::Transient(_) => {}
         other => panic!("expected Transient, got {other:?}"),
     }
 }
@@ -92,7 +92,7 @@ async fn http_4xx_is_permanent() {
         .await
         .unwrap_err();
     match err {
-        kyma_datasources::DataSourceError::Permanent(_) => {}
+        pensieve_datasources::DataSourceError::Permanent(_) => {}
         other => panic!("expected Permanent, got {other:?}"),
     }
 }

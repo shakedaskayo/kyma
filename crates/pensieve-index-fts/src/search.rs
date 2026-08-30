@@ -5,7 +5,7 @@ use tantivy::query::{BooleanQuery, Occur, Query, TermQuery};
 use tantivy::schema::{IndexRecordOption, Value};
 use tantivy::{Index, TantivyDocument, Term};
 
-use kyma_core::index_sidecar::RowAddress;
+use pensieve_core::index_sidecar::RowAddress;
 
 use crate::build::{unpack_addr, ADDR_FIELD, BODY_FIELD};
 use crate::file::FtsError;
@@ -15,7 +15,7 @@ type Result<T> = std::result::Result<T, FtsError>;
 
 /// Run a BM25 top-`top_k` search for `query` over an opened sidecar index.
 ///
-/// The query is analyzed with the same `kyma-word-v1` tokenizer used at build
+/// The query is analyzed with the same `pensieve-word-v1` tokenizer used at build
 /// time (so a query term matches a document term iff their analyzed forms are
 /// equal), then run as an OR over the resulting terms — standard bag-of-words
 /// BM25. Returns `(RowAddress, score)` pairs, highest score first. An

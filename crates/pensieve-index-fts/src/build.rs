@@ -17,10 +17,10 @@ use tantivy::schema::{
 };
 use tantivy::{doc, Index, TantivyDocument};
 
-use kyma_core::index_sidecar::RowAddress;
+use pensieve_core::index_sidecar::RowAddress;
 
 use crate::file::FtsError;
-use crate::tokenizer::{KymaWordTokenizer, MIN_TOKEN_LEN, TOKENIZER_NAME};
+use crate::tokenizer::{PensieveWordTokenizer, MIN_TOKEN_LEN, TOKENIZER_NAME};
 
 type Result<T> = std::result::Result<T, FtsError>;
 
@@ -39,7 +39,7 @@ pub fn pack_addr(addr: RowAddress) -> u64 {
 #[inline]
 pub fn unpack_addr(v: u64) -> RowAddress {
     RowAddress {
-        block: kyma_core::segment_format::BlockId((v >> 32) as u32),
+        block: pensieve_core::segment_format::BlockId((v >> 32) as u32),
         row: (v & 0xFFFF_FFFF) as u32,
     }
 }
@@ -49,7 +49,7 @@ pub fn unpack_addr(v: u64) -> RowAddress {
 /// `RowAddress`. Shared by the build and search paths so field handles line up.
 pub fn fts_schema() -> Schema {
     let mut b: SchemaBuilder = Schema::builder();
-    // Body: tokenized with `kyma-word-v1` (set explicitly so it matches the
+    // Body: tokenized with `pensieve-word-v1` (set explicitly so it matches the
     // writer's token rule), indexed WithFreqsAndPositions for BM25 + phrase
     // queries. The same tokenizer name is re-registered by file::open_index.
     let body_opts = TextOptions::default().set_indexing_options(
@@ -80,7 +80,7 @@ where
         .map_err(|e| FtsError::Tantivy(format!("create index: {e}")))?;
     index
         .tokenizers()
-        .register(TOKENIZER_NAME, KymaWordTokenizer);
+        .register(TOKENIZER_NAME, PensieveWordTokenizer);
 
     let mut writer = index
         .writer::<TantivyDocument>(15_000_000)

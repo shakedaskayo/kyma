@@ -1,7 +1,7 @@
 /**
- * KymaAgentChat — public embeddable agent chat component.
+ * PensieveAgentChat — public embeddable agent chat component.
  *
- * Wraps AgentConsole in a KymaErrorBoundary + CapabilityGate on the `agent`
+ * Wraps AgentConsole in a PensieveErrorBoundary + CapabilityGate on the `agent`
  * capability flag: servers without the inline agent surface render a
  * "not available on this server" card instead of 404-ing (the gate fails
  * OPEN while capabilities load — servers predating the flag report it via
@@ -15,11 +15,11 @@
  *     MessageView call. Omitted for now; document for future addition.
  */
 import type { ReactNode, CSSProperties } from "react";
-import { KymaErrorBoundary } from "../internal/KymaErrorBoundary";
+import { PensieveErrorBoundary } from "../internal/PensieveErrorBoundary";
 import { CapabilityGate } from "../internal/CapabilityGate";
 import { AgentConsole } from "./AgentConsole";
 
-export interface KymaAgentChatProps {
+export interface PensieveAgentChatProps {
   /**
    * Placeholder text shown in the input area.
    * Default: "Ask a question about <database or 'your data'>…"
@@ -27,7 +27,7 @@ export interface KymaAgentChatProps {
   placeholder?: string;
   /**
    * Override the database sent with each request. When omitted, the value
-   * comes from the transport default (set on KymaProvider).
+   * comes from the transport default (set on PensieveProvider).
    */
   database?: string;
   /** Extra CSS class for the root container. */
@@ -43,16 +43,16 @@ export interface KymaAgentChatProps {
   onMessage?: (m: { role: string; text: string }) => void;
 }
 
-export function KymaAgentChat({
+export function PensieveAgentChat({
   placeholder,
   database,
   className,
   style,
   fallback,
   onMessage,
-}: KymaAgentChatProps) {
+}: PensieveAgentChatProps) {
   return (
-    <KymaErrorBoundary fallback={fallback}>
+    <PensieveErrorBoundary fallback={fallback}>
       <div
         className={className}
         style={{ height: "100%", width: "100%", ...style }}
@@ -65,6 +65,6 @@ export function KymaAgentChat({
           />
         </CapabilityGate>
       </div>
-    </KymaErrorBoundary>
+    </PensieveErrorBoundary>
   );
 }

@@ -1,6 +1,6 @@
 //! `/v1/capabilities` — feature discovery for clients.
 //!
-//! Local mode (`kyma serve`, embedded SQLite) deliberately omits the
+//! Local mode (`pensieve serve`, embedded SQLite) deliberately omits the
 //! control-plane surfaces (data sources, credentials, OAuth, saved Discover
 //! views). The web UI gates those pages on these flags so it can explain
 //! "runs on the control plane" instead of discovering missing routes via

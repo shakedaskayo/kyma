@@ -6,7 +6,7 @@
 
 use crate::catalog_sql::{self, DataSourceRow};
 use anyhow::Result;
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -101,7 +101,7 @@ impl PgDataSourceCatalog {
         Self { pool }
     }
 
-    pub fn from_pg_catalog(catalog: &Arc<kyma_catalog::PostgresCatalog>) -> Self {
+    pub fn from_pg_catalog(catalog: &Arc<pensieve_catalog::PostgresCatalog>) -> Self {
         Self {
             pool: catalog.pool().clone(),
         }

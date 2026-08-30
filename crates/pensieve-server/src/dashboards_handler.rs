@@ -13,10 +13,10 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use kyma_core::catalog::{
+use pensieve_core::catalog::{
     Catalog, Dashboard, DashboardPanelInput, DashboardUpdate, DashboardWithPanels,
 };
-use kyma_core::errors::CatalogError;
+use pensieve_core::errors::CatalogError;
 use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;

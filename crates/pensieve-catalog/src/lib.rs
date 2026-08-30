@@ -1,6 +1,6 @@
 //! Postgres-backed catalog implementation.
 //!
-//! Implements [`kyma_core::catalog::Catalog`]. The metadata model mirrors
+//! Implements [`pensieve_core::catalog::Catalog`]. The metadata model mirrors
 //! Apache Iceberg's hierarchy (table → snapshot → manifest → data_file).
 //!
 //! # Commit flow
@@ -30,16 +30,16 @@ pub use snapshot::PgSnapshotTxn;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use kyma_core::catalog::{
+use pensieve_core::catalog::{
     BackgroundTask, Catalog, CleanupResult, ColumnInfo, ColumnPrune, Dashboard, DashboardPanel,
     DashboardPanelInput, DashboardUpdate, DashboardWithPanels, ExtentManifest, GraphRegistration,
     GraphSpec, IngestLedgerEntry, NodeInfo, NodeLease, NodeRole, PrunePredicate, RefreshClaim,
     SnapshotTxn, TableConfig, TableEmbedConfig, TableRef, TokenPrincipal, User,
 };
-use kyma_core::errors::{CatalogError, Result};
-use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
-use kyma_core::tenant::TenantId;
-use kyma_core::types::{DatabaseId, ExtentId, NodeId, SchemaSnapshotId, SnapshotId, TableId};
+use pensieve_core::errors::{CatalogError, Result};
+use pensieve_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
+use pensieve_core::tenant::TenantId;
+use pensieve_core::types::{DatabaseId, ExtentId, NodeId, SchemaSnapshotId, SnapshotId, TableId};
 use serde_json::Value as Json;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Row};
@@ -58,11 +58,11 @@ pub struct PostgresCatalog {
 impl PostgresCatalog {
     /// Connect to Postgres and run migrations.
     ///
-    /// Pool size and acquire timeout are env-tunable: `KYMA_PG_MAX_CONNS`
-    /// (default 16) and `KYMA_PG_ACQUIRE_TIMEOUT_SECS` (default 10).
+    /// Pool size and acquire timeout are env-tunable: `PENSIEVE_PG_MAX_CONNS`
+    /// (default 16) and `PENSIEVE_PG_ACQUIRE_TIMEOUT_SECS` (default 10).
     pub async fn connect(database_url: &str) -> Result<Self> {
-        let max_conns = env_parse("KYMA_PG_MAX_CONNS", 16u32).max(1);
-        let acquire_secs = env_parse("KYMA_PG_ACQUIRE_TIMEOUT_SECS", 10u64).max(1);
+        let max_conns = env_parse("PENSIEVE_PG_MAX_CONNS", 16u32).max(1);
+        let acquire_secs = env_parse("PENSIEVE_PG_ACQUIRE_TIMEOUT_SECS", 10u64).max(1);
         let pool = PgPoolOptions::new()
             .max_connections(max_conns)
             .acquire_timeout(Duration::from_secs(acquire_secs))
@@ -83,11 +83,11 @@ impl PostgresCatalog {
         &self.pool
     }
 
-    /// Publish pool-saturation gauges (`kyma_pg_pool_size`, `kyma_pg_pool_idle`).
+    /// Publish pool-saturation gauges (`pensieve_pg_pool_size`, `pensieve_pg_pool_idle`).
     /// Call periodically from the host process; cheap (atomic loads).
     pub fn record_pool_metrics(&self) {
-        ::metrics::gauge!("kyma_pg_pool_size").set(self.pool.size() as f64);
-        ::metrics::gauge!("kyma_pg_pool_idle").set(self.pool.num_idle() as f64);
+        ::metrics::gauge!("pensieve_pg_pool_size").set(self.pool.size() as f64);
+        ::metrics::gauge!("pensieve_pg_pool_idle").set(self.pool.num_idle() as f64);
     }
 }
 
@@ -745,7 +745,7 @@ impl Catalog for PostgresCatalog {
     async fn upsert_ann_tree(
         &self,
         tenant: TenantId,
-        desc: &kyma_core::index_sidecar::AnnTreeDescriptor,
+        desc: &pensieve_core::index_sidecar::AnnTreeDescriptor,
     ) -> Result<()> {
         // Upsert on (table, column, model) — mirrors the `ann_tree_uniq`
         // expression index. The tenant guard makes a cross-tenant re-register a
@@ -787,7 +787,7 @@ impl Catalog for PostgresCatalog {
         table_id: TableId,
         column: &str,
         embedding_model_id: Option<&str>,
-    ) -> Result<Option<kyma_core::index_sidecar::AnnTreeDescriptor>> {
+    ) -> Result<Option<pensieve_core::index_sidecar::AnnTreeDescriptor>> {
         let row = sqlx::query(
             "SELECT id, table_id, column_name, embedding_model_id, generation,
                     extent_fingerprint, object_path, byte_size, params, created_at
@@ -827,7 +827,7 @@ impl Catalog for PostgresCatalog {
 
     async fn upsert_tenant_quota(
         &self,
-        quota: &kyma_core::catalog::TenantQuota,
+        quota: &pensieve_core::catalog::TenantQuota,
     ) -> Result<()> {
         sqlx::query(
             "INSERT INTO tenant_quotas
@@ -850,7 +850,7 @@ impl Catalog for PostgresCatalog {
     async fn get_tenant_quota(
         &self,
         tenant: TenantId,
-    ) -> Result<Option<kyma_core::catalog::TenantQuota>> {
+    ) -> Result<Option<pensieve_core::catalog::TenantQuota>> {
         let row: Option<(Option<i32>, Option<i32>, chrono::DateTime<chrono::Utc>)> =
             sqlx::query_as(
                 "SELECT max_query_concurrent, max_agent_concurrent, updated_at
@@ -860,7 +860,7 @@ impl Catalog for PostgresCatalog {
             .fetch_optional(&self.pool)
             .await
             .map_err(sql_err)?;
-        Ok(row.map(|(q, a, updated_at)| kyma_core::catalog::TenantQuota {
+        Ok(row.map(|(q, a, updated_at)| pensieve_core::catalog::TenantQuota {
             tenant,
             max_query_concurrent: q.map(|v| v.max(0) as u32),
             max_agent_concurrent: a.map(|v| v.max(0) as u32),
@@ -868,7 +868,7 @@ impl Catalog for PostgresCatalog {
         }))
     }
 
-    async fn list_tenant_quotas(&self) -> Result<Vec<kyma_core::catalog::TenantQuota>> {
+    async fn list_tenant_quotas(&self) -> Result<Vec<pensieve_core::catalog::TenantQuota>> {
         let rows: Vec<(uuid::Uuid, Option<i32>, Option<i32>, chrono::DateTime<chrono::Utc>)> =
             sqlx::query_as(
                 "SELECT tenant_id, max_query_concurrent, max_agent_concurrent, updated_at
@@ -879,7 +879,7 @@ impl Catalog for PostgresCatalog {
             .map_err(sql_err)?;
         Ok(rows
             .into_iter()
-            .map(|(t, q, a, updated_at)| kyma_core::catalog::TenantQuota {
+            .map(|(t, q, a, updated_at)| pensieve_core::catalog::TenantQuota {
                 tenant: TenantId::from_uuid(t),
                 max_query_concurrent: q.map(|v| v.max(0) as u32),
                 max_agent_concurrent: a.map(|v| v.max(0) as u32),
@@ -915,7 +915,7 @@ impl Catalog for PostgresCatalog {
         &self,
         tenant: TenantId,
         max: i64,
-    ) -> Result<Vec<kyma_core::catalog::StagedExtentRow>> {
+    ) -> Result<Vec<pensieve_core::catalog::StagedExtentRow>> {
         let rows = sqlx::query(
             "SELECT id, table_id, manifest FROM staged_extents
              WHERE tenant_id = $1 ORDER BY created_at ASC LIMIT $2",
@@ -930,7 +930,7 @@ impl Catalog for PostgresCatalog {
                 let manifest_json: Json = r.try_get("manifest").map_err(sql_err)?;
                 let manifest: ExtentManifest = serde_json::from_value(manifest_json)
                     .map_err(|e| CatalogError::Sql(format!("deserialize staged manifest: {e}")))?;
-                Ok(kyma_core::catalog::StagedExtentRow {
+                Ok(pensieve_core::catalog::StagedExtentRow {
                     id: r.try_get("id").map_err(sql_err)?,
                     table_id: TableId::from_uuid(r.try_get("table_id").map_err(sql_err)?),
                     manifest,
@@ -1255,7 +1255,7 @@ impl Catalog for PostgresCatalog {
     async fn list_live_nodes(
         &self,
         max_stale_secs: u32,
-    ) -> Result<Vec<kyma_core::catalog::LiveNode>> {
+    ) -> Result<Vec<pensieve_core::catalog::LiveNode>> {
         let rows: Vec<(Uuid, String, String, DateTime<Utc>)> = sqlx::query_as(
             "SELECT id, role, endpoint, last_heartbeat FROM nodes
              WHERE last_heartbeat > now() - make_interval(secs => $1)
@@ -1267,7 +1267,7 @@ impl Catalog for PostgresCatalog {
         .map_err(sql_err)?;
         Ok(rows
             .into_iter()
-            .map(|(id, role, endpoint, hb)| kyma_core::catalog::LiveNode {
+            .map(|(id, role, endpoint, hb)| pensieve_core::catalog::LiveNode {
                 node_id: NodeId::from_uuid(id),
                 role: str_to_role(&role),
                 endpoint,
@@ -1279,7 +1279,7 @@ impl Catalog for PostgresCatalog {
     async fn submit_task(
         &self,
         kind: &str,
-        table_id: Option<kyma_core::types::TableId>,
+        table_id: Option<pensieve_core::types::TableId>,
         payload: serde_json::Value,
         priority: i32,
     ) -> Result<Uuid> {
@@ -1295,7 +1295,7 @@ impl Catalog for PostgresCatalog {
         .bind(table_id.map(|t| *t.as_uuid()))
         .bind(&payload)
         .bind(priority)
-        .bind(kyma_core::tenant::DEFAULT_TENANT.as_uuid())
+        .bind(pensieve_core::tenant::DEFAULT_TENANT.as_uuid())
         .fetch_one(&self.pool)
         .await
         .map_err(sql_err)?;
@@ -1346,7 +1346,7 @@ impl Catalog for PostgresCatalog {
         Ok(Some(BackgroundTask {
             id: row.try_get("id").map_err(sql_err)?,
             kind: row.try_get("kind").map_err(sql_err)?,
-            table_id: table_id.map(kyma_core::types::TableId::from_uuid),
+            table_id: table_id.map(pensieve_core::types::TableId::from_uuid),
             payload: row.try_get("payload").map_err(sql_err)?,
             priority: row.try_get("priority").map_err(sql_err)?,
             attempt: row.try_get("attempt").map_err(sql_err)?,
@@ -1963,7 +1963,7 @@ impl Catalog for PostgresCatalog {
             .await;
 
         Ok(Some(TokenPrincipal {
-            tenant: kyma_core::tenant::TenantId::from_uuid(tenant_uuid),
+            tenant: pensieve_core::tenant::TenantId::from_uuid(tenant_uuid),
             role,
             subject,
         }))
@@ -1986,7 +1986,7 @@ impl Catalog for PostgresCatalog {
         &self,
         tenant: TenantId,
         kind: &str,
-    ) -> std::result::Result<Vec<kyma_core::catalog::ApiTokenInfo>, CatalogError> {
+    ) -> std::result::Result<Vec<pensieve_core::catalog::ApiTokenInfo>, CatalogError> {
         use sqlx::Row as _;
         let rows = sqlx::query(
             "SELECT token_hash, scopes, subject, kind, created_at, last_used_at,
@@ -2002,7 +2002,7 @@ impl Catalog for PostgresCatalog {
         .map_err(|e| CatalogError::Sql(e.to_string()))?;
         rows.iter()
             .map(|row| {
-                Ok(kyma_core::catalog::ApiTokenInfo {
+                Ok(pensieve_core::catalog::ApiTokenInfo {
                     token_hash: row.try_get("token_hash").map_err(sql_err)?,
                     role: row.try_get("scopes").map_err(sql_err)?,
                     subject: row.try_get("subject").map_err(sql_err)?,
@@ -2029,7 +2029,7 @@ impl Catalog for PostgresCatalog {
             "INSERT INTO api_tokens (tenant_id, token_hash, scopes, subject, kind, expires_at, session_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
-        .bind(kyma_core::tenant::DEFAULT_TENANT.as_uuid())
+        .bind(pensieve_core::tenant::DEFAULT_TENANT.as_uuid())
         .bind(token_hash)
         .bind(scopes)
         .bind(subject)
@@ -2080,7 +2080,7 @@ impl Catalog for PostgresCatalog {
             .to_owned();
 
         Ok(Some(RefreshClaim {
-            tenant: kyma_core::tenant::TenantId::from_uuid(tenant_uuid),
+            tenant: pensieve_core::tenant::TenantId::from_uuid(tenant_uuid),
             role,
             subject,
             session_id: session_id.unwrap_or_else(Uuid::nil),
@@ -2112,7 +2112,7 @@ impl Catalog for PostgresCatalog {
     async fn list_databases_in_tenant(
         &self,
         tenant: TenantId,
-    ) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
+    ) -> std::result::Result<Vec<String>, pensieve_core::errors::CatalogError> {
         let rows: Vec<(String,)> =
             sqlx::query_as("SELECT name FROM databases WHERE tenant_id = $1 ORDER BY name ASC")
                 .bind(tenant.as_uuid())
@@ -2126,7 +2126,7 @@ impl Catalog for PostgresCatalog {
         &self,
         tenant: TenantId,
         database: &str,
-    ) -> std::result::Result<Vec<String>, kyma_core::errors::CatalogError> {
+    ) -> std::result::Result<Vec<String>, pensieve_core::errors::CatalogError> {
         let exists: (bool,) = sqlx::query_as(
             "SELECT EXISTS(SELECT 1 FROM databases WHERE tenant_id = $1 AND name = $2)",
         )
@@ -2157,7 +2157,7 @@ impl Catalog for PostgresCatalog {
         tenant: TenantId,
         database: &str,
         table: &str,
-    ) -> std::result::Result<Vec<ColumnInfo>, kyma_core::errors::CatalogError> {
+    ) -> std::result::Result<Vec<ColumnInfo>, pensieve_core::errors::CatalogError> {
         let db_exists: (bool,) = sqlx::query_as(
             "SELECT EXISTS(SELECT 1 FROM databases WHERE tenant_id = $1 AND name = $2)",
         )
@@ -2299,7 +2299,7 @@ impl Catalog for PostgresCatalog {
         for r in &rows {
             let h: String = r.try_get("content_hash").map_err(sql_err)?;
             let bytes: Vec<u8> = r.try_get("embedding").map_err(sql_err)?;
-            if let Some(v) = kyma_core::catalog::embedding_from_le_bytes(&bytes) {
+            if let Some(v) = pensieve_core::catalog::embedding_from_le_bytes(&bytes) {
                 out.insert(h, v);
             }
         }
@@ -2318,7 +2318,7 @@ impl Catalog for PostgresCatalog {
         }
         let mut tx = self.pool.begin().await.map_err(sql_err)?;
         for (hash, vec) in entries {
-            let bytes = kyma_core::catalog::embedding_to_le_bytes(vec);
+            let bytes = pensieve_core::catalog::embedding_to_le_bytes(vec);
             sqlx::query(
                 "INSERT INTO embedding_cache
                     (tenant_id, content_hash, model_id, dim, embedding)
@@ -2350,13 +2350,13 @@ fn sql_err(e: sqlx::Error) -> CatalogError {
 /// Map a unique-constraint violation (a racing committer claimed the same
 /// `(table_id, sequence_number)`) to `Conflict` so the caller retries; any other
 /// DB error stays a `Sql` error. Returns the top-level `Error` for `?`.
-fn conflict_or_sql(e: sqlx::Error) -> kyma_core::errors::Error {
+fn conflict_or_sql(e: sqlx::Error) -> pensieve_core::errors::Error {
     if let sqlx::Error::Database(db) = &e {
         if db.kind() == sqlx::error::ErrorKind::UniqueViolation {
-            return kyma_core::errors::Error::Catalog(CatalogError::Conflict);
+            return pensieve_core::errors::Error::Catalog(CatalogError::Conflict);
         }
     }
-    kyma_core::errors::Error::Catalog(CatalogError::Sql(e.to_string()))
+    pensieve_core::errors::Error::Catalog(CatalogError::Sql(e.to_string()))
 }
 
 fn row_to_dashboard(row: &sqlx::postgres::PgRow) -> std::result::Result<Dashboard, CatalogError> {
@@ -2410,9 +2410,9 @@ fn row_to_sidecar(row: &sqlx::postgres::PgRow) -> Result<IndexSidecarDescriptor>
 
 fn row_to_ann_tree(
     row: &sqlx::postgres::PgRow,
-) -> Result<kyma_core::index_sidecar::AnnTreeDescriptor> {
+) -> Result<pensieve_core::index_sidecar::AnnTreeDescriptor> {
     use sqlx::Row as _;
-    Ok(kyma_core::index_sidecar::AnnTreeDescriptor {
+    Ok(pensieve_core::index_sidecar::AnnTreeDescriptor {
         id: row.try_get("id").map_err(sql_err)?,
         table_id: TableId::from_uuid(row.try_get("table_id").map_err(sql_err)?),
         column: row.try_get("column_name").map_err(sql_err)?,
@@ -2592,7 +2592,7 @@ fn keep_extent_by_vector(
         .get("radius")
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(f64::INFINITY);
-    match kyma_core::catalog::cosine_distance_lower_bound(query, &centroid, radius) {
+    match pensieve_core::catalog::cosine_distance_lower_bound(query, &centroid, radius) {
         Some(lb) => lb < threshold,
         None => true,
     }

@@ -1,6 +1,6 @@
 //! Obsidian vault data source — catalog/validation only. Continuous-drive
 //! (`drive_model = "continuous"`): the local engine's vault watcher performs
-//! the actual sync (`kyma-local/src/vault_sync.rs`); the periodic scheduler
+//! the actual sync (`pensieve-local/src/vault_sync.rs`); the periodic scheduler
 //! never ticks these rows, and `run_once` refuses defensively.
 
 use async_trait::async_trait;
@@ -28,7 +28,7 @@ impl DataSource for ObsidianDataSource {
         );
         git_url.required = false;
         git_url.help =
-            Some("Import an existing Obsidian vault from a git repo — kyma clones/pulls it and ingests the notes.".into());
+            Some("Import an existing Obsidian vault from a git repo — pensieve clones/pulls it and ingests the notes.".into());
         let mut git_token = CatalogField::secret(
             "git_token",
             "Git token (private repos)",

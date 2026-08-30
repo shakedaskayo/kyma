@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-kyma is in pre-alpha. Only the latest commit on `main` is supported; older tags
+pensieve is in pre-alpha. Only the latest commit on `main` is supported; older tags
 and branches are not maintained. Production use is not yet recommended.
 
 ## Reporting a Vulnerability
@@ -10,8 +10,8 @@ and branches are not maintained. Production use is not yet recommended.
 Please report security issues **privately**, not via public GitHub issues.
 
 - Open a private security advisory:
-  <https://github.com/shakedaskayo/kyma/security/advisories/new>
-- Or email **shaked@agentcylabs.com** with the subject prefix `[kyma security]`.
+  <https://github.com/shakedaskayo/pensieve/security/advisories/new>
+- Or email **shaked@agentcylabs.com** with the subject prefix `[pensieve security]`.
 
 Please include:
 
@@ -29,7 +29,7 @@ public disclosure.
 
 In scope:
 
-- The kyma engine binary and all crates under `crates/`.
+- The pensieve engine binary and all crates under `crates/`.
 - The web UI under `web/`.
 - The default Docker image and `docker-compose.yml` development stack.
 - Documented HTTP, Arrow Flight, and OTLP endpoints.

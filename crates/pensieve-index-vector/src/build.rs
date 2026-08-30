@@ -10,7 +10,7 @@ use crate::file::{self, Entry, METRIC_COSINE};
 use crate::ivf;
 use crate::rabitq::{self, Rotation};
 use bytes::Bytes;
-use kyma_core::index_sidecar::RowAddress;
+use pensieve_core::index_sidecar::RowAddress;
 use serde_json::{json, Value as Json};
 
 /// Build the IVF + 1-bit RaBitQ sidecar from `rows`.
@@ -82,7 +82,7 @@ mod tests {
     use super::*;
     use crate::file::read_header;
     use crate::rng::SplitMix64;
-    use kyma_core::segment_format::BlockId;
+    use pensieve_core::segment_format::BlockId;
 
     fn norm(mut v: Vec<f32>) -> Vec<f32> {
         let n = (v.iter().map(|x| x * x).sum::<f32>()).sqrt();

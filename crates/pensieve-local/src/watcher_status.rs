@@ -1,7 +1,7 @@
-//! Local-mode watcher registry: kyma-local is a single process with SQLite,
+//! Local-mode watcher registry: pensieve-local is a single process with SQLite,
 //! so cc-sync watcher state lives in memory and is served through the same
 //! `/v1/data-sources/watchers` shape as the control plane's Postgres registry
-//! (`kyma_datasources::watchers::WatcherRow`) — the web UI's watchers tab
+//! (`pensieve_datasources::watchers::WatcherRow`) — the web UI's watchers tab
 //! works identically in both modes.
 
 use axum::{extract::State, routing::get, Json, Router};
@@ -74,16 +74,16 @@ impl LocalWatcher {
 }
 
 /// `(hostname, node_id, os user)` — same resolution as
-/// `kyma_datasources::watchers::node_identity` (inlined: kyma-local must not
-/// depend on the Postgres-backed datasources crate). `KYMA_NODE_ID` overrides
+/// `pensieve_datasources::watchers::node_identity` (inlined: pensieve-local must not
+/// depend on the Postgres-backed datasources crate). `PENSIEVE_NODE_ID` overrides
 /// the node id (defaults to the hostname).
-/// Keep in sync with `kyma_datasources::watchers::node_identity`.
+/// Keep in sync with `pensieve_datasources::watchers::node_identity`.
 pub fn node_identity() -> (String, String, String) {
     let host = hostname::get()
         .ok()
         .and_then(|h| h.into_string().ok())
         .unwrap_or_else(|| "localhost".to_string());
-    let node_id = std::env::var("KYMA_NODE_ID").unwrap_or_else(|_| host.clone());
+    let node_id = std::env::var("PENSIEVE_NODE_ID").unwrap_or_else(|_| host.clone());
     let user = std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_else(|_| "unknown".to_string());
@@ -93,7 +93,7 @@ pub fn node_identity() -> (String, String, String) {
 /// Shared in-process watcher store. Cheap to clone (Arc inside); the cc-sync
 /// loop holds one clone and upserts each cycle, the router holds another and
 /// serves reads. `cc_sync_enabled` is the runtime toggle — flipped by the
-/// settings API and persisted to `~/.kyma/watcher-settings.json`.
+/// settings API and persisted to `~/.pensieve/watcher-settings.json`.
 #[derive(Clone)]
 pub struct LocalWatcherStatus {
     watchers: Arc<RwLock<Vec<LocalWatcher>>>,
@@ -135,7 +135,7 @@ impl LocalWatcherStatus {
 
     /// Router serving `GET /v1/data-sources/watchers` → `{"items": [...]}` —
     /// the same path + shape as the control plane's Postgres-backed handler.
-    /// Mounted unconditionally (even with `KYMA_CC_WATCH=0`) so the web tab
+    /// Mounted unconditionally (even with `PENSIEVE_CC_WATCH=0`) so the web tab
     /// renders an empty state instead of a 404.
     pub fn router(&self) -> Router {
         Router::new()

@@ -1,5 +1,5 @@
 [package]
-name = "kyma-graph-topo"
+name = "pensieve-graph-topo"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,5 +15,5 @@ workspace = true
 # Differential correctness is validated against the petgraph reference oracle.
 # The testkit is publish=false and brings petgraph in only as a TEST-time
 # transitive dep, so petgraph never enters this engine crate's release build.
-kyma-graph-testkit.workspace = true
+pensieve-graph-testkit.workspace = true
 proptest.workspace = true

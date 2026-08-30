@@ -1,12 +1,12 @@
-//! Local-mode brain registry: `${KYMA_HOME}/brains.json`, atomic
+//! Local-mode brain registry: `${PENSIEVE_HOME}/brains.json`, atomic
 //! tmp+rename writes (the cc_writeback pattern), serialized by a mutex.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
-use kyma_brain::registry::{BrainConfig, BrainRecord, BrainRegistry, BrainRuntime};
-use kyma_brain::BrainError;
+use pensieve_brain::registry::{BrainConfig, BrainRecord, BrainRegistry, BrainRuntime};
+use pensieve_brain::BrainError;
 use tokio::sync::Mutex;
 
 pub struct LocalBrainRegistry {
@@ -84,7 +84,7 @@ impl BrainRegistry for LocalBrainRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kyma_brain::registry::RealmSelector;
+    use pensieve_brain::registry::RealmSelector;
 
     #[tokio::test]
     async fn crud_round_trip() {
@@ -94,7 +94,7 @@ mod tests {
 
         let cfg = BrainConfig::new(
             "team",
-            RealmSelector::Realms(vec!["kyma".into()]),
+            RealmSelector::Realms(vec!["pensieve".into()]),
             "2026-07-08T00:00:00Z",
         )
         .unwrap();

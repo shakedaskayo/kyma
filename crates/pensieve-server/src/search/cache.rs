@@ -7,7 +7,7 @@
 //! map lookup.
 //!
 //! Correctness is bounded by the TTL, not by snapshot tracking: a fresh ingest
-//! becomes visible within `KYMA_SEARCH_CACHE_TTL_MS` (default 3000; `0` disables
+//! becomes visible within `PENSIEVE_SEARCH_CACHE_TTL_MS` (default 3000; `0` disables
 //! the cache entirely). Keep it small — this trades a few seconds of staleness
 //! for a large drop in repeated-query cost. Per-tenant key isolation means one
 //! tenant never sees another's cached rows.
@@ -35,9 +35,9 @@ fn store() -> &'static Mutex<HashMap<String, Entry>> {
     S.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// TTL from `KYMA_SEARCH_CACHE_TTL_MS` (default 3000ms). `0` disables the cache.
+/// TTL from `PENSIEVE_SEARCH_CACHE_TTL_MS` (default 3000ms). `0` disables the cache.
 pub fn ttl() -> Duration {
-    let ms = std::env::var("KYMA_SEARCH_CACHE_TTL_MS")
+    let ms = std::env::var("PENSIEVE_SEARCH_CACHE_TTL_MS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(3000);
@@ -59,7 +59,7 @@ pub fn key(
     let raw = format!(
         "{tenant}\u{1}{query}\u{1}{scope_repr}\u{1}{limit}\u{1}{offset}\u{1}{time_range_repr}"
     );
-    kyma_core::crypto::content_hash_hex(raw.as_bytes())
+    pensieve_core::crypto::content_hash_hex(raw.as_bytes())
 }
 
 /// Fetch a fresh cached page, or `None` on miss / expiry / disabled. A returned
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn get_put_roundtrip_and_disable() {
-        std::env::set_var("KYMA_SEARCH_CACHE_TTL_MS", "3000");
+        std::env::set_var("PENSIEVE_SEARCH_CACHE_TTL_MS", "3000");
         let k = key("tenantX", "hello", "All", 5, 0, "none");
         assert!(get(&k).is_none(), "cold miss");
         let rows = vec![("src".to_string(), 1.0, serde_json::json!({"id": "a"}))];
@@ -124,11 +124,11 @@ mod tests {
         assert_eq!(srcs, 2);
 
         // TTL=0 disables both get and put.
-        std::env::set_var("KYMA_SEARCH_CACHE_TTL_MS", "0");
+        std::env::set_var("PENSIEVE_SEARCH_CACHE_TTL_MS", "0");
         assert!(get(&k).is_none(), "disabled → miss");
         put(k.clone(), rows, 2);
-        std::env::set_var("KYMA_SEARCH_CACHE_TTL_MS", "3000");
+        std::env::set_var("PENSIEVE_SEARCH_CACHE_TTL_MS", "3000");
         // (no assertion on the disabled put beyond it not panicking)
-        std::env::remove_var("KYMA_SEARCH_CACHE_TTL_MS");
+        std::env::remove_var("PENSIEVE_SEARCH_CACHE_TTL_MS");
     }
 }

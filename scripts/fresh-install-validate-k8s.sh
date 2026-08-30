@@ -2,18 +2,18 @@
 # fresh-install-validate-k8s.sh — Kubernetes (Helm) fresh-install acceptance gate.
 #
 # Validates the SHIPPED HELM CHART path on a throwaway `kind` cluster: deploys
-# in-cluster Postgres + MinIO, helm-installs the engine (deploy/helm/kyma-engine)
+# in-cluster Postgres + MinIO, helm-installs the engine (deploy/helm/pensieve-engine)
 # from a locally-built image, waits for the pod to become ready, then asserts the
 # engine serves over HTTP from a clean state (health, admin login, ingest, query,
 # search) — the k8s analogue of the local and docker-compose fresh-install gates.
 # Tears the cluster down on exit.
 #
-# Requirements: kind, kubectl, helm, docker. A kyma engine image must exist
-# locally; pass it via KYMA_IMAGE (default: kyma-smoke-kyma:latest, the tag the
+# Requirements: kind, kubectl, helm, docker. A pensieve engine image must exist
+# locally; pass it via PENSIEVE_IMAGE (default: pensieve-smoke-pensieve:latest, the tag the
 # compose-smoke build produces — run scripts/compose-smoke.sh first, or
-# `docker build -t kyma-smoke-kyma:latest .`).
+# `docker build -t pensieve-smoke-pensieve:latest .`).
 #
-# Fully isolated: a dedicated kind cluster (kyma-k8s-smoke) + in-cluster PG/MinIO
+# Fully isolated: a dedicated kind cluster (pensieve-k8s-smoke) + in-cluster PG/MinIO
 # (ClusterIP, never exposed to the host) + a port-forward on an isolated host
 # port. Safe to run alongside a developer's live stack.
 
@@ -22,12 +22,12 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-CLUSTER="kyma-k8s-smoke"
-NS="kyma-smoke"
-SRC_IMAGE="${KYMA_IMAGE:-kyma-smoke-kyma:latest}"
-IMAGE_REPO="kyma-engine"
+CLUSTER="pensieve-k8s-smoke"
+NS="pensieve-smoke"
+SRC_IMAGE="${PENSIEVE_IMAGE:-pensieve-smoke-pensieve:latest}"
+IMAGE_REPO="pensieve-engine"
 IMAGE_TAG="smoke"
-LPORT="${KYMA_K8S_PORT:-18091}"
+LPORT="${PENSIEVE_K8S_PORT:-18091}"
 BASE="http://127.0.0.1:${LPORT}"
 
 if [[ -t 1 ]]; then RED="\033[31m"; GRN="\033[32m"; BLU="\033[34m"; NC="\033[0m"; else RED=""; GRN=""; BLU=""; NC=""; fi
@@ -80,12 +80,12 @@ spec:
         - name: postgres
           image: pgvector/pgvector:pg16
           env:
-            - { name: POSTGRES_USER, value: kyma }
-            - { name: POSTGRES_PASSWORD, value: kyma_dev }
-            - { name: POSTGRES_DB, value: kyma }
+            - { name: POSTGRES_USER, value: pensieve }
+            - { name: POSTGRES_PASSWORD, value: pensieve_dev }
+            - { name: POSTGRES_DB, value: pensieve }
           ports: [{ containerPort: 5432 }]
           readinessProbe:
-            exec: { command: ["pg_isready","-U","kyma","-d","kyma"] }
+            exec: { command: ["pg_isready","-U","pensieve","-d","pensieve"] }
             initialDelaySeconds: 3
             periodSeconds: 3
 ---
@@ -109,9 +109,9 @@ spec:
         - name: minio
           image: bitnamilegacy/minio:2025.7.23-debian-12-r5
           env:
-            - { name: MINIO_ROOT_USER, value: kyma_admin }
-            - { name: MINIO_ROOT_PASSWORD, value: kyma_admin_dev }
-            - { name: MINIO_DEFAULT_BUCKETS, value: kyma }
+            - { name: MINIO_ROOT_USER, value: pensieve_admin }
+            - { name: MINIO_ROOT_PASSWORD, value: pensieve_admin_dev }
+            - { name: MINIO_DEFAULT_BUCKETS, value: pensieve }
           ports: [{ containerPort: 9000 }]
           readinessProbe:
             httpGet: { path: /minio/health/ready, port: 9000 }
@@ -130,40 +130,40 @@ kubectl wait -n "$NS" --for=condition=available --timeout=180s deploy/postgres d
 ok "Postgres + MinIO ready"
 
 section "helm install the engine (all-in-one) against in-cluster PG + MinIO"
-helm install kyma deploy/helm/kyma-engine -n "$NS" \
-  --set fullnameOverride=kyma \
+helm install pensieve deploy/helm/pensieve-engine -n "$NS" \
+  --set fullnameOverride=pensieve \
   --set image.repository="$IMAGE_REPO" \
   --set image.tag="$IMAGE_TAG" \
   --set image.pullPolicy=Never \
   --set serviceAccount.create=true \
-  --set-string env.KYMA_HTTP_ADDR="0.0.0.0:8080" \
-  --set-string env.KYMA_GRPC_ADDR="off" \
-  --set-string env.KYMA_OTLP_ADDR="off" \
-  --set-string env.KYMA_S3_ENDPOINT="http://minio:9000" \
-  --set-string env.KYMA_S3_BUCKET="kyma" \
-  --set-string env.KYMA_S3_REGION="us-east-1" \
-  --set-string env.KYMA_S3_PATH_STYLE="true" \
-  --set-string env.KYMA_S3_ALLOW_HTTP="true" \
-  --set-string env.KYMA_AUTH_BACKEND="session" \
-  --set-string env.KYMA_ADMIN_USER="admin" \
-  --set-string env.KYMA_ADMIN_PASSWORD="kyma_dev" \
-  --set-string secretEnv.KYMA_CATALOG_URL="postgres://kyma:kyma_dev@postgres:5432/kyma" \
-  --set-string secretEnv.KYMA_S3_ACCESS_KEY_ID="kyma_admin" \
-  --set-string secretEnv.KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev" \
-  --set-string secretEnv.KYMA_SECRET_KEY="dev_secret_key_dev_secret_key_32" \
+  --set-string env.PENSIEVE_HTTP_ADDR="0.0.0.0:8080" \
+  --set-string env.PENSIEVE_GRPC_ADDR="off" \
+  --set-string env.PENSIEVE_OTLP_ADDR="off" \
+  --set-string env.PENSIEVE_S3_ENDPOINT="http://minio:9000" \
+  --set-string env.PENSIEVE_S3_BUCKET="pensieve" \
+  --set-string env.PENSIEVE_S3_REGION="us-east-1" \
+  --set-string env.PENSIEVE_S3_PATH_STYLE="true" \
+  --set-string env.PENSIEVE_S3_ALLOW_HTTP="true" \
+  --set-string env.PENSIEVE_AUTH_BACKEND="session" \
+  --set-string env.PENSIEVE_ADMIN_USER="admin" \
+  --set-string env.PENSIEVE_ADMIN_PASSWORD="pensieve_dev" \
+  --set-string secretEnv.PENSIEVE_CATALOG_URL="postgres://pensieve:pensieve_dev@postgres:5432/pensieve" \
+  --set-string secretEnv.PENSIEVE_S3_ACCESS_KEY_ID="pensieve_admin" \
+  --set-string secretEnv.PENSIEVE_S3_SECRET_ACCESS_KEY="pensieve_admin_dev" \
+  --set-string secretEnv.PENSIEVE_SECRET_KEY="dev_secret_key_dev_secret_key_32" \
   || { echo "helm install failed" >&2; exit 1; }
 
 section "Wait for the engine pod to roll out"
-if ! kubectl rollout status -n "$NS" deploy/kyma -w --timeout=180s; then
+if ! kubectl rollout status -n "$NS" deploy/pensieve -w --timeout=180s; then
   bad "engine deployment never became ready"
   kubectl get pods -n "$NS"
-  kubectl logs -n "$NS" -l app.kubernetes.io/name=kyma-engine --tail=80 2>/dev/null || true
+  kubectl logs -n "$NS" -l app.kubernetes.io/name=pensieve-engine --tail=80 2>/dev/null || true
   exit 1
 fi
 ok "engine pod ready"
 
 section "Port-forward the Service to $BASE"
-kubectl port-forward -n "$NS" svc/kyma "${LPORT}:8080" --address 127.0.0.1 >/tmp/kyma-k8s-pf.log 2>&1 &
+kubectl port-forward -n "$NS" svc/pensieve "${LPORT}:8080" --address 127.0.0.1 >/tmp/pensieve-k8s-pf.log 2>&1 &
 PF_PID=$!
 disown "$PF_PID" 2>/dev/null || true
 healthy=0
@@ -171,11 +171,11 @@ for i in $(seq 1 40); do
   if curl -fsS "$BASE/health" >/dev/null 2>&1; then healthy=1; break; fi
   sleep 2
 done
-[[ "$healthy" == "1" ]] && ok "/health reachable via port-forward" || { bad "/health never reachable"; cat /tmp/kyma-k8s-pf.log; exit 1; }
+[[ "$healthy" == "1" ]] && ok "/health reachable via port-forward" || { bad "/health never reachable"; cat /tmp/pensieve-k8s-pf.log; exit 1; }
 
 section "Admin login → access token"
 TOKEN="$(curl -fsS -X POST "$BASE/v1/auth/login" -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"kyma_dev"}' 2>/dev/null \
+  -d '{"username":"admin","password":"pensieve_dev"}' 2>/dev/null \
   | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)"
 [[ -n "$TOKEN" ]] && ok "logged in as admin" || bad "login returned no token"
 AUTH=(-H "Authorization: Bearer $TOKEN")

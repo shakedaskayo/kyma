@@ -15,7 +15,7 @@
 import { useEffect, useRef } from "react";
 import type Sigma from "sigma";
 import { useGraphStore } from "./graph-store";
-import { useKymaContext } from "../provider/context";
+import { usePensieveContext } from "../provider/context";
 import { consumerColor } from "./consumer-style";
 import type { ConsumerBeam, LiveConsumer } from "./consumer-types";
 
@@ -62,7 +62,7 @@ export function ConsumerBeamsLayer({ sigma }: { sigma: Sigma | null }) {
   const consumers = useGraphStore((s) => s.liveConsumers);
   const hoveredConsumerId = useGraphStore((s) => s.hoveredConsumerId);
   const pinnedConsumerId = useGraphStore((s) => s.pinnedConsumerId);
-  const { isDark } = useKymaContext();
+  const { isDark } = usePensieveContext();
 
   // Live values for the animation loop, refreshed every render so the loop
   // never needs restarting when the data ticks.

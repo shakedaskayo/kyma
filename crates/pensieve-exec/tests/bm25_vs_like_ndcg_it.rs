@@ -23,16 +23,16 @@ use std::sync::Arc;
 use arrow_array::{Int64Array, RecordBatch, StringArray, TimestampNanosecondArray};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use futures::StreamExt;
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig, TableRef};
-use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarBuilder, SidecarKind};
-use kyma_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
-use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_core::types::TableId;
-use kyma_exec::bm25_topk;
-use kyma_format_tlm::TelemetryFormat;
-use kyma_index_fts::TantivyFtsBuilder;
-use kyma_storage::sidecar_cache::SidecarCache;
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig, TableRef};
+use pensieve_core::index_sidecar::{IndexSidecarDescriptor, SidecarBuilder, SidecarKind};
+use pensieve_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
+use pensieve_core::tenant::DEFAULT_TENANT;
+use pensieve_core::types::TableId;
+use pensieve_exec::bm25_topk;
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_index_fts::TantivyFtsBuilder;
+use pensieve_storage::sidecar_cache::SidecarCache;
 use object_store::path::Path as ObjPath;
 use object_store::{memory::InMemory, ObjectStore};
 
@@ -87,7 +87,7 @@ fn golden() -> Vec<(&'static str, i64)> {
 }
 
 /// Lowercase, split on non-alphanumeric, drop <2-char tokens, dedup — the same
-/// tokenization `kyma_memory::sql::tokenize_query` / the writer token-set use.
+/// tokenization `pensieve_memory::sql::tokenize_query` / the writer token-set use.
 fn tokenize(q: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for tok in q.split(|c: char| !c.is_alphanumeric()) {
@@ -257,7 +257,7 @@ async fn build_and_register_fts(
 #[tokio::test]
 async fn bm25_beats_like_ndcg_by_margin() {
     let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "kyma"));
+    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "pensieve"));
     let catalog = SqliteCatalog::connect_in_memory().await.unwrap();
     let db = catalog.create_database("default").await.unwrap();
     catalog
@@ -272,7 +272,7 @@ async fn bm25_beats_like_ndcg_by_margin() {
     build_and_register_fts(&catalog, &format, &store, tref.id, &tref, &manifest, "body").await;
 
     let cache_root = std::env::temp_dir().join(format!(
-        "kyma-ndcg-it-{}-{}",
+        "pensieve-ndcg-it-{}-{}",
         std::process::id(),
         uuid::Uuid::new_v4()
     ));

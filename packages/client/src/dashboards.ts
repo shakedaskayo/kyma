@@ -1,4 +1,4 @@
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import { errorFromResponse } from "./errors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -53,19 +53,19 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
 // ── API functions ─────────────────────────────────────────────────────────────
 
-export async function listDashboards(t: KymaTransport): Promise<Dashboard[]> {
+export async function listDashboards(t: PensieveTransport): Promise<Dashboard[]> {
   return handleResponse<Dashboard[]>(await t.request("/v1/dashboards"));
 }
 
 export async function getDashboard(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { id: string },
 ): Promise<DashboardWithPanels> {
   return handleResponse<DashboardWithPanels>(await t.request(`/v1/dashboards/${args.id}`));
 }
 
 export async function createDashboard(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { body: CreateDashboardBody },
 ): Promise<DashboardWithPanels> {
   return handleResponse<DashboardWithPanels>(
@@ -78,7 +78,7 @@ export async function createDashboard(
 }
 
 export async function updateDashboard(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { id: string; patch: DashboardUpdate },
 ): Promise<DashboardWithPanels> {
   return handleResponse<DashboardWithPanels>(
@@ -90,7 +90,7 @@ export async function updateDashboard(
   );
 }
 
-export async function deleteDashboard(t: KymaTransport, args: { id: string }): Promise<void> {
+export async function deleteDashboard(t: PensieveTransport, args: { id: string }): Promise<void> {
   const res = await t.request(`/v1/dashboards/${args.id}`, { method: "DELETE" });
   if (!res.ok) throw await errorFromResponse(res);
 }

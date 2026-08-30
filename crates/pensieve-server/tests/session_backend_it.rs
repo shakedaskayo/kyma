@@ -1,17 +1,17 @@
 //! Integration tests for [`SessionAuthBackend`].
 //!
-//! Requires `--features kyma-server/test-support`.
+//! Requires `--features pensieve-server/test-support`.
 //! Covers: env-token path, db-session-token path, unknown token.
 
 #![cfg(feature = "test-support")]
 
-use kyma_server::auth::{
+use pensieve_server::auth::{
     hash_token, AuthBackend, AuthError, EnvAuthBackend, Role, SessionAuthBackend,
 };
 
 #[tokio::test]
 async fn env_token_authenticates_and_returns_write_role() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let backend = SessionAuthBackend::new(
         state.catalog.clone(),
         EnvAuthBackend::from_str("tok:write"),
@@ -25,7 +25,7 @@ async fn env_token_authenticates_and_returns_write_role() {
 
 #[tokio::test]
 async fn db_session_token_authenticates() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let cat = &state.catalog;
 
     // Insert a session token directly.
@@ -50,7 +50,7 @@ async fn db_session_token_authenticates() {
 
 #[tokio::test]
 async fn unknown_token_returns_unknown_token_error() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let backend = SessionAuthBackend::new(
         state.catalog.clone(),
         EnvAuthBackend::from_str(""),
@@ -66,7 +66,7 @@ async fn unknown_token_returns_unknown_token_error() {
 
 #[tokio::test]
 async fn disabled_when_no_users_and_no_env_tokens() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let backend = SessionAuthBackend::new(
         state.catalog.clone(),
         EnvAuthBackend::from_str(""),
@@ -78,7 +78,7 @@ async fn disabled_when_no_users_and_no_env_tokens() {
 #[tokio::test]
 async fn env_token_takes_priority_over_db_lookup() {
     // The env token must match before we even attempt a DB lookup.
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let backend = SessionAuthBackend::new(
         state.catalog.clone(),
         EnvAuthBackend::from_str("fast-tok:read"),

@@ -1,4 +1,4 @@
-//! ADK-Rust `Runner` wiring for the kyma inline data-assistant.
+//! ADK-Rust `Runner` wiring for the pensieve inline data-assistant.
 //!
 //! Builds a fresh agent backed by the configured engine (Ollama, Anthropic, or
 //! OpenAI) with the inline tools from [`super::tools`] and returns a [`Runner`]
@@ -30,12 +30,12 @@ use super::tools::{
 
 /// Application name advertised to the session service. Stable so that
 /// session ids hash consistently across turns (once we add session reuse).
-pub const APP_NAME: &str = "kyma-agent";
+pub const APP_NAME: &str = "pensieve-agent";
 
 /// Stable agent name. The runner filters conversation history by author, so
 /// seeded assistant turns must use this exact name to be replayed (see
 /// [`make_runner`]).
-pub const AGENT_NAME: &str = "kyma-assistant";
+pub const AGENT_NAME: &str = "pensieve-assistant";
 
 /// User id used when the endpoint is hit without an authenticated subject.
 /// Matches the stub `auth_subject` column written into `agent_runs`.
@@ -46,7 +46,7 @@ pub const DEFAULT_MODEL: &str = "gemma4:latest";
 /// Default Ollama server URL (matches the host's running daemon).
 pub const DEFAULT_OLLAMA_HOST: &str = "http://localhost:11434";
 
-const SYSTEM_PROMPT: &str = r#"You are kyma's data assistant. Users ask questions in English; you answer them by using the tools.
+const SYSTEM_PROMPT: &str = r#"You are pensieve's data assistant. Users ask questions in English; you answer them by using the tools.
 
 KQL IS THE PRIMARY QUERY LANGUAGE — prefer `run_kql` over `run_sql`.
 
@@ -147,7 +147,7 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
                 tenant: state.tenant,
             }) as crate::agent::tools::ConsumerSink
         }),
-        federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+        federation: Some(pensieve_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
@@ -158,7 +158,7 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
 
     let agent = LlmAgentBuilder::new(AGENT_NAME)
         .description(
-            "Kyma inline data assistant — answers English questions about the user's data.",
+            "Pensieve inline data assistant — answers English questions about the user's data.",
         )
         .instruction(compose_system_prompt(state).await)
         .model(llm)
@@ -366,7 +366,7 @@ pub async fn summarize_conversation(
 ) -> anyhow::Result<String> {
     run_oneshot(
         state,
-        "kyma-summarizer",
+        "pensieve-summarizer",
         "Summarizes prior conversation for context compression.",
         "You compress conversations. Given a transcript, return a concise summary (3-6 \
          sentences) that preserves durable facts, decisions, and the user's intent. \

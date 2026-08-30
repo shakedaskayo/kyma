@@ -1,26 +1,26 @@
 //! Disk LRU cache for immutable index-sidecar objects.
 //!
 //! Sidecars (ANN / FTS blobs built per extent — see
-//! `kyma_core::index_sidecar`) are immutable: a given
+//! `pensieve_core::index_sidecar`) are immutable: a given
 //! `(extent, column, kind, model)` key always names the same bytes, so the
 //! cache never needs invalidation — only byte-capped LRU eviction.
 //!
 //! Layout: one file per sidecar under
-//! `${KYMA_CACHE_DIR:-~/.kyma/cache}/indexes`, named from the cache key
+//! `${PENSIEVE_CACHE_DIR:-~/.pensieve/cache}/indexes`, named from the cache key
 //! (extent id + a short hash of column/kind/model). Writes go through a
 //! temp file + atomic rename, so concurrent fetchers of the same key are
 //! safe (last rename wins; both see complete bytes). LRU recency is the
 //! file's mtime, refreshed on every cache hit.
 //!
-//! Capacity: `KYMA_SIDECAR_CACHE_MAX_BYTES` (default 2 GiB). Eviction may
+//! Capacity: `PENSIEVE_SIDECAR_CACHE_MAX_BYTES` (default 2 GiB). Eviction may
 //! remove a file another reader still holds a `PathBuf` to — on Unix an
 //! already-open fd keeps working; a reader re-opening by path should treat
 //! `NotFound` as a cache miss and call [`SidecarCache::get_or_fetch`] again.
 
 use crate::sha256_hex;
-use kyma_core::errors::{Result, StorageError};
-use kyma_core::index_sidecar::SidecarKind;
-use kyma_core::types::ExtentId;
+use pensieve_core::errors::{Result, StorageError};
+use pensieve_core::index_sidecar::SidecarKind;
+use pensieve_core::types::ExtentId;
 use object_store::path::Path as ObjPath;
 use object_store::ObjectStore;
 use std::path::{Path, PathBuf};
@@ -73,14 +73,14 @@ impl SidecarCache {
         }
     }
 
-    /// Build from the environment: `${KYMA_CACHE_DIR:-~/.kyma/cache}/indexes`,
-    /// capped by `KYMA_SIDECAR_CACHE_MAX_BYTES` (default 2 GiB).
+    /// Build from the environment: `${PENSIEVE_CACHE_DIR:-~/.pensieve/cache}/indexes`,
+    /// capped by `PENSIEVE_SIDECAR_CACHE_MAX_BYTES` (default 2 GiB).
     pub fn from_env() -> Self {
-        let base = std::env::var("KYMA_CACHE_DIR").unwrap_or_else(|_| {
+        let base = std::env::var("PENSIEVE_CACHE_DIR").unwrap_or_else(|_| {
             let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-            format!("{home}/.kyma/cache")
+            format!("{home}/.pensieve/cache")
         });
-        let max_bytes = std::env::var("KYMA_SIDECAR_CACHE_MAX_BYTES")
+        let max_bytes = std::env::var("PENSIEVE_SIDECAR_CACHE_MAX_BYTES")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(DEFAULT_MAX_BYTES);
@@ -208,7 +208,7 @@ mod tests {
 
     fn temp_root(tag: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
-            "kyma-sidecar-cache-{tag}-{}-{}",
+            "pensieve-sidecar-cache-{tag}-{}-{}",
             std::process::id(),
             uuid::Uuid::new_v4()
         ))

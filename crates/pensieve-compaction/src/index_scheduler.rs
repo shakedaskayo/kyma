@@ -1,6 +1,6 @@
 //! Index-build activation scheduler.
 //!
-//! The per-extent ANN sidecars ([`kyma_index_vector`]) are built by the async
+//! The per-extent ANN sidecars ([`pensieve_index_vector`]) are built by the async
 //! `index_build` fabric job, but something has to *enqueue* those jobs.
 //! Compaction only propagates sidecars that already existed on the inputs — so
 //! without this scheduler a vector column would never get its first sidecar
@@ -13,7 +13,7 @@
 //! harmless — it just no-ops. Coverage therefore converges monotonically.
 //!
 //! Enqueue targets either the Postgres fabric queue (server) or the local
-//! SQLite `jobs` table (embedded mode) through the [`kyma_core::fabric::JobEnqueuer`]
+//! SQLite `jobs` table (embedded mode) through the [`pensieve_core::fabric::JobEnqueuer`]
 //! abstraction: [`IndexScheduler::new`] resolves the Postgres queue by downcast,
 //! and [`IndexScheduler::with_enqueuer`] takes an explicit enqueuer for local
 //! mode. A scheduler with no enqueuer is idle.
@@ -22,23 +22,23 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use arrow_schema::DataType;
-use kyma_core::catalog::{Catalog, TableRef};
-use kyma_core::errors::{Error, Result};
-use kyma_core::index_sidecar::SidecarKind;
-use kyma_core::tenant::TenantId;
-use kyma_core::DEFAULT_TENANT;
+use pensieve_core::catalog::{Catalog, TableRef};
+use pensieve_core::errors::{Error, Result};
+use pensieve_core::index_sidecar::SidecarKind;
+use pensieve_core::tenant::TenantId;
+use pensieve_core::DEFAULT_TENANT;
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
 /// Periodically enqueues `index_build` / `embed_backfill` jobs for un-indexed
 /// vector + text columns. The enqueue target is abstracted
-/// ([`kyma_core::fabric::JobEnqueuer`]) so the same scan logic runs against the
+/// ([`pensieve_core::fabric::JobEnqueuer`]) so the same scan logic runs against the
 /// Postgres fabric queue (server) or the local SQLite `jobs` table (embedded).
 pub struct IndexScheduler {
     catalog: Arc<dyn Catalog>,
     /// Where build jobs are enqueued. `None` when the catalog has no fabric
     /// queue (`new` over a non-Postgres catalog) — `tick` is then idle.
-    enqueuer: Option<Arc<dyn kyma_core::fabric::JobEnqueuer>>,
+    enqueuer: Option<Arc<dyn pensieve_core::fabric::JobEnqueuer>>,
     /// Whether to enqueue `ann_maintain` (global centroid tree, S1.3). True in
     /// server mode (`new`); false in local mode (`with_enqueuer`) — local keeps
     /// per-extent ANN and never builds a global tree.
@@ -52,7 +52,7 @@ pub struct IndexScheduler {
 impl IndexScheduler {
     fn default_poll_interval() -> Duration {
         Duration::from_secs(
-            std::env::var("KYMA_INDEX_SCHED_POLL_SECS")
+            std::env::var("PENSIEVE_INDEX_SCHED_POLL_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(60),
@@ -63,12 +63,12 @@ impl IndexScheduler {
     /// a non-Postgres catalog the scheduler is idle (local mode uses
     /// [`IndexScheduler::with_enqueuer`] + a SQLite enqueuer instead).
     pub fn new(catalog: Arc<dyn Catalog>) -> Self {
-        let enqueuer: Option<Arc<dyn kyma_core::fabric::JobEnqueuer>> = catalog
+        let enqueuer: Option<Arc<dyn pensieve_core::fabric::JobEnqueuer>> = catalog
             .as_ref_any()
-            .downcast_ref::<kyma_catalog::PostgresCatalog>()
+            .downcast_ref::<pensieve_catalog::PostgresCatalog>()
             .map(|pg| {
-                Arc::new(kyma_catalog::PgFabricStore::new(pg.pool().clone()))
-                    as Arc<dyn kyma_core::fabric::JobEnqueuer>
+                Arc::new(pensieve_catalog::PgFabricStore::new(pg.pool().clone()))
+                    as Arc<dyn pensieve_core::fabric::JobEnqueuer>
             });
         Self {
             catalog,
@@ -84,7 +84,7 @@ impl IndexScheduler {
     /// Local mode keeps per-extent ANN and does not build a global tree.
     pub fn with_enqueuer(
         catalog: Arc<dyn Catalog>,
-        enqueuer: Arc<dyn kyma_core::fabric::JobEnqueuer>,
+        enqueuer: Arc<dyn pensieve_core::fabric::JobEnqueuer>,
     ) -> Self {
         Self {
             catalog,
@@ -118,7 +118,7 @@ impl IndexScheduler {
             debug!("no fabric enqueuer: index scheduler idle");
             return Ok(0);
         };
-        let fabric: &dyn kyma_core::fabric::JobEnqueuer = enqueuer.as_ref();
+        let fabric: &dyn pensieve_core::fabric::JobEnqueuer = enqueuer.as_ref();
 
         let mut enqueued = 0usize;
         let databases = self
@@ -209,7 +209,7 @@ impl IndexScheduler {
     /// fingerprint matches and nothing is enqueued until the set changes again.
     async fn enqueue_ann_maintain_stale(
         &self,
-        fabric: &dyn kyma_core::fabric::JobEnqueuer,
+        fabric: &dyn pensieve_core::fabric::JobEnqueuer,
         tenant: TenantId,
         table: &TableRef,
     ) -> Result<usize> {
@@ -241,7 +241,7 @@ impl IndexScheduler {
         }
         let mut jobs = 0usize;
         for ((column, model), ids) in groups {
-            let fp = kyma_index_vector::global_tree::extent_fingerprint(&ids);
+            let fp = pensieve_index_vector::global_tree::extent_fingerprint(&ids);
             let fresh = self
                 .catalog
                 .get_ann_tree(tenant, table.id, &column, model.as_deref())
@@ -253,8 +253,8 @@ impl IndexScheduler {
             if fresh {
                 continue;
             }
-            let job = kyma_core::fabric::EnqueueJob {
-                kind: kyma_core::fabric::JOB_ANN_MAINTAIN.to_string(),
+            let job = pensieve_core::fabric::EnqueueJob {
+                kind: pensieve_core::fabric::JOB_ANN_MAINTAIN.to_string(),
                 payload: serde_json::json!({
                     "table_id": table.id.as_uuid(),
                     "column": column,
@@ -283,10 +283,10 @@ impl IndexScheduler {
     /// embed_backfill is about to rewrite (which would discard it).
     async fn enqueue_fts_missing(
         &self,
-        fabric: &dyn kyma_core::fabric::JobEnqueuer,
+        fabric: &dyn pensieve_core::fabric::JobEnqueuer,
         tenant: TenantId,
         table: &TableRef,
-        cfg: &kyma_core::catalog::TableEmbedConfig,
+        cfg: &pensieve_core::catalog::TableEmbedConfig,
     ) -> Result<usize> {
         let extents = self
             .catalog
@@ -332,8 +332,8 @@ impl IndexScheduler {
                 "kind": SidecarKind::TantivyFts.as_str(),
                 "params": {},
             });
-            let job = kyma_core::fabric::EnqueueJob {
-                kind: kyma_core::fabric::JOB_INDEX_BUILD.to_string(),
+            let job = pensieve_core::fabric::EnqueueJob {
+                kind: pensieve_core::fabric::JOB_INDEX_BUILD.to_string(),
                 payload,
                 priority: 0,
                 affinity_worker_id: None,
@@ -360,10 +360,10 @@ impl IndexScheduler {
     /// stats appear, so it is not re-enqueued.
     async fn enqueue_embed_missing(
         &self,
-        fabric: &dyn kyma_core::fabric::JobEnqueuer,
+        fabric: &dyn pensieve_core::fabric::JobEnqueuer,
         tenant: TenantId,
         table: &TableRef,
-        cfg: &kyma_core::catalog::TableEmbedConfig,
+        cfg: &pensieve_core::catalog::TableEmbedConfig,
     ) -> Result<usize> {
         let extents = self
             .catalog
@@ -398,8 +398,8 @@ impl IndexScheduler {
                 "embedding_column": cfg.embedding_column,
                 "model_id": cfg.model_id,
             });
-            let job = kyma_core::fabric::EnqueueJob {
-                kind: kyma_core::fabric::JOB_EMBED_BACKFILL.to_string(),
+            let job = pensieve_core::fabric::EnqueueJob {
+                kind: pensieve_core::fabric::JOB_EMBED_BACKFILL.to_string(),
                 payload,
                 priority: 0,
                 affinity_worker_id: None,
@@ -422,7 +422,7 @@ impl IndexScheduler {
     /// that lacks an `ivf_rabitq` sidecar. Returns the number of jobs enqueued.
     async fn enqueue_missing(
         &self,
-        fabric: &dyn kyma_core::fabric::JobEnqueuer,
+        fabric: &dyn pensieve_core::fabric::JobEnqueuer,
         tenant: TenantId,
         table: &TableRef,
         column: &str,
@@ -488,8 +488,8 @@ impl IndexScheduler {
                 "kind": SidecarKind::IvfRabitq.as_str(),
                 "params": {},
             });
-            let job = kyma_core::fabric::EnqueueJob {
-                kind: kyma_core::fabric::JOB_INDEX_BUILD.to_string(),
+            let job = pensieve_core::fabric::EnqueueJob {
+                kind: pensieve_core::fabric::JOB_INDEX_BUILD.to_string(),
                 payload,
                 priority: 0,
                 affinity_worker_id: None,

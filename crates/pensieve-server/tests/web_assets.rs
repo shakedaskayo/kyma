@@ -7,7 +7,7 @@ use tower::ServiceExt; // for .oneshot
 
 #[tokio::test]
 async fn serves_index_at_root() {
-    let app = kyma_server::web_ui::router();
+    let app = pensieve_server::web_ui::router();
     let req = Request::builder().uri("/").body(Body::empty()).unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -17,7 +17,7 @@ async fn serves_index_at_root() {
 
 #[tokio::test]
 async fn spa_fallback_to_index_for_unknown_path() {
-    let app = kyma_server::web_ui::router();
+    let app = pensieve_server::web_ui::router();
     let req = Request::builder()
         .uri("/some/client-route")
         .body(Body::empty())
@@ -30,9 +30,9 @@ async fn spa_fallback_to_index_for_unknown_path() {
 
 #[tokio::test]
 async fn hashed_asset_is_cache_immutable() {
-    let app = kyma_server::web_ui::router();
+    let app = pensieve_server::web_ui::router();
     // Discover a real asset at runtime so the test isn't hash-coupled.
-    let asset_path = kyma_web_assets::DIST
+    let asset_path = pensieve_web_assets::DIST
         .get_dir("assets")
         .expect("web/dist/assets/ missing — did you run `pnpm -C web build`?")
         .files()
@@ -55,7 +55,7 @@ async fn hashed_asset_is_cache_immutable() {
 
 #[tokio::test]
 async fn index_is_no_cache() {
-    let app = kyma_server::web_ui::router();
+    let app = pensieve_server::web_ui::router();
     let req = Request::builder().uri("/").body(Body::empty()).unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.headers().get("cache-control").unwrap(), "no-cache");

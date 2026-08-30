@@ -20,7 +20,7 @@ provider "aws" {
   region = var.aws_region
   default_tags {
     tags = {
-      Project   = "kyma-cloud"
+      Project   = "pensieve-cloud"
       Env       = "bootstrap"
       ManagedBy = "terraform"
     }

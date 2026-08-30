@@ -1,4 +1,4 @@
-//! `kyma scrape <path>` (one-shot recursive) + `kyma watch <path>` (foreground)
+//! `pensieve scrape <path>` (one-shot recursive) + `pensieve watch <path>` (foreground)
 //! — local-filesystem ingest. Both walk the filesystem and POST each text file
 //! to `/v1/agent/files/contribute`, which parses it into the candidate file
 //! graph (E5); the dreaming promoter (E6) then stitches files belonging to a
@@ -81,7 +81,7 @@ async fn contribute_one(cfg: &ClientConfig, root: &Path, p: &Path, args: &Scrape
         "realm": args.realm,
         "repo": args.repo,
         "content": content,
-        "why_read": format!("kyma scrape: {}", p.display()),
+        "why_read": format!("pensieve scrape: {}", p.display()),
     });
     match post_json(cfg, "/v1/agent/files/contribute", body).await {
         Ok(v) => Some(v.get("symbols").and_then(|s| s.as_u64()).unwrap_or(0)),

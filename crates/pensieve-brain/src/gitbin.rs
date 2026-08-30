@@ -1,5 +1,5 @@
 //! Thin async wrapper around the `git` binary — the only git implementation
-//! kyma uses (gitoxide has no server side; stateless-rpc + fast-import via
+//! pensieve uses (gitoxide has no server side; stateless-rpc + fast-import via
 //! the battle-tested binary is the GitLab/gitea pattern).
 //!
 //! Every invocation gets a scrubbed environment, a wall-clock timeout, and
@@ -47,10 +47,10 @@ pub struct GitBin {
 }
 
 impl GitBin {
-    /// Locate `git` (honors `KYMA_GIT_BIN`) and verify it runs. `None` when
+    /// Locate `git` (honors `PENSIEVE_GIT_BIN`) and verify it runs. `None` when
     /// missing — the brain feature degrades gracefully.
     pub async fn detect() -> Option<Self> {
-        let program = std::env::var("KYMA_GIT_BIN").map_or_else(|_| PathBuf::from("git"), PathBuf::from);
+        let program = std::env::var("PENSIEVE_GIT_BIN").map_or_else(|_| PathBuf::from("git"), PathBuf::from);
         let bin = Self { program };
         match bin.run(Path::new("."), &["version"], PLUMBING_TIMEOUT).await {
             Ok(v) => {
@@ -335,7 +335,7 @@ impl GitBin {
         push(&mut stream, &format!("commit {refname}\n"));
         push(
             &mut stream,
-            &format!("committer kyma-brain <brain@kyma.local> {author_date_unix} +0000\n"),
+            &format!("committer pensieve-brain <brain@pensieve.local> {author_date_unix} +0000\n"),
         );
         push(&mut stream, &format!("data {}\n{message}\n", message.len() + 1));
         if let Some(p) = parent {

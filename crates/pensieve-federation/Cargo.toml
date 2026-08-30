@@ -1,6 +1,6 @@
 [package]
-name = "kyma-federation"
-description = "Federated (live-proxied) external data sources for kyma — remote subplan pushdown over DataFusion"
+name = "pensieve-federation"
+description = "Federated (live-proxied) external data sources for pensieve — remote subplan pushdown over DataFusion"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,7 +12,7 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
-kyma-core = { workspace = true }
+pensieve-core = { workspace = true }
 
 datafusion = { workspace = true }
 datafusion-federation = { workspace = true }

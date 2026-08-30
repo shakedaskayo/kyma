@@ -1,19 +1,19 @@
-//! Local-engine library backing the **`kyma`** CLI's `mcp` / `serve` / `setup` /
+//! Local-engine library backing the **`pensieve`** CLI's `mcp` / `serve` / `setup` /
 //! `sync` commands — the single-binary context engine for local machines.
 //!
 //! Zero infra: an embedded **SQLite catalog** + a **local-filesystem object
-//! store** + the in-process columnar engine. The `kyma` CLI exposes:
+//! store** + the in-process columnar engine. The `pensieve` CLI exposes:
 //!
-//!   - `kyma mcp`   — serve the Model Context Protocol over **stdio** (what a
+//!   - `pensieve mcp`   — serve the Model Context Protocol over **stdio** (what a
 //!     coding agent spawns): durable graph-aware **memory** *and* live data/graph.
-//!   - `kyma serve` — serve the **same web interface** + HTTP API the hosted
+//!   - `pensieve serve` — serve the **same web interface** + HTTP API the hosted
 //!     server runs (query/KQL/SQL, catalog, graph, ingest, MCP over HTTP) on a
 //!     local port, zero-auth.
-//!   - `kyma setup <agent>` — wire a coding agent to `kyma mcp` in one command.
-//!   - `kyma sync` — sync memory bidirectionally with a control plane.
+//!   - `pensieve setup <agent>` — wire a coding agent to `pensieve mcp` in one command.
+//!   - `pensieve sync` — sync memory bidirectionally with a control plane.
 //!
-//! Data lives under `~/.kyma` (override with `KYMA_HOME` / `KYMA_LOCAL_DB` /
-//! `KYMA_LOCAL_DATA`): `catalog.db` (metadata + memory graph) and `data/`
+//! Data lives under `~/.pensieve` (override with `PENSIEVE_HOME` / `PENSIEVE_LOCAL_DB` /
+//! `PENSIEVE_LOCAL_DATA`): `catalog.db` (metadata + memory graph) and `data/`
 //! (columnar extents). For `mcp`, **stdout is the protocol channel** — logs go
 //! to stderr.
 
@@ -59,39 +59,39 @@ use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 
 use anyhow::{Context, Result};
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_core::catalog::Catalog;
-use kyma_core::credentials::CredentialStore;
-use kyma_core::crypto::Crypto;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_datasources::admin::AdminState as DataSourceAdminState;
-use kyma_datasources::catalog_trait::DataSourceCatalog;
-use kyma_datasources::registry::DataSourceRegistry;
-use kyma_datasources::runner::{DataSourceTickDeps, GraphRegisterFn, RowSink};
-use kyma_datasources::scheduler::DataSourceScheduler;
-use kyma_datasources::secrets::EnvSecretStore;
-use kyma_format_tlm::TelemetryFormat;
-use kyma_ingest_core::events::IngestEvents;
-use kyma_ingest_core::WritePath;
-use kyma_ingest_otlp::self_export::{SelfTraceCtx, SelfTraceExporter};
-use kyma_ingest_rest::IngestState;
-use kyma_mcp::{serve_stdio, McpState, ServerInfo, ToolDispatch};
-use kyma_server::agent::local::{
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::credentials::CredentialStore;
+use pensieve_core::crypto::Crypto;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_datasources::admin::AdminState as DataSourceAdminState;
+use pensieve_datasources::catalog_trait::DataSourceCatalog;
+use pensieve_datasources::registry::DataSourceRegistry;
+use pensieve_datasources::runner::{DataSourceTickDeps, GraphRegisterFn, RowSink};
+use pensieve_datasources::scheduler::DataSourceScheduler;
+use pensieve_datasources::secrets::EnvSecretStore;
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_ingest_core::events::IngestEvents;
+use pensieve_ingest_core::WritePath;
+use pensieve_ingest_otlp::self_export::{SelfTraceCtx, SelfTraceExporter};
+use pensieve_ingest_rest::IngestState;
+use pensieve_mcp::{serve_stdio, McpState, ServerInfo, ToolDispatch};
+use pensieve_server::agent::local::{
     FileEnabledSkillsStore, FileEnginePreferenceStore, NullCredentialStore,
 };
-use kyma_server::agent::{
+use pensieve_server::agent::{
     AgentState, ConsumerPublisher, ConsumerSink, LocalConsumerPublisher, SharedToolCtx,
 };
-use kyma_server::auth::{
+use pensieve_server::auth::{
     require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role, SessionAuthBackend,
 };
-use kyma_server::catalog_handler::SchemaCache;
-use kyma_server::QueryState;
-use kyma_storage::{build_object_store, StorageConfig};
+use pensieve_server::catalog_handler::SchemaCache;
+use pensieve_server::QueryState;
+use pensieve_storage::{build_object_store, StorageConfig};
 use tracing::{info, warn};
 
-/// Set up the tracing subscriber for `kyma serve` — includes the fmt layer
-/// AND a `tracing_opentelemetry` layer that routes `kyma_telemetry`-target
+/// Set up the tracing subscriber for `pensieve serve` — includes the fmt layer
+/// AND a `tracing_opentelemetry` layer that routes `pensieve_telemetry`-target
 /// spans to the in-process self-trace exporter.
 ///
 /// Returns the handle for wiring the exporter to storage once the catalog
@@ -107,12 +107,12 @@ pub fn setup_serve_tracing() -> Arc<OnceLock<SelfTraceCtx>> {
     let tp = opentelemetry_sdk::trace::TracerProvider::builder()
         .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
         .build();
-    let tracer = tp.tracer("kyma-local");
+    let tracer = tp.tracer("pensieve-local");
     let otel_layer = tracing_opentelemetry::layer()
         .with_tracer(tracer)
         .with_filter(
             tracing_subscriber::filter::Targets::new()
-                .with_target("kyma_telemetry", tracing::Level::INFO),
+                .with_target("pensieve_telemetry", tracing::Level::INFO),
         );
     use tracing_subscriber::prelude::*;
     let _ = tracing_subscriber::registry()
@@ -138,13 +138,13 @@ struct Paths {
 }
 
 fn resolve_paths() -> Paths {
-    let home = std::env::var("KYMA_HOME").unwrap_or_else(|_| {
+    let home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| {
         let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        format!("{base}/.kyma")
+        format!("{base}/.pensieve")
     });
     let catalog_db =
-        std::env::var("KYMA_LOCAL_DB").unwrap_or_else(|_| format!("{home}/catalog.db"));
-    let data_root = std::env::var("KYMA_LOCAL_DATA").unwrap_or_else(|_| format!("{home}/data"));
+        std::env::var("PENSIEVE_LOCAL_DB").unwrap_or_else(|_| format!("{home}/catalog.db"));
+    let data_root = std::env::var("PENSIEVE_LOCAL_DATA").unwrap_or_else(|_| format!("{home}/data"));
     Paths {
         catalog_db,
         data_root,
@@ -180,20 +180,20 @@ async fn open_engine(paths: &Paths) -> Result<Engine> {
     })
     .context("building local object store")?;
     // S2.1: per-extent format dispatch (TLM + Parquet readers). Local writes use
-    // KYMA_WRITE_FORMAT (default "tlm"); both formats stay readable so a local
+    // PENSIEVE_WRITE_FORMAT (default "tlm"); both formats stay readable so a local
     // store can mix them.
     let tlm_fmt: Arc<dyn SegmentFormat> =
-        Arc::new(TelemetryFormat::new(store.clone(), "kyma-local"));
+        Arc::new(TelemetryFormat::new(store.clone(), "pensieve-local"));
     let parquet_fmt: Arc<dyn SegmentFormat> =
-        Arc::new(kyma_format_parquet::ParquetFormat::new(store, "kyma-local"));
+        Arc::new(pensieve_format_parquet::ParquetFormat::new(store, "pensieve-local"));
     let format: Arc<dyn SegmentFormat> =
-        if std::env::var("KYMA_WRITE_FORMAT").as_deref() == Ok("parquet") {
-            Arc::new(kyma_core::segment_format::FormatRegistry::new(
+        if std::env::var("PENSIEVE_WRITE_FORMAT").as_deref() == Ok("parquet") {
+            Arc::new(pensieve_core::segment_format::FormatRegistry::new(
                 parquet_fmt,
                 vec![tlm_fmt],
             ))
         } else {
-            Arc::new(kyma_core::segment_format::FormatRegistry::new(
+            Arc::new(pensieve_core::segment_format::FormatRegistry::new(
                 tlm_fmt,
                 vec![parquet_fmt],
             ))
@@ -207,8 +207,8 @@ async fn open_engine(paths: &Paths) -> Result<Engine> {
     })
 }
 
-/// Forwards consumer activity to a running `kyma serve` over HTTP. Used by the
-/// standalone `kyma mcp` (stdio) process, which has no access to the serve's
+/// Forwards consumer activity to a running `pensieve serve` over HTTP. Used by the
+/// standalone `pensieve mcp` (stdio) process, which has no access to the serve's
 /// in-process bus, so the agent driving it still shows in the live overlay.
 /// Best-effort + fire-and-forget; with no serve up the POST just fails silently.
 struct RemoteConsumerPublisher {
@@ -218,10 +218,10 @@ struct RemoteConsumerPublisher {
 }
 
 impl ConsumerPublisher for RemoteConsumerPublisher {
-    fn tenant(&self) -> kyma_core::tenant::TenantId {
-        kyma_core::tenant::DEFAULT_TENANT
+    fn tenant(&self) -> pensieve_core::tenant::TenantId {
+        pensieve_core::tenant::DEFAULT_TENANT
     }
-    fn publish(&self, activity: kyma_ingest_core::ConsumerActivity) {
+    fn publish(&self, activity: pensieve_ingest_core::ConsumerActivity) {
         let url = format!("{}/v1/consumers/emit", self.endpoint.trim_end_matches('/'));
         let token = self.token.clone();
         let client = self.client.clone();
@@ -239,13 +239,13 @@ impl ConsumerPublisher for RemoteConsumerPublisher {
     }
 }
 
-/// Build a forwarder to a running serve from `${KYMA_HOME}/config.json`, if it
-/// exists with an endpoint + token. `None` ⇒ `kyma mcp` runs standalone (no
+/// Build a forwarder to a running serve from `${PENSIEVE_HOME}/config.json`, if it
+/// exists with an endpoint + token. `None` ⇒ `pensieve mcp` runs standalone (no
 /// overlay forwarding), exactly as before.
 fn remote_consumer_sink() -> Option<ConsumerSink> {
-    let home = std::env::var("KYMA_HOME")
+    let home = std::env::var("PENSIEVE_HOME")
         .ok()
-        .or_else(|| std::env::var("HOME").ok().map(|h| format!("{h}/.kyma")))?;
+        .or_else(|| std::env::var("HOME").ok().map(|h| format!("{h}/.pensieve")))?;
     let raw = std::fs::read_to_string(format!("{home}/config.json")).ok()?;
     let cfg: serde_json::Value = serde_json::from_str(&raw).ok()?;
     let endpoint = cfg.get("endpoint")?.as_str()?.trim().to_string();
@@ -260,7 +260,7 @@ fn remote_consumer_sink() -> Option<ConsumerSink> {
     }))
 }
 
-fn mcp_state(engine: &Engine, memory: Option<kyma_memory::MemoryQueue>) -> McpState {
+fn mcp_state(engine: &Engine, memory: Option<pensieve_memory::MemoryQueue>) -> McpState {
     // No Postgres pool in local mode — recall/save run over the engine.
     let shared = SharedToolCtx {
         realm_scope: Default::default(),
@@ -278,7 +278,7 @@ fn mcp_state(engine: &Engine, memory: Option<kyma_memory::MemoryQueue>) -> McpSt
         dispatch: ToolDispatch::new(shared),
         builder: None,
         server_info: ServerInfo {
-            name: "kyma".into(),
+            name: "pensieve".into(),
             version: env!("CARGO_PKG_VERSION").into(),
         },
     }
@@ -287,7 +287,7 @@ fn mcp_state(engine: &Engine, memory: Option<kyma_memory::MemoryQueue>) -> McpSt
 /// A running async memory ingest queue: the submit/barrier handle, the worker
 /// task, and the trigger that tells the worker to drain + stop.
 struct LocalMemoryQueue {
-    queue: kyma_memory::MemoryQueue,
+    queue: pensieve_memory::MemoryQueue,
     worker: tokio::task::JoinHandle<()>,
     stop: tokio::sync::oneshot::Sender<()>,
 }
@@ -306,28 +306,28 @@ impl LocalMemoryQueue {
 }
 
 /// Spawn the async memory ingest worker over the local engine. Returns `None`
-/// (synchronous memory writes) when `KYMA_MEMORY_ASYNC=0` or the embedding
+/// (synchronous memory writes) when `PENSIEVE_MEMORY_ASYNC=0` or the embedding
 /// backend cannot be built. Local default: in-memory queue tier — crash loss
 /// window is bounded by the flush linger; durable opt-in via
-/// `KYMA_MEMORY_QUEUE_DURABLE=1` (persists pending saves to the catalog).
+/// `PENSIEVE_MEMORY_QUEUE_DURABLE=1` (persists pending saves to the catalog).
 async fn spawn_local_memory_queue(engine: &Engine) -> Option<LocalMemoryQueue> {
-    let disabled = std::env::var("KYMA_MEMORY_ASYNC")
+    let disabled = std::env::var("PENSIEVE_MEMORY_ASYNC")
         .map(|v| v == "0" || v.eq_ignore_ascii_case("false"))
         .unwrap_or(false);
     if disabled {
-        info!("KYMA_MEMORY_ASYNC=0 — memory writes are synchronous");
+        info!("PENSIEVE_MEMORY_ASYNC=0 — memory writes are synchronous");
         return None;
     }
-    let embed = match kyma_memory::shared_embedding().await {
+    let embed = match pensieve_memory::shared_embedding().await {
         Ok(e) => e,
         Err(e) => {
             warn!(error = %e, "embedding backend unavailable; memory writes stay synchronous");
             return None;
         }
     };
-    let cfg = kyma_memory::MemoryIngestConfig::from_env(false);
+    let cfg = pensieve_memory::MemoryIngestConfig::from_env(false);
     let (stop, stop_rx) = tokio::sync::oneshot::channel::<()>();
-    let (queue, worker) = kyma_memory::spawn_memory_queue(
+    let (queue, worker) = pensieve_memory::spawn_memory_queue(
         engine.catalog.clone(),
         engine.format.clone(),
         embed,
@@ -344,17 +344,17 @@ async fn spawn_local_memory_queue(engine: &Engine) -> Option<LocalMemoryQueue> {
     })
 }
 
-/// `kyma mcp` — serve the Model Context Protocol over stdio.
+/// `pensieve mcp` — serve the Model Context Protocol over stdio.
 ///
-/// The caller (the `kyma` binary) must route tracing to **stderr** — stdout is
+/// The caller (the `pensieve` binary) must route tracing to **stderr** — stdout is
 /// the JSON-RPC protocol channel.
 pub async fn run_mcp() -> Result<()> {
-    kyma_server::agent::identity::set_source("mcp-stdio");
+    pensieve_server::agent::identity::set_source("mcp-stdio");
     let engine = open_engine(&resolve_paths()).await?;
     // Opportunistic Claude Code file-memory sync: a session is starting, so
     // pick up any memory files that changed since the last one. Detached —
-    // never delays the protocol handshake. Kill switch: KYMA_CC_SYNC_ON_MCP=0.
-    if env_flag("KYMA_CC_SYNC_ON_MCP", true) && env_flag("KYMA_CC_FILE_SYNC", true) {
+    // never delays the protocol handshake. Kill switch: PENSIEVE_CC_SYNC_ON_MCP=0.
+    if env_flag("PENSIEVE_CC_SYNC_ON_MCP", true) && env_flag("PENSIEVE_CC_FILE_SYNC", true) {
         let eng = engine.clone();
         tokio::spawn(async move {
             if let Err(e) = run_cc_phase(&eng, None, &SyncOptions::default()).await {
@@ -385,16 +385,16 @@ pub async fn run_mcp() -> Result<()> {
 /// lifecycle that are not part of router construction.
 ///
 /// Also returns the `AgentState` so the caller can start optional background
-/// workers (e.g. the `KYMA_CC_WATCH` watcher) that hold a reference to it.
+/// workers (e.g. the `PENSIEVE_CC_WATCH` watcher) that hold a reference to it.
 /// `watcher_status` is passed in by the caller (created before `SqliteDataSourceCatalog`
 /// so it can be injected into the catalog for `list_watchers()`).
 #[allow(clippy::too_many_arguments)]
 pub fn build_local_app(
-    catalog: Arc<dyn kyma_core::catalog::Catalog>,
-    format: Arc<dyn kyma_core::segment_format::SegmentFormat>,
+    catalog: Arc<dyn pensieve_core::catalog::Catalog>,
+    format: Arc<dyn pensieve_core::segment_format::SegmentFormat>,
     backend: Arc<dyn AuthBackend>,
-    memory: Option<kyma_memory::MemoryQueue>,
-    local_dreaming: Option<Arc<kyma_server::agent::dreaming_local::LocalDreamingStore>>,
+    memory: Option<pensieve_memory::MemoryQueue>,
+    local_dreaming: Option<Arc<pensieve_server::agent::dreaming_local::LocalDreamingStore>>,
     mcp_url: Option<String>,
     // Optional credential store — if None, falls back to NullCredentialStore.
     cred_store: Option<Arc<dyn CredentialStore>>,
@@ -407,8 +407,8 @@ pub fn build_local_app(
     // Located `git` binary — mounts the brain repos surface (`/v1/brain` +
     // `/git/<name>.git`). `None` ⇒ management API reports git_available:false
     // and repo-touching endpoints answer 503.
-    brain_git: Option<Arc<kyma_brain::gitbin::GitBin>>,
-) -> (axum::Router, AgentState, kyma_server::brain::BrainState) {
+    brain_git: Option<Arc<pensieve_brain::gitbin::GitBin>>,
+) -> (axum::Router, AgentState, pensieve_server::brain::BrainState) {
     let schema_cache = Arc::new(SchemaCache::from_env());
     let query_state = QueryState {
         federation: None,
@@ -417,33 +417,33 @@ pub fn build_local_app(
         schema_cache: schema_cache.clone(),
         node_id: None,
         pg_pool: None, // local: no Postgres — pool-only surfaces degrade gracefully
-        layout_cache: std::sync::Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
+        layout_cache: std::sync::Arc::new(pensieve_server::graph_layout_cache::LayoutCache::new()),
     };
-    // Engine preference + enabled skills persist to JSON under ~/.kyma so
+    // Engine preference + enabled skills persist to JSON under ~/.pensieve so
     // Settings → Agent engine works locally and survives restarts. Engine
     // auth auto-detects env vars / ~/.claude/.credentials.json — the Postgres
     // credential store stays a control-plane feature.
-    let kyma_home = std::env::var("KYMA_HOME").unwrap_or_else(|_| {
+    let pensieve_home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| {
         let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        format!("{base}/.kyma")
+        format!("{base}/.pensieve")
     });
     let resolved_cred_store: Arc<dyn CredentialStore> = cred_store
         .clone()
         .unwrap_or_else(|| Arc::new(NullCredentialStore));
     // Live consumer-activity bus — fed by the memory tool paths, subscribed by
     // the /v1/consumers/live WebSocket that drives the graph explorer overlay.
-    let consumer_events = kyma_ingest_core::ConsumerEvents::new(256);
+    let consumer_events = pensieve_ingest_core::ConsumerEvents::new(256);
     let agent_state = AgentState {
         catalog: catalog.clone(),
         format: format.clone(),
         pool: None, // local: run/session history not persisted; memory runs over the engine
         engines: Arc::new(FileEnginePreferenceStore::new(std::format!(
-            "{kyma_home}/agent-engine.json"
+            "{pensieve_home}/agent-engine.json"
         ))),
         credentials: resolved_cred_store,
-        tenant: kyma_core::tenant::DEFAULT_TENANT,
+        tenant: pensieve_core::tenant::DEFAULT_TENANT,
         skills: Arc::new(FileEnabledSkillsStore::new(std::format!(
-            "{kyma_home}/agent-skills.json"
+            "{pensieve_home}/agent-skills.json"
         ))),
         // Loopback to this serve's own MCP endpoint so the ClaudeCli engine can
         // reach the local memory + data tools during dreaming/ask. `None` keeps
@@ -452,9 +452,9 @@ pub fn build_local_app(
         memory: memory.clone(),
         // Degraded local-mode dreaming: inline execution + in-memory ring + SQLite.
         local_dreaming,
-        // Local memory settings persist to a JSON file under ${KYMA_HOME}.
+        // Local memory settings persist to a JSON file under ${PENSIEVE_HOME}.
         memory_settings_path: Some(std::path::PathBuf::from(std::format!(
-            "{kyma_home}/memory-settings.json"
+            "{pensieve_home}/memory-settings.json"
         ))),
         consumer_events: Some(consumer_events.clone()),
     };
@@ -501,7 +501,7 @@ pub fn build_local_app(
     // Control-plane-only surfaces (data sources, credentials, OAuth, saved-view
     // writes) are NOT mounted — /v1/capabilities tells clients so, and the
     // SPA fallback 404s unknown /v1/* paths instead of serving HTML.
-    // (agent_state is cloned: the KYMA_CC_WATCH watcher in run_serve keeps one.)
+    // (agent_state is cloned: the PENSIEVE_CC_WATCH watcher in run_serve keeps one.)
     // Build a second QueryState for the live router sharing the same schema_cache.
     let query_state_for_live = QueryState {
         federation: None,
@@ -510,7 +510,7 @@ pub fn build_local_app(
         schema_cache,
         node_id: None,
         pg_pool: None,
-        layout_cache: std::sync::Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
+        layout_cache: std::sync::Arc::new(pensieve_server::graph_layout_cache::LayoutCache::new()),
     };
     // Build McpState from the same catalog + format the rest of the app uses.
     let mcp = McpState {
@@ -518,7 +518,7 @@ pub fn build_local_app(
             realm_scope: Default::default(),
             consumer_sink: Some(std::sync::Arc::new(LocalConsumerPublisher {
                 events: consumer_events.clone(),
-                tenant: kyma_core::tenant::DEFAULT_TENANT,
+                tenant: pensieve_core::tenant::DEFAULT_TENANT,
             })),
             federation: None,
             catalog: catalog.clone(),
@@ -532,58 +532,58 @@ pub fn build_local_app(
         // deployed-server concern.
         builder: None,
         server_info: ServerInfo {
-            name: "kyma".into(),
+            name: "pensieve".into(),
             version: env!("CARGO_PKG_VERSION").into(),
         },
     };
-    let read_router = kyma_server::router_with_agent(query_state, agent_state.clone())
-        .merge(kyma_mcp::router(mcp))
-        .merge(kyma_server::capabilities::router(
-            kyma_server::capabilities::Capabilities::LOCAL,
+    let read_router = pensieve_server::router_with_agent(query_state, agent_state.clone())
+        .merge(pensieve_mcp::router(mcp))
+        .merge(pensieve_server::capabilities::router(
+            pensieve_server::capabilities::Capabilities::LOCAL,
         ))
-        // POST /v1/consumers/emit — separate kyma mcp (stdio) processes forward
+        // POST /v1/consumers/emit — separate pensieve mcp (stdio) processes forward
         // their consumer activity here so they show in the live overlay.
         .merge(
-            kyma_server::discover::consumers_live::consumers_emit_router(Some(
+            pensieve_server::discover::consumers_live::consumers_emit_router(Some(
                 consumer_events.clone(),
             )),
         )
         .layer(read_mw());
-    let ingest_router = kyma_ingest_rest::router(ingest_state).layer(write_mw());
+    let ingest_router = pensieve_ingest_rest::router(ingest_state).layer(write_mw());
     // Dashboards + table cleanup write over the Catalog trait — fully
     // supported by the embedded SQLite catalog (the web UI needs them).
-    let local_write_router = kyma_server::dashboards_write_router(catalog.clone())
-        .merge(kyma_server::cleanup_write_router(catalog.clone()))
-        .merge(kyma_server::compact_write_router(catalog.clone()))
+    let local_write_router = pensieve_server::dashboards_write_router(catalog.clone())
+        .merge(pensieve_server::cleanup_write_router(catalog.clone()))
+        .merge(pensieve_server::compact_write_router(catalog.clone()))
         .layer(write_mw());
     // Keep the per-tenant quota cache (S2.6) fresh so the admission limiter and
     // the /v1/admin/tenant-quotas endpoint work in local mode too. No-op when the
     // tenant_quotas table is empty (the single-tenant default).
-    let _quota_refresh_handle = kyma_server::quota_cache::spawn_refresh(catalog.clone());
+    let _quota_refresh_handle = pensieve_server::quota_cache::spawn_refresh(catalog.clone());
     let admin_users_router =
-        kyma_server::admin_handler::admin_users_router(catalog.clone()).layer(admin_mw());
+        pensieve_server::admin_handler::admin_users_router(catalog.clone()).layer(admin_mw());
     let session_router =
-        kyma_server::auth_handler::auth_session_router(catalog.clone()).layer(read_mw());
+        pensieve_server::auth_handler::auth_session_router(catalog.clone()).layer(read_mw());
 
     // Live-tail WebSocket — mounted WITHOUT auth middleware; the session
     // authenticates via its first message (browsers can't send WS headers).
     // Live consumers WebSocket — same auth-by-first-message pattern as the
     // live-tail router. Backfills recent memory spans from the local `otel`
     // self-trace DB (matches the frontend's OPS_DB).
-    let consumers_router = kyma_server::discover::consumers_live::consumers_live_router(
+    let consumers_router = pensieve_server::discover::consumers_live::consumers_live_router(
         query_state_for_live.clone(),
         backend.clone(),
         Some(consumer_events),
         "otel".to_string(),
     );
-    let live_router = kyma_server::discover::live::explore_live_router(
+    let live_router = pensieve_server::discover::live::explore_live_router(
         query_state_for_live,
         backend.clone(),
         Some(ingest_events),
     );
     // /v1/workers stub (empty registry) so the dreaming UI's NodesStrip renders
     // its empty state. Behind read auth like the rest of the API surface.
-    let workers_router = kyma_server::local_workers_router().layer(read_mw());
+    let workers_router = pensieve_server::local_workers_router().layer(read_mw());
     // In-process watcher registry serving /v1/data-sources/watchers.
     // Omit this when the full datasource admin router is mounted — that router
     // already exposes /v1/data-sources/watchers (via SqliteDataSourceCatalog
@@ -599,15 +599,15 @@ pub fn build_local_app(
 
     // Credentials CRUD — only when a real credential store was supplied.
     let creds_router = cred_store.map(|store| {
-        kyma_server::credentials_handler::router(
-            kyma_server::credentials_handler::CredentialsState { store },
+        pensieve_server::credentials_handler::router(
+            pensieve_server::credentials_handler::CredentialsState { store },
         )
         .layer(write_mw())
     });
 
     // Data source admin CRUD — only when a catalog + registry were supplied.
     let ds_router = ds_admin.map(|(ds_catalog, ds_registry)| {
-        kyma_server::datasource_admin_router(DataSourceAdminState {
+        pensieve_server::datasource_admin_router(DataSourceAdminState {
             catalog: ds_catalog,
             registry: ds_registry,
         })
@@ -616,23 +616,23 @@ pub fn build_local_app(
 
     // Brain repos: /v1/brain management (read-mounted; mutating handlers gate
     // Write/Admin in-handler) + /git/<name>.git smart HTTP with Basic auth.
-    let brain_state = kyma_server::brain::BrainState::new(
+    let brain_state = pensieve_server::brain::BrainState::new(
         Arc::new(brain_registry::LocalBrainRegistry::new(std::format!(
-            "{kyma_home}/brains.json"
+            "{pensieve_home}/brains.json"
         ))),
         brain_git,
-        std::path::PathBuf::from(std::format!("{kyma_home}/brain")),
+        std::path::PathBuf::from(std::format!("{pensieve_home}/brain")),
         agent_state.clone(),
     );
     let brain_mgmt_router =
-        kyma_server::brain::routes::brain_router(brain_state.clone()).layer(read_mw());
-    let brain_git_router = kyma_server::brain::git_http::git_http_router(brain_state.clone()).layer(
+        pensieve_server::brain::routes::brain_router(brain_state.clone()).layer(read_mw());
+    let brain_git_router = pensieve_server::brain::git_http::git_http_router(brain_state.clone()).layer(
         axum::middleware::from_fn_with_state(
             AuthLayerState {
                 backend: backend.clone(),
                 required: Role::Read,
             },
-            kyma_server::auth::require_git_auth_middleware,
+            pensieve_server::auth::require_git_auth_middleware,
         ),
     );
 
@@ -642,13 +642,13 @@ pub fn build_local_app(
         .merge(admin_users_router)
         .merge(session_router)
         .merge(workers_router)
-        .merge(kyma_server::auth_handler::auth_login_router(
+        .merge(pensieve_server::auth_handler::auth_login_router(
             catalog.clone(),
         ))
-        .merge(kyma_server::health_router())
+        .merge(pensieve_server::health_router())
         .merge(live_router)
         .merge(consumers_router)
-        .merge(kyma_server::web_ui::router())
+        .merge(pensieve_server::web_ui::router())
         .merge(watcher_settings_router)
         .merge(brain_mgmt_router)
         .merge(brain_git_router);
@@ -661,25 +661,25 @@ pub fn build_local_app(
     if let Some(r) = ds_router {
         app = app.merge(r);
     }
-    let app = kyma_server::with_permissive_cors(app);
+    let app = pensieve_server::with_permissive_cors(app);
     (app, agent_state, brain_state)
 }
 
-/// `kyma serve` — serve the web UI + full HTTP API on `addr`, over the embedded
+/// `pensieve serve` — serve the web UI + full HTTP API on `addr`, over the embedded
 /// catalog (zero infra).
 ///
 /// `self_trace_handle` is the value returned by `setup_serve_tracing()`. When
 /// `Some`, the self-trace exporter is wired to the catalog write path so that
-/// internal `kyma_telemetry` spans land in the `otel_traces` table.
+/// internal `pensieve_telemetry` spans land in the `otel_traces` table.
 pub async fn run_serve(
     addr: SocketAddr,
     self_trace_handle: Option<Arc<OnceLock<SelfTraceCtx>>>,
 ) -> Result<()> {
-    kyma_server::agent::identity::set_source("local-serve");
+    pensieve_server::agent::identity::set_source("local-serve");
     let engine = open_engine(&resolve_paths()).await?;
 
     // Wire self-trace exporter now that the catalog + write path are ready.
-    // This makes internal kyma_telemetry spans land in otel_traces immediately.
+    // This makes internal pensieve_telemetry spans land in otel_traces immediately.
     // Pre-create the table so the Traces page never 404s on an empty database.
     if let Some(handle) = &self_trace_handle {
         let wp = WritePath::new(engine.catalog.clone(), engine.format.clone());
@@ -689,19 +689,19 @@ pub async fn run_serve(
             database: "otel".into(),
         });
     }
-    kyma_ingest_otlp::ensure_traces_table(&engine.catalog, "otel").await;
+    pensieve_ingest_otlp::ensure_traces_table(&engine.catalog, "otel").await;
 
     let memq = spawn_local_memory_queue(&engine).await;
     let memory = memq.as_ref().map(|m| m.queue.clone());
 
     // The web UI requires a sign-in. Seed a local user (default `admin`/`admin`,
-    // override with KYMA_LOCAL_USER / KYMA_LOCAL_PASSWORD) and authenticate via
+    // override with PENSIEVE_LOCAL_USER / PENSIEVE_LOCAL_PASSWORD) and authenticate via
     // session tokens stored in the embedded catalog — same machinery as the
     // server, over SQLite.
-    let user = std::env::var("KYMA_LOCAL_USER").unwrap_or_else(|_| "admin".into());
-    let password = std::env::var("KYMA_LOCAL_PASSWORD").unwrap_or_else(|_| "admin".into());
+    let user = std::env::var("PENSIEVE_LOCAL_USER").unwrap_or_else(|_| "admin".into());
+    let password = std::env::var("PENSIEVE_LOCAL_PASSWORD").unwrap_or_else(|_| "admin".into());
     if engine.catalog.count_users().await.unwrap_or(0) == 0 {
-        let phc = kyma_server::auth::passwords::hash_password(&password)
+        let phc = pensieve_server::auth::passwords::hash_password(&password)
             .map_err(|e| anyhow::anyhow!("hashing local password: {e}"))?;
         engine
             .catalog
@@ -717,12 +717,12 @@ pub async fn run_serve(
     ));
 
     // Self-heal the CLI connection: the CLI, MCP, and every coding-agent
-    // capture hook read ~/.kyma/config.json, and a stale token there (e.g. an
-    // expired browser session token from `kyma connect`) silently 401s them
+    // capture hook read ~/.pensieve/config.json, and a stale token there (e.g. an
+    // expired browser session token from `pensieve connect`) silently 401s them
     // all. Validate it against this serve's auth backend and mint a durable
     // replacement when needed. Best-effort — never blocks startup.
-    if env_flag("KYMA_LOCAL_HEAL_CONFIG", true) {
-        let cfg_path = std::path::PathBuf::from(home_dir()).join(".kyma/config.json");
+    if env_flag("PENSIEVE_LOCAL_HEAL_CONFIG", true) {
+        let cfg_path = std::path::PathBuf::from(home_dir()).join(".pensieve/config.json");
         match cli_config_heal::heal_cli_config(&cfg_path, addr, &backend, &engine.catalog).await {
             Ok(cli_config_heal::HealOutcome::TokenMinted) => {
                 info!(config = %cfg_path.display(), "minted durable CLI token (stored token was missing or stale)");
@@ -741,7 +741,7 @@ pub async fn run_serve(
     // Degraded local-mode dreaming state: in-memory ring hydrated from the
     // embedded SQLite catalog. Inline runs + the dreaming HTTP handlers read it.
     let local_dreaming = Some(
-        kyma_server::agent::dreaming_local::LocalDreamingStore::new(engine.catalog.clone()).await,
+        pensieve_server::agent::dreaming_local::LocalDreamingStore::new(engine.catalog.clone()).await,
     );
     // Loopback URL for this serve's own MCP endpoint, so the ClaudeCli engine
     // can reach the local memory/data tools during a dreaming run. When bound
@@ -756,22 +756,22 @@ pub async fn run_serve(
 
     // Local serve always seeds a user, so the auth backend is "enabled" and the
     // MCP endpoint requires a bearer. The dreaming ClaudeCli path reads
-    // KYMA_INTERNAL_BEARER for that header. If a static admin token is
-    // configured via KYMA_AUTH_TOKENS and KYMA_INTERNAL_BEARER isn't already
+    // PENSIEVE_INTERNAL_BEARER for that header. If a static admin token is
+    // configured via PENSIEVE_AUTH_TOKENS and PENSIEVE_INTERNAL_BEARER isn't already
     // set, derive it so dreaming-over-ClaudeCli works out of the box.
-    if std::env::var("KYMA_INTERNAL_BEARER").is_err() {
+    if std::env::var("PENSIEVE_INTERNAL_BEARER").is_err() {
         if let Some(tok) = first_admin_token() {
             // SAFETY: set before any worker thread reads it; single-threaded here.
-            std::env::set_var("KYMA_INTERNAL_BEARER", tok);
+            std::env::set_var("PENSIEVE_INTERNAL_BEARER", tok);
         }
     }
 
     // ── Credentials: AES-256-GCM key from env or auto-generated file ──────────
-    let kyma_home = std::env::var("KYMA_HOME").unwrap_or_else(|_| {
+    let pensieve_home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| {
         let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        format!("{base}/.kyma")
+        format!("{base}/.pensieve")
     });
-    let secret_key_path = format!("{kyma_home}/secret.key");
+    let secret_key_path = format!("{pensieve_home}/secret.key");
     let crypto = Arc::new(
         Crypto::from_env_or_file(&secret_key_path)
             .context("loading or generating local secret key")?,
@@ -800,21 +800,21 @@ pub async fn run_serve(
 
     let mut conn_reg = DataSourceRegistry::new();
     // Register all supported connectors (same set as the hosted server).
-    use kyma_datasources::prometheus::PromDataSource;
+    use pensieve_datasources::prometheus::PromDataSource;
     conn_reg.register(Arc::new(PromDataSource));
-    conn_reg.register(Arc::new(kyma_datasources::postgres::PgIntrospectDataSource));
-    conn_reg.register(Arc::new(kyma_datasources::s3::S3DataSource));
-    conn_reg.register(Arc::new(kyma_datasources::gitlab::GitlabDataSource));
-    conn_reg.register(Arc::new(kyma_datasources::bitbucket::BitbucketDataSource));
-    conn_reg.register(Arc::new(kyma_datasources::github::GithubDataSource));
-    conn_reg.register(Arc::new(kyma_datasources::notion::NotionDataSource));
-    conn_reg.register(Arc::new(kyma_datasources::googledrive::GdriveDataSource));
-    conn_reg.register(Arc::new(kyma_datasources::gmail::GmailDataSource));
-    conn_reg.register(Arc::new(kyma_datasources::slack::SlackDataSource));
-    conn_reg.register(Arc::new(kyma_datasources::jira::JiraDataSource));
-    conn_reg.register(Arc::new(kyma_datasources::confluence::ConfluenceDataSource));
-    conn_reg.register(Arc::new(kyma_datasources::msfabric::MsFabricDataSource));
-    conn_reg.register(Arc::new(kyma_datasources::obsidian::ObsidianDataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::postgres::PgIntrospectDataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::s3::S3DataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::gitlab::GitlabDataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::bitbucket::BitbucketDataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::github::GithubDataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::notion::NotionDataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::googledrive::GdriveDataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::gmail::GmailDataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::slack::SlackDataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::jira::JiraDataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::confluence::ConfluenceDataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::msfabric::MsFabricDataSource));
+    conn_reg.register(Arc::new(pensieve_datasources::obsidian::ObsidianDataSource));
     let conn_registry = Arc::new(conn_reg);
 
     // ── RowSink: auto-create + evolve schema, then ingest ───────────────────
@@ -824,12 +824,12 @@ pub async fn run_serve(
         move |db: String, tbl: String, rows: Vec<serde_json::Value>, idem: Option<String>| {
             let catalog = catalog_for_sink.clone();
             let write_path =
-                kyma_ingest_core::WritePath::new(catalog.clone(), format_for_sink.clone());
+                pensieve_ingest_core::WritePath::new(catalog.clone(), format_for_sink.clone());
             Box::pin(async move {
-                let table = kyma_ingest_core::ensure_table(catalog.as_ref(), &db, &tbl)
+                let table = pensieve_ingest_core::ensure_table(catalog.as_ref(), &db, &tbl)
                     .await
                     .map_err(|e| anyhow::anyhow!("ensure_table: {e}"))?;
-                let table = kyma_ingest_core::evolve_schema_for_records(
+                let table = pensieve_ingest_core::evolve_schema_for_records(
                     catalog.as_ref(),
                     &db,
                     table,
@@ -837,7 +837,7 @@ pub async fn run_serve(
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("evolve_schema: {e}"))?;
-                let batches = kyma_datasources::arrow_coerce::rows_to_batches(&table.schema, rows)
+                let batches = pensieve_datasources::arrow_coerce::rows_to_batches(&table.schema, rows)
                     .map_err(|e| anyhow::anyhow!("arrow coerce: {e}"))?;
                 write_path
                     .ingest_with_idempotency(&db, &table, batches, idem.as_deref())
@@ -851,10 +851,10 @@ pub async fn run_serve(
     // ── GraphRegisterFn: create property graph binding after ingest ─────────
     let catalog_for_graph = engine.catalog.clone();
     let graph_register: GraphRegisterFn =
-        Arc::new(move |db: String, hint: kyma_datasources::GraphHint| {
+        Arc::new(move |db: String, hint: pensieve_datasources::GraphHint| {
             let catalog = catalog_for_graph.clone();
             Box::pin(async move {
-                let spec = kyma_core::catalog::GraphSpec::with_defaults(
+                let spec = pensieve_core::catalog::GraphSpec::with_defaults(
                     hint.node_table.clone(),
                     hint.edge_table.clone(),
                 );
@@ -887,7 +887,7 @@ pub async fn run_serve(
     };
 
     // Brain repos need the git binary; absent ⇒ the surface degrades to 503s.
-    let brain_git = kyma_brain::gitbin::GitBin::detect().await.map(Arc::new);
+    let brain_git = pensieve_brain::gitbin::GitBin::detect().await.map(Arc::new);
 
     let (app, agent_state, brain_state) = build_local_app(
         engine.catalog.clone(),
@@ -927,9 +927,9 @@ pub async fn run_serve(
             vec!["data_source".to_string()],
             120, // 2-minute lease
         ));
-        let mut exec_reg = kyma_jobs::ExecutorRegistry::new();
+        let mut exec_reg = pensieve_jobs::ExecutorRegistry::new();
         exec_reg.register(Arc::new(
-            kyma_jobs::datasource_sync::DataSourceSyncExecutor::new(tick_deps),
+            pensieve_jobs::datasource_sync::DataSourceSyncExecutor::new(tick_deps),
         ));
 
         // Register the sidecar-building executors + start the activation
@@ -939,18 +939,18 @@ pub async fn run_serve(
         let mut indexing_kinds = "data_source_sync";
         if let Some(store) = engine.format.object_store() {
             let mut builders: std::collections::HashMap<
-                kyma_core::index_sidecar::SidecarKind,
-                Arc<dyn kyma_core::index_sidecar::SidecarBuilder>,
+                pensieve_core::index_sidecar::SidecarKind,
+                Arc<dyn pensieve_core::index_sidecar::SidecarBuilder>,
             > = std::collections::HashMap::new();
             builders.insert(
-                kyma_core::index_sidecar::SidecarKind::IvfRabitq,
-                Arc::new(kyma_index_vector::IvfRabitqBuilder::new()),
+                pensieve_core::index_sidecar::SidecarKind::IvfRabitq,
+                Arc::new(pensieve_index_vector::IvfRabitqBuilder::new()),
             );
             builders.insert(
-                kyma_core::index_sidecar::SidecarKind::TantivyFts,
-                Arc::new(kyma_index_fts::TantivyFtsBuilder::new()),
+                pensieve_core::index_sidecar::SidecarKind::TantivyFts,
+                Arc::new(pensieve_index_fts::TantivyFtsBuilder::new()),
             );
-            exec_reg.register(Arc::new(kyma_jobs::index_build::IndexBuildExecutor::new(
+            exec_reg.register(Arc::new(pensieve_jobs::index_build::IndexBuildExecutor::new(
                 engine.catalog.clone(),
                 engine.format.clone(),
                 store,
@@ -959,10 +959,10 @@ pub async fn run_serve(
             // The embed_backfill executor needs the process embedding backend.
             // If unavailable (provider feature off) only ANN/FTS over already-
             // embedded data activate; embeddings stay as ingested.
-            match kyma_memory::shared_embedding().await {
+            match pensieve_memory::shared_embedding().await {
                 Ok(embedder) => {
                     exec_reg.register(Arc::new(
-                        kyma_jobs::embed_backfill::EmbedBackfillExecutor::new(
+                        pensieve_jobs::embed_backfill::EmbedBackfillExecutor::new(
                             engine.catalog.clone(),
                             engine.format.clone(),
                             embedder,
@@ -979,7 +979,7 @@ pub async fn run_serve(
             // Activation scheduler: enqueue missing index_build / embed_backfill
             // jobs over the SQLite jobs table. Same scan logic the server runs;
             // stops on Ctrl-C like the other local loops.
-            let scheduler = kyma_compaction::IndexScheduler::with_enqueuer(
+            let scheduler = pensieve_compaction::IndexScheduler::with_enqueuer(
                 engine.catalog.clone(),
                 Arc::new(sqlite_queue::SqliteEnqueuer::new(pool.clone())),
             );
@@ -993,7 +993,7 @@ pub async fn run_serve(
             // Graph-snapshot activation scheduler (S3.2): the same refresh loop
             // the server runs, so local-mode deep-subgraph queries also serve
             // from a persistent CSR snapshot once a graph's edges change.
-            let graph_snap = kyma_server::graph_snapshot_sched::GraphSnapshotScheduler::new(
+            let graph_snap = pensieve_server::graph_snapshot_sched::GraphSnapshotScheduler::new(
                 engine.catalog.clone(),
                 engine.format.clone(),
             );
@@ -1005,7 +1005,7 @@ pub async fn run_serve(
             tokio::spawn(graph_snap.run(gsnap_rx));
         }
 
-        let runner = kyma_jobs::JobRunner::new(queue, exec_reg, 120);
+        let runner = pensieve_jobs::JobRunner::new(queue, exec_reg, 120);
         tokio::spawn(async move {
             runner
                 .run(async {
@@ -1017,11 +1017,11 @@ pub async fn run_serve(
     }
 
     // Optional in-process dreaming scheduler — only fires when dreaming is
-    // enabled in ${KYMA_HOME}/memory-settings.json (OFF by default). Runs inline
+    // enabled in ${PENSIEVE_HOME}/memory-settings.json (OFF by default). Runs inline
     // in this process; no worker fabric.
     if let Some(store) = local_dreaming {
         let scheduler =
-            kyma_server::agent::dreaming::LocalDreamingScheduler::new(agent_state.clone(), store);
+            pensieve_server::agent::dreaming::LocalDreamingScheduler::new(agent_state.clone(), store);
         tokio::spawn(async move {
             scheduler
                 .run(async {
@@ -1035,7 +1035,7 @@ pub async fn run_serve(
     // interval (per-brain `export_interval_secs`; 0 = manual only). Shares
     // the app's BrainState so exports serialize against pushes.
     {
-        let scheduler = kyma_server::brain::scheduler::LocalBrainScheduler::new(brain_state);
+        let scheduler = pensieve_server::brain::scheduler::LocalBrainScheduler::new(brain_state);
         tokio::spawn(async move {
             scheduler
                 .run(async {
@@ -1050,28 +1050,28 @@ pub async fn run_serve(
     // unbounded and every scan paid to enumerate thousands of tiny segments.
     // The worker + scheduler now cooperate via the catalog task queue over
     // SQLite; each stops on Ctrl-C like the dreaming scheduler above. Thresholds
-    // are tunable via KYMA_COMPACTION_* (same knobs as server mode).
+    // are tunable via PENSIEVE_COMPACTION_* (same knobs as server mode).
     {
-        use kyma_compaction::{CompactionScheduler, CompactionWorker};
+        use pensieve_compaction::{CompactionScheduler, CompactionWorker};
         let mut worker = CompactionWorker::new(
             engine.catalog.clone(),
             engine.format.clone(),
-            kyma_core::types::NodeId::new(),
+            pensieve_core::types::NodeId::new(),
         );
         let mut scheduler = CompactionScheduler::new(engine.catalog.clone());
-        if let Some(ms) = std::env::var("KYMA_COMPACTION_IDLE_SLEEP_MS")
+        if let Some(ms) = std::env::var("PENSIEVE_COMPACTION_IDLE_SLEEP_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
         {
             worker.idle_sleep = std::time::Duration::from_millis(ms);
         }
-        if let Some(s) = std::env::var("KYMA_COMPACTION_POLL_SECS")
+        if let Some(s) = std::env::var("PENSIEVE_COMPACTION_POLL_SECS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
         {
             scheduler.poll_interval = std::time::Duration::from_secs(s);
         }
-        if let Some(n) = std::env::var("KYMA_COMPACTION_MIN_EXTENTS")
+        if let Some(n) = std::env::var("PENSIEVE_COMPACTION_MIN_EXTENTS")
             .ok()
             .and_then(|v| v.parse::<i64>().ok())
         {
@@ -1102,11 +1102,11 @@ pub async fn run_serve(
 
     // Resident watcher: keep Claude Code file memory synced while the local
     // server runs. On by default — disable via the UI (Settings) or by setting
-    // KYMA_CC_WATCH=0 as a host-level kill switch.
-    if env_flag("KYMA_CC_WATCH", true) {
+    // PENSIEVE_CC_WATCH=0 as a host-level kill switch.
+    if env_flag("PENSIEVE_CC_WATCH", true) {
         let eng = engine.clone();
         let agent = agent_state.clone();
-        let poll = env_secs("KYMA_CC_SYNC_POLL_SECS", 30);
+        let poll = env_secs("PENSIEVE_CC_SYNC_POLL_SECS", 30);
         let status = watcher_status.clone();
         tokio::spawn(async move {
             let opts = SyncOptions::default();
@@ -1146,7 +1146,7 @@ pub async fn run_serve(
         let enabled = watcher_status.cc_sync_enabled();
         if enabled {
             info!(
-                "cc-sync watcher running (every {:?}; toggle in UI or KYMA_CC_WATCH=0 to disable)",
+                "cc-sync watcher running (every {:?}; toggle in UI or PENSIEVE_CC_WATCH=0 to disable)",
                 poll
             );
         } else {
@@ -1157,12 +1157,12 @@ pub async fn run_serve(
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding {addr}"))?;
-    info!(%addr, "kyma serving the web UI + full HTTP API (local, SQLite)");
+    info!(%addr, "pensieve serving the web UI + full HTTP API (local, SQLite)");
     info!("  web UI:   http://{addr}/   (sign in: {user} / {password})");
     info!("  ingest:   POST http://{addr}/v1/ingest   (X-Database / X-Table headers)");
     info!("  MCP:      http://{addr}/mcp/v1");
     if password == "admin" {
-        warn!("using the default local password 'admin' — set KYMA_LOCAL_PASSWORD to change it");
+        warn!("using the default local password 'admin' — set PENSIEVE_LOCAL_PASSWORD to change it");
     }
     // `into_make_service_with_connect_info` so handlers can read the peer addr
     // (the live-consumers overlay records the connecting agent's ip/pid).
@@ -1184,10 +1184,10 @@ pub async fn run_serve(
     Ok(())
 }
 
-/// Options for `kyma sync`.
+/// Options for `pensieve sync`.
 #[derive(Debug, Clone, Default)]
 pub struct SyncOptions {
-    /// Keep running, re-syncing on an interval (`KYMA_CC_SYNC_POLL_SECS`,
+    /// Keep running, re-syncing on an interval (`PENSIEVE_CC_SYNC_POLL_SECS`,
     /// default 30s).
     pub watch: bool,
     /// Plan + audit-log Claude Code file changes without writing them
@@ -1205,11 +1205,11 @@ fn env_flag(key: &str, default: bool) -> bool {
     std::env::var(key).map_or(default, |v| v != "0")
 }
 
-/// First `admin`-role token from `KYMA_AUTH_TOKENS` (`tok:role,…`), if any.
-/// Used to derive `KYMA_INTERNAL_BEARER` so the dreaming ClaudeCli path can
+/// First `admin`-role token from `PENSIEVE_AUTH_TOKENS` (`tok:role,…`), if any.
+/// Used to derive `PENSIEVE_INTERNAL_BEARER` so the dreaming ClaudeCli path can
 /// reach the auth-protected loopback MCP endpoint.
 fn first_admin_token() -> Option<String> {
-    let raw = std::env::var("KYMA_AUTH_TOKENS").ok()?;
+    let raw = std::env::var("PENSIEVE_AUTH_TOKENS").ok()?;
     raw.split(',').find_map(|pair| {
         let (tok, role) = pair.trim().split_once(':')?;
         (role.trim() == "admin" && !tok.trim().is_empty()).then(|| tok.trim().to_string())
@@ -1229,9 +1229,9 @@ fn home_dir() -> String {
     std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
 }
 
-/// `~/.claude` (override: `KYMA_CC_HOME`).
+/// `~/.claude` (override: `PENSIEVE_CC_HOME`).
 fn claude_home() -> std::path::PathBuf {
-    std::env::var("KYMA_CC_HOME")
+    std::env::var("PENSIEVE_CC_HOME")
         .unwrap_or_else(|_| format!("{}/.claude", home_dir()))
         .into()
 }
@@ -1239,22 +1239,22 @@ fn claude_home() -> std::path::PathBuf {
 /// Assemble the file-phase options from env + CLI options.
 fn cc_pipeline_options(opts: &SyncOptions) -> cc_pipeline::CcPipelineOptions {
     let cc = claude_home();
-    let kyma_home = std::env::var("KYMA_HOME").unwrap_or_else(|_| format!("{}/.kyma", home_dir()));
+    let pensieve_home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| format!("{}/.pensieve", home_dir()));
     cc_pipeline::CcPipelineOptions {
         sync: cc_sync::CcSyncOptions {
             projects_dir: cc.join("projects"),
             claude_json: Some(format!("{}/.claude.json", home_dir()).into()),
             project: opts.project.clone(),
         },
-        curate: env_flag("KYMA_CC_CURATE", true),
-        promote_cfg: kyma_server::agent::cc_curate::CurationConfig::from_env(),
-        llm_cfg: kyma_server::agent::cc_curate::LlmCurationConfig::from_env(),
+        curate: env_flag("PENSIEVE_CC_CURATE", true),
+        promote_cfg: pensieve_server::agent::cc_curate::CurationConfig::from_env(),
+        llm_cfg: pensieve_server::agent::cc_curate::LlmCurationConfig::from_env(),
         writeback: cc_writeback::WritebackConfig {
             dry_run: opts.dry_run,
-            quiet_window: env_secs("KYMA_CC_QUIET_WINDOW", 300),
-            lock_ttl: env_secs("KYMA_CC_LOCK_TTL", 300),
+            quiet_window: env_secs("PENSIEVE_CC_QUIET_WINDOW", 300),
+            lock_ttl: env_secs("PENSIEVE_CC_LOCK_TTL", 300),
             sessions_dir: Some(cc.join("sessions")),
-            audit_log: Some(format!("{kyma_home}/cc-curation.log").into()),
+            audit_log: Some(format!("{pensieve_home}/cc-curation.log").into()),
         },
     }
 }
@@ -1262,7 +1262,7 @@ fn cc_pipeline_options(opts: &SyncOptions) -> cc_pipeline::CcPipelineOptions {
 /// One Claude Code file-phase pass: ingest memory files → curate → apply.
 ///
 /// Returns the sync-phase rollup in the watcher `last_scan` shape
-/// (`CcSyncReport::last_scan_value`) so the `KYMA_CC_WATCH` loop can feed
+/// (`CcSyncReport::last_scan_value`) so the `PENSIEVE_CC_WATCH` loop can feed
 /// `/v1/data-sources/watchers`; other callers ignore it.
 async fn run_cc_phase(
     engine: &Engine,
@@ -1271,11 +1271,11 @@ async fn run_cc_phase(
 ) -> Result<serde_json::Value> {
     let pass_start = std::time::Instant::now();
     let wall_start = chrono::Utc::now();
-    let embed = kyma_memory::shared_embedding()
+    let embed = pensieve_memory::shared_embedding()
         .await
         .map_err(|e| anyhow::anyhow!("embedding backend: {e}"))?;
     let writer =
-        kyma_memory::MemoryWriter::new(engine.catalog.clone(), engine.format.clone(), embed);
+        pensieve_memory::MemoryWriter::new(engine.catalog.clone(), engine.format.clone(), embed);
     let popts = cc_pipeline_options(opts);
     let report = cc_pipeline::run_pass(engine, &writer, agent, &popts).await?;
     let (mut up, mut skip, mut arch) = (0, 0, 0);
@@ -1312,15 +1312,15 @@ async fn run_cc_phase(
     ))
 }
 
-/// Path to the cc-sync health marker `kyma status` reads. Fixed under
-/// `$HOME/.kyma`, not `KYMA_HOME`-relative, matching the hook-side
+/// Path to the cc-sync health marker `pensieve status` reads. Fixed under
+/// `$HOME/.pensieve`, not `PENSIEVE_HOME`-relative, matching the hook-side
 /// `capture-health.json` convention so both processes agree on the path.
 fn cc_sync_health_path() -> Option<std::path::PathBuf> {
     std::env::var_os("HOME")
-        .map(|h| std::path::PathBuf::from(h).join(".kyma").join("cc-sync-health.json"))
+        .map(|h| std::path::PathBuf::from(h).join(".pensieve").join("cc-sync-health.json"))
 }
 
-/// Record the outcome of a cc-sync pass so `kyma status` can report sync
+/// Record the outcome of a cc-sync pass so `pensieve status` can report sync
 /// freshness instead of it being invisible between session-boundary hook
 /// runs (which run this detached, fire-and-forget). Best-effort: a failure
 /// to write the marker never fails the sync itself.
@@ -1339,15 +1339,15 @@ fn write_cc_sync_health(ok: bool, detail: Option<&str>) {
     let _ = std::fs::write(&path, body.to_string());
 }
 
-/// `kyma sync` — sync memory with Claude Code's file memory (always, when
-/// `~/.claude` exists) and with a control plane (when `KYMA_CLOUD_URL` is
+/// `pensieve sync` — sync memory with Claude Code's file memory (always, when
+/// `~/.claude` exists) and with a control plane (when `PENSIEVE_CLOUD_URL` is
 /// set). `--watch` keeps the loop running.
 pub async fn run_sync(opts: SyncOptions) -> Result<()> {
     let engine = open_engine(&resolve_paths()).await?;
-    let poll = env_secs("KYMA_CC_SYNC_POLL_SECS", 30);
+    let poll = env_secs("PENSIEVE_CC_SYNC_POLL_SECS", 30);
     loop {
         // ── Phase 1: Claude Code memory files (fails open). ──
-        if !opts.cloud_only && env_flag("KYMA_CC_FILE_SYNC", true) {
+        if !opts.cloud_only && env_flag("PENSIEVE_CC_FILE_SYNC", true) {
             if let Err(e) = run_cc_phase(&engine, None, &opts).await {
                 eprintln!("cc-sync failed (continuing): {e}");
                 write_cc_sync_health(false, Some(&e.to_string()));
@@ -1355,14 +1355,14 @@ pub async fn run_sync(opts: SyncOptions) -> Result<()> {
         }
         // ── Phase 2: control plane (only when configured). ──
         if !opts.cc_only {
-            match std::env::var("KYMA_CLOUD_URL") {
+            match std::env::var("PENSIEVE_CLOUD_URL") {
                 Ok(cloud_url) if !cloud_url.is_empty() => {
                     let cfg = sync::SyncConfig {
                         cloud_url,
-                        token: std::env::var("KYMA_CLOUD_TOKEN")
+                        token: std::env::var("PENSIEVE_CLOUD_TOKEN")
                             .ok()
                             .filter(|s| !s.is_empty()),
-                        realm: std::env::var("KYMA_SYNC_REALM")
+                        realm: std::env::var("PENSIEVE_SYNC_REALM")
                             .ok()
                             .filter(|s| !s.is_empty()),
                         now: chrono::Utc::now().to_rfc3339(),
@@ -1371,7 +1371,7 @@ pub async fn run_sync(opts: SyncOptions) -> Result<()> {
                 }
                 _ if opts.cloud_only => {
                     return Err(anyhow::anyhow!(
-                        "set KYMA_CLOUD_URL (and usually KYMA_CLOUD_TOKEN) to sync to a control plane"
+                        "set PENSIEVE_CLOUD_URL (and usually PENSIEVE_CLOUD_TOKEN) to sync to a control plane"
                     ));
                 }
                 _ => {}
@@ -1387,7 +1387,7 @@ pub async fn run_sync(opts: SyncOptions) -> Result<()> {
     }
 }
 
-/// `kyma setup <agent>` — wire a coding agent to `kyma mcp` over stdio.
+/// `pensieve setup <agent>` — wire a coding agent to `pensieve mcp` over stdio.
 pub fn run_setup(agent: &str, print: bool) -> Result<()> {
     setup::run(agent, print)
 }
@@ -1395,17 +1395,17 @@ pub fn run_setup(agent: &str, print: bool) -> Result<()> {
 /// Print the resolved local paths (diagnostics).
 pub fn print_info() {
     let paths = resolve_paths();
-    eprintln!("kyma — local single-binary context engine");
+    eprintln!("pensieve — local single-binary context engine");
     eprintln!("  catalog : {}", paths.catalog_db);
     eprintln!("  data    : {}", paths.data_root);
-    eprintln!("  mcp     : kyma mcp           (stdio MCP; memory + data + graph)");
-    eprintln!("  serve   : kyma serve         (web UI + HTTP API + ingest, zero-auth)");
-    eprintln!("  setup   : kyma setup <agent> (wire claude-code/cursor/windsurf to mcp)");
+    eprintln!("  mcp     : pensieve mcp           (stdio MCP; memory + data + graph)");
+    eprintln!("  serve   : pensieve serve         (web UI + HTTP API + ingest, zero-auth)");
+    eprintln!("  setup   : pensieve setup <agent> (wire claude-code/cursor/windsurf to mcp)");
     eprintln!(
-        "  sync    : kyma sync          (Claude Code file memory + KYMA_CLOUD_URL push/pull)"
+        "  sync    : pensieve sync          (Claude Code file memory + PENSIEVE_CLOUD_URL push/pull)"
     );
     eprintln!("            --watch --dry-run --cc-only --cloud-only --project <path>");
     eprintln!(
-        "  worker  : kyma worker install|uninstall|status (background sync as an OS user service)"
+        "  worker  : pensieve worker install|uninstall|status (background sync as an OS user service)"
     );
 }

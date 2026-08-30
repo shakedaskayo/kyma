@@ -4,13 +4,13 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "../internal/ui/button";
-import { useKymaClient } from "../provider/context";
-import type { SavedView, Scope } from "@kyma-ai/client";
+import { usePensieveClient } from "../provider/context";
+import type { SavedView, Scope } from "@pensieve-ai/client";
 
 type Props = { value: Scope; onChange: (s: Scope) => void };
 
 export function ScopePicker({ value, onChange }: Props) {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const views = useQuery({

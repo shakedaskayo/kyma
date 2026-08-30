@@ -7,7 +7,7 @@ use axum::{
     routing::get,
     Router,
 };
-use kyma_web_assets::{mime_for, DIST};
+use pensieve_web_assets::{mime_for, DIST};
 
 /// Router exposing: `GET /`, `GET /assets/*`, and a SPA fallback.
 pub fn router() -> Router {
@@ -42,7 +42,7 @@ async fn serve_asset(uri: Uri) -> Response {
 /// reload / deep-link — with two exceptions:
 ///
 /// 1. Real embedded files outside `/assets/` (Vite copies `web/public/*` to
-///    the dist root: `/icons/kyma-mark.svg`, brand SVGs, …) are served as
+///    the dist root: `/icons/pensieve-mark.svg`, brand SVGs, …) are served as
 ///    themselves. Without this the logo/favicon came back as HTML — a broken
 ///    image on every installed bundle (dev was fine: Vite serves `public/`).
 /// 2. API prefixes get a real JSON 404, not a 200 with HTML: clients

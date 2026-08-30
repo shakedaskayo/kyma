@@ -1,15 +1,15 @@
 ---
-title: CORS — @kyma-ai/react
-description: Configure KYMA_CORS_ALLOWED_ORIGINS on the Kyma server to allow browser requests from your host application.
+title: CORS — @pensieve-ai/react
+description: Configure PENSIEVE_CORS_ALLOWED_ORIGINS on the Pensieve server to allow browser requests from your host application.
 ---
 
 # CORS
 
-The browser enforces the same-origin policy, so your Kyma server must emit
+The browser enforces the same-origin policy, so your Pensieve server must emit
 the correct CORS headers for the origin your host application runs on. The
 server reads a single environment variable to control this.
 
-## `KYMA_CORS_ALLOWED_ORIGINS`
+## `PENSIEVE_CORS_ALLOWED_ORIGINS`
 
 | State | Behaviour |
 |---|---|
@@ -22,12 +22,12 @@ A typo must not silently open the API to all origins.
 
 ## Local development
 
-Start the Kyma server with the Vite dev server's origin:
+Start the Pensieve server with the Vite dev server's origin:
 
 ```bash
-KYMA_CORS_ALLOWED_ORIGINS=http://localhost:5173 kyma serve
+PENSIEVE_CORS_ALLOWED_ORIGINS=http://localhost:5173 pensieve serve
 # or via Docker Compose:
-KYMA_CORS_ALLOWED_ORIGINS=http://localhost:5173 docker compose up
+PENSIEVE_CORS_ALLOWED_ORIGINS=http://localhost:5173 docker compose up
 ```
 
 ## Production
@@ -36,19 +36,19 @@ Set the variable to your deployed host-app origin(s):
 
 ```bash
 # Single origin
-KYMA_CORS_ALLOWED_ORIGINS=https://app.acme.com
+PENSIEVE_CORS_ALLOWED_ORIGINS=https://app.acme.com
 
 # Multiple origins (comma-separated, no spaces needed)
-KYMA_CORS_ALLOWED_ORIGINS=https://app.acme.com,https://staging.acme.com
+PENSIEVE_CORS_ALLOWED_ORIGINS=https://app.acme.com,https://staging.acme.com
 ```
 
-The Kyma server also allows any method, header, and exposes all response
-headers so SSE streams, the `Authorization` header, and custom Kyma headers
-(`x-database`, `x-kyma-request-id`) all flow through.
+The Pensieve server also allows any method, header, and exposes all response
+headers so SSE streams, the `Authorization` header, and custom Pensieve headers
+(`x-database`, `x-pensieve-request-id`) all flow through.
 
-## Interaction with `KymaProvider`
+## Interaction with `PensieveProvider`
 
-`KymaProvider` sends all API requests from the browser using `fetch`. The
+`PensieveProvider` sends all API requests from the browser using `fetch`. The
 `endpoint` you pass must be reachable from the origin the browser runs on.
 Proxy the server through your own ingress if you need to avoid configuring
-CORS (e.g. `/api/kyma` → the Kyma server).
+CORS (e.g. `/api/pensieve` → the Pensieve server).

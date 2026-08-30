@@ -3,10 +3,10 @@
 
 use std::collections::HashMap;
 
-use kyma_catalog::artifacts::ArtifactRecord;
-use kyma_catalog::PostgresCatalog;
-use kyma_core::retention::RetentionSettings;
-use kyma_core::tenant::TenantId;
+use pensieve_catalog::artifacts::ArtifactRecord;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::retention::RetentionSettings;
+use pensieve_core::tenant::TenantId;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 use uuid::Uuid;

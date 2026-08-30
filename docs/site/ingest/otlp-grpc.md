@@ -1,12 +1,12 @@
 ---
 title: OTLP gRPC
-description: Point an OpenTelemetry Collector at kyma's OTLP gRPC endpoint. Logs land in a fixed otel_logs table, auto-created on first export.
+description: Point an OpenTelemetry Collector at pensieve's OTLP gRPC endpoint. Logs land in a fixed otel_logs table, auto-created on first export.
 ---
 
 # OTLP gRPC
 
-kyma speaks the OpenTelemetry Protocol over gRPC. Point your existing
-OTel Collector — or any OTLP-gRPC exporter — at kyma's OTLP port. Logs
+pensieve speaks the OpenTelemetry Protocol over gRPC. Point your existing
+OTel Collector — or any OTLP-gRPC exporter — at pensieve's OTLP port. Logs
 land in the `otel_logs` table in the configured database; the table is
 auto-created on first export.
 
@@ -23,18 +23,18 @@ Two environment variables drive the server:
 
 | Variable             | Default     | Notes                                              |
 | -------------------- | ----------- | -------------------------------------------------- |
-| `KYMA_OTLP_ADDR`     | `off`       | gRPC listen addr. Standard port is `4317`.         |
-| `KYMA_OTLP_DATABASE` | `default`   | Target database for all OTLP logs.                 |
+| `PENSIEVE_OTLP_ADDR`     | `off`       | gRPC listen addr. Standard port is `4317`.         |
+| `PENSIEVE_OTLP_DATABASE` | `default`   | Target database for all OTLP logs.                 |
 
-Set `KYMA_OTLP_ADDR=0.0.0.0:4317` to enable. With the default `off`,
-the OTLP server doesn't bind and the rest of kyma runs unchanged.
+Set `PENSIEVE_OTLP_ADDR=0.0.0.0:4317` to enable. With the default `off`,
+the OTLP server doesn't bind and the rest of pensieve runs unchanged.
 
-The dev `docker-compose.yml` exposes `4317` and sets `KYMA_OTLP_ADDR`
+The dev `docker-compose.yml` exposes `4317` and sets `PENSIEVE_OTLP_ADDR`
 already, so the path below works out of the box.
 
 ## End-to-end example
 
-Wire an OTel Collector to forward logs to kyma:
+Wire an OTel Collector to forward logs to pensieve:
 
 ```yaml
 # otel-collector.yaml
@@ -43,8 +43,8 @@ receivers:
     include: [/var/log/app/*.log]
 
 exporters:
-  otlp/kyma:
-    endpoint: kyma:4317
+  otlp/pensieve:
+    endpoint: pensieve:4317
     tls:
       insecure: true            # local dev; use TLS in prod
     sending_queue:
@@ -56,7 +56,7 @@ service:
   pipelines:
     logs:
       receivers:  [filelog]
-      exporters:  [otlp/kyma]
+      exporters:  [otlp/pensieve]
 ```
 
 Or, from your application directly, with an OTLP-gRPC exporter:
@@ -69,15 +69,15 @@ import logging
 
 provider = LoggerProvider()
 provider.add_log_record_processor(
-    BatchLogRecordProcessor(OTLPLogExporter(endpoint="kyma:4317", insecure=True))
+    BatchLogRecordProcessor(OTLPLogExporter(endpoint="pensieve:4317", insecure=True))
 )
 logging.getLogger().addHandler(LoggingHandler(logger_provider=provider))
 logging.getLogger().setLevel(logging.INFO)
-logging.getLogger(__name__).info("hello kyma over otlp")
+logging.getLogger(__name__).info("hello pensieve over otlp")
 ```
 
 A successful export returns the standard
-`ExportLogsServiceResponse{}`. If kyma rows-ingested doesn't match
+`ExportLogsServiceResponse{}`. If pensieve rows-ingested doesn't match
 the export's record count, a `partial_success` is set with the
 delta — sending clients see this as a soft retry signal.
 
@@ -108,9 +108,9 @@ moves to writing into the real `dynamic` type — see
   `_timestamp` enrichment in your collector pipeline if you need
   guaranteed event time.
 - **Database doesn't exist.** OTLP doesn't have a "create database"
-  step, so the receiver creates one named `KYMA_OTLP_DATABASE` on
+  step, so the receiver creates one named `PENSIEVE_OTLP_DATABASE` on
   first export. Idempotent.
-- **Receiver disabled.** With `KYMA_OTLP_ADDR=off`, the server logs
+- **Receiver disabled.** With `PENSIEVE_OTLP_ADDR=off`, the server logs
   `otlp: disabled` at startup. Clients see TCP refusal — set up
   retries on the exporter side.
 

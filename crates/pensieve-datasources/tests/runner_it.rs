@@ -1,14 +1,14 @@
 //! Integration test — scheduler + runner + a fake DataSource.
 
 use async_trait::async_trait;
-use kyma_catalog::PostgresCatalog;
-use kyma_datasources::catalog_sql;
-use kyma_datasources::registry::DataSourceRegistry;
-use kyma_datasources::runner::DataSourceRunner;
-use kyma_datasources::secrets::EnvSecretStore;
-use kyma_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
-use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
-use kyma_core::tenant::DEFAULT_TENANT;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_datasources::catalog_sql;
+use pensieve_datasources::registry::DataSourceRegistry;
+use pensieve_datasources::runner::DataSourceRunner;
+use pensieve_datasources::secrets::EnvSecretStore;
+use pensieve_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
+use pensieve_core::catalog::{Catalog, NodeInfo, NodeRole};
+use pensieve_core::tenant::DEFAULT_TENANT;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -81,7 +81,7 @@ async fn runner_claims_and_updates_cursor() {
 
     // Enqueue directly on the legacy background_tasks harness this test
     // drives; the production scheduler now enqueues fabric `datasource_sync`
-    // jobs (covered by kyma-jobs' integration test).
+    // jobs (covered by pensieve-jobs' integration test).
     catalog_sql::enqueue_tick(catalog.pool(), DEFAULT_TENANT, id, 1_000)
         .await
         .unwrap();
@@ -99,7 +99,7 @@ async fn runner_claims_and_updates_cursor() {
     // Runner uses a stubbed RowSink — closes over a counter. Avoids
     // depending on a live WritePath here. Real WritePath wiring is
     // covered by the E2E test script.
-    let sink: kyma_datasources::runner::RowSink =
+    let sink: pensieve_datasources::runner::RowSink =
         Arc::new(|_db, _tbl, _rows, _idem| Box::pin(async move { Ok(()) }));
     let runner = DataSourceRunner::new(
         catalog.clone(),

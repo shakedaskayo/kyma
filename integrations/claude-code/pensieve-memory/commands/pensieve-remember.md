@@ -1,12 +1,12 @@
 ---
-description: Save a durable memory to Kyma, or distill the recent conversation into memories.
+description: Save a durable memory to Pensieve, or distill the recent conversation into memories.
 argument-hint: [optional explicit note to remember]
 ---
 
-Persist durable memory to Kyma (your unified memory layer).
+Persist durable memory to Pensieve (your unified memory layer).
 
 **If `$ARGUMENTS` is non-empty**, save it directly: call the MCP tool `save_memory`
-(server `kyma`) with:
+(server `pensieve`) with:
 - `content`: "$ARGUMENTS"
 - `memory_type`: infer one of fact | decision | preference | learning
 - `realm`: the current project realm (working directory basename)

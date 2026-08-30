@@ -2,18 +2,18 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rename Kyma's "connectors" concept to "Data Sources" everywhere (clean break, no aliases) and ship a tabbed `/data-sources` web module with Sources / File Watchers / Claude Code Memory Sync / Memories tabs, backed by a new watcher registry.
+**Goal:** Rename Pensieve's "connectors" concept to "Data Sources" everywhere (clean break, no aliases) and ship a tabbed `/data-sources` web module with Sources / File Watchers / Claude Code Memory Sync / Memories tabs, backed by a new watcher registry.
 
-**Architecture:** Mechanical rename sweeps move bottom-up (crates → symbols → DB/SQL → routes/tools/CLI → TS client → web → docs), each leaving the workspace green. New functionality is three small verticals: a `data_source_watchers` Postgres table + `WatcherRegistry` (server mode) with an in-memory twin in kyma-local (cc-sync), a `GET /v1/data-sources/watchers` endpoint in both modes, and a memory source-summary aggregate endpoint. Web work re-homes the existing connectors UX as the Sources tab and adds three new tabs.
+**Architecture:** Mechanical rename sweeps move bottom-up (crates → symbols → DB/SQL → routes/tools/CLI → TS client → web → docs), each leaving the workspace green. New functionality is three small verticals: a `data_source_watchers` Postgres table + `WatcherRegistry` (server mode) with an in-memory twin in pensieve-local (cc-sync), a `GET /v1/data-sources/watchers` endpoint in both modes, and a memory source-summary aggregate endpoint. Web work re-homes the existing connectors UX as the Sources tab and adds three new tabs.
 
-**Tech Stack:** Rust (axum, sqlx/Postgres, tokio, testcontainers), SQLite (kyma-local), TypeScript (`@kyma-ai/client`), React + TanStack Router/Query + Tailwind/shadcn, VitePress docs.
+**Tech Stack:** Rust (axum, sqlx/Postgres, tokio, testcontainers), SQLite (pensieve-local), TypeScript (`@pensieve-ai/client`), React + TanStack Router/Query + Tailwind/shadcn, VitePress docs.
 
 **Spec:** `docs/superpowers/specs/2026-06-11-data-sources-rename-design.md`
 
-**Plan-level deviation from spec (approved rationale inline):** the spec put all watcher state in the Postgres table. kyma-local (where cc-sync runs) is embedded SQLite and never sees Postgres, so cc-sync watcher state is held in-process in kyma-local and served through the same endpoint shape. The Postgres table serves server-mode filedrop watchers (multi-node visibility is the point there); a single-process local server needs no persistence for live heartbeat state.
+**Plan-level deviation from spec (approved rationale inline):** the spec put all watcher state in the Postgres table. pensieve-local (where cc-sync runs) is embedded SQLite and never sees Postgres, so cc-sync watcher state is held in-process in pensieve-local and served through the same endpoint shape. The Postgres table serves server-mode filedrop watchers (multi-node visibility is the point there); a single-process local server needs no persistence for live heartbeat state.
 
 **Working rules for every task:**
-- Repo root: `/Users/shakedaskayo/shaked/projects/kyma`. Branch off current `feat/federated-sources` (or a new `feat/data-sources-rename` branch — executor's choice, create once at start).
+- Repo root: `/Users/shakedaskayo/shaked/projects/pensieve`. Branch off current `feat/federated-sources` (or a new `feat/data-sources-rename` branch — executor's choice, create once at start).
 - `rg` = ripgrep. Use `perl -pi -e` for in-place edits (BSD sed on macOS mangles `-i`).
 - After every Rust task: `cargo check --workspace` must pass before commit.
 - Rust integration tests need Docker (testcontainers, `pgvector/pgvector:pg16`). Run targeted suites per task, full `cargo test --workspace` only in the final task.
@@ -25,59 +25,59 @@
 ### Task 1: Rename the crates
 
 **Files:**
-- Rename: `crates/kyma-connectors/` → `crates/kyma-datasources/`
-- Rename: `crates/kyma-connector-core/` → `crates/kyma-datasource-core/`
-- Modify: root `Cargo.toml` (workspace members + workspace deps), `crates/kyma-server/Cargo.toml`, `crates/kyma-bin/Cargo.toml`, `crates/kyma-jobs/Cargo.toml`, both renamed crates' `Cargo.toml`
+- Rename: `crates/pensieve-connectors/` → `crates/pensieve-datasources/`
+- Rename: `crates/pensieve-connector-core/` → `crates/pensieve-datasource-core/`
+- Modify: root `Cargo.toml` (workspace members + workspace deps), `crates/pensieve-server/Cargo.toml`, `crates/pensieve-bin/Cargo.toml`, `crates/pensieve-jobs/Cargo.toml`, both renamed crates' `Cargo.toml`
 
 - [ ] **Step 1: Move the crate directories**
 
 ```bash
-cd /Users/shakedaskayo/shaked/projects/kyma
-git mv crates/kyma-connectors crates/kyma-datasources
-git mv crates/kyma-connector-core crates/kyma-datasource-core
+cd /Users/shakedaskayo/shaked/projects/pensieve
+git mv crates/pensieve-connectors crates/pensieve-datasources
+git mv crates/pensieve-connector-core crates/pensieve-datasource-core
 ```
 
 - [ ] **Step 2: Rename packages and dependency references**
 
 ```bash
 # package names inside the moved crates
-perl -pi -e 's/name = "kyma-connectors"/name = "kyma-datasources"/' crates/kyma-datasources/Cargo.toml
-perl -pi -e 's/name = "kyma-connector-core"/name = "kyma-datasource-core"/' crates/kyma-datasource-core/Cargo.toml
-perl -pi -e 's/Stable extension API for third-party kyma connectors/Stable extension API for third-party kyma data sources/' crates/kyma-datasource-core/Cargo.toml
+perl -pi -e 's/name = "pensieve-connectors"/name = "pensieve-datasources"/' crates/pensieve-datasources/Cargo.toml
+perl -pi -e 's/name = "pensieve-connector-core"/name = "pensieve-datasource-core"/' crates/pensieve-datasource-core/Cargo.toml
+perl -pi -e 's/Stable extension API for third-party pensieve connectors/Stable extension API for third-party pensieve data sources/' crates/pensieve-datasource-core/Cargo.toml
 
 # every Cargo.toml that references them (workspace root + consumers)
-rg -l 'kyma-connector' --glob 'Cargo.toml' | xargs perl -pi -e 's/kyma-connectors/kyma-datasources/g; s/kyma-connector-core/kyma-datasource-core/g'
+rg -l 'pensieve-connector' --glob 'Cargo.toml' | xargs perl -pi -e 's/pensieve-connectors/pensieve-datasources/g; s/pensieve-connector-core/pensieve-datasource-core/g'
 ```
 
 - [ ] **Step 3: Fix the Rust `use`/`extern` paths (crate name only — symbols come in Task 2)**
 
 ```bash
-rg -l 'kyma_connector' --glob '*.rs' | xargs perl -pi -e 's/kyma_connectors/kyma_datasources/g; s/kyma_connector_core/kyma_datasource_core/g'
+rg -l 'pensieve_connector' --glob '*.rs' | xargs perl -pi -e 's/pensieve_connectors/pensieve_datasources/g; s/pensieve_connector_core/pensieve_datasource_core/g'
 ```
 
 - [ ] **Step 4: Verify build**
 
 Run: `cargo check --workspace`
-Expected: clean (warnings ok). If a feature gate like `kyma-bin`'s `github` feature references the old crate name (`crates/kyma-bin/Cargo.toml:58`), step 2's sweep already rewrote it — confirm with `rg 'kyma-connectors|kyma_connectors' --glob '!target' || echo CLEAN`.
+Expected: clean (warnings ok). If a feature gate like `pensieve-bin`'s `github` feature references the old crate name (`crates/pensieve-bin/Cargo.toml:58`), step 2's sweep already rewrote it — confirm with `rg 'pensieve-connectors|pensieve_connectors' --glob '!target' || echo CLEAN`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -A && git commit -m "refactor: rename kyma-connectors/kyma-connector-core crates to kyma-datasources/kyma-datasource-core"
+git add -A && git commit -m "refactor: rename pensieve-connectors/pensieve-connector-core crates to pensieve-datasources/pensieve-datasource-core"
 ```
 
 ### Task 2: Rename the Rust symbols
 
 **Files:** all `*.rs` mentioning `Connector*` symbols (~91 files), plus module file renames:
-- Rename: `crates/kyma-server/src/agent/connector_tools.rs` → `datasource_tools.rs`
-- Rename: `crates/kyma-cli/src/connector.rs` → `datasource.rs`
+- Rename: `crates/pensieve-server/src/agent/connector_tools.rs` → `datasource_tools.rs`
+- Rename: `crates/pensieve-cli/src/connector.rs` → `datasource.rs`
 
 This task renames **identifiers and doc comments only**. Do NOT touch string literals containing SQL (`FROM connectors`...), route paths (`/v1/connectors`), tool name strings (`"list_connectors"`), or env vars — those land in Tasks 3–6 together with their behavior change.
 
 - [ ] **Step 1: Sweep type/trait/struct names**
 
 ```bash
-cd /Users/shakedaskayo/shaked/projects/kyma
+cd /Users/shakedaskayo/shaked/projects/pensieve
 rg -l 'Connector' --glob '*.rs' | xargs perl -pi -e '
   s/\bConnectorRegistry\b/DataSourceRegistry/g;
   s/\bConnectorRunner\b/DataSourceRunner/g;
@@ -112,16 +112,16 @@ Manually revert (Edit tool, file by file) any changed **string literal** back to
 - [ ] **Step 3: Rename module files and their `mod` declarations**
 
 ```bash
-git mv crates/kyma-server/src/agent/connector_tools.rs crates/kyma-server/src/agent/datasource_tools.rs
-git mv crates/kyma-cli/src/connector.rs crates/kyma-cli/src/datasource.rs
-rg -n 'mod connector' crates/kyma-server/src crates/kyma-cli/src
+git mv crates/pensieve-server/src/agent/connector_tools.rs crates/pensieve-server/src/agent/datasource_tools.rs
+git mv crates/pensieve-cli/src/connector.rs crates/pensieve-cli/src/datasource.rs
+rg -n 'mod connector' crates/pensieve-server/src crates/pensieve-cli/src
 ```
 
 Update the `mod connector_tools;` / `mod connector;` declarations (now `mod datasource_tools;` / `mod datasource;`) and their use sites (`connector::Op` → `datasource::Op` etc. — step 2's sweep likely caught the paths; verify).
 
 - [ ] **Step 4: Build + run unit tests for the renamed crate**
 
-Run: `cargo check --workspace && cargo test -p kyma-datasources --lib`
+Run: `cargo check --workspace && cargo test -p pensieve-datasources --lib`
 Expected: compiles; lib unit tests pass. Fix residual compile errors (they will all be missed identifier/`mod` mismatches).
 
 - [ ] **Step 5: Verify literals survived intact**
@@ -141,9 +141,9 @@ git add -A && git commit -m "refactor: rename Connector* symbols to DataSource* 
 ### Task 3: DB migration 027 + SQL string sweep
 
 **Files:**
-- Create: `crates/kyma-catalog/migrations/027_data_sources_rename.sql` (if another migration landed first, use the next free number and adjust below)
-- Modify: every `*.rs` with SQL touching `connectors` / `connector_cursors` / `connector_leases` / `connector_tick` / `payload->>'connector_id'` (admin.rs, catalog_sql.rs, runner.rs, scheduler.rs, agent/datasource_tools.rs, kyma-jobs, tests)
-- Test: `crates/kyma-datasources/tests/migration_rename_it.rs` (new)
+- Create: `crates/pensieve-catalog/migrations/027_data_sources_rename.sql` (if another migration landed first, use the next free number and adjust below)
+- Modify: every `*.rs` with SQL touching `connectors` / `connector_cursors` / `connector_leases` / `connector_tick` / `payload->>'connector_id'` (admin.rs, catalog_sql.rs, runner.rs, scheduler.rs, agent/datasource_tools.rs, pensieve-jobs, tests)
+- Test: `crates/pensieve-datasources/tests/migration_rename_it.rs` (new)
 
 - [ ] **Step 1: Write the migration**
 
@@ -176,7 +176,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS background_tasks_data_source_tick_uniq
     WHERE kind = 'data_source_tick' AND status IN ('pending', 'claimed');
 
 -- Watcher registry (file watchers / cc-sync provenance). Server-mode only;
--- kyma-local keeps an in-process equivalent.
+-- pensieve-local keeps an in-process equivalent.
 CREATE TABLE IF NOT EXISTS data_source_watchers (
     id                uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     kind              text NOT NULL CHECK (kind IN ('filedrop','cc_sync')),
@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS data_source_watchers (
 
 - [ ] **Step 2: Write the failing migration test**
 
-Create `crates/kyma-datasources/tests/migration_rename_it.rs`. Pattern-match the container setup from `tests/admin_it.rs` (`pgvector/pgvector:pg16` via testcontainers). The test executes migration files in order directly from disk, seeds pre-rename rows after 026, applies 027, and asserts survival:
+Create `crates/pensieve-datasources/tests/migration_rename_it.rs`. Pattern-match the container setup from `tests/admin_it.rs` (`pgvector/pgvector:pg16` via testcontainers). The test executes migration files in order directly from disk, seeds pre-rename rows after 026, applies 027, and asserts survival:
 
 ```rust
 //! Verifies 027 renames tables in place: rows seeded under the old names
@@ -217,7 +217,7 @@ async fn rename_migration_preserves_rows() {
     // Apply migrations from disk in filename order, stopping before 027.
     let mut files: Vec<_> = std::fs::read_dir(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../kyma-catalog/migrations"
+        "/../pensieve-catalog/migrations"
     ))
     .unwrap()
     .map(|e| e.unwrap().path())
@@ -271,11 +271,11 @@ async fn rename_migration_preserves_rows() {
 }
 ```
 
-Note: if `background_tasks` columns differ (check `rg -n 'CREATE TABLE.*background_tasks' -A15 crates/kyma-catalog/migrations/`), adjust the seed INSERT to its real NOT NULL columns. Same for `connectors` extra columns — read the later ALTERs (`rg -n 'ALTER TABLE connectors' crates/kyma-catalog/migrations/`).
+Note: if `background_tasks` columns differ (check `rg -n 'CREATE TABLE.*background_tasks' -A15 crates/pensieve-catalog/migrations/`), adjust the seed INSERT to its real NOT NULL columns. Same for `connectors` extra columns — read the later ALTERs (`rg -n 'ALTER TABLE connectors' crates/pensieve-catalog/migrations/`).
 
 - [ ] **Step 3: Run the test — expect failure** (027 doesn't exist yet if you wrote the test first; otherwise it fails on seeded INSERT if columns mismatch — fix seeds until the only failure is the missing migration, then add the migration file from Step 1)
 
-Run: `cargo test -p kyma-datasources --test migration_rename_it -- --nocapture`
+Run: `cargo test -p pensieve-datasources --test migration_rename_it -- --nocapture`
 
 - [ ] **Step 4: Sweep the SQL strings + tick kind in code**
 
@@ -289,12 +289,12 @@ For each hit that is a **string literal** (SQL or job kind), update:
 - `'connector_tick'` / `"connector_tick"` → `data_source_tick`
 - `payload->>'connector_id'` → `payload->>'data_source_id'`, and the Rust code building tick payloads (`json!({"connector_id": ...})` → `data_source_id`)
 
-This includes `crates/kyma-datasources/src/{admin,catalog_sql,runner,scheduler}.rs`, `crates/kyma-server/src/agent/datasource_tools.rs` (its `SELECT ... FROM connectors` queries), kyma-jobs, and the integration tests' raw SQL.
+This includes `crates/pensieve-datasources/src/{admin,catalog_sql,runner,scheduler}.rs`, `crates/pensieve-server/src/agent/datasource_tools.rs` (its `SELECT ... FROM connectors` queries), pensieve-jobs, and the integration tests' raw SQL.
 
 - [ ] **Step 5: Run the suites**
 
-Run: `cargo test -p kyma-datasources --test migration_rename_it --test runner_it --test scheduler_it`
-Expected: PASS (admin_it still passes too — routes unchanged so far: `cargo test -p kyma-datasources --test admin_it`).
+Run: `cargo test -p pensieve-datasources --test migration_rename_it --test runner_it --test scheduler_it`
+Expected: PASS (admin_it still passes too — routes unchanged so far: `cargo test -p pensieve-datasources --test admin_it`).
 
 - [ ] **Step 6: Commit**
 
@@ -305,20 +305,20 @@ git add -A && git commit -m "feat: migrate connectors tables to data_sources + w
 ### Task 4: REST routes `/v1/data-sources`
 
 **Files:**
-- Modify: `crates/kyma-datasources/src/admin.rs` (router paths, lines ~22-34), `crates/kyma-server/src/lib.rs:90-108` (nest path if hardcoded), `crates/kyma-datasources/tests/admin_it.rs` (request URIs), any oauth route mentioning connectors
+- Modify: `crates/pensieve-datasources/src/admin.rs` (router paths, lines ~22-34), `crates/pensieve-server/src/lib.rs:90-108` (nest path if hardcoded), `crates/pensieve-datasources/tests/admin_it.rs` (request URIs), any oauth route mentioning connectors
 
 - [ ] **Step 1: Update tests first** — in `admin_it.rs` (and any other test issuing HTTP), replace `"/v1/connectors"` with `"/v1/data-sources"` (all variants: `/catalog`, `/:id`, `/pause`, `/resume`, `/trigger`, `/github/repos`).
 
 - [ ] **Step 2: Run to verify fail**
 
-Run: `cargo test -p kyma-datasources --test admin_it`
+Run: `cargo test -p pensieve-datasources --test admin_it`
 Expected: FAIL with 404s.
 
-- [ ] **Step 3: Flip the router** — in `admin.rs`, change every route registration `"/v1/connectors..."` → `"/v1/data-sources..."`. Check `kyma-server/src/lib.rs` and `kyma-bin/src/main.rs` for `.nest("/v1/connectors", ...)` or similar mount strings and update. Also `rg -n '/v1/connectors' --glob '*.rs'` must end at zero hits.
+- [ ] **Step 3: Flip the router** — in `admin.rs`, change every route registration `"/v1/connectors..."` → `"/v1/data-sources..."`. Check `pensieve-server/src/lib.rs` and `pensieve-bin/src/main.rs` for `.nest("/v1/connectors", ...)` or similar mount strings and update. Also `rg -n '/v1/connectors' --glob '*.rs'` must end at zero hits.
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `cargo test -p kyma-datasources --test admin_it`
+Run: `cargo test -p pensieve-datasources --test admin_it`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -330,7 +330,7 @@ git add -A && git commit -m "feat!: REST surface moves to /v1/data-sources (clea
 ### Task 5: MCP/agent tool rename
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/datasource_tools.rs`
+- Modify: `crates/pensieve-server/src/agent/datasource_tools.rs`
 
 - [ ] **Step 1: Rename tool name strings + descriptions**
 
@@ -341,7 +341,7 @@ git add -A && git commit -m "feat!: REST surface moves to /v1/data-sources (clea
 
 - [ ] **Step 3: Build + targeted test**
 
-Run: `cargo check --workspace && cargo test -p kyma-server agent`
+Run: `cargo check --workspace && cargo test -p pensieve-server agent`
 Expected: green.
 
 - [ ] **Step 4: Commit**
@@ -350,32 +350,32 @@ Expected: green.
 git add -A && git commit -m "feat!: agent tools renamed to list_data_sources / data_source_read"
 ```
 
-### Task 6: CLI `kyma datasource`
+### Task 6: CLI `pensieve datasource`
 
 **Files:**
-- Modify: `crates/kyma-cli/src/main.rs` (~lines 24, 139-141, 511-513), `crates/kyma-cli/src/datasource.rs`
+- Modify: `crates/pensieve-cli/src/main.rs` (~lines 24, 139-141, 511-513), `crates/pensieve-cli/src/datasource.rs`
 
 - [ ] **Step 1: Rename the subcommand**
 
-In `main.rs`: variant `Connector { op: datasource::Op }` → `Datasource { op: datasource::Op }` (clap derives the literal `datasource` from the variant), doc comment "Manage data sources — add a GitHub/GitLab/Bitbucket repo, list, pause, resume, trigger, remove. See `kyma datasource --help`."; match arm `Command::Connector` → `Command::Datasource`.
+In `main.rs`: variant `Connector { op: datasource::Op }` → `Datasource { op: datasource::Op }` (clap derives the literal `datasource` from the variant), doc comment "Manage data sources — add a GitHub/GitLab/Bitbucket repo, list, pause, resume, trigger, remove. See `pensieve datasource --help`."; match arm `Command::Connector` → `Command::Datasource`.
 
-In `datasource.rs`: `IngestOp::Status`/`Tail` flag `#[arg(long)] connector: Option<String>` → `#[arg(long)] datasource: Option<String>` (and uses). Update all user-facing strings: help text, table headers, error messages, confirmation prompts (`rg -n 'connector' crates/kyma-cli/src/ -i` → fix every hit). The HTTP paths it calls were updated to `/v1/data-sources` in Task 4 — verify: `rg -n '/v1/' crates/kyma-cli/src/datasource.rs`.
+In `datasource.rs`: `IngestOp::Status`/`Tail` flag `#[arg(long)] connector: Option<String>` → `#[arg(long)] datasource: Option<String>` (and uses). Update all user-facing strings: help text, table headers, error messages, confirmation prompts (`rg -n 'connector' crates/pensieve-cli/src/ -i` → fix every hit). The HTTP paths it calls were updated to `/v1/data-sources` in Task 4 — verify: `rg -n '/v1/' crates/pensieve-cli/src/datasource.rs`.
 
 - [ ] **Step 2: Build + smoke**
 
-Run: `cargo build -p kyma-cli && ./target/debug/kyma datasource --help && ./target/debug/kyma ingest status --help`
-Expected: help shows `datasource` subcommand with list/add/show/pause/resume/remove/trigger; ingest status shows `--datasource`. `./target/debug/kyma connector --help` exits with "unrecognized subcommand".
+Run: `cargo build -p pensieve-cli && ./target/debug/pensieve datasource --help && ./target/debug/pensieve ingest status --help`
+Expected: help shows `datasource` subcommand with list/add/show/pause/resume/remove/trigger; ingest status shows `--datasource`. `./target/debug/pensieve connector --help` exits with "unrecognized subcommand".
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add -A && git commit -m "feat!: CLI subcommand renamed to kyma datasource; ingest --datasource"
+git add -A && git commit -m "feat!: CLI subcommand renamed to pensieve datasource; ingest --datasource"
 ```
 
 ### Task 7: Capabilities rename
 
 **Files:**
-- Modify: `crates/kyma-server/src/capabilities.rs`
+- Modify: `crates/pensieve-server/src/capabilities.rs`
 
 - [ ] **Step 1: Write failing test** (in the existing `mod tests` of capabilities.rs):
 
@@ -390,11 +390,11 @@ fn capabilities_serialize_data_sources() {
 }
 ```
 
-- [ ] **Step 2: Run to verify fail**: `cargo test -p kyma-server capabilities` → FAIL.
+- [ ] **Step 2: Run to verify fail**: `cargo test -p pensieve-server capabilities` → FAIL.
 
 - [ ] **Step 3: Rename the field** `pub connectors: bool` → `pub data_sources: bool` in the struct and both consts (`SERVER: data_sources: true`, `LOCAL: data_sources: false`); update the module doc comment. Fix any Rust consumers (`rg -n '\.connectors' --glob '*.rs'`).
 
-- [ ] **Step 4: Run to verify pass**: `cargo test -p kyma-server capabilities` → PASS. `cargo check --workspace` green.
+- [ ] **Step 4: Run to verify pass**: `cargo test -p pensieve-server capabilities` → PASS. `cargo check --workspace` green.
 
 - [ ] **Step 5: Commit**
 
@@ -409,14 +409,14 @@ git add -A && git commit -m "feat!: capability key connectors -> data_sources"
 ### Task 8: `WatcherRegistry` (Postgres, server mode)
 
 **Files:**
-- Create: `crates/kyma-datasources/src/watchers.rs`
-- Modify: `crates/kyma-datasources/src/lib.rs` (add `pub mod watchers;`), `crates/kyma-datasources/Cargo.toml` (add `gethostname = "0.4"` — check workspace deps first: `rg gethostname Cargo.toml`; sha2 is already used by filedrop, add `sha2` + `hex` to this crate mirroring filedrop's versions)
-- Test: `crates/kyma-datasources/tests/watchers_it.rs`
+- Create: `crates/pensieve-datasources/src/watchers.rs`
+- Modify: `crates/pensieve-datasources/src/lib.rs` (add `pub mod watchers;`), `crates/pensieve-datasources/Cargo.toml` (add `gethostname = "0.4"` — check workspace deps first: `rg gethostname Cargo.toml`; sha2 is already used by filedrop, add `sha2` + `hex` to this crate mirroring filedrop's versions)
+- Test: `crates/pensieve-datasources/tests/watchers_it.rs`
 
-- [ ] **Step 1: Write failing test** `crates/kyma-datasources/tests/watchers_it.rs` (container setup copied from `admin_it.rs::state()` — pool only, no registry needed):
+- [ ] **Step 1: Write failing test** `crates/pensieve-datasources/tests/watchers_it.rs` (container setup copied from `admin_it.rs::state()` — pool only, no registry needed):
 
 ```rust
-use kyma_datasources::watchers::{ScanStats, WatcherRegistry};
+use pensieve_datasources::watchers::{ScanStats, WatcherRegistry};
 use sqlx::postgres::PgPoolOptions;
 use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
 
@@ -425,7 +425,7 @@ async fn pool() -> (testcontainers::ContainerAsync<Postgres>, sqlx::PgPool) {
     let port = pg.get_host_port_ipv4(5432).await.unwrap();
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
     let pool = PgPoolOptions::new().connect(&url).await.unwrap();
-    sqlx::migrate!("../kyma-catalog/migrations").run(&pool).await.unwrap();
+    sqlx::migrate!("../pensieve-catalog/migrations").run(&pool).await.unwrap();
     (pg, pool)
 }
 
@@ -464,9 +464,9 @@ async fn register_heartbeat_list_prune() {
 }
 ```
 
-- [ ] **Step 2: Run to verify fail**: `cargo test -p kyma-datasources --test watchers_it` → FAIL (module missing).
+- [ ] **Step 2: Run to verify fail**: `cargo test -p pensieve-datasources --test watchers_it` → FAIL (module missing).
 
-- [ ] **Step 3: Implement** `crates/kyma-datasources/src/watchers.rs`:
+- [ ] **Step 3: Implement** `crates/pensieve-datasources/src/watchers.rs`:
 
 ```rust
 //! Watcher registry — file watchers (filedrop, cc-sync) register themselves
@@ -513,10 +513,10 @@ pub struct WatcherRegistry {
     id: Uuid,
 }
 
-/// Hostname for registration; KYMA_NODE_ID overrides the node id.
+/// Hostname for registration; PENSIEVE_NODE_ID overrides the node id.
 pub fn node_identity() -> (String, String, String) {
     let host = gethostname::gethostname().to_string_lossy().into_owned();
-    let node_id = std::env::var("KYMA_NODE_ID").unwrap_or_else(|_| host.clone());
+    let node_id = std::env::var("PENSIEVE_NODE_ID").unwrap_or_else(|_| host.clone());
     let user = std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_else(|_| "unknown".into());
@@ -606,9 +606,9 @@ impl WatcherRegistry {
 }
 ```
 
-Add to `lib.rs`: `pub mod watchers;`. Note `sqlx::migrate!` path in the test references `../kyma-catalog/migrations` — match however `admin_it.rs`/`PostgresCatalog::connect` runs migrations (if `PostgresCatalog::connect` already migrates, use it instead of `sqlx::migrate!` in the test, exactly as `admin_it.rs` does).
+Add to `lib.rs`: `pub mod watchers;`. Note `sqlx::migrate!` path in the test references `../pensieve-catalog/migrations` — match however `admin_it.rs`/`PostgresCatalog::connect` runs migrations (if `PostgresCatalog::connect` already migrates, use it instead of `sqlx::migrate!` in the test, exactly as `admin_it.rs` does).
 
-- [ ] **Step 4: Run to verify pass**: `cargo test -p kyma-datasources --test watchers_it` → PASS.
+- [ ] **Step 4: Run to verify pass**: `cargo test -p pensieve-datasources --test watchers_it` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -619,13 +619,13 @@ git add -A && git commit -m "feat: watcher registry — register/heartbeat/list 
 ### Task 9: Filedrop registers + heartbeats
 
 **Files:**
-- Modify: `crates/kyma-ingest-filedrop/src/lib.rs` (scan hook + tick stats), `crates/kyma-bin/src/main.rs:1044-1064` (wire registry)
-- Modify: `crates/kyma-ingest-filedrop/Cargo.toml` only if it lacks `serde` (the hook passes a plain struct; no dependency on kyma-datasources from filedrop — kyma-bin bridges them)
-- Test: extend existing filedrop tests (`ls crates/kyma-ingest-filedrop/tests` / `#[cfg(test)]`) with a hook-invocation unit test
+- Modify: `crates/pensieve-ingest-filedrop/src/lib.rs` (scan hook + tick stats), `crates/pensieve-bin/src/main.rs:1044-1064` (wire registry)
+- Modify: `crates/pensieve-ingest-filedrop/Cargo.toml` only if it lacks `serde` (the hook passes a plain struct; no dependency on pensieve-datasources from filedrop — pensieve-bin bridges them)
+- Test: extend existing filedrop tests (`ls crates/pensieve-ingest-filedrop/tests` / `#[cfg(test)]`) with a hook-invocation unit test
 
 - [ ] **Step 1: Add scan stats + hook to filedrop**
 
-In `crates/kyma-ingest-filedrop/src/lib.rs`:
+In `crates/pensieve-ingest-filedrop/src/lib.rs`:
 
 ```rust
 /// Outcome of one poll cycle, handed to the optional scan hook.
@@ -669,18 +669,18 @@ _ = tokio::time::sleep(self.config.poll_interval) => {
 
 - [ ] **Step 2: Unit test the hook** — in filedrop's existing test setup (mirror however current tests construct a watcher with an in-memory/local object store), assert the hook fires after a tick with `seen`/`processed` matching dropped files. If existing tests only test `tick()` internals, call `tick()` directly and assert the returned `FiledropScan` counts instead — that's the load-bearing part.
 
-Run: `cargo test -p kyma-ingest-filedrop`
+Run: `cargo test -p pensieve-ingest-filedrop`
 Expected: PASS.
 
-- [ ] **Step 3: Wire registry in kyma-bin**
+- [ ] **Step 3: Wire registry in pensieve-bin**
 
-In `crates/kyma-bin/src/main.rs` (the `KYMA_FILEDROP_ENABLED` block). kyma-bin constructs the Postgres-backed catalog for the admin router — reuse its pool (`rg -n 'PostgresCatalog' crates/kyma-bin/src/main.rs` to find the variable; `.pool().clone()` it):
+In `crates/pensieve-bin/src/main.rs` (the `PENSIEVE_FILEDROP_ENABLED` block). pensieve-bin constructs the Postgres-backed catalog for the admin router — reuse its pool (`rg -n 'PostgresCatalog' crates/pensieve-bin/src/main.rs` to find the variable; `.pool().clone()` it):
 
 ```rust
 let config = FiledropConfig::from_env();
 let mut watcher = FiledropWatcher::new(catalog.clone(), store.clone(), write_path.clone(), config.clone());
-let (host, node_id, user) = kyma_datasources::watchers::node_identity();
-match kyma_datasources::watchers::WatcherRegistry::register(
+let (host, node_id, user) = pensieve_datasources::watchers::node_identity();
+match pensieve_datasources::watchers::WatcherRegistry::register(
     pg_catalog.pool().clone(),
     "filedrop",
     &host,
@@ -699,7 +699,7 @@ match kyma_datasources::watchers::WatcherRegistry::register(
         watcher = watcher.with_scan_hook(std::sync::Arc::new(move |scan| {
             let reg = reg.clone();
             rt.spawn(async move {
-                reg.heartbeat(Some(&kyma_datasources::watchers::ScanStats {
+                reg.heartbeat(Some(&pensieve_datasources::watchers::ScanStats {
                     seen: scan.seen,
                     processed: scan.processed,
                     errors: scan.errors,
@@ -715,7 +715,7 @@ match kyma_datasources::watchers::WatcherRegistry::register(
 }
 ```
 
-(`chrono` — confirm it's a kyma-bin dep, `rg chrono crates/kyma-bin/Cargo.toml`; otherwise use whatever time formatting the file already uses.) Registration failure must not prevent the watcher from running — the `match` above runs the watcher either way.
+(`chrono` — confirm it's a pensieve-bin dep, `rg chrono crates/pensieve-bin/Cargo.toml`; otherwise use whatever time formatting the file already uses.) Registration failure must not prevent the watcher from running — the `match` above runs the watcher either way.
 
 - [ ] **Step 4: Build**: `cargo check --workspace` → green.
 
@@ -728,9 +728,9 @@ git add -A && git commit -m "feat: filedrop watcher registers in watcher registr
 ### Task 10: `GET /v1/data-sources/watchers` (server) + TS client
 
 **Files:**
-- Modify: `crates/kyma-datasources/src/admin.rs` (new route + handler)
+- Modify: `crates/pensieve-datasources/src/admin.rs` (new route + handler)
 - Modify: `packages/client/src/connectors.ts` (still old name until Task 13 — add the function there; Task 13 renames the file)
-- Test: `crates/kyma-datasources/tests/admin_it.rs` (new test fn)
+- Test: `crates/pensieve-datasources/tests/admin_it.rs` (new test fn)
 
 - [ ] **Step 1: Failing test** in `admin_it.rs`:
 
@@ -748,7 +748,7 @@ async fn watchers_list_empty_then_rows() {
     let body: serde_json::Value = body_json(resp).await; // reuse the file's existing body helper
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
 
-    kyma_datasources::watchers::WatcherRegistry::register(
+    pensieve_datasources::watchers::WatcherRegistry::register(
         s.catalog.pool().clone(), "filedrop", "h", "n", "u", serde_json::json!({}),
     ).await.unwrap();
 
@@ -764,7 +764,7 @@ async fn watchers_list_empty_then_rows() {
 
 (Adapt to the file's actual response-reading helper; if requests in this file attach a tenant Extension/auth header, copy that too.)
 
-- [ ] **Step 2: Run to verify fail**: `cargo test -p kyma-datasources --test admin_it watchers` → FAIL 404.
+- [ ] **Step 2: Run to verify fail**: `cargo test -p pensieve-datasources --test admin_it watchers` → FAIL 404.
 
 - [ ] **Step 3: Implement handler** in `admin.rs`:
 
@@ -783,7 +783,7 @@ async fn list_watchers(State(s): State<DataSourceAdminState>) -> impl IntoRespon
 
 Route registration (place BEFORE the `/:id` route so `watchers` isn't captured as an id — axum 0.7 matches static over params, but keep ordering explicit anyway): `.route("/v1/data-sources/watchers", get(list_watchers))`.
 
-- [ ] **Step 4: Run to verify pass**: `cargo test -p kyma-datasources --test admin_it` → PASS.
+- [ ] **Step 4: Run to verify pass**: `cargo test -p pensieve-datasources --test admin_it` → PASS.
 
 - [ ] **Step 5: TS client function** — append to `packages/client/src/connectors.ts`:
 
@@ -810,7 +810,7 @@ export interface DataSourceWatcher {
   stale: boolean;
 }
 
-export async function listDataSourceWatchers(t: KymaTransport): Promise<DataSourceWatcher[]> {
+export async function listDataSourceWatchers(t: PensieveTransport): Promise<DataSourceWatcher[]> {
   const body = await handleResponse<{ items: DataSourceWatcher[] }>(
     await t.request("/v1/data-sources/watchers"),
   );
@@ -826,16 +826,16 @@ Build: `cd packages/client && npm run build` (or the repo's build command — ch
 git add -A && git commit -m "feat: GET /v1/data-sources/watchers endpoint + client"
 ```
 
-### Task 11: kyma-local cc-sync watcher status + local endpoint
+### Task 11: pensieve-local cc-sync watcher status + local endpoint
 
 **Files:**
-- Create: `crates/kyma-local/src/watcher_status.rs`
-- Modify: `crates/kyma-local/src/lib.rs:527-542` (watcher loop updates status; mount route where the other local `/v1` routers are nested — find with `rg -n 'Router::new\(\)|\.nest\(|\.merge\(' crates/kyma-local/src/lib.rs`)
+- Create: `crates/pensieve-local/src/watcher_status.rs`
+- Modify: `crates/pensieve-local/src/lib.rs:527-542` (watcher loop updates status; mount route where the other local `/v1` routers are nested — find with `rg -n 'Router::new\(\)|\.nest\(|\.merge\(' crates/pensieve-local/src/lib.rs`)
 
 - [ ] **Step 1: Implement the in-process status store** (`watcher_status.rs`):
 
 ```rust
-//! Local-mode watcher registry: kyma-local is a single process with SQLite,
+//! Local-mode watcher registry: pensieve-local is a single process with SQLite,
 //! so cc-sync watcher state lives in memory and is served through the same
 //! `/v1/data-sources/watchers` shape as the control plane's Postgres registry.
 
@@ -883,15 +883,15 @@ impl LocalWatcherStatus {
 }
 ```
 
-(Adjust the handler to however other kyma-local routes carry state — if local routers take a shared AppState, add the `LocalWatcherStatus` field there instead of a per-router state; copy the established pattern.)
+(Adjust the handler to however other pensieve-local routes carry state — if local routers take a shared AppState, add the `LocalWatcherStatus` field there instead of a per-router state; copy the established pattern.)
 
-- [ ] **Step 2: Feed it from the cc-sync loop** — in the `KYMA_CC_WATCH` block of `lib.rs`, create `let watcher_status = LocalWatcherStatus::default();` BEFORE router construction so it can be both mounted and moved into the loop. After each `run_cc_phase` call:
+- [ ] **Step 2: Feed it from the cc-sync loop** — in the `PENSIEVE_CC_WATCH` block of `lib.rs`, create `let watcher_status = LocalWatcherStatus::default();` BEFORE router construction so it can be both mounted and moved into the loop. After each `run_cc_phase` call:
 
 ```rust
 let started = chrono::Utc::now().to_rfc3339();
 let (host, node_id, user) = (
     gethostname::gethostname().to_string_lossy().into_owned(),
-    std::env::var("KYMA_NODE_ID").unwrap_or_else(|_| gethostname::gethostname().to_string_lossy().into_owned()),
+    std::env::var("PENSIEVE_NODE_ID").unwrap_or_else(|_| gethostname::gethostname().to_string_lossy().into_owned()),
     std::env::var("USER").unwrap_or_else(|_| "unknown".into()),
 );
 // inside the loop, after run_cc_phase returns Ok(report):
@@ -911,9 +911,9 @@ status.upsert(LocalWatcher {
 
 `run_cc_phase` returns a `CcSyncReport` (aggregating `ProjectSyncReport`s). Add a `summary()` → `serde_json::Value` method on `CcSyncReport` in `cc_sync.rs` packing: total upserted/skipped/user_edited/edges_added/archived, plus `realms: [{realm, upserted, skipped, user_edited, archived, edges_added}]` from the per-project reports (derive or hand-roll; `ProjectSyncReport` isn't Serialize today — either add `Serialize` derives or build the json manually). If `run_cc_phase` currently discards the report, change the loop to capture it (`Ok(report) => { ...upsert... }`).
 
-- [ ] **Step 3: Mount the router** — `.merge(watcher_status.router())` next to the other `/v1` routes in kyma-local's router construction.
+- [ ] **Step 3: Mount the router** — `.merge(watcher_status.router())` next to the other `/v1` routes in pensieve-local's router construction.
 
-- [ ] **Step 4: Test** — unit-test `LocalWatcherStatus::upsert` replaces by id (plain `#[test]` in the module), and `cargo test -p kyma-local` stays green. Manual check (optional, needs a local setup): `KYMA_CC_WATCH=1 kyma serve` then `curl localhost:<port>/v1/data-sources/watchers`.
+- [ ] **Step 4: Test** — unit-test `LocalWatcherStatus::upsert` replaces by id (plain `#[test]` in the module), and `cargo test -p pensieve-local` stays green. Manual check (optional, needs a local setup): `PENSIEVE_CC_WATCH=1 pensieve serve` then `curl localhost:<port>/v1/data-sources/watchers`.
 
 - [ ] **Step 5: Commit**
 
@@ -924,8 +924,8 @@ git add -A && git commit -m "feat: cc-sync watcher status + local /v1/data-sourc
 ### Task 12: Memory source-summary endpoint
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/memory_retrieve.rs` (or the module where memory list/recall HTTP handlers live — confirm with `rg -n 'memory' crates/kyma-server/src/agent/ -l` and pick the handler file that already serves the web memory UI)
-- Modify: kyma-local's matching memory handler if local mode serves memory routes separately (`rg -n 'memory' crates/kyma-local/src/ -l`)
+- Modify: `crates/pensieve-server/src/agent/memory_retrieve.rs` (or the module where memory list/recall HTTP handlers live — confirm with `rg -n 'memory' crates/pensieve-server/src/agent/ -l` and pick the handler file that already serves the web memory UI)
+- Modify: pensieve-local's matching memory handler if local mode serves memory routes separately (`rg -n 'memory' crates/pensieve-local/src/ -l`)
 - Modify: `packages/client/src/` memory module (find: `ls packages/client/src | grep -i memo`)
 
 The web memory UI works in BOTH modes today, so there is one memory HTTP surface reachable in both — implement the aggregate exactly where the existing memory-list endpoint lives, following its engine/dialect pattern.
@@ -934,21 +934,21 @@ The web memory UI works in BOTH modes today, so there is one memory HTTP surface
 
 ```bash
 rg -n 'memory_nodes' crates/ --glob '*.rs' -l
-rg -n 'fn.*(list|recall|search).*memor' crates/kyma-memory/src crates/kyma-server/src crates/kyma-local/src -i
+rg -n 'fn.*(list|recall|search).*memor' crates/pensieve-memory/src crates/pensieve-server/src crates/pensieve-local/src -i
 ```
 
 Identify: (a) the HTTP route serving the memory UI's list, (b) the storage function it calls, (c) whether that storage function is dialect-abstracted (one impl for SQLite + PG) or split.
 
-- [ ] **Step 2: Failing test** — alongside the existing storage-layer tests in kyma-memory (copy their setup; they run against SQLite in-memory or the PG container, whichever the suite uses):
+- [ ] **Step 2: Failing test** — alongside the existing storage-layer tests in pensieve-memory (copy their setup; they run against SQLite in-memory or the PG container, whichever the suite uses):
 
 ```rust
 #[tokio::test]
 async fn source_summary_groups_by_provenance_source_and_realm() {
     // setup: same harness as the neighboring list/recall tests
-    // insert three memories: two with provenance {"source":"claude-code"} realm "kyma",
+    // insert three memories: two with provenance {"source":"claude-code"} realm "pensieve",
     // one with no provenance (counts as "manual"), realm "default"
     // call source_summary()
-    // expect: [("claude-code", "kyma", 2), ("manual", "default", 1)]
+    // expect: [("claude-code", "pensieve", 2), ("manual", "default", 1)]
 }
 ```
 
@@ -978,13 +978,13 @@ GROUP BY 1, 2
 ORDER BY count DESC
 ```
 
-(Match the table/column names actually present — verify `provenance` column name and `status` values from kyma-memory's schema/migrations before writing; adjust to the real enum spellings.)
+(Match the table/column names actually present — verify `provenance` column name and `status` values from pensieve-memory's schema/migrations before writing; adjust to the real enum spellings.)
 
 Return type: `Vec<SourceSummary>` with `{ source: String, realm: String, count: i64 }` (Serialize).
 
 - [ ] **Step 4: HTTP route** — `GET /v1/agent/memory/source-summary` (match the existing memory route prefix exactly — if list lives at e.g. `/v1/agent/memory/list`, mirror it) returning `{ "items": [...] }`. Mount in both server and local exactly where the sibling memory routes are mounted.
 
-- [ ] **Step 5: Run tests**: targeted memory suite (`cargo test -p kyma-memory source_summary` + handler test if the module has HTTP tests) → PASS.
+- [ ] **Step 5: Run tests**: targeted memory suite (`cargo test -p pensieve-memory source_summary` + handler test if the module has HTTP tests) → PASS.
 
 - [ ] **Step 6: TS client** — in the client memory module:
 
@@ -995,7 +995,7 @@ export interface MemorySourceSummary {
   count: number;
 }
 
-export async function memorySourceSummary(t: KymaTransport): Promise<MemorySourceSummary[]> {
+export async function memorySourceSummary(t: PensieveTransport): Promise<MemorySourceSummary[]> {
   const body = await handleResponse<{ items: MemorySourceSummary[] }>(
     await t.request("/v1/agent/memory/source-summary"),
   );
@@ -1088,7 +1088,7 @@ git mv ConnectorRow.tsx DataSourceRow.tsx
 git mv ConnectorsList.tsx DataSourcesList.tsx
 git mv connector-kinds.ts datasource-kinds.ts
 git mv useConnectors.ts useDataSources.ts
-cd /Users/shakedaskayo/shaked/projects/kyma
+cd /Users/shakedaskayo/shaked/projects/pensieve
 ```
 
 (`BrandIcon.tsx`, `RepoPicker.tsx`, `StatusBadge.tsx`, `useOAuthConnect.ts`, `vendor-icons.tsx` keep their names.)
@@ -1225,7 +1225,7 @@ git add -A && git commit -m "feat(web): /data-sources tabbed module — Sources 
 - [ ] **Step 1: Shim exports** — mirror the existing shim style in `web/src/sdk/datasources.ts`:
 
 ```typescript
-export type { DataSourceWatcher, MemorySourceSummary } from "@kyma-ai/client";
+export type { DataSourceWatcher, MemorySourceSummary } from "@pensieve-ai/client";
 
 export function listDataSourceWatchers(_args: Base) {
   return sessionClient().datasources.listDataSourceWatchers();
@@ -1243,7 +1243,7 @@ export function memorySourceSummary(_args: Base) {
 import { useQuery } from "@tanstack/react-query";
 import { FolderSearch, Brain } from "lucide-react";
 import { sessionClient } from "@/sdk/client";
-import type { DataSourceWatcher } from "@kyma-ai/client";
+import type { DataSourceWatcher } from "@pensieve-ai/client";
 
 const KIND_META: Record<string, { label: string; icon: typeof FolderSearch }> = {
   filedrop: { label: "File drop", icon: FolderSearch },
@@ -1263,8 +1263,8 @@ export function WatchersTab() {
     return (
       <div className="p-6 text-sm text-muted-foreground">
         No file watchers are running. Enable the object-store drop watcher with{" "}
-        <code className="rounded bg-muted px-1">KYMA_FILEDROP_ENABLED=1</code> or Claude Code memory
-        sync with <code className="rounded bg-muted px-1">KYMA_CC_WATCH=1</code>.
+        <code className="rounded bg-muted px-1">PENSIEVE_FILEDROP_ENABLED=1</code> or Claude Code memory
+        sync with <code className="rounded bg-muted px-1">PENSIEVE_CC_WATCH=1</code>.
       </div>
     );
 
@@ -1342,7 +1342,7 @@ export function SyncTab() {
     return (
       <div className="p-6 text-sm text-muted-foreground">
         Claude Code memory sync is not running. Start the local server with{" "}
-        <code className="rounded bg-muted px-1">KYMA_CC_WATCH=1</code> to keep file memories synced
+        <code className="rounded bg-muted px-1">PENSIEVE_CC_WATCH=1</code> to keep file memories synced
         into the graph.
       </div>
     );
@@ -1479,7 +1479,7 @@ Static segments outrank `$id` in TanStack Router, so `/data-sources/watchers` ne
 - [ ] **Step 6: Build + visual check**
 
 Run: `cd web && npx tsc --noEmit && npm run build`
-Then `npm run dev` against a local server, open `/data-sources` — confirm: tabs render, Sources lists existing sources, Watchers/Sync show empty-state copy (or live rows with `KYMA_CC_WATCH=1`), Memories shows counts. Screenshot via browser-harness if running headed.
+Then `npm run dev` against a local server, open `/data-sources` — confirm: tabs render, Sources lists existing sources, Watchers/Sync show empty-state copy (or live rows with `PENSIEVE_CC_WATCH=1`), Memories shows counts. Screenshot via browser-harness if running headed.
 
 - [ ] **Step 7: Commit**
 
@@ -1506,7 +1506,7 @@ rg -l '/connectors/' docs/ | xargs perl -pi -e 's|/connectors/|/data-sources/|g'
 
 In `.vitepress/config.ts`: sidebar key `'/connectors/'` → `'/data-sources/'`, `text: 'Connectors'` → `'Data Sources'`, all item links (the sweep above caught the links; fix the `text:` labels by hand where they say "OAuth connectors" → "OAuth sources").
 
-- [ ] **Step 2: Content sweep** — rename user-facing prose: `rg -n -i 'connector' docs/site/ | wc -l`, then `rg -l -i connector docs/site | xargs perl -pi -e 's/\bConnectors\b/Data Sources/g; s/\bconnectors\b/data sources/g; s/\bConnector\b/Data source/g; s/\bconnector\b/data source/g'` and review the diff for casualties (code blocks showing CLI/API examples must show the NEW commands/paths — they were already correct from earlier task sweeps only if docs duplicated them; fix `kyma connector` → `kyma datasource`, `/v1/connectors` → `/v1/data-sources` in fenced blocks). Rename framework.md's trait references to `DataSource`.
+- [ ] **Step 2: Content sweep** — rename user-facing prose: `rg -n -i 'connector' docs/site/ | wc -l`, then `rg -l -i connector docs/site | xargs perl -pi -e 's/\bConnectors\b/Data Sources/g; s/\bconnectors\b/data sources/g; s/\bConnector\b/Data source/g; s/\bconnector\b/data source/g'` and review the diff for casualties (code blocks showing CLI/API examples must show the NEW commands/paths — they were already correct from earlier task sweeps only if docs duplicated them; fix `pensieve connector` → `pensieve datasource`, `/v1/connectors` → `/v1/data-sources` in fenced blocks). Rename framework.md's trait references to `DataSource`.
 
 - [ ] **Step 3: Build the docs site** — find the build script (`cat docs/site/package.json` or root package.json) and run it; VitePress fails on dead links, which catches missed renames.
 
@@ -1522,7 +1522,7 @@ git add -A && git commit -m "docs: connectors -> data sources across the site"
 
 ```bash
 rg -n -i 'connector' --glob '!target' --glob '!node_modules' --glob '!*.lock' \
-  --glob '!docs/superpowers/**' --glob '!crates/kyma-catalog/migrations/0[0-2][0-6]*' \
+  --glob '!docs/superpowers/**' --glob '!crates/pensieve-catalog/migrations/0[0-2][0-6]*' \
   --glob '!CHANGELOG*' . | grep -v '027_data_sources_rename'
 ```
 
@@ -1533,9 +1533,9 @@ Expected: empty (027 references old names by necessity). Fix any stragglers.
 Run: `cargo test --workspace` (Docker up) and `cd web && npm run build && npx tsc --noEmit` and the client package build.
 Expected: all green.
 
-- [ ] **Step 3: CLI smoke against a local server** (if a dev server is handy): `kyma datasource list`, `kyma ingest status` — exercise one real request each.
+- [ ] **Step 3: CLI smoke against a local server** (if a dev server is handy): `pensieve datasource list`, `pensieve ingest status` — exercise one real request each.
 
-- [ ] **Step 4: Update repo docs** — README and any quickstart mentioning `kyma connector` (`rg -n 'kyma connector' README.md docs/` — should already be clean from the gate).
+- [ ] **Step 4: Update repo docs** — README and any quickstart mentioning `pensieve connector` (`rg -n 'pensieve connector' README.md docs/` — should already be clean from the gate).
 
 - [ ] **Step 5: Final commit + summary**
 
@@ -1549,4 +1549,4 @@ git log --oneline feat/federated-sources..HEAD  # review the task commits
 ## Self-review notes (already applied)
 
 - Spec §1 naming map → Tasks 1–7, 13–15, 17. Spec §2 migration → Task 3. Spec §3 web module → Tasks 15–16. Spec §4 watcher registry → Tasks 8–11. Memories summary (spec §3 item 4) → Tasks 12, 16. Spec §5 error handling → registry best-effort (Task 8 heartbeat, Task 9 unregistered fallback). Spec §6 testing → per-task tests + Task 18 gate. Local-mode cc-sync deviation documented in the header.
-- Known adaptive points (flagged inline rather than guessed): exact memory handler file/route prefix (Task 12 Step 1 discovers it), kyma-local router state pattern (Task 11), background_tasks seed columns (Task 3), client class namespace shape (Task 13). Each has a discovery command and a copy-the-neighbor instruction.
+- Known adaptive points (flagged inline rather than guessed): exact memory handler file/route prefix (Task 12 Step 1 discovers it), pensieve-local router state pattern (Task 11), background_tasks seed columns (Task 3), client class namespace shape (Task 13). Each has a discovery command and a copy-the-neighbor instruction.

@@ -1,17 +1,17 @@
 [package]
-name = "kyma-memory"
+name = "pensieve-memory"
 version.workspace = true
 edition = "2021"
 license.workspace = true
 repository.workspace = true
-description = "kyma agentic memory: bi-temporal knowledge graph with hybrid (vector + keyword + graph) recall."
+description = "pensieve agentic memory: bi-temporal knowledge graph with hybrid (vector + keyword + graph) recall."
 
 [dependencies]
-kyma-core = { workspace = true }
-kyma-ingest-core = { workspace = true }
-kyma-embed = { workspace = true }
-kyma-queue = { workspace = true }
-kyma-codeparse = { workspace = true }
+pensieve-core = { workspace = true }
+pensieve-ingest-core = { workspace = true }
+pensieve-embed = { workspace = true }
+pensieve-queue = { workspace = true }
+pensieve-codeparse = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }
@@ -25,6 +25,6 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 
 [dev-dependencies]
-kyma-catalog-sqlite = { workspace = true }
-kyma-format-tlm = { workspace = true }
-kyma-storage = { workspace = true }
+pensieve-catalog-sqlite = { workspace = true }
+pensieve-format-tlm = { workspace = true }
+pensieve-storage = { workspace = true }

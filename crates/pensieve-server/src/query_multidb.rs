@@ -11,14 +11,14 @@
 //!
 //! Mechanism:
 //!   1. Register one `MemorySchemaProvider` per database under the default
-//!      catalog, each holding that database's `KymaTable`s. This makes
+//!      catalog, each holding that database's `PensieveTable`s. This makes
 //!      `db.table` resolve natively via DataFusion's `TableReference`.
 //!   2. For every distinct bare table name, register a `public` view that is a
 //!      `UNION ALL` (reconciled by name) across the databases that have it,
 //!      each branch tagged with its `__database`. Unqualified names bind here.
 //!
-//! The union/null-fill string construction mirrors what `kyma_kql`'s `union`
-//! operator already emits (`crates/kyma-kql/src/parser.rs`), reusing
+//! The union/null-fill string construction mirrors what `pensieve_kql`'s `union`
+//! operator already emits (`crates/pensieve-kql/src/parser.rs`), reusing
 //! DataFusion's own UNION-ALL planner + type coercion for the heavy lifting.
 
 use std::collections::BTreeMap;
@@ -28,16 +28,16 @@ use arrow_schema::DataType;
 use datafusion::catalog_common::MemorySchemaProvider;
 use datafusion::prelude::SessionContext;
 use datafusion::sql::TableReference;
-use kyma_core::catalog::{Catalog, TableRef};
-use kyma_core::segment_format::SegmentFormat;
-use kyma_core::tenant::TenantId;
-use kyma_core::types::NodeId;
-use kyma_exec::KymaTable;
+use pensieve_core::catalog::{Catalog, TableRef};
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_core::tenant::TenantId;
+use pensieve_core::types::NodeId;
+use pensieve_exec::PensieveTable;
 
-/// Databases holding kyma-internal state (agent memory). Excluded from the
+/// Databases holding pensieve-internal state (agent memory). Excluded from the
 /// unqualified cross-database union — mirrors `discover::scope::INTERNAL_DATABASES`
 /// so "all databases" means the user's data, not the engine's.
-pub const INTERNAL_DATABASES: &[&str] = &[kyma_memory::DEFAULT_DATABASE];
+pub const INTERNAL_DATABASES: &[&str] = &[pensieve_memory::DEFAULT_DATABASE];
 
 /// Synthetic provenance column added to unified results so each row carries the
 /// database it originated from.
@@ -112,10 +112,10 @@ pub async fn resolve_all_db_tables(
     Ok(out)
 }
 
-/// Build the KQL [`kyma_kql::SchemaMap`] for the cross-database context: each
+/// Build the KQL [`pensieve_kql::SchemaMap`] for the cross-database context: each
 /// distinct bare table name maps to its merged column superset (with the
 /// `__database` provenance column prepended), matching the registered union view.
-pub fn build_multidb_schema_map(db_tables: &[DbTable]) -> kyma_kql::SchemaMap {
+pub fn build_multidb_schema_map(db_tables: &[DbTable]) -> pensieve_kql::SchemaMap {
     group_by_table(db_tables)
         .into_iter()
         .map(|(name, per_db)| {
@@ -142,7 +142,7 @@ pub async fn register_multidb_context(
     catalog: &Arc<dyn Catalog>,
     format: &Arc<dyn SegmentFormat>,
     node_id: Option<NodeId>,
-    federation: Option<&Arc<kyma_federation::FederationRuntime>>,
+    federation: Option<&Arc<pensieve_federation::FederationRuntime>>,
     tenant: TenantId,
 ) -> Result<(), String> {
     let cat = ctx
@@ -185,20 +185,20 @@ pub async fn register_multidb_context(
         }
     }
 
-    // 2b. Register each local KymaTable under its `db.table` schema-qualified name.
+    // 2b. Register each local PensieveTable under its `db.table` schema-qualified name.
     for dt in db_tables {
         if dt.table.config.federated.is_some() {
             continue;
         }
-        let kt: Arc<KymaTable> = match node_id {
-            Some(nid) => Arc::new(KymaTable::with_node_id(
+        let kt: Arc<PensieveTable> = match node_id {
+            Some(nid) => Arc::new(PensieveTable::with_node_id(
                 dt.table.clone(),
                 catalog.clone(),
                 format.clone(),
                 nid,
                 dt.db.clone(),
             )),
-            None => Arc::new(KymaTable::new(
+            None => Arc::new(PensieveTable::new(
                 dt.table.clone(),
                 catalog.clone(),
                 format.clone(),
@@ -473,8 +473,8 @@ SELECT 'db2' AS \"__database\", \"ts\", NULL AS \"msg\", \"code\" FROM \"db2\".\
     #[test]
     fn schema_map_prepends_provenance() {
         // group_by_table + superset are exercised via the schema-map builder.
-        use kyma_core::catalog::{TableConfig, TableRef};
-        use kyma_core::types::{DatabaseId, SchemaSnapshotId, SnapshotId, TableId};
+        use pensieve_core::catalog::{TableConfig, TableRef};
+        use pensieve_core::types::{DatabaseId, SchemaSnapshotId, SnapshotId, TableId};
         use arrow_schema::{Field, Schema as ArrowSchema};
 
         let mk = |name: &str, cols: &[&str]| TableRef {

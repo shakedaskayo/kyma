@@ -1,7 +1,7 @@
-//! `MEMORY.md` index with a surgical kyma-managed region.
+//! `MEMORY.md` index with a surgical pensieve-managed region.
 //!
 //! Claude Code loads this file into context every session, and humans (and
-//! Claude itself) write entries to it. kyma therefore only ever rewrites the
+//! Claude itself) write entries to it. pensieve therefore only ever rewrites the
 //! region between [`crate::MANAGED_BEGIN`] and [`crate::MANAGED_END`];
 //! everything outside round-trips byte-for-byte. When no markers exist yet,
 //! the managed block is appended at the end — user content is never
@@ -13,7 +13,7 @@ use crate::{MANAGED_BEGIN, MANAGED_END};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManagedEntry {
     pub title: String,
-    /// Relative filename, e.g. `kyma-auth-model.md`.
+    /// Relative filename, e.g. `pensieve-auth-model.md`.
     pub file: String,
     /// Short description after the em-dash.
     pub hook: String,
@@ -89,7 +89,7 @@ impl MemoryIndex {
 
     /// Filenames referenced by bullets in the *user-owned* part of the index
     /// (outside the managed region). Used to defer to user entries instead of
-    /// double-listing a file kyma manages.
+    /// double-listing a file pensieve manages.
     pub fn user_files(&self) -> Vec<String> {
         self.before
             .lines()

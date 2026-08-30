@@ -4,17 +4,17 @@
 //! cursor + job status advance.
 
 use async_trait::async_trait;
-use kyma_catalog::{PgFabricStore, PostgresCatalog};
-use kyma_datasources::catalog_sql;
-use kyma_datasources::registry::DataSourceRegistry;
-use kyma_datasources::runner::{DataSourceTickDeps, PgDataSourceControl, RowSink};
-use kyma_datasources::scheduler::DataSourceScheduler;
-use kyma_datasources::secrets::EnvSecretStore;
-use kyma_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
-use kyma_core::fabric::{WorkerKind, WorkerRegistration};
-use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_jobs::datasource_sync::DataSourceSyncExecutor;
-use kyma_jobs::{ExecutorRegistry, JobRunner, PgQueue};
+use pensieve_catalog::{PgFabricStore, PostgresCatalog};
+use pensieve_datasources::catalog_sql;
+use pensieve_datasources::registry::DataSourceRegistry;
+use pensieve_datasources::runner::{DataSourceTickDeps, PgDataSourceControl, RowSink};
+use pensieve_datasources::scheduler::DataSourceScheduler;
+use pensieve_datasources::secrets::EnvSecretStore;
+use pensieve_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
+use pensieve_core::fabric::{WorkerKind, WorkerRegistration};
+use pensieve_core::tenant::DEFAULT_TENANT;
+use pensieve_jobs::datasource_sync::DataSourceSyncExecutor;
+use pensieve_jobs::{ExecutorRegistry, JobRunner, PgQueue};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -87,7 +87,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
 
     // The production scheduler enqueues a fabric `datasource_sync` job.
     let sched = DataSourceScheduler::new(Arc::new(
-        kyma_datasources::catalog_trait::PgDataSourceCatalog::from_pg_catalog(&catalog),
+        pensieve_datasources::catalog_trait::PgDataSourceCatalog::from_pg_catalog(&catalog),
     ));
     sched.tick_once().await.unwrap();
     // Idempotent: a second tick in the same bucket inserts nothing.
@@ -126,7 +126,7 @@ async fn scheduler_enqueues_fabric_job_and_worker_runs_it() {
         sink,
         graph_register: Arc::new(|_db, _hint| Box::pin(async move { Ok(()) })),
         secrets: Arc::new(EnvSecretStore),
-        credentials: Arc::new(kyma_datasources::runner::NoopCredentialStore),
+        credentials: Arc::new(pensieve_datasources::runner::NoopCredentialStore),
         oauth: None,
         artifacts: None,
         catalog: None,

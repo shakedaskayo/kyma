@@ -1,5 +1,5 @@
 //! SQL builders for memory recall / listing. The queries run server-side
-//! (where `KymaTable` + the `cosine_distance` UDF live) against the columnar
+//! (where `PensieveTable` + the `cosine_distance` UDF live) against the columnar
 //! memory tables. Each query first dedups to the latest version per node id
 //! (`row_number() ... ORDER BY updated_at DESC`), matching the append-only
 //! "latest-wins" model.
@@ -124,7 +124,7 @@ pub fn recall_sql(
     // Optional native-ANN activation: when `ann_threshold` is set, add a
     // `cosine_distance(embedding, q) < threshold` predicate. The planner pushes
     // it down to the columnar scan, where per-extent centroid+radius stats
-    // prune extents (see kyma-exec/kyma-catalog). `None`/0 → exact full-scan.
+    // prune extents (see pensieve-exec/pensieve-catalog). `None`/0 → exact full-scan.
     // Correctness holds either way; the predicate only filters out memories
     // already more distant than the threshold.
     let ann = match ann_threshold {
@@ -663,8 +663,8 @@ mod tests {
 
     #[test]
     fn tokenize_query_lowercases_splits_and_dedups() {
-        let toks = tokenize_query("Kyma uses PGVECTOR; kyma!!");
-        assert_eq!(toks, vec!["kyma", "uses", "pgvector"]);
+        let toks = tokenize_query("Pensieve uses PGVECTOR; pensieve!!");
+        assert_eq!(toks, vec!["pensieve", "uses", "pgvector"]);
     }
 
     #[test]
@@ -786,8 +786,8 @@ mod tests {
         // merge into one (source, realm) bucket; NULL provenance and a blob
         // without a `source` key both count as "manual".
         let rows = vec![
-            json!({"provenance": "{\"source\":\"claude-code\",\"run_id\":\"a\"}", "realm": "kyma", "n": 1}),
-            json!({"provenance": "{\"source\":\"claude-code\",\"run_id\":\"b\"}", "realm": "kyma", "n": 1}),
+            json!({"provenance": "{\"source\":\"claude-code\",\"run_id\":\"a\"}", "realm": "pensieve", "n": 1}),
+            json!({"provenance": "{\"source\":\"claude-code\",\"run_id\":\"b\"}", "realm": "pensieve", "n": 1}),
             json!({"provenance": null, "realm": "default", "n": 1}),
             json!({"provenance": "{\"run_id\":\"c\"}", "realm": "default", "n": 2}),
         ];
@@ -802,7 +802,7 @@ mod tests {
                 },
                 SourceSummary {
                     source: "claude-code".into(),
-                    realm: "kyma".into(),
+                    realm: "pensieve".into(),
                     count: 2
                 },
             ]
@@ -825,13 +825,13 @@ mod tests {
 
     #[test]
     fn fold_source_summary_treats_malformed_provenance_as_manual() {
-        let rows = vec![json!({"provenance": "not json", "realm": "kyma", "n": 1})];
+        let rows = vec![json!({"provenance": "not json", "realm": "pensieve", "n": 1})];
         let out = fold_source_summary(&rows);
         assert_eq!(
             out,
             vec![SourceSummary {
                 source: "manual".into(),
-                realm: "kyma".into(),
+                realm: "pensieve".into(),
                 count: 1
             }]
         );

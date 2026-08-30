@@ -9,8 +9,8 @@
 //! uses).
 
 use chrono::{DateTime, Utc};
-use kyma_core::errors::{CatalogError, Result};
-use kyma_core::tenant::TenantId;
+use pensieve_core::errors::{CatalogError, Result};
+use pensieve_core::tenant::TenantId;
 use sqlx::Row;
 use uuid::Uuid;
 

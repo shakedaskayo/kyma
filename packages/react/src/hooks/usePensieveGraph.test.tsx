@@ -1,5 +1,5 @@
 /**
- * useKymaGraph tests — failing-first TDD.
+ * usePensieveGraph tests — failing-first TDD.
  *
  * Fetch stubs follow the CapabilityGate recipe:
  *   - vi.stubGlobal("fetch", ...) for the global fetch used by the transport.
@@ -10,9 +10,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderHook, cleanup, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import React from "react";
-import { KymaProvider } from "../provider/KymaProvider";
-import { useKymaGraph } from "./useKymaGraph";
-import type { GraphPayload } from "@kyma-ai/client";
+import { PensieveProvider } from "../provider/PensieveProvider";
+import { usePensieveGraph } from "./usePensieveGraph";
+import type { GraphPayload } from "@pensieve-ai/client";
 
 afterEach(() => {
   cleanup();
@@ -25,9 +25,9 @@ function makeQC() {
 
 function wrapper(qc: QueryClient) {
   return ({ children }: { children: React.ReactNode }) => (
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
       {children}
-    </KymaProvider>
+    </PensieveProvider>
   );
 }
 
@@ -59,7 +59,7 @@ function jsonResponse(body: unknown) {
   );
 }
 
-describe("useKymaGraph — two-graph merge", () => {
+describe("usePensieveGraph — two-graph merge", () => {
   it("fetches two graphs and merges nodes/edges with namespace+database tags", async () => {
     const qc = makeQC();
     vi.stubGlobal(
@@ -73,7 +73,7 @@ describe("useKymaGraph — two-graph merge", () => {
 
     const { result } = renderHook(
       () =>
-        useKymaGraph({
+        usePensieveGraph({
           graphs: [
             { database: "db1", graph: "graphA" },
             { database: "db2", graph: "graphB" },
@@ -109,7 +109,7 @@ describe("useKymaGraph — two-graph merge", () => {
 
     const { result } = renderHook(
       () =>
-        useKymaGraph({
+        usePensieveGraph({
           graphs: [
             { database: "db1", graph: "graphA" },
             { database: "db2", graph: "graphB" },
@@ -129,7 +129,7 @@ describe("useKymaGraph — two-graph merge", () => {
 
     const { result } = renderHook(
       () =>
-        useKymaGraph({
+        usePensieveGraph({
           graphs: [{ database: "db1", graph: "graphA" }],
         }),
       { wrapper: wrapper(qc) },
@@ -147,7 +147,7 @@ describe("useKymaGraph — two-graph merge", () => {
     );
 
     const { result } = renderHook(
-      () => useKymaGraph({ graphs: [{ database: "db1", graph: "graphA" }] }),
+      () => usePensieveGraph({ graphs: [{ database: "db1", graph: "graphA" }] }),
       { wrapper: wrapper(qc) },
     );
 
@@ -156,7 +156,7 @@ describe("useKymaGraph — two-graph merge", () => {
   });
 });
 
-describe("useKymaGraph — expandNode", () => {
+describe("usePensieveGraph — expandNode", () => {
   it("expandNode appends new nodes and edges from the expansion response", async () => {
     const qc = makeQC();
 
@@ -184,7 +184,7 @@ describe("useKymaGraph — expandNode", () => {
     );
 
     const { result } = renderHook(
-      () => useKymaGraph({ graphs: [{ database: "db1", graph: "graphA" }] }),
+      () => usePensieveGraph({ graphs: [{ database: "db1", graph: "graphA" }] }),
       { wrapper: wrapper(qc) },
     );
 
@@ -202,7 +202,7 @@ describe("useKymaGraph — expandNode", () => {
   });
 });
 
-describe("useKymaGraph — load all graphs when args is omitted", () => {
+describe("usePensieveGraph — load all graphs when args is omitted", () => {
   it("calls listGraphs then loads each graph when graphs arg is omitted", async () => {
     const qc = makeQC();
 
@@ -218,14 +218,14 @@ describe("useKymaGraph — load all graphs when args is omitted", () => {
       }),
     );
 
-    const { result } = renderHook(() => useKymaGraph(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveGraph(), { wrapper: wrapper(qc) });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false), { timeout: 3000 });
     expect(result.current.nodes.length).toBe(2);
   });
 });
 
-describe("useKymaGraph — searchNodes", () => {
+describe("usePensieveGraph — searchNodes", () => {
   it("searchNodes calls the search endpoint and returns hits", async () => {
     const qc = makeQC();
     const hits = { hits: [GRAPH_A.nodes[0]], total: 1, limit: 20, offset: 0 };
@@ -240,7 +240,7 @@ describe("useKymaGraph — searchNodes", () => {
     );
 
     const { result } = renderHook(
-      () => useKymaGraph({ graphs: [{ database: "db1", graph: "graphA" }] }),
+      () => usePensieveGraph({ graphs: [{ database: "db1", graph: "graphA" }] }),
       { wrapper: wrapper(qc) },
     );
 

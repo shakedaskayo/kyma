@@ -1,8 +1,8 @@
 import { useState, useCallback, type ChangeEvent } from "react";
-import { KymaProvider } from "@kyma-ai/react";
-import { kymaDark, kymaLight } from "@kyma-ai/react";
-import type { KymaTheme } from "@kyma-ai/react";
-import type { KymaAuth } from "@kyma-ai/client";
+import { PensieveProvider } from "@pensieve-ai/react";
+import { pensieveDark, pensieveLight } from "@pensieve-ai/react";
+import type { PensieveTheme } from "@pensieve-ai/react";
+import type { PensieveAuth } from "@pensieve-ai/client";
 
 import { GraphView } from "./views/GraphView";
 import { QueryView } from "./views/QueryView";
@@ -13,10 +13,10 @@ import { HeadlessView } from "./views/HeadlessView";
 
 // ── Local-storage persistence helpers ─────────────────────────────────────────
 
-const LS_ENDPOINT = "kyma-demo:endpoint";
-const LS_TOKEN = "kyma-demo:token";
-const LS_DATABASE = "kyma-demo:database";
-const LS_USE_MINT = "kyma-demo:use-mint";
+const LS_ENDPOINT = "pensieve-demo:endpoint";
+const LS_TOKEN = "pensieve-demo:token";
+const LS_DATABASE = "pensieve-demo:database";
+const LS_USE_MINT = "pensieve-demo:use-mint";
 
 function ls(key: string, fallback = ""): string {
   try {
@@ -39,11 +39,11 @@ function lsSet(key: string, val: string): void {
 type ThemeMode = "dark" | "light" | "custom";
 
 /**
- * "custom" theme — kymaDark base with a purple accent + rounder radius.
- * Demonstrates Partial<KymaTheme> override pattern.
+ * "custom" theme — pensieveDark base with a purple accent + rounder radius.
+ * Demonstrates Partial<PensieveTheme> override pattern.
  */
-const kymaCustom: Partial<KymaTheme> = {
-  ...kymaDark,
+const pensieveCustom: Partial<PensieveTheme> = {
+  ...pensieveDark,
   primary: "270 70% 65%",
   primaryForeground: "270 10% 10%",
   accent: "270 30% 20%",
@@ -77,7 +77,7 @@ export function App() {
 
   // Committed connection (applied on Connect)
   const [activeEndpoint, setActiveEndpoint] = useState("");
-  const [activeAuth, setActiveAuth] = useState<KymaAuth | null>(null);
+  const [activeAuth, setActiveAuth] = useState<PensieveAuth | null>(null);
   const [activeDatabase, setActiveDatabase] = useState<string | undefined>(undefined);
 
   // UI state
@@ -92,22 +92,22 @@ export function App() {
     lsSet(LS_DATABASE, database);
     lsSet(LS_USE_MINT, useMint ? "1" : "0");
 
-    let auth: KymaAuth;
+    let auth: PensieveAuth;
     if (useMint) {
       /**
        * Multi-tenant mint-server pattern:
        * The host app's server mints a short-lived token from its IdP
-       * (or from KYMA_TOKEN for dev). The SDK never sees the raw credential.
+       * (or from PENSIEVE_TOKEN for dev). The SDK never sees the raw credential.
        *
        * Production variant: replace with your OIDC token endpoint, e.g.:
-       *   getToken: () => fetch("/api/auth/kyma-token").then(r => r.text())
+       *   getToken: () => fetch("/api/auth/pensieve-token").then(r => r.text())
        *
-       * OIDC variant: mint a JWT with kyma_role/kyma_databases claims
-       * signed by an issuer listed in KYMA_OIDC_ISSUERS on the server.
+       * OIDC variant: mint a JWT with pensieve_role/pensieve_databases claims
+       * signed by an issuer listed in PENSIEVE_OIDC_ISSUERS on the server.
        */
       auth = {
         getToken: () =>
-          fetch("http://localhost:8788/api/kyma-token").then((r) => {
+          fetch("http://localhost:8788/api/pensieve-token").then((r) => {
             if (!r.ok) throw new Error(`mint-server returned ${r.status}`);
             return r.text();
           }),
@@ -131,12 +131,12 @@ export function App() {
 
   // ── Theme resolution ────────────────────────────────────────────────────────
 
-  const resolvedTheme: Partial<KymaTheme> =
+  const resolvedTheme: Partial<PensieveTheme> =
     themeMode === "light"
-      ? kymaLight
+      ? pensieveLight
       : themeMode === "custom"
-        ? kymaCustom
-        : kymaDark;
+        ? pensieveCustom
+        : pensieveDark;
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -144,7 +144,7 @@ export function App() {
     <div className="demo-shell">
       {/* ── Topbar ─────────────────────────────────────────────────────────── */}
       <div className="demo-topbar">
-        <span className="demo-topbar-title">Kyma Embed Demo</span>
+        <span className="demo-topbar-title">Pensieve Embed Demo</span>
 
         <label className="demo-label">Endpoint</label>
         <input
@@ -176,7 +176,7 @@ export function App() {
               type="password"
               value={token}
               onChange={(e: ChangeEvent<HTMLInputElement>) => setToken(e.target.value)}
-              placeholder="kyma token …"
+              placeholder="pensieve token …"
               disabled={connected}
               style={{ minWidth: 160 }}
             />
@@ -211,8 +211,8 @@ export function App() {
           value={themeMode}
           onChange={(e) => setThemeMode(e.target.value as ThemeMode)}
         >
-          <option value="dark">kymaDark</option>
-          <option value="light">kymaLight</option>
+          <option value="dark">pensieveDark</option>
+          <option value="light">pensieveLight</option>
           <option value="custom">Custom (purple + rounded)</option>
         </select>
       </div>
@@ -238,11 +238,11 @@ export function App() {
           <UnconnectedInstructions />
         ) : (
           /*
-           * KymaProvider is keyed on endpoint|database so switching either
+           * PensieveProvider is keyed on endpoint|database so switching either
            * tears down and recreates the isolated React Query + Zustand
            * stores — no stale data from a previous connection leaks through.
            */
-          <KymaProvider
+          <PensieveProvider
             key={`${activeEndpoint}|${activeDatabase ?? ""}`}
             endpoint={activeEndpoint}
             auth={activeAuth}
@@ -257,7 +257,7 @@ export function App() {
               {tab === "agent" && <AgentView />}
               {tab === "headless" && <HeadlessView />}
             </div>
-          </KymaProvider>
+          </PensieveProvider>
         )}
       </main>
     </div>
@@ -267,18 +267,18 @@ export function App() {
 function UnconnectedInstructions() {
   return (
     <div className="demo-instructions">
-      <h2>Kyma Embed Demo</h2>
+      <h2>Pensieve Embed Demo</h2>
       <p>
         Enter the endpoint URL and a token (or enable the mint server), then click{" "}
-        <strong>Connect</strong> to start exploring the five embeddable Kyma components.
+        <strong>Connect</strong> to start exploring the five embeddable Pensieve components.
       </p>
       <p>
-        Prerequisites: a running Kyma server with{" "}
-        <code>KYMA_CORS_ALLOWED_ORIGINS=http://localhost:5173</code> and a valid bearer token.
+        Prerequisites: a running Pensieve server with{" "}
+        <code>PENSIEVE_CORS_ALLOWED_ORIGINS=http://localhost:5173</code> and a valid bearer token.
       </p>
       <p>
         For the <em>mint server</em> pattern, run{" "}
-        <code>KYMA_TOKEN=... pnpm --filter kyma-embed-demo mint-token</code> in a separate
+        <code>PENSIEVE_TOKEN=... pnpm --filter pensieve-embed-demo mint-token</code> in a separate
         terminal.
       </p>
     </div>

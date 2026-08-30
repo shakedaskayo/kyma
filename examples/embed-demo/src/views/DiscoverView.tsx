@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { KymaDiscover } from "@kyma-ai/react/discover";
+import { PensieveDiscover } from "@pensieve-ai/react/discover";
 
 /**
- * Discover tab: KymaDiscover with onRowOpen -> side-panel JSON detail.
+ * Discover tab: PensieveDiscover with onRowOpen -> side-panel JSON detail.
  * Also wires onExportKql to console.log so the KQL export path is exercised.
  */
 export function DiscoverView() {
@@ -14,15 +14,15 @@ export function DiscoverView() {
   return (
     <div style={{ display: "flex", height: "100%" }}>
       <div style={{ flex: 1, overflow: "hidden" }}>
-        <KymaDiscover
+        <PensieveDiscover
           defaultQuery=""
           style={{ height: "100%" }}
           onRowOpen={(row, source) => {
-            console.log("[kyma-embed-demo] row opened", { source, row });
+            console.log("[pensieve-embed-demo] row opened", { source, row });
             setOpenRow({ row, source });
           }}
           onExportKql={(kql) => {
-            console.log("[kyma-embed-demo] KQL export:", kql);
+            console.log("[pensieve-embed-demo] KQL export:", kql);
           }}
           onSearchChange={(_search) => {
             // Could sync search text to URL params here

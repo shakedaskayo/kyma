@@ -5,7 +5,7 @@
 //! `<id>.<region>.fabric.microsoft.com`, queryable with T-SQL. Auth is an
 //! Entra ID service principal (client-credentials flow) whose token is scoped
 //! to `https://database.windows.net/`. Fabric executes the pushed-down SQL on
-//! its own compute; kyma only streams back the (already filtered/joined)
+//! its own compute; pensieve only streams back the (already filtered/joined)
 //! result rows.
 //!
 //! Two entry points:
@@ -28,7 +28,7 @@ use datafusion::physical_plan::SendableRecordBatchStream;
 use datafusion::sql::unparser::dialect::Dialect;
 use datafusion_federation::sql::{AstAnalyzer, SQLExecutor};
 use futures::StreamExt;
-use kyma_core::credentials::CredentialValue;
+use pensieve_core::credentials::CredentialValue;
 use tiberius::{AuthMethod, Client, ColumnData, Config, EncryptionLevel, FromSql};
 use tokio::net::TcpStream;
 use tokio::sync::Semaphore;
@@ -38,7 +38,7 @@ use uuid::Uuid;
 
 use crate::FederationGuardrails;
 
-/// Stable platform id stored in [`kyma_core::catalog::FederatedTableSpec`].
+/// Stable platform id stored in [`pensieve_core::catalog::FederatedTableSpec`].
 pub const PLATFORM_ID: &str = "msfabric";
 
 /// Entra token audience for TDS endpoints (Fabric SQL, Azure SQL).
@@ -310,7 +310,7 @@ impl SQLExecutor for MsFabricExecutor {
 
     async fn get_table_schema(&self, _table_name: &str) -> DfResult<SchemaRef> {
         Err(DataFusionError::NotImplemented(
-            "msfabric: schemas are cached in the kyma catalog".into(),
+            "msfabric: schemas are cached in the pensieve catalog".into(),
         ))
     }
 }

@@ -1,6 +1,6 @@
 name: packages
 
-# CI gate for @kyma-ai/client and @kyma-ai/react.
+# CI gate for @pensieve-ai/client and @pensieve-ai/react.
 # Runs on every PR and push to main that touches package sources.
 
 on:
@@ -52,7 +52,7 @@ jobs:
         run: pnpm typecheck:all
 
       - name: Build embed-demo (host-app integration smoke test)
-        run: pnpm --filter kyma-embed-demo build
+        run: pnpm --filter pensieve-embed-demo build
 
       - name: Build Storybook
-        run: pnpm --filter @kyma-ai/react build-storybook
+        run: pnpm --filter @pensieve-ai/react build-storybook

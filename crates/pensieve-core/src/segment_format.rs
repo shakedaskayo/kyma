@@ -56,7 +56,7 @@ pub trait SegmentFormat: Send + Sync + 'static {
     /// Borrow the underlying object store, when the format is object-store
     /// backed.
     ///
-    /// The ANN query path (`kyma-exec`'s `ann_topk`) needs the raw store to
+    /// The ANN query path (`pensieve-exec`'s `ann_topk`) needs the raw store to
     /// fetch per-extent index sidecars (which live next to extents under
     /// `{tenant}/indexes/…`, not addressed through the format). A format that
     /// is not object-store backed returns `None`, and callers fall back to the
@@ -102,7 +102,7 @@ pub struct ExtentMetadata {
 
 /// A lowered, format-agnostic predicate evaluable at the block / extent level.
 ///
-/// Richer expressions live in `kyma-plan`'s `LogicalPlan`; the exec layer
+/// Richer expressions live in `pensieve-plan`'s `LogicalPlan`; the exec layer
 /// translates them to this shape before calling into the format.
 #[derive(Debug, Clone)]
 pub enum BlockPredicate {
@@ -202,9 +202,9 @@ pub struct ExtentWriteResult {
 /// right decoder per object:
 ///
 /// - `start_extent` always delegates to the configured **write** format
-///   (`KYMA_WRITE_FORMAT`), so writes flip wholesale.
+///   (`PENSIEVE_WRITE_FORMAT`), so writes flip wholesale.
 /// - `open_extent` sniffs the object's first 4 magic bytes and delegates to
-///   whichever registered reader claims them (`magic()[..4]`). TLM (`KYMA…`,
+///   whichever registered reader claims them (`magic()[..4]`). TLM (`PENSIEVE…`,
 ///   both v1/v2) and Parquet (`PAR1`) coexist, so old extents stay readable
 ///   forever and compaction migrates formats organically.
 ///

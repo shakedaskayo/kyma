@@ -2,11 +2,11 @@
 # Kafka ingest E2E.
 #
 # 1. Ensure redpanda is up.
-# 2. Create a test topic + kyma target table.
-# 3. Start kyma with Kafka consumer enabled on that topic.
+# 2. Create a test topic + pensieve target table.
+# 3. Start pensieve with Kafka consumer enabled on that topic.
 # 4. Produce NDJSON messages into Kafka.
 # 5. Verify rows appear in the table within the batch timeout.
-# 6. Stop kyma, produce more messages, restart kyma — verify it picks up
+# 6. Stop pensieve, produce more messages, restart pensieve — verify it picks up
 #    from where it left off (at-least-once, no data loss).
 
 set -euo pipefail
@@ -14,33 +14,33 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-TOPIC="kyma-test-$(date +%s)"
-GROUP="kyma-ingest-test-$(date +%s)"
+TOPIC="pensieve-test-$(date +%s)"
+GROUP="pensieve-ingest-test-$(date +%s)"
 
-export KYMA_CATALOG_URL="postgres://kyma:kyma_dev@localhost:5433/kyma"
-export KYMA_S3_ENDPOINT="http://localhost:9000"
-export KYMA_S3_BUCKET="kyma"
-export KYMA_S3_ACCESS_KEY_ID="kyma_admin"
-export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
-export KYMA_S3_PATH_STYLE="true"
-export KYMA_S3_ALLOW_HTTP="true"
-export KYMA_HTTP_ADDR="127.0.0.1:8080"
-export KYMA_GRPC_ADDR="off"
-export KYMA_OTLP_ADDR="off"
-export KYMA_COMPACTION_POLL_SECS="3600"
-export KYMA_RETENTION_POLL_SECS="3600"
-export KYMA_PHYSICAL_GC_POLL_SECS="3600"
+export PENSIEVE_CATALOG_URL="postgres://pensieve:pensieve_dev@localhost:5433/pensieve"
+export PENSIEVE_S3_ENDPOINT="http://localhost:9000"
+export PENSIEVE_S3_BUCKET="pensieve"
+export PENSIEVE_S3_ACCESS_KEY_ID="pensieve_admin"
+export PENSIEVE_S3_SECRET_ACCESS_KEY="pensieve_admin_dev"
+export PENSIEVE_S3_PATH_STYLE="true"
+export PENSIEVE_S3_ALLOW_HTTP="true"
+export PENSIEVE_HTTP_ADDR="127.0.0.1:8080"
+export PENSIEVE_GRPC_ADDR="off"
+export PENSIEVE_OTLP_ADDR="off"
+export PENSIEVE_COMPACTION_POLL_SECS="3600"
+export PENSIEVE_RETENTION_POLL_SECS="3600"
+export PENSIEVE_PHYSICAL_GC_POLL_SECS="3600"
 
-export KYMA_KAFKA_ENABLED=1
-export KYMA_KAFKA_BROKERS="localhost:9092"
-export KYMA_KAFKA_GROUP="$GROUP"
-export KYMA_KAFKA_TOPICS="$TOPIC:default.kafka_events"
-export KYMA_KAFKA_BATCH_SIZE=10
-export KYMA_KAFKA_BATCH_TIMEOUT_MS=500
+export PENSIEVE_KAFKA_ENABLED=1
+export PENSIEVE_KAFKA_BROKERS="localhost:9092"
+export PENSIEVE_KAFKA_GROUP="$GROUP"
+export PENSIEVE_KAFKA_TOPICS="$TOPIC:default.kafka_events"
+export PENSIEVE_KAFKA_BATCH_SIZE=10
+export PENSIEVE_KAFKA_BATCH_TIMEOUT_MS=500
 export RUST_LOG="${RUST_LOG:-info,sqlx=warn,rdkafka=warn,hyper=warn}"
 
 HTTP_BASE="http://127.0.0.1:8080"
-LOG_FILE="/tmp/kyma-kafka.log"
+LOG_FILE="/tmp/pensieve-kafka.log"
 SERVER_PID=""
 
 if [[ -t 1 ]]; then
@@ -55,27 +55,27 @@ f()       { printf "  ${RED}FAIL${NC} %s\n" "$*"; fail=$((fail+1)); }
 cleanup() { [[ -n "${SERVER_PID:-}" ]] && kill -9 "$SERVER_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
-if ! docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1; then
+if ! docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null 2>&1; then
     printf "${RED}docker-compose stack (postgres) not up.${NC}\n"; exit 2
 fi
-if ! docker exec kyma-redpanda rpk cluster info >/dev/null 2>&1; then
+if ! docker exec pensieve-redpanda rpk cluster info >/dev/null 2>&1; then
     printf "${RED}redpanda not up. Run: docker-compose up -d redpanda${NC}\n"; exit 2
 fi
 
 section "Reset state"
-docker exec kyma-postgres psql -U kyma -d kyma -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
-docker exec kyma-minio mc rm --recursive --force local/kyma >/dev/null 2>&1 || true
-docker exec kyma-minio mc mb --ignore-existing local/kyma >/dev/null
+docker exec pensieve-postgres psql -U pensieve -d pensieve -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
+docker exec pensieve-minio mc rm --recursive --force local/pensieve >/dev/null 2>&1 || true
+docker exec pensieve-minio mc mb --ignore-existing local/pensieve >/dev/null
 
-section "Create Kafka topic + kyma target table"
-docker exec kyma-redpanda rpk topic create "$TOPIC" -p 1 -r 1 >/dev/null
-./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
-./target/debug/kyma-cli create-table --db default --name kafka_events \
+section "Create Kafka topic + pensieve target table"
+docker exec pensieve-redpanda rpk topic create "$TOPIC" -p 1 -r 1 >/dev/null
+./target/debug/pensieve-cli create-database default --if-not-exists >/dev/null
+./target/debug/pensieve-cli create-table --db default --name kafka_events \
     --schema 'timestamp:timestamp,level:string,message:string' >/dev/null
 ok "topic=$TOPIC, table=default.kafka_events"
 
-section "Start kyma with Kafka consumer enabled"
-./target/debug/kyma >"$LOG_FILE" 2>&1 &
+section "Start pensieve with Kafka consumer enabled"
+./target/debug/pensieve >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 for i in 1 2 3 4 5 6 7 8 9 10; do
     if curl -sf "$HTTP_BASE/health" >/dev/null 2>&1; then break; fi; sleep 1
@@ -91,7 +91,7 @@ section "Produce 30 NDJSON messages into Kafka"
 for i in $(seq 1 30); do
     payload="{\"timestamp\":\"2026-04-20T11:00:$(printf %02d $((i % 60)))Z\",\"level\":\"INFO\",\"message\":\"kafka-msg-$i\"}"
     echo "$payload"
-done | docker exec -i kyma-redpanda rpk topic produce "$TOPIC" --brokers=localhost:9092 >/dev/null
+done | docker exec -i pensieve-redpanda rpk topic produce "$TOPIC" --brokers=localhost:9092 >/dev/null
 
 section "Wait for consumer to ingest all 30"
 got=0
@@ -125,19 +125,19 @@ else
     f "LIKE '%kafka-msg-17%' count=$hit"
 fi
 
-section "Shutdown kyma, produce more, restart — verify no data loss"
+section "Shutdown pensieve, produce more, restart — verify no data loss"
 kill -9 "$SERVER_PID"
 wait "$SERVER_PID" 2>/dev/null || true
 SERVER_PID=""
 
-# Produce 10 more messages while kyma is down.
+# Produce 10 more messages while pensieve is down.
 for i in $(seq 31 40); do
     payload="{\"timestamp\":\"2026-04-20T11:01:$(printf %02d $((i % 60)))Z\",\"level\":\"INFO\",\"message\":\"kafka-msg-$i\"}"
     echo "$payload"
-done | docker exec -i kyma-redpanda rpk topic produce "$TOPIC" --brokers=localhost:9092 >/dev/null
+done | docker exec -i pensieve-redpanda rpk topic produce "$TOPIC" --brokers=localhost:9092 >/dev/null
 
-# Restart kyma.
-./target/debug/kyma >>"$LOG_FILE" 2>&1 &
+# Restart pensieve.
+./target/debug/pensieve >>"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 for i in 1 2 3 4 5 6 7 8 9 10; do
     if curl -sf "$HTTP_BASE/health" >/dev/null 2>&1; then break; fi; sleep 1
@@ -159,8 +159,8 @@ else
 fi
 
 section "Metrics: Kafka counter"
-if curl -s "$HTTP_BASE/metrics" | grep -q 'kyma_kafka_messages_ingested_total'; then
-    ok "kyma_kafka_messages_ingested_total exported"
+if curl -s "$HTTP_BASE/metrics" | grep -q 'pensieve_kafka_messages_ingested_total'; then
+    ok "pensieve_kafka_messages_ingested_total exported"
 else
     f "no kafka metric"
 fi

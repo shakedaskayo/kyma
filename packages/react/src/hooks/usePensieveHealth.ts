@@ -20,7 +20,7 @@ type HealthState = {
  *
  * Call `start(endpoint)` to begin polling; the returned callback stops it.
  */
-export const useKymaHealth = create<HealthState>((set, get) => ({
+export const usePensieveHealth = create<HealthState>((set, get) => ({
   online: true,
   version: null,
   updated: false,

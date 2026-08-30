@@ -189,9 +189,9 @@ async fn shutdown_drains_pending_jobs() {
 // Durable (catalog-backed) tier, over the embedded SQLite catalog.
 // ---------------------------------------------------------------------------
 
-async fn sqlite_catalog() -> Arc<dyn kyma_core::catalog::Catalog> {
+async fn sqlite_catalog() -> Arc<dyn pensieve_core::catalog::Catalog> {
     Arc::new(
-        kyma_catalog_sqlite::SqliteCatalog::connect_in_memory()
+        pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory()
             .await
             .expect("open in-memory catalog"),
     )
@@ -223,7 +223,7 @@ async fn durable_submit_survives_and_completes() {
     let leftover = catalog
         .claim_task(
             "t_durable",
-            kyma_core::types::NodeId::new(),
+            pensieve_core::types::NodeId::new(),
             chrono::Duration::seconds(60),
         )
         .await

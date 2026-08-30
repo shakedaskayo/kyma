@@ -1,9 +1,9 @@
 //! Queue front-ends: how a worker reaches the control plane.
 
 use async_trait::async_trait;
-use kyma_catalog::PgFabricStore;
-use kyma_core::fabric::ClaimedJob;
-use kyma_core::tenant::TenantId;
+use pensieve_catalog::PgFabricStore;
+use pensieve_core::fabric::ClaimedJob;
+use pensieve_core::tenant::TenantId;
 use serde_json::Value as Json;
 use std::sync::Arc;
 use uuid::Uuid;

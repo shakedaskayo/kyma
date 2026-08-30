@@ -25,7 +25,7 @@ pub enum ConsumerAction {
 }
 
 /// A single read/write of memory by a consumer (coding agent, MCP client, the
-/// Ask-Kyma agent, …). Serialized verbatim into the live WS frames the frontend
+/// Ask-Pensieve agent, …). Serialized verbatim into the live WS frames the frontend
 /// renders, so field names are the wire contract.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsumerActivity {
@@ -35,7 +35,7 @@ pub struct ConsumerActivity {
     pub consumer_id: String,
     /// Agent kind / source: the MCP client name when known (`"claude-code"`,
     /// `"cursor"`, `"windsurf"`, `"codex"`, …), else the transport source
-    /// (`"local-serve"`, `"server"`, `"mcp-stdio"`, `"kyma"`). The frontend maps
+    /// (`"local-serve"`, `"server"`, `"mcp-stdio"`, `"pensieve"`). The frontend maps
     /// this to an icon + colour with a sensible default for unknown kinds.
     pub kind: String,
     /// Human display label (best-effort: the subject, else the client/kind).
@@ -110,7 +110,7 @@ mod tests {
             tenant: "default".into(),
             action,
             node_ids: vec!["memory:abc".into()],
-            namespaces: vec!["kyma".into()],
+            namespaces: vec!["pensieve".into()],
             query_preview: Some("auth flow".into()),
             ts: 1_700_000_000_000,
             host: Some("ws-mbp".into()),

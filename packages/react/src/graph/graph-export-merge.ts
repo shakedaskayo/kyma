@@ -1,9 +1,9 @@
 /**
  * Mutable accumulator for progressive full-graph export loading. Pages from
  * multiple (database, graph) streams merge into one node/edge set with
- * composite-id dedup (same scheme as useKymaGraph) plus a position map.
+ * composite-id dedup (same scheme as usePensieveGraph) plus a position map.
  */
-import type { GraphExportPage, GraphNode, GraphRelationship, GraphStats } from "@kyma-ai/client";
+import type { GraphExportPage, GraphNode, GraphRelationship, GraphStats } from "@pensieve-ai/client";
 
 export interface ExportAccumulator {
   nodes: GraphNode[];

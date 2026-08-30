@@ -7,8 +7,8 @@ use uuid::Uuid;
 
 use crate::metrics::DataSourceMetrics;
 use crate::secrets::SecretStore;
-use kyma_core::credentials::CredentialStore;
-use kyma_core::tenant::TenantId;
+use pensieve_core::credentials::CredentialStore;
+use pensieve_core::tenant::TenantId;
 
 /// How a data source is driven — periodic tick or long-lived lease.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -94,10 +94,10 @@ pub struct DataSourceCtx {
     /// platforms like `msfabric`) that register schema-only tables instead of
     /// returning rows. `None` when the runner wasn't wired with a catalog —
     /// such data sources must fail with a Config error in that case.
-    pub catalog: Option<Arc<dyn kyma_core::catalog::Catalog>>,
+    pub catalog: Option<Arc<dyn pensieve_core::catalog::Catalog>>,
     /// The data source's configured target database. Row-producing data sources
     /// never need it (the runner sinks into it on their behalf); metadata-sync
-    /// data sources use it as the kyma database to register tables under.
+    /// data sources use it as the pensieve database to register tables under.
     pub target_database: String,
 }
 

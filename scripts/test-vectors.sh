@@ -10,21 +10,21 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-export KYMA_CATALOG_URL="postgres://kyma:kyma_dev@localhost:5433/kyma"
-export KYMA_S3_ENDPOINT="http://localhost:9000"
-export KYMA_S3_BUCKET="kyma"
-export KYMA_S3_ACCESS_KEY_ID="kyma_admin"
-export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
-export KYMA_S3_PATH_STYLE="true"
-export KYMA_S3_ALLOW_HTTP="true"
-export KYMA_HTTP_ADDR="127.0.0.1:8080"
-export KYMA_COMPACTION_POLL_SECS="3600"
-export KYMA_RETENTION_POLL_SECS="3600"
-export KYMA_PHYSICAL_GC_POLL_SECS="3600"
+export PENSIEVE_CATALOG_URL="postgres://pensieve:pensieve_dev@localhost:5433/pensieve"
+export PENSIEVE_S3_ENDPOINT="http://localhost:9000"
+export PENSIEVE_S3_BUCKET="pensieve"
+export PENSIEVE_S3_ACCESS_KEY_ID="pensieve_admin"
+export PENSIEVE_S3_SECRET_ACCESS_KEY="pensieve_admin_dev"
+export PENSIEVE_S3_PATH_STYLE="true"
+export PENSIEVE_S3_ALLOW_HTTP="true"
+export PENSIEVE_HTTP_ADDR="127.0.0.1:8080"
+export PENSIEVE_COMPACTION_POLL_SECS="3600"
+export PENSIEVE_RETENTION_POLL_SECS="3600"
+export PENSIEVE_PHYSICAL_GC_POLL_SECS="3600"
 export RUST_LOG="${RUST_LOG:-warn}"
 
 HTTP_BASE="http://127.0.0.1:8080"
-LOG_FILE="/tmp/kyma-vectors.log"
+LOG_FILE="/tmp/pensieve-vectors.log"
 SERVER_PID=""
 
 if [[ -t 1 ]]; then
@@ -46,10 +46,10 @@ cleanup() {
 trap cleanup EXIT
 
 section "Build release binary"
-cargo build --release -p kyma-bin -q
+cargo build --release -p pensieve-bin -q
 
-section "Start kyma server"
-./target/release/kyma > "$LOG_FILE" 2>&1 &
+section "Start pensieve server"
+./target/release/pensieve > "$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 1 40); do
     if curl -sf "$HTTP_BASE/health" > /dev/null 2>&1; then

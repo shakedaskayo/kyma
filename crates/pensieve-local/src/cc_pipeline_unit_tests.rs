@@ -5,9 +5,9 @@ use crate::cc_pipeline::{run_pass, CcPipelineOptions};
 use crate::cc_sync::CcSyncOptions;
 use crate::cc_writeback::WritebackConfig;
 use crate::{open_engine, Engine, Paths};
-use kyma_embed::{EmbedError, EmbeddingBackend};
-use kyma_memory::{CreateMemory, MemoryType, MemoryWriter};
-use kyma_server::agent::cc_curate::{CurationConfig, LlmCurationConfig};
+use pensieve_embed::{EmbedError, EmbeddingBackend};
+use pensieve_memory::{CreateMemory, MemoryType, MemoryWriter};
+use pensieve_server::agent::cc_curate::{CurationConfig, LlmCurationConfig};
 
 #[derive(Debug)]
 struct TestEmbed;
@@ -72,7 +72,7 @@ async fn full_pass_ingests_promotes_and_reindexes() {
     let claude_json = tmp.path().join("claude.json");
     write(&claude_json, r#"{"projects": {"/tmp/proj": {}}}"#);
 
-    // A high-value kyma memory in the same realm — promotion candidate.
+    // A high-value pensieve memory in the same realm — promotion candidate.
     let mut cm = CreateMemory::new("We always deploy through the staging gate first.");
     cm.title = Some("Staging Gate Rule".to_string());
     cm.memory_type = MemoryType::Decision;
@@ -101,17 +101,17 @@ async fn full_pass_ingests_promotes_and_reindexes() {
     assert_eq!(report.curated[0].applied.written, 1);
 
     // The promoted file landed next to Claude Code's own memory file.
-    let promoted = mem.join("kyma-staging-gate-rule.md");
-    let parsed = kyma_ccmem::frontmatter::parse(
+    let promoted = mem.join("pensieve-staging-gate-rule.md");
+    let parsed = pensieve_ccmem::frontmatter::parse(
         &std::fs::read_to_string(&promoted).expect("promoted file"),
     )
     .expect("parses");
-    assert!(parsed.is_kyma_authored());
+    assert!(parsed.is_pensieve_authored());
     assert!(parsed.body.contains("staging gate"));
     // MEMORY.md: user entry intact + managed region with the promotion.
     let idx = std::fs::read_to_string(mem.join("MEMORY.md")).expect("index");
     assert!(idx.contains("- [Auth model](auth-model.md) — tokens"));
-    assert!(idx.contains("kyma-staging-gate-rule.md"));
+    assert!(idx.contains("pensieve-staging-gate-rule.md"));
 
     // Second pass: fully idempotent (promoted file re-ingest is loop-guarded,
     // no rewrites, no index churn).
@@ -171,7 +171,7 @@ async fn quiet_deferral_replans_until_writeback_lands() {
 
     let report = run_pass(&engine, &writer, None, &opts).await.expect("pass 1");
     assert!(report.curated[0].applied.skipped_quiet);
-    let promoted = mem.join("kyma-deferred-promotion.md");
+    let promoted = mem.join("pensieve-deferred-promotion.md");
     assert!(!promoted.exists(), "deferred: nothing written mid-session");
 
     // Session ends → the next pass must still want to write the file
@@ -220,6 +220,6 @@ async fn curate_disabled_only_ingests() {
     let report = run_pass(&engine, &writer, None, &opts).await.expect("pass");
     assert_eq!(report.sync.projects[0].upserted, 1);
     assert!(report.curated.is_empty());
-    assert!(!mem.join("kyma-big.md").exists());
+    assert!(!mem.join("pensieve-big.md").exists());
     assert!(!mem.join("MEMORY.md").exists(), "no index invented");
 }

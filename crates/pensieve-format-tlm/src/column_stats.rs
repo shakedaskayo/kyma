@@ -2,7 +2,7 @@
 //!
 //! This is the single source of truth for the `column_stats` JSON every extent
 //! carries, regardless of segment format (TLM, Parquet, …). The catalog's
-//! [`PrunePredicate`](kyma_core::catalog::PrunePredicate) reads these keys
+//! [`PrunePredicate`](pensieve_core::catalog::PrunePredicate) reads these keys
 //! (`distinct`, `tokens`, `vec`) to skip extents, and the index scheduler reads
 //! `column_stats[col]["vec"]` to decide embed/ANN work — so every writer MUST
 //! emit byte-identical stats or pruning + activation diverge per format.
@@ -19,7 +19,7 @@ use arrow_array::{
     StringArray, TimestampNanosecondArray,
 };
 use arrow_schema::{DataType, TimeUnit};
-use kyma_core::types::SchemaRef;
+use pensieve_core::types::SchemaRef;
 use serde_json::json;
 
 /// Max distinct values tracked per column. Past this, the column's distinct set

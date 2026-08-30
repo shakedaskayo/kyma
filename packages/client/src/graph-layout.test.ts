@@ -21,7 +21,7 @@ test("force layout is deterministic for the same input", () => {
   expect(p1.get("c")).toEqual(p2.get("c"));
 });
 
-test("kyma label colors resolve; unknown labels still get a color", () => {
+test("pensieve label colors resolve; unknown labels still get a color", () => {
   expect(getLabelColor("Table")).toBe("#7ed957");
   expect(typeof getLabelColor("SomethingUnknown")).toBe("string");
   expect(getRelationshipColor("REFERENCES")).toBe("#94a3b8");

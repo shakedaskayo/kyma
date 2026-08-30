@@ -30,7 +30,7 @@ use serde_json::{json, Value};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 
 use super::datasource_tools::{
     tool_data_source_read, tool_list_data_sources, DataSourceReadBudget, DataSourceToolCtx,
@@ -335,10 +335,10 @@ mod validity_gated_tool_tests {
 
     #[test]
     fn contents_extracts_single_save_memory_content() {
-        let args = json!({"content": "kyma uses DataFusion", "memory_type": "fact"});
+        let args = json!({"content": "pensieve uses DataFusion", "memory_type": "fact"});
         assert_eq!(
             ValidityGatedTool::contents(&args),
-            vec!["kyma uses DataFusion".to_string()]
+            vec!["pensieve uses DataFusion".to_string()]
         );
     }
 
@@ -379,7 +379,7 @@ fn dreaming_prompt(
     let housekeeping = mode != "sources";
 
     let mut p = format!(
-        "You are kyma's Dreaming agent — an autonomous background process that housekeeps the \
+        "You are pensieve's Dreaming agent — an autonomous background process that housekeeps the \
 user's long-term memory store. Nobody is watching live; your final message becomes the run \
 summary shown in the UI. Work in PHASES.{focus_line}
 Scope: {scope}.
@@ -477,7 +477,7 @@ RULES:
     p
 }
 
-/// Thin trigger used when the `kyma-dreaming` skill is delivered to the CLI: the
+/// Thin trigger used when the `pensieve-dreaming` skill is delivered to the CLI: the
 /// procedure lives in the skill (see [`super::dreaming_skill`]); this carries
 /// only the run context + a start instruction. Falls back to [`dreaming_prompt`]
 /// when skill delivery fails.
@@ -503,10 +503,10 @@ fn dreaming_trigger_prompt(
         String::new()
     };
     format!(
-        "You are kyma's Dreaming agent — an autonomous background pass that housekeeps the user's \
+        "You are pensieve's Dreaming agent — an autonomous background pass that housekeeps the user's \
 long-term memory store. Nobody is watching live; your final message becomes the run summary shown \
 in the UI.\n\n\
-Follow the `kyma-dreaming` skill for the full procedure — it is available in your skills.\n\n\
+Follow the `pensieve-dreaming` skill for the full procedure — it is available in your skills.\n\n\
 Run context:\n\
 - Mode: {mode}\n\
 - Scope: {scope}\n\
@@ -805,7 +805,7 @@ pub async fn run_dreaming_with(
     // when the policy is enabled and a durable queue store exists.
     // NOTE: the claude_cli engine drives mutations through the MCP server, whose
     // tool context is process-global; gating that path needs per-request
-    // dreaming tagging in kyma-mcp and is tracked as a follow-up.
+    // dreaming tagging in pensieve-mcp and is tracked as a follow-up.
     let hitl_gate = if full_settings.hitl.enabled {
         super::memory_queue_store::QueueStore::from_state(state).map(|store| {
             std::sync::Arc::new(super::memory_gate::HitlGate {
@@ -1076,7 +1076,7 @@ async fn run_via_adk(
     let shared = super::tools::SharedToolCtx {
         realm_scope: Default::default(),
         consumer_sink: None,
-        federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+        federation: Some(pensieve_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
@@ -1100,7 +1100,7 @@ async fn run_via_adk(
     // tools wrapped in the run's mutation budget, plus the data source read
     // tools for gap-fill.
     let mut builder = LlmAgentBuilder::new(super::runner::AGENT_NAME)
-        .description("Kyma dreaming agent — autonomous memory housekeeping.")
+        .description("Pensieve dreaming agent — autonomous memory housekeeping.")
         .instruction(system_prompt)
         .model(llm);
     for tool in dreaming_toolset(
@@ -1285,14 +1285,14 @@ fn dreaming_toolset(
 // ── Claude CLI engine path ───────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
-/// Build the full skill list for a dreaming run: `kyma-dreaming` first, then
+/// Build the full skill list for a dreaming run: `pensieve-dreaming` first, then
 /// every tenant-enabled skill (mirroring `runner::compose_system_prompt`).
 /// On any error fetching the enabled set we silently fall back to the
-/// `kyma-dreaming`-only vec so a bad skills store never breaks a dreaming run.
+/// `pensieve-dreaming`-only vec so a bad skills store never breaks a dreaming run.
 async fn gather_dreaming_skills(state: &AgentState) -> Vec<super::skill_delivery::SkillDoc> {
     let mut skills = vec![super::skill_delivery::SkillDoc {
-        name: "kyma-dreaming".to_string(),
-        body: super::dreaming_skill::kyma_dreaming_skill().to_string(),
+        name: "pensieve-dreaming".to_string(),
+        body: super::dreaming_skill::pensieve_dreaming_skill().to_string(),
     }];
 
     let enabled = match state.skills.get().await {
@@ -1306,7 +1306,7 @@ async fn gather_dreaming_skills(state: &AgentState) -> Vec<super::skill_delivery
     let discovered = crate::agent::skills::discover_all();
     let tenant_skills: Vec<_> = discovered
         .into_iter()
-        .filter(|s| s.name != "kyma-dreaming" && enabled_set.contains(s.name.as_str()))
+        .filter(|s| s.name != "pensieve-dreaming" && enabled_set.contains(s.name.as_str()))
         .collect();
     for s in tenant_skills {
         skills.push(super::skill_delivery::SkillDoc {
@@ -1328,33 +1328,33 @@ async fn run_via_claude_cli(
     outcome: &mut DreamingOutcome,
     trace: &mut Vec<Value>,
 ) -> Result<(), String> {
-    // Tools come via kyma's own MCP endpoint. Headless runs can carry an
-    // internal bearer (KYMA_INTERNAL_BEARER) for auth-enabled deployments;
+    // Tools come via pensieve's own MCP endpoint. Headless runs can carry an
+    // internal bearer (PENSIEVE_INTERNAL_BEARER) for auth-enabled deployments;
     // auth-disabled dev mode needs none.
-    let auth_header = std::env::var("KYMA_INTERNAL_BEARER")
+    let auth_header = std::env::var("PENSIEVE_INTERNAL_BEARER")
         .ok()
         .map(|t| format!("Bearer {t}"));
     let mcp = state.mcp_url.clone().map(|url| claude_cli::McpConfig {
         url,
         auth_header,
-        // Headless background run: ONLY kyma's MCP server — the user's own
+        // Headless background run: ONLY pensieve's MCP server — the user's own
         // MCP servers/plugins must not be reachable from a dreaming agent.
         strict: true,
     });
 
-    // Deliver the dreaming playbook as the `kyma-dreaming` skill the CLI
+    // Deliver the dreaming playbook as the `pensieve-dreaming` skill the CLI
     // discovers under `<cwd>/.claude/skills`. On success the prompt is a thin
     // trigger (the skill carries the procedure); on failure we fall back to the
     // full hardcoded prompt + a plain scratch cwd, so a delivery hiccup never
     // breaks a dreaming run. The scratch/delivery dir also keeps repo-local
     // CLAUDE.md / .claude settings out of the headless agent's context (it must
-    // see the memory store through kyma's tools, not the operator's checkout).
+    // see the memory store through pensieve's tools, not the operator's checkout).
     let skills = gather_dreaming_skills(state).await;
     let delivered = super::skill_delivery::deliver_to_workdir(&skills)
         .await
         .ok();
 
-    let scratch = std::env::temp_dir().join("kyma-dreaming");
+    let scratch = std::env::temp_dir().join("pensieve-dreaming");
     let (cwd, prompt) = match &delivered {
         Some(d) => (
             d.workdir.path().to_path_buf(),
@@ -1410,7 +1410,7 @@ async fn run_via_claude_cli(
                 trace.push(json!({"event": "tool_call", "data": {
                     "tool": name, "args": input, "call_index": outcome.tool_calls + 1
                 }}));
-                // MCP tools arrive as `mcp__kyma__save_memory` — strip the prefix
+                // MCP tools arrive as `mcp__pensieve__save_memory` — strip the prefix
                 // so tallies and the activity feed read naturally.
                 let short = name.rsplit("__").next().unwrap_or(&name).to_string();
                 observe_tool_call(outcome, activity, &short, &input).await;
@@ -1450,12 +1450,12 @@ async fn run_via_claude_cli(
 /// Execution is the worker's business — this loop only schedules.
 pub struct DreamingScheduler {
     state: AgentState,
-    fabric: Arc<kyma_catalog::PgFabricStore>,
+    fabric: Arc<pensieve_catalog::PgFabricStore>,
     pub poll: Duration,
 }
 
 impl DreamingScheduler {
-    pub fn new(state: AgentState, fabric: Arc<kyma_catalog::PgFabricStore>) -> Self {
+    pub fn new(state: AgentState, fabric: Arc<pensieve_catalog::PgFabricStore>) -> Self {
         Self {
             state,
             fabric,
@@ -1493,8 +1493,8 @@ impl DreamingScheduler {
             .fabric
             .enqueue_job(
                 self.state.tenant,
-                &kyma_core::fabric::EnqueueJob {
-                    kind: kyma_core::fabric::JOB_DREAMING.to_string(),
+                &pensieve_core::fabric::EnqueueJob {
+                    kind: pensieve_core::fabric::JOB_DREAMING.to_string(),
                     payload: serde_json::to_value(DreamingRequest {
                         trigger: Trigger::Scheduled,
                         mode: None,
@@ -1587,7 +1587,7 @@ pub fn spawn_local_run(
 /// In-process interval scheduler for local degraded mode. When dreaming is
 /// enabled in the local memory settings, kicks off an inline run every
 /// `interval_secs` (deduped by the store's in-flight guard). OFF by default —
-/// only runs when `dreaming.enabled` is set in `${KYMA_HOME}/memory-settings.json`.
+/// only runs when `dreaming.enabled` is set in `${PENSIEVE_HOME}/memory-settings.json`.
 pub struct LocalDreamingScheduler {
     state: AgentState,
     store: Arc<LocalDreamingStore>,
@@ -1833,7 +1833,7 @@ pub async fn trigger_run_handler(
             .into_response();
     };
     let body = body.map(|Json(b)| b).unwrap_or_default();
-    let fabric = kyma_catalog::PgFabricStore::new(pool);
+    let fabric = pensieve_catalog::PgFabricStore::new(pool);
     let payload = match serde_json::to_value(DreamingRequest {
         trigger: Trigger::Manual,
         mode: body.mode,
@@ -1853,8 +1853,8 @@ pub async fn trigger_run_handler(
     match fabric
         .enqueue_job(
             state.tenant,
-            &kyma_core::fabric::EnqueueJob {
-                kind: kyma_core::fabric::JOB_DREAMING.to_string(),
+            &pensieve_core::fabric::EnqueueJob {
+                kind: pensieve_core::fabric::JOB_DREAMING.to_string(),
                 payload,
                 priority: 10, // manual runs jump the queue
                 affinity_worker_id: None,
@@ -1897,7 +1897,7 @@ mod trigger_tests {
             &s,
             &si,
         );
-        assert!(p.contains("kyma-dreaming"), "references the skill");
+        assert!(p.contains("pensieve-dreaming"), "references the skill");
         assert!(p.contains("Mode: housekeeping"));
         assert!(p.contains("proj"), "carries realm scope");
         assert!(p.contains("auth refactor"), "carries focus");
@@ -1932,25 +1932,25 @@ mod trigger_tests {
         assert!(p.contains("all realms"));
     }
 
-    /// Verify the shape of the kyma-dreaming SkillDoc that `gather_dreaming_skills`
+    /// Verify the shape of the pensieve-dreaming SkillDoc that `gather_dreaming_skills`
     /// always inserts first.  We cannot cheaply construct an `AgentState` in a
     /// unit test (it requires live DB pools), so we test the invariant inline:
     /// the first element produced by the same logic used inside the helper must
-    /// be named "kyma-dreaming" and its body must be non-empty.
+    /// be named "pensieve-dreaming" and its body must be non-empty.
     #[test]
-    fn gather_dreaming_skills_first_doc_is_kyma_dreaming() {
+    fn gather_dreaming_skills_first_doc_is_pensieve_dreaming() {
         // Reproduce just the first-element construction from gather_dreaming_skills.
         let first = crate::agent::skill_delivery::SkillDoc {
-            name: "kyma-dreaming".to_string(),
-            body: crate::agent::dreaming_skill::kyma_dreaming_skill().to_string(),
+            name: "pensieve-dreaming".to_string(),
+            body: crate::agent::dreaming_skill::pensieve_dreaming_skill().to_string(),
         };
         assert_eq!(
-            first.name, "kyma-dreaming",
-            "first skill must always be kyma-dreaming"
+            first.name, "pensieve-dreaming",
+            "first skill must always be pensieve-dreaming"
         );
         assert!(
             !first.body.is_empty(),
-            "kyma-dreaming body must be non-empty"
+            "pensieve-dreaming body must be non-empty"
         );
     }
 }

@@ -1,5 +1,5 @@
 /**
- * useKymaSearch — headless hook for the unified hybrid search (`/v1/search`).
+ * usePensieveSearch — headless hook for the unified hybrid search (`/v1/search`).
  *
  * Lexical + vector (RRF-fused) ranked results across the sources in scope. Each
  * hit carries `db.table` provenance + the row (data mode) or rich metadata
@@ -7,10 +7,10 @@
  * query or navigate to the graph.
  */
 import { useCallback, useRef, useState } from "react";
-import type { HybridSearchHit, HybridSearchRequest } from "@kyma-ai/client";
-import { useKymaClient } from "../provider/context";
+import type { HybridSearchHit, HybridSearchRequest } from "@pensieve-ai/client";
+import { usePensieveClient } from "../provider/context";
 
-export interface UseKymaSearchResult {
+export interface UsePensieveSearchResult {
   hits: HybridSearchHit[];
   sourcesSearched: number;
   elapsedMs: number;
@@ -24,8 +24,8 @@ export interface UseKymaSearchResult {
   run: (req: HybridSearchRequest) => Promise<void>;
 }
 
-export function useKymaSearch(): UseKymaSearchResult {
-  const client = useKymaClient();
+export function usePensieveSearch(): UsePensieveSearchResult {
+  const client = usePensieveClient();
   const [hits, setHits] = useState<HybridSearchHit[]>([]);
   const [sourcesSearched, setSourcesSearched] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);

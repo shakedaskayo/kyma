@@ -3,7 +3,7 @@
  * minimal markdown renderer (packages/react/src/internal/ui/markdown.tsx).
  */
 
-import type { DashboardPanel } from "@kyma-ai/client";
+import type { DashboardPanel } from "@pensieve-ai/client";
 import { renderMarkdown } from "../../internal/ui/markdown";
 
 interface Props {

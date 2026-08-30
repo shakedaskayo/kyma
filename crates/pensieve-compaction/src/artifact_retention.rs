@@ -17,9 +17,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::Catalog;
-use kyma_core::errors::{Error, Result};
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::errors::{Error, Result};
 use object_store::path::Path;
 use object_store::ObjectStore;
 use tracing::{info, warn};
@@ -112,7 +112,7 @@ impl ArtifactRetentionWorker {
         stats.soft_deleted = swept.len();
         if !swept.is_empty() {
             info!(count = swept.len(), "artifact-retention: soft-deleted expired");
-            ::metrics::counter!("kyma_artifact_retention_soft_deleted_total")
+            ::metrics::counter!("pensieve_artifact_retention_soft_deleted_total")
                 .increment(swept.len() as u64);
         }
 
@@ -141,10 +141,10 @@ impl ArtifactRetentionWorker {
         pg.delete_artifact_rows(&deleted_ids).await?;
         stats.rows_deleted = deleted_ids.len();
 
-        ::metrics::counter!("kyma_artifact_gc_blobs_deleted_total")
+        ::metrics::counter!("pensieve_artifact_gc_blobs_deleted_total")
             .increment(deleted_ids.len() as u64);
         if failed > 0 {
-            ::metrics::counter!("kyma_artifact_gc_blob_delete_failed_total").increment(failed);
+            ::metrics::counter!("pensieve_artifact_gc_blob_delete_failed_total").increment(failed);
         }
         info!(
             blobs_deleted = stats.blobs_deleted,

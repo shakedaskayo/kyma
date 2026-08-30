@@ -1,6 +1,6 @@
 //! JSON rows → Arrow `RecordBatch` coercion for the data source sink.
 //!
-//! Delegates to the shared [`kyma_ingest_core::parse_ndjson`] so data source
+//! Delegates to the shared [`pensieve_ingest_core::parse_ndjson`] so data source
 //! ingest applies *exactly* the same coercion rules as REST, Kafka, and
 //! file-drop. Crucially that includes the two column kinds arrow-json's reader
 //! cannot decode on its own:
@@ -22,7 +22,7 @@ pub enum CoerceError {
     #[error("serialize: {0}")]
     Serialize(#[from] serde_json::Error),
     #[error("ndjson: {0}")]
-    Ndjson(#[from] kyma_ingest_core::NdjsonError),
+    Ndjson(#[from] pensieve_ingest_core::NdjsonError),
 }
 
 /// Coerce data source JSON rows into `RecordBatch`es against `schema`.
@@ -42,5 +42,5 @@ pub fn rows_to_batches(
         serde_json::to_writer(&mut buf, r)?;
         buf.push(b'\n');
     }
-    Ok(kyma_ingest_core::parse_ndjson(&buf, schema.clone())?)
+    Ok(pensieve_ingest_core::parse_ndjson(&buf, schema.clone())?)
 }

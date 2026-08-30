@@ -1,4 +1,4 @@
-// Shim: backwards-compatible wrappers around @kyma-ai/client discover functions.
+// Shim: backwards-compatible wrappers around @pensieve-ai/client discover functions.
 // All session calls delegate to sessionClient() — no one-shot transports.
 
 export type {
@@ -6,10 +6,10 @@ export type {
   Scope,
   SearchRequest,
   SavedView,
-} from "@kyma-ai/client";
-export { DiscoverError, parseNdjsonStream } from "@kyma-ai/client";
+} from "@pensieve-ai/client";
+export { DiscoverError, parseNdjsonStream } from "@pensieve-ai/client";
 
-import type { SearchRequest } from "@kyma-ai/client";
+import type { SearchRequest } from "@pensieve-ai/client";
 import { sessionClient } from "./client";
 
 // ── Session-implicit functions ────────────────────────────────────────────────

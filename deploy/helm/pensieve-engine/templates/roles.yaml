@@ -1,6 +1,6 @@
 {{- /*
   Role-split topology (S2.4/S2.6). Rendered only when roles.enabled. Replaces the
-  single all-in-one Deployment with three role Deployments, each setting KYMA_ROLE
+  single all-in-one Deployment with three role Deployments, each setting PENSIEVE_ROLE
   (honored by the engine's role_components()):
 
     edge       — stateless query + ingest staging. RollingUpdate, behind the
@@ -12,17 +12,17 @@
     worker     — background jobs (compaction / index / graph / retention). Jobs are
                  claimed via SKIP LOCKED, so it scales horizontally.
 
-  For the committer to have anything to drain, set KYMA_INGEST_MODE=staged in `env`.
+  For the committer to have anything to drain, set PENSIEVE_INGEST_MODE=staged in `env`.
 */ -}}
 {{- if .Values.roles.enabled }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "kyma-engine.fullname" . }}-edge
+  name: {{ include "pensieve-engine.fullname" . }}-edge
   labels:
-    {{- include "kyma-engine.labels" . | nindent 4 }}
-    kyma.io/role: edge
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
+    pensieve.io/role: edge
 spec:
   {{- if not .Values.roles.edge.autoscaling.enabled }}
   replicas: {{ .Values.roles.edge.replicas }}
@@ -31,23 +31,23 @@ spec:
     type: RollingUpdate
   selector:
     matchLabels:
-      {{- include "kyma-engine.roleSelectorLabels" (dict "ctx" . "role" "edge") | nindent 6 }}
+      {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "edge") | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "kyma-engine.roleSelectorLabels" (dict "ctx" . "role" "edge") | nindent 8 }}
+        {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "edge") | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "kyma-engine.serviceAccountName" . }}
+      serviceAccountName: {{ include "pensieve-engine.serviceAccountName" . }}
       containers:
-        {{- include "kyma-engine.roleContainer" (dict "ctx" . "role" "edge") | nindent 8 }}
+        {{- include "pensieve-engine.roleContainer" (dict "ctx" . "role" "edge") | nindent 8 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "kyma-engine.fullname" . }}-committer
+  name: {{ include "pensieve-engine.fullname" . }}-committer
   labels:
-    {{- include "kyma-engine.labels" . | nindent 4 }}
-    kyma.io/role: committer
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
+    pensieve.io/role: committer
 spec:
   replicas: 1
   # Lease-elected singleton — never roll a second active committer over the first.
@@ -55,52 +55,52 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      {{- include "kyma-engine.roleSelectorLabels" (dict "ctx" . "role" "committer") | nindent 6 }}
+      {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "committer") | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "kyma-engine.roleSelectorLabels" (dict "ctx" . "role" "committer") | nindent 8 }}
+        {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "committer") | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "kyma-engine.serviceAccountName" . }}
+      serviceAccountName: {{ include "pensieve-engine.serviceAccountName" . }}
       containers:
-        {{- include "kyma-engine.roleContainer" (dict "ctx" . "role" "committer") | nindent 8 }}
+        {{- include "pensieve-engine.roleContainer" (dict "ctx" . "role" "committer") | nindent 8 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "kyma-engine.fullname" . }}-worker
+  name: {{ include "pensieve-engine.fullname" . }}-worker
   labels:
-    {{- include "kyma-engine.labels" . | nindent 4 }}
-    kyma.io/role: worker
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
+    pensieve.io/role: worker
 spec:
   replicas: {{ .Values.roles.worker.replicas }}
   strategy:
     type: RollingUpdate
   selector:
     matchLabels:
-      {{- include "kyma-engine.roleSelectorLabels" (dict "ctx" . "role" "worker") | nindent 6 }}
+      {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "worker") | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "kyma-engine.roleSelectorLabels" (dict "ctx" . "role" "worker") | nindent 8 }}
+        {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "worker") | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "kyma-engine.serviceAccountName" . }}
+      serviceAccountName: {{ include "pensieve-engine.serviceAccountName" . }}
       containers:
-        {{- include "kyma-engine.roleContainer" (dict "ctx" . "role" "worker") | nindent 8 }}
+        {{- include "pensieve-engine.roleContainer" (dict "ctx" . "role" "worker") | nindent 8 }}
 {{- if .Values.roles.edge.autoscaling.enabled }}
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "kyma-engine.fullname" . }}-edge
+  name: {{ include "pensieve-engine.fullname" . }}-edge
   labels:
-    {{- include "kyma-engine.labels" . | nindent 4 }}
-    kyma.io/role: edge
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
+    pensieve.io/role: edge
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "kyma-engine.fullname" . }}-edge
+    name: {{ include "pensieve-engine.fullname" . }}-edge
   minReplicas: {{ .Values.roles.edge.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.roles.edge.autoscaling.maxReplicas }}
   metrics:
@@ -116,14 +116,14 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "kyma-engine.fullname" . }}-committer
+  name: {{ include "pensieve-engine.fullname" . }}-committer
   labels:
-    {{- include "kyma-engine.labels" . | nindent 4 }}
-    kyma.io/role: committer
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
+    pensieve.io/role: committer
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      {{- include "kyma-engine.roleSelectorLabels" (dict "ctx" . "role" "committer") | nindent 6 }}
+      {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "committer") | nindent 6 }}
 {{- end }}
 {{- end }}

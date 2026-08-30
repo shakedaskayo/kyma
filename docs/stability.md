@@ -1,10 +1,10 @@
-# kyma Stability Contract
+# pensieve Stability Contract
 
 > **Status:** in force from `v1.0.0`. Until then, this document is the
-> contract kyma is being hardened to meet. Any change to a "frozen" surface
+> contract pensieve is being hardened to meet. Any change to a "frozen" surface
 > below requires the deprecation policy at the bottom of this file.
 
-This document names every surface kyma promises not to break across minor
+This document names every surface pensieve promises not to break across minor
 versions in the v1.x series, and the deprecation policy that governs
 intentional changes.
 
@@ -103,13 +103,13 @@ policy in section 10.
 - Headers:
   - `X-Database: <string>` (optional; defaults to `default`)
   - `Content-Type: application/sql` (default) or `Content-Type: application/x-kql` (for KQL queries)
-  - `X-Kyma-Max-Wall-Clock-Ms: <uint>` (optional; wall-clock budget in milliseconds, minimum 10)
-  - `X-Kyma-Max-Memory-Bytes: <uint>` (optional; memory budget in bytes, minimum 1 MiB)
-  - `X-Kyma-Max-Object-Store-Bytes: <uint>` (optional; object-store scan budget in bytes)
+  - `X-Pensieve-Max-Wall-Clock-Ms: <uint>` (optional; wall-clock budget in milliseconds, minimum 10)
+  - `X-Pensieve-Max-Memory-Bytes: <uint>` (optional; memory budget in bytes, minimum 1 MiB)
+  - `X-Pensieve-Max-Object-Store-Bytes: <uint>` (optional; object-store scan budget in bytes)
   - `X-Request-ID: <uuid>` (optional; generated if absent)
   - `Authorization: Bearer <token>` (required when auth is enabled; `Role::Read`)
 - Request body: SQL statement (plain text) or KQL query text, depending on `Content-Type`. Body limit 16 MiB.
-- Response: `200 OK` with `Content-Type: application/x-ndjson; charset=utf-8` — one JSON object per result row, one row per line. Response headers include `X-Kyma-Rows: <count>` and `X-Request-ID`.
+- Response: `200 OK` with `Content-Type: application/x-ndjson; charset=utf-8` — one JSON object per result row, one row per line. Response headers include `X-Pensieve-Rows: <count>` and `X-Request-ID`.
 - Stable error codes: `body_too_large`, `bad_encoding`, `empty_query`, `kql_parse_error`, `database_not_found`, `database_empty`, `sql_parse_error`, `memory_exceeded`, `wall_clock_exceeded`, `query_execution_error`, `serialization_error`, `internal`.
 
 ### `GET /v1/catalog/schema` — list all databases, tables, and columns
@@ -135,7 +135,7 @@ policy in section 10.
     ]
   }
   ```
-  Response is served from a server-side cache (default TTL 5 s, configurable via `KYMA_SCHEMA_CACHE_TTL_SECS`).
+  Response is served from a server-side cache (default TTL 5 s, configurable via `PENSIEVE_SCHEMA_CACHE_TTL_SECS`).
 - Stable error codes: `catalog` (wrapped in `{ "error": { "code": "catalog", "message": "..." } }`).
 
 ### `GET /v1/dashboards` — list dashboards
@@ -383,7 +383,7 @@ wrapper is not independently frozen.
 
 ## 2. Arrow Flight gRPC API
 
-**Frozen.** The server exposes Arrow Flight on `:9090` by default (configurable via `KYMA_GRPC_ADDR`). The following surface is part of the v1.0 contract.
+**Frozen.** The server exposes Arrow Flight on `:9090` by default (configurable via `PENSIEVE_GRPC_ADDR`). The following surface is part of the v1.0 contract.
 
 ### Flight methods implemented
 
@@ -451,7 +451,7 @@ Errors are returned as gRPC `Status` codes. The status-code-to-meaning mapping f
 
 The KQL dialect that v1.0 supports is a defined subset of Kusto Query Language. Anything in this section is part of the v1.0 frozen contract; anything not in this section is "best-effort, not v1.0 surface" — the parser may accept it but the behavior is not contract.
 
-The implementation is a direct-lowering KQL→SQL translator (`crates/kyma-kql/`). It does not build an AST; it streams parsed operators into a `QueryState` accumulator and renders SQL once. This means multi-operator compositions that require IR-level rewrites (e.g., `join`, `make-series`) are deferred to a future phase and are explicitly not in v1.0.
+The implementation is a direct-lowering KQL→SQL translator (`crates/pensieve-kql/`). It does not build an AST; it streams parsed operators into a `QueryState` accumulator and renders SQL once. This means multi-operator compositions that require IR-level rewrites (e.g., `join`, `make-series`) are deferred to a future phase and are explicitly not in v1.0.
 
 **Known doc-debt:** The project README (`README.md`) contains example KQL queries that use `tostring(...)` and `toint(...)` functions — 8 occurrences total across five query examples. These functions are NOT implemented in the v1.0 KQL parser and will be rejected with a `kql_parse_error` if executed. The README examples are illustrative of the *engine's intent* (extracting typed values from the dynamic `attributes` object), not the *parser's actual surface*. Until the README is updated, treat those queries as reference documentation rather than working code. See Task 4 of the F1 plan.
 
@@ -552,7 +552,7 @@ Note on `datetime`: the argument `x` is cast to TIMESTAMP via SQL's native type 
 
 ### Error taxonomy
 
-The KQL frontend (`crates/kyma-kql/`) produces a single error type: `ParseError(String)`. At the HTTP layer, a parse failure causes a `400 Bad Request` with a JSON error body using code `kql_parse_error`. At the Arrow Flight layer, a parse failure returns gRPC status `InvalidArgument`.
+The KQL frontend (`crates/pensieve-kql/`) produces a single error type: `ParseError(String)`. At the HTTP layer, a parse failure causes a `400 Bad Request` with a JSON error body using code `kql_parse_error`. At the Arrow Flight layer, a parse failure returns gRPC status `InvalidArgument`.
 
 There is no structured sub-code within `ParseError` — the message string is free-form. The only stable error code at the API level is:
 
@@ -568,7 +568,7 @@ The lexer emits `LexError` (converted to `ParseError` before surfacing) in these
 
 | Operator / Feature | Gap |
 |---|---|
-| `top N by` | No dedicated test case in `scripts/test-kql.sh`. Covered by unit tests in `crates/kyma-kql/src/parser.rs`. |
+| `top N by` | No dedicated test case in `scripts/test-kql.sh`. Covered by unit tests in `crates/pensieve-kql/src/parser.rs`. |
 | `limit` (synonym for `take`) | Not explicitly tested; tested implicitly via `take`. |
 | `order by` (synonym for `sort by`) | Not explicitly tested. |
 | `bin(col, duration)` | Used only implicitly; no dedicated E2E test. |
@@ -587,13 +587,13 @@ The SQL dialect that v1.0 supports is the DataFusion SQL subset at version `44.0
 
 ### What's included
 
-The DataFusion SQL surface at the level documented at <https://datafusion.apache.org/user-guide/sql/index.html> for the pinned version, as filtered through kyma's thin HTTP and Flight query handlers. Both `POST /v1/query` and Arrow Flight `do_get` (language `"sql"`) call `SessionContext::sql()` directly — there is no kyma-level SQL parser or statement filter on either path (the agent's `run_sql` tool is the one exception; see opt-outs).
+The DataFusion SQL surface at the level documented at <https://datafusion.apache.org/user-guide/sql/index.html> for the pinned version, as filtered through pensieve's thin HTTP and Flight query handlers. Both `POST /v1/query` and Arrow Flight `do_get` (language `"sql"`) call `SessionContext::sql()` directly — there is no pensieve-level SQL parser or statement filter on either path (the agent's `run_sql` tool is the one exception; see opt-outs).
 
 Specific guarantees (verified end-to-end in `scripts/e2e-test.sh`, `scripts/test-flight.sh`, `scripts/test-pushdown.sh`, `scripts/test-block-pruning.sh`, and `scripts/test-vectors.sh`):
 
 - `SELECT` with column lists and `SELECT *`.
 - `WHERE` with scalar predicates, comparison operators (`=`, `!=`, `<`, `<=`, `>`, `>=`), and boolean connectives (`AND`, `OR`, `NOT`).
-- `WHERE` with timestamp range predicates: `col >= TIMESTAMP 'literal'`, `col < TIMESTAMP 'literal'`, `col BETWEEN TIMESTAMP 'a' AND TIMESTAMP 'b'`. These also engage kyma's extent-level and block-level pruning.
+- `WHERE` with timestamp range predicates: `col >= TIMESTAMP 'literal'`, `col < TIMESTAMP 'literal'`, `col BETWEEN TIMESTAMP 'a' AND TIMESTAMP 'b'`. These also engage pensieve's extent-level and block-level pruning.
 - `WHERE` with equality predicates and `IN (list)` on string/integer columns (also drives index-based extent pruning).
 - `WHERE` with `LIKE` patterns (`%needle%`, `prefix%`, `%suffix`) on string columns (also drives text-token extent pruning).
 - `GROUP BY` with one or more columns.
@@ -603,19 +603,19 @@ Specific guarantees (verified end-to-end in `scripts/e2e-test.sh`, `scripts/test
 - Aggregate functions: `COUNT(*)`, `COUNT(col)`, `COUNT(DISTINCT col)`, `SUM`, `AVG`, `MIN`, `MAX`.
 - Scalar functions: `date_trunc('unit', col)`, `date_bin(interval, col, origin)` (used by KQL→SQL lowering), standard DataFusion scalar functions.
 - `INNER JOIN` on equality conditions between two tables registered in the same database.
-- Common table expressions (`WITH ... AS (...) SELECT ...`) — accepted by DataFusion's planner. The agent path's `is_read_only_sql` guard also accepts `WITH`-prefixed queries (syntax-level check only). CTE execution has not been exercised end-to-end in kyma's test scripts, so this is "untested but likely working" rather than a fully verified frozen claim.
+- Common table expressions (`WITH ... AS (...) SELECT ...`) — accepted by DataFusion's planner. The agent path's `is_read_only_sql` guard also accepts `WITH`-prefixed queries (syntax-level check only). CTE execution has not been exercised end-to-end in pensieve's test scripts, so this is "untested but likely working" rather than a fully verified frozen claim.
 - `EXPLAIN` / `SHOW` — accepted by DataFusion's planner.
-- kyma-specific UDFs (registered at session startup by `kyma_exec::register_vector_udfs`): `cosine_distance(a, b)`, `l2_distance(a, b)`, `inner_product(a, b)` — each accepts `FixedSizeList<Float32>` or `List<Float32>` arguments and returns `Float64`. Mismatched-length vectors return `NULL`.
+- pensieve-specific UDFs (registered at session startup by `pensieve_exec::register_vector_udfs`): `cosine_distance(a, b)`, `l2_distance(a, b)`, `inner_product(a, b)` — each accepts `FixedSizeList<Float32>` or `List<Float32>` arguments and returns `Float64`. Mismatched-length vectors return `NULL`.
 
-Untested but likely working (DataFusion 44 includes these; not exercised through kyma's stack in current test scripts): window functions (`OVER (PARTITION BY ... ORDER BY ...)`), `LEFT JOIN`, `RIGHT JOIN`, `FULL OUTER JOIN`, `CROSS JOIN`, subqueries in `FROM` and `WHERE`, `UNION`/`INTERSECT`/`EXCEPT`. These are not part of the frozen surface because they have not been exercised end-to-end.
+Untested but likely working (DataFusion 44 includes these; not exercised through pensieve's stack in current test scripts): window functions (`OVER (PARTITION BY ... ORDER BY ...)`), `LEFT JOIN`, `RIGHT JOIN`, `FULL OUTER JOIN`, `CROSS JOIN`, subqueries in `FROM` and `WHERE`, `UNION`/`INTERSECT`/`EXCEPT`. These are not part of the frozen surface because they have not been exercised end-to-end.
 
 ### Opt-outs (not in v1.0)
 
-- **DDL statements** (`CREATE TABLE`, `DROP TABLE`, `ALTER TABLE`, `CREATE SCHEMA`, etc.) — kyma does not pre-filter DDL on the `POST /v1/query` or Arrow Flight `do_get` paths. DataFusion's `SessionContext::sql()` is called directly. In practice, DataFusion 44 operates on a read-only catalog (kyma registers `KymaTable` providers but does not register a mutable catalog); DDL statements that DataFusion tries to execute will fail at the execution layer with a DataFusion plan or execution error. At `POST /v1/query`, this surfaces as HTTP `500` with code `query_execution_error`; at Flight `do_get`, as gRPC status `Internal`. Behavior is not contractually defined — do not rely on DDL statements succeeding or failing with any specific error.
+- **DDL statements** (`CREATE TABLE`, `DROP TABLE`, `ALTER TABLE`, `CREATE SCHEMA`, etc.) — pensieve does not pre-filter DDL on the `POST /v1/query` or Arrow Flight `do_get` paths. DataFusion's `SessionContext::sql()` is called directly. In practice, DataFusion 44 operates on a read-only catalog (pensieve registers `PensieveTable` providers but does not register a mutable catalog); DDL statements that DataFusion tries to execute will fail at the execution layer with a DataFusion plan or execution error. At `POST /v1/query`, this surfaces as HTTP `500` with code `query_execution_error`; at Flight `do_get`, as gRPC status `Internal`. Behavior is not contractually defined — do not rely on DDL statements succeeding or failing with any specific error.
 
-- **DML other than reads** (`UPDATE`, `DELETE`, `MERGE`, `INSERT INTO ... SELECT`) — same situation as DDL. kyma registers no writable `TableProvider` implementations; DataFusion will fail such statements at the execution layer. Response shape is the same as DDL failures above. Not part of the v1.0 contract.
+- **DML other than reads** (`UPDATE`, `DELETE`, `MERGE`, `INSERT INTO ... SELECT`) — same situation as DDL. pensieve registers no writable `TableProvider` implementations; DataFusion will fail such statements at the execution layer. Response shape is the same as DDL failures above. Not part of the v1.0 contract.
 
-- **`INSERT INTO ... VALUES`** — not supported. DataFusion may accept the syntax at the planning layer but kyma tables are read-only `TableProvider` implementations. Any insert attempt will fail at execution with a DataFusion internal error.
+- **`INSERT INTO ... VALUES`** — not supported. DataFusion may accept the syntax at the planning layer but pensieve tables are read-only `TableProvider` implementations. Any insert attempt will fail at execution with a DataFusion internal error.
 
 - **Transactions** (`BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`) — DataFusion 44 does not support transaction-control statements. Any such statement is rejected by DataFusion at the planning stage. At `POST /v1/query` this surfaces as HTTP `400` with code `sql_parse_error`; at Flight `do_get`, as gRPC status `InvalidArgument`.
 
@@ -634,8 +634,8 @@ Stable error codes returned by the SQL frontend:
 HTTP (`POST /v1/query`):
 - `sql_parse_error` — DataFusion rejected the SQL at parse or plan time (returned by `ctx.sql()`); HTTP `400 Bad Request`.
 - `query_execution_error` — DataFusion failed at execution time (returned by `df.collect()`); HTTP `500 Internal Server Error`.
-- `memory_exceeded` — DataFusion's `GreedyMemoryPool` was exhausted during execution (error message contains `"ResourcesExhausted"` or `"Resources exhausted"`); HTTP `429 Too Many Requests` with `Retry-After: 1` and `X-Kyma-Budget-Limit` header.
-- `wall_clock_exceeded` — query did not complete within the `X-Kyma-Max-Wall-Clock-Ms` budget; HTTP `429 Too Many Requests`.
+- `memory_exceeded` — DataFusion's `GreedyMemoryPool` was exhausted during execution (error message contains `"ResourcesExhausted"` or `"Resources exhausted"`); HTTP `429 Too Many Requests` with `Retry-After: 1` and `X-Pensieve-Budget-Limit` header.
+- `wall_clock_exceeded` — query did not complete within the `X-Pensieve-Max-Wall-Clock-Ms` budget; HTTP `429 Too Many Requests`.
 - `serialization_error` — Arrow-to-NDJSON serialization failed post-execution; HTTP `500 Internal Server Error`.
 
 Arrow Flight (`do_get`, language `"sql"`):
@@ -644,18 +644,18 @@ Arrow Flight (`do_get`, language `"sql"`):
 
 ### Tests proving the freeze
 
-`scripts/test-flight.sh` exercises SQL via the Flight gRPC API (delegating to Rust integration tests tagged `--ignored` in `crates/kyma-server/tests/flight_smoke.rs`). `scripts/e2e-test.sh` exercises SQL via `POST /v1/query` with the queries listed under "What's included" above. `scripts/test-pushdown.sh`, `scripts/test-block-pruning.sh`, and `scripts/test-vectors.sh` exercise timestamp-range predicates, equality pushdown, and UDF calls respectively. The back-compat workflow (Task 17 in the F1 plan) replays SQL queries from `scripts/backcompat-queries.txt` against each tagged fixture.
+`scripts/test-flight.sh` exercises SQL via the Flight gRPC API (delegating to Rust integration tests tagged `--ignored` in `crates/pensieve-server/tests/flight_smoke.rs`). `scripts/e2e-test.sh` exercises SQL via `POST /v1/query` with the queries listed under "What's included" above. `scripts/test-pushdown.sh`, `scripts/test-block-pruning.sh`, and `scripts/test-vectors.sh` exercise timestamp-range predicates, equality pushdown, and UDF calls respectively. The back-compat workflow (Task 17 in the F1 plan) replays SQL queries from `scripts/backcompat-queries.txt` against each tagged fixture.
 
 ## 5. MCP surface
 
-The MCP server exposed by `kyma-mcp` is part of the v1.0 frozen surface. Agents that consume this surface can rely on tool names, argument schemas, and return shapes across the v1.x series.
+The MCP server exposed by `pensieve-mcp` is part of the v1.0 frozen surface. Agents that consume this surface can rely on tool names, argument schemas, and return shapes across the v1.x series.
 
 ### Transport
 
 - HTTP POST: `POST /mcp/v1` — JSON-RPC 2.0 channel. Request body must be a single JSON-RPC 2.0 request object or a non-empty batch array. Notifications (id absent) return `202 Accepted` with empty body. Batch responses omit entries for pure notifications; if every item in a batch is a notification the whole response is `202 Accepted` with empty body.
 - HTTP GET (SSE keepalive): `GET /mcp/v1` — `Content-Type: text/event-stream`. Emits a keepalive ping every 15 seconds. MCP clients that probe SSE before falling back to POST receive a valid Streamable HTTP handshake. The stream carries no tool results; it is purely a connection-maintenance channel.
 - stdio: not supported. The server is exclusively HTTP-based.
-- Auth: `Authorization: Bearer <token>` (required when auth is enabled; `Role::Read`). The same bearer-token model as the REST surface applies — `kyma-bin` wraps the MCP router with the `require_role_middleware(Role::Read)` layer. Unauthenticated requests to either endpoint return `401 Unauthorized`.
+- Auth: `Authorization: Bearer <token>` (required when auth is enabled; `Role::Read`). The same bearer-token model as the REST surface applies — `pensieve-bin` wraps the MCP router with the `require_role_middleware(Role::Read)` layer. Unauthenticated requests to either endpoint return `401 Unauthorized`.
 
 ### Protocol version and capability negotiation
 
@@ -709,7 +709,7 @@ All eight tools are read-only (`with_read_only(true)`) and concurrency-safe (`wi
 
 ---
 
-- **`list_databases`** — List every database in the kyma cluster. Call first to discover what databases exist.
+- **`list_databases`** — List every database in the pensieve cluster. Call first to discover what databases exist.
   - Arguments (JSON Schema):
     ```json
     { "type": "object" }
@@ -774,7 +774,7 @@ All eight tools are read-only (`with_read_only(true)`) and concurrency-safe (`wi
 
 ---
 
-- **`run_kql`** — Execute a KQL query against kyma — the primary query tool. KQL is pipe-syntax: `requests | where status >= 500 | summarize n=count() by url | top 10 by n`.
+- **`run_kql`** — Execute a KQL query against pensieve — the primary query tool. KQL is pipe-syntax: `requests | where status >= 500 | summarize n=count() by url | top 10 by n`.
   - Arguments (JSON Schema):
     ```json
     {
@@ -798,7 +798,7 @@ All eight tools are read-only (`with_read_only(true)`) and concurrency-safe (`wi
     }
     ```
     On KQL parse error: `{ "error": "kql_parse: <message>", "hint": "Check pipe syntax..." }` — `hint` is always present when `error` starts with `"kql_parse:"`. On execution failure: `{ "error": "<message>" }`.
-  - Behavior: compiles KQL to SQL via `kyma_kql::kql_to_sql`, then delegates to the same `execute_sql` path as `run_sql`. The compiled SQL is attached to the result as `compiled_sql` for debugging. Memory hard-capped at 256 MiB per call. The KQL surface is governed by section 3 of this document.
+  - Behavior: compiles KQL to SQL via `pensieve_kql::kql_to_sql`, then delegates to the same `execute_sql` path as `run_sql`. The compiled SQL is attached to the result as `compiled_sql` for debugging. Memory hard-capped at 256 MiB per call. The KQL surface is governed by section 3 of this document.
 
 ---
 
@@ -880,7 +880,7 @@ All eight tools are read-only (`with_read_only(true)`) and concurrency-safe (`wi
 
 ---
 
-- **`graph_traverse`** — Traverse a graph stored as edges in a kyma table. Wraps the KQL `graph-traverse` operator. Returns reachable nodes as `(node, depth)` pairs. Use for connectivity questions: "what services depend on X?", "which users trigger Y?".
+- **`graph_traverse`** — Traverse a graph stored as edges in a pensieve table. Wraps the KQL `graph-traverse` operator. Returns reachable nodes as `(node, depth)` pairs. Use for connectivity questions: "what services depend on X?", "which users trigger Y?".
   - Arguments (JSON Schema):
     ```json
     {
@@ -905,7 +905,7 @@ All eight tools are read-only (`with_read_only(true)`) and concurrency-safe (`wi
     }
     ```
     On identifier validation failure: `{ "error": "edges_table / from_column / to_column must be ascii-alphanumeric / underscore only" }`. On invalid `direction`: `{ "error": "direction must be forward | backward | both" }`. On KQL compile failure: `{ "error": "kql_compile: <message>", "kql": "<kql>" }`.
-  - Behavior: validates that `edges_table`, `from_column`, and `to_column` are safe identifiers (ASCII alphanumeric / underscore only), clamps `max_hops` to `[1, 20]`, builds a KQL `graph-traverse` expression, compiles it to SQL via `kyma_kql::kql_to_sql`, and executes via `execute_sql` with a 1000-row cap. Note: `graph-traverse` is not part of the v1.0 frozen KQL surface (section 3 lists it as "not v1.0"), but this tool's argument schema and return shape are frozen.
+  - Behavior: validates that `edges_table`, `from_column`, and `to_column` are safe identifiers (ASCII alphanumeric / underscore only), clamps `max_hops` to `[1, 20]`, builds a KQL `graph-traverse` expression, compiles it to SQL via `pensieve_kql::kql_to_sql`, and executes via `execute_sql` with a 1000-row cap. Note: `graph-traverse` is not part of the v1.0 frozen KQL surface (section 3 lists it as "not v1.0"), but this tool's argument schema and return shape are frozen.
 
 ---
 
@@ -931,11 +931,11 @@ Tool-level failures (bad arguments, catalog errors, SQL execution errors, KQL pa
 
 ### Tests proving the freeze
 
-`crates/kyma-mcp/tests/end_to_end.rs` — integration test `full_mcp_handshake_against_seeded_server` exercises the complete MCP lifecycle against a real TCP listener: `initialize` handshake, `notifications/initialized`, `tools/list` (asserts 8 tools), and `tools/call list_databases`. `rejects_request_without_bearer_token` asserts `401` when the bearer token is absent.
+`crates/pensieve-mcp/tests/end_to_end.rs` — integration test `full_mcp_handshake_against_seeded_server` exercises the complete MCP lifecycle against a real TCP listener: `initialize` handshake, `notifications/initialized`, `tools/list` (asserts 8 tools), and `tools/call list_databases`. `rejects_request_without_bearer_token` asserts `401` when the bearer token is absent.
 
-`crates/kyma-mcp/tests/jsonrpc_framing.rs` — wire-protocol tests covering: parse error for invalid JSON (`-32700`), invalid request for wrong JSON-RPC version (`-32600`), method not found for unknown method (`-32601`), invalid params for `tools/call` without `name` (`-32602`), batch with mixed results, batch of only notifications returning `202`, empty batch returning `InvalidRequest`.
+`crates/pensieve-mcp/tests/jsonrpc_framing.rs` — wire-protocol tests covering: parse error for invalid JSON (`-32700`), invalid request for wrong JSON-RPC version (`-32600`), method not found for unknown method (`-32601`), invalid params for `tools/call` without `name` (`-32602`), batch with mixed results, batch of only notifications returning `202`, empty batch returning `InvalidRequest`.
 
-`crates/kyma-mcp/src/tools_unit_tests.rs` — unit tests asserting `tools/list` returns exactly 8 named entries (`list_databases`, `describe_table`, `run_sql`, `run_kql`, `sample_rows`, `explore_schema`, `find_references_to`, `graph_traverse`) each with an `inputSchema` object and non-trivial description.
+`crates/pensieve-mcp/src/tools_unit_tests.rs` — unit tests asserting `tools/list` returns exactly 8 named entries (`list_databases`, `describe_table`, `run_sql`, `run_kql`, `sample_rows`, `explore_schema`, `find_references_to`, `graph_traverse`) each with an `inputSchema` object and non-trivial description.
 
 The back-compat workflow (Task 17) may add MCP smoke tests (`initialize` → `tools/list` → `tools/call list_databases`) against each tagged version's fixture in the future.
 
@@ -1347,18 +1347,18 @@ Indexes: `agent_replay_cache_layer_model` on `(layer, model_id)`.
 
 ### Migration discipline
 
-- Each migration is a single SQL file at `crates/kyma-catalog/migrations/<NNNN_name.sql>`.
+- Each migration is a single SQL file at `crates/pensieve-catalog/migrations/<NNNN_name.sql>`.
 - File name format: `NNN_snake_case_description.sql` (three-digit prefix, underscore-separated words).
 - Numbering is monotonic but not required to be gapless; current series is 001–007 with no gaps.
 - The back-compat workflow seeds the fixture's dataset into a fresh engine and replays a fixed query set against it. Forward-only schema discipline is enforced by code review and by the per-fixture `catalog-schema.sql` snapshot kept under `scripts/fixtures/backcompat/<tag>/` — divergence shows up in PR diffs. Automated schema-diff tooling is planned for A3.
 
 ### Migration tooling
 
-The migrations are applied by `sqlx::migrate!("./migrations")` embedded at compile time in `crates/kyma-catalog/src/lib.rs`. The macro runs all pending migrations at startup via `sqlx-migrate` (the `sqlx` crate's built-in migrate feature). Migration state is tracked in the standard `_sqlx_migrations` table (created and managed automatically by sqlx; not part of the application schema freeze).
+The migrations are applied by `sqlx::migrate!("./migrations")` embedded at compile time in `crates/pensieve-catalog/src/lib.rs`. The macro runs all pending migrations at startup via `sqlx-migrate` (the `sqlx` crate's built-in migrate feature). Migration state is tracked in the standard `_sqlx_migrations` table (created and managed automatically by sqlx; not part of the application schema freeze).
 
 ## 7. Configuration keys and environment variables
 
-Every `KYMA_*` env var below is part of the v1.0 contract. Removing or renaming any of them requires the deprecation policy in section 10. New env vars may be added at any v1.x minor release.
+Every `PENSIEVE_*` env var below is part of the v1.0 contract. Removing or renaming any of them requires the deprecation policy in section 10. New env vars may be added at any v1.x minor release.
 
 ### Runtime configuration (frozen)
 
@@ -1366,128 +1366,128 @@ Every `KYMA_*` env var below is part of the v1.0 contract. Removing or renaming 
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_CATALOG_URL` | `postgres://kyma:kyma_dev@localhost:5433/kyma` | PostgreSQL connection URL for the catalog database. Accepted by both `kyma` (engine) and `kyma-cli` (admin CLI). Must be a valid libpq/sqlx connection string. |
-| `KYMA_HTTP_ADDR` | `0.0.0.0:8080` | TCP socket address the HTTP server listens on. Format: `host:port`. |
-| `KYMA_GRPC_ADDR` | `0.0.0.0:9090` | TCP socket address for the Arrow Flight gRPC server. Set to `off` (case-insensitive) to disable Flight entirely. |
-| `KYMA_OTLP_ADDR` | `off` | TCP socket address for the OTLP gRPC log-receiver (standard port `4317`). Set to `off` (case-insensitive, default) to disable. |
-| `KYMA_OTLP_DATABASE` | `default` | Target kyma database name for logs received via the OTLP gRPC endpoint. |
-| `KYMA_PATH_PREFIX` | `kyma` | Object-store path prefix prepended to every extent key. All extents are stored under `<prefix>/<tenant_id>/extents/<id>.kyma`. |
+| `PENSIEVE_CATALOG_URL` | `postgres://pensieve:pensieve_dev@localhost:5433/pensieve` | PostgreSQL connection URL for the catalog database. Accepted by both `pensieve` (engine) and `pensieve-cli` (admin CLI). Must be a valid libpq/sqlx connection string. |
+| `PENSIEVE_HTTP_ADDR` | `0.0.0.0:8080` | TCP socket address the HTTP server listens on. Format: `host:port`. |
+| `PENSIEVE_GRPC_ADDR` | `0.0.0.0:9090` | TCP socket address for the Arrow Flight gRPC server. Set to `off` (case-insensitive) to disable Flight entirely. |
+| `PENSIEVE_OTLP_ADDR` | `off` | TCP socket address for the OTLP gRPC log-receiver (standard port `4317`). Set to `off` (case-insensitive, default) to disable. |
+| `PENSIEVE_OTLP_DATABASE` | `default` | Target pensieve database name for logs received via the OTLP gRPC endpoint. |
+| `PENSIEVE_PATH_PREFIX` | `pensieve` | Object-store path prefix prepended to every extent key. All extents are stored under `<prefix>/<tenant_id>/extents/<id>.pensieve`. |
 
 #### Authentication
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_AUTH_BACKEND` | _(unset — uses `EnvAuthBackend`)_ | Selects the authentication backend. Accepted values: `db` (requires the `cloud-auth` compile feature; uses the `api_tokens` Postgres table). Any other value or unset falls back to `EnvAuthBackend` (token list from `KYMA_AUTH_TOKENS`). |
-| `KYMA_AUTH_TOKENS` | _(unset — auth disabled)_ | Comma-separated list of `token:role` pairs that grant bearer-token access, e.g. `alice-tok:admin,bob-tok:write,reader-tok:read`. Accepted roles: `admin`, `write`, `read`. Empty or unset disables all auth (open access). |
+| `PENSIEVE_AUTH_BACKEND` | _(unset — uses `EnvAuthBackend`)_ | Selects the authentication backend. Accepted values: `db` (requires the `cloud-auth` compile feature; uses the `api_tokens` Postgres table). Any other value or unset falls back to `EnvAuthBackend` (token list from `PENSIEVE_AUTH_TOKENS`). |
+| `PENSIEVE_AUTH_TOKENS` | _(unset — auth disabled)_ | Comma-separated list of `token:role` pairs that grant bearer-token access, e.g. `alice-tok:admin,bob-tok:write,reader-tok:read`. Accepted roles: `admin`, `write`, `read`. Empty or unset disables all auth (open access). |
 
 #### Object storage (S3-compatible)
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_S3_ENDPOINT` | _(unset — AWS public endpoint)_ | URL of the S3-compatible endpoint, e.g. `http://localhost:9000` for MinIO. Omit for real AWS. |
-| `KYMA_S3_BUCKET` | `kyma` | Name of the S3 bucket kyma stores extents in. |
-| `KYMA_S3_REGION` | `us-east-1` | AWS region or MinIO region string. |
-| `KYMA_S3_ACCESS_KEY_ID` | _(unset — SDK credential chain)_ | S3 access key id. If unset, `object_store`/AWS SDK falls back to its standard credential chain (`AWS_ACCESS_KEY_ID`, instance role, etc.). |
-| `KYMA_S3_SECRET_ACCESS_KEY` | _(unset — SDK credential chain)_ | S3 secret access key. Same fallback behaviour as `KYMA_S3_ACCESS_KEY_ID`. |
-| `KYMA_S3_PATH_STYLE` | `true` | Use path-style S3 addressing (`true`, default, required for MinIO) instead of virtual-hosted-style (`false`, AWS default). Set `false` only when connecting to real AWS. |
-| `KYMA_S3_ALLOW_HTTP` | `true` | Allow plain HTTP to the object-store endpoint (default `true` for dev). Set to `false` or `0` to require TLS in production. |
+| `PENSIEVE_S3_ENDPOINT` | _(unset — AWS public endpoint)_ | URL of the S3-compatible endpoint, e.g. `http://localhost:9000` for MinIO. Omit for real AWS. |
+| `PENSIEVE_S3_BUCKET` | `pensieve` | Name of the S3 bucket pensieve stores extents in. |
+| `PENSIEVE_S3_REGION` | `us-east-1` | AWS region or MinIO region string. |
+| `PENSIEVE_S3_ACCESS_KEY_ID` | _(unset — SDK credential chain)_ | S3 access key id. If unset, `object_store`/AWS SDK falls back to its standard credential chain (`AWS_ACCESS_KEY_ID`, instance role, etc.). |
+| `PENSIEVE_S3_SECRET_ACCESS_KEY` | _(unset — SDK credential chain)_ | S3 secret access key. Same fallback behaviour as `PENSIEVE_S3_ACCESS_KEY_ID`. |
+| `PENSIEVE_S3_PATH_STYLE` | `true` | Use path-style S3 addressing (`true`, default, required for MinIO) instead of virtual-hosted-style (`false`, AWS default). Set `false` only when connecting to real AWS. |
+| `PENSIEVE_S3_ALLOW_HTTP` | `true` | Allow plain HTTP to the object-store endpoint (default `true` for dev). Set to `false` or `0` to require TLS in production. |
 
 #### Ingest staging (group-commit)
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_STAGING_DISABLED` | _(unset — staging enabled)_ | Set to `1` or `true` to disable the staging buffer and write one extent per ingest request. Intended for integration tests that need exact per-request semantics; not recommended in production. |
-| `KYMA_FLUSH_MAX_ROWS` | `8000` | Flush the staging buffer for a table when it accumulates this many rows. Unsigned integer. |
-| `KYMA_FLUSH_MAX_BYTES` | `16777216` (16 MiB) | Flush the staging buffer when its in-memory footprint exceeds this many bytes. Unsigned integer. |
-| `KYMA_FLUSH_MAX_AGE_MS` | `50` | Flush any buffer entry that has been waiting longer than this many milliseconds, even if thresholds are not yet met. Unsigned integer. |
-| `KYMA_COMMIT_WINDOW_MS` | `5` | Commit-coordinator batch window: wait up to this many milliseconds after the first extent arrives before committing the group. Lower = less latency; higher = more throughput. Unsigned integer. |
-| `KYMA_COMMIT_MAX_EXTENTS` | `128` | Hard cap on the number of extents bundled into a single coordinator snapshot commit. Unsigned integer. |
+| `PENSIEVE_STAGING_DISABLED` | _(unset — staging enabled)_ | Set to `1` or `true` to disable the staging buffer and write one extent per ingest request. Intended for integration tests that need exact per-request semantics; not recommended in production. |
+| `PENSIEVE_FLUSH_MAX_ROWS` | `8000` | Flush the staging buffer for a table when it accumulates this many rows. Unsigned integer. |
+| `PENSIEVE_FLUSH_MAX_BYTES` | `16777216` (16 MiB) | Flush the staging buffer when its in-memory footprint exceeds this many bytes. Unsigned integer. |
+| `PENSIEVE_FLUSH_MAX_AGE_MS` | `50` | Flush any buffer entry that has been waiting longer than this many milliseconds, even if thresholds are not yet met. Unsigned integer. |
+| `PENSIEVE_COMMIT_WINDOW_MS` | `5` | Commit-coordinator batch window: wait up to this many milliseconds after the first extent arrives before committing the group. Lower = less latency; higher = more throughput. Unsigned integer. |
+| `PENSIEVE_COMMIT_MAX_EXTENTS` | `128` | Hard cap on the number of extents bundled into a single coordinator snapshot commit. Unsigned integer. |
 
 #### Compaction
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_COMPACTION_IDLE_SLEEP_MS` | `2000` (2 s) | How long the compaction worker sleeps between idle polls (no task available). Unsigned integer (ms). |
-| `KYMA_COMPACTION_POLL_SECS` | `30` | How often the compaction scheduler scans the catalog for tables with enough extents to compact. Unsigned integer (seconds). |
-| `KYMA_COMPACTION_MIN_EXTENTS` | `4` | Minimum number of extents a table must have before the scheduler submits a compaction task. Signed 64-bit integer. |
+| `PENSIEVE_COMPACTION_IDLE_SLEEP_MS` | `2000` (2 s) | How long the compaction worker sleeps between idle polls (no task available). Unsigned integer (ms). |
+| `PENSIEVE_COMPACTION_POLL_SECS` | `30` | How often the compaction scheduler scans the catalog for tables with enough extents to compact. Unsigned integer (seconds). |
+| `PENSIEVE_COMPACTION_MIN_EXTENTS` | `4` | Minimum number of extents a table must have before the scheduler submits a compaction task. Signed 64-bit integer. |
 
 #### Retention and physical GC
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_RETENTION_POLL_SECS` | `60` | How often the retention sweeper checks for expired (soft-deleted) extents and marks them for physical deletion. Unsigned integer (seconds). |
-| `KYMA_PHYSICAL_GC_POLL_SECS` | `300` (5 min) | How often the physical-delete worker checks for extents past their grace period and deletes object-store bytes. Unsigned integer (seconds). |
-| `KYMA_PHYSICAL_GC_GRACE_SECS` | `86400` (24 h) | Time after soft-deletion before an extent's object-store bytes are actually removed. Signed integer (seconds). |
+| `PENSIEVE_RETENTION_POLL_SECS` | `60` | How often the retention sweeper checks for expired (soft-deleted) extents and marks them for physical deletion. Unsigned integer (seconds). |
+| `PENSIEVE_PHYSICAL_GC_POLL_SECS` | `300` (5 min) | How often the physical-delete worker checks for extents past their grace period and deletes object-store bytes. Unsigned integer (seconds). |
+| `PENSIEVE_PHYSICAL_GC_GRACE_SECS` | `86400` (24 h) | Time after soft-deletion before an extent's object-store bytes are actually removed. Signed integer (seconds). |
 
 #### File-drop watcher
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_FILEDROP_ENABLED` | `0` (disabled) | Set to `1` or `true` to activate the file-drop watcher. Off by default. |
-| `KYMA_FILEDROP_PREFIXES` | `ingest` | Comma-separated list of object-store prefixes to watch, e.g. `ingest,staging`. Takes precedence over the legacy `KYMA_FILEDROP_PREFIX`. Files must follow the `{prefix}/{database}/{table}/{filename}` path convention. |
-| `KYMA_FILEDROP_PREFIX` | `ingest` | Legacy single-prefix override. Ignored when `KYMA_FILEDROP_PREFIXES` is set. |
-| `KYMA_FILEDROP_POLL_SECS` | `5` | How often each configured prefix is scanned. Unsigned integer (seconds). |
-| `KYMA_FILEDROP_DELETE_AFTER_INGEST` | `false` | Set to `1` or `true` to delete object-store files after successful ingest. Default `false` preserves files for replay via the idempotency ledger. |
-| `KYMA_FILEDROP_AUTO_CREATE` | `true` | Automatically create the target table on the first NDJSON file with the engine's default schema. Set to `0` or `false` to require tables to exist before ingest. |
-| `KYMA_FILEDROP_SCHEMA_EVOLVE` | `true` | Scan each NDJSON file for new top-level keys and `ALTER TABLE ADD COLUMN` for any missing columns. Set to `0` or `false` to enforce strict schema. |
+| `PENSIEVE_FILEDROP_ENABLED` | `0` (disabled) | Set to `1` or `true` to activate the file-drop watcher. Off by default. |
+| `PENSIEVE_FILEDROP_PREFIXES` | `ingest` | Comma-separated list of object-store prefixes to watch, e.g. `ingest,staging`. Takes precedence over the legacy `PENSIEVE_FILEDROP_PREFIX`. Files must follow the `{prefix}/{database}/{table}/{filename}` path convention. |
+| `PENSIEVE_FILEDROP_PREFIX` | `ingest` | Legacy single-prefix override. Ignored when `PENSIEVE_FILEDROP_PREFIXES` is set. |
+| `PENSIEVE_FILEDROP_POLL_SECS` | `5` | How often each configured prefix is scanned. Unsigned integer (seconds). |
+| `PENSIEVE_FILEDROP_DELETE_AFTER_INGEST` | `false` | Set to `1` or `true` to delete object-store files after successful ingest. Default `false` preserves files for replay via the idempotency ledger. |
+| `PENSIEVE_FILEDROP_AUTO_CREATE` | `true` | Automatically create the target table on the first NDJSON file with the engine's default schema. Set to `0` or `false` to require tables to exist before ingest. |
+| `PENSIEVE_FILEDROP_SCHEMA_EVOLVE` | `true` | Scan each NDJSON file for new top-level keys and `ALTER TABLE ADD COLUMN` for any missing columns. Set to `0` or `false` to enforce strict schema. |
 
 #### Kafka ingest
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_KAFKA_ENABLED` | `0` (disabled) | Set to `1` or `true` to activate the Kafka consumer. |
-| `KYMA_KAFKA_BROKERS` | `localhost:9092` | Comma-separated list of Kafka broker addresses, e.g. `broker1:9092,broker2:9092`. |
-| `KYMA_KAFKA_GROUP` | `kyma-ingest` | Kafka consumer group id. |
-| `KYMA_KAFKA_TOPICS` | _(unset — consumer will not start)_ | Comma-separated `topic:database.table` routing specs, e.g. `events:mydb.mytable,logs:obs.raw`. The consumer ignores topics with no mapping. |
-| `KYMA_KAFKA_BATCH_SIZE` | `500` | Number of Kafka messages accumulated per flush to `WritePath`. Unsigned integer. |
-| `KYMA_KAFKA_BATCH_TIMEOUT_MS` | `500` | Max time (ms) a partial batch may linger before flushing regardless of size. Unsigned integer. |
+| `PENSIEVE_KAFKA_ENABLED` | `0` (disabled) | Set to `1` or `true` to activate the Kafka consumer. |
+| `PENSIEVE_KAFKA_BROKERS` | `localhost:9092` | Comma-separated list of Kafka broker addresses, e.g. `broker1:9092,broker2:9092`. |
+| `PENSIEVE_KAFKA_GROUP` | `pensieve-ingest` | Kafka consumer group id. |
+| `PENSIEVE_KAFKA_TOPICS` | _(unset — consumer will not start)_ | Comma-separated `topic:database.table` routing specs, e.g. `events:mydb.mytable,logs:obs.raw`. The consumer ignores topics with no mapping. |
+| `PENSIEVE_KAFKA_BATCH_SIZE` | `500` | Number of Kafka messages accumulated per flush to `WritePath`. Unsigned integer. |
+| `PENSIEVE_KAFKA_BATCH_TIMEOUT_MS` | `500` | Max time (ms) a partial batch may linger before flushing regardless of size. Unsigned integer. |
 
 #### Schema cache
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_SCHEMA_CACHE_TTL_SECS` | `5` | Server-side TTL in seconds for the `GET /v1/catalog/schema` response cache. Set to `0` to disable caching. Unsigned integer. |
+| `PENSIEVE_SCHEMA_CACHE_TTL_SECS` | `5` | Server-side TTL in seconds for the `GET /v1/catalog/schema` response cache. Set to `0` to disable caching. Unsigned integer. |
 
 #### Data source runner
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_DATA_SOURCE_WORKERS` | `4` | Number of concurrent data source runner goroutines. Unsigned integer. |
+| `PENSIEVE_DATA_SOURCE_WORKERS` | `4` | Number of concurrent data source runner goroutines. Unsigned integer. |
 
 #### Embedding provider
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_EMBED_PROVIDER` | _(unset — `fastembed`)_ | Embedding backend to use. Accepted values: `fastembed`, `ollama`, `openai-compat`, `gemini`. Unset defaults to `fastembed`. |
-| `KYMA_EMBED_MODEL_ID` | Provider-specific (see notes) | Embedding model identifier. Default per provider: `fastembed` → `bge-small-en-v1.5`; `ollama` → `nomic-embed-text`; `openai-compat` → `text-embedding-3-small`; `gemini` → `text-embedding-004`. |
-| `KYMA_EMBED_BASE_URL` | Provider-specific (see notes) | Base URL for network embedding providers. Default: `http://localhost:11434` for `ollama`; `https://api.openai.com/v1` for `openai-compat`. Ignored for `fastembed` and `gemini`. |
-| `KYMA_EMBED_MODEL_PATH` | _(unset)_ | Local filesystem path to a pre-downloaded fastembed model. Only used when `KYMA_EMBED_PROVIDER=fastembed`. |
-| `KYMA_EMBED_API_KEY_ENV` | `OPENAI_API_KEY` | Name of the environment variable that holds the API key for `openai-compat`. The engine reads the named env var at query time via the data source secret store. Only used when `KYMA_EMBED_PROVIDER=openai-compat`. |
+| `PENSIEVE_EMBED_PROVIDER` | _(unset — `fastembed`)_ | Embedding backend to use. Accepted values: `fastembed`, `ollama`, `openai-compat`, `gemini`. Unset defaults to `fastembed`. |
+| `PENSIEVE_EMBED_MODEL_ID` | Provider-specific (see notes) | Embedding model identifier. Default per provider: `fastembed` → `bge-small-en-v1.5`; `ollama` → `nomic-embed-text`; `openai-compat` → `text-embedding-3-small`; `gemini` → `text-embedding-004`. |
+| `PENSIEVE_EMBED_BASE_URL` | Provider-specific (see notes) | Base URL for network embedding providers. Default: `http://localhost:11434` for `ollama`; `https://api.openai.com/v1` for `openai-compat`. Ignored for `fastembed` and `gemini`. |
+| `PENSIEVE_EMBED_MODEL_PATH` | _(unset)_ | Local filesystem path to a pre-downloaded fastembed model. Only used when `PENSIEVE_EMBED_PROVIDER=fastembed`. |
+| `PENSIEVE_EMBED_API_KEY_ENV` | `OPENAI_API_KEY` | Name of the environment variable that holds the API key for `openai-compat`. The engine reads the named env var at query time via the data source secret store. Only used when `PENSIEVE_EMBED_PROVIDER=openai-compat`. |
 
 #### Inline data-assistant (agent)
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_AGENT_OLLAMA_HOST` | `http://localhost:11434` | Base URL of the Ollama server used by the inline `/v1/agent` endpoint. |
-| `KYMA_AGENT_MODEL` | `gemma4:latest` | Ollama model tag to use for the inline agent. Must be pulled on the Ollama host before use. |
+| `PENSIEVE_AGENT_OLLAMA_HOST` | `http://localhost:11434` | Base URL of the Ollama server used by the inline `/v1/agent` endpoint. |
+| `PENSIEVE_AGENT_MODEL` | `gemma4:latest` | Ollama model tag to use for the inline agent. Must be pulled on the Ollama host before use. |
 
 ### Inherited / third-party variables
 
-These env vars come from libraries kyma uses or from runtime convention. kyma inherits them as-is; their semantics belong to the library, not to kyma.
+These env vars come from libraries pensieve uses or from runtime convention. pensieve inherits them as-is; their semantics belong to the library, not to pensieve.
 
 | Variable | Source | Notes |
 |---|---|---|
-| `RUST_LOG` | `tracing-subscriber` | Controls the log level filter. Parsed by `EnvFilter::try_from_default_env()`. When unset, kyma defaults to `info,sqlx=warn,hyper=warn,h2=warn`. Syntax: `[target=]level[,...]`, e.g. `RUST_LOG=debug,sqlx=warn`. |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `object_store` / `aws-sdk` | Standard AWS credential env vars. Used as fallback when `KYMA_S3_ACCESS_KEY_ID` / `KYMA_S3_SECRET_ACCESS_KEY` are unset and no instance-role credential is available. |
-| `AWS_DEFAULT_REGION` | `object_store` / `aws-sdk` | AWS region fallback when `KYMA_S3_REGION` is unset. |
-| `OPENAI_API_KEY` | Embedding / data source | API key for OpenAI-compatible embedding providers. The variable name is configurable via `KYMA_EMBED_API_KEY_ENV`; `OPENAI_API_KEY` is the default. |
-| `GOOGLE_API_KEY` | Embedding | API key for the Gemini embedding provider. Hard-coded variable name when `KYMA_EMBED_PROVIDER=gemini`; not configurable. |
+| `RUST_LOG` | `tracing-subscriber` | Controls the log level filter. Parsed by `EnvFilter::try_from_default_env()`. When unset, pensieve defaults to `info,sqlx=warn,hyper=warn,h2=warn`. Syntax: `[target=]level[,...]`, e.g. `RUST_LOG=debug,sqlx=warn`. |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `object_store` / `aws-sdk` | Standard AWS credential env vars. Used as fallback when `PENSIEVE_S3_ACCESS_KEY_ID` / `PENSIEVE_S3_SECRET_ACCESS_KEY` are unset and no instance-role credential is available. |
+| `AWS_DEFAULT_REGION` | `object_store` / `aws-sdk` | AWS region fallback when `PENSIEVE_S3_REGION` is unset. |
+| `OPENAI_API_KEY` | Embedding / data source | API key for OpenAI-compatible embedding providers. The variable name is configurable via `PENSIEVE_EMBED_API_KEY_ENV`; `OPENAI_API_KEY` is the default. |
+| `GOOGLE_API_KEY` | Embedding | API key for the Gemini embedding provider. Hard-coded variable name when `PENSIEVE_EMBED_PROVIDER=gemini`; not configurable. |
 
 ### Test-only variables
 
 These are not part of the v1.0 contract; they may change at any time.
 
-- `KYMA_TEST_DATABASE_URL` — PostgreSQL connection URL used by integration and unit tests (MCP, ingest, schema) to connect to a test-specific catalog. Read directly in test code; never read by the main engine binary.
+- `PENSIEVE_TEST_DATABASE_URL` — PostgreSQL connection URL used by integration and unit tests (MCP, ingest, schema) to connect to a test-specific catalog. Read directly in test code; never read by the main engine binary.
 
 ## 8. Extent on-disk format
 
@@ -1495,7 +1495,7 @@ These are not part of the v1.0 contract; they may change at any time.
 
 The v1.0 extent format will be frozen when P0 lands. Until then, the following invariants are committed:
 
-- Every extent carries a leading magic + version byte sequence: ASCII `KYMA` (`0x4B 0x59 0x4D 0x41`) followed by a `u8` format version. Readers MUST check both before decoding.
+- Every extent carries a leading magic + version byte sequence: ASCII `PENSIEVE` (`0x4B 0x59 0x4D 0x41`) followed by a `u8` format version. Readers MUST check both before decoding.
 - v1.x readers will read every extent any v1.x writer produces. v1.x readers will read extents written by P0-era pre-v1.0 builds on a best-effort basis (back-compat fixtures pinned at the first `v1.0.0-pre.N` tag set the lower bound for guaranteed read-back).
 - Format version `0` is reserved for the current pre-P0 telemetry format.
 - Format version `1` will be the post-P0 telemetry format (Gorilla floats, delta-of-delta timestamps, FST term dictionaries, full inverted index — per the README roadmap).
@@ -1524,8 +1524,8 @@ A deprecated surface must continue to work for at least **6 months** (or two min
 1. **Announce.** Open an RFC issue tagged `stability` describing the change, the migration path, and the proposed removal version.
 2. **Land the replacement.** The new surface ships in the same release as (or before) the deprecation warning.
 3. **Warn.** Calls to the deprecated surface emit a structured warning:
-   - HTTP / Flight: response carries `X-Kyma-Deprecation: <surface>; sunset=<version>; replacement=<surface>`.
-   - Log: `kyma_deprecation_used_total{surface, replacement}` counter increments; structured log entry at WARN with `event=deprecation_used`.
+   - HTTP / Flight: response carries `X-Pensieve-Deprecation: <surface>; sunset=<version>; replacement=<surface>`.
+   - Log: `pensieve_deprecation_used_total{surface, replacement}` counter increments; structured log entry at WARN with `event=deprecation_used`.
 4. **Document.** Changelog entry under "Deprecated" with the sunset version.
 5. **Wait.** At least 6 months and 2 minor releases.
 6. **Remove.** In the sunset release, drop the surface. Changelog entry under "Removed."

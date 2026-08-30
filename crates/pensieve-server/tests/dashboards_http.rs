@@ -1,6 +1,6 @@
 //! Integration tests for the `/v1/dashboards` CRUD endpoints.
 //!
-//! Requires `--features kyma-server/test-support` to compile.
+//! Requires `--features pensieve-server/test-support` to compile.
 //! Each test spins up its own isolated Postgres container via testcontainers.
 
 use axum::body::Body;
@@ -17,7 +17,7 @@ use tower::ServiceExt;
 ///   - `test-read-token:read`
 ///   - `test-write-token:write`
 fn authed_app(
-    state: kyma_server::QueryState,
+    state: pensieve_server::QueryState,
 ) -> impl tower::Service<
     axum::http::Request<axum::body::Body>,
     Response = axum::http::Response<axum::body::Body>,
@@ -26,28 +26,28 @@ fn authed_app(
         Output = Result<axum::http::Response<axum::body::Body>, std::convert::Infallible>,
     >,
 > {
-    let backend: std::sync::Arc<dyn kyma_server::auth::AuthBackend> = std::sync::Arc::new(
-        kyma_server::auth::EnvAuthBackend::from_str(
+    let backend: std::sync::Arc<dyn pensieve_server::auth::AuthBackend> = std::sync::Arc::new(
+        pensieve_server::auth::EnvAuthBackend::from_str(
             "test-read-token:read,test-write-token:write",
         ),
     );
 
     let read_router =
-        kyma_server::router(state.clone()).layer(axum::middleware::from_fn_with_state(
-            kyma_server::auth::AuthLayerState {
+        pensieve_server::router(state.clone()).layer(axum::middleware::from_fn_with_state(
+            pensieve_server::auth::AuthLayerState {
                 backend: backend.clone(),
-                required: kyma_server::auth::Role::Read,
+                required: pensieve_server::auth::Role::Read,
             },
-            kyma_server::auth::require_role_middleware,
+            pensieve_server::auth::require_role_middleware,
         ));
 
-    let write_router = kyma_server::dashboards_write_router(state.catalog.clone()).layer(
+    let write_router = pensieve_server::dashboards_write_router(state.catalog.clone()).layer(
         axum::middleware::from_fn_with_state(
-            kyma_server::auth::AuthLayerState {
+            pensieve_server::auth::AuthLayerState {
                 backend,
-                required: kyma_server::auth::Role::Write,
+                required: pensieve_server::auth::Role::Write,
             },
-            kyma_server::auth::require_role_middleware,
+            pensieve_server::auth::require_role_middleware,
         ),
     );
 
@@ -158,7 +158,7 @@ async fn body_json(resp: axum::http::Response<Body>) -> Value {
 /// POST dashboard with no panels, then GET it back — shape is correct.
 #[tokio::test]
 async fn post_no_panels_then_get() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let mut app = authed_app(state);
 
     let resp = post_dashboard(
@@ -185,7 +185,7 @@ async fn post_no_panels_then_get() {
 /// POST dashboard with 3 panels → all 3 come back with display_order preserved.
 #[tokio::test]
 async fn post_with_panels_preserves_display_order() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let mut app = authed_app(state);
 
     let resp = post_dashboard(
@@ -215,7 +215,7 @@ async fn post_with_panels_preserves_display_order() {
 /// PATCH name only → updated; panels are untouched.
 #[tokio::test]
 async fn patch_name_only_leaves_panels() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let mut app = authed_app(state);
 
     // Create with 1 panel.
@@ -247,7 +247,7 @@ async fn patch_name_only_leaves_panels() {
 /// PATCH with `panels: [...]` → atomic replace; old panel IDs are gone.
 #[tokio::test]
 async fn patch_panels_atomic_replace() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let mut app = authed_app(state);
 
     // Create with 2 panels.
@@ -294,7 +294,7 @@ async fn patch_panels_atomic_replace() {
 /// DELETE → 204; GET same id → 404.
 #[tokio::test]
 async fn delete_returns_204_then_get_404() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let mut app = authed_app(state);
 
     let create_resp = post_dashboard(&mut app, json!({ "name": "To Delete" })).await;
@@ -312,19 +312,19 @@ async fn delete_returns_204_then_get_404() {
 /// Missing auth on write endpoints → 401.
 #[tokio::test]
 async fn missing_auth_returns_401_on_write() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
-    let backend: std::sync::Arc<dyn kyma_server::auth::AuthBackend> = std::sync::Arc::new(
-        kyma_server::auth::EnvAuthBackend::from_str("test-write-token:write"),
+    let state = pensieve_server::test_support::seeded_state_empty().await;
+    let backend: std::sync::Arc<dyn pensieve_server::auth::AuthBackend> = std::sync::Arc::new(
+        pensieve_server::auth::EnvAuthBackend::from_str("test-write-token:write"),
     );
 
     // Only wrap write router with auth — GET would be read-gated normally.
-    let write_router = kyma_server::dashboards_write_router(state.catalog.clone()).layer(
+    let write_router = pensieve_server::dashboards_write_router(state.catalog.clone()).layer(
         axum::middleware::from_fn_with_state(
-            kyma_server::auth::AuthLayerState {
+            pensieve_server::auth::AuthLayerState {
                 backend,
-                required: kyma_server::auth::Role::Write,
+                required: pensieve_server::auth::Role::Write,
             },
-            kyma_server::auth::require_role_middleware,
+            pensieve_server::auth::require_role_middleware,
         ),
     );
 
@@ -342,7 +342,7 @@ async fn missing_auth_returns_401_on_write() {
 /// Unknown dashboard id on GET → 404.
 #[tokio::test]
 async fn get_unknown_id_returns_404() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let mut app = authed_app(state);
 
     let fake_id = "00000000-0000-0000-0000-000000000001";
@@ -353,7 +353,7 @@ async fn get_unknown_id_returns_404() {
 /// List dashboards returns all created dashboards.
 #[tokio::test]
 async fn list_returns_all_dashboards() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let mut app = authed_app(state);
 
     post_dashboard(&mut app, json!({ "name": "Alpha" })).await;

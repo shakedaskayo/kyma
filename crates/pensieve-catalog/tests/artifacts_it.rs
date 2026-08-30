@@ -4,9 +4,9 @@
 //! fs-watch snapshots) and its retention worker.
 
 use chrono::{Duration, Utc};
-use kyma_catalog::artifacts::ArtifactRecord;
-use kyma_catalog::PostgresCatalog;
-use kyma_core::tenant::TenantId;
+use pensieve_catalog::artifacts::ArtifactRecord;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::tenant::TenantId;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 use uuid::Uuid;
@@ -36,7 +36,7 @@ fn rec(tenant: TenantId, path: &str) -> ArtifactRecord {
         object_path: path.to_string(),
         source: "github".to_string(),
         artifact_class: "log".to_string(),
-        table_ref: Some("kyma.github_job_logs".to_string()),
+        table_ref: Some("pensieve.github_job_logs".to_string()),
         data_source_id: None,
         size_bytes: 1234,
         sha256: Some("deadbeef".to_string()),

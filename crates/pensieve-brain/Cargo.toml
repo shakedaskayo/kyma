@@ -1,17 +1,17 @@
 [package]
-name = "kyma-brain"
+name = "pensieve-brain"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Brain repos: deterministic memory→Obsidian-vault export, git-binary wrapper, smart-HTTP pkt-line helpers, and push-ingest planning — the pure library behind kyma's git-clonable brains."
+description = "Brain repos: deterministic memory→Obsidian-vault export, git-binary wrapper, smart-HTTP pkt-line helpers, and push-ingest planning — the pure library behind pensieve's git-clonable brains."
 
 [lints]
 workspace = true
 
 [dependencies]
-kyma-ccmem = { workspace = true }
+pensieve-ccmem = { workspace = true }
 tokio = { workspace = true, features = ["process", "io-util", "time", "sync", "macros", "fs"] }
 async-trait = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

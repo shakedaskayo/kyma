@@ -1,7 +1,7 @@
-//! Ingest Claude Code's file-based memory into the local kyma engine.
+//! Ingest Claude Code's file-based memory into the local pensieve engine.
 //!
 //! Claude Code persists per-project memories as markdown files under
-//! `~/.claude/projects/<path-slug>/memory/` (see `kyma-ccmem` for the
+//! `~/.claude/projects/<path-slug>/memory/` (see `pensieve-ccmem` for the
 //! format). This module scans those directories and upserts each memory
 //! file into `memory_nodes` — embedded, graph-linked, recallable — with the
 //! **files as source of truth**:
@@ -10,13 +10,13 @@
 //!   (`ccsync:hash:<path>`) skip unchanged files without embedding; upserts
 //!   key on `topic_key = claude-md:<slug>/<name>` so edits become new
 //!   versions of the same node, never duplicates.
-//! - **Loop-safe**: files kyma itself promoted (frontmatter
-//!   `metadata.source: kyma`) are skipped while their on-disk hash matches
+//! - **Loop-safe**: files pensieve itself promoted (frontmatter
+//!   `metadata.source: pensieve`) are skipped while their on-disk hash matches
 //!   the stamped `content_hash`; a mismatch means the *user* edited the file,
 //!   which updates the original node and marks it user-owned so writeback
 //!   stops overwriting it.
 //! - **Realm**: the project's directory basename, matching the plugin hooks'
-//!   `kyma_realm()` convention — file memories surface in normal recall.
+//!   `pensieve_realm()` convention — file memories surface in normal recall.
 //!   Slugs resolve to project paths via `~/.claude.json`'s `projects` keys,
 //!   falling back to the `cwd` recorded in session transcripts.
 
@@ -29,10 +29,10 @@ use uuid::Uuid;
 
 use crate::sync::NODE_COLS;
 use crate::Engine;
-use kyma_ccmem::frontmatter::MemoryFile;
-use kyma_ccmem::{frontmatter, hash, slug, wikilink};
-use kyma_memory::{rows::edge_row, CreateMemory, MemoryType, MemoryWriter};
-use kyma_server::agent::{execute_sql, SharedToolCtx};
+use pensieve_ccmem::frontmatter::MemoryFile;
+use pensieve_ccmem::{frontmatter, hash, slug, wikilink};
+use pensieve_memory::{rows::edge_row, CreateMemory, MemoryType, MemoryWriter};
+use pensieve_server::agent::{execute_sql, SharedToolCtx};
 
 /// Importance assigned to file-born memories: Claude Code deliberately chose
 /// to persist them, which puts them above the 0.5 default but below
@@ -61,10 +61,10 @@ pub(crate) struct ProjectSyncReport {
     pub project_path: Option<PathBuf>,
     /// Files ingested or re-ingested (created or new version).
     pub upserted: usize,
-    /// Files unchanged since the last scan (hash hit) or kyma-authored and
+    /// Files unchanged since the last scan (hash hit) or pensieve-authored and
     /// untouched.
     pub skipped: usize,
-    /// kyma-authored files the user edited — pulled back as node updates.
+    /// pensieve-authored files the user edited — pulled back as node updates.
     pub user_edited: usize,
     /// `RELATES_TO` edges appended for resolved `[[wikilinks]]`.
     pub edges_added: usize,
@@ -72,7 +72,7 @@ pub(crate) struct ProjectSyncReport {
     pub archived: usize,
 }
 
-/// What one scanned (non-kyma) file contributed — input to the wikilink
+/// What one scanned (non-pensieve) file contributed — input to the wikilink
 /// edge pass and the deletion manifest.
 struct ScanEntry {
     name: String,
@@ -92,7 +92,7 @@ pub(crate) struct CcSyncReport {
 
 impl CcSyncReport {
     /// Rollup as a `last_scan` JSON value in the control plane's `ScanStats`
-    /// shape (`kyma_datasources::watchers`): `{seen, processed, errors,
+    /// shape (`pensieve_datasources::watchers`): `{seen, processed, errors,
     /// duration_ms, at, detail}` with `detail.realms` carrying per-project
     /// counts. Built manually rather than via Serialize: `ProjectSyncReport`
     /// embeds `PathBuf`s (`dir`, `project_path`) that don't belong on the
@@ -216,7 +216,7 @@ async fn sync_project(
         .filter(|p| {
             p.is_file()
                 && p.extension().and_then(|e| e.to_str()) == Some("md")
-                && p.file_name().and_then(|n| n.to_str()) != Some(kyma_ccmem::MEMORY_INDEX_FILE)
+                && p.file_name().and_then(|n| n.to_str()) != Some(pensieve_ccmem::MEMORY_INDEX_FILE)
         })
         .collect();
     files.sort();
@@ -256,7 +256,7 @@ async fn sync_project(
         let h = hash::content_hash(&name, parsed.front.cc_type.as_deref(), &parsed.body);
         let hash_key = format!("ccsync:hash:{}", path.display());
 
-        if parsed.is_kyma_authored() {
+        if parsed.is_pensieve_authored() {
             // Scan state first: this exact content was already processed
             // (e.g. a user edit pulled back on a previous pass — the in-file
             // stamp never matches again by design, so it can't be the skip
@@ -266,8 +266,8 @@ async fn sync_project(
                 manifest.push(json!({
                     "file": file_name,
                     "name": name,
-                    "kyma": true,
-                    "node_id": parsed.front.kyma_memory_id,
+                    "pensieve": true,
+                    "node_id": parsed.front.pensieve_memory_id,
                 }));
                 continue;
             }
@@ -278,17 +278,17 @@ async fn sync_project(
                 manifest.push(json!({
                     "file": file_name,
                     "name": name,
-                    "kyma": true,
-                    "node_id": parsed.front.kyma_memory_id,
+                    "pensieve": true,
+                    "node_id": parsed.front.pensieve_memory_id,
                 }));
                 continue;
             }
-            // The user edited a kyma-promoted file: the file wins. Pull the
+            // The user edited a pensieve-promoted file: the file wins. Pull the
             // edit back into the original node and mark it user-owned so
             // writeback stops overwriting this file.
             if let Some(uuid) = parsed
                 .front
-                .kyma_memory_id
+                .pensieve_memory_id
                 .as_deref()
                 .and_then(|id| Uuid::parse_str(id.strip_prefix("memory:").unwrap_or(id)).ok())
             {
@@ -298,15 +298,15 @@ async fn sync_project(
                 manifest.push(json!({
                     "file": file_name,
                     "name": name,
-                    "kyma": true,
-                    "node_id": parsed.front.kyma_memory_id,
+                    "pensieve": true,
+                    "node_id": parsed.front.pensieve_memory_id,
                 }));
                 continue;
             }
             // No back-pointer — fall through and treat as a regular file.
         }
 
-        let tk = kyma_ccmem::topic_key(&slug, &name);
+        let tk = pensieve_ccmem::topic_key(&slug, &name);
         if engine.sqlite.get_sync_state(&hash_key).await?.as_deref() == Some(h.as_str()) {
             report.skipped += 1;
             manifest.push(json!({
@@ -344,7 +344,7 @@ async fn sync_project(
             .and_then(|s| Uuid::parse_str(s).ok());
         cm.topic_key = Some(tk.clone());
         cm.provenance = Some(json!({
-            "source": kyma_ccmem::CC_PROVENANCE_SOURCE,
+            "source": pensieve_ccmem::CC_PROVENANCE_SOURCE,
             "cc_path_slug": slug,
             "cc_name": name,
             "cc_file": file_name,
@@ -462,7 +462,7 @@ async fn link_wikilinks(
             (Some(s), Some(d)) => Some(edge_row(
                 s,
                 d,
-                kyma_memory::EDGE_RELATES_TO,
+                pensieve_memory::EDGE_RELATES_TO,
                 realm,
                 None,
                 Some(&props),
@@ -501,7 +501,7 @@ async fn archive_deleted(
     let mut archived = 0;
     for old in old_manifest {
         let Some(tk) = old.get("topic_key").and_then(Value::as_str) else {
-            continue; // kyma-authored entries: writeback owns their lifecycle
+            continue; // pensieve-authored entries: writeback owns their lifecycle
         };
         if live.contains(tk) {
             continue;
@@ -529,10 +529,10 @@ pub(crate) async fn archive_node(
         "WITH latest AS (SELECT *, \
            row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS rn FROM {nt}) \
          SELECT {NODE_COLS} FROM latest WHERE rn = 1 AND topic_key = {tk} LIMIT 1",
-        nt = kyma_memory::NODE_TABLE,
-        tk = kyma_memory::sql::sql_str(topic_key),
+        nt = pensieve_memory::NODE_TABLE,
+        tk = pensieve_memory::sql::sql_str(topic_key),
     );
-    let res = execute_sql(shared, kyma_memory::DEFAULT_DATABASE, &q, 1).await;
+    let res = execute_sql(shared, pensieve_memory::DEFAULT_DATABASE, &q, 1).await;
     let Some(mut row) = res
         .get("rows")
         .and_then(Value::as_array)
@@ -563,7 +563,7 @@ pub(crate) async fn archive_node(
     Ok(true)
 }
 
-/// Pull a user edit of a kyma-promoted file back into its node, preserving
+/// Pull a user edit of a pensieve-promoted file back into its node, preserving
 /// the node's identity fields (title, type, tags, importance, topic_key).
 async fn apply_user_edit(
     writer: &MemoryWriter,
@@ -631,8 +631,8 @@ async fn apply_user_edit(
     Ok(())
 }
 
-/// Map Claude Code's `metadata.type` onto kyma's memory types. `reference`
-/// has no kyma variant, so it becomes a tagged fact.
+/// Map Claude Code's `metadata.type` onto pensieve's memory types. `reference`
+/// has no pensieve variant, so it becomes a tagged fact.
 fn map_cc_type(cc: Option<&str>) -> (MemoryType, Vec<String>) {
     match cc.map(str::trim) {
         Some("user") => (MemoryType::Preference, Vec::new()),
@@ -713,10 +713,10 @@ pub(crate) async fn node_id_by_topic_key(
         "WITH latest AS (SELECT id, topic_key, \
            row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS rn FROM {nt}) \
          SELECT id FROM latest WHERE rn = 1 AND topic_key = {tk} LIMIT 1",
-        nt = kyma_memory::NODE_TABLE,
-        tk = kyma_memory::sql::sql_str(topic_key),
+        nt = pensieve_memory::NODE_TABLE,
+        tk = pensieve_memory::sql::sql_str(topic_key),
     );
-    let res = execute_sql(shared, kyma_memory::DEFAULT_DATABASE, &q, 1).await;
+    let res = execute_sql(shared, pensieve_memory::DEFAULT_DATABASE, &q, 1).await;
     res.get("rows")
         .and_then(Value::as_array)
         .and_then(|a| a.first())
@@ -732,10 +732,10 @@ async fn latest_node(shared: &SharedToolCtx, node_id: &str) -> Option<Value> {
            row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS rn FROM {nt}) \
          SELECT id, realm, memory_type, title, tags, importance, topic_key, provenance \
          FROM latest WHERE rn = 1 AND id = {id} LIMIT 1",
-        nt = kyma_memory::NODE_TABLE,
-        id = kyma_memory::sql::sql_str(node_id),
+        nt = pensieve_memory::NODE_TABLE,
+        id = pensieve_memory::sql::sql_str(node_id),
     );
-    let res = execute_sql(shared, kyma_memory::DEFAULT_DATABASE, &q, 1).await;
+    let res = execute_sql(shared, pensieve_memory::DEFAULT_DATABASE, &q, 1).await;
     res.get("rows")
         .and_then(Value::as_array)
         .and_then(|a| a.first())

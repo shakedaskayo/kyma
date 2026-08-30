@@ -1,9 +1,9 @@
 ---
-title: What kyma is
-description: kyma is the context engine for coding agents — durable graph-aware memory, live data (logs, traces, code) in KQL/SQL, and the graph that links them, over one surface. Runs as a local single binary; scales to a team control plane.
+title: What pensieve is
+description: pensieve is the context engine for coding agents — durable graph-aware memory, live data (logs, traces, code) in KQL/SQL, and the graph that links them, over one surface. Runs as a local single binary; scales to a team control plane.
 ---
 
-# What kyma is
+# What pensieve is
 
 **The context engine for coding agents.** One place your agent recalls durable
 **memory**, queries **live data** (logs, traces, code, data sources) in KQL or SQL,
@@ -15,7 +15,7 @@ surface (a Claude Code plugin, a CLI, or MCP).
 
 ## The three layers
 
-kyma is one engine that does three things, in order of how you'll meet them:
+pensieve is one engine that does three things, in order of how you'll meet them:
 
 - **Memory** — durable, graph-aware recall across sessions and machines. Capture →
   LLM extraction with bi-temporal conflict resolution → near-realtime hybrid recall
@@ -39,14 +39,14 @@ toy key-value store:
 - **KQL, SQL, or PromQL** over Arrow Flight gRPC — exact rows, streamed zero-copy — so
   an agent can ask twenty exploratory questions per prompt without melting a credit card.
 - **Federates with your operational databases** — Postgres, MySQL, MongoDB register as
-  catalogs and DataFusion joins them with kyma's own tables in one query.
+  catalogs and DataFusion joins them with pensieve's own tables in one query.
 - **Scales from one binary to many nodes** without a rewrite: the catalog is externalized
   from byte one, compute is stateless, object storage is the source of truth. See
   [Local & cluster mode](/concepts/local-and-cluster-mode).
 
 ## What it is not
 
-- Not *just* a memory layer. Memory SaaS gives the agent facts; kyma gives it the facts,
+- Not *just* a memory layer. Memory SaaS gives the agent facts; pensieve gives it the facts,
   the live logs/traces/code those facts are about, and the graph linking them — one query
   surface, one MCP server.
 - Not a metrics database. Metrics are one signal among many; treating them specially
@@ -64,7 +64,7 @@ developer tired of an agent that forgets every session and can't see production.
 
 ## Where to go next
 
-- The whole picture, end to end: [How kyma works](/concepts/how-kyma-works).
+- The whole picture, end to end: [How pensieve works](/concepts/how-pensieve-works).
 - Give your agent memory in five minutes: [Quickstart](/quickstart/give-your-agent-memory).
 - How recall and the graph work: [Agentic Memory](/agent/memory).
 - How a query stays fast: [The pruning cascade](/concepts/the-pruning-cascade).

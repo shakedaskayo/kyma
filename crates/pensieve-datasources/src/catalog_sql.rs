@@ -11,7 +11,7 @@
 //! tenant context — it returns each row's `tenant_id` so the caller can
 //! propagate it (e.g., to [`enqueue_tick`]).
 
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 

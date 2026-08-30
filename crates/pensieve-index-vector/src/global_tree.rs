@@ -86,7 +86,7 @@ pub fn extent_fingerprint(extent_ids: &[Uuid]) -> String {
     for id in &ids {
         bytes.extend_from_slice(id);
     }
-    kyma_core::crypto::content_hash_hex(&bytes)
+    pensieve_core::crypto::content_hash_hex(&bytes)
 }
 
 /// `global_nlist = clamp(round(sqrt(total_partitions)), 16, 4096)`. Enough

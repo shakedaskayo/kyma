@@ -2,31 +2,31 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Kyma's memory live stream honest and complete (capture-pipeline hardening, memory-op events, backfill-vs-live rendering), and add a Traces page backed by a new OTLP traces receiver that Kyma's own server also exports into.
+**Goal:** Make Pensieve's memory live stream honest and complete (capture-pipeline hardening, memory-op events, backfill-vs-live rendering), and add a Traces page backed by a new OTLP traces receiver that Pensieve's own server also exports into.
 
-**Architecture:** One telemetry system: `kyma-ingest-otlp` gains an `ExportTraceServiceRequest` receiver writing to `otel.otel_traces`; `kyma-server` self-instruments with `tracing-opentelemetry` spans (target `kyma_telemetry` only — that target allowlist is the recursion guard) exported in-process through the same row mapping. The web Memory pulse tails `otel_traces` alongside the firehose; the new `/traces` page lists and waterfalls the same table. CLI/installer changes eliminate the token drift that silently killed capture.
+**Architecture:** One telemetry system: `pensieve-ingest-otlp` gains an `ExportTraceServiceRequest` receiver writing to `otel.otel_traces`; `pensieve-server` self-instruments with `tracing-opentelemetry` spans (target `pensieve_telemetry` only — that target allowlist is the recursion guard) exported in-process through the same row mapping. The web Memory pulse tails `otel_traces` alongside the firehose; the new `/traces` page lists and waterfalls the same table. CLI/installer changes eliminate the token drift that silently killed capture.
 
 **Tech Stack:** Rust (axum, tonic, arrow, tracing-opentelemetry 0.28 / opentelemetry_sdk 0.27 — already in workspace `Cargo.toml:72-76`), React + TanStack Router + framer-motion, vitest, Playwright.
 
 **Spec:** `docs/superpowers/specs/2026-06-11-live-telemetry-and-traces-design.md`
 
-**Repo:** `/Users/shakedaskayo/shaked/projects/kyma` (all paths below relative to repo root)
+**Repo:** `/Users/shakedaskayo/shaked/projects/pensieve` (all paths below relative to repo root)
 
-**Verification baseline before starting:** `cargo test -p kyma-ingest-otlp` and `cd web && npx vitest run` must pass.
+**Verification baseline before starting:** `cargo test -p pensieve-ingest-otlp` and `cd web && npx vitest run` must pass.
 
 ---
 
 ## Part A — Capture pipeline hardening
 
-### Task 1: `kyma service install` persists the token to `~/.kyma/config.json`
+### Task 1: `pensieve service install` persists the token to `~/.pensieve/config.json`
 
-The drift: `install.sh` mints a token, passes it to `kyma service install` (plist), and separately to `kyma connect` (config.json). When the two ever disagree (see Task 2), every CLI/hook call 401s. Defense in depth: the Rust install path itself syncs config.json.
+The drift: `install.sh` mints a token, passes it to `pensieve service install` (plist), and separately to `pensieve connect` (config.json). When the two ever disagree (see Task 2), every CLI/hook call 401s. Defense in depth: the Rust install path itself syncs config.json.
 
 **Files:**
-- Modify: `crates/kyma-cli/src/client.rs` (add `persist_local_connection`)
-- Modify: `crates/kyma-cli/src/main.rs:657-665` (`ServiceAction::Install` arm)
+- Modify: `crates/pensieve-cli/src/client.rs` (add `persist_local_connection`)
+- Modify: `crates/pensieve-cli/src/main.rs:657-665` (`ServiceAction::Install` arm)
 
-- [ ] **Step 1: Write the failing test** — append to `crates/kyma-cli/src/client.rs`:
+- [ ] **Step 1: Write the failing test** — append to `crates/pensieve-cli/src/client.rs`:
 
 ```rust
 #[cfg(test)]
@@ -35,7 +35,7 @@ mod persist_tests {
 
     #[test]
     fn persist_local_connection_writes_endpoint_and_token() {
-        let dir = std::env::temp_dir().join(format!("kyma-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("pensieve-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.json");
 
@@ -65,15 +65,15 @@ mod persist_tests {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cargo test -p kyma-cli persist_local_connection_writes -- --nocapture`
+Run: `cargo test -p pensieve-cli persist_local_connection_writes -- --nocapture`
 Expected: FAIL — `persist_local_connection_at` not found.
 
-- [ ] **Step 3: Implement** — add to `crates/kyma-cli/src/client.rs` (below `save_config`):
+- [ ] **Step 3: Implement** — add to `crates/pensieve-cli/src/client.rs` (below `save_config`):
 
 ```rust
 /// Sync the local connection (endpoint + token) into a config file, preserving
 /// any other persisted fields (e.g. `last_session_id`). Used by
-/// `kyma service install` so the plist/unit token and the CLI token can never
+/// `pensieve service install` so the plist/unit token and the CLI token can never
 /// drift apart — the silent-401 capture outage of 2026-06-07.
 pub(crate) fn persist_local_connection_at(
     path: &Path,
@@ -101,7 +101,7 @@ pub(crate) fn persist_local_connection_at(
     Ok(())
 }
 
-/// `persist_local_connection_at` against the default `~/.kyma/config.json`.
+/// `persist_local_connection_at` against the default `~/.pensieve/config.json`.
 pub(crate) fn persist_local_connection(endpoint: &str, token: Option<&str>) -> Result<()> {
     persist_local_connection_at(&config_path()?, endpoint, token)
 }
@@ -109,17 +109,17 @@ pub(crate) fn persist_local_connection(endpoint: &str, token: Option<&str>) -> R
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `cargo test -p kyma-cli persist_local_connection_writes`
+Run: `cargo test -p pensieve-cli persist_local_connection_writes`
 Expected: PASS
 
-- [ ] **Step 5: Call it from the install arm** — in `crates/kyma-cli/src/main.rs`, replace the `ServiceAction::Install` arm (currently lines 657-665):
+- [ ] **Step 5: Call it from the install arm** — in `crates/pensieve-cli/src/main.rs`, replace the `ServiceAction::Install` arm (currently lines 657-665):
 
 ```rust
             ServiceAction::Install { addr, token } => {
-                kyma_local::server_service::install(&kyma_local::server_service::ServerOptions {
+                pensieve_local::server_service::install(&pensieve_local::server_service::ServerOptions {
                     addr: addr.clone(),
                     token: token.clone(),
-                    kyma_home: None,
+                    pensieve_home: None,
                     secret_key: None,
                 })?;
                 // Keep the CLI pointed at the service we just installed: the
@@ -128,29 +128,29 @@ Expected: PASS
                 if let Err(e) =
                     client::persist_local_connection(&format!("http://{addr}"), token.as_deref())
                 {
-                    eprintln!("warning: couldn't sync ~/.kyma/config.json: {e}");
+                    eprintln!("warning: couldn't sync ~/.pensieve/config.json: {e}");
                 }
                 Ok(())
             }
 ```
 
-Note: `install()` returns `Result<bool>`; the old code mapped it to `()`. The new code uses `?` and ignores the bool — that bool only signals "no service manager on this OS", in which case the connection sync is still correct (the caller falls back to `KYMA_AUTH_TOKENS` nohup with the same token).
+Note: `install()` returns `Result<bool>`; the old code mapped it to `()`. The new code uses `?` and ignores the bool — that bool only signals "no service manager on this OS", in which case the connection sync is still correct (the caller falls back to `PENSIEVE_AUTH_TOKENS` nohup with the same token).
 
 - [ ] **Step 6: Build + clippy**
 
-Run: `cargo clippy -p kyma-cli -- -D warnings && cargo build -p kyma-cli`
+Run: `cargo clippy -p pensieve-cli -- -D warnings && cargo build -p pensieve-cli`
 Expected: clean
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/kyma-cli/src/client.rs crates/kyma-cli/src/main.rs
-git commit -m "fix(cli): kyma service install syncs the token into config.json"
+git add crates/pensieve-cli/src/client.rs crates/pensieve-cli/src/main.rs
+git commit -m "fix(cli): pensieve service install syncs the token into config.json"
 ```
 
 ### Task 2: `install.sh` reuses the existing supervised server's token
 
-The actual outage mechanism: re-running `install.sh` against an already-supervised, version-matched server mints a fresh `TOKEN` (`install.sh:302`), skips `kyma service install` (server already running), then runs `kyma connect --token $TOKEN` — overwriting config.json with a token the running server does not accept.
+The actual outage mechanism: re-running `install.sh` against an already-supervised, version-matched server mints a fresh `TOKEN` (`install.sh:302`), skips `pensieve service install` (server already running), then runs `pensieve connect --token $TOKEN` — overwriting config.json with a token the running server does not accept.
 
 **Files:**
 - Modify: `install.sh` (the `start_serve` function, lines ~301-356)
@@ -164,28 +164,28 @@ The actual outage mechanism: re-running `install.sh` against an already-supervis
 existing_service_token() {
   local f="$1"
   [ -f "$f" ] || return 0
-  # plist:  <key>KYMA_AUTH_TOKENS</key>\n    <string>TOKEN:admin</string>
-  # systemd: Environment=KYMA_AUTH_TOKENS=TOKEN:admin
-  grep -A1 'KYMA_AUTH_TOKENS' "$f" 2>/dev/null \
-    | sed -nE 's/.*<string>([^:<]+):admin<\/string>.*/\1/p; s/.*KYMA_AUTH_TOKENS=([^:]+):admin.*/\1/p' \
+  # plist:  <key>PENSIEVE_AUTH_TOKENS</key>\n    <string>TOKEN:admin</string>
+  # systemd: Environment=PENSIEVE_AUTH_TOKENS=TOKEN:admin
+  grep -A1 'PENSIEVE_AUTH_TOKENS' "$f" 2>/dev/null \
+    | sed -nE 's/.*<string>([^:<]+):admin<\/string>.*/\1/p; s/.*PENSIEVE_AUTH_TOKENS=([^:]+):admin.*/\1/p' \
     | head -1
 }
 ```
 
-- [ ] **Step 2: Use it in `start_serve`** — replace the first line of `start_serve()` body (`[ -z "$TOKEN" ] && TOKEN="kyma-local-$(rand_hex)"`) with:
+- [ ] **Step 2: Use it in `start_serve`** — replace the first line of `start_serve()` body (`[ -z "$TOKEN" ] && TOKEN="pensieve-local-$(rand_hex)"`) with:
 
 ```bash
   # Reuse the token already pinned in the service definition (if any) so a
   # re-run never desyncs the CLI from a server we are NOT restarting.
   local existing_service_file=""
   case "$(uname -s)" in
-    Darwin) existing_service_file="$HOME/Library/LaunchAgents/dev.getkyma.kyma-server.plist" ;;
-    Linux)  existing_service_file="$HOME/.config/systemd/user/kyma-server.service" ;;
+    Darwin) existing_service_file="$HOME/Library/LaunchAgents/dev.getpensieve.pensieve-server.plist" ;;
+    Linux)  existing_service_file="$HOME/.config/systemd/user/pensieve-server.service" ;;
   esac
   if [ -z "$TOKEN" ]; then
     TOKEN="$(existing_service_token "$existing_service_file")"
   fi
-  [ -z "$TOKEN" ] && TOKEN="kyma-local-$(rand_hex)"
+  [ -z "$TOKEN" ] && TOKEN="pensieve-local-$(rand_hex)"
 ```
 
 (The later `service_file` local inside the function remains as-is; the duplication is two lines and keeps the diff minimal.)
@@ -194,18 +194,18 @@ existing_service_token() {
 
 Run:
 ```bash
-cat > /tmp/kyma-test.plist <<'EOF'
+cat > /tmp/pensieve-test.plist <<'EOF'
   <key>EnvironmentVariables</key>
   <dict>
-    <key>KYMA_AUTH_TOKENS</key>
-    <string>kyma-local-deadbeef:admin</string>
+    <key>PENSIEVE_AUTH_TOKENS</key>
+    <string>pensieve-local-deadbeef:admin</string>
   </dict>
 EOF
-bash -c 'source <(sed -n "/^existing_service_token()/,/^}/p" install.sh); existing_service_token /tmp/kyma-test.plist'
-printf 'Environment=KYMA_AUTH_TOKENS=kyma-local-cafe:admin\n' > /tmp/kyma-test.unit
-bash -c 'source <(sed -n "/^existing_service_token()/,/^}/p" install.sh); existing_service_token /tmp/kyma-test.unit'
+bash -c 'source <(sed -n "/^existing_service_token()/,/^}/p" install.sh); existing_service_token /tmp/pensieve-test.plist'
+printf 'Environment=PENSIEVE_AUTH_TOKENS=pensieve-local-cafe:admin\n' > /tmp/pensieve-test.unit
+bash -c 'source <(sed -n "/^existing_service_token()/,/^}/p" install.sh); existing_service_token /tmp/pensieve-test.unit'
 ```
-Expected output: `kyma-local-deadbeef` then `kyma-local-cafe`.
+Expected output: `pensieve-local-deadbeef` then `pensieve-local-cafe`.
 
 - [ ] **Step 4: shellcheck**
 
@@ -218,12 +218,12 @@ git add install.sh
 git commit -m "fix(install): reuse the supervised server's token instead of minting a drifting one"
 ```
 
-### Task 3: `kyma status` authenticated probe
+### Task 3: `pensieve status` authenticated probe
 
-`cmd_status` (`crates/kyma-cli/src/main.rs:851-873`) only hits `/health` (unauthenticated) — it printed `Health: ok` all through the 4-day capture outage. Add a tokened probe against `GET /v1/auth/me` (exists: `crates/kyma-server/src/auth_handler.rs:237`).
+`cmd_status` (`crates/pensieve-cli/src/main.rs:851-873`) only hits `/health` (unauthenticated) — it printed `Health: ok` all through the 4-day capture outage. Add a tokened probe against `GET /v1/auth/me` (exists: `crates/pensieve-server/src/auth_handler.rs:237`).
 
 **Files:**
-- Modify: `crates/kyma-cli/src/main.rs` (`cmd_status`)
+- Modify: `crates/pensieve-cli/src/main.rs` (`cmd_status`)
 
 - [ ] **Step 1: Implement** — in `cmd_status`, after the `probe_health` match, add:
 
@@ -231,14 +231,14 @@ git commit -m "fix(install): reuse the supervised server's token instead of mint
             match probe_auth(&cfg).await {
                 Ok(true) => println!("Auth:      ok (token accepted)"),
                 Ok(false) => println!(
-                    "Auth:      TOKEN REJECTED — the server does not accept the configured token.\n           Fix: re-run the installer, or `kyma service install --addr <addr> --token <tok>`,\n           or `kyma connect {} --token <tok>` with the server's real token.",
+                    "Auth:      TOKEN REJECTED — the server does not accept the configured token.\n           Fix: re-run the installer, or `pensieve service install --addr <addr> --token <tok>`,\n           or `pensieve connect {} --token <tok>` with the server's real token.",
                     cfg.endpoint
                 ),
                 Err(e) => println!("Auth:      probe error — {e}"),
             }
 ```
 
-and add next to `probe_health` (same file, wherever `probe_health` is defined — find with `grep -n "fn probe_health" crates/kyma-cli/src/main.rs`):
+and add next to `probe_health` (same file, wherever `probe_health` is defined — find with `grep -n "fn probe_health" crates/pensieve-cli/src/main.rs`):
 
 ```rust
 /// `true` = token accepted, `false` = 401/403, error = transport failure.
@@ -257,84 +257,84 @@ async fn probe_auth(cfg: &client::ClientConfig) -> Result<bool> {
 
 - [ ] **Step 2: Build**
 
-Run: `cargo build -p kyma-cli`
+Run: `cargo build -p pensieve-cli`
 Expected: clean
 
 - [ ] **Step 3: Verify against the live local server (both outcomes)**
 
 ```bash
-./target/debug/kyma status            # Auth: ok (token accepted)
-KYMA_TOKEN=wrong ./target/debug/kyma status   # Auth: TOKEN REJECTED …
+./target/debug/pensieve status            # Auth: ok (token accepted)
+PENSIEVE_TOKEN=wrong ./target/debug/pensieve status   # Auth: TOKEN REJECTED …
 ```
-Expected: the two lines above respectively (env `KYMA_TOKEN` overrides config — `client.rs:effective_config`... note `cmd_status` uses `load_config()`, not `effective_config()`; change `cmd_status` to use `client::effective_config()` for the probe so the env override is honored, while still printing the config-file endpoint/token presence from `load_config`).
+Expected: the two lines above respectively (env `PENSIEVE_TOKEN` overrides config — `client.rs:effective_config`... note `cmd_status` uses `load_config()`, not `effective_config()`; change `cmd_status` to use `client::effective_config()` for the probe so the env override is honored, while still printing the config-file endpoint/token presence from `load_config`).
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-cli/src/main.rs
-git commit -m "feat(cli): kyma status probes auth, not just /health"
+git add crates/pensieve-cli/src/main.rs
+git commit -m "feat(cli): pensieve status probes auth, not just /health"
 ```
 
 ### Task 4: Capture-health marker from the hooks
 
-`kyma_emit` (`integrations/claude-code/kyma-memory/scripts/lib.sh:62-68`) is fire-and-forget: a 401 vanishes. Record the last failure (and clear on success) to `~/.kyma/capture-health.json`; surface it in `kyma status`.
+`pensieve_emit` (`integrations/claude-code/pensieve-memory/scripts/lib.sh:62-68`) is fire-and-forget: a 401 vanishes. Record the last failure (and clear on success) to `~/.pensieve/capture-health.json`; surface it in `pensieve status`.
 
 **Files:**
-- Modify: `integrations/claude-code/kyma-memory/scripts/lib.sh`
-- Modify: `crates/kyma-cli/src/main.rs` (`cmd_status`)
-- Modify: `integrations/claude-code/kyma-memory/commands/kyma-status.md` (mention capture health)
+- Modify: `integrations/claude-code/pensieve-memory/scripts/lib.sh`
+- Modify: `crates/pensieve-cli/src/main.rs` (`cmd_status`)
+- Modify: `integrations/claude-code/pensieve-memory/commands/pensieve-status.md` (mention capture health)
 
-- [ ] **Step 1: Rewrite `kyma_emit`** in `lib.sh`:
+- [ ] **Step 1: Rewrite `pensieve_emit`** in `lib.sh`:
 
 ```bash
-# Where hook-side capture failures are recorded for `kyma status` to surface.
-KYMA_CAPTURE_HEALTH="${KYMA_CAPTURE_HEALTH:-$HOME/.kyma/capture-health.json}"
+# Where hook-side capture failures are recorded for `pensieve status` to surface.
+PENSIEVE_CAPTURE_HEALTH="${PENSIEVE_CAPTURE_HEALTH:-$HOME/.pensieve/capture-health.json}"
 
 # Ship one compact NDJSON event line ($1) to the firehose. Detached so it
 # survives the hook process exiting and never adds latency to the turn.
-# Outcome is recorded to $KYMA_CAPTURE_HEALTH: failures write a marker,
+# Outcome is recorded to $PENSIEVE_CAPTURE_HEALTH: failures write a marker,
 # the next success clears it — so a silent 401 streak is visible to
-# `kyma status` instead of vanishing.
-kyma_emit() {
-  [ "$KYMA_CC_CAPTURE" = "off" ] && return 0
-  have kyma || return 0
+# `pensieve status` instead of vanishing.
+pensieve_emit() {
+  [ "$PENSIEVE_CC_CAPTURE" = "off" ] && return 0
+  have pensieve || return 0
   (
-    err=$(printf '%s\n' "$1" | kyma ingest push --table "$KYMA_CC_TABLE" --db "$KYMA_CC_DB" 2>&1 >/dev/null)
+    err=$(printf '%s\n' "$1" | pensieve ingest push --table "$PENSIEVE_CC_TABLE" --db "$PENSIEVE_CC_DB" 2>&1 >/dev/null)
     if [ $? -eq 0 ]; then
-      rm -f "$KYMA_CAPTURE_HEALTH" 2>/dev/null
+      rm -f "$PENSIEVE_CAPTURE_HEALTH" 2>/dev/null
     else
-      mkdir -p "$(dirname "$KYMA_CAPTURE_HEALTH")" 2>/dev/null
+      mkdir -p "$(dirname "$PENSIEVE_CAPTURE_HEALTH")" 2>/dev/null
       detail=$(printf '%s' "$err" | head -c 300 | tr '"' "'" | tr '\n' ' ')
       printf '{"ts":"%s","status":"error","detail":"%s"}\n' "$(now_ts)" "$detail" \
-        >"$KYMA_CAPTURE_HEALTH" 2>/dev/null
+        >"$PENSIEVE_CAPTURE_HEALTH" 2>/dev/null
     fi
   ) >/dev/null 2>&1 &
   return 0
 }
 ```
 
-- [ ] **Step 2: Test the failure path with a stub `kyma` binary**
+- [ ] **Step 2: Test the failure path with a stub `pensieve` binary**
 
 ```bash
 tmp=$(mktemp -d)
-cat > "$tmp/kyma" <<'EOF'
+cat > "$tmp/pensieve" <<'EOF'
 #!/bin/sh
 echo "ingest returned 401 Unauthorized: unknown token" >&2
 exit 1
 EOF
-chmod +x "$tmp/kyma"
-env PATH="$tmp:$PATH" KYMA_CAPTURE_HEALTH="$tmp/health.json" bash -c '
-  source integrations/claude-code/kyma-memory/scripts/lib.sh
-  kyma_emit "{\"kind\":\"test\"}"; sleep 1; cat "$KYMA_CAPTURE_HEALTH"'
+chmod +x "$tmp/pensieve"
+env PATH="$tmp:$PATH" PENSIEVE_CAPTURE_HEALTH="$tmp/health.json" bash -c '
+  source integrations/claude-code/pensieve-memory/scripts/lib.sh
+  pensieve_emit "{\"kind\":\"test\"}"; sleep 1; cat "$PENSIEVE_CAPTURE_HEALTH"'
 ```
 Expected: a JSON line with `"status":"error"` and the 401 detail.
 
 Then the success path (stub exits 0): re-run with `exit 0` stub — expected: `health.json` removed (cat errors with "No such file").
 
-- [ ] **Step 3: Surface in `kyma status`** — in `cmd_status` in `crates/kyma-cli/src/main.rs`, after the Auth line:
+- [ ] **Step 3: Surface in `pensieve status`** — in `cmd_status` in `crates/pensieve-cli/src/main.rs`, after the Auth line:
 
 ```rust
-            // Hook-side capture health (written by the kyma-memory plugin hooks).
+            // Hook-side capture health (written by the pensieve-memory plugin hooks).
             let health_path = client::config_dir()
                 .map(|d| d.join("capture-health.json"))
                 .ok();
@@ -352,31 +352,31 @@ Then the success path (stub exits 0): re-run with `exit 0` stub — expected: `h
             }
 ```
 
-- [ ] **Step 4: Update the plugin's `/kyma-status` command doc** — in `integrations/claude-code/kyma-memory/commands/kyma-status.md`, add one bullet to whatever checklist it renders: `Check ~/.kyma/capture-health.json — if present, capture is failing; show its ts + detail and suggest `kyma status` / re-running the installer.` (Read the file first and match its format.)
+- [ ] **Step 4: Update the plugin's `/pensieve-status` command doc** — in `integrations/claude-code/pensieve-memory/commands/pensieve-status.md`, add one bullet to whatever checklist it renders: `Check ~/.pensieve/capture-health.json — if present, capture is failing; show its ts + detail and suggest `pensieve status` / re-running the installer.` (Read the file first and match its format.)
 
 - [ ] **Step 5: Build + verify, then commit**
 
-Run: `cargo build -p kyma-cli && ./target/debug/kyma status`
+Run: `cargo build -p pensieve-cli && ./target/debug/pensieve status`
 Expected: `Capture: ok (no recorded hook failures)` (you repaired the local token earlier).
 
 ```bash
-git add integrations/claude-code/kyma-memory/scripts/lib.sh integrations/claude-code/kyma-memory/commands/kyma-status.md crates/kyma-cli/src/main.rs
-git commit -m "feat(capture): record hook ingest failures to capture-health.json and surface in kyma status"
+git add integrations/claude-code/pensieve-memory/scripts/lib.sh integrations/claude-code/pensieve-memory/commands/pensieve-status.md crates/pensieve-cli/src/main.rs
+git commit -m "feat(capture): record hook ingest failures to capture-health.json and surface in pensieve status"
 ```
 
 ---
 
 ## Part B — OTLP traces receiver
 
-### Task 5: Trace row mapping (pure function) in `kyma-ingest-otlp`
+### Task 5: Trace row mapping (pure function) in `pensieve-ingest-otlp`
 
-New module `traces.rs`: schema + `ExportTraceServiceRequest → RecordBatch` mapping. Mirrors the logs code; promotes `kyma.subject` / `kyma.tenant` span attributes into real columns.
+New module `traces.rs`: schema + `ExportTraceServiceRequest → RecordBatch` mapping. Mirrors the logs code; promotes `pensieve.subject` / `pensieve.tenant` span attributes into real columns.
 
 **Files:**
-- Create: `crates/kyma-ingest-otlp/src/traces.rs`
-- Modify: `crates/kyma-ingest-otlp/src/lib.rs` (add `pub mod traces;` and make `hex_encode`, `keyvalue_to_json`, `any_value_to_json`, `split_service_and_json` `pub(crate)`)
+- Create: `crates/pensieve-ingest-otlp/src/traces.rs`
+- Modify: `crates/pensieve-ingest-otlp/src/lib.rs` (add `pub mod traces;` and make `hex_encode`, `keyvalue_to_json`, `any_value_to_json`, `split_service_and_json` `pub(crate)`)
 
-- [ ] **Step 1: Write the failing test** — at the bottom of the new `crates/kyma-ingest-otlp/src/traces.rs` (write the test module first; the implementation skeleton in step 3):
+- [ ] **Step 1: Write the failing test** — at the bottom of the new `crates/pensieve-ingest-otlp/src/traces.rs` (write the test module first; the implementation skeleton in step 3):
 
 ```rust
 #[cfg(test)]
@@ -398,7 +398,7 @@ mod tests {
         ExportTraceServiceRequest {
             resource_spans: vec![ResourceSpans {
                 resource: Some(Resource {
-                    attributes: vec![kv("service.name", "kyma-server")],
+                    attributes: vec![kv("service.name", "pensieve-server")],
                     dropped_attributes_count: 0,
                 }),
                 scope_spans: vec![ScopeSpans {
@@ -414,8 +414,8 @@ mod tests {
                         start_time_unix_nano: 1_700_000_000_000_000_000,
                         end_time_unix_nano: 1_700_000_000_250_000_000,
                         attributes: vec![
-                            kv("kyma.subject", "ws-mbp-shaked"),
-                            kv("kyma.tenant", "default"),
+                            kv("pensieve.subject", "ws-mbp-shaked"),
+                            kv("pensieve.tenant", "default"),
                             kv("memory.query", "okta sso"),
                         ],
                         dropped_attributes_count: 0,
@@ -456,13 +456,13 @@ mod tests {
         assert_eq!(s("name"), "memory.recall");
         assert_eq!(s("kind"), "INTERNAL");
         assert_eq!(s("status_code"), "OK");
-        assert_eq!(s("service_name"), "kyma-server");
+        assert_eq!(s("service_name"), "pensieve-server");
         assert_eq!(s("subject"), "ws-mbp-shaked");
         assert_eq!(s("tenant"), "default");
-        // kyma.* promoted OUT of attributes_json; the rest stays in.
+        // pensieve.* promoted OUT of attributes_json; the rest stays in.
         let attrs = s("attributes_json");
         assert!(attrs.contains("memory.query"));
-        assert!(!attrs.contains("kyma.subject"));
+        assert!(!attrs.contains("pensieve.subject"));
     }
 
     #[test]
@@ -475,17 +475,17 @@ mod tests {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cargo test -p kyma-ingest-otlp traces::`
+Run: `cargo test -p pensieve-ingest-otlp traces::`
 Expected: FAIL to compile — `request_to_batch` / module missing.
 
-- [ ] **Step 3: Implement the mapping** — top of `crates/kyma-ingest-otlp/src/traces.rs`:
+- [ ] **Step 3: Implement the mapping** — top of `crates/pensieve-ingest-otlp/src/traces.rs`:
 
 ```rust
 //! OTLP traces ingest — `ExportTraceServiceRequest` → `otel_traces` rows.
 //!
 //! Same shape as the logs path in `lib.rs`: one RecordBatch per export,
 //! built column-at-a-time, written through the shared [`WritePath`].
-//! `kyma.subject` / `kyma.tenant` span attributes are promoted to real
+//! `pensieve.subject` / `pensieve.tenant` span attributes are promoted to real
 //! columns — the Traces page filters on them constantly.
 
 use arrow_array::builder::{Int64Builder, StringBuilder, TimestampNanosecondBuilder};
@@ -541,15 +541,15 @@ fn status_label(code: i32) -> &'static str {
 }
 
 /// Split span attributes into (subject, tenant, remaining-as-json).
-fn split_kyma_attrs(attrs: &[KeyValue]) -> (Option<String>, Option<String>, String) {
+fn split_pensieve_attrs(attrs: &[KeyValue]) -> (Option<String>, Option<String>, String) {
     let mut subject = None;
     let mut tenant = None;
     let mut rest: Vec<KeyValue> = Vec::with_capacity(attrs.len());
     for kv in attrs {
         let val = kv.value.as_ref().and_then(any_value_to_string);
         match kv.key.as_str() {
-            "kyma.subject" => subject = val,
-            "kyma.tenant" => tenant = val,
+            "pensieve.subject" => subject = val,
+            "pensieve.tenant" => tenant = val,
             _ => rest.push(kv.clone()),
         }
     }
@@ -618,7 +618,7 @@ pub fn request_to_batch(req: &ExportTraceServiceRequest) -> Result<RecordBatch, 
                     Some(s) => service_b.append_value(s),
                     None => service_b.append_null(),
                 }
-                let (subject, tenant, attrs_json) = split_kyma_attrs(&sp.attributes);
+                let (subject, tenant, attrs_json) = split_pensieve_attrs(&sp.attributes);
                 match subject {
                     Some(s) => subject_b.append_value(&s),
                     None => subject_b.append_null(),
@@ -659,23 +659,23 @@ In `lib.rs`, add `pub mod traces;` after the imports and change the four helper 
 
 - [ ] **Step 4: Run the tests**
 
-Run: `cargo test -p kyma-ingest-otlp traces::`
+Run: `cargo test -p pensieve-ingest-otlp traces::`
 Expected: PASS (2 tests). If `opentelemetry_proto::tonic::trace` doesn't resolve, add the `"trace"`... it ships with `gen-tonic-messages` (logs already work the same way) — check `cargo doc -p opentelemetry-proto --no-deps` if needed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-ingest-otlp/src/traces.rs crates/kyma-ingest-otlp/src/lib.rs
+git add crates/pensieve-ingest-otlp/src/traces.rs crates/pensieve-ingest-otlp/src/lib.rs
 git commit -m "feat(otlp): trace request -> otel_traces row mapping (subject/tenant promoted)"
 ```
 
-### Task 6: `OtlpTraceService` + wiring into `kyma-bin`
+### Task 6: `OtlpTraceService` + wiring into `pensieve-bin`
 
 **Files:**
-- Modify: `crates/kyma-ingest-otlp/src/lib.rs` (generalize `ensure_table`)
-- Modify: `crates/kyma-ingest-otlp/src/traces.rs` (the service)
-- Modify: `crates/kyma-bin/src/main.rs:1279-1305` (add the trace service)
-- Modify: `crates/kyma-ingest-otlp/tests/otlp_smoke.rs` (ignored live test)
+- Modify: `crates/pensieve-ingest-otlp/src/lib.rs` (generalize `ensure_table`)
+- Modify: `crates/pensieve-ingest-otlp/src/traces.rs` (the service)
+- Modify: `crates/pensieve-bin/src/main.rs:1279-1305` (add the trace service)
+- Modify: `crates/pensieve-ingest-otlp/tests/otlp_smoke.rs` (ignored live test)
 
 - [ ] **Step 1: Generalize table bootstrap** — in `lib.rs`, extract the body of `OtlpLogsService::ensure_table` into a free function and make the method delegate:
 
@@ -687,7 +687,7 @@ pub(crate) async fn ensure_otel_table(
     database: &str,
     table: &str,
     schema: Arc<Schema>,
-) -> Result<kyma_core::catalog::TableRef, Status> {
+) -> Result<pensieve_core::catalog::TableRef, Status> {
     match catalog.lookup_table(database, table).await {
         Ok(t) => Ok(t),
         Err(_) => {
@@ -713,13 +713,13 @@ pub(crate) async fn ensure_otel_table(
 
 and in `OtlpLogsService::ensure_table`: `ensure_otel_table(&self.catalog, &self.database, OTEL_LOGS_TABLE, otel_logs_schema()).await`.
 
-Run: `cargo test -p kyma-ingest-otlp` — still green.
+Run: `cargo test -p pensieve-ingest-otlp` — still green.
 
 - [ ] **Step 2: The trace service** — append to `traces.rs`:
 
 ```rust
-use kyma_core::catalog::Catalog;
-use kyma_ingest_core::WritePath;
+use pensieve_core::catalog::Catalog;
+use pensieve_ingest_core::WritePath;
 use opentelemetry_proto::tonic::collector::trace::v1::{
     trace_service_server::{TraceService, TraceServiceServer},
     ExportTracePartialSuccess, ExportTraceServiceResponse,
@@ -772,7 +772,7 @@ impl TraceService for OtlpTraceService {
             .ingest(&self.database, &table_ref, vec![batch])
             .await
             .map_err(|e| Status::internal(format!("ingest: {e}")))?;
-        ::metrics::counter!("kyma_otlp_spans_total").increment(ack.rows_ingested);
+        ::metrics::counter!("pensieve_otlp_spans_total").increment(ack.rows_ingested);
         info!(rows = ack.rows_ingested, "otlp trace export committed");
         Ok(Response::new(ExportTraceServiceResponse {
             partial_success: if ack.rows_ingested == total as u64 {
@@ -788,7 +788,7 @@ impl TraceService for OtlpTraceService {
 }
 ```
 
-- [ ] **Step 3: Wire in kyma-bin** — `crates/kyma-bin/src/main.rs`: add import `use kyma_ingest_otlp::traces::OtlpTraceService;` (next to the existing `OtlpLogsService` import at line 32 — note the existing alias `OtlpLogsServer` there; check how it's imported with `grep -n "OtlpLogs" crates/kyma-bin/src/main.rs`). In the OTLP block (lines ~1283-1305), after constructing `otlp_svc`, build and add the trace service:
+- [ ] **Step 3: Wire in pensieve-bin** — `crates/pensieve-bin/src/main.rs`: add import `use pensieve_ingest_otlp::traces::OtlpTraceService;` (next to the existing `OtlpLogsService` import at line 32 — note the existing alias `OtlpLogsServer` there; check how it's imported with `grep -n "OtlpLogs" crates/pensieve-bin/src/main.rs`). In the OTLP block (lines ~1283-1305), after constructing `otlp_svc`, build and add the trace service:
 
 ```rust
         let otlp_trace_svc = OtlpTraceService::new(
@@ -809,14 +809,14 @@ impl TraceService for OtlpTraceService {
 
 - [ ] **Step 4: Build + clippy**
 
-Run: `cargo clippy -p kyma-ingest-otlp -p kyma-bin -- -D warnings && cargo build -p kyma-bin`
+Run: `cargo clippy -p pensieve-ingest-otlp -p pensieve-bin -- -D warnings && cargo build -p pensieve-bin`
 Expected: clean
 
-- [ ] **Step 5: Add the ignored live smoke test** — append to `crates/kyma-ingest-otlp/tests/otlp_smoke.rs` (reuse its `kv` helper):
+- [ ] **Step 5: Add the ignored live smoke test** — append to `crates/pensieve-ingest-otlp/tests/otlp_smoke.rs` (reuse its `kv` helper):
 
 ```rust
 #[tokio::test]
-#[ignore = "requires a live kyma OTLP server on 127.0.0.1:4317"]
+#[ignore = "requires a live pensieve OTLP server on 127.0.0.1:4317"]
 async fn otlp_export_traces() {
     use opentelemetry_proto::tonic::collector::trace::v1::trace_service_client::TraceServiceClient;
     use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
@@ -847,7 +847,7 @@ async fn otlp_export_traces() {
                     kind: span::SpanKind::Server as i32,
                     start_time_unix_nano: now - 50_000_000,
                     end_time_unix_nano: now,
-                    attributes: vec![kv("kyma.subject", "smoke-test")],
+                    attributes: vec![kv("pensieve.subject", "smoke-test")],
                     dropped_attributes_count: 0,
                     events: vec![],
                     dropped_events_count: 0,
@@ -865,12 +865,12 @@ async fn otlp_export_traces() {
 }
 ```
 
-Run: `cargo test -p kyma-ingest-otlp` (ignored test skipped, everything green).
+Run: `cargo test -p pensieve-ingest-otlp` (ignored test skipped, everything green).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/kyma-ingest-otlp crates/kyma-bin/src/main.rs
+git add crates/pensieve-ingest-otlp crates/pensieve-bin/src/main.rs
 git commit -m "feat(otlp): ExportTraceService receiver -> otel.otel_traces"
 ```
 
@@ -883,9 +883,9 @@ git commit -m "feat(otlp): ExportTraceService receiver -> otel.otel_traces"
 An `opentelemetry_sdk` `SpanExporter` that maps exported `SpanData` straight onto the Task 5 schema and writes through `WritePath` — no loopback gRPC. It holds an `Arc<OnceLock<…>>` so the tracing stack can be installed at process start and wired to storage later; until then it drops batches.
 
 **Files:**
-- Create: `crates/kyma-ingest-otlp/src/self_export.rs`
-- Modify: `crates/kyma-ingest-otlp/src/lib.rs` (add `pub mod self_export;`)
-- Modify: `crates/kyma-ingest-otlp/Cargo.toml` (add `opentelemetry.workspace = true`, `opentelemetry_sdk.workspace = true`, `futures = "0.3"` — match the workspace-dep style used by sibling crates; check with `grep -n "workspace = true" crates/kyma-ingest-otlp/Cargo.toml`)
+- Create: `crates/pensieve-ingest-otlp/src/self_export.rs`
+- Modify: `crates/pensieve-ingest-otlp/src/lib.rs` (add `pub mod self_export;`)
+- Modify: `crates/pensieve-ingest-otlp/Cargo.toml` (add `opentelemetry.workspace = true`, `opentelemetry_sdk.workspace = true`, `futures = "0.3"` — match the workspace-dep style used by sibling crates; check with `grep -n "workspace = true" crates/pensieve-ingest-otlp/Cargo.toml`)
 
 - [ ] **Step 1: Write the failing test** — bottom of new `self_export.rs`:
 
@@ -915,8 +915,8 @@ mod tests {
             start_time: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
             end_time: UNIX_EPOCH + Duration::from_secs(1_700_000_000) + Duration::from_millis(250),
             attributes: vec![
-                OtelKv::new("kyma.subject", "ws-mbp-shaked"),
-                OtelKv::new("kyma.tenant", "default"),
+                OtelKv::new("pensieve.subject", "ws-mbp-shaked"),
+                OtelKv::new("pensieve.tenant", "default"),
                 OtelKv::new("memory.results", 7_i64),
             ],
             dropped_attributes_count: 0,
@@ -929,14 +929,14 @@ mod tests {
 
     #[test]
     fn span_data_maps_to_row() {
-        let batch = spans_to_batch(&[sample_span()], "kyma-server").expect("batch");
+        let batch = spans_to_batch(&[sample_span()], "pensieve-server").expect("batch");
         assert_eq!(batch.num_rows(), 1);
         let schema = batch.schema();
         let col = |n: &str| schema.index_of(n).unwrap();
         let s = |n: &str| batch.column(col(n)).as_any()
             .downcast_ref::<StringArray>().unwrap().value(0).to_string();
         assert_eq!(s("name"), "memory.recall");
-        assert_eq!(s("service_name"), "kyma-server");
+        assert_eq!(s("service_name"), "pensieve-server");
         assert_eq!(s("subject"), "ws-mbp-shaked");
         assert_eq!(s("status_code"), "OK");
         assert_eq!(s("kind"), "SERVER");
@@ -947,7 +947,7 @@ mod tests {
             .downcast_ref::<Int64Array>().unwrap();
         assert_eq!(dur.value(0), 250_000_000);
         assert!(s("attributes_json").contains("memory.results"));
-        assert!(!s("attributes_json").contains("kyma.subject"));
+        assert!(!s("attributes_json").contains("pensieve.subject"));
     }
 
     #[test]
@@ -965,13 +965,13 @@ mod tests {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cargo test -p kyma-ingest-otlp self_export::`
+Run: `cargo test -p pensieve-ingest-otlp self_export::`
 Expected: compile FAIL — module missing.
 
 - [ ] **Step 3: Implement** — top of `self_export.rs`:
 
 ```rust
-//! Kyma's own spans → its own `otel_traces` table, in-process.
+//! Pensieve's own spans → its own `otel_traces` table, in-process.
 //!
 //! The exporter is installed into the tracing stack at process start but
 //! only begins writing once [`SelfTraceExporter::wire`]d to a catalog +
@@ -979,15 +979,15 @@ Expected: compile FAIL — module missing.
 //! dropped — never buffered, never blocking.
 //!
 //! Recursion guard lives one level up: the tracing-opentelemetry layer is
-//! filtered to `target = "kyma_telemetry"` spans only, and nothing in the
+//! filtered to `target = "pensieve_telemetry"` spans only, and nothing in the
 //! ingest/storage path uses that target.
 
 use crate::traces::{otel_traces_schema, OTEL_TRACES_TABLE};
 use arrow_array::builder::{Int64Builder, StringBuilder, TimestampNanosecondBuilder};
 use arrow_array::{ArrayRef, RecordBatch};
 use futures::future::BoxFuture;
-use kyma_core::catalog::Catalog;
-use kyma_ingest_core::WritePath;
+use pensieve_core::catalog::Catalog;
+use pensieve_ingest_core::WritePath;
 use opentelemetry::trace::{SpanId, SpanKind, Status as OtelStatus};
 use opentelemetry_sdk::export::trace::{ExportResult, SpanData, SpanExporter};
 use std::sync::{Arc, OnceLock};
@@ -1009,7 +1009,7 @@ pub struct SelfTraceExporter {
 impl SelfTraceExporter {
     /// Create an exporter with no storage attached; pair with [`Self::handle`].
     pub fn unwired() -> Self {
-        Self { ctx: Arc::new(OnceLock::new()), service_name: "kyma-server".to_string() }
+        Self { ctx: Arc::new(OnceLock::new()), service_name: "pensieve-server".to_string() }
     }
 
     /// The shared slot to wire later: `handle.set(SelfTraceCtx{…})`.
@@ -1084,8 +1084,8 @@ pub fn spans_to_batch(batch: &[SpanData], service_name: &str) -> anyhow::Result<
             let key = kv.key.as_str();
             let val = kv.value.to_string();
             match key {
-                "kyma.subject" => subject = Some(val),
-                "kyma.tenant" => tenant = Some(val),
+                "pensieve.subject" => subject = Some(val),
+                "pensieve.tenant" => tenant = Some(val),
                 _ => { rest.insert(key.to_string(), serde_json::Value::String(val)); }
             }
         }
@@ -1120,10 +1120,10 @@ impl SpanExporter for SelfTraceExporter {
                 &ctx.catalog, &ctx.database, OTEL_TRACES_TABLE, otel_traces_schema(),
             ).await {
                 Ok(t) => t,
-                Err(_) => { ::metrics::counter!("kyma_self_trace_dropped_total").increment(batch.len() as u64); return Ok(()); }
+                Err(_) => { ::metrics::counter!("pensieve_self_trace_dropped_total").increment(batch.len() as u64); return Ok(()); }
             };
             if ctx.write_path.ingest(&ctx.database, &table, vec![rb]).await.is_err() {
-                ::metrics::counter!("kyma_self_trace_dropped_total").increment(batch.len() as u64);
+                ::metrics::counter!("pensieve_self_trace_dropped_total").increment(batch.len() as u64);
             }
             Ok(())
         })
@@ -1135,23 +1135,23 @@ API-drift watch: in opentelemetry_sdk 0.27, `SpanData.attributes` is `Vec<opente
 
 - [ ] **Step 4: Run the tests**
 
-Run: `cargo test -p kyma-ingest-otlp self_export::`
+Run: `cargo test -p pensieve-ingest-otlp self_export::`
 Expected: PASS (2 tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-ingest-otlp
-git commit -m "feat(otlp): in-process SelfTraceExporter — kyma's own spans into otel_traces"
+git add crates/pensieve-ingest-otlp
+git commit -m "feat(otlp): in-process SelfTraceExporter — pensieve's own spans into otel_traces"
 ```
 
-### Task 8: Install the OTel tracing layer in `kyma-bin`
+### Task 8: Install the OTel tracing layer in `pensieve-bin`
 
 **Files:**
-- Modify: `crates/kyma-bin/src/main.rs` (tracing init ~line 82, and wiring after `write_path` exists)
-- Modify: `crates/kyma-bin/Cargo.toml` (add `tracing-opentelemetry.workspace = true`, `opentelemetry.workspace = true`, `opentelemetry_sdk.workspace = true`)
+- Modify: `crates/pensieve-bin/src/main.rs` (tracing init ~line 82, and wiring after `write_path` exists)
+- Modify: `crates/pensieve-bin/Cargo.toml` (add `tracing-opentelemetry.workspace = true`, `opentelemetry.workspace = true`, `opentelemetry_sdk.workspace = true`)
 
-- [ ] **Step 1: Replace the `tracing_subscriber::fmt()` init.** Current shape (main.rs:82-86) is `tracing_subscriber::fmt().with_env_filter(...)` + `.init()` (read the exact lines first). Replace with a layered registry that adds the OTel layer gated to `kyma_telemetry`:
+- [ ] **Step 1: Replace the `tracing_subscriber::fmt()` init.** Current shape (main.rs:82-86) is `tracing_subscriber::fmt().with_env_filter(...)` + `.init()` (read the exact lines first). Replace with a layered registry that adds the OTel layer gated to `pensieve_telemetry`:
 
 ```rust
     use tracing_subscriber::layer::SubscriberExt as _;
@@ -1161,21 +1161,21 @@ git commit -m "feat(otlp): in-process SelfTraceExporter — kyma's own spans int
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,sqlx=warn,hyper=warn,h2=warn"));
 
-    // Self-tracing: spans with target `kyma_telemetry` are exported into our
+    // Self-tracing: spans with target `pensieve_telemetry` are exported into our
     // own otel_traces table. The exporter starts unwired (drops batches) and
     // is connected to storage further down, once the write path exists.
-    let self_exporter = kyma_ingest_otlp::self_export::SelfTraceExporter::unwired();
+    let self_exporter = pensieve_ingest_otlp::self_export::SelfTraceExporter::unwired();
     let self_trace_handle = self_exporter.handle();
     let tracer_provider = opentelemetry_sdk::trace::TracerProvider::builder()
         .with_batch_exporter(self_exporter, opentelemetry_sdk::runtime::Tokio)
         .build();
     use opentelemetry::trace::TracerProvider as _;
-    let tracer = tracer_provider.tracer("kyma-server");
+    let tracer = tracer_provider.tracer("pensieve-server");
     let otel_layer = tracing_opentelemetry::layer()
         .with_tracer(tracer)
         .with_filter(
             tracing_subscriber::filter::Targets::new()
-                .with_target("kyma_telemetry", tracing::Level::INFO),
+                .with_target("pensieve_telemetry", tracing::Level::INFO),
         );
 
     tracing_subscriber::registry()
@@ -1185,13 +1185,13 @@ git commit -m "feat(otlp): in-process SelfTraceExporter — kyma's own spans int
         .init();
 ```
 
-Preserve whatever options the current `fmt()` call sets (e.g. `.json()`, `.with_target(...)`) by moving them onto `tracing_subscriber::fmt::layer()`. Note `EnvFilter` as a registry-level `.with()` filters ALL layers including the otel one — `kyma_telemetry` spans are emitted at INFO so the default `info` filter passes them.
+Preserve whatever options the current `fmt()` call sets (e.g. `.json()`, `.with_target(...)`) by moving them onto `tracing_subscriber::fmt::layer()`. Note `EnvFilter` as a registry-level `.with()` filters ALL layers including the otel one — `pensieve_telemetry` spans are emitted at INFO so the default `info` filter passes them.
 
-- [ ] **Step 2: Wire the exporter once storage exists.** Right after `write_path` is constructed in main (find with `grep -n "let write_path" crates/kyma-bin/src/main.rs`), add:
+- [ ] **Step 2: Wire the exporter once storage exists.** Right after `write_path` is constructed in main (find with `grep -n "let write_path" crates/pensieve-bin/src/main.rs`), add:
 
 ```rust
     // Connect self-tracing to storage (drops silently before this point).
-    let _ = self_trace_handle.set(kyma_ingest_otlp::self_export::SelfTraceCtx {
+    let _ = self_trace_handle.set(pensieve_ingest_otlp::self_export::SelfTraceCtx {
         catalog: catalog.clone(),
         write_path: write_path.clone(),
         database: cli.otlp_database.clone(),
@@ -1200,24 +1200,24 @@ Preserve whatever options the current `fmt()` call sets (e.g. `.json()`, `.with_
 
 - [ ] **Step 3: Build + boot smoke**
 
-Run: `cargo build -p kyma-bin && cargo run -p kyma-bin -- serve --addr 127.0.0.1:7997 &` then `curl -s http://127.0.0.1:7997/health && kill %1`
-(Adjust the serve invocation to this binary's actual CLI — check `grep -n "struct Cli" -A 20 crates/kyma-bin/src/main.rs`; if `kyma-bin` IS the `kyma` binary, it's `cargo run -p kyma-bin -- serve …`.)
+Run: `cargo build -p pensieve-bin && cargo run -p pensieve-bin -- serve --addr 127.0.0.1:7997 &` then `curl -s http://127.0.0.1:7997/health && kill %1`
+(Adjust the serve invocation to this binary's actual CLI — check `grep -n "struct Cli" -A 20 crates/pensieve-bin/src/main.rs`; if `pensieve-bin` IS the `pensieve` binary, it's `cargo run -p pensieve-bin -- serve …`.)
 Expected: health ok, no panic from tracing init.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-bin
-git commit -m "feat(telemetry): kyma_telemetry-target spans export into our own otel_traces"
+git add crates/pensieve-bin
+git commit -m "feat(telemetry): pensieve_telemetry-target spans export into our own otel_traces"
 ```
 
 ### Task 9: Root request span in the auth middleware
 
 **Files:**
-- Modify: `crates/kyma-server/src/auth/middleware.rs`
-- Modify: `crates/kyma-server/Cargo.toml` only if `tracing` isn't already a dep (it is — verify `grep tracing crates/kyma-server/Cargo.toml`)
+- Modify: `crates/pensieve-server/src/auth/middleware.rs`
+- Modify: `crates/pensieve-server/Cargo.toml` only if `tracing` isn't already a dep (it is — verify `grep tracing crates/pensieve-server/Cargo.toml`)
 
-- [ ] **Step 1: Restructure `require_role_middleware`** so BOTH branches (auth-disabled and authenticated) run the request inside a `kyma_telemetry` span. Replace the function body with:
+- [ ] **Step 1: Restructure `require_role_middleware`** so BOTH branches (auth-disabled and authenticated) run the request inside a `pensieve_telemetry` span. Replace the function body with:
 
 ```rust
 pub async fn require_role_middleware(
@@ -1229,7 +1229,7 @@ pub async fn require_role_middleware(
         // Auth-disabled mode: pretend an Admin principal in the default tenant
         // so downstream extractors see consistent extensions.
         super::backend::Principal {
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            tenant: pensieve_core::tenant::DEFAULT_TENANT,
             role: Role::Admin,
             subject: None,
             allowed_databases: None,
@@ -1285,17 +1285,17 @@ pub async fn require_role_middleware(
 
     use tracing::Instrument as _;
     let span = tracing::info_span!(
-        target: "kyma_telemetry",
+        target: "pensieve_telemetry",
         "request",
         otel.name = %format!("{method} {route}"),
         http.method = %method,
         http.route = %route,
-        kyma.tenant = %tenant,
-        kyma.subject = tracing::field::Empty,
+        pensieve.tenant = %tenant,
+        pensieve.subject = tracing::field::Empty,
         http.status = tracing::field::Empty,
     );
     if let Some(s) = &subject {
-        span.record("kyma.subject", s.as_str());
+        span.record("pensieve.subject", s.as_str());
     }
     let resp = next.run(req).instrument(span.clone()).await;
     span.record("http.status", resp.status().as_u16());
@@ -1317,20 +1317,20 @@ pub async fn require_role_middleware(
 (so `principal` no longer needs an extra read-back from extensions, and the earlier `principal.clone()` insert can become a move: `insert(principal)` with `subject` already cloned out — `Clone` on `Principal` is then only needed if other middleware re-inserts it; keep the derive anyway, downstream handlers take it by `Extension<Principal>` which clones).
 
 Notes for the implementer:
-- `Principal` needs `#[derive(Clone)]` — check `crates/kyma-server/src/auth/backend.rs:34`; add `Clone` to its derive list if missing.
+- `Principal` needs `#[derive(Clone)]` — check `crates/pensieve-server/src/auth/backend.rs:34`; add `Clone` to its derive list if missing.
 - `tracing-opentelemetry` maps the special fields `otel.name` / `otel.status_code` onto the OTel span name/status; the span's tracing-name (`"request"`) is the fallback.
 - `MatchedPath` requires the axum feature `matched-path` (default-on) — if the extension is `None` (nested routers), the raw path fallback is fine.
 - This file currently has no `tracing` import — the macros are fully qualified above, so none is needed.
 
 - [ ] **Step 2: Build + existing tests**
 
-Run: `cargo clippy -p kyma-server -- -D warnings && cargo test -p kyma-server`
+Run: `cargo clippy -p pensieve-server -- -D warnings && cargo test -p pensieve-server`
 Expected: clean; existing auth tests still pass (behavior of 401/403 unchanged).
 
-- [ ] **Step 3: Live verify** — restart the dev server with the new binary (`cargo build -p kyma-bin`, then restart however the dev loop does it — for the supervised local service: `cp target/debug/kyma ~/.local/bin/kyma && launchctl kickstart -k gui/$(id -u)/dev.getkyma.kyma-server`), make any authed call, wait ~6s (batch export), then:
+- [ ] **Step 3: Live verify** — restart the dev server with the new binary (`cargo build -p pensieve-bin`, then restart however the dev loop does it — for the supervised local service: `cp target/debug/pensieve ~/.local/bin/pensieve && launchctl kickstart -k gui/$(id -u)/dev.getpensieve.pensieve-server`), make any authed call, wait ~6s (batch export), then:
 
 ```bash
-TOKEN=$(python3 -c "import json;print(json.load(open('$HOME/.kyma/config.json'))['token'])")
+TOKEN=$(python3 -c "import json;print(json.load(open('$HOME/.pensieve/config.json'))['token'])")
 curl -s -X POST http://127.0.0.1:7777/v1/query \
   -H "authorization: Bearer $TOKEN" -H "content-type: application/x-kql" -H "x-database: otel" \
   -d 'otel_traces | sort by start_time desc | take 3'
@@ -1340,14 +1340,14 @@ Expected: NDJSON rows with `name` like `GET /v1/auth/me`, `subject`, `tenant`, `
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/src/auth
+git add crates/pensieve-server/src/auth
 git commit -m "feat(telemetry): root request span (subject/tenant/route/status) in auth middleware"
 ```
 
 ### Task 10: Memory-op child spans
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/routes.rs` (`memory_query_handler` ~line 447; the import handler ~line 133; the export handler ~line 250; the ask/run handler ~line 728 — locate each with grep)
+- Modify: `crates/pensieve-server/src/agent/routes.rs` (`memory_query_handler` ~line 447; the import handler ~line 133; the export handler ~line 250; the ask/run handler ~line 728 — locate each with grep)
 
 - [ ] **Step 1: Instrument `memory_query_handler`** (routes.rs:447-478). Add an `Extension(principal)` param and wrap `retrieve`:
 
@@ -1358,10 +1358,10 @@ async fn memory_query_handler(
     Json(body): Json<MemoryQueryRequest>,
 ) -> Json<Value> {
     let span = tracing::info_span!(
-        target: "kyma_telemetry",
+        target: "pensieve_telemetry",
         "memory.recall",
-        kyma.subject = principal.subject.as_deref().unwrap_or(""),
-        kyma.tenant = %principal.tenant,
+        pensieve.subject = principal.subject.as_deref().unwrap_or(""),
+        pensieve.tenant = %principal.tenant,
         memory.query = %body.retrieve.query.chars().take(200).collect::<String>(),
         memory.results = tracing::field::Empty,
         memory.took_ms = tracing::field::Empty,
@@ -1382,9 +1382,9 @@ async fn memory_query_handler(
   - export handler → `"memory.export"`, record `memory.exported` similarly.
   - ask/agent-run handler → `"agent.query"`, attribute `agent.question` truncated to 200 chars (handler at routes.rs ~728 already has `question`).
 
-  In each, the transformation is exactly the Step 1 shape: add the `axum::Extension(principal): axum::Extension<…Principal>` param, build `tracing::info_span!(target: "kyma_telemetry", "<name>", kyma.subject = …, kyma.tenant = %principal.tenant, <attrs as fields>, <counts> = tracing::field::Empty)`, `.instrument(span.clone())` the core future, `span.record(…)` the counts after. The middleware root span is the parent automatically (same task-local context).
+  In each, the transformation is exactly the Step 1 shape: add the `axum::Extension(principal): axum::Extension<…Principal>` param, build `tracing::info_span!(target: "pensieve_telemetry", "<name>", pensieve.subject = …, pensieve.tenant = %principal.tenant, <attrs as fields>, <counts> = tracing::field::Empty)`, `.instrument(span.clone())` the core future, `span.record(…)` the counts after. The middleware root span is the parent automatically (same task-local context).
 
-- [ ] **Step 2b: Instrument REST ingest as `ingest.batch`** — `crates/kyma-ingest-rest/src/lib.rs:89` (`ingest_handler`). Wrap the handler body:
+- [ ] **Step 2b: Instrument REST ingest as `ingest.batch`** — `crates/pensieve-ingest-rest/src/lib.rs:89` (`ingest_handler`). Wrap the handler body:
 
 ```rust
 async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Response {
@@ -1396,13 +1396,13 @@ async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Respo
         .to_string();
     let subject = req
         .extensions()
-        .get::<kyma_server_auth_principal_type>() // see note below
+        .get::<pensieve_server_auth_principal_type>() // see note below
         .and_then(|p| p.subject.clone())
         .unwrap_or_default();
     let span = tracing::info_span!(
-        target: "kyma_telemetry",
+        target: "pensieve_telemetry",
         "ingest.batch",
-        kyma.subject = %subject,
+        pensieve.subject = %subject,
         ingest.table = %table,
         ingest.rows = tracing::field::Empty,
     );
@@ -1412,20 +1412,20 @@ async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Respo
 }
 ```
 
-  Dependency note: `kyma-ingest-rest` must not depend on `kyma-server` (it's the other way around). Check `grep -n "Principal" crates/kyma-ingest-rest/src/lib.rs` — if the Principal type isn't visible here, skip the subject attribute in this span (the middleware root span carries the subject for the same request; the child only adds table/rows), i.e. drop the `subject` lookup and the `kyma.subject` field entirely rather than adding a dependency edge. Record `ingest.rows` where the existing body learns the row count (it returns an ack — find `rows_ingested` in the body).
+  Dependency note: `pensieve-ingest-rest` must not depend on `pensieve-server` (it's the other way around). Check `grep -n "Principal" crates/pensieve-ingest-rest/src/lib.rs` — if the Principal type isn't visible here, skip the subject attribute in this span (the middleware root span carries the subject for the same request; the child only adds table/rows), i.e. drop the `subject` lookup and the `pensieve.subject` field entirely rather than adding a dependency edge. Record `ingest.rows` where the existing body learns the row count (it returns an ack — find `rows_ingested` in the body).
 
 - [ ] **Step 3: Build + tests**
 
-Run: `cargo clippy -p kyma-server -- -D warnings && cargo test -p kyma-server`
+Run: `cargo clippy -p pensieve-server -- -D warnings && cargo test -p pensieve-server`
 Expected: clean
 
-- [ ] **Step 4: Live verify** — rebuild + restart (as Task 9 step 3), run `./target/debug/kyma recall "test"`, wait ~6s, then the same KQL with `| where name startswith 'memory.'`.
+- [ ] **Step 4: Live verify** — rebuild + restart (as Task 9 step 3), run `./target/debug/pensieve recall "test"`, wait ~6s, then the same KQL with `| where name startswith 'memory.'`.
 Expected: a `memory.recall` row whose `parent_span_id` is non-null and whose `attributes_json` has `memory.query` + `memory.results`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/routes.rs
+git add crates/pensieve-server/src/agent/routes.rs
 git commit -m "feat(telemetry): memory.recall/import/export + agent.query child spans"
 ```
 
@@ -1696,7 +1696,7 @@ with, above the return:
 
 ```tsx
           {stalled ? (
-            <span className="text-amber-400" title="The stream is connected but no events are arriving. Check `kyma status` — capture may be failing.">
+            <span className="text-amber-400" title="The stream is connected but no events are arriving. Check `pensieve status` — capture may be failing.">
               capture stalled · last event {relTime(newestTs, now)}
             </span>
           ) : (
@@ -1746,7 +1746,7 @@ const span = (over: Partial<SpanRow>): SpanRow => ({
   kind: "SERVER",
   status_code: "OK",
   status_message: null,
-  service_name: "kyma-server",
+  service_name: "pensieve-server",
   subject: "ws-1",
   tenant: "default",
   attributes_json: "{}",
@@ -1934,7 +1934,7 @@ export function useTraceSpans(traceId: string | null) {
 }
 ```
 
-NOTE: `parent_span_id == ''` vs NULL — KQL nulls may not equal `''`. Verify against the live server: `otel_traces | where parent_span_id == '' | take 1` vs `isempty()`. The KQL crate's supported function list (`crates/kyma-kql/src/lib.rs:14-36`) doesn't list `isempty` — if `== ''` returns nothing for NULL columns, change the receiver/exporter mapping (Tasks 5/7) to write `""` instead of NULL for root parent ids, and re-run their unit tests (update the `is_null` assertions to `value(0) == ""`). Decide by testing, not by assumption.
+NOTE: `parent_span_id == ''` vs NULL — KQL nulls may not equal `''`. Verify against the live server: `otel_traces | where parent_span_id == '' | take 1` vs `isempty()`. The KQL crate's supported function list (`crates/pensieve-kql/src/lib.rs:14-36`) doesn't list `isempty` — if `== ''` returns nothing for NULL columns, change the receiver/exporter mapping (Tasks 5/7) to write `""` instead of NULL for root parent ids, and re-run their unit tests (update the `is_null` assertions to `value(0) == ""`). Decide by testing, not by assumption.
 
 - [ ] **Step 6: Typecheck + commit**
 
@@ -2156,7 +2156,7 @@ export function TracesList({
       {error && <p className="text-xs text-rose-300">{error}</p>}
       {!error && rows.length === 0 && !loading && (
         <p className="px-1 py-8 text-center text-xs text-muted-foreground">
-          No traces in this window. Kyma's own API operations appear here as they happen;
+          No traces in this window. Pensieve's own API operations appear here as they happen;
           external services can ship spans to the OTLP endpoint (port 4317).
         </p>
       )}
@@ -2270,7 +2270,7 @@ function TracesPage() {
 - [ ] **Step 5: Typecheck, lint, visual verify**
 
 Run: `cd web && npm run typecheck && npm run lint && npm run dev`
-Open `/traces` against the local server (it now self-traces): expect rows for your own `kyma recall` / UI API calls; click one → waterfall drawer with the root request span and `memory.recall` child.
+Open `/traces` against the local server (it now self-traces): expect rows for your own `pensieve recall` / UI API calls; click one → waterfall drawer with the root request span and `memory.recall` child.
 
 - [ ] **Step 6: Commit**
 
@@ -2289,8 +2289,8 @@ git commit -m "feat(web): Traces page — entity-filterable trace list + span wa
 ```ts
 import { test, expect } from "@playwright/test";
 
-const TOKEN    = process.env.KYMA_E2E_TOKEN ?? "";
-const ENDPOINT = process.env.KYMA_WEB_URL  ?? "http://localhost:8080";
+const TOKEN    = process.env.PENSIEVE_E2E_TOKEN ?? "";
+const ENDPOINT = process.env.PENSIEVE_WEB_URL  ?? "http://localhost:8080";
 
 test("memory op → self-trace → visible on Traces page", async ({ page, request }) => {
   // 1. Cause a memory.recall span via the API.
@@ -2325,8 +2325,8 @@ If the connect screen's selectors differ from golden-path (it may auto-skip when
 - [ ] **Step 2: Run it against the local stack**
 
 ```bash
-cd web && KYMA_WEB_URL=http://127.0.0.1:7777 \
-  KYMA_E2E_TOKEN=$(python3 -c "import json;print(json.load(open('$HOME/.kyma/config.json'))['token'])") \
+cd web && PENSIEVE_WEB_URL=http://127.0.0.1:7777 \
+  PENSIEVE_E2E_TOKEN=$(python3 -c "import json;print(json.load(open('$HOME/.pensieve/config.json'))['token'])") \
   npx playwright test e2e/traces.spec.ts
 ```
 Expected: PASS (needs the Task 8-10 server build running — restart the service on the new binary first).
@@ -2349,13 +2349,13 @@ cd web && npm run typecheck && npm run lint && npx vitest run && npm run build
 ```
 Expected: all green (workspace tests can be slow; `-p` the touched crates first if iterating).
 
-- [ ] **Step 2: Update `docs/architecture.md`** — add a short "Self-telemetry" subsection: OTLP receiver signals (logs + traces), the `otel.otel_traces` schema table from the spec, the `kyma_telemetry` target convention ("spans with this target are exported into our own store; never use it inside the ingest/storage path"), and the capture-health.json contract.
+- [ ] **Step 2: Update `docs/architecture.md`** — add a short "Self-telemetry" subsection: OTLP receiver signals (logs + traces), the `otel.otel_traces` schema table from the spec, the `pensieve_telemetry` target convention ("spans with this target are exported into our own store; never use it inside the ingest/storage path"), and the capture-health.json contract.
 
 - [ ] **Step 3: Final commit + ship per repo convention**
 
 ```bash
 git add docs/architecture.md
-git commit -m "docs: self-telemetry, otel_traces schema, kyma_telemetry target convention"
+git commit -m "docs: self-telemetry, otel_traces schema, pensieve_telemetry target convention"
 ```
 
 Then use superpowers:finishing-a-development-branch (current branch: `feat/federated-sources` — consider whether this work should live on its own branch `feat/live-telemetry-traces` cut from main before starting Task 1; if so, cut it first and cherry-pick the two docs commits).
@@ -2365,6 +2365,6 @@ Then use superpowers:finishing-a-development-branch (current branch: `feat/feder
 ## Execution notes (read before Task 1)
 
 - **Branch:** this plan's commits are independent of the in-flight `feat/federated-sources` work. Prefer `git checkout main && git pull && git checkout -b feat/live-telemetry-traces`, then `git cherry-pick 5606098a` (the spec commit) so the spec travels with the branch.
-- **Local service restarts:** the user's machine runs the supervised server (`launchctl`, label `dev.getkyma.kyma-server`, binary `~/.local/bin/kyma`). Live-verify steps that need the new build: `cargo build -p kyma-bin && cp target/debug/kyma ~/.local/bin/kyma && launchctl kickstart -k gui/$(id -u)/dev.getkyma.kyma-server`. (Confirm `kyma-bin` produces the `kyma` binary: `grep -n "^name" crates/kyma-bin/Cargo.toml` / `crates/kyma-cli` — whichever crate owns the `kyma` bin target is the one to copy.)
+- **Local service restarts:** the user's machine runs the supervised server (`launchctl`, label `dev.getpensieve.pensieve-server`, binary `~/.local/bin/pensieve`). Live-verify steps that need the new build: `cargo build -p pensieve-bin && cp target/debug/pensieve ~/.local/bin/pensieve && launchctl kickstart -k gui/$(id -u)/dev.getpensieve.pensieve-server`. (Confirm `pensieve-bin` produces the `pensieve` binary: `grep -n "^name" crates/pensieve-bin/Cargo.toml` / `crates/pensieve-cli` — whichever crate owns the `pensieve` bin target is the one to copy.)
 - **API-drift expectations:** opentelemetry_sdk 0.27 / tracing-opentelemetry 0.28 APIs in Tasks 7-8 are written from the workspace's pinned versions but not compiled yet — if `with_batch_exporter` or the `SpanExporter` trait signature differs, adapt the glue; the row mapping and its tests are the contract.
 - **NULL vs `''` for `parent_span_id`:** Task 14 step 5's note is load-bearing — resolve it empirically before building the Traces list on `where parent_span_id == ''`.

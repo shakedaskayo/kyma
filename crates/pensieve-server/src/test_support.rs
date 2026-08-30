@@ -1,13 +1,13 @@
-//! Test fixtures for `kyma-server` integration tests.
+//! Test fixtures for `pensieve-server` integration tests.
 //!
 //! Builds a real [`QueryState`] against a testcontainers Postgres instance
 //! with an in-memory object store, and seeds it with an "obs" database +
 //! "otel_logs" table that the catalog HTTP tests exercise.
 
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::{Catalog, TableConfig};
-use kyma_format_tlm::TelemetryFormat;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::{Catalog, TableConfig};
+use pensieve_format_tlm::TelemetryFormat;
 use object_store::memory::InMemory;
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ContainerAsync, ImageExt};
@@ -27,9 +27,9 @@ pub(crate) async fn start_test_postgres() -> (ContainerAsync<Postgres>, u16) {
     let mut last_err = String::new();
     for attempt in 1..=4u32 {
         match Postgres::default()
-            .with_user("kyma")
-            .with_password("kyma_dev")
-            .with_db_name("kyma")
+            .with_user("pensieve")
+            .with_password("pensieve_dev")
+            .with_db_name("pensieve")
             .with_name("pgvector/pgvector")
             .with_tag("pg16")
             .start()
@@ -80,8 +80,8 @@ impl TestServer {
 /// Panics on any fixture-setup failure.
 pub async fn seeded_state_empty() -> QueryState {
     let (container, port) = start_test_postgres().await;
-    let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
-    std::env::set_var("KYMA_TEST_DATABASE_URL", &url);
+    let url = format!("postgres://pensieve:pensieve_dev@localhost:{port}/pensieve");
+    std::env::set_var("PENSIEVE_TEST_DATABASE_URL", &url);
 
     let pg_catalog = PostgresCatalog::connect(&url)
         .await
@@ -90,7 +90,7 @@ pub async fn seeded_state_empty() -> QueryState {
     let catalog: Arc<dyn Catalog> = Arc::new(pg_catalog);
 
     let store = Arc::new(InMemory::new());
-    let format = Arc::new(TelemetryFormat::new(store, "kyma-test"));
+    let format = Arc::new(TelemetryFormat::new(store, "pensieve-test"));
 
     // Suppress Drop so the container outlives the test's tokio runtime.
     std::mem::forget(container);
@@ -122,8 +122,8 @@ pub async fn seeded_state_empty() -> QueryState {
 pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
     // Spin up Postgres via testcontainers (with startup retry under load).
     let (container, port) = start_test_postgres().await;
-    let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
-    std::env::set_var("KYMA_TEST_DATABASE_URL", &url);
+    let url = format!("postgres://pensieve:pensieve_dev@localhost:{port}/pensieve");
+    std::env::set_var("PENSIEVE_TEST_DATABASE_URL", &url);
 
     let pg_catalog = PostgresCatalog::connect(&url)
         .await
@@ -152,7 +152,7 @@ pub async fn seeded_state_with_obs_otel_logs() -> QueryState {
 
     // In-memory object store — no S3/MinIO needed for schema-only tests.
     let store = Arc::new(InMemory::new());
-    let format = Arc::new(TelemetryFormat::new(store, "kyma-test"));
+    let format = Arc::new(TelemetryFormat::new(store, "pensieve-test"));
 
     // Suppress Drop so the container outlives the test's tokio runtime.
     std::mem::forget(container);

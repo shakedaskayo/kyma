@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { GraphNode } from "@kyma-ai/client";
-import { KymaProvider } from "../provider/KymaProvider";
+import type { GraphNode } from "@pensieve-ai/client";
+import { PensieveProvider } from "../provider/PensieveProvider";
 import { InspectorPanel } from "./InspectorPanel";
 import { GraphStoreContext, createGraphStore } from "./graph-store";
 
@@ -36,13 +36,13 @@ const NODE: GraphNode = {
 function setup() {
   const store = createGraphStore({});
   // The detail modal portals through usePortalContainer(), which requires a
-  // KymaProvider in the tree (same as NodeDetailModal.test.tsx).
+  // PensieveProvider in the tree (same as NodeDetailModal.test.tsx).
   return render(
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
       <GraphStoreContext.Provider value={store}>
         <InspectorPanel node={NODE} edges={[]} nodesByCompositeId={new Map()} />
       </GraphStoreContext.Provider>
-    </KymaProvider>,
+    </PensieveProvider>,
   );
 }
 

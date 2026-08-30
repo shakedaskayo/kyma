@@ -4,9 +4,9 @@
 
 **Goal:** Ship `POST /v1/explore/search` — the engine-side cross-source search endpoint that powers the new Discover surface. Server-side fanout over all readable `(db, table)` pairs, NDJSON-streamed grouped-by-source results, per-source compilation tolerance, shared wall-clock + memory budget, RBAC-aware scope resolution, structured observability.
 
-**Architecture:** New module `crates/kyma-server/src/discover/` with submodules `grammar`, `compile`, `scope`, `frames`, `fanout`, `handler`. Handler is wired into the `read_router` next to `query_handler`. NDJSON response uses Axum `Body::from_stream` over a `tokio::sync::mpsc` channel — frames are emitted by `fanout` as sources complete. Per-source queries reuse the same `DataFusion SessionContext + KymaTable` plumbing as `query_handler`; the only new compilation step is `grammar → per-source KQL` (which then takes the existing `kyma_kql::kql_to_sql` path).
+**Architecture:** New module `crates/pensieve-server/src/discover/` with submodules `grammar`, `compile`, `scope`, `frames`, `fanout`, `handler`. Handler is wired into the `read_router` next to `query_handler`. NDJSON response uses Axum `Body::from_stream` over a `tokio::sync::mpsc` channel — frames are emitted by `fanout` as sources complete. Per-source queries reuse the same `DataFusion SessionContext + PensieveTable` plumbing as `query_handler`; the only new compilation step is `grammar → per-source KQL` (which then takes the existing `pensieve_kql::kql_to_sql` path).
 
-**Tech Stack:** Rust, Axum 0.7, Tokio, DataFusion, Arrow, kyma_kql, kyma_core::catalog, kyma_core::query_frontend::QueryBudget, `metrics` macros, `tracing`, testcontainers for integration tests.
+**Tech Stack:** Rust, Axum 0.7, Tokio, DataFusion, Arrow, pensieve_kql, pensieve_core::catalog, pensieve_core::query_frontend::QueryBudget, `metrics` macros, `tracing`, testcontainers for integration tests.
 
 **Reference spec:** `docs/superpowers/specs/2026-05-28-explore-discover-refactor-design.md` (sections 4, 5, 8).
 
@@ -18,16 +18,16 @@
 
 | File                                                                                | Action  | Responsibility                                                       |
 |-------------------------------------------------------------------------------------|---------|----------------------------------------------------------------------|
-| `crates/kyma-server/src/discover/mod.rs`                                            | Create  | Module root: re-exports + public types                               |
-| `crates/kyma-server/src/discover/grammar.rs`                                        | Create  | Parse search-bar string → `Vec<Clause>`                              |
-| `crates/kyma-server/src/discover/compile.rs`                                        | Create  | Compile `Vec<Clause>` against a source schema → KQL string + dropped-clause list |
-| `crates/kyma-server/src/discover/scope.rs`                                          | Create  | Resolve request `scope` → `Vec<SourceRef>` after RBAC + glob expansion |
-| `crates/kyma-server/src/discover/frames.rs`                                         | Create  | NDJSON frame structs + serializer (`Plan`, `SourceProgress`, `Rows`, `Histogram`, `SourceDone`, `Error`, `Done`) |
-| `crates/kyma-server/src/discover/fanout.rs`                                         | Create  | Per-source executor + parallel orchestrator under shared budget; emits frames to mpsc |
-| `crates/kyma-server/src/discover/handler.rs`                                        | Create  | Axum `discover_search_handler`; wires request → scope → fanout → streaming response |
-| `crates/kyma-server/src/discover/handler_test_support.rs`                           | Create  | Test fixtures used only by integration tests (seeds two tables in two DBs)            |
-| `crates/kyma-server/src/lib.rs`                                                     | Modify  | `pub mod discover;` + add route `POST /v1/explore/search` in `router()`               |
-| `crates/kyma-server/tests/discover_search_it.rs`                                    | Create  | End-to-end integration test exercising plan → rows → done over real Postgres + tables |
+| `crates/pensieve-server/src/discover/mod.rs`                                            | Create  | Module root: re-exports + public types                               |
+| `crates/pensieve-server/src/discover/grammar.rs`                                        | Create  | Parse search-bar string → `Vec<Clause>`                              |
+| `crates/pensieve-server/src/discover/compile.rs`                                        | Create  | Compile `Vec<Clause>` against a source schema → KQL string + dropped-clause list |
+| `crates/pensieve-server/src/discover/scope.rs`                                          | Create  | Resolve request `scope` → `Vec<SourceRef>` after RBAC + glob expansion |
+| `crates/pensieve-server/src/discover/frames.rs`                                         | Create  | NDJSON frame structs + serializer (`Plan`, `SourceProgress`, `Rows`, `Histogram`, `SourceDone`, `Error`, `Done`) |
+| `crates/pensieve-server/src/discover/fanout.rs`                                         | Create  | Per-source executor + parallel orchestrator under shared budget; emits frames to mpsc |
+| `crates/pensieve-server/src/discover/handler.rs`                                        | Create  | Axum `discover_search_handler`; wires request → scope → fanout → streaming response |
+| `crates/pensieve-server/src/discover/handler_test_support.rs`                           | Create  | Test fixtures used only by integration tests (seeds two tables in two DBs)            |
+| `crates/pensieve-server/src/lib.rs`                                                     | Modify  | `pub mod discover;` + add route `POST /v1/explore/search` in `router()`               |
+| `crates/pensieve-server/tests/discover_search_it.rs`                                    | Create  | End-to-end integration test exercising plan → rows → done over real Postgres + tables |
 
 ---
 
@@ -36,13 +36,13 @@
 ### Task 1: Module skeleton + grammar types
 
 **Files:**
-- Create: `crates/kyma-server/src/discover/mod.rs`
-- Create: `crates/kyma-server/src/discover/grammar.rs`
-- Modify: `crates/kyma-server/src/lib.rs:99` (add `pub mod discover;` near the other `pub mod` lines)
+- Create: `crates/pensieve-server/src/discover/mod.rs`
+- Create: `crates/pensieve-server/src/discover/grammar.rs`
+- Modify: `crates/pensieve-server/src/lib.rs:99` (add `pub mod discover;` near the other `pub mod` lines)
 
 - [ ] **Step 1: Create module root**
 
-Write `crates/kyma-server/src/discover/mod.rs`:
+Write `crates/pensieve-server/src/discover/mod.rs`:
 
 ```rust
 //! Cross-source search engine that powers `POST /v1/explore/search`.
@@ -63,7 +63,7 @@ mod handler_test_support;
 
 - [ ] **Step 2: Wire module into the crate**
 
-Edit `crates/kyma-server/src/lib.rs`. Find the existing `pub mod` block (around line 99 near `pub mod agent;`) and add:
+Edit `crates/pensieve-server/src/lib.rs`. Find the existing `pub mod` block (around line 99 near `pub mod agent;`) and add:
 
 ```rust
 pub mod discover;
@@ -73,7 +73,7 @@ pub mod discover;
 
 - [ ] **Step 3: Write grammar types + a failing tokenizer test**
 
-Write `crates/kyma-server/src/discover/grammar.rs`:
+Write `crates/pensieve-server/src/discover/grammar.rs`:
 
 ```rust
 //! Parses the user's search-bar string into structured clauses.
@@ -142,7 +142,7 @@ mod tests {
 - [ ] **Step 4: Run the test — should fail with "not yet implemented"**
 
 ```bash
-cargo test -p kyma-server --lib discover::grammar::tests::parses_bare_token_as_substring -- --nocapture
+cargo test -p pensieve-server --lib discover::grammar::tests::parses_bare_token_as_substring -- --nocapture
 ```
 
 Expected: FAIL with a panic message from `todo!("Task 2")`.
@@ -150,7 +150,7 @@ Expected: FAIL with a panic message from `todo!("Task 2")`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-server/src/discover/ crates/kyma-server/src/lib.rs
+git add crates/pensieve-server/src/discover/ crates/pensieve-server/src/lib.rs
 git commit -m "feat(discover): scaffold grammar module with failing test"
 ```
 
@@ -159,7 +159,7 @@ git commit -m "feat(discover): scaffold grammar module with failing test"
 ### Task 2: Grammar tokenizer
 
 **Files:**
-- Modify: `crates/kyma-server/src/discover/grammar.rs`
+- Modify: `crates/pensieve-server/src/discover/grammar.rs`
 
 - [ ] **Step 1: Add the full failing test suite**
 
@@ -246,7 +246,7 @@ mod tests {
 - [ ] **Step 2: Verify all new tests fail**
 
 ```bash
-cargo test -p kyma-server --lib discover::grammar::tests -- --nocapture
+cargo test -p pensieve-server --lib discover::grammar::tests -- --nocapture
 ```
 
 Expected: all 9 tests FAIL with the `todo!` panic.
@@ -352,7 +352,7 @@ fn split_field(token: &str) -> Option<(&str, &str)> {
 - [ ] **Step 4: Run tests — all should pass**
 
 ```bash
-cargo test -p kyma-server --lib discover::grammar::tests -- --nocapture
+cargo test -p pensieve-server --lib discover::grammar::tests -- --nocapture
 ```
 
 Expected: 9 passed, 0 failed.
@@ -360,7 +360,7 @@ Expected: 9 passed, 0 failed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-server/src/discover/grammar.rs
+git add crates/pensieve-server/src/discover/grammar.rs
 git commit -m "feat(discover): grammar tokenizer (substring/eq/neq/cmp/exists)"
 ```
 
@@ -371,11 +371,11 @@ git commit -m "feat(discover): grammar tokenizer (substring/eq/neq/cmp/exists)"
 ### Task 3: Compile clauses to KQL against a source schema
 
 **Files:**
-- Create: `crates/kyma-server/src/discover/compile.rs`
+- Create: `crates/pensieve-server/src/discover/compile.rs`
 
 - [ ] **Step 1: Write the module skeleton + failing tests**
 
-Write `crates/kyma-server/src/discover/compile.rs`:
+Write `crates/pensieve-server/src/discover/compile.rs`:
 
 ```rust
 //! Compiles a `Vec<Clause>` against a concrete source schema to a KQL string.
@@ -389,8 +389,8 @@ Write `crates/kyma-server/src/discover/compile.rs`:
 //! Returns the KQL string and the list of clauses that were dropped (for the
 //! `dropped_clauses` field on `source_done`).
 
-use kyma_core::catalog::TableRef;
-use kyma_core::schema::FieldType;
+use pensieve_core::catalog::TableRef;
+use pensieve_core::schema::FieldType;
 use serde::Serialize;
 
 use super::grammar::{Clause, CmpOp};
@@ -432,8 +432,8 @@ pub fn compile_for_source(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kyma_core::catalog::TableRef;
-    use kyma_core::schema::{Field, FieldType, Schema};
+    use pensieve_core::catalog::TableRef;
+    use pensieve_core::schema::{Field, FieldType, Schema};
 
     fn table(name: &str, fields: &[(&str, FieldType)]) -> TableRef {
         TableRef {
@@ -586,7 +586,7 @@ mod tests {
 - [ ] **Step 2: Run tests — all fail with `todo!`**
 
 ```bash
-cargo test -p kyma-server --lib discover::compile::tests -- --nocapture
+cargo test -p pensieve-server --lib discover::compile::tests -- --nocapture
 ```
 
 Expected: 11 tests FAIL.
@@ -728,17 +728,17 @@ fn escape_str(s: &str) -> String {
 - [ ] **Step 4: Run tests — all pass**
 
 ```bash
-cargo test -p kyma-server --lib discover::compile::tests -- --nocapture
+cargo test -p pensieve-server --lib discover::compile::tests -- --nocapture
 ```
 
 Expected: 11 passed.
 
-**Note:** The test helper uses `kyma_core::schema::FieldType` enum variants `String/Int/Float/Timestamp`. If the actual variant names differ in `crates/kyma-core/src/schema.rs`, run `grep -n 'enum FieldType' crates/kyma-core/src/schema.rs` and align names in **both the tests and the compiler match arms**. The structure of the compiler is independent of the exact variant names.
+**Note:** The test helper uses `pensieve_core::schema::FieldType` enum variants `String/Int/Float/Timestamp`. If the actual variant names differ in `crates/pensieve-core/src/schema.rs`, run `grep -n 'enum FieldType' crates/pensieve-core/src/schema.rs` and align names in **both the tests and the compiler match arms**. The structure of the compiler is independent of the exact variant names.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-server/src/discover/compile.rs
+git add crates/pensieve-server/src/discover/compile.rs
 git commit -m "feat(discover): per-source KQL compiler with type-aware tolerance"
 ```
 
@@ -749,21 +749,21 @@ git commit -m "feat(discover): per-source KQL compiler with type-aware tolerance
 ### Task 4: Resolve request `scope` → `Vec<SourceRef>`
 
 **Files:**
-- Create: `crates/kyma-server/src/discover/scope.rs`
+- Create: `crates/pensieve-server/src/discover/scope.rs`
 
 - [ ] **Step 1: Inspect the catalog trait once**
 
-Read `crates/kyma-core/src/catalog.rs` and confirm the methods you can use:
+Read `crates/pensieve-core/src/catalog.rs` and confirm the methods you can use:
 
 ```bash
-grep -n 'fn ' crates/kyma-core/src/catalog.rs | head -40
+grep -n 'fn ' crates/pensieve-core/src/catalog.rs | head -40
 ```
 
 You need a way to list **databases** the caller can read (often `list_databases`) and tables per database (`list_tables_in_database`). If `list_databases` exists, use it. If not, the multi-database scope == iteration over a hard-coded list — open a question with the spec owner before continuing. Don't fake it.
 
 - [ ] **Step 2: Write the failing test suite**
 
-Write `crates/kyma-server/src/discover/scope.rs`:
+Write `crates/pensieve-server/src/discover/scope.rs`:
 
 ```rust
 //! Resolve the `scope` field of a search request to a concrete
@@ -772,7 +772,7 @@ Write `crates/kyma-server/src/discover/scope.rs`:
 
 use std::sync::Arc;
 
-use kyma_core::catalog::{Catalog, TableRef};
+use pensieve_core::catalog::{Catalog, TableRef};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -857,7 +857,7 @@ mod tests {
 - [ ] **Step 3: Run tests — pattern tests pass, resolver tests deferred**
 
 ```bash
-cargo test -p kyma-server --lib discover::scope::tests -- --nocapture
+cargo test -p pensieve-server --lib discover::scope::tests -- --nocapture
 ```
 
 Expected: 4 passed (pattern unit tests). Resolver unit tests are not present at this stage; resolver behavior is exercised in the integration test (Task 9).
@@ -913,7 +913,7 @@ pub async fn resolve(
 
 If `catalog.list_databases()` does **not** exist on the trait, two options:
 
-- (A) Add it now to `kyma-core/src/catalog.rs` + `kyma-catalog/src/lib.rs` (a 3-method addition: trait method + `PostgresCatalog` impl returning `SELECT DISTINCT database_name FROM tables` + an in-memory test impl).
+- (A) Add it now to `pensieve-core/src/catalog.rs` + `pensieve-catalog/src/lib.rs` (a 3-method addition: trait method + `PostgresCatalog` impl returning `SELECT DISTINCT database_name FROM tables` + an in-memory test impl).
 - (B) Pass an explicit `Vec<String>` of database names into `resolve` from the handler, sourced from existing `list_databases`-equivalent already used somewhere in the codebase.
 
 Choose (A) — it's the clean home for this responsibility. The trait change is one async method.
@@ -921,15 +921,15 @@ Choose (A) — it's the clean home for this responsibility. The trait change is 
 - [ ] **Step 5: Run tests — still pass; resolver compiles**
 
 ```bash
-cargo test -p kyma-server --lib discover::scope -- --nocapture
+cargo test -p pensieve-server --lib discover::scope -- --nocapture
 ```
 
-Expected: 4 passed; `cargo check -p kyma-server` succeeds.
+Expected: 4 passed; `cargo check -p pensieve-server` succeeds.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/kyma-server/src/discover/scope.rs crates/kyma-core/src/catalog.rs crates/kyma-catalog/src/lib.rs
+git add crates/pensieve-server/src/discover/scope.rs crates/pensieve-core/src/catalog.rs crates/pensieve-catalog/src/lib.rs
 git commit -m "feat(discover): scope resolver with glob patterns + RBAC drops"
 ```
 
@@ -940,11 +940,11 @@ git commit -m "feat(discover): scope resolver with glob patterns + RBAC drops"
 ### Task 5: Frame types + serializer
 
 **Files:**
-- Create: `crates/kyma-server/src/discover/frames.rs`
+- Create: `crates/pensieve-server/src/discover/frames.rs`
 
 - [ ] **Step 1: Write the failing test**
 
-Write `crates/kyma-server/src/discover/frames.rs`:
+Write `crates/pensieve-server/src/discover/frames.rs`:
 
 ```rust
 //! Discriminated frame types emitted by `POST /v1/explore/search`.
@@ -1063,7 +1063,7 @@ mod tests {
 - [ ] **Step 2: Verify tests fail to compile (no implementation yet — but actually the struct definitions ARE the implementation; tests should pass).**
 
 ```bash
-cargo test -p kyma-server --lib discover::frames -- --nocapture
+cargo test -p pensieve-server --lib discover::frames -- --nocapture
 ```
 
 Expected: 4 passed (frames are pure-data, no logic to implement).
@@ -1071,7 +1071,7 @@ Expected: 4 passed (frames are pure-data, no logic to implement).
 - [ ] **Step 3: Commit**
 
 ```bash
-git add crates/kyma-server/src/discover/frames.rs
+git add crates/pensieve-server/src/discover/frames.rs
 git commit -m "feat(discover): NDJSON frame types"
 ```
 
@@ -1082,15 +1082,15 @@ git commit -m "feat(discover): NDJSON frame types"
 ### Task 6: Run per-source queries in parallel under a shared budget
 
 **Files:**
-- Create: `crates/kyma-server/src/discover/fanout.rs`
+- Create: `crates/pensieve-server/src/discover/fanout.rs`
 
 - [ ] **Step 1: Skim the existing query execution path**
 
-Re-read `crates/kyma-server/src/lib.rs:343-470` (the SessionContext build + `ctx.sql(&sql).await + tokio::time::timeout(...)` block). The fanout executor reuses this same plumbing per source — register one table, run the compiled SQL, collect batches, serialize to JSON rows.
+Re-read `crates/pensieve-server/src/lib.rs:343-470` (the SessionContext build + `ctx.sql(&sql).await + tokio::time::timeout(...)` block). The fanout executor reuses this same plumbing per source — register one table, run the compiled SQL, collect batches, serialize to JSON rows.
 
 - [ ] **Step 2: Write the module**
 
-Write `crates/kyma-server/src/discover/fanout.rs`:
+Write `crates/pensieve-server/src/discover/fanout.rs`:
 
 ```rust
 //! Run compiled per-source KQL in parallel under a shared wall-clock + memory
@@ -1103,10 +1103,10 @@ use arrow::json::ArrayWriter;
 use datafusion::execution::context::{SessionConfig, SessionContext};
 use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
-use kyma_core::catalog::Catalog;
-use kyma_core::query_frontend::QueryBudget;
-use kyma_exec::KymaTable;
-use kyma_object_store::ObjectStoreFactory;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::query_frontend::QueryBudget;
+use pensieve_exec::PensieveTable;
+use pensieve_object_store::ObjectStoreFactory;
 use tokio::sync::mpsc;
 
 use super::compile::{CompiledSource, TimeRange};
@@ -1237,7 +1237,7 @@ async fn execute_one(
     timeout: std::time::Duration,
     per_source_limit: usize,
 ) -> Result<PerSourceResult, (String, String)> {
-    let sql = kyma_kql::kql_to_sql(&compiled.kql)
+    let sql = pensieve_kql::kql_to_sql(&compiled.kql)
         .map_err(|e| ("kql_compile_error".into(), e.to_string()))?;
 
     let runtime = RuntimeEnv::new(
@@ -1246,13 +1246,13 @@ async fn execute_one(
         ),
     ).map_err(|e| ("runtime_env_error".into(), e.to_string()))?;
     let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), Arc::new(runtime));
-    kyma_exec::register_vector_udfs(&ctx);
+    pensieve_exec::register_vector_udfs(&ctx);
 
-    let kt: Arc<KymaTable> = match node_id {
-        Some(nid) => Arc::new(KymaTable::with_node_id(
+    let kt: Arc<PensieveTable> = match node_id {
+        Some(nid) => Arc::new(PensieveTable::with_node_id(
             src.table.clone(), catalog.clone(), format, nid, src.db.clone(),
         )),
-        None => Arc::new(KymaTable::new(src.table.clone(), catalog.clone(), format)),
+        None => Arc::new(PensieveTable::new(src.table.clone(), catalog.clone(), format)),
     };
     ctx.register_table(&src.table.name, kt)
         .map_err(|e| ("table_register_error".into(), e.to_string()))?;
@@ -1301,14 +1301,14 @@ fn collate_to_values(concatenated_arrays: &[u8]) -> Result<Vec<serde_json::Value
 - [ ] **Step 3: Compile-check**
 
 ```bash
-cargo check -p kyma-server
+cargo check -p pensieve-server
 ```
 
-Expected: compiles. If a crate import is missing (e.g. `kyma_object_store::ObjectStoreFactory`), grep the existing `query_handler` for the right type:
+Expected: compiles. If a crate import is missing (e.g. `pensieve_object_store::ObjectStoreFactory`), grep the existing `query_handler` for the right type:
 
 ```bash
-grep -n 'state.format' crates/kyma-server/src/lib.rs
-grep -n 'Arc<dyn ' crates/kyma-server/src/lib.rs | head -10
+grep -n 'state.format' crates/pensieve-server/src/lib.rs
+grep -n 'Arc<dyn ' crates/pensieve-server/src/lib.rs | head -10
 ```
 
 and align the import.
@@ -1316,7 +1316,7 @@ and align the import.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/src/discover/fanout.rs
+git add crates/pensieve-server/src/discover/fanout.rs
 git commit -m "feat(discover): parallel fanout executor under shared budget"
 ```
 
@@ -1327,12 +1327,12 @@ git commit -m "feat(discover): parallel fanout executor under shared budget"
 ### Task 7: Wire `POST /v1/explore/search`
 
 **Files:**
-- Create: `crates/kyma-server/src/discover/handler.rs`
-- Modify: `crates/kyma-server/src/lib.rs:113` (add the route)
+- Create: `crates/pensieve-server/src/discover/handler.rs`
+- Modify: `crates/pensieve-server/src/lib.rs:113` (add the route)
 
 - [ ] **Step 1: Write the handler module**
 
-Write `crates/kyma-server/src/discover/handler.rs`:
+Write `crates/pensieve-server/src/discover/handler.rs`:
 
 ```rust
 //! Axum handler for `POST /v1/explore/search`.
@@ -1426,7 +1426,7 @@ pub async fn discover_search_handler(
         },
     };
 
-    let max_sources = std::env::var("KYMA_DISCOVER_MAX_SOURCES")
+    let max_sources = std::env::var("PENSIEVE_DISCOVER_MAX_SOURCES")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_MAX_SOURCES);
@@ -1452,7 +1452,7 @@ pub async fn discover_search_handler(
 
     // Observability: count requests up-front, emit terminal histogram in a
     // detached task that observes when the channel closes.
-    ::metrics::counter!("kyma_explore_search_requests_total",
+    ::metrics::counter!("pensieve_explore_search_requests_total",
         "scope_kind" => scope_kind_label(&payload.scope)).increment(1);
     let req_id_for_log = request_id.clone();
     let scope_kind = scope_kind_label(&payload.scope);
@@ -1490,16 +1490,16 @@ pub async fn discover_search_handler(
             yield Ok::<_, std::convert::Infallible>(Bytes::from(line));
         }
         let elapsed = start.elapsed();
-        ::metrics::histogram!("kyma_explore_search_duration_seconds",
+        ::metrics::histogram!("pensieve_explore_search_duration_seconds",
             "scope_kind" => scope_kind.clone())
             .record(elapsed.as_secs_f64());
-        ::metrics::histogram!("kyma_explore_search_sources_resolved",
+        ::metrics::histogram!("pensieve_explore_search_sources_resolved",
             "scope_kind" => scope_kind.clone())
             .record(resolved_count as f64);
-        ::metrics::histogram!("kyma_explore_search_rows_returned").record(total_rows as f64);
-        ::metrics::counter!("kyma_explore_search_per_source_errors_total")
+        ::metrics::histogram!("pensieve_explore_search_rows_returned").record(total_rows as f64);
+        ::metrics::counter!("pensieve_explore_search_per_source_errors_total")
             .increment(error_count as u64);
-        ::metrics::counter!("kyma_explore_search_cap_hits_total")
+        ::metrics::counter!("pensieve_explore_search_cap_hits_total")
             .increment(capped_sources as u64);
         tracing::info!(
             request_id = %req_id_for_log,
@@ -1548,17 +1548,17 @@ fn parse_time_range(tr: &TimeRangeBody) -> Result<TimeRange, String> {
 
 - [ ] **Step 2: Expose `extract_request_id`, `error_response`, `resolve_query_budget` so the handler can use them**
 
-In `crates/kyma-server/src/lib.rs`, locate the three free functions (`fn extract_request_id`, `fn error_response`, `fn resolve_query_budget` — around lines 211–276). Change each from `fn` to `pub(crate) fn`. Example:
+In `crates/pensieve-server/src/lib.rs`, locate the three free functions (`fn extract_request_id`, `fn error_response`, `fn resolve_query_budget` — around lines 211–276). Change each from `fn` to `pub(crate) fn`. Example:
 
 ```rust
 pub(crate) fn extract_request_id(headers: &HeaderMap) -> String { ... }
 pub(crate) fn error_response(...) -> Response { ... }
-pub(crate) fn resolve_query_budget(headers: &HeaderMap) -> kyma_core::query_frontend::QueryBudget { ... }
+pub(crate) fn resolve_query_budget(headers: &HeaderMap) -> pensieve_core::query_frontend::QueryBudget { ... }
 ```
 
 - [ ] **Step 3: Register the route**
 
-In `crates/kyma-server/src/lib.rs` inside `pub fn router(...)`, add the route next to `/v1/query`:
+In `crates/pensieve-server/src/lib.rs` inside `pub fn router(...)`, add the route next to `/v1/query`:
 
 ```rust
 Router::new()
@@ -1572,17 +1572,17 @@ Router::new()
 - [ ] **Step 4: Compile-check**
 
 ```bash
-cargo check -p kyma-server
+cargo check -p pensieve-server
 ```
 
-If `async_stream`, `tokio_stream`, or `chrono` aren't in `kyma-server`'s `Cargo.toml`, add them. Run `cargo add -p kyma-server async-stream tokio-stream chrono` (or edit the manifest manually) — versions should match the workspace already used elsewhere (`cargo tree -p kyma-server | grep <crate>` to find the current pin).
+If `async_stream`, `tokio_stream`, or `chrono` aren't in `pensieve-server`'s `Cargo.toml`, add them. Run `cargo add -p pensieve-server async-stream tokio-stream chrono` (or edit the manifest manually) — versions should match the workspace already used elsewhere (`cargo tree -p pensieve-server | grep <crate>` to find the current pin).
 
 Expected: compiles.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-server/src/discover/handler.rs crates/kyma-server/src/lib.rs crates/kyma-server/Cargo.toml
+git add crates/pensieve-server/src/discover/handler.rs crates/pensieve-server/src/lib.rs crates/pensieve-server/Cargo.toml
 git commit -m "feat(discover): POST /v1/explore/search handler + route"
 ```
 
@@ -1593,21 +1593,21 @@ git commit -m "feat(discover): POST /v1/explore/search handler + route"
 ### Task 8: End-to-end integration test
 
 **Files:**
-- Create: `crates/kyma-server/src/discover/handler_test_support.rs`
-- Create: `crates/kyma-server/tests/discover_search_it.rs`
+- Create: `crates/pensieve-server/src/discover/handler_test_support.rs`
+- Create: `crates/pensieve-server/tests/discover_search_it.rs`
 
 - [ ] **Step 1: Read existing integration-test scaffolding**
 
 ```bash
-grep -n 'seeded_state_with_obs_otel_logs\|TestServer\|spawn_test_server' crates/kyma-server/src/test_support.rs
-cat crates/kyma-server/tests/auth_handler_it.rs | head -100
+grep -n 'seeded_state_with_obs_otel_logs\|TestServer\|spawn_test_server' crates/pensieve-server/src/test_support.rs
+cat crates/pensieve-server/tests/auth_handler_it.rs | head -100
 ```
 
 Note the function name and signature for the existing test-state fixture. The new test uses the same pattern.
 
 - [ ] **Step 2: Extend the test fixture to seed a second table in a second database**
 
-Write `crates/kyma-server/src/discover/handler_test_support.rs`:
+Write `crates/pensieve-server/src/discover/handler_test_support.rs`:
 
 ```rust
 //! Test fixture: seeds two databases each with one tiny table so the search
@@ -1641,19 +1641,19 @@ If `test_support::seed_table` does not exist, add it (one function in `test_supp
 
 - [ ] **Step 3: Write the integration test**
 
-Write `crates/kyma-server/tests/discover_search_it.rs`:
+Write `crates/pensieve-server/tests/discover_search_it.rs`:
 
 ```rust
 use axum::Router;
 use http::StatusCode;
-use kyma_server::discover::handler_test_support::seeded_state_two_dbs_two_tables;
-use kyma_server::router;
+use pensieve_server::discover::handler_test_support::seeded_state_two_dbs_two_tables;
+use pensieve_server::router;
 
 #[tokio::test]
 async fn discover_search_returns_plan_rows_and_done() {
     let state = seeded_state_two_dbs_two_tables().await;
     let app: Router = router(state);
-    let (addr, _shutdown) = kyma_server::test_support::spawn(app).await;
+    let (addr, _shutdown) = pensieve_server::test_support::spawn(app).await;
 
     let body = serde_json::json!({
         "query": "",
@@ -1715,7 +1715,7 @@ async fn discover_search_returns_plan_rows_and_done() {
 async fn discover_search_field_filter_narrows_results() {
     let state = seeded_state_two_dbs_two_tables().await;
     let app = router(state);
-    let (addr, _shutdown) = kyma_server::test_support::spawn(app).await;
+    let (addr, _shutdown) = pensieve_server::test_support::spawn(app).await;
 
     let body = serde_json::json!({
         "query": "status:500",
@@ -1750,9 +1750,9 @@ async fn discover_search_field_filter_narrows_results() {
 async fn scope_too_large_returns_400() {
     let state = seeded_state_two_dbs_two_tables().await;
     let app = router(state);
-    let (addr, _shutdown) = kyma_server::test_support::spawn(app).await;
+    let (addr, _shutdown) = pensieve_server::test_support::spawn(app).await;
 
-    std::env::set_var("KYMA_DISCOVER_MAX_SOURCES", "1");
+    std::env::set_var("PENSIEVE_DISCOVER_MAX_SOURCES", "1");
 
     let body = serde_json::json!({
         "query": "",
@@ -1765,7 +1765,7 @@ async fn scope_too_large_returns_400() {
         .json(&body)
         .send().await.unwrap();
 
-    std::env::remove_var("KYMA_DISCOVER_MAX_SOURCES");
+    std::env::remove_var("PENSIEVE_DISCOVER_MAX_SOURCES");
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let v: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(v["error"]["code"], "scope_too_large");
@@ -1775,7 +1775,7 @@ async fn scope_too_large_returns_400() {
 async fn bad_json_returns_400() {
     let state = seeded_state_two_dbs_two_tables().await;
     let app = router(state);
-    let (addr, _shutdown) = kyma_server::test_support::spawn(app).await;
+    let (addr, _shutdown) = pensieve_server::test_support::spawn(app).await;
 
     let resp = reqwest::Client::new()
         .post(&format!("http://{addr}/v1/explore/search"))
@@ -1791,7 +1791,7 @@ async fn bad_json_returns_400() {
 - [ ] **Step 4: Run the integration tests**
 
 ```bash
-cargo test -p kyma-server --test discover_search_it -- --nocapture
+cargo test -p pensieve-server --test discover_search_it -- --nocapture
 ```
 
 Expected: 4 tests pass. (First run will download testcontainers / start Postgres; subsequent runs are fast.)
@@ -1801,7 +1801,7 @@ If `test_support::spawn` or `spawn_test_server` is named differently in your tre
 - [ ] **Step 5: Run the full test suite**
 
 ```bash
-cargo test -p kyma-server -- --nocapture
+cargo test -p pensieve-server -- --nocapture
 ```
 
 Expected: green, no regressions in the existing handlers.
@@ -1809,9 +1809,9 @@ Expected: green, no regressions in the existing handlers.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/kyma-server/src/discover/handler_test_support.rs \
-        crates/kyma-server/src/test_support.rs \
-        crates/kyma-server/tests/discover_search_it.rs
+git add crates/pensieve-server/src/discover/handler_test_support.rs \
+        crates/pensieve-server/src/test_support.rs \
+        crates/pensieve-server/tests/discover_search_it.rs
 git commit -m "test(discover): integration test for /v1/explore/search (plan/rows/done, filter, scope-too-large)"
 ```
 
@@ -1819,12 +1819,12 @@ git commit -m "test(discover): integration test for /v1/explore/search (plan/row
 
 ## Phase 8 — Manual smoke
 
-### Task 9: Hit the endpoint with curl against a local kyma-bin
+### Task 9: Hit the endpoint with curl against a local pensieve-bin
 
 - [ ] **Step 1: Run the engine**
 
 ```bash
-cargo run -p kyma-bin
+cargo run -p pensieve-bin
 ```
 
 Wait for the "listening" log line. Confirm the auto-migration applied cleanly.
@@ -1833,7 +1833,7 @@ Wait for the "listening" log line. Confirm the auto-migration applied cleanly.
 
 ```bash
 curl -sN -X POST http://localhost:8080/v1/explore/search \
-  -H "authorization: Bearer $KYMA_READ_TOKEN" \
+  -H "authorization: Bearer $PENSIEVE_READ_TOKEN" \
   -H "content-type: application/json" \
   -d '{"query":"","scope":{"kind":"all"}}'
 ```
@@ -1843,16 +1843,16 @@ Expected: NDJSON frames stream: one `plan` line first, then per-source `source_p
 - [ ] **Step 3: Confirm metrics surfaced**
 
 ```bash
-curl -s http://localhost:8080/metrics | grep kyma_explore_search
+curl -s http://localhost:8080/metrics | grep pensieve_explore_search
 ```
 
-Expected: at least `kyma_explore_search_requests_total`, `kyma_explore_search_duration_seconds_bucket`, `kyma_explore_search_sources_resolved_bucket`.
+Expected: at least `pensieve_explore_search_requests_total`, `pensieve_explore_search_duration_seconds_bucket`, `pensieve_explore_search_sources_resolved_bucket`.
 
 - [ ] **Step 4: Issue a field-filter request and observe `dropped_clauses` on a source that lacks the field**
 
 ```bash
 curl -sN -X POST http://localhost:8080/v1/explore/search \
-  -H "authorization: Bearer $KYMA_READ_TOKEN" \
+  -H "authorization: Bearer $PENSIEVE_READ_TOKEN" \
   -H "content-type: application/json" \
   -d '{"query":"status:>500","scope":{"kind":"all"}}' \
   | jq -c 'select(.type=="source_done") | {source, total, dropped_clauses}'
@@ -1877,7 +1877,7 @@ cargo fmt --all
 - [ ] **Step 2: Clippy**
 
 ```bash
-cargo clippy -p kyma-server --all-targets -- -D warnings
+cargo clippy -p pensieve-server --all-targets -- -D warnings
 ```
 
 Expected: clean. Fix any warnings inline.
@@ -1904,7 +1904,7 @@ git diff --quiet || git commit -am "chore(discover): fmt + clippy"
 - §5 grammar — Task 2
 - §5 per-source compilation tolerance + `dropped_clauses` — Task 3 + Task 5 + Task 8 (smoke)
 - §8.1 limits — Task 7 (DEFAULT_PER_SOURCE_LIMIT=500, MAX=5000, DEFAULT_MAX_SOURCES=200)
-- §8.2 RBAC + auth — reuses `require_role_middleware(Role::Read)` applied by `kyma-bin`
+- §8.2 RBAC + auth — reuses `require_role_middleware(Role::Read)` applied by `pensieve-bin`
 - §8.3 error surfacing — error_response helper + per-source `Frame::Error`
 - §8.5 observability — Task 7 (5 metrics + structured tracing log)
 - §8.6 engine tests — Task 8 (integration), Task 2/3/5 (unit)

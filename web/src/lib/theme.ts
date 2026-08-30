@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 export type Theme = "light" | "dark" | "system";
 
-const STORAGE_KEY = "kyma:theme";
+const STORAGE_KEY = "pensieve:theme";
 
 function systemPrefersDark(): boolean {
   if (typeof window === "undefined") return false;

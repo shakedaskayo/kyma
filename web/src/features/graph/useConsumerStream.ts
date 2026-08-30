@@ -8,7 +8,7 @@
  * respects reduced motion. When `enabled` flips false the socket is torn down.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ConsumerBeam, ConsumerStatus, LiveConsumer, LiveConsumersData } from "@kyma-ai/react/graph";
+import type { ConsumerBeam, ConsumerStatus, LiveConsumer, LiveConsumersData } from "@pensieve-ai/react/graph";
 import { useSession } from "@/sdk/session";
 import { ConsumerLiveSession, type ConsumerActivityFrame } from "./consumer-live";
 import { ACTIVE_MS, DROP_MS, MAX_BEAMS, SWEEP_MS, dedupKey, toBeams, toConsumer } from "./consumer-lib";

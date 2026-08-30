@@ -16,10 +16,10 @@ use arrow_array::{Array, Int64Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use datafusion::datasource::MemTable;
 use datafusion::prelude::SessionContext;
-use kyma_graph_testkit::model::TestGraph;
-use kyma_graph_testkit::oracle::{self, Direction};
-use kyma_graph_testkit::synth;
-use kyma_kql::kql_to_sql;
+use pensieve_graph_testkit::model::TestGraph;
+use pensieve_graph_testkit::oracle::{self, Direction};
+use pensieve_graph_testkit::synth;
+use pensieve_kql::kql_to_sql;
 
 /// Register `g`'s edges as an in-memory `edges(src, dst, type)` table.
 fn edges_ctx(g: &TestGraph) -> SessionContext {
@@ -247,7 +247,7 @@ async fn var_match_on_cycles_matches_oracle() {
 // Differential vs oracle::shortest_path_len over node pairs.
 // =====================================================================
 
-use kyma_graph_testkit::oracle::shortest_path_len;
+use pensieve_graph_testkit::oracle::shortest_path_len;
 
 /// Shortest-path length `src`→`tgt` via the operator (None when no path within
 /// `max` hops).

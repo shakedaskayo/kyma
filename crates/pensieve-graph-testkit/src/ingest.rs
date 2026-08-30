@@ -1,12 +1,12 @@
-//! Load a [`TestGraph`] into a running kyma.
+//! Load a [`TestGraph`] into a running pensieve.
 //!
 //! Mirrors the house end-to-end flow (`scripts/test-graph.sh`):
-//! 1. `kyma-cli create-database <db>` + `create-table` with explicit schemas
+//! 1. `pensieve-cli create-database <db>` + `create-table` with explicit schemas
 //!    (ingest's auto-create would otherwise land the columns in the dynamic
 //!    `props` catch-all, invisible to `graph-match` SQL).
 //! 2. `POST /v1/ingest` NDJSON with `X-Database` / `X-Table` headers, one
 //!    object per node/edge row, chunked.
-//! 3. `kyma-cli create-graph --db <db> --name <name> --nodes <name>_nodes
+//! 3. `pensieve-cli create-graph --db <db> --name <name> --nodes <name>_nodes
 //!    --edges <name>_edges` — the column names below match the CLI's
 //!    [`GraphSpec`] defaults (`id`/`labels`/`src`/`dst`/`type`), so no column
 //!    overrides are needed.
@@ -22,7 +22,7 @@ use anyhow::{bail, Context};
 
 use crate::model::TestGraph;
 
-/// Where the engine + its admin CLI live. The CLI reads `KYMA_CATALOG_URL`
+/// Where the engine + its admin CLI live. The CLI reads `PENSIEVE_CATALOG_URL`
 /// from the environment itself (registration is a catalog write — there is no
 /// HTTP endpoint for `create-graph`; the CLI *is* how the codebase does it).
 pub struct EngineConfig {
@@ -32,22 +32,22 @@ pub struct EngineConfig {
     pub database: String,
     /// Optional bearer token for `/v1/ingest`.
     pub token: Option<String>,
-    /// Path to the `kyma-cli` binary.
+    /// Path to the `pensieve-cli` binary.
     pub cli_bin: String,
 }
 
 impl EngineConfig {
-    /// From env: `KYMA_BASE_URL` (default `http://127.0.0.1:8080`),
-    /// `KYMA_DATABASE` (default `default`), `KYMA_TOKEN`,
-    /// `KYMA_CLI_BIN` (default `./target/debug/kyma-cli`).
+    /// From env: `PENSIEVE_BASE_URL` (default `http://127.0.0.1:8080`),
+    /// `PENSIEVE_DATABASE` (default `default`), `PENSIEVE_TOKEN`,
+    /// `PENSIEVE_CLI_BIN` (default `./target/debug/pensieve-cli`).
     pub fn from_env() -> Self {
         Self {
-            base_url: std::env::var("KYMA_BASE_URL")
+            base_url: std::env::var("PENSIEVE_BASE_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:8080".into()),
-            database: std::env::var("KYMA_DATABASE").unwrap_or_else(|_| "default".into()),
-            token: std::env::var("KYMA_TOKEN").ok(),
-            cli_bin: std::env::var("KYMA_CLI_BIN")
-                .unwrap_or_else(|_| "./target/debug/kyma-cli".into()),
+            database: std::env::var("PENSIEVE_DATABASE").unwrap_or_else(|_| "default".into()),
+            token: std::env::var("PENSIEVE_TOKEN").ok(),
+            cli_bin: std::env::var("PENSIEVE_CLI_BIN")
+                .unwrap_or_else(|_| "./target/debug/pensieve-cli".into()),
         }
     }
 

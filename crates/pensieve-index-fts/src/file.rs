@@ -243,7 +243,7 @@ pub fn open_index(buf: &[u8]) -> Result<tantivy::Index> {
     // are per-Index runtime state, not persisted in the segment files).
     index.tokenizers().register(
         crate::tokenizer::TOKENIZER_NAME,
-        crate::tokenizer::KymaWordTokenizer,
+        crate::tokenizer::PensieveWordTokenizer,
     );
     Ok(index)
 }

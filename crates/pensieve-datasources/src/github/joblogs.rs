@@ -19,8 +19,8 @@ use crate::github::config::WorkflowOpts;
 use crate::github::failure;
 use crate::github::transform;
 use crate::types::DataSourceError;
-use kyma_catalog::artifacts::ArtifactRecord;
-use kyma_core::tenant::TenantId;
+use pensieve_catalog::artifacts::ArtifactRecord;
+use pensieve_core::tenant::TenantId;
 
 /// Flat pointer table for captured job logs (queryable via SQL/KQL; the blob
 /// itself lives on the object store at `object_path`).
@@ -62,7 +62,7 @@ pub async fn capture_job_logs(
 ) -> Result<CaptureResult, DataSourceError> {
     let (runs, _stop) = gh.list_workflow_runs(owner, repo, opts.max_pages).await?;
 
-    let guard = kyma_redact::global();
+    let guard = pensieve_redact::global();
     let mut rows: Vec<Value> = Vec::new();
     let mut nodes: Vec<Value> = Vec::new();
     let mut edges: Vec<Value> = Vec::new();
@@ -154,7 +154,7 @@ pub async fn capture_job_logs(
                 &redacted
             };
             let stored_bytes = stored_str.as_bytes().to_vec();
-            let sha = kyma_storage::sha256_hex(&stored_bytes);
+            let sha = pensieve_storage::sha256_hex(&stored_bytes);
             let size_bytes = stored_bytes.len() as i64;
             let object_path = job_log_key(tenant, owner, repo, run_id, job_id);
 
@@ -290,7 +290,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        // The job log contains an AWS access-key id (a kyma-redact pattern).
+        // The job log contains an AWS access-key id (a pensieve-redact pattern).
         Mock::given(method("GET"))
             .and(path("/repos/acme/app/actions/jobs/900/logs"))
             .respond_with(ResponseTemplate::new(200).set_body_string(

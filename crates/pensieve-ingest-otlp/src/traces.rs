@@ -2,7 +2,7 @@
 //!
 //! Same shape as the logs path in `lib.rs`: one RecordBatch per export,
 //! built column-at-a-time, written through the shared [`WritePath`].
-//! `kyma.subject` / `kyma.tenant` span attributes are promoted to real
+//! `pensieve.subject` / `pensieve.tenant` span attributes are promoted to real
 //! columns — the Traces page filters on them constantly.
 
 use arrow_array::builder::{Int64Builder, StringBuilder, TimestampNanosecondBuilder};
@@ -66,15 +66,15 @@ fn status_label(code: i32) -> &'static str {
 }
 
 /// Split span attributes into (subject, tenant, remaining-as-json).
-fn split_kyma_attrs(attrs: &[KeyValue]) -> (Option<String>, Option<String>, String) {
+fn split_pensieve_attrs(attrs: &[KeyValue]) -> (Option<String>, Option<String>, String) {
     let mut subject = None;
     let mut tenant = None;
     let mut rest: Vec<KeyValue> = Vec::with_capacity(attrs.len());
     for kv in attrs {
         let val = kv.value.as_ref().and_then(any_value_to_string);
         match kv.key.as_str() {
-            "kyma.subject" => subject = val,
-            "kyma.tenant" => tenant = val,
+            "pensieve.subject" => subject = val,
+            "pensieve.tenant" => tenant = val,
             _ => rest.push(kv.clone()),
         }
     }
@@ -185,8 +185,8 @@ pub fn request_to_batch(req: &ExportTraceServiceRequest) -> Result<RecordBatch, 
                     None => service_b.append_null(),
                 }
 
-                // kyma.subject / kyma.tenant / remaining attributes
-                let (subject, tenant, attrs_json) = split_kyma_attrs(&span.attributes);
+                // pensieve.subject / pensieve.tenant / remaining attributes
+                let (subject, tenant, attrs_json) = split_pensieve_attrs(&span.attributes);
                 match subject {
                     Some(s) => subject_b.append_value(&s),
                     None => subject_b.append_null(),
@@ -225,8 +225,8 @@ pub fn request_to_batch(req: &ExportTraceServiceRequest) -> Result<RecordBatch, 
 
 // -------- service -------------------------------------------------------
 
-use kyma_core::catalog::Catalog;
-use kyma_ingest_core::WritePath;
+use pensieve_core::catalog::Catalog;
+use pensieve_ingest_core::WritePath;
 use opentelemetry_proto::tonic::collector::trace::v1::{
     trace_service_server::{TraceService, TraceServiceServer},
     ExportTracePartialSuccess, ExportTraceServiceResponse,
@@ -284,7 +284,7 @@ impl TraceService for OtlpTraceService {
             .ingest(&self.database, &table_ref, vec![batch])
             .await
             .map_err(|e| tonic::Status::internal(format!("ingest: {e}")))?;
-        ::metrics::counter!("kyma_otlp_spans_total").increment(ack.rows_ingested);
+        ::metrics::counter!("pensieve_otlp_spans_total").increment(ack.rows_ingested);
         info!(rows = ack.rows_ingested, "otlp trace export committed");
         Ok(Response::new(ExportTraceServiceResponse {
             partial_success: if ack.rows_ingested == total as u64 {
@@ -320,7 +320,7 @@ mod tests {
         ExportTraceServiceRequest {
             resource_spans: vec![ResourceSpans {
                 resource: Some(Resource {
-                    attributes: vec![kv("service.name", "kyma-server")],
+                    attributes: vec![kv("service.name", "pensieve-server")],
                     dropped_attributes_count: 0,
                 }),
                 scope_spans: vec![ScopeSpans {
@@ -335,8 +335,8 @@ mod tests {
                         start_time_unix_nano: 1_700_000_000_000_000_000,
                         end_time_unix_nano: 1_700_000_000_250_000_000,
                         attributes: vec![
-                            kv("kyma.subject", "ws-mbp-shaked"),
-                            kv("kyma.tenant", "default"),
+                            kv("pensieve.subject", "ws-mbp-shaked"),
+                            kv("pensieve.tenant", "default"),
                             kv("memory.query", "okta sso"),
                         ],
                         dropped_attributes_count: 0,
@@ -397,13 +397,13 @@ mod tests {
         assert_eq!(s("name"), "memory.recall");
         assert_eq!(s("kind"), "INTERNAL");
         assert_eq!(s("status_code"), "OK");
-        assert_eq!(s("service_name"), "kyma-server");
+        assert_eq!(s("service_name"), "pensieve-server");
         assert_eq!(s("subject"), "ws-mbp-shaked");
         assert_eq!(s("tenant"), "default");
-        // kyma.* promoted OUT of attributes_json; the rest stays in.
+        // pensieve.* promoted OUT of attributes_json; the rest stays in.
         let attrs = s("attributes_json");
         assert!(attrs.contains("memory.query"));
-        assert!(!attrs.contains("kyma.subject"));
+        assert!(!attrs.contains("pensieve.subject"));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 [package]
-name = "kyma-retrieval-eval"
+name = "pensieve-retrieval-eval"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,7 +15,7 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
-# CLI arg parsing for the two bins — declared directly (same pattern as kyma-cli).
+# CLI arg parsing for the two bins — declared directly (same pattern as pensieve-cli).
 clap = { version = "4", features = ["derive", "env"] }
 # HTTP client for the bench bin (engine ingest/query) and the local-only
 # LLM-judge tool. Blocking client: these are sequential CLI tools, no tokio.

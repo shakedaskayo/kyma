@@ -48,9 +48,9 @@ fn hint_for(err: &anyhow::Error) -> Option<&'static str> {
         .join(" ")
         .to_lowercase();
     if text.contains("connection refused") {
-        Some("is `kyma serve` running? check the URL from `kyma status`")
+        Some("is `pensieve serve` running? check the URL from `pensieve status`")
     } else if text.contains("401") || text.contains("unauthorized") {
-        Some("run `kyma connect` to re-authenticate")
+        Some("run `pensieve connect` to re-authenticate")
     } else if text.contains("403") || text.contains("forbidden") {
         Some("your token may lack permission for this operation")
     } else if text.contains("404") || text.contains("not found") {
@@ -72,7 +72,7 @@ mod tests {
         let err = anyhow!("Connection refused (os error 61)");
         assert_eq!(
             hint_for(&err),
-            Some("is `kyma serve` running? check the URL from `kyma status`")
+            Some("is `pensieve serve` running? check the URL from `pensieve status`")
         );
     }
 
@@ -81,7 +81,7 @@ mod tests {
         let err = anyhow!("request failed: 401 Unauthorized");
         assert_eq!(
             hint_for(&err),
-            Some("run `kyma connect` to re-authenticate")
+            Some("run `pensieve connect` to re-authenticate")
         );
     }
 
@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn render_error_no_color_snapshot() {
-        let err = anyhow!("connection refused").context("failed to reach kyma server");
+        let err = anyhow!("connection refused").context("failed to reach pensieve server");
         insta::assert_snapshot!(render_error(&err, false));
     }
 

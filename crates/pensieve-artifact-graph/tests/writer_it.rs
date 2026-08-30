@@ -1,20 +1,20 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use kyma_artifact_graph::{artifact_node_row, ArtifactGraphWriter, ARTIFACTS_DB, GRAPH_NAME};
-use kyma_catalog::artifacts::ArtifactRecord;
-use kyma_core::catalog::{Catalog, GraphSpec};
-use kyma_core::segment_format::SegmentFormat;
-use kyma_core::tenant::TenantId;
-use kyma_format_tlm::TelemetryFormat;
-use kyma_storage::{build_object_store, StorageConfig};
+use pensieve_artifact_graph::{artifact_node_row, ArtifactGraphWriter, ARTIFACTS_DB, GRAPH_NAME};
+use pensieve_catalog::artifacts::ArtifactRecord;
+use pensieve_core::catalog::{Catalog, GraphSpec};
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_core::tenant::TenantId;
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_storage::{build_object_store, StorageConfig};
 use uuid::Uuid;
 
 async fn writer() -> (Arc<dyn Catalog>, ArtifactGraphWriter) {
     let catalog: Arc<dyn Catalog> = Arc::new(
-        kyma_catalog_sqlite::SqliteCatalog::connect_in_memory().await.unwrap(),
+        pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory().await.unwrap(),
     );
-    let tmp = std::env::temp_dir().join(format!("kyma-ag-{}", Uuid::new_v4()));
+    let tmp = std::env::temp_dir().join(format!("pensieve-ag-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&tmp).unwrap();
     let store = build_object_store(&StorageConfig::Local {
         root: tmp.to_string_lossy().to_string(),

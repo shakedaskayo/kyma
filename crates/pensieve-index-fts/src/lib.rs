@@ -4,14 +4,14 @@
 //!
 //! The index replaces the catalog's coarse `LIKE`/token-set prune for the
 //! lexical leg of search and memory with real BM25 ranking. Like the
-//! [`kyma_index_vector`] ANN sidecar it is built by the async
-//! [`kyma_core::index_sidecar::SidecarBuilder`] path: this crate provides
+//! [`pensieve_index_vector`] ANN sidecar it is built by the async
+//! [`pensieve_core::index_sidecar::SidecarBuilder`] path: this crate provides
 //! [`TantivyFtsBuilder`].
 //!
 //! ## Tokenizer parity
 //!
-//! The body field is analyzed with [`tokenizer::KymaWordTokenizer`]
-//! (`kyma-word-v1`), which applies the extent writer's exact token rule
+//! The body field is analyzed with [`tokenizer::PensieveWordTokenizer`]
+//! (`pensieve-word-v1`), which applies the extent writer's exact token rule
 //! (lowercase, ASCII-alphanumeric runs, length ≥ 2). This guarantees the
 //! catalog's existing token-set prune is never a false-negative for an
 //! FTS-indexed extent: every term the writer records, tantivy also indexes.
@@ -33,4 +33,4 @@ pub use build::{build_fts, fts_schema, pack_addr, unpack_addr};
 pub use builder::TantivyFtsBuilder;
 pub use file::{open_index, read_header, FtsError};
 pub use search::bm25_search;
-pub use tokenizer::{tokenize, KymaWordTokenizer, TOKENIZER_NAME};
+pub use tokenizer::{tokenize, PensieveWordTokenizer, TOKENIZER_NAME};

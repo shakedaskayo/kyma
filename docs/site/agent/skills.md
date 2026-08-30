@@ -1,11 +1,11 @@
 ---
 title: Skills
-description: Local skill discovery for the Kyma agent. Drop a SKILL.md in a discovery root and toggle it on in Settings.
+description: Local skill discovery for the Pensieve agent. Drop a SKILL.md in a discovery root and toggle it on in Settings.
 ---
 
 # Skills
 
-Enable skills to teach Kyma domain-specific tasks — drop a `SKILL.md` in a
+Enable skills to teach Pensieve domain-specific tasks — drop a `SKILL.md` in a
 discovery root and toggle it on. The agent picks up the new behaviour on the
 next turn, with no restart needed.
 
@@ -30,7 +30,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 # Toggle skills on/off (the array is the full set of enabled names).
 curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   http://localhost:8080/v1/agent/skills/enabled \
-  -d '{"skills":["kyma","brainstorming"]}'
+  -d '{"skills":["pensieve","brainstorming"]}'
 ```
 
 ## Discovery roots
@@ -40,8 +40,8 @@ candidate dir is scanned for `<skill>/SKILL.md`.
 
 | Path                                              | Source       | Purpose                                                    |
 | ------------------------------------------------- | ------------ | ---------------------------------------------------------- |
-| `./.skills/`                                      | `project`    | Skills checked into the current Kyma deployment.           |
-| `~/.kyma/skills/`                                 | `user`       | Skills shared across every Kyma server you run.            |
+| `./.skills/`                                      | `project`    | Skills checked into the current Pensieve deployment.           |
+| `~/.pensieve/skills/`                                 | `user`       | Skills shared across every Pensieve server you run.            |
 | `~/.skills/`                                      | `user`       | Vendor-neutral skills (Cursor / Aider / etc. can share).   |
 | `./.claude/skills/`                               | `project`    | Opt-in compatibility with Claude Code project skills.      |
 | `~/.claude/skills/`                               | `user`       | Opt-in compatibility with Claude Code user skills.         |
@@ -54,8 +54,8 @@ macOS.
 
 ## Writing your own
 
-The fastest path: copy `~/.kyma/skills/kyma/SKILL.md` (written by
-`kyma install-skill`) and adapt. The frontmatter `description` is the
+The fastest path: copy `~/.pensieve/skills/pensieve/SKILL.md` (written by
+`pensieve install-skill`) and adapt. The frontmatter `description` is the
 discovery trigger — be specific about the phrases that should fire the
 skill.
 
@@ -90,9 +90,9 @@ When multiple skills could apply to a request, the agent follows
 the priority order spelled out by [superpowers using-superpowers](https://github.com/claude-plugins-official/superpowers):
 
 1. Process skills (brainstorming, debugging) first — these set HOW.
-2. Domain skills (frontend-design, kyma) second — these set WHAT.
+2. Domain skills (frontend-design, pensieve) second — these set WHAT.
 
-Kyma doesn't enforce this; the LLM does, based on each skill's
+Pensieve doesn't enforce this; the LLM does, based on each skill's
 self-described trigger conditions.
 
 ## How skills land in the prompt

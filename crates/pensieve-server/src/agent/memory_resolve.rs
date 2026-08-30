@@ -20,9 +20,9 @@ use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
-use kyma_memory::rows;
-use kyma_memory::types::{CreateMemory, MemoryType};
-use kyma_memory::{
+use pensieve_memory::rows;
+use pensieve_memory::types::{CreateMemory, MemoryType};
+use pensieve_memory::{
     MemoryWriter, DEFAULT_DATABASE, EDGE_RELATES_TO, EDGE_RESOLVES_TO, NODE_TABLE,
 };
 
@@ -188,8 +188,8 @@ async fn find_entity_node(shared: &SharedToolCtx, realm: &str, name_lc: &str) ->
          SELECT id FROM latest WHERE rn = 1 AND memory_type = 'entity' \
            AND realm = {realm} AND lower(title) = {name} LIMIT 1",
         nt = NODE_TABLE,
-        realm = kyma_memory::sql::sql_str(realm),
-        name = kyma_memory::sql::sql_str(name_lc),
+        realm = pensieve_memory::sql::sql_str(realm),
+        name = pensieve_memory::sql::sql_str(name_lc),
     );
     let res = execute_sql(shared, DEFAULT_DATABASE, &q, 1).await;
     res.get("rows")

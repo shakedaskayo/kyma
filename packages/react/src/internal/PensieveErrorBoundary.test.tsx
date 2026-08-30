@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
-import { KymaProvider } from "../provider/KymaProvider";
-import { KymaErrorBoundary } from "./KymaErrorBoundary";
+import { PensieveProvider } from "../provider/PensieveProvider";
+import { PensieveErrorBoundary } from "./PensieveErrorBoundary";
 
 afterEach(() => cleanup());
 
@@ -12,15 +12,15 @@ function Bomb({ shouldThrow }: { shouldThrow: boolean }) {
 
 function Wrapper({ shouldThrow = true, onError }: { shouldThrow?: boolean; onError?: (e: unknown) => void }) {
   return (
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} onError={onError}>
-      <KymaErrorBoundary>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} onError={onError}>
+      <PensieveErrorBoundary>
         <Bomb shouldThrow={shouldThrow} />
-      </KymaErrorBoundary>
-    </KymaProvider>
+      </PensieveErrorBoundary>
+    </PensieveProvider>
   );
 }
 
-describe("KymaErrorBoundary", () => {
+describe("PensieveErrorBoundary", () => {
   it("catches a rendering error and shows fallback UI with error message", () => {
     const orig = console.error;
     console.error = () => {};
@@ -53,11 +53,11 @@ describe("KymaErrorBoundary", () => {
     const orig = console.error;
     console.error = () => {};
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }}>
-        <KymaErrorBoundary fallback={<div data-testid="custom-fb">custom fallback</div>}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }}>
+        <PensieveErrorBoundary fallback={<div data-testid="custom-fb">custom fallback</div>}>
           <Bomb shouldThrow />
-        </KymaErrorBoundary>
-      </KymaProvider>,
+        </PensieveErrorBoundary>
+      </PensieveProvider>,
     );
     expect(screen.getByTestId("custom-fb")).toBeTruthy();
     console.error = orig;

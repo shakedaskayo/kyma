@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn missing_file_returns_none() {
-        let path = PathBuf::from("/nonexistent/kyma-test/.credentials.json");
+        let path = PathBuf::from("/nonexistent/pensieve-test/.credentials.json");
         assert_eq!(discover_anthropic_key_at(&path), None);
     }
 

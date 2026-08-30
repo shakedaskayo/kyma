@@ -1,9 +1,9 @@
-//! `kyma setup <agent>` — wire a coding agent to this binary over stdio
+//! `pensieve setup <agent>` — wire a coding agent to this binary over stdio
 //! MCP, so it gets the full context-engine toolset (memory + data + graph) with
 //! zero infra. One-liner onboarding, the engram-style `setup <agent>`.
 //!
 //! Writes (merging, never clobbering other servers) the agent's MCP config with
-//! a `kyma` server pointing at `<this binary> mcp`. Agents whose config format
+//! a `pensieve` server pointing at `<this binary> mcp`. Agents whose config format
 //! we don't write are handled by `--print` / the generic snippet.
 
 use anyhow::{Context, Result};
@@ -35,25 +35,25 @@ fn supported() -> String {
     TARGETS.iter().map(|t| t.key).collect::<Vec<_>>().join(", ")
 }
 
-/// Configure `agent` to use `kyma mcp` over stdio. `print` previews the
+/// Configure `agent` to use `pensieve mcp` over stdio. `print` previews the
 /// resulting config instead of writing it.
 pub fn run(agent: &str, print: bool) -> Result<()> {
     if agent.eq_ignore_ascii_case("list") {
-        eprintln!("kyma setup <agent> — supported: {}", supported());
-        eprintln!("Any other agent: `kyma setup <agent> --print` emits a stdio MCP snippet to paste.");
+        eprintln!("pensieve setup <agent> — supported: {}", supported());
+        eprintln!("Any other agent: `pensieve setup <agent> --print` emits a stdio MCP snippet to paste.");
         return Ok(());
     }
 
     let exe = std::env::current_exe()
-        .context("resolving the kyma binary path")?
+        .context("resolving the pensieve binary path")?
         .to_string_lossy()
         .to_string();
-    // The `kyma` MCP server entry — `<this binary> mcp` over stdio.
+    // The `pensieve` MCP server entry — `<this binary> mcp` over stdio.
     let server = json!({ "type": "stdio", "command": exe, "args": ["mcp"] });
 
     let Some(t) = TARGETS.iter().find(|t| t.key.eq_ignore_ascii_case(agent)) else {
         // Unknown agent: emit the snippet for the user to paste into its config.
-        let snippet = json!({ "mcpServers": { "kyma": server } });
+        let snippet = json!({ "mcpServers": { "pensieve": server } });
         eprintln!("'{agent}' has no auto-writer (supported: {}).", supported());
         eprintln!("Add this stdio MCP server to its config:");
         println!("{}", serde_json::to_string_pretty(&snippet)?);
@@ -86,7 +86,7 @@ pub fn run(agent: &str, print: bool) -> Result<()> {
     servers
         .as_object_mut()
         .expect("mcpServers is an object")
-        .insert("kyma".into(), server);
+        .insert("pensieve".into(), server);
 
     let pretty = serde_json::to_string_pretty(&root)?;
     if print {
@@ -101,7 +101,7 @@ pub fn run(agent: &str, print: bool) -> Result<()> {
     std::fs::write(&path, format!("{pretty}\n"))
         .with_context(|| format!("writing {}", path.display()))?;
     eprintln!("✓ Configured {} → {}", t.label, path.display());
-    eprintln!("  MCP server 'kyma' → {} mcp (stdio)", "kyma");
+    eprintln!("  MCP server 'pensieve' → {} mcp (stdio)", "pensieve");
     eprintln!("  Restart {} to pick it up; then memory + data + graph tools are available.", t.label);
     Ok(())
 }

@@ -11,7 +11,7 @@ const out = path.join(root, 'architecture')
 
 const map = [
   { from: 'architecture.md', to: 'architecture.md',
-    frontmatter: '---\ntitle: Architecture\ndescription: How kyma stays correct, fast, and distributable.\n---\n\n' },
+    frontmatter: '---\ntitle: Architecture\ndescription: How pensieve stays correct, fast, and distributable.\n---\n\n' },
   { from: 'benchmarks.md', to: 'benchmarks.md',
     frontmatter: '---\ntitle: Benchmarks\ndescription: Performance budgets and measurements.\n---\n\n' },
 ]

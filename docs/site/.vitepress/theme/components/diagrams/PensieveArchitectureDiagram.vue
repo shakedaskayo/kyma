@@ -1,9 +1,9 @@
 <!--
-  KymaArchitectureDiagram
+  PensieveArchitectureDiagram
   -----------------------
-  Single-pane view of kyma's architecture: ingest lane (top), shared storage spine
+  Single-pane view of pensieve's architecture: ingest lane (top), shared storage spine
   (middle, the source of truth), and query lane (bottom). Inherits theme colors
-  via the kyma-* CSS variables, so it respects dark/light mode.
+  via the pensieve-* CSS variables, so it respects dark/light mode.
 
   Used as the hero diagram on /architecture/ and on /concepts/the-pruning-cascade
   (compact variant via the `compact` prop, which hides the long descriptions).
@@ -15,9 +15,9 @@ defineProps<{
 </script>
 
 <template>
-  <figure class="kyma-arch">
+  <figure class="pensieve-arch">
     <svg viewBox="0 0 1040 540" role="img"
-         :aria-label="caption ?? 'kyma architecture: ingest path, shared storage spine, query path'"
+         :aria-label="caption ?? 'pensieve architecture: ingest path, shared storage spine, query path'"
          xmlns="http://www.w3.org/2000/svg">
       <defs>
         <!-- Hairline arrowhead, matches link/citation blue -->
@@ -192,118 +192,118 @@ defineProps<{
 </template>
 
 <style scoped>
-.kyma-arch {
+.pensieve-arch {
   margin: 1.5rem 0 2rem;
-  font-family: var(--kyma-font-mono);
-  color: var(--kyma-fg);
+  font-family: var(--pensieve-font-mono);
+  color: var(--pensieve-fg);
 }
-.kyma-arch svg {
+.pensieve-arch svg {
   width: 100%;
   height: auto;
   display: block;
-  background: var(--kyma-bg-soft);
-  border: 1px solid var(--kyma-rule-soft);
+  background: var(--pensieve-bg-soft);
+  border: 1px solid var(--pensieve-rule-soft);
 }
-.kyma-arch figcaption {
+.pensieve-arch figcaption {
   margin-top: 0.75rem;
   font-size: 0.78rem;
   letter-spacing: 0.04em;
-  color: var(--kyma-muted);
+  color: var(--pensieve-muted);
   text-align: center;
 }
 
 /* ---- Lane labels ---- */
 .lane-label {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 11px;
   letter-spacing: 0.18em;
-  fill: var(--kyma-muted);
+  fill: var(--pensieve-muted);
   text-transform: uppercase;
 }
 
 /* ---- Generic node boxes ---- */
 .node rect {
-  fill: var(--kyma-bg);
-  stroke: var(--kyma-rule);
+  fill: var(--pensieve-bg);
+  stroke: var(--pensieve-rule);
   stroke-width: 1;
 }
 .node-mid rect {
-  fill: var(--kyma-bg-soft);
-  stroke: var(--kyma-rule-soft);
+  fill: var(--pensieve-bg-soft);
+  stroke: var(--pensieve-rule-soft);
 }
 .node-pull rect {
   fill: transparent;
-  stroke: var(--kyma-accent);
+  stroke: var(--pensieve-accent);
   stroke-width: 1;
   stroke-dasharray: 3 3;
 }
 
 .node-title {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 11px;
-  fill: var(--kyma-fg);
+  fill: var(--pensieve-fg);
   text-anchor: middle;
   font-weight: 600;
   letter-spacing: -0.005em;
 }
 .node-sub {
-  font-family: var(--kyma-font-body);
+  font-family: var(--pensieve-font-body);
   font-size: 9.5px;
-  fill: var(--kyma-fg-soft);
+  fill: var(--pensieve-fg-soft);
   text-anchor: middle;
 }
 .node-sub-em {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 9.5px;
-  fill: var(--kyma-accent);
+  fill: var(--pensieve-accent);
   text-anchor: middle;
   letter-spacing: 0.04em;
 }
 
 /* ---- Storage plate ---- */
 .store-plate rect {
-  fill: var(--kyma-bg-soft);
-  stroke: var(--kyma-rule);
+  fill: var(--pensieve-bg-soft);
+  stroke: var(--pensieve-rule);
   stroke-width: 1;
 }
 .store-title {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 12.5px;
-  fill: var(--kyma-fg);
+  fill: var(--pensieve-fg);
   font-weight: 600;
   letter-spacing: -0.005em;
 }
 .store-sub {
-  font-family: var(--kyma-font-body);
+  font-family: var(--pensieve-font-body);
   font-size: 10.5px;
-  fill: var(--kyma-fg-soft);
+  fill: var(--pensieve-fg-soft);
 }
 .store-sub-em {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 10px;
-  fill: var(--kyma-accent);
+  fill: var(--pensieve-accent);
   letter-spacing: 0.04em;
 }
 
 /* ---- Data source lines ---- */
 .link {
-  stroke: var(--kyma-fg);
+  stroke: var(--pensieve-fg);
   stroke-width: 1;
   opacity: 0.55;
   fill: none;
 }
 .link-accent {
-  stroke: var(--kyma-accent);
+  stroke: var(--pensieve-accent);
   stroke-width: 1.4;
   opacity: 0.95;
 }
 .link-label {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 9px;
-  fill: var(--kyma-accent);
+  fill: var(--pensieve-accent);
   letter-spacing: 0.06em;
 }
 .arch-accent-fill {
-  fill: var(--kyma-accent);
+  fill: var(--pensieve-accent);
 }
 </style>

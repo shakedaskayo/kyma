@@ -1,7 +1,7 @@
 variable "project_name" {
   type        = string
   description = "Name prefix for every resource (cluster, bucket, SSM params)."
-  default     = "kyma"
+  default     = "pensieve"
 }
 
 variable "aws_region" {
@@ -124,7 +124,7 @@ variable "storage_backend" {
 variable "storage_bucket" {
   type        = string
   description = "Bucket name for extents (created automatically for s3; for supabase/external it names the existing bucket)."
-  default     = "kyma"
+  default     = "pensieve"
 }
 
 variable "supabase_s3_access_key_id" {
@@ -177,7 +177,7 @@ variable "storage_secret" {
 
 variable "admin_emails" {
   type        = list(string)
-  description = "Supabase-authenticated emails granted the kyma admin role."
+  description = "Supabase-authenticated emails granted the pensieve admin role."
   default     = []
 }
 
@@ -195,7 +195,7 @@ variable "oauth_providers" {
 
 variable "admin_token" {
   type        = string
-  description = "Admin API token minted by the wizard (KYMA_AUTH_TOKENS=<token>:admin). Pass via TF_VAR_admin_token; never commit."
+  description = "Admin API token minted by the wizard (PENSIEVE_AUTH_TOKENS=<token>:admin). Pass via TF_VAR_admin_token; never commit."
   sensitive   = true
   default     = ""
 
@@ -228,7 +228,7 @@ variable "oidc_client_id" {
 
 variable "domain" {
   type        = string
-  description = "Custom domain for the engine (e.g. kyma.example.com). Empty = plain HTTP on the ALB DNS name (demo-grade). Fargate only."
+  description = "Custom domain for the engine (e.g. pensieve.example.com). Empty = plain HTTP on the ALB DNS name (demo-grade). Fargate only."
   default     = ""
 }
 
@@ -245,12 +245,12 @@ variable "route53_zone_id" {
 variable "image_repo" {
   type        = string
   description = "Engine container image repository."
-  default     = "ghcr.io/shakedaskayo/kyma-engine"
+  default     = "ghcr.io/shakedaskayo/pensieve-engine"
 }
 
 variable "image_tag" {
   type        = string
-  description = "Engine image tag. Pin a release (vX.Y.Z); `kyma deploy` injects the tag matching the CLI version."
+  description = "Engine image tag. Pin a release (vX.Y.Z); `pensieve deploy` injects the tag matching the CLI version."
   default     = "latest"
 }
 

@@ -1607,7 +1607,7 @@ export const useWorkspace = create<Store>()(
       resetAll: () => set({ tabs: [], activeId: null }),
     }),
     {
-      name: "kyma-workspace",
+      name: "pensieve-workspace",
       version: 2,
       migrate: (persisted: any, fromVersion) => {
         if (fromVersion < 2 && persisted?.state?.tabs) {
@@ -1662,7 +1662,7 @@ describe("workspace-store v1→v2 migration", () => {
       },
       version: 1,
     };
-    localStorage.setItem("kyma-workspace", JSON.stringify(v1));
+    localStorage.setItem("pensieve-workspace", JSON.stringify(v1));
     // Force a fresh import so the persist middleware re-runs migration.
     const mod = await import("./workspace-store?bust=" + Date.now());
     const tabs = mod.useWorkspace.getState().tabs;
@@ -1857,7 +1857,7 @@ type AskAIResult =
 
 If the current dialog only returns KQL (the existing behavior), the Discover-facing change is: when the dialog is launched from a Discover tab, pass `mode: "discover"` to the agent prompt. The agent decides which kind to return. If a Discover tab receives a `kql` reply, the dialog calls `newTab({ kind: "query", state: { query: reply.query, ... } })` (same path as Open in Query Editor).
 
-If the agent's prompt/system instructions live in the engine (`/v1/agent/*` or `crates/kyma-agent/...`), the engine-side prompt should add: "When the user is on Discover, prefer to return `{kind:'patch'}` with structured filters when possible; only use `{kind:'kql'}` when the request can't be expressed in Discover's grammar." That's a separate small commit in the agent crate.
+If the agent's prompt/system instructions live in the engine (`/v1/agent/*` or `crates/pensieve-agent/...`), the engine-side prompt should add: "When the user is on Discover, prefer to return `{kind:'patch'}` with structured filters when possible; only use `{kind:'kql'}` when the request can't be expressed in Discover's grammar." That's a separate small commit in the agent crate.
 
 - [ ] **Step 3: Wire the patch path in DiscoverPage**
 
@@ -1973,12 +1973,12 @@ cd web && pnpm vitest run
 - [ ] **Step 3: Engine integration tests still green**
 
 ```bash
-cargo test -p kyma-server -- --nocapture
+cargo test -p pensieve-server -- --nocapture
 ```
 
 - [ ] **Step 4: Manual smoke**
 
-Run `cargo run -p kyma-bin` and `cd web && pnpm dev`. Open `http://localhost:5173/`.
+Run `cargo run -p pensieve-bin` and `cd web && pnpm dev`. Open `http://localhost:5173/`.
 
 Verify:
 - Lands on `/discover`.

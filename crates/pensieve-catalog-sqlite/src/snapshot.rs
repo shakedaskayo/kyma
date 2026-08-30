@@ -17,10 +17,10 @@
 
 use async_trait::async_trait;
 use chrono::Utc;
-use kyma_core::catalog::{ExtentManifest, SnapshotSummary, SnapshotTxn};
-use kyma_core::errors::{CatalogError, Error, Result};
-use kyma_core::tenant::TenantId;
-use kyma_core::types::{ExtentId, SchemaSnapshotId, SnapshotId, TableId};
+use pensieve_core::catalog::{ExtentManifest, SnapshotSummary, SnapshotTxn};
+use pensieve_core::errors::{CatalogError, Error, Result};
+use pensieve_core::tenant::TenantId;
+use pensieve_core::types::{ExtentId, SchemaSnapshotId, SnapshotId, TableId};
 use sqlx::error::ErrorKind;
 use sqlx::SqlitePool;
 use uuid::Uuid;

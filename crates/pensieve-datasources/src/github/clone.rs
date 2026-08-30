@@ -33,7 +33,7 @@ pub fn clone_repo(
     branch: Option<&str>,
 ) -> Result<Checkout, DataSourceError> {
     let root = std::env::temp_dir().join(format!(
-        "kyma-gh-{}-{}-{:016x}",
+        "pensieve-gh-{}-{}-{:016x}",
         owner.replace(['/', '\\'], "_"),
         repo.replace(['/', '\\'], "_"),
         fastrand::u64(..),
@@ -41,12 +41,12 @@ pub fn clone_repo(
     let url = format!("https://github.com/{owner}/{repo}.git");
 
     let mut cmd = std::process::Command::new("git");
-    cmd.env("KYMA_GH_PAT", token)
+    cmd.env("PENSIEVE_GH_PAT", token)
         // Credential helper reads the PAT from the env — keeps it out of argv.
         .arg("-c")
         .arg("credential.helper=")
         .arg("-c")
-        .arg("credential.helper=!f() { echo username=x-access-token; echo \"password=$KYMA_GH_PAT\"; }; f")
+        .arg("credential.helper=!f() { echo username=x-access-token; echo \"password=$PENSIEVE_GH_PAT\"; }; f")
         .arg("clone")
         .arg("--depth")
         .arg("1")
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn walk_filters_and_skips_git() {
-        let dir = std::env::temp_dir().join(format!("kyma-walk-test-{:016x}", fastrand::u64(..)));
+        let dir = std::env::temp_dir().join(format!("pensieve-walk-test-{:016x}", fastrand::u64(..)));
         std::fs::create_dir_all(dir.join("src")).unwrap();
         std::fs::create_dir_all(dir.join(".git")).unwrap();
         std::fs::write(dir.join("src/main.py"), "print('hi')\n").unwrap();
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn walk_respects_max_files() {
-        let dir = std::env::temp_dir().join(format!("kyma-walk-max-{:016x}", fastrand::u64(..)));
+        let dir = std::env::temp_dir().join(format!("pensieve-walk-max-{:016x}", fastrand::u64(..)));
         std::fs::create_dir_all(&dir).unwrap();
         for i in 0..10 {
             std::fs::write(dir.join(format!("f{i}.py")), "x\n").unwrap();

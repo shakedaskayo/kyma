@@ -1,5 +1,5 @@
 [package]
-name = "kyma-mcp"
+name = "pensieve-mcp"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ description = "JSON-RPC 2.0 Model Context Protocol server over Streamable HTTP."
 workspace = true
 
 [dependencies]
-kyma-server = { workspace = true }
+pensieve-server = { workspace = true }
 adk-rust = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
@@ -28,19 +28,19 @@ object_store = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
 tower = { workspace = true, features = ["util"] }
-kyma-server = { workspace = true, features = ["test-support"] }
+pensieve-server = { workspace = true, features = ["test-support"] }
 testcontainers = { workspace = true }
 testcontainers-modules = { workspace = true }
 sqlx = { workspace = true }
 reqwest = { workspace = true }
 # DB-free fixtures for the stdio framing test (embedded catalog + in-mem store).
-kyma-catalog-sqlite = { workspace = true }
-kyma-format-tlm = { workspace = true }
+pensieve-catalog-sqlite = { workspace = true }
+pensieve-format-tlm = { workspace = true }
 # Async-memory e2e: real queue over the embedded catalog + a mock embedder.
-kyma-memory = { workspace = true }
-kyma-queue = { workspace = true }
-kyma-embed = { workspace = true }
-kyma-storage = { workspace = true }
-kyma-core = { workspace = true }
+pensieve-memory = { workspace = true }
+pensieve-queue = { workspace = true }
+pensieve-embed = { workspace = true }
+pensieve-storage = { workspace = true }
+pensieve-core = { workspace = true }
 async-trait = { workspace = true }
 uuid = { workspace = true }

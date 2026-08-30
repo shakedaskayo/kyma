@@ -3,11 +3,11 @@
 
 use async_trait::async_trait;
 
-/// A column as the schema-graph sees it (decoupled from `kyma_core::ColumnInfo`).
+/// A column as the schema-graph sees it (decoupled from `pensieve_core::ColumnInfo`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColumnDef {
     pub name: String,
-    /// kyma type token: `string`, `int`, `long`, `real`, `datetime`, `bool`, `dynamic`.
+    /// pensieve type token: `string`, `int`, `long`, `real`, `datetime`, `bool`, `dynamic`.
     pub type_: String,
     pub nullable: bool,
 }

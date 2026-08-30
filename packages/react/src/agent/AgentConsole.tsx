@@ -3,7 +3,7 @@ import { useChat } from "@ai-sdk/react";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { Copy, Database, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "../internal/ui/button";
-import { useKymaClient } from "../provider/context";
+import { usePensieveClient } from "../provider/context";
 import {
   Conversation,
   ConversationContent,
@@ -63,7 +63,7 @@ const SUGGESTIONS = [
  * State is in-memory; unmounting resets the transcript.
  */
 export function AgentConsole({ database, placeholder, className, onAssistantMessage }: AgentConsoleProps) {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   const [input, setInput] = useState("");
   const [includeThinking, setIncludeThinking] = useState(false);
 

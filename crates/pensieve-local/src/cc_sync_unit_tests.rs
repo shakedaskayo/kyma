@@ -5,9 +5,9 @@ use serde_json::Value;
 
 use crate::cc_sync::{run_once, CcSyncOptions};
 use crate::{open_engine, Engine, Paths};
-use kyma_embed::{EmbedError, EmbeddingBackend};
-use kyma_memory::{CreateMemory, MemoryWriter};
-use kyma_server::agent::{execute_sql, SharedToolCtx};
+use pensieve_embed::{EmbedError, EmbeddingBackend};
+use pensieve_memory::{CreateMemory, MemoryWriter};
+use pensieve_server::agent::{execute_sql, SharedToolCtx};
 
 /// Deterministic in-process embedding stub (dim 8) — no model downloads.
 #[derive(Debug)]
@@ -66,7 +66,7 @@ fn write(p: &Path, content: &str) {
 }
 
 async fn rows(shared: &SharedToolCtx, sql: &str) -> Vec<Value> {
-    let res = execute_sql(shared, kyma_memory::DEFAULT_DATABASE, sql, 10_000).await;
+    let res = execute_sql(shared, pensieve_memory::DEFAULT_DATABASE, sql, 10_000).await;
     res.get("rows")
         .and_then(Value::as_array)
         .cloned()
@@ -319,11 +319,11 @@ async fn rename_with_stable_name_keeps_the_node() {
 }
 
 #[tokio::test]
-async fn kyma_authored_files_skip_then_update_on_user_edit() {
+async fn pensieve_authored_files_skip_then_update_on_user_edit() {
     let tmp = tempfile::tempdir().expect("tmp");
     let (engine, writer, shared) = engine_at(tmp.path()).await;
 
-    // The node kyma promoted earlier (writeback side).
+    // The node pensieve promoted earlier (writeback side).
     let mut cm = CreateMemory::new("Original promoted content");
     cm.title = Some("Promoted note".into());
     cm.realm = "proj".into();
@@ -332,14 +332,14 @@ async fn kyma_authored_files_skip_then_update_on_user_edit() {
     let id = writer.save(&cm).await.expect("seed save");
 
     let body = "Original promoted content\n";
-    let h = kyma_ccmem::hash::content_hash("promoted-note", Some("reference"), body);
+    let h = pensieve_ccmem::hash::content_hash("promoted-note", Some("reference"), body);
     let projects = tmp.path().join("projects");
     let mem = projects.join("-tmp-proj").join("memory");
     let front = format!(
-        "---\nname: promoted-note\nmetadata:\n  type: reference\n  source: kyma\n  kyma_memory_id: memory:{id}\n  content_hash: {h}\n---\n\n"
+        "---\nname: promoted-note\nmetadata:\n  type: reference\n  source: pensieve\n  pensieve_memory_id: memory:{id}\n  content_hash: {h}\n---\n\n"
     );
     write(
-        &mem.join("kyma-promoted-note.md"),
+        &mem.join("pensieve-promoted-note.md"),
         &format!("{front}{body}"),
     );
     let claude_json = tmp.path().join("claude.json");
@@ -364,7 +364,7 @@ async fn kyma_authored_files_skip_then_update_on_user_edit() {
     // User edits the promoted file → pulled back as an update to the
     // original node, marked user-owned; identity fields preserved.
     write(
-        &mem.join("kyma-promoted-note.md"),
+        &mem.join("pensieve-promoted-note.md"),
         &format!("{front}User-improved content\n"),
     );
     let report = run_once(&engine, &writer, &opts).await.expect("sync 2");

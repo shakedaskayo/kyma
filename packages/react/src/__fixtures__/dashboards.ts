@@ -1,4 +1,4 @@
-import type { Dashboard, DashboardWithPanels } from "@kyma-ai/client";
+import type { Dashboard, DashboardWithPanels } from "@pensieve-ai/client";
 
 export const DASHBOARDS_FIXTURE: Dashboard[] = [
   {

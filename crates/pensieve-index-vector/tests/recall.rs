@@ -4,7 +4,7 @@
 //! it into the query path. We:
 //!
 //! 1. generate clustered synthetic data (5k vectors × 384-dim, seeded;
-//!    384 = Kyma's default BGE-small-en-v1.5 embedding dimension),
+//!    384 = Pensieve's default BGE-small-en-v1.5 embedding dimension),
 //! 2. build the sidecar,
 //! 3. for many random queries: probe the IVF, scan the probed partitions to
 //!    collect the top-(rerank_factor·k) candidates by the RaBitQ estimator,
@@ -16,9 +16,9 @@
 //! survives into the candidate set; the exact rerank fixes the final order.
 //! This mirrors exactly what Part B's `ann_topk` will do.
 
-use kyma_core::index_sidecar::RowAddress;
-use kyma_core::segment_format::BlockId;
-use kyma_index_vector::{
+use pensieve_core::index_sidecar::RowAddress;
+use pensieve_core::segment_format::BlockId;
+use pensieve_index_vector::{
     build_ivf_rabitq, encode_query_rotated, file, read_header, scan_partition, Rotation,
 };
 
@@ -64,7 +64,7 @@ fn cos_dist(a: &[f32], b: &[f32]) -> f32 {
 
 #[test]
 fn rabitq_recall_at_10_meets_threshold() {
-    // dim=384 matches Kyma's default BGE-small-en-v1.5 embeddings — the regime
+    // dim=384 matches Pensieve's default BGE-small-en-v1.5 embeddings — the regime
     // 1-bit RaBitQ is designed for (estimator error ∝ 1/√dim). rerank_factor=8
     // (exact-rerank ~1.6% of a 5k set) is well within the production budget.
     let dim = 384;
@@ -210,7 +210,7 @@ fn diag_breakdown() {
         .collect();
 
     // Build a flat list of (idx, VectorCode) by reading all partitions.
-    let mut all_codes: Vec<(usize, kyma_index_vector::VectorCode)> = Vec::new();
+    let mut all_codes: Vec<(usize, pensieve_index_vector::VectorCode)> = Vec::new();
     for p in 0..header.nlist as usize {
         for e in file::read_partition(&bytes, &header, p).unwrap() {
             let idx = addr_to_idx[&(e.addr.block.0, e.addr.row)];
@@ -243,7 +243,7 @@ fn diag_breakdown() {
         let qc = encode_query_rotated(&rotation.apply(&q));
         let mut cand: Vec<(usize, f32)> = all_codes
             .iter()
-            .map(|(i, c)| (*i, kyma_index_vector::rabitq::estimate_distance(c, &qc)))
+            .map(|(i, c)| (*i, pensieve_index_vector::rabitq::estimate_distance(c, &qc)))
             .collect();
         cand.sort_by(|x, y| x.1.partial_cmp(&y.1).unwrap());
         cand.truncate(4 * k);
@@ -280,8 +280,8 @@ fn diag_breakdown() {
     );
 }
 
-fn read_centroids_helper(bytes: &[u8], h: &kyma_index_vector::Header) -> Vec<Vec<f32>> {
-    kyma_index_vector::read_centroids(bytes, h).unwrap()
+fn read_centroids_helper(bytes: &[u8], h: &pensieve_index_vector::Header) -> Vec<Vec<f32>> {
+    pensieve_index_vector::read_centroids(bytes, h).unwrap()
 }
 fn nearest(v: &[f32], cs: &[Vec<f32>]) -> usize {
     let mut best = 0;
@@ -330,7 +330,7 @@ fn diag_sweep_rerank() {
         .map(|(i, (a, _))| ((a.block.0, a.row), i))
         .collect();
 
-    let mut all_codes: Vec<(usize, kyma_index_vector::VectorCode)> = Vec::new();
+    let mut all_codes: Vec<(usize, pensieve_index_vector::VectorCode)> = Vec::new();
     for p in 0..header.nlist as usize {
         for e in file::read_partition(&bytes, &header, p).unwrap() {
             let idx = addr_to_idx[&(e.addr.block.0, e.addr.row)];
@@ -359,7 +359,7 @@ fn diag_sweep_rerank() {
             let qc = encode_query_rotated(&rotation.apply(&q));
             let mut cand: Vec<(usize, f32)> = all_codes
                 .iter()
-                .map(|(i, c)| (*i, kyma_index_vector::rabitq::estimate_distance(c, &qc)))
+                .map(|(i, c)| (*i, pensieve_index_vector::rabitq::estimate_distance(c, &qc)))
                 .collect();
             cand.sort_by(|x, y| x.1.partial_cmp(&y.1).unwrap());
             cand.truncate(rf * k);

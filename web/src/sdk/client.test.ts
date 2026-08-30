@@ -25,13 +25,13 @@ beforeEach(() => {
 
 describe("sessionGetToken — initial / non-expired reason", () => {
   test("returns the current token when reason is not 'expired'", async () => {
-    useSession.getState().set({ token: "tok-abc", endpoint: "http://kyma.local" });
+    useSession.getState().set({ token: "tok-abc", endpoint: "http://pensieve.local" });
     const t = await sessionGetToken();
     expect(t).toBe("tok-abc");
   });
 
   test("returns the current token when reason is 'initial'", async () => {
-    useSession.getState().set({ token: "tok-initial", endpoint: "http://kyma.local" });
+    useSession.getState().set({ token: "tok-initial", endpoint: "http://pensieve.local" });
     const t = await sessionGetToken({ reason: "initial" });
     expect(t).toBe("tok-initial");
   });
@@ -40,7 +40,7 @@ describe("sessionGetToken — initial / non-expired reason", () => {
 describe("sessionGetToken — expired reason triggers refresh", () => {
   test("calls the refresh endpoint and updates the session store", async () => {
     useSession.getState().set({
-      endpoint: "http://kyma.local",
+      endpoint: "http://pensieve.local",
       token: "old-access",
       refreshToken: "old-refresh",
       accessExpiresAt: "2020-01-01T00:00:00Z",
@@ -91,7 +91,7 @@ describe("sessionGetToken — expired reason triggers refresh", () => {
 
 describe("sessionClient — cache behaviour", () => {
   test("returns the same client instance for the same endpoint+database", () => {
-    useSession.getState().set({ endpoint: "http://kyma.local", database: "obs", token: "t" });
+    useSession.getState().set({ endpoint: "http://pensieve.local", database: "obs", token: "t" });
     const c1 = sessionClient();
     const c2 = sessionClient();
     expect(c1).toBe(c2);
@@ -106,7 +106,7 @@ describe("sessionClient — cache behaviour", () => {
   });
 
   test("returned client has the expected namespace API shape", () => {
-    useSession.getState().set({ endpoint: "http://kyma.local", database: "obs", token: "t" });
+    useSession.getState().set({ endpoint: "http://pensieve.local", database: "obs", token: "t" });
     const c = sessionClient();
     expect(typeof c.discover.searchDiscover).toBe("function");
     expect(typeof c.query.runQuery).toBe("function");

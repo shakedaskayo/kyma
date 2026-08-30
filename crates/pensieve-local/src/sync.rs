@@ -16,8 +16,8 @@ use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 
 use crate::Engine;
-use kyma_memory::MemoryWriter;
-use kyma_server::agent::{execute_sql, SharedToolCtx};
+use pensieve_memory::MemoryWriter;
+use pensieve_server::agent::{execute_sql, SharedToolCtx};
 
 pub(crate) const NODE_COLS: &str =
     "id, labels, realm, memory_type, title, content, content_preview, tags, \
@@ -102,7 +102,7 @@ pub async fn run(engine: &Engine, cfg: SyncConfig) -> Result<()> {
     let until = body["until"].as_str().unwrap_or("").to_string();
 
     if !nodes.is_empty() || !edges.is_empty() {
-        let embed = kyma_memory::shared_embedding()
+        let embed = pensieve_memory::shared_embedding()
             .await
             .map_err(|e| anyhow!("embedding backend: {e}"))?;
         let writer = MemoryWriter::new(engine.catalog.clone(), engine.format.clone(), embed);
@@ -134,7 +134,7 @@ pub async fn run(engine: &Engine, cfg: SyncConfig) -> Result<()> {
 /// Run a read query over the local memory db, returning its rows (or empty on
 /// any error — e.g. the memory store doesn't exist yet).
 async fn sql_rows(shared: &SharedToolCtx, sql: &str) -> Vec<Value> {
-    let res = execute_sql(shared, kyma_memory::DEFAULT_DATABASE, sql, 1_000_000).await;
+    let res = execute_sql(shared, pensieve_memory::DEFAULT_DATABASE, sql, 1_000_000).await;
     res.get("rows")
         .and_then(Value::as_array)
         .cloned()

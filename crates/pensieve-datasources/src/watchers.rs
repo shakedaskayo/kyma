@@ -49,14 +49,14 @@ pub struct WatcherRegistry {
     id: Uuid,
 }
 
-/// `(hostname, node_id, os user)` for registration. `KYMA_NODE_ID` overrides
+/// `(hostname, node_id, os user)` for registration. `PENSIEVE_NODE_ID` overrides
 /// the node id (defaults to the hostname).
 pub fn node_identity() -> (String, String, String) {
     let host = hostname::get()
         .ok()
         .and_then(|h| h.into_string().ok())
         .unwrap_or_else(|| "localhost".to_string());
-    let node_id = std::env::var("KYMA_NODE_ID").unwrap_or_else(|_| host.clone());
+    let node_id = std::env::var("PENSIEVE_NODE_ID").unwrap_or_else(|_| host.clone());
     let user = std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_else(|_| "unknown".to_string());

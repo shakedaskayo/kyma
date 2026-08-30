@@ -6,7 +6,7 @@
 //! - [`metrics`] — recall@k, NDCG@k (graded relevance), MRR, latency
 //!   percentiles. Pure functions.
 //! - [`oracle`] — exact brute-force top-k over an in-memory dataset, with
-//!   distance semantics that mirror `kyma-exec`'s vector UDFs bit-for-bit
+//!   distance semantics that mirror `pensieve-exec`'s vector UDFs bit-for-bit
 //!   (f32 inputs, f64 accumulation) so engine-vs-oracle comparisons are
 //!   apples-to-apples. ANN recall is measured against THIS.
 //! - [`datasets`] — seeded, reproducible synthetic vector datasets

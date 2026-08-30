@@ -1,8 +1,8 @@
 //! Unified logical-plan IR, optimizer, and parser-plugin registry.
 //!
-//! `kyma-plan`'s [`LogicalPlan`][logical_plan::LogicalPlan] is the
-//! frontend-neutral IR that every [`kyma_core::query_frontend::QueryFrontend`]
-//! produces and that `kyma-exec` lowers to DataFusion.
+//! `pensieve-plan`'s [`LogicalPlan`][logical_plan::LogicalPlan] is the
+//! frontend-neutral IR that every [`pensieve_core::query_frontend::QueryFrontend`]
+//! produces and that `pensieve-exec` lowers to DataFusion.
 //!
 //! # Module map
 //!

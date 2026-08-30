@@ -21,18 +21,18 @@
 //!
 //! # Configuration (env)
 //!
-//! - `KYMA_KAFKA_ENABLED=1` — turn consumer on
-//! - `KYMA_KAFKA_BROKERS=host:9092[,host2:9092...]`
-//! - `KYMA_KAFKA_GROUP=kyma-ingest` — consumer group id
-//! - `KYMA_KAFKA_TOPICS=topic1:db1.tbl1,topic2:db2.tbl2` — topic/table map
+//! - `PENSIEVE_KAFKA_ENABLED=1` — turn consumer on
+//! - `PENSIEVE_KAFKA_BROKERS=host:9092[,host2:9092...]`
+//! - `PENSIEVE_KAFKA_GROUP=pensieve-ingest` — consumer group id
+//! - `PENSIEVE_KAFKA_TOPICS=topic1:db1.tbl1,topic2:db2.tbl2` — topic/table map
 
 #![forbid(unsafe_code)]
 
 use arrow_array::RecordBatch;
 use futures::StreamExt;
-use kyma_core::catalog::{Catalog, TableRef};
-use kyma_core::errors::{Error, Result};
-use kyma_ingest_core::WritePath;
+use pensieve_core::catalog::{Catalog, TableRef};
+use pensieve_core::errors::{Error, Result};
+use pensieve_ingest_core::WritePath;
 use rdkafka::consumer::{CommitMode, Consumer, StreamConsumer};
 use rdkafka::message::Message;
 use rdkafka::{ClientConfig, TopicPartitionList};
@@ -64,17 +64,17 @@ pub struct KafkaConsumerConfig {
 
 impl KafkaConsumerConfig {
     pub fn from_env() -> Option<Self> {
-        let enabled = std::env::var("KYMA_KAFKA_ENABLED")
+        let enabled = std::env::var("PENSIEVE_KAFKA_ENABLED")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
         if !enabled {
             return None;
         }
         let brokers =
-            std::env::var("KYMA_KAFKA_BROKERS").unwrap_or_else(|_| "localhost:9092".to_string());
+            std::env::var("PENSIEVE_KAFKA_BROKERS").unwrap_or_else(|_| "localhost:9092".to_string());
         let group_id =
-            std::env::var("KYMA_KAFKA_GROUP").unwrap_or_else(|_| "kyma-ingest".to_string());
-        let topics = std::env::var("KYMA_KAFKA_TOPICS").unwrap_or_default();
+            std::env::var("PENSIEVE_KAFKA_GROUP").unwrap_or_else(|_| "pensieve-ingest".to_string());
+        let topics = std::env::var("PENSIEVE_KAFKA_TOPICS").unwrap_or_default();
         let mut mappings = Vec::new();
         for spec in topics.split(',') {
             let spec = spec.trim();
@@ -96,12 +96,12 @@ impl KafkaConsumerConfig {
         if mappings.is_empty() {
             return None;
         }
-        let batch_size = std::env::var("KYMA_KAFKA_BATCH_SIZE")
+        let batch_size = std::env::var("PENSIEVE_KAFKA_BATCH_SIZE")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(500);
         let batch_timeout = Duration::from_millis(
-            std::env::var("KYMA_KAFKA_BATCH_TIMEOUT_MS")
+            std::env::var("PENSIEVE_KAFKA_BATCH_TIMEOUT_MS")
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(500),
@@ -300,7 +300,7 @@ impl KafkaConsumerWorker {
                     "kafka batch committed"
                 );
                 ::metrics::counter!(
-                    "kyma_kafka_messages_ingested_total",
+                    "pensieve_kafka_messages_ingested_total",
                     "topic" => topic.to_string()
                 )
                 .increment(ack.rows_ingested);
@@ -356,6 +356,6 @@ impl KafkaConsumerWorker {
 fn parse_ndjson(bytes: &[u8], schema: &Arc<arrow_schema::Schema>) -> Result<Vec<RecordBatch>> {
     // Delegate to the shared helper; it handles primitive columns via
     // arrow-json and adds FixedSizeList<Float32> (vector-column) support.
-    kyma_ingest_core::parse_ndjson(bytes, schema.clone())
+    pensieve_ingest_core::parse_ndjson(bytes, schema.clone())
         .map_err(|e| Error::Internal(format!("kafka ndjson: {e}")))
 }

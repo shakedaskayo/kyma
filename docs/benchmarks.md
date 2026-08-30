@@ -1,16 +1,16 @@
-# kyma — Industry benchmark comparison
+# pensieve — Industry benchmark comparison
 
 _Last measured: 2026-04-19. Hardware: 1× macOS laptop, Docker-hosted Postgres + MinIO on loopback. Dev build (`cargo build`, not `--release`). Phase-A format (Arrow IPC wrapper)._
 
 > **Update — Scale & Production-Readiness program (2026-06-15).** The "Phase D" /
 > "Phase B follow-on" work referenced throughout sections 1–7 below has since
 > **shipped** and supersedes those "future work" notes: a **Parquet** segment
-> format (ZSTD + encodings + blooms + page index; `KYMA_WRITE_FORMAT`, per-extent
+> format (ZSTD + encodings + blooms + page index; `PENSIEVE_WRITE_FORMAT`, per-extent
 > dispatch), **per-extent IVF + RaBitQ ANN** + **Tantivy BM25** sidecars + a
 > cross-encoder reranker (so "vector search = stub" is obsolete), **staged
 > ingest** (router → object store → lease-elected committer), the **Helm role
 > split** (edge / committer / worker), a **CSR graph traversal engine**
-> (`kyma-graph-topo`, benchmarked below) plus a Cypher dialect extended with
+> (`pensieve-graph-topo`, benchmarked below) plus a Cypher dialect extended with
 > CREATE/MERGE writes, and **query-admission** ops hardening (per-process
 > concurrency cap → `429` + `Retry-After`). The section-1 ingest numbers below
 > predate this and are **not** re-measured here. See `retrieval.md` and
@@ -40,7 +40,7 @@ _Last measured: 2026-04-19. Hardware: 1× macOS laptop, Docker-hosted Postgres +
 > SQLite + local FS, empty data dir) is GREEN (11/11). Both are wired into CI
 > (`.github/workflows/gauntlet-*.yml`, `fresh-install.yml`).
 >
-> **Graph traversal engine (S3.1/S3.2) — `kyma-graph-bench`, CI tier, dev laptop
+> **Graph traversal engine (S3.1/S3.2) — `pensieve-graph-bench`, CI tier, dev laptop
 > under load (orders of magnitude, not absolute ceilings):**
 >
 > | Operation | 10k edges | 100k edges |
@@ -53,7 +53,7 @@ _Last measured: 2026-04-19. Hardware: 1× macOS laptop, Docker-hosted Postgres +
 > Forward traversal + shortest-path are microseconds and scale-independent
 > (bounded fan-out from the seed over the immutable CSR); only worst-case
 > backward hub fan-in grows with graph size. Correctness is gated against a
-> petgraph oracle (`kyma-graph-testkit` / `kyma-graph-topo`, all green).
+> petgraph oracle (`pensieve-graph-testkit` / `pensieve-graph-topo`, all green).
 
 Our stated goal (plan §1) is to beat existing unified-observability solutions on a real production workload. This doc quantifies where we are **today**, compares honestly to published numbers for the closest industry peers, and lists the specific engineering work that closes each remaining gap.
 
@@ -78,7 +78,7 @@ Measured via `scripts/load-test.sh` and ad-hoc one-shot requests.
 
 The **66K rows/sec** ceiling is dominated by three things:
 
-1. **One extent per HTTP request.** Every `POST /v1/ingest` writes a new extent + commits a new snapshot. Postgres CAS is the serialization point. High-throughput systems batch N requests into one extent and amortize the commit — we will too (Phase B-follow-on: `kyma-ingest-core::StagingBuffer`).
+1. **One extent per HTTP request.** Every `POST /v1/ingest` writes a new extent + commits a new snapshot. Postgres CAS is the serialization point. High-throughput systems batch N requests into one extent and amortize the commit — we will too (Phase B-follow-on: `pensieve-ingest-core::StagingBuffer`).
 2. **Phase-A Arrow IPC format.** Written with default Arrow IPC compression; no per-type encoders (Gorilla floats, delta-of-delta timestamps, dictionary-coded strings). Real format lands in **Phase D**.
 3. **Dev build, no LTO, single machine, all over loopback.** Representative for relative comparisons but _not_ an absolute ceiling.
 
@@ -97,7 +97,7 @@ Numbers below are **per-node, sustained** per each vendor's published documentat
 | **Splunk** | 30–100k events/s per indexer | 1–10 s over 1 TB | Splunk sizing docs |
 | **Azure Data Explorer** | 100–500k events/s per ingest node, bursty to 5 M/s | sub-s over 1 B rows with inverted indices | Microsoft ADX perf docs |
 | **Parquet + DataFusion** (self-hosted) | 500k–2M rows/s bulk-load, limited by Parquet encoder | 100 ms – few s, depends heavily on RG size + filters | DataFusion benchmarks, `datafusion-benchmarks` repo |
-| **kyma today** (phase A) | **66 k rows/s sustained, 200 k peak** | 1–150 ms small-to-50k | this doc |
+| **pensieve today** (phase A) | **66 k rows/s sustained, 200 k peak** | 1–150 ms small-to-50k | this doc |
 
 ### What this means
 
@@ -112,7 +112,7 @@ Numbers below are **per-node, sustained** per each vendor's published documentat
 
 These are real advantages, not aspirations.
 
-| Dimension | kyma | Typical competitor |
+| Dimension | pensieve | Typical competitor |
 |---|---|---|
 | **Unified** (logs + metrics + traces + wide-table + vector-memory in one engine) | **Yes** by design (pluggable `SegmentFormat` trait) | Most orgs run 4–6 separate systems (Loki + Prom + Tempo + ES + …) |
 | **Open object storage** (MinIO/S3) with pluggable format | **Yes** (Iceberg-mirroring catalog; format swap is a trait impl) | Proprietary file formats (Splunk, ADX); tight coupling to one FS (Elastic shard files) |
@@ -128,7 +128,7 @@ These are real advantages, not aspirations.
 
 | Gap | Industry best | Current | Closes with | Expected impact |
 |---|---|---|---|---|
-| **Sustained ingest: 10×** | 500k–1M rows/s (ClickHouse, ADX) | 66k rows/s | **Staging buffer + batched commit** in `kyma-ingest-core`: accumulate N requests into one extent, one snapshot commit per flush. Single change, weeks of work. | **5–10×** ingest throughput. Closes most of the gap. |
+| **Sustained ingest: 10×** | 500k–1M rows/s (ClickHouse, ADX) | 66k rows/s | **Staging buffer + batched commit** in `pensieve-ingest-core`: accumulate N requests into one extent, one snapshot commit per flush. Single change, weeks of work. | **5–10×** ingest throughput. Closes most of the gap. |
 | **Query latency: needle-in-haystack** | sub-100 ms (ADX + inverted index on 1 TB) | 150 ms on 50 k rows no index | **Inverted index** on text columns + **per-block min/max** (Phase D). | **100×+** on text filters; 10× on any column-bounded predicate. |
 | **Storage efficiency** | Parquet+ZSTD ≈ 5–10× compression on logs | Arrow IPC ≈ 2–3× | **Per-type encoders** (Gorilla floats, delta timestamps, dictionary strings, LZ4→ZSTD at compaction) in Phase D format. | Disk + I/O 2–3×. |
 | **High-cardinality aggregation** | ClickHouse: native `count-distinct` sketches | Uses DF default HashAggregate | **HyperLogLog** integration + DF UDAF registration. Couple days. | ~10× on `dcount` at high cardinality. |
@@ -138,7 +138,7 @@ These are real advantages, not aspirations.
 
 ### Batched ingest — landed 2026-04-19
 
-Implemented as `kyma_ingest_core::StagingBuffer` with pipelined per-table flushes. Workload-shape matters more than I expected; here's what actually happens:
+Implemented as `pensieve_ingest_core::StagingBuffer` with pipelined per-table flushes. Workload-shape matters more than I expected; here's what actually happens:
 
 | Workload shape | Staging OFF | Staging ON | Extent count ratio |
 |---|---|---|---|
@@ -156,15 +156,15 @@ The **real** wins are the ones we cared about, just not the ones the raw rows/se
 The **raw rows/sec** improvement only materializes at workload shapes we can't easily drive from a bash script — hundreds-to-thousands of concurrent clients with small per-request payloads (the real log-shipper / OTLP-collector scenario). The bash benchmark is MinIO-PUT-bound at low concurrency, so direct mode's 8-way parallel upload beats batched on rows/sec in that regime.
 
 Future tuning knobs (env vars):
-- `KYMA_FLUSH_MAX_ROWS` (default 8000) — flush when buffer reaches N rows
-- `KYMA_FLUSH_MAX_BYTES` (default 16 MiB)
-- `KYMA_FLUSH_MAX_AGE_MS` (default 50) — safety valve for latency
+- `PENSIEVE_FLUSH_MAX_ROWS` (default 8000) — flush when buffer reaches N rows
+- `PENSIEVE_FLUSH_MAX_BYTES` (default 16 MiB)
+- `PENSIEVE_FLUSH_MAX_AGE_MS` (default 50) — safety valve for latency
 
-`KYMA_STAGING_DISABLED=1` restores one-extent-per-request behaviour for comparison tests.
+`PENSIEVE_STAGING_DISABLED=1` restores one-extent-per-request behaviour for comparison tests.
 
 ### Remaining lever for raw rows/sec — landed 2026-04-19
 
-Implemented as `kyma_ingest_core::CommitCoordinator`. **Group commit squared:** concurrent staging flushes no longer compete on `tables.current_snapshot_id`; they hand their extent manifests to a central coordinator that bundles arrivals within a short window (default 5 ms) into a single snapshot row containing many extents.
+Implemented as `pensieve_ingest_core::CommitCoordinator`. **Group commit squared:** concurrent staging flushes no longer compete on `tables.current_snapshot_id`; they hand their extent manifests to a central coordinator that bundles arrivals within a short window (default 5 ms) into a single snapshot row containing many extents.
 
 Measured after coordinator landed (same hardware, dev build):
 
@@ -245,12 +245,12 @@ would (on a 30-day retention table with 100 services) prune to roughly **1 exten
 
 | Var | Default | Effect |
 |---|---|---|
-| `KYMA_STAGING_DISABLED` | unset (staging on) | Skip staging; one extent per request |
-| `KYMA_FLUSH_MAX_ROWS` | 8 000 | Flush triggers when buffer hits this |
-| `KYMA_FLUSH_MAX_BYTES` | 16 MiB | Flush triggers when buffer hits this |
-| `KYMA_FLUSH_MAX_AGE_MS` | 50 | Force flush if oldest waiter is older |
-| `KYMA_COMMIT_WINDOW_MS` | 5 | Coordinator batch-arrival window |
-| `KYMA_COMMIT_MAX_EXTENTS` | 128 | Max extents bundled per snapshot |
+| `PENSIEVE_STAGING_DISABLED` | unset (staging on) | Skip staging; one extent per request |
+| `PENSIEVE_FLUSH_MAX_ROWS` | 8 000 | Flush triggers when buffer hits this |
+| `PENSIEVE_FLUSH_MAX_BYTES` | 16 MiB | Flush triggers when buffer hits this |
+| `PENSIEVE_FLUSH_MAX_AGE_MS` | 50 | Force flush if oldest waiter is older |
+| `PENSIEVE_COMMIT_WINDOW_MS` | 5 | Coordinator batch-arrival window |
+| `PENSIEVE_COMMIT_MAX_EXTENTS` | 128 | Max extents bundled per snapshot |
 
 ---
 
@@ -281,7 +281,7 @@ After items 1–4 land, we expect to be:
 docker-compose up -d
 
 # 2. Build (ideally `--release`).
-cargo build --release --bin kyma --bin kyma-cli
+cargo build --release --bin pensieve --bin pensieve-cli
 
 # 3. Load test.
 LOAD_DURATION_SECS=30 LOAD_PARALLELISM=8 LOAD_ROWS_PER_REQ=500 ./scripts/load-test.sh
@@ -300,10 +300,10 @@ done
 ```
 
 Raw metrics (Prometheus-format) are on `GET /metrics`. Key series:
-- `kyma_ingest_rows_total`, `kyma_ingest_bytes_total`, `kyma_ingest_duration_seconds`
-- `kyma_query_duration_seconds`, `kyma_scan_extents_listed_total`
-- `kyma_catalog_cas_conflicts_total`, `kyma_http_errors_total`
-- `kyma_compaction_tasks_total`, `kyma_retention_extents_soft_deleted_total`
+- `pensieve_ingest_rows_total`, `pensieve_ingest_bytes_total`, `pensieve_ingest_duration_seconds`
+- `pensieve_query_duration_seconds`, `pensieve_scan_extents_listed_total`
+- `pensieve_catalog_cas_conflicts_total`, `pensieve_http_errors_total`
+- `pensieve_compaction_tasks_total`, `pensieve_retention_extents_soft_deleted_total`
 
 ---
 

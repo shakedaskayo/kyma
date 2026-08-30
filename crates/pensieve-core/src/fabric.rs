@@ -1,7 +1,7 @@
 //! Worker/job fabric wire types — the distributed context-engine control
-//! plane vocabulary shared by the catalog store (`kyma-catalog::fabric`), the
-//! HTTP handlers (`kyma-server::fabric_handler`), and fabric clients (the
-//! embedded worker in kyma-bin and the remote daemon in kyma-local).
+//! plane vocabulary shared by the catalog store (`pensieve-catalog::fabric`), the
+//! HTTP handlers (`pensieve-server::fabric_handler`), and fabric clients (the
+//! embedded worker in pensieve-bin and the remote daemon in pensieve-local).
 //!
 //! A *worker* is a fabric compute identity: the server's embedded in-process
 //! worker, or a remote daemon registered from any compute. A *job* is a
@@ -18,7 +18,7 @@ pub const JOB_DATA_SOURCE_SYNC: &str = "data_source_sync";
 pub const JOB_DREAMING: &str = "dreaming";
 pub const JOB_SOURCE_SYNC: &str = "source_sync";
 /// Build index sidecars (ANN/FTS) for a set of extents — see
-/// `kyma-jobs::index_build`.
+/// `pensieve-jobs::index_build`.
 pub const JOB_INDEX_BUILD: &str = "index_build";
 /// Periodic ANN sidecar maintenance (re-train / re-balance). S1 executor.
 pub const JOB_ANN_MAINTAIN: &str = "ann_maintain";
@@ -26,7 +26,7 @@ pub const JOB_ANN_MAINTAIN: &str = "ann_maintain";
 /// configured. S1 executor.
 pub const JOB_EMBED_BACKFILL: &str = "embed_backfill";
 /// Export one brain repo (memory → Obsidian-vault git commit). Payload
-/// `{ "brain": <name> }` — see `kyma-server::brain::executor`.
+/// `{ "brain": <name> }` — see `pensieve-server::brain::executor`.
 pub const JOB_BRAIN_EXPORT: &str = "brain_export";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

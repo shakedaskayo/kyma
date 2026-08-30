@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # backcompat-snapshot.sh — capture a back-compat fixture of a running engine.
 # Usage: backcompat-snapshot.sh <engine-url> <out-dir>
-# Requires KYMA_CATALOG_URL (or KYMA_DATABASE_URL as a fallback) to be set to the catalog Postgres URL.
+# Requires PENSIEVE_CATALOG_URL (or PENSIEVE_DATABASE_URL as a fallback) to be set to the catalog Postgres URL.
 set -euo pipefail
 
 ENGINE_URL="${1:?engine URL required}"
@@ -12,11 +12,11 @@ mkdir -p "$OUT_DIR/sample-extents"
 # 1. git sha + build version
 git rev-parse HEAD > "$OUT_DIR/git-sha.txt"
 cargo metadata --format-version 1 --no-deps \
-  | python3 -c "import json,sys; m=json.load(sys.stdin); print(next(p['version'] for p in m['packages'] if p['name']=='kyma-bin'))" \
+  | python3 -c "import json,sys; m=json.load(sys.stdin); print(next(p['version'] for p in m['packages'] if p['name']=='pensieve-bin'))" \
   > "$OUT_DIR/build-version.txt"
 
 # 2. catalog schema dump (DDL only, no data)
-PG_URL="${KYMA_CATALOG_URL:-${KYMA_DATABASE_URL:?KYMA_CATALOG_URL must be set (KYMA_DATABASE_URL also accepted)}}"
+PG_URL="${PENSIEVE_CATALOG_URL:-${PENSIEVE_DATABASE_URL:?PENSIEVE_CATALOG_URL must be set (PENSIEVE_DATABASE_URL also accepted)}}"
 pg_dump --schema-only --no-owner --no-privileges "$PG_URL" > "$OUT_DIR/catalog-schema.sql"
 
 # 3. Catalog schema version — query the highest applied sqlx migration version

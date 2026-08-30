@@ -1,10 +1,10 @@
 {
   "mcpServers": {
-    "kyma": {
+    "pensieve": {
       "type": "http",
-      "url": "${KYMA_SERVER_URL}/mcp/v1",
+      "url": "${PENSIEVE_SERVER_URL}/mcp/v1",
       "headers": {
-        "Authorization": "Bearer ${KYMA_TOKEN}"
+        "Authorization": "Bearer ${PENSIEVE_TOKEN}"
       }
     }
   }

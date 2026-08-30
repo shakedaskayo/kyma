@@ -5,8 +5,8 @@
 //! catalog row (`extent_indexes`) describing it. S1's ANN (IVF+RaBitQ) and FTS
 //! (tantivy) builders produce real sidecars; S0 ships only this vocabulary,
 //! the catalog surface ([`crate::catalog::Catalog::register_index_sidecar`]
-//! et al.), the `index_build` job executor in `kyma-jobs`, and a disk cache in
-//! `kyma-storage`.
+//! et al.), the `index_build` job executor in `pensieve-jobs`, and a disk cache in
+//! `pensieve-storage`.
 //!
 //! Lifecycle invariants:
 //! - Sidecars are immutable and derived: losing one only costs a rebuild.
@@ -148,7 +148,7 @@ pub type BatchStream<'a> = BoxStream<'a, Result<RecordBatch>>;
 ///
 /// S0 ships **no production implementations** — this trait is the seam S1's
 /// IVF+RaBitQ and tantivy builders plug into. The `index_build` job executor
-/// (`kyma-jobs::index_build`) drives it: it opens the extent through the
+/// (`pensieve-jobs::index_build`) drives it: it opens the extent through the
 /// [`SegmentFormat`][crate::segment_format::SegmentFormat], streams every
 /// block (all columns; the builder projects by name), and uploads + registers
 /// the result.

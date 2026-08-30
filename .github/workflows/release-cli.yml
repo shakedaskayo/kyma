@@ -1,12 +1,12 @@
 name: release-cli
 #
-# Builds the kyma CLI binary for macOS (arm64 + x64) and Linux (arm64 + x64),
+# Builds the pensieve CLI binary for macOS (arm64 + x64) and Linux (arm64 + x64),
 # then creates (or updates) a GitHub release with the binary artifacts.
 #
-# Triggered by vX.Y.Z tags only — @kyma-ai/* npm tags are excluded.
-# Artifact naming matches install.sh / kyma update conventions:
-#   kyma-darwin-arm64.tar.gz, kyma-darwin-x64.tar.gz
-#   kyma-linux-arm64.tar.gz,  kyma-linux-x64.tar.gz
+# Triggered by vX.Y.Z tags only — @pensieve-ai/* npm tags are excluded.
+# Artifact naming matches install.sh / pensieve update conventions:
+#   pensieve-darwin-arm64.tar.gz, pensieve-darwin-x64.tar.gz
+#   pensieve-linux-arm64.tar.gz,  pensieve-linux-x64.tar.gz
 #
 on:
   push:
@@ -22,9 +22,9 @@ jobs:
       matrix:
         include:
           - target: aarch64-apple-darwin
-            artifact: kyma-darwin-arm64
+            artifact: pensieve-darwin-arm64
           - target: x86_64-apple-darwin
-            artifact: kyma-darwin-x64
+            artifact: pensieve-darwin-x64
     steps:
       - uses: actions/checkout@v4
 
@@ -42,12 +42,12 @@ jobs:
 
       - name: Build web UI
         # Root workspace install — web depends on workspace:* packages
-        # (@kyma-ai/client, @kyma-ai/react) that must be built (dist/) first.
+        # (@pensieve-ai/client, @pensieve-ai/react) that must be built (dist/) first.
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @kyma-ai/client build
-          pnpm --filter @kyma-ai/react build
-          pnpm --filter kyma-web build
+          pnpm --filter @pensieve-ai/client build
+          pnpm --filter @pensieve-ai/react build
+          pnpm --filter pensieve-web build
 
       - name: Install Rust target
         run: rustup target add ${{ matrix.target }}
@@ -58,13 +58,13 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build CLI
-        run: cargo build -p kyma-cli --release --target ${{ matrix.target }}
+        run: cargo build -p pensieve-cli --release --target ${{ matrix.target }}
 
       - name: Package
         run: |
-          # kyma-cli's build output is `kyma-cli`; end users get it as `kyma`.
-          cp target/${{ matrix.target }}/release/kyma-cli kyma
-          tar czf ${{ matrix.artifact }}.tar.gz kyma
+          # pensieve-cli's build output is `pensieve-cli`; end users get it as `pensieve`.
+          cp target/${{ matrix.target }}/release/pensieve-cli pensieve
+          tar czf ${{ matrix.artifact }}.tar.gz pensieve
           shasum -a 256 ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
 
       - uses: actions/upload-artifact@v4
@@ -80,7 +80,7 @@ jobs:
   # and a glibc ≥2.32 symbol (`__libc_single_threaded`) couldn't be satisfied by
   # cross-rs's older sysroot. A native runner has a current glibc + libstdc++ and
   # `ort` fetches a matching prebuilt, so the link resolves. OpenSSL is still
-  # vendored (see kyma-cli/Cargo.toml) for a self-contained binary.
+  # vendored (see pensieve-cli/Cargo.toml) for a self-contained binary.
   build-linux:
     name: "build (${{ matrix.target }})"
     runs-on: ${{ matrix.runner }}
@@ -89,10 +89,10 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            artifact: kyma-linux-x64
+            artifact: pensieve-linux-x64
             runner: ubuntu-24.04
           - target: aarch64-unknown-linux-gnu
-            artifact: kyma-linux-arm64
+            artifact: pensieve-linux-arm64
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -111,12 +111,12 @@ jobs:
 
       - name: Build web UI
         # Root workspace install — web depends on workspace:* packages
-        # (@kyma-ai/client, @kyma-ai/react) that must be built (dist/) first.
+        # (@pensieve-ai/client, @pensieve-ai/react) that must be built (dist/) first.
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @kyma-ai/client build
-          pnpm --filter @kyma-ai/react build
-          pnpm --filter kyma-web build
+          pnpm --filter @pensieve-ai/client build
+          pnpm --filter @pensieve-ai/react build
+          pnpm --filter pensieve-web build
 
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libssl-dev libsasl2-dev libcurl4-openssl-dev zlib1g-dev libzstd-dev protobuf-compiler
@@ -130,13 +130,13 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build CLI
-        run: cargo build -p kyma-cli --release --target ${{ matrix.target }}
+        run: cargo build -p pensieve-cli --release --target ${{ matrix.target }}
 
       - name: Package
         run: |
-          # kyma-cli's build output is `kyma-cli`; end users get it as `kyma`.
-          cp target/${{ matrix.target }}/release/kyma-cli kyma
-          tar czf ${{ matrix.artifact }}.tar.gz kyma
+          # pensieve-cli's build output is `pensieve-cli`; end users get it as `pensieve`.
+          cp target/${{ matrix.target }}/release/pensieve-cli pensieve
+          tar czf ${{ matrix.artifact }}.tar.gz pensieve
           sha256sum ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
 
       - uses: actions/upload-artifact@v4
@@ -161,13 +161,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            kyma-darwin-arm64.tar.gz
-            kyma-darwin-arm64.tar.gz.sha256
-            kyma-darwin-x64.tar.gz
-            kyma-darwin-x64.tar.gz.sha256
-            kyma-linux-arm64.tar.gz
-            kyma-linux-arm64.tar.gz.sha256
-            kyma-linux-x64.tar.gz
-            kyma-linux-x64.tar.gz.sha256
+            pensieve-darwin-arm64.tar.gz
+            pensieve-darwin-arm64.tar.gz.sha256
+            pensieve-darwin-x64.tar.gz
+            pensieve-darwin-x64.tar.gz.sha256
+            pensieve-linux-arm64.tar.gz
+            pensieve-linux-arm64.tar.gz.sha256
+            pensieve-linux-x64.tar.gz
+            pensieve-linux-x64.tar.gz.sha256
           generate_release_notes: true
           fail_on_unmatched_files: true

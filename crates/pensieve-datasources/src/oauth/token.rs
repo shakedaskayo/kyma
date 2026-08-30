@@ -5,7 +5,7 @@
 //! a PAT, but with transparent refresh + write-back for expired tokens.
 
 use chrono::{Duration, Utc};
-use kyma_core::credentials::CredentialValue;
+use pensieve_core::credentials::CredentialValue;
 use uuid::Uuid;
 
 use super::{client, flow, provider};

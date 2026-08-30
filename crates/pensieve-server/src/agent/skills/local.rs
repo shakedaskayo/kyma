@@ -29,13 +29,13 @@ impl LocalSkillSource {
             .collect();
 
         // User-installed: claude path first (it's where most existing
-        // skills live), then the Kyma-specific and vendor-neutral spots.
+        // skills live), then the Pensieve-specific and vendor-neutral spots.
         let user_dirs = home
             .as_ref()
             .map(|h| {
                 vec![
                     h.join(".claude").join("skills"),
-                    h.join(".kyma").join("skills"),
+                    h.join(".pensieve").join("skills"),
                     h.join(".skills"),
                 ]
             })

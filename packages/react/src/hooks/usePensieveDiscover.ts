@@ -1,5 +1,5 @@
 /**
- * useKymaDiscover — headless hook for streaming Discover search.
+ * usePensieveDiscover — headless hook for streaming Discover search.
  *
  * Wraps client.discover.searchDiscover (async generator over Frame objects).
  * Frames are accumulated as they arrive; `isStreaming` is true while the
@@ -12,12 +12,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Frame, SearchRequest } from "@kyma-ai/client";
-import { useKymaClient } from "../provider/context";
+import type { Frame, SearchRequest } from "@pensieve-ai/client";
+import { usePensieveClient } from "../provider/context";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-export interface UseKymaDiscoverResult {
+export interface UsePensieveDiscoverResult {
   /** All frames received from the current / last search stream. */
   frames: Frame[];
   /** True while the search generator is running. */
@@ -35,8 +35,8 @@ export interface UseKymaDiscoverResult {
 
 // ── Implementation ────────────────────────────────────────────────────────────
 
-export function useKymaDiscover(): UseKymaDiscoverResult {
-  const client = useKymaClient();
+export function usePensieveDiscover(): UsePensieveDiscoverResult {
+  const client = usePensieveClient();
 
   const [frames, setFrames] = useState<Frame[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);

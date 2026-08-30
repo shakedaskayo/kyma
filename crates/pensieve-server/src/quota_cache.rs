@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::Duration;
 
-use kyma_core::catalog::{Catalog, TenantQuota};
-use kyma_core::tenant::TenantId;
+use pensieve_core::catalog::{Catalog, TenantQuota};
+use pensieve_core::tenant::TenantId;
 
 fn cache() -> &'static RwLock<HashMap<TenantId, TenantQuota>> {
     static C: OnceLock<RwLock<HashMap<TenantId, TenantQuota>>> = OnceLock::new();
@@ -48,11 +48,11 @@ pub fn agent_limit_override(tenant: TenantId) -> Option<u32> {
     cache().read().ok()?.get(&tenant)?.max_agent_concurrent
 }
 
-/// Spawn the periodic refresh loop. `KYMA_QUOTA_REFRESH_SECS` (default 30, min 1)
+/// Spawn the periodic refresh loop. `PENSIEVE_QUOTA_REFRESH_SECS` (default 30, min 1)
 /// sets the interval. Returns the join handle so the caller can abort on
 /// shutdown. Cheap when the table is empty (one catalog list per interval).
 pub fn spawn_refresh(catalog: Arc<dyn Catalog>) -> tokio::task::JoinHandle<()> {
-    let secs = std::env::var("KYMA_QUOTA_REFRESH_SECS")
+    let secs = std::env::var("PENSIEVE_QUOTA_REFRESH_SECS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(30)

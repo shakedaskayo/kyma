@@ -33,8 +33,8 @@ use std::time::Duration;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::routing::get;
 use axum::Router;
-use kyma_core::query_frontend::QueryBudget;
-use kyma_core::tenant::TenantId;
+use pensieve_core::query_frontend::QueryBudget;
+use pensieve_core::tenant::TenantId;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio::time::{interval, sleep_until, Instant as TokioInstant, Sleep};
@@ -47,7 +47,7 @@ use super::handler::{parse_time_range, TimeRangeBody};
 use super::scope::{resolve as resolve_scope, ResolvedSource, Scope, ScopeError};
 use crate::auth::{AuthBackend, Principal, Role};
 use crate::QueryState;
-use kyma_ingest_core::IngestEvents;
+use pensieve_ingest_core::IngestEvents;
 
 /// Authentication handshake deadline.
 const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -461,7 +461,7 @@ async fn resolve_for(
     subject: Option<&str>,
     scope: &Scope,
 ) -> Result<Vec<ResolvedSource>, (&'static str, String)> {
-    let max_sources = std::env::var("KYMA_DISCOVER_MAX_SOURCES")
+    let max_sources = std::env::var("PENSIEVE_DISCOVER_MAX_SOURCES")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_MAX_SOURCES);
@@ -713,7 +713,7 @@ enum EventOutcome {
 /// Await the next ingest event. When there is no receiver (timer-only mode) or
 /// the channel has closed, this future never resolves so the `select!` arm goes
 /// dormant instead of spinning.
-async fn recv_event(rx: Option<&mut tokio::sync::broadcast::Receiver<kyma_ingest_core::RowsAppended>>) -> EventOutcome {
+async fn recv_event(rx: Option<&mut tokio::sync::broadcast::Receiver<pensieve_ingest_core::RowsAppended>>) -> EventOutcome {
     match rx {
         None => std::future::pending().await,
         Some(rx) => loop {

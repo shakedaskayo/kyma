@@ -1,7 +1,7 @@
 //! Execution test for the recall-layer space wiring (S3.3): drives the real
 //! `memory_retrieve::retrieve()` over the embedded engine (in-memory SQLite +
 //! local segment format), with a deterministic mock embedder injected via
-//! `kyma_memory::try_set_shared_embedding` so the path runs offline (no ONNX).
+//! `pensieve_memory::try_set_shared_embedding` so the path runs offline (no ONNX).
 //! Confirms `RetrieveRequest.space_agent` flows through to the recall filter and
 //! is enforced end-to-end: agent B's recall excludes agent A's private memory.
 //!
@@ -9,22 +9,22 @@
 
 use std::sync::Arc;
 
-use kyma_memory::{CreateMemory, MemoryWriter};
-use kyma_server::agent::memory_retrieve::{retrieve, RetrieveRequest};
-use kyma_server::agent::tools::SharedToolCtx;
+use pensieve_memory::{CreateMemory, MemoryWriter};
+use pensieve_server::agent::memory_retrieve::{retrieve, RetrieveRequest};
+use pensieve_server::agent::tools::SharedToolCtx;
 
 #[derive(Debug)]
 struct MockEmbed;
 
 #[async_trait::async_trait]
-impl kyma_embed::EmbeddingBackend for MockEmbed {
+impl pensieve_embed::EmbeddingBackend for MockEmbed {
     fn id(&self) -> &str {
         "mock/retrieve-space"
     }
     fn dimension(&self) -> u16 {
         4
     }
-    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, kyma_embed::EmbedError> {
+    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, pensieve_embed::EmbedError> {
         // Fractional so make_array renders floats (the cosine UDF rejects Int64).
         Ok(texts
             .iter()
@@ -33,20 +33,20 @@ impl kyma_embed::EmbeddingBackend for MockEmbed {
     }
 }
 
-type CatalogArc = Arc<dyn kyma_core::catalog::Catalog>;
-type FormatArc = Arc<dyn kyma_core::segment_format::SegmentFormat>;
+type CatalogArc = Arc<dyn pensieve_core::catalog::Catalog>;
+type FormatArc = Arc<dyn pensieve_core::segment_format::SegmentFormat>;
 
 async fn embedded_engine(root: &std::path::Path) -> (CatalogArc, FormatArc) {
     let catalog: CatalogArc = Arc::new(
-        kyma_catalog_sqlite::SqliteCatalog::connect_in_memory()
+        pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory()
             .await
             .expect("in-memory catalog"),
     );
-    let store = kyma_storage::build_object_store(&kyma_storage::StorageConfig::Local {
+    let store = pensieve_storage::build_object_store(&pensieve_storage::StorageConfig::Local {
         root: root.to_string_lossy().to_string(),
     })
     .expect("local store");
-    let format: FormatArc = Arc::new(kyma_format_tlm::TelemetryFormat::new(store, "test"));
+    let format: FormatArc = Arc::new(pensieve_format_tlm::TelemetryFormat::new(store, "test"));
     (catalog, format)
 }
 
@@ -83,7 +83,7 @@ fn req_for(agent: Option<&str>) -> RetrieveRequest {
 async fn retrieve_enforces_space_agent_visibility() {
     // Seed the deterministic embedder before any recall path builds the global.
     assert!(
-        kyma_memory::try_set_shared_embedding(Arc::new(MockEmbed)),
+        pensieve_memory::try_set_shared_embedding(Arc::new(MockEmbed)),
         "embedder must be settable (first use in this test binary)"
     );
 
@@ -105,7 +105,7 @@ async fn retrieve_enforces_space_agent_visibility() {
     };
 
     let shared = ctx(catalog, format);
-    let ids = |r: &kyma_server::agent::memory_retrieve::RetrieveResult| {
+    let ids = |r: &pensieve_server::agent::memory_retrieve::RetrieveResult| {
         r.memories.iter().map(|m| m.id.clone()).collect::<Vec<_>>()
     };
 

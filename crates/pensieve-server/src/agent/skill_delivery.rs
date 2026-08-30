@@ -30,14 +30,14 @@ mod tests {
     #[tokio::test]
     async fn writes_each_skill_under_claude_skills() {
         let skills = vec![
-            SkillDoc { name: "kyma-dreaming".into(), body: "---\nname: kyma-dreaming\n---\nbody".into() },
-            SkillDoc { name: "kyma-memory".into(), body: "x".into() },
+            SkillDoc { name: "pensieve-dreaming".into(), body: "---\nname: pensieve-dreaming\n---\nbody".into() },
+            SkillDoc { name: "pensieve-memory".into(), body: "x".into() },
         ];
         let d = deliver_to_workdir(&skills).await.unwrap();
-        let p = d.workdir.path().join(".claude/skills/kyma-dreaming/SKILL.md");
-        assert!(p.exists(), "kyma-dreaming SKILL.md written");
-        assert!(std::fs::read_to_string(&p).unwrap().contains("name: kyma-dreaming"));
-        assert!(d.workdir.path().join(".claude/skills/kyma-memory/SKILL.md").exists());
+        let p = d.workdir.path().join(".claude/skills/pensieve-dreaming/SKILL.md");
+        assert!(p.exists(), "pensieve-dreaming SKILL.md written");
+        assert!(std::fs::read_to_string(&p).unwrap().contains("name: pensieve-dreaming"));
+        assert!(d.workdir.path().join(".claude/skills/pensieve-memory/SKILL.md").exists());
     }
 
     #[tokio::test]

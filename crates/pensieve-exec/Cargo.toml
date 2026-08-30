@@ -1,22 +1,22 @@
 [package]
-name = "kyma-exec"
+name = "pensieve-exec"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "DataFusion integration: custom TableProvider, KymaScanExec, three-level pruning cascade. Isolates DataFusion API churn behind df_adapter."
+description = "DataFusion integration: custom TableProvider, PensieveScanExec, three-level pruning cascade. Isolates DataFusion API churn behind df_adapter."
 
 [lints]
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
-kyma-plan.workspace = true
-kyma-storage.workspace = true
-kyma-catalog.workspace = true
-kyma-format-tlm.workspace = true
-kyma-index-vector.workspace = true
-kyma-index-fts.workspace = true
+pensieve-core.workspace = true
+pensieve-plan.workspace = true
+pensieve-storage.workspace = true
+pensieve-catalog.workspace = true
+pensieve-format-tlm.workspace = true
+pensieve-index-vector.workspace = true
+pensieve-index-fts.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
@@ -35,7 +35,7 @@ object_store = { workspace = true }
 tonic = { workspace = true }
 
 [dev-dependencies]
-kyma-catalog-sqlite.workspace = true
-kyma-kql.workspace = true
-kyma-graph-testkit.workspace = true
+pensieve-catalog-sqlite.workspace = true
+pensieve-kql.workspace = true
+pensieve-graph-testkit.workspace = true
 tokio = { workspace = true, features = ["full"] }

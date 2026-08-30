@@ -2,16 +2,16 @@
 //! `/git/<name>.git` smart-HTTP service.
 //!
 //! The deterministic core (vault planning, git wrapper, ingest planning)
-//! lives in the pure `kyma-brain` crate; this module supplies the HTTP
+//! lives in the pure `pensieve-brain` crate; this module supplies the HTTP
 //! handlers, memory-table IO, per-brain locking, and run recording. Mounted
-//! by both app assemblies (`kyma-bin` hosted, `kyma-local` serve).
+//! by both app assemblies (`pensieve-bin` hosted, `pensieve-local` serve).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use kyma_brain::gitbin::GitBin;
-use kyma_brain::registry::BrainRegistry;
+use pensieve_brain::gitbin::GitBin;
+use pensieve_brain::registry::BrainRegistry;
 
 use crate::agent::state::AgentState;
 

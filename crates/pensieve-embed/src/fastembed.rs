@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 /// serializes its calls. A single instance is fine for schema-RAG (low QPS); to
 /// parallelize the bulk `embed_backfill` workload across several concurrent jobs
 /// we hold a **pool** of instances and round-robin across them. The pool size is
-/// `KYMA_EMBED_POOL_SIZE` (default 1 — each extra instance duplicates the model
+/// `PENSIEVE_EMBED_POOL_SIZE` (default 1 — each extra instance duplicates the model
 /// weights in memory, so opt in for high-throughput backfills).
 pub struct FastembedBackend {
     id: String,
@@ -33,7 +33,7 @@ impl std::fmt::Debug for FastembedBackend {
 impl FastembedBackend {
     /// `model_id` is the short name (e.g., `"bge-small-en-v1.5"`).
     /// `model_path` optionally points at a pre-downloaded ONNX dir for
-    /// air-gapped deployments (env `KYMA_EMBED_MODEL_PATH`).
+    /// air-gapped deployments (env `PENSIEVE_EMBED_MODEL_PATH`).
     pub async fn new(model_id: &str, model_path: Option<&str>) -> Result<Self, EmbedError> {
         let em = pick_model(model_id)?;
         let dimension = em_dimension(&em);
@@ -44,7 +44,7 @@ impl FastembedBackend {
         if !model_cached(model_path) {
             eprintln!("downloading the embedding model ({model_id}, one-time, ~30–130 MB)…");
         }
-        let pool_size = std::env::var("KYMA_EMBED_POOL_SIZE")
+        let pool_size = std::env::var("PENSIEVE_EMBED_POOL_SIZE")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(1)

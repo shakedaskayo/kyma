@@ -1,6 +1,6 @@
 /**
  * Internal Collapsible primitive — wraps @radix-ui/react-collapsible with
- * Kyma ky- class prefix so it is isolated from the host app's CSS.
+ * Pensieve ky- class prefix so it is isolated from the host app's CSS.
  * NOT exported from the public package surface.
  */
 import * as React from "react";

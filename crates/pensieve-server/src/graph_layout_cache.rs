@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use kyma_graph::{GraphExportPage, GraphRelationship, PositionedNode};
+use pensieve_graph::{GraphExportPage, GraphRelationship, PositionedNode};
 
 pub const PAGE_SIZE_DEFAULT: usize = 10_000;
 /// Above this node count, layout is computed in a background task and the
@@ -19,7 +19,7 @@ pub struct CacheKey {
     pub database: String,
     pub graph: String,
     pub realm: Option<String>,
-    pub algorithm: kyma_graph::LayoutAlgorithm,
+    pub algorithm: pensieve_graph::LayoutAlgorithm,
 }
 
 #[derive(Debug)]
@@ -218,7 +218,7 @@ pub fn slice_page(g: &LaidOutGraph, kind: char, offset: usize, page_size: usize)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kyma_graph::{GraphNode, NodeMetadata};
+    use pensieve_graph::{GraphNode, NodeMetadata};
 
     fn laid(n: usize, e: usize) -> LaidOutGraph {
         let nodes = (0..n)
@@ -283,7 +283,7 @@ mod tests {
             database: "db".into(),
             graph: "g".into(),
             realm: None,
-            algorithm: kyma_graph::LayoutAlgorithm::Force,
+            algorithm: pensieve_graph::LayoutAlgorithm::Force,
         };
         cache.insert_ready(key.clone(), laid(5, 2));
         assert!(matches!(cache.get_fresh(&key, (5, 2)), Some(CacheState::Ready(_))));
@@ -298,7 +298,7 @@ mod tests {
             database: "db".into(),
             graph: "g".into(),
             realm: None,
-            algorithm: kyma_graph::LayoutAlgorithm::Force,
+            algorithm: pensieve_graph::LayoutAlgorithm::Force,
         };
         assert!(cache.begin_compute(&key));
         assert!(!cache.begin_compute(&key));
@@ -336,7 +336,7 @@ mod tests {
             database: "db".into(),
             graph: "g".into(),
             realm: None,
-            algorithm: kyma_graph::LayoutAlgorithm::Force,
+            algorithm: pensieve_graph::LayoutAlgorithm::Force,
         };
 
         // 1. begin_compute via the guard path, then drop without disarm.

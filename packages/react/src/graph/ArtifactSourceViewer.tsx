@@ -7,10 +7,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Copy, WrapText } from "lucide-react";
 import { Button } from "../internal/ui/button";
-import { useKymaClient } from "../provider/context";
+import { usePensieveClient } from "../provider/context";
 
 export function ArtifactSourceViewer({ path }: { path: string }) {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   const [text, setText] = useState("");
   const [offset, setOffset] = useState(0);
   const [size, setSize] = useState<number | null>(null);

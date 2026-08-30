@@ -15,17 +15,17 @@ fn parses_claude_code_frontmatter() {
         f.front.origin_session_id.as_deref(),
         Some("11111111-1111-1111-1111-111111111111")
     );
-    assert!(!f.is_kyma_authored());
+    assert!(!f.is_pensieve_authored());
     assert!(f.body.starts_with("Body with **Why:**"));
     assert!(f.body.contains("[[other-mem]]"));
 }
 
 #[test]
-fn detects_kyma_authored_files() {
-    let raw = "---\nname: promoted\nmetadata:\n  source: kyma\n  kyma_memory_id: memory:abc\n  content_hash: deadbeef\n---\nbody\n";
+fn detects_pensieve_authored_files() {
+    let raw = "---\nname: promoted\nmetadata:\n  source: pensieve\n  pensieve_memory_id: memory:abc\n  content_hash: deadbeef\n---\nbody\n";
     let f = parse(raw).expect("parses");
-    assert!(f.is_kyma_authored());
-    assert_eq!(f.front.kyma_memory_id.as_deref(), Some("memory:abc"));
+    assert!(f.is_pensieve_authored());
+    assert_eq!(f.front.pensieve_memory_id.as_deref(), Some("memory:abc"));
     assert_eq!(f.front.content_hash.as_deref(), Some("deadbeef"));
 }
 
@@ -55,8 +55,8 @@ fn render_parse_round_trips() {
             description: Some("How auth works: session tokens".into()),
             cc_type: Some("project".into()),
             origin_session_id: Some("11111111-1111-1111-1111-111111111111".into()),
-            source: Some("kyma".into()),
-            kyma_memory_id: Some("memory:abc".into()),
+            source: Some("pensieve".into()),
+            pensieve_memory_id: Some("memory:abc".into()),
             content_hash: Some("deadbeef".into()),
             archived_at: None,
             archived_reason: None,

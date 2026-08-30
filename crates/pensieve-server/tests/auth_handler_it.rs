@@ -1,13 +1,13 @@
 //! Integration tests for the auth handler (login / me / logout).
 //!
-//! Requires `--features kyma-server/test-support`.
+//! Requires `--features pensieve-server/test-support`.
 //! Each test spins up an isolated Postgres container via testcontainers.
 
 #![cfg(feature = "test-support")]
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use kyma_server::auth::{
+use pensieve_server::auth::{
     passwords::hash_password, AuthLayerState, EnvAuthBackend, Role, SessionAuthBackend,
 };
 use serde_json::Value;
@@ -19,7 +19,7 @@ use tower::ServiceExt;
 // -------------------------------------------------------------------------
 
 fn build_auth_app(
-    state: &kyma_server::QueryState,
+    state: &pensieve_server::QueryState,
 ) -> impl tower::Service<
     Request<Body>,
     Response = axum::http::Response<Body>,
@@ -31,22 +31,22 @@ fn build_auth_app(
     let catalog = state.catalog.clone();
 
     // The session backend: checks catalog tokens + env fallback.
-    let backend: Arc<dyn kyma_server::auth::AuthBackend> = Arc::new(
+    let backend: Arc<dyn pensieve_server::auth::AuthBackend> = Arc::new(
         SessionAuthBackend::new(catalog.clone(), EnvAuthBackend::from_str(""), true),
     );
 
     // Unauthenticated login route.
-    let login_router = kyma_server::auth_handler::auth_login_router(catalog.clone());
+    let login_router = pensieve_server::auth_handler::auth_login_router(catalog.clone());
 
     // Authenticated me/logout routes.
     let session_router =
-        kyma_server::auth_handler::auth_session_router(catalog.clone()).layer(
+        pensieve_server::auth_handler::auth_session_router(catalog.clone()).layer(
             axum::middleware::from_fn_with_state(
                 AuthLayerState {
                     backend,
                     required: Role::Read,
                 },
-                kyma_server::auth::require_role_middleware,
+                pensieve_server::auth::require_role_middleware,
             ),
         );
 
@@ -62,7 +62,7 @@ fn build_auth_app(
 /// with wrong password → 401.
 #[tokio::test]
 async fn auth_handler_full_flow() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let cat = &state.catalog;
 
     // Seed an admin user.
@@ -167,7 +167,7 @@ async fn auth_handler_full_flow() {
 /// Login for a non-existent user → 401 (no user enumeration).
 #[tokio::test]
 async fn login_nonexistent_user_returns_401() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let app = build_auth_app(&state);
 
     let body = serde_json::json!({ "username": "nobody", "password": "any" });

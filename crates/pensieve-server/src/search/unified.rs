@@ -32,7 +32,7 @@ use std::time::Instant;
 use serde::Deserialize;
 use serde_json::Value;
 
-use kyma_graph::GraphProvider;
+use pensieve_graph::GraphProvider;
 
 use super::types::{SearchMode, UnifiedHit, UnifiedSearchResponse};
 use super::{search_data, DEFAULT_LIMIT, MAX_LIMIT};
@@ -61,13 +61,13 @@ const GRAPH_MAX_DATABASES: usize = 200;
 /// `tenant` + `principal` scope + RBAC-filter resolved sources.
 #[derive(Clone)]
 pub struct SearchCtx {
-    pub catalog: Arc<dyn kyma_core::catalog::Catalog>,
-    pub format: Arc<dyn kyma_core::segment_format::SegmentFormat>,
-    pub node_id: Option<kyma_core::types::NodeId>,
+    pub catalog: Arc<dyn pensieve_core::catalog::Catalog>,
+    pub format: Arc<dyn pensieve_core::segment_format::SegmentFormat>,
+    pub node_id: Option<pensieve_core::types::NodeId>,
     /// Catalog Postgres pool (`None` in local mode). Used by the memory/graph
     /// arms; the data arm does not need it.
     pub pool: Option<Arc<sqlx::PgPool>>,
-    pub tenant: kyma_core::tenant::TenantId,
+    pub tenant: pensieve_core::tenant::TenantId,
     /// Allowed-database RBAC filter, if the principal is scoped. `None` means
     /// no restriction (all resolved sources pass).
     pub allowed_databases: Option<Vec<String>>,
@@ -81,7 +81,7 @@ impl SearchCtx {
     ) -> Self {
         let tenant = principal
             .map(|p| p.tenant)
-            .unwrap_or(kyma_core::tenant::DEFAULT_TENANT);
+            .unwrap_or(pensieve_core::tenant::DEFAULT_TENANT);
         let allowed_databases = principal.and_then(|p| p.allowed_databases.clone());
         SearchCtx {
             catalog: state.catalog.clone(),
@@ -260,9 +260,9 @@ fn mode_str(mode: SearchMode) -> &'static str {
 
 /// A node's human title: its `properties.name` (if a string) else its id. The
 /// stored-graph provider promotes/decodes `name` into `properties` when the
-/// underlying table carries one (see `kyma_graph::stored_graph::collect_props`);
+/// underlying table carries one (see `pensieve_graph::stored_graph::collect_props`);
 /// when it doesn't, the id is the only stable label we have.
-fn node_title(node: &kyma_graph::GraphNode) -> String {
+fn node_title(node: &pensieve_graph::GraphNode) -> String {
     node.properties
         .get("name")
         .and_then(|v| v.as_str())
@@ -276,7 +276,7 @@ fn node_title(node: &kyma_graph::GraphNode) -> String {
 /// later graphs' ranks from colliding with the first graph's top hits when the
 /// merged list is globally re-sorted.
 fn map_graph_hits(
-    hits: kyma_graph::SearchHits,
+    hits: pensieve_graph::SearchHits,
     source: &str,
     rank_offset: usize,
 ) -> Vec<UnifiedHit> {
@@ -338,7 +338,7 @@ pub async fn unified_search(
             }
 
             let time_range = parse_time_range(req.time_range.as_ref(), request_id)?;
-            let max_sources = std::env::var("KYMA_DISCOVER_MAX_SOURCES")
+            let max_sources = std::env::var("PENSIEVE_DISCOVER_MAX_SOURCES")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(DEFAULT_MAX_SOURCES);
@@ -455,7 +455,7 @@ async fn graph_search(
             // Explicit database (via `scope: Sources["db.*"]`): that one graph.
             Some(db) => vec![(db, name.clone())],
             // No explicit database: resolve the named graph across every
-            // database in scope. Kyma's namespaces are composite (db/graph), so
+            // database in scope. Pensieve's namespaces are composite (db/graph), so
             // a bare graph name can exist in more than one database — searching
             // all matches keeps the unified view db-agnostic, matching the
             // all-DB discovery the data arm does.
@@ -600,7 +600,7 @@ async fn embed_query(query: &str) -> Option<Vec<f32>> {
     if query.trim().is_empty() {
         return None;
     }
-    match kyma_memory::shared_embedding().await {
+    match pensieve_memory::shared_embedding().await {
         Ok(embedder) => embedder
             .embed(std::slice::from_ref(&query.to_string()))
             .await
@@ -681,7 +681,7 @@ mod tests {
     // A full end-to-end parity harness (seed via MemoryWriter → call both
     // `retrieve()` and `unified_search(Memory)` and compare ids/order) is
     // infeasible in a unit/CI context: `retrieve()` builds its writer through
-    // `kyma_memory::shared_embedding()`, a process-wide OnceCell that downloads
+    // `pensieve_memory::shared_embedding()`, a process-wide OnceCell that downloads
     // and loads a real fastembed ONNX model (~30–130 MB, network) with no
     // test-time injection seam — and that 384-dim embedder mismatches any
     // MockEmbed-seeded vectors. So we test the **mapping** (the load-bearing
@@ -776,26 +776,26 @@ mod tests {
     // ── memory arm: smoke test over a real (empty) catalog ─────────────────
 
     async fn empty_ctx() -> SearchCtx {
-        use kyma_core::segment_format::SegmentFormat;
-        let catalog: Arc<dyn kyma_core::catalog::Catalog> = Arc::new(
-            kyma_catalog_sqlite::SqliteCatalog::connect_in_memory()
+        use pensieve_core::segment_format::SegmentFormat;
+        let catalog: Arc<dyn pensieve_core::catalog::Catalog> = Arc::new(
+            pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory()
                 .await
                 .expect("in-memory catalog"),
         );
-        let tmp = std::env::temp_dir().join(format!("kyma-usearch-{}", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!("pensieve-usearch-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&tmp).unwrap();
-        let store = kyma_storage::build_object_store(&kyma_storage::StorageConfig::Local {
+        let store = pensieve_storage::build_object_store(&pensieve_storage::StorageConfig::Local {
             root: tmp.to_string_lossy().to_string(),
         })
         .unwrap();
         let format: Arc<dyn SegmentFormat> =
-            Arc::new(kyma_format_tlm::TelemetryFormat::new(store, "test"));
+            Arc::new(pensieve_format_tlm::TelemetryFormat::new(store, "test"));
         SearchCtx {
             catalog,
             format,
             node_id: None,
             pool: None,
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            tenant: pensieve_core::tenant::DEFAULT_TENANT,
             allowed_databases: None,
         }
     }
@@ -828,16 +828,16 @@ mod tests {
 
     // ── graph arm: mapping unit test ───────────────────────────────────────
 
-    fn graph_node(id: &str, label: &str, name: Option<&str>) -> kyma_graph::GraphNode {
-        let mut properties = kyma_graph::types::Props::new();
+    fn graph_node(id: &str, label: &str, name: Option<&str>) -> pensieve_graph::GraphNode {
+        let mut properties = pensieve_graph::types::Props::new();
         if let Some(n) = name {
             properties.insert("name".into(), serde_json::json!(n));
         }
-        kyma_graph::GraphNode {
+        pensieve_graph::GraphNode {
             id: id.to_string(),
             labels: vec![label.to_string()],
             properties,
-            metadata: kyma_graph::types::NodeMetadata {
+            metadata: pensieve_graph::types::NodeMetadata {
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
                 source_type: Some("stored".into()),
@@ -849,7 +849,7 @@ mod tests {
 
     #[test]
     fn graph_hits_map_to_node_kind_with_source_and_title() {
-        let hits = kyma_graph::SearchHits {
+        let hits = pensieve_graph::SearchHits {
             hits: vec![
                 graph_node("svc:alpha", "Service", Some("alpha-service")),
                 graph_node("svc:beta", "Service", None), // no name ⇒ title falls back to id
@@ -878,7 +878,7 @@ mod tests {
         // `rank_offset` shifts the rank denominator so a later graph's hits
         // can't tie the first graph's top hit.
         let offset = map_graph_hits(
-            kyma_graph::SearchHits {
+            pensieve_graph::SearchHits {
                 hits: vec![graph_node("svc:gamma", "Service", None)],
                 total: 1,
                 limit: 20,
@@ -903,23 +903,23 @@ mod tests {
     /// Build a `SearchCtx` + ingest `kg.kg_nodes` with the given NDJSON, then
     /// register a `"kg"` stored graph over it. Returns the ctx.
     async fn ctx_with_seeded_graph(node_ndjson: &str) -> SearchCtx {
-        use kyma_core::catalog::{GraphSpec, TableConfig};
-        use kyma_core::segment_format::SegmentFormat;
+        use pensieve_core::catalog::{GraphSpec, TableConfig};
+        use pensieve_core::segment_format::SegmentFormat;
         use std::sync::Arc;
 
-        let catalog: Arc<dyn kyma_core::catalog::Catalog> = Arc::new(
-            kyma_catalog_sqlite::SqliteCatalog::connect_in_memory()
+        let catalog: Arc<dyn pensieve_core::catalog::Catalog> = Arc::new(
+            pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory()
                 .await
                 .expect("in-memory catalog"),
         );
-        let tmp = std::env::temp_dir().join(format!("kyma-graph-{}", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!("pensieve-graph-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&tmp).unwrap();
-        let store = kyma_storage::build_object_store(&kyma_storage::StorageConfig::Local {
+        let store = pensieve_storage::build_object_store(&pensieve_storage::StorageConfig::Local {
             root: tmp.to_string_lossy().to_string(),
         })
         .unwrap();
         let format: Arc<dyn SegmentFormat> =
-            Arc::new(kyma_format_tlm::TelemetryFormat::new(store, "test"));
+            Arc::new(pensieve_format_tlm::TelemetryFormat::new(store, "test"));
 
         // db "kg" + node table kg_nodes(id, labels, name, realm).
         let db_id = catalog.create_database("kg").await.expect("create db kg");
@@ -944,9 +944,9 @@ mod tests {
             .lookup_table("kg", "kg_nodes")
             .await
             .expect("lookup kg_nodes");
-        let batches = kyma_ingest_core::parse_ndjson(node_ndjson.as_bytes(), tref.schema.clone())
+        let batches = pensieve_ingest_core::parse_ndjson(node_ndjson.as_bytes(), tref.schema.clone())
             .expect("parse ndjson");
-        kyma_ingest_core::WritePath::new(catalog.clone(), format.clone())
+        pensieve_ingest_core::WritePath::new(catalog.clone(), format.clone())
             .ingest("kg", &tref, batches)
             .await
             .expect("ingest node rows");
@@ -964,7 +964,7 @@ mod tests {
             format,
             node_id: None,
             pool: None,
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            tenant: pensieve_core::tenant::DEFAULT_TENANT,
             allowed_databases: None,
         }
     }

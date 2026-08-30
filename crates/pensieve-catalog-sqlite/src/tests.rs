@@ -5,7 +5,7 @@
 
 use super::*;
 use arrow_schema::{DataType, Field, Schema};
-use kyma_core::catalog::{
+use pensieve_core::catalog::{
     ColumnPrune, ExtentManifest, GraphSpec, IngestLedgerEntry, NodeInfo, PrunePredicate,
     SnapshotSummary, TableConfig,
 };
@@ -486,7 +486,7 @@ async fn dashboards_round_trip() {
 }
 
 // ---------------------------------------------------------------------------
-// Index sidecars (extent_indexes) — parallel of kyma-catalog's
+// Index sidecars (extent_indexes) — parallel of pensieve-catalog's
 // extent_indexes_it.rs, run against the embedded SQLite catalog.
 // ---------------------------------------------------------------------------
 
@@ -494,10 +494,10 @@ fn sidecar_desc(
     tref: &TableRef,
     extent_id: ExtentId,
     column: &str,
-    kind: kyma_core::index_sidecar::SidecarKind,
+    kind: pensieve_core::index_sidecar::SidecarKind,
     model: Option<&str>,
-) -> kyma_core::index_sidecar::IndexSidecarDescriptor {
-    kyma_core::index_sidecar::IndexSidecarDescriptor {
+) -> pensieve_core::index_sidecar::IndexSidecarDescriptor {
+    pensieve_core::index_sidecar::IndexSidecarDescriptor {
         id: Uuid::new_v4(),
         extent_id,
         table_id: tref.id,
@@ -516,7 +516,7 @@ fn sidecar_desc(
 
 #[tokio::test]
 async fn index_sidecars_register_list_reregister_delete() {
-    use kyma_core::index_sidecar::SidecarKind;
+    use pensieve_core::index_sidecar::SidecarKind;
 
     let cat = fresh().await;
     let db = cat.create_database("default").await.unwrap();
@@ -649,7 +649,7 @@ async fn tenant_quota_round_trip_and_upsert_in_place() {
     assert!(cat.list_tenant_quotas().await.unwrap().is_empty());
 
     // Insert.
-    cat.upsert_tenant_quota(&kyma_core::catalog::TenantQuota {
+    cat.upsert_tenant_quota(&pensieve_core::catalog::TenantQuota {
         tenant: t,
         max_query_concurrent: Some(5),
         max_agent_concurrent: None,
@@ -663,7 +663,7 @@ async fn tenant_quota_round_trip_and_upsert_in_place() {
     assert_eq!(cat.list_tenant_quotas().await.unwrap().len(), 1);
 
     // Upsert again updates IN PLACE (no duplicate PK row).
-    cat.upsert_tenant_quota(&kyma_core::catalog::TenantQuota {
+    cat.upsert_tenant_quota(&pensieve_core::catalog::TenantQuota {
         tenant: t,
         max_query_concurrent: Some(10),
         max_agent_concurrent: Some(2),

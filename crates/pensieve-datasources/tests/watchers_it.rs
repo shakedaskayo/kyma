@@ -3,8 +3,8 @@
 //! staleness computation, and 24h prune.
 
 use chrono::Utc;
-use kyma_catalog::PostgresCatalog;
-use kyma_datasources::watchers::{ScanStats, WatcherRegistry};
+use pensieve_catalog::PostgresCatalog;
+use pensieve_datasources::watchers::{ScanStats, WatcherRegistry};
 use serde_json::json;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;

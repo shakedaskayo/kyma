@@ -379,7 +379,7 @@ pub fn shortest_path_len(
 /// `[n0, n1, …, nK]`.
 ///
 /// **Normative semantics** — exactly what the existing Cypher subset compiles
-/// to (a (2K+1)-way SQL inner join, see `kyma-kql`'s `graph-match` lowering):
+/// to (a (2K+1)-way SQL inner join, see `pensieve-kql`'s `graph-match` lowering):
 /// - **Homomorphism semantics**: node and edge variables may bind to the same
 ///   node/edge more than once within a tuple (`a→b→a` over a 2-cycle yields
 ///   `[a, b, a]`). There is **no** node- or edge-distinctness constraint.

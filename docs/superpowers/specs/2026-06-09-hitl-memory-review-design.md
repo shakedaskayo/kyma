@@ -1,8 +1,8 @@
-# Kyma Memory HITL & Conflict Review — Design
+# Pensieve Memory HITL & Conflict Review — Design
 
 **Status:** approved 2026-06-09. Single implementation slice (one plan, layered execution). Ships behind a default-off master switch, so landing it is a zero-behavior-change event until an operator opts in.
 
-**Relationship to other specs:** Extends the agentic-memory track (`2026-05-31-agentic-memory-design.md`). That design made consolidation (the A.U.D.N. conflict resolver) and dreaming housekeeping (merge / invalidate / archive / entity-link) **fully automatic**, gated only by a `mutation_cap` budget. This design adds an operator-configurable **human-in-the-loop (HITL) policy** over those same mutations, a **review queue**, and a **Review inbox** UI. It reuses the bi-temporal memory model (`crates/kyma-memory/src/schema.rs`) for cheap, deterministic rollback, and the existing settings surface (`/v1/agent/memory/settings`) for policy storage.
+**Relationship to other specs:** Extends the agentic-memory track (`2026-05-31-agentic-memory-design.md`). That design made consolidation (the A.U.D.N. conflict resolver) and dreaming housekeeping (merge / invalidate / archive / entity-link) **fully automatic**, gated only by a `mutation_cap` budget. This design adds an operator-configurable **human-in-the-loop (HITL) policy** over those same mutations, a **review queue**, and a **Review inbox** UI. It reuses the bi-temporal memory model (`crates/pensieve-memory/src/schema.rs`) for cheap, deterministic rollback, and the existing settings surface (`/v1/agent/memory/settings`) for policy storage.
 
 ---
 
@@ -42,7 +42,7 @@ The deliverable is **end-to-end and runnable**: an operator turns on the policy 
 
 ## 3. Policy model
 
-Added to `MemorySettings` (`crates/kyma-server/src/agent/memory_settings.rs`), serialized into the same `memory_settings` JSONB row:
+Added to `MemorySettings` (`crates/pensieve-server/src/agent/memory_settings.rs`), serialized into the same `memory_settings` JSONB row:
 
 ```rust
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -97,10 +97,10 @@ This function is pure and exhaustively unit-tested (op × {confidence below/abov
 
 Today two subsystems mutate memory:
 
-- **Real-time consolidation** — `crates/kyma-server/src/agent/memory_conflict.rs`: `consolidate_memory()` → `decide_conflict()` → applies `ConflictOp::{Add, Update, Noop, Invalidate}`.
-- **Dreaming housekeeping** — `crates/kyma-server/src/agent/dreaming.rs` tool handlers: `merge_memories`, `memory_judge` (→ invalidate/supersede), `update_memory_status` (→ archive), `link_memory_to_entity`, `update_memory_importance`.
+- **Real-time consolidation** — `crates/pensieve-server/src/agent/memory_conflict.rs`: `consolidate_memory()` → `decide_conflict()` → applies `ConflictOp::{Add, Update, Noop, Invalidate}`.
+- **Dreaming housekeeping** — `crates/pensieve-server/src/agent/dreaming.rs` tool handlers: `merge_memories`, `memory_judge` (→ invalidate/supersede), `update_memory_status` (→ archive), `link_memory_to_entity`, `update_memory_importance`.
 
-A new module `crates/kyma-server/src/agent/memory_gate.rs` introduces:
+A new module `crates/pensieve-server/src/agent/memory_gate.rs` introduces:
 
 ```rust
 pub struct GateOutcome { pub applied: bool, pub queued_id: Option<Uuid> }
@@ -127,7 +127,7 @@ Each existing mutation site is refactored so its actual write is wrapped in the 
 
 ## 5. Data model
 
-New migration `crates/kyma-catalog/migrations/024_memory_approval_queue.sql` (next free number; 022/023 are already doubled up across parallel branches):
+New migration `crates/pensieve-catalog/migrations/024_memory_approval_queue.sql` (next free number; 022/023 are already doubled up across parallel branches):
 
 ```sql
 CREATE TABLE memory_approval_queue (
@@ -177,7 +177,7 @@ Every inverse is covered by a round-trip unit test: apply op → assert state �
 
 ## 7. API
 
-Extend the existing memory router (`crates/kyma-server/src/agent/routes.rs`). Settings get the new block in-place; the queue gets a small REST surface:
+Extend the existing memory router (`crates/pensieve-server/src/agent/routes.rs`). Settings get the new block in-place; the queue gets a small REST surface:
 
 - `GET /v1/agent/memory/settings` / `PUT …` — now include `hitl` in the payload (no new route).
 - `GET /v1/agent/memory/review?status=&source=&realm=&op=&limit=&cursor=` — list queue rows (newest first).
@@ -217,13 +217,13 @@ The inbox is the canonical worklist; the graph and run views only deep-link into
 ## 10. File-by-file change surface
 
 **Backend (Rust)**
-- `crates/kyma-server/src/agent/memory_settings.rs` — add `HitlPolicy` / `OpMode` / `MemoryOp` + defaults.
-- `crates/kyma-server/src/agent/memory_gate.rs` — **new**: `classify`, `Disposition`, `dispatch`, resolve (approve/reject/undo/bulk), inverse computation, queue CRUD.
-- `crates/kyma-server/src/agent/memory_conflict.rs` — route A.U.D.N. apply through `dispatch`.
-- `crates/kyma-server/src/agent/dreaming.rs` — route housekeeping tool writes through `dispatch`; add disposition tallies to `decisions_json`.
-- `crates/kyma-server/src/agent/memory_extract.rs` — thread `confidence` into `GateCtx` / `provenance`.
-- `crates/kyma-server/src/agent/routes.rs` — review routes; settings payload already carries `hitl`.
-- `crates/kyma-catalog/migrations/024_memory_approval_queue.sql` — **new** table + indexes.
+- `crates/pensieve-server/src/agent/memory_settings.rs` — add `HitlPolicy` / `OpMode` / `MemoryOp` + defaults.
+- `crates/pensieve-server/src/agent/memory_gate.rs` — **new**: `classify`, `Disposition`, `dispatch`, resolve (approve/reject/undo/bulk), inverse computation, queue CRUD.
+- `crates/pensieve-server/src/agent/memory_conflict.rs` — route A.U.D.N. apply through `dispatch`.
+- `crates/pensieve-server/src/agent/dreaming.rs` — route housekeeping tool writes through `dispatch`; add disposition tallies to `decisions_json`.
+- `crates/pensieve-server/src/agent/memory_extract.rs` — thread `confidence` into `GateCtx` / `provenance`.
+- `crates/pensieve-server/src/agent/routes.rs` — review routes; settings payload already carries `hitl`.
+- `crates/pensieve-catalog/migrations/024_memory_approval_queue.sql` — **new** table + indexes.
 
 **Client + Web (TS)**
 - `packages/client/src/memory.ts` — review API + types.

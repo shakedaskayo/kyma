@@ -1,12 +1,12 @@
 use crate::tools::ToolDispatch;
-use kyma_server::agent::SharedToolCtx;
-use kyma_server::test_support::seeded_state_empty;
+use pensieve_server::agent::SharedToolCtx;
+use pensieve_server::test_support::seeded_state_empty;
 
 #[tokio::test]
 async fn list_returns_all_named_tools() {
     let state = seeded_state_empty().await;
     let pool = sqlx::PgPool::connect(
-        &std::env::var("KYMA_TEST_DATABASE_URL").expect("KYMA_TEST_DATABASE_URL"),
+        &std::env::var("PENSIEVE_TEST_DATABASE_URL").expect("PENSIEVE_TEST_DATABASE_URL"),
     )
     .await
     .unwrap();
@@ -65,7 +65,7 @@ async fn list_returns_all_named_tools() {
 async fn list_entries_have_inputschema_objects() {
     let state = seeded_state_empty().await;
     let pool = sqlx::PgPool::connect(
-        &std::env::var("KYMA_TEST_DATABASE_URL").expect("KYMA_TEST_DATABASE_URL"),
+        &std::env::var("PENSIEVE_TEST_DATABASE_URL").expect("PENSIEVE_TEST_DATABASE_URL"),
     )
     .await
     .unwrap();

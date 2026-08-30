@@ -5,7 +5,7 @@
 
 #![cfg(feature = "fastembed-backend")]
 
-use kyma_embed::{fastembed::FastembedBackend, EmbeddingBackend};
+use pensieve_embed::{fastembed::FastembedBackend, EmbeddingBackend};
 
 #[tokio::test]
 async fn bge_small_en_v1_5_matches_golden() {
@@ -42,7 +42,7 @@ async fn bge_small_en_v1_5_matches_golden() {
 #[tokio::test]
 #[ignore] // Requires `ollama serve` with nomic-embed-text pulled.
 async fn ollama_nomic_embed_text_shape() {
-    use kyma_embed::ollama::OllamaBackend;
+    use pensieve_embed::ollama::OllamaBackend;
     let b = OllamaBackend::new("nomic-embed-text", "http://localhost:11434", 768).unwrap();
     let out = b.embed(&["hello".into()]).await.unwrap();
     assert_eq!(out.len(), 1);

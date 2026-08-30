@@ -14,36 +14,36 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_USER: kyma
-          POSTGRES_PASSWORD: kyma_dev
-          POSTGRES_DB: kyma
+          POSTGRES_USER: pensieve
+          POSTGRES_PASSWORD: pensieve_dev
+          POSTGRES_DB: pensieve
         ports: ["5432:5432"]
         options: >-
-          --health-cmd="pg_isready -U kyma"
+          --health-cmd="pg_isready -U pensieve"
           --health-interval=5s
           --health-timeout=3s
           --health-retries=10
       minio:
         image: bitnamilegacy/minio:2025.7.23-debian-12-r5
         env:
-          MINIO_ROOT_USER: kyma_admin
-          MINIO_ROOT_PASSWORD: kyma_admin_dev
-          MINIO_DEFAULT_BUCKETS: kyma
+          MINIO_ROOT_USER: pensieve_admin
+          MINIO_ROOT_PASSWORD: pensieve_admin_dev
+          MINIO_DEFAULT_BUCKETS: pensieve
         ports: ["9000:9000"]
     env:
-      KYMA_CATALOG_URL: postgresql://kyma:kyma_dev@localhost:5432/kyma
-      KYMA_S3_ENDPOINT: http://localhost:9000
-      KYMA_S3_BUCKET: kyma
-      KYMA_SECRET_KEY: kyma-ci-secret-not-for-production
-      KYMA_S3_REGION: us-east-1
-      KYMA_S3_ACCESS_KEY_ID: kyma_admin
-      KYMA_S3_SECRET_ACCESS_KEY: kyma_admin_dev
-      KYMA_S3_PATH_STYLE: "true"
-      KYMA_S3_ALLOW_HTTP: "true"
-      KYMA_GRPC_ADDR: "off"
-      KYMA_OTLP_ADDR: "off"
-      AWS_ACCESS_KEY_ID: kyma_admin
-      AWS_SECRET_ACCESS_KEY: kyma_admin_dev
+      PENSIEVE_CATALOG_URL: postgresql://pensieve:pensieve_dev@localhost:5432/pensieve
+      PENSIEVE_S3_ENDPOINT: http://localhost:9000
+      PENSIEVE_S3_BUCKET: pensieve
+      PENSIEVE_SECRET_KEY: pensieve-ci-secret-not-for-production
+      PENSIEVE_S3_REGION: us-east-1
+      PENSIEVE_S3_ACCESS_KEY_ID: pensieve_admin
+      PENSIEVE_S3_SECRET_ACCESS_KEY: pensieve_admin_dev
+      PENSIEVE_S3_PATH_STYLE: "true"
+      PENSIEVE_S3_ALLOW_HTTP: "true"
+      PENSIEVE_GRPC_ADDR: "off"
+      PENSIEVE_OTLP_ADDR: "off"
+      AWS_ACCESS_KEY_ID: pensieve_admin
+      AWS_SECRET_ACCESS_KEY: pensieve_admin_dev
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -59,17 +59,17 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client cmake pkg-config libssl-dev libsasl2-dev libcurl4-openssl-dev zlib1g-dev libzstd-dev protobuf-compiler
 
       - name: build engine
-        run: cargo build --release -p kyma-bin
+        run: cargo build --release -p pensieve-bin
 
       - name: start engine
         run: |
-          ./target/release/kyma > /tmp/kyma-engine.log 2>&1 &
+          ./target/release/pensieve > /tmp/pensieve-engine.log 2>&1 &
           echo $! > /tmp/engine.pid
           for i in $(seq 1 60); do
             if curl -fsS http://localhost:8080/health >/dev/null; then break; fi
             sleep 1
           done
-          curl -fsS http://localhost:8080/health || { tail -50 /tmp/kyma-engine.log; exit 1; }
+          curl -fsS http://localhost:8080/health || { tail -50 /tmp/pensieve-engine.log; exit 1; }
 
       - name: run gauntlet --tier=pr
         run: scripts/gauntlet.sh --tier=pr --results=gauntlet-results.json
@@ -85,7 +85,7 @@ jobs:
         if: failure()
         run: |
           echo "=== engine log tail ==="
-          tail -200 /tmp/kyma-engine.log || true
+          tail -200 /tmp/pensieve-engine.log || true
 
       - name: stop engine
         if: always()

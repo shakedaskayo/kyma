@@ -1,6 +1,6 @@
 //! Committer — the async half of the S2.2 router/committer split.
 //!
-//! When ingest runs in staged mode (`KYMA_INGEST_MODE=staged`), routers write
+//! When ingest runs in staged mode (`PENSIEVE_INGEST_MODE=staged`), routers write
 //! the extent object + record its manifest in `staged_extents` + ack ("S3 is the
 //! WAL"). This worker drains those staged rows, groups them by table, and commits
 //! each group as one snapshot via [`Catalog::commit_staged_group`] — which
@@ -17,10 +17,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use kyma_core::catalog::Catalog;
-use kyma_core::errors::{CatalogError, Error};
-use kyma_core::tenant::TenantId;
-use kyma_core::types::TableId;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::errors::{CatalogError, Error};
+use pensieve_core::tenant::TenantId;
+use pensieve_core::types::TableId;
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
@@ -36,7 +36,7 @@ pub struct Committer {
 
 impl Committer {
     pub fn new(catalog: Arc<dyn Catalog>, tenant: TenantId) -> Self {
-        let window_ms = std::env::var("KYMA_COMMIT_WINDOW_MS")
+        let window_ms = std::env::var("PENSIEVE_COMMIT_WINDOW_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(1000);
@@ -49,7 +49,7 @@ impl Committer {
     }
 
     /// One drain+commit pass. Returns the number of extents committed.
-    pub async fn tick(&self) -> kyma_core::errors::Result<usize> {
+    pub async fn tick(&self) -> pensieve_core::errors::Result<usize> {
         let staged = self
             .catalog
             .list_staged_extents(self.tenant, self.max_per_tick)
@@ -59,7 +59,7 @@ impl Committer {
         }
 
         // Group by table — each table commits as its own snapshot.
-        let mut groups: HashMap<TableId, Vec<kyma_core::catalog::StagedExtentRow>> = HashMap::new();
+        let mut groups: HashMap<TableId, Vec<pensieve_core::catalog::StagedExtentRow>> = HashMap::new();
         for row in staged {
             groups.entry(row.table_id).or_default().push(row);
         }

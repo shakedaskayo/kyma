@@ -41,7 +41,7 @@ describe("prefixToken", () => {
 
     // Arbitrary values (brackets in utility part)
     ["w-[13px]", "ky-w-[13px]"],
-    ["bg-[hsl(var(--kyma-x))]", "ky-bg-[hsl(var(--kyma-x))]"],
+    ["bg-[hsl(var(--pensieve-x))]", "ky-bg-[hsl(var(--pensieve-x))]"],
     ["text-[#ff0000]", "ky-text-[#ff0000]"],
     ["p-[calc(1rem+2px)]", "ky-p-[calc(1rem+2px)]"],
 
@@ -65,11 +65,11 @@ describe("prefixToken", () => {
     ["!ky-px-2", "!ky-px-2"],
 
     // Preserve exact sentinel tokens
-    ["kyma-root", "kyma-root"],
-    ["kyma-dark", "kyma-dark"],
+    ["pensieve-root", "pensieve-root"],
+    ["pensieve-dark", "pensieve-dark"],
 
     // CSS custom-property names — non-class-like, preserve
-    ["--kyma-accent", "--kyma-accent"],
+    ["--pensieve-accent", "--pensieve-accent"],
     ["--primary", "--primary"],
 
     // Already prefixed variants
@@ -125,8 +125,8 @@ describe("prefixClassList", () => {
     ["flex\n  px-2", "ky-flex\n  ky-px-2"],
 
     // Sentinel preservation within a list
-    ["kyma-root flex", "kyma-root ky-flex"],
-    ["bg-accent kyma-dark text-sm", "ky-bg-accent kyma-dark ky-text-sm"],
+    ["pensieve-root flex", "pensieve-root ky-flex"],
+    ["bg-accent pensieve-dark text-sm", "ky-bg-accent pensieve-dark ky-text-sm"],
 
     // Important + variant
     ["!px-2 hover:!font-bold", "!ky-px-2 hover:!ky-font-bold"],
@@ -172,12 +172,12 @@ describe("rewriteFile – className attribute", () => {
     assert.equal(code, src);
   });
 
-  it("preserves kyma-root and kyma-dark sentinels", () => {
-    const src = `<div className="kyma-root flex" />`;
+  it("preserves pensieve-root and pensieve-dark sentinels", () => {
+    const src = `<div className="pensieve-root flex" />`;
     const { code } = rewriteFile(src, "test.tsx");
-    assert.ok(code.includes("kyma-root"), `Got: ${code}`);
+    assert.ok(code.includes("pensieve-root"), `Got: ${code}`);
     assert.ok(code.includes("ky-flex"), `Got: ${code}`);
-    assert.ok(!code.includes("ky-kyma-root"), `Should not prefix sentinel. Got: ${code}`);
+    assert.ok(!code.includes("ky-pensieve-root"), `Should not prefix sentinel. Got: ${code}`);
   });
 });
 

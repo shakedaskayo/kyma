@@ -28,11 +28,11 @@ rewrite.
 - **Address:** `database.table.column`
 - **Default database:** `default`
 - **System columns** — present only on tables synced from external sources
-  via the data source framework. Internal kyma tables don't have these.
-  - `_kyma_pk` — concatenated source primary key
-  - `_kyma_op` — `'insert' | 'update' | 'delete'`
-  - `_kyma_lsn` — engine-specific cursor at commit time
-  - `_kyma_event_at` — wall-clock time the source emitted the event
+  via the data source framework. Internal pensieve tables don't have these.
+  - `_pensieve_pk` — concatenated source primary key
+  - `_pensieve_op` — `'insert' | 'update' | 'delete'`
+  - `_pensieve_lsn` — engine-specific cursor at commit time
+  - `_pensieve_event_at` — wall-clock time the source emitted the event
 
 ## Default endpoints
 
@@ -56,7 +56,7 @@ in a later milestone.
 |-------|----------------------------------------------------------------------------|
 | 8080  | HTTP — query, ingest, agent, health, metrics.                              |
 | 9090  | Arrow Flight gRPC.                                                         |
-| 4317  | OTLP gRPC (off by default — set `KYMA_OTLP_ADDR` to enable).               |
+| 4317  | OTLP gRPC (off by default — set `PENSIEVE_OTLP_ADDR` to enable).               |
 | 5433  | Postgres catalog (host port; container port is `5432`).                    |
 | 9000  | MinIO S3 API.                                                              |
 | 9001  | MinIO console UI.                                                          |
@@ -64,24 +64,24 @@ in a later milestone.
 
 ## Key env vars
 
-Pulled from `kyma-bin/src/main.rs` and the storage / auth modules.
+Pulled from `pensieve-bin/src/main.rs` and the storage / auth modules.
 
 | Name                       | Default                                                | Purpose                                                                  |
 |----------------------------|--------------------------------------------------------|--------------------------------------------------------------------------|
-| `KYMA_CATALOG_URL`         | `postgres://kyma:kyma_dev@localhost:5433/kyma`         | Postgres catalog connection string.                                      |
-| `KYMA_HTTP_ADDR`           | `0.0.0.0:8080`                                         | HTTP listen address.                                                     |
-| `KYMA_GRPC_ADDR`           | `0.0.0.0:9090`                                         | Arrow Flight listen address. Set to `off` to disable.                    |
-| `KYMA_OTLP_ADDR`           | `off`                                                  | OTLP gRPC listen address (typically `0.0.0.0:4317`). `off` disables it.  |
-| `KYMA_OTLP_DATABASE`       | `default`                                              | Database OTLP-received logs land in.                                     |
-| `KYMA_AUTH_TOKENS`         | _(empty — auth disabled)_                              | Comma-separated `token:role` pairs. Roles: `admin`, `write`, `read`.     |
-| `KYMA_PATH_PREFIX`         | `kyma`                                                 | Object-store key prefix for all extents.                                 |
-| `KYMA_S3_ENDPOINT`         | _(unset — uses AWS default)_                           | S3 endpoint. Set to `http://minio:9000` for local MinIO.                 |
-| `KYMA_S3_BUCKET`           | `kyma`                                                 | Bucket holding extents.                                                  |
-| `KYMA_S3_REGION`           | `us-east-1`                                            | S3 region.                                                               |
-| `KYMA_S3_ACCESS_KEY_ID`    | _(unset)_                                              | S3 access key.                                                           |
-| `KYMA_S3_SECRET_ACCESS_KEY`| _(unset)_                                              | S3 secret key.                                                           |
-| `KYMA_S3_PATH_STYLE`       | `true`                                                 | Path-style addressing (required for MinIO).                              |
-| `KYMA_S3_ALLOW_HTTP`       | `false`                                                | Permit non-TLS S3. `true` for local MinIO.                               |
+| `PENSIEVE_CATALOG_URL`         | `postgres://pensieve:pensieve_dev@localhost:5433/pensieve`         | Postgres catalog connection string.                                      |
+| `PENSIEVE_HTTP_ADDR`           | `0.0.0.0:8080`                                         | HTTP listen address.                                                     |
+| `PENSIEVE_GRPC_ADDR`           | `0.0.0.0:9090`                                         | Arrow Flight listen address. Set to `off` to disable.                    |
+| `PENSIEVE_OTLP_ADDR`           | `off`                                                  | OTLP gRPC listen address (typically `0.0.0.0:4317`). `off` disables it.  |
+| `PENSIEVE_OTLP_DATABASE`       | `default`                                              | Database OTLP-received logs land in.                                     |
+| `PENSIEVE_AUTH_TOKENS`         | _(empty — auth disabled)_                              | Comma-separated `token:role` pairs. Roles: `admin`, `write`, `read`.     |
+| `PENSIEVE_PATH_PREFIX`         | `pensieve`                                                 | Object-store key prefix for all extents.                                 |
+| `PENSIEVE_S3_ENDPOINT`         | _(unset — uses AWS default)_                           | S3 endpoint. Set to `http://minio:9000` for local MinIO.                 |
+| `PENSIEVE_S3_BUCKET`           | `pensieve`                                                 | Bucket holding extents.                                                  |
+| `PENSIEVE_S3_REGION`           | `us-east-1`                                            | S3 region.                                                               |
+| `PENSIEVE_S3_ACCESS_KEY_ID`    | _(unset)_                                              | S3 access key.                                                           |
+| `PENSIEVE_S3_SECRET_ACCESS_KEY`| _(unset)_                                              | S3 secret key.                                                           |
+| `PENSIEVE_S3_PATH_STYLE`       | `true`                                                 | Path-style addressing (required for MinIO).                              |
+| `PENSIEVE_S3_ALLOW_HTTP`       | `false`                                                | Permit non-TLS S3. `true` for local MinIO.                               |
 
 For the full list — including compaction, retention, GC, file-drop, Kafka,
 and data-source-worker tunables — see [Reference](/reference/).

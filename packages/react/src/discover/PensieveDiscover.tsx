@@ -1,17 +1,17 @@
 /**
- * KymaDiscover — public embeddable Discover component.
+ * PensieveDiscover — public embeddable Discover component.
  *
- * Wraps DiscoverPage in a KymaErrorBoundary and a sized container that
+ * Wraps DiscoverPage in a PensieveErrorBoundary and a sized container that
  * accepts className/style for layout control.
  *
  * Prop decisions:
  * - defaultQuery / scope / timeRange → forwarded as initialSearch / initialScope /
  *   initialTimeRange to DiscoverPage (which seeds the per-instance store).
- * - database → scoped client: KymaDiscover reads the KymaContext client, calls
+ * - database → scoped client: PensieveDiscover reads the PensieveContext client, calls
  *   client.withDatabase(database) to create a scoped view (same token cache,
  *   same transport, just a different default database header), and overrides the
- *   KymaContext.client for all children. useDiscoverSearch and ScopePicker both
- *   call useKymaClient() which now returns the scoped client, so every search
+ *   PensieveContext.client for all children. useDiscoverSearch and ScopePicker both
+ *   call usePensieveClient() which now returns the scoped client, so every search
  *   request carries x-database: <database>.
  * - onRowOpen → fires when the user clicks any row to open its detail drawer.
  *   Internally the DiscoverPage sets openRow state on click; we intercept by
@@ -23,24 +23,24 @@
  *   per tab. Added as an additive prop on DiscoverPage as well.
  */
 
-import { KymaErrorBoundary } from "../internal/KymaErrorBoundary";
-import { KymaContext, useKymaContext } from "../provider/context";
+import { PensieveErrorBoundary } from "../internal/PensieveErrorBoundary";
+import { PensieveContext, usePensieveContext } from "../provider/context";
 import { DiscoverPage } from "./DiscoverPage";
 import type { Scope } from "./types";
 import type { TimeRange } from "../query/time-range/time-range-types";
 
-export interface KymaDiscoverProps {
+export interface PensieveDiscoverProps {
   /** Initial search text (discover grammar). */
   defaultQuery?: string;
   /** Initial scope (sources to search). */
   scope?: Scope;
   timeRange?: TimeRange;
   /**
-   * Override the default Kyma database for all Discover search requests.
+   * Override the default Pensieve database for all Discover search requests.
    *
-   * When set, KymaDiscover calls client.withDatabase(database) to create a
+   * When set, PensieveDiscover calls client.withDatabase(database) to create a
    * scoped client view (same token cache, different x-database default) and
-   * overrides the KymaContext client for all child components. Every search
+   * overrides the PensieveContext client for all child components. Every search
    * request (useDiscoverSearch, ScopePicker) will carry x-database: <database>.
    */
   database?: string;
@@ -74,8 +74,8 @@ export interface KymaDiscoverProps {
   onTimeRangeChange?: (timeRange: TimeRange) => void;
 }
 
-/** Inner component that can safely call hooks (must be inside KymaProvider). */
-function KymaDiscoverInner({
+/** Inner component that can safely call hooks (must be inside PensieveProvider). */
+function PensieveDiscoverInner({
   defaultQuery,
   scope,
   timeRange,
@@ -88,16 +88,16 @@ function KymaDiscoverInner({
   onSearchChange,
   onScopeChange,
   onTimeRangeChange,
-}: KymaDiscoverProps) {
-  const ctx = useKymaContext();
+}: PensieveDiscoverProps) {
+  const ctx = usePensieveContext();
   // Create a scoped client when a database override is requested. withDatabase
   // wraps the transport so every request carries x-database: <database> by
   // default; callers can still override per-request.
   const scopedCtx = database ? { ...ctx, client: ctx.client.withDatabase(database) } : ctx;
 
   return (
-    <KymaContext.Provider value={scopedCtx}>
-      <KymaErrorBoundary fallback={fallback}>
+    <PensieveContext.Provider value={scopedCtx}>
+      <PensieveErrorBoundary fallback={fallback}>
         <div
           className={className}
           style={{ position: "relative", overflow: "hidden", ...style }}
@@ -113,11 +113,11 @@ function KymaDiscoverInner({
             onTimeRangeChange={onTimeRangeChange}
           />
         </div>
-      </KymaErrorBoundary>
-    </KymaContext.Provider>
+      </PensieveErrorBoundary>
+    </PensieveContext.Provider>
   );
 }
 
-export function KymaDiscover(props: KymaDiscoverProps) {
-  return <KymaDiscoverInner {...props} />;
+export function PensieveDiscover(props: PensieveDiscoverProps) {
+  return <PensieveDiscoverInner {...props} />;
 }

@@ -16,7 +16,7 @@
 pub mod cache;
 pub mod sidecar_cache;
 
-use kyma_core::errors::{Result, StorageError};
+use pensieve_core::errors::{Result, StorageError};
 use object_store::aws::AmazonS3Builder;
 use object_store::local::LocalFileSystem;
 use object_store::memory::InMemory;
@@ -48,7 +48,7 @@ pub enum StorageConfig {
 /// Construct an `ObjectStore` from configuration.
 ///
 /// The base store is wrapped with an in-process read cache when
-/// `KYMA_CACHE_MEM_MB` is set (see [`cache::maybe_wrap`]); off by default.
+/// `PENSIEVE_CACHE_MEM_MB` is set (see [`cache::maybe_wrap`]); off by default.
 pub fn build_object_store(config: &StorageConfig) -> Result<Arc<dyn ObjectStore>> {
     let inner: Arc<dyn ObjectStore> = match config {
         StorageConfig::S3Compatible {
@@ -70,10 +70,10 @@ pub fn build_object_store(config: &StorageConfig) -> Result<Arc<dyn ObjectStore>
             } else {
                 AmazonS3Builder::new()
             };
-            // Request timeout is env-tunable (`KYMA_S3_TIMEOUT_SECS`): large
+            // Request timeout is env-tunable (`PENSIEVE_S3_TIMEOUT_SECS`): large
             // extent PUTs on slow links need more than the client default.
             let mut client_opts = object_store::ClientOptions::new();
-            if let Some(secs) = std::env::var("KYMA_S3_TIMEOUT_SECS")
+            if let Some(secs) = std::env::var("PENSIEVE_S3_TIMEOUT_SECS")
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())
             {
@@ -112,26 +112,26 @@ pub fn build_object_store(config: &StorageConfig) -> Result<Arc<dyn ObjectStore>
     Ok(cache::maybe_wrap(inner))
 }
 
-/// Resolve the local data root for single-binary mode. Order: `KYMA_LOCAL_DATA`
-/// env, else `$HOME/.kyma/data`, else `./.kyma/data`.
+/// Resolve the local data root for single-binary mode. Order: `PENSIEVE_LOCAL_DATA`
+/// env, else `$HOME/.pensieve/data`, else `./.pensieve/data`.
 pub fn local_data_root() -> String {
-    if let Ok(p) = std::env::var("KYMA_LOCAL_DATA") {
+    if let Ok(p) = std::env::var("PENSIEVE_LOCAL_DATA") {
         return p;
     }
     let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    format!("{base}/.kyma/data")
+    format!("{base}/.pensieve/data")
 }
 
-/// True if any `KYMA_S3_*` variable is set — i.e. an object store is configured
+/// True if any `PENSIEVE_S3_*` variable is set — i.e. an object store is configured
 /// (the server/docker path). When none are set we assume local single-binary
 /// mode and fall back to a local filesystem store.
 fn any_s3_env_set() -> bool {
     [
-        "KYMA_S3_ENDPOINT",
-        "KYMA_S3_BUCKET",
-        "KYMA_S3_REGION",
-        "KYMA_S3_ACCESS_KEY_ID",
-        "KYMA_S3_SECRET_ACCESS_KEY",
+        "PENSIEVE_S3_ENDPOINT",
+        "PENSIEVE_S3_BUCKET",
+        "PENSIEVE_S3_REGION",
+        "PENSIEVE_S3_ACCESS_KEY_ID",
+        "PENSIEVE_S3_SECRET_ACCESS_KEY",
     ]
     .iter()
     .any(|k| std::env::var(k).is_ok())
@@ -139,25 +139,25 @@ fn any_s3_env_set() -> bool {
 
 /// Convenience: load storage config from standard env vars.
 ///
-/// **Local single-binary mode** is auto-selected when `KYMA_LOCAL_MODE` is
-/// truthy *or* no `KYMA_S3_*` variable is set: the store becomes a local
+/// **Local single-binary mode** is auto-selected when `PENSIEVE_LOCAL_MODE` is
+/// truthy *or* no `PENSIEVE_S3_*` variable is set: the store becomes a local
 /// filesystem rooted at [`local_data_root`] (created if missing) — zero infra.
 ///
 /// Otherwise an **S3-compatible** store is built from (matching our
 /// docker-compose defaults):
-/// - `KYMA_S3_ENDPOINT` (e.g. `http://localhost:9000`)
-/// - `KYMA_S3_BUCKET` (default: `kyma`)
-/// - `KYMA_S3_REGION` (default: `us-east-1`)
-/// - `KYMA_S3_ACCESS_KEY_ID`
-/// - `KYMA_S3_SECRET_ACCESS_KEY`
-/// - `KYMA_S3_PATH_STYLE` (default: `true`)
+/// - `PENSIEVE_S3_ENDPOINT` (e.g. `http://localhost:9000`)
+/// - `PENSIEVE_S3_BUCKET` (default: `pensieve`)
+/// - `PENSIEVE_S3_REGION` (default: `us-east-1`)
+/// - `PENSIEVE_S3_ACCESS_KEY_ID`
+/// - `PENSIEVE_S3_SECRET_ACCESS_KEY`
+/// - `PENSIEVE_S3_PATH_STYLE` (default: `true`)
 ///
-/// When both `KYMA_S3_ACCESS_KEY_ID` and `KYMA_S3_SECRET_ACCESS_KEY` are
+/// When both `PENSIEVE_S3_ACCESS_KEY_ID` and `PENSIEVE_S3_SECRET_ACCESS_KEY` are
 /// unset, credentials come from the standard AWS provider chain (ECS/Fargate
 /// task role, web identity, `AWS_*` env vars, IMDS) — set only
-/// `KYMA_S3_BUCKET`/`KYMA_S3_REGION` for keyless IAM-role deployments.
+/// `PENSIEVE_S3_BUCKET`/`PENSIEVE_S3_REGION` for keyless IAM-role deployments.
 pub fn config_from_env() -> StorageConfig {
-    let local_mode = std::env::var("KYMA_LOCAL_MODE")
+    let local_mode = std::env::var("PENSIEVE_LOCAL_MODE")
         .map(|v| v == "true" || v == "1")
         .unwrap_or(false);
     if local_mode || !any_s3_env_set() {
@@ -169,15 +169,15 @@ pub fn config_from_env() -> StorageConfig {
     }
 
     StorageConfig::S3Compatible {
-        endpoint: std::env::var("KYMA_S3_ENDPOINT").ok(),
-        region: std::env::var("KYMA_S3_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
-        bucket: std::env::var("KYMA_S3_BUCKET").unwrap_or_else(|_| "kyma".to_string()),
-        access_key_id: std::env::var("KYMA_S3_ACCESS_KEY_ID").ok(),
-        secret_access_key: std::env::var("KYMA_S3_SECRET_ACCESS_KEY").ok(),
-        path_style: std::env::var("KYMA_S3_PATH_STYLE")
+        endpoint: std::env::var("PENSIEVE_S3_ENDPOINT").ok(),
+        region: std::env::var("PENSIEVE_S3_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
+        bucket: std::env::var("PENSIEVE_S3_BUCKET").unwrap_or_else(|_| "pensieve".to_string()),
+        access_key_id: std::env::var("PENSIEVE_S3_ACCESS_KEY_ID").ok(),
+        secret_access_key: std::env::var("PENSIEVE_S3_SECRET_ACCESS_KEY").ok(),
+        path_style: std::env::var("PENSIEVE_S3_PATH_STYLE")
             .map(|v| v != "false" && v != "0")
             .unwrap_or(true),
-        allow_http: std::env::var("KYMA_S3_ALLOW_HTTP")
+        allow_http: std::env::var("PENSIEVE_S3_ALLOW_HTTP")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(true),
     }
@@ -394,7 +394,7 @@ mod s3_credential_chain_tests {
         let cfg = StorageConfig::S3Compatible {
             endpoint: Some(format!("http://{addr}")),
             region: "us-east-1".to_string(),
-            bucket: "kyma-test".to_string(),
+            bucket: "pensieve-test".to_string(),
             access_key_id: None,
             secret_access_key: None,
             path_style: true,
@@ -436,10 +436,10 @@ mod local_mode_tests {
 
     #[test]
     fn local_mode_auto_selects_filesystem_store() {
-        let dir = std::env::temp_dir().join(format!("kyma-local-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("pensieve-local-{}", std::process::id()));
         let root = dir.to_str().unwrap().to_string();
-        std::env::set_var("KYMA_LOCAL_MODE", "1");
-        std::env::set_var("KYMA_LOCAL_DATA", &root);
+        std::env::set_var("PENSIEVE_LOCAL_MODE", "1");
+        std::env::set_var("PENSIEVE_LOCAL_DATA", &root);
 
         let cfg = config_from_env();
         match &cfg {
@@ -450,8 +450,8 @@ mod local_mode_tests {
         assert!(dir.exists(), "data root created");
         assert!(build_object_store(&cfg).is_ok(), "local FS store builds");
 
-        std::env::remove_var("KYMA_LOCAL_MODE");
-        std::env::remove_var("KYMA_LOCAL_DATA");
+        std::env::remove_var("PENSIEVE_LOCAL_MODE");
+        std::env::remove_var("PENSIEVE_LOCAL_DATA");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

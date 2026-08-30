@@ -47,7 +47,7 @@ pub struct VaultFile {
     pub bytes: Vec<u8>,
 }
 
-/// One exporter-owned path recorded in `.kyma/manifest.json`. `memory_id`
+/// One exporter-owned path recorded in `.pensieve/manifest.json`. `memory_id`
 /// is set for note files (the push-ingest key for deletions) and `None` for
 /// generated files like `index.md`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,4 +1,4 @@
-# kyma v1.0 Production Readiness — Master Design
+# pensieve v1.0 Production Readiness — Master Design
 
 **Status:** approved 2026-05-19. Decomposes into 8 sub-specs. Each sub-spec gets its own implementation plan.
 
@@ -10,11 +10,11 @@
 
 ### Goal
 
-kyma v1.0 is the version we put an OSS-grade stability sticker on. From v1.0 forward, anyone running `kyma-bin` on commodity hardware against an S3-compatible object store and a Postgres instance can ingest production telemetry and query it with:
+pensieve v1.0 is the version we put an OSS-grade stability sticker on. From v1.0 forward, anyone running `pensieve-bin` on commodity hardware against an S3-compatible object store and a Postgres instance can ingest production telemetry and query it with:
 
 - **No data-loss surprises.** The five invariants from `docs/architecture.md` hold under crash, Postgres failover, object-store throttling, schema-evolution races, and compaction interleaving. Each invariant is enforced by a CI test.
 - **A written contract for what we won't break.** REST + Flight API, KQL dialect, SQL dialect, MCP surface, extent on-disk format, catalog schema, config keys. Breaking changes go through a written deprecation policy.
-- **Self-observability sufficient to answer "what is kyma doing right now"** without source-code knowledge — documented metrics taxonomy, structured logs, internal traces, default Grafana dashboards, and per-failure-mode runbooks.
+- **Self-observability sufficient to answer "what is pensieve doing right now"** without source-code knowledge — documented metrics taxonomy, structured logs, internal traces, default Grafana dashboards, and per-failure-mode runbooks.
 - **A reproducible release.** Signed binaries + container image, SBOM, documented upgrade path, public benchmark harness whose numbers anyone can reproduce.
 
 ### Non-goals for v1.0
@@ -37,7 +37,7 @@ kyma v1.0 is the version we put an OSS-grade stability sticker on. From v1.0 for
 
 Each invariant in `docs/architecture.md` has a written failure-mode list and a passing CI test. Required behaviors:
 
-- **Crash-anywhere safe.** Kill `kyma-bin` mid-ingest, mid-query, mid-commit, mid-compaction → restart → no data loss, no torn snapshots, no duplicate extents.
+- **Crash-anywhere safe.** Kill `pensieve-bin` mid-ingest, mid-query, mid-commit, mid-compaction → restart → no data loss, no torn snapshots, no duplicate extents.
 - **Postgres failover safe.** Primary→replica promotion mid-commit → idempotency keys survive, commit either fully lands or fully aborts.
 - **Object-store fault safe.** S3 503 storms, transient timeouts → bounded retries, no partial writes ever visible to readers.
 - **Schema-evolution safe.** `ALTER TABLE ADD COLUMN` mid-ingest never rewrites history; old extents read with null-fill.
@@ -54,7 +54,7 @@ A single `docs/stability.md` names every frozen surface and the deprecation poli
 - Arrow Flight gRPC action set + ticket format.
 - KQL dialect — a documented subset; anything outside is "best-effort, not v1.0 surface."
 - SQL dialect — DataFusion's subset minus opt-outs, enumerated.
-- **MCP wire surface** (`kyma-mcp`) — frozen per the resolution in §5.
+- **MCP wire surface** (`pensieve-mcp`) — frozen per the resolution in §5.
 - Extent on-disk format (magic + version byte; v1.x readers read every v1.x writer's extents).
 - Catalog Postgres schema — forward-only migrations only; never drop or rename.
 - Config keys and env vars.
@@ -65,18 +65,18 @@ A single `docs/stability.md` names every frozen surface and the deprecation poli
 
 ### Axis 3 — Operability
 
-An operator with no kyma source-code knowledge can run kyma, watch it, and debug a failure using only shipped artifacts.
+An operator with no pensieve source-code knowledge can run pensieve, watch it, and debug a failure using only shipped artifacts.
 
-- **Metrics taxonomy.** Every metric named `kyma_<subsystem>_*`, listed in `docs/metrics.md`; same deprecation policy as the stability surface.
+- **Metrics taxonomy.** Every metric named `pensieve_<subsystem>_*`, listed in `docs/metrics.md`; same deprecation policy as the stability surface.
 - **Structured JSON logs** with a stable field set (`trace_id`, `tenant_id`, `request_id`, `query_id`, etc.) and documented log levels.
-- **Internal OTLP tracing.** kyma emits its own spans for commits, queries, compactions, GC. The engine is self-traceable.
+- **Internal OTLP tracing.** pensieve emits its own spans for commits, queries, compactions, GC. The engine is self-traceable.
 - **Default Grafana dashboards** shipped as JSON: ingest throughput / error rate, query p50/p99 by frontend, pruning effectiveness, commit-coordinator queue depth, GC lag.
 - **Default Prometheus alert rules** for every failure mode the gauntlet exercises.
 - **Runbooks** in `docs/runbooks/`: one per gauntlet scenario. Each runbook documents symptom → dashboard panels → log queries → mitigation → recovery.
 
 ### Axis 4 — Test rigor (the gauntlet)
 
-A single `scripts/gauntlet.sh` runs the full battery against a fresh kyma.
+A single `scripts/gauntlet.sh` runs the full battery against a fresh pensieve.
 
 - **Property + fuzz** — KQL parser fuzz, extent encoder/decoder roundtrip, catalog migration property tests.
 - **Deterministic sim** — injects crashes / pg-failover / object-store-throttling at every point in the ingest and commit paths. One scenario per invariant. Scope is narrow: invariants only, not feature coverage.
@@ -96,7 +96,7 @@ Eight sub-specs. Each is independently sized for a single implementation plan (1
 ### Phase-0 prerequisite
 
 **P0 — Format v1 completion**
-*Scope:* finish the in-flight telemetry format work — Gorilla floats, delta-of-delta timestamps, FST term dicts, full inverted index — and stabilize the extent format under `kyma-format-tlm` enough that F1 can freeze it. Owns its own gauntlet additions for format-level invariants.
+*Scope:* finish the in-flight telemetry format work — Gorilla floats, delta-of-delta timestamps, FST term dicts, full inverted index — and stabilize the extent format under `pensieve-format-tlm` enough that F1 can freeze it. Owns its own gauntlet additions for format-level invariants.
 *Hard prereq for M1.* All other specs assume the format has landed.
 
 ### Foundation specs (M1)
@@ -117,7 +117,7 @@ Each follows the same template: current state + known gaps → durability invari
 
 **A2 — Query readiness (incl. MCP)** — KQL frontend, SQL frontend, Flight gRPC, pruning cascade, DataFusion adapter, **MCP surface**. KQL/SQL/MCP dialect freezes, query budgets, cancellation, error taxonomy.
 
-**A3 — Storage + catalog readiness** — `kyma-storage`, `kyma-catalog`, `kyma-format-tlm`, compaction, retention, soft-delete + physical GC. Format freeze (post-P0), catalog schema freeze, GC reconciliation, format version-byte handling.
+**A3 — Storage + catalog readiness** — `pensieve-storage`, `pensieve-catalog`, `pensieve-format-tlm`, compaction, retention, soft-delete + physical GC. Format freeze (post-P0), catalog schema freeze, GC reconciliation, format version-byte handling.
 
 **A4 — Multi-tenancy + security readiness** — bearer-token auth, role model, tenant isolation (extends `78616f12` tenant-segmented extent paths and Slice 0 retrofit `abc26766`), quotas, TLS everywhere, secret handling, dependency-vuln scanning (cargo-deny, cargo-audit), supply-chain hardening. Multi-tenancy work rebases its gap analysis at A4's start, not at master-spec time.
 
@@ -182,7 +182,7 @@ Each area spec, on completion, expands the gauntlet with its scenarios and ships
 - **Multi-tenancy is a moving target.** Slice 0 (`abc26766`) and tenant-segmented extent paths (`78616f12`) landed recently; the ground will shift again before A4 starts. Mitigation: A4 does its gap analysis at the *start* of its window. The master spec commits to *what* A4 delivers, not *how*.
 - **Gauntlet maintenance drift.** Deterministic sim harnesses are expensive to keep in sync. Mitigation: F2 scopes sim narrowly to the five invariants only. Feature regressions stay in `scripts/test-*.sh`.
 - **A1↔A3 parallel slip.** Most durability work lives across this seam; if either slips, both wait. No mitigation beyond awareness — keeping them as separate specs makes slip per-spec visible rather than hidden in a merged plan.
-- **"One writer per table" rule fragility.** Operators violating the rule corrupt their own data. Mitigation: startup warning in `kyma-bin` if multiple instances detected against the same catalog without role-split env vars; documentation in `docs/operating.md`; alert rule shipped in A4.
+- **"One writer per table" rule fragility.** Operators violating the rule corrupt their own data. Mitigation: startup warning in `pensieve-bin` if multiple instances detected against the same catalog without role-split env vars; documentation in `docs/operating.md`; alert rule shipped in A4.
 - **Public benchmark integrity.** Once published, the numbers can be challenged. Mitigation: R1 owns reproducibility — public dataset, public harness, public hardware spec, reproducible-on-laptop fast tier.
 
 ---
@@ -193,7 +193,7 @@ Each stub is the seed for a per-spec brainstorming/writing-plans cycle. They are
 
 ### P0 — Format v1 completion
 
-- Gap analysis: what's landed in `kyma-format-tlm` today vs target (Gorilla, delta-of-delta, FST, inverted index).
+- Gap analysis: what's landed in `pensieve-format-tlm` today vs target (Gorilla, delta-of-delta, FST, inverted index).
 - Format version byte semantics; reader compatibility rules.
 - Format-level gauntlet additions (encoder/decoder roundtrip, mid-format corruption recovery).
 - Acceptance criteria for "format frozen, ready for F1."
@@ -209,7 +209,7 @@ Each stub is the seed for a per-spec brainstorming/writing-plans cycle. They are
 
 ### F2 — Test Gauntlet
 
-- Design the deterministic-sim harness (a new test module or `kyma-sim` crate); scope strictly to invariants.
+- Design the deterministic-sim harness (a new test module or `pensieve-sim` crate); scope strictly to invariants.
 - Map each Axis-1 failure mode to its sim/chaos/soak scenario.
 - Build `scripts/gauntlet.sh` and the three CI tier workflows.
 - Define perf-regression thresholds on the existing benchmark dataset; document how to update them.
@@ -248,6 +248,6 @@ Each stub is the seed for a per-spec brainstorming/writing-plans cycle. They are
 
 - Signed-release pipeline (cosign-style); container hardening; SBOM generation.
 - Documented upgrade path across 2 minor versions; tested in CI.
-- Public benchmark harness: reproducible-on-laptop fast tier + full-hardware tier; public dataset; published numbers on `getkyma.dev`.
+- Public benchmark harness: reproducible-on-laptop fast tier + full-hardware tier; public dataset; published numbers on `getpensieve.dev`.
 - Docs polish pass: every page reflects v1.0 surface; quickstart works against the v1.0 binary.
 - RC discipline: at least 4 weekly `v1.0.0-rc.N` tags; full 24h soak weekly; any failure resets the clock.

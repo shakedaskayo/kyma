@@ -1,4 +1,4 @@
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 
 export type Frame =
   // '?' tolerates old servers that omit the field; null = source has no timestamp column
@@ -32,7 +32,7 @@ export class DiscoverError extends Error {
 }
 
 export async function* searchDiscover(
-  t: KymaTransport,
+  t: PensieveTransport,
   req: SearchRequest,
   signal?: AbortSignal,
 ): AsyncGenerator<Frame, void, unknown> {
@@ -87,13 +87,13 @@ export type SavedView = {
   updated_at: string;
 };
 
-export async function listSavedViews(t: KymaTransport): Promise<SavedView[]> {
+export async function listSavedViews(t: PensieveTransport): Promise<SavedView[]> {
   const r = await t.request("/v1/explore/views");
   if (!r.ok) throw new DiscoverError("list_failed", await r.text(), r.status);
   return r.json();
 }
 
-export async function createSavedView(t: KymaTransport, name: string, sources: string[]): Promise<SavedView> {
+export async function createSavedView(t: PensieveTransport, name: string, sources: string[]): Promise<SavedView> {
   const r = await t.request("/v1/explore/views", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -103,7 +103,7 @@ export async function createSavedView(t: KymaTransport, name: string, sources: s
   return r.json();
 }
 
-export async function deleteSavedView(t: KymaTransport, id: string): Promise<void> {
+export async function deleteSavedView(t: PensieveTransport, id: string): Promise<void> {
   const r = await t.request(`/v1/explore/views/${id}`, { method: "DELETE" });
   if (!r.ok && r.status !== 204) throw new DiscoverError("delete_failed", await r.text(), r.status);
 }

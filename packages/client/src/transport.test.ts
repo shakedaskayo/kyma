@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTransport } from "./transport";
-import { KymaAuthError } from "./errors";
+import { PensieveAuthError } from "./errors";
 
 const ok = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
@@ -16,14 +16,14 @@ describe("createTransport", () => {
   it("resolves paths against endpoint and attaches bearer + x-database", async () => {
     const fetchMock = vi.fn().mockResolvedValue(ok({}));
     const t = createTransport({
-      endpoint: "https://kyma.example.com/",
+      endpoint: "https://pensieve.example.com/",
       auth: { token: "tok-1" },
       database: "prod",
       fetch: fetchMock,
     });
     await t.request("/v1/graph");
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://kyma.example.com/v1/graph");
+    expect(url).toBe("https://pensieve.example.com/v1/graph");
     expect(new Headers(init.headers).get("authorization")).toBe("Bearer tok-1");
     expect(new Headers(init.headers).get("x-database")).toBe("prod");
   });
@@ -51,20 +51,20 @@ describe("createTransport", () => {
     expect(getToken).toHaveBeenLastCalledWith({ reason: "expired" });
   });
 
-  it("throws KymaAuthError when retry after re-mint still 401s", async () => {
+  it("throws PensieveAuthError when retry after re-mint still 401s", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("nope", { status: 401 }));
     const t = createTransport({
       endpoint: "https://k",
       auth: { getToken: async () => "always-bad" },
       fetch: fetchMock,
     });
-    await expect(t.request("/v1/a")).rejects.toBeInstanceOf(KymaAuthError);
+    await expect(t.request("/v1/a")).rejects.toBeInstanceOf(PensieveAuthError);
   });
 
-  it("throws KymaAuthError immediately on 401 with static token (no re-mint possible)", async () => {
+  it("throws PensieveAuthError immediately on 401 with static token (no re-mint possible)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("nope", { status: 401 }));
     const t = createTransport({ endpoint: "https://k", auth: { token: "x" }, fetch: fetchMock });
-    await expect(t.request("/v1/a")).rejects.toBeInstanceOf(KymaAuthError);
+    await expect(t.request("/v1/a")).rejects.toBeInstanceOf(PensieveAuthError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -151,7 +151,7 @@ describe("createTransport", () => {
   });
 
   // Fix 3: Preserve requestId on auth errors
-  it("thrown KymaAuthError on 401 includes requestId from x-request-id header", async () => {
+  it("thrown PensieveAuthError on 401 includes requestId from x-request-id header", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: "token expired" }), {
         status: 401,
@@ -160,7 +160,7 @@ describe("createTransport", () => {
     );
     const t = createTransport({ endpoint: "https://k", auth: { token: "x" }, fetch: fetchMock });
     const err = await t.request("/v1/a").catch((e) => e);
-    expect(err).toBeInstanceOf(KymaAuthError);
+    expect(err).toBeInstanceOf(PensieveAuthError);
     expect(err.requestId).toBe("req-abc-123");
   });
 });

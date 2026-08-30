@@ -1,5 +1,5 @@
 [package]
-name = "kyma-ingest-core"
+name = "pensieve-ingest-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,10 +10,10 @@ description = "WAL, staging buffer, shared write path, schema coercion, dead-let
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
-kyma-storage.workspace = true
-kyma-catalog.workspace = true
-kyma-format-tlm.workspace = true
+pensieve-core.workspace = true
+pensieve-storage.workspace = true
+pensieve-catalog.workspace = true
+pensieve-format-tlm.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

@@ -26,12 +26,12 @@ pub use retention::{PhysicalDeleteWorker, RetentionSweeper};
 
 use arrow_array::{new_null_array, ArrayRef, RecordBatch};
 use chrono::Duration as ChronoDuration;
-use kyma_core::catalog::{
+use pensieve_core::catalog::{
     BackgroundTask, Catalog, ExtentManifest, PrunePredicate, SnapshotSummary, TableRef,
 };
-use kyma_core::errors::{CatalogError, Error, Result};
-use kyma_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
-use kyma_core::types::{NodeId, TableId};
+use pensieve_core::errors::{CatalogError, Error, Result};
+use pensieve_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
+use pensieve_core::types::{NodeId, TableId};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::sync::Arc;
@@ -114,7 +114,7 @@ impl CompactionWorker {
                                     if let Err(e) = self.catalog.complete_task(task_id).await {
                                         error!(error = %e, task_id = %task_id, "failed to mark task done");
                                     }
-                                    ::metrics::counter!("kyma_compaction_tasks_total", "result" => "ok")
+                                    ::metrics::counter!("pensieve_compaction_tasks_total", "result" => "ok")
                                         .increment(1);
                                 }
                                 Err(e) => {
@@ -122,7 +122,7 @@ impl CompactionWorker {
                                     if let Err(err) = self.catalog.fail_task(task_id, &format!("{e}")).await {
                                         error!(error = %err, "failed to record task failure");
                                     }
-                                    ::metrics::counter!("kyma_compaction_tasks_total", "result" => "error")
+                                    ::metrics::counter!("pensieve_compaction_tasks_total", "result" => "error")
                                         .increment(1);
                                 }
                             }
@@ -234,7 +234,7 @@ impl CompactionWorker {
         //    The merged extent's level is one above its highest input (LSM-style).
         let new_manifest =
             new_manifest_from_write(&table_ref, &result, next_compaction_level(&source_manifests));
-        let source_ids: Vec<kyma_core::types::ExtentId> =
+        let source_ids: Vec<pensieve_core::types::ExtentId> =
             source_manifests.iter().map(|m| m.id).collect();
         self.commit_with_retry(
             table_ref.id,
@@ -271,9 +271,9 @@ impl CompactionWorker {
             seconds = elapsed,
             "compaction committed"
         );
-        ::metrics::histogram!("kyma_compaction_duration_seconds").record(elapsed);
-        ::metrics::histogram!("kyma_compaction_bytes_in").record(input_bytes as f64);
-        ::metrics::histogram!("kyma_compaction_bytes_out").record(bytes_out as f64);
+        ::metrics::histogram!("pensieve_compaction_duration_seconds").record(elapsed);
+        ::metrics::histogram!("pensieve_compaction_bytes_in").record(input_bytes as f64);
+        ::metrics::histogram!("pensieve_compaction_bytes_out").record(bytes_out as f64);
         Ok(())
     }
 
@@ -288,23 +288,23 @@ impl CompactionWorker {
     async fn enqueue_sidecar_rebuilds(
         &self,
         table: &TableRef,
-        replaced: &[kyma_core::types::ExtentId],
-        new_extent: kyma_core::types::ExtentId,
+        replaced: &[pensieve_core::types::ExtentId],
+        new_extent: pensieve_core::types::ExtentId,
     ) -> Result<()> {
         let sidecars = self
             .catalog
-            .list_index_sidecars(kyma_core::DEFAULT_TENANT, table.id, replaced, None)
+            .list_index_sidecars(pensieve_core::DEFAULT_TENANT, table.id, replaced, None)
             .await?;
         if sidecars.is_empty() {
             return Ok(());
         }
 
         let any_ref: &dyn std::any::Any = self.catalog.as_ref_any();
-        let Some(pg) = any_ref.downcast_ref::<kyma_catalog::PostgresCatalog>() else {
+        let Some(pg) = any_ref.downcast_ref::<pensieve_catalog::PostgresCatalog>() else {
             debug!("non-Postgres catalog: skipping sidecar rebuild enqueue");
             return Ok(());
         };
-        let fabric = kyma_catalog::PgFabricStore::new(pg.pool().clone());
+        let fabric = pensieve_catalog::PgFabricStore::new(pg.pool().clone());
 
         // Distinct (column, kind, model) groups; carry one group's params.
         let mut groups: std::collections::BTreeMap<(String, String, Option<String>), serde_json::Value> =
@@ -322,8 +322,8 @@ impl CompactionWorker {
                 "kind": kind,
                 "params": params,
             });
-            let job = kyma_core::fabric::EnqueueJob {
-                kind: kyma_core::fabric::JOB_INDEX_BUILD.to_string(),
+            let job = pensieve_core::fabric::EnqueueJob {
+                kind: pensieve_core::fabric::JOB_INDEX_BUILD.to_string(),
                 payload,
                 priority: 0,
                 affinity_worker_id: None,
@@ -332,7 +332,7 @@ impl CompactionWorker {
                 max_attempts: 3,
             };
             let id = fabric
-                .enqueue_job(kyma_core::DEFAULT_TENANT, &job)
+                .enqueue_job(pensieve_core::DEFAULT_TENANT, &job)
                 .await
                 .map_err(|e| Error::Internal(format!("enqueue index_build: {e}")))?;
             debug!(job_id = ?id, extent = %new_extent, "enqueued sidecar rebuild");
@@ -360,7 +360,7 @@ impl CompactionWorker {
         &self,
         table_id: TableId,
         new_manifest: ExtentManifest,
-        sources: Vec<kyma_core::types::ExtentId>,
+        sources: Vec<pensieve_core::types::ExtentId>,
         rows_merged: u64,
         bytes_in: u64,
     ) -> Result<()> {
@@ -381,7 +381,7 @@ impl CompactionWorker {
             {
                 Ok(_) => return Ok(()),
                 Err(Error::Catalog(CatalogError::Conflict)) => {
-                    ::metrics::counter!("kyma_catalog_cas_conflicts_total",
+                    ::metrics::counter!("pensieve_catalog_cas_conflicts_total",
                         "table" => "_compaction")
                     .increment(1);
                     tokio::time::sleep(Duration::from_millis(50 * attempt as u64)).await;
@@ -404,7 +404,7 @@ fn ratio(a: u64, b: u64) -> f64 {
 
 fn new_manifest_from_write(
     table: &TableRef,
-    w: &kyma_core::segment_format::ExtentWriteResult,
+    w: &pensieve_core::segment_format::ExtentWriteResult,
     level: u32,
 ) -> ExtentManifest {
     ExtentManifest {
@@ -515,7 +515,7 @@ impl CompactionScheduler {
                 .submit_task("compaction", Some(group.table_id), payload, 0)
                 .await?;
             debug!(task_id = %id, table_id = %group.table_id, "submitted compaction task");
-            ::metrics::counter!("kyma_compaction_tasks_submitted_total").increment(1);
+            ::metrics::counter!("pensieve_compaction_tasks_submitted_total").increment(1);
         }
         Ok(())
     }
@@ -552,8 +552,8 @@ async fn find_compaction_candidates(
 #[cfg(test)]
 mod level_tests {
     use super::next_compaction_level;
-    use kyma_core::catalog::ExtentManifest;
-    use kyma_core::types::{ExtentId, SchemaSnapshotId, TableId};
+    use pensieve_core::catalog::ExtentManifest;
+    use pensieve_core::types::{ExtentId, SchemaSnapshotId, TableId};
 
     fn m(level: u32) -> ExtentManifest {
         ExtentManifest {

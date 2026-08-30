@@ -1,5 +1,5 @@
 /**
- * useKymaQuery tests.
+ * usePensieveQuery tests.
  *
  * runQuery is an async generator over NDJSON. We fake it by returning a
  * Response with a ReadableStream body, which the transport's reader loop
@@ -10,8 +10,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderHook, cleanup, waitFor, act } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import React from "react";
-import { KymaProvider } from "../provider/KymaProvider";
-import { useKymaQuery } from "./useKymaQuery";
+import { PensieveProvider } from "../provider/PensieveProvider";
+import { usePensieveQuery } from "./usePensieveQuery";
 
 afterEach(() => {
   cleanup();
@@ -24,9 +24,9 @@ function makeQC() {
 
 function wrapper(qc: QueryClient) {
   return ({ children }: { children: React.ReactNode }) => (
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
       {children}
-    </KymaProvider>
+    </PensieveProvider>
   );
 }
 
@@ -40,12 +40,12 @@ function makeNdjsonResponse(rows: Record<string, unknown>[]) {
   );
 }
 
-describe("useKymaQuery", () => {
+describe("usePensieveQuery", () => {
   it("starts in idle state before execute is called", () => {
     const qc = makeQC();
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
 
-    const { result } = renderHook(() => useKymaQuery(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveQuery(), { wrapper: wrapper(qc) });
 
     expect(result.current.isRunning).toBe(false);
     expect(result.current.rows).toEqual([]);
@@ -65,7 +65,7 @@ describe("useKymaQuery", () => {
       ),
     );
 
-    const { result } = renderHook(() => useKymaQuery(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveQuery(), { wrapper: wrapper(qc) });
 
     await act(async () => {
       await result.current.execute({ database: "db1", query: "events | take 2", language: "kql" });
@@ -86,7 +86,7 @@ describe("useKymaQuery", () => {
       ),
     );
 
-    const { result } = renderHook(() => useKymaQuery(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveQuery(), { wrapper: wrapper(qc) });
 
     await act(async () => {
       try {
@@ -112,7 +112,7 @@ describe("useKymaQuery", () => {
       }),
     );
 
-    const { result } = renderHook(() => useKymaQuery(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveQuery(), { wrapper: wrapper(qc) });
 
     act(() => {
       void result.current.execute({ database: "db1", query: "slow", language: "kql" });
@@ -141,7 +141,7 @@ describe("useKymaQuery", () => {
       }),
     );
 
-    const { result } = renderHook(() => useKymaQuery(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveQuery(), { wrapper: wrapper(qc) });
 
     await act(async () => {
       await result.current.execute({ database: "db1", query: "q1", language: "kql" });

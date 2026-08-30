@@ -1,5 +1,5 @@
 /**
- * useKymaQuery — headless hook for running KQL/SQL queries.
+ * usePensieveQuery — headless hook for running KQL/SQL queries.
  *
  * Wraps client.query.runQuery (an async generator that yields NDJSON chunks).
  * Accumulates columns + rows as chunks arrive. An AbortController is created
@@ -12,12 +12,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Column } from "@kyma-ai/client";
-import { useKymaClient } from "../provider/context";
+import type { Column } from "@pensieve-ai/client";
+import { usePensieveClient } from "../provider/context";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-export interface KymaQueryArgs {
+export interface PensieveQueryArgs {
   database: string;
   query: string;
   language: "kql" | "sql" | "cypher";
@@ -29,7 +29,7 @@ export interface KymaQueryArgs {
   memBytes?: number;
 }
 
-export interface UseKymaQueryResult {
+export interface UsePensieveQueryResult {
   /** Accumulated columns from the last/current query. */
   columns: Column[];
   /** Accumulated rows from the last/current query. */
@@ -42,15 +42,15 @@ export interface UseKymaQueryResult {
    * Execute a query. Returns a promise that resolves when the stream is
    * complete (or rejects on error). Aborts any previously running query.
    */
-  execute: (args: KymaQueryArgs) => Promise<void>;
+  execute: (args: PensieveQueryArgs) => Promise<void>;
   /** Abort the current in-flight query. No-op if nothing is running. */
   cancel: () => void;
 }
 
 // ── Implementation ────────────────────────────────────────────────────────────
 
-export function useKymaQuery(): UseKymaQueryResult {
-  const client = useKymaClient();
+export function usePensieveQuery(): UsePensieveQueryResult {
+  const client = usePensieveClient();
 
   const [columns, setColumns] = useState<Column[]>([]);
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
@@ -74,7 +74,7 @@ export function useKymaQuery(): UseKymaQueryResult {
   }, []);
 
   const execute = useCallback(
-    async (args: KymaQueryArgs): Promise<void> => {
+    async (args: PensieveQueryArgs): Promise<void> => {
       // Abort any in-flight query.
       abortRef.current?.abort();
       const ac = new AbortController();

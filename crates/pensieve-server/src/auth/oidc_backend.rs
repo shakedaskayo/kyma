@@ -1,7 +1,7 @@
 //! Generic OIDC bearer-token validation. Configured with one or more trusted
 //! issuers; JWKS are fetched via OIDC discovery and cached, refreshing when
 //! an unknown `kid` is seen (rate-limited). Tokens that do not look like JWTs
-//! fall through to the wrapped inner backend, so native Kyma tokens keep
+//! fall through to the wrapped inner backend, so native Pensieve tokens keep
 //! working unchanged.
 
 use super::backend::{AuthBackend, AuthError, Principal, Role};
@@ -23,16 +23,16 @@ use tokio::sync::RwLock;
 pub struct OidcConfig {
     pub issuers: Vec<String>,
     pub audience: String,
-    pub role_claim: String,      // default "kyma_role"
+    pub role_claim: String,      // default "pensieve_role"
     pub subject_claim: String,   // default "sub"
-    pub databases_claim: String, // default "kyma_databases"
-    pub realms_claim: String,    // default "kyma_realms"
+    pub databases_claim: String, // default "pensieve_databases"
+    pub realms_claim: String,    // default "pensieve_realms"
 }
 
 impl OidcConfig {
-    /// `None` when `KYMA_OIDC_ISSUERS` is unset/empty (OIDC disabled).
+    /// `None` when `PENSIEVE_OIDC_ISSUERS` is unset/empty (OIDC disabled).
     pub fn from_env() -> Option<Self> {
-        let issuers: Vec<String> = std::env::var("KYMA_OIDC_ISSUERS")
+        let issuers: Vec<String> = std::env::var("PENSIEVE_OIDC_ISSUERS")
             .ok()?
             .split(',')
             .map(|s| s.trim().trim_end_matches('/').to_owned())
@@ -41,18 +41,18 @@ impl OidcConfig {
         if issuers.is_empty() {
             return None;
         }
-        let audience = std::env::var("KYMA_OIDC_AUDIENCE").unwrap_or_else(|_| "kyma".into());
+        let audience = std::env::var("PENSIEVE_OIDC_AUDIENCE").unwrap_or_else(|_| "pensieve".into());
         Some(Self {
             issuers,
             audience,
-            role_claim: std::env::var("KYMA_OIDC_ROLE_CLAIM")
-                .unwrap_or_else(|_| "kyma_role".into()),
-            subject_claim: std::env::var("KYMA_OIDC_SUBJECT_CLAIM")
+            role_claim: std::env::var("PENSIEVE_OIDC_ROLE_CLAIM")
+                .unwrap_or_else(|_| "pensieve_role".into()),
+            subject_claim: std::env::var("PENSIEVE_OIDC_SUBJECT_CLAIM")
                 .unwrap_or_else(|_| "sub".into()),
-            databases_claim: std::env::var("KYMA_OIDC_DATABASES_CLAIM")
-                .unwrap_or_else(|_| "kyma_databases".into()),
-            realms_claim: std::env::var("KYMA_OIDC_REALMS_CLAIM")
-                .unwrap_or_else(|_| "kyma_realms".into()),
+            databases_claim: std::env::var("PENSIEVE_OIDC_DATABASES_CLAIM")
+                .unwrap_or_else(|_| "pensieve_databases".into()),
+            realms_claim: std::env::var("PENSIEVE_OIDC_REALMS_CLAIM")
+                .unwrap_or_else(|_| "pensieve_realms".into()),
         })
     }
 }
@@ -324,11 +324,11 @@ impl OidcAuthBackend {
             }
         };
 
-        // NOTE: multi-tenant claim mapping (e.g. a `kyma_tenant` claim that
+        // NOTE: multi-tenant claim mapping (e.g. a `pensieve_tenant` claim that
         // picks the TenantId) is a cloud-track follow-up. Self-hosted always
         // uses DEFAULT_TENANT.
         Ok(Principal {
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            tenant: pensieve_core::tenant::DEFAULT_TENANT,
             role,
             subject,
             allowed_databases,
@@ -474,11 +474,11 @@ mod tests {
     fn make_cfg(issuer: &str) -> OidcConfig {
         OidcConfig {
             issuers: vec![issuer.to_owned()],
-            audience: "kyma".into(),
-            role_claim: "kyma_role".into(),
+            audience: "pensieve".into(),
+            role_claim: "pensieve_role".into(),
             subject_claim: "sub".into(),
-            databases_claim: "kyma_databases".into(),
-            realms_claim: "kyma_realms".into(),
+            databases_claim: "pensieve_databases".into(),
+            realms_claim: "pensieve_realms".into(),
         }
     }
 
@@ -508,7 +508,7 @@ mod tests {
             enabled,
             token: "opaque-1".into(),
             principal: Principal {
-                tenant: kyma_core::tenant::DEFAULT_TENANT,
+                tenant: pensieve_core::tenant::DEFAULT_TENANT,
                 role: Role::Read,
                 subject: Some("stub-subject".into()),
                 allowed_databases: None,
@@ -536,11 +536,11 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": issuer,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() + 3600,
             "sub": "user-1",
-            "kyma_role": "write",
-            "kyma_databases": ["prod"],
+            "pensieve_role": "write",
+            "pensieve_databases": ["prod"],
         });
 
         let token = encode(&header, &claims, &encoding_key(&priv_key)).unwrap();
@@ -549,7 +549,7 @@ mod tests {
         assert_eq!(p.role, Role::Write);
         assert_eq!(p.subject, Some("user-1".into()));
         assert_eq!(p.allowed_databases, Some(vec!["prod".into()]));
-        assert_eq!(p.tenant, kyma_core::tenant::DEFAULT_TENANT);
+        assert_eq!(p.tenant, pensieve_core::tenant::DEFAULT_TENANT);
     }
 
     #[tokio::test]
@@ -567,10 +567,10 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": issuer,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() + 3600,
             "sub": "user-2",
-            // no kyma_role
+            // no pensieve_role
         });
 
         let token = encode(&header, &claims, &encoding_key(&priv_key)).unwrap();
@@ -593,10 +593,10 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": issuer,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() + 3600,
             "sub": "user-3",
-            // no kyma_databases
+            // no pensieve_databases
         });
 
         let token = encode(&header, &claims, &encoding_key(&priv_key)).unwrap();
@@ -623,7 +623,7 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": issuer,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() + 7200,
             "nbf": now_secs() + 3600, // not valid yet
             "sub": "future-user",
@@ -659,7 +659,7 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": issuer_token,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() + 3600,
             "sub": "slash-user",
         });
@@ -688,7 +688,7 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": issuer_token,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() + 3600,
             "sub": "noslash-user",
         });
@@ -719,7 +719,7 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": issuer,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() + 3600,
             "sub": "http-user",
         });
@@ -754,7 +754,7 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": issuer,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() + 3600,
             "sub": "bad-sig-user",
         });
@@ -783,7 +783,7 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": issuer,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() - 7200,  // expired well past any leeway
             "sub": "user-expired",
         });
@@ -840,7 +840,7 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": evil,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() + 3600,
             "sub": "evil-user",
         });
@@ -872,7 +872,7 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": issuer,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() + 3600,
             "sub": "some-user",
         });
@@ -915,7 +915,7 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": evil,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() + 3600,
             "sub": "evil",
         });
@@ -939,7 +939,7 @@ mod tests {
 
         let claims = serde_json::json!({
             "iss": evil,
-            "aud": "kyma",
+            "aud": "pensieve",
             "exp": now_secs() + 3600,
             "sub": "evil",
         });

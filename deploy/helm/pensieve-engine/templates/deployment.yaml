@@ -3,9 +3,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "kyma-engine.fullname" . }}
+  name: {{ include "pensieve-engine.fullname" . }}
   labels:
-    {{- include "kyma-engine.labels" . | nindent 4 }}
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   # The engine is single-writer per catalog — never run two pods at once.
@@ -13,15 +13,15 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      {{- include "kyma-engine.selectorLabels" . | nindent 6 }}
+      {{- include "pensieve-engine.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "kyma-engine.selectorLabels" . | nindent 8 }}
+        {{- include "pensieve-engine.selectorLabels" . | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "kyma-engine.serviceAccountName" . }}
+      serviceAccountName: {{ include "pensieve-engine.serviceAccountName" . }}
       containers:
-        - name: kyma-engine
+        - name: pensieve-engine
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
@@ -38,7 +38,7 @@ spec:
           {{- if .Values.secretEnv }}
           envFrom:
             - secretRef:
-                name: {{ include "kyma-engine.fullname" . }}-env
+                name: {{ include "pensieve-engine.fullname" . }}-env
           {{- end }}
           livenessProbe:
             httpGet:

@@ -28,16 +28,16 @@
 //! any graph_register calls.
 
 use async_trait::async_trait;
-use kyma_catalog::PostgresCatalog;
-use kyma_datasources::catalog_sql;
-use kyma_datasources::registry::DataSourceRegistry;
-use kyma_datasources::runner::{DataSourceRunner, GraphRegisterFn, RowSink};
-use kyma_datasources::secrets::EnvSecretStore;
-use kyma_datasources::{
+use pensieve_catalog::PostgresCatalog;
+use pensieve_datasources::catalog_sql;
+use pensieve_datasources::registry::DataSourceRegistry;
+use pensieve_datasources::runner::{DataSourceRunner, GraphRegisterFn, RowSink};
+use pensieve_datasources::secrets::EnvSecretStore;
+use pensieve_datasources::{
     ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
-use kyma_core::catalog::{Catalog, NodeInfo, NodeRole};
-use kyma_core::tenant::DEFAULT_TENANT;
+use pensieve_core::catalog::{Catalog, NodeInfo, NodeRole};
+use pensieve_core::tenant::DEFAULT_TENANT;
 use std::sync::{Arc, Mutex};
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
@@ -188,7 +188,7 @@ async fn multi_table_distinct_idempotency_keys() {
 
     // Enqueue directly on the legacy background_tasks harness this test
     // drives; the production scheduler now enqueues fabric `datasource_sync`
-    // jobs (covered by kyma-jobs' integration test).
+    // jobs (covered by pensieve-jobs' integration test).
     catalog_sql::enqueue_tick(catalog.pool(), DEFAULT_TENANT, conn_id, 1_000)
         .await
         .unwrap();

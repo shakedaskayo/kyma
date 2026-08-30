@@ -1,11 +1,11 @@
 ---
 title: Observability
-description: How to tell what kyma is doing. Prometheus metrics, request IDs, structured logs, agent run replay, dreaming run history, data source status, and the pushdown_summary that prevents federation from silently degrading.
+description: How to tell what pensieve is doing. Prometheus metrics, request IDs, structured logs, agent run replay, dreaming run history, data source status, and the pushdown_summary that prevents federation from silently degrading.
 ---
 
 # Observability
 
-kyma exposes four distinct observability surfaces, each aimed at a different audience:
+pensieve exposes four distinct observability surfaces, each aimed at a different audience:
 
 | Surface | Endpoint | Who uses it |
 | ------- | -------- | ----------- |
@@ -31,19 +31,19 @@ bad value means.
 
 | Metric | Labels | What it measures |
 | ------ | ------ | ---------------- |
-| `kyma_query_duration_seconds` | `language` (kql/sql/promql) | Wall time per query, by language. Rising p99 under steady load means storage or planning pressure. |
-| `kyma_query_requests_total` | `language`, `status` | Query volume; `status=error` rate is your query-error SLI. |
-| `kyma_query_rows_returned` | — | Histogram of result sizes; outlier queries scan enormous result sets. |
-| `kyma_query_budget_exceeded_total` | — | Queries killed by the row/time budget. Spikes indicate runaway scans or missing indexes. |
-| `kyma_scan_blocks_scanned_total` | — | Raw blocks touched per query. High value with low `_pruned_total` means poor time-range filtering. |
-| `kyma_scan_blocks_pruned_total` | — | Blocks skipped by bloom / time pruning. Ratio `pruned / (pruned + scanned)` is the pruning efficiency; low values suggest stale statistics or poor partitioning. |
-| `kyma_scan_extents_listed_total` | — | Catalog lookups per query; scales with table fragmentation. |
+| `pensieve_query_duration_seconds` | `language` (kql/sql/promql) | Wall time per query, by language. Rising p99 under steady load means storage or planning pressure. |
+| `pensieve_query_requests_total` | `language`, `status` | Query volume; `status=error` rate is your query-error SLI. |
+| `pensieve_query_rows_returned` | — | Histogram of result sizes; outlier queries scan enormous result sets. |
+| `pensieve_query_budget_exceeded_total` | — | Queries killed by the row/time budget. Spikes indicate runaway scans or missing indexes. |
+| `pensieve_scan_blocks_scanned_total` | — | Raw blocks touched per query. High value with low `_pruned_total` means poor time-range filtering. |
+| `pensieve_scan_blocks_pruned_total` | — | Blocks skipped by bloom / time pruning. Ratio `pruned / (pruned + scanned)` is the pruning efficiency; low values suggest stale statistics or poor partitioning. |
+| `pensieve_scan_extents_listed_total` | — | Catalog lookups per query; scales with table fragmentation. |
 
 **Example PromQL — pruning efficiency:**
 ```promql
-rate(kyma_scan_blocks_pruned_total[5m])
+rate(pensieve_scan_blocks_pruned_total[5m])
   /
-(rate(kyma_scan_blocks_pruned_total[5m]) + rate(kyma_scan_blocks_scanned_total[5m]))
+(rate(pensieve_scan_blocks_pruned_total[5m]) + rate(pensieve_scan_blocks_scanned_total[5m]))
 ```
 A value below 0.8 in production warrants investigation.
 
@@ -51,78 +51,78 @@ A value below 0.8 in production warrants investigation.
 
 | Metric | Labels | What it measures |
 | ------ | ------ | ---------------- |
-| `kyma_ingest_rows_total` | `frontend` (rest/otlp/kafka/filedrop), `table` | Rows landed per ingest path. Drop to zero = a writer stopped. |
-| `kyma_ingest_bytes_total` | `frontend`, `table` | Bytes written. Combined with rows gives average row size. |
-| `kyma_ingest_duration_seconds` | `frontend` | End-to-end ingest latency including staging + commit. |
-| `kyma_ingest_idempotency_hits_total` | — | Exact-duplicate rows deduplicated at commit. High rate = client retrying without ETag. |
-| `kyma_ingest_idempotency_races_total` | — | Two concurrent writers committed the same idempotency key. High rate = ingest fan-out without coordination. |
-| `kyma_kafka_messages_ingested_total` | `topic`, `table` | Kafka consumer progress. |
-| `kyma_otlp_log_records_total` | — | OTLP log records received. |
-| `kyma_filedrop_objects_processed_total` | — | Files processed by the file-drop frontend. |
-| `kyma_filedrop_rows_total` | — | Rows parsed from file-drop objects. |
+| `pensieve_ingest_rows_total` | `frontend` (rest/otlp/kafka/filedrop), `table` | Rows landed per ingest path. Drop to zero = a writer stopped. |
+| `pensieve_ingest_bytes_total` | `frontend`, `table` | Bytes written. Combined with rows gives average row size. |
+| `pensieve_ingest_duration_seconds` | `frontend` | End-to-end ingest latency including staging + commit. |
+| `pensieve_ingest_idempotency_hits_total` | — | Exact-duplicate rows deduplicated at commit. High rate = client retrying without ETag. |
+| `pensieve_ingest_idempotency_races_total` | — | Two concurrent writers committed the same idempotency key. High rate = ingest fan-out without coordination. |
+| `pensieve_kafka_messages_ingested_total` | `topic`, `table` | Kafka consumer progress. |
+| `pensieve_otlp_log_records_total` | — | OTLP log records received. |
+| `pensieve_filedrop_objects_processed_total` | — | Files processed by the file-drop frontend. |
+| `pensieve_filedrop_rows_total` | — | Rows parsed from file-drop objects. |
 
 ### Storage upkeep
 
 | Metric | Labels | What it measures |
 | ------ | ------ | ---------------- |
-| `kyma_staging_flush_duration_seconds` | — | Time the staging buffer spends in group-commit. P99 above ~200 ms indicates write pressure. |
-| `kyma_staging_flushes_total` | — | Number of staging flushes committed. |
-| `kyma_staging_flush_waiters` | — | Goroutines waiting on a flush. Sustained > 0 means group-commit is saturated. |
-| `kyma_catalog_cas_conflicts_total` | — | Snapshot compare-and-swap retries during commit. High value = ingest contention; two writers racing on the same table. |
-| `kyma_commit_batches_total` | — | Commit batches attempted. |
-| `kyma_commit_batch_extents` | — | Extents per commit batch; reflects merge efficiency. |
-| `kyma_compaction_tasks_total` | — | Compaction tasks completed. |
-| `kyma_compaction_tasks_submitted_total` | — | Compaction tasks queued. If `submitted` >> `completed` for sustained periods, the compactor is falling behind. |
-| `kyma_compaction_bytes_in` | — | Bytes read by the compactor. |
-| `kyma_compaction_bytes_out` | — | Bytes written by the compactor. Ratio `out/in` close to 1 = no meaningful compression gain. |
-| `kyma_compaction_duration_seconds` | — | Time per compaction task. |
-| `kyma_retention_extents_soft_deleted_total` | — | Extents soft-deleted by the retention sweeper. Not advancing = retention not running or policy not matched. |
-| `kyma_physical_gc_objects_deleted_total` | — | Objects physically removed from object storage. |
-| `kyma_physical_gc_objects_delete_failed_total` | — | GC failures. Persistent non-zero = permission or network issue against object storage. |
+| `pensieve_staging_flush_duration_seconds` | — | Time the staging buffer spends in group-commit. P99 above ~200 ms indicates write pressure. |
+| `pensieve_staging_flushes_total` | — | Number of staging flushes committed. |
+| `pensieve_staging_flush_waiters` | — | Goroutines waiting on a flush. Sustained > 0 means group-commit is saturated. |
+| `pensieve_catalog_cas_conflicts_total` | — | Snapshot compare-and-swap retries during commit. High value = ingest contention; two writers racing on the same table. |
+| `pensieve_commit_batches_total` | — | Commit batches attempted. |
+| `pensieve_commit_batch_extents` | — | Extents per commit batch; reflects merge efficiency. |
+| `pensieve_compaction_tasks_total` | — | Compaction tasks completed. |
+| `pensieve_compaction_tasks_submitted_total` | — | Compaction tasks queued. If `submitted` >> `completed` for sustained periods, the compactor is falling behind. |
+| `pensieve_compaction_bytes_in` | — | Bytes read by the compactor. |
+| `pensieve_compaction_bytes_out` | — | Bytes written by the compactor. Ratio `out/in` close to 1 = no meaningful compression gain. |
+| `pensieve_compaction_duration_seconds` | — | Time per compaction task. |
+| `pensieve_retention_extents_soft_deleted_total` | — | Extents soft-deleted by the retention sweeper. Not advancing = retention not running or policy not matched. |
+| `pensieve_physical_gc_objects_deleted_total` | — | Objects physically removed from object storage. |
+| `pensieve_physical_gc_objects_delete_failed_total` | — | GC failures. Persistent non-zero = permission or network issue against object storage. |
 
 ### Data sources
 
 | Metric | Labels | What it measures |
 | ------ | ------ | ---------------- |
-| `kyma_data_source_cursor_age_seconds` | `name`, `table` | Age of the sync cursor — how far the data source is behind the source. Rising = a sync source falling behind. Alert if > your RPO. |
-| `kyma_data_source_rows_ingested_total` | `name`, `table` | Rows synced from each source-table. |
-| `kyma_data_source_ticks_total` | `name` | Data source polling or CDC event cycles. Flat for a sync data source = it has stopped. |
-| `kyma_data_source_errors_total` | `name` | Hard errors per data source. Any sustained non-zero rate warrants investigation. |
-| `kyma_data_source_duration_seconds` | `name` | Time spent per data source tick. |
-| `kyma_data_source_last_success_timestamp_seconds` | `name` | Unix timestamp of last successful tick. Alert if `time() - kyma_data_source_last_success_timestamp_seconds > threshold`. |
+| `pensieve_data_source_cursor_age_seconds` | `name`, `table` | Age of the sync cursor — how far the data source is behind the source. Rising = a sync source falling behind. Alert if > your RPO. |
+| `pensieve_data_source_rows_ingested_total` | `name`, `table` | Rows synced from each source-table. |
+| `pensieve_data_source_ticks_total` | `name` | Data source polling or CDC event cycles. Flat for a sync data source = it has stopped. |
+| `pensieve_data_source_errors_total` | `name` | Hard errors per data source. Any sustained non-zero rate warrants investigation. |
+| `pensieve_data_source_duration_seconds` | `name` | Time spent per data source tick. |
+| `pensieve_data_source_last_success_timestamp_seconds` | `name` | Unix timestamp of last successful tick. Alert if `time() - pensieve_data_source_last_success_timestamp_seconds > threshold`. |
 
 **Example PromQL — data sources that haven't succeeded in 5 minutes:**
 ```promql
-time() - kyma_data_source_last_success_timestamp_seconds > 300
+time() - pensieve_data_source_last_success_timestamp_seconds > 300
 ```
 
 ### Agent and MCP
 
 | Metric | Labels | What it measures |
 | ------ | ------ | ---------------- |
-| `kyma_mcp_tool_calls_total` | `tool` | MCP tool calls dispatched by the agent. High rate of a single tool = agent looping. |
-| `kyma_mcp_tool_results_total` | `tool`, `status` | MCP tool results returned. `status=error` rate per tool surfaces bad skill definitions. |
-| `kyma_explore_search_requests_total` | — | `/explore/search` requests. |
-| `kyma_explore_search_executed_total` | — | Searches that reached the query engine. |
-| `kyma_explore_search_duration_seconds` | — | Search latency. |
-| `kyma_explore_search_rows_returned` | — | Result rows per search. |
-| `kyma_explore_search_cap_hits_total` | — | Searches that hit the result-row cap; indicates the cap may need raising for this deployment. |
-| `kyma_explore_search_per_source_errors_total` | — | Per-source errors during multi-source search. |
-| `kyma_explore_search_sources_resolved` | — | Number of sources each search fanned out to. |
+| `pensieve_mcp_tool_calls_total` | `tool` | MCP tool calls dispatched by the agent. High rate of a single tool = agent looping. |
+| `pensieve_mcp_tool_results_total` | `tool`, `status` | MCP tool results returned. `status=error` rate per tool surfaces bad skill definitions. |
+| `pensieve_explore_search_requests_total` | — | `/explore/search` requests. |
+| `pensieve_explore_search_executed_total` | — | Searches that reached the query engine. |
+| `pensieve_explore_search_duration_seconds` | — | Search latency. |
+| `pensieve_explore_search_rows_returned` | — | Result rows per search. |
+| `pensieve_explore_search_cap_hits_total` | — | Searches that hit the result-row cap; indicates the cap may need raising for this deployment. |
+| `pensieve_explore_search_per_source_errors_total` | — | Per-source errors during multi-source search. |
+| `pensieve_explore_search_sources_resolved` | — | Number of sources each search fanned out to. |
 
 ### HTTP layer
 
 | Metric | Labels | What it measures |
 | ------ | ------ | ---------------- |
-| `kyma_http_errors_total` | `method`, `path`, `status` | HTTP 4xx/5xx responses. |
-| `kyma_flight_do_get_total` | — | Arrow Flight DoGet requests (used by distributed scan). |
-| `kyma_flight_serve_extent_total` | — | Flight extents served. |
+| `pensieve_http_errors_total` | `method`, `path`, `status` | HTTP 4xx/5xx responses. |
+| `pensieve_flight_do_get_total` | — | Arrow Flight DoGet requests (used by distributed scan). |
+| `pensieve_flight_serve_extent_total` | — | Flight extents served. |
 
 ---
 
 ## Request ID correlation
 
-Every kyma HTTP response carries an `x-request-id` header — either echoed from the request if
+Every pensieve HTTP response carries an `x-request-id` header — either echoed from the request if
 the client supplied one, or generated as a fresh ULID. Structured log lines emitted during that
 request carry the same ID. This lets you correlate a slow or failed API call to the server-side
 log trace without any additional instrumentation.
@@ -132,21 +132,21 @@ log trace without any additional instrumentation.
 RID=$(curl -si http://localhost:8080/v1/query -d '{"sql":"SELECT 1"}' | grep -i x-request-id | awk '{print $2}' | tr -d '\r')
 
 # Find all log lines for that request
-journalctl -u kyma --no-pager | grep "$RID"
+journalctl -u pensieve --no-pager | grep "$RID"
 ```
 
 ---
 
 ## Structured logs
 
-kyma uses the `tracing` crate with structured fields. Set `RUST_LOG` to control verbosity:
+pensieve uses the `tracing` crate with structured fields. Set `RUST_LOG` to control verbosity:
 
 ```bash
 # Production — warn + error only
-RUST_LOG=warn kyma serve
+RUST_LOG=warn pensieve serve
 
 # Debug a specific component
-RUST_LOG=kyma_datasources=debug,kyma_ingest_core=info,warn kyma serve
+RUST_LOG=pensieve_datasources=debug,pensieve_ingest_core=info,warn pensieve serve
 ```
 
 Log lines include `request_id`, `table`, `data_source_id`, and other relevant fields so they can be
@@ -242,8 +242,8 @@ The per-data-source response carries the run state (secrets scrubbed):
 | `last_rows_ingested` | Persistently `0` for a source you expect to change. |
 
 For time-series health (alerting, dashboards), use the Prometheus data source
-metrics above — `kyma_data_source_cursor_age_seconds` (sync lag),
-`kyma_data_source_last_success_timestamp_seconds`, and `kyma_data_source_errors_total`
+metrics above — `pensieve_data_source_cursor_age_seconds` (sync lag),
+`pensieve_data_source_last_success_timestamp_seconds`, and `pensieve_data_source_errors_total`
 are the operational signals. Full endpoint list in the
 [API reference](/reference/api).
 
@@ -289,21 +289,21 @@ You'd see:
 ```
 
 This is the trust mechanism for federation. If a federated query is slow, the summary tells you
-whether kyma's planner failed to push something it should have, or whether the source itself was
+whether pensieve's planner failed to push something it should have, or whether the source itself was
 the bottleneck.
 
 - `filters_residual` non-empty for a filter you'd expect to be pushable → file a bug against the planner.
 - `join_pushed: false` with a large `rows_returned` → the cross-source join is materializing a big intermediate result; consider pre-filtering.
-- `agg_residual_reason: "cross-source group-by"` is expected for joins that span two sources; kyma cannot push aggregation to either side independently.
+- `agg_residual_reason: "cross-source group-by"` is expected for joins that span two sources; pensieve cannot push aggregation to either side independently.
 
 ---
 
 ## Tracing (roadmap)
 
-OTLP-based distributed tracing for kyma's own code paths is on the roadmap. The `tracing` crate
+OTLP-based distributed tracing for pensieve's own code paths is on the roadmap. The `tracing` crate
 and `opentelemetry-otlp` exporter are in place behind a feature flag; spans are emitted at major
-commit boundaries already. When the trace exporter ships, kyma will emit into its own ingest
-path — kyma observing kyma.
+commit boundaries already. When the trace exporter ships, pensieve will emit into its own ingest
+path — pensieve observing pensieve.
 
 In the meantime, use request IDs + structured logs for correlation (see above).
 

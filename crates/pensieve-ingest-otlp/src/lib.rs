@@ -35,9 +35,9 @@
 use arrow_array::builder::{Int32Builder, StringBuilder, TimestampNanosecondBuilder};
 use arrow_array::{ArrayRef, RecordBatch};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
-use kyma_core::catalog::{Catalog, TableConfig};
-use kyma_core::types::DatabaseId;
-use kyma_ingest_core::WritePath;
+use pensieve_core::catalog::{Catalog, TableConfig};
+use pensieve_core::types::DatabaseId;
+use pensieve_ingest_core::WritePath;
 use opentelemetry_proto::tonic::collector::logs::v1::{
     logs_service_server::{LogsService, LogsServiceServer},
     ExportLogsPartialSuccess, ExportLogsServiceRequest, ExportLogsServiceResponse,
@@ -98,7 +98,7 @@ impl OtlpLogsService {
 
     /// Ensure the `otel_logs` table exists in the target database.
     /// Idempotent — returns the existing `TableRef` if already present.
-    async fn ensure_table(&self) -> Result<kyma_core::catalog::TableRef, Status> {
+    async fn ensure_table(&self) -> Result<pensieve_core::catalog::TableRef, Status> {
         ensure_otel_table(&self.catalog, &self.database, OTEL_LOGS_TABLE, otel_logs_schema()).await
     }
 }
@@ -219,7 +219,7 @@ impl LogsService for OtlpLogsService {
             .await
             .map_err(|e| Status::internal(format!("ingest: {e}")))?;
 
-        ::metrics::counter!("kyma_otlp_log_records_total").increment(ack.rows_ingested);
+        ::metrics::counter!("pensieve_otlp_log_records_total").increment(ack.rows_ingested);
         info!(rows = ack.rows_ingested, "otlp export committed");
 
         // Standard OTLP response — partial_success is for soft-errors we
@@ -241,7 +241,7 @@ impl LogsService for OtlpLogsService {
 
 /// Pre-create the `otel_traces` table so it exists immediately on fresh
 /// install, before the first self-trace batch is flushed. Called from
-/// `kyma-bin` right after the self-trace exporter is wired to storage.
+/// `pensieve-bin` right after the self-trace exporter is wired to storage.
 pub async fn ensure_traces_table(catalog: &Arc<dyn Catalog>, database: &str) {
     if let Err(e) = ensure_otel_table(
         catalog,
@@ -264,7 +264,7 @@ pub(crate) async fn ensure_otel_table(
     database: &str,
     table: &str,
     schema: Arc<Schema>,
-) -> Result<kyma_core::catalog::TableRef, Status> {
+) -> Result<pensieve_core::catalog::TableRef, Status> {
     match catalog.lookup_table(database, table).await {
         Ok(t) => Ok(t),
         Err(_) => {
@@ -294,7 +294,7 @@ pub(crate) async fn ensure_otel_table(
 async fn find_database_id(catalog: &dyn Catalog, name: &str) -> Option<DatabaseId> {
     use std::any::Any;
     let any_ref: &dyn Any = catalog.as_ref_any();
-    let Some(pg) = any_ref.downcast_ref::<kyma_catalog::PostgresCatalog>() else {
+    let Some(pg) = any_ref.downcast_ref::<pensieve_catalog::PostgresCatalog>() else {
         return None;
     };
     let row: Option<(uuid::Uuid,)> = sqlx::query_as("SELECT id FROM databases WHERE name = $1")

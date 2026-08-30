@@ -4,7 +4,7 @@ use crate::types::NoteRow;
 fn row() -> NoteRow {
     NoteRow {
         id: "9f3a2b1c-4e21-4b8a-9c3e-1f2a3b4c5d6e".into(),
-        realm: "kyma".into(),
+        realm: "pensieve".into(),
         memory_type: "decision".into(),
         title: "Auth model uses stateless JWT".into(),
         content: "Sessions are stateless JWTs.\n\nWhy: horizontal scale.".into(),
@@ -32,9 +32,9 @@ fn render_is_deterministic_and_parses_back() {
 
     let parsed = parse_note(&a);
     assert_eq!(parsed.title.as_deref(), Some("Auth model uses stateless JWT"));
-    assert_eq!(parsed.kyma_memory_id.as_deref(), Some("9f3a2b1c-4e21-4b8a-9c3e-1f2a3b4c5d6e"));
+    assert_eq!(parsed.pensieve_memory_id.as_deref(), Some("9f3a2b1c-4e21-4b8a-9c3e-1f2a3b4c5d6e"));
     assert_eq!(parsed.memory_type.as_deref(), Some("decision"));
-    assert_eq!(parsed.realm.as_deref(), Some("kyma"));
+    assert_eq!(parsed.realm.as_deref(), Some("pensieve"));
     assert_eq!(parsed.tags, vec!["auth", "architecture"]);
     // Managed block stripped from the editable body.
     assert!(!parsed.body.contains("Related"));
@@ -89,7 +89,7 @@ fn yaml_special_titles_round_trip() {
 fn plain_markdown_without_frontmatter_parses() {
     let parsed = parse_note("# A note\n\nJust text with a [[Wiki Link]].");
     assert_eq!(parsed.title.as_deref(), Some("A note"));
-    assert!(parsed.kyma_memory_id.is_none());
+    assert!(parsed.pensieve_memory_id.is_none());
     assert_eq!(parsed.links, vec!["Wiki Link"]);
     assert_eq!(parsed.body, "Just text with a [[Wiki Link]].");
 }

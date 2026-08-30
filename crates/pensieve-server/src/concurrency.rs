@@ -12,15 +12,15 @@
 //! is rejected. Queuing would convert a saturated node's overload into unbounded
 //! latency; rejecting lets a load balancer route elsewhere.
 //!
-//! Off by default: `KYMA_QUERY_MAX_CONCURRENT` unset or `0` ⇒ unlimited (the
+//! Off by default: `PENSIEVE_QUERY_MAX_CONCURRENT` unset or `0` ⇒ unlimited (the
 //! permit is a no-op), so existing deployments and the fresh-install are
-//! unchanged. `KYMA_QUERY_RETRY_AFTER_SECS` (default 1) sets the advertised
+//! unchanged. `PENSIEVE_QUERY_RETRY_AFTER_SECS` (default 1) sets the advertised
 //! retry hint.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// Process-global query semaphore, or `None` when admission control is
@@ -28,7 +28,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 fn limiter() -> Option<&'static Arc<Semaphore>> {
     static S: OnceLock<Option<Arc<Semaphore>>> = OnceLock::new();
     S.get_or_init(|| {
-        let n = std::env::var("KYMA_QUERY_MAX_CONCURRENT")
+        let n = std::env::var("PENSIEVE_QUERY_MAX_CONCURRENT")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(0);
@@ -42,7 +42,7 @@ fn limiter() -> Option<&'static Arc<Semaphore>> {
 }
 
 fn retry_after_secs() -> u64 {
-    std::env::var("KYMA_QUERY_RETRY_AFTER_SECS")
+    std::env::var("PENSIEVE_QUERY_RETRY_AFTER_SECS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(1)
@@ -72,7 +72,7 @@ pub fn acquire() -> Result<QueryPermit, u64> {
 fn agent_limiter() -> Option<&'static Arc<Semaphore>> {
     static S: OnceLock<Option<Arc<Semaphore>>> = OnceLock::new();
     S.get_or_init(|| {
-        let n = std::env::var("KYMA_AGENT_MAX_CONCURRENT")
+        let n = std::env::var("PENSIEVE_AGENT_MAX_CONCURRENT")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(0);
@@ -86,7 +86,7 @@ fn agent_limiter() -> Option<&'static Arc<Semaphore>> {
 }
 
 fn agent_retry_after_secs() -> u64 {
-    std::env::var("KYMA_AGENT_RETRY_AFTER_SECS")
+    std::env::var("PENSIEVE_AGENT_RETRY_AFTER_SECS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(5)
@@ -99,7 +99,7 @@ pub struct AgentRunPermit(#[allow(dead_code)] Option<OwnedSemaphorePermit>);
 
 /// Try to admit one agent run. `Ok(permit)` to proceed (hold it for the whole
 /// run); `Err(retry_after_secs)` when the node is at its agent-run capacity.
-/// Off by default (`KYMA_AGENT_MAX_CONCURRENT` unset/0 ⇒ unlimited).
+/// Off by default (`PENSIEVE_AGENT_MAX_CONCURRENT` unset/0 ⇒ unlimited).
 pub fn acquire_agent_run() -> Result<AgentRunPermit, u64> {
     match agent_limiter() {
         None => Ok(AgentRunPermit(None)),
@@ -117,7 +117,7 @@ pub fn acquire_agent_run() -> Result<AgentRunPermit, u64> {
 fn per_tenant_query_limit() -> Option<usize> {
     static N: OnceLock<Option<usize>> = OnceLock::new();
     *N.get_or_init(|| {
-        let n = std::env::var("KYMA_QUERY_MAX_CONCURRENT_PER_TENANT")
+        let n = std::env::var("PENSIEVE_QUERY_MAX_CONCURRENT_PER_TENANT")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(0);
@@ -165,7 +165,7 @@ fn effective_tenant_semaphore(
 /// Admit one query for `tenant` against that tenant's own concurrency budget.
 /// `Ok(permit)` to proceed (hold it for the request); `Err(retry_after_secs)`
 /// when this tenant is at capacity. The limit is the tenant's `tenant_quotas`
-/// override if configured, else `KYMA_QUERY_MAX_CONCURRENT_PER_TENANT` (with no
+/// override if configured, else `PENSIEVE_QUERY_MAX_CONCURRENT_PER_TENANT` (with no
 /// override and unset/0 ⇒ unlimited).
 pub fn acquire_for_tenant(tenant: TenantId) -> Result<QueryPermit, u64> {
     let sem = match effective_tenant_semaphore(
@@ -189,7 +189,7 @@ pub fn acquire_for_tenant(tenant: TenantId) -> Result<QueryPermit, u64> {
 fn per_tenant_agent_limit() -> Option<usize> {
     static N: OnceLock<Option<usize>> = OnceLock::new();
     *N.get_or_init(|| {
-        let n = std::env::var("KYMA_AGENT_MAX_CONCURRENT_PER_TENANT")
+        let n = std::env::var("PENSIEVE_AGENT_MAX_CONCURRENT_PER_TENANT")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(0);
@@ -209,7 +209,7 @@ fn tenant_agent_semaphores() -> &'static Mutex<HashMap<TenantId, (usize, Arc<Sem
 /// Admit one agent run for `tenant` against that tenant's own agent-run budget
 /// (move the permit into the run's spawned task). `Err(retry_after_secs)` when
 /// this tenant is at capacity. The limit is the tenant's `tenant_quotas` override
-/// if configured, else `KYMA_AGENT_MAX_CONCURRENT_PER_TENANT` (with no override
+/// if configured, else `PENSIEVE_AGENT_MAX_CONCURRENT_PER_TENANT` (with no override
 /// and unset/0 ⇒ unlimited).
 pub fn acquire_agent_run_for_tenant(tenant: TenantId) -> Result<AgentRunPermit, u64> {
     let sem = match effective_tenant_semaphore(
@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn agent_run_disabled_when_unset_grants_inert_permits() {
-        // KYMA_AGENT_MAX_CONCURRENT unset ⇒ unlimited ⇒ never rejects.
+        // PENSIEVE_AGENT_MAX_CONCURRENT unset ⇒ unlimited ⇒ never rejects.
         for _ in 0..1000 {
             assert!(acquire_agent_run().is_ok());
         }
@@ -249,8 +249,8 @@ mod tests {
 
     #[test]
     fn per_tenant_disabled_when_unset_grants_inert_permits() {
-        // KYMA_QUERY_MAX_CONCURRENT_PER_TENANT unset ⇒ unlimited per tenant.
-        let t = kyma_core::tenant::DEFAULT_TENANT;
+        // PENSIEVE_QUERY_MAX_CONCURRENT_PER_TENANT unset ⇒ unlimited per tenant.
+        let t = pensieve_core::tenant::DEFAULT_TENANT;
         for _ in 0..1000 {
             assert!(acquire_for_tenant(t).is_ok());
         }
@@ -263,7 +263,7 @@ mod tests {
         // Uses a unique tenant so it can't collide with the other tests' default.
         let t = TenantId::from_uuid(uuid::Uuid::from_u128(0x9e57_0000_0000_0000_0000_0000_0000_0001));
         crate::quota_cache::clear_for_test();
-        crate::quota_cache::set_for_test(kyma_core::catalog::TenantQuota {
+        crate::quota_cache::set_for_test(pensieve_core::catalog::TenantQuota {
             tenant: t,
             max_query_concurrent: Some(1),
             max_agent_concurrent: None,
@@ -285,8 +285,8 @@ mod tests {
 
     #[test]
     fn per_tenant_agent_disabled_when_unset_grants_inert_permits() {
-        // KYMA_AGENT_MAX_CONCURRENT_PER_TENANT unset ⇒ unlimited per tenant.
-        let t = kyma_core::tenant::DEFAULT_TENANT;
+        // PENSIEVE_AGENT_MAX_CONCURRENT_PER_TENANT unset ⇒ unlimited per tenant.
+        let t = pensieve_core::tenant::DEFAULT_TENANT;
         for _ in 0..1000 {
             assert!(acquire_agent_run_for_tenant(t).is_ok());
         }

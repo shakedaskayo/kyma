@@ -1,4 +1,4 @@
-// Shim: backwards-compatible wrappers around @kyma-ai/client dashboards functions.
+// Shim: backwards-compatible wrappers around @pensieve-ai/client dashboards functions.
 
 export type {
   Dashboard,
@@ -6,9 +6,9 @@ export type {
   DashboardWithPanels,
   CreateDashboardBody,
   DashboardUpdate,
-} from "@kyma-ai/client";
+} from "@pensieve-ai/client";
 
-import type { CreateDashboardBody, DashboardUpdate } from "@kyma-ai/client";
+import type { CreateDashboardBody, DashboardUpdate } from "@pensieve-ai/client";
 import { sessionClient } from "./client";
 
 type Base = { endpoint: string; token: string; database?: string };

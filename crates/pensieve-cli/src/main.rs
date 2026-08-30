@@ -1,6 +1,6 @@
-//! Kyma CLI — admin + client mode.
+//! Pensieve CLI — admin + client mode.
 //!
-//! Client subcommands (talk to a running kyma server):
+//! Client subcommands (talk to a running pensieve server):
 //!   connect  <url> [--token TOKEN]   save server URL + bearer token
 //!   status                            show config + probe /health
 //!   query    "<question>" [--json]    stream /v1/agent/ask to stdout
@@ -8,7 +8,7 @@
 //!   distill  [--realm R]              stdin transcript → durable memories
 //!   ingest   push --table T           stdin NDJSON → POST /v1/ingest
 //!   install-skill [--target DIR]      write SKILL.md for coding agents
-//!   install-plugin [--target DIR]     install the kyma-memory Claude Code plugin
+//!   install-plugin [--target DIR]     install the pensieve-memory Claude Code plugin
 //!
 //! Admin subcommands (talk directly to Postgres):
 //!   create-database <name>
@@ -37,27 +37,27 @@ use client::{
 use anyhow::{anyhow, Context, Result};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use clap::{Parser, Subcommand};
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::{Catalog, TableConfig};
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::{Catalog, TableConfig};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 const SKILL_TEMPLATE: &str = include_str!("skill_template.md");
-/// `kyma-deploy` skill — production deployment runbook for coding agents.
-const DEPLOY_SKILL: &str = include_str!("../../../integrations/claude-code/kyma-deploy/SKILL.md");
+/// `pensieve-deploy` skill — production deployment runbook for coding agents.
+const DEPLOY_SKILL: &str = include_str!("../../../integrations/claude-code/pensieve-deploy/SKILL.md");
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "kyma",
-    about = "Kyma CLI — client queries + admin operations",
+    name = "pensieve",
+    about = "Pensieve CLI — client queries + admin operations",
     styles = clap::builder::Styles::styled()
 )]
 struct Cli {
     /// Postgres connection URL (admin subcommands only).
     #[arg(
         long,
-        env = "KYMA_CATALOG_URL",
-        default_value = "postgres://kyma:kyma_dev@localhost:5433/kyma"
+        env = "PENSIEVE_CATALOG_URL",
+        default_value = "postgres://pensieve:pensieve_dev@localhost:5433/pensieve"
     )]
     catalog_url: String,
 
@@ -72,7 +72,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     // ── client subcommands ────────────────────────────────────────────
-    /// Save a connection to a kyma server.
+    /// Save a connection to a pensieve server.
     Connect {
         /// Server base URL, e.g. http://localhost:8080
         url: String,
@@ -118,7 +118,7 @@ enum Command {
         #[command(subcommand)]
         op: SessionsOp,
     },
-    /// Recursively scrape a file/folder into kyma's candidate file graph
+    /// Recursively scrape a file/folder into pensieve's candidate file graph
     /// (deterministic structure; the local path is the source pointer).
     Scrape(scrape::ScrapeArgs),
     /// Watch a path and contribute files as they change (foreground).
@@ -128,42 +128,42 @@ enum Command {
         #[command(subcommand)]
         op: users::UsersOp,
     },
-    /// Install the Kyma skill so coding agents (Claude Code, Cursor, …)
+    /// Install the Pensieve skill so coding agents (Claude Code, Cursor, …)
     /// can discover and use this CLI.
     InstallSkill {
-        /// Target directory. Default: `$HOME/.kyma/skills/<skill>`.
+        /// Target directory. Default: `$HOME/.pensieve/skills/<skill>`.
         #[arg(long)]
         target: Option<std::path::PathBuf>,
         /// Also symlink into `$HOME/.claude/skills/<skill>` if that dir exists.
         #[arg(long)]
         also_link_claude: bool,
-        /// Which skill(s): the kyma CLI skill, the production-deployment
+        /// Which skill(s): the pensieve CLI skill, the production-deployment
         /// skill, or both.
-        #[arg(long, value_enum, default_value = "kyma")]
+        #[arg(long, value_enum, default_value = "pensieve")]
         which: SkillWhich,
     },
     /// Manage data sources — add a GitHub/GitLab/Bitbucket repo, list, pause,
-    /// resume, trigger, remove. See `kyma datasource --help`.
+    /// resume, trigger, remove. See `pensieve datasource --help`.
     #[command(name = "datasource")]
     DataSource {
         #[command(subcommand)]
         op: datasource::Op,
     },
     /// Publish memory as Git-clonable Obsidian vaults ("brains") — create,
-    /// list, export, clone. See `kyma brain --help`.
+    /// list, export, clone. See `pensieve brain --help`.
     Brain {
         #[command(subcommand)]
         op: brain::Op,
     },
     /// Git credential helper for brain clones (used via
-    /// `credential.helper=!kyma git-credential`; not for interactive use).
+    /// `credential.helper=!pensieve git-credential`; not for interactive use).
     #[command(name = "git-credential", hide = true)]
     GitCredential {
         /// The credential action git invokes: get | store | erase.
         action: Option<String>,
     },
-    /// Deploy kyma to production (AWS Fargate + S3 + Supabase) or run a
-    /// Supabase-backed local test drive. See `kyma deploy --help`.
+    /// Deploy pensieve to production (AWS Fargate + S3 + Supabase) or run a
+    /// Supabase-backed local test drive. See `pensieve deploy --help`.
     Deploy {
         #[command(subcommand)]
         op: deploy::Op,
@@ -174,8 +174,8 @@ enum Command {
         #[command(subcommand)]
         op: datasource::IngestOp,
     },
-    /// Recall durable memories from Kyma (semantic search via the MCP
-    /// `recall_memory` tool). Used by the kyma-memory plugin to inject context.
+    /// Recall durable memories from Pensieve (semantic search via the MCP
+    /// `recall_memory` tool). Used by the pensieve-memory plugin to inject context.
     Recall {
         /// What to recall.
         query: String,
@@ -189,7 +189,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Save a durable memory to Kyma (recallable later via `kyma recall`).
+    /// Save a durable memory to Pensieve (recallable later via `pensieve recall`).
     Remember {
         /// The memory content — a self-contained, durable fact/decision/preference.
         content: String,
@@ -234,7 +234,7 @@ enum Command {
         r#type: Option<String>,
     },
     /// Distill a session transcript (stdin) into durable memories via the
-    /// kyma agent. Used by the kyma-memory plugin at session end.
+    /// pensieve agent. Used by the pensieve-memory plugin at session end.
     Distill {
         /// Originating Claude Code session id (recorded for provenance).
         #[arg(long)]
@@ -243,10 +243,10 @@ enum Command {
         #[arg(long)]
         realm: Option<String>,
     },
-    /// Install the kyma-memory Claude Code plugin (hooks + MCP + commands)
-    /// into `~/.claude/skills/kyma-memory`.
+    /// Install the pensieve-memory Claude Code plugin (hooks + MCP + commands)
+    /// into `~/.claude/skills/pensieve-memory`.
     InstallPlugin {
-        /// Target plugin directory. Default: `$HOME/.claude/skills/kyma-memory`.
+        /// Target plugin directory. Default: `$HOME/.claude/skills/pensieve-memory`.
         #[arg(long)]
         target: Option<std::path::PathBuf>,
         /// Overwrite an existing install without warning.
@@ -262,10 +262,10 @@ enum Command {
     /// infra. Browse the graph + ingest on demand. Sign in: admin / admin.
     Serve {
         /// Listen address.
-        #[arg(long, env = "KYMA_LOCAL_HTTP_ADDR", default_value = "127.0.0.1:7777")]
+        #[arg(long, env = "PENSIEVE_LOCAL_HTTP_ADDR", default_value = "127.0.0.1:7777")]
         addr: SocketAddr,
     },
-    /// Wire a coding agent to `kyma mcp` over stdio (claude-code | cursor |
+    /// Wire a coding agent to `pensieve mcp` over stdio (claude-code | cursor |
     /// windsurf | …). One-liner onboarding; `setup list` shows the supported set.
     Setup {
         /// Agent key (e.g. claude-code, cursor, windsurf), or `list`.
@@ -275,11 +275,11 @@ enum Command {
         print: bool,
     },
     /// Sync memory with Claude Code's file memory (~/.claude/projects/*/memory,
-    /// always) and bidirectionally with a control plane (when KYMA_CLOUD_URL is
+    /// always) and bidirectionally with a control plane (when PENSIEVE_CLOUD_URL is
     /// set). The file phase ingests + embeds Claude Code memory files, promotes
-    /// high-value kyma memories back as native files, and curates MEMORY.md.
+    /// high-value pensieve memories back as native files, and curates MEMORY.md.
     Sync {
-        /// Keep running, re-syncing on an interval (KYMA_CC_SYNC_POLL_SECS,
+        /// Keep running, re-syncing on an interval (PENSIEVE_CC_SYNC_POLL_SECS,
         /// default 30s).
         #[arg(long)]
         watch: bool,
@@ -298,7 +298,7 @@ enum Command {
         project: Option<std::path::PathBuf>,
     },
     /// Manage the optional background sync worker — an OS user service
-    /// (launchd on macOS, systemd --user on Linux) running `kyma sync --watch`
+    /// (launchd on macOS, systemd --user on Linux) running `pensieve sync --watch`
     /// so memory stays synced with no terminal or session open.
     Worker {
         #[command(subcommand)]
@@ -306,7 +306,7 @@ enum Command {
     },
     /// Manage the local server as an OS user service (launchd on macOS,
     /// systemd --user on Linux): starts at login, restarts on crash —
-    /// `kyma serve` that stays up. See `kyma service --help`.
+    /// `pensieve serve` that stays up. See `pensieve service --help`.
     Service {
         #[command(subcommand)]
         action: ServiceAction,
@@ -388,7 +388,7 @@ enum Command {
         /// Reinstall even if this version is already current.
         #[arg(long)]
         force: bool,
-        /// Don't restart a running local `kyma serve` after updating.
+        /// Don't restart a running local `pensieve serve` after updating.
         #[arg(long)]
         no_restart: bool,
     },
@@ -433,7 +433,7 @@ enum Command {
 enum WorkerAction {
     /// Install + start the background sync worker (user service).
     Install {
-        /// Poll interval in seconds (default 30; sets KYMA_CC_SYNC_POLL_SECS).
+        /// Poll interval in seconds (default 30; sets PENSIEVE_CC_SYNC_POLL_SECS).
         #[arg(long)]
         interval: Option<u64>,
         /// Only the Claude Code file phase.
@@ -450,11 +450,11 @@ enum WorkerAction {
     /// Run a fabric node daemon: register with the control plane, sync local
     /// sources, and pull jobs this node accepts (low-impact by default).
     Run {
-        /// Control-plane URL (or KYMA_SERVER_URL).
-        #[arg(long, env = "KYMA_SERVER_URL")]
+        /// Control-plane URL (or PENSIEVE_SERVER_URL).
+        #[arg(long, env = "PENSIEVE_SERVER_URL")]
         server: String,
-        /// Worker token from `kyma worker create` (or KYMA_WORKER_TOKEN).
-        #[arg(long, env = "KYMA_WORKER_TOKEN")]
+        /// Worker token from `pensieve worker create` (or PENSIEVE_WORKER_TOKEN).
+        #[arg(long, env = "PENSIEVE_WORKER_TOKEN")]
         token: String,
         /// Job kinds to accept (comma-separated). Default: source_sync only.
         #[arg(long, value_delimiter = ',', default_value = "source_sync")]
@@ -491,7 +491,7 @@ enum ServiceAction {
         /// Listen address.
         #[arg(long, default_value = "127.0.0.1:7777")]
         addr: String,
-        /// Static admin token (KYMA_AUTH_TOKENS=<token>:admin in the service
+        /// Static admin token (PENSIEVE_AUTH_TOKENS=<token>:admin in the service
         /// env). Omit for the auth-disabled local default.
         #[arg(long)]
         token: Option<String>,
@@ -525,12 +525,12 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> Result<()> {
-    // `kyma serve` sets up a richer subscriber that includes the OTel self-trace
+    // `pensieve serve` sets up a richer subscriber that includes the OTel self-trace
     // layer; all other subcommands use a plain fmt subscriber.
     let self_trace_handle = if matches!(cli.command, Command::Serve { .. }) {
-        Some(kyma_local::setup_serve_tracing())
+        Some(pensieve_local::setup_serve_tracing())
     } else {
-        // Logs go to STDERR so command output (and the `kyma mcp` stdio
+        // Logs go to STDERR so command output (and the `pensieve mcp` stdio
         // protocol channel) stays clean on stdout.
         tracing_subscriber::fmt()
             .with_writer(std::io::stderr)
@@ -603,15 +603,15 @@ async fn run(cli: Cli) -> Result<()> {
         } => plugin::entity(name, kind, realm, prop, link, icon, r#type).await,
         Command::Distill { session, realm } => plugin::distill(session, realm).await,
         Command::InstallPlugin { target, force } => plugin::install_plugin(target, force).await,
-        // Local engine — delegate to the kyma-local library (one `kyma` binary).
-        Command::Mcp => kyma_local::run_mcp().await,
+        // Local engine — delegate to the pensieve-local library (one `pensieve` binary).
+        Command::Mcp => pensieve_local::run_mcp().await,
         Command::Serve { addr } => {
             // Fire-and-forget staleness nudge; serve runs until killed so it
             // prints (to stderr) once the throttled check resolves.
             tokio::spawn(update::maybe_notify_update());
-            kyma_local::run_serve(addr, self_trace_handle).await
+            pensieve_local::run_serve(addr, self_trace_handle).await
         }
-        Command::Setup { agent, print } => kyma_local::run_setup(&agent, print),
+        Command::Setup { agent, print } => pensieve_local::run_setup(&agent, print),
         Command::Sync {
             watch,
             dry_run,
@@ -619,7 +619,7 @@ async fn run(cli: Cli) -> Result<()> {
             cloud_only,
             project,
         } => {
-            kyma_local::run_sync(kyma_local::SyncOptions {
+            pensieve_local::run_sync(pensieve_local::SyncOptions {
                 watch,
                 dry_run,
                 cc_only,
@@ -634,15 +634,15 @@ async fn run(cli: Cli) -> Result<()> {
                 cc_only,
                 cloud_only,
             } => {
-                kyma_local::worker::install(&kyma_local::worker::WorkerOptions {
+                pensieve_local::worker::install(&pensieve_local::worker::WorkerOptions {
                     interval_secs: interval,
                     cc_only,
                     cloud_only,
-                    kyma_home: None, // resolved by install()
+                    pensieve_home: None, // resolved by install()
                 })
             }
-            WorkerAction::Uninstall => kyma_local::worker::uninstall(),
-            WorkerAction::Status => kyma_local::worker::status(),
+            WorkerAction::Uninstall => pensieve_local::worker::uninstall(),
+            WorkerAction::Status => pensieve_local::worker::status(),
             WorkerAction::Run {
                 server,
                 token,
@@ -650,7 +650,7 @@ async fn run(cli: Cli) -> Result<()> {
                 max_concurrent,
                 name,
             } => {
-                kyma_local::node::run_node(kyma_local::node::NodeConfig {
+                pensieve_local::node::run_node(pensieve_local::node::NodeConfig {
                     server_url: server,
                     token,
                     accept,
@@ -677,7 +677,7 @@ async fn run(cli: Cli) -> Result<()> {
                 println!();
                 println!("Shown once — store it now. Start the node with:");
                 println!(
-                    "  kyma worker run --server {} --token <token>",
+                    "  pensieve worker run --server {} --token <token>",
                     cfg.endpoint
                 );
                 Ok(())
@@ -730,10 +730,10 @@ async fn run(cli: Cli) -> Result<()> {
         },
         Command::Service { action } => match action {
             ServiceAction::Install { addr, token } => {
-                kyma_local::server_service::install(&kyma_local::server_service::ServerOptions {
+                pensieve_local::server_service::install(&pensieve_local::server_service::ServerOptions {
                     addr: addr.clone(),
                     token: token.clone(),
-                    kyma_home: None,
+                    pensieve_home: None,
                     secret_key: None,
                 })?;
                 // Keep the CLI pointed at the service we just installed: the
@@ -742,17 +742,17 @@ async fn run(cli: Cli) -> Result<()> {
                 if let Err(e) =
                     client::persist_local_connection(&format!("http://{addr}"), token.as_deref())
                 {
-                    eprintln!("warning: couldn't sync ~/.kyma/config.json: {e}");
+                    eprintln!("warning: couldn't sync ~/.pensieve/config.json: {e}");
                 }
                 Ok(())
             }
-            ServiceAction::Uninstall => kyma_local::server_service::uninstall(),
-            ServiceAction::Status => kyma_local::server_service::status(),
+            ServiceAction::Uninstall => pensieve_local::server_service::uninstall(),
+            ServiceAction::Status => pensieve_local::server_service::status(),
         },
 
         // ── admin subcommands ─────────────────────────────────────────
         Command::Version => {
-            println!("kyma {}", env!("CARGO_PKG_VERSION"));
+            println!("pensieve {}", env!("CARGO_PKG_VERSION"));
             update::maybe_notify_update().await;
             Ok(())
         }
@@ -840,8 +840,8 @@ async fn run(cli: Cli) -> Result<()> {
             }
             catalog
                 .set_table_embed_config(
-                    kyma_core::tenant::DEFAULT_TENANT,
-                    &kyma_core::catalog::TableEmbedConfig {
+                    pensieve_core::tenant::DEFAULT_TENANT,
+                    &pensieve_core::catalog::TableEmbedConfig {
                         table_id: tref.id,
                         source_column: source_column.clone(),
                         embedding_column: embedding_column.clone(),
@@ -913,7 +913,7 @@ async fn run(cli: Cli) -> Result<()> {
                 );
             }
             let cat = connect_catalog(&cli.catalog_url).await?;
-            let spec = kyma_core::catalog::GraphSpec {
+            let spec = pensieve_core::catalog::GraphSpec {
                 node_table: nodes,
                 edge_table: edges,
                 id_col,
@@ -1008,7 +1008,7 @@ async fn cmd_status() -> Result<()> {
                 ux::theme::muted(&format!("{} not set", ux::theme::CROSS))
             };
             println!("Token:     {token_line}");
-            // Use effective_config for probes so KYMA_SERVER_URL/KYMA_TOKEN env
+            // Use effective_config for probes so PENSIEVE_SERVER_URL/PENSIEVE_TOKEN env
             // overrides are honoured; fall back to the on-disk config if it fails.
             let probe_cfg = effective_config().unwrap_or_else(|_| cfg.clone());
             match probe_health(&probe_cfg).await {
@@ -1029,7 +1029,7 @@ async fn cmd_status() -> Result<()> {
                 Ok(false) => println!(
                     "Auth:      {}",
                     ux::theme::warn(&format!(
-                        "{} TOKEN REJECTED — the server does not accept the configured token.\n           Fix: re-run the installer, or `kyma service install --addr <addr> --token <tok>`,\n           or `kyma connect {} --token <tok>` with the server's real token.",
+                        "{} TOKEN REJECTED — the server does not accept the configured token.\n           Fix: re-run the installer, or `pensieve service install --addr <addr> --token <tok>`,\n           or `pensieve connect {} --token <tok>` with the server's real token.",
                         ux::theme::CROSS,
                         probe_cfg.endpoint
                     ))
@@ -1039,7 +1039,7 @@ async fn cmd_status() -> Result<()> {
                     ux::theme::error(&format!("{} probe error — {e}", ux::theme::CROSS))
                 ),
             }
-            // Hook-side capture health (written by the kyma-memory plugin hooks).
+            // Hook-side capture health (written by the pensieve-memory plugin hooks).
             if let Ok(dir) = client::config_dir() {
                 let p = dir.join("capture-health.json");
                 if let Ok(raw) = std::fs::read_to_string(&p) {
@@ -1064,7 +1064,7 @@ async fn cmd_status() -> Result<()> {
                 }
 
                 // cc-sync freshness (written by `run_cc_phase` on every pass —
-                // hook-triggered, worker-driven, or manual `kyma sync`).
+                // hook-triggered, worker-driven, or manual `pensieve sync`).
                 let sp = dir.join("cc-sync-health.json");
                 if let Ok(raw) = std::fs::read_to_string(&sp) {
                     let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
@@ -1080,25 +1080,25 @@ async fn cmd_status() -> Result<()> {
                 } else {
                     println!(
                         "Sync:      no recorded cc-sync yet (runs automatically at Claude Code \
-                         session start/end, or via `kyma sync`)"
+                         session start/end, or via `pensieve sync`)"
                     );
                 }
             }
 
-            // Background worker (`kyma worker install`) — sync otherwise only
-            // runs at session-boundary hooks or manual `kyma sync` calls.
-            let w = kyma_local::worker::probe();
+            // Background worker (`pensieve worker install`) — sync otherwise only
+            // runs at session-boundary hooks or manual `pensieve sync` calls.
+            let w = pensieve_local::worker::probe();
             match w.installed {
                 Some(true) if w.running => {
-                    println!("Worker:    installed, running (continuous `kyma sync --watch`)");
+                    println!("Worker:    installed, running (continuous `pensieve sync --watch`)");
                 }
                 Some(true) => println!(
-                    "Worker:    installed but not running — see ~/.kyma/logs/worker.log, or \
-                     `kyma worker install` again"
+                    "Worker:    installed but not running — see ~/.pensieve/logs/worker.log, or \
+                     `pensieve worker install` again"
                 ),
                 Some(false) => println!(
                     "Worker:    not installed — sync only runs at session start/end \
-                     (`kyma worker install` for continuous sync)"
+                     (`pensieve worker install` for continuous sync)"
                 ),
                 None => {}
             }
@@ -1106,7 +1106,7 @@ async fn cmd_status() -> Result<()> {
         Err(_) => {
             println!(
                 "{}",
-                ux::theme::muted("No config found. Run `kyma connect <url>` first.")
+                ux::theme::muted("No config found. Run `pensieve connect <url>` first.")
             );
         }
     }
@@ -1229,9 +1229,9 @@ async fn cmd_sessions(op: SessionsOp) -> Result<()> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 enum SkillWhich {
-    /// The `kyma` CLI skill (recall/remember/query).
-    Kyma,
-    /// The `kyma-deploy` production-deployment skill.
+    /// The `pensieve` CLI skill (recall/remember/query).
+    Pensieve,
+    /// The `pensieve-deploy` production-deployment skill.
     Deploy,
     /// Both skills.
     All,
@@ -1243,9 +1243,9 @@ async fn cmd_install_skill(
     which: SkillWhich,
 ) -> Result<()> {
     let skills: &[(&str, &str)] = match which {
-        SkillWhich::Kyma => &[("kyma", SKILL_TEMPLATE)],
-        SkillWhich::Deploy => &[("kyma-deploy", DEPLOY_SKILL)],
-        SkillWhich::All => &[("kyma", SKILL_TEMPLATE), ("kyma-deploy", DEPLOY_SKILL)],
+        SkillWhich::Pensieve => &[("pensieve", SKILL_TEMPLATE)],
+        SkillWhich::Deploy => &[("pensieve-deploy", DEPLOY_SKILL)],
+        SkillWhich::All => &[("pensieve", SKILL_TEMPLATE), ("pensieve-deploy", DEPLOY_SKILL)],
     };
     if target.is_some() && skills.len() > 1 {
         anyhow::bail!("--target only works with a single skill (drop --which all)");
@@ -1321,7 +1321,7 @@ async fn connect_catalog(url: &str) -> Result<Arc<dyn Catalog>> {
 async fn find_database_id(
     catalog: &Arc<dyn Catalog>,
     name: &str,
-) -> Result<kyma_core::types::DatabaseId> {
+) -> Result<pensieve_core::types::DatabaseId> {
     // We don't have a `lookup_database` method yet. Workaround: try to
     // create-then-read by creating; if duplicate, look it up via a direct
     // pg query. For phase A we just try to create the database and if it
@@ -1337,10 +1337,10 @@ async fn find_database_id(
     // trait (tracked as follow-up).
     let _ = catalog;
     let pool = sqlx::PgPool::connect(
-        std::env::var("KYMA_CATALOG_URL")
+        std::env::var("PENSIEVE_CATALOG_URL")
             .ok()
             .as_deref()
-            .unwrap_or("postgres://kyma:kyma_dev@localhost:5433/kyma"),
+            .unwrap_or("postgres://pensieve:pensieve_dev@localhost:5433/pensieve"),
     )
     .await?;
     let row: Option<(uuid::Uuid,)> = sqlx::query_as("SELECT id FROM databases WHERE name = $1")
@@ -1350,7 +1350,7 @@ async fn find_database_id(
     let id = row
         .ok_or_else(|| anyhow!("database '{}' not found — create it first", name))?
         .0;
-    Ok(kyma_core::types::DatabaseId::from_uuid(id))
+    Ok(pensieve_core::types::DatabaseId::from_uuid(id))
 }
 
 fn parse_schema_spec(spec: &str) -> Result<Schema> {

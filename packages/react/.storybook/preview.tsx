@@ -6,7 +6,7 @@
  * We override window.fetch once inside this module (the Storybook sandbox
  * iframe). This is intentional and acceptable here: every story runs in an
  * isolated iframe that is fully controlled by Storybook, so overriding fetch
- * does not pollute the host page. The override routes known Kyma API paths to
+ * does not pollute the host page. The override routes known Pensieve API paths to
  * in-memory fixture data so no real server is required.
  *
  * URL routing covers:
@@ -27,11 +27,11 @@
 import React from "react";
 import type { Preview, Decorator } from "@storybook/react";
 // Import from the package root so tooling that maps the package entry to the
-// built bundle resolves the SAME KymaProvider instance the components use —
+// built bundle resolves the SAME PensieveProvider instance the components use —
 // a deep-path import compiles a second copy whose React context the bundled
 // components can't see.
-import { KymaProvider, kymaDark, kymaLight } from "../src";
-import type { KymaTheme } from "../src/theme/tokens";
+import { PensieveProvider, pensieveDark, pensieveLight } from "../src";
+import type { PensieveTheme } from "../src/theme/tokens";
 
 // fixtures
 import { CAPABILITIES_FIXTURE } from "../src/__fixtures__/capabilities";
@@ -139,9 +139,9 @@ window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response>
 // ── Theme toolbar ───────────────────────────────────────────────────────────────
 
 export const globalTypes = {
-  kymaTheme: {
+  pensieveTheme: {
     name: "Theme",
-    description: "Kyma colour theme",
+    description: "Pensieve colour theme",
     defaultValue: "dark",
     toolbar: {
       icon: "paintbrush",
@@ -156,33 +156,33 @@ export const globalTypes = {
   },
 };
 
-function resolveTheme(value: string): Partial<KymaTheme> {
-  if (value === "light") return kymaLight;
-  if (value === "custom") return { ...kymaDark, accent: "185 80% 40%", primary: "185 80% 40%" };
-  return kymaDark;
+function resolveTheme(value: string): Partial<PensieveTheme> {
+  if (value === "light") return pensieveLight;
+  if (value === "custom") return { ...pensieveDark, accent: "185 80% 40%", primary: "185 80% 40%" };
+  return pensieveDark;
 }
 
 // ── Global decorator ────────────────────────────────────────────────────────────
 
-const withKymaProvider: Decorator = (Story, context) => {
-  const themeKey: string = (context.globals as Record<string, string>)["kymaTheme"] ?? "dark";
+const withPensieveProvider: Decorator = (Story, context) => {
+  const themeKey: string = (context.globals as Record<string, string>)["pensieveTheme"] ?? "dark";
   const theme = resolveTheme(themeKey);
 
   return (
     <div style={{ height: "100vh", overflow: "hidden", background: "#0a0f14" }}>
-      <KymaProvider
-        endpoint="https://kyma.demo"
+      <PensieveProvider
+        endpoint="https://pensieve.demo"
         auth={{ token: "storybook" }}
         theme={theme}
       >
         <Story />
-      </KymaProvider>
+      </PensieveProvider>
     </div>
   );
 };
 
 const preview: Preview = {
-  decorators: [withKymaProvider],
+  decorators: [withPensieveProvider],
   parameters: {
     layout: "fullscreen",
   },

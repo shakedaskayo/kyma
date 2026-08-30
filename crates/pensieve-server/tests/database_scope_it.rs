@@ -16,7 +16,7 @@
 use async_trait::async_trait;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use kyma_server::auth::{AuthBackend, AuthError, AuthLayerState, Principal, Role};
+use pensieve_server::auth::{AuthBackend, AuthError, AuthLayerState, Principal, Role};
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -34,7 +34,7 @@ impl AuthBackend for ScopedAuth {
             return Err(AuthError::MissingToken);
         }
         Ok(Principal {
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            tenant: pensieve_core::tenant::DEFAULT_TENANT,
             role: Role::Admin,
             subject: Some("test-scoped-user".to_string()),
             allowed_databases: Some(vec!["allowed_db".to_string()]),
@@ -43,19 +43,19 @@ impl AuthBackend for ScopedAuth {
     }
 }
 
-fn build_app(state: kyma_server::QueryState) -> axum::Router {
+fn build_app(state: pensieve_server::QueryState) -> axum::Router {
     let backend: Arc<dyn AuthBackend> = Arc::new(ScopedAuth);
     let layer = AuthLayerState {
         backend,
         required: Role::Read,
     };
-    kyma_server::router(state).layer(axum::middleware::from_fn_with_state(
+    pensieve_server::router(state).layer(axum::middleware::from_fn_with_state(
         layer,
-        kyma_server::auth::require_role_middleware,
+        pensieve_server::auth::require_role_middleware,
     ))
 }
 
-async fn one(state: kyma_server::QueryState, req: Request<Body>) -> (StatusCode, String) {
+async fn one(state: pensieve_server::QueryState, req: Request<Body>) -> (StatusCode, String) {
     let app = build_app(state);
     let resp = app.oneshot(req).await.unwrap();
     let status = resp.status();
@@ -78,7 +78,7 @@ async fn catalog_schema_excludes_unscoped_databases() {
     // The seeded state has an "obs" database. Our token is scoped to
     // "allowed_db" only. The schema response should contain no databases
     // (since "obs" ≠ "allowed_db").
-    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+    let state = pensieve_server::test_support::seeded_state_with_obs_otel_logs().await;
     let req = auth_header(Request::builder().uri("/v1/catalog/schema"))
         .body(Body::empty())
         .unwrap();
@@ -95,7 +95,7 @@ async fn catalog_schema_excludes_unscoped_databases() {
 #[tokio::test]
 async fn catalog_schema_includes_scoped_database() {
     // Seed a state with "allowed_db" and verify the handler includes it.
-    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+    let state = pensieve_server::test_support::seeded_state_with_obs_otel_logs().await;
     // Create "allowed_db" in the catalog.
     state
         .catalog
@@ -127,7 +127,7 @@ async fn catalog_schema_includes_scoped_database() {
 
 #[tokio::test]
 async fn query_handler_rejects_unscoped_database() {
-    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+    let state = pensieve_server::test_support::seeded_state_with_obs_otel_logs().await;
     let req = auth_header(
         Request::builder()
             .method("POST")
@@ -154,7 +154,7 @@ async fn query_handler_rejects_unscoped_database() {
 async fn schema_graph_excludes_unscoped_databases() {
     // Seeded state has an "obs" database with tables; token is scoped to
     // "allowed_db" only — nothing from "obs" may appear in the schema graph.
-    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+    let state = pensieve_server::test_support::seeded_state_with_obs_otel_logs().await;
     let req = auth_header(Request::builder().uri("/v1/graph/schema/overview"))
         .body(Body::empty())
         .unwrap();
@@ -168,7 +168,7 @@ async fn schema_graph_excludes_unscoped_databases() {
 
 #[tokio::test]
 async fn schema_graph_includes_scoped_database() {
-    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+    let state = pensieve_server::test_support::seeded_state_with_obs_otel_logs().await;
     // The schema graph only renders databases that have tables — give
     // allowed_db one so it produces nodes.
     let db_id = state
@@ -187,7 +187,7 @@ async fn schema_graph_includes_scoped_database() {
             db_id,
             "events",
             schema,
-            kyma_core::catalog::TableConfig::default(),
+            pensieve_core::catalog::TableConfig::default(),
         )
         .await
         .expect("create_table events");
@@ -208,7 +208,7 @@ async fn query_handler_allows_scoped_database() {
     // Token is scoped to "allowed_db". The database exists (we create it).
     // The query itself may fail with a SQL error since there are no tables,
     // but we must get past the scope gate (no 403).
-    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+    let state = pensieve_server::test_support::seeded_state_with_obs_otel_logs().await;
     state
         .catalog
         .create_database("allowed_db")

@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { KymaDiscover } from "./KymaDiscover";
+import { PensieveDiscover } from "./PensieveDiscover";
 
-const meta: Meta<typeof KymaDiscover> = {
-  title: "Components/KymaDiscover",
-  component: KymaDiscover,
+const meta: Meta<typeof PensieveDiscover> = {
+  title: "Components/PensieveDiscover",
+  component: PensieveDiscover,
   argTypes: {
     defaultQuery: {
       control: "text",
@@ -16,7 +16,7 @@ const meta: Meta<typeof KymaDiscover> = {
 };
 
 export default meta;
-type Story = StoryObj<typeof KymaDiscover>;
+type Story = StoryObj<typeof PensieveDiscover>;
 
 /**
  * Default Discover view. The fixture fetch serves NDJSON frames on

@@ -4,10 +4,10 @@
 # The scale program's acceptance gate (per the user directive): after merging
 # tested work to main, prove the engine runs from a *fresh* state with no
 # pre-existing data or infra. This exercises the LOCAL single-binary path
-# (`kyma serve`: SQLite catalog + local-filesystem store, zero external infra) —
+# (`pensieve serve`: SQLite catalog + local-filesystem store, zero external infra) —
 # the same path a new user gets from `install.sh` / `cargo install`.
 #
-# Steps: build the `kyma` binary -> serve from an empty data dir -> health ->
+# Steps: build the `pensieve` binary -> serve from an empty data dir -> health ->
 # create a vector table -> ingest -> query (count, filter, aggregate) ->
 # vector search (cosine) -> assert each. Exits non-zero on first failure.
 #
@@ -18,10 +18,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-PORT="${KYMA_FRESH_PORT:-7799}"
+PORT="${PENSIEVE_FRESH_PORT:-7799}"
 BASE="http://127.0.0.1:${PORT}"
-DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kyma-fresh-XXXXXX")"
-BIN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kyma-fresh-bin-XXXXXX")"
+DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pensieve-fresh-XXXXXX")"
+BIN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pensieve-fresh-bin-XXXXXX")"
 LOG="${DATA_DIR}/serve.log"
 SERVER_PID=""
 
@@ -39,22 +39,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
-section "Build the kyma binary (from source, like a fresh install)"
-cargo build -p kyma-cli --quiet
-cp target/debug/kyma-cli "$BIN_DIR/kyma"
-KYMA="$BIN_DIR/kyma"
-"$KYMA" --help >/dev/null 2>&1 && ok "kyma binary runs" || bad "kyma binary won't run"
+section "Build the pensieve binary (from source, like a fresh install)"
+cargo build -p pensieve-cli --quiet
+cp target/debug/pensieve-cli "$BIN_DIR/pensieve"
+PENSIEVE="$BIN_DIR/pensieve"
+"$PENSIEVE" --help >/dev/null 2>&1 && ok "pensieve binary runs" || bad "pensieve binary won't run"
 
 # Local serve mounts the full API behind role auth (ingest=Write, query=Read)
 # and seeds a default web-UI user (admin/admin). We authenticate the way a real
 # user does: POST /v1/auth/login -> access_token -> Bearer on every request.
 section "Serve from an EMPTY data dir (local mode: SQLite + local FS, zero infra)"
 ls -A "$DATA_DIR" | grep -q . && bad "data dir not empty before start" || ok "data dir is empty"
-KYMA_LOCAL_MODE=1 \
-KYMA_LOCAL_DATA="$DATA_DIR/data" \
-KYMA_HOME="$DATA_DIR/home" \
-KYMA_SECRET_KEY="${KYMA_SECRET_KEY:-fresh_install_validate_secret_key_32}" \
-  "$KYMA" serve --addr "127.0.0.1:${PORT}" >"$LOG" 2>&1 &
+PENSIEVE_LOCAL_MODE=1 \
+PENSIEVE_LOCAL_DATA="$DATA_DIR/data" \
+PENSIEVE_HOME="$DATA_DIR/home" \
+PENSIEVE_SECRET_KEY="${PENSIEVE_SECRET_KEY:-fresh_install_validate_secret_key_32}" \
+  "$PENSIEVE" serve --addr "127.0.0.1:${PORT}" >"$LOG" 2>&1 &
 SERVER_PID=$!
 
 for _ in $(seq 1 30); do
@@ -124,9 +124,9 @@ hits=$(curl -fsS -X POST "${BASE}/v1/search" \
 
 section "Restart durability: data survives a serve restart"
 kill "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true
-KYMA_LOCAL_MODE=1 KYMA_LOCAL_DATA="$DATA_DIR/data" KYMA_HOME="$DATA_DIR/home" \
-KYMA_SECRET_KEY="${KYMA_SECRET_KEY:-fresh_install_validate_secret_key_32}" \
-  "$KYMA" serve --addr "127.0.0.1:${PORT}" >>"$LOG" 2>&1 &
+PENSIEVE_LOCAL_MODE=1 PENSIEVE_LOCAL_DATA="$DATA_DIR/data" PENSIEVE_HOME="$DATA_DIR/home" \
+PENSIEVE_SECRET_KEY="${PENSIEVE_SECRET_KEY:-fresh_install_validate_secret_key_32}" \
+  "$PENSIEVE" serve --addr "127.0.0.1:${PORT}" >>"$LOG" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 1 30); do curl -fsS -o /dev/null "${BASE}/health" 2>/dev/null && break; sleep 1; done
 # Session tokens persist in the SQLite catalog, so the pre-restart token still

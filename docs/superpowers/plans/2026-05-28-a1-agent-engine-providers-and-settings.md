@@ -4,7 +4,7 @@
 
 **Goal:** Replace the hardcoded Ollama-only agent backend with a swappable engine registry (Anthropic / OpenAI / Ollama), a credential resolver that picks up `ANTHROPIC_API_KEY`/`~/.claude/.credentials.json`/catalog credentials, and a Settings → Agent Engine UI to configure all of it.
 
-**Architecture:** Introduce an `EngineRegistry` trait inside `crates/kyma-server/src/agent/engine/` with one impl per provider. `runner.rs` calls `EngineRegistry::resolve(...)` per run to construct the right adk-rust `Llm`. A new `engine_config` table (single global row for v1) persists the active provider/model/credential_id. A `CredentialResolver` walks env vars → `~/.claude/.credentials.json` → catalog `CredentialStore`. Web Settings page lists available providers (via `GET /v1/agent/engines`), shows the active config, lets the user save/test a new one.
+**Architecture:** Introduce an `EngineRegistry` trait inside `crates/pensieve-server/src/agent/engine/` with one impl per provider. `runner.rs` calls `EngineRegistry::resolve(...)` per run to construct the right adk-rust `Llm`. A new `engine_config` table (single global row for v1) persists the active provider/model/credential_id. A `CredentialResolver` walks env vars → `~/.claude/.credentials.json` → catalog `CredentialStore`. Web Settings page lists available providers (via `GET /v1/agent/engines`), shows the active config, lets the user save/test a new one.
 
 **Tech Stack:** Rust (axum, sqlx, adk-rust 0.6 with `anthropic` + `openai` features), TypeScript/React (react-query, shadcn/ui), Postgres migration.
 
@@ -12,7 +12,7 @@
 
 ## File Structure
 
-**Rust — `crates/kyma-server/src/agent/`:**
+**Rust — `crates/pensieve-server/src/agent/`:**
 
 - Create `engine/mod.rs` — `EngineKind`, `EngineConfig`, `ResolvedEngine`, `EngineRegistry` trait, `build_engine` dispatch.
 - Create `engine/anthropic.rs` — `AnthropicEngine` impl, default model list.
@@ -25,7 +25,7 @@
 - Modify `mod.rs:1-27` — re-export new types.
 - Modify `state.rs:13-23` — add `Arc<dyn EnginePreferenceStore>` + `Arc<dyn CredentialStore>` (already present?) to `AgentState`.
 
-**Rust — `crates/kyma-server/src/agent/routes.rs`:**
+**Rust — `crates/pensieve-server/src/agent/routes.rs`:**
 
 - Add `GET /v1/agent/engines` — list available engine kinds + their default models + whether creds are detected.
 - Add `GET /v1/agent/engine` — current `EngineConfig`.
@@ -34,11 +34,11 @@
 
 **Rust — migration:**
 
-- Create `crates/kyma-catalog/migrations/012_agent_engine_config.sql` — `engine_config` table (singleton row for v1).
+- Create `crates/pensieve-catalog/migrations/012_agent_engine_config.sql` — `engine_config` table (singleton row for v1).
 
 **Rust — bin wiring:**
 
-- Modify `crates/kyma-bin/src/main.rs` — wire the new engine routes into the agent sub-router; construct `AgentState` with the new stores.
+- Modify `crates/pensieve-bin/src/main.rs` — wire the new engine routes into the agent sub-router; construct `AgentState` with the new stores.
 
 **Web — `web/src/sdk/`:**
 
@@ -56,12 +56,12 @@
 - [ ] **Step 0a: Confirm working directory**
 
 Run: `pwd`
-Expected: `/Users/shakedaskayo/shaked/projects/kyma/.claude/worktrees/feature+graph-layer`
+Expected: `/Users/shakedaskayo/shaked/projects/pensieve/.claude/worktrees/feature+graph-layer`
 
 - [ ] **Step 0b: Confirm clean working tree before starting**
 
 Run: `git status --short`
-Expected: a list of in-flight changes from earlier sessions is acceptable, but no `M`-staged surprises in `crates/kyma-server/src/agent/` or `crates/kyma-catalog/`. If you see unrelated modifications there, stash them before starting.
+Expected: a list of in-flight changes from earlier sessions is acceptable, but no `M`-staged surprises in `crates/pensieve-server/src/agent/` or `crates/pensieve-catalog/`. If you see unrelated modifications there, stash them before starting.
 
 - [ ] **Step 0c: Verify adk-rust features needed are *not* enabled yet**
 
@@ -70,7 +70,7 @@ Expected: workspace dep has `ollama` but NOT `anthropic` or `openai`. (We'll add
 
 - [ ] **Step 0d: Verify catalog `CredentialStore` exists**
 
-Run: `grep -n "pub trait CredentialStore" crates/kyma-core/src/credentials.rs`
+Run: `grep -n "pub trait CredentialStore" crates/pensieve-core/src/credentials.rs`
 Expected: line 152 (or thereabouts) — the trait we'll wire into the resolver.
 
 ---
@@ -78,7 +78,7 @@ Expected: line 152 (or thereabouts) — the trait we'll wire into the resolver.
 ## Task 1: Add the `engine_config` migration
 
 **Files:**
-- Create: `crates/kyma-catalog/migrations/012_agent_engine_config.sql`
+- Create: `crates/pensieve-catalog/migrations/012_agent_engine_config.sql`
 
 - [ ] **Step 1: Write the migration**
 
@@ -106,7 +106,7 @@ ON CONFLICT (id) DO NOTHING;
 
 - [ ] **Step 2: Apply the migration locally**
 
-Run: `sqlx migrate run --source crates/kyma-catalog/migrations`
+Run: `sqlx migrate run --source crates/pensieve-catalog/migrations`
 Expected: `Applied 012/migrate agent engine config (...)`
 
 - [ ] **Step 3: Verify the row exists**
@@ -117,7 +117,7 @@ Expected: one row, `id=1 kind=ollama model=gemma4:latest`
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-catalog/migrations/012_agent_engine_config.sql
+git add crates/pensieve-catalog/migrations/012_agent_engine_config.sql
 git commit -m "feat(agent): migration 012 — engine_config singleton table"
 ```
 
@@ -147,7 +147,7 @@ adk-rust = { version = "0.6", default-features = false, features = [
 
 - [ ] **Step 2: Verify it compiles**
 
-Run: `cargo check -p kyma-server`
+Run: `cargo check -p pensieve-server`
 Expected: clean build (may take ~60s on first run due to new deps).
 
 - [ ] **Step 3: Commit**
@@ -162,12 +162,12 @@ git commit -m "build(agent): enable adk-rust anthropic + openai features"
 ## Task 3: Engine kinds + config type
 
 **Files:**
-- Create: `crates/kyma-server/src/agent/engine/mod.rs`
-- Test: `crates/kyma-server/src/agent/engine/mod.rs` (inline `#[cfg(test)]`)
+- Create: `crates/pensieve-server/src/agent/engine/mod.rs`
+- Test: `crates/pensieve-server/src/agent/engine/mod.rs` (inline `#[cfg(test)]`)
 
 - [ ] **Step 1: Write the failing test**
 
-Create `crates/kyma-server/src/agent/engine/mod.rs` with:
+Create `crates/pensieve-server/src/agent/engine/mod.rs` with:
 
 ```rust
 //! Agent engine registry — picks an LLM provider based on persisted config.
@@ -229,7 +229,7 @@ mod tests {
 
 - [ ] **Step 2: Wire the new module into the agent crate**
 
-Add to `crates/kyma-server/src/agent/mod.rs` after the existing `pub mod` lines:
+Add to `crates/pensieve-server/src/agent/mod.rs` after the existing `pub mod` lines:
 
 ```rust
 pub mod engine;
@@ -237,13 +237,13 @@ pub mod engine;
 
 - [ ] **Step 3: Run the test to confirm it passes**
 
-Run: `cargo test -p kyma-server --lib agent::engine::tests`
+Run: `cargo test -p pensieve-server --lib agent::engine::tests`
 Expected: 2 tests pass.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/engine/mod.rs crates/kyma-server/src/agent/mod.rs
+git add crates/pensieve-server/src/agent/engine/mod.rs crates/pensieve-server/src/agent/mod.rs
 git commit -m "feat(agent): EngineKind + EngineConfig types"
 ```
 
@@ -252,13 +252,13 @@ git commit -m "feat(agent): EngineKind + EngineConfig types"
 ## Task 4: `EnginePreferenceStore` trait + Postgres impl
 
 **Files:**
-- Create: `crates/kyma-server/src/agent/engine/store.rs`
-- Modify: `crates/kyma-server/src/agent/engine/mod.rs` (add `pub mod store;`)
+- Create: `crates/pensieve-server/src/agent/engine/store.rs`
+- Modify: `crates/pensieve-server/src/agent/engine/mod.rs` (add `pub mod store;`)
 - Test: inline `#[cfg(test)]` in `store.rs`
 
 - [ ] **Step 1: Write the trait + impl**
 
-Create `crates/kyma-server/src/agent/engine/store.rs`:
+Create `crates/pensieve-server/src/agent/engine/store.rs`:
 
 ```rust
 //! Persistence for the active EngineConfig — singleton row in `engine_config`.
@@ -389,7 +389,7 @@ mod tests {
 
 - [ ] **Step 2: Wire the new submodule**
 
-Append to `crates/kyma-server/src/agent/engine/mod.rs`:
+Append to `crates/pensieve-server/src/agent/engine/mod.rs`:
 
 ```rust
 pub mod store;
@@ -398,13 +398,13 @@ pub use store::{EnginePreferenceStore, PgEnginePreferenceStore};
 
 - [ ] **Step 3: Run the test**
 
-Run: `DATABASE_URL=postgres://kyma:kyma@localhost:5432/kyma cargo test -p kyma-server --lib agent::engine::store::tests -- --nocapture`
+Run: `DATABASE_URL=postgres://pensieve:pensieve@localhost:5432/pensieve cargo test -p pensieve-server --lib agent::engine::store::tests -- --nocapture`
 Expected: 1 test passes. If `DATABASE_URL` isn't set the test prints `skip:` and exits 0 — that's fine for laptops without Postgres.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/engine/store.rs crates/kyma-server/src/agent/engine/mod.rs
+git add crates/pensieve-server/src/agent/engine/store.rs crates/pensieve-server/src/agent/engine/mod.rs
 git commit -m "feat(agent): EnginePreferenceStore trait + Postgres impl"
 ```
 
@@ -413,13 +413,13 @@ git commit -m "feat(agent): EnginePreferenceStore trait + Postgres impl"
 ## Task 5: Claude Code credentials reader
 
 **Files:**
-- Create: `crates/kyma-server/src/agent/engine/claude_creds.rs`
-- Modify: `crates/kyma-server/src/agent/engine/mod.rs` (`pub mod claude_creds;`)
+- Create: `crates/pensieve-server/src/agent/engine/claude_creds.rs`
+- Modify: `crates/pensieve-server/src/agent/engine/mod.rs` (`pub mod claude_creds;`)
 - Test: inline
 
 - [ ] **Step 1: Write the reader**
 
-Create `crates/kyma-server/src/agent/engine/claude_creds.rs`:
+Create `crates/pensieve-server/src/agent/engine/claude_creds.rs`:
 
 ```rust
 //! Read the Claude Code creds file at `~/.claude/.credentials.json` and
@@ -488,7 +488,7 @@ mod tests {
     #[test]
     fn missing_file_is_none() {
         let prev = std::env::var_os("HOME");
-        std::env::set_var("HOME", "/nonexistent/kyma-test-home");
+        std::env::set_var("HOME", "/nonexistent/pensieve-test-home");
         assert_eq!(discover_anthropic_key(), None);
         if let Some(v) = prev {
             std::env::set_var("HOME", v);
@@ -516,7 +516,7 @@ mod tests {
 
 - [ ] **Step 2: Wire the submodule**
 
-Append to `crates/kyma-server/src/agent/engine/mod.rs`:
+Append to `crates/pensieve-server/src/agent/engine/mod.rs`:
 
 ```rust
 pub mod claude_creds;
@@ -524,13 +524,13 @@ pub mod claude_creds;
 
 - [ ] **Step 3: Run the tests**
 
-Run: `cargo test -p kyma-server --lib agent::engine::claude_creds::tests`
+Run: `cargo test -p pensieve-server --lib agent::engine::claude_creds::tests`
 Expected: 3 tests pass.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/engine/claude_creds.rs crates/kyma-server/src/agent/engine/mod.rs
+git add crates/pensieve-server/src/agent/engine/claude_creds.rs crates/pensieve-server/src/agent/engine/mod.rs
 git commit -m "feat(agent): ClaudeCode credential discovery (~/.claude/.credentials.json)"
 ```
 
@@ -539,12 +539,12 @@ git commit -m "feat(agent): ClaudeCode credential discovery (~/.claude/.credenti
 ## Task 6: `CredentialResolver` — env → claude → catalog
 
 **Files:**
-- Create: `crates/kyma-server/src/agent/engine/resolver.rs`
-- Modify: `crates/kyma-server/src/agent/engine/mod.rs` (`pub mod resolver;`)
+- Create: `crates/pensieve-server/src/agent/engine/resolver.rs`
+- Modify: `crates/pensieve-server/src/agent/engine/mod.rs` (`pub mod resolver;`)
 
 - [ ] **Step 1: Write the resolver**
 
-Create `crates/kyma-server/src/agent/engine/resolver.rs`:
+Create `crates/pensieve-server/src/agent/engine/resolver.rs`:
 
 ```rust
 //! Resolve the secret material for an EngineConfig.
@@ -556,8 +556,8 @@ Create `crates/kyma-server/src/agent/engine/resolver.rs`:
 //!   4. Ollama: no key — host URL is the config.
 
 use super::{claude_creds, EngineConfig, EngineKind};
-use kyma_core::credentials::{CredentialStore, CredentialValue};
-use kyma_core::tenant::TenantId;
+use pensieve_core::credentials::{CredentialStore, CredentialValue};
+use pensieve_core::tenant::TenantId;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -636,13 +636,13 @@ pub use resolver::{CredentialResolver, ResolvedKey};
 
 - [ ] **Step 3: Verify compile**
 
-Run: `cargo check -p kyma-server`
+Run: `cargo check -p pensieve-server`
 Expected: clean build.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/engine/resolver.rs crates/kyma-server/src/agent/engine/mod.rs
+git add crates/pensieve-server/src/agent/engine/resolver.rs crates/pensieve-server/src/agent/engine/mod.rs
 git commit -m "feat(agent): CredentialResolver — env / claude-code / catalog"
 ```
 
@@ -651,11 +651,11 @@ git commit -m "feat(agent): CredentialResolver — env / claude-code / catalog"
 ## Task 7: `EngineRegistry` + Ollama impl (refactor existing logic out of runner.rs)
 
 **Files:**
-- Create: `crates/kyma-server/src/agent/engine/ollama.rs`
+- Create: `crates/pensieve-server/src/agent/engine/ollama.rs`
 
 - [ ] **Step 1: Write the registry trait + Ollama impl**
 
-Create `crates/kyma-server/src/agent/engine/ollama.rs`:
+Create `crates/pensieve-server/src/agent/engine/ollama.rs`:
 
 ```rust
 //! Ollama engine — existing default. No API key needed; host is the config.
@@ -707,13 +707,13 @@ pub mod ollama;
 
 - [ ] **Step 3: Verify compile**
 
-Run: `cargo check -p kyma-server`
+Run: `cargo check -p pensieve-server`
 Expected: clean.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/engine/ollama.rs crates/kyma-server/src/agent/engine/mod.rs
+git add crates/pensieve-server/src/agent/engine/ollama.rs crates/pensieve-server/src/agent/engine/mod.rs
 git commit -m "feat(agent): Ollama engine extracted behind the new registry shape"
 ```
 
@@ -722,11 +722,11 @@ git commit -m "feat(agent): Ollama engine extracted behind the new registry shap
 ## Task 8: Anthropic engine impl
 
 **Files:**
-- Create: `crates/kyma-server/src/agent/engine/anthropic.rs`
+- Create: `crates/pensieve-server/src/agent/engine/anthropic.rs`
 
 - [ ] **Step 1: Write the impl**
 
-Create `crates/kyma-server/src/agent/engine/anthropic.rs`:
+Create `crates/pensieve-server/src/agent/engine/anthropic.rs`:
 
 ```rust
 //! Anthropic engine — adk-rust's AnthropicClient.
@@ -775,13 +775,13 @@ pub mod anthropic;
 
 - [ ] **Step 3: Verify compile**
 
-Run: `cargo check -p kyma-server`
+Run: `cargo check -p pensieve-server`
 Expected: clean. (If the adk-rust API differs slightly, adjust the import — the upstream Anthropic surface is `AnthropicClient::new(AnthropicConfig)`.)
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/engine/anthropic.rs crates/kyma-server/src/agent/engine/mod.rs
+git add crates/pensieve-server/src/agent/engine/anthropic.rs crates/pensieve-server/src/agent/engine/mod.rs
 git commit -m "feat(agent): Anthropic engine via adk-rust AnthropicClient"
 ```
 
@@ -790,7 +790,7 @@ git commit -m "feat(agent): Anthropic engine via adk-rust AnthropicClient"
 ## Task 9: OpenAI engine impl
 
 **Files:**
-- Create: `crates/kyma-server/src/agent/engine/openai.rs`
+- Create: `crates/pensieve-server/src/agent/engine/openai.rs`
 
 - [ ] **Step 1: Write the impl**
 
@@ -836,13 +836,13 @@ pub mod openai;
 
 - [ ] **Step 3: Verify compile**
 
-Run: `cargo check -p kyma-server`
+Run: `cargo check -p pensieve-server`
 Expected: clean. If `OpenAIResponsesConfig` struct fields differ in adk-rust 0.6, the field set has `api_key: String`, `model: String`, `base_url: Option<String>` plus other defaulted knobs — keep the field assignment minimal and let `..Default::default()` fill the rest.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/engine/openai.rs crates/kyma-server/src/agent/engine/mod.rs
+git add crates/pensieve-server/src/agent/engine/openai.rs crates/pensieve-server/src/agent/engine/mod.rs
 git commit -m "feat(agent): OpenAI engine via adk-rust OpenAIResponsesClient"
 ```
 
@@ -851,7 +851,7 @@ git commit -m "feat(agent): OpenAI engine via adk-rust OpenAIResponsesClient"
 ## Task 10: Engine dispatch — `build_engine`
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/engine/mod.rs`
+- Modify: `crates/pensieve-server/src/agent/engine/mod.rs`
 
 - [ ] **Step 1: Append the dispatch function**
 
@@ -906,13 +906,13 @@ pub fn engine_catalogue() -> Vec<EngineSummary> {
 
 - [ ] **Step 2: Verify compile**
 
-Run: `cargo check -p kyma-server`
+Run: `cargo check -p pensieve-server`
 Expected: clean.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/engine/mod.rs
+git add crates/pensieve-server/src/agent/engine/mod.rs
 git commit -m "feat(agent): build_engine dispatch + engine_catalogue summary"
 ```
 
@@ -921,21 +921,21 @@ git commit -m "feat(agent): build_engine dispatch + engine_catalogue summary"
 ## Task 11: Wire the new engine into the runner
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/state.rs`
-- Modify: `crates/kyma-server/src/agent/runner.rs`
+- Modify: `crates/pensieve-server/src/agent/state.rs`
+- Modify: `crates/pensieve-server/src/agent/runner.rs`
 
 - [ ] **Step 1: Extend `AgentState`**
 
-Replace `crates/kyma-server/src/agent/state.rs` with:
+Replace `crates/pensieve-server/src/agent/state.rs` with:
 
 ```rust
 //! Shared handler state for the `/v1/agent/*` surface.
 
 use crate::agent::engine::EnginePreferenceStore;
-use kyma_core::catalog::Catalog;
-use kyma_core::credentials::CredentialStore;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_core::tenant::TenantId;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::credentials::CredentialStore;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_core::tenant::TenantId;
 use sqlx::PgPool;
 use std::sync::Arc;
 
@@ -952,7 +952,7 @@ pub struct AgentState {
 
 - [ ] **Step 2: Rewrite `build_agent` to consult the engine store**
 
-In `crates/kyma-server/src/agent/runner.rs`, replace `build_agent` (around line 67-103) with:
+In `crates/pensieve-server/src/agent/runner.rs`, replace `build_agent` (around line 67-103) with:
 
 ```rust
 use crate::agent::engine::{build_engine, CredentialResolver};
@@ -969,9 +969,9 @@ pub async fn build_agent(state: &AgentState) -> anyhow::Result<Arc<dyn Agent>> {
         pool: state.pool.clone(),
     };
 
-    let agent = LlmAgentBuilder::new("kyma-assistant")
+    let agent = LlmAgentBuilder::new("pensieve-assistant")
         .description(
-            "Kyma inline data assistant — answers English questions about the user's data.",
+            "Pensieve inline data assistant — answers English questions about the user's data.",
         )
         .instruction(SYSTEM_PROMPT)
         .model(llm)
@@ -1010,18 +1010,18 @@ pub async fn model_id(state: &AgentState) -> String {
 
 - [ ] **Step 5: Update call sites of `model_id`**
 
-Run: `grep -rn "model_id()" crates/kyma-server/src/agent/`
+Run: `grep -rn "model_id()" crates/pensieve-server/src/agent/`
 Each caller of `model_id()` needs to become `model_id(&state).await`. Update each one in turn (likely only `routes.rs`).
 
 - [ ] **Step 6: Verify compile**
 
-Run: `cargo check -p kyma-server`
+Run: `cargo check -p pensieve-server`
 Expected: clean (with one warning expected about the now-unused `DEFAULT_OLLAMA_HOST`/`DEFAULT_MODEL` constants — leave them; they're documented defaults).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/runner.rs crates/kyma-server/src/agent/state.rs
+git add crates/pensieve-server/src/agent/runner.rs crates/pensieve-server/src/agent/state.rs
 git commit -m "feat(agent): runner consults EnginePreferenceStore + CredentialResolver"
 ```
 
@@ -1030,7 +1030,7 @@ git commit -m "feat(agent): runner consults EnginePreferenceStore + CredentialRe
 ## Task 12: HTTP routes — `GET /v1/agent/engines` and `GET/PUT /v1/agent/engine`
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/routes.rs`
+- Modify: `crates/pensieve-server/src/agent/routes.rs`
 
 - [ ] **Step 1: Add the new handlers**
 
@@ -1089,8 +1089,8 @@ Find the existing `pub fn router() -> Router<AgentState>` (or the function that 
 
 - [ ] **Step 3: Verify the new routes compile and respond**
 
-Run: `cargo check -p kyma-server`
-Then, with `kyma-bin` running and `DATABASE_URL` set:
+Run: `cargo check -p pensieve-server`
+Then, with `pensieve-bin` running and `DATABASE_URL` set:
 
 ```
 curl -sS http://localhost:8080/v1/agent/engines -H "Authorization: Bearer $TOKEN" | jq '.available[].kind'
@@ -1101,7 +1101,7 @@ Expected: `"anthropic"`, `"openai"`, `"ollama"` in some order.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/routes.rs
+git add crates/pensieve-server/src/agent/routes.rs
 git commit -m "feat(agent): GET /v1/agent/engines + GET/PUT /v1/agent/engine"
 ```
 
@@ -1110,7 +1110,7 @@ git commit -m "feat(agent): GET /v1/agent/engines + GET/PUT /v1/agent/engine"
 ## Task 13: `POST /v1/agent/engine/test` — connectivity smoke test
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/routes.rs`
+- Modify: `crates/pensieve-server/src/agent/routes.rs`
 
 - [ ] **Step 1: Add the test endpoint**
 
@@ -1155,37 +1155,37 @@ Add the route inside `router()`:
 
 - [ ] **Step 2: Verify compile**
 
-Run: `cargo check -p kyma-server`
+Run: `cargo check -p pensieve-server`
 Expected: clean. If the `generate_content` signature in adk-rust 0.6 differs, use `llm.health_check()` if it exists, or `llm.list_models()` — whichever is the smallest no-op the trait offers. Worst case, `cargo doc --open -p adk-rust` and find the minimal probe method.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add crates/kyma-server/src/agent/routes.rs
+git add crates/pensieve-server/src/agent/routes.rs
 git commit -m "feat(agent): POST /v1/agent/engine/test — connectivity probe"
 ```
 
 ---
 
-## Task 14: Wire the new stores into `kyma-bin`
+## Task 14: Wire the new stores into `pensieve-bin`
 
 **Files:**
-- Modify: `crates/kyma-bin/src/main.rs`
+- Modify: `crates/pensieve-bin/src/main.rs`
 
 - [ ] **Step 1: Find where `AgentState` is constructed**
 
-Run: `grep -n "AgentState" crates/kyma-bin/src/main.rs`
+Run: `grep -n "AgentState" crates/pensieve-bin/src/main.rs`
 
 - [ ] **Step 2: Add the new fields**
 
 Replace the existing `AgentState { catalog, format, pool }` construction (likely line ~150–200) with:
 
 ```rust
-use kyma_server::agent::engine::PgEnginePreferenceStore;
-use kyma_catalog::PgCredentialStore;
+use pensieve_server::agent::engine::PgEnginePreferenceStore;
+use pensieve_catalog::PgCredentialStore;
 
 let engines = std::sync::Arc::new(PgEnginePreferenceStore::new(pg_pool.clone()));
-let creds_store: std::sync::Arc<dyn kyma_core::credentials::CredentialStore> =
+let creds_store: std::sync::Arc<dyn pensieve_core::credentials::CredentialStore> =
     std::sync::Arc::new(PgCredentialStore::new(pg_pool.clone(), encryption_key.clone()));
 let agent_state = AgentState {
     catalog: catalog.clone(),
@@ -1193,21 +1193,21 @@ let agent_state = AgentState {
     pool: pg_pool.clone(),
     engines,
     credentials: creds_store,
-    tenant: kyma_core::tenant::DEFAULT_TENANT,
+    tenant: pensieve_core::tenant::DEFAULT_TENANT,
 };
 ```
 
-(The exact `PgCredentialStore::new` signature lives in `crates/kyma-catalog/src/credentials.rs` — match it.)
+(The exact `PgCredentialStore::new` signature lives in `crates/pensieve-catalog/src/credentials.rs` — match it.)
 
 - [ ] **Step 3: Verify the bin compiles + boots**
 
-Run: `cargo run -p kyma-bin -- --help`
+Run: `cargo run -p pensieve-bin -- --help`
 Expected: usage prints without panic.
 
 - [ ] **Step 4: Smoke-test the new endpoints**
 
 ```
-cargo run -p kyma-bin &
+cargo run -p pensieve-bin &
 sleep 4
 curl -sS http://localhost:8080/v1/agent/engines | jq
 kill %1
@@ -1218,8 +1218,8 @@ Expected: JSON listing 3 engines + the active Ollama config.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-bin/src/main.rs
-git commit -m "feat(agent): wire EnginePreferenceStore + CredentialStore into kyma-bin"
+git add crates/pensieve-bin/src/main.rs
+git commit -m "feat(agent): wire EnginePreferenceStore + CredentialStore into pensieve-bin"
 ```
 
 ---
@@ -1405,7 +1405,7 @@ export function EngineSettings() {
     <div className="rounded-lg border bg-card p-4">
       <h2 className="mb-1 text-sm font-semibold">Agent engine</h2>
       <p className="mb-4 text-xs text-muted-foreground">
-        Pick the model Ask Kyma uses. Anthropic / OpenAI keys are auto-detected
+        Pick the model Ask Pensieve uses. Anthropic / OpenAI keys are auto-detected
         from <code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, or
         <code>~/.claude/.credentials.json</code> when no explicit credential is
         attached.
@@ -1555,13 +1555,13 @@ git commit -m "feat(web): Settings → Agent Engine card (picker + test + save)"
 
 - [ ] **Step 1: Confirm the legacy default still works**
 
-With `kyma-bin` running fresh (Ollama at localhost), open `/agent` and ask a question. Expect: a normal answer streamed back. (This proves the refactor didn't break the existing path.)
+With `pensieve-bin` running fresh (Ollama at localhost), open `/agent` and ask a question. Expect: a normal answer streamed back. (This proves the refactor didn't break the existing path.)
 
 - [ ] **Step 2: Confirm Anthropic flow works via auto-detect**
 
 ```
 export ANTHROPIC_API_KEY=sk-ant-...
-# restart kyma-bin
+# restart pensieve-bin
 ```
 
 In `/settings`, change provider to `Anthropic (Claude)`, pick `claude-sonnet-4-6`, click "Test connection" — expect green check with `anthropic/claude-sonnet-4-6 reachable`. Click "Save". Go to `/agent`, ask a question — answer should stream from Claude.
@@ -1571,10 +1571,10 @@ In `/settings`, change provider to `Anthropic (Claude)`, pick `claude-sonnet-4-6
 ```
 unset ANTHROPIC_API_KEY
 # ensure ~/.claude/.credentials.json contains an Anthropic key
-# restart kyma-bin
+# restart pensieve-bin
 ```
 
-Test connection should still pass. Ask Kyma should still work. (If you don't have Claude Code installed, skip this — A1's contract is "auto-detect when present", not "Claude Code must be present".)
+Test connection should still pass. Ask Pensieve should still work. (If you don't have Claude Code installed, skip this — A1's contract is "auto-detect when present", not "Claude Code must be present".)
 
 - [ ] **Step 4: Confirm explicit credential override**
 
@@ -1591,8 +1591,8 @@ git commit --allow-empty -m "release(agent): A1 engine providers + Settings UI"
 
 ## Done criteria
 
-- A user with `ANTHROPIC_API_KEY` (or Claude Code) opens Kyma → Settings → Engine, picks Claude Sonnet, clicks Save, and Ask Kyma answers their next question with Claude.
+- A user with `ANTHROPIC_API_KEY` (or Claude Code) opens Pensieve → Settings → Engine, picks Claude Sonnet, clicks Save, and Ask Pensieve answers their next question with Claude.
 - The same flow works for OpenAI with `OPENAI_API_KEY`.
 - The legacy Ollama default still works on a fresh deploy with no API keys.
-- `cargo check -p kyma-server` and `cd web && pnpm typecheck` are both clean.
-- Reverting just `crates/kyma-catalog/migrations/012_agent_engine_config.sql` is enough to roll back (the runner falls back to constants if the store read fails — handled in Task 11 Step 4).
+- `cargo check -p pensieve-server` and `cd web && pnpm typecheck` are both clean.
+- Reverting just `crates/pensieve-catalog/migrations/012_agent_engine_config.sql` is enough to roll back (the runner falls back to constants if the store read fails — handled in Task 11 Step 4).

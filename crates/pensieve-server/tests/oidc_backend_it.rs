@@ -20,7 +20,7 @@ use jsonwebtoken::{
     jwk::JwkSet,
     Algorithm, EncodingKey, Header,
 };
-use kyma_server::auth::{AuthBackend, AuthError, OidcAuthBackend, OidcConfig, Principal, Role};
+use pensieve_server::auth::{AuthBackend, AuthError, OidcAuthBackend, OidcConfig, Principal, Role};
 use rsa::{pkcs1::EncodeRsaPrivateKey, traits::PublicKeyParts as _, RsaPrivateKey};
 use std::{
     sync::Arc,
@@ -187,7 +187,7 @@ impl AuthBackend for OpaqueInner {
     async fn authenticate(&self, token: &str) -> Result<Principal, AuthError> {
         if token == "opaque-xyz" {
             Ok(Principal {
-                tenant: kyma_core::tenant::DEFAULT_TENANT,
+                tenant: pensieve_core::tenant::DEFAULT_TENANT,
                 role: Role::Read,
                 subject: Some("opaque-subject".into()),
                 allowed_databases: None,
@@ -210,11 +210,11 @@ fn opaque_inner() -> Arc<dyn AuthBackend> {
 fn make_cfg(issuer_url: &str) -> OidcConfig {
     OidcConfig {
         issuers: vec![issuer_url.to_owned()],
-        audience: "kyma".into(),
-        role_claim: "kyma_role".into(),
+        audience: "pensieve".into(),
+        role_claim: "pensieve_role".into(),
         subject_claim: "sub".into(),
-        databases_claim: "kyma_databases".into(),
-        realms_claim: "kyma_realms".into(),
+        databases_claim: "pensieve_databases".into(),
+        realms_claim: "pensieve_realms".into(),
     }
 }
 
@@ -239,11 +239,11 @@ async fn full_flow_validates_token_and_maps_claims() {
 
     let claims = serde_json::json!({
         "iss": issuer.issuer_url,
-        "aud": "kyma",
+        "aud": "pensieve",
         "sub": "u1",
         "exp": now_secs() + 3600,
-        "kyma_role": "write",
-        "kyma_databases": ["prod"],
+        "pensieve_role": "write",
+        "pensieve_databases": ["prod"],
     });
 
     let token = encode(&hdr, &claims, &encoding_key(&key1)).unwrap();
@@ -256,7 +256,7 @@ async fn full_flow_validates_token_and_maps_claims() {
         Some(vec!["prod".into()]),
         "allowed_databases should be [prod]"
     );
-    assert_eq!(p.tenant, kyma_core::tenant::DEFAULT_TENANT);
+    assert_eq!(p.tenant, pensieve_core::tenant::DEFAULT_TENANT);
 }
 
 // ---------------------------------------------------------------------------
@@ -284,7 +284,7 @@ async fn key_rotation_refreshes_jwks_on_unknown_kid() {
 
     let claims1 = serde_json::json!({
         "iss": issuer.issuer_url,
-        "aud": "kyma",
+        "aud": "pensieve",
         "sub": "warm",
         "exp": now_secs() + 3600,
     });
@@ -303,7 +303,7 @@ async fn key_rotation_refreshes_jwks_on_unknown_kid() {
 
     let claims2 = serde_json::json!({
         "iss": issuer.issuer_url,
-        "aud": "kyma",
+        "aud": "pensieve",
         "sub": "rotated",
         "exp": now_secs() + 3600,
     });
@@ -330,11 +330,11 @@ async fn opaque_token_chains_to_inner_backend() {
     // We use a dummy URL; the opaque path never fetches it.
     let cfg = OidcConfig {
         issuers: vec!["http://127.0.0.1:1".into()], // unreachable — never hit
-        audience: "kyma".into(),
-        role_claim: "kyma_role".into(),
+        audience: "pensieve".into(),
+        role_claim: "pensieve_role".into(),
         subject_claim: "sub".into(),
-        databases_claim: "kyma_databases".into(),
-        realms_claim: "kyma_realms".into(),
+        databases_claim: "pensieve_databases".into(),
+        realms_claim: "pensieve_realms".into(),
     };
     let backend = OidcAuthBackend::new(cfg, opaque_inner());
 
@@ -348,7 +348,7 @@ async fn opaque_token_chains_to_inner_backend() {
 // ---------------------------------------------------------------------------
 // Test 4: scoped_claims_flow_through_real_http
 //
-// Token with kyma_databases ["a", "b"] → allowed_databases Some(["a","b"]).
+// Token with pensieve_databases ["a", "b"] → allowed_databases Some(["a","b"]).
 // Exercises REAL discovery + JWKS fetch (same as test 1, different claims).
 // ---------------------------------------------------------------------------
 
@@ -367,10 +367,10 @@ async fn scoped_claims_flow_through_real_http() {
 
     let claims = serde_json::json!({
         "iss": issuer.issuer_url,
-        "aud": "kyma",
+        "aud": "pensieve",
         "sub": "scoped-user",
         "exp": now_secs() + 3600,
-        "kyma_databases": ["a", "b"],
+        "pensieve_databases": ["a", "b"],
     });
 
     let token = encode(&hdr, &claims, &encoding_key(&key)).unwrap();

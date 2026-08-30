@@ -10,11 +10,11 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_core::catalog::Catalog;
-use kyma_format_tlm::TelemetryFormat;
-use kyma_local::build_local_app;
-use kyma_server::auth::EnvAuthBackend;
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_core::catalog::Catalog;
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_local::build_local_app;
+use pensieve_server::auth::EnvAuthBackend;
 use object_store::memory::InMemory;
 use std::sync::Arc;
 use tower::ServiceExt as _;
@@ -27,11 +27,11 @@ async fn local_app() -> axum::Router {
             .expect("in-memory SQLite catalog"),
     );
     let store = Arc::new(InMemory::new());
-    let format = Arc::new(TelemetryFormat::new(store, "kyma-test"));
+    let format = Arc::new(TelemetryFormat::new(store, "pensieve-test"));
     // Mint two tokens: one for writing (ingest), one for reading (query).
-    let backend: Arc<dyn kyma_server::auth::AuthBackend> =
+    let backend: Arc<dyn pensieve_server::auth::AuthBackend> =
         Arc::new(EnvAuthBackend::from_str("write-token:write,read-token:read"));
-    let (app, _agent_state, _brain_state) = build_local_app(catalog, format, backend, None, None, None, None, None, kyma_local::watcher_status::LocalWatcherStatus::default(), None);
+    let (app, _agent_state, _brain_state) = build_local_app(catalog, format, backend, None, None, None, None, None, pensieve_local::watcher_status::LocalWatcherStatus::default(), None);
     app
 }
 

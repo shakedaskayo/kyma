@@ -1,5 +1,5 @@
 [package]
-name = "kyma-ingest-filedrop"
+name = "pensieve-ingest-filedrop"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,9 +10,9 @@ description = "Object-store file-drop watcher. SHA256-keyed idempotency via the 
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
-kyma-ingest-core.workspace = true
-kyma-storage.workspace = true
+pensieve-core.workspace = true
+pensieve-ingest-core.workspace = true
+pensieve-storage.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
@@ -29,5 +29,5 @@ sha2 = "0.10"
 serde_json.workspace = true
 
 [dev-dependencies]
-kyma-catalog-sqlite.workspace = true
-kyma-format-tlm.workspace = true
+pensieve-catalog-sqlite.workspace = true
+pensieve-format-tlm.workspace = true

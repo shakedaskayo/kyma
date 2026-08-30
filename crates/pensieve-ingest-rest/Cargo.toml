@@ -1,5 +1,5 @@
 [package]
-name = "kyma-ingest-rest"
+name = "pensieve-ingest-rest"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,8 +10,8 @@ description = "HTTP / NDJSON ingest frontend (axum + simd-json)."
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
-kyma-ingest-core.workspace = true
+pensieve-core.workspace = true
+pensieve-ingest-core.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

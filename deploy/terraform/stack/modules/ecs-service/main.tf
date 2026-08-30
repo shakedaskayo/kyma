@@ -1,4 +1,4 @@
-# The kyma engine on ECS Fargate: one cluster, one task definition, one
+# The pensieve engine on ECS Fargate: one cluster, one task definition, one
 # service behind the ALB target group. ARM64 (Graviton) by default — the
 # release images are multi-arch and ARM is ~20% cheaper.
 
@@ -47,7 +47,7 @@ data "aws_kms_alias" "ssm" {
 
 data "aws_iam_policy_document" "execution_secrets" {
   statement {
-    sid       = "ReadKymaParams"
+    sid       = "ReadPensieveParams"
     actions   = ["ssm:GetParameters"]
     resources = values(var.ssm_param_arns)
   }
@@ -59,7 +59,7 @@ data "aws_iam_policy_document" "execution_secrets" {
 }
 
 resource "aws_iam_role_policy" "execution_secrets" {
-  name   = "read-kyma-secrets"
+  name   = "read-pensieve-secrets"
   role   = aws_iam_role.execution.id
   policy = data.aws_iam_policy_document.execution_secrets.json
 }
@@ -70,7 +70,7 @@ resource "aws_iam_role" "task" {
 }
 
 # Keyless S3: the engine resolves these credentials via the standard AWS
-# provider chain (no KYMA_S3_ACCESS_KEY_ID needed). Only for the native-S3
+# provider chain (no PENSIEVE_S3_ACCESS_KEY_ID needed). Only for the native-S3
 # storage backend — Supabase Storage authenticates with its own keys.
 data "aws_iam_policy_document" "task_s3" {
   count = var.s3_bucket_arn != "" ? 1 : 0
@@ -115,7 +115,7 @@ resource "aws_ecs_task_definition" "engine" {
 
   container_definitions = jsonencode([
     {
-      name      = "kyma-engine"
+      name      = "pensieve-engine"
       image     = var.image
       essential = true
 
@@ -161,7 +161,7 @@ resource "aws_ecs_service" "engine" {
 
   load_balancer {
     target_group_arn = var.target_group
-    container_name   = "kyma-engine"
+    container_name   = "pensieve-engine"
     container_port   = 8080
   }
 }

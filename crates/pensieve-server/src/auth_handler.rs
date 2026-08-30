@@ -26,7 +26,7 @@ use axum::{
     Extension, Json, Router,
 };
 use chrono::{Duration, Utc};
-use kyma_core::catalog::Catalog;
+use pensieve_core::catalog::Catalog;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -67,9 +67,9 @@ pub struct TokenPairResponse {
 }
 
 /// Access-token lifetime. Short by design — the client silently refreshes.
-/// Overridable via `KYMA_ACCESS_TTL_SECS` (default 3600 = 1h).
+/// Overridable via `PENSIEVE_ACCESS_TTL_SECS` (default 3600 = 1h).
 fn access_ttl() -> Duration {
-    std::env::var("KYMA_ACCESS_TTL_SECS")
+    std::env::var("PENSIEVE_ACCESS_TTL_SECS")
         .ok()
         .and_then(|s| s.parse::<i64>().ok())
         .map(Duration::seconds)
@@ -77,9 +77,9 @@ fn access_ttl() -> Duration {
 }
 
 /// Refresh-token lifetime (the effective max session age before re-login).
-/// Overridable via `KYMA_REFRESH_TTL_SECS` (default 2592000 = 30d).
+/// Overridable via `PENSIEVE_REFRESH_TTL_SECS` (default 2592000 = 30d).
 fn refresh_ttl() -> Duration {
-    std::env::var("KYMA_REFRESH_TTL_SECS")
+    std::env::var("PENSIEVE_REFRESH_TTL_SECS")
         .ok()
         .and_then(|s| s.parse::<i64>().ok())
         .map(Duration::seconds)
@@ -377,18 +377,18 @@ async fn revoke_api_token_handler(
 // -------------------------------------------------------------------------
 
 /// `GET /v1/auth/config` — unauthenticated. Tells the web app which login
-/// flow to render: kyma's password form, or Supabase (with the runtime
+/// flow to render: pensieve's password form, or Supabase (with the runtime
 /// project URL + anon key, so one build works against any deployment).
 async fn auth_config_handler() -> Response {
-    let supabase_mode = std::env::var("KYMA_AUTH_BACKEND")
+    let supabase_mode = std::env::var("PENSIEVE_AUTH_BACKEND")
         .map(|v| v == "supabase")
         .unwrap_or(false);
     let body = match (
         supabase_mode,
-        std::env::var("KYMA_SUPABASE_URL").ok().filter(|s| !s.is_empty()),
+        std::env::var("PENSIEVE_SUPABASE_URL").ok().filter(|s| !s.is_empty()),
     ) {
         (true, Some(url)) => {
-            let providers: Vec<String> = std::env::var("KYMA_SUPABASE_PROVIDERS")
+            let providers: Vec<String> = std::env::var("PENSIEVE_SUPABASE_PROVIDERS")
                 .unwrap_or_default()
                 .split(',')
                 .map(|s| s.trim().to_lowercase())
@@ -397,7 +397,7 @@ async fn auth_config_handler() -> Response {
             serde_json::json!({
                 "provider": "supabase",
                 "supabase_url": url.trim_end_matches('/'),
-                "supabase_anon_key": std::env::var("KYMA_SUPABASE_ANON_KEY").ok(),
+                "supabase_anon_key": std::env::var("PENSIEVE_SUPABASE_ANON_KEY").ok(),
                 "oauth_providers": providers,
             })
         }
@@ -518,7 +518,7 @@ async fn env_probe_handler() -> Response {
 /// Probe the local Ollama daemon for installed models. Returns
 /// `(reachable, model_names)`. Short timeout so the wizard stays snappy.
 async fn probe_ollama() -> (bool, Vec<String>) {
-    let host = std::env::var("KYMA_OLLAMA_HOST")
+    let host = std::env::var("PENSIEVE_OLLAMA_HOST")
         .ok()
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "http://localhost:11434".to_string());

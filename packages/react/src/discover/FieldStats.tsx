@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { ChevronRight } from "lucide-react";
-import type { Column } from "@kyma-ai/client";
+import type { Column } from "@pensieve-ai/client";
 
 const MAX_DISTINCT = 50;
 const TOP_N        = 5;

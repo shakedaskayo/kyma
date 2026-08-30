@@ -14,7 +14,7 @@ use tower::ServiceExt;
 
 /// Build the test router with auth middleware using `test-read-token → read`.
 fn authed_app(
-    state: kyma_server::QueryState,
+    state: pensieve_server::QueryState,
 ) -> impl tower::Service<
     axum::http::Request<axum::body::Body>,
     Response = axum::http::Response<axum::body::Body>,
@@ -23,21 +23,21 @@ fn authed_app(
         Output = Result<axum::http::Response<axum::body::Body>, std::convert::Infallible>,
     >,
 > {
-    let backend: std::sync::Arc<dyn kyma_server::auth::AuthBackend> = std::sync::Arc::new(
-        kyma_server::auth::EnvAuthBackend::from_str("test-read-token:read"),
+    let backend: std::sync::Arc<dyn pensieve_server::auth::AuthBackend> = std::sync::Arc::new(
+        pensieve_server::auth::EnvAuthBackend::from_str("test-read-token:read"),
     );
-    kyma_server::router(state).layer(axum::middleware::from_fn_with_state(
-        kyma_server::auth::AuthLayerState {
+    pensieve_server::router(state).layer(axum::middleware::from_fn_with_state(
+        pensieve_server::auth::AuthLayerState {
             backend,
-            required: kyma_server::auth::Role::Read,
+            required: pensieve_server::auth::Role::Read,
         },
-        kyma_server::auth::require_role_middleware,
+        pensieve_server::auth::require_role_middleware,
     ))
 }
 
 #[tokio::test]
 async fn returns_schema_tree() {
-    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+    let state = pensieve_server::test_support::seeded_state_with_obs_otel_logs().await;
     let app = authed_app(state);
 
     let req = Request::builder()
@@ -59,7 +59,7 @@ async fn returns_schema_tree() {
 
 #[tokio::test]
 async fn requires_read_role() {
-    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+    let state = pensieve_server::test_support::seeded_state_with_obs_otel_logs().await;
     let app = authed_app(state);
 
     let req = Request::builder()

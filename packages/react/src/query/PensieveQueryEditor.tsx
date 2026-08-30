@@ -1,10 +1,10 @@
 /**
- * KymaQueryEditor — self-contained embedded query surface.
+ * PensieveQueryEditor — self-contained embedded query surface.
  *
  * Composes KqlEditor/Monaco SQL, SchemaBrowser, ResultsGrid, ChartPanel, and
- * TimeRangePicker into a single embeddable component backed by useKymaQuery.
+ * TimeRangePicker into a single embeddable component backed by usePensieveQuery.
  *
- * Schema is loaded via React Query (key ["kyma", endpoint, database, "schema"])
+ * Schema is loaded via React Query (key ["pensieve", endpoint, database, "schema"])
  * and passed to the editor for completions and to SchemaBrowser for browsing.
  *
  * Time-range injection: when language="kql" and showTimeRange=true, the time
@@ -25,13 +25,13 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Play, Square } from "lucide-react";
-import { autoChartAxes } from "@kyma-ai/client";
-import type { Column, SchemaDoc } from "@kyma-ai/client";
+import { autoChartAxes } from "@pensieve-ai/client";
+import type { Column, SchemaDoc } from "@pensieve-ai/client";
 
-import { KymaErrorBoundary } from "../internal/KymaErrorBoundary";
+import { PensieveErrorBoundary } from "../internal/PensieveErrorBoundary";
 import { Button } from "../internal/ui/button";
-import { useKymaClient, useKymaContext } from "../provider/context";
-import { useKymaQuery } from "../hooks/useKymaQuery";
+import { usePensieveClient, usePensieveContext } from "../provider/context";
+import { usePensieveQuery } from "../hooks/usePensieveQuery";
 import { KqlEditor } from "./editor/KqlEditor";
 import { SchemaBrowser } from "./schema/SchemaBrowser";
 import { ResultsGrid } from "./results/ResultsGrid";
@@ -45,7 +45,7 @@ import type { TimeRange } from "./time-range/time-range-types";
 
 export type { TimeRange };
 
-export interface KymaQueryEditorProps {
+export interface PensieveQueryEditorProps {
   /** Query language. Default "kql". SQL mode skips KQL niceties + time injection. */
   language?: "kql" | "sql";
   /** Initial query text (uncontrolled — prop changes after mount are ignored). */
@@ -95,7 +95,7 @@ function formatQueryError(err: unknown): string {
 
 // ── Inner implementation (wrapped by error boundary below) ────────────────────
 
-function KymaQueryEditorInner({
+function PensieveQueryEditorInner({
   language = "kql",
   defaultQuery = "",
   showSchemaBrowser = true,
@@ -109,9 +109,9 @@ function KymaQueryEditorInner({
   style,
   onResults,
   onQueryChange,
-}: Omit<KymaQueryEditorProps, "fallback">) {
-  const client = useKymaClient();
-  const { } = useKymaContext(); // asserts provider is present
+}: Omit<PensieveQueryEditorProps, "fallback">) {
+  const client = usePensieveClient();
+  const { } = usePensieveContext(); // asserts provider is present
 
   // Use the scoped client when a database override is provided.
   const scopedClient = databaseProp ? client.withDatabase(databaseProp) : client;
@@ -141,7 +141,7 @@ function KymaQueryEditorInner({
   // ── Schema ────────────────────────────────────────────────────────────────────
 
   const { data: schema } = useQuery<SchemaDoc>({
-    queryKey: ["kyma", endpoint, effectiveDatabase, "schema"],
+    queryKey: ["pensieve", endpoint, effectiveDatabase, "schema"],
     queryFn: () => scopedClient.catalog.fetchSchema(),
     staleTime: 5 * 60_000,
     enabled: true,
@@ -149,7 +149,7 @@ function KymaQueryEditorInner({
 
   // ── Execution ─────────────────────────────────────────────────────────────────
 
-  const { columns, rows, isRunning, error, execute, cancel } = useKymaQuery();
+  const { columns, rows, isRunning, error, execute, cancel } = usePensieveQuery();
 
   // Track whether we have had a successful run
   const hasResults = columns.length > 0 && rows.length > 0;
@@ -230,7 +230,7 @@ function KymaQueryEditorInner({
 
   return (
     <div
-      className={`ky-kyma-query-editor ky-flex ky-h-full ky-flex-col ky-overflow-hidden ky-bg-background ky-text-foreground ${className ?? ""}`}
+      className={`ky-pensieve-query-editor ky-flex ky-h-full ky-flex-col ky-overflow-hidden ky-bg-background ky-text-foreground ${className ?? ""}`}
       style={style}
     >
       {/* ── Toolbar ── */}
@@ -364,7 +364,7 @@ function SqlEditor({
     theme: string;
   }> | null>(null);
 
-  const { isDark } = useKymaContext();
+  const { isDark } = usePensieveContext();
 
   useEffect(() => {
     import("@monaco-editor/react").then((mod) => {
@@ -416,10 +416,10 @@ function SqlEditor({
 
 // ── Public wrapper (adds error boundary) ─────────────────────────────────────
 
-export function KymaQueryEditor({ fallback, ...rest }: KymaQueryEditorProps): JSX.Element {
+export function PensieveQueryEditor({ fallback, ...rest }: PensieveQueryEditorProps): JSX.Element {
   return (
-    <KymaErrorBoundary fallback={fallback}>
-      <KymaQueryEditorInner {...rest} />
-    </KymaErrorBoundary>
+    <PensieveErrorBoundary fallback={fallback}>
+      <PensieveQueryEditorInner {...rest} />
+    </PensieveErrorBoundary>
   );
 }

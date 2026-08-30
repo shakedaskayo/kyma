@@ -14,7 +14,7 @@ use chrono::Utc;
 use serde_json::json;
 use tracing::{info, warn};
 
-use kyma_brain::registry::BrainRecord;
+use pensieve_brain::registry::BrainRecord;
 
 use super::BrainState;
 
@@ -41,12 +41,12 @@ fn gardener_due(rec: &BrainRecord) -> bool {
 /// Hosted-mode scheduler: enqueues fabric jobs on an interval.
 pub struct BrainScheduler {
     state: BrainState,
-    fabric: Arc<kyma_catalog::PgFabricStore>,
+    fabric: Arc<pensieve_catalog::PgFabricStore>,
     pub poll: Duration,
 }
 
 impl BrainScheduler {
-    pub fn new(state: BrainState, fabric: Arc<kyma_catalog::PgFabricStore>) -> Self {
+    pub fn new(state: BrainState, fabric: Arc<pensieve_catalog::PgFabricStore>) -> Self {
         Self { state, fabric, poll: Duration::from_secs(60) }
     }
 
@@ -68,8 +68,8 @@ impl BrainScheduler {
                 .fabric
                 .enqueue_job(
                     self.state.agent.tenant,
-                    &kyma_core::fabric::EnqueueJob {
-                        kind: kyma_core::fabric::JOB_BRAIN_EXPORT.to_string(),
+                    &pensieve_core::fabric::EnqueueJob {
+                        kind: pensieve_core::fabric::JOB_BRAIN_EXPORT.to_string(),
                         payload: json!({ "brain": rec.config.name }),
                         priority: 0,
                         affinity_worker_id: None,
@@ -162,7 +162,7 @@ impl LocalBrainScheduler {
 #[cfg(test)]
 mod tests {
     use super::due;
-    use kyma_brain::registry::{BrainConfig, BrainRecord, BrainRuntime, RealmSelector};
+    use pensieve_brain::registry::{BrainConfig, BrainRecord, BrainRuntime, RealmSelector};
 
     fn rec(interval: u64, last: Option<&str>) -> BrainRecord {
         let mut config =

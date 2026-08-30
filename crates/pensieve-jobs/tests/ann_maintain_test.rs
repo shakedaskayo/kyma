@@ -1,7 +1,7 @@
 //! `AnnMaintainExecutor` end-to-end over SQLite + InMemory (no Docker, no TLM).
 //!
 //! The executor only reads each extent's IVF *centroids*, so we craft valid
-//! KYIV sidecar blobs directly (via `kyma_index_vector::file::write`) with known
+//! KYIV sidecar blobs directly (via `pensieve_index_vector::file::write`) with known
 //! centroids — extent A near +e0, extent B near -e0 — upload them, register the
 //! sidecar rows, then run the executor and assert: a tree row + blob are written,
 //! the tree routes a +e0 query to extent A only, a re-run is idempotent
@@ -10,16 +10,16 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig};
-use kyma_core::fabric::{ClaimedJob, JOB_ANN_MAINTAIN};
-use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
-use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_core::types::{ExtentId, TableId};
-use kyma_index_vector::file as ivf_file;
-use kyma_index_vector::global_tree::GlobalTree;
-use kyma_jobs::ann_maintain::AnnMaintainExecutor;
-use kyma_jobs::{JobCtx, JobExecutor, JobQueue, ProgressSink};
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig};
+use pensieve_core::fabric::{ClaimedJob, JOB_ANN_MAINTAIN};
+use pensieve_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
+use pensieve_core::tenant::DEFAULT_TENANT;
+use pensieve_core::types::{ExtentId, TableId};
+use pensieve_index_vector::file as ivf_file;
+use pensieve_index_vector::global_tree::GlobalTree;
+use pensieve_jobs::ann_maintain::AnnMaintainExecutor;
+use pensieve_jobs::{JobCtx, JobExecutor, JobQueue, ProgressSink};
 use object_store::memory::InMemory;
 use object_store::{path::Path as ObjPath, ObjectStore};
 use serde_json::{json, Value as Json};
@@ -64,7 +64,7 @@ async fn add_extent_with_sidecar(
     catalog: &SqliteCatalog,
     store: &Arc<dyn ObjectStore>,
     table_id: TableId,
-    schema_snapshot_id: kyma_core::types::SchemaSnapshotId,
+    schema_snapshot_id: pensieve_core::types::SchemaSnapshotId,
     centroids: &[Vec<f32>],
 ) -> ExtentId {
     let id = ExtentId::new();
@@ -72,7 +72,7 @@ async fn add_extent_with_sidecar(
         id,
         table_id,
         schema_snapshot_id,
-        object_path: format!("test/extents/{}.kyma", id.as_uuid()),
+        object_path: format!("test/extents/{}.pensieve", id.as_uuid()),
         byte_size: 64,
         row_count: 100,
         min_timestamp: None,

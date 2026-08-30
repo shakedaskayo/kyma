@@ -1,6 +1,6 @@
 // ── Primary public component ──────────────────────────────────────────────────
-export { KymaDiscover } from "./KymaDiscover";
-export type { KymaDiscoverProps } from "./KymaDiscover";
+export { PensieveDiscover } from "./PensieveDiscover";
+export type { PensieveDiscoverProps } from "./PensieveDiscover";
 
 // ── Internal orchestrator (exported for advanced composition) ─────────────────
 export { DiscoverPage } from "./DiscoverPage";

@@ -9,7 +9,7 @@
 //!
 //! # Semantics (must match the reference oracle)
 //!
-//! These mirror `kyma_graph_testkit::oracle` exactly — that petgraph engine is
+//! These mirror `pensieve_graph_testkit::oracle` exactly — that petgraph engine is
 //! the normative spec, and [`CsrGraph`] is differentially validated against it:
 //! - **Directed multigraph**: parallel edges are all kept and traversable.
 //! - **Dangling edges dropped at build**: an edge whose `src` or `dst` id is
@@ -47,7 +47,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::fmt;
 
-/// Traversal direction. Mirrors `kyma_graph_testkit::oracle::Direction`.
+/// Traversal direction. Mirrors `pensieve_graph_testkit::oracle::Direction`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
     /// Follow edges `src → dst`.

@@ -1,6 +1,6 @@
-# Kyma Cloud — Decisions Record
+# Pensieve Cloud — Decisions Record
 
-Locks §7 of `2026-05-25-kyma-cloud-platform-design.md`. One row per decision;
+Locks §7 of `2026-05-25-pensieve-cloud-platform-design.md`. One row per decision;
 change requires a new dated entry, not an edit.
 
 ## 2026-05-25 — initial locks
@@ -12,7 +12,7 @@ change requires a new dated entry, not an edit.
 | 3 | Pooled isolation | Scoped STS session creds + `X-Database` + gateway quotas | Strongest practical isolation without per-tenant processes |
 | 4 | Supabase split | Two projects: A control-plane, B catalog | Independent blast radius / backups / roles |
 | 5 | Control-plane lang | TypeScript (Node) | Native to Supabase/Next.js/Stripe; CRUD not hot-path |
-| 6 | Gateway lang | Rust, reuse `kyma-server` crates | Hot path; keep OSS engine unmodified |
+| 6 | Gateway lang | Rust, reuse `pensieve-server` crates | Hot path; keep OSS engine unmodified |
 | 7 | Region | `us-east-1` for AWS + Supabase + Railway | Kill cross-cloud hot-path latency |
 | 8 | Provisioning split | Pooled = app logic; silo + envs = Terraform | Never terraform-apply per signup |
 | 9 | Billing meters | Ingest bytes/rows · storage GB-mo · query bytes-scanned/Flight-time | Maps to real S3 + compute cost; engine already emits these |

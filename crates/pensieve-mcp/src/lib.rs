@@ -1,8 +1,8 @@
-//! JSON-RPC 2.0 Model Context Protocol server for kyma.
+//! JSON-RPC 2.0 Model Context Protocol server for pensieve.
 //!
-//! Wraps the agent query + Agentic Memory tools from `kyma_server::agent`
+//! Wraps the agent query + Agentic Memory tools from `pensieve_server::agent`
 //! as MCP tools, served over **Streamable HTTP** at `/mcp/v1` (`router`) and
-//! over **stdio** (`stdio`) for the local single-binary mode (`kyma local
+//! over **stdio** (`stdio`) for the local single-binary mode (`pensieve local
 //! --mcp`). Both transports share the transport-agnostic `dispatch` layer.
 //! Wire spec: <https://modelcontextprotocol.io/>.
 

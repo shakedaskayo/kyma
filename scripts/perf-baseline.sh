@@ -13,7 +13,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-ENGINE_URL="${KYMA_HTTP_ADDR:-http://localhost:8080}"
+ENGINE_URL="${PENSIEVE_HTTP_ADDR:-http://localhost:8080}"
 TARGET_ROWS=100000
 K_REPS=10
 
@@ -120,6 +120,6 @@ print(json.dumps({
     "ingest_total_seconds": $INGEST_SECS,
     "captured_at": "$CAPTURED_AT",
     "hardware_label": "$HARDWARE_LABEL",
-    "kyma_git_sha": "$GIT_SHA",
+    "pensieve_git_sha": "$GIT_SHA",
 }))
 PY

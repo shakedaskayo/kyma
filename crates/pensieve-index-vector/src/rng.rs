@@ -2,7 +2,7 @@
 //!
 //! Index builds must be reproducible: the same (rows, dim) input must always
 //! produce byte-identical sidecars so re-runs of the `index_build` job
-//! converge (see [`kyma_core::index_sidecar::SidecarBuilder`]). We therefore
+//! converge (see [`pensieve_core::index_sidecar::SidecarBuilder`]). We therefore
 //! never touch `thread_rng` / `fastrand` / the OS RNG. Everything seeds from a
 //! fixed constant.
 //!

@@ -2,14 +2,14 @@
 //! Exercises the surface called out by Slice 1a verification: parse errors,
 //! version mismatches, batch requests, notifications.
 
-use kyma_mcp::{router, McpState, ServerInfo, ToolDispatch};
-use kyma_server::agent::SharedToolCtx;
-use kyma_server::test_support::seeded_state_empty;
+use pensieve_mcp::{router, McpState, ServerInfo, ToolDispatch};
+use pensieve_server::agent::SharedToolCtx;
+use pensieve_server::test_support::seeded_state_empty;
 use serde_json::{json, Value};
 
 async fn build() -> String {
     let state = seeded_state_empty().await;
-    let url = std::env::var("KYMA_TEST_DATABASE_URL").expect("KYMA_TEST_DATABASE_URL");
+    let url = std::env::var("PENSIEVE_TEST_DATABASE_URL").expect("PENSIEVE_TEST_DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
     let shared = SharedToolCtx {
         realm_scope: Default::default(),
@@ -26,7 +26,7 @@ async fn build() -> String {
         dispatch: ToolDispatch::new(shared),
         builder: None,
         server_info: ServerInfo {
-            name: "kyma".into(),
+            name: "pensieve".into(),
             version: "test".into(),
         },
     };

@@ -5,11 +5,11 @@
 //! ride on.
 
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig};
-use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
-use kyma_core::tenant::{TenantId, DEFAULT_TENANT};
-use kyma_core::types::{ExtentId, TableId};
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig};
+use pensieve_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
+use pensieve_core::tenant::{TenantId, DEFAULT_TENANT};
+use pensieve_core::types::{ExtentId, TableId};
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
@@ -22,9 +22,9 @@ struct Fixture {
 
 async fn fixture() -> Fixture {
     let container = Postgres::default()
-        .with_user("kyma")
-        .with_password("kyma_dev")
-        .with_db_name("kyma")
+        .with_user("pensieve")
+        .with_password("pensieve_dev")
+        .with_db_name("pensieve")
         .with_name("pgvector/pgvector")
         .with_tag("pg16")
         .start()
@@ -34,7 +34,7 @@ async fn fixture() -> Fixture {
         .get_host_port_ipv4(5432)
         .await
         .expect("failed to get mapped port");
-    let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
+    let url = format!("postgres://pensieve:pensieve_dev@localhost:{port}/pensieve");
     let catalog = PostgresCatalog::connect(&url)
         .await
         .expect("catalog connect + migrate");
@@ -68,7 +68,7 @@ async fn table_with_extent(catalog: &dyn Catalog, db: &str) -> (TableId, ExtentI
         id: extent_id,
         table_id,
         schema_snapshot_id: tref.schema_snapshot_id,
-        object_path: format!("test/extents/{}.kyma", Uuid::new_v4()),
+        object_path: format!("test/extents/{}.pensieve", Uuid::new_v4()),
         byte_size: 1024,
         row_count: 100,
         min_timestamp: Some(chrono::Utc::now()),
@@ -116,7 +116,7 @@ fn desc(
 
 #[tokio::test]
 async fn ann_tree_upsert_get_delete() {
-    use kyma_core::index_sidecar::AnnTreeDescriptor;
+    use pensieve_core::index_sidecar::AnnTreeDescriptor;
     let fx = fixture().await;
     let (table_id, _extent) = table_with_extent(&fx.catalog, "default").await;
 
@@ -367,7 +367,7 @@ async fn delete_for_extents_returns_object_paths() {
         id: e2,
         table_id,
         schema_snapshot_id: tref.schema_snapshot_id,
-        object_path: format!("test/extents/{}.kyma", Uuid::new_v4()),
+        object_path: format!("test/extents/{}.pensieve", Uuid::new_v4()),
         byte_size: 512,
         row_count: 10,
         min_timestamp: None,

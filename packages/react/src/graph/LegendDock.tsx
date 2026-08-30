@@ -19,9 +19,9 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import type { GraphStats, LayoutAlgorithm } from "@kyma-ai/client";
-import { getLabelColor } from "@kyma-ai/client";
-import type { GraphCoord } from "../hooks/useKymaGraph";
+import type { GraphStats, LayoutAlgorithm } from "@pensieve-ai/client";
+import { getLabelColor } from "@pensieve-ai/client";
+import type { GraphCoord } from "../hooks/usePensieveGraph";
 import { useGraphStore } from "./graph-store";
 import {
   getRelationshipFamilyColor,

@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type Graph from "graphology";
 import { Search } from "lucide-react";
-import { getLabelColor } from "@kyma-ai/client";
+import { getLabelColor } from "@pensieve-ai/client";
 import { useGraphStore } from "./graph-store";
 
 const MAX_RESULTS = 20;

@@ -1,5 +1,5 @@
 [package]
-name = "kyma-index-fts"
+name = "pensieve-index-fts"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ description = "Per-extent tantivy BM25 full-text-search index sidecar (build sid
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
+pensieve-core.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true
 bytes.workspace = true

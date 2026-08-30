@@ -1,8 +1,8 @@
-//! `kyma ingest push` · `kyma recall` · `kyma distill` · `kyma install-plugin`.
+//! `pensieve ingest push` · `pensieve recall` · `pensieve distill` · `pensieve install-plugin`.
 //!
-//! These four verbs back the **kyma-memory Claude Code plugin** (see
-//! `integrations/claude-code/kyma-memory/`). They all reuse the saved client
-//! connection (`~/.kyma/config.json` or `KYMA_SERVER_URL`/`KYMA_TOKEN`) and the
+//! These four verbs back the **pensieve-memory Claude Code plugin** (see
+//! `integrations/claude-code/pensieve-memory/`). They all reuse the saved client
+//! connection (`~/.pensieve/config.json` or `PENSIEVE_SERVER_URL`/`PENSIEVE_TOKEN`) and the
 //! shared reqwest client, so the plugin holds no credentials of its own.
 //!
 //!   - `ingest push`     firehose: stdin NDJSON → `POST /v1/ingest`
@@ -58,7 +58,7 @@ pub(crate) async fn ingest_push(
         return Err(anyhow!("ingest returned {status}: {text}"));
     }
     // Quiet on success unless asked for detail (hooks pipe this to /dev/null).
-    if std::env::var_os("KYMA_INGEST_VERBOSE").is_some() {
+    if std::env::var_os("PENSIEVE_INGEST_VERBOSE").is_some() {
         println!("{text}");
     }
     Ok(())
@@ -259,7 +259,7 @@ fn render_memory_line(row: &Value) -> String {
 
 /// Adds terminal styling to the server's plain-text `context` block. That
 /// block is shared verbatim with hook/agent-prompt consumers (see
-/// `build_context()` in kyma-server), where ANSI codes would be harmful —
+/// `build_context()` in pensieve-server), where ANSI codes would be harmful —
 /// this transform is purely for the interactive `recall` command's
 /// human-facing output and never touches the underlying string other
 /// consumers see.
@@ -343,12 +343,12 @@ async fn mcp_call(cfg: &ClientConfig, tool: &str, arguments: Value) -> Result<Va
 
 const DISTILL_MAX_CHARS: usize = 60_000;
 
-/// Read a session transcript from stdin and hand it to the kyma agent (which
+/// Read a session transcript from stdin and hand it to the pensieve agent (which
 /// owns `save_memory`) with an extraction instruction. The agent persists the
 /// durable memories. Shows a progress spinner while waiting (silent plain
 /// fallback when stderr isn't a terminal — e.g. when a hook pipes it to a
 /// log file); stays quiet about the *extracted memories themselves* unless
-/// `KYMA_DISTILL_VERBOSE` is set.
+/// `PENSIEVE_DISTILL_VERBOSE` is set.
 pub(crate) async fn distill(_session: Option<String>, realm: Option<String>) -> Result<()> {
     let cfg = client::effective_config()?;
     let mut transcript = String::new();
@@ -375,7 +375,7 @@ secret. Quality over quantity (typically 0-6). Then reply with a one-line summar
 you saved.\n\n--- SESSION TRANSCRIPT ---\n{transcript}"
     );
 
-    let verbose = std::env::var_os("KYMA_DISTILL_VERBOSE").is_some();
+    let verbose = std::env::var_os("PENSIEVE_DISTILL_VERBOSE").is_some();
     let spinner = (!verbose).then(|| ux::spinner::spinner("distilling memories"));
     let result = client::stream_agent_ask(&cfg, &instruction, None, |event, data| {
         if !verbose {
@@ -411,93 +411,93 @@ you saved.\n\n--- SESSION TRANSCRIPT ---\n{transcript}"
 const PLUGIN_FILES: &[(&str, &str, bool)] = &[
     (
         ".claude-plugin/plugin.json",
-        include_str!("../../../integrations/claude-code/kyma-memory/.claude-plugin/plugin.json"),
+        include_str!("../../../integrations/claude-code/pensieve-memory/.claude-plugin/plugin.json"),
         false,
     ),
     (
         "hooks/hooks.json",
-        include_str!("../../../integrations/claude-code/kyma-memory/hooks/hooks.json"),
+        include_str!("../../../integrations/claude-code/pensieve-memory/hooks/hooks.json"),
         false,
     ),
     (
         "scripts/lib.sh",
-        include_str!("../../../integrations/claude-code/kyma-memory/scripts/lib.sh"),
+        include_str!("../../../integrations/claude-code/pensieve-memory/scripts/lib.sh"),
         true,
     ),
     (
         "scripts/on-session-start.sh",
-        include_str!("../../../integrations/claude-code/kyma-memory/scripts/on-session-start.sh"),
+        include_str!("../../../integrations/claude-code/pensieve-memory/scripts/on-session-start.sh"),
         true,
     ),
     (
         "scripts/on-user-prompt.sh",
-        include_str!("../../../integrations/claude-code/kyma-memory/scripts/on-user-prompt.sh"),
+        include_str!("../../../integrations/claude-code/pensieve-memory/scripts/on-user-prompt.sh"),
         true,
     ),
     (
         "scripts/on-post-tool.sh",
-        include_str!("../../../integrations/claude-code/kyma-memory/scripts/on-post-tool.sh"),
+        include_str!("../../../integrations/claude-code/pensieve-memory/scripts/on-post-tool.sh"),
         true,
     ),
     (
         "scripts/on-stop.sh",
-        include_str!("../../../integrations/claude-code/kyma-memory/scripts/on-stop.sh"),
+        include_str!("../../../integrations/claude-code/pensieve-memory/scripts/on-stop.sh"),
         true,
     ),
     (
         "scripts/on-session-end.sh",
-        include_str!("../../../integrations/claude-code/kyma-memory/scripts/on-session-end.sh"),
+        include_str!("../../../integrations/claude-code/pensieve-memory/scripts/on-session-end.sh"),
         true,
     ),
     (
-        "commands/kyma-recall.md",
-        include_str!("../../../integrations/claude-code/kyma-memory/commands/kyma-recall.md"),
+        "commands/pensieve-recall.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/commands/pensieve-recall.md"),
         false,
     ),
     (
-        "commands/kyma-remember.md",
-        include_str!("../../../integrations/claude-code/kyma-memory/commands/kyma-remember.md"),
+        "commands/pensieve-remember.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/commands/pensieve-remember.md"),
         false,
     ),
     (
-        "commands/kyma-ask.md",
-        include_str!("../../../integrations/claude-code/kyma-memory/commands/kyma-ask.md"),
+        "commands/pensieve-ask.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/commands/pensieve-ask.md"),
         false,
     ),
     (
-        "commands/kyma-status.md",
-        include_str!("../../../integrations/claude-code/kyma-memory/commands/kyma-status.md"),
+        "commands/pensieve-status.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/commands/pensieve-status.md"),
         false,
     ),
     (
-        "commands/kyma-ingest.md",
-        include_str!("../../../integrations/claude-code/kyma-memory/commands/kyma-ingest.md"),
+        "commands/pensieve-ingest.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/commands/pensieve-ingest.md"),
         false,
     ),
     (
-        "skills/kyma-memory/SKILL.md",
-        include_str!("../../../integrations/claude-code/kyma-memory/skills/kyma-memory/SKILL.md"),
+        "skills/pensieve-memory/SKILL.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/skills/pensieve-memory/SKILL.md"),
         false,
     ),
     (
         "agents/memory-curator.md",
-        include_str!("../../../integrations/claude-code/kyma-memory/agents/memory-curator.md"),
+        include_str!("../../../integrations/claude-code/pensieve-memory/agents/memory-curator.md"),
         false,
     ),
     (
         "README.md",
-        include_str!("../../../integrations/claude-code/kyma-memory/README.md"),
+        include_str!("../../../integrations/claude-code/pensieve-memory/README.md"),
         false,
     ),
 ];
 
 /// Materialize the bundled plugin into a Claude Code skills-dir plugin
-/// (`~/.claude/skills/kyma-memory/` by default), templating the live Kyma URL +
+/// (`~/.claude/skills/pensieve-memory/` by default), templating the live Pensieve URL +
 /// token into `.mcp.json` so both hooks and the MCP server work immediately.
 pub(crate) async fn install_plugin(target: Option<PathBuf>, force: bool) -> Result<()> {
     let dir = match target {
         Some(p) => p,
-        None => claude_skills_dir()?.join("kyma-memory"),
+        None => claude_skills_dir()?.join("pensieve-memory"),
     };
 
     if dir.exists() && !force {
@@ -536,17 +536,17 @@ pub(crate) async fn install_plugin(target: Option<PathBuf>, force: bool) -> Resu
     // The MCP config may embed a bearer token — keep it private.
     set_private(&mcp_path);
 
-    println!("Installed kyma-memory plugin → {}", dir.display());
+    println!("Installed pensieve-memory plugin → {}", dir.display());
     println!("  MCP server → {}/mcp/v1", url.trim_end_matches('/'));
     if cfg.is_none() {
         println!(
-            "  ⚠  no Kyma connection found — run `kyma connect <url> --token <token>` then \
-re-run `kyma install-plugin` so the MCP server is authenticated."
+            "  ⚠  no Pensieve connection found — run `pensieve connect <url> --token <token>` then \
+re-run `pensieve install-plugin` so the MCP server is authenticated."
         );
     } else if token.is_none() {
         println!("  ⚠  no token saved — the MCP server will connect unauthenticated.");
     }
-    println!("\nRestart Claude Code, then run /kyma-status to verify.");
+    println!("\nRestart Claude Code, then run /pensieve-status to verify.");
     Ok(())
 }
 
@@ -556,7 +556,7 @@ fn claude_skills_dir() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".claude").join("skills"))
 }
 
-/// Build the `.mcp.json` for a Streamable-HTTP connection to kyma's MCP server.
+/// Build the `.mcp.json` for a Streamable-HTTP connection to pensieve's MCP server.
 fn mcp_json(url: &str, token: Option<&str>) -> Result<String> {
     let url = url.trim_end_matches('/');
     let mut server = json!({
@@ -568,7 +568,7 @@ fn mcp_json(url: &str, token: Option<&str>) -> Result<String> {
             server["headers"] = json!({ "Authorization": format!("Bearer {t}") });
         }
     }
-    let doc = json!({ "mcpServers": { "kyma": server } });
+    let doc = json!({ "mcpServers": { "pensieve": server } });
     Ok(serde_json::to_string_pretty(&doc)?)
 }
 

@@ -1,16 +1,16 @@
-export interface KymaApiErrorOpts {
+export interface PensieveApiErrorOpts {
   requestId?: string;
   code?: string;
 }
 
-/** Error from a Kyma API response. `status` is the HTTP status. */
-export class KymaApiError extends Error {
+/** Error from a Pensieve API response. `status` is the HTTP status. */
+export class PensieveApiError extends Error {
   readonly status: number;
   readonly requestId?: string;
   readonly code?: string;
-  constructor(status: number, message: string, opts?: KymaApiErrorOpts) {
+  constructor(status: number, message: string, opts?: PensieveApiErrorOpts) {
     super(message);
-    this.name = "KymaApiError";
+    this.name = "PensieveApiError";
     this.status = status;
     this.requestId = opts?.requestId;
     this.code = opts?.code;
@@ -18,14 +18,14 @@ export class KymaApiError extends Error {
 }
 
 /** 401/403 — token invalid, expired beyond refresh, or insufficient scope. */
-export class KymaAuthError extends KymaApiError {
-  constructor(status: number, message: string, opts?: KymaApiErrorOpts) {
+export class PensieveAuthError extends PensieveApiError {
+  constructor(status: number, message: string, opts?: PensieveApiErrorOpts) {
     super(status, message, opts);
-    this.name = "KymaAuthError";
+    this.name = "PensieveAuthError";
   }
 }
 
-export async function errorFromResponse(res: Response): Promise<KymaApiError> {
+export async function errorFromResponse(res: Response): Promise<PensieveApiError> {
   const requestId = res.headers.get("x-request-id") ?? undefined;
   let detail = "";
   let code: string | undefined;
@@ -45,9 +45,9 @@ export async function errorFromResponse(res: Response): Promise<KymaApiError> {
   const isAuth = res.status === 401 || res.status === 403;
   // For auth failures, include "unauthorized" so callers testing /unauthorized/i match.
   const statusLabel = isAuth ? `${res.status} unauthorized` : `${res.status}`;
-  const message = `kyma request failed: ${statusLabel}${detail ? ` — ${detail}` : ""}`;
-  const opts: KymaApiErrorOpts = { requestId, code };
+  const message = `pensieve request failed: ${statusLabel}${detail ? ` — ${detail}` : ""}`;
+  const opts: PensieveApiErrorOpts = { requestId, code };
   return isAuth
-    ? new KymaAuthError(res.status, message, opts)
-    : new KymaApiError(res.status, message, opts);
+    ? new PensieveAuthError(res.status, message, opts)
+    : new PensieveApiError(res.status, message, opts);
 }

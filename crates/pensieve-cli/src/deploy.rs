@@ -1,4 +1,4 @@
-//! `kyma deploy` — one-command production (and local test-drive) deployment.
+//! `pensieve deploy` — one-command production (and local test-drive) deployment.
 //!
 //! Targets:
 //! - **aws** (default): ECS Fargate engine + S3 extents + Supabase
@@ -13,10 +13,10 @@
 //!   1. `SUPABASE_ACCESS_TOKEN` env var
 //!   2. The Supabase CLI's stored login (`~/.supabase/access-token`)
 //!   3. Browser OAuth (authorization-code + PKCE against api.supabase.com)
-//!      when an OAuth app client id is configured (`KYMA_SUPABASE_OAUTH_CLIENT_ID`)
+//!      when an OAuth app client id is configured (`PENSIEVE_SUPABASE_OAUTH_CLIENT_ID`)
 //!   4. Guided manual paste (prints the dashboard URL that mints a token)
 //!
-//! Workspaces live in `~/.kyma/deploy/<name>/` — the embedded IaC templates
+//! Workspaces live in `~/.pensieve/deploy/<name>/` — the embedded IaC templates
 //! are materialized there, alongside the rendered `terraform.tfvars` (0600)
 //! and a small `deploy.json` describing the deployment.
 
@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command as Proc, Stdio};
 
 const DEFAULT_SUPABASE_API: &str = "https://api.supabase.com";
-const DEFAULT_IMAGE_REPO: &str = "ghcr.io/shakedaskayo/kyma-engine";
+const DEFAULT_IMAGE_REPO: &str = "ghcr.io/shakedaskayo/pensieve-engine";
 
 // ── argument parsing ─────────────────────────────────────────────────────────
 
@@ -95,7 +95,7 @@ pub(crate) enum Storage {
 pub(crate) enum Auth {
     /// Supabase Auth (only with `database = supabase`).
     Supabase,
-    /// Static admin API token minted by the wizard (`KYMA_AUTH_TOKENS`).
+    /// Static admin API token minted by the wizard (`PENSIEVE_AUTH_TOKENS`).
     Token,
     /// OIDC issuer + client id (validated via JWKS).
     Oidc,
@@ -247,7 +247,7 @@ fn default_auth(d: Database) -> Auth {
 pub(crate) enum Op {
     /// Wizard: collect credentials + settings, materialize the IaC workspace.
     Init {
-        /// Deployment name (workspace at ~/.kyma/deploy/<name>).
+        /// Deployment name (workspace at ~/.pensieve/deploy/<name>).
         #[arg(long, default_value = "prod")]
         name: String,
         /// Compute target: fargate | eks | helm | local.
@@ -310,7 +310,7 @@ pub(crate) enum Op {
         /// kubectl context to deploy into (helm target).
         #[arg(long)]
         kube_context: Option<String>,
-        /// Email(s) granted the kyma admin role (comma-separated).
+        /// Email(s) granted the pensieve admin role (comma-separated).
         #[arg(long)]
         admin_email: Option<String>,
         /// Answer prompts with defaults (supply the relevant flags).
@@ -504,44 +504,44 @@ const DEPLOY_FILES: &[(&str, &str)] = &[
         include_str!("../../../deploy/terraform/stack/modules/eks/versions.tf"),
     ),
     (
-        "helm/kyma-engine/Chart.yaml",
-        include_str!("../../../deploy/helm/kyma-engine/Chart.yaml"),
+        "helm/pensieve-engine/Chart.yaml",
+        include_str!("../../../deploy/helm/pensieve-engine/Chart.yaml"),
     ),
     (
-        "helm/kyma-engine/values.yaml",
-        include_str!("../../../deploy/helm/kyma-engine/values.yaml"),
+        "helm/pensieve-engine/values.yaml",
+        include_str!("../../../deploy/helm/pensieve-engine/values.yaml"),
     ),
     (
-        "helm/kyma-engine/.helmignore",
-        include_str!("../../../deploy/helm/kyma-engine/.helmignore"),
+        "helm/pensieve-engine/.helmignore",
+        include_str!("../../../deploy/helm/pensieve-engine/.helmignore"),
     ),
     (
-        "helm/kyma-engine/templates/_helpers.tpl",
-        include_str!("../../../deploy/helm/kyma-engine/templates/_helpers.tpl"),
+        "helm/pensieve-engine/templates/_helpers.tpl",
+        include_str!("../../../deploy/helm/pensieve-engine/templates/_helpers.tpl"),
     ),
     (
-        "helm/kyma-engine/templates/serviceaccount.yaml",
-        include_str!("../../../deploy/helm/kyma-engine/templates/serviceaccount.yaml"),
+        "helm/pensieve-engine/templates/serviceaccount.yaml",
+        include_str!("../../../deploy/helm/pensieve-engine/templates/serviceaccount.yaml"),
     ),
     (
-        "helm/kyma-engine/templates/secret.yaml",
-        include_str!("../../../deploy/helm/kyma-engine/templates/secret.yaml"),
+        "helm/pensieve-engine/templates/secret.yaml",
+        include_str!("../../../deploy/helm/pensieve-engine/templates/secret.yaml"),
     ),
     (
-        "helm/kyma-engine/templates/deployment.yaml",
-        include_str!("../../../deploy/helm/kyma-engine/templates/deployment.yaml"),
+        "helm/pensieve-engine/templates/deployment.yaml",
+        include_str!("../../../deploy/helm/pensieve-engine/templates/deployment.yaml"),
     ),
     (
-        "helm/kyma-engine/templates/service.yaml",
-        include_str!("../../../deploy/helm/kyma-engine/templates/service.yaml"),
+        "helm/pensieve-engine/templates/service.yaml",
+        include_str!("../../../deploy/helm/pensieve-engine/templates/service.yaml"),
     ),
     (
-        "helm/kyma-engine/templates/ingress.yaml",
-        include_str!("../../../deploy/helm/kyma-engine/templates/ingress.yaml"),
+        "helm/pensieve-engine/templates/ingress.yaml",
+        include_str!("../../../deploy/helm/pensieve-engine/templates/ingress.yaml"),
     ),
     (
-        "helm/kyma-engine/templates/NOTES.txt",
-        include_str!("../../../deploy/helm/kyma-engine/templates/NOTES.txt"),
+        "helm/pensieve-engine/templates/NOTES.txt",
+        include_str!("../../../deploy/helm/pensieve-engine/templates/NOTES.txt"),
     ),
     (
         "pulumi/typescript/Pulumi.yaml",
@@ -610,7 +610,7 @@ fn workspace_dir(name: &str) -> Result<PathBuf> {
 fn load_state(dir: &Path) -> Result<DeployState> {
     let p = dir.join("deploy.json");
     let raw = std::fs::read_to_string(&p)
-        .with_context(|| format!("read {} — run `kyma deploy init` first", p.display()))?;
+        .with_context(|| format!("read {} — run `pensieve deploy init` first", p.display()))?;
     Ok(serde_json::from_str(&raw)?)
 }
 
@@ -643,7 +643,7 @@ fn write_private(path: &Path, contents: &str) -> Result<()> {
     Ok(())
 }
 
-/// Persist the wizard answers (0600 — contains secrets) so `kyma deploy up`
+/// Persist the wizard answers (0600 — contains secrets) so `pensieve deploy up`
 /// can re-render the engine config after reading Terraform outputs (EKS path).
 fn save_answers(dir: &Path, a: &Answers) -> Result<()> {
     write_private(&dir.join("answers.json"), &serde_json::to_string_pretty(a)?)
@@ -652,7 +652,7 @@ fn save_answers(dir: &Path, a: &Answers) -> Result<()> {
 fn load_answers(dir: &Path) -> Result<Answers> {
     let p = dir.join("answers.json");
     let raw = std::fs::read_to_string(&p)
-        .with_context(|| format!("read {} — re-run `kyma deploy init`", p.display()))?;
+        .with_context(|| format!("read {} — re-run `pensieve deploy init`", p.display()))?;
     Ok(serde_json::from_str(&raw)?)
 }
 
@@ -722,7 +722,7 @@ fn hcl_string_list(items: &[String]) -> String {
 fn render_tfvars(a: &Answers) -> String {
     let ext = a.external_storage.clone().unwrap_or(ExternalStorage {
         endpoint: String::new(),
-        bucket: "kyma".into(),
+        bucket: "pensieve".into(),
         region: a.aws_region.clone(),
         access_key_id: String::new(),
         secret_access_key: String::new(),
@@ -732,7 +732,7 @@ fn render_tfvars(a: &Answers) -> String {
     let kv = |k: &str, v: &str| format!("{k:<21} = \"{v}\"\n");
     let raw = |k: &str, v: &str| format!("{k:<21} = {v}\n");
     let mut s =
-        String::from("# Generated by `kyma deploy init` — edit freely; `init --force` regenerates.\n");
+        String::from("# Generated by `pensieve deploy init` — edit freely; `init --force` regenerates.\n");
     s.push_str(&kv("project_name", &a.project_name));
     s.push_str(&kv("aws_region", &a.aws_region));
     s.push_str(&kv("compute_backend", a.compute.as_str()));
@@ -777,45 +777,45 @@ fn render_tfvars(a: &Answers) -> String {
 /// (The Terraform stack computes the equivalent env in HCL; see `stack/main.tf`.)
 fn engine_env(a: &Answers) -> (Vec<(String, String)>, Vec<(String, String)>) {
     let mut env: Vec<(String, String)> = vec![
-        ("KYMA_HTTP_ADDR".into(), "0.0.0.0:8080".into()),
-        ("KYMA_GRPC_ADDR".into(), "off".into()),
-        ("KYMA_OTLP_ADDR".into(), "off".into()),
-        ("KYMA_AUTH_BACKEND".into(), a.auth.as_str().into()),
+        ("PENSIEVE_HTTP_ADDR".into(), "0.0.0.0:8080".into()),
+        ("PENSIEVE_GRPC_ADDR".into(), "off".into()),
+        ("PENSIEVE_OTLP_ADDR".into(), "off".into()),
+        ("PENSIEVE_AUTH_BACKEND".into(), a.auth.as_str().into()),
     ];
     let mut secret: Vec<(String, String)> = Vec::new();
 
     // Catalog Postgres URL is always a secret.
     if !a.database_url.is_empty() {
-        secret.push(("KYMA_CATALOG_URL".into(), a.database_url.clone()));
+        secret.push(("PENSIEVE_CATALOG_URL".into(), a.database_url.clone()));
     }
 
     match a.auth {
         Auth::Supabase => {
             if !a.supabase_url.is_empty() {
-                env.push(("KYMA_SUPABASE_URL".into(), a.supabase_url.clone()));
+                env.push(("PENSIEVE_SUPABASE_URL".into(), a.supabase_url.clone()));
             }
             if !a.supabase_anon_key.is_empty() {
-                env.push(("KYMA_SUPABASE_ANON_KEY".into(), a.supabase_anon_key.clone()));
+                env.push(("PENSIEVE_SUPABASE_ANON_KEY".into(), a.supabase_anon_key.clone()));
             }
             if !a.oauth_providers.is_empty() {
-                env.push(("KYMA_SUPABASE_PROVIDERS".into(), a.oauth_providers.join(",")));
+                env.push(("PENSIEVE_SUPABASE_PROVIDERS".into(), a.oauth_providers.join(",")));
             }
             if !a.admin_emails.is_empty() {
-                env.push(("KYMA_ADMIN_EMAILS".into(), a.admin_emails.join(",")));
+                env.push(("PENSIEVE_ADMIN_EMAILS".into(), a.admin_emails.join(",")));
             }
             if !a.allowed_email_domains.is_empty() {
                 env.push((
-                    "KYMA_ALLOWED_EMAIL_DOMAINS".into(),
+                    "PENSIEVE_ALLOWED_EMAIL_DOMAINS".into(),
                     a.allowed_email_domains.join(","),
                 ));
             }
         }
         Auth::Token => {
-            secret.push(("KYMA_AUTH_TOKENS".into(), format!("{}:admin", a.admin_token)));
+            secret.push(("PENSIEVE_AUTH_TOKENS".into(), format!("{}:admin", a.admin_token)));
         }
         Auth::Oidc => {
-            env.push(("KYMA_OIDC_ISSUER".into(), a.oidc_issuer.clone()));
-            env.push(("KYMA_OIDC_CLIENT_ID".into(), a.oidc_client_id.clone()));
+            env.push(("PENSIEVE_OIDC_ISSUER".into(), a.oidc_issuer.clone()));
+            env.push(("PENSIEVE_OIDC_CLIENT_ID".into(), a.oidc_client_id.clone()));
         }
     }
 
@@ -825,37 +825,37 @@ fn engine_env(a: &Answers) -> (Vec<(String, String)>, Vec<(String, String)>) {
             // is only known after `terraform apply` (EKS path fills s3_bucket
             // from the TF output at `up`).
             if !a.s3_bucket.is_empty() {
-                env.push(("KYMA_S3_BUCKET".into(), a.s3_bucket.clone()));
+                env.push(("PENSIEVE_S3_BUCKET".into(), a.s3_bucket.clone()));
             }
-            env.push(("KYMA_S3_REGION".into(), a.aws_region.clone()));
-            env.push(("KYMA_S3_PATH_STYLE".into(), "false".into()));
-            env.push(("KYMA_S3_ALLOW_HTTP".into(), "false".into()));
+            env.push(("PENSIEVE_S3_REGION".into(), a.aws_region.clone()));
+            env.push(("PENSIEVE_S3_PATH_STYLE".into(), "false".into()));
+            env.push(("PENSIEVE_S3_ALLOW_HTTP".into(), "false".into()));
         }
         Storage::Supabase => {
-            env.push(("KYMA_S3_BUCKET".into(), "kyma".into()));
-            env.push(("KYMA_S3_PATH_STYLE".into(), "true".into()));
-            env.push(("KYMA_S3_ALLOW_HTTP".into(), "false".into()));
+            env.push(("PENSIEVE_S3_BUCKET".into(), "pensieve".into()));
+            env.push(("PENSIEVE_S3_PATH_STYLE".into(), "true".into()));
+            env.push(("PENSIEVE_S3_ALLOW_HTTP".into(), "false".into()));
             if !a.supabase_s3_access_key_id.is_empty() {
                 secret.push((
-                    "KYMA_S3_ACCESS_KEY_ID".into(),
+                    "PENSIEVE_S3_ACCESS_KEY_ID".into(),
                     a.supabase_s3_access_key_id.clone(),
                 ));
                 secret.push((
-                    "KYMA_S3_SECRET_ACCESS_KEY".into(),
+                    "PENSIEVE_S3_SECRET_ACCESS_KEY".into(),
                     a.supabase_s3_secret_access_key.clone(),
                 ));
             }
         }
         Storage::External => {
             if let Some(es) = &a.external_storage {
-                env.push(("KYMA_S3_ENDPOINT".into(), es.endpoint.clone()));
-                env.push(("KYMA_S3_BUCKET".into(), es.bucket.clone()));
-                env.push(("KYMA_S3_REGION".into(), es.region.clone()));
-                env.push(("KYMA_S3_PATH_STYLE".into(), es.path_style.to_string()));
-                env.push(("KYMA_S3_ALLOW_HTTP".into(), "false".into()));
-                secret.push(("KYMA_S3_ACCESS_KEY_ID".into(), es.access_key_id.clone()));
+                env.push(("PENSIEVE_S3_ENDPOINT".into(), es.endpoint.clone()));
+                env.push(("PENSIEVE_S3_BUCKET".into(), es.bucket.clone()));
+                env.push(("PENSIEVE_S3_REGION".into(), es.region.clone()));
+                env.push(("PENSIEVE_S3_PATH_STYLE".into(), es.path_style.to_string()));
+                env.push(("PENSIEVE_S3_ALLOW_HTTP".into(), "false".into()));
+                secret.push(("PENSIEVE_S3_ACCESS_KEY_ID".into(), es.access_key_id.clone()));
                 secret.push((
-                    "KYMA_S3_SECRET_ACCESS_KEY".into(),
+                    "PENSIEVE_S3_SECRET_ACCESS_KEY".into(),
                     es.secret_access_key.clone(),
                 ));
             }
@@ -875,7 +875,7 @@ fn render_helm_values(a: &Answers) -> String {
     let (env, secret) = engine_env(a);
     let ingress_enabled = !a.ingress_host.is_empty();
     let mut s = String::from(
-        "# Generated by `kyma deploy init` (compute=helm). Contains secrets — keep private.\n",
+        "# Generated by `pensieve deploy init` (compute=helm). Contains secrets — keep private.\n",
     );
     s.push_str(&format!(
         "image:\n  repository: {}\n  tag: {}\n  pullPolicy: IfNotPresent\n",
@@ -892,10 +892,10 @@ fn render_helm_values(a: &Answers) -> String {
     ));
     // serviceAccount.annotations carries the IRSA role ARN for keyless S3 on EKS.
     if a.irsa_role_arn.is_empty() {
-        s.push_str("serviceAccount:\n  create: true\n  name: kyma-engine\n  annotations: {}\n");
+        s.push_str("serviceAccount:\n  create: true\n  name: pensieve-engine\n  annotations: {}\n");
     } else {
         s.push_str(&format!(
-            "serviceAccount:\n  create: true\n  name: kyma-engine\n  annotations:\n    eks.amazonaws.com/role-arn: {}\n",
+            "serviceAccount:\n  create: true\n  name: pensieve-engine\n  annotations:\n    eks.amazonaws.com/role-arn: {}\n",
             yaml_quote(&a.irsa_role_arn)
         ));
     }
@@ -917,9 +917,9 @@ fn render_helm_values(a: &Answers) -> String {
 fn render_local_env_from(a: &Answers, secret_key: &str) -> String {
     let (env, secret) = engine_env(a);
     let mut s = String::from(
-        "# Generated by `kyma deploy init` (compute=local). Contains secrets — keep private.\n",
+        "# Generated by `pensieve deploy init` (compute=local). Contains secrets — keep private.\n",
     );
-    s.push_str(&format!("KYMA_SECRET_KEY={secret_key}\n"));
+    s.push_str(&format!("PENSIEVE_SECRET_KEY={secret_key}\n"));
     for (k, v) in env.iter().chain(secret.iter()) {
         s.push_str(&format!("{k}={v}\n"));
     }
@@ -951,41 +951,41 @@ fn render_local_env(
     let storage = match s3 {
         Some(s3) => format!(
             r#"# Extents live in Supabase Storage via its S3-compatible endpoint.
-KYMA_S3_ENDPOINT={endpoint}
-KYMA_S3_BUCKET={bucket}
-KYMA_S3_REGION={region}
-KYMA_S3_ACCESS_KEY_ID={ak}
-KYMA_S3_SECRET_ACCESS_KEY={sk}
-KYMA_S3_PATH_STYLE=true
-KYMA_S3_ALLOW_HTTP=false"#,
+PENSIEVE_S3_ENDPOINT={endpoint}
+PENSIEVE_S3_BUCKET={bucket}
+PENSIEVE_S3_REGION={region}
+PENSIEVE_S3_ACCESS_KEY_ID={ak}
+PENSIEVE_S3_SECRET_ACCESS_KEY={sk}
+PENSIEVE_S3_PATH_STYLE=true
+PENSIEVE_S3_ALLOW_HTTP=false"#,
             endpoint = s3.endpoint,
             bucket = s3.bucket,
             region = s3.region,
             ak = s3.access_key_id,
             sk = s3.secret_access_key,
         ),
-        None => r#"# Extents stay on the container volume (KYMA_LOCAL_DATA). To use Supabase
+        None => r#"# Extents stay on the container volume (PENSIEVE_LOCAL_DATA). To use Supabase
 # Storage's S3-compatible endpoint instead, create S3 access keys in the
 # dashboard (Project Settings → Storage) and fill in:
-# KYMA_S3_ENDPOINT=https://<ref>.storage.supabase.co/storage/v1/s3
-# KYMA_S3_BUCKET=kyma
-# KYMA_S3_REGION=<project-region>
-# KYMA_S3_ACCESS_KEY_ID=
-# KYMA_S3_SECRET_ACCESS_KEY=
-# KYMA_S3_PATH_STYLE=true"#
+# PENSIEVE_S3_ENDPOINT=https://<ref>.storage.supabase.co/storage/v1/s3
+# PENSIEVE_S3_BUCKET=pensieve
+# PENSIEVE_S3_REGION=<project-region>
+# PENSIEVE_S3_ACCESS_KEY_ID=
+# PENSIEVE_S3_SECRET_ACCESS_KEY=
+# PENSIEVE_S3_PATH_STYLE=true"#
             .to_string(),
     };
     format!(
-        r#"# Generated by `kyma deploy init --target local`. Contains secrets — keep private.
-KYMA_CATALOG_URL={db_url}
-KYMA_AUTH_BACKEND=supabase
-KYMA_SUPABASE_URL={supabase_url}
-KYMA_SUPABASE_ANON_KEY={anon_key}
-KYMA_ADMIN_EMAILS={admin_emails}
-KYMA_SECRET_KEY={secret_key}
-KYMA_HTTP_ADDR=0.0.0.0:8080
-KYMA_GRPC_ADDR=off
-KYMA_OTLP_ADDR=off
+        r#"# Generated by `pensieve deploy init --target local`. Contains secrets — keep private.
+PENSIEVE_CATALOG_URL={db_url}
+PENSIEVE_AUTH_BACKEND=supabase
+PENSIEVE_SUPABASE_URL={supabase_url}
+PENSIEVE_SUPABASE_ANON_KEY={anon_key}
+PENSIEVE_ADMIN_EMAILS={admin_emails}
+PENSIEVE_SECRET_KEY={secret_key}
+PENSIEVE_HTTP_ADDR=0.0.0.0:8080
+PENSIEVE_GRPC_ADDR=off
+PENSIEVE_OTLP_ADDR=off
 {storage}
 "#,
         db_url = db_url,
@@ -1065,12 +1065,12 @@ fn note(msg: &str) {
 // ── Supabase access-token acquisition ────────────────────────────────────────
 
 fn supabase_api_base() -> String {
-    std::env::var("KYMA_SUPABASE_API_BASE").unwrap_or_else(|_| DEFAULT_SUPABASE_API.to_string())
+    std::env::var("PENSIEVE_SUPABASE_API_BASE").unwrap_or_else(|_| DEFAULT_SUPABASE_API.to_string())
 }
 
 /// OAuth app registration used for the browser flow. Resolution order:
-/// `KYMA_SUPABASE_OAUTH_CLIENT_ID`/`_SECRET` env vars, then
-/// `~/.kyma/oauth-app.json` ({"client_id": …, "client_secret": …}).
+/// `PENSIEVE_SUPABASE_OAUTH_CLIENT_ID`/`_SECRET` env vars, then
+/// `~/.pensieve/oauth-app.json` ({"client_id": …, "client_secret": …}).
 #[derive(Debug, Clone)]
 struct OAuthAppConfig {
     client_id: String,
@@ -1078,11 +1078,11 @@ struct OAuthAppConfig {
 }
 
 fn oauth_app_config() -> Option<OAuthAppConfig> {
-    if let Ok(client_id) = std::env::var("KYMA_SUPABASE_OAUTH_CLIENT_ID") {
+    if let Ok(client_id) = std::env::var("PENSIEVE_SUPABASE_OAUTH_CLIENT_ID") {
         if !client_id.is_empty() {
             return Some(OAuthAppConfig {
                 client_id,
-                client_secret: std::env::var("KYMA_SUPABASE_OAUTH_CLIENT_SECRET")
+                client_secret: std::env::var("PENSIEVE_SUPABASE_OAUTH_CLIENT_SECRET")
                     .ok()
                     .filter(|s| !s.is_empty()),
             });
@@ -1167,7 +1167,7 @@ async fn oauth_flow(app: &OAuthAppConfig) -> Result<String> {
     // Fixed port: OAuth app registrations need a static redirect URI
     // (registered as http://localhost:53682/callback).
     let listener = std::net::TcpListener::bind("127.0.0.1:53682")
-        .context("bind callback port 53682 (is another kyma deploy running?)")?;
+        .context("bind callback port 53682 (is another pensieve deploy running?)")?;
     let port = listener.local_addr()?.port();
     let redirect_uri = format!("http://localhost:{port}/callback");
 
@@ -1206,7 +1206,7 @@ async fn oauth_flow(app: &OAuthAppConfig) -> Result<String> {
                     _ => {}
                 }
             }
-            let body = "<html><body><h3>kyma: authorization received — you can close this tab.</h3></body></html>";
+            let body = "<html><body><h3>pensieve: authorization received — you can close this tab.</h3></body></html>";
             let _ = write!(
                 sock,
                 "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\n\r\n{}",
@@ -1418,7 +1418,7 @@ async fn try_create_storage_keys(token: &str, project_ref: &str) -> Option<(Stri
     let v = supabase_post(
         token,
         &format!("/v1/projects/{project_ref}/storage/credentials"),
-        serde_json::json!({ "description": "kyma extents" }),
+        serde_json::json!({ "description": "pensieve extents" }),
     )
     .await
     .ok()?;
@@ -1548,7 +1548,7 @@ async fn provision_local_project(
     };
     let mut s3 = None;
     if let Some((ak, sk)) = keys {
-        let bucket = "kyma".to_string();
+        let bucket = "pensieve".to_string();
         let storage_ok = match &service_role_key {
             Some(sr) => match ensure_bucket(&supabase_url, sr, &bucket).await {
                 Ok(()) => true,
@@ -1560,7 +1560,7 @@ async fn provision_local_project(
             None => false,
         };
         if storage_ok {
-            note("• Extents: Supabase Storage (S3 protocol, bucket 'kyma')");
+            note("• Extents: Supabase Storage (S3 protocol, bucket 'pensieve')");
             s3 = Some(SupabaseS3 {
                 endpoint: format!("https://{project_ref}.storage.supabase.co/storage/v1/s3"),
                 region: region.to_string(),
@@ -1760,12 +1760,12 @@ async fn cmd_init(o: InitOpts) -> Result<()> {
     let dir = workspace_dir(&name)?;
     if dir.join("deploy.json").exists() && !o.force && !o.print_only {
         bail!(
-            "workspace '{name}' already exists at {} — rerun with --force to regenerate, or use `kyma deploy up`",
+            "workspace '{name}' already exists at {} — rerun with --force to regenerate, or use `pensieve deploy up`",
             dir.display()
         );
     }
 
-    note("kyma deployment");
+    note("pensieve deployment");
     note("");
 
     // ── axis resolution (flag → prompt → default) ──
@@ -1795,7 +1795,7 @@ async fn cmd_init(o: InitOpts) -> Result<()> {
     let database_url = if database == Database::External {
         match o.database_url {
             Some(u) => u,
-            None if o.print_only => "postgresql://USER:PASS@HOST:5432/kyma".to_string(),
+            None if o.print_only => "postgresql://USER:PASS@HOST:5432/pensieve".to_string(),
             None if interactive => {
                 prompt_secret("Postgres URL (postgresql://user:pass@host:5432/db)")?
             }
@@ -1821,7 +1821,7 @@ async fn cmd_init(o: InitOpts) -> Result<()> {
         };
         Some(ExternalStorage {
             endpoint: resolve_str(o.storage_endpoint, interactive, "S3-compatible endpoint (https://host:port)", "")?,
-            bucket: resolve_str(o.storage_bucket, interactive, "Bucket", "kyma")?,
+            bucket: resolve_str(o.storage_bucket, interactive, "Bucket", "pensieve")?,
             region: resolve_str(o.storage_region, interactive, "Region", "us-east-1")?,
             access_key_id: resolve_str(o.storage_access_key, interactive, "Access key id", "")?,
             secret_access_key: secret,
@@ -1951,7 +1951,7 @@ async fn cmd_init(o: InitOpts) -> Result<()> {
     let admin_emails: Vec<String> = match o.admin_email {
         Some(e) => e.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
         None if interactive && auth != Auth::Token => {
-            let raw = prompt("Admin email(s) (comma-separated — get the kyma admin role)", "")?;
+            let raw = prompt("Admin email(s) (comma-separated — get the pensieve admin role)", "")?;
             raw.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
         }
         None => Vec::new(),
@@ -1994,7 +1994,7 @@ async fn cmd_init(o: InitOpts) -> Result<()> {
 
     let mut answers = Answers {
         name: name.clone(),
-        project_name: format!("kyma-{name}"),
+        project_name: format!("pensieve-{name}"),
         compute,
         database,
         storage,
@@ -2053,7 +2053,7 @@ async fn cmd_init(o: InitOpts) -> Result<()> {
         storage: Some(storage.as_str().to_string()),
         auth: Some(auth.as_str().to_string()),
         kube_context: (!kube_context.is_empty()).then(|| kube_context.clone()),
-        namespace: Some("kyma".to_string()),
+        namespace: Some("pensieve".to_string()),
         ..Default::default()
     };
 
@@ -2077,7 +2077,7 @@ async fn cmd_init(o: InitOpts) -> Result<()> {
             save_state(&dir, &state)?;
             note("");
             note(&format!("Workspace ready: {}", dir.display()));
-            note("Next: kyma deploy up");
+            note("Next: pensieve deploy up");
         }
         Compute::Helm => {
             // No Terraform on the helm path — provision Supabase here if chosen.
@@ -2109,7 +2109,7 @@ async fn cmd_init(o: InitOpts) -> Result<()> {
             save_state(&dir, &state)?;
             note("");
             note(&format!("Workspace ready: {}", dir.display()));
-            note("Next: kyma deploy up   (helm upgrade --install into your kubectl context)");
+            note("Next: pensieve deploy up   (helm upgrade --install into your kubectl context)");
         }
         Compute::Local => {
             let secret_key = random_token(48);
@@ -2141,17 +2141,17 @@ async fn cmd_init(o: InitOpts) -> Result<()> {
             } else {
                 write_private(&env_file, &render_local_env_from(&answers, &secret_key))?;
             }
-            state.container_name = Some(format!("kyma-{name}"));
+            state.container_name = Some(format!("pensieve-{name}"));
             save_answers(&dir, &answers)?;
             save_state(&dir, &state)?;
             note(&format!("Env file: {}", env_file.display()));
-            note("Next: kyma deploy up   (runs the engine container locally)");
+            note("Next: pensieve deploy up   (runs the engine container locally)");
         }
     }
     Ok(())
 }
 
-/// The artifact `kyma deploy init` renders for a compute target (used by
+/// The artifact `pensieve deploy init` renders for a compute target (used by
 /// `--print-only` and the init flow).
 fn planned_artifact(a: &Answers) -> (String, String) {
     match a.compute {
@@ -2168,17 +2168,17 @@ fn print_planned_commands(a: &Answers, dir: &Path, tool: IacTool) {
                 println!("cd {}/terraform && terraform init && terraform apply", dir.display())
             }
             IacTool::Pulumi => println!(
-                "cd {}/pulumi/typescript && pulumi package add terraform-module ../../terraform/stack kymaengine && pulumi up",
+                "cd {}/pulumi/typescript && pulumi package add terraform-module ../../terraform/stack pensieveengine && pulumi up",
                 dir.display()
             ),
         },
         Compute::Helm => println!(
-            "helm upgrade --install kyma {}/helm/kyma-engine -f {}/helm-values.yaml -n kyma --create-namespace",
+            "helm upgrade --install pensieve {}/helm/pensieve-engine -f {}/helm-values.yaml -n pensieve --create-namespace",
             dir.display(),
             dir.display()
         ),
         Compute::Local => println!(
-            "docker run -d --name kyma-{} --env-file {}/local.env -p 8080:8080 {DEFAULT_IMAGE_REPO}:{}",
+            "docker run -d --name pensieve-{} --env-file {}/local.env -p 8080:8080 {DEFAULT_IMAGE_REPO}:{}",
             a.name,
             dir.display(),
             a.image_tag
@@ -2260,7 +2260,7 @@ async fn iac_apply(
                 run_streamed(
                     &tf_dir,
                     bin,
-                    &["apply", "-target=module.kyma.module.supabase", "-auto-approve"],
+                    &["apply", "-target=module.pensieve.module.supabase", "-auto-approve"],
                 )?;
                 let raw = run_captured(&tf_dir, bin, &["output", "-json"])?;
                 let outputs: serde_json::Value = serde_json::from_str(&raw)?;
@@ -2300,13 +2300,13 @@ async fn iac_apply(
             run_streamed(
                 &pl_dir,
                 "pulumi",
-                &["package", "add", "terraform-module", "../../terraform/stack", "kymaengine"],
+                &["package", "add", "terraform-module", "../../terraform/stack", "pensieveengine"],
             )
             .or_else(|_| {
                 run_streamed(
                     &pl_dir,
                     "npm",
-                    &["pkg", "set", "dependencies.@pulumi/kymaengine=file:sdks/kymaengine"],
+                    &["pkg", "set", "dependencies.@pulumi/pensieveengine=file:sdks/pensieveengine"],
                 )
                 .and_then(|()| run_streamed(&pl_dir, "npm", &["install", "--no-fund", "--no-audit"]))
             })?;
@@ -2342,10 +2342,10 @@ async fn ensure_supabase_bucket(dir: &Path, state: &DeployState) {
             .map(String::from);
         if let Some(sr) = service_role {
             let supabase_url = format!("https://{project_ref}.supabase.co");
-            match ensure_bucket(&supabase_url, &sr, "kyma").await {
-                Ok(()) => note("• Extents bucket 'kyma' ready in Supabase Storage"),
+            match ensure_bucket(&supabase_url, &sr, "pensieve").await {
+                Ok(()) => note("• Extents bucket 'pensieve' ready in Supabase Storage"),
                 Err(e) => note(&format!(
-                    "• Could not create the extents bucket ({e}) — create 'kyma' in Supabase Storage manually"
+                    "• Could not create the extents bucket ({e}) — create 'pensieve' in Supabase Storage manually"
                 )),
             }
         }
@@ -2392,21 +2392,21 @@ async fn up_eks(dir: &Path, state: &mut DeployState, auto_approve: bool) -> Resu
         &["eks", "update-kubeconfig", "--name", &cluster, "--region", &state.aws_region],
     )?;
 
-    let chart = dir.join("helm").join("kyma-engine");
+    let chart = dir.join("helm").join("pensieve-engine");
     let chart_s = chart.to_str().unwrap();
     let values_s = values_path.to_str().unwrap();
-    note("• Installing the kyma engine Helm chart…");
+    note("• Installing the pensieve engine Helm chart…");
     run_streamed(
         dir,
         "helm",
         &[
-            "upgrade", "--install", "kyma", chart_s, "-f", values_s, "-n", "kyma",
+            "upgrade", "--install", "pensieve", chart_s, "-f", values_s, "-n", "pensieve",
             "--create-namespace", "--wait", "--timeout", "300s",
         ],
     )?;
 
     let engine_url = if answers.ingress_host.is_empty() {
-        "http://localhost:8080 (kubectl -n kyma port-forward svc/kyma-kyma-engine 8080:8080)".to_string()
+        "http://localhost:8080 (kubectl -n pensieve port-forward svc/pensieve-pensieve-engine 8080:8080)".to_string()
     } else {
         format!("https://{}", answers.ingress_host)
     };
@@ -2419,21 +2419,21 @@ async fn up_eks(dir: &Path, state: &mut DeployState, auto_approve: bool) -> Resu
 async fn up_helm(dir: &Path, state: &mut DeployState) -> Result<()> {
     let values = dir.join("helm-values.yaml");
     if !values.exists() {
-        bail!("helm-values.yaml missing — run `kyma deploy init` first");
+        bail!("helm-values.yaml missing — run `pensieve deploy init` first");
     }
-    let chart = dir.join("helm").join("kyma-engine");
+    let chart = dir.join("helm").join("pensieve-engine");
     let chart_s = chart.to_str().unwrap();
     let values_s = values.to_str().unwrap();
     let kctx = state.kube_context.clone().unwrap_or_default();
     let mut args = vec![
-        "upgrade", "--install", "kyma", chart_s, "-f", values_s, "-n", "kyma",
+        "upgrade", "--install", "pensieve", chart_s, "-f", values_s, "-n", "pensieve",
         "--create-namespace", "--wait", "--timeout", "300s",
     ];
     if !kctx.is_empty() {
         args.push("--kube-context");
         args.push(&kctx);
     }
-    note("• helm upgrade --install kyma …");
+    note("• helm upgrade --install pensieve …");
     run_streamed(dir, "helm", &args)?;
 
     let answers = load_answers(dir).ok();
@@ -2442,7 +2442,7 @@ async fn up_helm(dir: &Path, state: &mut DeployState) -> Result<()> {
         .filter(|a| !a.ingress_host.is_empty())
         .map(|a| format!("https://{}", a.ingress_host))
         .unwrap_or_else(|| {
-            "http://localhost:8080 (kubectl -n kyma port-forward svc/kyma-kyma-engine 8080:8080)".to_string()
+            "http://localhost:8080 (kubectl -n pensieve port-forward svc/pensieve-pensieve-engine 8080:8080)".to_string()
         });
     state.engine_url = Some(engine_url.clone());
     save_state(dir, state)?;
@@ -2454,7 +2454,7 @@ fn up_local(dir: &Path, name: &str, state: &mut DeployState) -> Result<()> {
     let container = state
         .container_name
         .clone()
-        .unwrap_or_else(|| format!("kyma-{name}"));
+        .unwrap_or_else(|| format!("pensieve-{name}"));
     let image = format!("{DEFAULT_IMAGE_REPO}:{}", state.image_tag);
     let env_file = dir.join("local.env");
     // Replace any previous container of the same name.
@@ -2465,7 +2465,7 @@ fn up_local(dir: &Path, name: &str, state: &mut DeployState) -> Result<()> {
         &[
             "run", "-d", "--name", &container, "--env-file",
             env_file.to_str().unwrap(), "-p", "8080:8080", "-v",
-            &format!("{container}-data:/root/.kyma"), &image,
+            &format!("{container}-data:/root/.pensieve"), &image,
         ],
     )?;
     let engine_url = "http://localhost:8080".to_string();
@@ -2478,14 +2478,14 @@ fn up_local(dir: &Path, name: &str, state: &mut DeployState) -> Result<()> {
 fn finish_up(engine_url: &str, admin_password: Option<&str>) {
     note("");
     note("──────────────────────────────────────────────");
-    note(&format!("kyma is deploying at: {engine_url}"));
+    note(&format!("pensieve is deploying at: {engine_url}"));
     note("");
     note("Sign in via your configured auth backend (Supabase / OIDC / API token).");
     if let Some(pw) = admin_password {
         note(&format!("Fallback admin user: admin / {pw}"));
     }
     note("");
-    note(&format!("Connect the CLI:  kyma connect {engine_url} --token <api-token>"));
+    note(&format!("Connect the CLI:  pensieve connect {engine_url} --token <api-token>"));
     note("(mint an API token in the web UI under Settings → API tokens)");
     note("──────────────────────────────────────────────");
 }
@@ -2519,7 +2519,7 @@ async fn cmd_status(name: &str) -> Result<()> {
                 Err(e) => println!("health:     unreachable ({e})"),
             }
         }
-        None => println!("engine url: (not deployed yet — run `kyma deploy up`)"),
+        None => println!("engine url: (not deployed yet — run `pensieve deploy up`)"),
     }
     Ok(())
 }
@@ -2557,7 +2557,7 @@ async fn cmd_destroy(name: &str, yes: bool) -> Result<()> {
         },
         Compute::Helm => {
             let kctx = state.kube_context.clone().unwrap_or_default();
-            let mut args = vec!["uninstall", "kyma", "-n", "kyma"];
+            let mut args = vec!["uninstall", "pensieve", "-n", "pensieve"];
             if !kctx.is_empty() {
                 args.push("--kube-context");
                 args.push(&kctx);
@@ -2671,7 +2671,7 @@ mod tests {
 
     #[test]
     fn deploy_state_migrates_legacy_target() {
-        let legacy = r#"{"target":"aws","tool":"terraform","project_name":"kyma-prod","aws_region":"us-east-1","image_tag":"v1"}"#;
+        let legacy = r#"{"target":"aws","tool":"terraform","project_name":"pensieve-prod","aws_region":"us-east-1","image_tag":"v1"}"#;
         let st: DeployState = serde_json::from_str(legacy).unwrap();
         assert_eq!(st.compute(), Compute::Fargate);
         let legacy_local = r#"{"target":"local","tool":"terraform","project_name":"p","aws_region":"r","image_tag":"v"}"#;
@@ -2698,14 +2698,14 @@ mod tests {
     fn answers() -> Answers {
         Answers {
             name: "prod".into(),
-            project_name: "kyma-prod".into(),
+            project_name: "pensieve-prod".into(),
             compute: Compute::Fargate,
             database: Database::Supabase,
             storage: Storage::Supabase,
             auth: Auth::Supabase,
             aws_region: "eu-central-1".into(),
             image_tag: "v0.1.0".into(),
-            domain: "kyma.corp.com".into(),
+            domain: "pensieve.corp.com".into(),
             route53_zone_id: "Z123".into(),
             supabase_org_id: "org-123".into(),
             supabase_region: "eu-central-1".into(),
@@ -2769,7 +2769,7 @@ mod tests {
     fn tfvars_renders_every_answer() {
         let rendered = render_tfvars(&answers());
         let m = parse_tfvars(&rendered);
-        assert_eq!(m["project_name"], "kyma-prod");
+        assert_eq!(m["project_name"], "pensieve-prod");
         assert_eq!(m["aws_region"], "eu-central-1");
         assert_eq!(m["compute_backend"], "fargate");
         assert_eq!(m["database_backend"], "supabase");
@@ -2777,7 +2777,7 @@ mod tests {
         assert_eq!(m["auth_backend"], "supabase");
         assert_eq!(m["supabase_org_id"], "org-123");
         assert_eq!(m["supabase_db_password"], "s3cret");
-        assert_eq!(m["domain"], "kyma.corp.com");
+        assert_eq!(m["domain"], "pensieve.corp.com");
         assert_eq!(m["route53_zone_id"], "Z123");
         assert_eq!(m["image_tag"], "v0.1.0");
         assert_eq!(m["supabase_s3_access_key_id"], "AKTEST");
@@ -2814,23 +2814,23 @@ mod tests {
         a.auth = Auth::Token;
         a.database_url = "postgresql://u:p@host:5432/db".into();
         a.admin_token = "tok".into();
-        a.ingress_host = "kyma.example.com".into();
+        a.ingress_host = "pensieve.example.com".into();
         a.external_storage = Some(ExternalStorage {
             endpoint: "https://minio:9000".into(),
-            bucket: "kyma".into(),
+            bucket: "pensieve".into(),
             region: "us-east-1".into(),
             access_key_id: "AK".into(),
             secret_access_key: "SK".into(),
             path_style: true,
         });
         let y = render_helm_values(&a);
-        assert!(y.contains("repository: ghcr.io/shakedaskayo/kyma-engine"), "{y}");
-        assert!(y.contains(r#"KYMA_CATALOG_URL: "postgresql://u:p@host:5432/db""#), "{y}");
-        assert!(y.contains(r#"KYMA_AUTH_BACKEND: "token""#), "{y}");
-        assert!(y.contains(r#"KYMA_AUTH_TOKENS: "tok:admin""#), "{y}");
-        assert!(y.contains(r#"KYMA_S3_ENDPOINT: "https://minio:9000""#), "{y}");
-        assert!(y.contains(r#"KYMA_S3_PATH_STYLE: "true""#), "{y}");
-        assert!(y.contains(r#"host: "kyma.example.com""#), "{y}");
+        assert!(y.contains("repository: ghcr.io/shakedaskayo/pensieve-engine"), "{y}");
+        assert!(y.contains(r#"PENSIEVE_CATALOG_URL: "postgresql://u:p@host:5432/db""#), "{y}");
+        assert!(y.contains(r#"PENSIEVE_AUTH_BACKEND: "token""#), "{y}");
+        assert!(y.contains(r#"PENSIEVE_AUTH_TOKENS: "tok:admin""#), "{y}");
+        assert!(y.contains(r#"PENSIEVE_S3_ENDPOINT: "https://minio:9000""#), "{y}");
+        assert!(y.contains(r#"PENSIEVE_S3_PATH_STYLE: "true""#), "{y}");
+        assert!(y.contains(r#"host: "pensieve.example.com""#), "{y}");
     }
 
     #[test]
@@ -2844,18 +2844,18 @@ mod tests {
         a.admin_token = "tok".into();
         a.external_storage = Some(ExternalStorage {
             endpoint: "https://minio:9000".into(),
-            bucket: "kyma".into(),
+            bucket: "pensieve".into(),
             region: "us-east-1".into(),
             access_key_id: "AK".into(),
             secret_access_key: "SK".into(),
             path_style: true,
         });
         let env = render_local_env_from(&a, "sk");
-        assert!(env.contains("KYMA_CATALOG_URL=postgresql://u:p@h:5432/db"), "{env}");
-        assert!(env.contains("KYMA_AUTH_BACKEND=token"));
-        assert!(env.contains("KYMA_AUTH_TOKENS=tok:admin"));
-        assert!(env.contains("KYMA_S3_ENDPOINT=https://minio:9000"));
-        assert!(env.contains("KYMA_SECRET_KEY=sk"));
+        assert!(env.contains("PENSIEVE_CATALOG_URL=postgresql://u:p@h:5432/db"), "{env}");
+        assert!(env.contains("PENSIEVE_AUTH_BACKEND=token"));
+        assert!(env.contains("PENSIEVE_AUTH_TOKENS=tok:admin"));
+        assert!(env.contains("PENSIEVE_S3_ENDPOINT=https://minio:9000"));
+        assert!(env.contains("PENSIEVE_SECRET_KEY=sk"));
     }
 
     #[test]
@@ -2882,14 +2882,14 @@ mod tests {
         a.database = Database::Rds;
         a.storage = Storage::S3;
         a.auth = Auth::Token;
-        a.database_url = "postgresql://u:p@rds:5432/kyma".into();
+        a.database_url = "postgresql://u:p@rds:5432/pensieve".into();
         a.admin_token = "tok".into();
-        a.s3_bucket = "kyma-extents-abc".into();
-        a.irsa_role_arn = "arn:aws:iam::123:role/kyma-engine-irsa".into();
+        a.s3_bucket = "pensieve-extents-abc".into();
+        a.irsa_role_arn = "arn:aws:iam::123:role/pensieve-engine-irsa".into();
         let y = render_helm_values(&a);
-        assert!(y.contains("eks.amazonaws.com/role-arn: \"arn:aws:iam::123:role/kyma-engine-irsa\""), "{y}");
-        assert!(y.contains("KYMA_S3_BUCKET: \"kyma-extents-abc\""), "{y}");
-        assert!(y.contains("KYMA_CATALOG_URL: \"postgresql://u:p@rds:5432/kyma\""), "{y}");
+        assert!(y.contains("eks.amazonaws.com/role-arn: \"arn:aws:iam::123:role/pensieve-engine-irsa\""), "{y}");
+        assert!(y.contains("PENSIEVE_S3_BUCKET: \"pensieve-extents-abc\""), "{y}");
+        assert!(y.contains("PENSIEVE_CATALOG_URL: \"postgresql://u:p@rds:5432/pensieve\""), "{y}");
     }
 
     #[test]
@@ -2902,13 +2902,13 @@ mod tests {
             "sk",
             None,
         );
-        assert!(env.contains("KYMA_CATALOG_URL=postgresql://postgres:pw@db.ref.supabase.co"));
-        assert!(env.contains("KYMA_AUTH_BACKEND=supabase"));
-        assert!(env.contains("KYMA_SUPABASE_URL=https://ref.supabase.co"));
-        assert!(env.contains("KYMA_SUPABASE_ANON_KEY=anon-key"));
-        assert!(env.contains("KYMA_ADMIN_EMAILS=a@corp.com"));
+        assert!(env.contains("PENSIEVE_CATALOG_URL=postgresql://postgres:pw@db.ref.supabase.co"));
+        assert!(env.contains("PENSIEVE_AUTH_BACKEND=supabase"));
+        assert!(env.contains("PENSIEVE_SUPABASE_URL=https://ref.supabase.co"));
+        assert!(env.contains("PENSIEVE_SUPABASE_ANON_KEY=anon-key"));
+        assert!(env.contains("PENSIEVE_ADMIN_EMAILS=a@corp.com"));
         // No storage keys → S3 stays commented (filesystem fallback).
-        assert!(env.contains("# KYMA_S3_ENDPOINT="));
+        assert!(env.contains("# PENSIEVE_S3_ENDPOINT="));
     }
 
     #[test]
@@ -2916,7 +2916,7 @@ mod tests {
         let s3 = SupabaseS3 {
             endpoint: "https://ref.storage.supabase.co/storage/v1/s3".into(),
             region: "us-east-1".into(),
-            bucket: "kyma".into(),
+            bucket: "pensieve".into(),
             access_key_id: "AK".into(),
             secret_access_key: "SK".into(),
         };
@@ -2928,30 +2928,30 @@ mod tests {
             "sk",
             Some(&s3),
         );
-        assert!(env.contains("KYMA_S3_ENDPOINT=https://ref.storage.supabase.co/storage/v1/s3"));
-        assert!(env.contains("KYMA_S3_BUCKET=kyma"));
-        assert!(env.contains("KYMA_S3_REGION=us-east-1"));
-        assert!(env.contains("KYMA_S3_ACCESS_KEY_ID=AK"));
-        assert!(env.contains("KYMA_S3_SECRET_ACCESS_KEY=SK"));
-        assert!(env.contains("KYMA_S3_PATH_STYLE=true"));
-        assert!(!env.contains("# KYMA_S3_ENDPOINT="), "no commented block when active");
+        assert!(env.contains("PENSIEVE_S3_ENDPOINT=https://ref.storage.supabase.co/storage/v1/s3"));
+        assert!(env.contains("PENSIEVE_S3_BUCKET=pensieve"));
+        assert!(env.contains("PENSIEVE_S3_REGION=us-east-1"));
+        assert!(env.contains("PENSIEVE_S3_ACCESS_KEY_ID=AK"));
+        assert!(env.contains("PENSIEVE_S3_SECRET_ACCESS_KEY=SK"));
+        assert!(env.contains("PENSIEVE_S3_PATH_STYLE=true"));
+        assert!(!env.contains("# PENSIEVE_S3_ENDPOINT="), "no commented block when active");
     }
 
     #[test]
     fn oauth_app_config_reads_env_then_file() {
         // env wins
-        std::env::set_var("KYMA_SUPABASE_OAUTH_CLIENT_ID", "cid-env");
-        std::env::set_var("KYMA_SUPABASE_OAUTH_CLIENT_SECRET", "sec-env");
+        std::env::set_var("PENSIEVE_SUPABASE_OAUTH_CLIENT_ID", "cid-env");
+        std::env::set_var("PENSIEVE_SUPABASE_OAUTH_CLIENT_SECRET", "sec-env");
         let cfg = oauth_app_config().expect("config from env");
         assert_eq!(cfg.client_id, "cid-env");
         assert_eq!(cfg.client_secret.as_deref(), Some("sec-env"));
-        std::env::remove_var("KYMA_SUPABASE_OAUTH_CLIENT_ID");
-        std::env::remove_var("KYMA_SUPABASE_OAUTH_CLIENT_SECRET");
+        std::env::remove_var("PENSIEVE_SUPABASE_OAUTH_CLIENT_ID");
+        std::env::remove_var("PENSIEVE_SUPABASE_OAUTH_CLIENT_SECRET");
     }
 
     #[test]
     fn materialize_writes_all_templates_and_never_tfvars() {
-        let dir = std::env::temp_dir().join(format!("kyma-deploy-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("pensieve-deploy-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         materialize(&dir).unwrap();
         for (rel, _) in DEPLOY_FILES {
@@ -3006,9 +3006,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        std::env::set_var("KYMA_SUPABASE_API_BASE", server.uri());
+        std::env::set_var("PENSIEVE_SUPABASE_API_BASE", server.uri());
         let orgs = fetch_orgs("sbp_test").await.unwrap();
-        std::env::remove_var("KYMA_SUPABASE_API_BASE");
+        std::env::remove_var("PENSIEVE_SUPABASE_API_BASE");
         assert_eq!(
             orgs,
             vec![("org-1".into(), "Acme".into()), ("org-2".into(), "Beta".into())]

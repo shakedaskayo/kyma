@@ -2,8 +2,8 @@
 
 #![cfg(all(feature = "test-support", feature = "cloud-auth"))]
 
-use kyma_core::tenant::{TenantId, DEFAULT_TENANT};
-use kyma_server::auth::{AuthBackend, DbAuthBackend, EnvAuthBackend, Role};
+use pensieve_core::tenant::{TenantId, DEFAULT_TENANT};
+use pensieve_server::auth::{AuthBackend, DbAuthBackend, EnvAuthBackend, Role};
 use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
 use testcontainers::runners::AsyncRunner;
@@ -31,10 +31,10 @@ async fn env_backend_rejects_unknown_token() {
 #[tokio::test]
 async fn db_backend_returns_workspace_tenant() {
     let container = Postgres::default()
-        .with_user("kyma").with_password("kyma_dev").with_db_name("kyma")
+        .with_user("pensieve").with_password("pensieve_dev").with_db_name("pensieve")
         .start().await.expect("postgres up");
     let port = container.get_host_port_ipv4(5432).await.unwrap();
-    let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
+    let url = format!("postgres://pensieve:pensieve_dev@localhost:{port}/pensieve");
     let pool = PgPoolOptions::new().max_connections(4).connect(&url).await.unwrap();
 
     sqlx::query(r#"CREATE EXTENSION IF NOT EXISTS "pgcrypto""#)
@@ -93,10 +93,10 @@ async fn db_backend_returns_workspace_tenant() {
 #[tokio::test]
 async fn db_backend_rejects_revoked_tokens() {
     let container = Postgres::default()
-        .with_user("kyma").with_password("kyma_dev").with_db_name("kyma")
+        .with_user("pensieve").with_password("pensieve_dev").with_db_name("pensieve")
         .start().await.unwrap();
     let port = container.get_host_port_ipv4(5432).await.unwrap();
-    let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
+    let url = format!("postgres://pensieve:pensieve_dev@localhost:{port}/pensieve");
     let pool = PgPoolOptions::new().max_connections(4).connect(&url).await.unwrap();
 
     sqlx::query(r#"CREATE EXTENSION IF NOT EXISTS "pgcrypto""#)
@@ -134,10 +134,10 @@ async fn db_backend_rejects_revoked_tokens() {
 #[tokio::test]
 async fn db_backend_rejects_expired_tokens() {
     let container = Postgres::default()
-        .with_user("kyma").with_password("kyma_dev").with_db_name("kyma")
+        .with_user("pensieve").with_password("pensieve_dev").with_db_name("pensieve")
         .start().await.unwrap();
     let port = container.get_host_port_ipv4(5432).await.unwrap();
-    let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
+    let url = format!("postgres://pensieve:pensieve_dev@localhost:{port}/pensieve");
     let pool = PgPoolOptions::new().max_connections(4).connect(&url).await.unwrap();
 
     sqlx::query(r#"CREATE EXTENSION IF NOT EXISTS "pgcrypto""#)

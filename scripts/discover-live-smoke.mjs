@@ -4,7 +4,7 @@
 //
 // Usage: node scripts/discover-live-smoke.mjs [endpoint] [token]
 //   endpoint defaults to http://127.0.0.1:8080
-//   token defaults to $KYMA_TOKEN or the local CLI config (~/.kyma/config.json)
+//   token defaults to $PENSIEVE_TOKEN or the local CLI config (~/.pensieve/config.json)
 //
 // Requires Node >= 22 (built-in WebSocket). Exits 0 on success.
 
@@ -15,8 +15,8 @@ import { join } from "node:path";
 const endpoint = process.argv[2] ?? "http://127.0.0.1:8080";
 const token =
   process.argv[3] ??
-  process.env.KYMA_TOKEN ??
-  JSON.parse(readFileSync(join(homedir(), ".kyma", "config.json"), "utf8")).token;
+  process.env.PENSIEVE_TOKEN ??
+  JSON.parse(readFileSync(join(homedir(), ".pensieve", "config.json"), "utf8")).token;
 
 const wsUrl = endpoint.replace(/\/$/, "").replace(/^http/, "ws") + "/v1/explore/live";
 const die = (msg) => {

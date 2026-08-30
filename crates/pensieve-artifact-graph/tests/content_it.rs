@@ -8,15 +8,15 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use chrono::Utc;
-use kyma_artifact_graph::content::{ArtifactContentIndexer, CHUNKS_TABLE};
-use kyma_artifact_graph::ARTIFACTS_DB;
-use kyma_catalog::artifacts::ArtifactRecord;
-use kyma_core::catalog::Catalog;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_core::tenant::TenantId;
-use kyma_embed::{EmbedError, EmbeddingBackend};
-use kyma_format_tlm::TelemetryFormat;
-use kyma_storage::{build_object_store, StorageConfig};
+use pensieve_artifact_graph::content::{ArtifactContentIndexer, CHUNKS_TABLE};
+use pensieve_artifact_graph::ARTIFACTS_DB;
+use pensieve_catalog::artifacts::ArtifactRecord;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_core::tenant::TenantId;
+use pensieve_embed::{EmbedError, EmbeddingBackend};
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_storage::{build_object_store, StorageConfig};
 use object_store::path::Path as ObjPath;
 use object_store::ObjectStore;
 use uuid::Uuid;
@@ -56,9 +56,9 @@ struct Harness {
 
 async fn harness() -> Harness {
     let catalog: Arc<dyn Catalog> = Arc::new(
-        kyma_catalog_sqlite::SqliteCatalog::connect_in_memory().await.unwrap(),
+        pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory().await.unwrap(),
     );
-    let tmp = std::env::temp_dir().join(format!("kyma-ac-{}", Uuid::new_v4()));
+    let tmp = std::env::temp_dir().join(format!("pensieve-ac-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&tmp).unwrap();
     let store = build_object_store(&StorageConfig::Local {
         root: tmp.to_string_lossy().to_string(),
@@ -93,7 +93,7 @@ fn rec(source: &str, class: &str, path: &str, size: i64) -> ArtifactRecord {
 }
 
 async fn put(store: &Arc<dyn ObjectStore>, path: &str, bytes: &[u8]) {
-    kyma_storage::put_artifact(store, &ObjPath::from(path), Bytes::copy_from_slice(bytes))
+    pensieve_storage::put_artifact(store, &ObjPath::from(path), Bytes::copy_from_slice(bytes))
         .await
         .unwrap();
 }
@@ -102,7 +102,7 @@ async fn put(store: &Arc<dyn ObjectStore>, path: &str, bytes: &[u8]) {
 async fn chunk_count(h: &Harness) -> usize {
     use datafusion::prelude::SessionContext;
     let tref = h.catalog.lookup_table(ARTIFACTS_DB, CHUNKS_TABLE).await.unwrap();
-    let kt = Arc::new(kyma_exec::KymaTable::new(
+    let kt = Arc::new(pensieve_exec::PensieveTable::new(
         tref,
         h.catalog.clone(),
         h.format.clone(),

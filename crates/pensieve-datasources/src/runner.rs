@@ -4,14 +4,14 @@ use crate::catalog_sql;
 use crate::metrics::{DataSourceMetrics, TickResult};
 use crate::registry::DataSourceRegistry;
 use crate::secrets::SecretStore;
-use kyma_core::credentials::CredentialStore;
+use pensieve_core::credentials::CredentialStore;
 use crate::types::{DataSourceCtx, DataSourceError, DataSourceRun, GraphHint};
 use chrono::Utc;
 use futures::future::BoxFuture;
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::Catalog;
-use kyma_core::tenant::{TenantId, DEFAULT_TENANT};
-use kyma_core::types::NodeId;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::tenant::{TenantId, DEFAULT_TENANT};
+use pensieve_core::types::NodeId;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 /// Thin async "send these rows into WritePath" closure. Passed in so the
 /// runner does not need a generic on WritePath; that plumbing lives in
-/// kyma-bin where the concrete types are assembled.
+/// pensieve-bin where the concrete types are assembled.
 pub type RowSink = Arc<
     dyn Fn(
             String,
@@ -115,7 +115,7 @@ impl DataSourceControl for PgDataSourceControl {
 
 /// Everything one data source tick needs, independent of which queue delivered
 /// it (background_tasks via [`DataSourceRunner`], or a fabric `datasource_sync`
-/// job via kyma-jobs' executor).
+/// job via pensieve-jobs' executor).
 #[derive(Clone)]
 pub struct DataSourceTickDeps {
     pub control: Arc<dyn DataSourceControl>,
@@ -386,7 +386,7 @@ impl DataSourceRunner {
             Arc::new(|_db, _hint| Box::pin(async move { Ok(()) }));
         // No-op credentials store by default — data sources that don't look up
         // credentials work unchanged; the real store is attached via
-        // `with_credentials` from kyma-bin.
+        // `with_credentials` from pensieve-bin.
         let credentials: Arc<dyn CredentialStore> = Arc::new(NoopCredentialStore);
         Self {
             catalog,
@@ -423,7 +423,7 @@ impl DataSourceRunner {
     pub fn with_oauth(
         mut self,
         pool: sqlx::PgPool,
-        crypto: Arc<kyma_core::crypto::Crypto>,
+        crypto: Arc<pensieve_core::crypto::Crypto>,
     ) -> Self {
         self.oauth = Some(crate::oauth::OAuthRuntime { pool, crypto });
         self
@@ -567,7 +567,7 @@ impl CredentialStore for NoopCredentialStore {
         &self,
         _tenant: TenantId,
         id: Uuid,
-    ) -> anyhow::Result<kyma_core::credentials::Credential> {
+    ) -> anyhow::Result<pensieve_core::credentials::Credential> {
         Err(anyhow::anyhow!(
             "credential store not configured (looked up id={id})"
         ))

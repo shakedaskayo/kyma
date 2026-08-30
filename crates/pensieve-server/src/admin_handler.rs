@@ -23,7 +23,7 @@ use axum::{
     routing::{get, patch, put},
     Json, Router,
 };
-use kyma_core::catalog::Catalog;
+use pensieve_core::catalog::Catalog;
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
@@ -255,7 +255,7 @@ async fn upsert_quota_handler(
     Path(tenant): Path<String>,
     Json(body): Json<UpsertQuotaRequest>,
 ) -> Response {
-    let tenant_id = match tenant.parse::<kyma_core::tenant::TenantId>() {
+    let tenant_id = match tenant.parse::<pensieve_core::tenant::TenantId>() {
         Ok(t) => t,
         Err(_) => {
             return err(
@@ -265,7 +265,7 @@ async fn upsert_quota_handler(
             )
         }
     };
-    let quota = kyma_core::catalog::TenantQuota {
+    let quota = pensieve_core::catalog::TenantQuota {
         tenant: tenant_id,
         max_query_concurrent: body.max_query_concurrent,
         max_agent_concurrent: body.max_agent_concurrent,

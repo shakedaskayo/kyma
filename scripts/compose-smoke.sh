@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # compose-smoke.sh — docker-compose fresh-install smoke test.
 #
-# Validates the SHIPPED CONTAINER path: builds the kyma image from the Dockerfile
+# Validates the SHIPPED CONTAINER path: builds the pensieve image from the Dockerfile
 # and brings up the full compose stack (Postgres + MinIO + the engine) on an
 # ISOLATED project/ports (scripts/compose.smoke-override.yml), then asserts the
 # engine serves over HTTP from a clean state — health, admin login, ingest,
@@ -10,7 +10,7 @@
 # instead of a `cargo build`. Tears the stack down on exit.
 #
 # Safe to run alongside a developer's live `docker compose up`: the override
-# renames every container (kyma-smoke-*) and remaps every host port, so there is
+# renames every container (pensieve-smoke-*) and remaps every host port, so there is
 # no collision with the default-named stack.
 #
 # Usage: scripts/compose-smoke.sh
@@ -20,7 +20,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-PROJECT="kyma-smoke"
+PROJECT="pensieve-smoke"
 COMPOSE=(docker compose -p "$PROJECT" -f docker-compose.yml -f scripts/compose.smoke-override.yml)
 BASE="http://127.0.0.1:18090"
 
@@ -54,15 +54,15 @@ done
 if [[ "$healthy" != "1" ]]; then
   bad "/health never came up"
   echo "--- engine logs (tail) ---"
-  "${COMPOSE[@]}" logs --tail 80 kyma 2>&1 || true
+  "${COMPOSE[@]}" logs --tail 80 pensieve 2>&1 || true
   exit 1
 fi
 ok "/health is ok"
 
-section "Admin login (seeded admin/kyma_dev → access token)"
+section "Admin login (seeded admin/pensieve_dev → access token)"
 TOKEN="$(curl -fsS -X POST "$BASE/v1/auth/login" \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"kyma_dev"}' 2>/dev/null \
+  -d '{"username":"admin","password":"pensieve_dev"}' 2>/dev/null \
   | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)"
 if [[ -n "$TOKEN" ]]; then ok "logged in as admin"; else bad "login returned no access token"; fi
 AUTH=(-H "Authorization: Bearer $TOKEN")

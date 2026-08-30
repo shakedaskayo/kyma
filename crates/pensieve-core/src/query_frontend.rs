@@ -2,10 +2,10 @@
 //!
 //! # Why `Arc<dyn Any>` for the returned plan
 //!
-//! `kyma-core` cannot depend on `kyma-plan` — that would invert the crate
+//! `pensieve-core` cannot depend on `pensieve-plan` — that would invert the crate
 //! dependency graph (every crate depends on core). But a `QueryFrontend` has
 //! to return _something_ plan-shaped. Solution: return the plan as
-//! `Arc<dyn Any + Send + Sync>`; `kyma-plan::query_frontend_registry`
+//! `Arc<dyn Any + Send + Sync>`; `pensieve-plan::query_frontend_registry`
 //! downcasts it to the concrete `LogicalPlan`.
 //!
 //! This is the same pattern DataFusion uses for `ExecutionPlan::as_any()` —
@@ -48,8 +48,8 @@ impl Default for QueryBudget {
 
 impl QueryBudget {
     /// Deployment-wide defaults: `Default` overridden by env vars
-    /// `KYMA_QUERY_MEMORY_BYTES`, `KYMA_QUERY_WALL_MS`, and
-    /// `KYMA_QUERY_OBJECT_STORE_BYTES`. Read once and cached; per-request
+    /// `PENSIEVE_QUERY_MEMORY_BYTES`, `PENSIEVE_QUERY_WALL_MS`, and
+    /// `PENSIEVE_QUERY_OBJECT_STORE_BYTES`. Read once and cached; per-request
     /// header overrides still apply on top in the server.
     pub fn from_env() -> Self {
         static CACHED: std::sync::OnceLock<QueryBudget> = std::sync::OnceLock::new();
@@ -59,13 +59,13 @@ impl QueryBudget {
                     std::env::var(key).ok().and_then(|v| v.parse().ok())
                 }
                 let mut b = QueryBudget::default();
-                if let Some(n) = parse("KYMA_QUERY_MEMORY_BYTES") {
+                if let Some(n) = parse("PENSIEVE_QUERY_MEMORY_BYTES") {
                     b.max_memory_bytes = n.max(1024 * 1024);
                 }
-                if let Some(ms) = parse("KYMA_QUERY_WALL_MS") {
+                if let Some(ms) = parse("PENSIEVE_QUERY_WALL_MS") {
                     b.max_wall_clock = Duration::from_millis(ms.max(10));
                 }
-                if let Some(n) = parse("KYMA_QUERY_OBJECT_STORE_BYTES") {
+                if let Some(n) = parse("PENSIEVE_QUERY_OBJECT_STORE_BYTES") {
                     b.max_object_store_bytes = n.max(1024 * 1024);
                 }
                 b
@@ -86,8 +86,8 @@ pub trait QueryFrontend: Send + Sync {
 
     /// Parse a source string into an opaque logical-plan payload.
     ///
-    /// The payload is typed `Arc<dyn Any + Send + Sync>` so `kyma-core`
-    /// avoids depending on `kyma-plan`. Callers downcast via the plan-crate
+    /// The payload is typed `Arc<dyn Any + Send + Sync>` so `pensieve-core`
+    /// avoids depending on `pensieve-plan`. Callers downcast via the plan-crate
     /// registry.
     async fn parse(&self, source: &str, ctx: &QueryContext) -> Result<Arc<dyn Any + Send + Sync>>;
 }

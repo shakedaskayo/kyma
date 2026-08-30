@@ -38,7 +38,7 @@ trap cleanup EXIT
 python3 -c "
 import json
 m = json.load(open('$TMPDIR/baseline.json'))
-required = ['ingest_rps', 'query_p50_ms', 'query_p99_ms', 'ingest_total_rows', 'ingest_total_seconds', 'captured_at', 'hardware_label', 'kyma_git_sha']
+required = ['ingest_rps', 'query_p50_ms', 'query_p99_ms', 'ingest_total_rows', 'ingest_total_seconds', 'captured_at', 'hardware_label', 'pensieve_git_sha']
 for k in required:
     assert k in m, f'missing key: {k}'
 assert isinstance(m['ingest_rps'], (int, float)) and m['ingest_rps'] > 0, m['ingest_rps']

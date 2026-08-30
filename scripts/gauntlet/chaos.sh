@@ -33,7 +33,7 @@ b_health=$(curl -sf "http://$ISO_NODE_B/health" >/dev/null 2>&1 && echo 1 || ech
 b_cnt=$(curl -s -X POST "http://$ISO_NODE_B/v1/query" -H 'X-Database: default' -H 'Content-Type: application/sql' --data 'SELECT COUNT(*) AS n FROM soak' | jq -r .n 2>/dev/null)
 
 # Replacement node C rejoins the same catalog + store (stateless add).
-KYMA_HTTP_ADDR="127.0.0.1:18182" "$ISO_KYMA" >"/tmp/chaos-c-$ISO_SUF.log" 2>&1 & PID_C=$!
+PENSIEVE_HTTP_ADDR="127.0.0.1:18182" "$ISO_PENSIEVE" >"/tmp/chaos-c-$ISO_SUF.log" 2>&1 & PID_C=$!
 disown "$PID_C" 2>/dev/null || true
 c_ok=0
 for i in $(seq 1 30); do curl -sf "http://127.0.0.1:18182/health" >/dev/null 2>&1 && { c_ok=1; break; }; sleep 1; done

@@ -7,7 +7,7 @@ import { useEffect } from "react";
 import { ChartPanel } from "../../query/chart/ChartPanel";
 import { usePanelQuery } from "../usePanelQuery";
 import type { TimeRange } from "../../query/time-range/time-range-types";
-import type { DashboardPanel } from "@kyma-ai/client";
+import type { DashboardPanel } from "@pensieve-ai/client";
 
 interface Props {
   panel: DashboardPanel;

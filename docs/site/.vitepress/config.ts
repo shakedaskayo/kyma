@@ -3,15 +3,15 @@ import { withMermaid } from 'vitepress-plugin-mermaid'
 import attrs from 'markdown-it-attrs'
 
 export default withMermaid(defineConfig({
-  title: 'kyma',
+  title: 'pensieve',
   description: 'The context engine for coding agents — durable graph-aware memory, live data in KQL/SQL, and the graph that links them. One local binary, zero infra.',
   cleanUrls: true,
 
   // Light is the default; the dark-mode toggle still works and persists per-visitor.
   appearance: { initialValue: 'light' },
 
-  // Served from GitHub Pages at shakedaskayo.github.io/kyma/.
-  base: '/kyma/',
+  // Served from GitHub Pages at shakedaskayo.github.io/pensieve/.
+  base: '/pensieve/',
 
   // `README.md` is operator-facing notes on the docs site itself, not part of
   // the published surface. Sibling of `index.md`, so without exclusion it
@@ -23,26 +23,26 @@ export default withMermaid(defineConfig({
 
   sitemap: {
     // Must include the base — VitePress sitemap URLs are page paths without it.
-    hostname: 'https://shakedaskayo.github.io/kyma/',
+    hostname: 'https://shakedaskayo.github.io/pensieve/',
   },
 
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/kyma/icons/kyma-mark.svg' }],
-    ['link', { rel: 'canonical', href: 'https://shakedaskayo.github.io/kyma/' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/pensieve/icons/pensieve-mark.svg' }],
+    ['link', { rel: 'canonical', href: 'https://shakedaskayo.github.io/pensieve/' }],
     ['meta', { property: 'og:type', content: 'website' }],
-    ['meta', { property: 'og:title', content: 'kyma — production knowledge, as a query' }],
+    ['meta', { property: 'og:title', content: 'pensieve — production knowledge, as a query' }],
     ['meta', { property: 'og:description', content: 'A unified columnar query engine for every signal your stack emits. Logs, traces, metrics, plus first-class federation to Postgres, MySQL, MongoDB. Sub-second latency over a decade of history.' }],
-    ['meta', { property: 'og:url', content: 'https://shakedaskayo.github.io/kyma/' }],
-    ['meta', { property: 'og:image', content: 'https://shakedaskayo.github.io/kyma/icons/kyma-mark.svg' }],
+    ['meta', { property: 'og:url', content: 'https://shakedaskayo.github.io/pensieve/' }],
+    ['meta', { property: 'og:image', content: 'https://shakedaskayo.github.io/pensieve/icons/pensieve-mark.svg' }],
     ['meta', { name: 'twitter:card', content: 'summary' }],
-    ['meta', { name: 'twitter:title', content: 'kyma — production knowledge, as a query' }],
+    ['meta', { name: 'twitter:title', content: 'pensieve — production knowledge, as a query' }],
     ['meta', { name: 'twitter:description', content: 'One columnar query engine for every signal your stack emits.' }],
-    ['meta', { name: 'twitter:image', content: 'https://shakedaskayo.github.io/kyma/icons/kyma-mark.svg' }],
+    ['meta', { name: 'twitter:image', content: 'https://shakedaskayo.github.io/pensieve/icons/pensieve-mark.svg' }],
   ],
 
   themeConfig: {
-    logo: '/icons/kyma-mark.svg',
-    siteTitle: 'kyma',
+    logo: '/icons/pensieve-mark.svg',
+    siteTitle: 'pensieve',
     // Five scannable top-level entries. The capability pages (ingest/query/
     // data-sources/agent/embed) collapse into a "Guides" dropdown and the
     // learning material into "Learn", so the two things an operator looks for —
@@ -81,8 +81,8 @@ export default withMermaid(defineConfig({
       '/concepts/': [{
         text: 'Concepts',
         items: [
-          { text: 'What kyma is',          link: '/concepts/what-is-kyma' },
-          { text: 'How kyma works',        link: '/concepts/how-kyma-works' },
+          { text: 'What pensieve is',          link: '/concepts/what-is-pensieve' },
+          { text: 'How pensieve works',        link: '/concepts/how-pensieve-works' },
           { text: 'The five invariants',   link: '/concepts/the-five-invariants' },
           { text: 'The pruning cascade',   link: '/concepts/the-pruning-cascade' },
           { text: 'Extents and snapshots', link: '/concepts/extents-and-snapshots' },
@@ -163,7 +163,7 @@ export default withMermaid(defineConfig({
         text: 'Production deployment',
         items: [
           { text: 'Overview',            link: '/deploy/' },
-          { text: 'kyma deploy (CLI)',   link: '/deploy/cli' },
+          { text: 'pensieve deploy (CLI)',   link: '/deploy/cli' },
           { text: 'Terraform',           link: '/deploy/terraform' },
           { text: 'Pulumi',              link: '/deploy/pulumi' },
           { text: 'Helm',                link: '/deploy/helm' },
@@ -217,14 +217,14 @@ export default withMermaid(defineConfig({
       }],
     },
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/shakedaskayo/kyma' },
+      { icon: 'github', link: 'https://github.com/shakedaskayo/pensieve' },
     ],
     search: {
       provider: 'local',
     },
     footer: {
       message: 'An open-source project · MIT licensed.',
-      copyright: 'Copyright © 2026 the kyma authors · <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener" class="kyma-footer-link">GitHub</a>',
+      copyright: 'Copyright © 2026 the pensieve authors · <a href="https://github.com/shakedaskayo/pensieve" target="_blank" rel="noopener" class="pensieve-footer-link">GitHub</a>',
     },
   },
 

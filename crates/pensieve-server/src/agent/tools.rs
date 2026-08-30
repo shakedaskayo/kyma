@@ -1,6 +1,6 @@
-//! The four inline tools wired into the kyma data-assistant agent.
+//! The four inline tools wired into the pensieve data-assistant agent.
 //!
-//! Each tool is a thin wrapper over [`kyma_core::catalog::Catalog`] +
+//! Each tool is a thin wrapper over [`pensieve_core::catalog::Catalog`] +
 //! DataFusion [`SessionContext`](datafusion::prelude::SessionContext) that
 //! returns JSON suitable for ADK's `FunctionTool` contract.
 //!
@@ -20,11 +20,11 @@ use arrow::json::ArrayWriter;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
-use kyma_core::catalog::Catalog;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_core::tenant::TenantId;
-use kyma_exec::KymaTable;
-use kyma_ingest_core::{ConsumerAction, ConsumerActivity, ConsumerEvents};
+use pensieve_core::catalog::Catalog;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_core::tenant::TenantId;
+use pensieve_exec::PensieveTable;
+use pensieve_ingest_core::{ConsumerAction, ConsumerActivity, ConsumerEvents};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -43,7 +43,7 @@ pub struct SharedToolCtx {
     pub format: Arc<dyn SegmentFormat>,
     /// Optional Postgres pool — used by graph-style tools (`find_references_to`)
     /// and to read per-tenant memory settings. `None` in **local single-binary
-    /// mode** (`kyma local`), where there is no Postgres: pool-only tools
+    /// mode** (`pensieve local`), where there is no Postgres: pool-only tools
     /// degrade gracefully and memory settings fall back to defaults. The hot
     /// memory recall/save paths run entirely over the catalog + engine, so they
     /// work unchanged with `None`.
@@ -52,8 +52,8 @@ pub struct SharedToolCtx {
     /// return immediately (batched embedding + bulk commits land in the
     /// background); read tools issue a realm-scoped flush barrier first so
     /// read-your-own-writes holds. `None` ⇒ the original synchronous write
-    /// path (tests, `kyma sync`, `KYMA_MEMORY_ASYNC=0`).
-    pub memory: Option<kyma_memory::MemoryQueue>,
+    /// path (tests, `pensieve sync`, `PENSIEVE_MEMORY_ASYNC=0`).
+    pub memory: Option<pensieve_memory::MemoryQueue>,
     /// HITL approval chokepoint for *autonomous* memory mutations. `Some` only
     /// for the dreaming housekeeping toolset (built from the run's settings);
     /// `None` for the interactive agent — user-driven tool calls are already
@@ -63,7 +63,7 @@ pub struct SharedToolCtx {
     /// Live-proxy runtime for federated tables (Microsoft Fabric, …). `None`
     /// ⇒ `run_sql` against a database containing federated tables returns a
     /// clear error instead of empty results.
-    pub federation: Option<std::sync::Arc<kyma_federation::FederationRuntime>>,
+    pub federation: Option<std::sync::Arc<pensieve_federation::FederationRuntime>>,
     /// Live consumer-activity sink. `Some` only on the interactive memory tool
     /// paths (MCP recall/search/remember, the HTTP memory routes) so the graph
     /// explorer's realtime overlay can see which agents touch which memories.
@@ -83,8 +83,8 @@ pub struct SharedToolCtx {
     pub realm_scope: crate::auth::RealmScope,
 }
 
-/// Where a consumer-activity event goes. The `kyma serve` process publishes to
-/// its in-process broadcast bus; a separate `kyma mcp` (stdio) process — which
+/// Where a consumer-activity event goes. The `pensieve serve` process publishes to
+/// its in-process broadcast bus; a separate `pensieve mcp` (stdio) process — which
 /// can't reach that bus — forwards events over HTTP to a running serve instead.
 pub trait ConsumerPublisher: Send + Sync {
     /// Tenant stamped onto emitted activity (the tool layer has no `Principal`).
@@ -190,7 +190,7 @@ impl SharedToolCtx {
         if let Some(pool) = self.pool.as_ref() {
             return Some(super::memory_usage_store::UsageStore::Pg {
                 pool: pool.clone(),
-                tenant: kyma_core::tenant::DEFAULT_TENANT,
+                tenant: pensieve_core::tenant::DEFAULT_TENANT,
             });
         }
         let path = self.memory_settings_path.as_ref()?;
@@ -209,7 +209,7 @@ impl SharedToolCtx {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 struct NoArgs {}
 
-const LIST_DATABASES_DESC: &str = "List every database in the kyma cluster. \
+const LIST_DATABASES_DESC: &str = "List every database in the pensieve cluster. \
 Call first to discover what databases exist. \
 Returns an array of database names.";
 
@@ -365,7 +365,7 @@ pub fn tool_run_sql(ctx: SharedToolCtx) -> Arc<dyn Tool> {
 }
 
 // ---------------------------------------------------------------------------
-// Tool 4: run_kql — kyma's native query surface
+// Tool 4: run_kql — pensieve's native query surface
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -381,7 +381,7 @@ struct RunKqlArgs {
     max_rows: usize,
 }
 
-const RUN_KQL_DESC: &str = "Execute a KQL query against kyma — the PRIMARY \
+const RUN_KQL_DESC: &str = "Execute a KQL query against pensieve — the PRIMARY \
 query tool. KQL is pipe-syntax: \
 `requests | where status >= 500 | summarize n=count() by url | top 10 by n`. \
 Supports: where, project, project-away, extend, summarize…by…, take, limit, \
@@ -516,14 +516,14 @@ async fn kql_to_sql_for_database(
         .list_tables_in_database(database)
         .await
         .map_err(|e| json!({"error": format!("list_tables_in_database({database}): {e}")}))?;
-    let schemas: kyma_kql::SchemaMap = tables
+    let schemas: pensieve_kql::SchemaMap = tables
         .iter()
         .map(|t| {
             let cols = t.schema.fields().iter().map(|f| f.name().clone()).collect();
             (t.name.clone(), cols)
         })
         .collect();
-    kyma_kql::kql_to_sql_with_schemas(kql, &schemas)
+    pensieve_kql::kql_to_sql_with_schemas(kql, &schemas)
         .map_err(|e| json!({"error": format!("kql_parse: {e}"), "hint": "Check pipe syntax; operators are '|'-separated, strings are double-quoted, comparisons use '=='."}))
 }
 
@@ -538,19 +538,19 @@ pub async fn execute_sql(
     max_rows: usize,
 ) -> Value {
     // Emit a telemetry child span only when the caller is already inside a
-    // kyma_telemetry span (request handler, tool.call, memory.search.*).
+    // pensieve_telemetry span (request handler, tool.call, memory.search.*).
     // Background workers (memory queue, dreaming, cc-curation) call this too,
-    // and the OTel layer — which only sees kyma_telemetry spans — would export
+    // and the OTel layer — which only sees pensieve_telemetry spans — would export
     // theirs as parentless single-span `sql.execute` roots: pure noise on the
     // Traces page.
     let inside_telemetry = tracing::Span::current()
         .metadata()
-        .is_some_and(|m| m.target() == "kyma_telemetry");
+        .is_some_and(|m| m.target() == "pensieve_telemetry");
     if !inside_telemetry {
         return execute_sql_inner(shared, database, sql, max_rows).await;
     }
     let span = tracing::info_span!(
-        target: "kyma_telemetry",
+        target: "pensieve_telemetry",
         "sql.execute",
         sql.database = %database,
     );
@@ -585,9 +585,9 @@ async fn execute_sql_inner(
     let ctx = if federated.is_empty() {
         SessionContext::new_with_config_rt(SessionConfig::new(), runtime)
     } else {
-        kyma_federation::federated_session_context(SessionConfig::new(), runtime)
+        pensieve_federation::federated_session_context(SessionConfig::new(), runtime)
     };
-    kyma_exec::register_vector_udfs(&ctx);
+    pensieve_exec::register_vector_udfs(&ctx);
     if !federated.is_empty() {
         let Some(fed_rt) = shared.federation.as_ref() else {
             return json!({"error": format!(
@@ -597,7 +597,7 @@ async fn execute_sql_inner(
         // The agent path is tenant-scoped at the transport layer; tools run
         // under the default tenant like the rest of SharedToolCtx.
         let providers = match fed_rt
-            .federated_providers(kyma_core::tenant::DEFAULT_TENANT, &federated)
+            .federated_providers(pensieve_core::tenant::DEFAULT_TENANT, &federated)
             .await
         {
             Ok(p) => p,
@@ -611,7 +611,7 @@ async fn execute_sql_inner(
     }
     for t in local {
         let name = t.name.clone();
-        let table = Arc::new(KymaTable::new(
+        let table = Arc::new(PensieveTable::new(
             t,
             shared.catalog.clone(),
             shared.format.clone(),
@@ -643,7 +643,7 @@ async fn execute_sql_inner(
         })
         .collect();
 
-    // NDJSON-assembly pattern copied from kyma_server::lib's query_handler.
+    // NDJSON-assembly pattern copied from pensieve_server::lib's query_handler.
     // We serialize each batch into a JSON array via arrow::json::ArrayWriter,
     // then re-parse and flatten into individual row objects. Cap at max_rows.
     let mut rows: Vec<Value> = Vec::new();
@@ -967,7 +967,7 @@ fn default_direction() -> String {
 }
 
 const GRAPH_TRAVERSE_DESC: &str = "Traverse a graph stored as edges in a \
-kyma table. Wraps the KQL `graph-traverse` operator. Returns reachable \
+pensieve table. Wraps the KQL `graph-traverse` operator. Returns reachable \
 nodes as (node, depth) pairs. Use for connectivity questions: 'what \
 services depend on X?', 'which users trigger Y?'.";
 

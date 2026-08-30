@@ -77,7 +77,7 @@ impl CredentialValue {
     }
 
     /// Short, non-secret preview suitable for showing in lists (e.g.
-    /// `ghp_…1f2a` or `kyma_admin / ····`). Never leaks more than the last
+    /// `ghp_…1f2a` or `pensieve_admin / ····`). Never leaks more than the last
     /// 4 chars of any actual secret material.
     pub fn preview(&self) -> String {
         fn tail(s: &str) -> String {
@@ -154,7 +154,7 @@ impl From<Credential> for CredentialSummary {
     }
 }
 
-/// Abstract access to the credentials store. Implemented by [`kyma_catalog`]
+/// Abstract access to the credentials store. Implemented by [`pensieve_catalog`]
 /// for real persistence; trivial in-memory mocks make testing data sources easy
 /// without standing up Postgres.
 #[async_trait::async_trait]

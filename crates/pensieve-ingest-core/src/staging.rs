@@ -31,10 +31,10 @@
 
 use arrow_array::RecordBatch;
 use chrono::Utc;
-use kyma_core::catalog::{Catalog, ExtentManifest, IngestLedgerEntry, SnapshotSummary, TableRef};
-use kyma_core::errors::{CatalogError, Error, Result};
-use kyma_core::segment_format::{ExtentWriteResult, SegmentFormat};
-use kyma_core::types::{SnapshotId, TableId};
+use pensieve_core::catalog::{Catalog, ExtentManifest, IngestLedgerEntry, SnapshotSummary, TableRef};
+use pensieve_core::errors::{CatalogError, Error, Result};
+use pensieve_core::segment_format::{ExtentWriteResult, SegmentFormat};
+use pensieve_core::types::{SnapshotId, TableId};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -62,7 +62,7 @@ struct TableStaging {
 #[derive(Debug, Clone)]
 pub struct FlushOutcome {
     pub snapshot_id: SnapshotId,
-    pub extent_id: kyma_core::types::ExtentId,
+    pub extent_id: pensieve_core::types::ExtentId,
     pub byte_size: u64,
     pub row_count: u64,
 }
@@ -105,17 +105,17 @@ impl Default for StagingConfig {
 impl StagingConfig {
     pub fn from_env() -> Self {
         let mut d = Self::default();
-        if let Ok(v) = std::env::var("KYMA_FLUSH_MAX_ROWS")
+        if let Ok(v) = std::env::var("PENSIEVE_FLUSH_MAX_ROWS")
             .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
         {
             d.flush_max_rows = v;
         }
-        if let Ok(v) = std::env::var("KYMA_FLUSH_MAX_BYTES")
+        if let Ok(v) = std::env::var("PENSIEVE_FLUSH_MAX_BYTES")
             .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
         {
             d.flush_max_bytes = v;
         }
-        if let Ok(v) = std::env::var("KYMA_FLUSH_MAX_AGE_MS")
+        if let Ok(v) = std::env::var("PENSIEVE_FLUSH_MAX_AGE_MS")
             .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
         {
             d.flush_max_age = Duration::from_millis(v);
@@ -177,7 +177,7 @@ impl StagingBuffer {
             // caller's current snapshot.
             return Ok(FlushOutcome {
                 snapshot_id: table.current_snapshot_id,
-                extent_id: kyma_core::types::ExtentId::new(),
+                extent_id: pensieve_core::types::ExtentId::new(),
                 byte_size: 0,
                 row_count: 0,
             });
@@ -443,18 +443,18 @@ impl StagingBuffer {
         );
 
         ::metrics::counter!(
-            "kyma_staging_flushes_total",
+            "pensieve_staging_flushes_total",
             "table" => staging.table_name.clone(),
             "reason" => format!("{reason:?}").to_lowercase()
         )
         .increment(1);
         ::metrics::histogram!(
-            "kyma_staging_flush_waiters",
+            "pensieve_staging_flush_waiters",
             "table" => staging.table_name.clone()
         )
         .record(n_waiters as f64);
         ::metrics::histogram!(
-            "kyma_staging_flush_duration_seconds",
+            "pensieve_staging_flush_duration_seconds",
             "table" => staging.table_name
         )
         .record(dur.as_secs_f64());
@@ -505,7 +505,7 @@ async fn lookup_by_id(catalog: &dyn Catalog, table_id: TableId) -> Result<Option
     // the Postgres pool like the compaction scheduler does.
     use std::any::Any;
     let any_ref: &dyn Any = catalog.as_ref_any();
-    if let Some(pg) = any_ref.downcast_ref::<kyma_catalog::PostgresCatalog>() {
+    if let Some(pg) = any_ref.downcast_ref::<pensieve_catalog::PostgresCatalog>() {
         let row = sqlx::query_as::<_, (uuid::Uuid, String)>(
             "SELECT d.id, d.name
              FROM tables t JOIN databases d ON d.id = t.database_id
@@ -578,7 +578,7 @@ async fn commit_with_retry(
             Ok(id) => return Ok(id),
             Err(Error::Catalog(CatalogError::Conflict)) => {
                 ::metrics::counter!(
-                    "kyma_catalog_cas_conflicts_total",
+                    "pensieve_catalog_cas_conflicts_total",
                     "table" => table_label.to_string()
                 )
                 .increment(1);

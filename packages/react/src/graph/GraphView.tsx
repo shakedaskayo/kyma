@@ -3,9 +3,9 @@ import type Sigma from "sigma";
 import { Network, Plus, Minus, Maximize2, RefreshCw } from "lucide-react";
 import { useGraphStore } from "./graph-store";
 import { useGraphExport } from "../hooks/useGraphExport";
-import { graphKey } from "../hooks/useKymaGraph";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
-import { useKymaContext } from "../provider/context";
+import { graphKey } from "../hooks/usePensieveGraph";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
+import { usePensieveContext } from "../provider/context";
 import { SigmaCanvas } from "./SigmaCanvas";
 import { GraphCanvas } from "./GraphCanvas";
 import { CommandBar } from "./CommandBar";
@@ -17,7 +17,7 @@ import { HullsLayer } from "./HullsLayer";
 import { ConsumerBeamsLayer } from "./ConsumerBeamsLayer";
 import { ConsumerDock } from "./ConsumerDock";
 import { useKeyboardWalk } from "./useKeyboardWalk";
-import type { UseKymaGraphArgs } from "../hooks/useKymaGraph";
+import type { UsePensieveGraphArgs } from "../hooks/usePensieveGraph";
 
 /**
  * Cross-database unified full-bleed graph view. Always merges every (database, graph)
@@ -27,7 +27,7 @@ import type { UseKymaGraphArgs } from "../hooks/useKymaGraph";
  * edges, and animated flow on the focused neighbourhood.
  *
  * NOTE: This component must be rendered inside a GraphStoreContext provider
- * (supplied by KymaGraph). Data is loaded via useGraphExport (chunked streamed
+ * (supplied by PensieveGraph). Data is loaded via useGraphExport (chunked streamed
  * pages with server-side layout positions).
  */
 
@@ -73,7 +73,7 @@ export interface GraphViewProps {
   showChrome?: boolean;
   /**
    * Fires with the RESOLVED selected node whenever the selection changes
-   * (null on deselect). This is the public-callback bridge for KymaGraph —
+   * (null on deselect). This is the public-callback bridge for PensieveGraph —
    * the full GraphNode lives in this component's node map, not in the store.
    */
   onSelectedNodeChange?: (node: GraphNode | null) => void;
@@ -110,10 +110,10 @@ export function GraphView({
   const pushTrail = useGraphStore((s) => s.pushTrail);
   const showLiveConsumers = useGraphStore((s) => s.showLiveConsumers);
 
-  const { isDark } = useKymaContext();
+  const { isDark } = usePensieveContext();
 
   // ── Data loading ─────────────────────────────────────────────────────────────
-  const exportArgs: UseKymaGraphArgs & { algorithm: typeof layout } = {
+  const exportArgs: UsePensieveGraphArgs & { algorithm: typeof layout } = {
     graphs,
     discover,
     realm,

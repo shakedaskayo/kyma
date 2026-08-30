@@ -9,8 +9,8 @@ use crate::{MAGIC, MAGIC_V2};
 use arrow::ipc::reader::FileReader;
 use arrow_array::RecordBatch;
 use async_trait::async_trait;
-use kyma_core::errors::{FormatError, Result, StorageError};
-use kyma_core::segment_format::{
+use pensieve_core::errors::{FormatError, Result, StorageError};
+use pensieve_core::segment_format::{
     BlockId, BlockPredicate, ColumnId, ExtentMetadata, ExtentReader, OpenExtentInput, ScalarValue,
 };
 use object_store::path::Path;

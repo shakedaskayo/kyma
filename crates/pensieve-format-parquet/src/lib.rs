@@ -1,17 +1,17 @@
 //! Parquet `SegmentFormat` — ZSTD columnar extents at rest (S2.1).
 //!
-//! A drop-in [`SegmentFormat`](kyma_core::segment_format::SegmentFormat) that
+//! A drop-in [`SegmentFormat`](pensieve_core::segment_format::SegmentFormat) that
 //! writes each extent as a single Parquet object (ZSTD-compressed, one row group
 //! per appended batch) instead of the TLM Arrow-IPC frame. It emits the SAME
 //! per-extent `column_stats` (via the shared
-//! [`kyma_format_tlm::column_stats::ColumnStatsAccumulator`]) so catalog pruning
+//! [`pensieve_format_tlm::column_stats::ColumnStatsAccumulator`]) so catalog pruning
 //! and the index scheduler's vec-stats gate behave identically regardless of
 //! format — the only difference is bytes-on-object (Parquet's columnar + ZSTD
 //! encoding is far smaller than Arrow IPC).
 //!
 //! Per-extent format dispatch: a Parquet object begins with the standard
 //! `PAR1` magic, so a [`FormatRegistry`] can pick the right reader by sniffing
-//! the first bytes — old TLM (`KYMA…`) extents stay readable forever.
+//! the first bytes — old TLM (`PENSIEVE…`) extents stay readable forever.
 //!
 //! Block model: 1 appended `RecordBatch` → 1 Parquet row group → 1 [`BlockId`].
 //! `read_block(n)` reads row group `n`; `pruned_blocks` is conservative for now
@@ -21,9 +21,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use kyma_core::errors::Result;
-use kyma_core::segment_format::{ExtentReader, ExtentWriter, OpenExtentInput, SegmentFormat};
-use kyma_core::types::SchemaRef;
+use pensieve_core::errors::Result;
+use pensieve_core::segment_format::{ExtentReader, ExtentWriter, OpenExtentInput, SegmentFormat};
+use pensieve_core::types::SchemaRef;
 use object_store::ObjectStore;
 
 mod reader;
@@ -60,7 +60,7 @@ impl ParquetFormat {
     pub fn with_tenant(
         store: Arc<dyn ObjectStore>,
         path_prefix: impl Into<String>,
-        tenant: kyma_core::tenant::TenantId,
+        tenant: pensieve_core::tenant::TenantId,
     ) -> Self {
         Self {
             store,
@@ -83,7 +83,7 @@ impl ParquetFormat {
 #[async_trait]
 impl SegmentFormat for ParquetFormat {
     fn name(&self) -> &'static str {
-        "kyma-format-parquet"
+        "pensieve-format-parquet"
     }
     fn magic(&self) -> &'static [u8] {
         MAGIC

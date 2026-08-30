@@ -85,7 +85,7 @@ export function ApiTokensSettings() {
           <div>
             <p className="text-sm font-medium">Create a token</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              For <code className="font-mono">kyma connect &lt;url&gt; --token …</code>, MCP
+              For <code className="font-mono">pensieve connect &lt;url&gt; --token …</code>, MCP
               clients, and CI. The token is shown once — store it safely.
             </p>
           </div>

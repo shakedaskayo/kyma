@@ -4,8 +4,8 @@
 //! a real Postgres instance spun up via testcontainers.
 
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::{Catalog, TableConfig};
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::{Catalog, TableConfig};
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
@@ -14,9 +14,9 @@ async fn setup() -> (PostgresCatalog, testcontainers::ContainerAsync<Postgres>) 
     // pgvector/pgvector:pg16 ships the `vector` extension that migration 004
     // creates; the bare postgres image lacks it and migration would fail.
     let container = Postgres::default()
-        .with_user("kyma")
-        .with_password("kyma_dev")
-        .with_db_name("kyma")
+        .with_user("pensieve")
+        .with_password("pensieve_dev")
+        .with_db_name("pensieve")
         .with_name("pgvector/pgvector")
         .with_tag("pg16")
         .start()
@@ -26,7 +26,7 @@ async fn setup() -> (PostgresCatalog, testcontainers::ContainerAsync<Postgres>) 
         .get_host_port_ipv4(5432)
         .await
         .expect("failed to get mapped port");
-    let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
+    let url = format!("postgres://pensieve:pensieve_dev@localhost:{port}/pensieve");
     let catalog = PostgresCatalog::connect(&url)
         .await
         .expect("catalog connect + migrate");
@@ -110,7 +110,7 @@ async fn get_table_columns_returns_table_not_found_for_missing_table() {
 
     let err = catalog.get_table_columns("obs", "ghost").await.unwrap_err();
     match err {
-        kyma_core::errors::CatalogError::TableNotFound { .. } => {}
+        pensieve_core::errors::CatalogError::TableNotFound { .. } => {}
         other => panic!("expected TableNotFound, got {other:?}"),
     }
 }
@@ -120,7 +120,7 @@ async fn list_tables_not_found_for_unknown_database() {
     let (catalog, _container) = setup().await;
     let err = catalog.list_tables("does_not_exist").await.unwrap_err();
     match err {
-        kyma_core::errors::CatalogError::DatabaseNotFound(name) => {
+        pensieve_core::errors::CatalogError::DatabaseNotFound(name) => {
             assert_eq!(name, "does_not_exist");
         }
         other => panic!("expected DatabaseNotFound, got {other:?}"),
@@ -135,7 +135,7 @@ async fn get_table_columns_not_found_for_unknown_database() {
         .await
         .unwrap_err();
     match err {
-        kyma_core::errors::CatalogError::DatabaseNotFound(name) => {
+        pensieve_core::errors::CatalogError::DatabaseNotFound(name) => {
             assert_eq!(name, "does_not_exist");
         }
         other => panic!("expected DatabaseNotFound, got {other:?}"),

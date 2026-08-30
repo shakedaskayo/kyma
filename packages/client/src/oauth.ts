@@ -1,7 +1,7 @@
 // Typed client for the OAuth2 data source connect flow (`/v1/oauth/*`).
 // All functions require an authenticated transport.
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import { errorFromResponse } from "./errors";
 
 async function handleResponse<T>(res: Response): Promise<T> {
@@ -28,7 +28,7 @@ export interface StartOAuthResult {
 }
 
 export async function startOAuth(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { provider: string; body: StartOAuthBody },
 ): Promise<StartOAuthResult> {
   return handleResponse<StartOAuthResult>(
@@ -47,7 +47,7 @@ export interface OAuthFlowStatus {
 
 /** Poll a flow's status by `state` — the fallback for Tauri / popup-blocked. */
 export async function getOAuthFlowStatus(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { state: string },
 ): Promise<OAuthFlowStatus> {
   return handleResponse<OAuthFlowStatus>(

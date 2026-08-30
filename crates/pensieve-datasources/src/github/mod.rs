@@ -104,7 +104,7 @@ impl DataSource for GithubDataSource {
         // SecretStore (which handles "$env:GITHUB_TOKEN" refs). At least one
         // is guaranteed present by validate_config.
         let token: String = if let Some(cid) = config.credential_id {
-            use kyma_core::credentials::CredentialValue;
+            use pensieve_core::credentials::CredentialValue;
             let cred = ctx
                 .credentials
                 .get(ctx.tenant, cid)
@@ -479,7 +479,7 @@ impl DataSource for GithubDataSource {
         if config.modules.job_logs {
             // Register the resolved PAT as a known secret so the data source's own
             // token can never surface in a stored log, pattern or not.
-            kyma_redact::global().register_value("github-token", &gh.token);
+            pensieve_redact::global().register_value("github-token", &gh.token);
             for repo_slug in &config.repos {
                 let parts: Vec<&str> = repo_slug.splitn(2, '/').collect();
                 if parts.len() != 2 {

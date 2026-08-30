@@ -1,6 +1,6 @@
 ---
 title: Engines
-description: Provider abstraction for the Kyma agent — Anthropic, OpenAI, Ollama, and the Claude Code CLI engine.
+description: Provider abstraction for the Pensieve agent — Anthropic, OpenAI, Ollama, and the Claude Code CLI engine.
 ---
 
 # Engines
@@ -98,7 +98,7 @@ Returns:
 }
 ```
 
-The Ollama branch live-fetches with a 2 s timeout. If Ollama is down, the endpoint falls back to the hardcoded list — you can still select a model; you'll get a clear error on the next `kyma query`.
+The Ollama branch live-fetches with a 2 s timeout. If Ollama is down, the endpoint falls back to the hardcoded list — you can still select a model; you'll get a clear error on the next `pensieve query`.
 
 ## Credential resolution
 
@@ -113,7 +113,7 @@ If nothing resolves, the engine returns a clear error in the streaming response.
 
 ## Adding a new provider
 
-Single-file change in `crates/kyma-server/src/agent/engine/`:
+Single-file change in `crates/pensieve-server/src/agent/engine/`:
 
 1. Add a variant to `EngineKind`.
 2. Add a new module (`mistral.rs`, `gemini.rs`, …) with `build(cfg, key) -> Result<Arc<dyn Llm>>` and `default_models()`.

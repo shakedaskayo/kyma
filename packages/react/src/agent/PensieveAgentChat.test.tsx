@@ -1,5 +1,5 @@
 /**
- * KymaAgentChat tests.
+ * PensieveAgentChat tests.
  *
  * Strategy: the custom transport in transport.ts routes every POST through
  * `client.transport.request()`, which ultimately calls globalThis.fetch.
@@ -14,8 +14,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, cleanup, waitFor, screen, fireEvent } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import React from "react";
-import { KymaProvider } from "../provider/KymaProvider";
-import { KymaAgentChat } from "./KymaAgentChat";
+import { PensieveProvider } from "../provider/PensieveProvider";
+import { PensieveAgentChat } from "./PensieveAgentChat";
 
 // jsdom has no ResizeObserver — Conversation's auto-scroll uses it.
 class ResizeObserverStub {
@@ -41,13 +41,13 @@ function makeQC() {
 function provider(children: React.ReactNode) {
   const qc = makeQC();
   return (
-    <KymaProvider
-      endpoint="https://kyma.test"
+    <PensieveProvider
+      endpoint="https://pensieve.test"
       auth={{ token: "test-token" }}
       queryClient={qc}
     >
       {children}
-    </KymaProvider>
+    </PensieveProvider>
   );
 }
 
@@ -108,17 +108,17 @@ function askCalls(fetchMock: ReturnType<typeof vi.fn>): [string, RequestInit][] 
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-describe("KymaAgentChat", () => {
+describe("PensieveAgentChat", () => {
   it("smoke renders without crashing", () => {
     stubFetch(vi.fn().mockReturnValue(new Promise(() => {})));
-    render(provider(<KymaAgentChat />));
+    render(provider(<PensieveAgentChat />));
     // The input textarea should be present
     expect(screen.getByRole("textbox")).toBeTruthy();
   });
 
   it("renders the empty-state suggestions before any message is sent", () => {
     stubFetch(vi.fn().mockReturnValue(new Promise(() => {})));
-    render(provider(<KymaAgentChat />));
+    render(provider(<PensieveAgentChat />));
     expect(
       screen.getByText("Ask anything about your data"),
     ).toBeTruthy();
@@ -128,7 +128,7 @@ describe("KymaAgentChat", () => {
     stubFetch(vi.fn().mockReturnValue(new Promise(() => {})));
     const { container } = render(
       provider(
-        <KymaAgentChat className="my-chat" style={{ height: 400 }} />,
+        <PensieveAgentChat className="my-chat" style={{ height: 400 }} />,
       ),
     );
     // The outer wrapper div gets className + style (the innermost container
@@ -141,12 +141,12 @@ describe("KymaAgentChat", () => {
     const fetchMock = agentFetch([
       { type: "text-start", id: "t1" },
       { type: "text-delta", id: "t1", delta: "Hello " },
-      { type: "text-delta", id: "t1", delta: "from Kyma!" },
+      { type: "text-delta", id: "t1", delta: "from Pensieve!" },
       { type: "text-end", id: "t1" },
     ]);
     stubFetch(fetchMock as unknown as typeof fetch);
 
-    render(provider(<KymaAgentChat />));
+    render(provider(<PensieveAgentChat />));
 
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "What tables exist?" } });
@@ -163,7 +163,7 @@ describe("KymaAgentChat", () => {
     await waitFor(
       () => {
         // The text is rendered through Streamdown; check combined content
-        expect(screen.getByText(/Hello.*from Kyma/s)).toBeTruthy();
+        expect(screen.getByText(/Hello.*from Pensieve/s)).toBeTruthy();
       },
       { timeout: 5000 },
     );
@@ -179,7 +179,7 @@ describe("KymaAgentChat", () => {
     const fetchMock = agentFetch([]);
     stubFetch(fetchMock as unknown as typeof fetch);
 
-    render(provider(<KymaAgentChat />));
+    render(provider(<PensieveAgentChat />));
 
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "hello" } });
@@ -205,7 +205,7 @@ describe("KymaAgentChat", () => {
     stubFetch(fetchMock as unknown as typeof fetch);
 
     const onMessage = vi.fn();
-    render(provider(<KymaAgentChat onMessage={onMessage} />));
+    render(provider(<PensieveAgentChat onMessage={onMessage} />));
 
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "ping" } });
@@ -239,7 +239,7 @@ describe("KymaAgentChat", () => {
     try {
       render(
         provider(
-          <KymaAgentChat
+          <PensieveAgentChat
             fallback={<div data-testid="custom-fallback">oops</div>}
           />,
         ),
@@ -255,7 +255,7 @@ describe("KymaAgentChat", () => {
     const fetchMock = agentFetch([]);
     stubFetch(fetchMock as unknown as typeof fetch);
 
-    render(provider(<KymaAgentChat database="mydb" />));
+    render(provider(<PensieveAgentChat database="mydb" />));
 
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "query" } });
@@ -295,7 +295,7 @@ describe("KymaAgentChat", () => {
       });
     stubFetch(fetchMock);
 
-    render(provider(<KymaAgentChat />));
+    render(provider(<PensieveAgentChat />));
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
 
     // First turn

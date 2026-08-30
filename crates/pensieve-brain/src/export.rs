@@ -4,7 +4,7 @@
 //! The critical invariant: a full-state `deleteall` commit MUST carry every
 //! file the exporter does not own, or user-pushed files (images, personal
 //! notes) would be destroyed. Ownership is recorded in
-//! `.kyma/manifest.json`; anything in HEAD but absent from the previous
+//! `.pensieve/manifest.json`; anything in HEAD but absent from the previous
 //! manifest is preserved verbatim. On a path conflict the generated file
 //! wins — the pushed content was already ingested into memory, which is the
 //! source of truth.

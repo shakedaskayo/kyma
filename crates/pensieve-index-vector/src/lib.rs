@@ -1,9 +1,9 @@
-//! `kyma-index-vector` — per-extent IVF + 1-bit RaBitQ ANN vector index.
+//! `pensieve-index-vector` — per-extent IVF + 1-bit RaBitQ ANN vector index.
 //!
 //! This crate builds the **vector ANN sidecar** for one extent (S1.1, Part A:
 //! the build side). A sidecar is an immutable blob derived from one extent's
 //! embedding column and stored next to the extent (see
-//! [`kyma_core::index_sidecar`]). The query path that reads it (`ann_topk`,
+//! [`pensieve_core::index_sidecar`]). The query path that reads it (`ann_topk`,
 //! probing + exact rerank) is Part B and lives elsewhere; this crate only
 //! produces the blob and exposes the read primitives Part B builds on.
 //!

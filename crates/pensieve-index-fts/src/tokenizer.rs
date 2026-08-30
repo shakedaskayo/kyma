@@ -1,7 +1,7 @@
-//! The `kyma-word-v1` tokenizer.
+//! The `pensieve-word-v1` tokenizer.
 //!
 //! This crate's tokenizer is a **superset-compatible match** for the extent
-//! writer's token rule (`kyma-format-tlm`'s `writer::tokenize`), so the
+//! writer's token rule (`pensieve-format-tlm`'s `writer::tokenize`), so the
 //! catalog's existing word-level token prune (`tokens @> ["needle"]`) can never
 //! falsely exclude an extent that has an FTS sidecar: every term the writer
 //! records, tantivy also indexes.
@@ -36,9 +36,9 @@
 use tantivy::tokenizer::{BoxTokenStream, Token, TokenStream, Tokenizer};
 
 /// Stable registry name for the tokenizer. Persisted into the sidecar `params`
-/// (`{"tokenizer":"kyma-word-v1", …}`) and used by both the build and search
+/// (`{"tokenizer":"pensieve-word-v1", …}`) and used by both the build and search
 /// paths so the same analysis applies to documents and queries.
-pub const TOKENIZER_NAME: &str = "kyma-word-v1";
+pub const TOKENIZER_NAME: &str = "pensieve-word-v1";
 
 /// Minimum token length (chars). Runs shorter than this are dropped — matches
 /// the writer's `cur.len() >= 2` check (a token is pure ASCII so byte-len ==
@@ -49,7 +49,7 @@ pub const MIN_TOKEN_LEN: usize = 2;
 /// ASCII-alphanumeric, len-≥2 tokens the extent writer records.
 ///
 /// This is the function the parity tests compare against the writer's rule. It
-/// is also the exact logic the tantivy [`KymaWordTokenizer`] applies, so the
+/// is also the exact logic the tantivy [`PensieveWordTokenizer`] applies, so the
 /// indexed terms equal `tokenize(doc)` and the query terms equal
 /// `tokenize(query)`.
 pub fn tokenize(s: &str) -> Vec<String> {
@@ -72,11 +72,11 @@ pub fn tokenize(s: &str) -> Vec<String> {
     out
 }
 
-/// tantivy [`Tokenizer`] applying the `kyma-word-v1` rule (see module docs).
+/// tantivy [`Tokenizer`] applying the `pensieve-word-v1` rule (see module docs).
 #[derive(Clone, Default)]
-pub struct KymaWordTokenizer;
+pub struct PensieveWordTokenizer;
 
-impl Tokenizer for KymaWordTokenizer {
+impl Tokenizer for PensieveWordTokenizer {
     type TokenStream<'a> = BoxTokenStream<'a>;
 
     fn token_stream<'a>(&'a mut self, text: &'a str) -> Self::TokenStream<'a> {
@@ -155,9 +155,9 @@ mod tests {
     use super::*;
     use tantivy::tokenizer::Tokenizer;
 
-    /// Collect the terms a tantivy `KymaWordTokenizer` emits for `text`.
+    /// Collect the terms a tantivy `PensieveWordTokenizer` emits for `text`.
     fn tantivy_terms(text: &str) -> Vec<String> {
-        let mut tok = KymaWordTokenizer;
+        let mut tok = PensieveWordTokenizer;
         let mut stream = tok.token_stream(text);
         let mut out = Vec::new();
         while stream.advance() {

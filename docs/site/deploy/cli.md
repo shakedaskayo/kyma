@@ -1,9 +1,9 @@
 ---
-title: kyma deploy (CLI)
-description: The kyma deploy wizard — init/up/status/destroy across compute (fargate/eks/helm/local), database, storage, and auth backends.
+title: pensieve deploy (CLI)
+description: The pensieve deploy wizard — init/up/status/destroy across compute (fargate/eks/helm/local), database, storage, and auth backends.
 ---
 
-# `kyma deploy`
+# `pensieve deploy`
 
 A wizard that provisions the [deployment topology](./index) for you. It resolves
 each axis (flag → interactive prompt → default), validates the combination,
@@ -13,10 +13,10 @@ renders the right artifact into a private workspace, and runs the tool for you.
 
 | Command | What it does |
 | ------- | ------------ |
-| `kyma deploy init` | Resolve axes + credentials, materialize `~/.kyma/deploy/<name>/`, render the artifact. |
-| `kyma deploy up` | Provision: `terraform`/`pulumi apply` (fargate/eks; EKS then runs `helm upgrade --install`), `helm upgrade --install` (helm), or `docker run` (local). Prints the engine URL. |
-| `kyma deploy status` | Workspace summary (compute/db/storage/auth), outputs, live `/health` probe. |
-| `kyma deploy destroy` | Tear down (with confirmation). |
+| `pensieve deploy init` | Resolve axes + credentials, materialize `~/.pensieve/deploy/<name>/`, render the artifact. |
+| `pensieve deploy up` | Provision: `terraform`/`pulumi apply` (fargate/eks; EKS then runs `helm upgrade --install`), `helm upgrade --install` (helm), or `docker run` (local). Prints the engine URL. |
+| `pensieve deploy status` | Workspace summary (compute/db/storage/auth), outputs, live `/health` probe. |
+| `pensieve deploy destroy` | Tear down (with confirmation). |
 
 ## Axis flags
 
@@ -41,7 +41,7 @@ renders the right artifact into a private workspace, and runs the tool for you.
 | `--domain` | prompt / none | Custom domain + ACM/HTTPS (fargate). |
 | `--ingress-host` | prompt / none | Kubernetes ingress host (helm/eks). |
 | `--kube-context` | current context | kubectl context to deploy into (helm). |
-| `--admin-email` | prompt | Comma-separated emails granted the kyma admin role (supabase/oidc). |
+| `--admin-email` | prompt | Comma-separated emails granted the pensieve admin role (supabase/oidc). |
 | `--target` | — | **Deprecated** alias for `--compute` (`aws`→`fargate`, `local`→`local`). |
 | `--yes` | off | Non-interactive (supply the relevant flags). |
 | `--print-only` | off | Render the artifact + print planned commands; runs nothing. |
@@ -52,19 +52,19 @@ renders the right artifact into a private workspace, and runs the tool for you.
 When a Supabase backend is in use, `init` obtains a Management-API token in this
 order: `SUPABASE_ACCESS_TOKEN` → your `supabase login` session
 (`~/.supabase/access-token`) → browser OAuth (PKCE, when
-`KYMA_SUPABASE_OAUTH_CLIENT_ID` is set) → guided paste. AWS compute uses the
+`PENSIEVE_SUPABASE_OAUTH_CLIENT_ID` is set) → guided paste. AWS compute uses the
 standard AWS credential chain (`aws configure`, SSO, env vars). Non-Supabase
 deployments need neither — only what the chosen backends require.
 
 ## Workspaces
 
-Everything lives in `~/.kyma/deploy/<name>/` (rendered files are `0600` and hold
+Everything lives in `~/.pensieve/deploy/<name>/` (rendered files are `0600` and hold
 secrets — never commit them):
 
 ```
 terraform/                   # materialized stack (fargate/eks)
 terraform/terraform.tfvars   # rendered answers
-helm/kyma-engine/            # the engine Helm chart (helm/eks)
+helm/pensieve-engine/            # the engine Helm chart (helm/eks)
 helm-values.yaml             # rendered Helm values (helm/eks)
 local.env                    # docker env file (local)
 answers.json                 # persisted axis answers (helm/eks/local)
@@ -83,7 +83,7 @@ see [Terraform → State](./terraform#state) for the team setup.
   catalog URL, created bucket, and IRSA role into the chart. See
   [Kubernetes / EKS](./kubernetes).
 - **helm** — renders `helm-values.yaml` at `init`; `up` runs
-  `helm upgrade --install kyma … -n kyma --create-namespace`. See [Helm](./helm).
+  `helm upgrade --install pensieve … -n pensieve --create-namespace`. See [Helm](./helm).
 - **local** — provisions a Supabase project (if used) or wires your external
   Postgres/storage, then `docker run`s the engine on `:8080`.
 

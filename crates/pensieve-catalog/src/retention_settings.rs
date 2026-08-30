@@ -6,9 +6,9 @@
 //!   * `reconcile_table_retention` — pushes explicit per-table overrides into
 //!     `tables.config.retention_days`, which the existing RetentionSweeper reads.
 
-use kyma_core::errors::{CatalogError, Result};
-use kyma_core::retention::RetentionSettings;
-use kyma_core::tenant::TenantId;
+use pensieve_core::errors::{CatalogError, Result};
+use pensieve_core::retention::RetentionSettings;
+use pensieve_core::tenant::TenantId;
 
 use crate::PostgresCatalog;
 

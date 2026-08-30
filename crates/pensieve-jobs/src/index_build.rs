@@ -20,12 +20,12 @@
 use crate::executor::{JobCtx, JobError, JobExecutor};
 use async_trait::async_trait;
 use futures::StreamExt;
-use kyma_core::catalog::{Catalog, ExtentManifest, PrunePredicate, TableRef};
-use kyma_core::fabric::{ClaimedJob, JOB_INDEX_BUILD};
-use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarBuilder, SidecarKind};
-use kyma_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
-use kyma_core::tenant::TenantId;
-use kyma_core::types::{ExtentId, TableId};
+use pensieve_core::catalog::{Catalog, ExtentManifest, PrunePredicate, TableRef};
+use pensieve_core::fabric::{ClaimedJob, JOB_INDEX_BUILD};
+use pensieve_core::index_sidecar::{IndexSidecarDescriptor, SidecarBuilder, SidecarKind};
+use pensieve_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
+use pensieve_core::tenant::TenantId;
+use pensieve_core::types::{ExtentId, TableId};
 use object_store::path::Path as ObjPath;
 use object_store::ObjectStore;
 use serde::{Deserialize, Serialize};

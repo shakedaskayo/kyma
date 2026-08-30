@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "kyma-engine.fullname" . }}
+  name: {{ include "pensieve-engine.fullname" . }}
   labels:
-    {{- include "kyma-engine.labels" . | nindent 4 }}
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -17,7 +17,7 @@ spec:
   tls:
     - hosts:
         - {{ .Values.ingress.host | quote }}
-      secretName: {{ include "kyma-engine.fullname" . }}-tls
+      secretName: {{ include "pensieve-engine.fullname" . }}-tls
   {{- end }}
   rules:
     - host: {{ .Values.ingress.host | quote }}
@@ -27,7 +27,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "kyma-engine.fullname" . }}
+                name: {{ include "pensieve-engine.fullname" . }}
                 port:
                   number: {{ .Values.service.port }}
 {{- end }}

@@ -14,12 +14,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use kyma_graph_topo::CsrGraph;
+use pensieve_graph_topo::CsrGraph;
 
 use crate::types::GraphRelationship;
 
 /// Max cached graphs. Small because each entry retains up to
-/// `KYMA_GRAPH_TOPO_MAX_EDGES` edge rows; operators trade memory for hit rate
+/// `PENSIEVE_GRAPH_TOPO_MAX_EDGES` edge rows; operators trade memory for hit rate
 /// via that cap.
 const MAX_ENTRIES: usize = 4;
 

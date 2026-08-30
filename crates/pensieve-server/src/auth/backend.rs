@@ -3,7 +3,7 @@
 //! (e.g. [`super::env_backend::EnvAuthBackend`]).
 
 use async_trait::async_trait;
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 
 /// Minimum role needed to access a handler.
 ///
@@ -40,7 +40,7 @@ pub struct Principal {
     pub allowed_databases: Option<Vec<String>>,
     /// Memory realms this principal may read/write. `None` = unrestricted (the
     /// default for all pre-existing backends and the auth-disabled synthetic
-    /// principal; only an OIDC `kyma_realms` claim populates this). See
+    /// principal; only an OIDC `pensieve_realms` claim populates this). See
     /// [`super::scope::RealmScope`] / [`super::scope::intersect_realms`].
     pub allowed_realms: Option<Vec<String>>,
 }

@@ -12,15 +12,15 @@
 #![cfg(feature = "test-support")]
 
 use arrow_schema::{DataType, Field, Schema};
-use kyma_core::catalog::{GraphSpec, TableConfig};
-use kyma_server::graph_snapshot_sched::GraphSnapshotScheduler;
+use pensieve_core::catalog::{GraphSpec, TableConfig};
+use pensieve_server::graph_snapshot_sched::GraphSnapshotScheduler;
 use object_store::path::Path as ObjPath;
 use std::sync::Arc;
 
 /// Seed `obs` with `gnodes(id,name)` + `gedges(src,dst,type)` and register the
 /// conventional graph "kg" over them (same shape as the cypher fixtures).
-async fn seeded_state_with_graph() -> kyma_server::QueryState {
-    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+async fn seeded_state_with_graph() -> pensieve_server::QueryState {
+    let state = pensieve_server::test_support::seeded_state_with_obs_otel_logs().await;
     let obs_id = state
         .catalog
         .lookup_database("obs")
@@ -73,13 +73,13 @@ async fn scheduler_builds_then_debounces_snapshot() {
 
     // The snapshot object landed at the consumer's key, and a freshness marker
     // beside it records a non-empty source version.
-    let snap_path = kyma_graph::snapshot::snapshot_path("obs", "gedges");
+    let snap_path = pensieve_graph::snapshot::snapshot_path("obs", "gedges");
     store
         .head(&ObjPath::from(snap_path.as_str()))
         .await
         .expect("snapshot object exists at snapshot_path(db, edge_table)");
-    let meta_path = kyma_graph::snapshot::meta_path("obs", "gedges");
-    let marker = kyma_graph::snapshot::load_snapshot_meta(&store, &meta_path)
+    let meta_path = pensieve_graph::snapshot::meta_path("obs", "gedges");
+    let marker = pensieve_graph::snapshot::load_snapshot_meta(&store, &meta_path)
         .await
         .expect("read marker")
         .expect("marker written after a successful build");

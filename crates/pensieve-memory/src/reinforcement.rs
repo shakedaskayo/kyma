@@ -1,7 +1,7 @@
 //! Pure usage-based reinforcement scoring — no I/O (M8.1).
 //!
 //! Usage counters live in a small Postgres side table (`memory_usage_stats`,
-//! see `kyma-server::agent::memory_usage_store`), not on `memory_nodes` rows:
+//! see `pensieve-server::agent::memory_usage_store`), not on `memory_nodes` rows:
 //! every `memory_nodes` mutation re-embeds and appends a whole new versioned
 //! row (see [`crate::MemoryWriter::save_as`]), so bumping a counter on every
 //! recall hit there would mean paying a full embedding rewrite per hit. This

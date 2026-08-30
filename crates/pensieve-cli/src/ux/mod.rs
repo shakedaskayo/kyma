@@ -1,4 +1,4 @@
-//! Shared terminal-output toolkit for the kyma CLI. Commands use these
+//! Shared terminal-output toolkit for the pensieve CLI. Commands use these
 //! helpers instead of hand-rolled `println!` formatting, so color, tables,
 //! spinners, and error rendering stay consistent across every subcommand.
 

@@ -1,4 +1,4 @@
-//! Kyma's own spans → its own `otel_traces` table, in-process.
+//! Pensieve's own spans → its own `otel_traces` table, in-process.
 //!
 //! The exporter is installed into the tracing stack at process start but
 //! only begins writing once wired (`handle().set(SelfTraceCtx{…})`) to a
@@ -6,15 +6,15 @@
 //! batches are dropped — never buffered, never blocking.
 //!
 //! Recursion guard lives one level up: the tracing-opentelemetry layer is
-//! filtered to `target = "kyma_telemetry"` spans only, and nothing in the
+//! filtered to `target = "pensieve_telemetry"` spans only, and nothing in the
 //! ingest/storage path uses that target.
 
 use crate::traces::{otel_traces_schema, OTEL_TRACES_TABLE};
 use arrow_array::builder::{Int64Builder, StringBuilder, TimestampNanosecondBuilder};
 use arrow_array::{ArrayRef, RecordBatch};
 use futures::future::BoxFuture;
-use kyma_core::catalog::Catalog;
-use kyma_ingest_core::WritePath;
+use pensieve_core::catalog::Catalog;
+use pensieve_ingest_core::WritePath;
 use opentelemetry::trace::{SpanId, SpanKind, Status as OtelStatus};
 use opentelemetry_sdk::export::trace::{ExportResult, SpanData, SpanExporter};
 use std::sync::{Arc, OnceLock};
@@ -27,7 +27,7 @@ pub struct SelfTraceCtx {
     pub database: String,
 }
 
-/// A [`SpanExporter`] that writes Kyma's own spans straight onto the shared
+/// A [`SpanExporter`] that writes Pensieve's own spans straight onto the shared
 /// `otel_traces` schema through the in-process [`WritePath`] — no loopback
 /// gRPC hop.
 #[derive(Clone)]
@@ -50,7 +50,7 @@ impl SelfTraceExporter {
     pub fn unwired() -> Self {
         Self {
             ctx: Arc::new(OnceLock::new()),
-            service_name: "kyma-server".to_string(),
+            service_name: "pensieve-server".to_string(),
         }
     }
 
@@ -147,15 +147,15 @@ pub fn spans_to_batch(batch: &[SpanData], service_name: &str) -> anyhow::Result<
         // service_name: same for every row of a self-export batch
         service_b.append_value(service_name);
 
-        // kyma.subject / kyma.tenant promoted; the rest → attributes_json
+        // pensieve.subject / pensieve.tenant promoted; the rest → attributes_json
         let mut subject: Option<String> = None;
         let mut tenant: Option<String> = None;
         let mut rest = serde_json::Map::new();
         for kv in &sp.attributes {
             let val = kv.value.to_string();
             match kv.key.as_str() {
-                "kyma.subject" => subject = Some(val),
-                "kyma.tenant" => tenant = Some(val),
+                "pensieve.subject" => subject = Some(val),
+                "pensieve.tenant" => tenant = Some(val),
                 key => {
                     rest.insert(key.to_string(), serde_json::Value::String(val));
                 }
@@ -219,7 +219,7 @@ impl SpanExporter for SelfTraceExporter {
             {
                 Ok(t) => t,
                 Err(_) => {
-                    ::metrics::counter!("kyma_self_trace_dropped_total")
+                    ::metrics::counter!("pensieve_self_trace_dropped_total")
                         .increment(batch.len() as u64);
                     return Ok(());
                 }
@@ -230,7 +230,7 @@ impl SpanExporter for SelfTraceExporter {
                 .await
                 .is_err()
             {
-                ::metrics::counter!("kyma_self_trace_dropped_total").increment(batch.len() as u64);
+                ::metrics::counter!("pensieve_self_trace_dropped_total").increment(batch.len() as u64);
             }
             Ok(())
         })
@@ -264,8 +264,8 @@ mod tests {
             start_time: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
             end_time: UNIX_EPOCH + Duration::from_secs(1_700_000_000) + Duration::from_millis(250),
             attributes: vec![
-                OtelKv::new("kyma.subject", "ws-mbp-shaked"),
-                OtelKv::new("kyma.tenant", "default"),
+                OtelKv::new("pensieve.subject", "ws-mbp-shaked"),
+                OtelKv::new("pensieve.tenant", "default"),
                 OtelKv::new("memory.results", 7_i64),
             ],
             dropped_attributes_count: 0,
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn span_data_maps_to_row() {
-        let batch = spans_to_batch(&[sample_span()], "kyma-server").expect("batch");
+        let batch = spans_to_batch(&[sample_span()], "pensieve-server").expect("batch");
         assert_eq!(batch.num_rows(), 1);
         let schema = batch.schema();
         let col = |n: &str| schema.index_of(n).unwrap();
@@ -292,7 +292,7 @@ mod tests {
                 .to_string()
         };
         assert_eq!(s("name"), "memory.recall");
-        assert_eq!(s("service_name"), "kyma-server");
+        assert_eq!(s("service_name"), "pensieve-server");
         assert_eq!(s("subject"), "ws-mbp-shaked");
         assert_eq!(s("status_code"), "OK");
         assert_eq!(s("kind"), "SERVER");
@@ -309,7 +309,7 @@ mod tests {
             .unwrap();
         assert_eq!(dur.value(0), 250_000_000);
         assert!(s("attributes_json").contains("memory.results"));
-        assert!(!s("attributes_json").contains("kyma.subject"));
+        assert!(!s("attributes_json").contains("pensieve.subject"));
     }
 
     #[test]

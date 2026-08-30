@@ -129,7 +129,7 @@ impl DataSource for BitbucketDataSource {
         // For `basic`: build `Basic base64(user:pass)`; for `pat`: build a Bearer.
         use base64::Engine;
         let auth_header: Option<String> = if let Some(cid) = parsed.credential_id {
-            use kyma_core::credentials::CredentialValue;
+            use pensieve_core::credentials::CredentialValue;
             let cred = ctx
                 .credentials
                 .get(ctx.tenant, cid)

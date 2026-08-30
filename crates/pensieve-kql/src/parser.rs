@@ -1636,7 +1636,7 @@ impl<'s> Parser<'s> {
         let rhs = self.parse_additive()?;
         let result = match op {
             // `contains` → LIKE '%needle%'. Using LIKE (rather than
-            // position) so `kyma-exec` can pattern-match and push down
+            // position) so `pensieve-exec` can pattern-match and push down
             // extent-pruning to the catalog token index.
             "KQL_CONTAINS" => format!("({lhs} LIKE {})", add_like_both(&rhs)),
             "KQL_STARTSWITH" => format!("({lhs} LIKE {})", add_like_right(&rhs)),

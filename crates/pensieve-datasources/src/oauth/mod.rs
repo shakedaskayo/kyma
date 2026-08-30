@@ -1,7 +1,7 @@
 //! OAuth2 authorization-code framework for data sources.
 //!
 //! Data sources that authenticate with `auth_mode: "oauth"` (Notion, Google,
-//! Atlassian, Slack, …) obtain a [`kyma_core::credentials::CredentialValue::Oauth2`]
+//! Atlassian, Slack, …) obtain a [`pensieve_core::credentials::CredentialValue::Oauth2`]
 //! credential through the browser flow implemented here:
 //!
 //! 1. `POST /v1/oauth/:provider/start` — the UI asks for an authorize URL. We
@@ -17,7 +17,7 @@
 //!    [`token::valid_access_token`], which refreshes + persists in place.
 //!
 //! Client app credentials (`client_id` / `client_secret`) come from operator
-//! env (`KYMA_OAUTH_<PROVIDER>_CLIENT_ID` / `_CLIENT_SECRET`) or a per-tenant
+//! env (`PENSIEVE_OAUTH_<PROVIDER>_CLIENT_ID` / `_CLIENT_SECRET`) or a per-tenant
 //! bring-your-own row in `oauth_clients`; see [`client::resolve_client`].
 
 pub mod client;
@@ -42,5 +42,5 @@ pub use token::valid_access_token;
 #[derive(Clone)]
 pub struct OAuthRuntime {
     pub pool: sqlx::PgPool,
-    pub crypto: Arc<kyma_core::crypto::Crypto>,
+    pub crypto: Arc<pensieve_core::crypto::Crypto>,
 }

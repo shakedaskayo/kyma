@@ -1,10 +1,10 @@
 import { useCallback, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { KymaGraph } from "@kyma-ai/react/graph";
+import { PensieveGraph } from "@pensieve-ai/react/graph";
 import { useConsumerStream } from "@/features/graph/useConsumerStream";
 
 /**
- * Graph route — renders the embeddable KymaGraph component across all databases.
+ * Graph route — renders the embeddable PensieveGraph component across all databases.
  *
  * URL search params:
  *   ?graph=<db/graphname>  — one-way: seeds focusQuery on first render so the
@@ -13,9 +13,9 @@ import { useConsumerStream } from "@/features/graph/useConsumerStream";
  *                            store manages selection internally).
  *
  * Dropped behaviours vs. the old features/graph GraphView:
- *   - Two-way URL sync of selectedNodeId/graph filter: the KymaGraph store owns
+ *   - Two-way URL sync of selectedNodeId/graph filter: the PensieveGraph store owns
  *     selection internally; we only seed focusQuery from the URL, not the reverse.
- *   - Direct access to overview/layout toggle state: managed inside KymaGraph.
+ *   - Direct access to overview/layout toggle state: managed inside PensieveGraph.
  */
 
 type GraphSearch = {
@@ -40,7 +40,7 @@ function GraphPage() {
   const onLiveConsumersToggle = useCallback((enabled: boolean) => setLiveEnabled(enabled), []);
   return (
     <div className="flex h-full w-full">
-      <KymaGraph
+      <PensieveGraph
         discover="all-databases"
         height="100%"
         focusQuery={graph}

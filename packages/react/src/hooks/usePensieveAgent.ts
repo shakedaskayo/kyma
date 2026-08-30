@@ -1,5 +1,5 @@
 /**
- * useKymaAgent — headless hook for the Kyma Ask agent.
+ * usePensieveAgent — headless hook for the Pensieve Ask agent.
  *
  * Wire format: POST /v1/agent/ask returns SSE (text/event-stream) carrying
  * the Vercel AI SDK "UI Message Stream v1" protocol:
@@ -21,7 +21,7 @@
  * Auth is handled by routing the POST through client.transport.request(),
  * which injects Authorization and x-database headers automatically.
  *
- * This hook does NOT pull in @ai-sdk/react to keep @kyma-ai/react lean.
+ * This hook does NOT pull in @ai-sdk/react to keep @pensieve-ai/react lean.
  * The /agent subpath export is reserved for a future richer integration.
  *
  * Request body (AskRequest — server's expected JSON):
@@ -29,7 +29,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useKymaClient } from "../provider/context";
+import { usePensieveClient } from "../provider/context";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -45,12 +45,12 @@ export interface AgentMessage {
 
 export type AgentStatus = "idle" | "streaming" | "error";
 
-export interface UseKymaAgentArgs {
+export interface UsePensieveAgentArgs {
   database?: string;
   includeThinking?: boolean;
 }
 
-export interface UseKymaAgentResult {
+export interface UsePensieveAgentResult {
   messages: AgentMessage[];
   status: AgentStatus;
   /**
@@ -124,8 +124,8 @@ function newId(): string {
 
 // ── Implementation ────────────────────────────────────────────────────────────
 
-export function useKymaAgent(args?: UseKymaAgentArgs): UseKymaAgentResult {
-  const client = useKymaClient();
+export function usePensieveAgent(args?: UsePensieveAgentArgs): UsePensieveAgentResult {
+  const client = usePensieveClient();
 
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [status, setStatus] = useState<AgentStatus>("idle");

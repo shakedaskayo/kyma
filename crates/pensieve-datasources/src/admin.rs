@@ -7,7 +7,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;

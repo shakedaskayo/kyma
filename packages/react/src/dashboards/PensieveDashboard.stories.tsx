@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { KymaDashboard } from "./KymaDashboard";
+import { PensieveDashboard } from "./PensieveDashboard";
 
-const meta: Meta<typeof KymaDashboard> = {
-  title: "Components/KymaDashboard",
-  component: KymaDashboard,
+const meta: Meta<typeof PensieveDashboard> = {
+  title: "Components/PensieveDashboard",
+  component: PensieveDashboard,
   argTypes: {
     dashboardId: {
       control: "text",
@@ -22,7 +22,7 @@ const meta: Meta<typeof KymaDashboard> = {
 };
 
 export default meta;
-type Story = StoryObj<typeof KymaDashboard>;
+type Story = StoryObj<typeof PensieveDashboard>;
 
 /**
  * Read-only view: 5-panel "Service Health" dashboard with chart, stat, markdown,

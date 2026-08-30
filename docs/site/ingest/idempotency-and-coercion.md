@@ -31,7 +31,7 @@ depending on the path's settings.
 | Anything           | `dynamic` (Binary)                   | Stored as the raw JSON-bytes representation; queryable via path syntax. |
 
 Two columns get special handling: vectors and dynamic. Both are split
-out of the arrow-json fast path and decoded by a kyma-specific NDJSON
+out of the arrow-json fast path and decoded by a pensieve-specific NDJSON
 reader so the JSON shape matches the typed shape exactly.
 
 A field present in JSON but absent from the schema is not an error.

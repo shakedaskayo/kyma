@@ -1,32 +1,32 @@
 [package]
-name = "kyma-cli"
+name = "pensieve-cli"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "kyma — the context engine for coding agents. A single binary: stdio/HTTP MCP, a zero-infra local web UI + API (serve), memory recall/save, and control-plane sync. Installs as `kyma`."
-homepage = "https://shakedaskayo.github.io/kyma/"
-documentation = "https://shakedaskayo.github.io/kyma/"
+description = "pensieve — the context engine for coding agents. A single binary: stdio/HTTP MCP, a zero-infra local web UI + API (serve), memory recall/save, and control-plane sync. Installs as `pensieve`."
+homepage = "https://shakedaskayo.github.io/pensieve/"
+documentation = "https://shakedaskayo.github.io/pensieve/"
 keywords = ["mcp", "memory", "agent", "context", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 
-# Build output is `kyma-cli` so a `cargo build --workspace` does not collide
-# with kyma-bin's `kyma` (the server). Distribution channels that present this
-# CLI to end users as `kyma` (release-cli.yml tarball, install.sh, Dockerfile)
+# Build output is `pensieve-cli` so a `cargo build --workspace` does not collide
+# with pensieve-bin's `pensieve` (the server). Distribution channels that present this
+# CLI to end users as `pensieve` (release-cli.yml tarball, install.sh, Dockerfile)
 # rename the artifact themselves.
 [[bin]]
-name = "kyma-cli"
+name = "pensieve-cli"
 path = "src/main.rs"
 
 [lints]
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
-kyma-catalog.workspace = true
-# Local-engine commands (mcp/serve/setup/sync) — one `kyma` binary, no separate tool.
-kyma-local.workspace = true
+pensieve-core.workspace = true
+pensieve-catalog.workspace = true
+# Local-engine commands (mcp/serve/setup/sync) — one `pensieve` binary, no separate tool.
+pensieve-local.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
@@ -39,25 +39,25 @@ chrono.workspace = true
 uuid.workspace = true
 arrow-schema.workspace = true
 sqlx.workspace = true
-# clap will be needed for subcommands — adding directly here since only kyma-cli uses it
+# clap will be needed for subcommands — adding directly here since only pensieve-cli uses it
 clap = { version = "4", features = ["derive", "env"] }
-# Terminal UX toolkit (crates/kyma-cli/src/ux/): color/TTY detection, tables, spinners.
+# Terminal UX toolkit (crates/pensieve-cli/src/ux/): color/TTY detection, tables, spinners.
 console = "0.15"
 comfy-table = "7"
 indicatif = "0.17"
 reqwest = { workspace = true, features = ["json"] }
 futures-util = "0.3"
 directories = "5"
-# `kyma update` self-update: unpack release tarballs + verify checksums.
+# `pensieve update` self-update: unpack release tarballs + verify checksums.
 flate2 = "1"
 tar = "0.4"
 sha2 = "0.10"
-# Hidden interactive password prompts for `kyma user create|passwd`.
+# Hidden interactive password prompts for `pensieve user create|passwd`.
 rpassword = "7"
-# `kyma scrape`/`watch`: gitignore-aware recursive walk + filesystem events.
+# `pensieve scrape`/`watch`: gitignore-aware recursive walk + filesystem events.
 ignore = "0.4"
 notify = "6"
-# `kyma deploy`: PKCE verifiers + generated passwords.
+# `pensieve deploy`: PKCE verifiers + generated passwords.
 rand = "0.8"
 
 # Linux release binaries are cross-compiled (release-cli.yml: `cross build` for

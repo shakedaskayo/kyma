@@ -7,11 +7,11 @@ description: Six surfaces — KQL, SQL, PromQL (roadmap), Arrow Flight, the agen
 
 Three query languages, two transports, one agent endpoint, and the
 performance rules that apply to all of them. They share more than they
-differ: every surface produces the same kyma logical plan, runs through
+differ: every surface produces the same pensieve logical plan, runs through
 the same [pruning cascade](/concepts/the-pruning-cascade), executes on
 the same DataFusion engine, and returns the same Arrow result.
 
-Pick the surface that matches how you're calling kyma — not what the
+Pick the surface that matches how you're calling pensieve — not what the
 data looks like, because that's the same on the other side.
 
 ![The Discover search UI querying across sources](/screenshots/discover-search.png)
@@ -47,7 +47,7 @@ sub-queries, or when SQL is what your tool already speaks.
 
 Reserved for `Content-Type: application/promql`; frontend lands in a
 later milestone. When it ships, existing Prometheus dashboards point
-at kyma's endpoint with no other change.
+at pensieve's endpoint with no other change.
 
 </div>
 
@@ -88,7 +88,7 @@ and a short cookbook of the patterns that prune well.
 ## What's the same across all surfaces
 
 - **One logical plan.** Every frontend parses to the unified IR in
-  `kyma-plan`. KQL and SQL are peer trait implementations; the planner
+  `pensieve-plan`. KQL and SQL are peer trait implementations; the planner
   doesn't know which one fed it.
 - **One execution engine.** DataFusion runs vectorized over Arrow.
   Cross-source joins are the same exec path as native joins.

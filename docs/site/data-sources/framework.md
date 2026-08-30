@@ -140,8 +140,8 @@ in `data_sources.config_jsonb`, and the data source calls
 
 `SecretStore` is a trait with one method (`resolve(&self, &str) -> Result<String>`).
 The shipped impl is `EnvSecretStore`, which reads `$env:NAME` from the
-environment of the kyma process. Database-engine data sources in DB-M0+
-add a file-based store (`KYMA_SECRETS_FILE`) and an in-cluster store;
+environment of the pensieve process. Database-engine data sources in DB-M0+
+add a file-based store (`PENSIEVE_SECRETS_FILE`) and an in-cluster store;
 Vault / AWS Secrets Manager / GCP Secret Manager are documented
 extension points.
 

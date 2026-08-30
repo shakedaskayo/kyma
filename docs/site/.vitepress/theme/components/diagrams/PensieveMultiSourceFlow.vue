@@ -1,9 +1,9 @@
 <!--
-  KymaMultiSourceFlow
+  PensieveMultiSourceFlow
   -------------------
-  Visual: a SQL query joining kyma's native otel_logs with a federated
+  Visual: a SQL query joining pensieve's native otel_logs with a federated
   pg_prod.public.users table. Shows two paths through the engine —
-  the federation lane (live read) and the sync lane (CDC into kyma extents) —
+  the federation lane (live read) and the sync lane (CDC into pensieve extents) —
   meeting at the DataFusion join.
 -->
 <script setup lang="ts">
@@ -13,7 +13,7 @@ defineProps<{
 </script>
 
 <template>
-  <figure class="kyma-msf">
+  <figure class="pensieve-msf">
     <svg viewBox="0 0 1040 480" role="img"
          :aria-label="caption ?? 'Multi-source data flow: federation and sync, joined in DataFusion'"
          xmlns="http://www.w3.org/2000/svg">
@@ -68,17 +68,17 @@ defineProps<{
         <text x="100" y="22" class="msf-pathway-title" text-anchor="middle">CdcDataSource::stream</text>
         <text x="100" y="40" class="msf-pathway-sub" text-anchor="middle">snapshot · stream events</text>
         <text x="100" y="56" class="msf-pathway-sub" text-anchor="middle">commit + cursor (CAS)</text>
-        <text x="100" y="72" class="msf-pathway-sub-em" text-anchor="middle">→ kyma extents</text>
+        <text x="100" y="72" class="msf-pathway-sub-em" text-anchor="middle">→ pensieve extents</text>
       </g>
 
       <!-- arrows: source → both pathways -->
       <line x1="240" y1="170" x2="288" y2="170" class="msf-link msf-link-accent" marker-end="url(#msf-arrow-accent)"/>
       <line x1="240" y1="270" x2="288" y2="270" class="msf-link msf-link-accent" marker-end="url(#msf-arrow-accent)"/>
 
-      <!-- ───────── kyma engine ───────── -->
+      <!-- ───────── pensieve engine ───────── -->
       <g transform="translate(540, 100)">
         <rect width="220" height="280" class="msf-engine-rect"/>
-        <text x="110" y="28" class="msf-engine-title" text-anchor="middle">kyma · DataFusion</text>
+        <text x="110" y="28" class="msf-engine-title" text-anchor="middle">pensieve · DataFusion</text>
         <text x="110" y="46" class="msf-engine-sub" text-anchor="middle">SessionContext</text>
 
         <line x1="20" y1="62" x2="200" y2="62" class="msf-rule"/>
@@ -91,7 +91,7 @@ defineProps<{
         <line x1="20" y1="135" x2="200" y2="135" class="msf-rule msf-rule-soft"/>
 
         <!-- Native otel_logs -->
-        <text x="20" y="156" class="msf-engine-label">▸ kyma (catalog)</text>
+        <text x="20" y="156" class="msf-engine-label">▸ pensieve (catalog)</text>
         <text x="20" y="172" class="msf-engine-detail">otel_logs · synced</text>
         <text x="20" y="186" class="msf-engine-detail">14k extents · pruned</text>
 
@@ -140,64 +140,64 @@ defineProps<{
 </template>
 
 <style scoped>
-.kyma-msf {
+.pensieve-msf {
   margin: 1.5rem 0 2rem;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
 }
-.kyma-msf svg {
+.pensieve-msf svg {
   width: 100%;
   height: auto;
   display: block;
-  background: var(--kyma-bg-soft);
-  border: 1px solid var(--kyma-rule-soft);
+  background: var(--pensieve-bg-soft);
+  border: 1px solid var(--pensieve-rule-soft);
 }
-.kyma-msf figcaption {
+.pensieve-msf figcaption {
   margin-top: 0.75rem;
   font-size: 0.78rem;
-  color: var(--kyma-muted);
+  color: var(--pensieve-muted);
   text-align: center;
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
 }
 
 .msf-eyebrow {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 11px;
-  fill: var(--kyma-muted);
+  fill: var(--pensieve-muted);
   letter-spacing: 0.18em;
 }
 .msf-title {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 12px;
-  fill: var(--kyma-fg);
+  fill: var(--pensieve-fg);
   letter-spacing: -0.005em;
 }
 
 .msf-source-rect {
-  fill: var(--kyma-bg);
-  stroke: var(--kyma-rule);
+  fill: var(--pensieve-bg);
+  stroke: var(--pensieve-rule);
   stroke-width: 1;
 }
 .msf-pathway-rect {
   fill: transparent;
-  stroke: var(--kyma-accent);
+  stroke: var(--pensieve-accent);
   stroke-width: 1;
   stroke-dasharray: 3 3;
 }
 .msf-engine-rect {
-  fill: var(--kyma-bg);
-  stroke: var(--kyma-fg);
+  fill: var(--pensieve-bg);
+  stroke: var(--pensieve-fg);
   stroke-width: 1.4;
 }
 .msf-result-rect {
-  fill: var(--kyma-bg);
-  stroke: var(--kyma-rule);
+  fill: var(--pensieve-bg);
+  stroke: var(--pensieve-rule);
   stroke-width: 1;
 }
 
 .msf-node-title, .msf-pathway-title, .msf-engine-title, .msf-result-title {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-weight: 600;
-  fill: var(--kyma-fg);
+  fill: var(--pensieve-fg);
   letter-spacing: -0.005em;
 }
 .msf-node-title { font-size: 13px; }
@@ -206,94 +206,94 @@ defineProps<{
 .msf-result-title { font-size: 12px; }
 
 .msf-node-sub, .msf-pathway-sub, .msf-engine-sub, .msf-result-sub {
-  font-family: var(--kyma-font-body);
+  font-family: var(--pensieve-font-body);
   font-size: 10px;
-  fill: var(--kyma-fg-soft);
+  fill: var(--pensieve-fg-soft);
 }
 .msf-pathway-sub-em {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 10px;
-  fill: var(--kyma-accent);
+  fill: var(--pensieve-accent);
   letter-spacing: 0.04em;
 }
 
 .msf-lane-label {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 10px;
-  fill: var(--kyma-fg);
+  fill: var(--pensieve-fg);
   font-weight: 600;
   letter-spacing: 0.16em;
 }
 .msf-lane-sub {
-  font-family: var(--kyma-font-body);
+  font-family: var(--pensieve-font-body);
   font-size: 9px;
-  fill: var(--kyma-fg-soft);
+  fill: var(--pensieve-fg-soft);
 }
 .msf-lane-sub-em {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 9px;
-  fill: var(--kyma-accent);
+  fill: var(--pensieve-accent);
   letter-spacing: 0.04em;
 }
 
 .msf-engine-label {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 10.5px;
-  fill: var(--kyma-fg);
+  fill: var(--pensieve-fg);
   font-weight: 500;
 }
 .msf-engine-detail {
-  font-family: var(--kyma-font-body);
+  font-family: var(--pensieve-font-body);
   font-size: 9.5px;
-  fill: var(--kyma-fg-soft);
+  fill: var(--pensieve-fg-soft);
 }
 
 .msf-result-stat {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 11px;
-  fill: var(--kyma-fg);
+  fill: var(--pensieve-fg);
 }
 .msf-num {
-  fill: var(--kyma-accent);
+  fill: var(--pensieve-accent);
   font-weight: 600;
 }
 
 .msf-link {
-  stroke: var(--kyma-fg);
+  stroke: var(--pensieve-fg);
   stroke-width: 1;
   opacity: 0.55;
   fill: none;
 }
 .msf-link-accent {
-  stroke: var(--kyma-accent);
+  stroke: var(--pensieve-accent);
   stroke-width: 1.4;
   opacity: 0.95;
 }
-.msf-accent-fill { fill: var(--kyma-accent); }
+.msf-accent-fill { fill: var(--pensieve-accent); }
 
 .msf-rule {
-  stroke: var(--kyma-rule);
+  stroke: var(--pensieve-rule);
   stroke-width: 1;
 }
 .msf-rule-soft {
-  stroke: var(--kyma-rule-soft);
+  stroke: var(--pensieve-rule-soft);
   stroke-width: 1;
 }
 
 .msf-footer-label {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 10px;
-  fill: var(--kyma-muted);
+  fill: var(--pensieve-muted);
   letter-spacing: 0.18em;
 }
 .msf-footer {
-  font-family: var(--kyma-font-body);
+  font-family: var(--pensieve-font-body);
   font-size: 10px;
-  fill: var(--kyma-fg-soft);
+  fill: var(--pensieve-fg-soft);
 }
 .msf-mono {
-  font-family: var(--kyma-font-mono);
-  fill: var(--kyma-accent);
+  font-family: var(--pensieve-font-mono);
+  fill: var(--pensieve-accent);
   font-weight: 500;
 }
 </style>

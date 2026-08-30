@@ -4,7 +4,7 @@
  * fetchable source artifact (`object_path`), and how to format property values
  * for display (pretty JSON, collapsed embeddings).
  */
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 
 /** The node's renderable long-text content (`properties.content`) or null. */
 export function nodeContent(node: GraphNode): string | null {

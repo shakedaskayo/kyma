@@ -25,7 +25,7 @@ function TracesPage() {
         <div className="mb-3">
           <h1 className="text-sm font-medium text-foreground/90">Traces</h1>
           <p className="text-xs text-muted-foreground">
-            Kyma's own operations, end to end — plus anything shipped to the OTLP endpoint.
+            Pensieve's own operations, end to end — plus anything shipped to the OTLP endpoint.
           </p>
         </div>
         <div className="min-h-0 flex-1">

@@ -12,7 +12,7 @@ use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use kyma_brain::registry::{
+use pensieve_brain::registry::{
     BrainConfig, BrainFilters, BrainRunRecord, GardenerConfig, RealmSelector,
 };
 
@@ -49,7 +49,7 @@ fn require_role(principal: &Principal, needed: Role, what: &str) -> Option<Respo
     None
 }
 
-fn brain_json(state: &BrainState, rec: &kyma_brain::registry::BrainRecord) -> Value {
+fn brain_json(state: &BrainState, rec: &pensieve_brain::registry::BrainRecord) -> Value {
     let mut v = serde_json::to_value(rec).unwrap_or_else(|_| json!({}));
     if let Some(obj) = v.as_object_mut() {
         obj.insert("clone_path".into(), json!(format!("/git/{}.git", rec.config.name)));
@@ -222,7 +222,7 @@ async fn delete_handler(
     if let Some(r) = require_role(&principal, Role::Admin, "brain delete") {
         return r;
     }
-    if kyma_brain::validate_name(&name).is_err() {
+    if pensieve_brain::validate_name(&name).is_err() {
         return err(StatusCode::BAD_REQUEST, "invalid brain name");
     }
     let lock = state.lock_for(&name);
@@ -255,7 +255,7 @@ pub async fn run_export_now(state: &BrainState, cfg: &BrainConfig) -> Result<Val
     let (nodes, edges) = fetch::fetch_rows(&state.agent, cfg).await?;
     let repo = state.repo_dir(&cfg.name);
     let outcome =
-        kyma_brain::export::run_export(&git, &repo, cfg, &nodes, &edges, Utc::now().timestamp())
+        pensieve_brain::export::run_export(&git, &repo, cfg, &nodes, &edges, Utc::now().timestamp())
             .await;
 
     let mut rec = state
@@ -338,11 +338,11 @@ async fn export_handler(
 }
 
 /// Kick off a wiki-gardener run for this brain: a dreaming run whose focus
-/// is [`kyma_brain::gardener::gardener_focus`]. Local mode runs it inline
+/// is [`pensieve_brain::gardener::gardener_focus`]. Local mode runs it inline
 /// (dreaming store guard dedupes); hosted mode enqueues a `dreaming` fabric
 /// job. The gardener writes wiki memories; the next export renders them.
-pub async fn trigger_gardener(state: &BrainState, cfg: &kyma_brain::registry::BrainConfig) -> Result<Value, String> {
-    let focus = kyma_brain::gardener::gardener_focus(cfg);
+pub async fn trigger_gardener(state: &BrainState, cfg: &pensieve_brain::registry::BrainConfig) -> Result<Value, String> {
+    let focus = pensieve_brain::gardener::gardener_focus(cfg);
     let result = if let Some(store) = state.agent.local_dreaming.clone() {
         if !store.try_acquire() {
             return Ok(json!({ "deduped": true, "detail": "a dreaming run is already in flight" }));
@@ -356,7 +356,7 @@ pub async fn trigger_gardener(state: &BrainState, cfg: &kyma_brain::registry::Br
         );
         json!({ "started": true, "mode": "local" })
     } else if let Some(pool) = state.agent.pool.clone() {
-        let fabric = kyma_catalog::PgFabricStore::new(pool);
+        let fabric = pensieve_catalog::PgFabricStore::new(pool);
         let payload = serde_json::to_value(crate::agent::dreaming::DreamingRequest {
             trigger: crate::agent::dreaming::Trigger::Manual,
             mode: None,
@@ -368,8 +368,8 @@ pub async fn trigger_gardener(state: &BrainState, cfg: &kyma_brain::registry::Br
         let enqueued = fabric
             .enqueue_job(
                 state.agent.tenant,
-                &kyma_core::fabric::EnqueueJob {
-                    kind: kyma_core::fabric::JOB_DREAMING.to_string(),
+                &pensieve_core::fabric::EnqueueJob {
+                    kind: pensieve_core::fabric::JOB_DREAMING.to_string(),
                     payload,
                     priority: 5,
                     affinity_worker_id: None,
@@ -428,7 +428,7 @@ async fn runs_handler(State(state): State<BrainState>, Path(name): Path<String>)
 async fn browse_repo(
     state: &BrainState,
     name: &str,
-) -> Result<(std::sync::Arc<kyma_brain::gitbin::GitBin>, std::path::PathBuf, String), Response> {
+) -> Result<(std::sync::Arc<pensieve_brain::gitbin::GitBin>, std::path::PathBuf, String), Response> {
     let Some(git) = state.git.clone() else {
         return Err(err(StatusCode::SERVICE_UNAVAILABLE, "git binary not found on server host"));
     };
@@ -438,7 +438,7 @@ async fn browse_repo(
         Err(e) => return Err(err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
     let dir = state.repo_dir(name);
-    let head = match git.rev_parse(&dir, &format!("refs/heads/{}", kyma_brain::BRAIN_BRANCH)).await
+    let head = match git.rev_parse(&dir, &format!("refs/heads/{}", pensieve_brain::BRAIN_BRANCH)).await
     {
         Ok(Some(h)) => h,
         Ok(None) => return Err(err(StatusCode::NOT_FOUND, "brain has no exports yet")),
@@ -505,7 +505,7 @@ async fn clone_info_handler(State(state): State<BrainState>, Path(name): Path<St
     match state.registry.get(&name).await {
         Ok(Some(rec)) => Json(json!({
             "path": format!("/git/{}.git", rec.config.name),
-            "auth": "http basic — username anything (e.g. `kyma`), password = a kyma API token",
+            "auth": "http basic — username anything (e.g. `pensieve`), password = a pensieve API token",
             "min_role": rec.config.visibility_role,
             "example": format!("git clone http://<host>:<port>/git/{}.git", rec.config.name),
         }))

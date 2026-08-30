@@ -10,8 +10,8 @@
  */
 import { useEffect, useMemo, useRef } from "react";
 import type Sigma from "sigma";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
-import { getLabelColor } from "@kyma-ai/client";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
+import { getLabelColor } from "@pensieve-ai/client";
 import { convexHull, detectCommunities, padHull } from "./graph-community";
 import { edgeDstKey, edgeSrcKey, keyOf } from "./sigma-graph-builder";
 import { useGraphStore } from "./graph-store";

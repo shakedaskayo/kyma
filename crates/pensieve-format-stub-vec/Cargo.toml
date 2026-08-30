@@ -1,5 +1,5 @@
 [package]
-name = "kyma-format-stub-vec"
+name = "pensieve-format-stub-vec"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ description = "Stub vector / ANN format implementation. Proves the SegmentFormat
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
+pensieve-core.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 arrow.workspace = true

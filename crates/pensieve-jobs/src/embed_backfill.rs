@@ -37,13 +37,13 @@ use arrow_array::cast::AsArray;
 use arrow_array::{Array, ArrayRef, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use async_trait::async_trait;
-use kyma_core::catalog::{Catalog, ExtentManifest, PrunePredicate, SnapshotSummary, TableRef};
-use kyma_core::crypto::content_hash_hex;
-use kyma_core::fabric::{ClaimedJob, JOB_EMBED_BACKFILL};
-use kyma_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
-use kyma_core::tenant::TenantId;
-use kyma_core::types::{ExtentId, TableId};
-use kyma_embed::EmbeddingBackend;
+use pensieve_core::catalog::{Catalog, ExtentManifest, PrunePredicate, SnapshotSummary, TableRef};
+use pensieve_core::crypto::content_hash_hex;
+use pensieve_core::fabric::{ClaimedJob, JOB_EMBED_BACKFILL};
+use pensieve_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
+use pensieve_core::tenant::TenantId;
+use pensieve_core::types::{ExtentId, TableId};
+use pensieve_embed::EmbeddingBackend;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 use std::collections::{HashMap, HashSet};
@@ -395,7 +395,7 @@ impl EmbedBackfillExecutor {
                 .await
             {
                 Ok(_) => return Ok(()),
-                Err(kyma_core::Error::Catalog(kyma_core::errors::CatalogError::Conflict)) => {
+                Err(pensieve_core::Error::Catalog(pensieve_core::errors::CatalogError::Conflict)) => {
                     tokio::time::sleep(std::time::Duration::from_millis(50 * attempt as u64)).await;
                     continue;
                 }

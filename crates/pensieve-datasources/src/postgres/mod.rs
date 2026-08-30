@@ -102,7 +102,7 @@ impl DataSource for PgIntrospectDataSource {
 
         // Resolve the connection URL: credential first (preferred), then inline.
         let url: String = if let Some(cid) = parsed.credential_id {
-            use kyma_core::credentials::CredentialValue;
+            use pensieve_core::credentials::CredentialValue;
             let cred = ctx
                 .credentials
                 .get(ctx.tenant, cid)

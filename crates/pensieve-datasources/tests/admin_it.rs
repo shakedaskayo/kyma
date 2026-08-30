@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use axum::http::StatusCode;
 use axum::{Extension, Router};
-use kyma_catalog::PostgresCatalog;
-use kyma_datasources::admin::{router, AdminState};
-use kyma_datasources::catalog_trait::{DataSourceCatalog, PgDataSourceCatalog};
-use kyma_datasources::registry::DataSourceRegistry;
-use kyma_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
-use kyma_core::tenant::DEFAULT_TENANT;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_datasources::admin::{router, AdminState};
+use pensieve_datasources::catalog_trait::{DataSourceCatalog, PgDataSourceCatalog};
+use pensieve_datasources::registry::DataSourceRegistry;
+use pensieve_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
+use pensieve_core::tenant::DEFAULT_TENANT;
 use serde_json::json;
 use sqlx::PgPool;  // used for WatcherRegistry::register
 use std::sync::Arc;
@@ -52,8 +52,8 @@ impl DataSource for WatcherStub {
     fn type_id(&self) -> &'static str {
         "wstub"
     }
-    fn catalog(&self) -> kyma_datasources::CatalogEntry {
-        let mut c = kyma_datasources::CatalogEntry::minimal("wstub");
+    fn catalog(&self) -> pensieve_datasources::CatalogEntry {
+        let mut c = pensieve_datasources::CatalogEntry::minimal("wstub");
         c.drive_model = "continuous".into();
         c
     }
@@ -164,7 +164,7 @@ async fn watchers_list_empty_then_rows() {
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(v["items"], json!([]));
 
-    kyma_datasources::watchers::WatcherRegistry::register(
+    pensieve_datasources::watchers::WatcherRegistry::register(
         &pool, "filedrop", "h", "n", "u", json!({}),
     )
     .await

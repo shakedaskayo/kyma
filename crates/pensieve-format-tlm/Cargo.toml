@@ -1,5 +1,5 @@
 [package]
-name = "kyma-format-tlm"
+name = "pensieve-format-tlm"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,8 +10,8 @@ description = "The telemetry storage format: extents, blocks, column encoders, i
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
-kyma-storage.workspace = true
+pensieve-core.workspace = true
+pensieve-storage.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

@@ -1,11 +1,11 @@
-# kyma CLI — UX overhaul (shared output toolkit + phased command rollout)
+# pensieve CLI — UX overhaul (shared output toolkit + phased command rollout)
 
 **Date:** 2026-07-01
 **Status:** Approved (brainstorm with user; all decisions locked)
 
 ## Summary
 
-The kyma CLI (`crates/kyma-cli`, ~30 subcommands across `main.rs`, `plugin.rs`, `datasource.rs`)
+The pensieve CLI (`crates/pensieve-cli`, ~30 subcommands across `main.rs`, `plugin.rs`, `datasource.rs`)
 currently formats every command's output by hand with raw `println!()`. There is no color, no
 tables, no progress indication, error messages are often Rust `anyhow` debug dumps, and every
 command invents its own layout (fixed-width columns in `datasource list`, tab-separated fields in
@@ -32,9 +32,9 @@ Decisions made with the user:
 
 ## 1. Architecture — the `ux` module
 
-New module `crates/kyma-cli/src/ux/`. Every command imports from it instead of hand-rolling
+New module `crates/pensieve-cli/src/ux/`. Every command imports from it instead of hand-rolling
 output. It wraps three libraries already resolved in `Cargo.lock` as transitive deps but not
-currently used directly by `kyma-cli`: `console`, `comfy-table`, `indicatif` — no new dependency
+currently used directly by `pensieve-cli`: `console`, `comfy-table`, `indicatif` — no new dependency
 for U0–U3 (U4 adds `ratatui`).
 
 - **`theme.rs`** — semantic style functions (`success`, `error`, `warn`, `info`, `muted`,
@@ -51,8 +51,8 @@ for U0–U3 (U4 adds `ratatui`).
 - **`error.rs`** — `ux::print_error(&anyhow::Error)`, called once from `main()`'s top-level error
   return path. Walks the `anyhow` cause chain and prints a `✗ Error:` header (red) with each cause
   indented underneath, instead of `{:?}`-style debug output. Appends a `hint:` line for a small,
-  growing table of known cases: connection refused → "is `kyma serve` running?"; 401/403 → "run
-  `kyma connect` to re-auth"; 404 → resource-not-found phrasing; timeout; validation errors. Not
+  growing table of known cases: connection refused → "is `pensieve serve` running?"; 401/403 → "run
+  `pensieve connect` to re-auth"; 404 → resource-not-found phrasing; timeout; validation errors. Not
   exhaustive on day one — designed to grow as new cases are noticed.
 - **`format.rs`** — relative timestamps (`"2m ago"`), word-boundary-aware truncation with ellipsis
   (replacing `recall`'s hardcoded 280-char hard cut), and a score→color mapping for similarity
@@ -111,5 +111,5 @@ they're noticed in real usage rather than trying to enumerate every failure mode
 - Rewriting command *behavior* or flags — this is presentation-only; no subcommand's semantics,
   inputs, or JSON shapes change because of this program (aside from `--json` being added to a few
   list/status commands that don't have it yet).
-- A standalone crate for the `ux` module — it's a module inside `kyma-cli` since no other crate
+- A standalone crate for the `ux` module — it's a module inside `pensieve-cli` since no other crate
   consumes it; promote to a crate later only if that changes.

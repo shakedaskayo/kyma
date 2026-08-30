@@ -8,7 +8,7 @@
 
 Agent platforms leak secrets through three distinct surfaces: (1) the sandbox/execution
 environment, (2) the model's context window (and therefore the LLM provider), and
-(3) the persisted transcript and its UI rendering. Kyma already does
+(3) the persisted transcript and its UI rendering. Pensieve already does
 reference-not-value credential handling where it matters (`credential_id` in engine
 config, AES-256-GCM encrypted catalog, 0600 MCP config temp files), but has **no
 secret hygiene at the trace/tool-result layer**:
@@ -18,7 +18,7 @@ secret hygiene at the trace/tool-result layer**:
 - A SQL/KQL query touching a token-bearing column sends those values into model
   context, the DB, and the web UI unredacted.
 - The spawned `claude` subprocess (`claude_cli.rs:144`) inherits the full server env
-  (`KYMA_SECRET_KEY`, `OPENAI_API_KEY`, Supabase secrets, …).
+  (`PENSIEVE_SECRET_KEY`, `OPENAI_API_KEY`, Supabase secrets, …).
 - The question is passed as argv — visible via `ps`.
 - Memory redaction is opt-in (`<private>` tags only); error messages and logs are
   unsanitized; the UI renders raw tool I/O JSON.
@@ -34,10 +34,10 @@ secret hygiene at the trace/tool-result layer**:
 | `read_only_token` | Delete + gitignore patterns; user rotates the PAT |
 | User-pasted secrets in questions | Still go to the model (explicit user choice) but are redacted in trace/persistence/UI |
 
-## 1. New crate: `kyma-redact`
+## 1. New crate: `pensieve-redact`
 
-Workspace crate with no kyma dependencies so `kyma-server`, `kyma-mcp`,
-`kyma-memory`, `kyma-catalog`, and `kyma-connectors` can all use it.
+Workspace crate with no pensieve dependencies so `pensieve-server`, `pensieve-mcp`,
+`pensieve-memory`, `pensieve-catalog`, and `pensieve-connectors` can all use it.
 
 ```rust
 pub struct Finding { pub kind: String, pub surface_hint: Option<String> } // never the value
@@ -78,27 +78,27 @@ One `Arc<SecretGuard>` in server state.
 
 | Where | What |
 |---|---|
-| Server startup | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `KYMA_SECRET_KEY`, Supabase secret env vars |
-| `kyma-catalog/src/credentials.rs` fetch/decrypt | every decrypted connector credential value |
+| Server startup | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `PENSIEVE_SECRET_KEY`, Supabase secret env vars |
+| `pensieve-catalog/src/credentials.rs` fetch/decrypt | every decrypted connector credential value |
 | `agent/routes.rs` ask handler | the per-request bearer token |
 
 **Choke points (innermost first):**
 
 | Where | Change |
 |---|---|
-| `agent/tools.rs`, `agent/memory_tools.rs` (ADK path); `kyma-mcp/src/tools.rs` (Claude CLI path) | `redact_json` every tool result **before it returns to the model** — the core "never enters model context" guarantee |
+| `agent/tools.rs`, `agent/memory_tools.rs` (ADK path); `pensieve-mcp/src/tools.rs` (Claude CLI path) | `redact_json` every tool result **before it returns to the model** — the core "never enters model context" guarantee |
 | `Emitter::tool_call` / `tool_result` (`agent/routes.rs:454,470`) | `redact_json` args/results before `record()` and the UI push; emit `security_event` on findings |
 | `Emitter::answer_delta` / `thinking_delta` | route text through `StreamScrubber` (catches the model echoing a user-pasted secret) |
 | `run_started` (question) and `answer_final` | redact in trace/persistence only; the live question still reaches the model |
 | `persist_run` (`agent/routes.rs:880`) | belt-and-braces scrub of whole `trace_json` before bind; same for `agent_session_turns.content_json` |
-| `kyma-memory/src/writer.rs` | auto-scan content on save; detected secrets redacted alongside existing `<private>`-tag handling in `redact_create()` |
+| `pensieve-memory/src/writer.rs` | auto-scan content on save; detected secrets redacted alongside existing `<private>`-tag handling in `redact_create()` |
 | Logging setup | wrap the `tracing` fmt layer's `MakeWriter` in a scrubbing writer — every formatted log line passes the guard; covers resolver/connector/credential error messages without chasing individual error sites |
 
 ## 3. Claude CLI subprocess containment (`agent/engine/claude_cli.rs`)
 
 - `cmd.env_clear()` + explicit allowlist: `PATH`, `HOME`, `TERM`, `SHELL`,
   `LANG`/`LC_*`, `ANTHROPIC_API_KEY` (the CLI's own auth), `CLAUDE_*`. The spawned
-  CLI can never read `KYMA_SECRET_KEY`, `OPENAI_API_KEY`, or Supabase secrets.
+  CLI can never read `PENSIEVE_SECRET_KEY`, `OPENAI_API_KEY`, or Supabase secrets.
 - Pass the question via **stdin** instead of argv (no `ps` exposure).
 - MCP config handling unchanged (0600 temp file is already correct).
 
@@ -133,7 +133,7 @@ No new audit table (trace + logs suffice).
 
 ## 7. Testing
 
-- **`kyma-redact` unit tests:** every pattern; known-value matching; JSON deep-walk
+- **`pensieve-redact` unit tests:** every pattern; known-value matching; JSON deep-walk
   (values and keys); stream-boundary spanning (secret split across deltas);
   idempotency of `[REDACTED:…]`.
 - **Integration:** seed a fake credential in the catalog → agent turn whose SQL
@@ -146,7 +146,7 @@ No new audit table (trace + logs suffice).
 ## Accepted trade-offs
 
 - Pattern detection can miss exotic foreign-secret formats; known-value matching is
-  exact for everything Kyma itself holds.
+  exact for everything Pensieve itself holds.
 - The `Bearer` regex may occasionally mask non-secret data — masking (not blocking)
   plus an audit event keeps the harm low.
 - The ~256-byte stream holdback adds imperceptible UI streaming latency.

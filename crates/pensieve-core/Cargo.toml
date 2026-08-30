@@ -1,10 +1,10 @@
 [package]
-name = "kyma-core"
+name = "pensieve-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Traits, types, and errors — the architectural contract of the kyma engine."
+description = "Traits, types, and errors — the architectural contract of the pensieve engine."
 
 [lints]
 workspace = true

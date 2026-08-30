@@ -1,4 +1,4 @@
-// Shim: re-exports from @kyma-ai/client with backwards-compatible web wrappers.
+// Shim: re-exports from @pensieve-ai/client with backwards-compatible web wrappers.
 // getSetupStatus/getSetupProbe/signup are unauthenticated — re-exported directly.
 // ingestSample is transport-based — delegates to sessionClient.
 
@@ -9,7 +9,7 @@ export {
   type SetupStatus,
   type SetupProbe,
   type EngineRecommendation,
-} from "@kyma-ai/client";
+} from "@pensieve-ai/client";
 
 import { sessionClient } from "./client";
 

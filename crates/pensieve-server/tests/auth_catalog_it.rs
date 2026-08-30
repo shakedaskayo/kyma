@@ -16,7 +16,7 @@ fn sha256(data: &[u8]) -> Vec<u8> {
 
 #[tokio::test]
 async fn auth_user_and_token_crud_roundtrip() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let cat = &state.catalog;
 
     // --- users ---
@@ -25,7 +25,7 @@ async fn auth_user_and_token_crud_roundtrip() {
     assert_eq!(cat.count_users().await.unwrap(), 0);
 
     // Create a user.
-    let phc = kyma_server::auth::passwords::hash_password("hunter2").unwrap();
+    let phc = pensieve_server::auth::passwords::hash_password("hunter2").unwrap();
     let user = cat
         .create_user("alice", &phc, "admin")
         .await
@@ -80,7 +80,7 @@ async fn auth_user_and_token_crud_roundtrip() {
 
 #[tokio::test]
 async fn lookup_api_token_returns_none_for_expired_token() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let cat = &state.catalog;
 
     let raw_token = b"expired-token-secret-for-expiry-test";

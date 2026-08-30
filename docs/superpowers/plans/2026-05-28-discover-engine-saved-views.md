@@ -6,7 +6,7 @@
 
 **Architecture:** One additive migration (013), one catalog module (`saved_views.rs`) implementing CRUD against Postgres, one Axum handler module with four routes mounted under the existing **write** router for create/patch/delete and the **read** router for list. The `SavedViewLookup` trait introduced by Plan A is implemented by a thin adapter wrapping the catalog method.
 
-**Tech Stack:** Rust, Axum, sqlx (already in use by `kyma-catalog`), serde, uuid.
+**Tech Stack:** Rust, Axum, sqlx (already in use by `pensieve-catalog`), serde, uuid.
 
 **Reference spec:** `docs/superpowers/specs/2026-05-28-explore-discover-refactor-design.md` (section 4.2).
 
@@ -18,21 +18,21 @@
 
 | File                                                       | Action  | Responsibility                              |
 |------------------------------------------------------------|---------|---------------------------------------------|
-| `crates/kyma-catalog/migrations/013_saved_views.sql`       | Create  | Postgres table + indexes                    |
-| `crates/kyma-catalog/src/saved_views.rs`                   | Create  | CRUD methods against the table              |
-| `crates/kyma-catalog/src/lib.rs`                           | Modify  | `pub mod saved_views;` export               |
-| `crates/kyma-server/src/discover/saved_views_handler.rs`   | Create  | Axum CRUD handlers + types                  |
-| `crates/kyma-server/src/discover/saved_views_lookup.rs`    | Create  | `SavedViewLookup` adapter wiring the catalog into Plan A's resolver |
-| `crates/kyma-server/src/discover/mod.rs`                   | Modify  | `pub mod saved_views_handler; pub mod saved_views_lookup;` |
-| `crates/kyma-server/src/discover/handler.rs`               | Modify  | Pass `Some(&lookup)` into `resolve_scope` (replaces the `None`) |
-| `crates/kyma-server/src/lib.rs`                            | Modify  | Mount `GET /v1/explore/views` (read router) + `POST/PATCH/DELETE` (write router) |
-| `crates/kyma-server/tests/discover_saved_views_it.rs`      | Create  | Integration test: create → list → use as scope → delete |
+| `crates/pensieve-catalog/migrations/013_saved_views.sql`       | Create  | Postgres table + indexes                    |
+| `crates/pensieve-catalog/src/saved_views.rs`                   | Create  | CRUD methods against the table              |
+| `crates/pensieve-catalog/src/lib.rs`                           | Modify  | `pub mod saved_views;` export               |
+| `crates/pensieve-server/src/discover/saved_views_handler.rs`   | Create  | Axum CRUD handlers + types                  |
+| `crates/pensieve-server/src/discover/saved_views_lookup.rs`    | Create  | `SavedViewLookup` adapter wiring the catalog into Plan A's resolver |
+| `crates/pensieve-server/src/discover/mod.rs`                   | Modify  | `pub mod saved_views_handler; pub mod saved_views_lookup;` |
+| `crates/pensieve-server/src/discover/handler.rs`               | Modify  | Pass `Some(&lookup)` into `resolve_scope` (replaces the `None`) |
+| `crates/pensieve-server/src/lib.rs`                            | Modify  | Mount `GET /v1/explore/views` (read router) + `POST/PATCH/DELETE` (write router) |
+| `crates/pensieve-server/tests/discover_saved_views_it.rs`      | Create  | Integration test: create → list → use as scope → delete |
 
 ---
 
 ## Task 1: Migration
 
-**Files:** `crates/kyma-catalog/migrations/013_saved_views.sql`
+**Files:** `crates/pensieve-catalog/migrations/013_saved_views.sql`
 
 - [ ] **Step 1: Write the migration**
 
@@ -62,7 +62,7 @@ CREATE INDEX IF NOT EXISTS saved_views_by_owner
 - [ ] **Step 2: Confirm `pgcrypto` (for `gen_random_uuid`) is available**
 
 ```bash
-grep -rn 'CREATE EXTENSION' crates/kyma-catalog/migrations/
+grep -rn 'CREATE EXTENSION' crates/pensieve-catalog/migrations/
 ```
 
 If no migration enables `pgcrypto`, prepend to `013_saved_views.sql`:
@@ -74,7 +74,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 - [ ] **Step 3: Run the engine and watch migration apply**
 
 ```bash
-cargo run -p kyma-bin 2>&1 | grep -i 'migration\|saved_views' | head
+cargo run -p pensieve-bin 2>&1 | grep -i 'migration\|saved_views' | head
 ```
 
 Expected: a log line indicating `013_saved_views.sql` was applied. Stop the engine.
@@ -82,7 +82,7 @@ Expected: a log line indicating `013_saved_views.sql` was applied. Stop the engi
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-catalog/migrations/013_saved_views.sql
+git add crates/pensieve-catalog/migrations/013_saved_views.sql
 git commit -m "feat(catalog): migration 013 — saved_views table"
 ```
 
@@ -91,12 +91,12 @@ git commit -m "feat(catalog): migration 013 — saved_views table"
 ## Task 2: Catalog CRUD methods
 
 **Files:**
-- Create: `crates/kyma-catalog/src/saved_views.rs`
-- Modify: `crates/kyma-catalog/src/lib.rs`
+- Create: `crates/pensieve-catalog/src/saved_views.rs`
+- Modify: `crates/pensieve-catalog/src/lib.rs`
 
 - [ ] **Step 1: Add module export**
 
-In `crates/kyma-catalog/src/lib.rs`, near the other `pub mod` lines, add:
+In `crates/pensieve-catalog/src/lib.rs`, near the other `pub mod` lines, add:
 
 ```rust
 pub mod saved_views;
@@ -104,7 +104,7 @@ pub mod saved_views;
 
 - [ ] **Step 2: Write the CRUD module with failing tests**
 
-Write `crates/kyma-catalog/src/saved_views.rs`:
+Write `crates/pensieve-catalog/src/saved_views.rs`:
 
 ```rust
 //! CRUD against `saved_views`. All methods scope on (tenant_id, owner_subject).
@@ -312,15 +312,15 @@ pub async fn delete(
 - [ ] **Step 3: Compile-check**
 
 ```bash
-cargo check -p kyma-catalog
+cargo check -p pensieve-catalog
 ```
 
-Expected: compiles. If `chrono` or `uuid` aren't in scope, add `chrono = { workspace = true, features = ["serde"] }` and `uuid = { workspace = true }` to `crates/kyma-catalog/Cargo.toml`.
+Expected: compiles. If `chrono` or `uuid` aren't in scope, add `chrono = { workspace = true, features = ["serde"] }` and `uuid = { workspace = true }` to `crates/pensieve-catalog/Cargo.toml`.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-catalog/src/saved_views.rs crates/kyma-catalog/src/lib.rs crates/kyma-catalog/Cargo.toml
+git add crates/pensieve-catalog/src/saved_views.rs crates/pensieve-catalog/src/lib.rs crates/pensieve-catalog/Cargo.toml
 git commit -m "feat(catalog): saved_views CRUD module"
 ```
 
@@ -329,8 +329,8 @@ git commit -m "feat(catalog): saved_views CRUD module"
 ## Task 3: HTTP handlers
 
 **Files:**
-- Create: `crates/kyma-server/src/discover/saved_views_handler.rs`
-- Modify: `crates/kyma-server/src/discover/mod.rs`
+- Create: `crates/pensieve-server/src/discover/saved_views_handler.rs`
+- Modify: `crates/pensieve-server/src/discover/mod.rs`
 
 - [ ] **Step 1: Add module to `discover/mod.rs`**
 
@@ -341,12 +341,12 @@ pub mod saved_views_lookup;
 
 - [ ] **Step 2: Write the handler module**
 
-Write `crates/kyma-server/src/discover/saved_views_handler.rs`:
+Write `crates/pensieve-server/src/discover/saved_views_handler.rs`:
 
 ```rust
 //! CRUD endpoints for saved Discover views.
 //!
-//! Routes (registered in `kyma_server::lib`):
+//! Routes (registered in `pensieve_server::lib`):
 //!   GET    /v1/explore/views        → list (owner-scoped)
 //!   POST   /v1/explore/views        → create
 //!   PATCH  /v1/explore/views/:id    → update
@@ -356,7 +356,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use kyma_catalog::saved_views::{
+use pensieve_catalog::saved_views::{
     create as cat_create, delete as cat_delete, list as cat_list, update as cat_update,
     NewSavedView, SavedView, SavedViewError, UpdateSavedView,
 };
@@ -441,15 +441,15 @@ fn error(code: &str, msg: &str, status: StatusCode) -> Response {
 - [ ] **Step 3: Compile-check**
 
 ```bash
-cargo check -p kyma-server
+cargo check -p pensieve-server
 ```
 
-If `crate::auth::principal::{Principal, TenantId}` paths differ, run `grep -rn 'struct Principal\|struct TenantId' crates/kyma-server/src/auth/` and adjust the imports. The handler logic is unchanged.
+If `crate::auth::principal::{Principal, TenantId}` paths differ, run `grep -rn 'struct Principal\|struct TenantId' crates/pensieve-server/src/auth/` and adjust the imports. The handler logic is unchanged.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/src/discover/saved_views_handler.rs crates/kyma-server/src/discover/mod.rs
+git add crates/pensieve-server/src/discover/saved_views_handler.rs crates/pensieve-server/src/discover/mod.rs
 git commit -m "feat(discover): saved_views CRUD handlers"
 ```
 
@@ -458,7 +458,7 @@ git commit -m "feat(discover): saved_views CRUD handlers"
 ## Task 4: `SavedViewLookup` adapter
 
 **Files:**
-- Create: `crates/kyma-server/src/discover/saved_views_lookup.rs`
+- Create: `crates/pensieve-server/src/discover/saved_views_lookup.rs`
 
 - [ ] **Step 1: Write the adapter**
 
@@ -471,7 +471,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::scope::SavedViewLookup;
-use kyma_catalog::saved_views;
+use pensieve_catalog::saved_views;
 
 pub struct CatalogSavedViewLookup {
     pub pool: Arc<PgPool>,
@@ -497,7 +497,7 @@ impl SavedViewLookup for CatalogSavedViewLookup {
 
 - [ ] **Step 2: Wire it into the search handler**
 
-Edit `crates/kyma-server/src/discover/handler.rs` — locate the call:
+Edit `crates/pensieve-server/src/discover/handler.rs` — locate the call:
 
 ```rust
 let resolved = match resolve_scope(&payload.scope, state.catalog.clone(), None, max_sources).await {
@@ -541,12 +541,12 @@ pub struct QueryState {
 }
 ```
 
-and thread it through the constructor in `kyma-bin/src/main.rs` (search for where `QueryState { catalog, format, node_id }` is built).
+and thread it through the constructor in `pensieve-bin/src/main.rs` (search for where `QueryState { catalog, format, node_id }` is built).
 
 - [ ] **Step 3: Compile-check**
 
 ```bash
-cargo check -p kyma-server -p kyma-bin
+cargo check -p pensieve-server -p pensieve-bin
 ```
 
 Expected: compiles.
@@ -554,10 +554,10 @@ Expected: compiles.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/src/discover/saved_views_lookup.rs \
-        crates/kyma-server/src/discover/handler.rs \
-        crates/kyma-server/src/lib.rs \
-        crates/kyma-bin/src/main.rs
+git add crates/pensieve-server/src/discover/saved_views_lookup.rs \
+        crates/pensieve-server/src/discover/handler.rs \
+        crates/pensieve-server/src/lib.rs \
+        crates/pensieve-bin/src/main.rs
 git commit -m "feat(discover): wire SavedViewLookup into search handler"
 ```
 
@@ -566,7 +566,7 @@ git commit -m "feat(discover): wire SavedViewLookup into search handler"
 ## Task 5: Mount routes
 
 **Files:**
-- Modify: `crates/kyma-server/src/lib.rs`
+- Modify: `crates/pensieve-server/src/lib.rs`
 
 - [ ] **Step 1: Add the GET route to the read router**
 
@@ -602,25 +602,25 @@ pub fn discover_views_write_router(pool: Arc<sqlx::PgPool>) -> Router {
 }
 ```
 
-- [ ] **Step 3: Mount in `kyma-bin/src/main.rs`**
+- [ ] **Step 3: Mount in `pensieve-bin/src/main.rs`**
 
 Find where `dashboards_write_router(...)` is mounted with `require_role_middleware(Role::Write)` and add the same treatment for `discover_views_write_router`. Pattern:
 
 ```rust
-let discover_write = kyma_server::discover_views_write_router(pg_pool.clone())
+let discover_write = pensieve_server::discover_views_write_router(pg_pool.clone())
     .layer(require_role_middleware(Role::Write, auth_state.clone()));
 ```
 
 - [ ] **Step 4: Compile-check**
 
 ```bash
-cargo check -p kyma-server -p kyma-bin
+cargo check -p pensieve-server -p pensieve-bin
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-server/src/lib.rs crates/kyma-bin/src/main.rs
+git add crates/pensieve-server/src/lib.rs crates/pensieve-bin/src/main.rs
 git commit -m "feat(discover): mount saved_views routes (read + write)"
 ```
 
@@ -629,21 +629,21 @@ git commit -m "feat(discover): mount saved_views routes (read + write)"
 ## Task 6: Integration test
 
 **Files:**
-- Create: `crates/kyma-server/tests/discover_saved_views_it.rs`
+- Create: `crates/pensieve-server/tests/discover_saved_views_it.rs`
 
 - [ ] **Step 1: Write the test**
 
 ```rust
 use http::StatusCode;
-use kyma_server::discover::handler_test_support::seeded_state_two_dbs_two_tables;
-use kyma_server::router;
+use pensieve_server::discover::handler_test_support::seeded_state_two_dbs_two_tables;
+use pensieve_server::router;
 
 #[tokio::test]
 async fn saved_view_round_trip_and_scopes_search() {
     let state = seeded_state_two_dbs_two_tables().await;
     let app = router(state.clone())
-        .merge(kyma_server::discover_views_write_router(state.pg_pool.clone()));
-    let (addr, _shutdown) = kyma_server::test_support::spawn(app).await;
+        .merge(pensieve_server::discover_views_write_router(state.pg_pool.clone()));
+    let (addr, _shutdown) = pensieve_server::test_support::spawn(app).await;
     let client = reqwest::Client::new();
 
     // 1) Create
@@ -712,8 +712,8 @@ async fn saved_view_round_trip_and_scopes_search() {
 async fn duplicate_name_yields_409() {
     let state = seeded_state_two_dbs_two_tables().await;
     let app = router(state.clone())
-        .merge(kyma_server::discover_views_write_router(state.pg_pool.clone()));
-    let (addr, _shutdown) = kyma_server::test_support::spawn(app).await;
+        .merge(pensieve_server::discover_views_write_router(state.pg_pool.clone()));
+    let (addr, _shutdown) = pensieve_server::test_support::spawn(app).await;
     let client = reqwest::Client::new();
 
     let body = r#"{"name":"dup","sources":["obs.*"]}"#;
@@ -734,7 +734,7 @@ async fn duplicate_name_yields_409() {
 - [ ] **Step 2: Run the test**
 
 ```bash
-cargo test -p kyma-server --test discover_saved_views_it -- --nocapture
+cargo test -p pensieve-server --test discover_saved_views_it -- --nocapture
 ```
 
 Expected: 2 tests pass.
@@ -742,7 +742,7 @@ Expected: 2 tests pass.
 - [ ] **Step 3: Full suite**
 
 ```bash
-cargo test -p kyma-server -- --nocapture
+cargo test -p pensieve-server -- --nocapture
 ```
 
 Expected: all green (including Plan A's tests).
@@ -750,7 +750,7 @@ Expected: all green (including Plan A's tests).
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/kyma-server/tests/discover_saved_views_it.rs
+git add crates/pensieve-server/tests/discover_saved_views_it.rs
 git commit -m "test(discover): integration test for saved views CRUD + search wiring"
 ```
 

@@ -1,8 +1,8 @@
 ---
-source: crates/kyma-cli/src/ux/error.rs
+source: crates/pensieve-cli/src/ux/error.rs
 expression: "render_error(&err, false)"
 ---
 ✗ Error:
-  failed to reach kyma server
+  failed to reach pensieve server
   caused by: connection refused
-  hint: is `kyma serve` running? check the URL from `kyma status`
+  hint: is `pensieve serve` running? check the URL from `pensieve status`

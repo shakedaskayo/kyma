@@ -1,8 +1,8 @@
 import MonacoEditor, { type OnMount } from "@monaco-editor/react";
 import { useCallback, useEffect, useRef } from "react";
 import { registerKql, registerKqlCompletions, KQL_LANG_ID, type KqlSchema } from "./kql-language";
-import type { SchemaDoc } from "@kyma-ai/client";
-import { useKymaContext } from "../../provider/context";
+import type { SchemaDoc } from "@pensieve-ai/client";
+import { usePensieveContext } from "../../provider/context";
 
 export type { KqlSchema };
 
@@ -21,18 +21,18 @@ export type KqlEditorProps = {
 
 /** Monaco theme name used in dark mode.
  *
- * The theme is defined from KymaProvider theme tokens: we read `isDark` from
+ * The theme is defined from PensieveProvider theme tokens: we read `isDark` from
  * context and select either this custom dark theme or the built-in "vs" light
- * theme. Colors are matched to the Kyma dark palette (--kyma-card HSL triplet
+ * theme. Colors are matched to the Pensieve dark palette (--pensieve-card HSL triplet
  * ≈ "217.2 32.6% 9%"). A static dark/light pair is used here rather than
  * dynamically deriving colors from CSS vars because Monaco's theme API requires
  * hex strings resolved at definition time — runtime CSS var reads are not
- * possible. The dark palette is correct for Kyma's default dark theme. */
-const KYMA_DARK_THEME = "kyma-dark";
+ * possible. The dark palette is correct for Pensieve's default dark theme. */
+const PENSIEVE_DARK_THEME = "pensieve-dark";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function ensureKymaDarkTheme(monaco: any) {
-  monaco.editor.defineTheme(KYMA_DARK_THEME, {
+function ensurePensieveDarkTheme(monaco: any) {
+  monaco.editor.defineTheme(PENSIEVE_DARK_THEME, {
     base: "vs-dark",
     inherit: true,
     rules: [],
@@ -58,7 +58,7 @@ function ensureKymaDarkTheme(monaco: any) {
 }
 
 /**
- * Controlled Monaco-based KQL editor for the Kyma SDK.
+ * Controlled Monaco-based KQL editor for the Pensieve SDK.
  *
  * Tab/workspace orchestration is the caller's responsibility:
  *   - `value` / `onChange` carry the controlled query text.
@@ -67,7 +67,7 @@ function ensureKymaDarkTheme(monaco: any) {
  *     schema while the catalog is loading — completions degrade gracefully.
  */
 export function KqlEditor({ value, onChange, onRun, schema, database, knownValues }: KqlEditorProps) {
-  const { isDark } = useKymaContext();
+  const { isDark } = usePensieveContext();
   const onRunRef = useRef(onRun);
   useEffect(() => { onRunRef.current = onRun; }, [onRun]);
 
@@ -76,7 +76,7 @@ export function KqlEditor({ value, onChange, onRun, schema, database, knownValue
 
   const handleMount: OnMount = useCallback((editor, monaco) => {
     registerKql(monaco);
-    ensureKymaDarkTheme(monaco);
+    ensurePensieveDarkTheme(monaco);
     registerKqlCompletions(monaco, (): KqlSchema => {
       const { schema: s, database: db, knownValues: kv } = schemaRef.current;
       const dbDoc = s?.databases.find((d) => d.name === db);
@@ -98,7 +98,7 @@ export function KqlEditor({ value, onChange, onRun, schema, database, knownValue
     <MonacoEditor
       height="100%"
       language={KQL_LANG_ID}
-      theme={isDark ? KYMA_DARK_THEME : "vs"}
+      theme={isDark ? PENSIEVE_DARK_THEME : "vs"}
       value={value}
       onChange={(v) => onChange(v ?? "")}
       onMount={handleMount}

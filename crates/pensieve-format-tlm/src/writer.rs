@@ -13,9 +13,9 @@ use arrow::ipc::writer::FileWriter;
 use arrow_array::RecordBatch;
 use arrow_schema::Schema;
 use async_trait::async_trait;
-use kyma_core::errors::{FormatError, Result};
-use kyma_core::segment_format::{ExtentWriteResult, ExtentWriter};
-use kyma_core::types::{ExtentId, SchemaRef};
+use pensieve_core::errors::{FormatError, Result};
+use pensieve_core::segment_format::{ExtentWriteResult, ExtentWriter};
+use pensieve_core::types::{ExtentId, SchemaRef};
 use object_store::path::Path;
 use object_store::PutPayload;
 use std::sync::Arc;
@@ -127,7 +127,7 @@ impl ExtentWriter for TelemetryExtentWriter {
         store
             .put(&Path::from(object_path.as_str()), PutPayload::from(payload))
             .await
-            .map_err(|e| kyma_core::errors::StorageError::ObjectStore(e.to_string()))?;
+            .map_err(|e| pensieve_core::errors::StorageError::ObjectStore(e.to_string()))?;
 
         Ok(ExtentWriteResult {
             extent_id,
@@ -146,9 +146,9 @@ impl ExtentWriter for TelemetryExtentWriter {
 
 fn format_extent_path(prefix: &str, tenant_segment: &str, extent_id: &ExtentId) -> String {
     let core = if tenant_segment.is_empty() {
-        format!("extents/{extent_id}.kyma")
+        format!("extents/{extent_id}.pensieve")
     } else {
-        format!("{tenant_segment}/extents/{extent_id}.kyma")
+        format!("{tenant_segment}/extents/{extent_id}.pensieve")
     };
     if prefix.is_empty() {
         core
@@ -160,16 +160,16 @@ fn format_extent_path(prefix: &str, tenant_segment: &str, extent_id: &ExtentId) 
 #[cfg(test)]
 mod path_tests {
     use super::format_extent_path;
-    use kyma_core::types::ExtentId;
+    use pensieve_core::types::ExtentId;
     use uuid::Uuid;
 
     #[test]
     fn legacy_path_when_tenant_empty() {
         let id = ExtentId::from_uuid(Uuid::nil());
-        let path = format_extent_path("kyma", "", &id);
+        let path = format_extent_path("pensieve", "", &id);
         assert_eq!(
             path,
-            "kyma/extents/00000000-0000-0000-0000-000000000000.kyma"
+            "pensieve/extents/00000000-0000-0000-0000-000000000000.pensieve"
         );
     }
 
@@ -177,10 +177,10 @@ mod path_tests {
     fn tenant_segmented_path() {
         let id = ExtentId::from_uuid(Uuid::nil());
         let tenant = "11111111-1111-1111-1111-111111111111";
-        let path = format_extent_path("kyma", tenant, &id);
+        let path = format_extent_path("pensieve", tenant, &id);
         assert_eq!(
             path,
-            "kyma/11111111-1111-1111-1111-111111111111/extents/00000000-0000-0000-0000-000000000000.kyma"
+            "pensieve/11111111-1111-1111-1111-111111111111/extents/00000000-0000-0000-0000-000000000000.pensieve"
         );
     }
 }

@@ -5,7 +5,7 @@ description: Five non-negotiable architectural properties that turn distribution
 
 # The five invariants
 
-Every load-bearing decision in kyma traces back to one of five invariants.
+Every load-bearing decision in pensieve traces back to one of five invariants.
 Together, they're the difference between "this scales when we need it" and
 "we have to rewrite the engine to scale."
 
@@ -54,7 +54,7 @@ system, because they were never written for a non-distributed one.
 ## 4. Format is pluggable
 
 `SegmentFormat` is the trait boundary between storage and the rest of the
-engine. The shipping implementation, `kyma-format-tlm`, is one of many
+engine. The shipping implementation, `pensieve-format-tlm`, is one of many
 possible formats.
 
 **What this rules out.** Format-specific code in the planner, the executor,
@@ -67,7 +67,7 @@ interop — land as new trait implementations, not as engine-wide rewrites.
 
 ## 5. Parser is pluggable
 
-`QueryFrontend` is the trait boundary for query languages. `kyma-kql` is one
+`QueryFrontend` is the trait boundary for query languages. `pensieve-kql` is one
 frontend; SQL, PromQL, and custom DSLs layer on as peers.
 
 **What this rules out.** Hard-coding KQL semantics into the optimizer. A

@@ -1,6 +1,6 @@
 //! Apply curation [`FileAction`]s to a Claude Code project memory dir.
 //!
-//! The decision engine (`kyma_server::agent::cc_curate`) plans; this module
+//! The decision engine (`pensieve_server::agent::cc_curate`) plans; this module
 //! owns the only code that touches `~/.claude/projects/<slug>/memory/`:
 //!
 //! - **Atomic**: every write is temp-file + rename in the same directory; a
@@ -8,10 +8,10 @@
 //! - **Never deletes**: archiving moves a file into `memory/archive/` with a
 //!   tombstone frontmatter (`archived_at`, `archived_reason`) and the full
 //!   body preserved.
-//! - **User edits win**: a kyma-authored file whose on-disk body no longer
+//! - **User edits win**: a pensieve-authored file whose on-disk body no longer
 //!   matches its stamped `content_hash` was edited by the user — it is never
 //!   overwritten (ingest pulls the edit back instead).
-//! - **Session-safe**: a fresh `.kyma-curate.lock` aborts a concurrent pass;
+//! - **Session-safe**: a fresh `.pensieve-curate.lock` aborts a concurrent pass;
 //!   an active Claude Code session for the project (per
 //!   `~/.claude/sessions/*.json`) defers writeback to the next pass.
 //! - **Audited**: every pass appends one JSONL line (plan + outcome) to the
@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Result;
-use kyma_server::agent::cc_curate::FileAction;
+use pensieve_server::agent::cc_curate::FileAction;
 
 /// Applier knobs, resolved from env by callers.
 pub(crate) struct WritebackConfig {
@@ -135,16 +135,16 @@ pub(crate) fn apply_actions(
             }
             FileAction::SetIndex { entries } => {
                 report.applied[i] = true; // no guard stamps reference the index
-                let path = memory_dir.join(kyma_ccmem::MEMORY_INDEX_FILE);
+                let path = memory_dir.join(pensieve_ccmem::MEMORY_INDEX_FILE);
                 let raw = std::fs::read_to_string(&path).ok();
                 let mut idx = raw.as_deref().map_or_else(
-                    kyma_ccmem::index::MemoryIndex::new_empty,
-                    kyma_ccmem::index::MemoryIndex::parse,
+                    pensieve_ccmem::index::MemoryIndex::new_empty,
+                    pensieve_ccmem::index::MemoryIndex::parse,
                 );
                 // Defer to the user: a file they list themselves is not
                 // double-listed in the managed region.
                 let user_files = idx.user_files();
-                let managed: Vec<kyma_ccmem::index::ManagedEntry> = entries
+                let managed: Vec<pensieve_ccmem::index::ManagedEntry> = entries
                     .iter()
                     .filter(|e| !user_files.contains(&e.file))
                     // No dead links: an indexed file the user deleted by hand
@@ -152,7 +152,7 @@ pub(crate) fn apply_actions(
                     // freshly promoted files exist by now; in dry-run they
                     // don't, and nothing is written anyway.)
                     .filter(|e| cfg.dry_run || memory_dir.join(&e.file).is_file())
-                    .map(|e| kyma_ccmem::index::ManagedEntry {
+                    .map(|e| pensieve_ccmem::index::ManagedEntry {
                         title: e.title.clone(),
                         file: e.file.clone(),
                         hook: e.hook.clone(),
@@ -162,7 +162,7 @@ pub(crate) fn apply_actions(
                 // alone (don't litter empty marker blocks everywhere).
                 let has_markers = raw
                     .as_deref()
-                    .is_some_and(|r| r.contains(kyma_ccmem::MANAGED_BEGIN));
+                    .is_some_and(|r| r.contains(pensieve_ccmem::MANAGED_BEGIN));
                 if managed.is_empty() && !has_markers {
                     continue;
                 }
@@ -185,25 +185,25 @@ pub(crate) fn apply_actions(
 enum WriteVerdict {
     /// Target absent → plain write.
     Fresh,
-    /// Target is an untouched kyma file with this exact content.
+    /// Target is an untouched pensieve file with this exact content.
     Unchanged(String),
-    /// Target was edited by the user (or isn't kyma's at all) — hands off.
+    /// Target was edited by the user (or isn't pensieve's at all) — hands off.
     UserOwned,
 }
 
-/// The user-edit guard: only overwrite a file that kyma authored AND whose
+/// The user-edit guard: only overwrite a file that pensieve authored AND whose
 /// on-disk body still matches its stamped `content_hash`.
 fn write_guard(target: &Path) -> WriteVerdict {
     let Ok(raw) = std::fs::read_to_string(target) else {
         return WriteVerdict::Fresh;
     };
-    let Some(parsed) = kyma_ccmem::frontmatter::parse(&raw) else {
+    let Some(parsed) = pensieve_ccmem::frontmatter::parse(&raw) else {
         return WriteVerdict::UserOwned; // unparseable → assume user's
     };
-    if !parsed.is_kyma_authored() {
+    if !parsed.is_pensieve_authored() {
         return WriteVerdict::UserOwned;
     }
-    let on_disk = kyma_ccmem::hash::content_hash(
+    let on_disk = pensieve_ccmem::hash::content_hash(
         parsed.front.name.as_deref().unwrap_or_default(),
         parsed.front.cc_type.as_deref(),
         &parsed.body,
@@ -219,16 +219,16 @@ fn write_guard(target: &Path) -> WriteVerdict {
 /// durably in place before the original is removed — never lossy.
 fn archive_file(memory_dir: &Path, src: &Path, reason: &str, now: &str) -> Result<()> {
     let raw = std::fs::read_to_string(src)?;
-    let tombstone = match kyma_ccmem::frontmatter::parse(&raw) {
+    let tombstone = match pensieve_ccmem::frontmatter::parse(&raw) {
         Some(mut parsed) => {
             parsed.front.archived_at = Some(now.to_string());
             parsed.front.archived_reason = Some(reason.to_string());
-            kyma_ccmem::frontmatter::render(&parsed)
+            pensieve_ccmem::frontmatter::render(&parsed)
         }
         // Unparseable file: move it as-is rather than inventing frontmatter.
         None => raw,
     };
-    let archive_dir = memory_dir.join(kyma_ccmem::ARCHIVE_DIR);
+    let archive_dir = memory_dir.join(pensieve_ccmem::ARCHIVE_DIR);
     std::fs::create_dir_all(&archive_dir)?;
     let dest = archive_dir.join(src.file_name().unwrap_or_default());
     atomic_write(&dest, &tombstone)?;
@@ -239,7 +239,7 @@ fn archive_file(memory_dir: &Path, src: &Path, reason: &str, now: &str) -> Resul
 /// Temp-file + rename in the same directory (atomic on POSIX), fsynced.
 fn atomic_write(path: &Path, content: &str) -> Result<()> {
     use std::io::Write as _;
-    let tmp = path.with_extension(format!("kyma-tmp-{}", std::process::id()));
+    let tmp = path.with_extension(format!("pensieve-tmp-{}", std::process::id()));
     {
         let mut f = std::fs::File::create(&tmp)?;
         f.write_all(content.as_bytes())?;
@@ -249,7 +249,7 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
     Ok(())
 }
 
-/// Advisory lock: exclusive-create `.kyma-curate.lock`; a fresh lock loses,
+/// Advisory lock: exclusive-create `.pensieve-curate.lock`; a fresh lock loses,
 /// a stale one (older than the TTL) is reclaimed. Released on drop.
 struct LockGuard(PathBuf);
 
@@ -261,7 +261,7 @@ impl Drop for LockGuard {
 
 fn acquire_lock(memory_dir: &Path, ttl: Duration) -> Option<LockGuard> {
     std::fs::create_dir_all(memory_dir).ok()?;
-    let path = memory_dir.join(".kyma-curate.lock");
+    let path = memory_dir.join(".pensieve-curate.lock");
     let try_create = |p: &Path| {
         std::fs::OpenOptions::new()
             .write(true)

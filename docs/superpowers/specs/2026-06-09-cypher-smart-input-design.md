@@ -8,22 +8,22 @@
 Piece 3 of the shared-substrate program (4→1→3→2). Pieces 4 + 1 landed. The user's framing: "Cypher in the smart input (new parser → KQL graph ops)."
 
 ## Problem
-`kyma-kql` already has graph ops (`make-graph`, `graph-match` single-hop, `graph-traverse`), and the smart input detects `search`/`kql`/`sql` (`detectMode.ts`) routing by `content-type`. There is **no Cypher**. Users who know Cypher can't query the graph in the familiar `MATCH (a)-[r]->(b) RETURN …` form.
+`pensieve-kql` already has graph ops (`make-graph`, `graph-match` single-hop, `graph-traverse`), and the smart input detects `search`/`kql`/`sql` (`detectMode.ts`) routing by `content-type`. There is **no Cypher**. Users who know Cypher can't query the graph in the familiar `MATCH (a)-[r]->(b) RETURN …` form.
 
 ## Decisions (locked)
 | Decision | Choice |
 |---|---|
-| Translation target | **Cypher → KQL** (reuse `graph-match`), not Cypher → SQL. A new `cypher_to_kql(cypher, binding)` in `kyma-kql` emits a KQL string; the existing `kql_to_sql_with_schemas` finishes the job. |
+| Translation target | **Cypher → KQL** (reuse `graph-match`), not Cypher → SQL. A new `cypher_to_kql(cypher, binding)` in `pensieve-kql` emits a KQL string; the existing `kql_to_sql_with_schemas` finishes the job. |
 | Subset (v1) | `MATCH (a[:Label])-[r[:TYPE]]->(b[:Label]) [WHERE <preds>] RETURN <proj> [LIMIT n]` — single-hop, directed or undirected (`-[r]-`), node labels, rel types, `WHERE` simple comparisons joined by `AND`, `RETURN var.prop [AS alias]` or bare `var`, `LIMIT`. Read-only. |
 | Deferred (clear ParseError) | Multi-hop `(a)-->(b)-->(c)`, variable-length `-[*1..3]->`, `OPTIONAL MATCH`, multiple `MATCH`, `WITH`, aggregation, `ORDER BY`, mutations (`CREATE/SET/DELETE/MERGE`), `shortestPath`. Each yields a precise "unsupported in v1" error, not a silent wrong result. |
 | Graph binding | A Cypher query runs against ONE registered graph. The server resolves it from an `x-graph` header (`"db/graph"`); if absent and exactly one graph is in scope, use it; if ambiguous, error. The resolved `GraphSpec` (node/edge tables + id/src/dst/type/label cols) becomes a `GraphBinding` passed to `cypher_to_kql`. |
 | `graph-match` | Stays single-hop in v1 (no multi-hop extension) — keeps the change contained; multi-hop Cypher is the documented follow-up. |
-| UI | `detectMode.ts` (separate file) gains `cypher`; the dispatch in `KymaExplore.tsx` (user is co-editing it) gets the **minimal** wiring, applied carefully on top of their WIP, as the last task. |
+| UI | `detectMode.ts` (separate file) gains `cypher`; the dispatch in `PensieveExplore.tsx` (user is co-editing it) gets the **minimal** wiring, applied carefully on top of their WIP, as the last task. |
 
 ## Architecture
 
-### 1. `kyma-kql`: Cypher → KQL translator
-New `crates/kyma-kql/src/cypher.rs`, re-exported from `lib.rs`:
+### 1. `pensieve-kql`: Cypher → KQL translator
+New `crates/pensieve-kql/src/cypher.rs`, re-exported from `lib.rs`:
 ```rust
 pub struct GraphBinding {
     pub edge_table: String,
@@ -52,7 +52,7 @@ pub fn cypher_to_kql(cypher: &str, g: &GraphBinding) -> Result<String, ParseErro
 - Pure function: no catalog/IO. Unit-testable with hand-built `GraphBinding`s. Reuses `ParseError`.
 
 ### 2. Server: `application/x-cypher` routing
-In `crates/kyma-server/src/lib.rs` `query_handler` (the content-type branch ~810):
+In `crates/pensieve-server/src/lib.rs` `query_handler` (the content-type branch ~810):
 - Add `else if content_type.starts_with("application/x-cypher")`:
   - Resolve the target graph: read `x-graph` header (`db/graph`), else the single in-scope graph, else 400 "specify a graph via x-graph".
   - `catalog.get_graph(db, name)` → `GraphSpec` → build `GraphBinding` (map the spec's column roles; `label_col` from the spec).
@@ -63,7 +63,7 @@ In `crates/kyma-server/src/lib.rs` `query_handler` (the content-type branch ~810
 ### 3. Smart input: detection + dispatch
 - `packages/react/src/explore/detectMode.ts`: `ExploreMode` gains `"cypher"`. Detect when the trimmed input matches `^\s*(OPTIONAL\s+)?MATCH\b` (case-insensitive) → `"cypher"`. Add `modeLabel("cypher") = "Cypher"`.
 - `packages/client/src/query.ts`: `language` gains `"cypher"` → `content-type: application/x-cypher`; pass the selected graph as the `x-graph` header (thread a `graph?` arg through `runQuery`/the ticket).
-- `packages/react/src/explore/KymaExplore.tsx` (minimal, careful, last): route `mode === "cypher"` to `execute({ ..., language: "cypher", graph })`; show the `Cypher` badge; supply the current graph context (reuse the page's graph/database scope, or default). Keep the user's `autoRun` WIP intact.
+- `packages/react/src/explore/PensieveExplore.tsx` (minimal, careful, last): route `mode === "cypher"` to `execute({ ..., language: "cypher", graph })`; show the `Cypher` badge; supply the current graph context (reuse the page's graph/database scope, or default). Keep the user's `autoRun` WIP intact.
 
 ## Error handling
 - Unsupported construct → `ParseError("cypher: <feature> is not supported yet (v1 single-hop MATCH)")`. Never silently mistranslate.
@@ -71,9 +71,9 @@ In `crates/kyma-server/src/lib.rs` `query_handler` (the content-type branch ~810
 - Unknown node/edge prop → let the SQL layer surface it (same as KQL).
 
 ## Testing
-- **kyma-kql unit (the core):** `cypher_to_kql` over a fixed `GraphBinding` — single-hop directed; `:Label`/`:TYPE` filters; `WHERE a.p = 'x' AND b.q > 3`; `RETURN a.name AS n, b.id`; `LIMIT`; undirected; bare-var RETURN. Each asserts the emitted KQL string (and that it then compiles via `kql_to_sql_with_schemas`). Unsupported constructs (multi-hop, `CREATE`, `*`) return the precise error.
+- **pensieve-kql unit (the core):** `cypher_to_kql` over a fixed `GraphBinding` — single-hop directed; `:Label`/`:TYPE` filters; `WHERE a.p = 'x' AND b.q > 3`; `RETURN a.name AS n, b.id`; `LIMIT`; undirected; bare-var RETURN. Each asserts the emitted KQL string (and that it then compiles via `kql_to_sql_with_schemas`). Unsupported constructs (multi-hop, `CREATE`, `*`) return the precise error.
 - **Server integration:** POST `/v1/query` with `content-type: application/x-cypher` + `x-graph` over a seeded graph returns rows; missing-graph → 400; bad Cypher → 400 with message.
-- **Client/React:** `detectMode("MATCH (a)-[r]->(b) RETURN a")` → `"cypher"`; `runQuery({language:"cypher", graph})` sends `application/x-cypher` + `x-graph`. KymaExplore renders cypher results (reuses the table renderer).
+- **Client/React:** `detectMode("MATCH (a)-[r]->(b) RETURN a")` → `"cypher"`; `runQuery({language:"cypher", graph})` sends `application/x-cypher` + `x-graph`. PensieveExplore renders cypher results (reuses the table renderer).
 
 ## Out of scope / deferred
 - Multi-hop / variable-length paths (+ extending `graph-match` to N-hop).
@@ -81,8 +81,8 @@ In `crates/kyma-server/src/lib.rs` `query_handler` (the content-type branch ~810
 - Cross-graph Cypher (one graph per query in v1).
 
 ## File touch list
-- `crates/kyma-kql/src/cypher.rs` (new) + `crates/kyma-kql/src/lib.rs` (re-export).
-- `crates/kyma-server/src/lib.rs` (`x-cypher` branch + graph resolution).
+- `crates/pensieve-kql/src/cypher.rs` (new) + `crates/pensieve-kql/src/lib.rs` (re-export).
+- `crates/pensieve-server/src/lib.rs` (`x-cypher` branch + graph resolution).
 - `packages/react/src/explore/detectMode.ts` (+ test).
 - `packages/client/src/query.ts` (`cypher` language + `x-graph`).
-- `packages/react/src/explore/KymaExplore.tsx` (minimal dispatch + badge — careful, on top of co-working WIP).
+- `packages/react/src/explore/PensieveExplore.tsx` (minimal dispatch + badge — careful, on top of co-working WIP).

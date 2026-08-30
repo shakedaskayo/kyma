@@ -2,8 +2,8 @@
 
 use arrow_array::{RecordBatch, RecordBatchReader};
 use bytes::Bytes;
-use kyma_core::errors::{FormatError, Result, StorageError};
-use kyma_core::segment_format::{
+use pensieve_core::errors::{FormatError, Result, StorageError};
+use pensieve_core::segment_format::{
     BlockId, BlockPredicate, ColumnId, ExtentMetadata, ExtentReader, OpenExtentInput,
 };
 use object_store::path::Path;

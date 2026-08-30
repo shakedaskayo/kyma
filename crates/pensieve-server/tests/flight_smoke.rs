@@ -1,15 +1,15 @@
-//! Arrow Flight smoke test — runs against a live `kyma` binary.
+//! Arrow Flight smoke test — runs against a live `pensieve` binary.
 //!
 //! Expects:
 //!   - docker-compose stack up (Postgres + MinIO)
-//!   - `target/debug/kyma` present
+//!   - `target/debug/pensieve` present
 //!   - target table `default.flight_t` created + populated (see the
 //!     companion shell script `scripts/test-flight.sh` for fixture setup)
 //!
 //! This test uses the `arrow-flight` Rust client directly, avoiding the
 //! pyarrow dependency and Python version compatibility issues.
 //!
-//! Ignored by default — run with `cargo test -p kyma-server --test flight_smoke -- --ignored`.
+//! Ignored by default — run with `cargo test -p pensieve-server --test flight_smoke -- --ignored`.
 
 use arrow_array::RecordBatch;
 use arrow_flight::decode::FlightRecordBatchStream;
@@ -50,7 +50,7 @@ async fn query(
 }
 
 #[tokio::test]
-#[ignore = "requires a live kyma server on 127.0.0.1:9090"]
+#[ignore = "requires a live pensieve server on 127.0.0.1:9090"]
 async fn flight_sql_roundtrip() {
     let batches = query(
         "http://127.0.0.1:9090",
@@ -73,7 +73,7 @@ async fn flight_sql_roundtrip() {
 }
 
 #[tokio::test]
-#[ignore = "requires a live kyma server on 127.0.0.1:9090"]
+#[ignore = "requires a live pensieve server on 127.0.0.1:9090"]
 async fn flight_kql_roundtrip() {
     let batches = query(
         "http://127.0.0.1:9090",

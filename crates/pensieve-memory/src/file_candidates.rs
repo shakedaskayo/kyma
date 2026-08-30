@@ -1,8 +1,8 @@
 //! File-candidate graph (E5).
 //!
-//! Coding agents (and the `kyma scrape`/watch worker) contribute files they
+//! Coding agents (and the `pensieve scrape`/watch worker) contribute files they
 //! read; this module extracts their structure with the tree-sitter parser
-//! (`kyma-codeparse`) and writes **candidate** `File` / `Symbol` / `Module`
+//! (`pensieve-codeparse`) and writes **candidate** `File` / `Symbol` / `Module`
 //! nodes + `DEFINES` / `IMPORTS` / `REFERENCES` edges into an isolated
 //! `file_candidates` graph — reusing the memory machinery (embeddings, recall,
 //! graph registration) via [`MemoryWriter::with_database`]. A dreaming pipeline
@@ -101,12 +101,12 @@ pub async fn contribute(writer: &MemoryWriter, req: &ContributeFile) -> Result<F
     let fid = file_node_id(realm, req.repo.as_deref(), &req.path);
     let now = chrono::Utc::now().to_rfc3339();
 
-    let lang = kyma_codeparse::Lang::from_path(&req.path);
+    let lang = pensieve_codeparse::Lang::from_path(&req.path);
     let (symbols, imports, calls) = match lang {
         Some(l) => (
-            kyma_codeparse::extract_symbols(l, &req.content),
-            kyma_codeparse::extract_imports(l, &req.content),
-            kyma_codeparse::extract_calls(l, &req.content),
+            pensieve_codeparse::extract_symbols(l, &req.content),
+            pensieve_codeparse::extract_imports(l, &req.content),
+            pensieve_codeparse::extract_calls(l, &req.content),
         ),
         None => (vec![], vec![], vec![]),
     };
@@ -171,8 +171,8 @@ pub async fn contribute(writer: &MemoryWriter, req: &ContributeFile) -> Result<F
     let mut sym_id_by_name: HashMap<String, String> = HashMap::new();
     for s in &symbols {
         let kind = match s.kind {
-            kyma_codeparse::SymbolKind::Function => "func",
-            kyma_codeparse::SymbolKind::Class => "class",
+            pensieve_codeparse::SymbolKind::Function => "func",
+            pensieve_codeparse::SymbolKind::Class => "class",
         };
         let sid = symbol_node_id(&fid, &s.name, s.line, kind);
         sym_id_by_name.entry(s.name.clone()).or_insert_with(|| sid.clone());
@@ -216,8 +216,8 @@ pub async fn contribute(writer: &MemoryWriter, req: &ContributeFile) -> Result<F
     let mut edge_rows: Vec<Value> = Vec::new();
     for s in &symbols {
         let kind = match s.kind {
-            kyma_codeparse::SymbolKind::Function => "func",
-            kyma_codeparse::SymbolKind::Class => "class",
+            pensieve_codeparse::SymbolKind::Function => "func",
+            pensieve_codeparse::SymbolKind::Class => "class",
         };
         let sid = symbol_node_id(&fid, &s.name, s.line, kind);
         edge_rows.push(edge_row(&fid, &sid, "DEFINES", realm, None, None, &now));

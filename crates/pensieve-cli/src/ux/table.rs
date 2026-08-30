@@ -2,7 +2,7 @@
 
 use comfy_table::{Cell, Color, ContentArrangement, Table};
 
-/// Returns a table pre-configured with kyma's standard look: rounded
+/// Returns a table pre-configured with pensieve's standard look: rounded
 /// UTF-8 borders, dynamic content arrangement, and the given header row.
 pub(crate) fn table(headers: Vec<&str>) -> Table {
     let mut t = Table::new();

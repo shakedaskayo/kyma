@@ -1,4 +1,4 @@
-//! End-to-end retrieval benchmark against a RUNNING kyma engine over HTTP.
+//! End-to-end retrieval benchmark against a RUNNING pensieve engine over HTTP.
 //!
 //! Flow:
 //!   1. Generate a seeded clustered-gaussian dataset for the tier
@@ -6,7 +6,7 @@
 //!   2. Ingest via `POST /v1/ingest` NDJSON in batches. Rows are
 //!      `{"id": "v0000123", "text": "...", "embedding": [f32; dim]}` —
 //!      the vector column is named `embedding`, matching the convention in
-//!      `scripts/test-vectors.sh` and `kyma-server/src/search` (the unified
+//!      `scripts/test-vectors.sh` and `pensieve-server/src/search` (the unified
 //!      search vector leg + `cosine_distance` UDF operate on
 //!      `FixedSizeList<Float32>` columns).
 //!   3. Run N seeded queries via `POST /v1/query` SQL:
@@ -22,13 +22,13 @@
 //! The target table must already exist with a `vector(dim)` column —
 //! ingest auto-create infers plain Utf8 columns, which `cosine_distance`
 //! can't use. `scripts/retrieval-bench.sh` provisions it via
-//! `kyma-cli create-table --schema 'id:string,text:string,embedding:vector(384)'`.
+//! `pensieve-cli create-table --schema 'id:string,text:string,embedding:vector(384)'`.
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, ValueEnum};
-use kyma_retrieval_eval::datasets::{clustered_gaussian, queries_from_dataset};
-use kyma_retrieval_eval::metrics::{mean, recall_at_k, LatencyStats};
-use kyma_retrieval_eval::oracle::{ExactOracle, Metric};
+use pensieve_retrieval_eval::datasets::{clustered_gaussian, queries_from_dataset};
+use pensieve_retrieval_eval::metrics::{mean, recall_at_k, LatencyStats};
+use pensieve_retrieval_eval::oracle::{ExactOracle, Metric};
 use serde::Serialize;
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
@@ -64,15 +64,15 @@ impl Tier {
 #[derive(Debug, Parser)]
 #[command(
     name = "retrieval_bench",
-    about = "Retrieval-quality + latency benchmark against a running kyma engine"
+    about = "Retrieval-quality + latency benchmark against a running pensieve engine"
 )]
 struct Args {
     /// Engine base URL (scheme optional; bare host:port accepted).
-    #[arg(long, env = "KYMA_HTTP_ADDR", default_value = "http://127.0.0.1:8080")]
+    #[arg(long, env = "PENSIEVE_HTTP_ADDR", default_value = "http://127.0.0.1:8080")]
     engine_url: String,
 
     /// Bearer token for engines with auth enabled.
-    #[arg(long, env = "KYMA_AUTH_TOKEN")]
+    #[arg(long, env = "PENSIEVE_AUTH_TOKEN")]
     auth_token: Option<String>,
 
     /// Dataset tier: pr=100k, nightly=1M, release=10M vectors.
@@ -141,7 +141,7 @@ struct Engine {
 
 impl Engine {
     fn new(url: &str, auth: Option<String>) -> Result<Self> {
-        // load-test.sh exports KYMA_HTTP_ADDR=127.0.0.1:8080 (no scheme);
+        // load-test.sh exports PENSIEVE_HTTP_ADDR=127.0.0.1:8080 (no scheme);
         // accept both forms.
         let base = if url.starts_with("http://") || url.starts_with("https://") {
             url.trim_end_matches('/').to_string()
@@ -414,8 +414,8 @@ mod tests {
     fn engine_url_normalization() {
         let e = Engine::new("127.0.0.1:8080", None).unwrap();
         assert_eq!(e.base, "http://127.0.0.1:8080");
-        let e = Engine::new("https://kyma.example.com/", Some("t".into())).unwrap();
-        assert_eq!(e.base, "https://kyma.example.com");
+        let e = Engine::new("https://pensieve.example.com/", Some("t".into())).unwrap();
+        assert_eq!(e.base, "https://pensieve.example.com");
     }
 
     #[test]

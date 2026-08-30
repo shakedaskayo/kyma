@@ -7,9 +7,9 @@
 //!   * columnar **tables** — by explicit per-table override, then source, then
 //!     global default.
 //!
-//! `None` at every level means *retain forever*. Lives in `kyma-core` (a plain
-//! serde struct + pure resolver) so both the settings API (kyma-server) and the
-//! retention worker (kyma-compaction) use it without a dependency cycle.
+//! `None` at every level means *retain forever*. Lives in `pensieve-core` (a plain
+//! serde struct + pure resolver) so both the settings API (pensieve-server) and the
+//! retention worker (pensieve-compaction) use it without a dependency cycle.
 
 use std::collections::HashMap;
 
@@ -60,7 +60,7 @@ mod tests {
         RetentionSettings {
             global_default_days: Some(90),
             per_source_days: HashMap::from([("github".to_string(), 30)]),
-            per_table_days: HashMap::from([("kyma.events".to_string(), 7)]),
+            per_table_days: HashMap::from([("pensieve.events".to_string(), 7)]),
             per_artifact_class_days: HashMap::from([("log".to_string(), 14)]),
         }
     }
@@ -79,16 +79,16 @@ mod tests {
     #[test]
     fn table_precedence_table_over_source_over_global() {
         let s = s();
-        assert_eq!(s.table_days("kyma.events", Some("github")), Some(7));
-        assert_eq!(s.table_days("kyma.other", Some("github")), Some(30));
-        assert_eq!(s.table_days("kyma.other", None), Some(90));
+        assert_eq!(s.table_days("pensieve.events", Some("github")), Some(7));
+        assert_eq!(s.table_days("pensieve.other", Some("github")), Some(30));
+        assert_eq!(s.table_days("pensieve.other", None), Some(90));
     }
 
     #[test]
     fn empty_settings_retain_forever() {
         let s = RetentionSettings::default();
         assert_eq!(s.artifact_days("github", "log"), None);
-        assert_eq!(s.table_days("kyma.events", Some("github")), None);
+        assert_eq!(s.table_days("pensieve.events", Some("github")), None);
     }
 
     #[test]

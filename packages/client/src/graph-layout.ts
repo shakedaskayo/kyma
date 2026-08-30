@@ -281,9 +281,9 @@ export function forceDirectedLayout(
   return positions;
 }
 
-// Color scheme for node labels — kyma domain palette
+// Color scheme for node labels — pensieve domain palette
 const LABEL_COLORS: Record<string, string> = {
-  // Kyma core domain
+  // Pensieve core domain
   Table: "#7ed957",
   Column: "#60a5fa",
   Database: "#a78bfa",

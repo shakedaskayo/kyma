@@ -6,8 +6,8 @@ import ForceGraph2D, {
 } from "react-force-graph-2d";
 import { Plus, Minus, Maximize2 } from "lucide-react";
 
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
-import { computeLayout, type LayoutAlgorithm } from "@kyma-ai/client";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
+import { computeLayout, type LayoutAlgorithm } from "@pensieve-ai/client";
 import {
   getRelationshipFamilyColor,
   lighten,
@@ -20,7 +20,7 @@ import { detectCommunities, convexHull, padHull } from "./graph-community";
 import { resolveGraphIcon, resolveNodeColor, getIconImage, type ResolvedIcon } from "./graph-icons";
 import { paletteFor } from "../internal/data-palette";
 import { useGraphStore } from "./graph-store";
-import { useKymaContext } from "../provider/context";
+import { usePensieveContext } from "../provider/context";
 
 export interface GraphCanvasProps {
   nodes: GraphNode[];
@@ -123,7 +123,7 @@ export function GraphCanvas({
 }: GraphCanvasProps) {
   const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
   const { ref: containerRef, size } = useSize<HTMLDivElement>();
-  const { isDark } = useKymaContext();
+  const { isDark } = usePensieveContext();
 
   // Fit the view, then clamp over-zoom — a single/sparse graph would otherwise
   // zoom so far that one glowing node fills the whole screen.
@@ -215,7 +215,7 @@ export function GraphCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, edges]);
 
-  // Precompute positions with kyma's tuned layout algorithms for EVERY layout
+  // Precompute positions with pensieve's tuned layout algorithms for EVERY layout
   // (including "force" — the organic spread cloud) and pin them. Passing the
   // full nodes (with `labels`) lets force/tree grouping work. We rely on these
   // deterministic, well-distributed positions rather than react-force-graph's

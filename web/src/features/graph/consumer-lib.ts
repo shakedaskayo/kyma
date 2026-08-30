@@ -2,8 +2,8 @@
  * Pure helpers + tuning constants for the live-consumers stream. Maps raw
  * backend activity frames into the SDK's `LiveConsumer` / `ConsumerBeam` shapes.
  */
-import { resolveConsumerKind } from "@kyma-ai/react/graph";
-import type { ConsumerBeam, ConsumerVerb, LiveConsumer } from "@kyma-ai/react/graph";
+import { resolveConsumerKind } from "@pensieve-ai/react/graph";
+import type { ConsumerBeam, ConsumerVerb, LiveConsumer } from "@pensieve-ai/react/graph";
 import type { ConsumerActivityFrame } from "./consumer-live";
 
 /** A consumer is "active" (bright, beam-eligible) within this window. */

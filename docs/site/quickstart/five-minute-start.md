@@ -1,6 +1,6 @@
 ---
 title: Five-minute start
-description: Boot kyma with docker compose, send your first row over REST, and run your first KQL query — start to finish in five minutes.
+description: Boot pensieve with docker compose, send your first row over REST, and run your first KQL query — start to finish in five minutes.
 ---
 
 # Five-minute start
@@ -19,22 +19,22 @@ That is the entire list. No language toolchain, no cloud account.
 ## Step 1: Boot
 
 ```bash
-git clone https://github.com/shakedaskayo/kyma kyma
-cd kyma
+git clone https://github.com/shakedaskayo/pensieve pensieve
+cd pensieve
 docker compose up -d
 ```
 
 Four containers come up:
 
-- **kyma** — the engine (HTTP `8080`, Arrow Flight gRPC `9090`).
+- **pensieve** — the engine (HTTP `8080`, Arrow Flight gRPC `9090`).
 - **postgres** — the externalized catalog (`5433` on the host).
 - **minio** — S3-compatible object storage (`9000`, console at `9001`).
 - **redpanda** — Kafka-compatible broker for the Kafka ingest path (`9092`).
 
-Wait for the kyma container to log `http server listening`:
+Wait for the pensieve container to log `http server listening`:
 
 ```bash
-docker compose logs -f kyma | grep -m1 "http server listening"
+docker compose logs -f pensieve | grep -m1 "http server listening"
 ```
 
 Smoke test the surface:
@@ -57,7 +57,7 @@ curl -sS -X POST http://localhost:8080/v1/ingest \
   -H "X-Table: hello" \
   -H "Content-Type: application/x-ndjson" \
   --data-binary @- <<'EOF'
-{"_timestamp":"2026-05-02T10:00:00Z","service_name":"demo","message":"hello kyma"}
+{"_timestamp":"2026-05-02T10:00:00Z","service_name":"demo","message":"hello pensieve"}
 EOF
 ```
 
@@ -91,7 +91,7 @@ curl -sS -X POST http://localhost:8080/v1/query \
 Response is NDJSON — one JSON row per line:
 
 ```json
-{"_timestamp":"2026-05-02T10:00:00Z","service_name":"demo","message":"hello kyma"}
+{"_timestamp":"2026-05-02T10:00:00Z","service_name":"demo","message":"hello pensieve"}
 ```
 
 ## What just happened
@@ -104,7 +104,7 @@ group-committed it, and the commit coordinator wrote a snapshot.
 `default.hello.*`. Postgres holds the manifest — per-column stats, time
 range, present columns — that the planner uses to prune.
 
-**Query.** The KQL string was parsed by `kyma-kql`, lowered to SQL, and
+**Query.** The KQL string was parsed by `pensieve-kql`, lowered to SQL, and
 executed by DataFusion against the registered tables. Three levels of
 pruning ran before any extent bytes were decoded.
 
@@ -124,15 +124,15 @@ You'll get a streamed answer.
 From your terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
-kyma connect http://localhost:8080 --token "<bearer-token>"
-kyma query "what databases do we have?"
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/pensieve/main/install.sh | bash
+pensieve connect http://localhost:8080 --token "<bearer-token>"
+pensieve query "what databases do we have?"
 ```
 
-Add the Kyma skill so Claude Code / Cursor / Aider can ask Kyma:
+Add the Pensieve skill so Claude Code / Cursor / Aider can ask Pensieve:
 
 ```bash
-kyma install-skill --also-link-claude
+pensieve install-skill --also-link-claude
 ```
 
 ## Step 5: Ingest a GitHub repo
@@ -142,8 +142,8 @@ graph. The token comes from `$GITHUB_TOKEN`, `$GH_TOKEN`, or `gh auth
 token` (whichever is set first):
 
 ```bash
-kyma create-database github
-kyma datasource add github shakedaskayo/kyma --start
+pensieve create-database github
+pensieve datasource add github shakedaskayo/pensieve --start
 ```
 
 Now visit `/graph` in the web app — your repo appears as a node-and-
@@ -153,6 +153,6 @@ edge graph (commits, branches, PRs, issues, contributors). See
 ## Next
 
 - The mental model: [Concepts](/concepts/)
-- The Kyma Agent in depth: [Agent](/agent/)
+- The Pensieve Agent in depth: [Agent](/agent/)
 - One step deeper: [First real run](/quickstart/first-real-run)
 - Other ingest paths: [Ingest](/ingest/)

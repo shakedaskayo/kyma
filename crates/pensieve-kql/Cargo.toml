@@ -1,17 +1,17 @@
 [package]
-name = "kyma-kql"
+name = "pensieve-kql"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "KQL parser (chumsky) + translator to kyma-plan's unified LogicalPlan IR."
+description = "KQL parser (chumsky) + translator to pensieve-plan's unified LogicalPlan IR."
 
 [lints]
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
-kyma-plan.workspace = true
+pensieve-core.workspace = true
+pensieve-plan.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

@@ -89,30 +89,30 @@ run_step() {
 # split is what keeps CI green and makes "green locally" predict "green in CI".
 run_step "compile all test targets" \
   cargo test --workspace --locked --no-run \
-  --exclude app --exclude kyma-bin --exclude kyma-ingest-kafka
+  --exclude app --exclude pensieve-bin --exclude pensieve-ingest-kafka
 run_step "unit suites (no infra)" \
   cargo test --locked \
-  -p kyma-core -p kyma-storage -p kyma-kql -p kyma-memory \
-  -p kyma-catalog-sqlite -p kyma-retrieval-eval -p kyma-graph-testkit \
-  -p kyma-graph-topo
+  -p pensieve-core -p pensieve-storage -p pensieve-kql -p pensieve-memory \
+  -p pensieve-catalog-sqlite -p pensieve-retrieval-eval -p pensieve-graph-testkit \
+  -p pensieve-graph-topo
 run_step "catalog integration (testcontainers)" \
-  cargo test --locked -p kyma-catalog -- --test-threads=2
+  cargo test --locked -p pensieve-catalog -- --test-threads=2
 run_step "server integration (testcontainers)" \
-  cargo test --locked -p kyma-server --features "test-support cloud-auth" -- --test-threads=2
+  cargo test --locked -p pensieve-server --features "test-support cloud-auth" -- --test-threads=2
 run_step "mcp integration (testcontainers)" \
-  cargo test --locked -p kyma-mcp --features "kyma-server/test-support" -- --test-threads=2
+  cargo test --locked -p pensieve-mcp --features "pensieve-server/test-support" -- --test-threads=2
 run_step "jobs integration (testcontainers)" \
-  cargo test --locked -p kyma-jobs -- --test-threads=2
+  cargo test --locked -p pensieve-jobs -- --test-threads=2
 # Retrieval engine: ANN recall-vs-oracle (ann_topk_it, testcontainers), BM25
 # round-trip (bm25_topk_it), and the S1 BM25-vs-LIKE NDCG@10 gate.
 run_step "exec retrieval (testcontainers)" \
-  cargo test --locked -p kyma-exec -- --test-threads=2
+  cargo test --locked -p pensieve-exec -- --test-threads=2
 # Index-build activation scheduler (index_scheduler_it, testcontainers).
 run_step "compaction integration (testcontainers)" \
-  cargo test --locked -p kyma-compaction -- --test-threads=2
+  cargo test --locked -p pensieve-compaction -- --test-threads=2
 # Local-mode (SQLite) ANN + BM25 sidecar activation parity.
 run_step "local index activation (sqlite)" \
-  cargo test --locked -p kyma-local --test local_index_activation_it
+  cargo test --locked -p pensieve-local --test local_index_activation_it
 
 # Each integration script boots its own server(s) and resets the shared
 # Postgres+MinIO stack. A prior script's server can still be draining (and
@@ -120,8 +120,8 @@ run_step "local index activation (sqlite)" \
 # flakes. Between scripts, kill any lingering engine processes and wait for the
 # common ports to free so every script starts from a clean slate.
 reap_servers() {
-  pkill -9 -f "target/debug/kyma$" 2>/dev/null || true
-  pkill -9 -f "target/debug/kyma " 2>/dev/null || true
+  pkill -9 -f "target/debug/pensieve$" 2>/dev/null || true
+  pkill -9 -f "target/debug/pensieve " 2>/dev/null || true
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     if ! lsof -ti tcp:8080,tcp:9090,tcp:18080,tcp:18081 >/dev/null 2>&1; then
       break

@@ -40,7 +40,7 @@ pub struct SessionContext {
 ///
 /// A caller-supplied `requested` id that doesn't exist yet is created with
 /// that id — this lets external callers (e.g. Claude Code hooks) map their own
-/// session id onto a kyma session.
+/// session id onto a pensieve session.
 pub async fn load_or_create(
     pool: Option<&PgPool>,
     requested: Option<&str>,

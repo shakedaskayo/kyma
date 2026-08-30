@@ -12,7 +12,7 @@ import {
   Sigma,
   FileText,
 } from "lucide-react";
-import type { SchemaDoc, ColumnInfo } from "@kyma-ai/client";
+import type { SchemaDoc, ColumnInfo } from "@pensieve-ai/client";
 
 export type { SchemaDoc };
 

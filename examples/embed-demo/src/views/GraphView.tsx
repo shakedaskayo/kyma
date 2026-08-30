@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { KymaGraph } from "@kyma-ai/react/graph";
-import type { GraphNode } from "@kyma-ai/react/graph";
+import { PensieveGraph } from "@pensieve-ai/react/graph";
+import type { GraphNode } from "@pensieve-ai/react/graph";
 
 /**
- * Graph tab: KymaGraph with discover="all-databases".
+ * Graph tab: PensieveGraph with discover="all-databases".
  * Clicking a node opens a side-panel JSON inspector.
  * Proves onNodeClick + onSelectionChange callbacks work.
  */
@@ -13,7 +13,7 @@ export function GraphView() {
   return (
     <div style={{ display: "flex", height: "100%" }}>
       <div style={{ flex: 1, overflow: "hidden" }}>
-        <KymaGraph
+        <PensieveGraph
           discover="all-databases"
           height="100%"
           toolbar

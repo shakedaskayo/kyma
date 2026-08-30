@@ -2,9 +2,9 @@
 //!
 //! TODO(M2): flesh out the full enum per architecture plan §6. The shape
 //! below is a minimal placeholder that lets the crate compile so dependents
-//! (kyma-kql, kyma-exec) can reference the type.
+//! (pensieve-kql, pensieve-exec) can reference the type.
 
-use kyma_core::types::TableId;
+use pensieve_core::types::TableId;
 
 /// Frontend-neutral logical plan. First-class nodes exist for KQL idioms
 /// that have no natural SQL analog (`TimeSeries`, `MvExpand`).

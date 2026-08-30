@@ -15,10 +15,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use kyma_core::catalog::Catalog;
-use kyma_core::tenant::TenantId;
-use kyma_core::types::{ExtentId, TableId};
-use kyma_index_vector::global_tree::{self, GlobalTree};
+use pensieve_core::catalog::Catalog;
+use pensieve_core::tenant::TenantId;
+use pensieve_core::types::{ExtentId, TableId};
+use pensieve_index_vector::global_tree::{self, GlobalTree};
 use object_store::{path::Path as ObjPath, ObjectStore};
 use uuid::Uuid;
 

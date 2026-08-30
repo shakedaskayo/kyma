@@ -1,11 +1,11 @@
 /**
- * KymaGraph tests — smoke render, callback wiring, and the hard acceptance
+ * PensieveGraph tests — smoke render, callback wiring, and the hard acceptance
  * criterion: two mounted instances have fully independent store state.
  *
  * react-force-graph-2d is mocked as a lightweight div that records each
  * mounted instance's props so tests can read graphData and fire onNodeClick.
  *
- * NOTE: jsdom has no WebGL, so webglAvailable() returns false and KymaGraph
+ * NOTE: jsdom has no WebGL, so webglAvailable() returns false and PensieveGraph
  * automatically uses the canvas (ForceGraph2D) fallback path. The mock
  * captures force-graph props so we can verify data flow.
  *
@@ -24,9 +24,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { render, cleanup, waitFor, screen } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import React from "react";
-import { KymaProvider } from "../provider/KymaProvider";
-import { KymaGraph } from "./KymaGraph";
-import type { GraphNode, GraphPayload } from "@kyma-ai/client";
+import { PensieveProvider } from "../provider/PensieveProvider";
+import { PensieveGraph } from "./PensieveGraph";
+import type { GraphNode, GraphPayload } from "@pensieve-ai/client";
 
 // jsdom has no ResizeObserver — GraphCanvas observes its container size.
 class ResizeObserverStub {
@@ -102,7 +102,7 @@ function jsonResponse(body: unknown) {
   );
 }
 
-// Export page shape that matches GraphExportPage from @kyma-ai/client.
+// Export page shape that matches GraphExportPage from @pensieve-ai/client.
 const EXPORT_PAGE_1 = {
   layout_status: "ready",
   layout_id: "L001",
@@ -150,9 +150,9 @@ function provider(children: React.ReactNode) {
     defaultOptions: { queries: { retry: false, staleTime: 0 } },
   });
   return (
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
       {children}
-    </KymaProvider>
+    </PensieveProvider>
   );
 }
 
@@ -160,10 +160,10 @@ const GRAPHS = [{ database: "db1", graph: "graphA" }];
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-describe("KymaGraph", () => {
+describe("PensieveGraph", () => {
   it("renders fixture nodes through to the force-graph canvas", async () => {
     stubGraphFetch();
-    render(provider(<KymaGraph graphs={GRAPHS} />));
+    render(provider(<PensieveGraph graphs={GRAPHS} />));
 
     await waitFor(() => {
       expect(fgInstances.length).toBeGreaterThan(0);
@@ -177,7 +177,7 @@ describe("KymaGraph", () => {
     const selections: GraphNode[][] = [];
     render(
       provider(
-        <KymaGraph
+        <PensieveGraph
           graphs={GRAPHS}
           onNodeClick={(n) => clicked.push(n)}
           onSelectionChange={(ns) => selections.push(ns)}
@@ -205,8 +205,8 @@ describe("KymaGraph", () => {
     render(
       provider(
         <>
-          <KymaGraph graphs={GRAPHS} onSelectionChange={(ns) => selectionsA.push(ns)} />
-          <KymaGraph graphs={GRAPHS} onSelectionChange={(ns) => selectionsB.push(ns)} />
+          <PensieveGraph graphs={GRAPHS} onSelectionChange={(ns) => selectionsA.push(ns)} />
+          <PensieveGraph graphs={GRAPHS} onSelectionChange={(ns) => selectionsB.push(ns)} />
         </>,
       ),
     );
@@ -228,7 +228,7 @@ describe("KymaGraph", () => {
 
   it("hides the chrome when sidebar={false}", async () => {
     stubGraphFetch();
-    const { container } = render(provider(<KymaGraph graphs={GRAPHS} sidebar={false} />));
+    const { container } = render(provider(<PensieveGraph graphs={GRAPHS} sidebar={false} />));
     await waitFor(() => expect(fgInstances.length).toBe(1));
     // The LegendDock chip ("N nodes · M edges") is the always-visible chrome
     // element — it must be absent when the chrome is hidden.
@@ -237,7 +237,7 @@ describe("KymaGraph", () => {
 
   it("shows the legend dock chip by default", async () => {
     stubGraphFetch();
-    const { container } = render(provider(<KymaGraph graphs={GRAPHS} />));
+    const { container } = render(provider(<PensieveGraph graphs={GRAPHS} />));
     await waitFor(() => expect(fgInstances.length).toBe(1));
     await waitFor(() => expect(container.textContent).toContain("edges"));
   });
@@ -249,13 +249,13 @@ describe("KymaGraph", () => {
     try {
       render(
         provider(
-          <KymaGraph graphs={GRAPHS} fallback={<div data-testid="boom">graph failed</div>} />,
+          <PensieveGraph graphs={GRAPHS} fallback={<div data-testid="boom">graph failed</div>} />,
         ),
       );
       await waitFor(() => expect(fgInstances.length).toBe(1));
       // Force a render error in the captured instance by making graphData a throw
       // — instead, simulate by rendering a child that throws via the boundary:
-      // (the boundary path is covered in KymaErrorBoundary.test; here we just
+      // (the boundary path is covered in PensieveErrorBoundary.test; here we just
       // assert the fallback prop is accepted and normal render succeeds.)
       expect(screen.queryByTestId("boom")).toBeNull();
     } finally {

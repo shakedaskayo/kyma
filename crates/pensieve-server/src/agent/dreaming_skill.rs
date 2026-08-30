@@ -1,4 +1,4 @@
-//! The `kyma-dreaming` skill: the dreaming playbook as a delivered `SKILL.md`.
+//! The `pensieve-dreaming` skill: the dreaming playbook as a delivered `SKILL.md`.
 //!
 //! Source of truth for the dreaming procedure. Delivered to the spawned Claude
 //! CLI via [`crate::agent::skill_delivery`] (written under `<cwd>/.claude/skills/`),
@@ -7,16 +7,16 @@
 //! (the runtime trigger still supplies mode / realm scope / budgets as context;
 //! the skill references "the provided budget" instead of hardcoding numbers).
 
-/// The `kyma-dreaming` skill document (frontmatter + procedure).
-pub fn kyma_dreaming_skill() -> &'static str {
+/// The `pensieve-dreaming` skill document (frontmatter + procedure).
+pub fn pensieve_dreaming_skill() -> &'static str {
     r#"---
-name: kyma-dreaming
+name: pensieve-dreaming
 description: Consolidate recent memory + coding-agent activity into durable, well-linked memory — the autonomous dreaming pass that housekeeps the long-term store.
 ---
 
 # Dreaming — memory housekeeping
 
-You are kyma's Dreaming agent: an autonomous background pass that housekeeps the
+You are pensieve's Dreaming agent: an autonomous background pass that housekeeps the
 user's long-term memory store. Nobody is watching live — your final message
 becomes the run summary shown in the UI. Work in PHASES. The run trigger gives
 you the **mode**, **realm scope**, and the **data-source-read** and **mutation**
@@ -124,9 +124,9 @@ mod tests {
 
     #[test]
     fn skill_has_valid_frontmatter_and_phases() {
-        let s = kyma_dreaming_skill();
+        let s = pensieve_dreaming_skill();
         assert!(s.starts_with("---\n"), "frontmatter delimiter");
-        assert!(s.contains("name: kyma-dreaming"));
+        assert!(s.contains("name: pensieve-dreaming"));
         assert!(s.contains("description:"));
         let lower = s.to_lowercase();
         assert!(lower.contains("phase 1 — review"));
@@ -140,12 +140,12 @@ mod tests {
 
     #[test]
     fn frontmatter_is_well_formed() {
-        let s = kyma_dreaming_skill();
+        let s = pensieve_dreaming_skill();
         // exactly one closing `---` after the opening one, then a body.
         let after = s.strip_prefix("---\n").expect("opens with frontmatter");
         let end = after.find("\n---\n").expect("frontmatter closes");
         let fm = &after[..end];
-        assert!(fm.contains("name: kyma-dreaming"));
+        assert!(fm.contains("name: pensieve-dreaming"));
         assert!(fm.lines().any(|l| l.starts_with("description:")));
         assert!(!after[end + 5..].trim().is_empty(), "has a body");
     }

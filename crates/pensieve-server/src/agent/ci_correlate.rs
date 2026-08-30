@@ -18,9 +18,9 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use kyma_core::tenant::TenantId;
-use kyma_memory::types::MemoryType;
-use kyma_memory::{CreateMemory, MemoryWriter};
+use pensieve_core::tenant::TenantId;
+use pensieve_memory::types::MemoryType;
+use pensieve_memory::{CreateMemory, MemoryWriter};
 
 use super::tools::{execute_sql, SharedToolCtx};
 
@@ -244,7 +244,7 @@ impl CiCorrelator {
     /// Write/upsert an incident memory per detected recurrence. Returns
     /// `(scanned, written)`.
     async fn write_incidents(&self, incidents: Vec<Incident>) -> anyhow::Result<(i64, i64)> {
-        let embed = kyma_memory::shared_embedding()
+        let embed = pensieve_memory::shared_embedding()
             .await
             .map_err(|e| anyhow::anyhow!("embedding backend: {e}"))?;
         let writer = MemoryWriter::new(

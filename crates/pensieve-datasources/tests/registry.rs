@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use kyma_datasources::registry::DataSourceRegistry;
-use kyma_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
+use pensieve_datasources::registry::DataSourceRegistry;
+use pensieve_datasources::{ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun};
 use std::sync::Arc;
 
 struct FakeConn;

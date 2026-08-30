@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 

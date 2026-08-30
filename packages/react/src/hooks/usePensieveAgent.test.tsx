@@ -1,5 +1,5 @@
 /**
- * useKymaAgent tests.
+ * usePensieveAgent tests.
  *
  * The server sends AI-SDK v1 UIMessageStream over SSE:
  *   Content-Type: text/event-stream
@@ -15,8 +15,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderHook, cleanup, waitFor, act } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import React from "react";
-import { KymaProvider } from "../provider/KymaProvider";
-import { useKymaAgent } from "./useKymaAgent";
+import { PensieveProvider } from "../provider/PensieveProvider";
+import { usePensieveAgent } from "./usePensieveAgent";
 
 afterEach(() => {
   cleanup();
@@ -29,9 +29,9 @@ function makeQC() {
 
 function wrapper(qc: QueryClient) {
   return ({ children }: { children: React.ReactNode }) => (
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
       {children}
-    </KymaProvider>
+    </PensieveProvider>
   );
 }
 
@@ -62,12 +62,12 @@ function sseResponse(parts: object[]): Response {
   });
 }
 
-describe("useKymaAgent", () => {
+describe("usePensieveAgent", () => {
   it("starts with empty messages and idle status", () => {
     const qc = makeQC();
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
 
-    const { result } = renderHook(() => useKymaAgent(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveAgent(), { wrapper: wrapper(qc) });
 
     expect(result.current.messages).toEqual([]);
     expect(result.current.status).toBe("idle");
@@ -89,7 +89,7 @@ describe("useKymaAgent", () => {
       ),
     );
 
-    const { result } = renderHook(() => useKymaAgent(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveAgent(), { wrapper: wrapper(qc) });
 
     await act(async () => {
       await result.current.send("Hi there");
@@ -131,7 +131,7 @@ describe("useKymaAgent", () => {
       }),
     );
 
-    const { result } = renderHook(() => useKymaAgent(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveAgent(), { wrapper: wrapper(qc) });
 
     act(() => {
       void result.current.send("question");
@@ -166,7 +166,7 @@ describe("useKymaAgent", () => {
       }),
     );
 
-    const { result } = renderHook(() => useKymaAgent(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveAgent(), { wrapper: wrapper(qc) });
 
     act(() => {
       void result.current.send("question");
@@ -202,7 +202,7 @@ describe("useKymaAgent", () => {
       }),
     );
 
-    const { result } = renderHook(() => useKymaAgent(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveAgent(), { wrapper: wrapper(qc) });
 
     await act(async () => {
       await result.current.send("first");
@@ -242,7 +242,7 @@ describe("useKymaAgent", () => {
         );
       }),
     );
-    const { result } = renderHook(() => useKymaAgent(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveAgent(), { wrapper: wrapper(qc) });
 
     act(() => {
       void result.current.send("first");
@@ -264,7 +264,7 @@ describe("useKymaAgent", () => {
       vi.fn().mockResolvedValue(new Response("Internal Server Error", { status: 500 })),
     );
 
-    const { result } = renderHook(() => useKymaAgent(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveAgent(), { wrapper: wrapper(qc) });
 
     await act(async () => {
       try {

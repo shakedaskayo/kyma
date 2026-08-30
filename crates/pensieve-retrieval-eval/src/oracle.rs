@@ -2,7 +2,7 @@
 //!
 //! The reference every approximate index is graded against: O(n·d) scan,
 //! deterministic tie-break by index. Distance math intentionally mirrors
-//! `crates/kyma-exec/src/udfs_vector.rs` — f32 inputs, f64 accumulation —
+//! `crates/pensieve-exec/src/udfs_vector.rs` — f32 inputs, f64 accumulation —
 //! so an oracle-vs-engine comparison on the same data measures the *index*,
 //! not floating-point drift between two different implementations.
 

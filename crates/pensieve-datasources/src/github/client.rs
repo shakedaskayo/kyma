@@ -70,7 +70,7 @@ impl GithubClient {
             .header("Authorization", format!("Bearer {}", self.token))
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "kyma-github-datasource/1.0")
+            .header("User-Agent", "pensieve-github-datasource/1.0")
     }
 
     /// Execute a single request with retry logic. Returns the parsed JSON body

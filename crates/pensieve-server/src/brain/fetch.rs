@@ -1,9 +1,9 @@
 //! Memory-table reads for the exporter: latest node versions + edges for a
-//! brain's realm selection, mapped to `kyma-brain`'s row types. The
+//! brain's realm selection, mapped to `pensieve-brain`'s row types. The
 //! `embedding` column is excluded at SQL level and never leaves the store.
 
-use kyma_brain::registry::{BrainConfig, RealmSelector};
-use kyma_brain::types::{EdgeRow, NoteRow};
+use pensieve_brain::registry::{BrainConfig, RealmSelector};
+use pensieve_brain::types::{EdgeRow, NoteRow};
 use serde_json::Value;
 
 use crate::agent::state::AgentState;
@@ -46,14 +46,14 @@ fn opt_field(row: &Value, key: &str) -> Option<String> {
 
 /// Fetch the latest node versions + all edges for a brain. Status /
 /// importance / type filters are applied later by the pure planner
-/// (`kyma_brain::vault::included`) — SQL only scopes realms and drops the
+/// (`pensieve_brain::vault::included`) — SQL only scopes realms and drops the
 /// embedding column.
 pub async fn fetch_rows(
     agent: &AgentState,
     cfg: &BrainConfig,
 ) -> Result<(Vec<NoteRow>, Vec<EdgeRow>), String> {
     let shared = shared_ctx(agent);
-    let db = kyma_memory::DEFAULT_DATABASE;
+    let db = pensieve_memory::DEFAULT_DATABASE;
     let realm_filter = realm_predicate(cfg);
 
     let nodes_sql = format!(
@@ -78,7 +78,7 @@ pub async fn fetch_rows(
             rows.iter()
                 .map(|r| NoteRow {
                     // Stored node ids carry the `memory:` prefix; the brain
-                    // crate (filenames, frontmatter kyma_memory_id) uses the
+                    // crate (filenames, frontmatter pensieve_memory_id) uses the
                     // bare uuid.
                     id: str_field(r, "id").strip_prefix("memory:").map_or_else(
                         || str_field(r, "id"),

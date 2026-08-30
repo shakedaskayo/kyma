@@ -1,13 +1,13 @@
 /**
- * useKymaDashboards tests.
+ * usePensieveDashboards tests.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderHook, cleanup, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import React from "react";
-import { KymaProvider } from "../provider/KymaProvider";
-import { useKymaDashboards } from "./useKymaDashboards";
-import type { Dashboard, DashboardWithPanels } from "@kyma-ai/client";
+import { PensieveProvider } from "../provider/PensieveProvider";
+import { usePensieveDashboards } from "./usePensieveDashboards";
+import type { Dashboard, DashboardWithPanels } from "@pensieve-ai/client";
 
 afterEach(() => {
   cleanup();
@@ -20,9 +20,9 @@ function makeQC() {
 
 function wrapper(qc: QueryClient) {
   return ({ children }: { children: React.ReactNode }) => (
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
       {children}
-    </KymaProvider>
+    </PensieveProvider>
   );
 }
 
@@ -76,7 +76,7 @@ const DASHBOARD_WITH_PANELS: DashboardWithPanels = {
   ],
 };
 
-describe("useKymaDashboards", () => {
+describe("usePensieveDashboards", () => {
   it("loads and returns dashboards list", async () => {
     const qc = makeQC();
     vi.stubGlobal(
@@ -84,7 +84,7 @@ describe("useKymaDashboards", () => {
       vi.fn().mockImplementation(() => jsonResponse(DASHBOARDS)),
     );
 
-    const { result } = renderHook(() => useKymaDashboards(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveDashboards(), { wrapper: wrapper(qc) });
 
     expect(result.current.isLoading).toBe(true);
 
@@ -102,7 +102,7 @@ describe("useKymaDashboards", () => {
       vi.fn().mockResolvedValue(new Response("not found", { status: 404 })),
     );
 
-    const { result } = renderHook(() => useKymaDashboards(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveDashboards(), { wrapper: wrapper(qc) });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false), { timeout: 3000 });
 
@@ -120,7 +120,7 @@ describe("useKymaDashboards", () => {
       }),
     );
 
-    const { result } = renderHook(() => useKymaDashboards(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveDashboards(), { wrapper: wrapper(qc) });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false), { timeout: 3000 });
 
@@ -141,7 +141,7 @@ describe("useKymaDashboards", () => {
       }),
     );
 
-    const { result } = renderHook(() => useKymaDashboards(), { wrapper: wrapper(qc) });
+    const { result } = renderHook(() => usePensieveDashboards(), { wrapper: wrapper(qc) });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false), { timeout: 3000 });
     expect(result.current.dashboards).toHaveLength(1);

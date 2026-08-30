@@ -1,9 +1,9 @@
-# Graphs in kyma
+# Graphs in pensieve
 
-kyma supports graph data and traversal end-to-end. The model is **tabular
-graphs over Arrow** — edges are rows in a regular kyma table, traversal is
+pensieve supports graph data and traversal end-to-end. The model is **tabular
+graphs over Arrow** — edges are rows in a regular pensieve table, traversal is
 SQL recursive CTEs or the first-class KQL operators `graph-traverse` and
-`graph-shortest-path`. Every hop of a traversal benefits from kyma's
+`graph-shortest-path`. Every hop of a traversal benefits from pensieve's
 pruning cascade: time-range, equality-index (on `src`/`dst`), and
 text-index all apply.
 
@@ -11,7 +11,7 @@ Why tabular-graph, not native-graph? Two reasons:
 
 1. **One engine.** Neo4j-style native graph storage is blazing fast for
    traversal but terrible at everything else (time-range scans, high-
-   cardinality aggregations, mixing with metrics/logs). kyma's whole
+   cardinality aggregations, mixing with metrics/logs). pensieve's whole
    premise is a single unified engine; the tabular model makes graphs
    compose with the rest of the language.
 2. **Your graph is already tabular.** A distributed-trace edge list, a
@@ -33,7 +33,7 @@ metrics and logs, tabular is the right answer.
 properties.
 
 ```bash
-kyma-cli create-table --db default --name service_calls \
+pensieve-cli create-table --db default --name service_calls \
     --schema 'timestamp:timestamp,caller:string,callee:string,latency_ms:int,trace_id:string'
 ```
 
@@ -170,7 +170,7 @@ KQL is available downstream. Chain `where`, `summarize`, `extend`,
 ### How pruning engages
 
 Every hop is a scan of the edges table filtered by the current frontier:
-`WHERE src = <node>` or `WHERE src IN (<frontier>)`. kyma's equality
+`WHERE src = <node>` or `WHERE src IN (<frontier>)`. pensieve's equality
 index (task #38) prunes these to exactly the extents containing rows
 with those `src` values. For a service graph with one extent per service
 (common: a month of data bucketed by service), a 3-hop traversal from
@@ -180,7 +180,7 @@ table.
 ### Current honest limitation
 
 DataFusion's recursive-CTE execution doesn't propagate the frontier
-predicate back into the `KymaTable::scan` call for each iteration — the
+predicate back into the `PensieveTable::scan` call for each iteration — the
 CTE body re-reads the whole edges table each step. For workloads where
 the edges table is small (< 10 GiB, fits comfortably in object-store
 cache), this is fine: every recursive step is a second-or-so full scan.
@@ -206,7 +206,7 @@ cases get the native format later.
 ### Index recommendations
 
 For graph-heavy tables, make sure `src` and `dst` are both typed string
-or int columns (not buried in a `dynamic` column). kyma's writer
+or int columns (not buried in a `dynamic` column). pensieve's writer
 auto-indexes these, so the query `WHERE src = 'X'` prunes extents
 without touching object storage.
 
@@ -265,7 +265,7 @@ agent_memory_edges
 
 This is precisely the ADR-class memory retrieval an LLM agent wants
 from its "what did I know about this user earlier in the conversation?"
-side-channel. kyma handles it natively because agent memory is, at
+side-channel. pensieve handles it natively because agent memory is, at
 heart, a temporal property graph over JSON — which is exactly what
 our existing operators cover.
 

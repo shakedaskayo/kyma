@@ -1,11 +1,11 @@
 {
-  "name": "@kyma-ai/react",
+  "name": "@pensieve-ai/react",
   "version": "0.2.0",
-  "description": "Embeddable React components for the Kyma context engine — Graph, Discover, Query, Dashboards, Agent",
+  "description": "Embeddable React components for the Pensieve context engine — Graph, Discover, Query, Dashboards, Agent",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/shakedaskayo/kyma.git",
+    "url": "https://github.com/shakedaskayo/pensieve.git",
     "directory": "packages/react"
   },
   "publishConfig": {
@@ -67,7 +67,7 @@
   "dependencies": {
     "@ai-sdk/react": "^3.0.195",
     "@icons-pack/react-simple-icons": "^13.13.0",
-    "@kyma-ai/client": "workspace:^",
+    "@pensieve-ai/client": "workspace:^",
     "@monaco-editor/react": "4.6.0",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",

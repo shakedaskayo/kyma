@@ -1,6 +1,6 @@
-// ── Public surface: KymaQueryEditor ──────────────────────────────────────────
-export { KymaQueryEditor } from "./KymaQueryEditor";
-export type { KymaQueryEditorProps } from "./KymaQueryEditor";
+// ── Public surface: PensieveQueryEditor ──────────────────────────────────────────
+export { PensieveQueryEditor } from "./PensieveQueryEditor";
+export type { PensieveQueryEditorProps } from "./PensieveQueryEditor";
 export type { TimeRange } from "./time-range/time-range-types";
 
 // ── Secondary public surface: sub-components ──────────────────────────────────

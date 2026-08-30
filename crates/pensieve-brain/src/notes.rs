@@ -2,7 +2,7 @@
 //! format.
 //!
 //! Flat, Obsidian-native YAML frontmatter (deterministic key order, absent
-//! fields omitted), an H1 title, the memory content, and a kyma-managed
+//! fields omitted), an H1 title, the memory content, and a pensieve-managed
 //! `Related` block generated from graph edges. Everything outside managed
 //! blocks is the *editable region*; `content_hash` covers it so push-ingest
 //! can tell real edits from formatting churn.
@@ -12,9 +12,9 @@ use serde_yaml::Value;
 use crate::types::NoteRow;
 
 /// Opening marker of the generated Related block.
-pub const RELATED_BEGIN: &str = "<!-- kyma:related:begin -->";
+pub const RELATED_BEGIN: &str = "<!-- pensieve:related:begin -->";
 /// Closing marker of the generated Related block.
-pub const RELATED_END: &str = "<!-- kyma:related:end -->";
+pub const RELATED_END: &str = "<!-- pensieve:related:end -->";
 
 /// One wikilink target in the Related block.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,7 +31,7 @@ pub struct RelatedLink {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ParsedNote {
     pub title: Option<String>,
-    pub kyma_memory_id: Option<String>,
+    pub pensieve_memory_id: Option<String>,
     pub memory_type: Option<String>,
     pub realm: Option<String>,
     pub tags: Vec<String>,
@@ -63,8 +63,8 @@ pub fn strip_private_spans(s: &str) -> String {
     out
 }
 
-/// Kebab slug of a title (no `kyma-` prefix, unlike ccmem's
-/// `memory_filename` — the whole repo is kyma-managed).
+/// Kebab slug of a title (no `pensieve-` prefix, unlike ccmem's
+/// `memory_filename` — the whole repo is pensieve-managed).
 pub fn title_slug(title: &str) -> String {
     let mut slug = String::with_capacity(title.len());
     let mut prev_dash = true;
@@ -178,7 +178,7 @@ pub fn render_note(row: &NoteRow, related: &[RelatedLink], redact_private: bool)
 
     let mut fm = String::new();
     fm.push_str(&format!("title: {}\n", yaml_scalar(&row.title)));
-    fm.push_str(&format!("kyma_memory_id: {}\n", row.id));
+    fm.push_str(&format!("pensieve_memory_id: {}\n", row.id));
     fm.push_str(&format!("type: {}\n", row.memory_type));
     fm.push_str(&format!("realm: {}\n", yaml_scalar(&row.realm)));
     if !tags.is_empty() {
@@ -230,7 +230,7 @@ pub fn parse_note(raw: &str) -> ParsedNote {
     if let Some(yaml) = front {
         if let Ok(Value::Mapping(map)) = serde_yaml::from_str::<Value>(&yaml) {
             note.title = value_str(&map, "title").or_else(|| value_str(&map, "name"));
-            note.kyma_memory_id = value_str(&map, "kyma_memory_id");
+            note.pensieve_memory_id = value_str(&map, "pensieve_memory_id");
             note.memory_type = value_str(&map, "type");
             note.realm = value_str(&map, "realm");
             note.content_hash = value_str(&map, "content_hash");
@@ -264,7 +264,7 @@ pub fn parse_note(raw: &str) -> ParsedNote {
     }
     body_lines.extend(lines);
     note.body = body_lines.join("\n").trim().to_string();
-    note.links = kyma_ccmem::wikilink::extract_normalized(&note.body);
+    note.links = pensieve_ccmem::wikilink::extract_normalized(&note.body);
     note
 }
 

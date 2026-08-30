@@ -1,9 +1,9 @@
-// Typed client for the kyma credentials store (`/v1/credentials/*`).
+// Typed client for the pensieve credentials store (`/v1/credentials/*`).
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import { errorFromResponse } from "./errors";
 
-// ── Types (must match crates/kyma-core/src/credentials.rs) ────────────────────
+// ── Types (must match crates/pensieve-core/src/credentials.rs) ────────────────────
 
 export type CredentialKind =
   | "pat"
@@ -56,13 +56,13 @@ interface ListEnvelope {
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
-export async function listCredentials(t: KymaTransport): Promise<CredentialSummary[]> {
+export async function listCredentials(t: PensieveTransport): Promise<CredentialSummary[]> {
   const body = await handleResponse<ListEnvelope>(await t.request("/v1/credentials"));
   return body.items ?? [];
 }
 
 export async function createCredential(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { body: CreateCredentialBody },
 ): Promise<CredentialSummary> {
   return handleResponse<CredentialSummary>(
@@ -75,13 +75,13 @@ export async function createCredential(
 }
 
 export async function getCredential(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { id: string },
 ): Promise<CredentialSummary> {
   return handleResponse<CredentialSummary>(await t.request(`/v1/credentials/${args.id}`));
 }
 
-export async function deleteCredential(t: KymaTransport, args: { id: string }): Promise<void> {
+export async function deleteCredential(t: PensieveTransport, args: { id: string }): Promise<void> {
   const res = await t.request(`/v1/credentials/${args.id}`, { method: "DELETE" });
   if (!res.ok) throw await errorFromResponse(res);
 }

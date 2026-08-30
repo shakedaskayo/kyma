@@ -1,8 +1,8 @@
-{{- define "kyma-engine.name" -}}
+{{- define "pensieve-engine.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "kyma-engine.fullname" -}}
+{{- define "pensieve-engine.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
@@ -15,9 +15,9 @@
 {{- end -}}
 {{- end -}}
 
-{{- define "kyma-engine.labels" -}}
+{{- define "pensieve-engine.labels" -}}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
-app.kubernetes.io/name: {{ include "kyma-engine.name" . }}
+app.kubernetes.io/name: {{ include "pensieve-engine.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- if .Chart.AppVersion }}
@@ -25,32 +25,32 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 {{- end -}}
 
-{{- define "kyma-engine.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "kyma-engine.name" . }}
+{{- define "pensieve-engine.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "pensieve-engine.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{- define "kyma-engine.serviceAccountName" -}}
+{{- define "pensieve-engine.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
-{{- default (include "kyma-engine.fullname" .) .Values.serviceAccount.name -}}
+{{- default (include "pensieve-engine.fullname" .) .Values.serviceAccount.name -}}
 {{- else -}}
 {{- default "default" .Values.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
 
-{{- /* Selector labels for one role deployment (adds kyma.io/role). Arg: dict
+{{- /* Selector labels for one role deployment (adds pensieve.io/role). Arg: dict
        "ctx" $ "role" "<role>". */ -}}
-{{- define "kyma-engine.roleSelectorLabels" -}}
-{{ include "kyma-engine.selectorLabels" .ctx }}
-kyma.io/role: {{ .role }}
+{{- define "pensieve-engine.roleSelectorLabels" -}}
+{{ include "pensieve-engine.selectorLabels" .ctx }}
+pensieve.io/role: {{ .role }}
 {{- end -}}
 
-{{- /* The shared engine container for a role deployment, with KYMA_ROLE injected
+{{- /* The shared engine container for a role deployment, with PENSIEVE_ROLE injected
        ahead of the configured env (which the engine's role_components() honors).
        Arg: dict "ctx" $ "role" "<role>". */ -}}
-{{- define "kyma-engine.roleContainer" -}}
+{{- define "pensieve-engine.roleContainer" -}}
 {{- $ctx := .ctx -}}
-- name: kyma-engine
+- name: pensieve-engine
   image: "{{ $ctx.Values.image.repository }}:{{ $ctx.Values.image.tag }}"
   imagePullPolicy: {{ $ctx.Values.image.pullPolicy }}
   ports:
@@ -58,7 +58,7 @@ kyma.io/role: {{ .role }}
       containerPort: 8080
       protocol: TCP
   env:
-    - name: KYMA_ROLE
+    - name: PENSIEVE_ROLE
       value: {{ .role | quote }}
     {{- range $k, $v := $ctx.Values.env }}
     - name: {{ $k }}
@@ -67,7 +67,7 @@ kyma.io/role: {{ .role }}
   {{- if $ctx.Values.secretEnv }}
   envFrom:
     - secretRef:
-        name: {{ include "kyma-engine.fullname" $ctx }}-env
+        name: {{ include "pensieve-engine.fullname" $ctx }}-env
   {{- end }}
   livenessProbe:
     httpGet:

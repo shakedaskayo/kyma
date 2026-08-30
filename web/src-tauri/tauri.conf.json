@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "kyma",
+  "productName": "pensieve",
   "version": "0.1.0",
-  "identifier": "com.agentcylabs.kyma",
+  "identifier": "com.agentcylabs.pensieve",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "kyma",
+        "title": "pensieve",
         "width": 800,
         "height": 600,
         "resizable": true,

@@ -15,9 +15,9 @@ import {
   SigmaCanvas,
   createGraphStore,
   GraphStoreContext,
-} from "@kyma-ai/react/graph";
-import { KymaProvider, kymaDark } from "@kyma-ai/react";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/react/graph";
+} from "@pensieve-ai/react/graph";
+import { PensieveProvider, pensieveDark } from "@pensieve-ai/react";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/react/graph";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sigma = any;
 
@@ -284,10 +284,10 @@ function GraphBenchPage() {
   const noopNull = useCallback((_: string | null) => {}, []);
 
   return (
-    <KymaProvider
+    <PensieveProvider
       endpoint="http://localhost:0"
       auth={{ getToken: async () => "" }}
-      theme={kymaDark}
+      theme={pensieveDark}
     >
       <GraphStoreContext.Provider value={store}>
         <div
@@ -372,6 +372,6 @@ function GraphBenchPage() {
           </div>
         </div>
       </GraphStoreContext.Provider>
-    </KymaProvider>
+    </PensieveProvider>
   );
 }

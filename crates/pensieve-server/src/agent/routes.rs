@@ -43,11 +43,11 @@ const MAX_TOOL_CALLS: u32 = 12;
 const RUN_WALL_CLOCK: Duration = Duration::from_secs(60);
 
 /// Default number of new turns after which a session's rolling summary is
-/// refreshed. Overridable via `KYMA_SESSION_SUMMARY_EVERY`.
+/// refreshed. Overridable via `PENSIEVE_SESSION_SUMMARY_EVERY`.
 const DEFAULT_SUMMARY_EVERY: i32 = 12;
 
 fn summary_every() -> i32 {
-    std::env::var("KYMA_SESSION_SUMMARY_EVERY")
+    std::env::var("PENSIEVE_SESSION_SUMMARY_EVERY")
         .ok()
         .and_then(|v| v.parse::<i32>().ok())
         .filter(|n| *n > 0)
@@ -141,10 +141,10 @@ async fn import_memory_handler(
     Json(body): Json<ImportBody>,
 ) -> Response {
     let span = tracing::info_span!(
-        target: "kyma_telemetry",
+        target: "pensieve_telemetry",
         "memory.import",
-        kyma.subject = principal.subject.as_deref().unwrap_or(""),
-        kyma.tenant = %principal.tenant,
+        pensieve.subject = principal.subject.as_deref().unwrap_or(""),
+        pensieve.tenant = %principal.tenant,
         memory.imported = tracing::field::Empty,
     );
     async move {
@@ -159,14 +159,14 @@ async fn import_memory_handler(
             )
                 .into_response();
         }
-        let embed = match kyma_memory::shared_embedding().await {
+        let embed = match pensieve_memory::shared_embedding().await {
             Ok(e) => e,
             Err(e) => {
                 return Json(json!({ "error": format!("embedding backend: {e}") })).into_response()
             }
         };
         let writer =
-            kyma_memory::MemoryWriter::new(state.catalog.clone(), state.format.clone(), embed);
+            pensieve_memory::MemoryWriter::new(state.catalog.clone(), state.format.clone(), embed);
         let mut applied_nodes = 0usize;
         let mut applied_edges = 0usize;
         let mut errors: Vec<String> = Vec::new();
@@ -224,7 +224,7 @@ async fn changes_memory_handler(
     let shared = SharedToolCtx {
         realm_scope: Default::default(),
         consumer_sink: None,
-        federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+        federation: Some(pensieve_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
@@ -253,7 +253,7 @@ async fn changes_memory_handler(
         "SELECT id, src, dst, type, realm, target_namespace, props, created_at \
          FROM memory_edges WHERE created_at > '{since_esc}'"
     );
-    let db = kyma_memory::DEFAULT_DATABASE;
+    let db = pensieve_memory::DEFAULT_DATABASE;
     let nodes = execute_sql(&shared, db, &nodes_sql, 1_000_000).await;
     let edges = execute_sql(&shared, db, &edges_sql, 1_000_000).await;
     let rows = |v: Value| v.get("rows").cloned().unwrap_or_else(|| json!([]));
@@ -275,14 +275,14 @@ async fn export_memory_handler(
     axum::extract::Query(params): axum::extract::Query<ExportParams>,
 ) -> Json<Value> {
     let span = tracing::info_span!(
-        target: "kyma_telemetry",
+        target: "pensieve_telemetry",
         "memory.export",
-        kyma.subject = principal.subject.as_deref().unwrap_or(""),
-        kyma.tenant = %principal.tenant,
+        pensieve.subject = principal.subject.as_deref().unwrap_or(""),
+        pensieve.tenant = %principal.tenant,
         memory.exported = tracing::field::Empty,
     );
     async move {
-        let shared = SharedToolCtx { realm_scope: Default::default(), consumer_sink: None, federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+        let shared = SharedToolCtx { realm_scope: Default::default(), consumer_sink: None, federation: Some(pensieve_federation::runtime_from(state.credentials.clone())),
             catalog: state.catalog.clone(),
             format: state.format.clone(),
             pool: state.pool.clone(),
@@ -304,7 +304,7 @@ async fn export_memory_handler(
         );
         let edges_sql =
             "SELECT id, src, dst, type, realm, target_namespace, props, created_at FROM memory_edges";
-        let db = kyma_memory::DEFAULT_DATABASE;
+        let db = pensieve_memory::DEFAULT_DATABASE;
         let nodes = execute_sql(&shared, db, &nodes_sql, 1_000_000).await;
         let edges = execute_sql(&shared, db, edges_sql, 1_000_000).await;
         let rows = |v: Value| v.get("rows").cloned().unwrap_or_else(|| json!([]));
@@ -334,7 +334,7 @@ async fn get_memory_settings(State(state): State<AgentState>) -> Json<Value> {
 
 /// `PUT /v1/agent/memory/settings` — persist tunable memory settings. Server
 /// mode writes the Postgres row; local mode writes the JSON file under
-/// `${KYMA_HOME}`.
+/// `${PENSIEVE_HOME}`.
 async fn put_memory_settings(
     State(state): State<AgentState>,
     Json(body): Json<super::memory_settings::MemorySettings>,
@@ -364,7 +364,7 @@ async fn put_memory_settings(
 }
 
 /// `POST /v1/agent/files/contribute` — persist a file's structure as candidate
-/// graph nodes (used by `kyma scrape` / `kyma watch` and any HTTP client). Same
+/// graph nodes (used by `pensieve scrape` / `pensieve watch` and any HTTP client). Same
 /// path as the `contribute_file` MCP tool.
 #[derive(Debug, serde::Deserialize)]
 struct ContributeFileBody {
@@ -406,10 +406,10 @@ async fn get_retention_settings(State(state): State<AgentState>) -> Response {
     let Some(pg) = state
         .catalog
         .as_ref_any()
-        .downcast_ref::<kyma_catalog::PostgresCatalog>()
+        .downcast_ref::<pensieve_catalog::PostgresCatalog>()
     else {
         // Local mode: no Postgres, settings default to retain-forever.
-        return Json(kyma_core::retention::RetentionSettings::default()).into_response();
+        return Json(pensieve_core::retention::RetentionSettings::default()).into_response();
     };
     match pg.load_retention_settings(state.tenant).await {
         Ok(s) => Json(s).into_response(),
@@ -426,7 +426,7 @@ async fn get_retention_settings(State(state): State<AgentState>) -> Response {
 /// explicit per-table overrides into `tables.config.retention_days`.
 async fn put_retention_settings(
     State(state): State<AgentState>,
-    Json(body): Json<kyma_core::retention::RetentionSettings>,
+    Json(body): Json<pensieve_core::retention::RetentionSettings>,
 ) -> Response {
     // A day-count of 0 would mean "expire immediately" — almost always a
     // foot-gun. Retain-forever is expressed by omitting the key (or null global).
@@ -447,7 +447,7 @@ async fn put_retention_settings(
     let Some(pg) = state
         .catalog
         .as_ref_any()
-        .downcast_ref::<kyma_catalog::PostgresCatalog>()
+        .downcast_ref::<pensieve_catalog::PostgresCatalog>()
     else {
         return Json(json!({ "ok": true, "persisted": false })).into_response();
     };
@@ -497,11 +497,11 @@ async fn memory_query_handler(
     }
     let query_preview: String = body.retrieve.query.chars().take(200).collect();
     let span = tracing::info_span!(
-        target: "kyma_telemetry",
+        target: "pensieve_telemetry",
         "memory.recall",
-        kyma.subject = principal.subject.as_deref().unwrap_or(""),
-        kyma.tenant = %principal.tenant,
-        kyma.client = %crate::agent::identity::consumer_kind(),
+        pensieve.subject = principal.subject.as_deref().unwrap_or(""),
+        pensieve.tenant = %principal.tenant,
+        pensieve.client = %crate::agent::identity::consumer_kind(),
         memory.query = %query_preview,
         memory.results = tracing::field::Empty,
         memory.took_ms = tracing::field::Empty,
@@ -517,7 +517,7 @@ async fn memory_query_handler(
                     tenant: state.tenant,
                 }) as crate::agent::tools::ConsumerSink
             }),
-            federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+            federation: Some(pensieve_federation::runtime_from(state.credentials.clone())),
             catalog: state.catalog.clone(),
             format: state.format.clone(),
             pool: state.pool.clone(),
@@ -552,13 +552,13 @@ async fn memory_query_handler(
                 .or_else(|| pid.map(|p| p.to_string()))
                 .or_else(|| ip.clone())
                 .unwrap_or_else(|| "anon".into());
-            sink.publish(kyma_ingest_core::ConsumerActivity {
+            sink.publish(pensieve_ingest_core::ConsumerActivity {
                 consumer_id: format!("{kind}:{ident}"),
                 label: principal.subject.clone().unwrap_or_else(|| kind.clone()),
                 kind,
                 subject: principal.subject.clone(),
                 tenant: principal.tenant.to_string(),
-                action: kyma_ingest_core::ConsumerAction::Recall,
+                action: pensieve_ingest_core::ConsumerAction::Recall,
                 node_ids,
                 namespaces,
                 query_preview: Some(query_preview.clone()),
@@ -575,7 +575,7 @@ async fn memory_query_handler(
             let prompt = format!("Question: {}\n\n{}", body.retrieve.query, result.context);
             if let Ok(brief) = run_oneshot(
                 &state,
-                "kyma-memory-brief",
+                "pensieve-memory-brief",
                 "Answers a question from retrieved memory.",
                 "Answer the question using ONLY the provided memories. Be concise and cite memory \
                  ids. If the memories don't contain the answer, say so plainly.",
@@ -810,10 +810,10 @@ async fn ask_handler(
             .into_response();
     }
     let agent_span = tracing::info_span!(
-        target: "kyma_telemetry",
+        target: "pensieve_telemetry",
         "agent.query",
-        kyma.subject = principal.subject.as_deref().unwrap_or(""),
-        kyma.tenant = %principal.tenant,
+        pensieve.subject = principal.subject.as_deref().unwrap_or(""),
+        pensieve.tenant = %principal.tenant,
         agent.question = %question.chars().take(200).collect::<String>(),
     );
 
@@ -844,7 +844,7 @@ async fn ask_handler(
 
     // S2.6 agent-run admission: cap concurrent agent runs (each is a heavy LLM
     // tool loop — model calls + memory recall + data-source reads). Off by
-    // default (`KYMA_AGENT_MAX_CONCURRENT` unset). The permit is moved into the
+    // default (`PENSIEVE_AGENT_MAX_CONCURRENT` unset). The permit is moved into the
     // run's spawned task below, so the slot frees when the run finishes. (The
     // Claude-CLI engine path above owns its own resource model; capping it is a
     // follow-up.)
@@ -862,7 +862,7 @@ async fn ask_handler(
         }
     };
     // Per-tenant agent-run budget (S2.6): one tenant's agent activity can't
-    // starve another's. Off by default (`KYMA_AGENT_MAX_CONCURRENT_PER_TENANT`).
+    // starve another's. Off by default (`PENSIEVE_AGENT_MAX_CONCURRENT_PER_TENANT`).
     let agent_tenant_permit =
         match crate::concurrency::acquire_agent_run_for_tenant(principal.tenant) {
             Ok(p) => p,
@@ -886,7 +886,7 @@ async fn ask_handler(
 
     // Resolve (or create) the conversation session (A5). Prior turns are
     // replayed into the runner; this turn is appended below.
-    let source = body.source.as_deref().unwrap_or("kyma");
+    let source = body.source.as_deref().unwrap_or("pensieve");
     let tenant_uuid = state.tenant.as_uuid();
     let sctx = sessions::load_or_create(
         state.pool.as_ref(),
@@ -1853,7 +1853,7 @@ async fn ask_via_claude_cli(
                     run_id,
                     &question_owned,
                     &model,
-                    kyma_core::tenant::DEFAULT_TENANT.as_uuid(),
+                    pensieve_core::tenant::DEFAULT_TENANT.as_uuid(),
                     None,
                     started_at,
                     Utc::now(),
@@ -1946,7 +1946,7 @@ async fn ask_via_claude_cli(
             run_id,
             &question_owned,
             &model,
-            kyma_core::tenant::DEFAULT_TENANT.as_uuid(),
+            pensieve_core::tenant::DEFAULT_TENANT.as_uuid(),
             None,
             started_at,
             Utc::now(),

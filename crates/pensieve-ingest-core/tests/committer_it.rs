@@ -8,27 +8,27 @@
 use std::sync::Arc;
 
 use arrow_schema::{DataType, Field, Schema};
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::{Catalog, ExtentManifest, PrunePredicate, TableConfig, TableRef};
-use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_core::types::{ExtentId, TableId};
-use kyma_ingest_core::committer::Committer;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::{Catalog, ExtentManifest, PrunePredicate, TableConfig, TableRef};
+use pensieve_core::tenant::DEFAULT_TENANT;
+use pensieve_core::types::{ExtentId, TableId};
+use pensieve_ingest_core::committer::Committer;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 use uuid::Uuid;
 
 async fn connect() -> (PostgresCatalog, testcontainers::ContainerAsync<Postgres>) {
     let container = Postgres::default()
-        .with_user("kyma")
-        .with_password("kyma_dev")
-        .with_db_name("kyma")
+        .with_user("pensieve")
+        .with_password("pensieve_dev")
+        .with_db_name("pensieve")
         .with_name("pgvector/pgvector")
         .with_tag("pg16")
         .start()
         .await
         .expect("start postgres");
     let port = container.get_host_port_ipv4(5432).await.expect("port");
-    let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
+    let url = format!("postgres://pensieve:pensieve_dev@localhost:{port}/pensieve");
     let catalog = PostgresCatalog::connect(&url)
         .await
         .expect("connect + migrate");
@@ -44,7 +44,7 @@ fn manifest_for(tref: &TableRef) -> ExtentManifest {
         id: ExtentId::new(),
         table_id: tref.id,
         schema_snapshot_id: tref.schema_snapshot_id,
-        object_path: format!("staged/{}.kyma", Uuid::new_v4()),
+        object_path: format!("staged/{}.pensieve", Uuid::new_v4()),
         byte_size: 2048,
         row_count: 100,
         min_timestamp: None,
@@ -147,8 +147,8 @@ async fn stage_then_commit_is_exactly_once() {
 #[tokio::test]
 async fn staged_write_path_acks_without_commit_then_committer_commits() {
     use arrow_array::{Int64Array, RecordBatch};
-    use kyma_core::segment_format::SegmentFormat;
-    use kyma_ingest_core::WritePath;
+    use pensieve_core::segment_format::SegmentFormat;
+    use pensieve_ingest_core::WritePath;
     use object_store::memory::InMemory;
     use object_store::ObjectStore;
     use std::sync::Arc as StdArc;
@@ -166,7 +166,7 @@ async fn staged_write_path_acks_without_commit_then_committer_commits() {
     // Staged WritePath over an InMemory store + TLM format.
     let store: StdArc<dyn ObjectStore> = StdArc::new(InMemory::new());
     let format: StdArc<dyn SegmentFormat> =
-        StdArc::new(kyma_format_tlm::TelemetryFormat::new(store.clone(), "kyma"));
+        StdArc::new(pensieve_format_tlm::TelemetryFormat::new(store.clone(), "pensieve"));
     let catalog_dyn: StdArc<dyn Catalog> = StdArc::new(catalog.clone());
     let wp = WritePath::new(catalog_dyn.clone(), format).with_staged_mode();
 

@@ -1,5 +1,5 @@
 //! The seam that lets the stored-graph provider run SQL over node/edge tables
-//! without `kyma-graph` depending on the engine. `kyma-server` implements this
+//! without `pensieve-graph` depending on the engine. `pensieve-server` implements this
 //! over its DataFusion query path.
 
 use async_trait::async_trait;

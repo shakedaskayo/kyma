@@ -16,7 +16,7 @@
 
 ## File structure
 
-**Backend (Rust, `crates/kyma-server/src/agent/`)**
+**Backend (Rust, `crates/pensieve-server/src/agent/`)**
 - `memory_policy.rs` — **new**: `HitlPolicy`, `OpMode`, `MemoryOp`, `Disposition`, `classify()`, `bump()`. Pure, no I/O. (~150 lines)
 - `memory_queue_store.rs` — **new**: `QueueRow`, `QueueStore` enum (Pg | Local-file), insert/list/get/count/update. (~250 lines)
 - `memory_gate.rs` — **new**: `GateCtx`, `OpPayload`, `Inverse`, `dispatch()`, `apply_op()`, `inverse_of()`, `resolve()` (approve/reject/undo/bulk). (~400 lines)
@@ -26,7 +26,7 @@
 - `tools.rs` — **modify**: add `hitl: Option<Arc<HitlGate>>` to `SharedToolCtx`.
 - `dreaming.rs` — **modify**: build the `HitlGate` from settings+state; attach to the dreaming `SharedToolCtx`; add disposition tallies.
 - `routes.rs` — **modify**: 6 review routes; settings payload already carries `hitl` via the struct.
-- `crates/kyma-catalog/migrations/024_memory_approval_queue.sql` — **new**.
+- `crates/pensieve-catalog/migrations/024_memory_approval_queue.sql` — **new**.
 
 **Frontend (`web/src/`)**
 - `sdk/review.ts` — **new**: types + `listReview`/`reviewCount`/`approve`/`reject`/`undo`/`bulkReview`.
@@ -45,8 +45,8 @@
 ## Task 1: Policy types + `classify` (pure core)
 
 **Files:**
-- Create: `crates/kyma-server/src/agent/memory_policy.rs`
-- Modify: `crates/kyma-server/src/agent/mod.rs` (add `pub mod memory_policy;`)
+- Create: `crates/pensieve-server/src/agent/memory_policy.rs`
+- Modify: `crates/pensieve-server/src/agent/mod.rs` (add `pub mod memory_policy;`)
 
 - [ ] **Step 1: Write the module with types + classify + failing tests**
 
@@ -149,7 +149,7 @@ mod tests {
 ```
 
 - [ ] **Step 2: Run tests, expect FAIL (module not wired)** → add `pub mod memory_policy;` to `mod.rs`.
-- [ ] **Step 3: Run `cargo test -p kyma-server memory_policy::` → expect PASS (8 tests).**
+- [ ] **Step 3: Run `cargo test -p pensieve-server memory_policy::` → expect PASS (8 tests).**
 - [ ] **Step 4: Commit** `feat(memory): HITL policy model + pure classifier`.
 
 ---
@@ -157,8 +157,8 @@ mod tests {
 ## Task 2: Migration + queue store (pg + local backends)
 
 **Files:**
-- Create: `crates/kyma-catalog/migrations/024_memory_approval_queue.sql`
-- Create: `crates/kyma-server/src/agent/memory_queue_store.rs` (+ `mod.rs` line)
+- Create: `crates/pensieve-catalog/migrations/024_memory_approval_queue.sql`
+- Create: `crates/pensieve-server/src/agent/memory_queue_store.rs` (+ `mod.rs` line)
 
 - [ ] **Step 1: Write the migration** (table + indexes exactly as in spec §5). Confirm migrations are applied by the existing runner (same dir as `020_memory_settings.sql`); no code wiring needed beyond the file.
 
@@ -198,7 +198,7 @@ impl QueueStore {
 ```
 Local backend stores `Vec<QueueRow>` as pretty JSON (read-modify-write under a `tokio::sync::Mutex` held in a process-wide `OnceCell` keyed by path, to avoid lost updates). Pg backend uses sqlx with `tenant_id` scoping on every query.
 
-- [ ] **Step 3: Tests.** `cargo test -p kyma-server memory_queue_store::` — local-backend round-trip: insert 2 → list returns newest-first → get by id → update_status → counts reflect it. (Pg path covered later by integration tests in CI with a database; the local path is the unit-tested one.)
+- [ ] **Step 3: Tests.** `cargo test -p pensieve-server memory_queue_store::` — local-backend round-trip: insert 2 → list returns newest-first → get by id → update_status → counts reflect it. (Pg path covered later by integration tests in CI with a database; the local path is the unit-tested one.)
 - [ ] **Step 4: Commit** `feat(memory): approval-queue table + dual-backend store`.
 
 ---
@@ -206,7 +206,7 @@ Local backend stores `Vec<QueueRow>` as pretty JSON (read-modify-write under a `
 ## Task 3: Gate dispatch + inverses + resolve
 
 **Files:**
-- Create: `crates/kyma-server/src/agent/memory_gate.rs` (+ `mod.rs` line)
+- Create: `crates/pensieve-server/src/agent/memory_gate.rs` (+ `mod.rs` line)
 
 - [ ] **Step 1: Define `GateCtx`, `OpPayload`, `HitlGate`, `dispatch`.**
 
@@ -235,8 +235,8 @@ where F: FnOnce() -> Fut, Fut: Future<Output = anyhow::Result<AppliedRef>>;
   - `reject`: `update_status(rejected)`.
   - `undo` (post_hoc row): `apply_inverse(row.inverse)`; `update_status(rolled_back)`.
 
-- [ ] **Step 3: Round-trip inverse tests (local store + an in-memory MemoryWriter against a tempdir catalog).** For each op {Add, Update, Invalidate, Merge, Archive, RelationshipWrite}: apply → snapshot latest node/edge state → run inverse → assert equals pre-op snapshot. Use the existing test catalog harness (mirror `memory_settings.rs` test style + `MemoryWriter` test setup found in `crates/kyma-memory` tests).
-- [ ] **Step 4: Run `cargo test -p kyma-server memory_gate::` → PASS.**
+- [ ] **Step 3: Round-trip inverse tests (local store + an in-memory MemoryWriter against a tempdir catalog).** For each op {Add, Update, Invalidate, Merge, Archive, RelationshipWrite}: apply → snapshot latest node/edge state → run inverse → assert equals pre-op snapshot. Use the existing test catalog harness (mirror `memory_settings.rs` test style + `MemoryWriter` test setup found in `crates/pensieve-memory` tests).
+- [ ] **Step 4: Run `cargo test -p pensieve-server memory_gate::` → PASS.**
 - [ ] **Step 5: Commit** `feat(memory): gate dispatch + deterministic bi-temporal inverses`.
 
 ---
@@ -244,8 +244,8 @@ where F: FnOnce() -> Fut, Fut: Future<Output = anyhow::Result<AppliedRef>>;
 ## Task 4: Wire realtime consolidation through the gate
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/memory_conflict.rs` (`consolidate_memory`)
-- Modify: `crates/kyma-server/src/agent/memory_settings.rs` (add `hitl` field — do here so consolidation can read it)
+- Modify: `crates/pensieve-server/src/agent/memory_conflict.rs` (`consolidate_memory`)
+- Modify: `crates/pensieve-server/src/agent/memory_settings.rs` (add `hitl` field — do here so consolidation can read it)
 
 - [ ] **Step 1:** Add `hitl: HitlPolicy` to `MemorySettings` + `Default` (defaults to `HitlPolicy::default()`). Serde-roundtrip test incl. a legacy JSON value missing `hitl` → loads default.
 - [ ] **Step 2:** In `consolidate_memory`, after `decision`, map `ConflictOp → MemoryOp` (Add→Add, Update→Update, Invalidate→Invalidate; Noop→skip). Build a `HitlGate` from `memory_settings::load_for(state)` + `QueueStore::from_state(state)`. Wrap each apply arm in `gate::dispatch` with `confidence: m.confidence`, `source:"realtime"`, payload carrying the candidate + `decision`. When `dispatch` returns `applied:false`, do **not** bump the tally's written count (it was deferred); add a `gated` counter to `ConflictTally`.
@@ -257,9 +257,9 @@ where F: FnOnce() -> Fut, Fut: Future<Output = anyhow::Result<AppliedRef>>;
 ## Task 5: Wire dreaming housekeeping tools through the gate
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/tools.rs` (`SharedToolCtx` + `hitl: Option<Arc<HitlGate>>`)
-- Modify: `crates/kyma-server/src/agent/memory_tools.rs` (5 mutating tools)
-- Modify: `crates/kyma-server/src/agent/dreaming.rs` (build gate, attach to dreaming `SharedToolCtx`, tallies)
+- Modify: `crates/pensieve-server/src/agent/tools.rs` (`SharedToolCtx` + `hitl: Option<Arc<HitlGate>>`)
+- Modify: `crates/pensieve-server/src/agent/memory_tools.rs` (5 mutating tools)
+- Modify: `crates/pensieve-server/src/agent/dreaming.rs` (build gate, attach to dreaming `SharedToolCtx`, tallies)
 
 - [ ] **Step 1:** Add `pub hitl: Option<Arc<HitlGate>>` to `SharedToolCtx`; default `None` at every existing construction site (interactive agent stays ungated — it is already human-driven). A small helper `gate_or_apply(shared, ctx, payload, apply)` lives in `memory_gate.rs`: if `shared.hitl` is `Some`, `dispatch`; else just `apply()`.
 - [ ] **Step 2:** Wrap the mutation in each of: `tool_merge_memories` (op `Merge`), `tool_memory_judge` (`supersedes`→`Invalidate`, `merged`→`Merge`, else `RelationshipWrite`), `tool_update_memory_status` (status=archived → `Archive`; else ungated), `tool_link_memory_to_entity` (cross-realm/cross-namespace → `LinkEntityCrossRealm`, else `RelationshipWrite`), `tool_update_memory_importance` (`Update`). When gated/deferred, the tool returns `{"queued_for_review": true, "queue_id": "...", "applied": false}` so the dreaming agent knows it proposed, not committed.
@@ -272,7 +272,7 @@ where F: FnOnce() -> Fut, Fut: Future<Output = anyhow::Result<AppliedRef>>;
 ## Task 6: API — settings payload + review routes
 
 **Files:**
-- Modify: `crates/kyma-server/src/agent/routes.rs`
+- Modify: `crates/pensieve-server/src/agent/routes.rs`
 
 - [ ] **Step 1:** Confirm `get/put_memory_settings` already serialize the whole `MemorySettings` (so `hitl` rides along automatically — verify the handler doesn't field-pick). Add a test asserting a PUT with `hitl` round-trips through GET.
 - [ ] **Step 2:** Add routes under the existing memory group:
@@ -314,7 +314,7 @@ where F: FnOnce() -> Fut, Fut: Future<Output = anyhow::Result<AppliedRef>>;
 
 **Files:** Create `ReviewInbox.tsx`, `CandidateCard.tsx`, `ReviewInbox.test.tsx`, `CandidateCard.test.tsx` under `web/src/features/review/`; routes `_app.memory.review.tsx` + `.index.tsx`.
 
-- [ ] **Step 1 (TDD):** Write `CandidateCard.test.tsx`: renders op badge + confidence + reason; shows old⇄new for a merge payload; clicking Approve calls the mutation; `Undo` shows only for `post_hoc` rows. Mock the hooks/fetch per `KymaDiscover.test.tsx`.
+- [ ] **Step 1 (TDD):** Write `CandidateCard.test.tsx`: renders op badge + confidence + reason; shows old⇄new for a merge payload; clicking Approve calls the mutation; `Undo` shows only for `post_hoc` rows. Mock the hooks/fetch per `PensieveDiscover.test.tsx`.
 - [ ] **Step 2:** Implement `CandidateCard` using `@/components/ui` primitives (Card, Badge, Button) + `cn()`, matching the ASCII mock (op badge w/ severity color, confidence chip, source + run deep-link, two-column diff for merge/invalidate/update, action row; inline edit on new-content before approve).
 - [ ] **Step 3:** Implement `ReviewInbox` (filter bar: status/source/realm/op/confidence; list of `CandidateCard`; bulk-select + bulk bar; `EmptyState` when none; `SkeletonRows` while loading). `ReviewInbox.test.tsx`: renders a list from mocked `useReviewItems`, empty state when none.
 - [ ] **Step 4:** Add the two route files (pattern from subagent report §1).
@@ -344,7 +344,7 @@ where F: FnOnce() -> Fut, Fut: Future<Output = anyhow::Result<AppliedRef>>;
 ## Task 12: Full verification + route tree + merge
 
 - [ ] **Step 1:** Regenerate the TanStack route tree (`pnpm -C web build` or the route-gen step) so `routeTree.gen.ts` includes the new routes. Commit the regen if it changes.
-- [ ] **Step 2:** Backend gate: `cargo build -p kyma-server` and `cargo test -p kyma-server` → all green; `cargo clippy -p kyma-server --all-targets -- -D warnings` → clean (fix any).
+- [ ] **Step 2:** Backend gate: `cargo build -p pensieve-server` and `cargo test -p pensieve-server` → all green; `cargo clippy -p pensieve-server --all-targets -- -D warnings` → clean (fix any).
 - [ ] **Step 3:** Frontend gate: `pnpm -C web typecheck`, `pnpm -C web test`, `pnpm -C web build` (or `lint`) → all green.
 - [ ] **Step 4:** Manual smoke (document results): start the server in local mode, enable the policy via PUT settings, run a manual dreaming run that proposes a merge, GET `/memory/review` shows the pending row, POST approve applies it. Record actual output.
 - [ ] **Step 5: Merge.** `git checkout main && git merge --no-ff worktree-memory-hitl-review` (per the local-merge-sync preference), then push. Exit the worktree (keep or remove).

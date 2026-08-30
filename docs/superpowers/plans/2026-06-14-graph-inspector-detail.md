@@ -4,15 +4,15 @@
 
 **Goal:** Make the graph node inspector readable — inline-expandable property rows, a wide "View details" modal with markdown content + untruncated properties, and a paged source-file viewer for nodes that reference a stored artifact.
 
-**Architecture:** Five small, focused frontend units in `packages/react/src`. A shared `<Markdown>` is extracted from the existing dashboard renderer; pure `node-detail` helpers decide content/source/formatting; `ArtifactSourceViewer` pages the existing `/v1/artifacts/by-path` API via `useKymaClient()`; `NodeDetailModal` composes them in a Radix dialog; `InspectorPanel` gains expandable rows + a button that opens the modal. No server changes, no graph-store changes.
+**Architecture:** Five small, focused frontend units in `packages/react/src`. A shared `<Markdown>` is extracted from the existing dashboard renderer; pure `node-detail` helpers decide content/source/formatting; `ArtifactSourceViewer` pages the existing `/v1/artifacts/by-path` API via `usePensieveClient()`; `NodeDetailModal` composes them in a Radix dialog; `InspectorPanel` gains expandable rows + a button that opens the modal. No server changes, no graph-store changes.
 
-**Tech Stack:** React + TypeScript, `@kyma-ai/react` package (`ky-` Tailwind prefix), Radix Dialog primitive, `@kyma-ai/client` (`client.artifacts.fetchArtifactByPath`), Vitest + Testing Library.
+**Tech Stack:** React + TypeScript, `@pensieve-ai/react` package (`ky-` Tailwind prefix), Radix Dialog primitive, `@pensieve-ai/client` (`client.artifacts.fetchArtifactByPath`), Vitest + Testing Library.
 
 **Reference spec:** `docs/superpowers/specs/2026-06-14-graph-inspector-detail-design.md`
 
 **Conventions for every task:**
 - Run a single test file from the repo root with:
-  `pnpm --filter @kyma-ai/react exec vitest run <path-relative-to-packages/react>`
+  `pnpm --filter @pensieve-ai/react exec vitest run <path-relative-to-packages/react>`
 - All class names use the `ky-` prefix (package CSS isolation).
 - Commit after each task. Branch: `worktree-graph-inspector-detail`.
 
@@ -84,7 +84,7 @@ describe("Markdown", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/internal/ui/markdown.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/internal/ui/markdown.test.tsx`
 Expected: FAIL — `Failed to resolve import "./markdown"`.
 
 - [ ] **Step 3: Create the shared markdown module**
@@ -262,7 +262,7 @@ Replace the entire contents of `packages/react/src/dashboards/panels/MarkdownPan
  * minimal markdown renderer (packages/react/src/internal/ui/markdown.tsx).
  */
 
-import type { DashboardPanel } from "@kyma-ai/client";
+import type { DashboardPanel } from "@pensieve-ai/client";
 import { renderMarkdown } from "../../internal/ui/markdown";
 
 interface Props {
@@ -286,7 +286,7 @@ export function MarkdownPanelViz({ panel }: Props) {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/internal/ui/markdown.test.tsx src/dashboards`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/internal/ui/markdown.test.tsx src/dashboards`
 Expected: PASS — new markdown test passes and existing dashboard/markdown-panel tests still pass (unchanged output).
 
 - [ ] **Step 6: Commit**
@@ -312,7 +312,7 @@ Create `packages/react/src/graph/node-detail.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 import { nodeContent, nodeSourcePath, formatValue, orderedProps } from "./node-detail";
 
 function node(properties: Record<string, unknown>, labels: string[] = ["Memory"]): GraphNode {
@@ -380,7 +380,7 @@ describe("orderedProps", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/node-detail.test.ts`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/node-detail.test.ts`
 Expected: FAIL — `Failed to resolve import "./node-detail"`.
 
 - [ ] **Step 3: Write the implementation**
@@ -394,7 +394,7 @@ Create `packages/react/src/graph/node-detail.ts`:
  * fetchable source artifact (`object_path`), and how to format property values
  * for display (pretty JSON, collapsed embeddings).
  */
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 
 /** The node's renderable long-text content (`properties.content`) or null. */
 export function nodeContent(node: GraphNode): string | null {
@@ -474,7 +474,7 @@ export function orderedProps(node: GraphNode): Array<[string, unknown]> {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/node-detail.test.ts`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/node-detail.test.ts`
 Expected: PASS — all helper assertions pass.
 
 - [ ] **Step 5: Commit**
@@ -503,7 +503,7 @@ Create `packages/react/src/graph/ArtifactSourceViewer.test.tsx`:
 ```tsx
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { KymaProvider } from "../provider/KymaProvider";
+import { PensieveProvider } from "../provider/PensieveProvider";
 import { ArtifactSourceViewer } from "./ArtifactSourceViewer";
 
 function windowResponse(offset: number, content: string, eof: boolean, size: number) {
@@ -543,9 +543,9 @@ describe("ArtifactSourceViewer", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
         <ArtifactSourceViewer path="artifacts/t/logs/build.log" />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
 
     await waitFor(() =>
@@ -564,9 +564,9 @@ describe("ArtifactSourceViewer", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nope", { status: 500 })));
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
         <ArtifactSourceViewer path="artifacts/t/logs/build.log" />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
 
     await waitFor(() => expect(screen.getByRole("button", { name: /retry/i })).toBeTruthy());
@@ -576,7 +576,7 @@ describe("ArtifactSourceViewer", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/ArtifactSourceViewer.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/ArtifactSourceViewer.test.tsx`
 Expected: FAIL — `Failed to resolve import "./ArtifactSourceViewer"`.
 
 - [ ] **Step 3: Write the implementation**
@@ -593,10 +593,10 @@ Create `packages/react/src/graph/ArtifactSourceViewer.tsx`:
 import { useEffect, useState } from "react";
 import { Copy, WrapText } from "lucide-react";
 import { Button } from "../internal/ui/button";
-import { useKymaClient } from "../provider/context";
+import { usePensieveClient } from "../provider/context";
 
 export function ArtifactSourceViewer({ path }: { path: string }) {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   const [text, setText] = useState("");
   const [offset, setOffset] = useState(0);
   const [size, setSize] = useState<number | null>(null);
@@ -691,7 +691,7 @@ export function ArtifactSourceViewer({ path }: { path: string }) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/ArtifactSourceViewer.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/ArtifactSourceViewer.test.tsx`
 Expected: PASS — first window renders, "Load more" appends and disappears at eof, error path shows Retry.
 
 - [ ] **Step 5: Commit**
@@ -716,12 +716,12 @@ Create `packages/react/src/graph/NodeDetailModal.test.tsx`:
 ```tsx
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { GraphNode } from "@kyma-ai/client";
-import { KymaProvider } from "../provider/KymaProvider";
+import type { GraphNode } from "@pensieve-ai/client";
+import { PensieveProvider } from "../provider/PensieveProvider";
 import { NodeDetailModal } from "./NodeDetailModal";
 
 // jsdom can't run Radix portals/animations — replace the dialog primitive with
-// simple pass-through elements (same approach as KymaDashboard.test.tsx).
+// simple pass-through elements (same approach as PensieveDashboard.test.tsx).
 vi.mock("@radix-ui/react-dialog", () => {
   const Root = ({ open, children }: { open?: boolean; children: React.ReactNode }) =>
     open ? <div data-testid="dialog-root">{children}</div> : null;
@@ -765,9 +765,9 @@ function renderModal(node: GraphNode) {
     ),
   );
   return render(
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
       <NodeDetailModal node={node} open onClose={() => {}} />
-    </KymaProvider>,
+    </PensieveProvider>,
   );
 }
 
@@ -799,7 +799,7 @@ describe("NodeDetailModal", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/NodeDetailModal.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/NodeDetailModal.test.tsx`
 Expected: FAIL — `Failed to resolve import "./NodeDetailModal"`.
 
 - [ ] **Step 3: Write the implementation**
@@ -815,7 +815,7 @@ Create `packages/react/src/graph/NodeDetailModal.tsx`:
  */
 import { useState } from "react";
 import { Copy } from "lucide-react";
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../internal/ui/dialog";
 import { Button } from "../internal/ui/button";
 import { Markdown } from "../internal/ui/markdown";
@@ -916,7 +916,7 @@ export function NodeDetailModal({
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/NodeDetailModal.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/NodeDetailModal.test.tsx`
 Expected: PASS — markdown heading renders, properties listed, source section gated on `object_path`.
 
 - [ ] **Step 5: Commit**
@@ -941,7 +941,7 @@ Create `packages/react/src/graph/InspectorPanel.test.tsx`:
 ```tsx
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 import { InspectorPanel } from "./InspectorPanel";
 import { GraphStoreContext, createGraphStore } from "./graph-store";
 
@@ -1007,7 +1007,7 @@ describe("InspectorPanel", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/InspectorPanel.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/InspectorPanel.test.tsx`
 Expected: FAIL — no "View details" button / no "expand topic_key" button exists yet.
 
 - [ ] **Step 3: Edit InspectorPanel — imports + hooks**
@@ -1017,7 +1017,7 @@ In `packages/react/src/graph/InspectorPanel.tsx`, update the import block at the
 ```tsx
 import { useMemo } from "react";
 import { ArrowLeft, ArrowRight, Copy, Crosshair, X } from "lucide-react";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
 import { useGraphStore } from "./graph-store";
 import { getRelationshipFamilyColor } from "./graph-style";
 ```
@@ -1027,7 +1027,7 @@ with:
 ```tsx
 import { useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Copy, Crosshair, Maximize2, X } from "lucide-react";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
 import { useGraphStore } from "./graph-store";
 import { getRelationshipFamilyColor } from "./graph-style";
 import { NodeDetailModal } from "./NodeDetailModal";
@@ -1134,7 +1134,7 @@ and replace it with:
 
 - [ ] **Step 6: Run test to verify it passes**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/InspectorPanel.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/InspectorPanel.test.tsx`
 Expected: PASS — "View details" opens the (mocked) dialog; chevron toggles a row from expand→collapse.
 
 - [ ] **Step 7: Commit**
@@ -1152,17 +1152,17 @@ git commit -m "feat(graph): InspectorPanel — expandable property rows + View d
 
 - [ ] **Step 1: Typecheck the package**
 
-Run: `pnpm --filter @kyma-ai/react typecheck`
+Run: `pnpm --filter @pensieve-ai/react typecheck`
 Expected: no errors. (If `formatValue`/`orderedProps`/`Markdown` signatures drift from their call sites, fix here.)
 
 - [ ] **Step 2: Run the full react test suite**
 
-Run: `pnpm --filter @kyma-ai/react test`
+Run: `pnpm --filter @pensieve-ai/react test`
 Expected: all tests pass, including the 5 new test files and the unchanged dashboard/markdown tests.
 
 - [ ] **Step 3: Build the package**
 
-Run: `pnpm --filter @kyma-ai/react build`
+Run: `pnpm --filter @pensieve-ai/react build`
 Expected: build succeeds (no unused-import or TS build errors).
 
 - [ ] **Step 4: Manual smoke (optional but recommended)**

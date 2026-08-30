@@ -1,7 +1,7 @@
 //! Integration tests for federated (live-proxied) tables in the query path.
 //!
 //! A federated table is a metadata-only catalog entry (`TableConfig.federated`
-//! = Some) whose rows live on an external platform — see `kyma-federation`.
+//! = Some) whose rows live on an external platform — see `pensieve-federation`.
 //! Without a live Microsoft Fabric endpoint these tests can't run a remote
 //! query end-to-end; what they DO pin down is the wiring around it:
 //!
@@ -18,7 +18,7 @@
 use arrow_schema::{DataType, Field, Schema};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use kyma_core::catalog::{FederatedTableSpec, TableConfig};
+use pensieve_core::catalog::{FederatedTableSpec, TableConfig};
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -48,8 +48,8 @@ fn orders_schema() -> Arc<Schema> {
 /// `otel_logs`.
 async fn seeded_state_with_federated(
     exclude_from_wildcard: bool,
-) -> kyma_server::QueryState {
-    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+) -> pensieve_server::QueryState {
+    let state = pensieve_server::test_support::seeded_state_with_obs_otel_logs().await;
     let obs_id = state
         .catalog
         .lookup_database("obs")
@@ -69,8 +69,8 @@ async fn seeded_state_with_federated(
     state
 }
 
-async fn run(state: kyma_server::QueryState, req: Request<Body>) -> (StatusCode, String) {
-    let app = kyma_server::router(state);
+async fn run(state: pensieve_server::QueryState, req: Request<Body>) -> (StatusCode, String) {
+    let app = pensieve_server::router(state);
     let resp = app.oneshot(req).await.unwrap();
     let status = resp.status();
     let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
@@ -111,7 +111,7 @@ async fn ingest_into_federated_table_is_rejected() {
         .await
         .expect("lookup fab_orders");
 
-    let write = kyma_ingest_core::WritePath::new(state.catalog.clone(), state.format.clone());
+    let write = pensieve_ingest_core::WritePath::new(state.catalog.clone(), state.format.clone());
     let batch = arrow_array::RecordBatch::try_new(
         orders_schema(),
         vec![
@@ -133,11 +133,11 @@ async fn ingest_into_federated_table_is_rejected() {
 
 #[tokio::test]
 async fn wildcard_resolution_honors_exclude_flag() {
-    use kyma_server::query_multidb::resolve_all_db_tables;
+    use pensieve_server::query_multidb::resolve_all_db_tables;
 
     // Excluded: the wildcard sweep must not see fab_orders…
     let state = seeded_state_with_federated(true).await;
-    let tables = resolve_all_db_tables(&state.catalog, kyma_core::tenant::DEFAULT_TENANT, None)
+    let tables = resolve_all_db_tables(&state.catalog, pensieve_core::tenant::DEFAULT_TENANT, None)
         .await
         .expect("resolve");
     assert!(
@@ -152,7 +152,7 @@ async fn wildcard_resolution_honors_exclude_flag() {
 
     // Not excluded: the wildcard sweep includes it.
     let state = seeded_state_with_federated(false).await;
-    let tables = resolve_all_db_tables(&state.catalog, kyma_core::tenant::DEFAULT_TENANT, None)
+    let tables = resolve_all_db_tables(&state.catalog, pensieve_core::tenant::DEFAULT_TENANT, None)
         .await
         .expect("resolve");
     assert!(tables.iter().any(|dt| dt.table.name == "fab_orders"));

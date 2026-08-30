@@ -1,7 +1,7 @@
-//! `kyma user …` — admin user management against `/v1/admin/users`.
+//! `pensieve user …` — admin user management against `/v1/admin/users`.
 //!
 //! These talk to a running server (not Postgres directly) and require an
-//! **admin** bearer token saved via `kyma connect <url> --token <admin-token>`.
+//! **admin** bearer token saved via `pensieve connect <url> --token <admin-token>`.
 //! Passwords are sent to the server, which hashes them (argon2id) — the CLI
 //! never hashes or stores them.
 
@@ -114,7 +114,7 @@ pub(crate) async fn run(op: UsersOp) -> Result<()> {
 fn require_token(cfg: &ClientConfig) -> Result<()> {
     if cfg.token.is_none() {
         return Err(anyhow!(
-            "user management needs an admin token — run `kyma connect {} --token <admin-token>`",
+            "user management needs an admin token — run `pensieve connect {} --token <admin-token>`",
             cfg.endpoint
         ));
     }
@@ -167,7 +167,7 @@ fn hint_auth(result: Result<Value>) -> Result<Value> {
     result.map_err(|e| {
         let msg = e.to_string();
         if msg.contains("401") {
-            anyhow!("{msg}\n  → not authenticated; run `kyma connect <url> --token <admin-token>`")
+            anyhow!("{msg}\n  → not authenticated; run `pensieve connect <url> --token <admin-token>`")
         } else if msg.contains("403") {
             anyhow!("{msg}\n  → your token is not an admin token; user management requires the admin role")
         } else {

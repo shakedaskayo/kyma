@@ -1,7 +1,7 @@
-//! Typed client for brain repos (`/v1/brain/*`) — kyma memory published as
+//! Typed client for brain repos (`/v1/brain/*`) — pensieve memory published as
 //! Git-clonable Obsidian vaults served over smart HTTP at `/git/<name>.git`.
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import { errorFromResponse } from "./errors";
 
 export type RealmSelector =
@@ -88,16 +88,16 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function listBrains(t: KymaTransport): Promise<BrainsEnvelope> {
+export async function listBrains(t: PensieveTransport): Promise<BrainsEnvelope> {
   return handleResponse(await t.request("/v1/brain"));
 }
 
-export async function getBrain(t: KymaTransport, name: string): Promise<Brain> {
+export async function getBrain(t: PensieveTransport, name: string): Promise<Brain> {
   return handleResponse(await t.request(`/v1/brain/${encodeURIComponent(name)}`));
 }
 
 export async function createBrain(
-  t: KymaTransport,
+  t: PensieveTransport,
   input: CreateBrainInput,
 ): Promise<{ brain: Brain; first_export: BrainExportResult }> {
   return handleResponse(
@@ -106,7 +106,7 @@ export async function createBrain(
 }
 
 export async function deleteBrain(
-  t: KymaTransport,
+  t: PensieveTransport,
   name: string,
   opts?: { purge?: boolean },
 ): Promise<{ deleted: string; repo_purged: boolean }> {
@@ -118,7 +118,7 @@ export async function deleteBrain(
 }
 
 export async function triggerBrainExport(
-  t: KymaTransport,
+  t: PensieveTransport,
   name: string,
 ): Promise<BrainExportResult> {
   return handleResponse(
@@ -130,7 +130,7 @@ export async function triggerBrainExport(
 }
 
 export async function triggerBrainGardener(
-  t: KymaTransport,
+  t: PensieveTransport,
   name: string,
 ): Promise<{ started?: boolean; deduped?: boolean; detail?: string }> {
   return handleResponse(
@@ -142,7 +142,7 @@ export async function triggerBrainGardener(
 }
 
 export async function listBrainRuns(
-  t: KymaTransport,
+  t: PensieveTransport,
   name: string,
 ): Promise<{ runs: BrainRunRecord[] }> {
   return handleResponse(await t.request(`/v1/brain/${encodeURIComponent(name)}/runs`));

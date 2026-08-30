@@ -12,12 +12,12 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_server::agent::local::{
+use pensieve_core::tenant::DEFAULT_TENANT;
+use pensieve_server::agent::local::{
     NullCredentialStore, NullEnabledSkillsStore, NullEnginePreferenceStore,
 };
-use kyma_server::agent::AgentState;
-use kyma_server::auth::{
+use pensieve_server::agent::AgentState;
+use pensieve_server::auth::{
     require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role,
 };
 use std::sync::Arc;
@@ -25,7 +25,7 @@ use tower::ServiceExt;
 
 /// Build the agent router with a backend that knows a read-role and a
 /// write-role token, wrapped in the same `Role::Read` middleware production uses.
-fn agent_app(state: &kyma_server::QueryState) -> axum::Router {
+fn agent_app(state: &pensieve_server::QueryState) -> axum::Router {
     let agent_state = AgentState {
         catalog: state.catalog.clone(),
         format: state.format.clone(),
@@ -43,7 +43,7 @@ fn agent_app(state: &kyma_server::QueryState) -> axum::Router {
     let backend: Arc<dyn AuthBackend> = Arc::new(EnvAuthBackend::from_str(
         "read-token:read,write-token:write",
     ));
-    kyma_server::agent::router(agent_state).layer(axum::middleware::from_fn_with_state(
+    pensieve_server::agent::router(agent_state).layer(axum::middleware::from_fn_with_state(
         AuthLayerState {
             backend,
             required: Role::Read,
@@ -68,7 +68,7 @@ async fn post_import(app: axum::Router, auth: Option<&str>) -> StatusCode {
 
 #[tokio::test]
 async fn import_refuses_read_token_and_anonymous() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
 
     // Read-only token passes the Role::Read middleware but the handler's
     // Role::Write gate must refuse it.

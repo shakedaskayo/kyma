@@ -1,17 +1,17 @@
 ---
 title: Extents and snapshots
-description: How kyma stores data on object storage. Append-only columnar extents, atomically-committed snapshots, and the catalog manifests that let queries skip everything.
+description: How pensieve stores data on object storage. Append-only columnar extents, atomically-committed snapshots, and the catalog manifests that let queries skip everything.
 ---
 
 # Extents and snapshots
 
-The unit of storage in kyma is an extent — a chunk of columnar Arrow data
+The unit of storage in pensieve is an extent — a chunk of columnar Arrow data
 on object storage. The unit of visibility is a snapshot — a catalog
 transaction that publishes one or more new extents atomically. Once written,
 neither is mutated. New writes produce new extents; new states produce new
 snapshots.
 
-<KymaArchitectureDiagram caption="kyma's two lanes — ingest and query — share the storage spine. Object storage is the only source of truth; the catalog is externalized; compute is stateless." />
+<PensieveArchitectureDiagram caption="pensieve's two lanes — ingest and query — share the storage spine. Object storage is the only source of truth; the catalog is externalized; compute is stateless." />
 
 This shape is what makes the pruning cascade possible, what makes ingest
 exactly-once, and what makes "every node is stateless" structurally true.

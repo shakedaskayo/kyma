@@ -9,7 +9,7 @@
 //! `kubernetes`, `slack`, `aws`, `postgresql`, ….
 //!
 //! Built-in defaults cover the common set; deployments extend/override them with
-//! a JSON file pointed to by `KYMA_ICON_GALLERY`, shaped:
+//! a JSON file pointed to by `PENSIEVE_ICON_GALLERY`, shaped:
 //! ```json
 //! { "kinds": { "pipeline": "function" }, "vendors": { "clickhouse": "clickhouse" } }
 //! ```
@@ -156,10 +156,10 @@ impl IconGallery {
         }
     }
 
-    /// Built-ins, then merge any overrides from `KYMA_ICON_GALLERY` (a JSON file).
+    /// Built-ins, then merge any overrides from `PENSIEVE_ICON_GALLERY` (a JSON file).
     pub fn load() -> Self {
         let mut g = Self::builtin();
-        if let Ok(path) = std::env::var("KYMA_ICON_GALLERY") {
+        if let Ok(path) = std::env::var("PENSIEVE_ICON_GALLERY") {
             match std::fs::read_to_string(&path) {
                 Ok(s) => match serde_json::from_str::<IconGallery>(&s) {
                     Ok(extra) => {
@@ -173,9 +173,9 @@ impl IconGallery {
                             g.resources.insert(norm(&k), v);
                         }
                     }
-                    Err(e) => tracing::warn!("KYMA_ICON_GALLERY parse failed: {e}"),
+                    Err(e) => tracing::warn!("PENSIEVE_ICON_GALLERY parse failed: {e}"),
                 },
-                Err(e) => tracing::warn!("KYMA_ICON_GALLERY read failed ({path}): {e}"),
+                Err(e) => tracing::warn!("PENSIEVE_ICON_GALLERY read failed ({path}): {e}"),
             }
         }
         g

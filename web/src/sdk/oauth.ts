@@ -1,12 +1,12 @@
-// Shim: backwards-compatible wrappers around @kyma-ai/client oauth functions.
+// Shim: backwards-compatible wrappers around @pensieve-ai/client oauth functions.
 
 export type {
   StartOAuthBody,
   StartOAuthResult,
   OAuthFlowStatus,
-} from "@kyma-ai/client";
+} from "@pensieve-ai/client";
 
-import type { StartOAuthBody } from "@kyma-ai/client";
+import type { StartOAuthBody } from "@pensieve-ai/client";
 import { sessionClient } from "./client";
 
 type Base = { endpoint: string; token: string; database?: string };

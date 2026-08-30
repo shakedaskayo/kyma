@@ -3,7 +3,7 @@
 //! The hash covers what a memory *means* — name, type, body — normalized so
 //! that mtime-only touches and trailing-whitespace churn don't register as
 //! changes. Used both as the ingest skip-index value and as the
-//! `content_hash` kyma stamps into promoted files (a mismatch on disk means
+//! `content_hash` pensieve stamps into promoted files (a mismatch on disk means
 //! the user edited the file).
 
 /// Hash a memory's identity + normalized body (blake3, hex).

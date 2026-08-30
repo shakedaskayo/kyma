@@ -116,7 +116,7 @@ function pathTo(node: { x: number; y: number; role: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Live readout — fakes a representative kyma query result, ticks every 3s.
+// Live readout — fakes a representative pensieve query result, ticks every 3s.
 // ─────────────────────────────────────────────────────────────────────────
 type Readout = {
   walltime_ms: number
@@ -152,7 +152,7 @@ onMounted(() => { intervalId = setInterval(() => { readout.value = genReadout() 
 onUnmounted(() => { if (intervalId) clearInterval(intervalId) })
 
 // ─────────────────────────────────────────────────────────────────────────
-// Use cases — what kyma replaces.
+// Use cases — what pensieve replaces.
 // ─────────────────────────────────────────────────────────────────────────
 const useCases = [
   {
@@ -173,7 +173,7 @@ const useCases = [
     label: 'FinOps',
     title: 'Cloud spend, queryable',
     body: 'Pull AWS, GCP, Azure billing exports through the same ingest path. Group by service, team, tag. Alert on anomalies. The agent answers "why is spend up?" without a separate tool.',
-    bullets: ['CUR / billing exports as kyma tables', 'Group by tag, team, env', 'Anomaly queries in KQL or SQL'],
+    bullets: ['CUR / billing exports as pensieve tables', 'Group by tag, team, env', 'Anomaly queries in KQL or SQL'],
     accent: '#f0a060',
   },
   {
@@ -186,7 +186,7 @@ const useCases = [
   {
     label: 'Graph',
     title: 'A native graph layer at million-node scale',
-    body: 'Beyond rows and columns: kyma stores entities and relationships as a first-class graph. Trace from a Stripe customer to their auth events to the deploy that broke their checkout — in one query, in milliseconds, at organizational scale.',
+    body: 'Beyond rows and columns: pensieve stores entities and relationships as a first-class graph. Trace from a Stripe customer to their auth events to the deploy that broke their checkout — in one query, in milliseconds, at organizational scale.',
     bullets: ['Entities and edges as native types', 'Cypher-style traversals over Arrow', 'Same pruning cascade applies'],
     accent: '#7ed957',
   },
@@ -203,93 +203,93 @@ const buildDate = new Date().toISOString().slice(0, 10)
 </script>
 
 <template>
-  <div class="kyma-landing">
+  <div class="pensieve-landing">
 
     <!-- ════════════════════════════════════ HERO ════════════════════════════════════ -->
-    <section class="kyma-hero kyma-hero--orbit">
-      <h1 class="kyma-hero-title">kyma</h1>
-      <p class="kyma-tagline">The context engine for coding agents.</p>
-      <p class="kyma-lede">
+    <section class="pensieve-hero pensieve-hero--orbit">
+      <h1 class="pensieve-hero-title">pensieve</h1>
+      <p class="pensieve-tagline">The context engine for coding agents.</p>
+      <p class="pensieve-lede">
         Not just memory — one place your agent recalls durable, graph-aware <strong>memory</strong>,
         queries <strong>live data</strong> (logs, traces, code, every signal your org emits) in KQL/SQL,
         and walks the <strong>graph</strong> that links them. Connect it via a plugin, a CLI, or MCP —
         a local single binary that syncs to your control plane.
       </p>
 
-      <div class="kyma-cta-row">
-        <a :href="withBase('/quickstart/give-your-agent-memory')" class="kyma-cta kyma-cta--primary">Give your agent memory</a>
-        <a :href="withBase('/concepts/how-kyma-works')" class="kyma-cta">How it works</a>
-        <a :href="withBase('/agent/memory')" class="kyma-cta">Memory</a>
-        <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener" class="kyma-cta">GitHub</a>
+      <div class="pensieve-cta-row">
+        <a :href="withBase('/quickstart/give-your-agent-memory')" class="pensieve-cta pensieve-cta--primary">Give your agent memory</a>
+        <a :href="withBase('/concepts/how-pensieve-works')" class="pensieve-cta">How it works</a>
+        <a :href="withBase('/agent/memory')" class="pensieve-cta">Memory</a>
+        <a href="https://github.com/shakedaskayo/pensieve" target="_blank" rel="noopener" class="pensieve-cta">GitHub</a>
       </div>
 
       <!-- The orbit — one SVG containing geometry, beams, rings; nodes overlay
            via absolute-positioned HTML for crisp pill rendering. -->
-      <div class="kyma-orbit" aria-hidden="true">
+      <div class="pensieve-orbit" aria-hidden="true">
         <svg
-          class="kyma-orbit-svg"
+          class="pensieve-orbit-svg"
           :viewBox="`0 0 ${VIEW_W} ${VIEW_H}`"
           preserveAspectRatio="xMidYMid meet"
           role="img"
         >
           <defs>
-            <radialGradient id="kyma-orbit-fade" cx="50%" cy="50%" r="50%">
+            <radialGradient id="pensieve-orbit-fade" cx="50%" cy="50%" r="50%">
               <stop offset="0%"  stop-color="#7ed957" stop-opacity="0.15"/>
               <stop offset="55%" stop-color="#7ed957" stop-opacity="0.04"/>
               <stop offset="100%" stop-color="#7ed957" stop-opacity="0"/>
             </radialGradient>
-            <linearGradient id="kyma-beam-grad-in" x1="0%" y1="0%" x2="100%" y2="0%">
+            <linearGradient id="pensieve-beam-grad-in" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%"   stop-color="#7ed957" stop-opacity="0.0"/>
               <stop offset="50%"  stop-color="#7ed957" stop-opacity="0.55"/>
               <stop offset="100%" stop-color="#7ed957" stop-opacity="0.85"/>
             </linearGradient>
-            <linearGradient id="kyma-beam-grad-out" x1="0%" y1="0%" x2="100%" y2="0%">
+            <linearGradient id="pensieve-beam-grad-out" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%"   stop-color="#7ed957" stop-opacity="0.85"/>
               <stop offset="50%"  stop-color="#7ed957" stop-opacity="0.55"/>
               <stop offset="100%" stop-color="#7ed957" stop-opacity="0.0"/>
             </linearGradient>
-            <filter id="kyma-orbit-glow">
+            <filter id="pensieve-orbit-glow">
               <feGaussianBlur stdDeviation="3" />
             </filter>
           </defs>
 
           <!-- Soft phosphor halo behind the center -->
-          <circle :cx="CX" :cy="CY" r="220" fill="url(#kyma-orbit-fade)"/>
+          <circle :cx="CX" :cy="CY" r="220" fill="url(#pensieve-orbit-fade)"/>
 
           <!-- Concentric rings (decorative) -->
-          <circle :cx="CX" :cy="CY" :r="R_INNER" class="kyma-orbit-ring-svg" />
-          <circle :cx="CX" :cy="CY" :r="R_OUTER" class="kyma-orbit-ring-svg" />
+          <circle :cx="CX" :cy="CY" :r="R_INNER" class="pensieve-orbit-ring-svg" />
+          <circle :cx="CX" :cy="CY" :r="R_OUTER" class="pensieve-orbit-ring-svg" />
 
           <!-- Connection paths — one per node. Static stroke + animated
                flowing dash overlay for the data-flow sense. -->
-          <g class="kyma-orbit-paths">
+          <g class="pensieve-orbit-paths">
             <path
               v-for="(node, i) in allNodes"
               :key="`path-${node.slug}`"
               :d="pathTo(node)"
-              class="kyma-orbit-path"
-              :class="`kyma-orbit-path--${node.role}`"
+              class="pensieve-orbit-path"
+              :class="`pensieve-orbit-path--${node.role}`"
               :style="{ '--i': i }"
             />
           </g>
           <!-- Animated flow particles riding the same paths -->
-          <g class="kyma-orbit-flows">
+          <g class="pensieve-orbit-flows">
             <path
               v-for="(node, i) in allNodes"
               :key="`flow-${node.slug}`"
               :d="pathTo(node)"
-              class="kyma-orbit-flow"
-              :class="`kyma-orbit-flow--${node.role}`"
+              class="pensieve-orbit-flow"
+              :class="`pensieve-orbit-flow--${node.role}`"
               :style="{ '--i': i, '--delay': `${i * 0.15}s` }"
             />
           </g>
         </svg>
 
         <!-- Center mark: positioned by % of orbit container. -->
-        <div class="kyma-orbit-center">
-          <div class="kyma-orbit-mark">
-            <img :src="withBase('/icons/kyma-mark.svg')" alt="kyma" />
-            <div class="kyma-orbit-mark-pulse"></div>
+        <div class="pensieve-orbit-center">
+          <div class="pensieve-orbit-mark">
+            <img :src="withBase('/icons/pensieve-mark.svg')" alt="pensieve" />
+            <div class="pensieve-orbit-mark-pulse"></div>
           </div>
         </div>
 
@@ -298,8 +298,8 @@ const buildDate = new Date().toISOString().slice(0, 10)
         <a
           v-for="(node, i) in allNodes"
           :key="`node-${node.slug}`"
-          class="kyma-orbit-node"
-          :class="[`kyma-orbit-node--${node.role}`, `kyma-orbit-node--${node.ring}`]"
+          class="pensieve-orbit-node"
+          :class="[`pensieve-orbit-node--${node.role}`, `pensieve-orbit-node--${node.ring}`]"
           :style="{
             left:  `${(node.x / VIEW_W) * 100}%`,
             top:   `${(node.y / VIEW_H) * 100}%`,
@@ -309,32 +309,32 @@ const buildDate = new Date().toISOString().slice(0, 10)
           :href="withBase(node.role === 'source' ? '/ingest/' : '/query/')"
         >
           <img :src="withBase(`/icons/brand/${node.slug}.svg`)" :alt="node.label" width="22" height="22" />
-          <span class="kyma-orbit-label">{{ node.label }}</span>
+          <span class="pensieve-orbit-label">{{ node.label }}</span>
         </a>
       </div>
 
       <!-- Live readout — a single representative query result, refreshes every 3s -->
-      <div class="kyma-readout" role="status" aria-live="polite">
-        <div class="kyma-readout-question">
-          <span class="kyma-readout-label">latest query</span>
-          <span class="kyma-readout-q">"{{ readout.question }}"</span>
+      <div class="pensieve-readout" role="status" aria-live="polite">
+        <div class="pensieve-readout-question">
+          <span class="pensieve-readout-label">latest query</span>
+          <span class="pensieve-readout-q">"{{ readout.question }}"</span>
         </div>
-        <dl class="kyma-readout-stats">
-          <div><dt>wall</dt><dd><span class="kyma-num">{{ readout.walltime_ms }}</span> ms</dd></div>
-          <div><dt>extents pruned</dt><dd><span class="kyma-num">{{ readout.extents_pruned_pct }}</span>%</dd></div>
-          <div><dt>scanned</dt><dd><span class="kyma-num">{{ readout.bytes_scanned_mib }}</span> MiB</dd></div>
-          <div><dt>rows</dt><dd><span class="kyma-num">{{ readout.rows_returned }}</span></dd></div>
+        <dl class="pensieve-readout-stats">
+          <div><dt>wall</dt><dd><span class="pensieve-num">{{ readout.walltime_ms }}</span> ms</dd></div>
+          <div><dt>extents pruned</dt><dd><span class="pensieve-num">{{ readout.extents_pruned_pct }}</span>%</dd></div>
+          <div><dt>scanned</dt><dd><span class="pensieve-num">{{ readout.bytes_scanned_mib }}</span> MiB</dd></div>
+          <div><dt>rows</dt><dd><span class="pensieve-num">{{ readout.rows_returned }}</span></dd></div>
         </dl>
       </div>
     </section>
 
     <!-- ════════════════════════════════════ THE BIG CLAIM ═══════════════════════════ -->
-    <section class="kyma-claim">
-      <p class="kyma-claim-eyebrow">// THE HOOK</p>
-      <h2 class="kyma-claim-title">
-        Your coding agent forgets everything. <em>kyma is the memory it keeps.</em>
+    <section class="pensieve-claim">
+      <p class="pensieve-claim-eyebrow">// THE HOOK</p>
+      <h2 class="pensieve-claim-title">
+        Your coding agent forgets everything. <em>pensieve is the memory it keeps.</em>
       </h2>
-      <p class="kyma-claim-body">
+      <p class="pensieve-claim-body">
         Install one binary, wire it to your agent, and it recalls durable, graph-aware
         memory into every prompt — across sessions and machines. That's the hook. Then it
         grows: the same engine lets your agent query your <strong>live data</strong> in
@@ -344,25 +344,25 @@ const buildDate = new Date().toISOString().slice(0, 10)
     </section>
 
     <!-- ════════════════════════════════════ USE CASES ══════════════════════════════ -->
-    <section class="kyma-usecases">
-      <div class="kyma-usecases-header">
-        <p class="kyma-section-eyebrow">// BEYOND MEMORY — THE LIVE DATA</p>
-        <h2 class="kyma-section-title">The same engine runs your whole stack</h2>
-        <p class="kyma-section-lede">
-          Memory is the front door. Underneath, kyma is one columnar engine for every
+    <section class="pensieve-usecases">
+      <div class="pensieve-usecases-header">
+        <p class="pensieve-section-eyebrow">// BEYOND MEMORY — THE LIVE DATA</p>
+        <h2 class="pensieve-section-title">The same engine runs your whole stack</h2>
+        <p class="pensieve-section-lede">
+          Memory is the front door. Underneath, pensieve is one columnar engine for every
           signal your org emits — so the live data your agent reasons over is the same
           data these teams already live in. One schema, one query language, one agent.
         </p>
       </div>
 
-      <div class="kyma-usecases-grid">
+      <div class="pensieve-usecases-grid">
         <article
           v-for="uc in useCases"
           :key="uc.label"
-          class="kyma-usecase"
+          class="pensieve-usecase"
           :style="{ '--accent': uc.accent }"
         >
-          <span class="kyma-usecase-label">{{ uc.label }}</span>
+          <span class="pensieve-usecase-label">{{ uc.label }}</span>
           <h3>{{ uc.title }}</h3>
           <p>{{ uc.body }}</p>
           <ul>
@@ -373,36 +373,36 @@ const buildDate = new Date().toISOString().slice(0, 10)
     </section>
 
     <!-- ════════════════════════════════════ CONTEXT GRAPH + RECURSIVE INTEL ═══════ -->
-    <section class="kyma-graph">
-      <div class="kyma-graph-text">
-        <p class="kyma-section-eyebrow">// THE GRAPH — WHERE IT ALL CONNECTS</p>
-        <h2 class="kyma-section-title">Where memory meets your systems.</h2>
-        <p class="kyma-section-lede">
+    <section class="pensieve-graph">
+      <div class="pensieve-graph-text">
+        <p class="pensieve-section-eyebrow">// THE GRAPH — WHERE IT ALL CONNECTS</p>
+        <h2 class="pensieve-section-title">Where memory meets your systems.</h2>
+        <p class="pensieve-section-lede">
           The third layer. A native graph over the same Arrow storage, where your agent's
           <strong>memories</strong> are nodes wired to the real services, repos, and traces
           they're about — millions of entities, hundreds of millions of relationships,
           queried in milliseconds.
         </p>
-        <ul class="kyma-graph-bullets">
+        <ul class="pensieve-graph-bullets">
           <li><strong>Entities + relationships as native types.</strong> Customers, deploys, services, alerts, agent runs — all linked, all queryable.</li>
           <li><strong>Cypher-style traversals.</strong> "Find every customer affected by a deploy that touched the payments service in the last 24h" — one query.</li>
           <li><strong>Same pruning cascade.</strong> Graph queries hit the same time-bound + token-index pruning that makes log queries fast.</li>
-          <li><strong>Federated edges.</strong> Pull entities from Postgres, edges from MongoDB, events from OTLP — kyma joins them in the graph layer.</li>
+          <li><strong>Federated edges.</strong> Pull entities from Postgres, edges from MongoDB, events from OTLP — pensieve joins them in the graph layer.</li>
         </ul>
       </div>
 
-      <div class="kyma-graph-visual" aria-hidden="true">
-        <svg viewBox="0 0 400 400" class="kyma-graph-svg">
+      <div class="pensieve-graph-visual" aria-hidden="true">
+        <svg viewBox="0 0 400 400" class="pensieve-graph-svg">
           <defs>
-            <radialGradient id="kyma-graph-glow" cx="50%" cy="50%" r="50%">
+            <radialGradient id="pensieve-graph-glow" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stop-color="#7ed957" stop-opacity="0.25"/>
               <stop offset="80%" stop-color="#7ed957" stop-opacity="0"/>
             </radialGradient>
           </defs>
-          <circle cx="200" cy="200" r="180" fill="url(#kyma-graph-glow)"/>
+          <circle cx="200" cy="200" r="180" fill="url(#pensieve-graph-glow)"/>
 
           <!-- Edges -->
-          <g class="kyma-graph-edges">
+          <g class="pensieve-graph-edges">
             <line x1="200" y1="200" x2="80"  y2="100" />
             <line x1="200" y1="200" x2="320" y2="80"  />
             <line x1="200" y1="200" x2="340" y2="220" />
@@ -418,37 +418,37 @@ const buildDate = new Date().toISOString().slice(0, 10)
           </g>
 
           <!-- Nodes -->
-          <g class="kyma-graph-nodes">
-            <circle cx="200" cy="200" r="14" class="kyma-graph-node kyma-graph-node--center" />
-            <circle cx="80"  cy="100" r="9"  class="kyma-graph-node" />
-            <circle cx="320" cy="80"  r="9"  class="kyma-graph-node" />
-            <circle cx="340" cy="220" r="9"  class="kyma-graph-node" />
-            <circle cx="80"  cy="280" r="9"  class="kyma-graph-node" />
-            <circle cx="220" cy="340" r="9"  class="kyma-graph-node" />
-            <circle cx="180" cy="240" r="6"  class="kyma-graph-node kyma-graph-node--small" />
+          <g class="pensieve-graph-nodes">
+            <circle cx="200" cy="200" r="14" class="pensieve-graph-node pensieve-graph-node--center" />
+            <circle cx="80"  cy="100" r="9"  class="pensieve-graph-node" />
+            <circle cx="320" cy="80"  r="9"  class="pensieve-graph-node" />
+            <circle cx="340" cy="220" r="9"  class="pensieve-graph-node" />
+            <circle cx="80"  cy="280" r="9"  class="pensieve-graph-node" />
+            <circle cx="220" cy="340" r="9"  class="pensieve-graph-node" />
+            <circle cx="180" cy="240" r="6"  class="pensieve-graph-node pensieve-graph-node--small" />
             <!-- Decorative outer ring of small distant nodes (suggests scale) -->
-            <circle cx="40"  cy="60"  r="3" class="kyma-graph-node kyma-graph-node--distant" />
-            <circle cx="380" cy="40"  r="3" class="kyma-graph-node kyma-graph-node--distant" />
-            <circle cx="370" cy="320" r="3" class="kyma-graph-node kyma-graph-node--distant" />
-            <circle cx="40"  cy="340" r="3" class="kyma-graph-node kyma-graph-node--distant" />
-            <circle cx="20"  cy="200" r="3" class="kyma-graph-node kyma-graph-node--distant" />
+            <circle cx="40"  cy="60"  r="3" class="pensieve-graph-node pensieve-graph-node--distant" />
+            <circle cx="380" cy="40"  r="3" class="pensieve-graph-node pensieve-graph-node--distant" />
+            <circle cx="370" cy="320" r="3" class="pensieve-graph-node pensieve-graph-node--distant" />
+            <circle cx="40"  cy="340" r="3" class="pensieve-graph-node pensieve-graph-node--distant" />
+            <circle cx="20"  cy="200" r="3" class="pensieve-graph-node pensieve-graph-node--distant" />
           </g>
         </svg>
-        <div class="kyma-graph-stats">
-          <div><span class="kyma-num">10M+</span><span class="kyma-graph-stat-label">entities</span></div>
-          <div><span class="kyma-num">100M+</span><span class="kyma-graph-stat-label">relationships</span></div>
-          <div><span class="kyma-num">&lt; 100ms</span><span class="kyma-graph-stat-label">traversal p99</span></div>
+        <div class="pensieve-graph-stats">
+          <div><span class="pensieve-num">10M+</span><span class="pensieve-graph-stat-label">entities</span></div>
+          <div><span class="pensieve-num">100M+</span><span class="pensieve-graph-stat-label">relationships</span></div>
+          <div><span class="pensieve-num">&lt; 100ms</span><span class="pensieve-graph-stat-label">traversal p99</span></div>
         </div>
       </div>
     </section>
 
     <!-- ════════════════════════════════════ RECURSIVE INTELLIGENCE ════════════════ -->
-    <section class="kyma-recursive">
-      <p class="kyma-section-eyebrow">// THE NEW PRIMITIVE</p>
-      <h2 class="kyma-recursive-title">
+    <section class="pensieve-recursive">
+      <p class="pensieve-section-eyebrow">// THE NEW PRIMITIVE</p>
+      <h2 class="pensieve-recursive-title">
         <em>Recursive intelligence</em> — agents that build on each other's answers.
       </h2>
-      <p class="kyma-recursive-body">
+      <p class="pensieve-recursive-body">
         When every signal — including <strong>the agents themselves</strong> — flows through
         one engine, agents stop being one-shot tools. They become a recursive layer:
         a triage agent's output is the next triage agent's input. A finance agent
@@ -456,19 +456,19 @@ const buildDate = new Date().toISOString().slice(0, 10)
         anomaly through the graph the BI agent just queried. The engine that answered
         the last question is the engine that asked the next one.
       </p>
-      <div class="kyma-recursive-grid">
-        <div class="kyma-recursive-card">
-          <div class="kyma-recursive-step">01</div>
+      <div class="pensieve-recursive-grid">
+        <div class="pensieve-recursive-card">
+          <div class="pensieve-recursive-step">01</div>
           <h3>Agents observe</h3>
-          <p>Every <code>/v1/agent/ask</code> call is itself logged into kyma — question, tool calls, result. Agent runs become first-class data.</p>
+          <p>Every <code>/v1/agent/ask</code> call is itself logged into pensieve — question, tool calls, result. Agent runs become first-class data.</p>
         </div>
-        <div class="kyma-recursive-card">
-          <div class="kyma-recursive-step">02</div>
+        <div class="pensieve-recursive-card">
+          <div class="pensieve-recursive-step">02</div>
           <h3>Agents query other agents</h3>
           <p>The next agent reads <code>agent_runs</code> the same way it reads <code>otel_logs</code>. It sees what colleagues asked, found, missed.</p>
         </div>
-        <div class="kyma-recursive-card">
-          <div class="kyma-recursive-step">03</div>
+        <div class="pensieve-recursive-card">
+          <div class="pensieve-recursive-step">03</div>
           <h3>Insights compound</h3>
           <p>Patterns across runs surface in the graph. The org's collective troubleshooting becomes an asset that improves with use, not a stream that vanishes.</p>
         </div>
@@ -476,98 +476,98 @@ const buildDate = new Date().toISOString().slice(0, 10)
     </section>
 
     <!-- ════════════════════════════════════ KQL EXAMPLE ════════════════════════════ -->
-    <section class="kyma-example">
-      <div class="kyma-example-text">
-        <p class="kyma-section-eyebrow">// THE QUERY SURFACE</p>
-        <h2 class="kyma-section-title">KQL or SQL, take your pick</h2>
-        <p class="kyma-section-lede">
+    <section class="pensieve-example">
+      <div class="pensieve-example-text">
+        <p class="pensieve-section-eyebrow">// THE QUERY SURFACE</p>
+        <h2 class="pensieve-section-title">KQL or SQL, take your pick</h2>
+        <p class="pensieve-section-lede">
           Both languages parse to the same logical plan. Both run through the same
           three-level pruning cascade. Both stream Arrow over the same Flight gRPC
           endpoint. Pick whichever your tool already speaks.
         </p>
-        <div class="kyma-cta-row">
-          <a :href="withBase('/query/kql')" class="kyma-cta kyma-cta--primary">KQL reference</a>
-          <a :href="withBase('/query/sql')" class="kyma-cta">SQL reference</a>
+        <div class="pensieve-cta-row">
+          <a :href="withBase('/query/kql')" class="pensieve-cta pensieve-cta--primary">KQL reference</a>
+          <a :href="withBase('/query/sql')" class="pensieve-cta">SQL reference</a>
         </div>
       </div>
-      <div class="kyma-example-code">
-        <pre class="kyma-codeblock">
-<span class="kyma-cm">// errors per service in the last hour</span>
+      <div class="pensieve-example-code">
+        <pre class="pensieve-codeblock">
+<span class="pensieve-cm">// errors per service in the last hour</span>
 otel_logs
-| <span class="kyma-kw">where</span> _timestamp &gt; <span class="kyma-kw">ago</span>(<span class="kyma-num">1h</span>)
-| <span class="kyma-kw">where</span> severity_text == <span class="kyma-str">"ERROR"</span>
-| <span class="kyma-kw">summarize</span> n = <span class="kyma-kw">count</span>() <span class="kyma-kw">by</span> service_name
-| <span class="kyma-kw">order</span> <span class="kyma-kw">by</span> n <span class="kyma-kw">desc</span>
-| <span class="kyma-kw">take</span> <span class="kyma-num">5</span></pre>
+| <span class="pensieve-kw">where</span> _timestamp &gt; <span class="pensieve-kw">ago</span>(<span class="pensieve-num">1h</span>)
+| <span class="pensieve-kw">where</span> severity_text == <span class="pensieve-str">"ERROR"</span>
+| <span class="pensieve-kw">summarize</span> n = <span class="pensieve-kw">count</span>() <span class="pensieve-kw">by</span> service_name
+| <span class="pensieve-kw">order</span> <span class="pensieve-kw">by</span> n <span class="pensieve-kw">desc</span>
+| <span class="pensieve-kw">take</span> <span class="pensieve-num">5</span></pre>
       </div>
     </section>
 
     <!-- ════════════════════════════════════ FAST ════════════════════════════════════ -->
-    <section class="kyma-cascade-section">
-      <div class="kyma-cascade-stats">
-        <div class="kyma-stat">
-          <div class="kyma-stat-num">99.94<span class="kyma-stat-pct">%</span></div>
-          <div class="kyma-stat-label">extents pruned at the catalog</div>
+    <section class="pensieve-cascade-section">
+      <div class="pensieve-cascade-stats">
+        <div class="pensieve-stat">
+          <div class="pensieve-stat-num">99.94<span class="pensieve-stat-pct">%</span></div>
+          <div class="pensieve-stat-label">extents pruned at the catalog</div>
         </div>
-        <div class="kyma-stat">
-          <div class="kyma-stat-num">~ 84<span class="kyma-stat-pct">ms</span></div>
-          <div class="kyma-stat-label">typical wall time, decade of data</div>
+        <div class="pensieve-stat">
+          <div class="pensieve-stat-num">~ 84<span class="pensieve-stat-pct">ms</span></div>
+          <div class="pensieve-stat-label">typical wall time, decade of data</div>
         </div>
-        <div class="kyma-stat">
-          <div class="kyma-stat-num">2.1<span class="kyma-stat-pct">MiB</span></div>
-          <div class="kyma-stat-label">bytes actually decoded</div>
+        <div class="pensieve-stat">
+          <div class="pensieve-stat-num">2.1<span class="pensieve-stat-pct">MiB</span></div>
+          <div class="pensieve-stat-label">bytes actually decoded</div>
         </div>
       </div>
-      <div class="kyma-cascade-text">
-        <p class="kyma-section-eyebrow">// HOW IT STAYS FAST</p>
-        <h2 class="kyma-section-title">Three levels of pruning before any byte is decoded.</h2>
-        <p class="kyma-section-lede">
+      <div class="pensieve-cascade-text">
+        <p class="pensieve-section-eyebrow">// HOW IT STAYS FAST</p>
+        <h2 class="pensieve-section-title">Three levels of pruning before any byte is decoded.</h2>
+        <p class="pensieve-section-lede">
           Catalog pruning eliminates 99% of extents using time-range and column statistics.
           Extent footers eliminate 90%+ of blocks via bloom filters. Block-level posting
           lists narrow to exact rows. The decode step only touches data that matters.
         </p>
-        <a :href="withBase('/concepts/the-pruning-cascade')" class="kyma-cta">Read the deep dive →</a>
+        <a :href="withBase('/concepts/the-pruning-cascade')" class="pensieve-cta">Read the deep dive →</a>
       </div>
     </section>
 
     <!-- ════════════════════════════════════ SECTIONS ══════════════════════════════ -->
-    <section class="kyma-sections-wrap">
-      <p class="kyma-section-eyebrow">// THE DOCS</p>
-      <h2 class="kyma-section-title">Get going</h2>
-      <div class="kyma-sections">
-        <a class="kyma-section-card" :href="withBase('/quickstart/give-your-agent-memory')">
+    <section class="pensieve-sections-wrap">
+      <p class="pensieve-section-eyebrow">// THE DOCS</p>
+      <h2 class="pensieve-section-title">Get going</h2>
+      <div class="pensieve-sections">
+        <a class="pensieve-section-card" :href="withBase('/quickstart/give-your-agent-memory')">
           <h3>Quickstart</h3>
           <p>Give your coding agent memory in one command — local, zero infra, ~5 min.</p>
         </a>
-        <a class="kyma-section-card" :href="withBase('/concepts/how-kyma-works')">
+        <a class="pensieve-section-card" :href="withBase('/concepts/how-pensieve-works')">
           <h3>Concepts</h3>
           <p>How it all works: memory → data → graph, the modes, dreaming, and sync.</p>
         </a>
-        <a class="kyma-section-card" :href="withBase('/ingest/')">
+        <a class="pensieve-section-card" :href="withBase('/ingest/')">
           <h3>Ingest</h3>
           <p>OTLP gRPC, REST/NDJSON, Kafka, file-drop. One write path on the far side.</p>
         </a>
-        <a class="kyma-section-card" :href="withBase('/query/')">
+        <a class="pensieve-section-card" :href="withBase('/query/')">
           <h3>Query</h3>
           <p>KQL, SQL, and the agent endpoint. Arrow Flight gRPC for zero-copy streams.</p>
         </a>
-        <a class="kyma-section-card" :href="withBase('/data-sources/')">
+        <a class="pensieve-section-card" :href="withBase('/data-sources/')">
           <h3>Data Sources</h3>
           <p>Postgres, MySQL, MongoDB. Federate live, or sync via CDC.</p>
         </a>
-        <a class="kyma-section-card" :href="withBase('/deploy/')">
+        <a class="pensieve-section-card" :href="withBase('/deploy/')">
           <h3>Deploy to production</h3>
-          <p>One binary locally, or scale out on AWS/EKS, Kubernetes (Helm), Terraform, or Pulumi — via <code>kyma deploy</code>.</p>
+          <p>One binary locally, or scale out on AWS/EKS, Kubernetes (Helm), Terraform, or Pulumi — via <code>pensieve deploy</code>.</p>
         </a>
-        <a class="kyma-section-card" :href="withBase('/architecture/architecture')">
+        <a class="pensieve-section-card" :href="withBase('/architecture/architecture')">
           <h3>Architecture</h3>
           <p>The five invariants and how they hold the engine together.</p>
         </a>
-        <a class="kyma-section-card" :href="withBase('/use-cases/')">
+        <a class="pensieve-section-card" :href="withBase('/use-cases/')">
           <h3>Use cases</h3>
           <p>What it's for — memory, live data, and the graph, doing real work.</p>
         </a>
-        <a class="kyma-section-card" :href="withBase('/reference/')">
+        <a class="pensieve-section-card" :href="withBase('/reference/')">
           <h3>Reference</h3>
           <p>HTTP API, CLI, env vars, KQL functions, schema mappings.</p>
         </a>
@@ -575,10 +575,10 @@ otel_logs
     </section>
 
     <!-- ════════════════════════════════════ FOOTER ═════════════════════════════════ -->
-    <footer class="kyma-landing-footer">
-      <p class="kyma-landing-footer-meta">
+    <footer class="pensieve-landing-footer">
+      <p class="pensieve-landing-footer-meta">
         MIT licensed · Source on
-        <a href="https://github.com/shakedaskayo/kyma" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/shakedaskayo/pensieve" target="_blank" rel="noopener">GitHub</a>
         · Built {{ buildDate }}
       </p>
     </footer>

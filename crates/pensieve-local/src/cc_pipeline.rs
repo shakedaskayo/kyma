@@ -1,19 +1,19 @@
 //! The full Claude Code file-memory pass: ingest → curate → apply.
 //!
 //! One call runs the whole loop for every project (or one): `cc_sync`
-//! ingests memory files into the engine, `cc_curate` (in `kyma-server`)
+//! ingests memory files into the engine, `cc_curate` (in `pensieve-server`)
 //! plans promotions/archives/index updates per project, and `cc_writeback`
-//! applies them atomically. Wired into `kyma sync`, the MCP-startup
-//! opportunistic sync, the `--watch` loop, and the optional `kyma serve`
+//! applies them atomically. Wired into `pensieve sync`, the MCP-startup
+//! opportunistic sync, the `--watch` loop, and the optional `pensieve serve`
 //! tick.
 
 use anyhow::Result;
-use kyma_memory::MemoryWriter;
-use kyma_server::agent::cc_curate::{
+use pensieve_memory::MemoryWriter;
+use pensieve_server::agent::cc_curate::{
     commit_guard_stamps, llm_curation_pass, plan_curation, CurationConfig, CurationInput,
     CurationOutcome, LlmCurationConfig,
 };
-use kyma_server::agent::{AgentState, SharedToolCtx};
+use pensieve_server::agent::{AgentState, SharedToolCtx};
 
 use crate::cc_sync::{self, CcSyncOptions, CcSyncReport};
 use crate::cc_writeback::{self, ApplyReport, WritebackConfig};

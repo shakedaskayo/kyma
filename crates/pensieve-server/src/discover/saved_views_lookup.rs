@@ -12,7 +12,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use super::scope::SavedViewLookup;
-use kyma_catalog::saved_views;
+use pensieve_catalog::saved_views;
 
 /// Catalog-backed implementation of [`SavedViewLookup`] for a single
 /// (`tenant_id`, `owner_subject`) caller.

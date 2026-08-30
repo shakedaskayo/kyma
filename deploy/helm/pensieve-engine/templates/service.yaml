@@ -1,16 +1,16 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "kyma-engine.fullname" . }}
+  name: {{ include "pensieve-engine.fullname" . }}
   labels:
-    {{- include "kyma-engine.labels" . | nindent 4 }}
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
   selector:
     {{- if .Values.roles.enabled }}
-    {{- include "kyma-engine.roleSelectorLabels" (dict "ctx" . "role" "edge") | nindent 4 }}
+    {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "edge") | nindent 4 }}
     {{- else }}
-    {{- include "kyma-engine.selectorLabels" . | nindent 4 }}
+    {{- include "pensieve-engine.selectorLabels" . | nindent 4 }}
     {{- end }}
   ports:
     - name: http

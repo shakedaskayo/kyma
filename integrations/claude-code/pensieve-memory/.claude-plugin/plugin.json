@@ -1,15 +1,15 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "kyma-memory",
+  "name": "pensieve-memory",
   "version": "0.1.0",
-  "description": "Realtime memory for Claude Code, backed by your Kyma deployment. Streams conversation points to a KQL/SQL-queryable firehose, auto-recalls relevant context each turn, and distills durable memories you can recall in later sessions.",
+  "description": "Realtime memory for Claude Code, backed by your Pensieve deployment. Streams conversation points to a KQL/SQL-queryable firehose, auto-recalls relevant context each turn, and distills durable memories you can recall in later sessions.",
   "author": {
     "name": "AgentCy Labs",
     "email": "shaked@agentcylabs.com",
-    "url": "https://github.com/agentcylabs/kyma"
+    "url": "https://github.com/agentcylabs/pensieve"
   },
-  "homepage": "https://github.com/agentcylabs/kyma",
-  "keywords": ["memory", "kyma", "kql", "sql", "recall", "observability", "context"],
+  "homepage": "https://github.com/agentcylabs/pensieve",
+  "keywords": ["memory", "pensieve", "kql", "sql", "recall", "observability", "context"],
   "hooks": "./hooks/hooks.json",
   "mcpServers": "./.mcp.json"
 }

@@ -1,4 +1,4 @@
-//! Claude Code memory-file format — the pure library behind kyma's
+//! Claude Code memory-file format — the pure library behind pensieve's
 //! Claude Code file-memory sync.
 //!
 //! Claude Code keeps a per-project file memory at
@@ -8,11 +8,11 @@
 //! `metadata.originSessionId`) and `[[wikilinks]]` between memories.
 //!
 //! This crate owns that on-disk format and nothing else: parsing/rendering
-//! frontmatter ([`frontmatter`]), the `MEMORY.md` index with kyma's managed
+//! frontmatter ([`frontmatter`]), the `MEMORY.md` index with pensieve's managed
 //! region ([`index`]), wikilink extraction ([`wikilink`]), Claude Code path
 //! slugs ([`slug`]), and normalized content hashing ([`hash`]). No async, no
-//! database, no filesystem — both `kyma-local` (ingest + writeback) and
-//! `kyma-server` (curation decisions) depend on it.
+//! database, no filesystem — both `pensieve-local` (ingest + writeback) and
+//! `pensieve-server` (curation decisions) depend on it.
 
 #![forbid(unsafe_code)]
 
@@ -41,11 +41,11 @@ pub mod hash;
 #[cfg(test)]
 mod hash_unit_tests;
 
-/// Value of `metadata.source` stamped into files kyma writes (promotion /
+/// Value of `metadata.source` stamped into files pensieve writes (promotion /
 /// archive tombstones). The ingester treats files carrying this marker as
-/// kyma-authored: skipped when the on-disk hash matches the recorded one,
+/// pensieve-authored: skipped when the on-disk hash matches the recorded one,
 /// ingested as an UPDATE to the original node when the user edited them.
-pub const KYMA_SOURCE_MARKER: &str = "kyma";
+pub const PENSIEVE_SOURCE_MARKER: &str = "pensieve";
 
 /// `provenance.source` value on memory nodes ingested from Claude Code files.
 pub const CC_PROVENANCE_SOURCE: &str = "claude-code-file";
@@ -54,11 +54,11 @@ pub const CC_PROVENANCE_SOURCE: &str = "claude-code-file";
 /// `claude-md:<path-slug>/<name>`.
 pub const TOPIC_KEY_PREFIX: &str = "claude-md:";
 
-/// Opening marker of the kyma-managed region inside `MEMORY.md`.
-pub const MANAGED_BEGIN: &str = "<!-- BEGIN kyma-managed -->";
+/// Opening marker of the pensieve-managed region inside `MEMORY.md`.
+pub const MANAGED_BEGIN: &str = "<!-- BEGIN pensieve-managed -->";
 
-/// Closing marker of the kyma-managed region inside `MEMORY.md`.
-pub const MANAGED_END: &str = "<!-- END kyma-managed -->";
+/// Closing marker of the pensieve-managed region inside `MEMORY.md`.
+pub const MANAGED_END: &str = "<!-- END pensieve-managed -->";
 
 /// Subdirectory of `memory/` where curation archives files (never deletes).
 pub const ARCHIVE_DIR: &str = "archive";

@@ -5,15 +5,15 @@ use crate::router::{router, McpState};
 use crate::tools::ToolDispatch;
 use axum::body::{to_bytes, Body};
 use axum::http::Request;
-use kyma_server::agent::SharedToolCtx;
-use kyma_server::test_support::seeded_state_empty;
+use pensieve_server::agent::SharedToolCtx;
+use pensieve_server::test_support::seeded_state_empty;
 use serde_json::{json, Value};
 use tower::util::ServiceExt;
 
 async fn build_app() -> axum::Router {
     let state = seeded_state_empty().await;
     let pool = sqlx::PgPool::connect(
-        &std::env::var("KYMA_TEST_DATABASE_URL").expect("KYMA_TEST_DATABASE_URL"),
+        &std::env::var("PENSIEVE_TEST_DATABASE_URL").expect("PENSIEVE_TEST_DATABASE_URL"),
     )
     .await
     .unwrap();
@@ -32,7 +32,7 @@ async fn build_app() -> axum::Router {
         dispatch: ToolDispatch::new(shared),
         builder: None,
         server_info: ServerInfo {
-            name: "kyma".into(),
+            name: "pensieve".into(),
             version: "test".into(),
         },
     })

@@ -1,11 +1,11 @@
-// Shim: backwards-compatible wrappers around @kyma-ai/client catalog functions.
+// Shim: backwards-compatible wrappers around @pensieve-ai/client catalog functions.
 
 export type {
   ColumnInfo,
   TableDoc,
   DatabaseDoc,
   SchemaDoc,
-} from "@kyma-ai/client";
+} from "@pensieve-ai/client";
 
 import { sessionClient } from "./client";
 

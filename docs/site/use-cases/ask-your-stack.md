@@ -11,7 +11,7 @@ Most questions about production are one-offs. "Why is checkout slow today?" "Whi
 customers hit 5xx this morning?" "Is AWS spend up, and where?" You don't want to hand-write
 KQL for each one, remember every table's schema, or open three dashboards. You want to ask.
 
-kyma ships a built-in agent that turns a plain-English question into the same query you'd
+pensieve ships a built-in agent that turns a plain-English question into the same query you'd
 have written — and runs it over every signal in one engine.
 
 ## Three ways to ask
@@ -20,19 +20,19 @@ Same engine underneath; pick the surface:
 
 ```bash
 # 1. From your terminal — streams the answer to stdout
-kyma query "p99 latency on /api/checkout in the last hour, by version"
+pensieve query "p99 latency on /api/checkout in the last hour, by version"
 
 # 2. From any connected coding agent (MCP) — it calls run_kql / run_sql for you
-#    "ask kyma which services errored most in the last 15 minutes"
+#    "ask pensieve which services errored most in the last 15 minutes"
 
 # 3. Over HTTP — Server-Sent Events from the agent endpoint
-curl -N -X POST $KYMA/v1/agent/ask -H 'content-type: application/json' \
+curl -N -X POST $PENSIEVE/v1/agent/ask -H 'content-type: application/json' \
   -d '{"question":"which customers hit checkout 5xx today?"}'
 ```
 
 ## What you can ask
 
-The agent reasons across everything kyma holds — not just logs:
+The agent reasons across everything pensieve holds — not just logs:
 
 - **Telemetry** — "errors per service in the last hour", "p99 latency on `/api/checkout`".
 - **Data sources & DBs** — "top customers by support tickets this week" (federated to Postgres),
@@ -53,7 +53,7 @@ The agent reasons across everything kyma holds — not just logs:
 ## What you'll see
 
 ```
-$ kyma query "which services errored most in the last 15 minutes?"
+$ pensieve query "which services errored most in the last 15 minutes?"
 checkout-svc   247
 payments-svc    89
 web-svc         14

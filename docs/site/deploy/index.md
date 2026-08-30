@@ -1,11 +1,11 @@
 ---
 title: Production deployment
-description: Deploy the kyma engine — pluggable compute (Fargate/EKS/Helm/local), database (Supabase/RDS/your own Postgres), and storage (S3/Supabase/any S3-compatible). One command via kyma deploy, or Terraform/Pulumi/Helm.
+description: Deploy the pensieve engine — pluggable compute (Fargate/EKS/Helm/local), database (Supabase/RDS/your own Postgres), and storage (S3/Supabase/any S3-compatible). One command via pensieve deploy, or Terraform/Pulumi/Helm.
 ---
 
 # Production deployment
 
-The engine is backend-agnostic. `kyma deploy` picks one option on each of four
+The engine is backend-agnostic. `pensieve deploy` picks one option on each of four
 independent axes; everything else follows.
 
 | Axis | Options |
@@ -22,40 +22,40 @@ telling you the nearest valid choice.
 ## One command
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash -s -- --prod-deploy
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/pensieve/main/install.sh | bash -s -- --prod-deploy
 ```
 
 or, with the CLI installed:
 
 ```sh
-kyma deploy init    # wizard: compute → database → storage → auth, + credentials
-kyma deploy up      # provisions, prints your engine URL
-kyma deploy status  # outputs + live /health probe
-kyma deploy destroy
+pensieve deploy init    # wizard: compute → database → storage → auth, + credentials
+pensieve deploy up      # provisions, prints your engine URL
+pensieve deploy status  # outputs + live /health probe
+pensieve deploy destroy
 ```
 
-Preview any combination without touching a cloud: `kyma deploy init --print-only`.
+Preview any combination without touching a cloud: `pensieve deploy init --print-only`.
 
 ## Common stacks
 
 ```sh
 # Default: AWS Fargate + Supabase (catalog + auth + storage)
-kyma deploy init
+pensieve deploy init
 
 # Fully AWS-native: Fargate + RDS Postgres + native S3, token auth
-kyma deploy init --compute fargate --database rds --storage s3 --auth token
+pensieve deploy init --compute fargate --database rds --storage s3 --auth token
 
 # Kubernetes (EKS): cluster provisioned by Terraform, engine installed via Helm
-kyma deploy init --compute eks --database rds --storage s3 --auth oidc \
-  --oidc-issuer https://issuer.example.com --oidc-client-id kyma --ingress-host kyma.example.com
+pensieve deploy init --compute eks --database rds --storage s3 --auth oidc \
+  --oidc-issuer https://issuer.example.com --oidc-client-id pensieve --ingress-host pensieve.example.com
 
 # Your own cluster + your own Postgres + your own object store
-kyma deploy init --compute helm --database external --database-url "$DB_URL" \
+pensieve deploy init --compute helm --database external --database-url "$DB_URL" \
   --storage external --storage-endpoint https://minio.example.com:9000 \
-  --auth token --ingress-host kyma.example.com
+  --auth token --ingress-host pensieve.example.com
 
 # Local test drive (docker), bring-your-own Postgres + MinIO
-kyma deploy init --compute local --database external --database-url "$DB_URL" \
+pensieve deploy init --compute local --database external --database-url "$DB_URL" \
   --storage external --storage-endpoint http://localhost:9000 --auth token
 ```
 
@@ -64,7 +64,7 @@ kyma deploy init --compute local --database external --database-url "$DB_URL" \
 | Compute | When | How traffic gets in |
 | ------- | ---- | ------------------- |
 | `fargate` | Default AWS path; lowest moving parts. | ALB (+ ACM/Route53 for TLS) |
-| `eks` | You want Kubernetes and let kyma provision the cluster. | Kubernetes ingress |
+| `eks` | You want Kubernetes and let pensieve provision the cluster. | Kubernetes ingress |
 | `helm` | You already run a cluster (EKS/GKE/AKS/anything). | Kubernetes ingress |
 | `local` | Evaluate on your laptop with docker. | `localhost:8080` |
 
@@ -77,24 +77,24 @@ On `helm`/`local`, use `external` storage (endpoint + keys) and `external`/
 
 | Path | When |
 | ---- | ---- |
-| [`kyma deploy` CLI](./cli) | Let the wizard drive everything. |
+| [`pensieve deploy` CLI](./cli) | Let the wizard drive everything. |
 | [Terraform](./terraform) | Fargate/EKS — you manage IaC or customize the stack. |
 | [Pulumi](./pulumi) | Same stack via the terraform-module bridge. |
 | [Helm](./helm) | Install the engine chart on any Kubernetes cluster. |
 | [Kubernetes / EKS](./kubernetes) | Provision an EKS cluster + install the chart. |
 
-## Required secret: `KYMA_SECRET_KEY`
+## Required secret: `PENSIEVE_SECRET_KEY`
 
 The server encrypts stored data source credentials (AES-256-GCM) with
-`KYMA_SECRET_KEY` and refuses to start without it. Every deploy path sets it
+`PENSIEVE_SECRET_KEY` and refuses to start without it. Every deploy path sets it
 for you: the Terraform stack generates one and injects it via SSM (Fargate) or
-a Kubernetes Secret (EKS/Helm), `kyma deploy` writes it to the workspace
-`local.env`, and `kyma service install` mints one at `~/.kyma/secret.key`.
+a Kubernetes Secret (EKS/Helm), `pensieve deploy` writes it to the workspace
+`local.env`, and `pensieve service install` mints one at `~/.pensieve/secret.key`.
 
 Running the binary directly? Set it yourself:
 
 ```bash
-export KYMA_SECRET_KEY="$(openssl rand -base64 32)"
+export PENSIEVE_SECRET_KEY="$(openssl rand -base64 32)"
 ```
 
 Keep the value stable for the lifetime of a deployment — rotating it makes
@@ -106,6 +106,6 @@ rotation).
 1. Open the engine URL and sign in via your auth backend (Supabase / OIDC, or
    the API token you minted for `token` auth).
 2. Mint an API token under **Settings → API tokens** and connect the CLI:
-   `kyma connect <engine-url> --token <api-token>`.
-3. Wire your coding agents: `kyma setup claude-code` (and friends) — see the
+   `pensieve connect <engine-url> --token <api-token>`.
+3. Wire your coding agents: `pensieve setup claude-code` (and friends) — see the
    [quickstart](/quickstart/).

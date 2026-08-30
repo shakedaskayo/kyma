@@ -1,6 +1,6 @@
 /**
- * Internal Button primitive — mirrors shadcn/ui Button but wired to Kyma CSS
- * custom properties (--kyma-*) rather than the host app's shadcn tokens.
+ * Internal Button primitive — mirrors shadcn/ui Button but wired to Pensieve CSS
+ * custom properties (--pensieve-*) rather than the host app's shadcn tokens.
  * NOT exported from the public package surface.
  */
 import * as React from "react";

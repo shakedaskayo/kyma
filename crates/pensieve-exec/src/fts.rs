@@ -1,5 +1,5 @@
 //! `bm25_topk` — the BM25 lexical query path over per-extent tantivy FTS
-//! sidecars (S1.4 Part B). Part A ([`kyma_index_fts`]) built one immutable
+//! sidecars (S1.4 Part B). Part A ([`pensieve_index_fts`]) built one immutable
 //! tantivy index blob per extent under
 //! `{tenant}/indexes/{extent}/{column}.tantivy_fts`; here we read them.
 //!
@@ -24,12 +24,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use kyma_core::catalog::{Catalog, PrunePredicate, TableRef};
-use kyma_core::index_sidecar::{IndexSidecarDescriptor, RowAddress, SidecarKind};
-use kyma_core::tenant::TenantId;
-use kyma_core::types::ExtentId;
-use kyma_index_fts::{bm25_search, open_index};
-use kyma_storage::sidecar_cache::{SidecarCache, SidecarCacheKey};
+use pensieve_core::catalog::{Catalog, PrunePredicate, TableRef};
+use pensieve_core::index_sidecar::{IndexSidecarDescriptor, RowAddress, SidecarKind};
+use pensieve_core::tenant::TenantId;
+use pensieve_core::types::ExtentId;
+use pensieve_index_fts::{bm25_search, open_index};
+use pensieve_storage::sidecar_cache::{SidecarCache, SidecarCacheKey};
 use object_store::ObjectStore;
 
 /// One BM25 hit: the row's extent address and its BM25 relevance score.

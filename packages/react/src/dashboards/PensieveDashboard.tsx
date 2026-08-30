@@ -1,26 +1,26 @@
 /**
- * KymaDashboard — self-contained embeddable dashboard viewer/editor.
+ * PensieveDashboard — self-contained embeddable dashboard viewer/editor.
  *
  * Renders a dashboard by ID using react-grid-layout for the panel grid.
  * Read-only by default; editable=true enables panel add/edit/delete and
  * layout drag-resize, with saves going directly to the client API.
  *
  * Decoupling notes vs web's _app.dashboards.$id.tsx:
- *   - Session (endpoint/token/db) → useKymaClient() from KymaProvider context
+ *   - Session (endpoint/token/db) → usePensieveClient() from PensieveProvider context
  *   - Router navigation → onEditChange prop (no tanstack-router dependency)
  *   - Toast (sonner) → dropped; save result is surfaced via onSaveSuccess/onSaveError
- *   - useSession.getState() Zustand calls → useKymaClient() client object
+ *   - useSession.getState() Zustand calls → usePensieveClient() client object
  *   - database prop: scoped client via client.withDatabase(database). The outer
- *     KymaDashboard wrapper overrides KymaContext.client so ALL child hooks
- *     (useKymaDashboards/getDashboard, usePanelQuery, AddPanelModal schema fetch)
+ *     PensieveDashboard wrapper overrides PensieveContext.client so ALL child hooks
+ *     (usePensieveDashboards/getDashboard, usePanelQuery, AddPanelModal schema fetch)
  *     automatically use x-database: <database>. New panels also receive
  *     database_name seeded from the prop so their stored database is correct.
  *
  * Auto-refresh: ticks every refresh_interval_seconds, invalidates the React
- * Query dashboard detail cache (same key used by useKymaDashboards).
+ * Query dashboard detail cache (same key used by usePensieveDashboards).
  *
  * Grid: react-grid-layout with ResizeObserver for responsive container width.
- * draggableHandle targets .kyma-panel-drag-handle (set in PanelCard).
+ * draggableHandle targets .pensieve-panel-drag-handle (set in PanelCard).
  */
 
 import React, {
@@ -32,9 +32,9 @@ import React, {
 import GridLayout, { type Layout } from "react-grid-layout";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Eye, Pencil, RefreshCw, Save } from "lucide-react";
-import type { DashboardWithPanels, DashboardPanel } from "@kyma-ai/client";
-import { useKymaClient, useKymaContext, KymaContext } from "../provider/context";
-import { useKymaDashboards } from "../hooks/useKymaDashboards";
+import type { DashboardWithPanels, DashboardPanel } from "@pensieve-ai/client";
+import { usePensieveClient, usePensieveContext, PensieveContext } from "../provider/context";
+import { usePensieveDashboards } from "../hooks/usePensieveDashboards";
 import { Button } from "../internal/ui/button";
 import { PanelCard } from "./PanelCard";
 import { AddPanelModal, type PanelDraft } from "./AddPanelModal";
@@ -44,7 +44,7 @@ import type { TimeRange, TimeRangePreset } from "../query/time-range/time-range-
 
 export type { TimeRange };
 
-export interface KymaDashboardProps {
+export interface PensieveDashboardProps {
   /** ID of the dashboard to load. */
   dashboardId: string;
   /**
@@ -58,9 +58,9 @@ export interface KymaDashboardProps {
    */
   timeRange?: TimeRange;
   /**
-   * Override the default Kyma database for ALL panel queries and dashboard
-   * loads. When set, KymaDashboard calls client.withDatabase(database) to
-   * create a scoped client view and overrides the KymaContext for all child
+   * Override the default Pensieve database for ALL panel queries and dashboard
+   * loads. When set, PensieveDashboard calls client.withDatabase(database) to
+   * create a scoped client view and overrides the PensieveContext for all child
    * components, so every request (dashboard load, panel query, schema fetch)
    * carries x-database: <database>. New panels are also pre-seeded with
    * this database_name so their stored value matches.
@@ -153,20 +153,20 @@ function TimeRangeSelect({
   );
 }
 
-// ── KymaDashboard ─────────────────────────────────────────────────────────────
+// ── PensieveDashboard ─────────────────────────────────────────────────────────────
 
 /** Public entry point — wraps inner in a scoped client context when database is set. */
-export function KymaDashboard({ database, ...rest }: KymaDashboardProps) {
-  const ctx = useKymaContext();
+export function PensieveDashboard({ database, ...rest }: PensieveDashboardProps) {
+  const ctx = usePensieveContext();
   const scopedCtx = database ? { ...ctx, client: ctx.client.withDatabase(database) } : ctx;
   return (
-    <KymaContext.Provider value={scopedCtx}>
-      <KymaDashboardInner database={database} {...rest} />
-    </KymaContext.Provider>
+    <PensieveContext.Provider value={scopedCtx}>
+      <PensieveDashboardInner database={database} {...rest} />
+    </PensieveContext.Provider>
   );
 }
 
-function KymaDashboardInner({
+function PensieveDashboardInner({
   dashboardId,
   editable: editableProp = false,
   timeRange: timeRangeProp,
@@ -178,9 +178,9 @@ function KymaDashboardInner({
   onEditChange,
   onSaveSuccess,
   onSaveError,
-}: KymaDashboardProps) {
-  const client = useKymaClient();
-  const { getDashboard } = useKymaDashboards();
+}: PensieveDashboardProps) {
+  const client = usePensieveClient();
+  const { getDashboard } = usePensieveDashboards();
   const queryClient = useQueryClient();
   const endpoint = client.transport.endpoint;
   const dbKey = client.transport.database ?? "default";
@@ -262,7 +262,7 @@ function KymaDashboardInner({
     if (!editMode && interval && interval > 0) {
       autoRefreshRef.current = setInterval(() => {
         void queryClient.invalidateQueries({
-          queryKey: ["kyma", endpoint, dbKey, "dashboards", dashboardId],
+          queryKey: ["pensieve", endpoint, dbKey, "dashboards", dashboardId],
         });
       }, interval * 1000);
     }
@@ -345,10 +345,10 @@ function KymaDashboardInner({
       setDraft(saved);
       setFetched(saved);
       void queryClient.invalidateQueries({
-        queryKey: ["kyma", endpoint, dbKey, "dashboards"],
+        queryKey: ["pensieve", endpoint, dbKey, "dashboards"],
       });
       void queryClient.setQueryData(
-        ["kyma", endpoint, dbKey, "dashboards", dashboardId],
+        ["pensieve", endpoint, dbKey, "dashboards", dashboardId],
         saved,
       );
       onSaveSuccess?.(saved);
@@ -504,7 +504,7 @@ function KymaDashboardInner({
             width={containerWidth}
             isDraggable={editMode}
             isResizable={editMode}
-            draggableHandle=".kyma-panel-drag-handle"
+            draggableHandle=".pensieve-panel-drag-handle"
             onLayoutChange={handleLayoutChange}
             margin={[8, 8]}
             containerPadding={[0, 0]}

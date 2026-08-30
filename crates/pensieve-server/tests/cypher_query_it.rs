@@ -18,7 +18,7 @@
 use arrow_schema::{DataType, Field, Schema};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use kyma_core::catalog::{GraphSpec, TableConfig};
+use pensieve_core::catalog::{GraphSpec, TableConfig};
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -27,8 +27,8 @@ use tower::ServiceExt;
 /// ones the cypher→kql→sql chain references for
 /// `MATCH (a)-[r]->(b) RETURN a.name`, so the emitted SQL is valid against the
 /// (empty) tables and executes to 0 rows.
-async fn seeded_state_with_graph() -> kyma_server::QueryState {
-    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+async fn seeded_state_with_graph() -> pensieve_server::QueryState {
+    let state = pensieve_server::test_support::seeded_state_with_obs_otel_logs().await;
 
     // Resolve the "obs" database id (seeded by the fixture) for create_table.
     let obs_id = state
@@ -75,8 +75,8 @@ async fn seeded_state_with_graph() -> kyma_server::QueryState {
     state
 }
 
-async fn run(state: kyma_server::QueryState, req: Request<Body>) -> (StatusCode, String) {
-    let app = kyma_server::router(state);
+async fn run(state: pensieve_server::QueryState, req: Request<Body>) -> (StatusCode, String) {
+    let app = pensieve_server::router(state);
     let resp = app.oneshot(req).await.unwrap();
     let status = resp.status();
     let bytes = axum::body::to_bytes(resp.into_body(), 16 * 1024 * 1024)
@@ -150,7 +150,7 @@ async fn cypher_unknown_graph_is_400() {
 #[tokio::test]
 async fn cypher_missing_x_graph_when_no_graph_is_400() {
     // No graph registered → cannot auto-select → 400 instructing x-graph.
-    let state = kyma_server::test_support::seeded_state_with_obs_otel_logs().await;
+    let state = pensieve_server::test_support::seeded_state_with_obs_otel_logs().await;
     let req = cypher_req(None, "obs", "MATCH (a)-[r]->(b) RETURN a.name");
     let (status, body) = run(state, req).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
@@ -178,7 +178,7 @@ async fn cypher_malformed_is_400_with_parse_error() {
 async fn cypher_multi_hop_match_is_supported() {
     let state = seeded_state_with_graph().await;
     // Regression guard: this exact shape was a 400 ("multi-hop not
-    // supported") before kyma-kql learned multi-hop graph-match.
+    // supported") before pensieve-kql learned multi-hop graph-match.
     let req = cypher_req(
         Some("obs/kg"),
         "obs",
@@ -192,9 +192,9 @@ async fn cypher_multi_hop_match_is_supported() {
 async fn graph_analytics_endpoint_dispatches_by_kind() {
     // The schema-only graph has no edges, so every analytic returns an empty
     // result — enough to validate the route + resolve + JSON envelope. (Algorithm
-    // correctness is differentially covered in kyma-graph-topo / kyma-graph.)
+    // correctness is differentially covered in pensieve-graph-topo / pensieve-graph.)
     let state = seeded_state_with_graph().await;
-    let app = kyma_server::router(state);
+    let app = pensieve_server::router(state);
 
     for kind in ["components", "communities", "pagerank"] {
         let req = Request::builder()
@@ -381,9 +381,9 @@ async fn cypher_write_requires_write_role() {
     let state = seeded_state_with_graph().await;
     let mut req = cypher_req(Some("obs/kg"), "obs", "CREATE (n:Service {id:'x'})");
     // A read-only principal must be rejected on a write.
-    req.extensions_mut().insert(kyma_server::auth::Principal {
-        tenant: kyma_core::tenant::DEFAULT_TENANT,
-        role: kyma_server::auth::Role::Read,
+    req.extensions_mut().insert(pensieve_server::auth::Principal {
+        tenant: pensieve_core::tenant::DEFAULT_TENANT,
+        role: pensieve_server::auth::Role::Read,
         subject: None,
         allowed_databases: None,
         allowed_realms: None,
@@ -544,7 +544,7 @@ async fn cypher_shortest_path_is_supported() {
 async fn cypher_variable_length_match_is_supported() {
     let state = seeded_state_with_graph().await;
     // Regression guard: `-[*M..N]->` was a 400 ("variable-length not
-    // supported") before kyma-kql learned graph-var-match. The full HTTP path
+    // supported") before pensieve-kql learned graph-var-match. The full HTTP path
     // (cypher → graph-var-match → recursive-CTE SQL → DataFusion) must plan and
     // execute to 200 (schema-only tables ⇒ 0 rows, still a 200).
     let req = cypher_req(

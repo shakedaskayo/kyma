@@ -21,9 +21,9 @@
 //! already exists with the right shape, they are a single catalog lookup.
 
 use arrow_schema::{DataType, Field, Schema, SchemaRef, TimeUnit};
-use kyma_core::catalog::{Catalog, TableConfig, TableRef};
-use kyma_core::errors::{Error, Result};
-use kyma_core::types::DatabaseId;
+use pensieve_core::catalog::{Catalog, TableConfig, TableRef};
+use pensieve_core::errors::{Error, Result};
+use pensieve_core::types::DatabaseId;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::{debug, info, warn};

@@ -2,9 +2,9 @@
 //!
 //! Unlike row-producing data sources, this one never ingests data. Each tick it
 //! introspects a Fabric SQL analytics endpoint (`INFORMATION_SCHEMA` over TDS)
-//! and reconciles the target kyma database to mirror the remote tables as
+//! and reconciles the target pensieve database to mirror the remote tables as
 //! **federated** (live-proxied) tables: schema in the catalog, rows fetched at
-//! query time by `kyma-federation`. See `kyma_core::catalog::FederatedTableSpec`.
+//! query time by `pensieve-federation`. See `pensieve_core::catalog::FederatedTableSpec`.
 //!
 //! Reconciliation rules per tick:
 //! - new remote table          → create federated table;
@@ -28,9 +28,9 @@ use crate::catalog::{CatalogEntry, CatalogField};
 use crate::types::{
     ConfigError, DataSource, DataSourceCtx, DataSourceError, DataSourceRun, GraphHint, TableRows,
 };
-use kyma_core::catalog::{FederatedTableSpec, TableConfig};
-use kyma_core::credentials::CredentialValue;
-use kyma_federation::msfabric::{introspect, RemoteTableMeta, PLATFORM_ID};
+use pensieve_core::catalog::{FederatedTableSpec, TableConfig};
+use pensieve_core::credentials::CredentialValue;
+use pensieve_federation::msfabric::{introspect, RemoteTableMeta, PLATFORM_ID};
 
 /// Wall-clock budget for one introspection pass (connect + walk
 /// INFORMATION_SCHEMA). Generous: metadata sync is a background tick.
@@ -153,7 +153,7 @@ impl DataSource for MsFabricDataSource {
         .await
         .map_err(|e| DataSourceError::Transient(format!("fabric introspection: {e}")))?;
 
-        // 2. Ensure the target kyma database exists.
+        // 2. Ensure the target pensieve database exists.
         let db_name = ctx.target_database.clone();
         let db_id = match catalog
             .lookup_database_in_tenant(ctx.tenant, &db_name)
@@ -167,11 +167,11 @@ impl DataSource for MsFabricDataSource {
                 .map_err(|e| DataSourceError::Transient(format!("create database: {e}")))?,
         };
 
-        // 3. Desired state: kyma table name → (remote meta, federated spec).
+        // 3. Desired state: pensieve table name → (remote meta, federated spec).
         let desired: BTreeMap<String, (&RemoteTableMeta, FederatedTableSpec)> = remote
             .iter()
             .map(|t| {
-                let name = kyma_table_name(t);
+                let name = pensieve_table_name(t);
                 let spec = FederatedTableSpec {
                     platform: PLATFORM_ID.into(),
                     endpoint: parsed.endpoint.clone(),
@@ -201,7 +201,7 @@ impl DataSource for MsFabricDataSource {
                     warn!(
                         table = %table.name,
                         database = %db_name,
-                        "msfabric: remote table name collides with a non-federated kyma table; skipping"
+                        "msfabric: remote table name collides with a non-federated pensieve table; skipping"
                     );
                 }
                 continue;
@@ -267,7 +267,7 @@ impl DataSource for MsFabricDataSource {
 
         // Context-graph entities: endpoint → database item → tables. These DO
         // ingest (normal rows into <db>.msfabric_nodes/_edges) — the graph is
-        // kyma metadata about the remote source, not remote data.
+        // pensieve metadata about the remote source, not remote data.
         let (nodes, edges) = graph_rows(&parsed, &desired);
 
         Ok(DataSourceRun {
@@ -317,12 +317,12 @@ fn graph_rows(
         "type": "CONTAINS",
     })];
 
-    for (kyma_name, (meta, _)) in desired {
+    for (pensieve_name, (meta, _)) in desired {
         let table_id = format!("{db_id}/{}.{}", meta.remote_schema, meta.remote_table);
         nodes.push(json!({
             "id": table_id,
             "labels": ["FabricTable"],
-            "name": kyma_name,
+            "name": pensieve_name,
             "vendor": "msfabric",
             "remote_schema": meta.remote_schema,
             "remote_table": meta.remote_table,
@@ -341,9 +341,9 @@ fn graph_rows(
     (nodes, edges)
 }
 
-/// Kyma-side table name for a remote table: bare name for the default `dbo`
+/// Pensieve-side table name for a remote table: bare name for the default `dbo`
 /// schema, `schema__table` otherwise (lakehouse multi-schema support).
-fn kyma_table_name(t: &RemoteTableMeta) -> String {
+fn pensieve_table_name(t: &RemoteTableMeta) -> String {
     if t.remote_schema.eq_ignore_ascii_case("dbo") {
         t.remote_table.clone()
     } else {

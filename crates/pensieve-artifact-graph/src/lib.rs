@@ -3,7 +3,7 @@
 //! (object-store blobs, agent files, fs-watch snapshots). github CI-log
 //! artifacts are already nodes in the `github` graph and are skipped here.
 //!
-//! Modeled on `kyma_memory::MemoryWriter` (provision-on-demand + `WritePath`
+//! Modeled on `pensieve_memory::MemoryWriter` (provision-on-demand + `WritePath`
 //! append) but without embeddings — artifact nodes are plain Utf8 rows.
 
 pub mod content;
@@ -11,10 +11,10 @@ pub mod content;
 use std::sync::Arc;
 
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
-use kyma_catalog::artifacts::ArtifactRecord;
-use kyma_core::catalog::{Catalog, GraphSpec, TableConfig};
-use kyma_core::segment_format::SegmentFormat;
-use kyma_ingest_core::WritePath;
+use pensieve_catalog::artifacts::ArtifactRecord;
+use pensieve_core::catalog::{Catalog, GraphSpec, TableConfig};
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_ingest_core::WritePath;
 use serde_json::{json, Map, Value};
 
 pub const ARTIFACTS_DB: &str = "artifacts";
@@ -149,7 +149,7 @@ impl ArtifactGraphWriter {
             buf.push(b'\n');
         }
         let key = format!("artifacts:{:x}", stable_hash(&buf));
-        let batches = kyma_ingest_core::parse_ndjson(&buf, tref.schema.clone())?;
+        let batches = pensieve_ingest_core::parse_ndjson(&buf, tref.schema.clone())?;
         self.write
             .ingest_with_idempotency(ARTIFACTS_DB, &tref, batches, Some(&key))
             .await?;

@@ -7,12 +7,12 @@ use arrow_schema::DataType;
 use async_trait::async_trait;
 use futures::StreamExt;
 
-use kyma_core::catalog::ExtentManifest;
-use kyma_core::errors::{Error, Result};
-use kyma_core::index_sidecar::{
+use pensieve_core::catalog::ExtentManifest;
+use pensieve_core::errors::{Error, Result};
+use pensieve_core::index_sidecar::{
     BatchStream, BuiltSidecar, RowAddress, SidecarBuilder, SidecarKind,
 };
-use kyma_core::segment_format::BlockId;
+use pensieve_core::segment_format::BlockId;
 
 use crate::build::build_fts;
 

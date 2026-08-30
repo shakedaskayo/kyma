@@ -1,33 +1,33 @@
 ---
-title: Headless hooks — @kyma-ai/react
-description: Low-level data hooks for building custom UIs on top of the Kyma data layer without the bundled components.
+title: Headless hooks — @pensieve-ai/react
+description: Low-level data hooks for building custom UIs on top of the Pensieve data layer without the bundled components.
 ---
 
 # Headless hooks
 
-All five Kyma data surfaces are available as plain React hooks that return raw
+All five Pensieve data surfaces are available as plain React hooks that return raw
 data, loading state, and imperative actions. Use them when you want to build
-a custom UI on top of the Kyma data layer without the bundled component chrome.
+a custom UI on top of the Pensieve data layer without the bundled component chrome.
 
-All hooks must be called inside a `KymaProvider`.
+All hooks must be called inside a `PensieveProvider`.
 
 ---
 
-## `useKymaGraph`
+## `usePensieveGraph`
 
 ```ts
-import { useKymaGraph } from "@kyma-ai/react";
-import type { UseKymaGraphArgs, UseKymaGraphResult } from "@kyma-ai/react";
+import { usePensieveGraph } from "@pensieve-ai/react";
+import type { UsePensieveGraphArgs, UsePensieveGraphResult } from "@pensieve-ai/react";
 ```
 
 Loads one or more (database, graph) pairs in parallel via React Query, merges
 them into a unified node/edge set, and exposes expansion and search helpers.
 
 ```ts
-function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult
+function usePensieveGraph(args?: UsePensieveGraphArgs): UsePensieveGraphResult
 ```
 
-**`UseKymaGraphArgs`**
+**`UsePensieveGraphArgs`**
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -36,7 +36,7 @@ function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult
 | `realm` | `string` | — | Passed to `getOverview` for realm-scoped fetches. |
 | `limit` | `number` | `800` | Max nodes per graph request. |
 
-**`UseKymaGraphResult`**
+**`UsePensieveGraphResult`**
 
 | Field | Type | Description |
 |---|---|---|
@@ -56,10 +56,10 @@ function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult
 **Custom graph UI example**
 
 ```tsx
-import { useKymaGraph } from "@kyma-ai/react";
+import { usePensieveGraph } from "@pensieve-ai/react";
 
 function GraphStats() {
-  const { nodes, edges, isLoading, error } = useKymaGraph({
+  const { nodes, edges, isLoading, error } = usePensieveGraph({
     discover: "all-databases",
   });
 
@@ -77,11 +77,11 @@ function GraphStats() {
 
 ---
 
-## `useKymaQuery`
+## `usePensieveQuery`
 
 ```ts
-import { useKymaQuery } from "@kyma-ai/react";
-import type { KymaQueryArgs, UseKymaQueryResult } from "@kyma-ai/react";
+import { usePensieveQuery } from "@pensieve-ai/react";
+import type { PensieveQueryArgs, UsePensieveQueryResult } from "@pensieve-ai/react";
 ```
 
 Runs KQL or SQL queries via `POST /v1/query` (NDJSON streaming). Accumulates
@@ -89,10 +89,10 @@ columns and rows as chunks arrive. An `AbortController` per `execute()` call
 allows mid-stream cancellation; unmount aborts automatically.
 
 ```ts
-function useKymaQuery(): UseKymaQueryResult
+function usePensieveQuery(): UsePensieveQueryResult
 ```
 
-**`UseKymaQueryResult`**
+**`UsePensieveQueryResult`**
 
 | Field | Type | Description |
 |---|---|---|
@@ -100,10 +100,10 @@ function useKymaQuery(): UseKymaQueryResult
 | `rows` | `Record<string, unknown>[]` | Accumulated rows from the last/current query. |
 | `isRunning` | `boolean` | True while the stream is active. |
 | `error` | `unknown` | Error from the last `execute()`, or null. |
-| `execute` | `(args: KymaQueryArgs) => Promise<void>` | Run a query. Aborts any previously running query. Resolves when the stream completes. |
+| `execute` | `(args: PensieveQueryArgs) => Promise<void>` | Run a query. Aborts any previously running query. Resolves when the stream completes. |
 | `cancel` | `() => void` | Abort the current in-flight query. No-op if idle. |
 
-**`KymaQueryArgs`**
+**`PensieveQueryArgs`**
 
 | Field | Type | Description |
 |---|---|---|
@@ -116,10 +116,10 @@ function useKymaQuery(): UseKymaQueryResult
 **Custom query UI example**
 
 ```tsx
-import { useKymaQuery } from "@kyma-ai/react";
+import { usePensieveQuery } from "@pensieve-ai/react";
 
 function LiveQuery() {
-  const { rows, isRunning, execute, cancel } = useKymaQuery();
+  const { rows, isRunning, execute, cancel } = usePensieveQuery();
 
   return (
     <div>
@@ -135,11 +135,11 @@ function LiveQuery() {
 
 ---
 
-## `useKymaDiscover`
+## `usePensieveDiscover`
 
 ```ts
-import { useKymaDiscover } from "@kyma-ai/react";
-import type { UseKymaDiscoverResult } from "@kyma-ai/react";
+import { usePensieveDiscover } from "@pensieve-ai/react";
+import type { UsePensieveDiscoverResult } from "@pensieve-ai/react";
 ```
 
 Streaming discover search (`POST /v1/explore/search`) that yields typed frames
@@ -147,10 +147,10 @@ Streaming discover search (`POST /v1/explore/search`) that yields typed frames
 Use this to build a custom log/event browsing UI.
 
 ```ts
-function useKymaDiscover(): UseKymaDiscoverResult
+function usePensieveDiscover(): UsePensieveDiscoverResult
 ```
 
-**`UseKymaDiscoverResult`**
+**`UsePensieveDiscoverResult`**
 
 | Field | Type | Description |
 |---|---|---|
@@ -163,10 +163,10 @@ function useKymaDiscover(): UseKymaDiscoverResult
 **Custom discover UI example** (from `examples/embed-demo` headless view)
 
 ```tsx
-import { useKymaDiscover } from "@kyma-ai/react";
+import { usePensieveDiscover } from "@pensieve-ai/react";
 
 function DiscoverHeadless() {
-  const { frames, isStreaming, search, abort } = useKymaDiscover();
+  const { frames, isStreaming, search, abort } = usePensieveDiscover();
 
   const rows = frames
     .filter((f) => f.type === "rows")
@@ -186,23 +186,23 @@ function DiscoverHeadless() {
 
 ---
 
-## `useKymaDashboards`
+## `usePensieveDashboards`
 
 ```ts
-import { useKymaDashboards } from "@kyma-ai/react";
-import type { UseKymaDashboardsResult } from "@kyma-ai/react";
+import { usePensieveDashboards } from "@pensieve-ai/react";
+import type { UsePensieveDashboardsResult } from "@pensieve-ai/react";
 ```
 
 React Query wrapper over `client.dashboards.listDashboards()`. Exposes the
 dashboard list and a `getDashboard(id)` helper for on-demand detail loads.
 CRUD mutations (create, update, delete) are intentionally not in this hook —
-drive them directly via `useKymaClient().dashboards.*`.
+drive them directly via `usePensieveClient().dashboards.*`.
 
 ```ts
-function useKymaDashboards(): UseKymaDashboardsResult
+function usePensieveDashboards(): UsePensieveDashboardsResult
 ```
 
-**`UseKymaDashboardsResult`**
+**`UsePensieveDashboardsResult`**
 
 | Field | Type | Description |
 |---|---|---|
@@ -214,11 +214,11 @@ function useKymaDashboards(): UseKymaDashboardsResult
 
 ---
 
-## `useKymaAgent`
+## `usePensieveAgent`
 
 ```ts
-import { useKymaAgent } from "@kyma-ai/react";
-import type { UseKymaAgentArgs, UseKymaAgentResult, AgentMessage, AgentStatus } from "@kyma-ai/react";
+import { usePensieveAgent } from "@pensieve-ai/react";
+import type { UsePensieveAgentArgs, UsePensieveAgentResult, AgentMessage, AgentStatus } from "@pensieve-ai/react";
 ```
 
 Headless agent hook over `POST /v1/agent/ask` (SSE stream, Vercel AI UI Message
@@ -226,17 +226,17 @@ Stream v1 protocol). Manages the message list, streaming state, and multi-turn
 session resume internally.
 
 ```ts
-function useKymaAgent(args?: UseKymaAgentArgs): UseKymaAgentResult
+function usePensieveAgent(args?: UsePensieveAgentArgs): UsePensieveAgentResult
 ```
 
-**`UseKymaAgentArgs`**
+**`UsePensieveAgentArgs`**
 
 | Field | Type | Description |
 |---|---|---|
 | `database` | `string?` | Database sent with each ask request. Defaults to the transport's database. |
 | `includeThinking` | `boolean?` | Request extended thinking tokens (model-dependent). |
 
-**`UseKymaAgentResult`**
+**`UsePensieveAgentResult`**
 
 | Field | Type | Description |
 |---|---|---|
@@ -259,10 +259,10 @@ interface AgentMessage {
 **Custom agent UI example**
 
 ```tsx
-import { useKymaAgent } from "@kyma-ai/react";
+import { usePensieveAgent } from "@pensieve-ai/react";
 
 function ChatWidget() {
-  const { messages, status, send } = useKymaAgent();
+  const { messages, status, send } = usePensieveAgent();
   const [input, setInput] = useState("");
 
   return (
@@ -281,17 +281,17 @@ function ChatWidget() {
 
 ---
 
-## `useKymaCapabilities`
+## `usePensieveCapabilities`
 
 ```ts
-import { useKymaCapabilities } from "@kyma-ai/react";
+import { usePensieveCapabilities } from "@pensieve-ai/react";
 ```
 
 React Query wrapper over `GET /v1/capabilities`. Returns the server's feature
-flag set. Used internally by `CapabilityGate` (e.g. to guard `KymaAgentChat`).
+flag set. Used internally by `CapabilityGate` (e.g. to guard `PensieveAgentChat`).
 
 ```ts
-function useKymaCapabilities(): UseQueryResult<Capabilities>
+function usePensieveCapabilities(): UseQueryResult<Capabilities>
 ```
 
 `Capabilities` is a flat object with boolean fields
@@ -300,22 +300,22 @@ function useKymaCapabilities(): UseQueryResult<Capabilities>
 
 ---
 
-## `useKymaClient`
+## `usePensieveClient`
 
 ```ts
-import { useKymaClient } from "@kyma-ai/react";
-import type { KymaContextValue } from "@kyma-ai/react";
+import { usePensieveClient } from "@pensieve-ai/react";
+import type { PensieveContextValue } from "@pensieve-ai/react";
 ```
 
-Returns the `KymaClient` from context. Use this to call the full client API
+Returns the `PensieveClient` from context. Use this to call the full client API
 (graph, query, discover, dashboards, data sources, etc.) from any component
 inside the provider.
 
 ```tsx
-import { useKymaClient } from "@kyma-ai/react";
+import { usePensieveClient } from "@pensieve-ai/react";
 
 function ListDatabases() {
-  const client = useKymaClient();
+  const client = usePensieveClient();
 
   useEffect(() => {
     client.catalog.fetchSchema().then((schema) => {

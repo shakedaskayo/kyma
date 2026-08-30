@@ -4,21 +4,21 @@
 
 use std::sync::Arc;
 
-use kyma_artifact_graph::content::ArtifactContentIndexer;
-use kyma_artifact_graph::ArtifactGraphWriter;
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::Catalog;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_core::tenant::TenantId;
+use pensieve_artifact_graph::content::ArtifactContentIndexer;
+use pensieve_artifact_graph::ArtifactGraphWriter;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_core::tenant::TenantId;
 use object_store::ObjectStore;
 
 /// Materialize artifact nodes for one tenant. Returns the number of nodes
 /// written (0 when the catalog is not Postgres).
 ///
 /// Uses the same `as_ref_any().downcast_ref::<PostgresCatalog>()` accessor that
-/// the artifact-retention worker (`kyma_compaction::ArtifactRetentionWorker`)
+/// the artifact-retention worker (`pensieve_compaction::ArtifactRetentionWorker`)
 /// relies on — the artifacts catalog is Postgres-only, so this is a safe no-op
-/// under `kyma local` (sqlite).
+/// under `pensieve local` (sqlite).
 pub async fn sync_artifact_nodes(
     catalog: Arc<dyn Catalog>,
     format: Arc<dyn SegmentFormat>,
@@ -49,7 +49,7 @@ pub async fn sync_artifact_content(
     let Some(pg) = catalog.as_ref_any().downcast_ref::<PostgresCatalog>() else {
         return Ok(0);
     };
-    let embed = match kyma_memory::shared_embedding().await {
+    let embed = match pensieve_memory::shared_embedding().await {
         Ok(e) => e,
         Err(e) => {
             tracing::warn!(error = %e, "no embedding backend; skipping artifact content indexing");
@@ -103,7 +103,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use kyma_format_tlm::TelemetryFormat;
+    use pensieve_format_tlm::TelemetryFormat;
     use object_store::memory::InMemory;
 
     /// The non-Postgres arm is a safe no-op: an in-memory sqlite catalog has no
@@ -112,11 +112,11 @@ mod tests {
     #[tokio::test]
     async fn non_postgres_catalog_is_noop() {
         let catalog: Arc<dyn Catalog> =
-            Arc::new(kyma_catalog_sqlite::SqliteCatalog::connect_in_memory().await.unwrap());
+            Arc::new(pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory().await.unwrap());
         let store = Arc::new(InMemory::new());
         let format: Arc<dyn SegmentFormat> =
-            Arc::new(TelemetryFormat::new(store, "kyma-test"));
-        let n = sync_artifact_nodes(catalog, format, kyma_core::tenant::DEFAULT_TENANT)
+            Arc::new(TelemetryFormat::new(store, "pensieve-test"));
+        let n = sync_artifact_nodes(catalog, format, pensieve_core::tenant::DEFAULT_TENANT)
             .await
             .unwrap();
         assert_eq!(n, 0);
@@ -128,10 +128,10 @@ mod tests {
     #[tokio::test]
     async fn all_tenants_non_postgres_is_noop() {
         let catalog: Arc<dyn Catalog> =
-            Arc::new(kyma_catalog_sqlite::SqliteCatalog::connect_in_memory().await.unwrap());
+            Arc::new(pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory().await.unwrap());
         let store = Arc::new(InMemory::new());
         let format: Arc<dyn SegmentFormat> =
-            Arc::new(TelemetryFormat::new(store, "kyma-test"));
+            Arc::new(TelemetryFormat::new(store, "pensieve-test"));
         let n = sync_artifact_nodes_all_tenants(catalog, format, None)
             .await
             .unwrap();

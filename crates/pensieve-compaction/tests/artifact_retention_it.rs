@@ -6,11 +6,11 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use chrono::{Duration, Utc};
-use kyma_catalog::artifacts::ArtifactRecord;
-use kyma_catalog::PostgresCatalog;
-use kyma_compaction::ArtifactRetentionWorker;
-use kyma_core::catalog::Catalog;
-use kyma_core::tenant::TenantId;
+use pensieve_catalog::artifacts::ArtifactRecord;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_compaction::ArtifactRetentionWorker;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::tenant::TenantId;
 use object_store::memory::InMemory;
 use object_store::path::Path;
 use object_store::ObjectStore;

@@ -13,9 +13,9 @@
 //! is the default (configurable per-table in a future slice).
 
 use chrono::Utc;
-use kyma_core::catalog::{Catalog, SnapshotSummary};
-use kyma_core::errors::{CatalogError, Error, Result};
-use kyma_core::types::{ExtentId, TableId};
+use pensieve_core::catalog::{Catalog, SnapshotSummary};
+use pensieve_core::errors::{CatalogError, Error, Result};
+use pensieve_core::types::{ExtentId, TableId};
 use object_store::path::Path;
 use object_store::ObjectStore;
 use std::collections::HashMap;
@@ -26,7 +26,7 @@ use tracing::{debug, info, warn};
 
 fn catalog_pool(catalog: &Arc<dyn Catalog>) -> Result<&sqlx::PgPool> {
     let any_ref: &dyn std::any::Any = catalog.as_ref_any();
-    if let Some(pg) = any_ref.downcast_ref::<kyma_catalog::PostgresCatalog>() {
+    if let Some(pg) = any_ref.downcast_ref::<pensieve_catalog::PostgresCatalog>() {
         Ok(pg.pool())
     } else {
         Err(Error::Internal(
@@ -132,7 +132,7 @@ impl RetentionSweeper {
                 {
                     Ok(_) => {
                         debug!(table_id = %table_id, count = ids.len(), "retention commit ok");
-                        ::metrics::counter!("kyma_retention_extents_soft_deleted_total")
+                        ::metrics::counter!("pensieve_retention_extents_soft_deleted_total")
                             .increment(ids.len() as u64);
                         break;
                     }
@@ -247,9 +247,9 @@ impl PhysicalDeleteWorker {
         // mode than an object referencing a vanished row.
         self.catalog.delete_extent_rows(&ids).await?;
 
-        ::metrics::counter!("kyma_physical_gc_objects_deleted_total").increment(deleted_objects);
+        ::metrics::counter!("pensieve_physical_gc_objects_deleted_total").increment(deleted_objects);
         if failed_objects > 0 {
-            ::metrics::counter!("kyma_physical_gc_objects_delete_failed_total")
+            ::metrics::counter!("pensieve_physical_gc_objects_delete_failed_total")
                 .increment(failed_objects);
         }
         info!(

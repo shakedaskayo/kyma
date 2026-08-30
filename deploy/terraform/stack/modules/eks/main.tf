@@ -1,5 +1,5 @@
 # EKS cluster + managed node group + IRSA, all pure AWS resources so the stack
-# stays provider-free (no kubernetes/helm providers — the `kyma deploy` CLI
+# stays provider-free (no kubernetes/helm providers — the `pensieve deploy` CLI
 # installs the engine Helm chart against this cluster as a second step, reusing
 # the same chart as the `helm` compute target). IRSA gives the engine pod
 # keyless S3 access via its service account, mirroring the Fargate task role.

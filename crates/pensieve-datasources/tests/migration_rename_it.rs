@@ -24,7 +24,7 @@ async fn rename_migration_preserves_rows() {
 
     let mut files: Vec<_> = std::fs::read_dir(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../kyma-catalog/migrations"
+        "/../pensieve-catalog/migrations"
     ))
     .unwrap()
     .map(|e| e.unwrap().path())

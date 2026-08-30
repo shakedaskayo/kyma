@@ -2,15 +2,15 @@
 //!
 //! The `credentials` table holds tenant-scoped, encrypted secret values
 //! (`enc_value = nonce(12) || ciphertext(AES-256-GCM)`). All reads decrypt on
-//! the fly with the [`Crypto`] key loaded from `KYMA_SECRET_KEY` at server
+//! the fly with the [`Crypto`] key loaded from `PENSIEVE_SECRET_KEY` at server
 //! start, so plaintext never leaves memory unless a caller asks for it.
 
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use kyma_core::credentials::{Credential, CredentialStore, CredentialSummary, CredentialValue};
-use kyma_core::crypto::Crypto;
-use kyma_core::tenant::TenantId;
+use pensieve_core::credentials::{Credential, CredentialStore, CredentialSummary, CredentialValue};
+use pensieve_core::crypto::Crypto;
+use pensieve_core::tenant::TenantId;
 use serde_json::Value as Json;
 use sqlx::{PgPool, Row};
 use std::sync::Arc;

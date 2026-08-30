@@ -7,7 +7,7 @@
 //!     minimal keepalive stream so MCP clients that probe SSE before
 //!     falling back to POST get a valid handshake.
 //!
-//! Auth is NOT applied here — `kyma-bin` wraps the router with the
+//! Auth is NOT applied here — `pensieve-bin` wraps the router with the
 //! existing `require_role_middleware(Role::Read)` layer.
 
 use axum::body::{Body, Bytes};
@@ -30,7 +30,7 @@ use crate::jsonrpc::{
     parse_envelope, ErrorObject, Request as RpcRequest, RequestEnvelope, Response as RpcResponse,
 };
 use crate::tools::{DispatchBuilder, ToolDispatch};
-use kyma_server::auth::{Principal, RealmScope};
+use pensieve_server::auth::{Principal, RealmScope};
 
 #[derive(Clone)]
 pub struct McpState {
@@ -54,7 +54,7 @@ pub fn router(state: McpState) -> Router {
 
 async fn handle_post(
     State(state): State<McpState>,
-    // Inserted into request extensions by `require_role_middleware` (kyma-bin
+    // Inserted into request extensions by `require_role_middleware` (pensieve-bin
     // wraps the router with it). Optional so tests and the auth-disabled path
     // — which insert no principal — resolve to an unrestricted scope.
     principal: Option<Extension<Principal>>,
@@ -70,7 +70,7 @@ async fn handle_post(
     // (best-effort, loopback-only) pid only on `initialize`, to amortize the
     // lsof cost across the session.
     if let Some(ConnectInfo(addr)) = peer {
-        kyma_server::agent::identity::record_peer(addr, envelope_has_initialize(&envelope));
+        pensieve_server::agent::identity::record_peer(addr, envelope_has_initialize(&envelope));
     }
 
     // Resolve the per-request tool dispatch. Unrestricted tokens (the common

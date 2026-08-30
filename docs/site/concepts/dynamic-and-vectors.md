@@ -1,11 +1,11 @@
 ---
 title: Dynamic and vectors
-description: How kyma stores and queries the two non-relational column types — dynamic (CBOR with a token index) and vector(N) (fixed-dimension embeddings with distance UDFs).
+description: How pensieve stores and queries the two non-relational column types — dynamic (CBOR with a token index) and vector(N) (fixed-dimension embeddings with distance UDFs).
 ---
 
 # Dynamic and vectors
 
-Kyma is column-aware first. Most data fits the typed columns from the
+Pensieve is column-aware first. Most data fits the typed columns from the
 [schema model](/concepts/schema-model). Two column types handle what
 doesn't: `dynamic` for arbitrary structured data, and `vector(N)` for
 embeddings.
@@ -74,10 +74,10 @@ For a tour of how these fit into the broader pipeline, see
 
 A field that's appeared in ≥ 100 events with one consistent type within
 a 1000-event window is a candidate for promotion to a typed column.
-Manual promotion via `kyma-cli`:
+Manual promotion via `pensieve-cli`:
 
 ```bash
-kyma-cli alter-table otel_logs add-column \
+pensieve-cli alter-table otel_logs add-column \
   --name "service_name" \
   --type "string" \
   --from-dynamic "attributes.service.name"
@@ -93,7 +93,7 @@ A fixed-dimension `Float32` embedding column. The dimension `N` is set
 at table creation time and never changes.
 
 ```bash
-kyma-cli create-table embeddings \
+pensieve-cli create-table embeddings \
   --schema '_timestamp:timestamp, doc_id:string, body:string, embedding:vector(384)'
 ```
 
@@ -141,7 +141,7 @@ RaBitQ ANN sidecar**, built automatically:
 - A background job builds an `ivf_rabitq` sidecar for any vector column whose
   extent doesn't have one yet (the same scheduler also builds Tantivy BM25
   sidecars for text columns). This runs on job-running nodes in server mode and
-  in-process under `kyma serve` — **local mode has the full ANN story**; only
+  in-process under `pensieve serve` — **local mode has the full ANN story**; only
   the cross-node global centroid tree is server-only.
 - Each sidecar holds `nlist = clamp(round(√rows), 16, 256)` IVF centroids plus
   1-bit RaBitQ codes with correction factors.
@@ -153,7 +153,7 @@ RaBitQ ANN sidecar**, built automatically:
 
 Hybrid search (`POST /v1/search`) fuses the vector leg with the BM25 lexical leg
 (RRF), and — when a [cross-encoder reranker](/reference/env#embeddings) is
-configured (`KYMA_RERANK_MODEL`) — adds a final reranking stage over the fused
+configured (`PENSIEVE_RERANK_MODEL`) — adds a final reranking stage over the fused
 top results.
 
 ### Loading vectors

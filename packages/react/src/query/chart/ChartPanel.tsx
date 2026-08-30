@@ -1,8 +1,8 @@
 import ReactECharts from "echarts-for-react";
 import { useMemo } from "react";
 import { BarChart3 } from "lucide-react";
-import { autoChartAxes, type Column } from "@kyma-ai/client";
-import { useKymaContext } from "../../provider/context";
+import { autoChartAxes, type Column } from "@pensieve-ai/client";
+import { usePensieveContext } from "../../provider/context";
 import { DATA_PALETTE, chartTheme } from "../../internal/data-palette";
 
 // ── time formatter ────────────────────────────────────────────────────────────
@@ -47,8 +47,8 @@ function makeTooltipFmt(yName: string) {
 // ── component ─────────────────────────────────────────────────────────────────
 
 export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<string, unknown>[] }) {
-  // Theme-aware: derive isDark from KymaProvider context (no web-app Zustand store).
-  const { isDark } = useKymaContext();
+  // Theme-aware: derive isDark from PensieveProvider context (no web-app Zustand store).
+  const { isDark } = usePensieveContext();
 
   const option = useMemo(() => {
     const spec = autoChartAxes(columns);
@@ -58,8 +58,8 @@ export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<
     const symbol = isSparse ? "circle" : "none";
     const symbolSize = 4;
 
-    // Theme-aware axis + tooltip + gridline colors sourced from the Kyma CSS
-    // custom properties (--kyma-*) via chartTheme(). Falls back gracefully when
+    // Theme-aware axis + tooltip + gridline colors sourced from the Pensieve CSS
+    // custom properties (--pensieve-*) via chartTheme(). Falls back gracefully when
     // no DOM is available (tests/SSR).
     const theme = chartTheme(isDark);
     const axisLabelColor = theme.axis;

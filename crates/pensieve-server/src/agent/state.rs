@@ -2,10 +2,10 @@
 
 use crate::agent::engine::EnginePreferenceStore;
 use crate::agent::skills::EnabledSkillsStore;
-use kyma_core::catalog::Catalog;
-use kyma_core::credentials::CredentialStore;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_core::tenant::TenantId;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::credentials::CredentialStore;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_core::tenant::TenantId;
 use sqlx::PgPool;
 use std::sync::Arc;
 
@@ -13,10 +13,10 @@ use std::sync::Arc;
 pub struct AgentState {
     /// Catalog handle — used by tools to enumerate databases / tables.
     pub catalog: Arc<dyn Catalog>,
-    /// Object-store + segment format — passed to KymaTable for inline tool SQL execution.
+    /// Object-store + segment format — passed to PensieveTable for inline tool SQL execution.
     pub format: Arc<dyn SegmentFormat>,
     /// Postgres pool — used to persist `agent_runs`/session rows and read memory
-    /// settings. `None` in **local mode** (`kyma-local serve`): run/session
+    /// settings. `None` in **local mode** (`pensieve-local serve`): run/session
     /// history isn't persisted and settings default; memory recall/save and the
     /// data tools run over the catalog + engine and work unchanged.
     pub pool: Option<PgPool>,
@@ -35,13 +35,13 @@ pub struct AgentState {
     pub mcp_url: Option<String>,
     /// Async memory ingest queue — flows into every [`super::SharedToolCtx`]
     /// built from this state. `None` ⇒ synchronous memory writes.
-    pub memory: Option<kyma_memory::MemoryQueue>,
+    pub memory: Option<pensieve_memory::MemoryQueue>,
     /// Degraded local-mode dreaming state (in-memory ring + SQLite). `Some` only
-    /// in `kyma serve` (single-binary local mode); `None` in the worker-fabric
+    /// in `pensieve serve` (single-binary local mode); `None` in the worker-fabric
     /// server, where dreaming runs persist to Postgres. When set, the dreaming
     /// HTTP handlers serve from this store and runs execute inline.
     pub local_dreaming: Option<std::sync::Arc<super::dreaming_local::LocalDreamingStore>>,
-    /// Path to the local memory-settings JSON file (`${KYMA_HOME}/memory-settings.json`).
+    /// Path to the local memory-settings JSON file (`${PENSIEVE_HOME}/memory-settings.json`).
     /// `Some` only in local mode — settings GET/PUT read/write this file there.
     /// `None` in server mode, where settings live in the Postgres `memory_settings`
     /// row.
@@ -50,5 +50,5 @@ pub struct AgentState {
     /// of every interactive memory tool path (as a [`super::tools::ConsumerSink`])
     /// and is subscribed by the `GET /v1/consumers/live` WebSocket that drives the
     /// graph explorer's realtime overlay. `None` ⇒ the overlay has no live feed.
-    pub consumer_events: Option<kyma_ingest_core::ConsumerEvents>,
+    pub consumer_events: Option<pensieve_ingest_core::ConsumerEvents>,
 }

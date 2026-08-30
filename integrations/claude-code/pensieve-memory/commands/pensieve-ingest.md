@@ -1,18 +1,18 @@
 ---
-description: Ingest into Kyma on demand — pull from a data source, or create virtual graph entities wired to memory and existing resources.
+description: Ingest into Pensieve on demand — pull from a data source, or create virtual graph entities wired to memory and existing resources.
 argument-hint: [data source to pull from | resources & relationships to add]
-allowed-tools: Bash(kyma datasource:*), Bash(kyma ingest:*), Bash(kyma status:*)
+allowed-tools: Bash(pensieve datasource:*), Bash(pensieve ingest:*), Bash(pensieve status:*)
 ---
 
-Ingest into Kyma's context engine. Request: **$ARGUMENTS**
+Ingest into Pensieve's context engine. Request: **$ARGUMENTS**
 
 Data sources configured on this server (name · type · enabled · last run):
 
-!`kyma datasource list 2>/dev/null || echo "no kyma connection — run: kyma connect <url>"`
+!`pensieve datasource list 2>/dev/null || echo "no pensieve connection — run: pensieve connect <url>"`
 
 Recent ingestion runs:
 
-!`kyma ingest status 2>/dev/null || true`
+!`pensieve ingest status 2>/dev/null || true`
 
 Pick the mode that fits the request.
 
@@ -23,13 +23,13 @@ prometheus / s3 / postgres / notion / slack / jira / confluence / gmail / gdrive
 **empty** — then summarize the data sources listed above and ask which to pull from.
 
 1. Pick the matching data source from the list. If it isn't configured yet, add it with
-   `kyma datasource add <source> …` (run `kyma datasource add --help` for the source's flags) —
+   `pensieve datasource add <source> …` (run `pensieve datasource add --help` for the source's flags) —
    adding triggers a first run.
-2. Trigger an on-demand run now: `kyma datasource trigger <name-or-id>`.
-3. Confirm it ran: `kyma ingest status --datasource <name-or-id>` (or
-   `kyma ingest tail --datasource <name-or-id>` to follow).
+2. Trigger an on-demand run now: `pensieve datasource trigger <name-or-id>`.
+3. Confirm it ran: `pensieve ingest status --datasource <name-or-id>` (or
+   `pensieve ingest tail --datasource <name-or-id>` to follow).
 4. Report what was pulled and point the user at the graph view (Graph page, select the
-   data source's database) or `/kyma-recall`. **Continuous** background ingestion is a server
+   data source's database) or `/pensieve-recall`. **Continuous** background ingestion is a server
    feature — the scheduler ticks data sources on their interval; this command is on-demand.
 
 ## Mode B — dynamic entities (enrich the graph)
@@ -39,10 +39,10 @@ learned this session — services, repos, tables, people, configs, concepts, and
 relate — as **virtual resources** on the graph.
 
 1. **Find what to wire to first** (don't duplicate existing nodes):
-   - `recall_memory` / `memory_search` (MCP server `kyma`) for related memories;
+   - `recall_memory` / `memory_search` (MCP server `pensieve`) for related memories;
    - `find_references_to` / `graph_traverse` for existing graph node ids (e.g. the GitHub
      `repo:owner/name`, a service or table node).
-2. For each resource, call **`ingest_entity`** (MCP server `kyma`) with:
+2. For each resource, call **`ingest_entity`** (MCP server `pensieve`) with:
    - `name`, `kind` (`service|repo|table|person|file|config|concept`), optional `properties`
      (e.g. `{"language":"rust","owner":"team-pay"}`);
    - `links` — wire it to what you found:

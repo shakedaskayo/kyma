@@ -23,7 +23,7 @@
 
 use super::backend::{AuthBackend, AuthError, Principal, Role};
 use async_trait::async_trait;
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 use sqlx::{PgPool, Row};
 
 #[derive(Clone)]

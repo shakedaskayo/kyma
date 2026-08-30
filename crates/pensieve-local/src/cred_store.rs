@@ -1,4 +1,4 @@
-//! SQLite-backed credential store for local mode (`kyma serve`).
+//! SQLite-backed credential store for local mode (`pensieve serve`).
 //!
 //! Mirrors the Postgres `PgCredentialStore` API — same AES-256-GCM envelope,
 //! same CRUD surface — but persists to the embedded `credentials` table in the
@@ -6,9 +6,9 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use kyma_core::credentials::{Credential, CredentialStore, CredentialSummary, CredentialValue};
-use kyma_core::crypto::Crypto;
-use kyma_core::tenant::TenantId;
+use pensieve_core::credentials::{Credential, CredentialStore, CredentialSummary, CredentialValue};
+use pensieve_core::crypto::Crypto;
+use pensieve_core::tenant::TenantId;
 use serde_json::Value as Json;
 use sqlx::SqlitePool;
 use std::sync::Arc;

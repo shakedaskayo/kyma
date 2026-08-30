@@ -1,23 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { KymaApiError, KymaAuthError, errorFromResponse } from "./errors";
+import { PensieveApiError, PensieveAuthError, errorFromResponse } from "./errors";
 
 describe("errorFromResponse", () => {
-  it("maps 4xx/5xx with JSON body to KymaApiError", async () => {
+  it("maps 4xx/5xx with JSON body to PensieveApiError", async () => {
     const res = new Response(JSON.stringify({ error: "bad query" }), {
       status: 400,
       headers: { "content-type": "application/json", "x-request-id": "r-1" },
     });
     const err = await errorFromResponse(res);
-    expect(err).toBeInstanceOf(KymaApiError);
+    expect(err).toBeInstanceOf(PensieveApiError);
     expect(err.status).toBe(400);
     expect(err.message).toContain("bad query");
     expect(err.requestId).toBe("r-1");
   });
 
-  it("maps 401/403 to KymaAuthError (subtype of KymaApiError)", async () => {
+  it("maps 401/403 to PensieveAuthError (subtype of PensieveApiError)", async () => {
     const err = await errorFromResponse(new Response("nope", { status: 401 }));
-    expect(err).toBeInstanceOf(KymaAuthError);
-    expect(err).toBeInstanceOf(KymaApiError);
+    expect(err).toBeInstanceOf(PensieveAuthError);
+    expect(err).toBeInstanceOf(PensieveApiError);
   });
 
   it("truncates long text bodies", async () => {
@@ -25,7 +25,7 @@ describe("errorFromResponse", () => {
     expect(err.message.length).toBeLessThan(300);
   });
 
-  // Fix 4: code field on KymaApiError
+  // Fix 4: code field on PensieveApiError
   it("populates code from JSON body code field", async () => {
     const res = new Response(JSON.stringify({ error: "x", code: "SCOPE_DENIED" }), {
       status: 403,

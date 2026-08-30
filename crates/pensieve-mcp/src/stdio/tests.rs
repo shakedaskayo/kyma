@@ -7,11 +7,11 @@
 use crate::initialize::ServerInfo;
 use crate::stdio::serve;
 use crate::tools::ToolDispatch;
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_core::catalog::Catalog;
-use kyma_format_tlm::TelemetryFormat;
-use kyma_server::agent::SharedToolCtx;
-use kyma_storage::{build_object_store, StorageConfig};
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_core::catalog::Catalog;
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_server::agent::SharedToolCtx;
+use pensieve_storage::{build_object_store, StorageConfig};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -38,7 +38,7 @@ async fn db_free_dispatch() -> (ToolDispatch, ServerInfo) {
     (
         ToolDispatch::new(shared),
         ServerInfo {
-            name: "kyma".into(),
+            name: "pensieve".into(),
             version: "test".into(),
         },
     )

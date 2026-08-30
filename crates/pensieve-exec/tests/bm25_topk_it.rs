@@ -1,4 +1,4 @@
-//! Integration test for the BM25 lexical query path (`kyma_exec::bm25_topk`).
+//! Integration test for the BM25 lexical query path (`pensieve_exec::bm25_topk`).
 //!
 //! Exercises the full real plumbing against real components — a SQLite catalog
 //! (`list_extents` / `list_index_sidecars`), an `InMemory` object store, the TLM
@@ -22,16 +22,16 @@ use std::sync::Arc;
 use arrow_array::{Int64Array, RecordBatch, StringArray, TimestampNanosecondArray};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use futures::StreamExt;
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig, TableRef};
-use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarBuilder, SidecarKind};
-use kyma_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
-use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_core::types::TableId;
-use kyma_exec::bm25_topk;
-use kyma_format_tlm::TelemetryFormat;
-use kyma_index_fts::TantivyFtsBuilder;
-use kyma_storage::sidecar_cache::SidecarCache;
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig, TableRef};
+use pensieve_core::index_sidecar::{IndexSidecarDescriptor, SidecarBuilder, SidecarKind};
+use pensieve_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
+use pensieve_core::tenant::DEFAULT_TENANT;
+use pensieve_core::types::TableId;
+use pensieve_exec::bm25_topk;
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_index_fts::TantivyFtsBuilder;
+use pensieve_storage::sidecar_cache::SidecarCache;
 use object_store::path::Path as ObjPath;
 use object_store::{memory::InMemory, ObjectStore};
 
@@ -169,7 +169,7 @@ async fn setup() -> (
     SidecarCache,
 ) {
     let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "kyma"));
+    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "pensieve"));
     let catalog = SqliteCatalog::connect_in_memory().await.unwrap();
     let db = catalog.create_database("default").await.unwrap();
     catalog
@@ -178,7 +178,7 @@ async fn setup() -> (
         .unwrap();
     let tref = catalog.lookup_table("default", "logs").await.unwrap();
     let cache_root = std::env::temp_dir().join(format!(
-        "kyma-fts-it-{}-{}",
+        "pensieve-fts-it-{}-{}",
         std::process::id(),
         uuid::Uuid::new_v4()
     ));

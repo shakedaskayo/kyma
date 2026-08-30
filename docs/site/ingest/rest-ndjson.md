@@ -5,7 +5,7 @@ description: POST /v1/ingest takes NDJSON, auto-creates the table and evolves th
 
 # REST / NDJSON
 
-The default way data lands in kyma. One HTTP `POST`, one body of NDJSON,
+The default way data lands in pensieve. One HTTP `POST`, one body of NDJSON,
 one snapshot. Headers tell the engine which database and table to write
 to; the body is one JSON object per line. The table is auto-created on
 first write and the schema evolves to fit new fields.

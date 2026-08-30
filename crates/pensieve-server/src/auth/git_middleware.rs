@@ -1,6 +1,6 @@
 //! Auth middleware for the `/git` smart-HTTP subtree. Git clients speak
-//! HTTP Basic, not Bearer: the kyma API token rides as the Basic *password*
-//! (username is ignored — `git clone http://kyma:<token>@host/...`) or as
+//! HTTP Basic, not Bearer: the pensieve API token rides as the Basic *password*
+//! (username is ignored — `git clone http://pensieve:<token>@host/...`) or as
 //! the username when the password is empty. Bearer is also accepted so
 //! non-git clients can hit the same routes.
 //!
@@ -22,13 +22,13 @@ use super::middleware::AuthLayerState;
 fn basic_unauthorized(msg: &str) -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        [(header::WWW_AUTHENTICATE, r#"Basic realm="kyma""#)],
+        [(header::WWW_AUTHENTICATE, r#"Basic realm="pensieve""#)],
         msg.to_owned(),
     )
         .into_response()
 }
 
-/// Extract a kyma token from `Authorization: Basic …` or `Bearer …`.
+/// Extract a pensieve token from `Authorization: Basic …` or `Bearer …`.
 fn extract_token(value: &str) -> Option<String> {
     if let Some(bearer) = value.strip_prefix("Bearer ") {
         return Some(bearer.trim().to_string());
@@ -71,7 +71,7 @@ pub async fn require_git_auth_middleware(
         }
     } else {
         super::backend::Principal {
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            tenant: pensieve_core::tenant::DEFAULT_TENANT,
             role: Role::Admin,
             subject: None,
             allowed_databases: None,
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn token_from_password_username_or_bearer() {
-        assert_eq!(extract_token(&basic("kyma", "tok1")).as_deref(), Some("tok1"));
+        assert_eq!(extract_token(&basic("pensieve", "tok1")).as_deref(), Some("tok1"));
         assert_eq!(extract_token(&basic("tok2", "")).as_deref(), Some("tok2"));
         assert_eq!(extract_token("Bearer tok3").as_deref(), Some("tok3"));
         assert_eq!(extract_token(&basic("", "")), None);

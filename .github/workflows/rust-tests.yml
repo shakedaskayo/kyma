@@ -2,7 +2,7 @@ name: rust-tests
 
 # Correctness gate for the Rust workspace: a full compile of every crate +
 # test target, the no-infra unit suites, and the Postgres-backed integration
-# suites (testcontainers spins pgvector/pgvector:pg16 per fixture; the kyma-mcp
+# suites (testcontainers spins pgvector/pgvector:pg16 per fixture; the pensieve-mcp
 # end-to-end pool connects to the `postgres` service below).
 #
 # Complements gauntlet-pr (live scenario tests against a running engine). There
@@ -18,10 +18,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
-  # The kyma-mcp end-to-end test opens a raw sqlx pool against this URL (it does
+  # The pensieve-mcp end-to-end test opens a raw sqlx pool against this URL (it does
   # not migrate it — assertions run against the testcontainers catalog). Any
   # reachable Postgres satisfies it.
-  KYMA_TEST_DATABASE_URL: postgres://kyma:kyma_dev@localhost:5432/kyma
+  PENSIEVE_TEST_DATABASE_URL: postgres://pensieve:pensieve_dev@localhost:5432/pensieve
 
 jobs:
   rust-tests:
@@ -31,12 +31,12 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: kyma
-          POSTGRES_PASSWORD: kyma_dev
-          POSTGRES_DB: kyma
+          POSTGRES_USER: pensieve
+          POSTGRES_PASSWORD: pensieve_dev
+          POSTGRES_DB: pensieve
         ports: ["5432:5432"]
         options: >-
-          --health-cmd="pg_isready -U kyma"
+          --health-cmd="pg_isready -U pensieve"
           --health-interval=5s
           --health-timeout=3s
           --health-retries=10
@@ -59,28 +59,28 @@ jobs:
       # runner lacks, and their full build is gated by other workflows:
       #   - `app` — the Tauri desktop shell (GTK/webkit); the web frontend has
       #     its own workflow.
-      #   - `kyma-bin` + `kyma-ingest-kafka` — pull rdkafka/librdkafka, whose
-      #     CMake build needs libcurl/SASL/etc. `kyma-bin`'s full build is
+      #   - `pensieve-bin` + `pensieve-ingest-kafka` — pull rdkafka/librdkafka, whose
+      #     CMake build needs libcurl/SASL/etc. `pensieve-bin`'s full build is
       #     already gated by gauntlet-pr and build-image.
       - name: compile crates + test targets (engine/server surface)
         run: >-
           cargo test --workspace --locked --no-run
-          --exclude app --exclude kyma-bin --exclude kyma-ingest-kafka
+          --exclude app --exclude pensieve-bin --exclude pensieve-ingest-kafka
 
       # Fast, no external dependencies.
       - name: unit suites (no infra)
         run: >-
           cargo test --locked
-          -p kyma-core -p kyma-storage -p kyma-kql
-          -p kyma-memory -p kyma-catalog-sqlite
+          -p pensieve-core -p pensieve-storage -p pensieve-kql
+          -p pensieve-memory -p pensieve-catalog-sqlite
 
       # Postgres-backed. testcontainers starts an ephemeral pgvector/pgvector:pg16
       # per fixture using the runner's Docker daemon — no service wiring needed.
       - name: catalog integration (testcontainers)
-        run: cargo test --locked -p kyma-catalog
+        run: cargo test --locked -p pensieve-catalog
 
       - name: server integration (testcontainers)
-        run: cargo test --locked -p kyma-server --features "test-support cloud-auth"
+        run: cargo test --locked -p pensieve-server --features "test-support cloud-auth"
 
       - name: mcp integration (testcontainers + pool)
-        run: cargo test --locked -p kyma-mcp --features "kyma-server/test-support"
+        run: cargo test --locked -p pensieve-mcp --features "pensieve-server/test-support"

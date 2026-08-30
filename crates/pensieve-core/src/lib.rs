@@ -1,4 +1,4 @@
-//! kyma-core — the architectural contract of the kyma engine.
+//! pensieve-core — the architectural contract of the pensieve engine.
 //!
 //! Every other crate in the workspace depends on this one (and this one
 //! depends on no sibling crates). The trait surfaces declared here are the

@@ -2,7 +2,7 @@
 //! agent-private memory, then runs the real `recall_sql` through `POST
 //! /v1/query` over the embedded engine (in-memory SQLite catalog + local
 //! segment format + a mock embedder — the same DataFusion engine + SQL server
-//! and `kyma local` execute, no Docker). Confirms the `space` projection and
+//! and `pensieve local` execute, no Docker). Confirms the `space` projection and
 //! predicate actually execute and that visibility is enforced:
 //! - agent B sees the public memory but NOT agent A's private one,
 //! - agent A sees its own private memory,
@@ -12,23 +12,23 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use kyma_embed::EmbeddingBackend as _;
-use kyma_memory::types::RecallFilter;
-use kyma_memory::{sql, CreateMemory, MemoryWriter, NODE_TABLE};
+use pensieve_embed::EmbeddingBackend as _;
+use pensieve_memory::types::RecallFilter;
+use pensieve_memory::{sql, CreateMemory, MemoryWriter, NODE_TABLE};
 use tower::ServiceExt;
 
 #[derive(Debug)]
 struct MockEmbed;
 
 #[async_trait::async_trait]
-impl kyma_embed::EmbeddingBackend for MockEmbed {
+impl pensieve_embed::EmbeddingBackend for MockEmbed {
     fn id(&self) -> &str {
         "mock/space-recall"
     }
     fn dimension(&self) -> u16 {
         4
     }
-    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, kyma_embed::EmbedError> {
+    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, pensieve_embed::EmbedError> {
         // Deterministic + fractional (whole-number floats would render as
         // integer literals and the cosine UDF rejects Int64 arrays). Identical
         // content embeds identically, so only `space` distinguishes recall.
@@ -39,36 +39,36 @@ impl kyma_embed::EmbeddingBackend for MockEmbed {
     }
 }
 
-type CatalogArc = Arc<dyn kyma_core::catalog::Catalog>;
-type FormatArc = Arc<dyn kyma_core::segment_format::SegmentFormat>;
+type CatalogArc = Arc<dyn pensieve_core::catalog::Catalog>;
+type FormatArc = Arc<dyn pensieve_core::segment_format::SegmentFormat>;
 
 async fn embedded_engine(root: &std::path::Path) -> (CatalogArc, FormatArc) {
     let catalog: CatalogArc = Arc::new(
-        kyma_catalog_sqlite::SqliteCatalog::connect_in_memory()
+        pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory()
             .await
             .expect("in-memory catalog"),
     );
-    let store = kyma_storage::build_object_store(&kyma_storage::StorageConfig::Local {
+    let store = pensieve_storage::build_object_store(&pensieve_storage::StorageConfig::Local {
         root: root.to_string_lossy().to_string(),
     })
     .expect("local store");
-    let format: FormatArc = Arc::new(kyma_format_tlm::TelemetryFormat::new(store, "test"));
+    let format: FormatArc = Arc::new(pensieve_format_tlm::TelemetryFormat::new(store, "test"));
     (catalog, format)
 }
 
 fn query_app(catalog: CatalogArc, format: FormatArc) -> axum::Router {
     // No auth layer → no Principal → default tenant, no scope gate (fine for a
     // single-database embedded test).
-    let state = kyma_server::QueryState {
+    let state = pensieve_server::QueryState {
         catalog,
         format,
-        schema_cache: Arc::new(kyma_server::catalog_handler::SchemaCache::default()),
+        schema_cache: Arc::new(pensieve_server::catalog_handler::SchemaCache::default()),
         node_id: None,
         pg_pool: None,
         federation: None,
-        layout_cache: Arc::new(kyma_server::graph_layout_cache::LayoutCache::new()),
+        layout_cache: Arc::new(pensieve_server::graph_layout_cache::LayoutCache::new()),
     };
-    kyma_server::router(state)
+    pensieve_server::router(state)
 }
 
 fn private_to(agent: &str) -> CreateMemory {
@@ -83,7 +83,7 @@ async fn query_ids(app: &axum::Router, sql: &str) -> Vec<String> {
         .method("POST")
         .uri("/v1/query")
         .header("content-type", "text/plain")
-        .header("x-database", kyma_memory::DEFAULT_DATABASE)
+        .header("x-database", pensieve_memory::DEFAULT_DATABASE)
         .body(Body::from(sql.to_string()))
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();

@@ -17,8 +17,8 @@ use arrow_flight::flight_service_client::FlightServiceClient;
 use arrow_flight::Ticket;
 use datafusion::error::{DataFusionError, Result as DfResult};
 use futures::StreamExt;
-use kyma_core::catalog::{ExtentManifest, LiveNode};
-use kyma_core::types::{ExtentId, NodeId};
+use pensieve_core::catalog::{ExtentManifest, LiveNode};
+use pensieve_core::types::{ExtentId, NodeId};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::Hasher;
@@ -164,7 +164,7 @@ pub async fn fetch_remote_extents(
             batches.push(batch);
         }
         ::metrics::counter!(
-            "kyma_scan_extents_remote_total",
+            "pensieve_scan_extents_remote_total",
             "peer" => endpoint.clone()
         )
         .increment(1);

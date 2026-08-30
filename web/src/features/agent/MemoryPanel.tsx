@@ -269,7 +269,7 @@ function SessionTable({ rows }: { rows: Row[] }) {
 
 function EventFeed({ rows }: { rows: Row[] }) {
   if (rows.length === 0)
-    return <p className="text-xs text-muted-foreground">No events yet — start a Claude Code session with the kyma-memory plugin.</p>;
+    return <p className="text-xs text-muted-foreground">No events yet — start a Claude Code session with the pensieve-memory plugin.</p>;
   return (
     <div className="max-h-72 space-y-1 overflow-auto">
       {rows.map((r, i) => {

@@ -1,7 +1,7 @@
 //! Agent-source detection — a small, extensible registry of coding-agent
 //! installations a node can own as local sources.
 //!
-//! Kyma is a distributed context engine for *any* coding agent, so the node
+//! Pensieve is a distributed context engine for *any* coding agent, so the node
 //! daemon must not assume Claude Code is the only world. Each detector is a
 //! cheap filesystem probe: it reports the agent's root dir(s), the realms it
 //! has on disk, and which sessions look active right now. Detectors that find
@@ -12,7 +12,7 @@
 //! others are detected (so they appear in node inventory + capabilities) and
 //! their `source_sync` jobs no-op until a pipeline lands.
 
-use kyma_core::fabric::PresenceSession;
+use pensieve_core::fabric::PresenceSession;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn realm_dirs_lists_sorted_subdirs() {
-        let tmp = std::env::temp_dir().join(format!("kyma-realms-{}", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!("pensieve-realms-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(tmp.join("zeta")).unwrap();
         std::fs::create_dir_all(tmp.join("alpha")).unwrap();
         std::fs::write(tmp.join("a-file"), b"x").unwrap(); // files are ignored
@@ -327,7 +327,7 @@ mod tests {
 
     #[test]
     fn presence_picks_up_recent_transcripts() {
-        let tmp = std::env::temp_dir().join(format!("kyma-presence-{}", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!("pensieve-presence-{}", uuid::Uuid::new_v4()));
         let realm = tmp.join("proj-a");
         std::fs::create_dir_all(&realm).unwrap();
         std::fs::write(realm.join("sess-1.jsonl"), b"{}").unwrap();

@@ -6,7 +6,7 @@
 //! column, a **vector** leg (`cosine_distance` against the query embedding), then
 //! fuses the two ranked lists with Reciprocal Rank Fusion. The query is embedded
 //! at request time via the process-shared embedding backend
-//! (`kyma_memory::shared_embedding`). Hits carry `db.table` provenance + the row,
+//! (`pensieve_memory::shared_embedding`). Hits carry `db.table` provenance + the row,
 //! so callers can follow up with SQL/KQL to correlate.
 //!
 //! Degrades gracefully: no embedder / no vector column → lexical-only; a failing
@@ -28,7 +28,7 @@ use axum::response::Response;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
-use kyma_exec::KymaTable;
+use pensieve_exec::PensieveTable;
 use serde_json::Value;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -83,7 +83,7 @@ pub async fn search_handler(State(state): State<QueryState>, req: Request<Body>)
     let request_id = crate::extract_request_id(&parts.headers);
 
     // Shared query admission control (see `crate::concurrency`); permit held for
-    // the duration of the search. No-op unless KYMA_QUERY_MAX_CONCURRENT is set.
+    // the duration of the search. No-op unless PENSIEVE_QUERY_MAX_CONCURRENT is set.
     let _admission = match crate::concurrency::acquire() {
         Ok(p) => p,
         Err(retry) => return crate::too_many_requests_response(retry, &request_id),
@@ -157,10 +157,10 @@ pub(crate) async fn search_data(
     qvec: Option<Vec<f32>>,
     time_range: Option<TimeRange>,
     limit: usize,
-    catalog: Arc<dyn kyma_core::catalog::Catalog>,
-    format: Arc<dyn kyma_core::segment_format::SegmentFormat>,
-    node_id: Option<kyma_core::types::NodeId>,
-    tenant: kyma_core::tenant::TenantId,
+    catalog: Arc<dyn pensieve_core::catalog::Catalog>,
+    format: Arc<dyn pensieve_core::segment_format::SegmentFormat>,
+    node_id: Option<pensieve_core::types::NodeId>,
+    tenant: pensieve_core::tenant::TenantId,
 ) -> Vec<(String, f64, Value)> {
     // Fan out per source.
     let mut set: JoinSet<Vec<(String, f64, Value)>> = JoinSet::new();
@@ -214,7 +214,7 @@ async fn rerank_stage(
     mut hits: Vec<(String, f64, Value)>,
     limit: usize,
 ) -> Vec<(String, f64, Value)> {
-    let Some(reranker) = kyma_memory::shared_reranker().await else {
+    let Some(reranker) = pensieve_memory::shared_reranker().await else {
         hits.truncate(limit);
         return hits;
     };
@@ -283,10 +283,10 @@ async fn search_one_source(
     query: &str,
     qvec: Option<&[f32]>,
     time_range: Option<TimeRange>,
-    catalog: Arc<dyn kyma_core::catalog::Catalog>,
-    format: Arc<dyn kyma_core::segment_format::SegmentFormat>,
-    node_id: Option<kyma_core::types::NodeId>,
-    tenant: kyma_core::tenant::TenantId,
+    catalog: Arc<dyn pensieve_core::catalog::Catalog>,
+    format: Arc<dyn pensieve_core::segment_format::SegmentFormat>,
+    node_id: Option<pensieve_core::types::NodeId>,
+    tenant: pensieve_core::tenant::TenantId,
 ) -> Vec<(String, f64, Value)> {
     let source_key = format!("{}.{}", src.db, src.table.name);
     let table_name = src.table.name.clone();
@@ -306,16 +306,16 @@ async fn search_one_source(
         Err(_) => return Vec::new(),
     };
     let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
-    kyma_exec::register_vector_udfs(&ctx);
-    let kt: Arc<KymaTable> = match node_id {
-        Some(nid) => Arc::new(KymaTable::with_node_id(
+    pensieve_exec::register_vector_udfs(&ctx);
+    let kt: Arc<PensieveTable> = match node_id {
+        Some(nid) => Arc::new(PensieveTable::with_node_id(
             src.table.clone(),
             catalog.clone(),
             format.clone(),
             nid,
             src.db.clone(),
         )),
-        None => Arc::new(KymaTable::new(
+        None => Arc::new(PensieveTable::new(
             src.table.clone(),
             catalog.clone(),
             format.clone(),
@@ -358,7 +358,7 @@ async fn search_one_source(
                 }]
             };
             let compiled = compile_for_source(&src.table, &clauses, time_range.as_ref(), PER_LEG_K);
-            match kyma_kql::kql_to_sql(&compiled.kql) {
+            match pensieve_kql::kql_to_sql(&compiled.kql) {
                 Ok(sql) => run_rows(&ctx, &sql).await,
                 Err(_) => Vec::new(),
             }
@@ -474,15 +474,15 @@ async fn run_rows(ctx: &SessionContext, sql: &str) -> Vec<Value> {
 /// (no sidecar, no store, or a hard error — never a silent empty result that
 /// would defeat fusion).
 async fn ann_vector_rows(
-    catalog: &Arc<dyn kyma_core::catalog::Catalog>,
-    format: &Arc<dyn kyma_core::segment_format::SegmentFormat>,
-    tenant: kyma_core::tenant::TenantId,
-    table: &kyma_core::catalog::TableRef,
+    catalog: &Arc<dyn pensieve_core::catalog::Catalog>,
+    format: &Arc<dyn pensieve_core::segment_format::SegmentFormat>,
+    tenant: pensieve_core::tenant::TenantId,
+    table: &pensieve_core::catalog::TableRef,
     vec_col: &str,
     qvec: &[f32],
     non_vector_cols: &[String],
 ) -> Option<Vec<Value>> {
-    use kyma_core::index_sidecar::SidecarKind;
+    use pensieve_core::index_sidecar::SidecarKind;
 
     // Capability gate: need an object store (object-store-backed format) AND at
     // least one IvfRabitq sidecar on this column. Either missing → SQL path.
@@ -493,7 +493,7 @@ async fn ann_vector_rows(
             tenant,
             table.id,
             table.current_snapshot_id,
-            &kyma_core::catalog::PrunePredicate::default(),
+            &pensieve_core::catalog::PrunePredicate::default(),
         )
         .await
         .ok()?;
@@ -510,8 +510,8 @@ async fn ann_vector_rows(
     }
 
     let cache = sidecar_cache();
-    let params = kyma_exec::AnnParams::with_k(PER_LEG_K);
-    let hits = match kyma_exec::ann_topk(
+    let params = pensieve_exec::AnnParams::with_k(PER_LEG_K);
+    let hits = match pensieve_exec::ann_topk(
         catalog, tenant, format, &store, cache, table, vec_col, qvec, &params, None,
     )
     .await
@@ -527,7 +527,7 @@ async fn ann_vector_rows(
     let manifest_by_id: std::collections::HashMap<_, _> =
         extents.iter().map(|m| (m.id, m)).collect();
     // Column ids to project (positions in the table schema).
-    let proj: Vec<kyma_core::segment_format::ColumnId> = non_vector_cols
+    let proj: Vec<pensieve_core::segment_format::ColumnId> = non_vector_cols
         .iter()
         .filter_map(|name| {
             table
@@ -535,7 +535,7 @@ async fn ann_vector_rows(
                 .fields()
                 .iter()
                 .position(|f| f.name() == name)
-                .map(|i| kyma_core::segment_format::ColumnId(i as u32))
+                .map(|i| pensieve_core::segment_format::ColumnId(i as u32))
         })
         .collect();
 
@@ -552,7 +552,7 @@ async fn ann_vector_rows(
     let mut resolved: Vec<Option<Value>> = vec![None; hits.len()];
     let mut readers: std::collections::HashMap<
         String,
-        Arc<dyn kyma_core::segment_format::ExtentReader>,
+        Arc<dyn pensieve_core::segment_format::ExtentReader>,
     > = std::collections::HashMap::new();
 
     for ((extent_str, block), members) in by_block {
@@ -566,7 +566,7 @@ async fn ann_vector_rows(
             Some(r) => r.clone(),
             None => {
                 let r = format
-                    .open_extent(kyma_core::segment_format::OpenExtentInput {
+                    .open_extent(pensieve_core::segment_format::OpenExtentInput {
                         extent_id: manifest.id,
                         table_id: manifest.table_id,
                         schema: table.schema.clone(),
@@ -582,7 +582,7 @@ async fn ann_vector_rows(
         // Read the block projecting the non-vector columns (in table-schema
         // order, so JSON keys match the SQL leg).
         let batch = reader
-            .read_block(kyma_core::segment_format::BlockId(block), &proj)
+            .read_block(pensieve_core::segment_format::BlockId(block), &proj)
             .await
             .ok()?;
         for (hit_idx, dist) in members {
@@ -608,14 +608,14 @@ async fn ann_vector_rows(
 /// [`ann_vector_rows`]: capability-gate on a sidecar, run `bm25_topk`, resolve
 /// each hit's `(extent, block, row)` to the projected non-vector columns.
 async fn bm25_lexical_rows(
-    catalog: &Arc<dyn kyma_core::catalog::Catalog>,
-    format: &Arc<dyn kyma_core::segment_format::SegmentFormat>,
-    tenant: kyma_core::tenant::TenantId,
-    table: &kyma_core::catalog::TableRef,
+    catalog: &Arc<dyn pensieve_core::catalog::Catalog>,
+    format: &Arc<dyn pensieve_core::segment_format::SegmentFormat>,
+    tenant: pensieve_core::tenant::TenantId,
+    table: &pensieve_core::catalog::TableRef,
     query: &str,
     non_vector_cols: &[String],
 ) -> Option<Vec<Value>> {
-    use kyma_core::index_sidecar::SidecarKind;
+    use pensieve_core::index_sidecar::SidecarKind;
     if query.trim().is_empty() {
         return None;
     }
@@ -625,7 +625,7 @@ async fn bm25_lexical_rows(
             tenant,
             table.id,
             table.current_snapshot_id,
-            &kyma_core::catalog::PrunePredicate::default(),
+            &pensieve_core::catalog::PrunePredicate::default(),
         )
         .await
         .ok()?;
@@ -641,7 +641,7 @@ async fn bm25_lexical_rows(
     let fts_col = sidecars.first().map(|d| d.column.clone())?;
 
     let cache = sidecar_cache();
-    let hits = match kyma_exec::bm25_topk(
+    let hits = match pensieve_exec::bm25_topk(
         catalog, tenant, &store, cache, table, &fts_col, query, PER_LEG_K, None,
     )
     .await
@@ -653,7 +653,7 @@ async fn bm25_lexical_rows(
 
     let manifest_by_id: std::collections::HashMap<_, _> =
         extents.iter().map(|m| (m.id, m)).collect();
-    let proj: Vec<kyma_core::segment_format::ColumnId> = non_vector_cols
+    let proj: Vec<pensieve_core::segment_format::ColumnId> = non_vector_cols
         .iter()
         .filter_map(|name| {
             table
@@ -661,7 +661,7 @@ async fn bm25_lexical_rows(
                 .fields()
                 .iter()
                 .position(|f| f.name() == name)
-                .map(|i| kyma_core::segment_format::ColumnId(i as u32))
+                .map(|i| pensieve_core::segment_format::ColumnId(i as u32))
         })
         .collect();
 
@@ -677,7 +677,7 @@ async fn bm25_lexical_rows(
     let mut resolved: Vec<Option<Value>> = vec![None; hits.len()];
     let mut readers: std::collections::HashMap<
         String,
-        Arc<dyn kyma_core::segment_format::ExtentReader>,
+        Arc<dyn pensieve_core::segment_format::ExtentReader>,
     > = std::collections::HashMap::new();
     for ((extent_str, block), members) in by_block {
         let Some(hit0) = members.first().map(|(i, _)| &hits[*i]) else {
@@ -690,7 +690,7 @@ async fn bm25_lexical_rows(
             Some(r) => r.clone(),
             None => {
                 let r = format
-                    .open_extent(kyma_core::segment_format::OpenExtentInput {
+                    .open_extent(pensieve_core::segment_format::OpenExtentInput {
                         extent_id: manifest.id,
                         table_id: manifest.table_id,
                         schema: table.schema.clone(),
@@ -704,7 +704,7 @@ async fn bm25_lexical_rows(
             }
         };
         let batch = reader
-            .read_block(kyma_core::segment_format::BlockId(block), &proj)
+            .read_block(pensieve_core::segment_format::BlockId(block), &proj)
             .await
             .ok()?;
         for (hit_idx, score) in members {
@@ -726,9 +726,9 @@ async fn bm25_lexical_rows(
 }
 
 /// Process-shared sidecar disk cache for the ANN query path.
-fn sidecar_cache() -> &'static kyma_storage::sidecar_cache::SidecarCache {
-    static CACHE: OnceLock<kyma_storage::sidecar_cache::SidecarCache> = OnceLock::new();
-    CACHE.get_or_init(kyma_storage::sidecar_cache::SidecarCache::from_env)
+fn sidecar_cache() -> &'static pensieve_storage::sidecar_cache::SidecarCache {
+    static CACHE: OnceLock<pensieve_storage::sidecar_cache::SidecarCache> = OnceLock::new();
+    CACHE.get_or_init(pensieve_storage::sidecar_cache::SidecarCache::from_env)
 }
 
 /// Convert a single-row `RecordBatch` slice to JSON objects (best-effort).
@@ -765,7 +765,7 @@ fn is_vector_type(dt: &DataType) -> bool {
     }
 }
 
-fn vector_column(table: &kyma_core::catalog::TableRef) -> Option<String> {
+fn vector_column(table: &pensieve_core::catalog::TableRef) -> Option<String> {
     table
         .schema
         .fields()

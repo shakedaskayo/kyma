@@ -4,7 +4,7 @@
 //! over a small post-fusion candidate set, not over the corpus. Like
 //! [`crate::fastembed::FastembedBackend`] it keeps a small instance pool so
 //! concurrent rerank calls don't serialize on one model mutex
-//! (`KYMA_RERANK_POOL_SIZE`, default 1). Runs the blocking ONNX inference on a
+//! (`PENSIEVE_RERANK_POOL_SIZE`, default 1). Runs the blocking ONNX inference on a
 //! blocking thread.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -39,7 +39,7 @@ impl FastembedReranker {
     pub async fn new(model_id: &str, model_path: Option<&str>) -> Result<Self, EmbedError> {
         let model = pick_model(model_id)?;
         let interactive = std::io::IsTerminal::is_terminal(&std::io::stderr());
-        let pool_size = std::env::var("KYMA_RERANK_POOL_SIZE")
+        let pool_size = std::env::var("PENSIEVE_RERANK_POOL_SIZE")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(1)

@@ -31,7 +31,7 @@ use tokio::time::{interval_at, Instant as TokioInstant};
 
 use crate::auth::{AuthBackend, Principal, Role};
 use crate::QueryState;
-use kyma_ingest_core::{ConsumerAction, ConsumerActivity, ConsumerEvents};
+use pensieve_ingest_core::{ConsumerAction, ConsumerActivity, ConsumerEvents};
 
 /// Authentication handshake deadline (whole handshake, not per-message).
 const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -47,7 +47,7 @@ struct Deps {
     backend: Arc<dyn AuthBackend>,
     events: Option<ConsumerEvents>,
     /// Database holding `otel_traces` (resolved from config — `otel` in local
-    /// mode, `KYMA_OTLP_DATABASE` in server mode). Never hardcoded here.
+    /// mode, `PENSIEVE_OTLP_DATABASE` in server mode). Never hardcoded here.
     traces_db: String,
 }
 
@@ -74,7 +74,7 @@ pub fn consumers_live_router(
     )
 }
 
-/// Authenticated `POST /v1/consumers/emit` — lets a separate `kyma mcp` (stdio)
+/// Authenticated `POST /v1/consumers/emit` — lets a separate `pensieve mcp` (stdio)
 /// process forward its consumer activity into THIS serve's live bus, so coding
 /// agents that don't share the serve's process still appear in the overlay. The
 /// tenant is stamped from the caller's principal (the body's value is ignored).
@@ -311,13 +311,13 @@ fn backfill_row_to_activity(row: &Value, tenant: &str) -> Option<ConsumerActivit
         .map(|dt| dt.timestamp_millis())
         .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
     // Prefer the stamped client; otel-backfilled memory ops without one are
-    // Kyma's own HTTP/internal reads (external agents use MCP, which doesn't
-    // create these spans), so default to the Kyma agent — never "unknown".
+    // Pensieve's own HTTP/internal reads (external agents use MCP, which doesn't
+    // create these spans), so default to the Pensieve agent — never "unknown".
     let kind = attrs
         .as_ref()
-        .and_then(|a| a.get("kyma.client").and_then(|c| c.as_str()))
+        .and_then(|a| a.get("pensieve.client").and_then(|c| c.as_str()))
         .filter(|s| !s.is_empty())
-        .unwrap_or("kyma")
+        .unwrap_or("pensieve")
         .to_string();
     Some(ConsumerActivity {
         consumer_id: format!("{kind}:{}", subject.as_deref().unwrap_or("anon")),
@@ -369,16 +369,16 @@ mod tests {
         assert_eq!(act.action, ConsumerAction::Remember);
         assert!(act.subject.is_none());
         assert!(act.query_preview.is_none());
-        // No stamped client → defaults to the Kyma agent, never "unknown".
-        assert_eq!(act.consumer_id, "kyma:anon");
-        assert_eq!(act.kind, "kyma");
+        // No stamped client → defaults to the Pensieve agent, never "unknown".
+        assert_eq!(act.consumer_id, "pensieve:anon");
+        assert_eq!(act.kind, "pensieve");
     }
 
     #[test]
     fn backfill_reads_stamped_client() {
         let row = json!({
             "name": "memory.recall",
-            "attributes_json": "{\"kyma.client\":\"claude-code\",\"memory.query\":\"q\"}",
+            "attributes_json": "{\"pensieve.client\":\"claude-code\",\"memory.query\":\"q\"}",
         });
         let act = backfill_row_to_activity(&row, "t1").expect("mapped");
         assert_eq!(act.kind, "claude-code");

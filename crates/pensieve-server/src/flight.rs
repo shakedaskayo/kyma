@@ -36,9 +36,9 @@ use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use futures::stream::{self, BoxStream, StreamExt};
-use kyma_core::catalog::Catalog;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_exec::KymaTable;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_exec::PensieveTable;
 use std::sync::Arc;
 use tonic::{Request, Response, Status, Streaming};
 use tracing::debug;
@@ -50,7 +50,7 @@ pub struct FlightState {
     pub format: Arc<dyn SegmentFormat>,
     /// Current node's id. When set, queries arriving via Flight fan out
     /// to peers via the read-router (same logic as HTTP).
-    pub node_id: Option<kyma_core::types::NodeId>,
+    pub node_id: Option<pensieve_core::types::NodeId>,
 }
 
 /// The Flight service implementation.
@@ -82,8 +82,8 @@ impl FlightQueryService {
         let reader = self
             .state
             .format
-            .open_extent(kyma_core::segment_format::OpenExtentInput {
-                extent_id: kyma_core::types::ExtentId::new(),
+            .open_extent(pensieve_core::segment_format::OpenExtentInput {
+                extent_id: pensieve_core::types::ExtentId::new(),
                 table_id: table.id,
                 schema: table.schema.clone(),
                 object_path: ticket.object_path.clone(),
@@ -93,7 +93,7 @@ impl FlightQueryService {
             .map_err(|e| Status::internal(format!("open_extent: {e}")))?;
 
         let block_ids = reader
-            .pruned_blocks(&kyma_core::segment_format::BlockPredicate::All)
+            .pruned_blocks(&pensieve_core::segment_format::BlockPredicate::All)
             .await
             .map_err(|e| Status::internal(format!("pruned_blocks: {e}")))?;
 
@@ -106,7 +106,7 @@ impl FlightQueryService {
             batches.push(b);
         }
 
-        ::metrics::counter!("kyma_flight_serve_extent_total").increment(1);
+        ::metrics::counter!("pensieve_flight_serve_extent_total").increment(1);
 
         let s = stream::iter(
             batches
@@ -233,7 +233,7 @@ impl FlightService for FlightQueryService {
         let sql = match ticket.language.as_str() {
             "kql" => {
                 let schemas = crate::build_schema_map(&tables);
-                kyma_kql::kql_to_sql_with_schemas(&ticket.query, &schemas)
+                pensieve_kql::kql_to_sql_with_schemas(&ticket.query, &schemas)
                     .map_err(|e| Status::invalid_argument(format!("KQL parse: {e}")))?
             }
             "sql" => ticket.query,
@@ -252,18 +252,18 @@ impl FlightService for FlightQueryService {
                 .map_err(|e| Status::internal(format!("runtime: {e}")))?,
         );
         let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
-        kyma_exec::register_vector_udfs(&ctx);
+        pensieve_exec::register_vector_udfs(&ctx);
         for t in tables {
             let name = t.name.clone();
-            let tbl: Arc<KymaTable> = match self.state.node_id {
-                Some(nid) => Arc::new(KymaTable::with_node_id(
+            let tbl: Arc<PensieveTable> = match self.state.node_id {
+                Some(nid) => Arc::new(PensieveTable::with_node_id(
                     t,
                     self.state.catalog.clone(),
                     self.state.format.clone(),
                     nid,
                     ticket.database.clone(),
                 )),
-                None => Arc::new(KymaTable::new(
+                None => Arc::new(PensieveTable::new(
                     t,
                     self.state.catalog.clone(),
                     self.state.format.clone(),
@@ -294,7 +294,7 @@ impl FlightService for FlightQueryService {
             .map(|r| r.map_err(|e| Status::internal(format!("encode: {e}"))))
             .boxed();
 
-        ::metrics::counter!("kyma_flight_do_get_total", "lang" => ticket.language).increment(1);
+        ::metrics::counter!("pensieve_flight_do_get_total", "lang" => ticket.language).increment(1);
         Ok(Response::new(encoder))
     }
 

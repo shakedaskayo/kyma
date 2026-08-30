@@ -1,6 +1,6 @@
-//! Agentic Memory substrate for Kyma.
+//! Agentic Memory substrate for Pensieve.
 //!
-//! Memory is stored as ordinary Kyma columnar tables (`memory_nodes` /
+//! Memory is stored as ordinary Pensieve columnar tables (`memory_nodes` /
 //! `memory_edges`) registered as the `memory` graph, so it is first-class
 //! queryable (`run_sql`/`run_kql`/Discover) and renders in the unified
 //! GraphView. Embeddings are a `FixedSizeList<Float32>` column searched via the

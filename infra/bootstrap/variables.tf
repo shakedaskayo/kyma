@@ -6,20 +6,20 @@ variable "aws_region" {
 variable "state_bucket_name" {
   type        = string
   description = "Globally-unique S3 bucket for Terraform remote state."
-  default     = "kyma-cloud-tfstate"
+  default     = "pensieve-cloud-tfstate"
 }
 
 variable "lock_table_name" {
   type    = string
-  default = "kyma-cloud-tflock"
+  default = "pensieve-cloud-tflock"
 }
 
 variable "github_org" {
   type        = string
-  description = "GitHub org/owner that hosts the kyma repo."
+  description = "GitHub org/owner that hosts the pensieve repo."
 }
 
 variable "github_repo" {
   type    = string
-  default = "kyma"
+  default = "pensieve"
 }

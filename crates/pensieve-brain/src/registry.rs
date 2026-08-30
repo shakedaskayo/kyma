@@ -1,7 +1,7 @@
 //! Brain registry: the configuration of each published brain plus its
-//! mutable runtime state, behind a storage-agnostic trait. `kyma-server`
-//! backs it with Postgres (`brain_repos` table); `kyma-local` with
-//! `${KYMA_HOME}/brains.json`.
+//! mutable runtime state, behind a storage-agnostic trait. `pensieve-server`
+//! backs it with Postgres (`brain_repos` table); `pensieve-local` with
+//! `${PENSIEVE_HOME}/brains.json`.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

@@ -5,19 +5,19 @@
 //! explicitly with:
 //!
 //! ```sh
-//! cargo test -p kyma-server --test claude_cli_smoke -- --ignored --nocapture
+//! cargo test -p pensieve-server --test claude_cli_smoke -- --ignored --nocapture
 //! ```
 //!
 //! It guards the regression where the stream aborted on the CLI's
 //! `rate_limit_event` frame, dropping the terminal `result` and surfacing a
 //! spurious error.
 
-use kyma_server::agent::engine::claude_cli::{run_stream, ClaudeEvent};
+use pensieve_server::agent::engine::claude_cli::{run_stream, ClaudeEvent};
 
 #[tokio::test]
 #[ignore = "spawns the real claude CLI; run explicitly with --ignored"]
 async fn streams_tokens_and_finishes_without_spurious_error() {
-    if kyma_server::agent::engine::claude_cli::locate_binary().is_none() {
+    if pensieve_server::agent::engine::claude_cli::locate_binary().is_none() {
         eprintln!("skipping: `claude` not on PATH");
         return;
     }

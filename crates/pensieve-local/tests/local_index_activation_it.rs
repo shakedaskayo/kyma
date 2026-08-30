@@ -9,25 +9,25 @@
 //!   and `SqliteQueue` (the same queue the local fabric worker drains) can claim
 //!   them.
 //!
-//! It mirrors the Postgres `kyma-compaction::index_scheduler_it` over the SQLite
+//! It mirrors the Postgres `pensieve-compaction::index_scheduler_it` over the SQLite
 //! backend — the scheduler's scan logic is catalog-agnostic (only `Catalog`
 //! trait methods), and only the enqueue target differs. The executors that
-//! actually build sidecars are covered by `kyma-jobs::embed_backfill_it` and
+//! actually build sidecars are covered by `pensieve-jobs::embed_backfill_it` and
 //! `index_build_test` (both SQLite), and the full real-model serve→ingest→search
 //! path by `scripts/fresh-install-validate.sh`.
 
 use std::sync::Arc;
 
 use arrow_schema::{DataType, Field, Schema};
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_compaction::IndexScheduler;
-use kyma_core::catalog::{
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_compaction::IndexScheduler;
+use pensieve_core::catalog::{
     Catalog, ExtentManifest, SnapshotSummary, TableConfig, TableEmbedConfig, TableRef,
 };
-use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_core::types::{ExtentId, TableId};
-use kyma_jobs::JobQueue;
-use kyma_local::sqlite_queue::{SqliteEnqueuer, SqliteQueue};
+use pensieve_core::tenant::DEFAULT_TENANT;
+use pensieve_core::types::{ExtentId, TableId};
+use pensieve_jobs::JobQueue;
+use pensieve_local::sqlite_queue::{SqliteEnqueuer, SqliteQueue};
 use uuid::Uuid;
 
 /// `(id Int64, msg Utf8, embedding FixedSizeList<Float32, 4>)` — a text source
@@ -57,7 +57,7 @@ async fn register_extent_stats(
         id,
         table_id,
         schema_snapshot_id: tref.schema_snapshot_id,
-        object_path: format!("{DEFAULT_TENANT}/extents/{}.kyma", id.as_uuid()),
+        object_path: format!("{DEFAULT_TENANT}/extents/{}.pensieve", id.as_uuid()),
         byte_size: 1024,
         row_count: 100,
         min_timestamp: None,
@@ -130,12 +130,12 @@ async fn unembedded_extent_enqueues_embed_backfill_claimable_over_sqlite() {
     // The same queue the local worker drains can claim it under its kind.
     let queue = SqliteQueue::new(pool, Uuid::new_v4(), vec!["data_source".into()], 120);
     let embed = queue
-        .claim(&[kyma_core::fabric::JOB_EMBED_BACKFILL.to_string()], 10)
+        .claim(&[pensieve_core::fabric::JOB_EMBED_BACKFILL.to_string()], 10)
         .await
         .unwrap();
     assert_eq!(embed.len(), 1, "embed_backfill job is claimable");
     let index = queue
-        .claim(&[kyma_core::fabric::JOB_INDEX_BUILD.to_string()], 10)
+        .claim(&[pensieve_core::fabric::JOB_INDEX_BUILD.to_string()], 10)
         .await
         .unwrap();
     assert!(
@@ -166,13 +166,13 @@ async fn embedded_extent_enqueues_ann_and_fts_claimable_over_sqlite() {
     // Both sidecar builds are enqueued under JOB_INDEX_BUILD and claimable.
     let queue = SqliteQueue::new(pool, Uuid::new_v4(), vec!["data_source".into()], 120);
     let index = queue
-        .claim(&[kyma_core::fabric::JOB_INDEX_BUILD.to_string()], 10)
+        .claim(&[pensieve_core::fabric::JOB_INDEX_BUILD.to_string()], 10)
         .await
         .unwrap();
     assert_eq!(index.len(), 2, "ivf_rabitq + tantivy_fts both claimable");
     // No embed needed — the extent is already embedded.
     let embed = queue
-        .claim(&[kyma_core::fabric::JOB_EMBED_BACKFILL.to_string()], 10)
+        .claim(&[pensieve_core::fabric::JOB_EMBED_BACKFILL.to_string()], 10)
         .await
         .unwrap();
     assert!(

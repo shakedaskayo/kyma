@@ -1,12 +1,12 @@
 name: Publish to crates.io
 
-# MANUAL ONLY. Publishes kyma-cli's dependency closure (19 crates) to crates.io
+# MANUAL ONLY. Publishes pensieve-cli's dependency closure (19 crates) to crates.io
 # in dependency-layer order.
 #
 # ⚠️ Caveat: the workspace pins a `[patch.crates-io] arrow-arith` fix for a
 # chrono 0.4.44 / DataFusion 44 conflict. Cargo `[patch]` does NOT propagate to
 # published crates, so until that fix lands upstream, a downstream
-# `cargo install kyma-cli` may fail to compile. Publishing (with --no-verify)
+# `cargo install pensieve-cli` may fail to compile. Publishing (with --no-verify)
 # still succeeds and reserves the names; the reliable install path remains the
 # prebuilt binary (install.sh / GitHub Releases).
 on:
@@ -36,13 +36,13 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: "pnpm" }
 
-      # kyma-web-assets embeds the built UI from its crate-local `embedded/`
+      # pensieve-web-assets embeds the built UI from its crate-local `embedded/`
       # dir; populate it (build.rs syncs ../../web/dist) before packaging.
       - name: Build web UI + populate embedded assets
         run: |
           pnpm install --frozen-lockfile
           pnpm -C web build
-          cargo build -p kyma-web-assets
+          cargo build -p pensieve-web-assets
 
       - name: Publish
         env:
@@ -56,7 +56,7 @@ jobs:
             local out
             # --no-verify: skip the verification build (the arrow-arith patch is
             #   workspace-local and not needed just to package + upload).
-            # --allow-dirty: kyma-web-assets ships the gitignored, generated
+            # --allow-dirty: pensieve-web-assets ships the gitignored, generated
             #   embedded/ dir via its `include` list.
             if out=$(cargo publish -p "$crate" --no-verify --allow-dirty 2>&1); then
               echo "$crate published."
@@ -72,31 +72,31 @@ jobs:
           }
 
           # Layer 1 — no internal deps
-          publish kyma-core
-          publish kyma-graph
-          publish kyma-web-assets
+          publish pensieve-core
+          publish pensieve-graph
+          publish pensieve-web-assets
           # Layer 2
-          publish kyma-catalog
-          publish kyma-catalog-sqlite
-          publish kyma-embed
-          publish kyma-plan
-          publish kyma-storage
+          publish pensieve-catalog
+          publish pensieve-catalog-sqlite
+          publish pensieve-embed
+          publish pensieve-plan
+          publish pensieve-storage
           # Layer 3
-          publish kyma-format-tlm
-          publish kyma-kql
+          publish pensieve-format-tlm
+          publish pensieve-kql
           # Layer 4
-          publish kyma-exec
-          publish kyma-ingest-core
+          publish pensieve-exec
+          publish pensieve-ingest-core
           # Layer 5
-          publish kyma-datasources
-          publish kyma-datasource-core
-          publish kyma-ingest-rest
-          publish kyma-memory
+          publish pensieve-datasources
+          publish pensieve-datasource-core
+          publish pensieve-ingest-rest
+          publish pensieve-memory
           # Layer 6
-          publish kyma-server
+          publish pensieve-server
           # Layer 7
-          publish kyma-mcp
+          publish pensieve-mcp
           # Layer 8
-          publish kyma-local
-          # Layer 9 — the CLI (installs as `kyma`)
-          publish kyma-cli
+          publish pensieve-local
+          # Layer 9 — the CLI (installs as `pensieve`)
+          publish pensieve-cli

@@ -2,7 +2,7 @@
 
 use adk_rust::tool::SimpleToolContext;
 use adk_rust::Tool;
-use kyma_server::agent::{
+use pensieve_server::agent::{
     tool_contribute_file, tool_describe_file, tool_describe_table, tool_explore_schema,
     tool_file_neighbors, tool_find_references_to, tool_flush_memory, tool_graph_analytics,
     tool_graph_search, tool_graph_traverse, tool_ingest_entity, tool_link_memory_to_entity,
@@ -146,16 +146,16 @@ impl ToolDispatch {
     /// credential store); local/stdio mode skips this.
     pub fn with_datasource_tools(
         self,
-        ctx: kyma_server::agent::datasource_tools::DataSourceToolCtx,
+        ctx: pensieve_server::agent::datasource_tools::DataSourceToolCtx,
     ) -> Self {
         let mut map: HashMap<&'static str, Arc<dyn Tool>> = (*self.by_name).clone();
         map.insert(
             "list_data_sources",
-            kyma_server::agent::datasource_tools::tool_list_data_sources(ctx.clone()),
+            pensieve_server::agent::datasource_tools::tool_list_data_sources(ctx.clone()),
         );
         map.insert(
             "data_source_read",
-            kyma_server::agent::datasource_tools::tool_data_source_read(ctx),
+            pensieve_server::agent::datasource_tools::tool_data_source_read(ctx),
         );
         Self {
             by_name: Arc::new(map),
@@ -199,11 +199,11 @@ impl ToolDispatch {
                 format!("unknown tool: {name}"),
             ));
         };
-        let ctx = Arc::new(SimpleToolContext::new("kyma-mcp"));
+        let ctx = Arc::new(SimpleToolContext::new("pensieve-mcp"));
         // Span names must be static in `tracing`; otel.name carries the
         // per-tool display name through to the exported span.
         let span = tracing::info_span!(
-            target: "kyma_telemetry",
+            target: "pensieve_telemetry",
             "tool.call",
             otel.name = %format!("tool.{name}"),
             tool.name = %name,
@@ -225,7 +225,7 @@ impl ToolDispatch {
 }
 
 /// The ingredients needed to rebuild a [`ToolDispatch`] per request with a
-/// caller-specific [`RealmScope`](kyma_server::auth::RealmScope). Held in
+/// caller-specific [`RealmScope`](pensieve_server::auth::RealmScope). Held in
 /// `McpState` so the server-mode MCP transport can serve realm-restricted
 /// tokens a scoped tool set without disturbing the startup-built fast path used
 /// by the (overwhelming majority) unrestricted callers.
@@ -236,7 +236,7 @@ impl ToolDispatch {
 pub struct DispatchBuilder {
     pub shared: SharedToolCtx,
     pub artifact_store: Option<Arc<dyn object_store::ObjectStore>>,
-    pub datasource_ctx: Option<kyma_server::agent::datasource_tools::DataSourceToolCtx>,
+    pub datasource_ctx: Option<pensieve_server::agent::datasource_tools::DataSourceToolCtx>,
 }
 
 impl DispatchBuilder {
@@ -244,7 +244,7 @@ impl DispatchBuilder {
     /// unrestricted scope this reproduces the full tool set (including the
     /// artifact/datasource extensions); for a restricted scope the escape-hatch
     /// tools are withheld and the extensions are skipped entirely.
-    pub fn build(&self, scope: kyma_server::auth::RealmScope) -> ToolDispatch {
+    pub fn build(&self, scope: pensieve_server::auth::RealmScope) -> ToolDispatch {
         let mut shared = self.shared.clone();
         shared.realm_scope = scope.clone();
         let mut d = ToolDispatch::new(shared);

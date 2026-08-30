@@ -1,6 +1,6 @@
 //! Axum middleware that enforces a minimum [`Role`] using a pluggable
 //! [`AuthBackend`]. On success, inserts the resolved [`super::backend::Principal`]
-//! and its [`kyma_core::tenant::TenantId`] into the request extensions so
+//! and its [`pensieve_core::tenant::TenantId`] into the request extensions so
 //! downstream handlers can scope work to that tenant.
 
 use super::backend::{AuthBackend, AuthError, Role};
@@ -62,7 +62,7 @@ pub async fn require_role_middleware(
         // Auth-disabled mode: pretend an Admin principal in the default tenant
         // so downstream extractors see consistent extensions.
         super::backend::Principal {
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            tenant: pensieve_core::tenant::DEFAULT_TENANT,
             role: Role::Admin,
             subject: None,
             allowed_databases: None,
@@ -88,20 +88,20 @@ pub async fn require_role_middleware(
     }
 
     let span = tracing::info_span!(
-        target: "kyma_telemetry",
+        target: "pensieve_telemetry",
         "request",
         otel.name = %format!("{method} {route}"),
         http.method = %method,
         http.route = %route,
-        kyma.tenant = %tenant,
-        kyma.subject = tracing::field::Empty,
+        pensieve.tenant = %tenant,
+        pensieve.subject = tracing::field::Empty,
         http.status = tracing::field::Empty,
         // Declared Empty so the later `record()` lands — recording an
         // undeclared field is a silent no-op in `tracing`.
         otel.status_code = tracing::field::Empty,
     );
     if let Some(s) = &subject {
-        span.record("kyma.subject", s.as_str());
+        span.record("pensieve.subject", s.as_str());
     }
     let resp = next.run(req).instrument(span.clone()).await;
     span.record("http.status", resp.status().as_u16());
@@ -115,7 +115,7 @@ pub async fn require_role_middleware(
 fn unauthorized(msg: &str) -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        [(header::WWW_AUTHENTICATE, r#"Bearer realm="kyma""#)],
+        [(header::WWW_AUTHENTICATE, r#"Bearer realm="pensieve""#)],
         msg.to_owned(),
     )
         .into_response()

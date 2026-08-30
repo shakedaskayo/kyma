@@ -1,7 +1,7 @@
-//! First-class property-graph layer for kyma: wire types, the `GraphProvider`
+//! First-class property-graph layer for pensieve: wire types, the `GraphProvider`
 //! trait, and the synthetic schema-graph provider (catalog → property-graph).
 //!
-//! This crate is intentionally decoupled from `kyma-core`: it consumes a
+//! This crate is intentionally decoupled from `pensieve-core`: it consumes a
 //! narrow [`SchemaSource`] trait rather than the full catalog, so providers
 //! are unit-testable without a database.
 

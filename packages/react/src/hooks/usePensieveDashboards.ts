@@ -1,24 +1,24 @@
 /**
- * useKymaDashboards — headless hook for dashboard listing and lookup.
+ * usePensieveDashboards — headless hook for dashboard listing and lookup.
  *
  * React Query wrapper over client.dashboards.listDashboards(). Exposes the
  * list for display and a getDashboard(id) helper for on-demand detail loads.
  *
  * CRUD mutations (create, update, delete) are intentionally omitted from this
  * hook — they belong to the edit flow which components can drive via the client
- * directly (useKymaClient().dashboards.*). This keeps the headless hook minimal.
+ * directly (usePensieveClient().dashboards.*). This keeps the headless hook minimal.
  *
- * Query key: ["kyma", endpoint, database, "dashboards"]
+ * Query key: ["pensieve", endpoint, database, "dashboards"]
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import type { Dashboard, DashboardWithPanels } from "@kyma-ai/client";
-import { useKymaClient } from "../provider/context";
+import type { Dashboard, DashboardWithPanels } from "@pensieve-ai/client";
+import { usePensieveClient } from "../provider/context";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-export interface UseKymaDashboardsResult {
+export interface UsePensieveDashboardsResult {
   dashboards: Dashboard[];
   isLoading: boolean;
   error: unknown;
@@ -32,13 +32,13 @@ export interface UseKymaDashboardsResult {
 
 // ── Implementation ────────────────────────────────────────────────────────────
 
-export function useKymaDashboards(): UseKymaDashboardsResult {
-  const client = useKymaClient();
+export function usePensieveDashboards(): UsePensieveDashboardsResult {
+  const client = usePensieveClient();
   const endpoint = client.transport.endpoint;
   const database = client.transport.database ?? "default";
   const queryClient = useQueryClient();
 
-  const queryKey = ["kyma", endpoint, database, "dashboards"] as const;
+  const queryKey = ["pensieve", endpoint, database, "dashboards"] as const;
 
   const query = useQuery<Dashboard[]>({
     queryKey,
@@ -48,7 +48,7 @@ export function useKymaDashboards(): UseKymaDashboardsResult {
 
   const getDashboard = useCallback(
     (id: string): Promise<DashboardWithPanels> => {
-      const cacheKey = ["kyma", endpoint, database, "dashboards", id];
+      const cacheKey = ["pensieve", endpoint, database, "dashboards", id];
       const cached = queryClient.getQueryData<DashboardWithPanels>(cacheKey);
       if (cached) return Promise.resolve(cached);
       return queryClient.fetchQuery({

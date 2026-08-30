@@ -139,7 +139,7 @@ impl DataSource for S3DataSource {
         // a triple (access_key_id, secret_access_key, session_token?).
         let (access_key_id, secret_access_key, session_token): (String, String, Option<String>) =
             if let Some(cid) = parsed.credential_id {
-                use kyma_core::credentials::CredentialValue;
+                use pensieve_core::credentials::CredentialValue;
                 let cred = ctx
                     .credentials
                     .get(ctx.tenant, cid)

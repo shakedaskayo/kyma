@@ -1,13 +1,13 @@
 //! stdio transport for the MCP server — newline-delimited JSON-RPC.
 //!
 //! This is the local single-binary integration surface. A coding agent
-//! (Claude Code, Cursor, Windsurf, …) spawns `kyma local --mcp` and speaks
+//! (Claude Code, Cursor, Windsurf, …) spawns `pensieve local --mcp` and speaks
 //! JSON-RPC over the child's stdin/stdout: **one JSON message per line**,
 //! responses **one per line**. The exact same [`dispatch_request`] powers the
 //! HTTP transport, so the toolset and protocol are identical.
 //!
 //! **stdout is the protocol channel** — only JSON-RPC frames go there. All
-//! logging must be routed to stderr by the host (`kyma local` configures the
+//! logging must be routed to stderr by the host (`pensieve local` configures the
 //! tracing subscriber accordingly).
 
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};

@@ -1,9 +1,9 @@
-//! `kyma brain …` — publish kyma's memory as Git-clonable Obsidian vaults.
+//! `pensieve brain …` — publish pensieve's memory as Git-clonable Obsidian vaults.
 //!
 //! The clone IS the interface: everything here is possible with plain git
-//! (`git clone http://host:7777/git/<name>.git`, password = kyma token).
+//! (`git clone http://host:7777/git/<name>.git`, password = pensieve token).
 //! These subcommands wrap the `/v1/brain` management API plus a safe
-//! clone flow (`kyma git-credential` keeps tokens out of URLs and shell
+//! clone flow (`pensieve git-credential` keeps tokens out of URLs and shell
 //! history). Deliberately no `brain grep`/`cat` — `rg`, Obsidian, and any
 //! agent's file tools already do that better on the clone.
 
@@ -53,7 +53,7 @@ pub(crate) enum Op {
         #[arg(long)]
         with_token: bool,
     },
-    /// Clone a brain with credentials wired via `kyma git-credential`.
+    /// Clone a brain with credentials wired via `pensieve git-credential`.
     Clone {
         name: String,
         /// Target directory (default: the brain name).
@@ -120,7 +120,7 @@ pub(crate) async fn run(op: Op) -> Result<()> {
             if brains.is_empty() {
                 println!("{}", ux::theme::muted("No brains published yet."));
                 println!(
-                    "  {} kyma brain create <name> --realm <realm>",
+                    "  {} pensieve brain create <name> --realm <realm>",
                     ux::theme::accent("create one:")
                 );
                 return Ok(());
@@ -148,7 +148,7 @@ pub(crate) async fn run(op: Op) -> Result<()> {
                 "\n  {} git clone {}   {}",
                 ux::theme::muted("clone:"),
                 clone_url(&cfg, "<name>"),
-                ux::theme::muted("(password = kyma token)")
+                ux::theme::muted("(password = pensieve token)")
             );
         }
         Op::Create { name, realms, all_realms, schedule, gardener } => {
@@ -172,8 +172,8 @@ pub(crate) async fn run(op: Op) -> Result<()> {
                         short_sha(&fe["commit"]),
                     ));
                     println!("\n  git clone {}", ux::theme::accent(&clone_url(&cfg, &name)));
-                    println!("  {}", ux::theme::muted("password = your kyma API token"));
-                    println!("  {} kyma brain clone {name}", ux::theme::muted("or:"));
+                    println!("  {}", ux::theme::muted("password = your pensieve API token"));
+                    println!("  {} pensieve brain clone {name}", ux::theme::muted("or:"));
                 }
                 Err(e) => {
                     sp.finish_error("publish failed");
@@ -206,7 +206,7 @@ pub(crate) async fn run(op: Op) -> Result<()> {
                 kv("last error", ux::theme::error(err));
             }
             println!("\n  git clone {}", ux::theme::accent(&clone_url(&cfg, &name)));
-            println!("  {}", ux::theme::muted("password = your kyma API token"));
+            println!("  {}", ux::theme::muted("password = your pensieve API token"));
         }
         Op::Export { name } => {
             let sp = ux::spinner::spinner(format!("Exporting `{name}`…"));
@@ -282,13 +282,13 @@ pub(crate) async fn run(op: Op) -> Result<()> {
                 let token = cfg
                     .token
                     .clone()
-                    .ok_or_else(|| anyhow!("no token configured (kyma connect / KYMA_TOKEN)"))?;
+                    .ok_or_else(|| anyhow!("no token configured (pensieve connect / PENSIEVE_TOKEN)"))?;
                 eprintln!(
                     "{}",
                     ux::theme::warn("warning: URL contains your token — it will land in shell history")
                 );
                 let base = cfg.endpoint.trim_end_matches('/');
-                let with_creds = base.replacen("://", &format!("://kyma:{token}@"), 1);
+                let with_creds = base.replacen("://", &format!("://pensieve:{token}@"), 1);
                 println!("{with_creds}/git/{name}.git");
             } else {
                 println!("{}", clone_url(&cfg, &name));
@@ -305,7 +305,7 @@ pub(crate) async fn run(op: Op) -> Result<()> {
                 std::env::current_exe()
                     .ok()
                     .and_then(|p| p.to_str().map(str::to_string))
-                    .unwrap_or_else(|| "kyma".to_string())
+                    .unwrap_or_else(|| "pensieve".to_string())
             );
             let status = std::process::Command::new("git")
                 .args(["clone", "--config", &format!("credential.helper={helper}"), &url, &target])
@@ -344,10 +344,10 @@ pub(crate) async fn run(op: Op) -> Result<()> {
     Ok(())
 }
 
-/// `kyma git-credential` — a git credential helper (the `get` action of the
-/// git-credential protocol). Answers with the configured kyma endpoint's
+/// `pensieve git-credential` — a git credential helper (the `get` action of the
+/// git-credential protocol). Answers with the configured pensieve endpoint's
 /// token when the requested host matches, so clones wired with
-/// `credential.helper=!kyma git-credential` authenticate without tokens in
+/// `credential.helper=!pensieve git-credential` authenticate without tokens in
 /// URLs. Non-`get` actions (store/erase) are accepted and ignored.
 pub(crate) async fn run_git_credential(action: Option<String>) -> Result<()> {
     if action.as_deref() != Some("get") {
@@ -380,7 +380,7 @@ pub(crate) async fn run_git_credential(action: Option<String>) -> Result<()> {
         return Ok(());
     }
     let Some(token) = cfg.token else { return Ok(()) };
-    println!("username=kyma");
+    println!("username=pensieve");
     println!("password={token}");
     Ok(())
 }

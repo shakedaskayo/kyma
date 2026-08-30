@@ -12,23 +12,23 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-export KYMA_CATALOG_URL="postgres://kyma:kyma_dev@localhost:5433/kyma"
-export KYMA_S3_ENDPOINT="http://localhost:9000"
-export KYMA_S3_BUCKET="kyma"
-export KYMA_S3_ACCESS_KEY_ID="kyma_admin"
-export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
-export KYMA_S3_PATH_STYLE="true"
-export KYMA_S3_ALLOW_HTTP="true"
-export KYMA_HTTP_ADDR="127.0.0.1:8080"
-export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
+export PENSIEVE_CATALOG_URL="postgres://pensieve:pensieve_dev@localhost:5433/pensieve"
+export PENSIEVE_S3_ENDPOINT="http://localhost:9000"
+export PENSIEVE_S3_BUCKET="pensieve"
+export PENSIEVE_S3_ACCESS_KEY_ID="pensieve_admin"
+export PENSIEVE_S3_SECRET_ACCESS_KEY="pensieve_admin_dev"
+export PENSIEVE_S3_PATH_STYLE="true"
+export PENSIEVE_S3_ALLOW_HTTP="true"
+export PENSIEVE_HTTP_ADDR="127.0.0.1:8080"
+export PENSIEVE_SELF_TRACE="off"   # deterministic storage-layout assertions
 # Aggressive timings for the test:
-export KYMA_RETENTION_POLL_SECS="2"
-export KYMA_PHYSICAL_GC_POLL_SECS="2"
-export KYMA_PHYSICAL_GC_GRACE_SECS="1"  # 1s grace so the test doesn't wait 24h
+export PENSIEVE_RETENTION_POLL_SECS="2"
+export PENSIEVE_PHYSICAL_GC_POLL_SECS="2"
+export PENSIEVE_PHYSICAL_GC_GRACE_SECS="1"  # 1s grace so the test doesn't wait 24h
 export RUST_LOG="${RUST_LOG:-info,sqlx=warn}"
 
 HTTP_BASE="http://127.0.0.1:8080"
-LOG_FILE="/tmp/kyma-retention.log"
+LOG_FILE="/tmp/pensieve-retention.log"
 SERVER_PID=""
 
 if [[ -t 1 ]]; then
@@ -52,17 +52,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if ! docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1; then
+if ! docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null 2>&1; then
     printf "${RED}docker-compose stack not up.${NC}\n"; exit 2
 fi
 
 section "Reset state"
-docker exec kyma-postgres psql -U kyma -d kyma -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
-docker exec kyma-minio mc rm --recursive --force local/kyma >/dev/null 2>&1 || true
-docker exec kyma-minio mc mb --ignore-existing local/kyma >/dev/null
+docker exec pensieve-postgres psql -U pensieve -d pensieve -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
+docker exec pensieve-minio mc rm --recursive --force local/pensieve >/dev/null 2>&1 || true
+docker exec pensieve-minio mc mb --ignore-existing local/pensieve >/dev/null
 
-section "Start kyma (retention 2s / grace 1s)"
-./target/debug/kyma >"$LOG_FILE" 2>&1 &
+section "Start pensieve (retention 2s / grace 1s)"
+./target/debug/pensieve >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 for i in 1 2 3 4 5 6 7 8 9 10; do
     if curl -sf "$HTTP_BASE/health" >/dev/null 2>&1; then break; fi
@@ -70,10 +70,10 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 section "Create table retention_days=1 + ingest 2-day-old data"
-./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
-./target/debug/kyma-cli create-table --db default --name aged \
+./target/debug/pensieve-cli create-database default --if-not-exists >/dev/null
+./target/debug/pensieve-cli create-table --db default --name aged \
     --schema 'timestamp:timestamp,n:int' --retention-days 1 >/dev/null
-./target/debug/kyma-cli create-table --db default --name fresh \
+./target/debug/pensieve-cli create-table --db default --name fresh \
     --schema 'timestamp:timestamp,n:int' --retention-days 1 >/dev/null
 
 # 2-day-old rows (expired).
@@ -102,14 +102,14 @@ curl -s -X POST "$HTTP_BASE/v1/ingest" \
     --data-binary @/tmp/fresh.ndjson > /dev/null
 
 # The aged extent is expired on arrival (2-day-old data, retention_days=1), so
-# the background sweeper (KYMA_RETENTION_POLL_SECS=2) may soft-delete it before
+# the background sweeper (PENSIEVE_RETENTION_POLL_SECS=2) may soft-delete it before
 # this check runs — racing on "live before sweep" is non-deterministic. Assert
 # instead that the ingest CREATED an extent (total count, robust to soft-delete,
 # which only sets deleted_at and keeps the row until physical-gc). The sweep is
 # verified deterministically by the soft-delete wait below.
-aged_total=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+aged_total=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
     "SELECT COUNT(*) FROM extents WHERE table_id = (SELECT id FROM tables WHERE name='aged')")
-fresh_live_before=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+fresh_live_before=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
     "SELECT COUNT(*) FROM extents WHERE deleted_at IS NULL AND table_id = (SELECT id FROM tables WHERE name='fresh')")
 assert_eq "aged: 1 extent created"            "1" "$aged_total"
 assert_eq "fresh: 1 live extent before sweep" "1" "$fresh_live_before"
@@ -118,7 +118,7 @@ section "Wait for retention sweep (soft-delete)"
 deadline=$((SECONDS + 30))
 swept=0
 while (( SECONDS < deadline )); do
-    live=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+    live=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
         "SELECT COUNT(*) FROM extents WHERE deleted_at IS NULL AND table_id = (SELECT id FROM tables WHERE name='aged')")
     if (( live == 0 )); then swept=1; break; fi
     sleep 1
@@ -130,20 +130,20 @@ fi
 ok "aged extents soft-deleted"
 
 # Fresh table should NOT have been swept.
-fresh_live_after=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+fresh_live_after=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
     "SELECT COUNT(*) FROM extents WHERE deleted_at IS NULL AND table_id = (SELECT id FROM tables WHERE name='fresh')")
 assert_eq "fresh: still 1 live extent (not expired)" "1" "$fresh_live_after"
 
 section "Wait for physical-gc (remove bytes after grace)"
 # Objects before physical-gc (both tables still have objects in MinIO — the
 # aged one soft-deleted in catalog but not yet physically gone).
-objects_before=$(docker exec kyma-minio mc ls -r local/kyma/ | grep -c '\.kyma$' || true)
+objects_before=$(docker exec pensieve-minio mc ls -r local/pensieve/ | grep -c '\.pensieve$' || true)
 printf "  ${DIM}objects before physical-gc: $objects_before${NC}\n"
 
 deadline=$((SECONDS + 30))
 gc_ok=0
 while (( SECONDS < deadline )); do
-    rows_left=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+    rows_left=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
         "SELECT COUNT(*) FROM extents WHERE table_id = (SELECT id FROM tables WHERE name='aged')")
     if (( rows_left == 0 )); then gc_ok=1; break; fi
     sleep 1
@@ -154,7 +154,7 @@ if (( gc_ok == 0 )); then
 fi
 ok "aged catalog rows physically deleted"
 
-objects_after=$(docker exec kyma-minio mc ls -r local/kyma/ | grep -c '\.kyma$' || true)
+objects_after=$(docker exec pensieve-minio mc ls -r local/pensieve/ | grep -c '\.pensieve$' || true)
 printf "  ${DIM}objects after physical-gc: $objects_after${NC}\n"
 if (( objects_after < objects_before )); then
     ok "MinIO objects deleted by physical-gc ($objects_before → $objects_after)"
@@ -169,12 +169,12 @@ assert_eq "fresh table still has 3 rows" "3" "$fresh_rows"
 
 section "Verify metrics"
 metrics=$(curl -s "$HTTP_BASE/metrics")
-if echo "$metrics" | grep -q 'kyma_retention_extents_soft_deleted_total'; then
+if echo "$metrics" | grep -q 'pensieve_retention_extents_soft_deleted_total'; then
     ok "retention soft-delete counter fired"
 else
     f "no retention_extents_soft_deleted metric"
 fi
-if echo "$metrics" | grep -q 'kyma_physical_gc_objects_deleted_total'; then
+if echo "$metrics" | grep -q 'pensieve_physical_gc_objects_deleted_total'; then
     ok "physical-gc object-delete counter fired"
 else
     f "no physical_gc_objects_deleted metric"

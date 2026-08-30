@@ -38,7 +38,7 @@ export const Route = createFileRoute("/setup")({
   component: Setup,
 });
 
-// ── Kyma brand tokens (from the kyma docs site) ────────────────────────────
+// ── Pensieve brand tokens (from the pensieve docs site) ────────────────────────────
 const GREEN = "#7ed957"; // phosphor accent
 const inputCls =
   "h-11 rounded-lg border-[#dfdfd6]/12 bg-[#111317] text-[#e8e6e0] placeholder:text-[#dfdfd6]/30 " +
@@ -124,9 +124,9 @@ function Setup() {
       <aside className="relative hidden w-[42%] shrink-0 flex-col justify-between overflow-hidden border-r border-[#dfdfd6]/[0.07] p-12 lg:flex">
         <Aurora />
         <div className="relative z-10 flex items-center gap-3 ky-rise" style={{ animationDelay: "40ms" }}>
-          <KymaMark className="h-9 w-9" />
+          <PensieveMark className="h-9 w-9" />
           <span className="font-mono text-[17px] font-semibold tracking-[0.18em] text-[#e8e6e0]">
-            kyma
+            pensieve
           </span>
         </div>
 
@@ -180,8 +180,8 @@ function Setup() {
       <main className="relative z-10 flex flex-1 items-center justify-center px-6 py-12 sm:px-12">
         {/* mobile wordmark */}
         <div className="absolute left-6 top-6 flex items-center gap-2 lg:hidden">
-          <KymaMark className="h-7 w-7" />
-          <span className="font-mono text-sm font-semibold tracking-[0.18em] text-[#e8e6e0]">kyma</span>
+          <PensieveMark className="h-7 w-7" />
+          <span className="font-mono text-sm font-semibold tracking-[0.18em] text-[#e8e6e0]">pensieve</span>
         </div>
 
         {checking ? (
@@ -192,7 +192,7 @@ function Setup() {
               <StepShell
                 eyebrow="Step 2 / Account"
                 title="Create your admin"
-                subtitle="This is the owner account for your kyma instance — and the login your CLI authenticates with."
+                subtitle="This is the owner account for your pensieve instance — and the login your CLI authenticates with."
               >
                 <form onSubmit={handleCreateAccount} className="space-y-4">
                   <Field label="Server URL">
@@ -415,7 +415,7 @@ function EngineStep({ endpoint, onNext }: { endpoint: string; onNext: () => void
               title={`${provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"} detected — ready.`}
             />
           ) : (
-            <Field label="API key" hint="stored encrypted in kyma">
+            <Field label="API key" hint="stored encrypted in pensieve">
               <Input
                 className={inputCls}
                 type="password"
@@ -479,10 +479,10 @@ function DataStep({ endpoint, onNext }: { endpoint: string; onNext: () => void }
           <div className="mb-1.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-[#dfdfd6]/40">
             <Terminal className="h-3.5 w-3.5" /> Connect a source from the CLI
           </div>
-          <CopyRow text="kyma datasource add github <owner>/<repo> --start" />
+          <CopyRow text="pensieve datasource add github <owner>/<repo> --start" />
           <p className="mt-1.5 text-[12px] leading-snug text-[#dfdfd6]/45">
             GitHub, GitLab, Bitbucket, Postgres, Prometheus &amp; more — see{" "}
-            <span className="font-mono text-[#dfdfd6]/70">kyma datasource --help</span>.
+            <span className="font-mono text-[#dfdfd6]/70">pensieve datasource --help</span>.
           </p>
         </div>
 
@@ -492,9 +492,9 @@ function DataStep({ endpoint, onNext }: { endpoint: string; onNext: () => void }
             <Sparkles className="h-3.5 w-3.5" /> Or let your coding agent do it
           </div>
           <p className="mb-2 text-[12.5px] leading-snug text-[#dfdfd6]/65">
-            Your coding agent already has the kyma skill — just ask it:
+            Your coding agent already has the pensieve skill — just ask it:
           </p>
-          <CopyRow prefix="› " text="Discover the data sources I can reach and ingest them into kyma." />
+          <CopyRow prefix="› " text="Discover the data sources I can reach and ingest them into pensieve." />
         </div>
 
         {/* Secondary: quick sample */}
@@ -529,15 +529,15 @@ function DataStep({ endpoint, onNext }: { endpoint: string; onNext: () => void }
 
 function AgentStep({ endpoint, onNext }: { endpoint: string; onNext: () => void }) {
   const commands = [
-    { label: "1 / Install the kyma CLI", cmd: "cargo install kyma-cli   # or: brew install kyma" },
-    { label: "2 / Authenticate to this instance", cmd: `kyma connect ${endpoint}` },
-    { label: "3 / Add the skill to your coding agent", cmd: "kyma install-skill --also-link-claude" },
+    { label: "1 / Install the pensieve CLI", cmd: "cargo install pensieve-cli   # or: brew install pensieve" },
+    { label: "2 / Authenticate to this instance", cmd: `pensieve connect ${endpoint}` },
+    { label: "3 / Add the skill to your coding agent", cmd: "pensieve install-skill --also-link-claude" },
   ];
   return (
     <StepShell
       eyebrow="Step 1 / Coding agent"
       title="Connect your coding agent"
-      subtitle="Start here: install the kyma CLI, authenticate, and drop the kyma skill into Claude Code, Cursor or any coding agent so it can query your data through the CLI."
+      subtitle="Start here: install the pensieve CLI, authenticate, and drop the pensieve skill into Claude Code, Cursor or any coding agent so it can query your data through the CLI."
     >
       <div className="space-y-3">
         {commands.map((c) => (
@@ -552,7 +552,7 @@ function AgentStep({ endpoint, onNext }: { endpoint: string; onNext: () => void 
       </div>
       <div className="mt-4 flex items-start gap-2 rounded-lg border border-[#dfdfd6]/[0.08] bg-[#dfdfd6]/[0.02] p-3 text-[12px] leading-snug text-[#dfdfd6]/55">
         <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-[#7ed957]/70" />
-        Your agent then runs <span className="font-mono text-[#dfdfd6]/80">kyma query "…"</span> to ask
+        Your agent then runs <span className="font-mono text-[#dfdfd6]/80">pensieve query "…"</span> to ask
         questions over everything you've ingested.
       </div>
       <PrimaryButton onClick={onNext} className="mt-5">
@@ -570,7 +570,7 @@ function DoneStep({ onEnter }: { onEnter: () => void }) {
   return (
     <div className="text-center">
       <div className="mx-auto mb-7 ky-rise">
-        <KymaMark className="mx-auto h-16 w-16 ky-glow rounded-full" />
+        <PensieveMark className="mx-auto h-16 w-16 ky-glow rounded-full" />
       </div>
       <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.18em] text-[#7ed957]">
         Ready
@@ -581,7 +581,7 @@ function DoneStep({ onEnter }: { onEnter: () => void }) {
         database.
       </p>
       <PrimaryButton onClick={onEnter} className="mt-7">
-        Enter kyma
+        Enter pensieve
         <ArrowRight className="ml-1 h-4 w-4" />
       </PrimaryButton>
     </div>
@@ -804,24 +804,24 @@ function CopyRow({ text, prefix = "$ " }: { text: string; prefix?: string }) {
   );
 }
 
-/** The real kyma mark — phosphor-ring aperture (from the kyma docs site). */
-function KymaMark({ className }: { className?: string }) {
+/** The real pensieve mark — phosphor-ring aperture (from the pensieve docs site). */
+function PensieveMark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 96 96" role="img" aria-label="kyma" className={className}>
+    <svg viewBox="0 0 96 96" role="img" aria-label="pensieve" className={className}>
       <defs>
-        <radialGradient id="kymaCore" cx="50%" cy="50%" r="50%">
+        <radialGradient id="pensieveCore" cx="50%" cy="50%" r="50%">
           <stop offset="0%" stopColor="#0d1015" />
           <stop offset="80%" stopColor="#0d1015" />
           <stop offset="100%" stopColor="#11151b" />
         </radialGradient>
-        <linearGradient id="kymaRing" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="pensieveRing" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#7ed957" />
           <stop offset="60%" stopColor="#7ed957" stopOpacity="0.5" />
           <stop offset="100%" stopColor="#7ed957" stopOpacity="0.15" />
         </linearGradient>
       </defs>
-      <circle cx="48" cy="48" r="44" fill="none" stroke="url(#kymaRing)" strokeWidth="2" />
-      <circle cx="48" cy="48" r="36" fill="url(#kymaCore)" stroke="#2a2e36" strokeWidth="1" />
+      <circle cx="48" cy="48" r="44" fill="none" stroke="url(#pensieveRing)" strokeWidth="2" />
+      <circle cx="48" cy="48" r="36" fill="url(#pensieveCore)" stroke="#2a2e36" strokeWidth="1" />
       <circle cx="48" cy="48" r="36" fill="none" stroke="#7ed957" strokeWidth="0.5" opacity="0.4" />
       <g stroke="#e8e6e0" strokeWidth="3.5" strokeLinecap="round" fill="none">
         <line x1="34" y1="32" x2="34" y2="64" />

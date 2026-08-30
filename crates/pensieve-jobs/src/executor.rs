@@ -2,7 +2,7 @@
 
 use crate::queue::JobQueue;
 use async_trait::async_trait;
-use kyma_core::fabric::ClaimedJob;
+use pensieve_core::fabric::ClaimedJob;
 use serde_json::Value as Json;
 use std::sync::Arc;
 use uuid::Uuid;

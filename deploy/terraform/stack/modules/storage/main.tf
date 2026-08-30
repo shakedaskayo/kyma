@@ -1,4 +1,4 @@
-# Extent bucket: kyma's columnar data files. Versioning + SSE + private.
+# Extent bucket: pensieve's columnar data files. Versioning + SSE + private.
 # Adapted from infra/modules/s3-extent-bucket (managed-cloud), minus the
 # multi-tenant prefix isolation — a self-host deployment owns the bucket.
 

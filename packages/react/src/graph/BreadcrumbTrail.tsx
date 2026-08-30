@@ -1,6 +1,6 @@
 /** BreadcrumbTrail — visited nodes, click to fly back (jumpTrail). */
 import { ChevronRight } from "lucide-react";
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 import { useGraphStore } from "./graph-store";
 
 export function BreadcrumbTrail({ nodesByCompositeId }: { nodesByCompositeId: Map<string, GraphNode> }) {

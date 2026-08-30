@@ -217,7 +217,7 @@ pub fn coming_soon() -> Vec<CatalogEntry> {
         soon("s3", "Amazon S3", "data", "amazons3", "none",
              "Objects and prefixes from an S3 bucket as a navigable tree."),
         // Federated platforms (live-proxied; msfabric shipped first — these
-        // follow as further `kyma-federation` platform impls).
+        // follow as further `pensieve-federation` platform impls).
         soon("databricks", "Databricks", "data", "databricks", "pat",
              "Query Unity Catalog tables live via a SQL warehouse — no ingestion, data stays in Databricks."),
         soon("snowflake", "Snowflake", "data", "snowflake", "pat",

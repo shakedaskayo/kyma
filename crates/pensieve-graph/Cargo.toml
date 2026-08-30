@@ -1,6 +1,6 @@
 [package]
-name = "kyma-graph"
-description = "Property-graph layer for kyma: wire types, the SchemaSource catalog interface, and the GraphProvider abstraction."
+name = "pensieve-graph"
+description = "Property-graph layer for pensieve: wire types, the SchemaSource catalog interface, and the GraphProvider abstraction."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
-kyma-graph-topo = { workspace = true }
+pensieve-graph-topo = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 async-trait = { workspace = true }

@@ -38,9 +38,9 @@ pub fn handle_initialize(params: Value, server: &ServerInfo) -> Result<Value, Er
     })?;
 
     // Record who is connecting — stamped into the provenance of every memory
-    // this client writes (see `kyma_server::agent::identity`).
+    // this client writes (see `pensieve_server::agent::identity`).
     if let Some(ci) = &parsed.client_info {
-        kyma_server::agent::identity::record_client(&ci.name, &ci.version);
+        pensieve_server::agent::identity::record_client(&ci.name, &ci.version);
     }
 
     // Echo client's version if matched, otherwise advertise our own.

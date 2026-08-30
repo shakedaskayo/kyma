@@ -1,17 +1,17 @@
 //! Oracle baselines: k-hop + shortest-path on power-law graphs, and synth
-//! generation throughput. See `kyma-graph-bench`'s crate docs for how S3
+//! generation throughput. See `pensieve-graph-bench`'s crate docs for how S3
 //! engine benches line up against these.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use kyma_graph_testkit::model::TestGraph;
-use kyma_graph_testkit::oracle::{Direction, Oracle};
-use kyma_graph_testkit::synth;
+use pensieve_graph_testkit::model::TestGraph;
+use pensieve_graph_testkit::oracle::{Direction, Oracle};
+use pensieve_graph_testkit::synth;
 
 /// (label, n_nodes) — avg_degree 4 ⇒ ~2 edges per node, so edge counts land
-/// near the label. The 1M case only runs with `KYMA_BENCH_LARGE=1`.
+/// near the label. The 1M case only runs with `PENSIEVE_BENCH_LARGE=1`.
 fn sizes() -> Vec<(&'static str, usize)> {
     let mut v = vec![("10k_edges", 5_000), ("100k_edges", 50_000)];
-    if std::env::var("KYMA_BENCH_LARGE").as_deref() == Ok("1") {
+    if std::env::var("PENSIEVE_BENCH_LARGE").as_deref() == Ok("1") {
         v.push(("1M_edges", 500_000));
     }
     v

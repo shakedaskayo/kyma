@@ -1,5 +1,5 @@
 /**
- * KymaDashboard tests.
+ * PensieveDashboard tests.
  *
  * Stubs:
  *   - fetch: returns fixture dashboard JSON for /v1/dashboards/:id and
@@ -19,9 +19,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import React from "react";
-import { KymaProvider } from "../provider/KymaProvider";
-import { KymaDashboard } from "./KymaDashboard";
-import type { DashboardWithPanels } from "@kyma-ai/client";
+import { PensieveProvider } from "../provider/PensieveProvider";
+import { PensieveDashboard } from "./PensieveDashboard";
+import type { DashboardWithPanels } from "@pensieve-ai/client";
 
 // ── react-grid-layout mock ────────────────────────────────────────────────────
 // Renders children directly in a div, ignoring layout/cols/width props.
@@ -152,16 +152,16 @@ function makeFetchMock(dashboard = DASHBOARD_FIXTURE) {
 }
 
 function renderDashboard(
-  props: Partial<Parameters<typeof KymaDashboard>[0]> & { dashboardId?: string } = {},
+  props: Partial<Parameters<typeof PensieveDashboard>[0]> & { dashboardId?: string } = {},
   qc = makeQC(),
 ) {
   const { dashboardId = "dash-1", ...rest } = props;
   vi.stubGlobal("fetch", makeFetchMock());
 
   return render(
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }} queryClient={qc}>
-      <KymaDashboard dashboardId={dashboardId} {...rest} />
-    </KymaProvider>,
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }} queryClient={qc}>
+      <PensieveDashboard dashboardId={dashboardId} {...rest} />
+    </PensieveProvider>,
   );
 }
 
@@ -173,7 +173,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("KymaDashboard", () => {
+describe("PensieveDashboard", () => {
   it("1. smoke: renders panel titles and toolbar after dashboard loads", async () => {
     renderDashboard();
 
@@ -250,9 +250,9 @@ describe("KymaDashboard", () => {
     const qc = makeQC();
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }} queryClient={qc}>
-        <KymaDashboard dashboardId="dash-1" database="staging" />
-      </KymaProvider>,
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }} queryClient={qc}>
+        <PensieveDashboard dashboardId="dash-1" database="staging" />
+      </PensieveProvider>,
     );
 
     // Wait for the dashboard to load
@@ -304,9 +304,9 @@ describe("KymaDashboard", () => {
     const qc = makeQC();
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }} queryClient={qc}>
-        <KymaDashboard dashboardId="dash-1" editable database="mydb" />
-      </KymaProvider>,
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }} queryClient={qc}>
+        <PensieveDashboard dashboardId="dash-1" editable database="mydb" />
+      </PensieveProvider>,
     );
 
     await waitFor(() => {
@@ -324,7 +324,7 @@ describe("KymaDashboard", () => {
     // Wait for schema to load and "mydb" option to appear in the select
     await waitFor(() => {
       const dbSelect = document.querySelector("#panel-db") as HTMLSelectElement | null;
-      // The select should default to "mydb" (seeded from KymaDashboard.database prop)
+      // The select should default to "mydb" (seeded from PensieveDashboard.database prop)
       expect(dbSelect?.value).toBe("mydb");
     });
   });
@@ -340,9 +340,9 @@ describe("KymaDashboard", () => {
     const qc = makeQC();
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }} queryClient={qc}>
-        <KymaDashboard dashboardId="dash-1" fallback={<div data-testid="my-fallback">Loading...</div>} />
-      </KymaProvider>,
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }} queryClient={qc}>
+        <PensieveDashboard dashboardId="dash-1" fallback={<div data-testid="my-fallback">Loading...</div>} />
+      </PensieveProvider>,
     );
 
     expect(screen.getByTestId("my-fallback")).toBeTruthy();

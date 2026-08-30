@@ -1,5 +1,5 @@
 ---
-source: crates/kyma-embed/tests/golden_vectors.rs
+source: crates/pensieve-embed/tests/golden_vectors.rs
 expression: prefix_rounded
 ---
 [

@@ -1,6 +1,6 @@
 ---
 title: Pruning and performance
-description: Practical rules for writing fast kyma queries. What the pruning cascade can and can't do for you, what makes a query slow, and how to read the diagnostics.
+description: Practical rules for writing fast pensieve queries. What the pruning cascade can and can't do for you, what makes a query slow, and how to read the diagnostics.
 ---
 
 # Pruning and performance
@@ -13,7 +13,7 @@ queries that are slower than they should be.
 
 ## The single rule that matters
 
-**Always include a time bound.** Almost every kyma table is
+**Always include a time bound.** Almost every pensieve table is
 time-partitioned. The catalog stores `min(_timestamp)` and
 `max(_timestamp)` per extent. A query without a time predicate has
 nothing to filter on at stage 1 — it plans like a full scan because
@@ -68,7 +68,7 @@ Equivalent rewrites:
 otel_logs
 | where lower(severity_text) == "error"
 
-// Fast — kyma's string equality is case-sensitive; if your data is
+// Fast — pensieve's string equality is case-sensitive; if your data is
 // dirty, normalize on ingest with X-Schema-Evolve and a coercer.
 otel_logs
 | where severity_text == "ERROR"
@@ -87,7 +87,7 @@ patterns:
 
 For [federation joins](/concepts/multi-source-data), the small side
 is usually a Postgres table you've prefiltered. The pruning cascade
-on the kyma side handles the big side.
+on the pensieve side handles the big side.
 
 ```sql
 SELECT u.email, COUNT(*)
@@ -104,7 +104,7 @@ SELECT u.email, COUNT(*)
 
 DataFusion picks the build side automatically. If you find yourself
 writing a query where the small side genuinely isn't small, materialize
-it first into a kyma table (one ingest call), then join.
+it first into a pensieve table (one ingest call), then join.
 
 ## Query budgets
 
@@ -153,15 +153,15 @@ the most common "why is this slow?" answer. See
 ## Diagnostics — Prometheus metrics
 
 ```
-kyma_query_duration_seconds{language="kql", quantile="0.99"}
-kyma_query_extents_pruned_ratio_bucket{le="0.99"}
-kyma_query_decode_bytes_total
+pensieve_query_duration_seconds{language="kql", quantile="0.99"}
+pensieve_query_extents_pruned_ratio_bucket{le="0.99"}
+pensieve_query_decode_bytes_total
 ```
 
-`kyma_query_extents_pruned_ratio` is the headline. A healthy
+`pensieve_query_extents_pruned_ratio` is the headline. A healthy
 deployment has the p99 above 0.99 — most queries eliminate most
 extents. A regression here often points to a missing time bound in
-some new dashboard, not a kyma bug. See
+some new dashboard, not a pensieve bug. See
 [Observability](/concepts/observability).
 
 ## A short cookbook

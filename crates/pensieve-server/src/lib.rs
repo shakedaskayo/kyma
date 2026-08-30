@@ -5,11 +5,11 @@
 //!   - `Content-Type: application/sql` — the query text is the request body
 //!
 //! Builds a one-shot DataFusion `SessionContext`, registers every table in
-//! the specified database as a [`KymaTable`], executes the SQL, and streams
+//! the specified database as a [`PensieveTable`], executes the SQL, and streams
 //! the results back as NDJSON (one JSON object per row).
 //!
 //! Phase-A simplifications:
-//!   - Only SQL (via DataFusion). KQL lands in M2 when `kyma-kql` and the
+//!   - Only SQL (via DataFusion). KQL lands in M2 when `pensieve-kql` and the
 //!     `QueryFrontend` registry are wired.
 //!   - Results are buffered in memory before streaming. Truly streaming
 //!     response lands when we implement a custom scan `ExecutionPlan`.
@@ -82,9 +82,9 @@ use bytes::Bytes;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
-use kyma_core::catalog::{Catalog, TableRef};
-use kyma_core::segment_format::SegmentFormat;
-use kyma_exec::KymaTable;
+use pensieve_core::catalog::{Catalog, TableRef};
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_exec::PensieveTable;
 use serde::Serialize;
 use std::sync::Arc;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
@@ -92,25 +92,25 @@ use tracing::{debug, error, info, Instrument as _};
 
 const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 
-pub use kyma_datasources::admin::AdminState as DataSourceAdminState;
-pub use kyma_datasources::oauth::OAuthState;
+pub use pensieve_datasources::admin::AdminState as DataSourceAdminState;
+pub use pensieve_datasources::oauth::OAuthState;
 
 /// Build the data source admin router (auth-eligible — caller wraps with middleware).
-pub fn datasource_admin_router(state: kyma_datasources::admin::AdminState) -> Router {
-    kyma_datasources::admin::router(state)
+pub fn datasource_admin_router(state: pensieve_datasources::admin::AdminState) -> Router {
+    pensieve_datasources::admin::router(state)
 }
 
 /// Build the authenticated OAuth router (start + poll) — caller wraps with the
 /// `Role::Write` middleware.
 pub fn oauth_authed_router(state: OAuthState) -> Router {
-    kyma_datasources::oauth::oauth_authed_router(state)
+    pensieve_datasources::oauth::oauth_authed_router(state)
 }
 
 /// Build the **unauthenticated** OAuth callback router — mount alongside the
 /// login route (the IdP redirect carries no bearer; the single-use `state`
 /// token is the trust anchor).
 pub fn oauth_callback_router(state: OAuthState) -> Router {
-    kyma_datasources::oauth::oauth_callback_router(state)
+    pensieve_datasources::oauth::oauth_callback_router(state)
 }
 
 /// Shared HTTP-handler state for the query surface.
@@ -119,20 +119,20 @@ pub struct QueryState {
     pub catalog: Arc<dyn Catalog>,
     pub format: Arc<dyn SegmentFormat>,
     pub schema_cache: Arc<catalog_handler::SchemaCache>,
-    /// Current node's id. Passed into `KymaTable` so the scan path can
+    /// Current node's id. Passed into `PensieveTable` so the scan path can
     /// fan extents out to peer nodes via the read-router.
-    pub node_id: Option<kyma_core::types::NodeId>,
+    pub node_id: Option<pensieve_core::types::NodeId>,
     /// Catalog Postgres pool. Threaded through so non-`Catalog`-trait
     /// surfaces (saved Discover views, etc.) can run SQL directly without
     /// having to downcast the `dyn Catalog`. `None` in **local mode**
-    /// (`kyma-local serve`): the pool-only surfaces (saved Discover views)
+    /// (`pensieve-local serve`): the pool-only surfaces (saved Discover views)
     /// degrade to empty; query / catalog / graph / discover-search all run
     /// over the catalog + engine and work unchanged.
     pub pg_pool: Option<Arc<sqlx::PgPool>>,
     /// Live-proxy runtime for federated tables (Microsoft Fabric, …). `None`
     /// when no credential store is wired (local mode): federated tables then
     /// fail queries with a clear error instead of silently returning empty.
-    pub federation: Option<Arc<kyma_federation::FederationRuntime>>,
+    pub federation: Option<Arc<pensieve_federation::FederationRuntime>>,
     /// Server-side layout cache for the full-graph export endpoint.
     pub layout_cache: Arc<graph_layout_cache::LayoutCache>,
 }
@@ -189,7 +189,7 @@ pub fn router(state: QueryState) -> Router {
 ///
 /// Mount alongside the query router in `main.rs`, wrapped with
 /// `require_role_middleware(Role::Write)`.
-pub fn dashboards_write_router(catalog: Arc<dyn kyma_core::catalog::Catalog>) -> Router {
+pub fn dashboards_write_router(catalog: Arc<dyn pensieve_core::catalog::Catalog>) -> Router {
     use dashboards_handler::{
         create_dashboard, delete_dashboard, update_dashboard, DashboardState,
     };
@@ -242,7 +242,7 @@ pub fn discover_views_write_router(pool: Arc<sqlx::PgPool>) -> Router {
 /// Mounts `POST /v1/database/:db/table/:table/cleanup`.
 /// Mount alongside the query router in `main.rs`, wrapped with
 /// `require_role_middleware(Role::Write)`.
-pub fn cleanup_write_router(catalog: Arc<dyn kyma_core::catalog::Catalog>) -> Router {
+pub fn cleanup_write_router(catalog: Arc<dyn pensieve_core::catalog::Catalog>) -> Router {
     use cleanup_handler::{cleanup_table, CleanupState};
     let state = CleanupState { catalog };
     Router::new()
@@ -263,7 +263,7 @@ pub fn cleanup_write_router(catalog: Arc<dyn kyma_core::catalog::Catalog>) -> Ro
 /// Mounts `POST /v1/admin/compact`, which submits compaction tasks for small
 /// extents so the compaction worker merges them. Mount alongside the query
 /// router, wrapped with `require_role_middleware(Role::Write)`.
-pub fn compact_write_router(catalog: Arc<dyn kyma_core::catalog::Catalog>) -> Router {
+pub fn compact_write_router(catalog: Arc<dyn pensieve_core::catalog::Catalog>) -> Router {
     use compact_handler::{compact, CompactState};
     let state = CompactState { catalog };
     Router::new()
@@ -295,7 +295,7 @@ pub fn local_workers_router() -> Router {
 }
 
 /// Variant of [`router`] that additionally nests the inline agent surface
-/// under `/v1/agent`. Called by `kyma-bin` once the `PgPool` (needed for
+/// under `/v1/agent`. Called by `pensieve-bin` once the `PgPool` (needed for
 /// `agent_runs` persistence) is available.
 ///
 /// The agent surface is guarded against database-scoped tokens (fail closed):
@@ -319,7 +319,7 @@ pub fn router_with_agent(state: QueryState, agent_state: agent::AgentState) -> R
 /// API. Mirrors the request origin, accepts any method / header, and exposes
 /// all response headers so SSE streams + Authorization headers flow through.
 ///
-/// Apply this to the outermost `Router` in `kyma-bin::main`. Production
+/// Apply this to the outermost `Router` in `pensieve-bin::main`. Production
 /// deployments should replace it with a config-driven origin allow-list.
 pub fn with_permissive_cors(r: Router) -> Router {
     use tower_http::cors::{AllowOrigin, Any, CorsLayer};
@@ -332,15 +332,15 @@ pub fn with_permissive_cors(r: Router) -> Router {
 }
 
 /// CORS for production: explicit origin allow-list from
-/// `KYMA_CORS_ALLOWED_ORIGINS` (comma-separated). Falls back to the
+/// `PENSIEVE_CORS_ALLOWED_ORIGINS` (comma-separated). Falls back to the
 /// permissive mirror behavior when UNSET (dev default). When the variable is
 /// set but contains no valid origins (typo, bad syntax), we fail CLOSED with
 /// an empty allow-list — a misconfigured production deployment must not
 /// silently become world-readable.
 pub fn with_configured_cors(r: Router) -> Router {
     use tower_http::cors::{AllowOrigin, Any, CorsLayer};
-    let Some(raw) = std::env::var("KYMA_CORS_ALLOWED_ORIGINS").ok() else {
-        tracing::warn!("KYMA_CORS_ALLOWED_ORIGINS unset — using permissive CORS (dev only)");
+    let Some(raw) = std::env::var("PENSIEVE_CORS_ALLOWED_ORIGINS").ok() else {
+        tracing::warn!("PENSIEVE_CORS_ALLOWED_ORIGINS unset — using permissive CORS (dev only)");
         return with_permissive_cors(r);
     };
     let origins: Vec<axum::http::HeaderValue> = raw
@@ -350,7 +350,7 @@ pub fn with_configured_cors(r: Router) -> Router {
     if origins.is_empty() {
         tracing::error!(
             value = %raw,
-            "KYMA_CORS_ALLOWED_ORIGINS set but contains no valid origins — \
+            "PENSIEVE_CORS_ALLOWED_ORIGINS set but contains no valid origins — \
              failing closed (no cross-origin requests allowed)"
         );
     }
@@ -366,7 +366,7 @@ pub fn with_configured_cors(r: Router) -> Router {
 /// resolve their target database from the `x-database` request header.
 ///
 /// This is applied as a layer over routers in separate crates (e.g.
-/// `kyma-ingest-rest`) that cannot take a `kyma-server` dependency.
+/// `pensieve-ingest-rest`) that cannot take a `pensieve-server` dependency.
 /// The `Principal` is already inserted into request extensions by
 /// `require_role_middleware` before this middleware runs.
 pub async fn database_scope_middleware(
@@ -488,10 +488,10 @@ mod cors_tests {
     fn make_app(origins_env: &str) -> Router {
         // Temporarily set the env var, build the router, then clear it.
         // Tests calling this are serialized via the CORS_TEST_MUTEX.
-        std::env::set_var("KYMA_CORS_ALLOWED_ORIGINS", origins_env);
+        std::env::set_var("PENSIEVE_CORS_ALLOWED_ORIGINS", origins_env);
         let r = Router::new().route("/ping", axum::routing::get(|| async { "pong" }));
         let app = with_configured_cors(r);
-        std::env::remove_var("KYMA_CORS_ALLOWED_ORIGINS");
+        std::env::remove_var("PENSIEVE_CORS_ALLOWED_ORIGINS");
         app
     }
 
@@ -593,7 +593,7 @@ mod scoped_token_guard_tests {
 
     fn principal(allowed: Option<Vec<&str>>) -> Principal {
         Principal {
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            tenant: pensieve_core::tenant::DEFAULT_TENANT,
             role: Role::Admin,
             subject: None,
             allowed_databases: allowed
@@ -668,7 +668,7 @@ struct ErrorDetail<'a> {
 }
 
 pub(crate) fn error_response(status: StatusCode, code: &str, message: &str, request_id: &str) -> Response {
-    ::metrics::counter!("kyma_http_errors_total", "code" => code.to_string()).increment(1);
+    ::metrics::counter!("pensieve_http_errors_total", "code" => code.to_string()).increment(1);
     (
         status,
         Json(ErrorBody {
@@ -698,10 +698,10 @@ pub(crate) fn too_many_requests_response(retry_after_secs: u64, request_id: &str
     resp
 }
 
-pub(crate) fn resolve_query_budget(headers: &HeaderMap) -> kyma_core::query_frontend::QueryBudget {
-    let mut b = kyma_core::query_frontend::QueryBudget::from_env();
+pub(crate) fn resolve_query_budget(headers: &HeaderMap) -> pensieve_core::query_frontend::QueryBudget {
+    let mut b = pensieve_core::query_frontend::QueryBudget::from_env();
     if let Some(v) = headers
-        .get("x-kyma-max-wall-clock-ms")
+        .get("x-pensieve-max-wall-clock-ms")
         .and_then(|v| v.to_str().ok())
     {
         if let Ok(ms) = v.parse::<u64>() {
@@ -709,7 +709,7 @@ pub(crate) fn resolve_query_budget(headers: &HeaderMap) -> kyma_core::query_fron
         }
     }
     if let Some(v) = headers
-        .get("x-kyma-max-memory-bytes")
+        .get("x-pensieve-max-memory-bytes")
         .and_then(|v| v.to_str().ok())
     {
         if let Ok(n) = v.parse::<u64>() {
@@ -717,7 +717,7 @@ pub(crate) fn resolve_query_budget(headers: &HeaderMap) -> kyma_core::query_fron
         }
     }
     if let Some(v) = headers
-        .get("x-kyma-max-object-store-bytes")
+        .get("x-pensieve-max-object-store-bytes")
         .and_then(|v| v.to_str().ok())
     {
         if let Ok(n) = v.parse::<u64>() {
@@ -738,7 +738,7 @@ fn budget_exceeded_response(
     let hdrs = resp.headers_mut();
     hdrs.insert("retry-after", HeaderValue::from_static("1"));
     if let Ok(h) = HeaderValue::from_str(&format!("{limit} {unit}")) {
-        hdrs.insert("x-kyma-budget-limit", h);
+        hdrs.insert("x-pensieve-budget-limit", h);
     }
     resp
 }
@@ -751,12 +751,12 @@ pub(crate) fn extract_request_id(headers: &HeaderMap) -> String {
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
 }
 
-/// Build a [`kyma_kql::SchemaMap`] from a slice of [`TableRef`]s.
+/// Build a [`pensieve_kql::SchemaMap`] from a slice of [`TableRef`]s.
 ///
 /// Each entry maps the table name to its column names in schema order.
-/// This is passed to [`kyma_kql::kql_to_sql_with_schemas`] so that KQL
+/// This is passed to [`pensieve_kql::kql_to_sql_with_schemas`] so that KQL
 /// `union` can compute the column superset for outer-by-name semantics.
-pub(crate) fn build_schema_map(tables: &[TableRef]) -> kyma_kql::SchemaMap {
+pub(crate) fn build_schema_map(tables: &[TableRef]) -> pensieve_kql::SchemaMap {
     tables
         .iter()
         .map(|t| {
@@ -766,7 +766,7 @@ pub(crate) fn build_schema_map(tables: &[TableRef]) -> kyma_kql::SchemaMap {
         .collect()
 }
 
-/// Resolve the [`kyma_kql::GraphBinding`] a Cypher query runs against.
+/// Resolve the [`pensieve_kql::GraphBinding`] a Cypher query runs against.
 ///
 /// A Cypher query targets exactly ONE registered graph. The graph is selected
 /// from the `x-graph` request header, whose value is either `"<db>/<graph>"`
@@ -779,10 +779,10 @@ pub(crate) fn build_schema_map(tables: &[TableRef]) -> kyma_kql::SchemaMap {
 /// can fold it straight into [`error_response`] (mirroring the KQL error path).
 pub(crate) async fn resolve_graph_binding(
     catalog: &Arc<dyn Catalog>,
-    tenant: kyma_core::tenant::TenantId,
+    tenant: pensieve_core::tenant::TenantId,
     x_graph: Option<&str>,
     database: &str,
-) -> Result<kyma_kql::GraphBinding, (StatusCode, String)> {
+) -> Result<pensieve_kql::GraphBinding, (StatusCode, String)> {
     // 1. Determine the (database, graph-name) pair to resolve.
     let (db, name): (String, String) = match x_graph.map(str::trim).filter(|s| !s.is_empty()) {
         Some(spec) => match spec.split_once('/') {
@@ -824,7 +824,7 @@ pub(crate) async fn resolve_graph_binding(
         })?
         .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("graph not found: {name}")))?;
 
-    Ok(kyma_kql::GraphBinding {
+    Ok(pensieve_kql::GraphBinding {
         edge_table: reg.edge_table,
         node_table: reg.node_table,
         id_col: reg.id_col,
@@ -838,10 +838,10 @@ pub(crate) async fn resolve_graph_binding(
 /// Render a `CREATE`/`MERGE` property literal as a JSON value: numbers parse to
 /// int/float, everything else stays a string (the NDJSON coercer maps it onto
 /// the column's Arrow type).
-fn cypher_lit_to_json(l: &kyma_kql::PropLit) -> serde_json::Value {
+fn cypher_lit_to_json(l: &pensieve_kql::PropLit) -> serde_json::Value {
     match l {
-        kyma_kql::PropLit::Str(s) => serde_json::Value::String(s.clone()),
-        kyma_kql::PropLit::Num(n) => n
+        pensieve_kql::PropLit::Str(s) => serde_json::Value::String(s.clone()),
+        pensieve_kql::PropLit::Num(n) => n
             .parse::<i64>()
             .map(serde_json::Value::from)
             .or_else(|_| n.parse::<f64>().map(serde_json::Value::from))
@@ -849,10 +849,10 @@ fn cypher_lit_to_json(l: &kyma_kql::PropLit) -> serde_json::Value {
     }
 }
 
-fn cypher_lit_str(l: &kyma_kql::PropLit) -> String {
+fn cypher_lit_str(l: &pensieve_kql::PropLit) -> String {
     match l {
-        kyma_kql::PropLit::Str(s) => s.clone(),
-        kyma_kql::PropLit::Num(n) => n.clone(),
+        pensieve_kql::PropLit::Str(s) => s.clone(),
+        pensieve_kql::PropLit::Num(n) => n.clone(),
     }
 }
 
@@ -860,7 +860,7 @@ fn cypher_lit_str(l: &kyma_kql::PropLit) -> String {
 /// append them as one extent. Returns the row count, or an error response.
 async fn cypher_ingest_rows(
     state: &QueryState,
-    write_path: &kyma_ingest_core::WritePath,
+    write_path: &pensieve_ingest_core::WritePath,
     database: &str,
     table_name: &str,
     rows: &[serde_json::Value],
@@ -883,7 +883,7 @@ async fn cypher_ingest_rows(
         .map(|r| r.to_string())
         .collect::<Vec<_>>()
         .join("\n");
-    let batches = kyma_ingest_core::ndjson::parse_ndjson(ndjson.as_bytes(), table_ref.schema.clone())
+    let batches = pensieve_ingest_core::ndjson::parse_ndjson(ndjson.as_bytes(), table_ref.schema.clone())
         .map_err(|e| {
             error_response(
                 StatusCode::BAD_REQUEST,
@@ -912,12 +912,12 @@ async fn cypher_ingest_rows(
 async fn handle_cypher_write(
     state: &QueryState,
     database: &str,
-    binding: &kyma_kql::GraphBinding,
-    write: kyma_kql::CypherWrite,
+    binding: &pensieve_kql::GraphBinding,
+    write: pensieve_kql::CypherWrite,
     request_id: &str,
 ) -> Response {
-    use kyma_graph::GraphProvider;
-    use kyma_kql::CypherWriteOp;
+    use pensieve_graph::GraphProvider;
+    use pensieve_kql::CypherWriteOp;
 
     // Provider is only needed for MERGE existence checks — build it lazily.
     let need_provider = write.ops.iter().any(|op| match op {
@@ -974,7 +974,7 @@ async fn handle_cypher_write(
                         let dst = cypher_lit_str(dst_id);
                         // Edges from `src` (to external nodes ⇒ only_internal=false).
                         match prov
-                            .neighbors(&[src], kyma_graph::Direction::Forward, false, 100_000)
+                            .neighbors(&[src], pensieve_graph::Direction::Forward, false, 100_000)
                             .await
                         {
                             Ok(exp) => {
@@ -1006,7 +1006,7 @@ async fn handle_cypher_write(
         }
     }
 
-    let write_path = kyma_ingest_core::WritePath::new(state.catalog.clone(), state.format.clone());
+    let write_path = pensieve_ingest_core::WritePath::new(state.catalog.clone(), state.format.clone());
     let mut created_nodes = 0usize;
     let mut created_edges = 0usize;
     if !node_rows.is_empty() {
@@ -1041,7 +1041,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
 
     // Admission control: shed load with 429 + Retry-After rather than let a
     // burst of heavy queries drive the node into memory pressure. The permit is
-    // held until this handler returns (no-op when KYMA_QUERY_MAX_CONCURRENT=0).
+    // held until this handler returns (no-op when PENSIEVE_QUERY_MAX_CONCURRENT=0).
     let _admission = match crate::concurrency::acquire() {
         Ok(p) => p,
         Err(retry) => return too_many_requests_response(retry, &request_id),
@@ -1068,11 +1068,11 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
     }
     let tenant = principal
         .map(|p| p.tenant)
-        .unwrap_or(kyma_core::tenant::DEFAULT_TENANT);
+        .unwrap_or(pensieve_core::tenant::DEFAULT_TENANT);
 
     // Per-tenant query admission (S2.6): each tenant has its own concurrency
     // budget, so one tenant saturating it can't starve another. Held for the
-    // (buffered) execution below. No-op unless KYMA_QUERY_MAX_CONCURRENT_PER_TENANT
+    // (buffered) execution below. No-op unless PENSIEVE_QUERY_MAX_CONCURRENT_PER_TENANT
     // is set; complements the process-global cap acquired above.
     let _tenant_admission = match crate::concurrency::acquire_for_tenant(tenant) {
         Ok(p) => p,
@@ -1127,7 +1127,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         Single(Vec<TableRef>),
         Multi(Vec<crate::query_multidb::DbTable>),
     }
-    let (sources, schemas): (Sources, kyma_kql::SchemaMap) = if all_db {
+    let (sources, schemas): (Sources, pensieve_kql::SchemaMap) = if all_db {
         let db_tables = match crate::query_multidb::resolve_all_db_tables(
             &state.catalog,
             tenant,
@@ -1186,7 +1186,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/sql");
     let (language, sql) = if content_type.starts_with("application/x-kql") {
-        match kyma_kql::kql_to_sql_with_schemas(&raw, &schemas) {
+        match pensieve_kql::kql_to_sql_with_schemas(&raw, &schemas) {
             Ok(s) => ("kql", s),
             Err(e) => {
                 return error_response(
@@ -1209,7 +1209,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
             };
         // CREATE / MERGE → append rows via the ingest path (write). Detected
         // before lowering to read SQL; MATCH/RETURN queries fall through.
-        match kyma_kql::parse_cypher_write(&raw, &binding.id_col) {
+        match pensieve_kql::parse_cypher_write(&raw, &binding.id_col) {
             Ok(Some(write)) => {
                 if principal.map(|p| p.role < crate::auth::Role::Write).unwrap_or(false) {
                     return error_response(
@@ -1233,8 +1233,8 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         }
         // Both `cypher_to_kql` and `kql_to_sql_with_schemas` return
         // `Result<_, ParseError>`, so the two stages chain via `and_then`.
-        match kyma_kql::cypher_to_kql(&raw, &binding)
-            .and_then(|kql| kyma_kql::kql_to_sql_with_schemas(&kql, &schemas))
+        match pensieve_kql::cypher_to_kql(&raw, &binding)
+            .and_then(|kql| pensieve_kql::kql_to_sql_with_schemas(&kql, &schemas))
         {
             Ok(s) => ("cypher", s),
             Err(e) => {
@@ -1254,7 +1254,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         budget_memory = budget.max_memory_bytes,
         budget_wall_ms = budget.max_wall_clock.as_millis() as u64,
         "query received");
-    ::metrics::counter!("kyma_query_frontend_total", "lang" => language.to_string()).increment(1);
+    ::metrics::counter!("pensieve_query_frontend_total", "lang" => language.to_string()).increment(1);
 
     // Build a SessionContext whose memory pool is bounded by the budget.
     let runtime = match RuntimeEnvBuilder::new()
@@ -1275,22 +1275,22 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
     // query planner on the context; plans without them are untouched by the
     // extra rule, so the federated context is only built when needed.
     let has_federated = match &sources {
-        Sources::Single(tables) => kyma_federation::any_federated(tables),
+        Sources::Single(tables) => pensieve_federation::any_federated(tables),
         Sources::Multi(db_tables) => db_tables
             .iter()
             .any(|dt| dt.table.config.federated.is_some()),
     };
     let ctx = if has_federated {
-        kyma_federation::federated_session_context(SessionConfig::new(), runtime)
+        pensieve_federation::federated_session_context(SessionConfig::new(), runtime)
     } else {
         SessionContext::new_with_config_rt(SessionConfig::new(), runtime)
     };
-    kyma_exec::register_vector_udfs(&ctx);
+    pensieve_exec::register_vector_udfs(&ctx);
     // Child span of the request span: table registration + SQL planning.
     // Awaits are individually instrumented — entering a span guard across an
     // await would corrupt the subscriber's span stack.
     let plan_span = tracing::info_span!(
-        target: "kyma_telemetry",
+        target: "pensieve_telemetry",
         "query.plan",
         query.language = language,
         query.federated = has_federated,
@@ -1298,7 +1298,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
     match sources {
         Sources::Single(tables) => {
             // Federated tables register live remote providers; local tables
-            // register KymaTables. Build the federated providers first in one
+            // register PensieveTables. Build the federated providers first in one
             // batch so same-source tables share a provider (join pushdown).
             let (federated, local): (Vec<_>, Vec<_>) = tables
                 .into_iter()
@@ -1340,21 +1340,21 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
             }
             for t in local {
                 let table_name = t.name.clone();
-                let kyma_tbl: Arc<KymaTable> = match state.node_id {
-                    Some(nid) => Arc::new(KymaTable::with_node_id(
+                let pensieve_tbl: Arc<PensieveTable> = match state.node_id {
+                    Some(nid) => Arc::new(PensieveTable::with_node_id(
                         t,
                         state.catalog.clone(),
                         state.format.clone(),
                         nid,
                         database.clone(),
                     )),
-                    None => Arc::new(KymaTable::new(
+                    None => Arc::new(PensieveTable::new(
                         t,
                         state.catalog.clone(),
                         state.format.clone(),
                     )),
                 };
-                if let Err(e) = ctx.register_table(&table_name, kyma_tbl) {
+                if let Err(e) = ctx.register_table(&table_name, pensieve_tbl) {
                     error!(request_id = %request_id, table = %table_name, error = %e, "failed to register table");
                     return error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -1410,7 +1410,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
     };
     drop(plan_span);
     let collect_span = tracing::info_span!(
-        target: "kyma_telemetry",
+        target: "pensieve_telemetry",
         "query.collect",
         query.rows = tracing::field::Empty,
     );
@@ -1424,7 +1424,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
             // ResourcesExhausted from DataFusion signals memory-pool exhaustion.
             let msg = e.to_string();
             if msg.contains("ResourcesExhausted") || msg.contains("Resources exhausted") {
-                ::metrics::counter!("kyma_query_budget_exceeded_total", "kind" => "memory")
+                ::metrics::counter!("pensieve_query_budget_exceeded_total", "kind" => "memory")
                     .increment(1);
                 return budget_exceeded_response(
                     "memory_exceeded",
@@ -1442,7 +1442,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
             );
         }
         Err(_elapsed) => {
-            ::metrics::counter!("kyma_query_budget_exceeded_total", "kind" => "wall_clock")
+            ::metrics::counter!("pensieve_query_budget_exceeded_total", "kind" => "wall_clock")
                 .increment(1);
             return budget_exceeded_response(
                 "wall_clock_exceeded",
@@ -1461,12 +1461,12 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
     drop(collect_span);
     info!(request_id = %request_id, database = %db_label, rows = total_rows, "query completed");
 
-    ::metrics::counter!("kyma_query_requests_total",
+    ::metrics::counter!("pensieve_query_requests_total",
         "database" => db_label.clone(), "result" => "ok")
     .increment(1);
-    ::metrics::histogram!("kyma_query_duration_seconds", "database" => db_label.clone())
+    ::metrics::histogram!("pensieve_query_duration_seconds", "database" => db_label.clone())
         .record(start.elapsed().as_secs_f64());
-    ::metrics::histogram!("kyma_query_rows_returned", "database" => db_label.clone())
+    ::metrics::histogram!("pensieve_query_rows_returned", "database" => db_label.clone())
         .record(total_rows as f64);
 
     // 3. Serialize each batch into NDJSON and stream.
@@ -1510,7 +1510,7 @@ async fn query_handler(State(state): State<QueryState>, req: Request) -> Respons
         HeaderValue::from_static("application/x-ndjson; charset=utf-8"),
     );
     hdrs.insert(
-        "x-kyma-rows",
+        "x-pensieve-rows",
         HeaderValue::from_str(&total_rows.to_string()).unwrap(),
     );
     if let Ok(rid) = HeaderValue::from_str(&request_id) {

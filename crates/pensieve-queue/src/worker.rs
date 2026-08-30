@@ -6,8 +6,8 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use kyma_core::catalog::BackgroundTask;
-use kyma_core::types::NodeId;
+use pensieve_core::catalog::BackgroundTask;
+use pensieve_core::types::NodeId;
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -26,7 +26,7 @@ use crate::{BatchHandler, Job, Queue, QueueConfig, Shared, Watermarks};
 /// best-effort.
 pub fn spawn(
     cfg: QueueConfig,
-    durable: Option<Arc<dyn kyma_core::catalog::Catalog>>,
+    durable: Option<Arc<dyn pensieve_core::catalog::Catalog>>,
     handler: Arc<dyn BatchHandler>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> (Queue, JoinHandle<()>) {
@@ -162,7 +162,7 @@ async fn process_batch(shared: &Arc<Shared>, handler: &Arc<dyn BatchHandler>, ba
                     "batch failed; retrying"
                 );
                 ::metrics::counter!(
-                    "kyma_queue_batch_retries_total",
+                    "pensieve_queue_batch_retries_total",
                     "queue" => shared.cfg.name.clone()
                 )
                 .increment(1);
@@ -188,7 +188,7 @@ async fn process_batch(shared: &Arc<Shared>, handler: &Arc<dyn BatchHandler>, ba
     }
     if !ok {
         ::metrics::counter!(
-            "kyma_queue_batches_failed_total",
+            "pensieve_queue_batches_failed_total",
             "queue" => shared.cfg.name.clone()
         )
         .increment(1);
@@ -206,17 +206,17 @@ async fn process_batch(shared: &Arc<Shared>, handler: &Arc<dyn BatchHandler>, ba
     shared.notify.notify_waiters();
 
     ::metrics::counter!(
-        "kyma_queue_batches_total",
+        "pensieve_queue_batches_total",
         "queue" => shared.cfg.name.clone()
     )
     .increment(1);
     ::metrics::histogram!(
-        "kyma_queue_batch_jobs",
+        "pensieve_queue_batch_jobs",
         "queue" => shared.cfg.name.clone()
     )
     .record(batch.len() as f64);
     ::metrics::histogram!(
-        "kyma_queue_batch_duration_seconds",
+        "pensieve_queue_batch_duration_seconds",
         "queue" => shared.cfg.name.clone()
     )
     .record(started.elapsed().as_secs_f64());
@@ -248,7 +248,7 @@ async fn claim_from_store(shared: &Arc<Shared>, handler: &Arc<dyn BatchHandler>,
         }
         debug!(queue = %shared.cfg.name, jobs = batch.len(), "replaying durable jobs from store");
         ::metrics::counter!(
-            "kyma_queue_jobs_replayed_total",
+            "pensieve_queue_jobs_replayed_total",
             "queue" => shared.cfg.name.clone()
         )
         .increment(batch.len() as u64);

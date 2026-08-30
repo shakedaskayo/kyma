@@ -7,7 +7,7 @@ function base(endpoint: string) {
   return endpoint.replace(/\/$/, "");
 }
 
-/** Mirror of `kyma_core::retention::RetentionSettings`. Day-counts delete data
+/** Mirror of `pensieve_core::retention::RetentionSettings`. Day-counts delete data
  *  older than N days; `null`/absent = retain forever. */
 export interface RetentionSettings {
   global_default_days: number | null;

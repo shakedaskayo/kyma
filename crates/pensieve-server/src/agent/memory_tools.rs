@@ -1,4 +1,4 @@
-//! Agentic Memory tools wired into the agent. These let the Ask Kyma agent
+//! Agentic Memory tools wired into the agent. These let the Ask Pensieve agent
 //! (and the future ingestion/dream agent) persist and recall durable memories.
 //! Memory lives in the columnar `memory` graph; recall reuses the platform
 //! `cosine_distance` UDF via [`super::tools::execute_sql`].
@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use adk_rust::tool::FunctionTool;
 use adk_rust::{Tool, ToolContext};
-use kyma_memory::types::{MemoryStatus, MemoryType, RecallFilter};
-use kyma_memory::{CreateMemory, MemoryWriter, DEFAULT_DATABASE, DEFAULT_REALM, NODE_TABLE};
+use pensieve_memory::types::{MemoryStatus, MemoryType, RecallFilter};
+use pensieve_memory::{CreateMemory, MemoryWriter, DEFAULT_DATABASE, DEFAULT_REALM, NODE_TABLE};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -17,7 +17,7 @@ use super::memory_gate::{self, AddSpec, OpPayload};
 use super::memory_policy::MemoryOp;
 use super::memory_retrieve::{retrieve, RetrieveRequest, RetrieveResult};
 use super::tools::{execute_sql, SharedToolCtx};
-use kyma_ingest_core::ConsumerAction;
+use pensieve_ingest_core::ConsumerAction;
 
 fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339()
@@ -73,7 +73,7 @@ fn row_realm(row: &Value) -> String {
 pub(crate) async fn build_writer(
     shared: &SharedToolCtx,
 ) -> std::result::Result<MemoryWriter, Value> {
-    let embed = kyma_memory::shared_embedding()
+    let embed = pensieve_memory::shared_embedding()
         .await
         .map_err(|e| json!({"error": format!("embedding backend: {e}")}))?;
     Ok(MemoryWriter::new(
@@ -91,8 +91,8 @@ async fn find_by_topic_key(shared: &SharedToolCtx, realm: &str, topic_key: &str)
            row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS rn FROM {nt}) \
          SELECT id FROM latest WHERE rn = 1 AND topic_key = {tk} AND realm = {r} LIMIT 1",
         nt = NODE_TABLE,
-        tk = kyma_memory::sql::sql_str(topic_key),
-        r = kyma_memory::sql::sql_str(realm),
+        tk = pensieve_memory::sql::sql_str(topic_key),
+        r = pensieve_memory::sql::sql_str(realm),
     );
     let res = execute_sql(shared, DEFAULT_DATABASE, &q, 1).await;
     res.get("rows")
@@ -584,7 +584,7 @@ pub fn tool_ingest_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                                 let rel = l
                                     .relationship_type
                                     .unwrap_or_else(|| "RELATES_TO".to_string());
-                                let edge = kyma_memory::rows::edge_row(
+                                let edge = pensieve_memory::rows::edge_row(
                                     &src,
                                     &dst,
                                     &rel,
@@ -932,7 +932,7 @@ pub fn tool_list_memories(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     };
                     // Read-your-own-writes for the listed realm(s).
                     shared.memory_barrier(&filter.realms).await;
-                    let sql = kyma_memory::sql::list_sql(NODE_TABLE, &filter, limit, offset);
+                    let sql = pensieve_memory::sql::list_sql(NODE_TABLE, &filter, limit, offset);
                     Ok(execute_sql(&shared, DEFAULT_DATABASE, &sql, limit).await)
                 }
             },
@@ -1016,7 +1016,7 @@ pub fn tool_link_memory_to_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     // Async-by-default: queue the edge. FIFO + node-before-edge
                     // makes linking a just-queued memory safe.
                     if let Some(q) = shared.memory.as_ref() {
-                        let edge = kyma_memory::rows::edge_row(
+                        let edge = pensieve_memory::rows::edge_row(
                             &src,
                             &parsed.target_node_id,
                             &rel,
@@ -1083,7 +1083,7 @@ pub(crate) async fn fetch_latest_node(
     // writes that precede it (the realm is unknown until the row is read, so
     // barrier across all realms — these are rare curation paths).
     shared.memory_barrier(&[]).await;
-    let sql = kyma_memory::sql::latest_node_sql(NODE_TABLE, node_id);
+    let sql = pensieve_memory::sql::latest_node_sql(NODE_TABLE, node_id);
     let res = execute_sql(shared, DEFAULT_DATABASE, &sql, 1).await;
     if let Some(err) = res.get("error") {
         return Err(json!({"error": format!("fetch: {err}")}));
@@ -1340,7 +1340,7 @@ pub fn tool_merge_memories(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                             }
                         }
                         // Record the merge edge.
-                        let edge = kyma_memory::rows::edge_row(
+                        let edge = pensieve_memory::rows::edge_row(
                             &from_id,
                             &into,
                             "MERGED_INTO",
@@ -1577,7 +1577,7 @@ pub fn tool_memory_judge(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                             if let Err(e) = put_node(row).await {
                                 return Ok(json!({"error": format!("invalidate: {e}")}));
                             }
-                            let edge = kyma_memory::rows::edge_row(
+                            let edge = pensieve_memory::rows::edge_row(
                                 &src, &dst, "INVALIDATES", &realm, None, None, &now,
                             );
                             let _ = put_edge(edge, realm.clone()).await;
@@ -1589,7 +1589,7 @@ pub fn tool_memory_judge(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                                 row["updated_at"] = json!(now);
                                 let _ = put_node(row).await;
                             }
-                            let edge = kyma_memory::rows::edge_row(
+                            let edge = pensieve_memory::rows::edge_row(
                                 &dst, &src, "MERGED_INTO", &realm, None, None, &now,
                             );
                             let _ = put_edge(edge, realm.clone()).await;
@@ -1597,7 +1597,7 @@ pub fn tool_memory_judge(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         }
                         _ => {
                             let props = json!({ "verdict": verdict, "reason": parsed.reason });
-                            let edge = kyma_memory::rows::edge_row(
+                            let edge = pensieve_memory::rows::edge_row(
                                 &src, &dst, "RELATES_TO", &realm, None, Some(&props), &now,
                             );
                             if let Err(e) = put_edge(edge, realm.clone()).await {

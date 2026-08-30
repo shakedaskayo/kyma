@@ -1,5 +1,5 @@
 /**
- * DiscoverPage — the internal orchestrator for KymaDiscover.
+ * DiscoverPage — the internal orchestrator for PensieveDiscover.
  *
  * Stripped from the web app version:
  * - useWorkspace / tab state → props + per-instance DiscoverStore
@@ -53,7 +53,7 @@ export type DiscoverPageProps = {
   onExportKql?: (kql: string) => void;
   /**
    * Called when the user opens a row detail drawer. Receives the row data and
-   * the source key. Added to support the KymaDiscover onRowOpen callback.
+   * the source key. Added to support the PensieveDiscover onRowOpen callback.
    */
   onRowOpen?: (row: Record<string, unknown>, source: string) => void;
   /**

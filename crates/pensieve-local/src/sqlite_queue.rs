@@ -8,9 +8,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
-use kyma_core::fabric::{ClaimedJob, EnqueueJob, JobEnqueuer};
-use kyma_core::tenant::TenantId;
-use kyma_jobs::JobQueue;
+use pensieve_core::fabric::{ClaimedJob, EnqueueJob, JobEnqueuer};
+use pensieve_core::tenant::TenantId;
+use pensieve_jobs::JobQueue;
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -256,7 +256,7 @@ impl JobQueue for SqliteQueue {
 }
 
 /// SQLite enqueue side of the worker fabric — the local counterpart to
-/// `PgFabricStore::enqueue`. Lets the [`kyma_compaction::IndexScheduler`] insert
+/// `PgFabricStore::enqueue`. Lets the [`pensieve_compaction::IndexScheduler`] insert
 /// `index_build` / `embed_backfill` jobs into the same `jobs` table that
 /// [`SqliteQueue`] claims from, so local (embedded) mode builds ANN + FTS
 /// sidecars through the exact pipeline the server uses.
@@ -283,8 +283,8 @@ impl JobEnqueuer for SqliteEnqueuer {
         &self,
         tenant: TenantId,
         job: &EnqueueJob,
-    ) -> kyma_core::errors::Result<Option<Uuid>> {
-        use kyma_core::errors::Error;
+    ) -> pensieve_core::errors::Result<Option<Uuid>> {
+        use pensieve_core::errors::Error;
         let id = Uuid::new_v4();
         let id_str = id.to_string();
         let tenant_str = tenant.as_uuid().to_string();

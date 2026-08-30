@@ -12,7 +12,7 @@
 //!    and FIFO submit order preserves create-before-mutate and topic-key
 //!    latest-wins semantics.
 //!
-//! Consistency contract (see `kyma-queue` for the mechanics):
+//! Consistency contract (see `pensieve-queue` for the mechanics):
 //! - Partition = **realm**. Reads call [`MemoryQueue::barrier`] with their
 //!   target realms and only wait for writes in those realms (bounded wait,
 //!   no-op when idle) — read-your-own-writes per realm.
@@ -26,10 +26,10 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
-use kyma_core::catalog::Catalog;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_embed::EmbeddingBackend;
-use kyma_queue::{BatchHandler, Job, Queue, QueueConfig};
+use pensieve_core::catalog::Catalog;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_embed::EmbeddingBackend;
+use pensieve_queue::{BatchHandler, Job, Queue, QueueConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::error;
@@ -76,15 +76,15 @@ pub struct MemoryIngestConfig {
 }
 
 impl MemoryIngestConfig {
-    /// Read `KYMA_MEMORY_QUEUE_*` tuning plus `KYMA_MEMORY_QUEUE_DURABLE`
+    /// Read `PENSIEVE_MEMORY_QUEUE_*` tuning plus `PENSIEVE_MEMORY_QUEUE_DURABLE`
     /// (falling back to `durable_default`: `true` for the server binary,
     /// `false` for local/stdio).
     pub fn from_env(durable_default: bool) -> Self {
-        let durable = std::env::var("KYMA_MEMORY_QUEUE_DURABLE")
+        let durable = std::env::var("PENSIEVE_MEMORY_QUEUE_DURABLE")
             .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
             .unwrap_or(durable_default);
         Self {
-            queue: QueueConfig::from_env("memory_ops", "KYMA_MEMORY_QUEUE"),
+            queue: QueueConfig::from_env("memory_ops", "PENSIEVE_MEMORY_QUEUE"),
             durable,
         }
     }
@@ -175,13 +175,13 @@ pub fn spawn_memory_queue(
     {
         let embed = embed.clone();
         tokio::spawn(async move {
-            let _ = embed.embed(&["kyma memory warmup".to_string()]).await;
+            let _ = embed.embed(&["pensieve memory warmup".to_string()]).await;
         });
     }
     let writer = MemoryWriter::new(catalog.clone(), format, embed);
     let handler = Arc::new(BatchIngestor { writer });
     let durable = cfg.durable.then_some(catalog);
-    let (q, handle) = kyma_queue::spawn(cfg.queue, durable, handler, shutdown);
+    let (q, handle) = pensieve_queue::spawn(cfg.queue, durable, handler, shutdown);
     (MemoryQueue { q }, handle)
 }
 

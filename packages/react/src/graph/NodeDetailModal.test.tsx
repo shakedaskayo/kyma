@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import type { GraphNode } from "@kyma-ai/client";
-import { KymaProvider } from "../provider/KymaProvider";
+import type { GraphNode } from "@pensieve-ai/client";
+import { PensieveProvider } from "../provider/PensieveProvider";
 import { NodeDetailModal } from "./NodeDetailModal";
 
 // jsdom can't run Radix portals/animations — replace the dialog primitive with
-// simple pass-through elements (same approach as KymaDashboard.test.tsx).
+// simple pass-through elements (same approach as PensieveDashboard.test.tsx).
 vi.mock("@radix-ui/react-dialog", () => {
   const Root = ({ open, children }: { open?: boolean; children: React.ReactNode }) =>
     open ? <div data-testid="dialog-root">{children}</div> : null;
@@ -49,9 +49,9 @@ function renderModal(node: GraphNode) {
     ),
   );
   return render(
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
       <NodeDetailModal node={node} open onClose={() => {}} />
-    </KymaProvider>,
+    </PensieveProvider>,
   );
 }
 

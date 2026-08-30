@@ -24,8 +24,8 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use kyma_core::catalog::{Catalog, PrunePredicate, TableRef};
-use kyma_core::errors::Error as KymaError;
+use pensieve_core::catalog::{Catalog, PrunePredicate, TableRef};
+use pensieve_core::errors::Error as PensieveError;
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -77,11 +77,11 @@ pub async fn compact(
         None => {
             let dbs = match &req.database {
                 Some(d) => vec![d.clone()],
-                None => cat.list_databases().await.map_err(KymaError::from)?,
+                None => cat.list_databases().await.map_err(PensieveError::from)?,
             };
             let mut out = Vec::new();
             for d in dbs {
-                for t in cat.list_tables(&d).await.map_err(KymaError::from)? {
+                for t in cat.list_tables(&d).await.map_err(PensieveError::from)? {
                     out.push((d.clone(), t));
                 }
             }
@@ -104,7 +104,7 @@ pub async fn compact(
                 continue; // a single extent has nothing to merge with
             }
             let ids: Vec<String> = chunk.iter().map(|e| e.id.as_uuid().to_string()).collect();
-            // CompactionPayload shape (kyma-compaction); built inline to avoid a dep.
+            // CompactionPayload shape (pensieve-compaction); built inline to avoid a dep.
             let payload = serde_json::json!({ "source_extent_ids": ids });
             cat.submit_task("compaction", Some(tref.id), payload, 0).await?;
             tasks_submitted += 1;
@@ -184,11 +184,11 @@ async fn wait_for_drain(
 
 #[derive(Debug)]
 pub enum ApiError {
-    Catalog(KymaError),
+    Catalog(PensieveError),
 }
 
-impl From<KymaError> for ApiError {
-    fn from(e: KymaError) -> Self {
+impl From<PensieveError> for ApiError {
+    fn from(e: PensieveError) -> Self {
         ApiError::Catalog(e)
     }
 }
@@ -196,9 +196,9 @@ impl From<KymaError> for ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let ApiError::Catalog(e) = self;
-        use kyma_core::errors::CatalogError;
+        use pensieve_core::errors::CatalogError;
         match e {
-            KymaError::Catalog(CatalogError::TableNotFound { database, name }) => (
+            PensieveError::Catalog(CatalogError::TableNotFound { database, name }) => (
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({ "error": format!("table '{database}'.'{name}' not found") })),
             )

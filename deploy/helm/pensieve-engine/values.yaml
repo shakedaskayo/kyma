@@ -1,11 +1,11 @@
-# kyma-engine default values. `kyma deploy init` renders a values.yaml from the
+# pensieve-engine default values. `pensieve deploy init` renders a values.yaml from the
 # wizard answers; these defaults make `helm lint`/`helm template` self-contained.
 
 # The engine is single-writer per catalog — keep one replica.
 replicaCount: 1
 
 image:
-  repository: ghcr.io/shakedaskayo/kyma-engine
+  repository: ghcr.io/shakedaskayo/pensieve-engine
   tag: latest
   pullPolicy: IfNotPresent
 
@@ -25,29 +25,29 @@ ingress:
 
 serviceAccount:
   create: true
-  # Must match the IRSA trust on EKS (system:serviceaccount:<ns>:kyma-engine).
-  name: kyma-engine
+  # Must match the IRSA trust on EKS (system:serviceaccount:<ns>:pensieve-engine).
+  name: pensieve-engine
   # On EKS, set eks.amazonaws.com/role-arn here for keyless S3.
   annotations: {}
 
 resources: {}
 
-# Non-secret engine environment (KYMA_* → value). Rendered as container env.
+# Non-secret engine environment (PENSIEVE_* → value). Rendered as container env.
 env:
-  KYMA_HTTP_ADDR: "0.0.0.0:8080"
-  KYMA_GRPC_ADDR: "off"
-  KYMA_OTLP_ADDR: "off"
+  PENSIEVE_HTTP_ADDR: "0.0.0.0:8080"
+  PENSIEVE_GRPC_ADDR: "off"
+  PENSIEVE_OTLP_ADDR: "off"
 
-# Secret engine environment (KYMA_CATALOG_URL, KYMA_AUTH_TOKENS, S3 keys, …).
+# Secret engine environment (PENSIEVE_CATALOG_URL, PENSIEVE_AUTH_TOKENS, S3 keys, …).
 # Rendered into a Kubernetes Secret and injected via envFrom.
 secretEnv: {}
 
 # Role split (S2.4/S2.6). Disabled by default → the single all-in-one Deployment
-# above. When enabled, three role Deployments run instead (each sets KYMA_ROLE,
+# above. When enabled, three role Deployments run instead (each sets PENSIEVE_ROLE,
 # which the engine honors): stateless `edge` nodes (query+ingest, RollingUpdate,
 # optional HPA) behind the Service, a single `committer` (Recreate + PDB), and a
 # `worker` for background jobs (compaction/index/graph/retention). For the split
-# to actually offload commits, set KYMA_INGEST_MODE=staged in `env`.
+# to actually offload commits, set PENSIEVE_INGEST_MODE=staged in `env`.
 roles:
   enabled: false
   edge:

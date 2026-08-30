@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { KymaAgentChat } from "./KymaAgentChat";
+import { PensieveAgentChat } from "./PensieveAgentChat";
 
-const meta: Meta<typeof KymaAgentChat> = {
-  title: "Components/KymaAgentChat",
-  component: KymaAgentChat,
+const meta: Meta<typeof PensieveAgentChat> = {
+  title: "Components/PensieveAgentChat",
+  component: PensieveAgentChat,
   argTypes: {
     placeholder: {
       control: "text",
@@ -20,7 +20,7 @@ const meta: Meta<typeof KymaAgentChat> = {
 };
 
 export default meta;
-type Story = StoryObj<typeof KymaAgentChat>;
+type Story = StoryObj<typeof PensieveAgentChat>;
 
 /**
  * Default chat: type a question and submit to see the canned fixture response.

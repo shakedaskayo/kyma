@@ -7,7 +7,7 @@ Stripe billing `meter`.
 
 | Input | Purpose |
 |---|---|
-| `name` | product name (e.g. "Kyma Cloud — Pro") |
+| `name` | product name (e.g. "Pensieve Cloud — Pro") |
 | `unit_label` | invoice unit label |
 | `currency` | ISO currency (default `usd`) |
 | `metered_prices` | list of `{ nickname, unit_amount_decimal, meter }` |

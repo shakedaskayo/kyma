@@ -49,7 +49,7 @@ impl RealmScope {
         self.0.is_some()
     }
     /// Whether this scope permits touching `realm`. Unrestricted ⇒ always
-    /// true. An empty allow-list (`Some(vec![])`, from an empty `kyma_realms`
+    /// true. An empty allow-list (`Some(vec![])`, from an empty `pensieve_realms`
     /// claim) permits nothing — consistently fail-closed.
     pub fn allows(&self, realm: &str) -> bool {
         match &self.0 {
@@ -107,9 +107,9 @@ pub fn intersect_realms(scope: &RealmScope, requested: &[String]) -> EffectiveRe
 /// reach these through the generic query/search surfaces, which see every
 /// realm regardless of any realm predicate.
 pub fn is_memory_internal_db(db: &str) -> bool {
-    db == kyma_memory::DEFAULT_DATABASE
-        || db == kyma_memory::file_candidates::FILE_CANDIDATES_DB
-        || db == kyma_memory::activities::ACTIVITIES_DB
+    db == pensieve_memory::DEFAULT_DATABASE
+        || db == pensieve_memory::file_candidates::FILE_CANDIDATES_DB
+        || db == pensieve_memory::activities::ACTIVITIES_DB
 }
 
 /// HTTP-flavored realm membership check, mirroring [`check_database_scope`].
@@ -134,7 +134,7 @@ mod tests {
 
     fn principal_unrestricted() -> Principal {
         Principal {
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            tenant: pensieve_core::tenant::DEFAULT_TENANT,
             role: Role::Read,
             subject: None,
             allowed_databases: None,
@@ -144,7 +144,7 @@ mod tests {
 
     fn principal_scoped(dbs: &[&str]) -> Principal {
         Principal {
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            tenant: pensieve_core::tenant::DEFAULT_TENANT,
             role: Role::Read,
             subject: None,
             allowed_databases: Some(dbs.iter().map(|s| s.to_string()).collect()),
@@ -154,7 +154,7 @@ mod tests {
 
     fn principal_realm_scoped(realms: &[&str]) -> Principal {
         Principal {
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            tenant: pensieve_core::tenant::DEFAULT_TENANT,
             role: Role::Read,
             subject: None,
             allowed_databases: None,

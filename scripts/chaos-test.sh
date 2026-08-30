@@ -13,23 +13,23 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-export KYMA_CATALOG_URL="postgres://kyma:kyma_dev@localhost:5433/kyma"
-export KYMA_S3_ENDPOINT="http://localhost:9000"
-export KYMA_S3_BUCKET="kyma"
-export KYMA_S3_ACCESS_KEY_ID="kyma_admin"
-export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
-export KYMA_S3_PATH_STYLE="true"
-export KYMA_S3_ALLOW_HTTP="true"
-export KYMA_HTTP_ADDR="127.0.0.1:8080"
-export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
-export KYMA_COMPACTION_POLL_SECS="3600"
-export KYMA_RETENTION_POLL_SECS="3600"
-export KYMA_PHYSICAL_GC_POLL_SECS="3600"
+export PENSIEVE_CATALOG_URL="postgres://pensieve:pensieve_dev@localhost:5433/pensieve"
+export PENSIEVE_S3_ENDPOINT="http://localhost:9000"
+export PENSIEVE_S3_BUCKET="pensieve"
+export PENSIEVE_S3_ACCESS_KEY_ID="pensieve_admin"
+export PENSIEVE_S3_SECRET_ACCESS_KEY="pensieve_admin_dev"
+export PENSIEVE_S3_PATH_STYLE="true"
+export PENSIEVE_S3_ALLOW_HTTP="true"
+export PENSIEVE_HTTP_ADDR="127.0.0.1:8080"
+export PENSIEVE_SELF_TRACE="off"   # deterministic storage-layout assertions
+export PENSIEVE_COMPACTION_POLL_SECS="3600"
+export PENSIEVE_RETENTION_POLL_SECS="3600"
+export PENSIEVE_PHYSICAL_GC_POLL_SECS="3600"
 export RUST_LOG="${RUST_LOG:-warn}"
 
 HTTP_BASE="http://127.0.0.1:8080"
-LOG_A="/tmp/kyma-chaos-1.log"
-LOG_B="/tmp/kyma-chaos-2.log"
+LOG_A="/tmp/pensieve-chaos-1.log"
+LOG_B="/tmp/pensieve-chaos-2.log"
 
 if [[ -t 1 ]]; then
     RED="\033[31m"; GRN="\033[32m"; YLW="\033[33m"; BLU="\033[34m"; DIM="\033[2m"; NC="\033[0m"
@@ -46,9 +46,9 @@ SERVER_PID=""
 cleanup() { [[ -n "${SERVER_PID:-}" ]] && kill -9 "$SERVER_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
-start_kyma() {
+start_pensieve() {
     local log="$1"
-    ./target/debug/kyma >"$log" 2>&1 &
+    ./target/debug/pensieve >"$log" 2>&1 &
     SERVER_PID=$!
     for i in 1 2 3 4 5 6 7 8 9 10; do
         if curl -sf "$HTTP_BASE/health" >/dev/null 2>&1; then return 0; fi
@@ -57,19 +57,19 @@ start_kyma() {
     return 1
 }
 
-if ! docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1; then
+if ! docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null 2>&1; then
     printf "${RED}docker-compose stack not up.${NC}\n"; exit 2
 fi
 
 section "Reset state"
-docker exec kyma-postgres psql -U kyma -d kyma -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
-docker exec kyma-minio mc rm --recursive --force local/kyma >/dev/null 2>&1 || true
-docker exec kyma-minio mc mb --ignore-existing local/kyma >/dev/null
+docker exec pensieve-postgres psql -U pensieve -d pensieve -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
+docker exec pensieve-minio mc rm --recursive --force local/pensieve >/dev/null 2>&1 || true
+docker exec pensieve-minio mc mb --ignore-existing local/pensieve >/dev/null
 
 section "Start server A, create schema, ingest 50 rows"
-start_kyma "$LOG_A" || { f "server A never healthy"; exit 1; }
-./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
-./target/debug/kyma-cli create-table --db default --name chaos \
+start_pensieve "$LOG_A" || { f "server A never healthy"; exit 1; }
+./target/debug/pensieve-cli create-database default --if-not-exists >/dev/null
+./target/debug/pensieve-cli create-table --db default --name chaos \
     --schema 'timestamp:timestamp,n:int' >/dev/null
 
 # Generate 50 rows, ingest 5 small batches of 10.
@@ -100,7 +100,7 @@ for i in 1 2 3 4 5; do
 done
 
 section "Start server B against same catalog + object store"
-start_kyma "$LOG_B" || { f "server B never healthy"; exit 1; }
+start_pensieve "$LOG_B" || { f "server B never healthy"; exit 1; }
 
 section "Verify all 50 rows survive the crash"
 after=$(curl -s -X POST "$HTTP_BASE/v1/query" -H 'X-Database: default' -H 'Content-Type: application/sql' \
@@ -132,7 +132,7 @@ for i in 1 2 3 4 5; do
     if ! nc -z 127.0.0.1 8080 2>/dev/null; then break; fi
     sleep 1
 done
-start_kyma "$LOG_B" || { f "server B (restart) never healthy"; exit 1; }
+start_pensieve "$LOG_B" || { f "server B (restart) never healthy"; exit 1; }
 
 section "Verify post-second-restart data integrity"
 final=$(curl -s -X POST "$HTTP_BASE/v1/query" -H 'X-Database: default' -H 'Content-Type: application/sql' \
@@ -140,7 +140,7 @@ final=$(curl -s -X POST "$HTTP_BASE/v1/query" -H 'X-Database: default' -H 'Conte
 [[ "$final" == "50" ]] && ok "50 rows intact after 2 hard kills" || f "expected 50, got $final"
 
 section "Catalog snapshot chain still walkable"
-snapshots=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+snapshots=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
     "SELECT COUNT(*) FROM snapshots WHERE table_id = (SELECT id FROM tables WHERE name='chaos')")
 # 1 bootstrap + 5 ingest snapshots = 6
 [[ "$snapshots" == "6" ]] && ok "snapshot chain intact (6 rows)" || f "expected 6 snapshots, got $snapshots"

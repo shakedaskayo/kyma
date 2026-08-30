@@ -45,18 +45,18 @@ default**. Pass `--no-codebase` for metadata-only ingestion.
 ```bash
 # One repo. Token auto-discovered from $GITHUB_TOKEN, $GH_TOKEN,
 # or `gh auth token` (in that order).
-kyma datasource add github shakedaskayo/kyma --start
+pensieve datasource add github shakedaskayo/pensieve --start
 
 # Multiple repos under one data source.
-kyma datasource add github \
+pensieve datasource add github \
   "anthropics/claude-code,anthropics/anthropic-sdk-python" \
   --start
 
 # Metadata only (no source parsing) — faster, less API quota.
-kyma datasource add github shakedaskayo/kyma --no-codebase --start
+pensieve datasource add github shakedaskayo/pensieve --no-codebase --start
 
 # Restrict code parsing to specific languages + tune caps.
-kyma datasource add github my-org/big-repo \
+pensieve datasource add github my-org/big-repo \
   --languages rust,go \
   --max-files 1000 \
   --max-bytes 524288 \
@@ -65,14 +65,14 @@ kyma datasource add github my-org/big-repo \
   --start
 
 # Explicit token, custom name and database.
-kyma datasource add github octocat/Hello-World \
+pensieve datasource add github octocat/Hello-World \
   --token ghp_xxx \
   --name oss-demo \
   --db demo \
   --start
 
 # Reuse a credential you've already stored.
-kyma datasource add github my-org/my-repo \
+pensieve datasource add github my-org/my-repo \
   --credential-id 6c6c0a52-… \
   --start
 ```
@@ -109,12 +109,12 @@ All optional; defaults match server-side defaults.
 5. `gh auth token` shell-out (if [GitHub CLI](https://cli.github.com)
    is installed and authenticated). Best-effort, silent fallback.
 
-If nothing resolves, `kyma datasource add github` errors out with a
+If nothing resolves, `pensieve datasource add github` errors out with a
 clear hint.
 
 ### Same knobs on gitlab / bitbucket
 
-`kyma datasource add gitlab …` and `kyma datasource add bitbucket …`
+`pensieve datasource add gitlab …` and `pensieve datasource add bitbucket …`
 accept the same `--no-codebase`, `--languages`, `--max-bytes`,
 `--max-files`, `--exclude` flags. The server-side codebase parsing
 for those providers is on the roadmap — the CLI surface is reserved

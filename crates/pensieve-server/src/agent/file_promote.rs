@@ -17,16 +17,16 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use kyma_core::tenant::TenantId;
-use kyma_memory::file_candidates::FILE_CANDIDATES_DB;
-use kyma_memory::MemoryWriter;
+use pensieve_core::tenant::TenantId;
+use pensieve_memory::file_candidates::FILE_CANDIDATES_DB;
+use pensieve_memory::MemoryWriter;
 
 use super::tools::{execute_sql, SharedToolCtx};
 
 const GITHUB_NODE_TABLE: &str = "github_nodes";
 
 /// The live `github` graph node id for a repo file. Mirrors
-/// `kyma_datasources::github::transform::file_id` (`file:{owner}/{repo}:{path}`),
+/// `pensieve_datasources::github::transform::file_id` (`file:{owner}/{repo}:{path}`),
 /// which is how the data source keys File nodes — so a contributed file under a
 /// known repo maps to the exact same node.
 fn github_file_id(repo: &str, path: &str) -> String {
@@ -147,7 +147,7 @@ impl FilePromoter {
     /// Resolve each candidate to a live github File node and write a `SAME_AS`
     /// edge. Returns `(scanned, promoted)`.
     async fn promote(&self, candidates: &[Value], dbs: &[String]) -> anyhow::Result<(i64, i64)> {
-        let embed = kyma_memory::shared_embedding()
+        let embed = pensieve_memory::shared_embedding()
             .await
             .map_err(|e| anyhow::anyhow!("embedding backend: {e}"))?;
         let writer = MemoryWriter::new(self.shared.catalog.clone(), self.shared.format.clone(), embed)

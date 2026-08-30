@@ -4,13 +4,13 @@
 
 use std::sync::Arc;
 
-use kyma_core::catalog::Catalog;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_embed::{EmbedError, EmbeddingBackend};
-use kyma_format_tlm::TelemetryFormat;
-use kyma_memory::file_candidates::{contribute, file_node_id, ContributeFile, FILE_CANDIDATES_DB};
-use kyma_memory::MemoryWriter;
-use kyma_storage::{build_object_store, StorageConfig};
+use pensieve_core::catalog::Catalog;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_embed::{EmbedError, EmbeddingBackend};
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_memory::file_candidates::{contribute, file_node_id, ContributeFile, FILE_CANDIDATES_DB};
+use pensieve_memory::MemoryWriter;
+use pensieve_storage::{build_object_store, StorageConfig};
 
 #[derive(Debug)]
 struct MockEmbed;
@@ -36,11 +36,11 @@ impl EmbeddingBackend for MockEmbed {
 
 async fn writer() -> MemoryWriter {
     let catalog: Arc<dyn Catalog> = Arc::new(
-        kyma_catalog_sqlite::SqliteCatalog::connect_in_memory()
+        pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory()
             .await
             .expect("in-memory catalog"),
     );
-    let tmp = std::env::temp_dir().join(format!("kyma-fc-{}", uuid::Uuid::new_v4()));
+    let tmp = std::env::temp_dir().join(format!("pensieve-fc-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&tmp).unwrap();
     let store = build_object_store(&StorageConfig::Local {
         root: tmp.to_string_lossy().to_string(),

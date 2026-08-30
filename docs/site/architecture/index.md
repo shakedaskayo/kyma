@@ -1,11 +1,11 @@
 ---
 title: Architecture
-description: How kyma stays correct, fast, and distributable. The five invariants, the three-level pruning cascade, the four-slice roadmap, and the on-disk format powering all of it.
+description: How pensieve stays correct, fast, and distributable. The five invariants, the three-level pruning cascade, the four-slice roadmap, and the on-disk format powering all of it.
 ---
 
 # Architecture
 
-Two things make kyma's architecture interesting. The first is the
+Two things make pensieve's architecture interesting. The first is the
 [five invariants](/concepts/the-five-invariants) — five non-negotiable
 properties that turn distribution from a rewrite into a deployment
 change. The second is the
@@ -17,13 +17,13 @@ This section is the deep view of both. It pairs the synced
 architecture document — the canonical source of truth, generated from
 `docs/architecture.md` — with the slice-by-slice roadmap that says
 exactly what's shipped, what's next, and what's still being decided.
-The on-disk format gets its own page: `kyma-format-tlm` is one
+The on-disk format gets its own page: `pensieve-format-tlm` is one
 implementation of the `SegmentFormat` trait, and the deep-dive covers
 its extent layout, footer structure, block-level metadata, and the
 indices that make the cascade work.
 
-If you're evaluating kyma, start with the architecture overview and
-the slice roadmap. If you're building on kyma — implementing a new
+If you're evaluating pensieve, start with the architecture overview and
+the slice roadmap. If you're building on pensieve — implementing a new
 segment format, writing a data source, or planning a self-hosted
 deployment — the storage format page is where the real specification
 lives. The benchmarks page anchors all of it in measured numbers.
@@ -56,7 +56,7 @@ place — not aspirational.
 
 ### [Storage format](/architecture/storage-format)
 
-`kyma-format-tlm` deep dive. Extent layout, magic bytes and footer
+`pensieve-format-tlm` deep dive. Extent layout, magic bytes and footer
 framing, per-block stats, per-column distinct sets, token index for
 text-search pruning, dynamic-column path bitmaps. The reference for
 implementing a new `SegmentFormat`.

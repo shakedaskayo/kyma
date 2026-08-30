@@ -1,44 +1,44 @@
 [package]
-name = "kyma-bin"
+name = "pensieve-bin"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Main kyma binary. Composes services, registers the node in the catalog, runs background workers."
+description = "Main pensieve binary. Composes services, registers the node in the catalog, runs background workers."
 
 [[bin]]
-name = "kyma"
+name = "pensieve"
 path = "src/main.rs"
 
 [lints]
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
-kyma-catalog.workspace = true
-kyma-jobs.workspace = true
-kyma-index-vector.workspace = true
-kyma-index-fts.workspace = true
+pensieve-core.workspace = true
+pensieve-catalog.workspace = true
+pensieve-jobs.workspace = true
+pensieve-index-vector.workspace = true
+pensieve-index-fts.workspace = true
 hostname = "0.4"
 uuid.workspace = true
-kyma-storage.workspace = true
-kyma-format-tlm.workspace = true
-kyma-format-parquet.workspace = true
-kyma-compaction.workspace = true
-kyma-datasources.workspace = true
-kyma-ingest-core.workspace = true
-kyma-ingest-rest.workspace = true
-kyma-ingest-filedrop.workspace = true
-kyma-ingest-otlp.workspace = true
-kyma-ingest-kafka.workspace = true
-kyma-mcp.workspace = true
-kyma-memory.workspace = true
-kyma-plan.workspace = true
-kyma-kql.workspace = true
-kyma-exec.workspace = true
-kyma-federation.workspace = true
-kyma-brain.workspace = true
-kyma-server.workspace = true
+pensieve-storage.workspace = true
+pensieve-format-tlm.workspace = true
+pensieve-format-parquet.workspace = true
+pensieve-compaction.workspace = true
+pensieve-datasources.workspace = true
+pensieve-ingest-core.workspace = true
+pensieve-ingest-rest.workspace = true
+pensieve-ingest-filedrop.workspace = true
+pensieve-ingest-otlp.workspace = true
+pensieve-ingest-kafka.workspace = true
+pensieve-mcp.workspace = true
+pensieve-memory.workspace = true
+pensieve-plan.workspace = true
+pensieve-kql.workspace = true
+pensieve-exec.workspace = true
+pensieve-federation.workspace = true
+pensieve-brain.workspace = true
+pensieve-server.workspace = true
 futures.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
@@ -60,6 +60,6 @@ chrono.workspace = true
 
 [features]
 default = ["github"]
-web-ui  = ["kyma-server/web-ui"]
-cloud-auth = ["kyma-server/cloud-auth"]
-github = ["kyma-datasources/github"]
+web-ui  = ["pensieve-server/web-ui"]
+cloud-auth = ["pensieve-server/cloud-auth"]
+github = ["pensieve-datasources/github"]

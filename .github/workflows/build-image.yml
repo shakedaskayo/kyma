@@ -1,23 +1,23 @@
 name: build-image
 #
-# Publishes the engine image to ghcr.io/shakedaskayo/kyma-engine.
+# Publishes the engine image to ghcr.io/shakedaskayo/pensieve-engine.
 #
-# We deliberately use `kyma-engine` (not `kyma`) so this push creates a
+# We deliberately use `pensieve-engine` (not `pensieve`) so this push creates a
 # fresh, repo-auto-linked GHCR package on first write. The pre-existing
-# `ghcr.io/shakedaskayo/kyma` package was created user-scoped and isn't
+# `ghcr.io/shakedaskayo/pensieve` package was created user-scoped and isn't
 # repo-linked, so `secrets.GITHUB_TOKEN` can't write to it; rather than
 # require a manual UI click on every fresh repo clone, we ship under a
 # new name that the runner's auto token has `packages: write` for.
 #
-# If you'd rather publish to `ghcr.io/shakedaskayo/kyma`, link the
-# package at github.com/users/shakedaskayo/packages/container/kyma/settings
-# and rename `kyma-engine` back below.
+# If you'd rather publish to `ghcr.io/shakedaskayo/pensieve`, link the
+# package at github.com/users/shakedaskayo/packages/container/pensieve/settings
+# and rename `pensieve-engine` back below.
 #
 # Tagging scheme:
 #   push to main      → :<short_sha> + :edge          (amd64 only, fast feedback)
 #   release tag vX.Y.Z → :vX.Y.Z + :latest            (amd64 + arm64; arm64 runs
 #                        under QEMU and is slow — acceptable on release cadence)
-# `kyma deploy` (deploy/terraform) pins the release tag matching the CLI version.
+# `pensieve deploy` (deploy/terraform) pins the release tag matching the CLI version.
 on:
   push:
     branches: [main]
@@ -60,7 +60,7 @@ jobs:
         run: |
           SHORT_SHA="${GITHUB_SHA::8}"
           OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          REPO="ghcr.io/${OWNER_LC}/kyma-engine"
+          REPO="ghcr.io/${OWNER_LC}/pensieve-engine"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
             TAGS="${REPO}:${VERSION},${REPO}:latest"

@@ -1,14 +1,14 @@
 /**
- * KymaExplore — the unified data-exploration surface.
+ * PensieveExplore — the unified data-exploration surface.
  *
  * One smart input that auto-detects keyword search vs raw KQL/SQL and routes to
  * the matching engine, sharing a single shell: scope + time-range + Run, a
  * results area, and a row-detail drawer.
  *
- *   keyword → useKymaSearch (/v1/search): instant hybrid (lexical + vector,
+ *   keyword → usePensieveSearch (/v1/search): instant hybrid (lexical + vector,
  *             RRF-fused) ranked hits across all sources in scope, with db.table
  *             provenance. Click a hit to inspect; switch to KQL/SQL to correlate.
- *   kql/sql → useKymaQuery (/v1/query): schema browser → field-stats rail,
+ *   kql/sql → usePensieveQuery (/v1/query): schema browser → field-stats rail,
  *             timestamp histogram, results grid, chart, row drawer.
  *
  * The detected mode is a clickable badge so auto-detection is never a mystery.
@@ -17,16 +17,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Play, Square, Search as SearchIcon, Code2, Network, Brain, GitFork } from "lucide-react";
-import { autoChartAxes } from "@kyma-ai/client";
-import type { Column, HybridSearchHit, SchemaDoc } from "@kyma-ai/client";
+import { autoChartAxes } from "@pensieve-ai/client";
+import type { Column, HybridSearchHit, SchemaDoc } from "@pensieve-ai/client";
 
-import { KymaErrorBoundary } from "../internal/KymaErrorBoundary";
+import { PensieveErrorBoundary } from "../internal/PensieveErrorBoundary";
 import { Button } from "../internal/ui/button";
-import { KymaContext, useKymaClient, useKymaContext } from "../provider/context";
+import { PensieveContext, usePensieveClient, usePensieveContext } from "../provider/context";
 import { cn } from "../internal/cn";
 
-import { useKymaQuery } from "../hooks/useKymaQuery";
-import { useKymaSearch } from "../hooks/useKymaSearch";
+import { usePensieveQuery } from "../hooks/usePensieveQuery";
+import { usePensieveSearch } from "../hooks/usePensieveSearch";
 import { RowDetailDrawer } from "../discover/RowDetailDrawer";
 import { serializePills } from "../discover/discoverGrammar";
 import { resolveTimeRange } from "../discover/useDiscoverSearch";
@@ -46,7 +46,7 @@ import type { TimeRange } from "../query/time-range/time-range-types";
 
 import { detectMode, modeLabel, type ExploreMode } from "./detectMode";
 
-export interface KymaExploreProps {
+export interface PensieveExploreProps {
   /** Initial input text. */
   defaultQuery?: string;
   /** Initial time range. Defaults to "all time" so any data shows on first run. */
@@ -77,7 +77,7 @@ export interface KymaExploreProps {
   onViewInGraph?: (nodeId: string, db: string) => void;
 }
 
-function KymaExploreInner({
+function PensieveExploreInner({
   defaultQuery = "",
   timeRange: timeRangeProp,
   database = "*",
@@ -86,8 +86,8 @@ function KymaExploreInner({
   autoRun = true,
   onQueryChange,
   onViewInGraph,
-}: Omit<KymaExploreProps, "fallback">) {
-  const client = useKymaClient();
+}: Omit<PensieveExploreProps, "fallback">) {
+  const client = usePensieveClient();
   const endpoint = client.transport.endpoint;
 
   const [input, setInput] = useState(defaultQuery);
@@ -102,7 +102,7 @@ function KymaExploreInner({
   const [cols, setCols] = useState<string[]>([]);
 
   const { data: schema } = useQuery<SchemaDoc>({
-    queryKey: ["kyma", endpoint, "explore-schema"],
+    queryKey: ["pensieve", endpoint, "explore-schema"],
     queryFn: () => client.catalog.fetchSchema(),
     staleTime: 5 * 60_000,
   });
@@ -118,9 +118,9 @@ function KymaExploreInner({
     [database],
   );
 
-  const search = useKymaSearch();
+  const search = usePensieveSearch();
   const { columns: qCols, rows: qRows, isRunning: qRunning, error: qError, execute, cancel: cancelQuery } =
-    useKymaQuery();
+    usePensieveQuery();
 
   const inputRef = useRef(input);
   inputRef.current = input;
@@ -897,14 +897,14 @@ function formatErr(err: unknown): string {
   }
 }
 
-export function KymaExplore({ fallback, database, ...rest }: KymaExploreProps): JSX.Element {
-  const ctx = useKymaContext();
+export function PensieveExplore({ fallback, database, ...rest }: PensieveExploreProps): JSX.Element {
+  const ctx = usePensieveContext();
   const scopedCtx = database ? { ...ctx, client: ctx.client.withDatabase(database) } : ctx;
   return (
-    <KymaContext.Provider value={scopedCtx}>
-      <KymaErrorBoundary fallback={fallback}>
-        <KymaExploreInner database={database} {...rest} />
-      </KymaErrorBoundary>
-    </KymaContext.Provider>
+    <PensieveContext.Provider value={scopedCtx}>
+      <PensieveErrorBoundary fallback={fallback}>
+        <PensieveExploreInner database={database} {...rest} />
+      </PensieveErrorBoundary>
+    </PensieveContext.Provider>
   );
 }

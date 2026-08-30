@@ -5,7 +5,7 @@
  * Uses internal data-palette (no web imports).
  */
 import { PALETTE } from "../internal/data-palette";
-import { getLabelColor, getRelationshipColor } from "@kyma-ai/client";
+import { getLabelColor, getRelationshipColor } from "@pensieve-ai/client";
 
 export type RelFamily =
   | "structural"

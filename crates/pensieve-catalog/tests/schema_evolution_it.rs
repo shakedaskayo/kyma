@@ -5,9 +5,9 @@
 //! and falls back to the generic `props` column).
 
 use arrow_schema::{DataType, Field, Schema};
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::{Catalog, TableConfig};
-use kyma_core::tenant::TenantId;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::{Catalog, TableConfig};
+use pensieve_core::tenant::TenantId;
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
@@ -74,7 +74,7 @@ async fn alter_table_add_column_succeeds_under_tenancy() {
 
 #[tokio::test]
 async fn alter_table_add_column_succeeds_under_default_tenant() {
-    // Mirrors the live kyma-bin path, which is currently tenant-blind
+    // Mirrors the live pensieve-bin path, which is currently tenant-blind
     // and routes through DEFAULT_TENANT via the legacy `create_table`
     // / `alter_table_add_column` defaults.
     let (catalog, _container) = fixture().await;

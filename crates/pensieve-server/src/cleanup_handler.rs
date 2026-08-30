@@ -18,8 +18,8 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
-use kyma_core::catalog::{Catalog, CleanupResult};
-use kyma_core::errors::{CatalogError, Error as KymaError};
+use pensieve_core::catalog::{Catalog, CleanupResult};
+use pensieve_core::errors::{CatalogError, Error as PensieveError};
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -63,12 +63,12 @@ pub async fn cleanup_table(
 
 #[derive(Debug)]
 pub enum ApiError {
-    Catalog(KymaError),
+    Catalog(PensieveError),
     Forbidden { status: StatusCode, message: String },
 }
 
-impl From<KymaError> for ApiError {
-    fn from(e: KymaError) -> Self {
+impl From<PensieveError> for ApiError {
+    fn from(e: PensieveError) -> Self {
         ApiError::Catalog(e)
     }
 }
@@ -76,7 +76,7 @@ impl From<KymaError> for ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         match self {
-            ApiError::Catalog(KymaError::Catalog(CatalogError::TableNotFound {
+            ApiError::Catalog(PensieveError::Catalog(CatalogError::TableNotFound {
                 database,
                 name,
             })) => (

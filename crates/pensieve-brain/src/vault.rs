@@ -17,7 +17,7 @@ use crate::{moc, BrainError, MANIFEST_PATH, WIKI_TOPIC_PREFIX};
 const RELATED_CAP: usize = 8;
 
 /// The planned vault: files to commit plus the new manifest (already
-/// included in `files` as `.kyma/manifest.json`).
+/// included in `files` as `.pensieve/manifest.json`).
 #[derive(Debug, Clone)]
 pub struct VaultPlan {
     pub files: Vec<VaultFile>,
@@ -236,7 +236,7 @@ pub fn seed_files(cfg: &BrainConfig) -> Vec<VaultFile> {
     let app_json = "{\n  \"newFileLocation\": \"folder\",\n  \"newFileFolderPath\": \"inbox\"\n}\n";
     let gitignore = ".obsidian/workspace*.json\n.obsidian/cache\n.trash/\n.DS_Store\n";
     let inbox_keep = format!(
-        "Drop new notes here (see CONTRIBUTING.md). They are ingested into kyma's `{}` brain and re-filed under notes/ on the next export.\n",
+        "Drop new notes here (see CONTRIBUTING.md). They are ingested into pensieve's `{}` brain and re-filed under notes/ on the next export.\n",
         cfg.name
     );
     vec![

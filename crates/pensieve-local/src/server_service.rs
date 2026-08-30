@@ -1,13 +1,13 @@
-//! The local server as an OS background service: `kyma service install`
-//! registers a user service that runs `kyma serve` with no terminal or
+//! The local server as an OS background service: `pensieve service install`
+//! registers a user service that runs `pensieve serve` with no terminal or
 //! session — launchd LaunchAgent on macOS, systemd user unit on Linux.
 //!
 //! This is what makes a fresh install *stay* up: the nohup'd process the
 //! installer used to spawn died on reboot and never restarted on crash.
 //! The service starts at login (`RunAtLoad`), restarts on failure
 //! (`KeepAlive` / `Restart=on-failure`), and logs to
-//! `~/.kyma/logs/server.log`. Fully reversible (`kyma service uninstall`)
-//! and inspectable (`kyma service status`).
+//! `~/.pensieve/logs/server.log`. Fully reversible (`pensieve service uninstall`)
+//! and inspectable (`pensieve service status`).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -15,22 +15,22 @@ use std::process::Command;
 use anyhow::{Context, Result};
 
 /// Service label / unit name.
-const LABEL: &str = "dev.getkyma.kyma-server";
-const UNIT: &str = "kyma-server.service";
+const LABEL: &str = "dev.getpensieve.pensieve-server";
+const UNIT: &str = "pensieve-server.service";
 
 /// What the server service should run.
 #[derive(Debug, Clone)]
 pub struct ServerOptions {
-    /// Listen address for `kyma serve`.
+    /// Listen address for `pensieve serve`.
     pub addr: String,
-    /// Static admin token (`KYMA_AUTH_TOKENS=<token>:admin` in the service
+    /// Static admin token (`PENSIEVE_AUTH_TOKENS=<token>:admin` in the service
     /// env). None = auth-disabled local default.
     pub token: Option<String>,
     /// Store location pinned into the service env (services don't inherit
-    /// the shell's `KYMA_HOME`). Filled by [`install`] when unset.
-    pub kyma_home: Option<String>,
-    /// Credential-encryption key (`KYMA_SECRET_KEY` in the service env).
-    /// Filled by [`install`] from `<kyma_home>/secret.key`, minting one on
+    /// the shell's `PENSIEVE_HOME`). Filled by [`install`] when unset.
+    pub pensieve_home: Option<String>,
+    /// Credential-encryption key (`PENSIEVE_SECRET_KEY` in the service env).
+    /// Filled by [`install`] from `<pensieve_home>/secret.key`, minting one on
     /// first install — the key must stay stable across reinstalls or
     /// credentials encrypted at rest become undecryptable.
     pub secret_key: Option<String>,
@@ -41,7 +41,7 @@ impl Default for ServerOptions {
         Self {
             addr: "127.0.0.1:7777".to_string(),
             token: None,
-            kyma_home: None,
+            pensieve_home: None,
             secret_key: None,
         }
     }
@@ -50,32 +50,32 @@ impl Default for ServerOptions {
 /// `(key, value)` env pairs the service needs.
 fn service_env(opts: &ServerOptions) -> Vec<(String, String)> {
     let mut env = Vec::new();
-    if let Some(h) = &opts.kyma_home {
-        env.push(("KYMA_HOME".to_string(), h.clone()));
+    if let Some(h) = &opts.pensieve_home {
+        env.push(("PENSIEVE_HOME".to_string(), h.clone()));
     }
     if let Some(tok) = &opts.token {
-        env.push(("KYMA_AUTH_TOKENS".to_string(), format!("{tok}:admin")));
+        env.push(("PENSIEVE_AUTH_TOKENS".to_string(), format!("{tok}:admin")));
     }
     if let Some(key) = &opts.secret_key {
-        env.push(("KYMA_SECRET_KEY".to_string(), key.clone()));
+        env.push(("PENSIEVE_SECRET_KEY".to_string(), key.clone()));
     }
     env
 }
 
-/// Load the store's stable secret key from `<kyma_home>/secret.key`, minting
+/// Load the store's stable secret key from `<pensieve_home>/secret.key`, minting
 /// (base64, 32 random bytes, file mode 0600) on first use. Best-effort: an
 /// unreadable/unwritable store yields `None` and the service runs without the
 /// key, exactly as before.
-fn load_or_create_secret_key(kyma_home: &str) -> Option<String> {
-    let path = std::path::Path::new(kyma_home).join("secret.key");
+fn load_or_create_secret_key(pensieve_home: &str) -> Option<String> {
+    let path = std::path::Path::new(pensieve_home).join("secret.key");
     if let Ok(existing) = std::fs::read_to_string(&path) {
         let trimmed = existing.trim();
         if !trimmed.is_empty() {
             return Some(trimmed.to_string());
         }
     }
-    let key = kyma_core::crypto::generate_key();
-    std::fs::create_dir_all(kyma_home).ok();
+    let key = pensieve_core::crypto::generate_key();
+    std::fs::create_dir_all(pensieve_home).ok();
     if std::fs::write(&path, &key).is_err() {
         return None;
     }
@@ -87,7 +87,7 @@ fn load_or_create_secret_key(kyma_home: &str) -> Option<String> {
     Some(key)
 }
 
-/// The `kyma` argv the service runs (after the binary path).
+/// The `pensieve` argv the service runs (after the binary path).
 pub(crate) fn serve_args(opts: &ServerOptions) -> Vec<String> {
     vec![
         "serve".to_string(),
@@ -117,7 +117,7 @@ pub(crate) fn launchd_plist(exe: &str, opts: &ServerOptions, log_path: &str) -> 
     };
     // Working dir = the store: relative caches (e.g. fastembed's model dir)
     // land somewhere stable and writable, not launchd's default `/`.
-    let cwd = opts.kyma_home.clone().unwrap_or_else(home);
+    let cwd = opts.pensieve_home.clone().unwrap_or_else(home);
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -150,9 +150,9 @@ pub(crate) fn systemd_unit(exe: &str, opts: &ServerOptions) -> String {
         .iter()
         .map(|(k, v)| format!("Environment={k}={v}\n"))
         .collect();
-    let cwd = opts.kyma_home.clone().unwrap_or_else(home);
+    let cwd = opts.pensieve_home.clone().unwrap_or_else(home);
     format!(
-        "[Unit]\nDescription=kyma local server (web UI + API + background workers)\n\n\
+        "[Unit]\nDescription=pensieve local server (web UI + API + background workers)\n\n\
          [Service]\nExecStart={exe} {}\nWorkingDirectory={cwd}\nRestart=on-failure\nRestartSec=5\n{env}\n\
          [Install]\nWantedBy=default.target\n",
         serve_args(opts).join(" "),
@@ -166,7 +166,7 @@ pub(crate) fn plist_path(home: &str) -> PathBuf {
         .join(format!("{LABEL}.plist"))
 }
 
-/// `~/.config/systemd/user/kyma-server.service`.
+/// `~/.config/systemd/user/pensieve-server.service`.
 pub(crate) fn unit_path(home: &str) -> PathBuf {
     PathBuf::from(home).join(".config/systemd/user").join(UNIT)
 }
@@ -176,8 +176,8 @@ fn home() -> String {
 }
 
 fn log_path() -> String {
-    let kyma_home = std::env::var("KYMA_HOME").unwrap_or_else(|_| format!("{}/.kyma", home()));
-    format!("{kyma_home}/logs/server.log")
+    let pensieve_home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| format!("{}/.pensieve", home()));
+    format!("{pensieve_home}/logs/server.log")
 }
 
 /// Best-effort command; returns whether it succeeded.
@@ -203,18 +203,18 @@ fn uid() -> String {
 /// no supported one (caller may fall back to a plain background process).
 pub fn install(opts: &ServerOptions) -> Result<bool> {
     let exe = std::env::current_exe()
-        .context("resolving the kyma binary path")?
+        .context("resolving the pensieve binary path")?
         .to_string_lossy()
         .to_string();
     let mut opts = opts.clone();
-    if opts.kyma_home.is_none() {
+    if opts.pensieve_home.is_none() {
         // Pin the resolved store so the service sees the same data the CLI
-        // does, custom KYMA_HOME included.
-        opts.kyma_home =
-            Some(std::env::var("KYMA_HOME").unwrap_or_else(|_| format!("{}/.kyma", home())));
+        // does, custom PENSIEVE_HOME included.
+        opts.pensieve_home =
+            Some(std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| format!("{}/.pensieve", home())));
     }
     if opts.secret_key.is_none() {
-        opts.secret_key = opts.kyma_home.as_deref().and_then(load_or_create_secret_key);
+        opts.secret_key = opts.pensieve_home.as_deref().and_then(load_or_create_secret_key);
     }
     let opts = &opts;
     let log = log_path();
@@ -292,7 +292,7 @@ pub fn install(opts: &ServerOptions) -> Result<bool> {
 }
 
 /// Restart the service when (and only when) it is installed — used by
-/// `kyma update` after swapping the binary so the new build goes live.
+/// `pensieve update` after swapping the binary so the new build goes live.
 /// `None` = not service-managed; `Some(success)` = restart attempted.
 pub fn restart_if_installed() -> Option<bool> {
     match std::env::consts::OS {

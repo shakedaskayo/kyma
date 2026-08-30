@@ -22,13 +22,13 @@
 //! absolute error of the judge against human grades on the overlap.
 //!
 //! LLM judge: raw HTTP to the Anthropic Messages API (`POST /v1/messages`)
-//! — `ANTHROPIC_API_KEY` required, model from `KYMA_JUDGE_MODEL`
+//! — `ANTHROPIC_API_KEY` required, model from `PENSIEVE_JUDGE_MODEL`
 //! (default `claude-opus-4-8`). The HTTP call sits behind the [`Judge`]
 //! trait so tests never touch the network.
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
-use kyma_retrieval_eval::golden::{GoldenFixture, Judged};
+use pensieve_retrieval_eval::golden::{GoldenFixture, Judged};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
@@ -62,13 +62,13 @@ struct Args {
     human_labels: Option<PathBuf>,
 
     /// Judge model id (LLM mode only).
-    #[arg(long, env = "KYMA_JUDGE_MODEL", default_value = "claude-opus-4-8")]
+    #[arg(long, env = "PENSIEVE_JUDGE_MODEL", default_value = "claude-opus-4-8")]
     model: String,
 
     /// Anthropic-compatible Messages endpoint (LLM mode only).
     #[arg(
         long,
-        env = "KYMA_JUDGE_ENDPOINT",
+        env = "PENSIEVE_JUDGE_ENDPOINT",
         default_value = "https://api.anthropic.com/v1/messages"
     )]
     endpoint: String,
@@ -447,7 +447,7 @@ mod tests {
         let out = dir.path().join(format!("{}.json", slug(&fixtures[0].query)));
         std::fs::write(&out, serde_json::to_string_pretty(&fixtures[0]).unwrap()).unwrap();
         // Round-trip through the golden loader.
-        let loaded = kyma_retrieval_eval::golden::load_fixtures(dir.path()).unwrap();
+        let loaded = pensieve_retrieval_eval::golden::load_fixtures(dir.path()).unwrap();
         // cands.jsonl isn't .json, so only the fixture is picked up.
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].1.judged.len(), 2);

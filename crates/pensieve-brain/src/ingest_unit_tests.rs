@@ -5,20 +5,20 @@ use crate::ingest::{plan_push_ingest, IngestOp};
 use crate::registry::{BrainConfig, RealmSelector};
 
 fn cfg() -> BrainConfig {
-    BrainConfig::new("team", RealmSelector::Realms(vec!["kyma".into()]), "2026-07-08T00:00:00Z")
+    BrainConfig::new("team", RealmSelector::Realms(vec!["pensieve".into()]), "2026-07-08T00:00:00Z")
         .unwrap()
 }
 
 fn cfg_multi() -> BrainConfig {
     BrainConfig::new(
         "team",
-        RealmSelector::Realms(vec!["kyma".into(), "ops".into()]),
+        RealmSelector::Realms(vec!["pensieve".into(), "ops".into()]),
         "2026-07-08T00:00:00Z",
     )
     .unwrap()
 }
 
-const EXPORTED: &str = "---\ntitle: Alpha\nkyma_memory_id: aaaa1111-0000-0000-0000-000000000001\ntype: fact\nrealm: kyma\n---\n\n# Alpha\n\nEdited body.\n";
+const EXPORTED: &str = "---\ntitle: Alpha\npensieve_memory_id: aaaa1111-0000-0000-0000-000000000001\ntype: fact\nrealm: pensieve\n---\n\n# Alpha\n\nEdited body.\n";
 
 #[test]
 fn edit_of_exported_note_updates_same_memory() {
@@ -72,7 +72,7 @@ fn new_inbox_note_creates_memory_with_topic_key() {
     match &plan.ops[0] {
         IngestOp::CreateNew { topic_key, realm, note, .. } => {
             assert_eq!(topic_key, "brain:team:inbox/idea.md");
-            assert_eq!(realm, "kyma");
+            assert_eq!(realm, "pensieve");
             assert_eq!(note.title.as_deref(), Some("An idea"));
         }
         other => panic!("unexpected op: {other:?}"),
@@ -118,10 +118,10 @@ fn generated_and_non_note_paths_are_ignored() {
         &cfg(),
         &[
             (ChangeKind::Modified, "index.md".into()),
-            (ChangeKind::Modified, ".kyma/manifest.json".into()),
+            (ChangeKind::Modified, ".pensieve/manifest.json".into()),
             (ChangeKind::Added, "assets/diagram.png".into()),
             (ChangeKind::Modified, "README.md".into()),
-            (ChangeKind::Modified, "notes/kyma/index.md".into()),
+            (ChangeKind::Modified, "notes/pensieve/index.md".into()),
         ],
         |_| Some(b"x".to_vec()),
         &BTreeMap::new(),

@@ -1,6 +1,6 @@
 name: compose-smoke
 
-# Validates the SHIPPED CONTAINER path: build the kyma image from the Dockerfile
+# Validates the SHIPPED CONTAINER path: build the pensieve image from the Dockerfile
 # and bring up the full docker-compose stack (Postgres + MinIO + engine), then
 # assert the engine serves over HTTP from a clean state (health, admin login,
 # ingest, query, search) via scripts/compose-smoke.sh. This is the

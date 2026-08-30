@@ -1,12 +1,12 @@
 //! Symmetric encryption for credentials stored at rest.
 //!
-//! AES-256-GCM with a key derived from the `KYMA_SECRET_KEY` environment
+//! AES-256-GCM with a key derived from the `PENSIEVE_SECRET_KEY` environment
 //! variable. Ciphertexts are stored as `nonce(12 bytes) || ciphertext(N)` so a
 //! single `bytea` column round-trips through Postgres without a separate
 //! nonce column. The key is loaded once at server start and held in an `Arc`
 //! shared with every subsystem that needs to encrypt or decrypt.
 //!
-//! Production deployments should set `KYMA_SECRET_KEY` to a base64-encoded
+//! Production deployments should set `PENSIEVE_SECRET_KEY` to a base64-encoded
 //! random 32 bytes (e.g. `openssl rand -base64 32`). Shorter values are
 //! SHA-256 stretched so dev environments can use any string; the server logs
 //! a warning when stretching kicks in.
@@ -27,11 +27,11 @@ pub struct Crypto {
 }
 
 impl Crypto {
-    /// Build from the `KYMA_SECRET_KEY` env var. Accepts base64 (preferred,
+    /// Build from the `PENSIEVE_SECRET_KEY` env var. Accepts base64 (preferred,
     /// `openssl rand -base64 32`) or any plain string (SHA-256 stretched).
     pub fn from_env() -> Result<Self> {
-        let raw = std::env::var("KYMA_SECRET_KEY")
-            .context("KYMA_SECRET_KEY env var not set — required for credential encryption")?;
+        let raw = std::env::var("PENSIEVE_SECRET_KEY")
+            .context("PENSIEVE_SECRET_KEY env var not set — required for credential encryption")?;
         Ok(Self::from_secret(&raw))
     }
 
@@ -76,11 +76,11 @@ impl Crypto {
             .map_err(|e| anyhow!("aes-gcm decrypt: {e}"))
     }
 
-    /// Load from `KYMA_SECRET_KEY` env var, or generate + persist a random key
+    /// Load from `PENSIEVE_SECRET_KEY` env var, or generate + persist a random key
     /// to `key_path` on first use (`0600` permissions). Safe for local mode where
     /// no env var is configured.
     pub fn from_env_or_file(key_path: &str) -> Result<Self> {
-        if let Ok(raw) = std::env::var("KYMA_SECRET_KEY") {
+        if let Ok(raw) = std::env::var("PENSIEVE_SECRET_KEY") {
             return Ok(Self::from_secret(&raw));
         }
         let path = std::path::Path::new(key_path);
@@ -102,12 +102,12 @@ impl Crypto {
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
                 .with_context(|| format!("setting permissions on {key_path}"))?;
         }
-        eprintln!("kyma: generated local secret key at {key_path} (first boot)");
+        eprintln!("pensieve: generated local secret key at {key_path} (first boot)");
         Ok(Self::from_secret(&key))
     }
 }
 
-/// Generate a fresh `KYMA_SECRET_KEY` value: base64 of 32 random bytes — the
+/// Generate a fresh `PENSIEVE_SECRET_KEY` value: base64 of 32 random bytes — the
 /// format [`Crypto::from_secret`] accepts without SHA-256 stretching. Used by
 /// installers/services that mint a key for a deployed environment.
 pub fn generate_key() -> String {

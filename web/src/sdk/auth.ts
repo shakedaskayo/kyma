@@ -1,4 +1,4 @@
-// Shim: re-exports from @kyma-ai/client with backwards-compatible web wrappers.
+// Shim: re-exports from @pensieve-ai/client with backwards-compatible web wrappers.
 // login/refresh/getSetupStatus/signup stay unauthenticated — no change needed.
 // me/logout are transport-based — delegate to sessionClient.
 
@@ -7,7 +7,7 @@ export {
   refresh,
   type AuthUser,
   type TokenPair,
-} from "@kyma-ai/client";
+} from "@pensieve-ai/client";
 
 import { sessionClient } from "./client";
 

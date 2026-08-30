@@ -1,6 +1,6 @@
 ---
-title: Quickstart — embed Kyma in React
-description: Install @kyma-ai/react, wire KymaProvider, and render your first embedded view in under 20 lines.
+title: Quickstart — embed Pensieve in React
+description: Install @pensieve-ai/react, wire PensieveProvider, and render your first embedded view in under 20 lines.
 ---
 
 # Quickstart
@@ -8,12 +8,12 @@ description: Install @kyma-ai/react, wire KymaProvider, and render your first em
 ## Install
 
 ```bash
-npm install @kyma-ai/react @kyma-ai/client
+npm install @pensieve-ai/react @pensieve-ai/client
 # or
-pnpm add @kyma-ai/react @kyma-ai/client
+pnpm add @pensieve-ai/react @pensieve-ai/client
 ```
 
-`@kyma-ai/react` ships pre-built ESM. Peer dependencies — React and React DOM
+`@pensieve-ai/react` ships pre-built ESM. Peer dependencies — React and React DOM
 18+ — must already be present in your project.
 
 ```bash
@@ -23,57 +23,57 @@ npm install react react-dom
 
 ## Import the stylesheet
 
-Kyma's components use scoped Tailwind CSS compiled into a single stylesheet.
+Pensieve's components use scoped Tailwind CSS compiled into a single stylesheet.
 Import it once at the top level of your application:
 
 ```ts
-import "@kyma-ai/react/styles.css";
+import "@pensieve-ai/react/styles.css";
 ```
 
 ## Add the provider and a view
 
 ```tsx
-import { KymaProvider } from "@kyma-ai/react";
-import { KymaGraph }    from "@kyma-ai/react/graph";
-import "@kyma-ai/react/styles.css";
+import { PensieveProvider } from "@pensieve-ai/react";
+import { PensieveGraph }    from "@pensieve-ai/react/graph";
+import "@pensieve-ai/react/styles.css";
 
-export function KymaPanel() {
+export function PensievePanel() {
   return (
-    <KymaProvider
-      endpoint="https://kyma.acme.internal"
+    <PensieveProvider
+      endpoint="https://pensieve.acme.internal"
       auth={{ token: "ky-abc123" }}
       database="prod"
     >
       <div style={{ height: 600 }}>
-        <KymaGraph />
+        <PensieveGraph />
       </div>
-    </KymaProvider>
+    </PensieveProvider>
   );
 }
 ```
 
-That is the complete setup. `KymaProvider` creates an isolated React Query
-client and injects the theme tokens; `KymaGraph` loads graph data from the
+That is the complete setup. `PensieveProvider` creates an isolated React Query
+client and injects the theme tokens; `PensieveGraph` loads graph data from the
 connected server and renders it.
 
 ## What each import does
 
 | Import | Purpose | Bundle note |
 |---|---|---|
-| `@kyma-ai/react` | `KymaProvider`, hooks, utilities | Core; no heavy UI deps |
-| `@kyma-ai/react/graph` | `KymaGraph` | Adds `react-force-graph-2d` (WebGL canvas) |
-| `@kyma-ai/react/query` | `KymaQueryEditor` | Adds `@monaco-editor/react` (Monaco) |
-| `@kyma-ai/react/discover` | `KymaDiscover` | Streaming search UI; no extra heavy deps |
-| `@kyma-ai/react/dashboards` | `KymaDashboard` | Adds `react-grid-layout` + `echarts` |
-| `@kyma-ai/react/agent` | `KymaAgentChat` | SSE streaming chat; no extra heavy deps |
-| `@kyma-ai/react/styles.css` | All component CSS | Import once per app |
+| `@pensieve-ai/react` | `PensieveProvider`, hooks, utilities | Core; no heavy UI deps |
+| `@pensieve-ai/react/graph` | `PensieveGraph` | Adds `react-force-graph-2d` (WebGL canvas) |
+| `@pensieve-ai/react/query` | `PensieveQueryEditor` | Adds `@monaco-editor/react` (Monaco) |
+| `@pensieve-ai/react/discover` | `PensieveDiscover` | Streaming search UI; no extra heavy deps |
+| `@pensieve-ai/react/dashboards` | `PensieveDashboard` | Adds `react-grid-layout` + `echarts` |
+| `@pensieve-ai/react/agent` | `PensieveAgentChat` | SSE streaming chat; no extra heavy deps |
+| `@pensieve-ai/react/styles.css` | All component CSS | Import once per app |
 
-Each subpath is a separate bundle entry, so if you only render `KymaGraph`,
+Each subpath is a separate bundle entry, so if you only render `PensieveGraph`,
 Monaco and ECharts are never loaded.
 
 ## Next steps
 
 - [Authentication](/embed/authentication) — configure tokens or OIDC
-- [CORS](/embed/cors) — allow the browser to reach the Kyma server
+- [CORS](/embed/cors) — allow the browser to reach the Pensieve server
 - [Theming](/embed/theming) — match your brand
 - [Components](/embed/components) — full prop tables for every component

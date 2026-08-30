@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { KymaDashboard } from "@kyma-ai/react/dashboards";
-import { useKymaDashboards } from "@kyma-ai/react";
-import type { DashboardWithPanels } from "@kyma-ai/react";
+import { PensieveDashboard } from "@pensieve-ai/react/dashboards";
+import { usePensieveDashboards } from "@pensieve-ai/react";
+import type { DashboardWithPanels } from "@pensieve-ai/react";
 
 /**
- * Dashboards tab: lists dashboards via useKymaDashboards hook,
- * lets the user pick one by ID or from the list, then renders KymaDashboard.
+ * Dashboards tab: lists dashboards via usePensieveDashboards hook,
+ * lets the user pick one by ID or from the list, then renders PensieveDashboard.
  *
  * Demonstrates:
- * - useKymaDashboards headless hook for listing
- * - KymaDashboard with onPanelClick, onSaveSuccess, onSaveError callbacks
+ * - usePensieveDashboards headless hook for listing
+ * - PensieveDashboard with onPanelClick, onSaveSuccess, onSaveError callbacks
  * - dashboardId controlled by host state
  */
 export function DashboardsView() {
@@ -17,7 +17,7 @@ export function DashboardsView() {
   const [inputId, setInputId] = useState("");
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
-  const { dashboards, isLoading } = useKymaDashboards();
+  const { dashboards, isLoading } = usePensieveDashboards();
 
   const handleLoad = () => {
     const id = inputId.trim();
@@ -78,19 +78,19 @@ export function DashboardsView() {
 
       <div className="demo-dashboard-view" style={{ flex: 1, overflow: "auto" }}>
         {dashboardId ? (
-          <KymaDashboard
+          <PensieveDashboard
             key={dashboardId}
             dashboardId={dashboardId}
             editable={false}
             onPanelClick={(panelId) => {
-              console.log("[kyma-embed-demo] panel clicked:", panelId);
+              console.log("[pensieve-embed-demo] panel clicked:", panelId);
             }}
             onSaveSuccess={(dashboard: DashboardWithPanels) => {
               setSaveMsg(`Saved: ${dashboard.name}`);
               setTimeout(() => setSaveMsg(null), 3000);
             }}
             onSaveError={(err) => {
-              console.error("[kyma-embed-demo] save error:", err);
+              console.error("[pensieve-embed-demo] save error:", err);
               setSaveMsg("Save failed");
               setTimeout(() => setSaveMsg(null), 3000);
             }}

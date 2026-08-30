@@ -18,7 +18,7 @@
 //! without going through this lossy envelope.
 //!
 //! Agent-agnostic: nothing here names a specific coding agent. The MCP
-//! dispatch ([`kyma_mcp`]) registers these per its per-agent-kind registry.
+//! dispatch ([`pensieve_mcp`]) registers these per its per-agent-kind registry.
 
 use std::sync::Arc;
 
@@ -40,8 +40,8 @@ use crate::search::unified::{unified_search, SearchCtx, UnifiedSearchRequest};
 /// [`SearchCtx::from_query_state`] applies when a request carries no scoped
 /// principal (`tenant: DEFAULT_TENANT`, `allowed_databases: None`, where
 /// `None` means "no restriction / all resolved sources pass"). `node_id` is
-/// `None`, matching how the other agent tools build their `KymaTable`s (see
-/// [`super::tools::execute_sql`], which uses `KymaTable::new` without a node
+/// `None`, matching how the other agent tools build their `PensieveTable`s (see
+/// [`super::tools::execute_sql`], which uses `PensieveTable::new` without a node
 /// id). `pool` is wrapped into the `Arc` shape `SearchCtx` expects.
 fn search_ctx_from_shared(shared: &SharedToolCtx) -> SearchCtx {
     SearchCtx {
@@ -49,7 +49,7 @@ fn search_ctx_from_shared(shared: &SharedToolCtx) -> SearchCtx {
         format: shared.format.clone(),
         node_id: None,
         pool: shared.pool.clone().map(Arc::new),
-        tenant: kyma_core::tenant::DEFAULT_TENANT,
+        tenant: pensieve_core::tenant::DEFAULT_TENANT,
         allowed_databases: None,
     }
 }
@@ -152,7 +152,7 @@ struct GraphSearchArgs {
     /// Text to match graph nodes against (by name/label/properties).
     query: String,
     /// Restrict to one named graph (e.g. "kg"). Omit to search every graph
-    /// across all databases — Kyma's namespaces are composite (db/graph), so a
+    /// across all databases — Pensieve's namespaces are composite (db/graph), so a
     /// bare name can resolve in more than one database.
     #[serde(default)]
     graph: Option<String>,
@@ -212,20 +212,20 @@ mod tests {
     /// the `unified.rs` smoke-test setup. No tenant/principal — the agent
     /// defaults (`DEFAULT_TENANT`, `allowed_databases: None`) apply.
     async fn empty_shared() -> SharedToolCtx {
-        use kyma_core::segment_format::SegmentFormat;
-        let catalog: Arc<dyn kyma_core::catalog::Catalog> = Arc::new(
-            kyma_catalog_sqlite::SqliteCatalog::connect_in_memory()
+        use pensieve_core::segment_format::SegmentFormat;
+        let catalog: Arc<dyn pensieve_core::catalog::Catalog> = Arc::new(
+            pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory()
                 .await
                 .expect("in-memory catalog"),
         );
-        let tmp = std::env::temp_dir().join(format!("kyma-searchtool-{}", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!("pensieve-searchtool-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&tmp).unwrap();
-        let store = kyma_storage::build_object_store(&kyma_storage::StorageConfig::Local {
+        let store = pensieve_storage::build_object_store(&pensieve_storage::StorageConfig::Local {
             root: tmp.to_string_lossy().to_string(),
         })
         .unwrap();
         let format: Arc<dyn SegmentFormat> =
-            Arc::new(kyma_format_tlm::TelemetryFormat::new(store, "test"));
+            Arc::new(pensieve_format_tlm::TelemetryFormat::new(store, "test"));
         SharedToolCtx {
             realm_scope: Default::default(),
             consumer_sink: None,
@@ -248,7 +248,7 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let shared = rt.block_on(empty_shared());
         let ctx = search_ctx_from_shared(&shared);
-        assert_eq!(ctx.tenant, kyma_core::tenant::DEFAULT_TENANT);
+        assert_eq!(ctx.tenant, pensieve_core::tenant::DEFAULT_TENANT);
         assert!(
             ctx.allowed_databases.is_none(),
             "no RBAC allow-list ⇒ all pass"
@@ -315,7 +315,7 @@ mod tests {
         // End-to-end over a real seeded stored graph (pure SQL path, no
         // embedder needed): ingest a node table, register a graph, and assert
         // the tool surfaces a matching node hit through the substrate.
-        use kyma_core::catalog::{GraphSpec, TableConfig};
+        use pensieve_core::catalog::{GraphSpec, TableConfig};
         let shared = empty_shared().await;
         let catalog = shared.catalog.clone();
         let format = shared.format.clone();
@@ -342,9 +342,9 @@ mod tests {
             .expect("lookup kg_nodes");
         let ndjson = r#"{"id":"svc:alpha","labels":"Service","name":"alpha-service","realm":"kg"}
 {"id":"svc:beta","labels":"Service","name":"beta-service","realm":"kg"}"#;
-        let batches = kyma_ingest_core::parse_ndjson(ndjson.as_bytes(), tref.schema.clone())
+        let batches = pensieve_ingest_core::parse_ndjson(ndjson.as_bytes(), tref.schema.clone())
             .expect("parse ndjson");
-        kyma_ingest_core::WritePath::new(catalog.clone(), format.clone())
+        pensieve_ingest_core::WritePath::new(catalog.clone(), format.clone())
             .ingest("kg", &tref, batches)
             .await
             .expect("ingest node rows");

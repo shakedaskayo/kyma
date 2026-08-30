@@ -21,11 +21,11 @@ use datafusion::error::DataFusionError;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
-use kyma_core::catalog::Catalog;
-use kyma_core::query_frontend::QueryBudget;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_core::types::NodeId;
-use kyma_exec::KymaTable;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::query_frontend::QueryBudget;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_core::types::NodeId;
+use pensieve_exec::PensieveTable;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
@@ -170,7 +170,7 @@ async fn run_source(
 
     // b. Compile KQL → SQL.
     // compile_for_source never emits union — the schema-less API suffices.
-    let sql = match kyma_kql::kql_to_sql(&compiled.kql) {
+    let sql = match pensieve_kql::kql_to_sql(&compiled.kql) {
         Ok(s) => s,
         Err(e) => {
             let _ = tx
@@ -204,19 +204,19 @@ async fn run_source(
     let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
 
     // d. Vector UDFs available to every Discover query.
-    kyma_exec::register_vector_udfs(&ctx);
+    pensieve_exec::register_vector_udfs(&ctx);
 
-    // e. Build + register the KymaTable.
+    // e. Build + register the PensieveTable.
     let table_name = src.table.name.clone();
-    let kt: Arc<KymaTable> = match node_id {
-        Some(nid) => Arc::new(KymaTable::with_node_id(
+    let kt: Arc<PensieveTable> = match node_id {
+        Some(nid) => Arc::new(PensieveTable::with_node_id(
             src.table.clone(),
             catalog,
             format,
             nid,
             src.db.clone(),
         )),
-        None => Arc::new(KymaTable::new(src.table.clone(), catalog, format)),
+        None => Arc::new(PensieveTable::new(src.table.clone(), catalog, format)),
     };
     if let Err(e) = ctx.register_table(&table_name, kt) {
         let _ = tx

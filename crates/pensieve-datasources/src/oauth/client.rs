@@ -3,11 +3,11 @@
 //!
 //! Precedence (highest first):
 //! 1. a per-tenant bring-your-own row in `oauth_clients` (encrypted secret),
-//! 2. operator env `KYMA_OAUTH_<ENV_KEY>_CLIENT_ID` / `_CLIENT_SECRET`.
+//! 2. operator env `PENSIEVE_OAUTH_<ENV_KEY>_CLIENT_ID` / `_CLIENT_SECRET`.
 
 use anyhow::Result;
-use kyma_core::crypto::Crypto;
-use kyma_core::tenant::TenantId;
+use pensieve_core::crypto::Crypto;
+use pensieve_core::tenant::TenantId;
 use sqlx::{PgPool, Row};
 
 use super::provider::OAuthProvider;
@@ -34,8 +34,8 @@ pub async fn resolve_client(
 
 /// Operator-configured client creds from env, if both vars are present.
 pub fn env_client(provider: &OAuthProvider) -> Option<ClientCreds> {
-    let id = std::env::var(format!("KYMA_OAUTH_{}_CLIENT_ID", provider.env_key)).ok()?;
-    let secret = std::env::var(format!("KYMA_OAUTH_{}_CLIENT_SECRET", provider.env_key)).ok()?;
+    let id = std::env::var(format!("PENSIEVE_OAUTH_{}_CLIENT_ID", provider.env_key)).ok()?;
+    let secret = std::env::var(format!("PENSIEVE_OAUTH_{}_CLIENT_SECRET", provider.env_key)).ok()?;
     if id.is_empty() || secret.is_empty() {
         return None;
     }

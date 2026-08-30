@@ -1,15 +1,15 @@
 //! Curation decision engine for Claude Code memory files.
 //!
-//! Decides — from the memory DB alone — what kyma should do to a project's
+//! Decides — from the memory DB alone — what pensieve should do to a project's
 //! `~/.claude/projects/<slug>/memory/` directory: which high-value memories
 //! to **promote** into native `.md` files Claude Code loads, which files to
 //! **archive** (superseded, duplicated, demoted — never deleted), and what
-//! the kyma-managed region of `MEMORY.md` should contain.
+//! the pensieve-managed region of `MEMORY.md` should contain.
 //!
 //! This module performs **no filesystem IO**. It emits a serializable plan
 //! of [`FileAction`]s (the audit/dry-run record) and applies the matching DB
 //! mutations in the same pass, so store and files converge; the applier in
-//! `kyma-local` owns the actual writes (atomic, lock-guarded, user-edit
+//! `pensieve-local` owns the actual writes (atomic, lock-guarded, user-edit
 //! aware).
 //!
 //! Anti-flood invariants: a hard cap on managed index entries
@@ -20,7 +20,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use kyma_memory::MemoryWriter;
+use pensieve_memory::MemoryWriter;
 
 use super::SharedToolCtx;
 
@@ -37,7 +37,7 @@ pub struct IndexEntry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum FileAction {
-    /// Write (create or refresh) a kyma-promoted memory file.
+    /// Write (create or refresh) a pensieve-promoted memory file.
     WriteMemoryFile {
         /// Filename relative to the project's `memory/` dir.
         file: String,
@@ -53,7 +53,7 @@ pub enum FileAction {
         reason: String,
         node_id: Option<String>,
     },
-    /// Replace the kyma-managed region of `MEMORY.md` with these entries.
+    /// Replace the pensieve-managed region of `MEMORY.md` with these entries.
     SetIndex { entries: Vec<IndexEntry> },
 }
 
@@ -74,7 +74,7 @@ pub struct CurationOutcome {
     pub llm_reviewed: usize,
 }
 
-/// Tuning knobs, resolved from `KYMA_CC_*` env by callers that want env
+/// Tuning knobs, resolved from `PENSIEVE_CC_*` env by callers that want env
 /// configuration.
 #[derive(Debug, Clone)]
 pub struct CurationConfig {
@@ -101,17 +101,17 @@ impl Default for CurationConfig {
 }
 
 impl CurationConfig {
-    /// Resolve from `KYMA_CC_PROMOTE`, `KYMA_CC_PROMOTE_MAX`,
-    /// `KYMA_CC_PROMOTE_MIN_IMPORTANCE`.
+    /// Resolve from `PENSIEVE_CC_PROMOTE`, `PENSIEVE_CC_PROMOTE_MAX`,
+    /// `PENSIEVE_CC_PROMOTE_MIN_IMPORTANCE`.
     pub fn from_env() -> Self {
         let d = CurationConfig::default();
         let get = |k: &str| std::env::var(k).ok();
         CurationConfig {
-            promote: get("KYMA_CC_PROMOTE").map_or(d.promote, |v| v != "0"),
-            promote_max: get("KYMA_CC_PROMOTE_MAX")
+            promote: get("PENSIEVE_CC_PROMOTE").map_or(d.promote, |v| v != "0"),
+            promote_max: get("PENSIEVE_CC_PROMOTE_MAX")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(d.promote_max),
-            promote_min_importance: get("KYMA_CC_PROMOTE_MIN_IMPORTANCE")
+            promote_min_importance: get("PENSIEVE_CC_PROMOTE_MIN_IMPORTANCE")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(d.promote_min_importance),
             dry_run: false,
@@ -221,17 +221,17 @@ impl Default for LlmCurationConfig {
 }
 
 impl LlmCurationConfig {
-    /// Resolve from `KYMA_CC_STALE_DAYS` / `KYMA_CC_DUP_COSINE`.
+    /// Resolve from `PENSIEVE_CC_STALE_DAYS` / `PENSIEVE_CC_DUP_COSINE`.
     pub fn from_env() -> Self {
         let d = LlmCurationConfig::default();
         LlmCurationConfig {
-            stale_days: std::env::var("KYMA_CC_STALE_DAYS")
+            stale_days: std::env::var("PENSIEVE_CC_STALE_DAYS")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(d.stale_days),
             dup_band: (
                 d.dup_band.0,
-                std::env::var("KYMA_CC_DUP_COSINE")
+                std::env::var("PENSIEVE_CC_DUP_COSINE")
                     .ok()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(d.dup_band.1),
@@ -348,7 +348,7 @@ pub async fn llm_curation_pass(
     }
 
     let nodes = realm_nodes(shared, input.realm).await;
-    let file_prefix = format!("{}{}/", kyma_ccmem::TOPIC_KEY_PREFIX, input.path_slug);
+    let file_prefix = format!("{}{}/", pensieve_ccmem::TOPIC_KEY_PREFIX, input.path_slug);
     let managed_file = |n: &Node| -> Option<String> {
         n.prov_str("cc_file")
             .or_else(|| n.prov_str("cc_promoted_file"))
@@ -378,7 +378,7 @@ pub async fn llm_curation_pass(
         );
         let Ok(text) = super::runner::run_oneshot(
             state,
-            "kyma-memory-curator",
+            "pensieve-memory-curator",
             "Reviews stale memories: KEEP / ARCHIVE / REFRESH.",
             CURATION_SYSTEM,
             &item,
@@ -512,7 +512,7 @@ async fn adjudicate_near_dups(
                         .link(
                             &loser.id,
                             &winner.id,
-                            kyma_memory::EDGE_MERGED_INTO,
+                            pensieve_memory::EDGE_MERGED_INTO,
                             input.realm,
                             None,
                         )
@@ -738,7 +738,7 @@ pub async fn plan_curation(
     let mut stamps: Vec<GuardStamp> = Vec::new();
     let mut outcome = CurationOutcome::default();
     let nodes = realm_nodes(shared, input.realm).await;
-    let file_prefix = format!("{}{}/", kyma_ccmem::TOPIC_KEY_PREFIX, input.path_slug);
+    let file_prefix = format!("{}{}/", pensieve_ccmem::TOPIC_KEY_PREFIX, input.path_slug);
 
     // ── Superseded/archived file-born memories → archive their files (once).
     for n in nodes.iter().filter(|n| n.topic_key.starts_with(&file_prefix)) {
@@ -753,7 +753,7 @@ pub async fn plan_curation(
         };
         actions.push(FileAction::ArchiveFile {
             file,
-            reason: "superseded in kyma".to_string(),
+            reason: "superseded in pensieve".to_string(),
             node_id: Some(n.id.clone()),
         });
         stamps.push(GuardStamp {
@@ -795,7 +795,7 @@ pub async fn plan_curation(
                         .link(
                             &loser.id,
                             &winner.id,
-                            kyma_memory::EDGE_MERGED_INTO,
+                            pensieve_memory::EDGE_MERGED_INTO,
                             input.realm,
                             None,
                         )
@@ -821,7 +821,7 @@ pub async fn plan_curation(
         }
     }
 
-    // ── Promotion: high-value kyma memories become native files + the
+    // ── Promotion: high-value pensieve memories become native files + the
     //    managed MEMORY.md region.
     if cfg.promote {
         promote(shared, input, cfg, &nodes, &mut actions, &mut stamps, &mut outcome).await;
@@ -841,11 +841,11 @@ async fn promote(
     outcome: &mut CurationOutcome,
 ) {
     let floor = f64::from(cfg.promote_min_importance);
-    let is_file_born = |n: &Node| n.topic_key.starts_with(kyma_ccmem::TOPIC_KEY_PREFIX);
+    let is_file_born = |n: &Node| n.topic_key.starts_with(pensieve_ccmem::TOPIC_KEY_PREFIX);
     let never_promotes =
         |n: &Node| matches!(n.memory_type.as_str(), "summary" | "entity") || is_file_born(n);
 
-    // User-owned promoted files: the user edited them, kyma never rewrites —
+    // User-owned promoted files: the user edited them, pensieve never rewrites —
     // but they stay indexed (they exist on disk and matter to the user).
     let user_owned: Vec<&Node> = nodes
         .iter()
@@ -867,7 +867,7 @@ async fn promote(
     let mut kept_prev: Vec<&Node> = Vec::new();
     for n in &prev_promoted {
         if n.dead() {
-            demoted.push((n, "invalidated in kyma"));
+            demoted.push((n, "invalidated in pensieve"));
         } else if n.importance < floor * 0.8 || never_promotes(n) {
             demoted.push((n, "demoted (importance fell)"));
         } else {
@@ -943,26 +943,26 @@ async fn promote(
         let title = n.display_title();
         let file = match n.prov_str("cc_promoted_file") {
             Some(f) => f.to_string(),
-            None => unique_file(&kyma_ccmem::slug::memory_filename(&title), &used_files),
+            None => unique_file(&pensieve_ccmem::slug::memory_filename(&title), &used_files),
         };
         used_files.insert(file.clone());
         let name = file.trim_end_matches(".md").to_string();
         let cc_type = cc_type_for(&n.memory_type);
         let body = build_body(&n.content, related.get(&n.id).map_or(&[][..], |v| v));
-        let hash = kyma_ccmem::hash::content_hash(&name, Some(cc_type), &body);
+        let hash = pensieve_ccmem::hash::content_hash(&name, Some(cc_type), &body);
 
         let unchanged = n.prov_str("cc_promoted_file") == Some(file.as_str())
             && n.prov_str("cc_content_hash") == Some(hash.as_str());
         if !unchanged {
-            let rendered = kyma_ccmem::frontmatter::render(&kyma_ccmem::frontmatter::MemoryFile {
-                front: kyma_ccmem::frontmatter::Frontmatter {
+            let rendered = pensieve_ccmem::frontmatter::render(&pensieve_ccmem::frontmatter::MemoryFile {
+                front: pensieve_ccmem::frontmatter::Frontmatter {
                     name: Some(name.clone()),
                     description: Some(clip(&title, 140)),
                     cc_type: Some(cc_type.to_string()),
-                    source: Some(kyma_ccmem::KYMA_SOURCE_MARKER.to_string()),
-                    kyma_memory_id: Some(n.id.clone()),
+                    source: Some(pensieve_ccmem::PENSIEVE_SOURCE_MARKER.to_string()),
+                    pensieve_memory_id: Some(n.id.clone()),
                     content_hash: Some(hash.clone()),
-                    ..kyma_ccmem::frontmatter::Frontmatter::default()
+                    ..pensieve_ccmem::frontmatter::Frontmatter::default()
                 },
                 body: body.clone(),
             });
@@ -1010,7 +1010,7 @@ async fn promote(
     actions.push(FileAction::SetIndex { entries });
 }
 
-/// Reverse of the ingest mapping: kyma memory type → Claude Code
+/// Reverse of the ingest mapping: pensieve memory type → Claude Code
 /// `metadata.type`.
 pub fn cc_type_for(memory_type: &str) -> &'static str {
     match memory_type {
@@ -1030,7 +1030,7 @@ fn type_weight(t: &str) -> f64 {
     }
 }
 
-/// Exponential decay with kyma's standard 30-day half-life.
+/// Exponential decay with pensieve's standard 30-day half-life.
 fn recency(updated_at: &str, now: &str) -> f64 {
     let parse = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok();
     let (Some(u), Some(n)) = (parse(updated_at), parse(now)) else {
@@ -1038,7 +1038,7 @@ fn recency(updated_at: &str, now: &str) -> f64 {
     };
     #[allow(clippy::cast_precision_loss)] // second counts fit f64's mantissa
     let age_days = (n - u).num_seconds().max(0) as f64 / 86_400.0;
-    (-age_days / kyma_memory::HALF_LIFE_DAYS).exp2()
+    (-age_days / pensieve_memory::HALF_LIFE_DAYS).exp2()
 }
 
 fn clip(s: &str, max: usize) -> String {
@@ -1071,11 +1071,11 @@ fn build_body(content: &str, related: &[String]) -> String {
         body.push_str("\n\nRelated: ");
         let links: Vec<String> = related
             .iter()
-            .map(|n| kyma_ccmem::wikilink::to_wikilink(n))
+            .map(|n| pensieve_ccmem::wikilink::to_wikilink(n))
             .collect();
         body.push_str(&links.join(", "));
     }
-    body.push_str("\n\n<!-- managed by kyma — edit freely; kyma pulls your edits back -->\n");
+    body.push_str("\n\n<!-- managed by pensieve — edit freely; pensieve pulls your edits back -->\n");
     body
 }
 
@@ -1087,10 +1087,10 @@ async fn realm_nodes(shared: &SharedToolCtx, realm: &str) -> Vec<Node> {
          SELECT id, memory_type, title, content, importance, status, updated_at, \
                 invalid_at, topic_key, provenance \
          FROM latest WHERE rn = 1 AND realm = {r}",
-        nt = kyma_memory::NODE_TABLE,
-        r = kyma_memory::sql::sql_str(realm),
+        nt = pensieve_memory::NODE_TABLE,
+        r = pensieve_memory::sql::sql_str(realm),
     );
-    let res = super::execute_sql(shared, kyma_memory::DEFAULT_DATABASE, &q, 100_000).await;
+    let res = super::execute_sql(shared, pensieve_memory::DEFAULT_DATABASE, &q, 100_000).await;
     res.get("rows")
         .and_then(Value::as_array)
         .map(|rows| rows.iter().filter_map(Node::from_row).collect())
@@ -1105,10 +1105,10 @@ async fn reference_counts(
     let q = format!(
         "SELECT src, COUNT(DISTINCT id) AS c FROM {et} \
          WHERE type = 'REFERENCES' AND realm = {r} GROUP BY src",
-        et = kyma_memory::EDGE_TABLE,
-        r = kyma_memory::sql::sql_str(realm),
+        et = pensieve_memory::EDGE_TABLE,
+        r = pensieve_memory::sql::sql_str(realm),
     );
-    let res = super::execute_sql(shared, kyma_memory::DEFAULT_DATABASE, &q, 100_000).await;
+    let res = super::execute_sql(shared, pensieve_memory::DEFAULT_DATABASE, &q, 100_000).await;
     res.get("rows")
         .and_then(Value::as_array)
         .map(|rows| {
@@ -1146,10 +1146,10 @@ async fn related_names(
     let q = format!(
         "SELECT DISTINCT src, dst FROM {et} \
          WHERE type IN ('RELATES_TO', 'REFERENCES') AND realm = {r}",
-        et = kyma_memory::EDGE_TABLE,
-        r = kyma_memory::sql::sql_str(realm),
+        et = pensieve_memory::EDGE_TABLE,
+        r = pensieve_memory::sql::sql_str(realm),
     );
-    let res = super::execute_sql(shared, kyma_memory::DEFAULT_DATABASE, &q, 100_000).await;
+    let res = super::execute_sql(shared, pensieve_memory::DEFAULT_DATABASE, &q, 100_000).await;
     let Some(rows) = res.get("rows").and_then(Value::as_array) else {
         return out;
     };
@@ -1243,10 +1243,10 @@ async fn fetch_full_row(shared: &SharedToolCtx, node_id: &str) -> Option<Value> 
         "WITH latest AS (SELECT *, \
            row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS rn FROM {nt}) \
          SELECT {ALL_COLS} FROM latest WHERE rn = 1 AND id = {id} LIMIT 1",
-        nt = kyma_memory::NODE_TABLE,
-        id = kyma_memory::sql::sql_str(node_id),
+        nt = pensieve_memory::NODE_TABLE,
+        id = pensieve_memory::sql::sql_str(node_id),
     );
-    let res = super::execute_sql(shared, kyma_memory::DEFAULT_DATABASE, &q, 1).await;
+    let res = super::execute_sql(shared, pensieve_memory::DEFAULT_DATABASE, &q, 1).await;
     res.get("rows")
         .and_then(Value::as_array)
         .and_then(|a| a.first())

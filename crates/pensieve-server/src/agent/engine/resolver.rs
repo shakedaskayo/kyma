@@ -7,8 +7,8 @@
 //!   4. Ollama: no key — host URL is the config.
 
 use super::{claude_creds, EngineConfig, EngineKind};
-use kyma_core::credentials::{CredentialStore, CredentialValue};
-use kyma_core::tenant::TenantId;
+use pensieve_core::credentials::{CredentialStore, CredentialValue};
+use pensieve_core::tenant::TenantId;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]

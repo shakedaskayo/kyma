@@ -1,22 +1,22 @@
 /**
- * KymaErrorBoundary — class-based error boundary that:
+ * PensieveErrorBoundary — class-based error boundary that:
  *  - catches render errors in its subtree
  *  - renders a styled fallback card (or the `fallback` prop override)
  *  - exposes a Retry button that resets the boundary
  *  - reports to the context `onError` callback if one is set
  *
- * Uses a functional wrapper (KymaErrorBoundary) that reads the context and
+ * Uses a functional wrapper (PensieveErrorBoundary) that reads the context and
  * passes `onError` into the class boundary via props.
  */
 import { Component, type ReactNode } from "react";
-import { useKymaContext } from "../provider/context";
+import { usePensieveContext } from "../provider/context";
 
 // ── Class boundary (cannot use hooks) ────────────────────────────────────────
 
 interface ClassBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
-  /** Called when an error is caught — wired from the Kyma context. */
+  /** Called when an error is caught — wired from the Pensieve context. */
   onError?: (err: unknown) => void;
 }
 
@@ -72,18 +72,18 @@ class ClassBoundary extends Component<ClassBoundaryProps, ClassBoundaryState> {
 
 // ── Public functional wrapper (reads context via hook) ────────────────────────
 
-export interface KymaErrorBoundaryProps {
+export interface PensieveErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
 }
 
-export function KymaErrorBoundary({ children, fallback }: KymaErrorBoundaryProps) {
+export function PensieveErrorBoundary({ children, fallback }: PensieveErrorBoundaryProps) {
   // Best-effort: if rendered outside a provider (e.g. in tests without one),
   // skip the context read and pass no onError — the boundary still works.
   let onError: ((err: unknown) => void) | undefined;
   try {
     // eslint-disable-next-line react-hooks/rules-of-hooks
-    const ctx = useKymaContext();
+    const ctx = usePensieveContext();
     onError = ctx.onError;
   } catch {
     // Outside provider — acceptable; boundary works without onError

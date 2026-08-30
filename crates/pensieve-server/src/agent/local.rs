@@ -1,8 +1,8 @@
-//! Store implementations for **local single-binary mode** (`kyma-local`).
+//! Store implementations for **local single-binary mode** (`pensieve-local`).
 //!
 //! The agent surface persists engine preference, enabled skills, and tenant
 //! credentials in Postgres. Local mode has no Postgres: engine preference and
-//! enabled skills persist to JSON files under `~/.kyma` (so Settings → Agent
+//! enabled skills persist to JSON files under `~/.pensieve` (so Settings → Agent
 //! engine genuinely works and survives restarts), while credentials stay a
 //! control-plane feature (engine auth auto-detects env vars /
 //! `~/.claude/.credentials.json` instead). Memory + data + graph all run over
@@ -14,8 +14,8 @@ use uuid::Uuid;
 
 use crate::agent::engine::{EngineConfig, EnginePreferenceStore};
 use crate::agent::skills::EnabledSkillsStore;
-use kyma_core::credentials::{Credential, CredentialStore};
-use kyma_core::tenant::TenantId;
+use pensieve_core::credentials::{Credential, CredentialStore};
+use pensieve_core::tenant::TenantId;
 
 /// Engine preference store that reports "no engine configured".
 pub struct NullEnginePreferenceStore;

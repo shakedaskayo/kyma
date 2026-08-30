@@ -27,7 +27,7 @@ export const useUI = create<UIStore>()(
       toggleCmd: () => set((s) => ({ cmdOpen: !s.cmdOpen })),
     }),
     {
-      name: "kyma:ui",
+      name: "pensieve:ui",
       // Only the durable preference is persisted; palette state stays transient.
       partialize: (s) => ({ sidebarCollapsed: s.sidebarCollapsed }),
     },

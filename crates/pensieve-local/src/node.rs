@@ -1,4 +1,4 @@
-//! The kyma node daemon (`kyma worker run`) — a fabric worker on any compute.
+//! The pensieve node daemon (`pensieve worker run`) — a fabric worker on any compute.
 //!
 //! A node is more than a job executor: on a developer machine it OWNS local
 //! sources (a coding agent's memory files / transcripts — Claude Code, Cursor,
@@ -20,8 +20,8 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use kyma_core::fabric::{ClaimedJob, Heartbeat, WorkerRegistration};
-use kyma_jobs::{ExecutorRegistry, JobCtx, JobError, JobExecutor, JobQueue, JobRunner};
+use pensieve_core::fabric::{ClaimedJob, Heartbeat, WorkerRegistration};
+use pensieve_jobs::{ExecutorRegistry, JobCtx, JobError, JobExecutor, JobQueue, JobRunner};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,9 +31,9 @@ use crate::agent_sources;
 
 #[derive(Debug, Clone)]
 pub struct NodeConfig {
-    /// Control-plane base URL (e.g. `https://kyma.example.com`).
+    /// Control-plane base URL (e.g. `https://pensieve.example.com`).
     pub server_url: String,
-    /// Worker token (`kyw_…`) minted by `kyma worker create`.
+    /// Worker token (`kyw_…`) minted by `pensieve worker create`.
     pub token: String,
     /// Job kinds this node executes. Default: `["source_sync"]`.
     pub accept: Vec<String>,
@@ -44,13 +44,13 @@ pub struct NodeConfig {
 
 impl NodeConfig {
     pub fn validate(&self) -> Result<()> {
-        let insecure = std::env::var("KYMA_WORKER_INSECURE").ok().as_deref() == Some("1");
+        let insecure = std::env::var("PENSIEVE_WORKER_INSECURE").ok().as_deref() == Some("1");
         let local = self.server_url.starts_with("http://127.0.0.1")
             || self.server_url.starts_with("http://localhost");
         if self.server_url.starts_with("http://") && !insecure && !local {
             anyhow::bail!(
                 "refusing plain http to a non-local control plane (worker tokens + claim \
-                 payloads ride this channel). Use https, or set KYMA_WORKER_INSECURE=1."
+                 payloads ride this channel). Use https, or set PENSIEVE_WORKER_INSECURE=1."
             );
         }
         if !self.token.starts_with("kyw_") {
@@ -196,7 +196,7 @@ pub struct SourceSyncExecutor;
 #[async_trait]
 impl JobExecutor for SourceSyncExecutor {
     fn kind(&self) -> &'static str {
-        kyma_core::fabric::JOB_SOURCE_SYNC
+        pensieve_core::fabric::JOB_SOURCE_SYNC
     }
 
     async fn run(&self, ctx: &JobCtx, job: &ClaimedJob) -> Result<Value, JobError> {
@@ -265,7 +265,7 @@ pub async fn run_node(cfg: NodeConfig) -> Result<()> {
 
     let reg = WorkerRegistration {
         name: cfg.name.clone().unwrap_or_else(|| format!("node@{hostname}")),
-        kind: kyma_core::fabric::WorkerKind::Daemon,
+        kind: pensieve_core::fabric::WorkerKind::Daemon,
         hostname: Some(hostname.clone()),
         capabilities,
         labels: json!({}),
@@ -307,7 +307,7 @@ pub async fn run_node(cfg: NodeConfig) -> Result<()> {
         if !accepts_source_sync {
             return;
         }
-        let poll = std::env::var("KYMA_CC_SYNC_POLL_SECS")
+        let poll = std::env::var("PENSIEVE_CC_SYNC_POLL_SECS")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(60u64);

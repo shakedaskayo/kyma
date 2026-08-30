@@ -1,18 +1,18 @@
 //! End-to-end MCP handshake test against a real TCP listener.
 
-use kyma_mcp::{router, McpState, ServerInfo, ToolDispatch};
-use kyma_server::agent::SharedToolCtx;
-use kyma_server::auth::{
+use pensieve_mcp::{router, McpState, ServerInfo, ToolDispatch};
+use pensieve_server::agent::SharedToolCtx;
+use pensieve_server::auth::{
     require_role_middleware, AuthBackend, AuthLayerState, EnvAuthBackend, Role,
 };
-use kyma_server::test_support::seeded_state_with_obs_otel_logs;
+use pensieve_server::test_support::seeded_state_with_obs_otel_logs;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn full_mcp_handshake_against_seeded_server() {
     let state = seeded_state_with_obs_otel_logs().await;
-    let url = std::env::var("KYMA_TEST_DATABASE_URL").expect("KYMA_TEST_DATABASE_URL");
+    let url = std::env::var("PENSIEVE_TEST_DATABASE_URL").expect("PENSIEVE_TEST_DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
     let shared = SharedToolCtx {
         realm_scope: Default::default(),
@@ -29,7 +29,7 @@ async fn full_mcp_handshake_against_seeded_server() {
         dispatch: ToolDispatch::new(shared),
         builder: None,
         server_info: ServerInfo {
-            name: "kyma".into(),
+            name: "pensieve".into(),
             version: "test".into(),
         },
     };
@@ -144,7 +144,7 @@ async fn full_mcp_handshake_against_seeded_server() {
 #[tokio::test]
 async fn rejects_request_without_bearer_token() {
     let state = seeded_state_with_obs_otel_logs().await;
-    let url = std::env::var("KYMA_TEST_DATABASE_URL").expect("KYMA_TEST_DATABASE_URL");
+    let url = std::env::var("PENSIEVE_TEST_DATABASE_URL").expect("PENSIEVE_TEST_DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
     let shared = SharedToolCtx {
         realm_scope: Default::default(),
@@ -161,7 +161,7 @@ async fn rejects_request_without_bearer_token() {
         dispatch: ToolDispatch::new(shared),
         builder: None,
         server_info: ServerInfo {
-            name: "kyma".into(),
+            name: "pensieve".into(),
             version: "test".into(),
         },
     };

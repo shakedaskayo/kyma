@@ -8,7 +8,7 @@
 //! ```
 //!
 //! A push is also the ingest trigger: after `receive-pack` updates the
-//! branch, the old..new diff is planned by `kyma_brain::ingest` and applied
+//! branch, the old..new diff is planned by `pensieve_brain::ingest` and applied
 //! through the `MemoryWriter` while the per-brain lock is held, so a
 //! subsequent export can never miss a landed-but-uningested push.
 
@@ -26,10 +26,10 @@ use std::collections::BTreeMap;
 use std::io::Read as _;
 use tokio::io::AsyncWriteExt as _;
 
-use kyma_brain::gitbin::GitBin;
-use kyma_brain::ingest::{plan_push_ingest, IngestOp};
-use kyma_brain::registry::{BrainRecord, BrainRunRecord};
-use kyma_brain::{pktline, BRAIN_BRANCH};
+use pensieve_brain::gitbin::GitBin;
+use pensieve_brain::ingest::{plan_push_ingest, IngestOp};
+use pensieve_brain::registry::{BrainRecord, BrainRunRecord};
+use pensieve_brain::{pktline, BRAIN_BRANCH};
 
 use crate::agent::tools::{execute_sql, SharedToolCtx};
 use crate::auth::{Principal, Role};
@@ -74,7 +74,7 @@ async fn resolve_brain(
     let Some(name) = repo.strip_suffix(".git") else {
         return Err(plain(StatusCode::NOT_FOUND, "repository must be addressed as <name>.git"));
     };
-    if kyma_brain::validate_name(name).is_err() {
+    if pensieve_brain::validate_name(name).is_err() {
         return Err(plain(StatusCode::NOT_FOUND, "unknown repository"));
     }
     let rec = match state.registry.get(name).await {
@@ -330,12 +330,12 @@ fn shared_ctx(state: &BrainState) -> SharedToolCtx {
 /// Latest full node row by bare memory uuid (all columns — re-appended
 /// verbatim on archive, embedding included).
 async fn latest_row_by_id(state: &BrainState, id: &str) -> Option<Value> {
-    let node_id = kyma_memory::sql::sql_str(&format!("memory:{id}"));
+    let node_id = pensieve_memory::sql::sql_str(&format!("memory:{id}"));
     let q = format!(
         "WITH latest AS (SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn \
          FROM memory_nodes) SELECT * FROM latest WHERE __rn = 1 AND id = {node_id} LIMIT 1"
     );
-    execute_sql(&shared_ctx(state), kyma_memory::DEFAULT_DATABASE, &q, 1)
+    execute_sql(&shared_ctx(state), pensieve_memory::DEFAULT_DATABASE, &q, 1)
         .await
         .get("rows")
         .and_then(Value::as_array)
@@ -359,7 +359,7 @@ async fn ingest_push(
         None => git.ls_tree_paths(dir, new_head).await.map(|paths| {
             paths
                 .into_iter()
-                .map(|p| (kyma_brain::gitbin::ChangeKind::Added, p))
+                .map(|p| (pensieve_brain::gitbin::ChangeKind::Added, p))
                 .collect::<Vec<_>>()
         }),
     };
@@ -376,8 +376,8 @@ async fn ingest_push(
 
     // Prior manifest (pre-push tip) maps exported paths to memory ids.
     let prior = match old_head {
-        Some(old) => kyma_brain::export::read_prior_manifest(git, dir, Some(old)).await,
-        None => Ok(kyma_brain::types::Manifest::default()),
+        Some(old) => pensieve_brain::export::read_prior_manifest(git, dir, Some(old)).await,
+        None => Ok(pensieve_brain::types::Manifest::default()),
     }
     .unwrap_or_default();
     let prior_ids: BTreeMap<String, String> = prior.memory_ids_by_path();
@@ -386,7 +386,7 @@ async fn ingest_push(
     // changed path at the new tip.
     let mut blobs: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for (kind, path) in &changes {
-        if !matches!(kind, kyma_brain::gitbin::ChangeKind::Deleted) && path.ends_with(".md") {
+        if !matches!(kind, pensieve_brain::gitbin::ChangeKind::Deleted) && path.ends_with(".md") {
             if let Ok(bytes) = git.cat_file(dir, new_head, path).await {
                 blobs.insert(path.clone(), bytes);
             }
@@ -398,14 +398,14 @@ async fn ingest_push(
         return report;
     }
 
-    let embed = match kyma_memory::shared_embedding().await {
+    let embed = match pensieve_memory::shared_embedding().await {
         Ok(e) => e,
         Err(e) => {
             report.error = Some(format!("embedding backend: {e}"));
             return report;
         }
     };
-    let writer = kyma_memory::MemoryWriter::new(
+    let writer = pensieve_memory::MemoryWriter::new(
         state.agent.catalog.clone(),
         state.agent.format.clone(),
         embed,
@@ -424,23 +424,23 @@ async fn ingest_push(
 
 fn create_memory_from_note(
     rec: &BrainRecord,
-    note: &kyma_brain::notes::ParsedNote,
+    note: &pensieve_brain::notes::ParsedNote,
     realm: String,
     topic_key: Option<String>,
     rel_path: &str,
-) -> kyma_memory::CreateMemory {
-    let mut m = kyma_memory::CreateMemory::new(note.body.clone());
+) -> pensieve_memory::CreateMemory {
+    let mut m = pensieve_memory::CreateMemory::new(note.body.clone());
     m.title = note.title.clone();
     m.memory_type = note
         .memory_type
         .as_deref()
-        .map_or(kyma_memory::MemoryType::Fact, kyma_memory::MemoryType::parse);
+        .map_or(pensieve_memory::MemoryType::Fact, pensieve_memory::MemoryType::parse);
     m.tags = note.tags.clone();
     m.realm = realm;
     m.importance = note.importance.map_or(0.6, |v| v as f32);
     m.topic_key = topic_key;
     m.provenance = Some(json!({
-        "source": kyma_brain::BRAIN_PROVENANCE_SOURCE,
+        "source": pensieve_brain::BRAIN_PROVENANCE_SOURCE,
         "brain": rec.config.name,
         "path": rel_path,
     }));
@@ -449,7 +449,7 @@ fn create_memory_from_note(
 
 async fn apply_op(
     state: &BrainState,
-    writer: &kyma_memory::MemoryWriter,
+    writer: &pensieve_memory::MemoryWriter,
     rec: &BrainRecord,
     now: &str,
     op: IngestOp,
@@ -457,7 +457,7 @@ async fn apply_op(
     match op {
         IngestOp::UpdateExisting { memory_id, rel_path, note } => {
             let uuid = uuid::Uuid::parse_str(&memory_id)
-                .map_err(|_| format!("{rel_path}: invalid kyma_memory_id, skipped"))?;
+                .map_err(|_| format!("{rel_path}: invalid pensieve_memory_id, skipped"))?;
             let existing = latest_row_by_id(state, &memory_id).await;
             let Some(row) = existing else {
                 return Err(format!("{rel_path}: memory {memory_id} not found, skipped"));
@@ -477,7 +477,7 @@ async fn apply_op(
             }
             if note.memory_type.is_none() {
                 if let Some(t) = field("memory_type") {
-                    m.memory_type = kyma_memory::MemoryType::parse(&t);
+                    m.memory_type = pensieve_memory::MemoryType::parse(&t);
                 }
             }
             if note.importance.is_none() {

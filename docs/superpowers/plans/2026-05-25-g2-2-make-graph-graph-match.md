@@ -4,13 +4,13 @@
 
 **Goal:** Add KQL `make-graph` + `graph-match` for fixed single-hop pattern matching that projects node/edge properties across the pattern — e.g. `Edges | make-graph caller --> callee with Services on id | graph-match (a)-[e:CALLS]->(b) project a.name, e.latency, b.name`.
 
-**Architecture:** All in `crates/kyma-kql`. `make-graph` records a `GraphDef` (edge src/dst cols + node table + id col) on `QueryState`; it emits no SQL. `graph-match` consumes the `GraphDef`, parses a `(a)-[e:TYPE]->(b)` pattern + a required `project` list, and pushes a non-recursive CTE that 3-way-joins the edge table to the node table twice (`a` on src, `b` on dst), with an optional `WHERE e."type" = '<TYPE>'`. To avoid touching the **shared** expression parser (which deliberately reserves dotted paths for format-v1 dynamic columns), `graph-match` uses a **local** project parser for `var.col [as alias]` items — no change to `parse_expr`/`parse_atom`.
+**Architecture:** All in `crates/pensieve-kql`. `make-graph` records a `GraphDef` (edge src/dst cols + node table + id col) on `QueryState`; it emits no SQL. `graph-match` consumes the `GraphDef`, parses a `(a)-[e:TYPE]->(b)` pattern + a required `project` list, and pushes a non-recursive CTE that 3-way-joins the edge table to the node table twice (`a` on src, `b` on dst), with an optional `WHERE e."type" = '<TYPE>'`. To avoid touching the **shared** expression parser (which deliberately reserves dotted paths for format-v1 dynamic columns), `graph-match` uses a **local** project parser for `var.col [as alias]` items — no change to `parse_expr`/`parse_atom`.
 
-**Tech Stack:** Rust, `kyma-kql` (lexer + parser + state). Inline golden tests + a live execution check.
+**Tech Stack:** Rust, `pensieve-kql` (lexer + parser + state). Inline golden tests + a live execution check.
 
-**Reference:** `crates/kyma-kql/src/lexer.rs` (Token enum ~4-30, `-` scan ~243-258), `parser.rs` (`parse_operator` ~128, `op_graph_traverse` as the CTE-push template, `quote_ident`, tests ~868+), `state.rs` (`QueryState` ~7-34). The G2 exploration report (KQL parser map) has the details.
+**Reference:** `crates/pensieve-kql/src/lexer.rs` (Token enum ~4-30, `-` scan ~243-258), `parser.rs` (`parse_operator` ~128, `op_graph_traverse` as the CTE-push template, `quote_ident`, tests ~868+), `state.rs` (`QueryState` ~7-34). The G2 exploration report (KQL parser map) has the details.
 
-**Working dir:** worktree `…/.claude/worktrees/feature+graph-layer`. `cargo test -p kyma-kql`.
+**Working dir:** worktree `…/.claude/worktrees/feature+graph-layer`. `cargo test -p pensieve-kql`.
 
 ---
 
@@ -28,7 +28,7 @@ Edges
 
 ## Task 1: lexer tokens — `:`, `-->`, `->`
 
-**Files:** `crates/kyma-kql/src/lexer.rs` (+ inline tests).
+**Files:** `crates/pensieve-kql/src/lexer.rs` (+ inline tests).
 
 - [ ] **Step 1: failing test** — add to lexer tests (find the `#[cfg(test)]` module; if none, add one):
 ```rust
@@ -52,7 +52,7 @@ fn minus_still_lexes_alone() {
 ```
 (Confirm `tokenize` is the lexer entry + how `Token` is imported in the test module.)
 
-- [ ] **Step 2:** `cargo test -p kyma-kql lexes_graph` → FAIL (Colon/Arrow/RightArrow don't exist).
+- [ ] **Step 2:** `cargo test -p pensieve-kql lexes_graph` → FAIL (Colon/Arrow/RightArrow don't exist).
 
 - [ ] **Step 3: implement.** In the `Token` enum add `Colon, Arrow, RightArrow`. In the scanner:
   - `':'` → push `Token::Colon`.
@@ -62,11 +62,11 @@ fn minus_still_lexes_alone() {
     - else push `Token::Minus` (unchanged).
   READ the existing `-` handling (~lexer.rs:243-258) and integrate so hyphenated idents (`graph-match`, `max-hops`) are UNAFFECTED — those are consumed by the identifier scanner before reaching the standalone-dash branch. Only standalone `-` (after `)`, `]`, whitespace, etc.) reaches this branch.
 
-- [ ] **Step 4:** `cargo test -p kyma-kql` → all pass (new lexer tests + ALL existing parser/lexer tests unchanged — the existing `graph-traverse`/arithmetic tests must still pass; `-` in `a - b` and negative numbers still lex as `Minus`). `cargo build -p kyma-kql` clean.
+- [ ] **Step 4:** `cargo test -p pensieve-kql` → all pass (new lexer tests + ALL existing parser/lexer tests unchanged — the existing `graph-traverse`/arithmetic tests must still pass; `-` in `a - b` and negative numbers still lex as `Minus`). `cargo build -p pensieve-kql` clean.
 
 - [ ] **Step 5: Commit:**
 ```bash
-git add crates/kyma-kql/src/lexer.rs
+git add crates/pensieve-kql/src/lexer.rs
 git commit -m "feat(kql/lexer): Colon, Arrow (-->), RightArrow (->) tokens"
 ```
 
@@ -74,7 +74,7 @@ git commit -m "feat(kql/lexer): Colon, Arrow (-->), RightArrow (->) tokens"
 
 ## Task 2: `QueryState.graph_def` + `make-graph`
 
-**Files:** `crates/kyma-kql/src/state.rs`, `crates/kyma-kql/src/parser.rs`.
+**Files:** `crates/pensieve-kql/src/state.rs`, `crates/pensieve-kql/src/parser.rs`.
 
 - [ ] **Step 1:** in `state.rs`, add a `GraphDef` struct + field on `QueryState`:
 ```rust
@@ -192,11 +192,11 @@ Add helpers if missing: `expect(&Token)` (bump + assert equals), `expect_ident()
 
 NOTE on `:TYPE` as an ident: a bare type like `CALLS` lexes as `Ident`. If a type needs quoting, `[e:"some type"]` would lex `:` then `Str` — for v1 support only the `Ident` type token; a `Str` type can be a later enhancement (report if you add it).
 
-- [ ] **Step 6:** `cargo test -p kyma-kql` → all pass (new + existing). `cargo build` + `cargo clippy -p kyma-kql` clean.
+- [ ] **Step 6:** `cargo test -p pensieve-kql` → all pass (new + existing). `cargo build` + `cargo clippy -p pensieve-kql` clean.
 
 - [ ] **Step 7: Commit:**
 ```bash
-git add crates/kyma-kql/src/state.rs crates/kyma-kql/src/parser.rs
+git add crates/pensieve-kql/src/state.rs crates/pensieve-kql/src/parser.rs
 git commit -m "feat(kql): make-graph + graph-match (single-hop pattern + project)"
 ```
 
@@ -210,7 +210,7 @@ git commit -m "feat(kql): make-graph + graph-match (single-hop pattern + project
 kg_edges | make-graph src --> dst with kg_nodes on id | graph-match (a)-[e:CALLS]->(b) project a.name as src_name, b.name as dst_name, e.type
 ```
 Expected: one row — `src_name=payments, dst_name=auth, type=CALLS` (the n1→n2 CALLS edge; payments→auth). This proves the join CTE + edge-type filter + property projection execute against DataFusion. Report the actual rows.
-- [ ] **Step 3:** `cargo test -p kyma-kql` all pass; build clean. Commit:
+- [ ] **Step 3:** `cargo test -p pensieve-kql` all pass; build clean. Commit:
 ```bash
 git add docs/graphs.md
 git commit -m "docs(graphs): document make-graph + graph-match"

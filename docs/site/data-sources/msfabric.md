@@ -1,12 +1,12 @@
 ---
 title: Microsoft Fabric
-description: Query Fabric Lakehouse and Warehouse tables live over the SQL analytics endpoint — schemas cataloged in kyma, data stays in Fabric, whole subplans pushed down as T-SQL.
+description: Query Fabric Lakehouse and Warehouse tables live over the SQL analytics endpoint — schemas cataloged in pensieve, data stays in Fabric, whole subplans pushed down as T-SQL.
 ---
 
 # Microsoft Fabric
 
 `type`: `"msfabric"`. The first **federated** data source: it never ingests
-rows. A periodic metadata sync mirrors the remote tables into a kyma
+rows. A periodic metadata sync mirrors the remote tables into a pensieve
 database as *federated tables* (schema only), and queries against them
 execute live on Fabric's compute — filters, joins between two Fabric
 tables, and aggregations are pushed down as a single T-SQL statement
@@ -76,9 +76,9 @@ endpoint and reconciles `target_database`:
 - new remote tables appear as federated tables (bare name for the `dbo`
   schema, `schema__table` otherwise);
 - schema drift drops + recreates the catalog entry (no data is touched —
-  there is none in kyma);
+  there is none in pensieve);
 - tables that disappear remotely are dropped;
-- a name collision with a non-federated kyma table is skipped with a
+- a name collision with a non-federated pensieve table is skipped with a
   warning — ingested data is never clobbered.
 
 It also registers an `msfabric` context graph
@@ -101,8 +101,8 @@ LIMIT  20;
 ```
 
 The whole statement compiles to one T-SQL query and runs on Fabric;
-kyma streams back only the result rows. A join between a Fabric table
-and a local kyma table runs the Fabric side remotely and the join
+pensieve streams back only the result rows. A join between a Fabric table
+and a local pensieve table runs the Fabric side remotely and the join
 locally.
 
 `describe_table` / `explore_schema` mark these tables with
@@ -115,9 +115,9 @@ Remote queries run on your Fabric capacity. Server-wide bounds, env-tunable:
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `KYMA_FEDERATION_TIMEOUT_MS` | `30000` | Wall-clock budget per remote query |
-| `KYMA_FEDERATION_MAX_ROWS` | `100000` | Row cap per remote result (truncates + warns) |
-| `KYMA_FEDERATION_MAX_CONCURRENT` | `4` | In-flight remote queries per source |
+| `PENSIEVE_FEDERATION_TIMEOUT_MS` | `30000` | Wall-clock budget per remote query |
+| `PENSIEVE_FEDERATION_MAX_ROWS` | `100000` | Row cap per remote result (truncates + warns) |
+| `PENSIEVE_FEDERATION_MAX_CONCURRENT` | `4` | In-flight remote queries per source |
 
 Set `"exclude_from_wildcard": true` to keep the source out of
 `x-database: *` fan-outs; explicit queries still work.

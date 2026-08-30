@@ -27,13 +27,13 @@ Agents (via MCP) and the UI (via HTTP) hit different code, so results, ranking, 
 | Backward compatibility | `/v1/search` with no `mode` == today's behavior, byte-for-byte for the `data` envelope. New envelope fields are **additive/optional**. `/v1/agent/memory/query` and `/v1/graph/:graph/search` stay. |
 | MCP | **Refined during implementation:** memory tools (`memory_search`/`recall_memory`) keep calling `retrieve()` directly — that IS the shared substrate the `memory` arm delegates to, and the tools return a strictly richer payload than the lossy `UnifiedHit` envelope, so re-pointing them would regress recall. Instead add a `search` tool (`data` mode) and a `graph_search` tool (`graph` mode) so agents gain the data + graph modes through `unified_search`. |
 | Context unification | A small `SearchCtx` (catalog, format, embedder, pool, tenant, principal) built by both the HTTP handler and the MCP tool ctx; `unified_search` builds each mode's needs from it (e.g. a `SharedToolCtx` for `retrieve()`). |
-| UI | `data` stays the Explore default (current UX preserved). Client gains `mode`; the envelope change must not break `KymaExplore`. A lightweight memory/graph search affordance is in scope only if cheap; otherwise deferred. |
+| UI | `data` stays the Explore default (current UX preserved). Client gains `mode`; the envelope change must not break `PensieveExplore`. A lightweight memory/graph search affordance is in scope only if cheap; otherwise deferred. |
 
 ## Architecture
 
 ### The substrate: `unified_search()`
 
-New module `crates/kyma-server/src/search/unified.rs` (split `search.rs` into a `search/` module: `mod.rs` keeps the data-mode legs/RRF, `unified.rs` is the dispatcher, `types.rs` the envelope).
+New module `crates/pensieve-server/src/search/unified.rs` (split `search.rs` into a `search/` module: `mod.rs` keeps the data-mode legs/RRF, `unified.rs` is the dispatcher, `types.rs` the envelope).
 
 ```rust
 pub struct SearchCtx { /* catalog, format, embedder handle, pool, tenant, principal */ }
@@ -92,17 +92,17 @@ pub async fn unified_search(ctx: &SearchCtx, req: UnifiedSearchRequest)
 
 `search_handler` builds `SearchCtx` from `QueryState` + principal/tenant, parses the (extended, backward-compatible) `SearchBody` into `UnifiedSearchRequest`, calls `unified_search`, serializes `UnifiedSearchResponse`. With no `mode`, the response keeps the current `{hits:[{source,score,row}], sources_searched, elapsed_ms}` keys (the new fields are simply absent/empty), so existing clients are unaffected.
 
-### MCP tools (`kyma-mcp` + `agent/memory_tools.rs`)
+### MCP tools (`pensieve-mcp` + `agent/memory_tools.rs`)
 
 - `memory_search` / `recall_memory` → call `unified_search(Memory)` (build `SearchCtx` from the tool's `SharedToolCtx`). Same inputs as today; identical results (it's the same `retrieve()` underneath, now via the shared entry).
 - New `search` tool → `unified_search(Data)`: agents get hybrid lexical+vector data search (what the UI has).
 - New `graph_search` tool → `unified_search(Graph)`: agents get graph node search.
-- Register the two new tools in the dispatch table (`kyma-mcp/src/tools.rs`) and the bundled skill docs (the kyma skills) so agents discover them. Keep the agent-agnostic registry pattern.
+- Register the two new tools in the dispatch table (`pensieve-mcp/src/tools.rs`) and the bundled skill docs (the pensieve skills) so agents discover them. Keep the agent-agnostic registry pattern.
 
 ### Client + UI
 
 - `packages/client/src/search.ts`: `search()` request gains optional `mode` + the memory/graph fields; response type gains the optional envelope fields. Keep the existing default path working.
-- `KymaExplore.tsx`: unchanged default (data). Optional: a small mode chip to target memory/graph (in scope only if it doesn't balloon the task; otherwise a follow-up). The `autoRun` WIP is preserved.
+- `PensieveExplore.tsx`: unchanged default (data). Optional: a small mode chip to target memory/graph (in scope only if it doesn't balloon the task; otherwise a follow-up). The `autoRun` WIP is preserved.
 
 ## Error handling
 - Unknown `mode` → 400 with the allowed set.
@@ -114,7 +114,7 @@ pub async fn unified_search(ctx: &SearchCtx, req: UnifiedSearchRequest)
 - **Rust integration**: `unified_search(Memory)` returns the same memories as a direct `retrieve()` call (parity test — proves no regression); `unified_search(Data)` matches the pre-refactor `/v1/search` for a fixture; `unified_search(Graph)` finds a node.
 - **MCP**: `memory_search` via the unified path returns the same shape as before (snapshot); the new `search`/`graph_search` tools dispatch and return hits.
 - **HTTP**: `/v1/search` with no mode == legacy response keys; `mode:"memory"` returns `context`+memory hits.
-- **Client/React**: `search()` with `mode` round-trips; KymaExplore still renders data results with the new envelope.
+- **Client/React**: `search()` with `mode` round-trips; PensieveExplore still renders data results with the new envelope.
 
 ## Out of scope / deferred
 - Auto mode-detection in `/v1/search` (explicit `mode` for v1).
@@ -123,10 +123,10 @@ pub async fn unified_search(ctx: &SearchCtx, req: UnifiedSearchRequest)
 - Cypher (Piece 3), dreaming-as-skill (Piece 2).
 
 ## File touch list (anticipated)
-- `crates/kyma-server/src/search.rs` → split into `search/{mod.rs,unified.rs,types.rs}` (mod.rs = data legs + RRF, kept).
-- `crates/kyma-server/src/agent/memory_tools.rs` — memory tools call `unified_search`.
-- `crates/kyma-mcp/src/tools.rs` — register `search` + `graph_search`; re-point memory tools.
-- `crates/kyma-server/src/lib.rs` — handler wiring (route unchanged).
+- `crates/pensieve-server/src/search.rs` → split into `search/{mod.rs,unified.rs,types.rs}` (mod.rs = data legs + RRF, kept).
+- `crates/pensieve-server/src/agent/memory_tools.rs` — memory tools call `unified_search`.
+- `crates/pensieve-mcp/src/tools.rs` — register `search` + `graph_search`; re-point memory tools.
+- `crates/pensieve-server/src/lib.rs` — handler wiring (route unchanged).
 - `packages/client/src/search.ts` — `mode` + envelope types.
-- `packages/react/src/explore/KymaExplore.tsx` — keep data default; optional mode chip.
+- `packages/react/src/explore/PensieveExplore.tsx` — keep data default; optional mode chip.
 - Bundled skill docs — mention the new tools (agent-agnostic).

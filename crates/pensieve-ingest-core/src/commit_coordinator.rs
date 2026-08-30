@@ -32,9 +32,9 @@
 //! `catalog.begin_snapshot`. This preserves correctness but loses the
 //! grouping benefit until the coordinator restarts.
 
-use kyma_core::catalog::{Catalog, ExtentManifest, SnapshotSummary};
-use kyma_core::errors::{CatalogError, Error, Result};
-use kyma_core::types::{SnapshotId, TableId};
+use pensieve_core::catalog::{Catalog, ExtentManifest, SnapshotSummary};
+use pensieve_core::errors::{CatalogError, Error, Result};
+use pensieve_core::types::{SnapshotId, TableId};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -77,12 +77,12 @@ impl Default for CoordinatorConfig {
 impl CoordinatorConfig {
     pub fn from_env() -> Self {
         let mut d = Self::default();
-        if let Ok(v) = std::env::var("KYMA_COMMIT_WINDOW_MS")
+        if let Ok(v) = std::env::var("PENSIEVE_COMMIT_WINDOW_MS")
             .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
         {
             d.batch_window = Duration::from_millis(v);
         }
-        if let Ok(v) = std::env::var("KYMA_COMMIT_MAX_EXTENTS").and_then(|v| {
+        if let Ok(v) = std::env::var("PENSIEVE_COMMIT_MAX_EXTENTS").and_then(|v| {
             v.parse::<usize>()
                 .map_err(|_| std::env::VarError::NotPresent)
         }) {
@@ -238,12 +238,12 @@ async fn commit_one_table_group(catalog: &dyn Catalog, table_id: TableId, jobs: 
         {
             Ok(snapshot_id) => {
                 ::metrics::counter!(
-                    "kyma_commit_batches_total",
+                    "pensieve_commit_batches_total",
                     "table" => label.clone()
                 )
                 .increment(1);
                 ::metrics::histogram!(
-                    "kyma_commit_batch_extents",
+                    "pensieve_commit_batch_extents",
                     "table" => label.clone()
                 )
                 .record(extent_count as f64);
@@ -254,7 +254,7 @@ async fn commit_one_table_group(catalog: &dyn Catalog, table_id: TableId, jobs: 
             }
             Err(Error::Catalog(CatalogError::Conflict)) => {
                 ::metrics::counter!(
-                    "kyma_catalog_cas_conflicts_total",
+                    "pensieve_catalog_cas_conflicts_total",
                     "table" => label.clone()
                 )
                 .increment(1);

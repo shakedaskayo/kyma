@@ -10,29 +10,29 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
-use kyma_local::build_local_app;
-use kyma_memory::{CreateMemory, MemoryWriter};
-use kyma_server::agent::tools::{execute_sql, SharedToolCtx};
+use pensieve_local::build_local_app;
+use pensieve_memory::{CreateMemory, MemoryWriter};
+use pensieve_server::agent::tools::{execute_sql, SharedToolCtx};
 use serde_json::Value;
 
 #[derive(Debug)]
 struct MockEmbed;
 
 #[async_trait::async_trait]
-impl kyma_embed::EmbeddingBackend for MockEmbed {
+impl pensieve_embed::EmbeddingBackend for MockEmbed {
     fn id(&self) -> &str {
         "mock/brain-it"
     }
     fn dimension(&self) -> u16 {
         4
     }
-    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, kyma_embed::EmbedError> {
+    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, pensieve_embed::EmbedError> {
         Ok(texts.iter().map(|t| vec![0.5, 0.25, 0.125, t.len() as f32 / 100.0]).collect())
     }
 }
 
-type CatalogArc = Arc<dyn kyma_core::catalog::Catalog>;
-type FormatArc = Arc<dyn kyma_core::segment_format::SegmentFormat>;
+type CatalogArc = Arc<dyn pensieve_core::catalog::Catalog>;
+type FormatArc = Arc<dyn pensieve_core::segment_format::SegmentFormat>;
 
 fn git(dir: &Path, args: &[&str]) -> std::process::Output {
     Command::new("git")
@@ -74,7 +74,7 @@ async fn latest_node(shared: &SharedToolCtx, id_pred: &str) -> Option<Value> {
         "WITH latest AS (SELECT *, row_number() OVER (PARTITION BY id ORDER BY updated_at DESC) AS __rn \
          FROM memory_nodes) SELECT * FROM latest WHERE __rn = 1 AND {id_pred} LIMIT 1"
     );
-    execute_sql(shared, kyma_memory::DEFAULT_DATABASE, &q, 1)
+    execute_sql(shared, pensieve_memory::DEFAULT_DATABASE, &q, 1)
         .await
         .get("rows")
         .and_then(Value::as_array)
@@ -88,38 +88,38 @@ async fn brain_clone_push_ingest_round_trip() {
         eprintln!("skipping: git binary not found");
         return;
     }
-    let _ = kyma_memory::try_set_shared_embedding(Arc::new(MockEmbed));
+    let _ = pensieve_memory::try_set_shared_embedding(Arc::new(MockEmbed));
 
-    // Isolated KYMA_HOME so brains.json + repos land in the tempdir.
+    // Isolated PENSIEVE_HOME so brains.json + repos land in the tempdir.
     let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("KYMA_HOME", tmp.path().join("kyma-home"));
+    std::env::set_var("PENSIEVE_HOME", tmp.path().join("pensieve-home"));
 
     let catalog: CatalogArc = Arc::new(
-        kyma_catalog_sqlite::SqliteCatalog::connect_in_memory().await.expect("in-memory catalog"),
+        pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory().await.expect("in-memory catalog"),
     );
     let data_root = tmp.path().join("data");
     std::fs::create_dir_all(&data_root).unwrap();
-    let store = kyma_storage::build_object_store(&kyma_storage::StorageConfig::Local {
+    let store = pensieve_storage::build_object_store(&pensieve_storage::StorageConfig::Local {
         root: data_root.to_string_lossy().to_string(),
     })
     .expect("local store");
-    let format: FormatArc = Arc::new(kyma_format_tlm::TelemetryFormat::new(store, "test"));
+    let format: FormatArc = Arc::new(pensieve_format_tlm::TelemetryFormat::new(store, "test"));
 
-    // Seed one memory in realm `kyma`.
+    // Seed one memory in realm `pensieve`.
     let writer = MemoryWriter::new(catalog.clone(), format.clone(), Arc::new(MockEmbed));
     let seeded_id = {
         let mut m = CreateMemory::new("Sessions are stateless JWTs signed with the server keypair.");
         m.title = Some("Auth model uses stateless JWT".into());
-        m.realm = "kyma".into();
-        m.memory_type = kyma_memory::MemoryType::Decision;
+        m.realm = "pensieve".into();
+        m.memory_type = pensieve_memory::MemoryType::Decision;
         m.importance = 0.8;
         writer.save(&m).await.expect("seed memory")
     };
 
-    let backend: Arc<dyn kyma_server::auth::AuthBackend> = Arc::new(
-        kyma_server::auth::EnvAuthBackend::from_str("admin-tok:admin,read-tok:read"),
+    let backend: Arc<dyn pensieve_server::auth::AuthBackend> = Arc::new(
+        pensieve_server::auth::EnvAuthBackend::from_str("admin-tok:admin,read-tok:read"),
     );
-    let brain_git = kyma_brain::gitbin::GitBin::detect().await.map(Arc::new);
+    let brain_git = pensieve_brain::gitbin::GitBin::detect().await.map(Arc::new);
     assert!(brain_git.is_some(), "git detected above, GitBin::detect must succeed");
     let (app, _agent_state, _brain_state) = build_local_app(
         catalog.clone(),
@@ -130,7 +130,7 @@ async fn brain_clone_push_ingest_round_trip() {
         None,
         None,
         None,
-        kyma_local::watcher_status::LocalWatcherStatus::default(),
+        pensieve_local::watcher_status::LocalWatcherStatus::default(),
         brain_git,
     );
 
@@ -145,7 +145,7 @@ async fn brain_clone_push_ingest_round_trip() {
     let resp = http
         .post(format!("{base}/v1/brain"))
         .bearer_auth("admin-tok")
-        .json(&serde_json::json!({ "name": "team", "realms": ["kyma"] }))
+        .json(&serde_json::json!({ "name": "team", "realms": ["pensieve"] }))
         .send()
         .await
         .unwrap();
@@ -169,7 +169,7 @@ async fn brain_clone_push_ingest_round_trip() {
     // ── Clone over smart HTTP (token as Basic password). ───────────────────
     let work = tmp.path().join("work");
     std::fs::create_dir_all(&work).unwrap();
-    let clone_url = format!("http://kyma:admin-tok@{addr}/git/team.git");
+    let clone_url = format!("http://pensieve:admin-tok@{addr}/git/team.git");
     git_ok(&work, &["clone", &clone_url, "clone"]);
     let repo = work.join("clone");
 
@@ -181,9 +181,9 @@ async fn brain_clone_push_ingest_round_trip() {
     };
     let note_text = std::fs::read_to_string(repo.join(&note_rel)).unwrap();
     assert!(note_text.contains("Sessions are stateless JWTs"), "{note_text}");
-    assert!(note_text.contains(&format!("kyma_memory_id: {seeded_id}")), "{note_text}");
+    assert!(note_text.contains(&format!("pensieve_memory_id: {seeded_id}")), "{note_text}");
     assert!(repo.join("index.md").exists());
-    assert!(repo.join(".kyma/manifest.json").exists());
+    assert!(repo.join(".pensieve/manifest.json").exists());
 
     // Unauthenticated clone must fail when auth is enabled.
     let out = git(&work, &["clone", &format!("http://{addr}/git/team.git"), "noauth"]);
@@ -221,7 +221,7 @@ async fn brain_clone_push_ingest_round_trip() {
         .expect("inbox note ingested");
     assert_eq!(created_row["title"], "Cache the auth keys");
     assert_eq!(created_row["memory_type"], "learning");
-    assert_eq!(created_row["realm"], "kyma");
+    assert_eq!(created_row["realm"], "pensieve");
 
     // ── Delete the note and push → memory archived, never destroyed. ──────
     git_ok(&repo, &["rm", "-q", &note_rel]);

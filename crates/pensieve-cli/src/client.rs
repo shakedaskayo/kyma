@@ -18,7 +18,7 @@ pub(crate) struct ClientConfig {
 
 pub(crate) fn config_dir() -> Result<PathBuf> {
     if let Some(home) = std::env::var_os("HOME") {
-        return Ok(PathBuf::from(home).join(".kyma"));
+        return Ok(PathBuf::from(home).join(".pensieve"));
     }
     Err(anyhow!("$HOME is not set"))
 }
@@ -57,24 +57,24 @@ pub(crate) fn save_config(cfg: &ClientConfig) -> Result<()> {
     save_config_at(&config_path()?, cfg)
 }
 
-/// Resolve the effective config: precedence is `KYMA_SERVER_URL` /
-/// `KYMA_TOKEN` env vars, then `~/.kyma/config.json`. Env wins so the
+/// Resolve the effective config: precedence is `PENSIEVE_SERVER_URL` /
+/// `PENSIEVE_TOKEN` env vars, then `~/.pensieve/config.json`. Env wins so the
 /// CLI works in CI without needing the file.
 pub(crate) fn effective_config() -> Result<ClientConfig> {
     let mut cfg = load_config().unwrap_or_default();
-    if let Ok(v) = std::env::var("KYMA_SERVER_URL") {
+    if let Ok(v) = std::env::var("PENSIEVE_SERVER_URL") {
         if !v.is_empty() {
             cfg.endpoint = v;
         }
     }
-    if let Ok(v) = std::env::var("KYMA_TOKEN") {
+    if let Ok(v) = std::env::var("PENSIEVE_TOKEN") {
         if !v.is_empty() {
             cfg.token = Some(v);
         }
     }
     if cfg.endpoint.is_empty() {
         return Err(anyhow!(
-            "no server configured — run `kyma connect <url>` or set KYMA_SERVER_URL"
+            "no server configured — run `pensieve connect <url>` or set PENSIEVE_SERVER_URL"
         ));
     }
     Ok(cfg)
@@ -82,7 +82,7 @@ pub(crate) fn effective_config() -> Result<ClientConfig> {
 
 pub(crate) fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
-        .user_agent(concat!("kyma-cli/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("pensieve-cli/", env!("CARGO_PKG_VERSION")))
         .build()
         .expect("reqwest client")
 }
@@ -243,11 +243,11 @@ pub(crate) async fn probe_auth(cfg: &ClientConfig) -> Result<bool> {
 }
 
 /// Resolve the install target dir. If `explicit` is given, use it; else
-/// default to `$HOME/.kyma/skills/kyma/`. Creates the dir.
+/// default to `$HOME/.pensieve/skills/pensieve/`. Creates the dir.
 pub(crate) fn install_target(explicit: Option<PathBuf>) -> Result<PathBuf> {
     let dir = match explicit {
         Some(p) => p,
-        None => config_dir()?.join("skills").join("kyma"),
+        None => config_dir()?.join("skills").join("pensieve"),
     };
     std::fs::create_dir_all(&dir).with_context(|| format!("mkdir {}", dir.display()))?;
     Ok(dir)
@@ -261,7 +261,7 @@ pub(crate) fn write_skill_file(target: &Path, body: &str) -> Result<PathBuf> {
 
 /// Sync the local connection (endpoint + token) into a config file, preserving
 /// any other persisted fields (e.g. `last_session_id`). Used by
-/// `kyma service install` so the plist/unit token and the CLI token can never
+/// `pensieve service install` so the plist/unit token and the CLI token can never
 /// drift apart — the silent-401 capture outage of 2026-06-07.
 pub(crate) fn persist_local_connection_at(
     path: &Path,
@@ -282,7 +282,7 @@ pub(crate) fn persist_local_connection_at(
     save_config_at(path, &cfg)
 }
 
-/// `persist_local_connection_at` against the default `~/.kyma/config.json`.
+/// `persist_local_connection_at` against the default `~/.pensieve/config.json`.
 pub(crate) fn persist_local_connection(endpoint: &str, token: Option<&str>) -> Result<()> {
     persist_local_connection_at(&config_path()?, endpoint, token)
 }
@@ -293,7 +293,7 @@ mod persist_tests {
 
     #[test]
     fn persist_local_connection_writes_endpoint_and_token() {
-        let dir = std::env::temp_dir().join(format!("kyma-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("pensieve-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.json");
 

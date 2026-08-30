@@ -8,8 +8,8 @@
 // "reserved for v2" to keep the API stable.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Scope, SearchRequest } from "@kyma-ai/client";
-import { useKymaClient } from "../provider/context";
+import type { Scope, SearchRequest } from "@pensieve-ai/client";
+import { usePensieveClient } from "../provider/context";
 import { applyFrame } from "./discover-store";
 import type { DiscoverResultsState } from "./types";
 import type { TimeRange } from "../query/time-range/time-range-types";
@@ -44,7 +44,7 @@ const emptyResults = (): DiscoverResultsState => ({
 });
 
 export function useDiscoverSearch(args: Args) {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   const [results, setResults] = useState<DiscoverResultsState>(emptyResults);
   const abortRef = useRef<AbortController | null>(null);
 

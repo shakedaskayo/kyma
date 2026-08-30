@@ -1,11 +1,11 @@
 ---
 title: Graph
-description: kyma's native graph layer — schema graph (synthetic, always on) and stored graphs (registered). Query with KQL operators, MCP tools, or the HTTP API. All graphs render together on the unified /graph canvas.
+description: pensieve's native graph layer — schema graph (synthetic, always on) and stored graphs (registered). Query with KQL operators, MCP tools, or the HTTP API. All graphs render together on the unified /graph canvas.
 ---
 
 # Graph
 
-kyma includes a native graph layer over the same columnar store. Entities and
+pensieve includes a native graph layer over the same columnar store. Entities and
 relationships are first-class — indexed, pruned, and served through the same
 Arrow execution path as every other query surface. There is no separate graph
 database; the graph is a view over tables you already have.
@@ -15,7 +15,7 @@ Two kinds of graph exist side-by-side in every deployment.
 ## The schema graph
 
 The schema graph is synthetic and always available — nothing to register, nothing
-to configure. kyma derives it from the catalog at query time:
+to configure. pensieve derives it from the catalog at query time:
 
 - Every table in a database becomes a node.
 - Inferred `REFERENCES` edges connect tables whose columns share value domains
@@ -33,13 +33,13 @@ the schema graph to keep the view clean.
 ## Stored graphs
 
 A stored graph is a property-graph you register against two tables — one for
-nodes, one for edges. Once registered, kyma reads those tables on every graph
+nodes, one for edges. Once registered, pensieve reads those tables on every graph
 query, deduplicating append-only data source rows to one canonical node per id.
 
 ### Register a graph
 
 ```bash
-kyma create-graph \
+pensieve create-graph \
   --db <database-name> \
   --name <graph-name> \
   --nodes <node-table> \
@@ -63,8 +63,8 @@ flags. Override individual names if they differ.
 ### List and drop
 
 ```bash
-kyma list-graphs --db <database-name>
-kyma drop-graph  --db <database-name> --name <graph-name>
+pensieve list-graphs --db <database-name>
+pensieve drop-graph  --db <database-name> --name <graph-name>
 ```
 
 Drop removes the registration; it does not delete the underlying tables.
@@ -252,13 +252,13 @@ Every GitHub CI job log captured by the [GitHub data source](/data-sources/githu
 
 **Forward-only relabel note:** CI logs captured before this change keep their old `LogFile` label in the append-only tables; only newly captured logs carry the `Artifact` label. Re-capture a job to get the new label.
 
-**Redaction note:** The GitHub data source redacts secrets from CI log text before writing the blob to object-store (`kyma-redact` runs at capture time; raw log text is never persisted). What you retrieve from the viewer is already redacted.
+**Redaction note:** The GitHub data source redacts secrets from CI log text before writing the blob to object-store (`pensieve-redact` runs at capture time; raw log text is never persisted). What you retrieve from the viewer is already redacted.
 
 ### Other artifact sources (server / Postgres mode)
 
 Object-store blobs, agent-contributed files, and filesystem-watch snapshots that have no matching producer node appear as `Artifact` nodes in a dedicated `artifacts` graph. This graph is materialized on startup and kept current by a periodic sync running in the server process.
 
-**Availability:** server + Postgres mode only. `kyma local` has no artifact catalog and no `artifacts` graph.
+**Availability:** server + Postgres mode only. `pensieve local` has no artifact catalog and no `artifacts` graph.
 
 ### Viewing artifacts on the graph page
 
@@ -274,7 +274,7 @@ Graph search matches on node id and label. Searching `artifact` returns all `Art
 
 Artifact blob **contents** are searchable through the unified search endpoint (`POST /v1/search`) and the Explore page, not the graph page.
 
-On the same cadence as the artifact-graph sync (`KYMA_ARTIFACT_GC_POLL_SECS`, default 300s), the server indexes text-like artifacts into the `artifacts.artifact_chunks` table:
+On the same cadence as the artifact-graph sync (`PENSIEVE_ARTIFACT_GC_POLL_SECS`, default 300s), the server indexes text-like artifacts into the `artifacts.artifact_chunks` table:
 
 - **Which artifacts:** classes `log`, `file`, `text`, `doc`, `config`; up to 4 MB per blob; binary content is sniffed and skipped.
 - **How:** the blob is split into line-aligned ~1500-char chunks (max 64 per artifact), embedded with the process-shared embedding backend, and appended with the artifact's `artifact_id`, `object_path`, `source`, and `table_ref` for provenance.

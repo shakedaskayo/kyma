@@ -1,5 +1,5 @@
 /**
- * useKymaGraph — headless hook for the Kyma graph layer.
+ * usePensieveGraph — headless hook for the Pensieve graph layer.
  *
  * Loads one or more (database, graph) pairs in parallel via React Query,
  * merges them into a single unified canvas and exposes imperative helpers
@@ -8,12 +8,12 @@
 
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { GraphNode, GraphRelationship, GraphStats, SearchHits } from "@kyma-ai/client";
-import { useKymaClient } from "../provider/context";
+import type { GraphNode, GraphRelationship, GraphStats, SearchHits } from "@pensieve-ai/client";
+import { usePensieveClient } from "../provider/context";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-export interface UseKymaGraphArgs {
+export interface UsePensieveGraphArgs {
   /** Graphs to merge; omit to load all graphs of the default database. */
   graphs?: Array<{ database?: string; graph: string }>;
   /**
@@ -45,7 +45,7 @@ export interface GraphProgress {
   hasAny: boolean;
 }
 
-export interface UseKymaGraphResult {
+export interface UsePensieveGraphResult {
   nodes: GraphNode[];
   edges: GraphRelationship[];
   stats: GraphStats | null;
@@ -79,13 +79,13 @@ export interface UseKymaGraphResult {
  * 3. Neither — list graphs from the default database only.
  */
 export function useGraphCoords(
-  args?: Pick<UseKymaGraphArgs, "graphs" | "discover">,
+  args?: Pick<UsePensieveGraphArgs, "graphs" | "discover">,
 ): {
   coords: GraphCoord[];
   isLoading: boolean;
   error: unknown;
 } {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   const endpoint = client.transport.endpoint;
   const database = client.transport.database ?? "default";
 
@@ -95,7 +95,7 @@ export function useGraphCoords(
 
   // ── Phase 1a: simple discovery (default database only) ───────────────────
   const simpleDiscoveryQuery = useQuery({
-    queryKey: ["kyma", endpoint, database, "graph", "__list"],
+    queryKey: ["pensieve", endpoint, database, "graph", "__list"],
     queryFn: async () => {
       const refs = await client.graph.listGraphs();
       return refs.map((r): GraphCoord => ({ database, graph: r.name, kind: r.kind }));
@@ -106,7 +106,7 @@ export function useGraphCoords(
 
   // ── Phase 1b: all-databases discovery ────────────────────────────────────
   const allDbDiscoveryQuery = useQuery({
-    queryKey: ["kyma", endpoint, "__all-databases", "graph", "__list"],
+    queryKey: ["pensieve", endpoint, "__all-databases", "graph", "__list"],
     queryFn: async () => {
       const schema = await client.catalog.fetchSchema();
       const dbNames = schema.databases.map((d: { name: string }) => d.name);
@@ -154,8 +154,8 @@ export function useGraphCoords(
  * 2. `graphs` provided — use those coords directly.
  * 3. Neither — list graphs from the default database only.
  */
-export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
-  const client = useKymaClient();
+export function usePensieveGraph(args?: UsePensieveGraphArgs): UsePensieveGraphResult {
+  const client = usePensieveClient();
   const endpoint = client.transport.endpoint;
   const database = client.transport.database ?? "default";
   const realm = args?.realm;
@@ -174,7 +174,7 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
   // ── Phase 2: load each graph in parallel ──────────────────────────────────
   const queries = useQueries({
     queries: resolvedCoords.map(({ database: db, graph }) => ({
-      queryKey: ["kyma", endpoint, db, "graph", graph, realm ?? null, limit] as const,
+      queryKey: ["pensieve", endpoint, db, "graph", graph, realm ?? null, limit] as const,
       queryFn: () => client.withDatabase(db).graph.getOverview({ graph, realm, limit }),
       staleTime: 30_000,
       enabled: resolvedCoords.length > 0,
@@ -353,17 +353,17 @@ export function useKymaGraph(args?: UseKymaGraphArgs): UseKymaGraphResult {
   const refetch = useCallback(() => {
     for (const coord of resolvedCoords) {
       void queryClient.invalidateQueries({
-        queryKey: ["kyma", endpoint, coord.database, "graph", coord.graph],
+        queryKey: ["pensieve", endpoint, coord.database, "graph", coord.graph],
       });
     }
     if (needsSimpleDiscovery) {
       void queryClient.invalidateQueries({
-        queryKey: ["kyma", endpoint, database, "graph", "__list"],
+        queryKey: ["pensieve", endpoint, database, "graph", "__list"],
       });
     }
     if (discoverAll) {
       void queryClient.invalidateQueries({
-        queryKey: ["kyma", endpoint, "__all-databases", "graph", "__list"],
+        queryKey: ["pensieve", endpoint, "__all-databases", "graph", "__list"],
       });
     }
   }, [queryClient, endpoint, database, resolvedCoords, needsSimpleDiscovery, discoverAll]);

@@ -1,7 +1,7 @@
 //! Embedded SQLite-backed catalog implementation.
 //!
-//! Implements [`kyma_core::catalog::Catalog`] against a local SQLite database —
-//! the storage backend for **local single-binary mode** (`kyma local`), where
+//! Implements [`pensieve_core::catalog::Catalog`] against a local SQLite database —
+//! the storage backend for **local single-binary mode** (`pensieve local`), where
 //! there is no Postgres/MinIO/HTTP layer. The metadata model mirrors the
 //! Postgres catalog one-for-one (table → snapshot → manifest → extent), so the
 //! engine, ingest, compaction, and memory layers run unchanged on top of it.
@@ -31,17 +31,17 @@ pub use snapshot::SqliteSnapshotTxn;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use kyma_core::catalog::{
+use pensieve_core::catalog::{
     cosine_distance_lower_bound, BackgroundTask, Catalog, CleanupResult, ColumnInfo, ColumnPrune,
     Dashboard, DashboardPanel, DashboardUpdate, DashboardWithPanels, ExtentManifest,
     GraphRegistration, GraphSpec, IngestLedgerEntry, LiveNode, NodeInfo, NodeLease, NodeRole,
     PrunePredicate, RefreshClaim, SnapshotTxn, TableConfig, TableEmbedConfig, TableRef,
     TokenPrincipal, User,
 };
-use kyma_core::errors::{CatalogError, Result};
-use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
-use kyma_core::tenant::{TenantId, DEFAULT_TENANT};
-use kyma_core::types::{DatabaseId, ExtentId, NodeId, SchemaSnapshotId, SnapshotId, TableId};
+use pensieve_core::errors::{CatalogError, Result};
+use pensieve_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
+use pensieve_core::tenant::{TenantId, DEFAULT_TENANT};
+use pensieve_core::types::{DatabaseId, ExtentId, NodeId, SchemaSnapshotId, SnapshotId, TableId};
 use serde_json::Value as Json;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow};
 use sqlx::{Row, SqlitePool};
@@ -1285,7 +1285,7 @@ impl Catalog for SqliteCatalog {
     async fn upsert_ann_tree(
         &self,
         tenant: TenantId,
-        desc: &kyma_core::index_sidecar::AnnTreeDescriptor,
+        desc: &pensieve_core::index_sidecar::AnnTreeDescriptor,
     ) -> Result<()> {
         // UPDATE-then-INSERT upsert on (table, column, model) — single-process
         // local mode makes the window benign (same pattern as sidecars).
@@ -1341,7 +1341,7 @@ impl Catalog for SqliteCatalog {
         table_id: TableId,
         column: &str,
         embedding_model_id: Option<&str>,
-    ) -> Result<Option<kyma_core::index_sidecar::AnnTreeDescriptor>> {
+    ) -> Result<Option<pensieve_core::index_sidecar::AnnTreeDescriptor>> {
         let row = sqlx::query(
             "SELECT id, table_id, column_name, embedding_model_id, generation,
                     extent_fingerprint, object_path, byte_size, params, created_at
@@ -1383,7 +1383,7 @@ impl Catalog for SqliteCatalog {
 
     async fn upsert_tenant_quota(
         &self,
-        quota: &kyma_core::catalog::TenantQuota,
+        quota: &pensieve_core::catalog::TenantQuota,
     ) -> Result<()> {
         let now = Utc::now();
         let updated = sqlx::query(
@@ -1419,7 +1419,7 @@ impl Catalog for SqliteCatalog {
     async fn get_tenant_quota(
         &self,
         tenant: TenantId,
-    ) -> Result<Option<kyma_core::catalog::TenantQuota>> {
+    ) -> Result<Option<pensieve_core::catalog::TenantQuota>> {
         let row: Option<(Option<i64>, Option<i64>, DateTime<Utc>)> = sqlx::query_as(
             "SELECT max_query_concurrent, max_agent_concurrent, updated_at
              FROM tenant_quotas WHERE tenant_id = ?",
@@ -1428,7 +1428,7 @@ impl Catalog for SqliteCatalog {
         .fetch_optional(&self.pool)
         .await
         .map_err(ce)?;
-        Ok(row.map(|(q, a, updated_at)| kyma_core::catalog::TenantQuota {
+        Ok(row.map(|(q, a, updated_at)| pensieve_core::catalog::TenantQuota {
             tenant,
             max_query_concurrent: q.map(|v| v.max(0) as u32),
             max_agent_concurrent: a.map(|v| v.max(0) as u32),
@@ -1436,7 +1436,7 @@ impl Catalog for SqliteCatalog {
         }))
     }
 
-    async fn list_tenant_quotas(&self) -> Result<Vec<kyma_core::catalog::TenantQuota>> {
+    async fn list_tenant_quotas(&self) -> Result<Vec<pensieve_core::catalog::TenantQuota>> {
         let rows: Vec<(Uuid, Option<i64>, Option<i64>, DateTime<Utc>)> = sqlx::query_as(
             "SELECT tenant_id, max_query_concurrent, max_agent_concurrent, updated_at
              FROM tenant_quotas",
@@ -1446,7 +1446,7 @@ impl Catalog for SqliteCatalog {
         .map_err(ce)?;
         Ok(rows
             .into_iter()
-            .map(|(t, q, a, updated_at)| kyma_core::catalog::TenantQuota {
+            .map(|(t, q, a, updated_at)| pensieve_core::catalog::TenantQuota {
                 tenant: TenantId::from_uuid(t),
                 max_query_concurrent: q.map(|v| v.max(0) as u32),
                 max_agent_concurrent: a.map(|v| v.max(0) as u32),
@@ -2400,7 +2400,7 @@ impl Catalog for SqliteCatalog {
         &self,
         tenant: TenantId,
         kind: &str,
-    ) -> Result<Vec<kyma_core::catalog::ApiTokenInfo>, CatalogError> {
+    ) -> Result<Vec<pensieve_core::catalog::ApiTokenInfo>, CatalogError> {
         let rows = sqlx::query(
             "SELECT token_hash, scopes, subject, kind, created_at, last_used_at,
                     expires_at, revoked
@@ -2415,7 +2415,7 @@ impl Catalog for SqliteCatalog {
         .map_err(ce)?;
         rows.iter()
             .map(|row| {
-                Ok(kyma_core::catalog::ApiTokenInfo {
+                Ok(pensieve_core::catalog::ApiTokenInfo {
                     token_hash: row.try_get("token_hash").map_err(ce)?,
                     role: row.try_get("scopes").map_err(ce)?,
                     subject: row.try_get("subject").map_err(ce)?,
@@ -2646,7 +2646,7 @@ impl Catalog for SqliteCatalog {
         for r in &rows {
             let h: String = r.try_get("content_hash").map_err(ce)?;
             let bytes: Vec<u8> = r.try_get("embedding").map_err(ce)?;
-            if let Some(v) = kyma_core::catalog::embedding_from_le_bytes(&bytes) {
+            if let Some(v) = pensieve_core::catalog::embedding_from_le_bytes(&bytes) {
                 out.insert(h, v);
             }
         }
@@ -2666,7 +2666,7 @@ impl Catalog for SqliteCatalog {
         let now = Utc::now();
         let mut tx = self.pool.begin().await.map_err(ce)?;
         for (hash, vec) in entries {
-            let bytes = kyma_core::catalog::embedding_to_le_bytes(vec);
+            let bytes = pensieve_core::catalog::embedding_to_le_bytes(vec);
             sqlx::query(
                 "INSERT INTO embedding_cache
                     (tenant_id, content_hash, model_id, dim, embedding, created_at)
@@ -2790,9 +2790,9 @@ fn row_to_sidecar(row: &SqliteRow) -> Result<IndexSidecarDescriptor> {
     })
 }
 
-fn row_to_ann_tree(row: &SqliteRow) -> Result<kyma_core::index_sidecar::AnnTreeDescriptor> {
+fn row_to_ann_tree(row: &SqliteRow) -> Result<pensieve_core::index_sidecar::AnnTreeDescriptor> {
     let params_str: String = row.try_get("params").map_err(ce)?;
-    Ok(kyma_core::index_sidecar::AnnTreeDescriptor {
+    Ok(pensieve_core::index_sidecar::AnnTreeDescriptor {
         id: row.try_get("id").map_err(ce)?,
         table_id: TableId::from_uuid(row.try_get("table_id").map_err(ce)?),
         column: row.try_get("column_name").map_err(ce)?,

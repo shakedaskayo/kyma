@@ -1,5 +1,5 @@
 {
-  "name": "kyma-web",
+  "name": "pensieve-web",
   "private": true,
   "type": "module",
   "scripts": {
@@ -16,8 +16,8 @@
     "e2e:ui": "playwright test --ui"
   },
   "dependencies": {
-    "@kyma-ai/client": "workspace:*",
-    "@kyma-ai/react": "workspace:*",
+    "@pensieve-ai/client": "workspace:*",
+    "@pensieve-ai/react": "workspace:*",
     "@ai-sdk/react": "^3.0.195",
     "@bufbuild/protobuf": "2.11.0",
     "@connectrpc/connect": "2.1.1",

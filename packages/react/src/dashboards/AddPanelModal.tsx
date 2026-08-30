@@ -2,7 +2,7 @@
  * AddPanelModal — create/edit dashboard panel form (editable mode only).
  *
  * Adapted from web's AddPanelModal with:
- *   - session → useKymaClient() for catalog schema fetch
+ *   - session → usePensieveClient() for catalog schema fetch
  *   - web shadcn components → internal/ui primitives (ky- prefix)
  *   - Toast dropped (no router-level notification infra in the SDK)
  *   - Preview uses SDK panel viz components
@@ -11,8 +11,8 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Play } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { DashboardPanel } from "@kyma-ai/client";
-import { useKymaClient } from "../provider/context";
+import type { DashboardPanel } from "@pensieve-ai/client";
+import { usePensieveClient } from "../provider/context";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +37,7 @@ interface Props {
   onClose: () => void;
   onSave: (draft: PanelDraft) => void;
   initial?: DashboardPanel | null;
-  /** Default database_name for new panels (from KymaDashboard.database prop). */
+  /** Default database_name for new panels (from PensieveDashboard.database prop). */
   defaultDatabase?: string;
 }
 
@@ -84,7 +84,7 @@ function Label({ htmlFor, children }: { htmlFor?: string; children: React.ReactN
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase }: Props) {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   const endpoint = client.transport.endpoint;
   const database = client.transport.database ?? "default";
 
@@ -110,7 +110,7 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
   const [previewKey, setPreviewKey] = useState(0);
 
   const { data: schema } = useQuery({
-    queryKey: ["kyma", endpoint, database, "schema"],
+    queryKey: ["pensieve", endpoint, database, "schema"],
     queryFn: () => client.catalog.fetchSchema(),
     staleTime: 5 * 60_000,
   });

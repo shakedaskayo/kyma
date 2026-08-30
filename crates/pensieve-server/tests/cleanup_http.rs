@@ -1,14 +1,14 @@
 //! Integration tests for `POST /v1/database/:db/table/:table/cleanup`.
 //!
-//! Requires `--features kyma-server/test-support` to compile.
+//! Requires `--features pensieve-server/test-support` to compile.
 //! Each test spins up its own isolated Postgres container via testcontainers.
 
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::{Catalog, TableConfig};
-use kyma_core::tenant::DEFAULT_TENANT;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::{Catalog, TableConfig};
+use pensieve_core::tenant::DEFAULT_TENANT;
 use serde_json::Value;
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ImageExt};
@@ -28,15 +28,15 @@ fn cleanup_write_app(
         Output = Result<axum::http::Response<axum::body::Body>, std::convert::Infallible>,
     >,
 > {
-    let backend: std::sync::Arc<dyn kyma_server::auth::AuthBackend> = std::sync::Arc::new(
-        kyma_server::auth::EnvAuthBackend::from_str("test-write-token:write"),
+    let backend: std::sync::Arc<dyn pensieve_server::auth::AuthBackend> = std::sync::Arc::new(
+        pensieve_server::auth::EnvAuthBackend::from_str("test-write-token:write"),
     );
-    kyma_server::cleanup_write_router(catalog).layer(axum::middleware::from_fn_with_state(
-        kyma_server::auth::AuthLayerState {
+    pensieve_server::cleanup_write_router(catalog).layer(axum::middleware::from_fn_with_state(
+        pensieve_server::auth::AuthLayerState {
             backend,
-            required: kyma_server::auth::Role::Write,
+            required: pensieve_server::auth::Role::Write,
         },
-        kyma_server::auth::require_role_middleware,
+        pensieve_server::auth::require_role_middleware,
     ))
 }
 
@@ -84,9 +84,9 @@ async fn body_json(resp: axum::http::Response<Body>) -> Value {
 /// `pool()` for direct SQL seeding.
 async fn raw_catalog() -> (PostgresCatalog, testcontainers::ContainerAsync<testcontainers_modules::postgres::Postgres>) {
     let container = testcontainers_modules::postgres::Postgres::default()
-        .with_user("kyma")
-        .with_password("kyma_dev")
-        .with_db_name("kyma")
+        .with_user("pensieve")
+        .with_password("pensieve_dev")
+        .with_db_name("pensieve")
         .with_name("pgvector/pgvector")
         .with_tag("pg16")
         .start()
@@ -96,7 +96,7 @@ async fn raw_catalog() -> (PostgresCatalog, testcontainers::ContainerAsync<testc
         .get_host_port_ipv4(5432)
         .await
         .expect("testcontainers: failed to get mapped port");
-    let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
+    let url = format!("postgres://pensieve:pensieve_dev@localhost:{port}/pensieve");
     let catalog = PostgresCatalog::connect(&url)
         .await
         .expect("catalog connect + migrate");
@@ -148,7 +148,7 @@ async fn cleanup_removes_soft_deleted_extents_and_returns_counts() {
     // Insert a soft-deleted extent with known byte_size + row_count.
     sqlx::query(
         "INSERT INTO extents (tenant_id, table_id, schema_snapshot_id, object_path, byte_size, row_count, deleted_at)
-         VALUES ($1, $2, $3, 'test/path/old.kyma', 4096, 200, now() - interval '2 days')",
+         VALUES ($1, $2, $3, 'test/path/old.pensieve', 4096, 200, now() - interval '2 days')",
     )
     .bind(DEFAULT_TENANT.as_uuid())
     .bind(table_uuid)
@@ -160,7 +160,7 @@ async fn cleanup_removes_soft_deleted_extents_and_returns_counts() {
     // 3. Seed a second, live (not soft-deleted) extent — should NOT be cleaned.
     sqlx::query(
         "INSERT INTO extents (tenant_id, table_id, schema_snapshot_id, object_path, byte_size, row_count)
-         VALUES ($1, $2, $3, 'test/path/live.kyma', 2048, 50)",
+         VALUES ($1, $2, $3, 'test/path/live.pensieve', 2048, 50)",
     )
     .bind(DEFAULT_TENANT.as_uuid())
     .bind(table_uuid)
@@ -228,7 +228,7 @@ async fn cleanup_respects_before_cutoff() {
     // Insert an extent soft-deleted 1 hour ago.
     sqlx::query(
         "INSERT INTO extents (tenant_id, table_id, schema_snapshot_id, object_path, byte_size, row_count, deleted_at)
-         VALUES ($1, $2, $3, 'test/path/recent.kyma', 512, 10, now() - interval '1 hour')",
+         VALUES ($1, $2, $3, 'test/path/recent.pensieve', 512, 10, now() - interval '1 hour')",
     )
     .bind(DEFAULT_TENANT.as_uuid())
     .bind(table_uuid)
@@ -258,7 +258,7 @@ async fn cleanup_respects_before_cutoff() {
 /// Cleanup against a nonexistent table returns 404.
 #[tokio::test]
 async fn cleanup_unknown_table_returns_404() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
+    let state = pensieve_server::test_support::seeded_state_empty().await;
     let app = cleanup_write_app(state.catalog.clone());
 
     let resp = post_cleanup(app, "no_such_db", "no_such_table", "2030-01-01T00:00:00Z").await;
@@ -268,17 +268,17 @@ async fn cleanup_unknown_table_returns_404() {
 /// Missing auth token returns 401.
 #[tokio::test]
 async fn cleanup_missing_auth_returns_401() {
-    let state = kyma_server::test_support::seeded_state_empty().await;
-    let backend: std::sync::Arc<dyn kyma_server::auth::AuthBackend> = std::sync::Arc::new(
-        kyma_server::auth::EnvAuthBackend::from_str("test-write-token:write"),
+    let state = pensieve_server::test_support::seeded_state_empty().await;
+    let backend: std::sync::Arc<dyn pensieve_server::auth::AuthBackend> = std::sync::Arc::new(
+        pensieve_server::auth::EnvAuthBackend::from_str("test-write-token:write"),
     );
-    let app = kyma_server::cleanup_write_router(state.catalog.clone()).layer(
+    let app = pensieve_server::cleanup_write_router(state.catalog.clone()).layer(
         axum::middleware::from_fn_with_state(
-            kyma_server::auth::AuthLayerState {
+            pensieve_server::auth::AuthLayerState {
                 backend,
-                required: kyma_server::auth::Role::Write,
+                required: pensieve_server::auth::Role::Write,
             },
-            kyma_server::auth::require_role_middleware,
+            pensieve_server::auth::require_role_middleware,
         ),
     );
 

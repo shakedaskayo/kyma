@@ -57,18 +57,18 @@ const isTauri = typeof window !== "undefined" && "__TAURI__" in window;
 const tauriStorage: StateStorage = {
   async getItem(name) {
     const { Store } = await import("@tauri-apps/plugin-store");
-    const s = await Store.load("kyma.store");
+    const s = await Store.load("pensieve.store");
     return (await s.get<string>(name)) ?? null;
   },
   async setItem(name, val) {
     const { Store } = await import("@tauri-apps/plugin-store");
-    const s = await Store.load("kyma.store");
+    const s = await Store.load("pensieve.store");
     await s.set(name, val);
     await s.save();
   },
   async removeItem(name) {
     const { Store } = await import("@tauri-apps/plugin-store");
-    const s = await Store.load("kyma.store");
+    const s = await Store.load("pensieve.store");
     await s.delete(name);
     await s.save();
   },
@@ -105,7 +105,7 @@ export const useSession = create<SessionState>()(
       isAuthenticated: () => Boolean(get().token),
     }),
     {
-      name: "kyma.session",
+      name: "pensieve.session",
       storage: isTauri ? createJSONStorage(() => tauriStorage) : createJSONStorage(() => localStorage),
     },
   ),

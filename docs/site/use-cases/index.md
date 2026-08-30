@@ -1,13 +1,13 @@
 ---
 title: Use cases
-description: What kyma is for — organized along the memory → data → graph spine. Give your coding agent durable memory, ground it in live data, connect everything in the graph, and make anything queryable.
+description: What pensieve is for — organized along the memory → data → graph spine. Give your coding agent durable memory, ground it in live data, connect everything in the graph, and make anything queryable.
 ---
 
 <script setup>
 import { withBase } from 'vitepress'
 </script>
 
-<p class="kyma-eyebrow">What it's for</p>
+<p class="pensieve-eyebrow">What it's for</p>
 
 # Use cases
 
@@ -16,7 +16,7 @@ them — doing real work for a coding agent. They build along the spine: memory 
 the live data it's grounded in, then the graph that connects it all, then anything else
 your org runs on.
 
-<p class="kyma-eyebrow">Memory</p>
+<p class="pensieve-eyebrow">Memory</p>
 
 <div class="feature-grid">
 
@@ -28,7 +28,7 @@ Stop re-explaining your codebase. Architectural decisions, conventions, and gotc
 persist and get recalled into every prompt — across sessions and machines.
 
 ```bash
-kyma remember "Auth is Supabase JWT; prefer KQL over SQL in examples."
+pensieve remember "Auth is Supabase JWT; prefer KQL over SQL in examples."
 ```
 
 </div>
@@ -41,14 +41,14 @@ Point a new hire's agent at the team's shared memory and the repo graph, sync on
 it already knows the architecture, the services, and the conventions.
 
 ```bash
-KYMA_CLOUD_URL=https://kyma.your-co.dev kyma sync
+PENSIEVE_CLOUD_URL=https://pensieve.your-co.dev pensieve sync
 ```
 
 </div>
 
 </div>
 
-<p class="kyma-eyebrow">Live data</p>
+<p class="pensieve-eyebrow">Live data</p>
 
 <div class="feature-grid">
 
@@ -74,14 +74,14 @@ otel_logs | where _timestamp > ago(15m) and severity_text == "ERROR"
 data sources, and your operational databases, and streams the answer.
 
 ```bash
-kyma query "p99 latency on /api/checkout in the last hour, by version"
+pensieve query "p99 latency on /api/checkout in the last hour, by version"
 ```
 
 </div>
 
 </div>
 
-<p class="kyma-eyebrow">The graph</p>
+<p class="pensieve-eyebrow">The graph</p>
 
 <div class="feature-grid">
 
@@ -106,14 +106,14 @@ Connect GitHub and the agent traverses code, PRs, issues, and people — and you
 link to the real files and services they're about.
 
 ```bash
-kyma datasource add github your-org/your-repo --start
+pensieve datasource add github your-org/your-repo --start
 ```
 
 </div>
 
 </div>
 
-<p class="kyma-eyebrow">Anything</p>
+<p class="pensieve-eyebrow">Anything</p>
 
 <div class="feature-grid">
 
@@ -125,7 +125,7 @@ Webhooks, billing exports, CI outcomes, your own metrics — one POST and it's q
 agent-readable data that prunes well from day one.
 
 ```bash
-curl -X POST $KYMA/v1/ingest -H "X-Table: github_actions" --data-binary @runs.ndjson
+curl -X POST $PENSIEVE/v1/ingest -H "X-Table: github_actions" --data-binary @runs.ndjson
 ```
 
 </div>
@@ -135,5 +135,5 @@ curl -X POST $KYMA/v1/ingest -H "X-Table: github_actions" --data-binary @runs.nd
 ## Build your own
 
 These are starting points, not a closed list — anything with a timestamp and a body becomes
-memory-adjacent, queryable data. The mental model is [How kyma works](/concepts/how-kyma-works);
+memory-adjacent, queryable data. The mental model is [How pensieve works](/concepts/how-pensieve-works);
 the surfaces are [Ingest](/ingest/), [Query](/query/), and [Connect your agent](/agent/connect).

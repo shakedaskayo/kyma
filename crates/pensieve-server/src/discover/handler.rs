@@ -11,7 +11,7 @@ use axum::body::{Body, Bytes};
 use axum::extract::{Extension, State};
 use axum::http::{HeaderValue, Request, StatusCode};
 use axum::response::Response;
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 use serde::Deserialize;
 use std::convert::Infallible;
 use std::time::Instant;
@@ -67,8 +67,8 @@ pub async fn discover_search_handler(
 
     // Count every request at entry so very-early failures (body-too-large,
     // bad JSON, scope_too_large, view_not_found) are visible in the
-    // requests_total counter alongside the kyma_http_errors_total counter.
-    ::metrics::counter!("kyma_explore_search_requests_total", "scope_kind" => "unknown")
+    // requests_total counter alongside the pensieve_http_errors_total counter.
+    ::metrics::counter!("pensieve_explore_search_requests_total", "scope_kind" => "unknown")
         .increment(1);
 
     // 1. Read body (max 1 MiB).
@@ -133,7 +133,7 @@ pub async fn discover_search_handler(
     };
 
     // 6. Pull the scope-size cap from env (operator knob), defaulting to 200.
-    let max_sources = std::env::var("KYMA_DISCOVER_MAX_SOURCES")
+    let max_sources = std::env::var("PENSIEVE_DISCOVER_MAX_SOURCES")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_MAX_SOURCES);
@@ -223,7 +223,7 @@ pub async fn discover_search_handler(
     // The entry-counter above uses scope_kind="unknown" so it covers requests
     // that never made it past parsing.
     ::metrics::counter!(
-        "kyma_explore_search_executed_total",
+        "pensieve_explore_search_executed_total",
         "scope_kind" => scope_kind.clone()
     )
     .increment(1);
@@ -275,20 +275,20 @@ pub async fn discover_search_handler(
 
         let elapsed = start.elapsed();
         ::metrics::histogram!(
-            "kyma_explore_search_duration_seconds",
+            "pensieve_explore_search_duration_seconds",
             "scope_kind" => scope_kind_for_stream.clone()
         )
         .record(elapsed.as_secs_f64());
         ::metrics::histogram!(
-            "kyma_explore_search_sources_resolved",
+            "pensieve_explore_search_sources_resolved",
             "scope_kind" => scope_kind_for_stream.clone()
         )
         .record(resolved_count as f64);
-        ::metrics::histogram!("kyma_explore_search_rows_returned")
+        ::metrics::histogram!("pensieve_explore_search_rows_returned")
             .record(total_rows as f64);
-        ::metrics::counter!("kyma_explore_search_per_source_errors_total")
+        ::metrics::counter!("pensieve_explore_search_per_source_errors_total")
             .increment(error_count as u64);
-        ::metrics::counter!("kyma_explore_search_cap_hits_total")
+        ::metrics::counter!("pensieve_explore_search_cap_hits_total")
             .increment(capped_sources as u64);
         tracing::info!(
             request_id = %req_id_for_log,

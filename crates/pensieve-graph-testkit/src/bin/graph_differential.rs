@@ -1,17 +1,17 @@
 //! End-to-end differential gate: synth → ingest → existing Cypher subset
-//! through a live kyma vs the petgraph oracle.
+//! through a live pensieve vs the petgraph oracle.
 //!
 //! Run by `scripts/test-graph-differential.sh` against a freshly reset stack.
 //! Exits nonzero on any oracle/engine divergence (or engine error).
 //!
-//! Env: `KYMA_BASE_URL`, `KYMA_DATABASE`, `KYMA_TOKEN`, `KYMA_CLI_BIN` — see
-//! `kyma_graph_testkit::ingest::EngineConfig::from_env`.
+//! Env: `PENSIEVE_BASE_URL`, `PENSIEVE_DATABASE`, `PENSIEVE_TOKEN`, `PENSIEVE_CLI_BIN` — see
+//! `pensieve_graph_testkit::ingest::EngineConfig::from_env`.
 
-use kyma_graph_testkit::harness::{run_differential, HttpKymaEngine};
-use kyma_graph_testkit::ingest::{load_graph, EngineConfig};
-use kyma_graph_testkit::model::TestGraph;
-use kyma_graph_testkit::oracle::ChainPattern;
-use kyma_graph_testkit::synth;
+use pensieve_graph_testkit::harness::{run_differential, HttpPensieveEngine};
+use pensieve_graph_testkit::ingest::{load_graph, EngineConfig};
+use pensieve_graph_testkit::model::TestGraph;
+use pensieve_graph_testkit::oracle::ChainPattern;
+use pensieve_graph_testkit::synth;
 
 /// ~10 forward-chain patterns over the `N`/`Hub` + `LINKS`/`CALLS`
 /// conventions every generator follows: 1–3 hops, typed/untyped, labeled on
@@ -70,7 +70,7 @@ async fn main() -> std::process::ExitCode {
         }
         println!("ingested + registered stored graph `{}/{name}`", cfg.database);
 
-        let engine = HttpKymaEngine::new(
+        let engine = HttpPensieveEngine::new(
             cfg.base_url.clone(),
             cfg.database.clone(),
             (*name).to_string(),

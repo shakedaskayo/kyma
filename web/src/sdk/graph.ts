@@ -1,4 +1,4 @@
-// Shim: backwards-compatible wrappers around @kyma-ai/client graph functions.
+// Shim: backwards-compatible wrappers around @pensieve-ai/client graph functions.
 // All session calls delegate to sessionClient() — no one-shot transports.
 
 export type {
@@ -13,9 +13,9 @@ export type {
   GraphSchema,
   GraphRef,
   Direction,
-} from "@kyma-ai/client";
+} from "@pensieve-ai/client";
 
-import type { Direction } from "@kyma-ai/client";
+import type { Direction } from "@pensieve-ai/client";
 import { sessionClient } from "./client";
 
 type Base = { endpoint: string; token: string; database?: string };

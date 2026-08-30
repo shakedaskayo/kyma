@@ -5,9 +5,9 @@
 //! every validation rule — signature, exp, aud, iss — is exercised against
 //! real JWT mechanics, no Supabase account needed.
 
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_core::catalog::Catalog;
-use kyma_server::auth::{
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_core::catalog::Catalog;
+use pensieve_server::auth::{
     AuthBackend, EnvAuthBackend, Role, SessionAuthBackend, SupabaseAuthBackend,
     SupabaseAuthConfig,
 };

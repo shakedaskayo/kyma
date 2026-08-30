@@ -8,12 +8,12 @@
 //! no other setup.
 
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
-use kyma_catalog::PostgresCatalog;
-use kyma_core::catalog::{
+use pensieve_catalog::PostgresCatalog;
+use pensieve_core::catalog::{
     Catalog, ExtentManifest, NodeInfo, NodeRole, PrunePredicate, SnapshotSummary, TableConfig,
 };
-use kyma_core::errors::{CatalogError, Error};
-use kyma_core::types::{ExtentId, SchemaSnapshotId, TableId};
+use pensieve_core::errors::{CatalogError, Error};
+use pensieve_core::types::{ExtentId, SchemaSnapshotId, TableId};
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
@@ -31,9 +31,9 @@ async fn fixture() -> Fixture {
     // pgvector/pgvector:pg16 ships the `vector` extension that migration 004
     // creates; the bare postgres image lacks it and migration would fail.
     let container = Postgres::default()
-        .with_user("kyma")
-        .with_password("kyma_dev")
-        .with_db_name("kyma")
+        .with_user("pensieve")
+        .with_password("pensieve_dev")
+        .with_db_name("pensieve")
         .with_name("pgvector/pgvector")
         .with_tag("pg16")
         .start()
@@ -43,7 +43,7 @@ async fn fixture() -> Fixture {
         .get_host_port_ipv4(5432)
         .await
         .expect("failed to get mapped port");
-    let url = format!("postgres://kyma:kyma_dev@localhost:{port}/kyma");
+    let url = format!("postgres://pensieve:pensieve_dev@localhost:{port}/pensieve");
     let catalog = PostgresCatalog::connect(&url)
         .await
         .expect("catalog connect + migrate");
@@ -70,7 +70,7 @@ fn sample_manifest(table_id: TableId, schema_snap: SchemaSnapshotId) -> ExtentMa
         id: ExtentId::new(),
         table_id,
         schema_snapshot_id: schema_snap,
-        object_path: format!("test/extents/{}.kyma", uuid::Uuid::new_v4()),
+        object_path: format!("test/extents/{}.pensieve", uuid::Uuid::new_v4()),
         byte_size: 1024,
         row_count: 100,
         min_timestamp: Some(chrono::Utc::now()),
@@ -320,7 +320,7 @@ async fn node_register_heartbeat_deregister() {
     fx.catalog.heartbeat(&lease).await.unwrap();
 
     // Heartbeat against a different lease id should fail.
-    let stolen = kyma_core::catalog::NodeLease {
+    let stolen = pensieve_core::catalog::NodeLease {
         node_id: lease.node_id,
         lease_id: uuid::Uuid::new_v4(),
         expires_at: lease.expires_at,
@@ -355,7 +355,7 @@ async fn list_extents_honors_time_range() {
         id: ExtentId::new(),
         table_id: tid,
         schema_snapshot_id: table.schema_snapshot_id,
-        object_path: format!("test/{}.kyma", uuid::Uuid::new_v4()),
+        object_path: format!("test/{}.pensieve", uuid::Uuid::new_v4()),
         byte_size: 100,
         row_count: 10,
         min_timestamp: Some(base + chrono::Duration::hours(hour_offset)),
@@ -384,7 +384,7 @@ async fn list_extents_honors_time_range() {
 
     // Time-range window covering only hour 2-4 should match the middle extent only.
     let prune = PrunePredicate {
-        time_range: Some(kyma_core::catalog::TimeRange {
+        time_range: Some(pensieve_core::catalog::TimeRange {
             start_inclusive: base + chrono::Duration::hours(2),
             end_exclusive: base + chrono::Duration::hours(4),
         }),
@@ -405,7 +405,7 @@ async fn list_extents_honors_time_range() {
 #[tokio::test]
 async fn upsert_external_user_creates_then_refreshes() {
     let fx = fixture().await;
-    let tenant = kyma_core::tenant::DEFAULT_TENANT;
+    let tenant = pensieve_core::tenant::DEFAULT_TENANT;
 
     let u1 = fx
         .catalog

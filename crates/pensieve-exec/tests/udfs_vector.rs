@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 async fn setup() -> SessionContext {
     let ctx = SessionContext::new();
-    kyma_exec::register_vector_udfs(&ctx);
+    pensieve_exec::register_vector_udfs(&ctx);
 
     // Table: id STRING, v FixedSizeList<Float32, 3>
     let schema = Arc::new(Schema::new(vec![

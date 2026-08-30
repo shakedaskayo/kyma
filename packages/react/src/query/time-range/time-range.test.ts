@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { prependTimeFilter, presetToKqlAgo, pickTimeColumn } from "./time-range";
-import type { SchemaDoc } from "@kyma-ai/client";
+import type { SchemaDoc } from "@pensieve-ai/client";
 
 const schemaWith = (table: string, cols: [string, string][]): SchemaDoc => ({
   databases: [

@@ -1,5 +1,5 @@
 [package]
-name = "kyma-plan"
+name = "pensieve-plan"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ description = "Unified logical-plan IR, optimizer, and parser-plugin registry."
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
+pensieve-core.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 arrow-schema.workspace = true

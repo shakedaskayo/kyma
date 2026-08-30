@@ -56,7 +56,7 @@ pub struct TableConfig {
     /// When `Some`, this table is a **federated** (live-proxied) table: its
     /// schema is cataloged here but its rows live on an external platform and
     /// are fetched at query time. Federated tables hold no extents and reject
-    /// ingest. See `kyma-federation`.
+    /// ingest. See `pensieve-federation`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub federated: Option<FederatedTableSpec>,
 }
@@ -117,7 +117,7 @@ pub struct StagedExtentRow {
 
 /// Per-tenant resource quota (S2.6 ops hardening). A catalog row that lets an
 /// operator configure DIFFERENT admission limits per tenant — overriding the
-/// process-global `KYMA_*_MAX_CONCURRENT[_PER_TENANT]` env defaults for that one
+/// process-global `PENSIEVE_*_MAX_CONCURRENT[_PER_TENANT]` env defaults for that one
 /// tenant. Each field is `None` when that dimension is not configured for the
 /// tenant (the env default applies). Only the dimensions that carry a tenant on
 /// their request path are configurable here (query + agent concurrency); ingest
@@ -703,7 +703,7 @@ pub trait Catalog: Send + Sync {
     /// Creates a new `schema_snapshot` row with the extended schema and
     /// atomically advances `tables.schema_snapshot_id`. Historical extents
     /// keep their original schema_snapshot_id; reads null-fill the new
-    /// column (see `KymaTable::scan` promotion logic).
+    /// column (see `PensieveTable::scan` promotion logic).
     ///
     /// The column is always nullable; non-nullable ADD COLUMN requires a
     /// backfill pass which lands in a later slice.

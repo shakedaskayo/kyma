@@ -14,10 +14,10 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use chrono::{Duration, Utc};
-use kyma_catalog::PgCredentialStore;
-use kyma_core::credentials::CredentialValue;
-use kyma_core::crypto::Crypto;
-use kyma_core::tenant::TenantId;
+use pensieve_catalog::PgCredentialStore;
+use pensieve_core::credentials::CredentialValue;
+use pensieve_core::crypto::Crypto;
+use pensieve_core::tenant::TenantId;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -128,7 +128,7 @@ async fn start(
             return err(
                 StatusCode::SERVICE_UNAVAILABLE,
                 format!(
-                    "no OAuth client configured for `{}` — set KYMA_OAUTH_{}_CLIENT_ID/_CLIENT_SECRET or provide your own",
+                    "no OAuth client configured for `{}` — set PENSIEVE_OAUTH_{}_CLIENT_ID/_CLIENT_SECRET or provide your own",
                     prov.slug, prov.env_key
                 ),
             );
@@ -419,7 +419,7 @@ fn callback_html(ui_base: &str, provider: &str, state: Option<&str>, outcome: Ou
     let (payload, redirect) = match &outcome {
         Outcome::Ok { credential_id, label } => (
             serde_json::json!({
-                "type": "kyma-oauth",
+                "type": "pensieve-oauth",
                 "ok": true,
                 "provider": provider,
                 "state": state,
@@ -430,7 +430,7 @@ fn callback_html(ui_base: &str, provider: &str, state: Option<&str>, outcome: Ou
         ),
         Outcome::Error(msg) => (
             serde_json::json!({
-                "type": "kyma-oauth",
+                "type": "pensieve-oauth",
                 "ok": false,
                 "provider": provider,
                 "state": state,

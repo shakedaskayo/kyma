@@ -7,9 +7,9 @@
 
 use serde_yaml::{Mapping, Value};
 
-/// The frontmatter fields kyma reads and writes. Claude Code's own schema is
-/// `name`/`description`/`metadata.{type, originSessionId}`; the `kyma_*`,
-/// `source`, `content_hash` and `archived_*` fields are kyma's additions on
+/// The frontmatter fields pensieve reads and writes. Claude Code's own schema is
+/// `name`/`description`/`metadata.{type, originSessionId}`; the `pensieve_*`,
+/// `source`, `content_hash` and `archived_*` fields are pensieve's additions on
 /// promoted files and archive tombstones.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Frontmatter {
@@ -17,17 +17,17 @@ pub struct Frontmatter {
     /// it; tolerated as `None` for hand-made files (callers fall back to the
     /// file stem).
     pub name: Option<String>,
-    /// One-line summary; becomes the kyma memory title.
+    /// One-line summary; becomes the pensieve memory title.
     pub description: Option<String>,
     /// `metadata.type`: user | feedback | project | reference.
     pub cc_type: Option<String>,
     /// `metadata.originSessionId`.
     pub origin_session_id: Option<String>,
-    /// `metadata.source` — [`crate::KYMA_SOURCE_MARKER`] on kyma-authored files.
+    /// `metadata.source` — [`crate::PENSIEVE_SOURCE_MARKER`] on pensieve-authored files.
     pub source: Option<String>,
-    /// `metadata.kyma_memory_id` — back-pointer (`memory:<uuid>`) on promoted files.
-    pub kyma_memory_id: Option<String>,
-    /// `metadata.content_hash` — hash of the body as last written by kyma;
+    /// `metadata.pensieve_memory_id` — back-pointer (`memory:<uuid>`) on promoted files.
+    pub pensieve_memory_id: Option<String>,
+    /// `metadata.content_hash` — hash of the body as last written by pensieve;
     /// a mismatch on disk means the user edited the file.
     pub content_hash: Option<String>,
     /// `metadata.archived_at` — set on archive tombstones.
@@ -45,9 +45,9 @@ pub struct MemoryFile {
 }
 
 impl MemoryFile {
-    /// True when the file was written by kyma (promotion or tombstone).
-    pub fn is_kyma_authored(&self) -> bool {
-        self.front.source.as_deref() == Some(crate::KYMA_SOURCE_MARKER)
+    /// True when the file was written by pensieve (promotion or tombstone).
+    pub fn is_pensieve_authored(&self) -> bool {
+        self.front.source.as_deref() == Some(crate::PENSIEVE_SOURCE_MARKER)
     }
 }
 
@@ -86,7 +86,7 @@ pub fn parse(raw: &str) -> Option<MemoryFile> {
             cc_type: from_meta("type"),
             origin_session_id: from_meta("originSessionId"),
             source: from_meta("source"),
-            kyma_memory_id: from_meta("kyma_memory_id"),
+            pensieve_memory_id: from_meta("pensieve_memory_id"),
             content_hash: from_meta("content_hash"),
             archived_at: from_meta("archived_at"),
             archived_reason: from_meta("archived_reason"),
@@ -115,7 +115,7 @@ pub fn render(file: &MemoryFile) -> String {
     put(&mut meta, "type", &f.cc_type);
     put(&mut meta, "originSessionId", &f.origin_session_id);
     put(&mut meta, "source", &f.source);
-    put(&mut meta, "kyma_memory_id", &f.kyma_memory_id);
+    put(&mut meta, "pensieve_memory_id", &f.pensieve_memory_id);
     put(&mut meta, "content_hash", &f.content_hash);
     put(&mut meta, "archived_at", &f.archived_at);
     put(&mut meta, "archived_reason", &f.archived_reason);

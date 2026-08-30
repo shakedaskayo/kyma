@@ -1,7 +1,7 @@
 //! DataFusion integration — phase A.
 //!
-//! Exposes [`KymaTable`], a DataFusion `TableProvider` that resolves a
-//! kyma table against the catalog + format, fetches matching extents, and
+//! Exposes [`PensieveTable`], a DataFusion `TableProvider` that resolves a
+//! pensieve table against the catalog + format, fetches matching extents, and
 //! materializes their rows for SQL execution via `MemoryExec`.
 //!
 //! Phase-A simplifications vs. the target architecture:
@@ -12,7 +12,7 @@
 //!    extent from object storage.
 //!
 //! These don't affect correctness; they affect latency + memory footprint.
-//! Real pushdown + streaming scans land with M2's custom `KymaScanExec`.
+//! Real pushdown + streaming scans land with M2's custom `PensieveScanExec`.
 
 #![forbid(unsafe_code)]
 
@@ -37,22 +37,22 @@ use datafusion::logical_expr::{BinaryExpr, Expr, Like, Operator, TableProviderFi
 use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::scalar::ScalarValue;
-use kyma_core::catalog::{Catalog, ColumnPrune, PrunePredicate, TableRef, TimeRange};
-use kyma_core::segment_format::{
+use pensieve_core::catalog::{Catalog, ColumnPrune, PrunePredicate, TableRef, TimeRange};
+use pensieve_core::segment_format::{
     BlockPredicate, ColumnId, ExtentReader, OpenExtentInput, ScalarValue as BlockScalar,
     SegmentFormat,
 };
-use kyma_core::types::NodeId;
+use pensieve_core::types::NodeId;
 use std::any::Any;
 use std::sync::Arc;
 use tracing::instrument;
 
 pub mod router;
 
-/// A kyma table exposed to DataFusion.
+/// A pensieve table exposed to DataFusion.
 ///
 /// Construct once per query (or cache cheaply — it holds only shared refs).
-pub struct KymaTable {
+pub struct PensieveTable {
     table: TableRef,
     catalog: Arc<dyn Catalog>,
     format: Arc<dyn SegmentFormat>,
@@ -64,9 +64,9 @@ pub struct KymaTable {
     database_name: Option<String>,
 }
 
-impl std::fmt::Debug for KymaTable {
+impl std::fmt::Debug for PensieveTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("KymaTable")
+        f.debug_struct("PensieveTable")
             .field("name", &self.table.name)
             .field("table_id", &self.table.id)
             .field("node_id", &self.node_id)
@@ -74,8 +74,8 @@ impl std::fmt::Debug for KymaTable {
     }
 }
 
-impl KymaTable {
-    /// Construct a local-only KymaTable (scale-out disabled). Used by
+impl PensieveTable {
+    /// Construct a local-only PensieveTable (scale-out disabled). Used by
     /// tests that don't want peer fan-out.
     pub fn new(table: TableRef, catalog: Arc<dyn Catalog>, format: Arc<dyn SegmentFormat>) -> Self {
         Self {
@@ -87,7 +87,7 @@ impl KymaTable {
         }
     }
 
-    /// Construct a KymaTable aware of the current node — enables peer
+    /// Construct a PensieveTable aware of the current node — enables peer
     /// fan-out via the read-router.
     pub fn with_node_id(
         table: TableRef,
@@ -107,7 +107,7 @@ impl KymaTable {
 }
 
 #[async_trait]
-impl TableProvider for KymaTable {
+impl TableProvider for PensieveTable {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -211,10 +211,10 @@ impl TableProvider for KymaTable {
             limit = ?limit,
             projection = ?projection,
             time_range = ?prune.time_range,
-            "kyma scan"
+            "pensieve scan"
         );
 
-        ::metrics::counter!("kyma_scan_extents_listed_total").increment(manifests.len() as u64);
+        ::metrics::counter!("pensieve_scan_extents_listed_total").increment(manifests.len() as u64);
 
         // 2a. Read-router: if this node knows its own id and database,
         //     consult `list_live_nodes` and split extents between
@@ -228,7 +228,7 @@ impl TableProvider for KymaTable {
                 let fetches: Vec<_> = remote_by_node
                     .into_iter()
                     .map(|(node_id, (endpoint, ms))| {
-                        ::metrics::counter!("kyma_scan_extents_remote_assigned_total")
+                        ::metrics::counter!("pensieve_scan_extents_remote_assigned_total")
                             .increment(ms.len() as u64);
                         let db = db.clone();
                         let name = self.table.name.clone();
@@ -275,8 +275,8 @@ impl TableProvider for KymaTable {
 
             let scanned = block_ids.len() as u64;
             let pruned = (total_blocks as u64).saturating_sub(scanned);
-            ::metrics::counter!("kyma_scan_blocks_scanned_total").increment(scanned);
-            ::metrics::counter!("kyma_scan_blocks_pruned_total").increment(pruned);
+            ::metrics::counter!("pensieve_scan_blocks_scanned_total").increment(scanned);
+            ::metrics::counter!("pensieve_scan_blocks_pruned_total").increment(pruned);
 
             for bid in block_ids {
                 // Read full columns of the extent (no extent-level projection),
@@ -311,7 +311,7 @@ impl TableProvider for KymaTable {
                 Ok(bs) => bs,
                 Err(e) => {
                     tracing::warn!(peer = %endpoint, error = %e, "peer fetch failed; falling back to local read");
-                    ::metrics::counter!("kyma_scan_extents_remote_fallback_total")
+                    ::metrics::counter!("pensieve_scan_extents_remote_fallback_total")
                         .increment(ms.len() as u64);
                     let mut fallback: Vec<RecordBatch> = Vec::new();
                     for m in ms {
@@ -368,7 +368,7 @@ impl TableProvider for KymaTable {
 
 async fn read_one_block(
     reader: &dyn ExtentReader,
-    block: kyma_core::segment_format::BlockId,
+    block: pensieve_core::segment_format::BlockId,
     projection: &[ColumnId],
 ) -> DfResult<RecordBatch> {
     reader
@@ -752,7 +752,7 @@ fn extract_text_search(
     // we're just pruning *extents* here.
     let trimmed = raw.trim_matches('%');
     let mut tokens: std::collections::HashSet<String> = Default::default();
-    kyma_format_tlm_tokenize_like(trimmed, &mut tokens);
+    pensieve_format_tlm_tokenize_like(trimmed, &mut tokens);
     if tokens.is_empty() {
         return None;
     }
@@ -762,9 +762,9 @@ fn extract_text_search(
     Some((col_name, ColumnPrune::ContainsTokens(tokens_vec)))
 }
 
-/// Minimal mirror of the writer's tokenizer. Kept local so kyma-exec
-/// doesn't need a direct runtime dep on kyma-format-tlm's internals.
-fn kyma_format_tlm_tokenize_like(s: &str, out: &mut std::collections::HashSet<String>) {
+/// Minimal mirror of the writer's tokenizer. Kept local so pensieve-exec
+/// doesn't need a direct runtime dep on pensieve-format-tlm's internals.
+fn pensieve_format_tlm_tokenize_like(s: &str, out: &mut std::collections::HashSet<String>) {
     let mut cur = String::with_capacity(16);
     for c in s.chars() {
         if c.is_ascii_alphanumeric() {

@@ -7,12 +7,12 @@ use super::cc_curate::{
     commit_guard_stamps, plan_curation, CurationConfig, CurationInput, FileAction, GuardStamp,
 };
 use super::{execute_sql, SharedToolCtx};
-use kyma_core::catalog::Catalog;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_embed::{EmbedError, EmbeddingBackend};
-use kyma_format_tlm::TelemetryFormat;
-use kyma_memory::{CreateMemory, MemoryType, MemoryWriter};
-use kyma_storage::{build_object_store, StorageConfig};
+use pensieve_core::catalog::Catalog;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_embed::{EmbedError, EmbeddingBackend};
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_memory::{CreateMemory, MemoryType, MemoryWriter};
+use pensieve_storage::{build_object_store, StorageConfig};
 
 /// Deterministic in-process embedding stub (dim 8) — no model downloads.
 #[derive(Debug)]
@@ -43,7 +43,7 @@ impl EmbeddingBackend for TestEmbed {
 async fn engine() -> (tempfile::TempDir, MemoryWriter, SharedToolCtx) {
     let tmp = tempfile::tempdir().expect("tmp");
     let sqlite = Arc::new(
-        kyma_catalog_sqlite::SqliteCatalog::connect(
+        pensieve_catalog_sqlite::SqliteCatalog::connect(
             &tmp.path().join("catalog.db").display().to_string(),
         )
         .await
@@ -56,7 +56,7 @@ async fn engine() -> (tempfile::TempDir, MemoryWriter, SharedToolCtx) {
         root: data_root.display().to_string(),
     })
     .expect("store");
-    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store, "kyma-test"));
+    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store, "pensieve-test"));
     let writer = MemoryWriter::new(catalog.clone(), format.clone(), Arc::new(TestEmbed));
     let shared = SharedToolCtx {
         realm_scope: Default::default(),
@@ -94,7 +94,7 @@ async fn seed(
 }
 
 async fn rows(shared: &SharedToolCtx, sql: &str) -> Vec<Value> {
-    let res = execute_sql(shared, kyma_memory::DEFAULT_DATABASE, sql, 10_000).await;
+    let res = execute_sql(shared, pensieve_memory::DEFAULT_DATABASE, sql, 10_000).await;
     res.get("rows")
         .and_then(Value::as_array)
         .cloned()
@@ -329,17 +329,17 @@ async fn promotes_top_memories_capped_ordered_and_idempotent() {
     else {
         unreachable!()
     };
-    assert_eq!(file, "kyma-auth-model-decision.md");
+    assert_eq!(file, "pensieve-auth-model-decision.md");
     assert_eq!(node_id, &format!("memory:{id_decision}"));
-    let parsed = kyma_ccmem::frontmatter::parse(content).expect("rendered file parses");
-    assert!(parsed.is_kyma_authored());
+    let parsed = pensieve_ccmem::frontmatter::parse(content).expect("rendered file parses");
+    assert!(parsed.is_pensieve_authored());
     assert_eq!(
         parsed.front.name.as_deref(),
-        Some("kyma-auth-model-decision")
+        Some("pensieve-auth-model-decision")
     );
     assert_eq!(parsed.front.cc_type.as_deref(), Some("project")); // decision → project
     assert_eq!(
-        parsed.front.kyma_memory_id.as_deref(),
+        parsed.front.pensieve_memory_id.as_deref(),
         Some(node_id.as_str())
     );
     assert_eq!(
@@ -348,7 +348,7 @@ async fn promotes_top_memories_capped_ordered_and_idempotent() {
     );
     assert!(parsed.body.contains("session tokens over JWTs"));
     // The stamped hash matches a recompute over the rendered file.
-    let recomputed = kyma_ccmem::hash::content_hash(
+    let recomputed = pensieve_ccmem::hash::content_hash(
         parsed.front.name.as_deref().unwrap_or_default(),
         parsed.front.cc_type.as_deref(),
         &parsed.body,
@@ -357,8 +357,8 @@ async fn promotes_top_memories_capped_ordered_and_idempotent() {
 
     let idx = index_entries(&actions);
     assert_eq!(idx.len(), 2);
-    assert_eq!(idx[0].file, "kyma-auth-model-decision.md", "score order");
-    assert_eq!(idx[1].file, "kyma-prefer-nextest.md");
+    assert_eq!(idx[0].file, "pensieve-auth-model-decision.md", "score order");
+    assert_eq!(idx[1].file, "pensieve-prefer-nextest.md");
     assert_eq!(outcome.index_entries, 2);
 
     // Apply succeeds → stamps commit; second pass: no rewrites, no churn.
@@ -435,7 +435,7 @@ async fn excludes_file_born_and_user_owned_from_promotion() {
         Some("promo/user-owned"),
         Some(json!({
             "cc_user_owned": true,
-            "cc_promoted_file": "kyma-user-owned-note.md",
+            "cc_promoted_file": "pensieve-user-owned-note.md",
             "cc_content_hash": "stale",
         })),
     )
@@ -453,7 +453,7 @@ async fn excludes_file_born_and_user_owned_from_promotion() {
     );
     let idx = index_entries(&actions);
     assert_eq!(idx.len(), 1, "user-owned file keeps its index entry");
-    assert_eq!(idx[0].file, "kyma-user-owned-note.md");
+    assert_eq!(idx[0].file, "pensieve-user-owned-note.md");
 }
 
 #[tokio::test]
@@ -586,7 +586,7 @@ async fn demoted_promotion_is_archived_and_unstamped() {
         0.3,
         Some("promo/faded"),
         Some(json!({
-            "cc_promoted_file": "kyma-faded-note.md",
+            "cc_promoted_file": "pensieve-faded-note.md",
             "cc_content_hash": "whatever",
         })),
     )
@@ -602,7 +602,7 @@ async fn demoted_promotion_is_archived_and_unstamped() {
     let FileAction::ArchiveFile { file, reason, .. } = arch[0] else {
         unreachable!()
     };
-    assert_eq!(file, "kyma-faded-note.md");
+    assert_eq!(file, "pensieve-faded-note.md");
     assert!(reason.contains("demoted"));
     assert!(index_entries(&actions).is_empty());
 
@@ -675,7 +675,7 @@ async fn promotion_synthesizes_a_clean_title_when_none_was_saved() {
     else {
         unreachable!()
     };
-    let parsed = kyma_ccmem::frontmatter::parse(file_content).expect("rendered file parses");
+    let parsed = pensieve_ccmem::frontmatter::parse(file_content).expect("rendered file parses");
     let desc = parsed.front.description.clone().unwrap_or_default();
     let old_buggy: String = content.split_whitespace().take(6).collect::<Vec<_>>().join(" ");
 

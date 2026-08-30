@@ -2,7 +2,7 @@
 //!
 //! Returns the full schema tree (databases → tables → columns) as JSON,
 //! with a configurable server-side cache (default 5 s, override via
-//! `KYMA_SCHEMA_CACHE_TTL_SECS`) backed by a `tokio::sync::Mutex`.
+//! `PENSIEVE_SCHEMA_CACHE_TTL_SECS`) backed by a `tokio::sync::Mutex`.
 //! Thundering-herd tolerant on cold-start misses: multiple concurrent cold
 //! requests will each rebuild. The cache is never held across IO, so warm
 //! readers never block on a builder.
@@ -15,7 +15,7 @@ use serde::Serialize;
 use tokio::sync::Mutex;
 
 use crate::QueryState;
-use kyma_core::catalog::{Catalog, ColumnInfo};
+use pensieve_core::catalog::{Catalog, ColumnInfo};
 
 /// Top-level schema document returned by `GET /v1/catalog/schema`.
 #[derive(Serialize, Clone)]
@@ -30,7 +30,7 @@ pub struct DatabaseDoc {
     pub tables: Vec<TableDoc>,
 }
 
-/// Per-table entry (columns are `ColumnInfo` from `kyma_core`).
+/// Per-table entry (columns are `ColumnInfo` from `pensieve_core`).
 #[derive(Serialize, Clone)]
 pub struct TableDoc {
     pub name: String,
@@ -67,11 +67,11 @@ impl SchemaCache {
         }
     }
 
-    /// Read `KYMA_SCHEMA_CACHE_TTL_SECS` from the environment and construct a
+    /// Read `PENSIEVE_SCHEMA_CACHE_TTL_SECS` from the environment and construct a
     /// [`SchemaCache`] accordingly.  Falls back to the 5-second default when
     /// the variable is absent or unparseable.
     pub fn from_env() -> Self {
-        let ttl = std::env::var("KYMA_SCHEMA_CACHE_TTL_SECS")
+        let ttl = std::env::var("PENSIEVE_SCHEMA_CACHE_TTL_SECS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .map(Duration::from_secs)
@@ -150,7 +150,7 @@ fn filter_schema_by_principal(
     doc
 }
 
-async fn build(catalog: &dyn Catalog) -> Result<SchemaDoc, kyma_core::errors::CatalogError> {
+async fn build(catalog: &dyn Catalog) -> Result<SchemaDoc, pensieve_core::errors::CatalogError> {
     let mut out = SchemaDoc {
         databases: Vec::new(),
     };

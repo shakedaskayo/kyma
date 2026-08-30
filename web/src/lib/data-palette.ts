@@ -1,5 +1,5 @@
 /**
- * kyma data palette — the single source of truth for categorical color.
+ * pensieve data palette — the single source of truth for categorical color.
  *
  * Charts (ECharts), result-grid type badges, memory-type chips, and the graph
  * node colors all draw from here so the product reads as one visual system.

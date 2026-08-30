@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end smoke test for the kyma phase-A vertical slice.
+# End-to-end smoke test for the pensieve phase-A vertical slice.
 #
 # Runs a sequence of ingest + query + catalog operations against a live
 # server backed by the docker-compose Postgres + MinIO stack, and asserts
@@ -8,7 +8,7 @@
 # Prereqs (auto-bootstrapped where possible):
 #   - docker + docker-compose
 #   - jq, curl
-#   - `cargo build -p kyma-bin -p kyma-cli` already run
+#   - `cargo build -p pensieve-bin -p pensieve-cli` already run
 #   - docker-compose up (the script brings it up if not already)
 
 set -euo pipefail
@@ -19,19 +19,19 @@ cd "$ROOT"
 # ------------------------------------------------------------------
 # Config
 # ------------------------------------------------------------------
-export KYMA_CATALOG_URL="postgres://kyma:kyma_dev@localhost:5433/kyma"
-export KYMA_S3_ENDPOINT="http://localhost:9000"
-export KYMA_S3_BUCKET="kyma"
-export KYMA_S3_ACCESS_KEY_ID="kyma_admin"
-export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
-export KYMA_S3_PATH_STYLE="true"
-export KYMA_S3_ALLOW_HTTP="true"
-export KYMA_HTTP_ADDR="127.0.0.1:8080"
-export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
+export PENSIEVE_CATALOG_URL="postgres://pensieve:pensieve_dev@localhost:5433/pensieve"
+export PENSIEVE_S3_ENDPOINT="http://localhost:9000"
+export PENSIEVE_S3_BUCKET="pensieve"
+export PENSIEVE_S3_ACCESS_KEY_ID="pensieve_admin"
+export PENSIEVE_S3_SECRET_ACCESS_KEY="pensieve_admin_dev"
+export PENSIEVE_S3_PATH_STYLE="true"
+export PENSIEVE_S3_ALLOW_HTTP="true"
+export PENSIEVE_HTTP_ADDR="127.0.0.1:8080"
+export PENSIEVE_SELF_TRACE="off"   # deterministic storage-layout assertions
 export RUST_LOG="${RUST_LOG:-info,sqlx=warn}"
 
 HTTP_BASE="http://127.0.0.1:8080"
-LOG_FILE="/tmp/kyma-e2e.log"
+LOG_FILE="/tmp/pensieve-e2e.log"
 SERVER_PID=""
 
 # ------------------------------------------------------------------
@@ -79,30 +79,30 @@ section "Bring up Postgres + MinIO"
 docker-compose up -d --quiet-pull >/dev/null 2>&1
 
 for i in 1 2 3 4 5 6 7 8 9 10; do
-    if docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1 &&
-       docker exec kyma-minio mc ready local >/dev/null 2>&1; then
+    if docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null 2>&1 &&
+       docker exec pensieve-minio mc ready local >/dev/null 2>&1; then
         break
     fi
     sleep 2
 done
-docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null
+docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null
 info "postgres + minio healthy"
 
 section "Reset state (truncate catalog, empty bucket)"
-docker exec kyma-postgres psql -U kyma -d kyma -qc "
+docker exec pensieve-postgres psql -U pensieve -d pensieve -qc "
     TRUNCATE TABLE extents, manifests, snapshots, schema_snapshots, tables, databases, nodes RESTART IDENTITY CASCADE;
 " >/dev/null 2>&1 || true
 # mc alias is persistent within the container, but `mc alias set` is idempotent.
-docker exec kyma-minio mc alias set local http://localhost:9000 kyma_admin kyma_admin_dev >/dev/null 2>&1 || true
-docker exec kyma-minio mc rm --recursive --force local/kyma >/dev/null 2>&1 || true
-docker exec kyma-minio mc mb --ignore-existing local/kyma >/dev/null
+docker exec pensieve-minio mc alias set local http://localhost:9000 pensieve_admin pensieve_admin_dev >/dev/null 2>&1 || true
+docker exec pensieve-minio mc rm --recursive --force local/pensieve >/dev/null 2>&1 || true
+docker exec pensieve-minio mc mb --ignore-existing local/pensieve >/dev/null
 info "catalog truncated; bucket cleared"
 
 # ------------------------------------------------------------------
-# Start kyma
+# Start pensieve
 # ------------------------------------------------------------------
-section "Start kyma server"
-./target/debug/kyma >"$LOG_FILE" 2>&1 &
+section "Start pensieve server"
+./target/debug/pensieve >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 info "PID $SERVER_PID; log $LOG_FILE"
 for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -118,13 +118,13 @@ assert_eq "server /health returns status=ok" '"ok"' "$(echo "$health" | jq .stat
 # Test 1: Bootstrap — create database + two tables
 # ------------------------------------------------------------------
 section "Test 1 — bootstrap: create database + tables"
-./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
-./target/debug/kyma-cli create-table --db default --name http_logs   --schema 'timestamp:timestamp,status:int,path:string,message:string' >/dev/null
-./target/debug/kyma-cli create-table --db default --name user_events --schema 'timestamp:timestamp,user_id:long,event:string' >/dev/null
+./target/debug/pensieve-cli create-database default --if-not-exists >/dev/null
+./target/debug/pensieve-cli create-table --db default --name http_logs   --schema 'timestamp:timestamp,status:int,path:string,message:string' >/dev/null
+./target/debug/pensieve-cli create-table --db default --name user_events --schema 'timestamp:timestamp,user_id:long,event:string' >/dev/null
 # Filter out server-internal tables (e.g. otel_traces, pre-created in `default`
 # for self-tracing) — this test asserts the two tables IT created, not the
 # bootstrap set.
-tables_listing=$(./target/debug/kyma-cli list-tables --db default | awk '{print $1}' \
+tables_listing=$(./target/debug/pensieve-cli list-tables --db default | awk '{print $1}' \
     | grep -E '^(http_logs|user_events)$' | sort | tr '\n' ',' | sed 's/,$//')
 assert_eq "two tables created"      "http_logs,user_events" "$tables_listing"
 
@@ -299,7 +299,7 @@ section "Test 14 — durability: kill server, restart, data still queryable"
 kill "$SERVER_PID"
 wait "$SERVER_PID" 2>/dev/null || true
 info "server stopped; objects remain in MinIO, metadata in Postgres"
-./target/debug/kyma >>"$LOG_FILE" 2>&1 &
+./target/debug/pensieve >>"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 for i in 1 2 3 4 5 6 7 8 9 10; do
     if curl -s -o /dev/null -w "%{http_code}" "$HTTP_BASE/health" 2>/dev/null | grep -q 200; then
@@ -314,15 +314,15 @@ assert_eq "row count survives restart = 120" "120" "$post_restart_count"
 # Test 15 — catalog state checks (snapshot chain + extent count)
 # ------------------------------------------------------------------
 section "Test 15 — catalog consistency checks"
-snapshot_count=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+snapshot_count=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
     "SELECT COUNT(*) FROM snapshots WHERE table_id = (SELECT id FROM tables WHERE name='http_logs')")
 assert_eq "http_logs has 3 snapshots (bootstrap + 2 ingests)" "3" "$snapshot_count"
 
-extent_count=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+extent_count=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
     "SELECT COUNT(*) FROM extents WHERE table_id = (SELECT id FROM tables WHERE name='http_logs') AND deleted_at IS NULL")
 assert_eq "http_logs has 2 live extents" "2" "$extent_count"
 
-minio_object_count=$(docker exec kyma-minio mc ls -r local/kyma/ | grep -c '\.kyma$' || true)
+minio_object_count=$(docker exec pensieve-minio mc ls -r local/pensieve/ | grep -c '\.pensieve$' || true)
 # 2 http_logs extents + 1 user_events extent = 3 objects
 assert_eq "MinIO contains 3 extent objects" "3" "$minio_object_count"
 

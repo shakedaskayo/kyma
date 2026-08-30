@@ -4,7 +4,7 @@
 //! so near-duplicate top results don't crowd out diverse ones.
 //!
 //! Deliberately duplicates a small `cosine_sim` here rather than reusing the
-//! DataFusion vector UDFs in `kyma-exec`: those operate on Arrow arrays
+//! DataFusion vector UDFs in `pensieve-exec`: those operate on Arrow arrays
 //! inside a `SessionContext`, not plain `Vec<f32>` — a 5-line duplicate is
 //! cheaper than a cross-crate dependency for this.
 

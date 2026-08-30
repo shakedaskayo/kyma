@@ -25,27 +25,27 @@ fn launchd_plist_renders_service() {
         interval_secs: Some(120),
         cc_only: true,
         cloud_only: false,
-        kyma_home: Some("/Users/x/.kyma".to_string()),
+        pensieve_home: Some("/Users/x/.pensieve".to_string()),
     };
-    let plist = launchd_plist("/usr/local/bin/kyma", &opts, "/Users/x/.kyma/logs/worker.log");
-    assert!(plist.contains("<string>dev.getkyma.kyma-sync</string>"));
-    assert!(plist.contains("<string>/usr/local/bin/kyma</string>"));
+    let plist = launchd_plist("/usr/local/bin/pensieve", &opts, "/Users/x/.pensieve/logs/worker.log");
+    assert!(plist.contains("<string>dev.getpensieve.pensieve-sync</string>"));
+    assert!(plist.contains("<string>/usr/local/bin/pensieve</string>"));
     assert!(plist.contains("<string>sync</string>"));
     assert!(plist.contains("<string>--watch</string>"));
     assert!(plist.contains("<string>--cc-only</string>"));
     assert!(plist.contains("<key>KeepAlive</key>"));
-    assert!(plist.contains("<string>/Users/x/.kyma/logs/worker.log</string>"));
-    assert!(plist.contains("<key>KYMA_CC_SYNC_POLL_SECS</key>"));
+    assert!(plist.contains("<string>/Users/x/.pensieve/logs/worker.log</string>"));
+    assert!(plist.contains("<key>PENSIEVE_CC_SYNC_POLL_SECS</key>"));
     assert!(plist.contains("<string>120</string>"));
     // Services don't inherit the shell env — the store location is pinned.
-    assert!(plist.contains("<key>KYMA_HOME</key>"));
-    assert!(plist.contains("<string>/Users/x/.kyma</string>"));
+    assert!(plist.contains("<key>PENSIEVE_HOME</key>"));
+    assert!(plist.contains("<string>/Users/x/.pensieve</string>"));
     // Working dir is the store: relative caches (fastembed models) land in a
     // stable, writable place instead of launchd's default `/`.
     assert!(plist.contains("<key>WorkingDirectory</key>"));
 
     // No interval / no home → no env block.
-    let plain = launchd_plist("/usr/local/bin/kyma", &WorkerOptions::default(), "/tmp/w.log");
+    let plain = launchd_plist("/usr/local/bin/pensieve", &WorkerOptions::default(), "/tmp/w.log");
     assert!(!plain.contains("EnvironmentVariables"));
     assert!(!plain.contains("--cc-only"));
 }
@@ -54,18 +54,18 @@ fn launchd_plist_renders_service() {
 fn systemd_unit_renders_service() {
     let opts = WorkerOptions {
         interval_secs: Some(60),
-        kyma_home: Some("/home/x/.kyma".to_string()),
+        pensieve_home: Some("/home/x/.pensieve".to_string()),
         ..WorkerOptions::default()
     };
-    let unit = systemd_unit("/usr/bin/kyma", &opts);
-    assert!(unit.contains("ExecStart=/usr/bin/kyma sync --watch"));
+    let unit = systemd_unit("/usr/bin/pensieve", &opts);
+    assert!(unit.contains("ExecStart=/usr/bin/pensieve sync --watch"));
     assert!(unit.contains("Restart=on-failure"));
-    assert!(unit.contains("Environment=KYMA_CC_SYNC_POLL_SECS=60"));
-    assert!(unit.contains("Environment=KYMA_HOME=/home/x/.kyma"));
-    assert!(unit.contains("WorkingDirectory=/home/x/.kyma"));
+    assert!(unit.contains("Environment=PENSIEVE_CC_SYNC_POLL_SECS=60"));
+    assert!(unit.contains("Environment=PENSIEVE_HOME=/home/x/.pensieve"));
+    assert!(unit.contains("WorkingDirectory=/home/x/.pensieve"));
     assert!(unit.contains("WantedBy=default.target"));
 
-    let plain = systemd_unit("/usr/bin/kyma", &WorkerOptions::default());
+    let plain = systemd_unit("/usr/bin/pensieve", &WorkerOptions::default());
     assert!(!plain.contains("Environment="));
 }
 
@@ -73,10 +73,10 @@ fn systemd_unit_renders_service() {
 fn service_paths_live_under_home() {
     assert_eq!(
         plist_path("/Users/x").display().to_string(),
-        "/Users/x/Library/LaunchAgents/dev.getkyma.kyma-sync.plist"
+        "/Users/x/Library/LaunchAgents/dev.getpensieve.pensieve-sync.plist"
     );
     assert_eq!(
         unit_path("/home/x").display().to_string(),
-        "/home/x/.config/systemd/user/kyma-sync.service"
+        "/home/x/.config/systemd/user/pensieve-sync.service"
     );
 }

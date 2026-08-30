@@ -1,6 +1,6 @@
 //! Graph-snapshot activation scheduler (S3.2).
 //!
-//! The deep-subgraph fast path ([`kyma_graph::StoredGraphProvider`]) can serve a
+//! The deep-subgraph fast path ([`pensieve_graph::StoredGraphProvider`]) can serve a
 //! large-graph traversal from a persistent CSR snapshot instead of a per-hop SQL
 //! loop — but only if a snapshot has been *built*. Building is a full edge scan,
 //! so it can't run on the query path; something has to refresh snapshots out of
@@ -11,7 +11,7 @@
 //! Debounce signal: the edge table's `current_snapshot_id`. It advances on every
 //! commit to that table and never moves backward, so it is a correct, cheap
 //! staleness signal — if the live id still matches the marker stored beside the
-//! snapshot ([`kyma_graph::snapshot::meta_path`]), the topology is unchanged and
+//! snapshot ([`pensieve_graph::snapshot::meta_path`]), the topology is unchanged and
 //! the rebuild is skipped. A full edge scan therefore happens only after a real
 //! write, not on every tick.
 //!
@@ -19,15 +19,15 @@
 //! deep query fall back to the per-hop path (slower, identical results). So a
 //! failed rebuild is logged and retried next tick, never fatal.
 //!
-//! The same loop runs in the server (`kyma serve` / the distributed query node)
-//! and in local mode (`kyma-local`), since both build their graph providers from
+//! The same loop runs in the server (`pensieve serve` / the distributed query node)
+//! and in local mode (`pensieve-local`), since both build their graph providers from
 //! the same catalog + format pair.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use kyma_core::catalog::Catalog;
-use kyma_core::segment_format::SegmentFormat;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::segment_format::SegmentFormat;
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
@@ -52,7 +52,7 @@ fn needs_rebuild(last_marker: Option<&str>, current_version: &str) -> bool {
 impl GraphSnapshotScheduler {
     fn default_poll_interval() -> Duration {
         Duration::from_secs(
-            std::env::var("KYMA_GRAPH_SNAPSHOT_POLL_SECS")
+            std::env::var("PENSIEVE_GRAPH_SNAPSHOT_POLL_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(120),
@@ -109,8 +109,8 @@ impl GraphSnapshotScheduler {
                     continue;
                 };
                 let current_version = edge_tbl.current_snapshot_id.to_string();
-                let marker = kyma_graph::snapshot::meta_path(&db, &reg.edge_table);
-                let last = kyma_graph::snapshot::load_snapshot_meta(&store, &marker)
+                let marker = pensieve_graph::snapshot::meta_path(&db, &reg.edge_table);
+                let last = pensieve_graph::snapshot::load_snapshot_meta(&store, &marker)
                     .await
                     .unwrap_or(None);
                 if !needs_rebuild(last.as_deref(), &current_version) {
@@ -124,7 +124,7 @@ impl GraphSnapshotScheduler {
                         // crash between the two just rebuilds next tick (never
                         // marks a snapshot that wasn't written).
                         if let Err(e) =
-                            kyma_graph::snapshot::store_snapshot_meta(&store, &marker, &current_version)
+                            pensieve_graph::snapshot::store_snapshot_meta(&store, &marker, &current_version)
                                 .await
                         {
                             warn!(database = %db, graph = %reg.edge_table, error = %e,

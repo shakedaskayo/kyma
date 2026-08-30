@@ -20,9 +20,9 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use kyma_core::tenant::TenantId;
-use kyma_memory::types::MemoryType;
-use kyma_memory::{CreateMemory, MemoryWriter};
+use pensieve_core::tenant::TenantId;
+use pensieve_memory::types::MemoryType;
+use pensieve_memory::{CreateMemory, MemoryWriter};
 
 use super::engine::EngineKind;
 use super::memory_conflict::{self, ConflictTally};
@@ -34,7 +34,7 @@ use super::tools::{execute_sql, SharedToolCtx};
 use super::{memory_extract, memory_resolve, memory_settings, memory_validity_gate};
 
 const FIREHOSE_DB: &str = "default";
-const MEMORY_DB: &str = kyma_memory::DEFAULT_DATABASE; // "memory"
+const MEMORY_DB: &str = pensieve_memory::DEFAULT_DATABASE; // "memory"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -53,7 +53,7 @@ pub(crate) fn sql_lit(s: &str) -> String {
 }
 
 async fn build_writer(shared: &SharedToolCtx) -> anyhow::Result<MemoryWriter> {
-    let embed = kyma_memory::shared_embedding()
+    let embed = pensieve_memory::shared_embedding()
         .await
         .map_err(|e| anyhow::anyhow!("embedding backend: {e}"))?;
     Ok(MemoryWriter::new(
@@ -67,7 +67,7 @@ fn shared_from(state: &AgentState) -> SharedToolCtx {
     SharedToolCtx {
         realm_scope: Default::default(),
         consumer_sink: None,
-        federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
+        federation: Some(pensieve_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),
         format: state.format.clone(),
         pool: state.pool.clone(),
@@ -113,11 +113,11 @@ async fn memory_section(shared: &SharedToolCtx) -> Value {
 /// the raw provenance blob and `provenance.source` is folded out in Rust.
 pub async fn source_summary_handler(State(state): State<AgentState>) -> Json<Value> {
     let shared = shared_from(&state);
-    let sql = kyma_memory::sql::source_summary_sql(kyma_memory::NODE_TABLE);
+    let sql = pensieve_memory::sql::source_summary_sql(pensieve_memory::NODE_TABLE);
     // An empty/unprovisioned memory store surfaces as an execute_sql error;
     // rows_of maps that to no rows, i.e. an empty summary.
     let rows = rows_of(&execute_sql(&shared, MEMORY_DB, &sql, 100_000).await);
-    let items = kyma_memory::sql::fold_source_summary(&rows);
+    let items = pensieve_memory::sql::fold_source_summary(&rows);
     Json(json!({ "items": items }))
 }
 
@@ -525,20 +525,20 @@ impl MemoryConsolidator {
     /// backend unavailable, provisioning error, …) — callers proceed without
     /// a precedent link rather than failing extraction over this.
     async fn capture_activity(&self, realm: &str, window: &str) -> Option<String> {
-        let embed = kyma_memory::shared_embedding().await.ok()?;
+        let embed = pensieve_memory::shared_embedding().await.ok()?;
         let awriter = MemoryWriter::new(
             self.shared.catalog.clone(),
             self.shared.format.clone(),
             embed,
         )
-        .with_database(kyma_memory::activities::ACTIVITIES_DB);
-        let activity = kyma_memory::activities::RawActivity {
+        .with_database(pensieve_memory::activities::ACTIVITIES_DB);
+        let activity = pensieve_memory::activities::RawActivity {
             text: window.to_string(),
             realm: realm.to_string(),
             source: "claude-code".to_string(),
         };
-        match kyma_memory::activities::capture(&awriter, &activity).await {
-            Ok(id) => Some(kyma_memory::activities::activity_node_id(&id)),
+        match pensieve_memory::activities::capture(&awriter, &activity).await {
+            Ok(id) => Some(pensieve_memory::activities::activity_node_id(&id)),
             Err(e) => {
                 tracing::debug!(error = %e, "activity capture failed");
                 None

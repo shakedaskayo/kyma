@@ -21,8 +21,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use kyma_memory::types::{CreateMemory, MemoryType};
-use kyma_memory::{rows, EDGE_INVALIDATES};
+use pensieve_memory::types::{CreateMemory, MemoryType};
+use pensieve_memory::{rows, EDGE_INVALIDATES};
 
 use super::memory_policy::{classify, Disposition, HitlPolicy, MemoryOp};
 use super::memory_queue_store::{QueueRow, QueueStore};
@@ -553,7 +553,7 @@ pub async fn apply_op(shared: &SharedToolCtx, payload: &OpPayload) -> anyhow::Re
 }
 
 /// Persist an [`AddSpec`] as a new memory; returns its `memory:<uuid>` node id.
-async fn add_spec(writer: &kyma_memory::MemoryWriter, spec: &AddSpec) -> anyhow::Result<String> {
+async fn add_spec(writer: &pensieve_memory::MemoryWriter, spec: &AddSpec) -> anyhow::Result<String> {
     let mut cm = CreateMemory::new(spec.content.clone());
     cm.title = Some(
         spec.title
@@ -584,7 +584,7 @@ pub async fn apply_inverse(shared: &SharedToolCtx, inv: &Inverse) -> anyhow::Res
 
 fn apply_inverse_inner<'a>(
     shared: &'a SharedToolCtx,
-    writer: &'a kyma_memory::MemoryWriter,
+    writer: &'a pensieve_memory::MemoryWriter,
     inv: &'a Inverse,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>> {
     Box::pin(async move {

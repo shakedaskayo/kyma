@@ -24,9 +24,9 @@ use uuid::Uuid;
 
 use crate::cc_sync::{archive_node, node_id_by_topic_key};
 use crate::Engine;
-use kyma_ccmem::{hash, wikilink};
-use kyma_memory::{rows::edge_row, CreateMemory, MemoryType, MemoryWriter};
-use kyma_server::agent::SharedToolCtx;
+use pensieve_ccmem::{hash, wikilink};
+use pensieve_memory::{rows::edge_row, CreateMemory, MemoryType, MemoryWriter};
+use pensieve_server::agent::SharedToolCtx;
 
 /// Importance assigned to vault notes: deliberately curated knowledge, but
 /// not an explicit "remember this" save (0.7) — between that and the 0.5
@@ -371,7 +371,7 @@ async fn link_wikilinks(
             (Some(s), Some(d)) => Some(edge_row(
                 s,
                 d,
-                kyma_memory::EDGE_RELATES_TO,
+                pensieve_memory::EDGE_RELATES_TO,
                 realm,
                 None,
                 Some(&props),

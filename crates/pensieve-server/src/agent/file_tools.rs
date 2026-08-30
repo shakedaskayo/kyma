@@ -13,15 +13,15 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use kyma_core::catalog::Catalog;
-use kyma_core::segment_format::SegmentFormat;
-use kyma_memory::file_candidates::{self, ContributeFile, FileContribution, FILE_CANDIDATES_DB};
-use kyma_memory::MemoryWriter;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::segment_format::SegmentFormat;
+use pensieve_memory::file_candidates::{self, ContributeFile, FileContribution, FILE_CANDIDATES_DB};
+use pensieve_memory::MemoryWriter;
 
 use super::tools::{execute_sql, SharedToolCtx};
 
 /// Shared contribution path used by both the `contribute_file` MCP tool and the
-/// `POST /v1/agent/files/contribute` HTTP endpoint (which `kyma scrape`/`watch`
+/// `POST /v1/agent/files/contribute` HTTP endpoint (which `pensieve scrape`/`watch`
 /// call). Redacts secrets, hashes, parses, and writes the candidate subgraph.
 pub async fn contribute_file_impl(
     catalog: Arc<dyn Catalog>,
@@ -32,9 +32,9 @@ pub async fn contribute_file_impl(
     content: String,
     why_read: Option<String>,
 ) -> std::result::Result<FileContribution, String> {
-    let (redacted, _findings) = kyma_redact::global().redact_text(&content);
+    let (redacted, _findings) = pensieve_redact::global().redact_text(&content);
     let sha = sha256_hex(redacted.as_bytes());
-    let embed = kyma_memory::shared_embedding()
+    let embed = pensieve_memory::shared_embedding()
         .await
         .map_err(|e| format!("embedding backend: {e}"))?;
     let writer = MemoryWriter::new(catalog, format, embed).with_database(FILE_CANDIDATES_DB);
@@ -82,7 +82,7 @@ struct ContributeArgs {
     why_read: Option<String>,
 }
 
-const CONTRIBUTE_DESC: &str = "Contribute a file you read so kyma persists its \
+const CONTRIBUTE_DESC: &str = "Contribute a file you read so pensieve persists its \
 structure (symbols, imports, call edges) as candidate graph nodes. Do this once \
 per file; afterwards use describe_file / file_neighbors / recall_file to recall \
 its meaning + relationships cheaply instead of re-reading it. Secrets in the \
@@ -280,7 +280,7 @@ pub fn tool_recall_file(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
-                    let embed = match kyma_memory::shared_embedding().await {
+                    let embed = match pensieve_memory::shared_embedding().await {
                         Ok(e) => e,
                         Err(e) => return Ok(json!({"error": format!("embedding backend: {e}")})),
                     };

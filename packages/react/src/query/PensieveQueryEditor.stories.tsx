@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { KymaQueryEditor } from "./KymaQueryEditor";
+import { PensieveQueryEditor } from "./PensieveQueryEditor";
 
-const meta: Meta<typeof KymaQueryEditor> = {
-  title: "Components/KymaQueryEditor",
-  component: KymaQueryEditor,
+const meta: Meta<typeof PensieveQueryEditor> = {
+  title: "Components/PensieveQueryEditor",
+  component: PensieveQueryEditor,
   argTypes: {
     language: {
       control: { type: "select" },
@@ -48,7 +48,7 @@ const meta: Meta<typeof KymaQueryEditor> = {
 };
 
 export default meta;
-type Story = StoryObj<typeof KymaQueryEditor>;
+type Story = StoryObj<typeof PensieveQueryEditor>;
 
 /**
  * Default editor: KQL mode, schema browser open, run to see 8 rows of fixture data.

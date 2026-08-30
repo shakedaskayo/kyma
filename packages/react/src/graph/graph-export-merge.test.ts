@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createExportAccumulator, mergeExportPage } from "./graph-export-merge";
-import type { GraphExportPage } from "@kyma-ai/client";
+import type { GraphExportPage } from "@pensieve-ai/client";
 
 const meta = { created_at: "", updated_at: "", realm: "default" };
 const pnode = (id: string, x: number, y: number) => ({

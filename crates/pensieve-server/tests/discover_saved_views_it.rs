@@ -13,7 +13,7 @@
 use async_trait::async_trait;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use kyma_server::auth::{AuthBackend, AuthError, AuthLayerState, Principal, Role};
+use pensieve_server::auth::{AuthBackend, AuthError, AuthLayerState, Principal, Role};
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -34,7 +34,7 @@ impl AuthBackend for TestAuth {
             return Err(AuthError::MissingToken);
         }
         Ok(Principal {
-            tenant: kyma_core::tenant::DEFAULT_TENANT,
+            tenant: pensieve_core::tenant::DEFAULT_TENANT,
             role: Role::Admin,
             subject: Some("test-user".to_string()),
             allowed_databases: None,
@@ -43,15 +43,15 @@ impl AuthBackend for TestAuth {
     }
 }
 
-fn build_app(state: kyma_server::QueryState) -> axum::Router {
+fn build_app(state: pensieve_server::QueryState) -> axum::Router {
     let backend: Arc<dyn AuthBackend> = Arc::new(TestAuth);
     let layer = AuthLayerState {
         backend,
         required: Role::Read,
     };
 
-    let read_router = kyma_server::router(state.clone());
-    let write_router = kyma_server::discover_views_write_router(
+    let read_router = pensieve_server::router(state.clone());
+    let write_router = pensieve_server::discover_views_write_router(
         state
             .pg_pool
             .clone()
@@ -62,11 +62,11 @@ fn build_app(state: kyma_server::QueryState) -> axum::Router {
         .merge(write_router)
         .layer(axum::middleware::from_fn_with_state(
             layer,
-            kyma_server::auth::require_role_middleware,
+            pensieve_server::auth::require_role_middleware,
         ))
 }
 
-async fn one(state: kyma_server::QueryState, req: Request<Body>) -> (StatusCode, String) {
+async fn one(state: pensieve_server::QueryState, req: Request<Body>) -> (StatusCode, String) {
     let app = build_app(state);
     let resp = app.oneshot(req).await.unwrap();
     let status = resp.status();
@@ -82,7 +82,7 @@ fn auth_header(req: axum::http::request::Builder) -> axum::http::request::Builde
 
 #[tokio::test]
 async fn create_then_list_then_delete() {
-    let state = kyma_server::test_support::seeded_state_two_databases().await;
+    let state = pensieve_server::test_support::seeded_state_two_databases().await;
 
     // 1) Create
     let req = auth_header(Request::builder().method("POST").uri("/v1/explore/views"))
@@ -136,7 +136,7 @@ async fn create_then_list_then_delete() {
 
 #[tokio::test]
 async fn create_with_duplicate_name_returns_409() {
-    let state = kyma_server::test_support::seeded_state_two_databases().await;
+    let state = pensieve_server::test_support::seeded_state_two_databases().await;
     let body = r#"{"name":"dup","sources":["obs.*"]}"#;
 
     let req = auth_header(Request::builder().method("POST").uri("/v1/explore/views"))
@@ -158,7 +158,7 @@ async fn create_with_duplicate_name_returns_409() {
 
 #[tokio::test]
 async fn create_with_empty_name_returns_400() {
-    let state = kyma_server::test_support::seeded_state_two_databases().await;
+    let state = pensieve_server::test_support::seeded_state_two_databases().await;
     let req = auth_header(Request::builder().method("POST").uri("/v1/explore/views"))
         .header("content-type", "application/json")
         .body(Body::from(r#"{"name":"","sources":["obs.*"]}"#))
@@ -169,7 +169,7 @@ async fn create_with_empty_name_returns_400() {
 
 #[tokio::test]
 async fn create_with_empty_sources_returns_400() {
-    let state = kyma_server::test_support::seeded_state_two_databases().await;
+    let state = pensieve_server::test_support::seeded_state_two_databases().await;
     let req = auth_header(Request::builder().method("POST").uri("/v1/explore/views"))
         .header("content-type", "application/json")
         .body(Body::from(r#"{"name":"x","sources":[]}"#))
@@ -180,7 +180,7 @@ async fn create_with_empty_sources_returns_400() {
 
 #[tokio::test]
 async fn search_with_view_scope_resolves_via_saved_view() {
-    let state = kyma_server::test_support::seeded_state_two_databases().await;
+    let state = pensieve_server::test_support::seeded_state_two_databases().await;
 
     // Create a view that scopes to obs.* only.
     let req = auth_header(Request::builder().method("POST").uri("/v1/explore/views"))
@@ -225,7 +225,7 @@ async fn search_with_view_scope_resolves_via_saved_view() {
 
 #[tokio::test]
 async fn search_with_missing_view_returns_404() {
-    let state = kyma_server::test_support::seeded_state_two_databases().await;
+    let state = pensieve_server::test_support::seeded_state_two_databases().await;
     let body = serde_json::json!({
         "query": "",
         "scope": { "kind": "view", "view_id": "00000000-0000-0000-0000-000000000000" },

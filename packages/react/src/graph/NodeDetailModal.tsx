@@ -6,7 +6,7 @@
  */
 import { useState } from "react";
 import { Copy } from "lucide-react";
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../internal/ui/dialog";
 import { Button } from "../internal/ui/button";
 import { Markdown } from "../internal/ui/markdown";

@@ -11,7 +11,7 @@ use crate::gitbin::ChangeKind;
 /// One memory operation derived from a pushed change.
 #[derive(Debug, Clone, PartialEq)]
 pub enum IngestOp {
-    /// Note carries a `kyma_memory_id` from a previous export → update that
+    /// Note carries a `pensieve_memory_id` from a previous export → update that
     /// memory in place (new version, same id).
     UpdateExisting { memory_id: String, rel_path: String, note: ParsedNote },
     /// New note (no id) → create a memory keyed by `brain:<name>:<path>`.
@@ -48,7 +48,7 @@ fn realm_for_path(cfg: &BrainConfig, rel_path: &str) -> String {
 
 fn is_note_path(path: &str) -> bool {
     path.ends_with(".md")
-        && !path.starts_with(".kyma/")
+        && !path.starts_with(".pensieve/")
         && !path.starts_with(".obsidian/")
         && path != "README.md"
         && path != "CONTRIBUTING.md"
@@ -102,7 +102,7 @@ pub fn plan_push_ingest(
                     continue;
                 };
                 let note = notes::parse_note(&text);
-                let claimed_id = note.kyma_memory_id.clone();
+                let claimed_id = note.pensieve_memory_id.clone();
                 let manifest_id = prior_ids.get(path).cloned();
 
                 match (claimed_id, manifest_id) {
@@ -118,7 +118,7 @@ pub fn plan_push_ingest(
                     // claim, treat as edit of the note that lives there.
                     (Some(_), Some(known)) => {
                         plan.warnings.push(format!(
-                            "{path}: kyma_memory_id does not match the exported note; keeping original identity"
+                            "{path}: pensieve_memory_id does not match the exported note; keeping original identity"
                         ));
                         plan.ops.push(IngestOp::UpdateExisting {
                             memory_id: known,
@@ -152,7 +152,7 @@ pub fn plan_push_ingest(
                     // Exported note whose id line was stripped: keep identity.
                     (None, Some(known)) => {
                         plan.warnings.push(format!(
-                            "{path}: kyma_memory_id removed by edit; keeping original identity"
+                            "{path}: pensieve_memory_id removed by edit; keeping original identity"
                         ));
                         plan.ops.push(IngestOp::UpdateExisting {
                             memory_id: known,

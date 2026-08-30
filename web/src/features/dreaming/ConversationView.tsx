@@ -13,7 +13,7 @@ import {
   ToolHeader,
   ToolInput,
   ToolOutput,
-} from "@kyma-ai/react/agent";
+} from "@pensieve-ai/react/agent";
 import { cn } from "@/lib/utils";
 import type { ConversationPart } from "./traceToParts";
 

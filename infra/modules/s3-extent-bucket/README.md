@@ -1,6 +1,6 @@
 # module: s3-extent-bucket
 
-The S3 bucket that holds Kyma extents (the source of truth). Versioned,
+The S3 bucket that holds Pensieve extents (the source of truth). Versioned,
 KMS-encrypted at rest, public access fully blocked, with a lifecycle rule that
 expires noncurrent object versions after `noncurrent_expiration_days`.
 
@@ -11,7 +11,7 @@ each tenant's credentials to its own prefix.
 
 | Input | Type | Default | Purpose |
 |---|---|---|---|
-| `bucket_name` | string | — | Globally-unique name, e.g. `kyma-dev-extents` |
+| `bucket_name` | string | — | Globally-unique name, e.g. `pensieve-dev-extents` |
 | `env` | string | — | Tag value (`dev`/`staging`/`prod`) |
 | `noncurrent_expiration_days` | number | `30` | Expiry for noncurrent versions |
 

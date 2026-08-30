@@ -9,8 +9,8 @@
 
 use serde_json::{json, Value};
 
-use kyma_memory::types::{MemoryType, RecallFilter};
-use kyma_memory::{MemoryWriter, DEFAULT_DATABASE, NODE_TABLE};
+use pensieve_memory::types::{MemoryType, RecallFilter};
+use pensieve_memory::{MemoryWriter, DEFAULT_DATABASE, NODE_TABLE};
 
 use super::memory_extract::{decide_conflict, ConflictOp, ExtractedMemory};
 use super::memory_gate::{self, AddSpec, GateCtx, HitlGate, OpPayload};
@@ -187,9 +187,9 @@ pub async fn consolidate_memory(
                         .link(
                             new_id,
                             activity,
-                            kyma_memory::EDGE_DERIVED_FROM,
+                            pensieve_memory::EDGE_DERIVED_FROM,
                             realm,
-                            Some(kyma_memory::activities::ACTIVITIES_NAMESPACE),
+                            Some(pensieve_memory::activities::ACTIVITIES_NAMESPACE),
                         )
                         .await;
                 }
@@ -219,7 +219,7 @@ async fn nearest(
         memory_type: Some(kind),
         ..Default::default()
     };
-    let sql = kyma_memory::sql::recall_sql(NODE_TABLE, &qvec, &filter, NEIGHBOURS, None);
+    let sql = pensieve_memory::sql::recall_sql(NODE_TABLE, &qvec, &filter, NEIGHBOURS, None);
     let res = execute_sql(shared, DEFAULT_DATABASE, &sql, NEIGHBOURS).await;
     res.get("rows")
         .and_then(Value::as_array)

@@ -1,4 +1,4 @@
-import { createTransport, type KymaTransport, type TransportConfig } from "./transport";
+import { createTransport, type PensieveTransport, type TransportConfig } from "./transport";
 import * as graph from "./graph";
 import * as query from "./query";
 import * as discover from "./discover";
@@ -19,7 +19,7 @@ import * as artifacts from "./artifacts";
 
 // ── Bind-coverage type guard ─────────────────────────────────────────────────
 // TransportFirstKeys<M> resolves to the union of keys in M whose value is a
-// function whose first parameter extends KymaTransport. This lets us write
+// function whose first parameter extends PensieveTransport. This lets us write
 // compile-time assertions that every transport-first export appears in its
 // *_FNS list — a forgotten entry produces a type error at build time.
 //
@@ -30,7 +30,7 @@ import * as artifacts from "./artifacts";
 // immediately-unused variable so the compiler flags the never.
 
 type TransportFirstKeys<M> = {
-  [K in keyof M]: M[K] extends (t: KymaTransport, ...args: never[]) => unknown ? K : never;
+  [K in keyof M]: M[K] extends (t: PensieveTransport, ...args: never[]) => unknown ? K : never;
 }[keyof M] &
   string;
 
@@ -49,7 +49,7 @@ type Expect<T extends true> = T extends true ? true : never;
 // ── Curated bind lists ──────────────────────────────────────────────────────
 // Each array names the transport-first exported functions in its module.
 // Pure helpers (no transport arg) are intentionally absent — they remain
-// importable directly from @kyma-ai/client but are NOT attached to the client.
+// importable directly from @pensieve-ai/client but are NOT attached to the client.
 
 const GRAPH_FNS = [
   "listGraphs",
@@ -176,7 +176,7 @@ declare const _bindGuard: [
 
 // ── bind helper ─────────────────────────────────────────────────────────────
 
-type BoundFn<F> = F extends (t: KymaTransport, ...a: infer A) => infer R
+type BoundFn<F> = F extends (t: PensieveTransport, ...a: infer A) => infer R
   ? (...a: A) => R
   : never;
 
@@ -185,7 +185,7 @@ type BoundModule<M, Keys extends readonly (keyof M)[]> = {
 };
 
 function bind<M extends Record<string, unknown>, Keys extends readonly (keyof M)[]>(
-  t: KymaTransport,
+  t: PensieveTransport,
   mod: M,
   keys: Keys,
 ): BoundModule<M, Keys> {
@@ -197,11 +197,11 @@ function bind<M extends Record<string, unknown>, Keys extends readonly (keyof M)
   return out as BoundModule<M, Keys>;
 }
 
-// ── KymaClient interface ─────────────────────────────────────────────────────
+// ── PensieveClient interface ─────────────────────────────────────────────────────
 
-export interface KymaClient {
+export interface PensieveClient {
   /** Raw transport — use for one-off requests or advanced use-cases. */
-  readonly transport: KymaTransport;
+  readonly transport: PensieveTransport;
 
   /** Graph namespace — browse, search, expand nodes & edges. */
   readonly graph: BoundModule<typeof graph, typeof GRAPH_FNS>;
@@ -259,14 +259,14 @@ export interface KymaClient {
    * wrapped transport ensures `opts.database` overrides the default).
    * Shares the same token cache as the parent — does NOT create a new transport.
    */
-  withDatabase(database: string): KymaClient;
+  withDatabase(database: string): PensieveClient;
 }
 
-export type KymaClientConfig = TransportConfig;
+export type PensieveClientConfig = TransportConfig;
 
 // ── factory ──────────────────────────────────────────────────────────────────
 
-function fromTransport(t: KymaTransport): KymaClient {
+function fromTransport(t: PensieveTransport): PensieveClient {
   return {
     transport: t,
 
@@ -292,11 +292,11 @@ function fromTransport(t: KymaTransport): KymaClient {
     oauth: bind(t, oauth, OAUTH_FNS),
     artifacts: bind(t, artifacts, ARTIFACTS_FNS),
 
-    withDatabase(database: string): KymaClient {
+    withDatabase(database: string): PensieveClient {
       // Wrap the transport so the default database is applied.
       // opts.database in the caller's per-request options wins because the spread
       // order is `{ database, ...opts }` — a defined opts.database comes last.
-      const scoped: KymaTransport = {
+      const scoped: PensieveTransport = {
         endpoint: t.endpoint,
         database,
         request(path, opts = {}) {
@@ -309,6 +309,6 @@ function fromTransport(t: KymaTransport): KymaClient {
   };
 }
 
-export function createKymaClient(cfg: KymaClientConfig): KymaClient {
+export function createPensieveClient(cfg: PensieveClientConfig): PensieveClient {
   return fromTransport(createTransport(cfg));
 }

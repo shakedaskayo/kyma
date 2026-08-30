@@ -6,7 +6,7 @@ use bytes::{BufMut, BytesMut};
 
 #[tokio::test]
 async fn grpc_web_do_get_returns_arrow_stream() {
-    let server = kyma_server::test_support::start_test_server_with_seeded_data().await;
+    let server = pensieve_server::test_support::start_test_server_with_seeded_data().await;
     let base = server.http_base_url(); // e.g. http://127.0.0.1:PORT
     let ticket_json = serde_json::json!({
         "database": "obs",

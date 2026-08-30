@@ -41,7 +41,7 @@ use tracing::{trace, warn};
 /// catalogue uses this to decide whether to advertise the engine in the picker.
 ///
 /// Resolution order, first hit wins:
-///   1. `KYMA_CLAUDE_BIN` — explicit override (absolute path to the binary).
+///   1. `PENSIEVE_CLAUDE_BIN` — explicit override (absolute path to the binary).
 ///   2. `which claude` — the inherited `$PATH`.
 ///   3. Well-known install locations under `$HOME` and the usual system bins.
 ///
@@ -55,12 +55,12 @@ pub fn locate_binary() -> Option<std::path::PathBuf> {
     use std::path::PathBuf;
 
     // 1. Explicit override.
-    if let Some(raw) = std::env::var_os("KYMA_CLAUDE_BIN") {
+    if let Some(raw) = std::env::var_os("PENSIEVE_CLAUDE_BIN") {
         let p = PathBuf::from(raw);
         if p.is_file() {
             return Some(p);
         }
-        warn!(path = %p.display(), "KYMA_CLAUDE_BIN is set but not a file; ignoring");
+        warn!(path = %p.display(), "PENSIEVE_CLAUDE_BIN is set but not a file; ignoring");
     }
 
     // 2. Inherited PATH.
@@ -124,14 +124,14 @@ pub enum ClaudeEvent {
     Error { message: String },
 }
 
-/// How to reach Kyma's own MCP server so the agent can query the user's data.
+/// How to reach Pensieve's own MCP server so the agent can query the user's data.
 ///
-/// When supplied to [`run_stream`], the `kyma` MCP server is registered with
+/// When supplied to [`run_stream`], the `pensieve` MCP server is registered with
 /// the CLI (`--mcp-config`), its tools are auto-approved (`--allowedTools
-/// mcp__kyma`), and a system-prompt hint nudges the model to use them.
+/// mcp__pensieve`), and a system-prompt hint nudges the model to use them.
 #[derive(Clone, Debug)]
 pub struct McpConfig {
-    /// HTTP URL of the Kyma MCP endpoint, e.g. `http://127.0.0.1:8080/mcp/v1`.
+    /// HTTP URL of the Pensieve MCP endpoint, e.g. `http://127.0.0.1:8080/mcp/v1`.
     pub url: String,
     /// Full `Authorization` header value to present (e.g. `"Bearer …"`), or
     /// `None` when the server runs with auth disabled.
@@ -143,9 +143,9 @@ pub struct McpConfig {
     pub strict: bool,
 }
 
-/// Appended to the system prompt when the Kyma MCP server is wired, so the
+/// Appended to the system prompt when the Pensieve MCP server is wired, so the
 /// model knows the data tools exist and prefers them over guessing.
-const MCP_SYSTEM_HINT: &str = "You are connected to the user's Kyma data warehouse through the `kyma` MCP server. \
+const MCP_SYSTEM_HINT: &str = "You are connected to the user's Pensieve data warehouse through the `pensieve` MCP server. \
 To answer questions about their data, use its tools — list_databases, describe_table, explore_schema, \
 sample_rows, run_sql, run_kql, find_references_to, and graph_traverse — rather than guessing. \
 Call `memory_search` FIRST when a question may depend on prior context, decisions, or how entities \
@@ -170,8 +170,8 @@ struct BlockState {
 /// * `resume_session_id` — when `Some`, the turn resumes that Claude session
 ///   (`--resume`), preserving multi-turn context.
 /// * `cwd` — working directory for the agent (`None` = inherit the server's).
-/// * `mcp` — when `Some`, register Kyma's MCP server so the agent can query the
-///   user's data; when `None`, the agent runs with no Kyma tools.
+/// * `mcp` — when `Some`, register Pensieve's MCP server so the agent can query the
+///   user's data; when `None`, the agent runs with no Pensieve tools.
 ///
 /// The returned receiver closes when the turn completes; the final event is
 /// always either [`ClaudeEvent::Result`] or [`ClaudeEvent::Error`].
@@ -197,7 +197,7 @@ pub fn run_stream_with_pid(
 ) -> anyhow::Result<(mpsc::UnboundedReceiver<ClaudeEvent>, Option<u32>)> {
     let binary = locate_binary().ok_or_else(|| {
         anyhow::anyhow!(
-            "`claude` not found — install Claude Code, or set KYMA_CLAUDE_BIN to its absolute path \
+            "`claude` not found — install Claude Code, or set PENSIEVE_CLAUDE_BIN to its absolute path \
              (the server's PATH is {:?})",
             std::env::var("PATH").unwrap_or_default()
         )
@@ -220,7 +220,7 @@ pub fn run_stream_with_pid(
         cmd.arg("--resume").arg(sid);
     }
 
-    // Register Kyma's MCP server (data tools) for this turn. The config is
+    // Register Pensieve's MCP server (data tools) for this turn. The config is
     // written to a 0600 temp file rather than passed inline so the bearer token
     // never lands in the process arg list (visible via `ps`). The file is
     // removed once the child exits.
@@ -233,14 +233,14 @@ pub fn run_stream_with_pid(
                     // servers/plugins entirely (headless background runs).
                     cmd.arg("--strict-mcp-config");
                 }
-                // Auto-approve every `kyma` MCP tool (no interactive prompt in
+                // Auto-approve every `pensieve` MCP tool (no interactive prompt in
                 // --print mode); other tools stay default-denied.
-                cmd.arg("--allowedTools").arg("mcp__kyma");
+                cmd.arg("--allowedTools").arg("mcp__pensieve");
                 cmd.arg("--append-system-prompt").arg(MCP_SYSTEM_HINT);
                 Some(path)
             }
             Err(e) => {
-                warn!(error = %e, "claude_cli: failed to write MCP config; running without Kyma tools");
+                warn!(error = %e, "claude_cli: failed to write MCP config; running without Pensieve tools");
                 None
             }
         },
@@ -541,7 +541,7 @@ fn ensure_block(
     id
 }
 
-/// Write the Claude `--mcp-config` JSON for the Kyma MCP server to a private
+/// Write the Claude `--mcp-config` JSON for the Pensieve MCP server to a private
 /// (0600) temp file and return its path. Using a file keeps the bearer token
 /// out of the process arg list.
 fn write_mcp_config(cfg: &McpConfig) -> anyhow::Result<std::path::PathBuf> {
@@ -551,9 +551,9 @@ fn write_mcp_config(cfg: &McpConfig) -> anyhow::Result<std::path::PathBuf> {
     if let Some(auth) = &cfg.auth_header {
         server["headers"] = json!({ "Authorization": auth });
     }
-    let config = json!({ "mcpServers": { "kyma": server } });
+    let config = json!({ "mcpServers": { "pensieve": server } });
 
-    let path = std::env::temp_dir().join(format!("kyma-mcp-{}.json", uuid::Uuid::new_v4()));
+    let path = std::env::temp_dir().join(format!("pensieve-mcp-{}.json", uuid::Uuid::new_v4()));
     let mut file = std::fs::File::create(&path)?;
     #[cfg(unix)]
     {
@@ -673,7 +673,7 @@ mod tests {
         let body = std::fs::read_to_string(&path).expect("read config");
         let v: Value = serde_json::from_str(&body).unwrap();
 
-        let server = &v["mcpServers"]["kyma"];
+        let server = &v["mcpServers"]["pensieve"];
         assert_eq!(server["type"], "http");
         assert_eq!(server["url"], "http://127.0.0.1:8080/mcp/v1");
         assert_eq!(server["headers"]["Authorization"], "Bearer secret-token");
@@ -699,7 +699,7 @@ mod tests {
         let path = write_mcp_config(&cfg).expect("write config");
         let v: Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert!(v["mcpServers"]["kyma"].get("headers").is_none());
+        assert!(v["mcpServers"]["pensieve"].get("headers").is_none());
         let _ = std::fs::remove_file(&path);
     }
 

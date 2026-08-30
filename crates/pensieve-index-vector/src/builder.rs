@@ -1,10 +1,10 @@
 //! [`SidecarBuilder`] implementation for the IVF + 1-bit RaBitQ ANN index.
 //!
-//! The `index_build` job executor (`kyma-jobs::index_build`) drives this: it
+//! The `index_build` job executor (`pensieve-jobs::index_build`) drives this: it
 //! streams the extent's blocks (full schema, in block order) to [`build`]. We
 //! project the `column` (a `FixedSizeList<Float32>` embedding column),
 //! L2-normalize each row exactly as the extent writer does
-//! (`kyma-format-tlm`'s `update_vector_stats`), derive each row's
+//! (`pensieve-format-tlm`'s `update_vector_stats`), derive each row's
 //! [`RowAddress`] from the batch ordinal + in-batch row index, and hand the
 //! `(addr, vec)` pairs to [`crate::build::build_ivf_rabitq`].
 //!
@@ -33,12 +33,12 @@ use arrow_array::{Array, FixedSizeListArray, Float32Array, RecordBatch};
 use arrow_schema::DataType;
 use async_trait::async_trait;
 use futures::StreamExt;
-use kyma_core::catalog::ExtentManifest;
-use kyma_core::errors::{Error, Result};
-use kyma_core::index_sidecar::{
+use pensieve_core::catalog::ExtentManifest;
+use pensieve_core::errors::{Error, Result};
+use pensieve_core::index_sidecar::{
     BatchStream, BuiltSidecar, RowAddress, SidecarBuilder, SidecarKind,
 };
-use kyma_core::segment_format::BlockId;
+use pensieve_core::segment_format::BlockId;
 
 /// Builds [`SidecarKind::IvfRabitq`] sidecars.
 #[derive(Debug, Default, Clone)]
@@ -112,7 +112,7 @@ impl SidecarBuilder for IvfRabitqBuilder {
 /// column is absent (so the caller can error after the whole stream is empty),
 /// or an error when the column exists but is the wrong type.
 ///
-/// Normalization matches `kyma-format-tlm`'s writer exactly: accumulate the
+/// Normalization matches `pensieve-format-tlm`'s writer exactly: accumulate the
 /// squared-norm in f64, skip rows whose norm ≤ 1e-12 (zero vectors can't be
 /// placed on the unit sphere), and divide each coordinate by the norm.
 fn extract_rows(
@@ -183,8 +183,8 @@ mod tests {
     use arrow_array::{Int64Array, RecordBatch};
     use arrow_schema::{Field, Schema};
     use futures::stream;
-    use kyma_core::catalog::ExtentManifest;
-    use kyma_core::types::{ExtentId, SchemaSnapshotId, TableId};
+    use pensieve_core::catalog::ExtentManifest;
+    use pensieve_core::types::{ExtentId, SchemaSnapshotId, TableId};
     use std::sync::Arc;
 
     fn vec_batch(vectors: &[Vec<f32>], dim: usize) -> RecordBatch {
@@ -212,7 +212,7 @@ mod tests {
             id: ExtentId::new(),
             table_id: TableId::new(),
             schema_snapshot_id: SchemaSnapshotId::new(),
-            object_path: "t/extents/x.kyma".into(),
+            object_path: "t/extents/x.pensieve".into(),
             byte_size: 0,
             row_count: 0,
             min_timestamp: None,

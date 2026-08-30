@@ -1,5 +1,5 @@
 //! Build JSON rows for the columnar memory tables. Rows are serialized to
-//! NDJSON and coerced to Arrow by `kyma_ingest_core::parse_ndjson`, so the
+//! NDJSON and coerced to Arrow by `pensieve_ingest_core::parse_ndjson`, so the
 //! `embedding` value is a plain JSON array of floats.
 
 use serde_json::{json, Value};

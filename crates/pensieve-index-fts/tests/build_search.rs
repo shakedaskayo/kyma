@@ -1,8 +1,8 @@
 //! Build → serialize → open → BM25-search round-trip and relevance tests.
 
-use kyma_core::index_sidecar::RowAddress;
-use kyma_core::segment_format::BlockId;
-use kyma_index_fts::{bm25_search, build_fts, open_index, read_header};
+use pensieve_core::index_sidecar::RowAddress;
+use pensieve_core::segment_format::BlockId;
+use pensieve_index_fts::{bm25_search, build_fts, open_index, read_header};
 
 fn addr(block: u32, row: u32) -> RowAddress {
     RowAddress {
@@ -19,7 +19,7 @@ fn build(docs: &[&str]) -> bytes::Bytes {
         .map(|(i, s)| (addr(0, i as u32), (*s).to_string()))
         .collect();
     let (blob, params) = build_fts(rows).unwrap();
-    assert_eq!(params["tokenizer"], "kyma-word-v1");
+    assert_eq!(params["tokenizer"], "pensieve-word-v1");
     assert_eq!(params["docs"], docs.len() as u64);
     blob
 }

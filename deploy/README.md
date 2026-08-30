@@ -1,6 +1,6 @@
-# Deploying kyma to production
+# Deploying pensieve to production
 
-Self-host the kyma engine with pluggable backends. Pick one option on each axis
+Self-host the pensieve engine with pluggable backends. Pick one option on each axis
 — the wizard wires the rest:
 
 | Axis | Options |
@@ -13,31 +13,31 @@ Self-host the kyma engine with pluggable backends. Pick one option on each axis
 The engine is backend-agnostic; this directory holds the IaC + Helm chart that
 expose those choices. Native `s3`/`rds` need an AWS compute target (`fargate`/`eks`).
 
-## The easy way: `kyma deploy`
+## The easy way: `pensieve deploy`
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash -s -- --prod-deploy
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/pensieve/main/install.sh | bash -s -- --prod-deploy
 # or, with the CLI installed:
-kyma deploy init     # wizard: compute → database → storage → auth + credentials
-kyma deploy up       # provision + connect
-kyma deploy status   # outputs + live /health probe
-kyma deploy destroy
+pensieve deploy init     # wizard: compute → database → storage → auth + credentials
+pensieve deploy up       # provision + connect
+pensieve deploy status   # outputs + live /health probe
+pensieve deploy destroy
 ```
 
-Preview any combination: `kyma deploy init --print-only`. Examples:
+Preview any combination: `pensieve deploy init --print-only`. Examples:
 
 ```sh
 # AWS-native: Fargate + RDS + native S3 + token auth
-kyma deploy init --compute fargate --database rds --storage s3 --auth token
+pensieve deploy init --compute fargate --database rds --storage s3 --auth token
 
 # Kubernetes: EKS cluster (Terraform) + engine via Helm, OIDC auth
-kyma deploy init --compute eks --database rds --storage s3 --auth oidc \
-  --oidc-issuer https://issuer.example.com --ingress-host kyma.example.com
+pensieve deploy init --compute eks --database rds --storage s3 --auth oidc \
+  --oidc-issuer https://issuer.example.com --ingress-host pensieve.example.com
 
 # Your cluster + your Postgres + your object store
-kyma deploy init --compute helm --database external --database-url "$DB_URL" \
+pensieve deploy init --compute helm --database external --database-url "$DB_URL" \
   --storage external --storage-endpoint https://minio:9000 --auth token \
-  --ingress-host kyma.example.com
+  --ingress-host pensieve.example.com
 ```
 
 ## Layout
@@ -45,7 +45,7 @@ kyma deploy init --compute helm --database external --database-url "$DB_URL" \
 ```
 terraform/                 # thin root (provider config) → stack/ module (fargate/eks)
 terraform/stack/modules/   # network, ecs-service, eks, supabase, rds, storage, secrets
-helm/kyma-engine/          # the engine Helm chart (helm target + EKS install)
+helm/pensieve-engine/          # the engine Helm chart (helm target + EKS install)
 pulumi/                    # consumes stack/ via the terraform-module bridge
 ```
 
@@ -54,7 +54,7 @@ pulumi/                    # consumes stack/ via the terraform-module bridge
 - **Terraform** (`fargate`/`eks`): `cd terraform && cp terraform.tfvars.example
   terraform.tfvars` (set your backends) → `terraform init && apply`.
 - **Pulumi**: same `stack/` via the terraform-module bridge — see `pulumi/`.
-- **Helm** (any cluster): `helm upgrade --install kyma helm/kyma-engine -n kyma
+- **Helm** (any cluster): `helm upgrade --install pensieve helm/pensieve-engine -n pensieve
   --create-namespace -f your-values.yaml`.
 
 Full docs: `docs/site/deploy/` → Overview · CLI · Terraform · Pulumi · Helm ·
@@ -67,4 +67,4 @@ Kubernetes (EKS).
 - The engine self-migrates the catalog on first connect — no bootstrap job.
 - The Terraform `stack/` is provider-free (Pulumi-bridge requirement); EKS
   provisions the cluster only and the CLI installs the chart as a second step.
-- Engine image: `ghcr.io/shakedaskayo/kyma-engine`. Pin `image_tag` to a release.
+- Engine image: `ghcr.io/shakedaskayo/pensieve-engine`. Pin `image_tag` to a release.

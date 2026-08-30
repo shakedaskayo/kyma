@@ -1,5 +1,5 @@
 // Per-instance Discover state. Held as a zustand/vanilla store so two mounted
-// KymaDiscover components never share results state.
+// PensieveDiscover components never share results state.
 // (Mirrors the web/src/features/discover/discover-store.ts reducer but uses the
 // vanilla factory pattern matching graph-store.ts.)
 
@@ -189,6 +189,6 @@ export const DiscoverStoreContext = createContext<DiscoverStore | null>(null);
 
 export function useDiscoverStore<T>(selector: (s: DiscoverStoreState) => T): T {
   const store = useContext(DiscoverStoreContext);
-  if (!store) throw new Error("useDiscoverStore must be used inside <KymaDiscover>");
+  if (!store) throw new Error("useDiscoverStore must be used inside <PensieveDiscover>");
   return useStore(store, selector);
 }

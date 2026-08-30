@@ -1,10 +1,10 @@
-//! `kyma update` — self-update from GitHub releases, plus the passive
-//! "a newer kyma is available" notice shown by `version`/`status`/`serve`.
+//! `pensieve update` — self-update from GitHub releases, plus the passive
+//! "a newer pensieve is available" notice shown by `version`/`status`/`serve`.
 //!
 //! The web UI is embedded in the binary at compile time, so a stale binary
-//! means a stale UI. `kyma update` closes the loop end to end: fetch the
+//! means a stale UI. `pensieve update` closes the loop end to end: fetch the
 //! latest release, swap the binary in place, and restart the local server
-//! (when we started it — `~/.kyma/serve.pid`) so the new UI is live
+//! (when we started it — `~/.pensieve/serve.pid`) so the new UI is live
 //! immediately. Browsers revalidate `index.html` (`Cache-Control: no-cache`)
 //! and assets are content-hashed, so no client-side cache clearing is needed.
 
@@ -15,14 +15,14 @@ use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-const REPO: &str = "shakedaskayo/kyma";
+const REPO: &str = "shakedaskayo/pensieve";
 /// How long a passive check result stays fresh before we hit GitHub again.
 const CHECK_TTL_SECS: u64 = 24 * 60 * 60;
 
 // ── GitHub release lookup ───────────────────────────────────────────────────
 
 /// Public wrapper: the latest GitHub release tag (e.g. "v0.1.0").
-/// Used by `kyma deploy` to pin the engine image to the release train.
+/// Used by `pensieve deploy` to pin the engine image to the release train.
 pub(crate) async fn latest_release_tag() -> Result<String> {
     fetch_latest_tag().await
 }
@@ -84,7 +84,7 @@ fn platform_artifact() -> Result<String> {
         "aarch64" => "arm64",
         other => bail!("no prebuilt binaries for {other} — reinstall with install.sh --from-source"),
     };
-    Ok(format!("kyma-{os}-{arch}"))
+    Ok(format!("pensieve-{os}-{arch}"))
 }
 
 // ── the update itself ───────────────────────────────────────────────────────
@@ -103,15 +103,15 @@ pub(crate) async fn run(
 
     if check {
         if is_newer(&target, current) {
-            println!("kyma {target} is available (you have v{current}) — run `kyma update`");
+            println!("pensieve {target} is available (you have v{current}) — run `pensieve update`");
         } else {
-            println!("kyma v{current} is up to date (latest release: {target})");
+            println!("pensieve v{current} is up to date (latest release: {target})");
         }
         return Ok(());
     }
 
     if !force && !is_newer(&target, current) {
-        println!("kyma v{current} is already up to date (latest release: {target}); use --force to reinstall");
+        println!("pensieve v{current} is already up to date (latest release: {target}); use --force to reinstall");
         // Even when the binary is current, a long-running server may predate it.
         if !no_restart {
             restart_stale_server(current).await?;
@@ -122,7 +122,7 @@ pub(crate) async fn run(
     let artifact = platform_artifact()?;
     let base = format!("https://github.com/{REPO}/releases/download/{target}/{artifact}.tar.gz");
 
-    eprintln!("▸ downloading kyma {target} ({artifact})…");
+    eprintln!("▸ downloading pensieve {target} ({artifact})…");
     let tarball = http_client()
         .get(&base)
         .send()
@@ -150,34 +150,34 @@ pub(crate) async fn run(
         }
     }
 
-    let new_bin = extract_kyma(&tarball).context("extract kyma from release tarball")?;
-    let dest = std::env::current_exe().context("locate current kyma binary")?;
+    let new_bin = extract_pensieve(&tarball).context("extract pensieve from release tarball")?;
+    let dest = std::env::current_exe().context("locate current pensieve binary")?;
     let dest = std::fs::canonicalize(&dest).unwrap_or(dest);
     replace_binary(&dest, &new_bin)
-        .with_context(|| format!("replace {} (try: sudo kyma update)", dest.display()))?;
-    println!("✓ kyma v{current} → {target}  ({})", dest.display());
+        .with_context(|| format!("replace {} (try: sudo pensieve update)", dest.display()))?;
+    println!("✓ pensieve v{current} → {target}  ({})", dest.display());
 
     if !no_restart {
         restart_stale_server(target.trim_start_matches('v')).await?;
     } else {
-        eprintln!("note: a running `kyma serve` keeps the old UI until restarted");
+        eprintln!("note: a running `pensieve serve` keeps the old UI until restarted");
     }
     Ok(())
 }
 
-fn extract_kyma(tarball: &[u8]) -> Result<Vec<u8>> {
+fn extract_pensieve(tarball: &[u8]) -> Result<Vec<u8>> {
     let gz = flate2::read::GzDecoder::new(tarball);
     let mut archive = tar::Archive::new(gz);
     for entry in archive.entries().context("read tar entries")? {
         let mut entry = entry?;
         let path = entry.path()?;
-        if path.file_name().and_then(|n| n.to_str()) == Some("kyma") {
+        if path.file_name().and_then(|n| n.to_str()) == Some("pensieve") {
             let mut buf = Vec::with_capacity(entry.size() as usize);
             entry.read_to_end(&mut buf)?;
             return Ok(buf);
         }
     }
-    bail!("no `kyma` binary inside the release tarball")
+    bail!("no `pensieve` binary inside the release tarball")
 }
 
 /// Atomic-as-possible swap: write next to the destination (same filesystem),
@@ -189,7 +189,7 @@ fn replace_binary(dest: &Path, contents: &[u8]) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let staged = dest.with_file_name(".kyma.update");
+        let staged = dest.with_file_name(".pensieve.update");
         std::fs::write(&staged, contents)
             .with_context(|| format!("write {}", staged.display()))?;
         std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))?;
@@ -202,9 +202,9 @@ fn replace_binary(dest: &Path, contents: &[u8]) -> Result<()> {
 
 // ── restart the local server we own (install.sh / serve.pid contract) ──────
 
-/// If a kyma server is reachable on the configured/default local endpoint and
+/// If a pensieve server is reachable on the configured/default local endpoint and
 /// reports an older version than `fresh`, restart it — but only when it's
-/// loopback AND `~/.kyma/serve.pid` points at a live process (i.e. install.sh
+/// loopback AND `~/.pensieve/serve.pid` points at a live process (i.e. install.sh
 /// or a previous update started it). Anything else gets a printed hint.
 async fn restart_stale_server(fresh: &str) -> Result<()> {
     let endpoint = load_config()
@@ -221,15 +221,15 @@ async fn restart_stale_server(fresh: &str) -> Result<()> {
     }
 
     // Service-managed server (the default since install.sh switched to
-    // `kyma service install`): a kick reloads the swapped binary. Killing the
+    // `pensieve service install`): a kick reloads the swapped binary. Killing the
     // pid instead would just make launchd/systemd respawn the OLD process
     // image's restart loop semantics — go through the supervisor.
-    if let Some(ok) = kyma_local::server_service::restart_if_installed() {
+    if let Some(ok) = pensieve_local::server_service::restart_if_installed() {
         if ok {
             eprintln!("▸ restarted the supervised server (v{running} → v{fresh})");
             return Ok(());
         }
-        eprintln!("! couldn't restart the server service — run: kyma service status");
+        eprintln!("! couldn't restart the server service — run: pensieve service status");
         return Ok(());
     }
 
@@ -237,7 +237,7 @@ async fn restart_stale_server(fresh: &str) -> Result<()> {
     let pid = read_live_serve_pid();
     if !loopback || pid.is_none() {
         eprintln!(
-            "! a kyma server at {endpoint} is still running v{running} — restart it to load the new UI"
+            "! a pensieve server at {endpoint} is still running v{running} — restart it to load the new UI"
         );
         return Ok(());
     }
@@ -258,20 +258,20 @@ async fn restart_stale_server(fresh: &str) -> Result<()> {
         bail!("old server (pid {pid}) didn't exit; restart it manually");
     }
 
-    // Mirror install.sh: background `kyma serve`, same addr, static token from
-    // the saved CLI config so existing `kyma connect` credentials keep working.
+    // Mirror install.sh: background `pensieve serve`, same addr, static token from
+    // the saved CLI config so existing `pensieve connect` credentials keep working.
     // `--addr` is a SocketAddr — it takes IPs, not hostnames.
     let addr = endpoint
         .trim_start_matches("http://")
         .trim_start_matches("https://")
         .trim_end_matches('/')
         .replace("localhost", "127.0.0.1");
-    let exe = std::env::current_exe().context("locate kyma binary")?;
+    let exe = std::env::current_exe().context("locate pensieve binary")?;
     let dir = config_dir()?;
     let log = dir.join("serve.log");
     let mut env_prefix = String::new();
     if let Some(token) = load_config().ok().and_then(|c| c.token) {
-        env_prefix = format!("KYMA_AUTH_TOKENS='{}:admin' ", token.replace('\'', ""));
+        env_prefix = format!("PENSIEVE_AUTH_TOKENS='{}:admin' ", token.replace('\'', ""));
     }
     let cmd = format!(
         "{env_prefix}nohup '{}' serve --addr '{addr}' >>'{}' 2>&1 & echo $!",
@@ -282,7 +282,7 @@ async fn restart_stale_server(fresh: &str) -> Result<()> {
         .arg("-c")
         .arg(&cmd)
         .output()
-        .context("spawn kyma serve")?;
+        .context("spawn pensieve serve")?;
     let new_pid = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if !new_pid.is_empty() {
         let _ = std::fs::write(dir.join("serve.pid"), &new_pid);
@@ -365,11 +365,11 @@ fn now_secs() -> u64 {
 }
 
 /// Print a one-line nudge on stderr when a newer release exists. Throttled to
-/// one GitHub hit per day via `~/.kyma/update-check.json`; never blocks longer
+/// one GitHub hit per day via `~/.pensieve/update-check.json`; never blocks longer
 /// than the short HTTP timeout; silent on any failure. Opt out with
-/// `KYMA_NO_UPDATE_CHECK=1`.
+/// `PENSIEVE_NO_UPDATE_CHECK=1`.
 pub(crate) async fn maybe_notify_update() {
-    if std::env::var_os("KYMA_NO_UPDATE_CHECK").is_some() {
+    if std::env::var_os("PENSIEVE_NO_UPDATE_CHECK").is_some() {
         return;
     }
     let latest = match cached_or_fetch_latest().await {
@@ -378,7 +378,7 @@ pub(crate) async fn maybe_notify_update() {
     };
     let current = env!("CARGO_PKG_VERSION");
     if is_newer(&latest, current) {
-        eprintln!("\n💡 kyma {latest} is available (you have v{current}) — run `kyma update`");
+        eprintln!("\n💡 pensieve {latest} is available (you have v{current}) — run `pensieve update`");
     }
 }
 
@@ -425,9 +425,9 @@ mod tests {
     #[test]
     fn artifact_matches_release_naming() {
         // Whatever platform CI runs on, the name must match release.yml's
-        // kyma-{darwin|linux}-{x64|arm64} scheme.
+        // pensieve-{darwin|linux}-{x64|arm64} scheme.
         let a = platform_artifact().unwrap();
-        assert!(a.starts_with("kyma-"));
+        assert!(a.starts_with("pensieve-"));
         assert!(a.ends_with("-x64") || a.ends_with("-arm64"));
     }
 }

@@ -70,7 +70,7 @@ export function LivePulse({ className }: { className?: string }) {
           {stalled ? (
             <span
               className="text-amber-400"
-              title="The stream is connected but no events are arriving. Check `kyma status` — capture may be failing."
+              title="The stream is connected but no events are arriving. Check `pensieve status` — capture may be failing."
             >
               capture stalled · last event {relTime(newestTs, now)}
             </span>

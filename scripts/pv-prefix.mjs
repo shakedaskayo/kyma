@@ -21,9 +21,9 @@ import { createRequire } from "module";
 
 /**
  * Tokens that must never be prefixed.
- * These are the kyma-root/kyma-dark scope sentinels, and the ky- prefix itself.
+ * These are the pensieve-root/pensieve-dark scope sentinels, and the ky- prefix itself.
  */
-const PRESERVE_EXACT = new Set(["kyma-root", "kyma-dark"]);
+const PRESERVE_EXACT = new Set(["pensieve-root", "pensieve-dark"]);
 
 /**
  * Returns true when a token is "not class-like" and should be left alone.

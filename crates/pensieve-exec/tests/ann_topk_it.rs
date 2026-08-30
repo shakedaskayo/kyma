@@ -1,4 +1,4 @@
-//! Integration test for the ANN query path (`kyma_exec::ann_topk`).
+//! Integration test for the ANN query path (`pensieve_exec::ann_topk`).
 //!
 //! Exercises the *full* real pipeline end-to-end against real components:
 //! a SQLite catalog (`list_extents` / `list_index_sidecars`), an `InMemory`
@@ -27,17 +27,17 @@ use arrow_array::builder::{FixedSizeListBuilder, Float32Builder};
 use arrow_array::{Int64Array, RecordBatch, TimestampNanosecondArray};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use futures::StreamExt;
-use kyma_catalog_sqlite::SqliteCatalog;
-use kyma_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig, TableRef};
-use kyma_core::index_sidecar::AnnTreeDescriptor;
-use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarBuilder, SidecarKind};
-use kyma_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
-use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_core::types::TableId;
-use kyma_exec::{ann_topk, AnnParams};
-use kyma_format_tlm::TelemetryFormat;
-use kyma_index_vector::{file as ivf_file, global_tree, IvfRabitqBuilder};
-use kyma_storage::sidecar_cache::SidecarCache;
+use pensieve_catalog_sqlite::SqliteCatalog;
+use pensieve_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig, TableRef};
+use pensieve_core::index_sidecar::AnnTreeDescriptor;
+use pensieve_core::index_sidecar::{IndexSidecarDescriptor, SidecarBuilder, SidecarKind};
+use pensieve_core::segment_format::{BlockPredicate, OpenExtentInput, SegmentFormat};
+use pensieve_core::tenant::DEFAULT_TENANT;
+use pensieve_core::types::TableId;
+use pensieve_exec::{ann_topk, AnnParams};
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_index_vector::{file as ivf_file, global_tree, IvfRabitqBuilder};
+use pensieve_storage::sidecar_cache::SidecarCache;
 use object_store::path::Path as ObjPath;
 use object_store::{memory::InMemory, ObjectStore};
 
@@ -264,9 +264,9 @@ async fn setup() -> (
         .await
         .expect("sqlite catalog");
     let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "kyma"));
+    let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store.clone(), "pensieve"));
     let cache_root = std::env::temp_dir().join(format!(
-        "kyma-ann-it-{}-{}",
+        "pensieve-ann-it-{}-{}",
         std::process::id(),
         uuid::Uuid::new_v4()
     ));
@@ -457,9 +457,9 @@ async fn ann_topk_with_global_tree_prunes_and_keeps_recall() {
     const E: usize = 4;
     const R: usize = 1000;
     let (vectors, anchors) = gen_clustered(E * R, 50, 0xA11C_E5_7EE_2026);
-    let mut flat_base: std::collections::HashMap<kyma_core::types::ExtentId, usize> =
+    let mut flat_base: std::collections::HashMap<pensieve_core::types::ExtentId, usize> =
         std::collections::HashMap::new();
-    let mut sidecar_ids: Vec<kyma_core::types::ExtentId> = Vec::new();
+    let mut sidecar_ids: Vec<pensieve_core::types::ExtentId> = Vec::new();
     for e in 0..E {
         let chunk = &vectors[e * R..(e + 1) * R];
         let batch = make_batch(chunk, (e * R) as i64, (e * R) as i64);

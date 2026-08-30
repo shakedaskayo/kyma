@@ -4,13 +4,13 @@
 
 **Goal:** Extend the KQL `graph-traverse` operator with (1) a **multi-source seed set** — `source (a, b, c)` — and (2) an **edge-type filter** — `edge-type <value>` — that prunes per hop (inside the recursive CTE), not just on the final result.
 
-**Architecture:** Pure KQL-parser work in `crates/kyma-kql/src/parser.rs`. `graph-traverse` already compiles to a recursive CTE (`_gt`/`_gt_min`/`_gt_result`). Multi-source changes only the anchor row of `_gt`; edge-type adds `AND e."type" = <lit>` to both the anchor-join and the recursive step's WHERE. No lexer changes (both use the existing keyword-arg + `(...)` token patterns). Schema-agnostic, like the rest of KQL.
+**Architecture:** Pure KQL-parser work in `crates/pensieve-kql/src/parser.rs`. `graph-traverse` already compiles to a recursive CTE (`_gt`/`_gt_min`/`_gt_result`). Multi-source changes only the anchor row of `_gt`; edge-type adds `AND e."type" = <lit>` to both the anchor-join and the recursive step's WHERE. No lexer changes (both use the existing keyword-arg + `(...)` token patterns). Schema-agnostic, like the rest of KQL.
 
-**Tech Stack:** Rust, `kyma-kql`. Tests inline in `parser.rs` (`must()` + `sql.contains()` style).
+**Tech Stack:** Rust, `pensieve-kql`. Tests inline in `parser.rs` (`must()` + `sql.contains()` style).
 
-**Reference (read these):** `crates/kyma-kql/src/parser.rs` — `parse_operator` (~128), `op_graph_traverse` (~377–441), `parse_graph_preamble` (~323–375), `parse_scalar_literal` (grep it), `build_recursive_step_with_src` (~757), `quote_ident`, the test module (~868+). `state.rs` `QueryState.ctes`.
+**Reference (read these):** `crates/pensieve-kql/src/parser.rs` — `parse_operator` (~128), `op_graph_traverse` (~377–441), `parse_graph_preamble` (~323–375), `parse_scalar_literal` (grep it), `build_recursive_step_with_src` (~757), `quote_ident`, the test module (~868+). `state.rs` `QueryState.ctes`.
 
-**Working dir:** worktree `…/.claude/worktrees/feature+graph-layer`. Verify: `cargo test -p kyma-kql`, `cargo build -p kyma-kql`.
+**Working dir:** worktree `…/.claude/worktrees/feature+graph-layer`. Verify: `cargo test -p pensieve-kql`, `cargo build -p pensieve-kql`.
 
 **Backward compatibility (critical):** existing `graph-traverse source "a" from src to dst max-hops N [direction …]` must still compile to the same SQL. Both new clauses are OPTIONAL and additive.
 
@@ -29,7 +29,7 @@ Edges | graph-traverse source "a"            from src to dst max-hops 3 edge-typ
 
 ## Task 1: multi-source seed set
 
-**Files:** `crates/kyma-kql/src/parser.rs` (+ inline tests).
+**Files:** `crates/pensieve-kql/src/parser.rs` (+ inline tests).
 
 - [ ] **Step 1: failing tests** — add to the `#[cfg(test)] mod tests`:
 ```rust
@@ -49,7 +49,7 @@ fn graph_traverse_single_source_unchanged() {
 }
 ```
 
-- [ ] **Step 2:** `cargo test -p kyma-kql graph_traverse_multi_source` → FAIL (parse error on `(`).
+- [ ] **Step 2:** `cargo test -p pensieve-kql graph_traverse_multi_source` → FAIL (parse error on `(`).
 
 - [ ] **Step 3: implement.** Add a seed-list parser and use it in `op_graph_traverse`.
   - Add a method (near `parse_scalar_literal`): 
@@ -91,11 +91,11 @@ let anchor = if seeds.len() == 1 {
 ```
   - Use `{anchor}` in the `_gt` CTE body in place of the current inline anchor SELECT (keep the `UNION ALL SELECT {step_sql} FROM _gt t JOIN {edge_table} e ON {join_cond} WHERE t.depth < {max_hops}` part unchanged for now — edge-type adds to that WHERE in Task 2).
 
-- [ ] **Step 4:** `cargo test -p kyma-kql` → all pass (new + existing graph_traverse tests unchanged). `cargo build -p kyma-kql` clean.
+- [ ] **Step 4:** `cargo test -p pensieve-kql` → all pass (new + existing graph_traverse tests unchanged). `cargo build -p pensieve-kql` clean.
 
 - [ ] **Step 5: Commit:**
 ```bash
-git add crates/kyma-kql/src/parser.rs
+git add crates/pensieve-kql/src/parser.rs
 git commit -m "feat(kql): graph-traverse multi-source seed set"
 ```
 
@@ -103,7 +103,7 @@ git commit -m "feat(kql): graph-traverse multi-source seed set"
 
 ## Task 2: edge-type filter (per-hop)
 
-**Files:** `crates/kyma-kql/src/parser.rs` (+ inline tests).
+**Files:** `crates/pensieve-kql/src/parser.rs` (+ inline tests).
 
 - [ ] **Step 1: failing tests:**
 ```rust
@@ -137,7 +137,7 @@ let type_filter = match &edge_type {
   Then inject `{type_filter}` into the recursive `_gt` body's WHERE clause, i.e. change `WHERE t.depth < {max_hops}` → `WHERE t.depth < {max_hops}{type_filter}`. (The `e` alias is the edge table in that join, so `e."type"` resolves.)
   - `edge-type` must be parsed AFTER the optional `direction` (i.e. after `parse_graph_preamble`, which already consumed direction). Confirm ordering: preamble consumes `from/to/max-hops/[direction]`; `edge-type` comes next. Good.
 
-- [ ] **Step 4:** `cargo test -p kyma-kql` → all pass. Also confirm multi-source + edge-type compose: optionally add
+- [ ] **Step 4:** `cargo test -p pensieve-kql` → all pass. Also confirm multi-source + edge-type compose: optionally add
 ```rust
 #[test]
 fn graph_traverse_multi_source_and_edge_type_compose() {
@@ -145,11 +145,11 @@ fn graph_traverse_multi_source_and_edge_type_compose() {
     assert!(sql.to_uppercase().contains("VALUES") && sql.contains(r#"e."type" = 'X'"#), "got: {sql}");
 }
 ```
-  `cargo build -p kyma-kql` + `cargo clippy -p kyma-kql` clean.
+  `cargo build -p pensieve-kql` + `cargo clippy -p pensieve-kql` clean.
 
 - [ ] **Step 5: Commit:**
 ```bash
-git add crates/kyma-kql/src/parser.rs
+git add crates/pensieve-kql/src/parser.rs
 git commit -m "feat(kql): graph-traverse edge-type per-hop filter"
 ```
 
@@ -157,7 +157,7 @@ git commit -m "feat(kql): graph-traverse edge-type per-hop filter"
 
 ## Task 3: doc + verify
 - [ ] **Step 1:** Update `docs/graphs.md` `graph-traverse` section to document the new optional clauses (multi-source `source (...)`, `edge-type "<t>"`), with a one-line example each. Keep it short; match the existing doc style.
-- [ ] **Step 2:** `cargo test -p kyma-kql` all pass; `cargo build -p kyma-kql` clean.
+- [ ] **Step 2:** `cargo test -p pensieve-kql` all pass; `cargo build -p pensieve-kql` clean.
 - [ ] **Step 3: Commit:**
 ```bash
 git add docs/graphs.md

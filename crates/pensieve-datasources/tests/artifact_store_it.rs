@@ -3,10 +3,10 @@
 //! job log is immediately retrievable (by bytes) and tracked (for retention).
 
 use bytes::Bytes;
-use kyma_catalog::artifacts::ArtifactRecord;
-use kyma_catalog::PostgresCatalog;
-use kyma_datasources::artifacts::{ArtifactStore, ObjectArtifactStore};
-use kyma_core::tenant::TenantId;
+use pensieve_catalog::artifacts::ArtifactRecord;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_datasources::artifacts::{ArtifactStore, ObjectArtifactStore};
+use pensieve_core::tenant::TenantId;
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
@@ -24,7 +24,7 @@ async fn put_and_register_writes_blob_and_tracking_row() {
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
     let catalog = Arc::new(PostgresCatalog::connect(&url).await.expect("connect + migrate"));
 
-    let store = kyma_storage::build_object_store(&kyma_storage::StorageConfig::Memory).unwrap();
+    let store = pensieve_storage::build_object_store(&pensieve_storage::StorageConfig::Memory).unwrap();
     let artifacts = ObjectArtifactStore::new(store.clone(), catalog.clone());
 
     let tenant =
@@ -36,10 +36,10 @@ async fn put_and_register_writes_blob_and_tracking_row() {
         object_path: path.to_string(),
         source: "github".to_string(),
         artifact_class: "log".to_string(),
-        table_ref: Some("kyma.github_job_logs".to_string()),
+        table_ref: Some("pensieve.github_job_logs".to_string()),
         data_source_id: None,
         size_bytes: 11,
-        sha256: Some(kyma_storage::sha256_hex(b"build failed")),
+        sha256: Some(pensieve_storage::sha256_hex(b"build failed")),
         created_at: None,
         expires_at: None,
         deleted_at: None,
@@ -60,7 +60,7 @@ async fn put_and_register_writes_blob_and_tracking_row() {
     assert_eq!(got.source, "github");
 
     // Blob is retrievable from the object store at the same path.
-    let blob = kyma_storage::get_artifact(&store, &object_store::path::Path::from(path))
+    let blob = pensieve_storage::get_artifact(&store, &object_store::path::Path::from(path))
         .await
         .unwrap();
     assert_eq!(blob.as_deref(), Some(&b"build failed"[..]));

@@ -421,8 +421,8 @@ mod tests {
 
     #[test]
     fn redacts_url_password_only() {
-        let (out, f) = guard().redact_text("postgres://kyma:s3cretPW@db.host:5432/kyma");
-        assert_eq!(out, "postgres://kyma:[REDACTED:url-credential]@db.host:5432/kyma");
+        let (out, f) = guard().redact_text("postgres://pensieve:s3cretPW@db.host:5432/pensieve");
+        assert_eq!(out, "postgres://pensieve:[REDACTED:url-credential]@db.host:5432/pensieve");
         assert_eq!(f[0].kind, "url-credential");
     }
 

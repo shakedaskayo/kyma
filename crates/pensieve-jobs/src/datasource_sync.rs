@@ -1,15 +1,15 @@
 //! `datasource_sync` executor — the data source tick re-hosted on the fabric.
 //!
 //! The tick body (load row + cursor → run data source → sink rows → graphs →
-//! cursor + run status) is `kyma_datasources::runner::run_data_source_tick`,
+//! cursor + run status) is `pensieve_datasources::runner::run_data_source_tick`,
 //! shared with the legacy background_tasks front-end. This executor only maps
 //! the job payload in and the [`TickOutcome`] onto fabric job semantics.
 
 use crate::executor::{JobCtx, JobError, JobExecutor};
 use async_trait::async_trait;
-use kyma_datasources::runner::{run_data_source_tick, DataSourceTickDeps, TickOutcome};
-use kyma_core::fabric::ClaimedJob;
-use kyma_core::tenant::{TenantId, DEFAULT_TENANT};
+use pensieve_datasources::runner::{run_data_source_tick, DataSourceTickDeps, TickOutcome};
+use pensieve_core::fabric::ClaimedJob;
+use pensieve_core::tenant::{TenantId, DEFAULT_TENANT};
 use serde_json::{json, Value as Json};
 use uuid::Uuid;
 
@@ -26,7 +26,7 @@ impl DataSourceSyncExecutor {
 #[async_trait]
 impl JobExecutor for DataSourceSyncExecutor {
     fn kind(&self) -> &'static str {
-        kyma_core::fabric::JOB_DATA_SOURCE_SYNC
+        pensieve_core::fabric::JOB_DATA_SOURCE_SYNC
     }
 
     async fn run(&self, ctx: &JobCtx, job: &ClaimedJob) -> Result<Json, JobError> {

@@ -27,13 +27,13 @@ variable "password" {
 variable "db_name" {
   type        = string
   description = "Initial database name."
-  default     = "kyma"
+  default     = "pensieve"
 }
 
 variable "username" {
   type        = string
   description = "Master username."
-  default     = "kyma"
+  default     = "pensieve"
 }
 
 variable "instance_class" {

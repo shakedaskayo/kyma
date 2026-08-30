@@ -1,5 +1,5 @@
 <!--
-  KymaPruningCascade
+  PensievePruningCascade
   ------------------
   Visual proof of the three-level pruning cascade. Shows data volume
   shrinking dramatically through each filter — from "all extents" to
@@ -12,7 +12,7 @@ defineProps<{
 </script>
 
 <template>
-  <figure class="kyma-cascade-svg">
+  <figure class="pensieve-cascade-svg">
     <svg viewBox="0 0 1040 520" role="img"
          :aria-label="caption ?? 'Three-level pruning cascade: catalog, extent, block'"
          xmlns="http://www.w3.org/2000/svg">
@@ -152,130 +152,130 @@ defineProps<{
 </template>
 
 <style scoped>
-.kyma-cascade-svg {
+.pensieve-cascade-svg {
   margin: 1.5rem 0 2rem;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
 }
-.kyma-cascade-svg svg {
+.pensieve-cascade-svg svg {
   width: 100%;
   height: auto;
   display: block;
-  background: var(--kyma-bg-soft);
-  border: 1px solid var(--kyma-rule-soft);
+  background: var(--pensieve-bg-soft);
+  border: 1px solid var(--pensieve-rule-soft);
 }
-.kyma-cascade-svg figcaption {
+.pensieve-cascade-svg figcaption {
   margin-top: 0.75rem;
   font-size: 0.78rem;
   letter-spacing: 0.04em;
-  color: var(--kyma-muted);
+  color: var(--pensieve-muted);
   text-align: center;
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
 }
 
 .cascade-title {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 13px;
-  fill: var(--kyma-fg);
+  fill: var(--pensieve-fg);
   font-weight: 600;
 }
 .cascade-subtitle {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 10.5px;
-  fill: var(--kyma-muted);
+  fill: var(--pensieve-muted);
   letter-spacing: -0.005em;
 }
 
 .stage-num {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 10px;
-  fill: var(--kyma-muted);
+  fill: var(--pensieve-muted);
   letter-spacing: 0.1em;
 }
 .stage-label {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 13px;
-  fill: var(--kyma-fg);
+  fill: var(--pensieve-fg);
   font-weight: 600;
   letter-spacing: 0.04em;
 }
 .stage-meta {
-  font-family: var(--kyma-font-body);
+  font-family: var(--pensieve-font-body);
   font-size: 10px;
-  fill: var(--kyma-fg-soft);
+  fill: var(--pensieve-fg-soft);
 }
 
 .stage-frame {
   fill: transparent;
-  stroke: var(--kyma-rule);
+  stroke: var(--pensieve-rule);
   stroke-width: 1;
 }
 .stage-frame-active {
-  stroke: var(--kyma-accent);
+  stroke: var(--pensieve-accent);
   stroke-width: 1.2;
 }
 .stage-frame-final {
-  fill: var(--kyma-accent);
-  stroke: var(--kyma-accent);
+  fill: var(--pensieve-accent);
+  stroke: var(--pensieve-accent);
 }
 
 .stage-volume {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 10.5px;
-  fill: var(--kyma-fg-soft);
+  fill: var(--pensieve-fg-soft);
   font-weight: 500;
 }
 .stage-volume-active {
-  fill: var(--kyma-fg);
+  fill: var(--pensieve-fg);
 }
 
 .stage-pct {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 14px;
-  fill: var(--kyma-muted);
+  fill: var(--pensieve-muted);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 .stage-pct-elim {
-  fill: var(--kyma-accent);
+  fill: var(--pensieve-accent);
 }
 
 .cascade-link {
-  stroke: var(--kyma-accent);
+  stroke: var(--pensieve-accent);
   stroke-width: 1.2;
   opacity: 0.85;
 }
 .cascade-link-label {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 9px;
-  fill: var(--kyma-accent);
+  fill: var(--pensieve-accent);
   letter-spacing: 0.04em;
 }
 .cascade-accent-fill {
-  fill: var(--kyma-accent);
+  fill: var(--pensieve-accent);
 }
 
 .cascade-summary-rule {
-  stroke: var(--kyma-rule-soft);
+  stroke: var(--pensieve-rule-soft);
   stroke-width: 1;
 }
 .cascade-summary-label {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 11px;
-  fill: var(--kyma-muted);
+  fill: var(--pensieve-muted);
   letter-spacing: 0.14em;
 }
 .cascade-summary-value {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 11px;
-  fill: var(--kyma-fg);
+  fill: var(--pensieve-fg);
 }
 .cascade-summary-final {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 11px;
-  fill: var(--kyma-fg);
+  fill: var(--pensieve-fg);
 }
 .cascade-num {
-  fill: var(--kyma-accent);
+  fill: var(--pensieve-accent);
   font-weight: 600;
 }
 </style>

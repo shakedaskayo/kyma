@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use kyma_graph_topo::CsrGraph;
+use pensieve_graph_topo::CsrGraph;
 use object_store::path::Path;
 use object_store::ObjectStore;
 
@@ -94,7 +94,7 @@ pub async fn load_snapshot(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kyma_graph_topo::Direction;
+    use pensieve_graph_topo::Direction;
     use object_store::memory::InMemory;
 
     fn sample() -> CsrGraph {

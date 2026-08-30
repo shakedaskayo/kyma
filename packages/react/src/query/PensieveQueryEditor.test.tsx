@@ -1,5 +1,5 @@
 /**
- * KymaQueryEditor tests.
+ * PensieveQueryEditor tests.
  *
  * Monaco is mocked at the @monaco-editor/react boundary as a <textarea
  * data-testid="monaco"> that captures value/onChange. Fetch is stubbed to
@@ -9,16 +9,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, cleanup, waitFor, act, fireEvent } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import React from "react";
-import { KymaProvider } from "../provider/KymaProvider";
-import { KymaQueryEditor } from "./KymaQueryEditor";
-import type { SchemaDoc } from "@kyma-ai/client";
+import { PensieveProvider } from "../provider/PensieveProvider";
+import { PensieveQueryEditor } from "./PensieveQueryEditor";
+import type { SchemaDoc } from "@pensieve-ai/client";
 
 // ── Monaco mock ───────────────────────────────────────────────────────────────
 
 // KqlEditor imports MonacoEditor from "@monaco-editor/react". We replace it
 // with a plain <textarea> that mirrors value/onChange. onMount is called with
 // a stub monaco object that satisfies all the calls in KqlEditor's handleMount
-// (registerKql, ensureKymaDarkTheme, registerKqlCompletions, addCommand).
+// (registerKql, ensurePensieveDarkTheme, registerKqlCompletions, addCommand).
 vi.mock("@monaco-editor/react", () => {
   const MockEditor = ({
     value,
@@ -137,8 +137,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("KymaQueryEditor", () => {
-  it("1. smoke: renders editor, schema browser, and run button inside KymaProvider", async () => {
+describe("PensieveQueryEditor", () => {
+  it("1. smoke: renders editor, schema browser, and run button inside PensieveProvider", async () => {
     const qc = makeQC();
     vi.stubGlobal(
       "fetch",
@@ -149,9 +149,9 @@ describe("KymaQueryEditor", () => {
     );
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
-        <KymaQueryEditor defaultQuery="events | take 10" />
-      </KymaProvider>,
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
+        <PensieveQueryEditor defaultQuery="events | take 10" />
+      </PensieveProvider>,
     );
 
     // Editor textarea is present
@@ -178,14 +178,14 @@ describe("KymaQueryEditor", () => {
     const onResults = vi.fn();
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
-        <KymaQueryEditor
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
+        <PensieveQueryEditor
           defaultQuery=""
           showTimeRange={false}
           database="testdb"
           onResults={onResults}
         />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
 
     const textarea = screen.getByTestId("monaco");
@@ -252,9 +252,9 @@ describe("KymaQueryEditor", () => {
     );
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
-        <KymaQueryEditor showSchemaBrowser={false} />
-      </KymaProvider>,
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
+        <PensieveQueryEditor showSchemaBrowser={false} />
+      </PensieveProvider>,
     );
 
     // The schema browser filter input is a good sentinel — it's always rendered
@@ -274,9 +274,9 @@ describe("KymaQueryEditor", () => {
     );
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
-        <KymaQueryEditor readOnly />
-      </KymaProvider>,
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
+        <PensieveQueryEditor readOnly />
+      </PensieveProvider>,
     );
 
     expect(screen.queryByTestId("run-btn")).toBeNull();
@@ -299,9 +299,9 @@ describe("KymaQueryEditor", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
-        <KymaQueryEditor defaultQuery="events | take 5" showTimeRange={false} database="testdb" />
-      </KymaProvider>,
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
+        <PensieveQueryEditor defaultQuery="events | take 5" showTimeRange={false} database="testdb" />
+      </PensieveProvider>,
     );
 
     await act(async () => {
@@ -326,16 +326,16 @@ describe("KymaQueryEditor", () => {
     );
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
         <div>
           <div data-testid="editor-a">
-            <KymaQueryEditor defaultQuery="query-alpha" showSchemaBrowser={false} showTimeRange={false} />
+            <PensieveQueryEditor defaultQuery="query-alpha" showSchemaBrowser={false} showTimeRange={false} />
           </div>
           <div data-testid="editor-b">
-            <KymaQueryEditor defaultQuery="query-beta" showSchemaBrowser={false} showTimeRange={false} />
+            <PensieveQueryEditor defaultQuery="query-beta" showSchemaBrowser={false} showTimeRange={false} />
           </div>
         </div>
-      </KymaProvider>,
+      </PensieveProvider>,
     );
 
     const textareas = screen.getAllByTestId("monaco");

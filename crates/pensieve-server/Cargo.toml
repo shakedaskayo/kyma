@@ -1,5 +1,5 @@
 [package]
-name = "kyma-server"
+name = "pensieve-server"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,35 +10,35 @@ description = "HTTP + gRPC query API, auth stub, health, observability."
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
-kyma-graph.workspace = true
-kyma-graph-topo.workspace = true
+pensieve-core.workspace = true
+pensieve-graph.workspace = true
+pensieve-graph-topo.workspace = true
 anyhow = { workspace = true }
-kyma-plan.workspace = true
-kyma-exec.workspace = true
-kyma-federation.workspace = true
-kyma-kql.workspace = true
-kyma-catalog.workspace = true
-kyma-storage.workspace = true
-kyma-datasources.workspace = true
-kyma-memory.workspace = true
-kyma-artifact-graph.workspace = true
-kyma-embed.workspace = true
-kyma-redact.workspace = true
-kyma-ccmem.workspace = true
-kyma-brain.workspace = true
+pensieve-plan.workspace = true
+pensieve-exec.workspace = true
+pensieve-federation.workspace = true
+pensieve-kql.workspace = true
+pensieve-catalog.workspace = true
+pensieve-storage.workspace = true
+pensieve-datasources.workspace = true
+pensieve-memory.workspace = true
+pensieve-artifact-graph.workspace = true
+pensieve-embed.workspace = true
+pensieve-redact.workspace = true
+pensieve-ccmem.workspace = true
+pensieve-brain.workspace = true
 # Git clients gzip upload-pack negotiation bodies (brain smart-HTTP).
 flate2 = "1"
 # Local degraded-mode dreaming persists finished runs into the embedded SQLite
 # catalog (dreaming_local.rs downcasts the Catalog to SqliteCatalog).
-kyma-catalog-sqlite.workspace = true
-kyma-ingest-core.workspace = true
+pensieve-catalog-sqlite.workspace = true
+pensieve-ingest-core.workspace = true
 datafusion.workspace = true
 arrow.workspace = true
 arrow-array.workspace = true
 bytes.workspace = true
-kyma-web-assets = { workspace = true, optional = true }
-kyma-format-tlm = { workspace = true, optional = true }
+pensieve-web-assets = { workspace = true, optional = true }
+pensieve-format-tlm = { workspace = true, optional = true }
 object_store = { workspace = true }
 testcontainers = { workspace = true, optional = true }
 testcontainers-modules = { workspace = true, optional = true }
@@ -92,14 +92,14 @@ tower = { workspace = true, features = ["util"] }
 sqlx.workspace = true
 chrono.workspace = true
 uuid.workspace = true
-kyma-catalog.workspace = true
-kyma-ingest-core.workspace = true
+pensieve-catalog.workspace = true
+pensieve-ingest-core.workspace = true
 tempfile = "3"
 wiremock = "0.6"
 # Embedded-engine fixtures for the cc_curate unit tests (no Postgres).
-kyma-format-tlm.workspace = true
-kyma-storage.workspace = true
-kyma-embed.workspace = true
+pensieve-format-tlm.workspace = true
+pensieve-storage.workspace = true
+pensieve-embed.workspace = true
 # RSA keypair generation for OidcAuthBackend unit tests.
 rsa = { version = "0.9", features = ["pem"] }
 rand = "0.8"
@@ -107,9 +107,9 @@ rand = "0.8"
 [features]
 default = []
 cloud-auth = []
-web-ui  = ["dep:kyma-web-assets", "dep:tonic-web", "dep:http-body-util"]
+web-ui  = ["dep:pensieve-web-assets", "dep:tonic-web", "dep:http-body-util"]
 test-support = [
-    "dep:kyma-format-tlm",
+    "dep:pensieve-format-tlm",
     "dep:testcontainers",
     "dep:testcontainers-modules",
 ]

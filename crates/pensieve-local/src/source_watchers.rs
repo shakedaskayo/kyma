@@ -21,7 +21,7 @@ use sqlx::{Row, SqlitePool};
 use crate::datasource_catalog::SqliteDataSourceControl;
 use crate::watcher_status::{self, LocalWatcherStatus};
 use crate::{vault_sync, Engine};
-use kyma_datasources::runner::DataSourceControl;
+use pensieve_datasources::runner::DataSourceControl;
 
 /// How often the manager re-reads the rows to start/stop loops.
 const RECONCILE_EVERY: Duration = Duration::from_secs(15);
@@ -45,7 +45,7 @@ pub(crate) struct DesiredSource {
     /// Detects config edits → restart (config + schedule + name).
     pub fingerprint: String,
     /// Local folder synced into memory. For a git-hosted vault this is the
-    /// managed clone dir (`${KYMA_HOME}/vaults/<id>`).
+    /// managed clone dir (`${PENSIEVE_HOME}/vaults/<id>`).
     pub vault_path: PathBuf,
     pub realm: String,
     pub scan_interval: Duration,
@@ -93,11 +93,11 @@ fn expand_home(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// `${KYMA_HOME}/vaults` — where git-hosted Obsidian imports are cloned.
+/// `${PENSIEVE_HOME}/vaults` — where git-hosted Obsidian imports are cloned.
 fn vaults_root() -> PathBuf {
-    let home = std::env::var("KYMA_HOME").unwrap_or_else(|_| {
+    let home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| {
         let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        format!("{base}/.kyma")
+        format!("{base}/.pensieve")
     });
     PathBuf::from(home).join("vaults")
 }
@@ -266,7 +266,7 @@ async fn run_source_loop(
         "source_id": src.id,
         "realm": src.realm,
     });
-    let tenant = kyma_core::tenant::TenantId::from_uuid(
+    let tenant = pensieve_core::tenant::TenantId::from_uuid(
         src.tenant.parse().unwrap_or_else(|_| uuid::Uuid::nil()),
     );
     let source_uuid = src.id.parse().unwrap_or_else(|_| uuid::Uuid::nil());
@@ -338,7 +338,7 @@ async fn run_pass(
     src: &DesiredSource,
 ) -> anyhow::Result<vault_sync::VaultSyncReport> {
     if let Some(git) = &src.git {
-        let bin = kyma_brain::gitbin::GitBin::detect()
+        let bin = pensieve_brain::gitbin::GitBin::detect()
             .await
             .ok_or_else(|| anyhow::anyhow!("git binary not found — cannot import a git-hosted vault"))?;
         let head = bin
@@ -347,11 +347,11 @@ async fn run_pass(
             .map_err(|e| anyhow::anyhow!("git import: {e}"))?;
         tracing::debug!(source = %src.id, head = %head, "git vault synced to HEAD");
     }
-    let embed = kyma_memory::shared_embedding()
+    let embed = pensieve_memory::shared_embedding()
         .await
         .map_err(|e| anyhow::anyhow!("embedding backend: {e}"))?;
     let writer =
-        kyma_memory::MemoryWriter::new(engine.catalog.clone(), engine.format.clone(), embed);
+        pensieve_memory::MemoryWriter::new(engine.catalog.clone(), engine.format.clone(), embed);
     let opts = vault_sync::VaultSyncOptions {
         source_id: src.id.clone(),
         vault_path: src.vault_path.clone(),

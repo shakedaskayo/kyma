@@ -166,13 +166,13 @@ export function Shell() {
   }, [endpoint, token, setSession]);
 
   // The UI ships embedded in the server binary; when /health starts reporting
-  // a new version mid-session (kyma update / reinstall restarted the server),
+  // a new version mid-session (pensieve update / reinstall restarted the server),
   // this tab's loaded assets are stale — nudge for a reload.
   const serverUpdated = useHealth((s) => s.updated);
   useEffect(() => {
     if (!serverUpdated) return;
-    toast.info("kyma was updated", {
-      id: "kyma-server-updated",
+    toast.info("pensieve was updated", {
+      id: "pensieve-server-updated",
       description: "The server is running a new version — reload to get the latest UI.",
       duration: Infinity,
       action: { label: "Reload", onClick: () => window.location.reload() },

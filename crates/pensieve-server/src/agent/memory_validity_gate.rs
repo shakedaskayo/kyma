@@ -84,7 +84,7 @@ struct KeepVerdict {
 async fn llm_judge_keep(state: &AgentState, content: &str) -> bool {
     let text = match runner::run_oneshot(
         state,
-        "kyma-validity-gate",
+        "pensieve-validity-gate",
         "Judges whether content is worth keeping as a durable memory.",
         VALIDITY_SYSTEM,
         content,
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn short_content_rejected_by_heuristic() {
-        let m = extracted("kyma", Some(0.9));
+        let m = extracted("pensieve", Some(0.9));
         assert!(extraction_reject(&m, &settings(20)).is_some());
     }
 
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn genuine_fact_passes() {
-        let m = extracted("kyma uses DataFusion for query execution", Some(0.9));
+        let m = extracted("pensieve uses DataFusion for query execution", Some(0.9));
         assert_eq!(extraction_reject(&m, &settings(20)), None);
     }
 }

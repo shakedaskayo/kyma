@@ -1,8 +1,8 @@
 /**
- * KymaGraph — public embeddable graph component.
+ * PensieveGraph — public embeddable graph component.
  *
  * Wraps GraphView in an instance-isolated zustand store (createGraphStore via
- * useRef) and a KymaErrorBoundary. Each mounted KymaGraph owns its own store so
+ * useRef) and a PensieveErrorBoundary. Each mounted PensieveGraph owns its own store so
  * two instances on the same page never share selection / layout state.
  *
  * Props deliberately omitted (not wired — no dead props shipped):
@@ -19,19 +19,19 @@
  *   Default: auto-detected via webglAvailable() — tries webgl2 then webgl.
  */
 import { useCallback, useEffect, useMemo, useRef, type JSX } from "react";
-import type { GraphNode } from "@kyma-ai/client";
-import { KymaErrorBoundary } from "../internal/KymaErrorBoundary";
+import type { GraphNode } from "@pensieve-ai/client";
+import { PensieveErrorBoundary } from "../internal/PensieveErrorBoundary";
 import { GraphStoreContext, createGraphStore } from "./graph-store";
 import type { GraphStore } from "./graph-store";
 import { GraphView } from "./GraphView";
 import type { LiveConsumersData } from "./consumer-types";
-import type { LayoutAlgorithm } from "@kyma-ai/client";
+import type { LayoutAlgorithm } from "@pensieve-ai/client";
 // Re-export so embedders can query the renderer without rendering.
 export { webglAvailable } from "./GraphView";
 
 // ── Public prop surface ────────────────────────────────────────────────────────
 
-export interface KymaGraphProps {
+export interface PensieveGraphProps {
   /** Graphs to render; omit for the default database's graphs. */
   graphs?: Array<{ database?: string; graph: string }>;
   /** "all-databases" discovers every graph across the deployment. */
@@ -68,7 +68,7 @@ export interface KymaGraphProps {
   fallback?: React.ReactNode;
   /**
    * Called when a node is clicked. Wired via store subscription: GraphView
-   * writes selectedNodeId to the store on click; KymaGraph subscribes to that
+   * writes selectedNodeId to the store on click; PensieveGraph subscribes to that
    * field and calls onNodeClick with the resolved GraphNode.
    */
   onNodeClick?: (node: GraphNode) => void;
@@ -95,9 +95,9 @@ export interface KymaGraphProps {
 /**
  * Public embeddable graph component with per-instance isolated state.
  *
- * Must be rendered inside a KymaProvider.
+ * Must be rendered inside a PensieveProvider.
  */
-export function KymaGraph(props: KymaGraphProps): JSX.Element {
+export function PensieveGraph(props: PensieveGraphProps): JSX.Element {
   const {
     graphs,
     discover,
@@ -205,7 +205,7 @@ export function KymaGraph(props: KymaGraphProps): JSX.Element {
   );
 
   return (
-    <KymaErrorBoundary fallback={fallback}>
+    <PensieveErrorBoundary fallback={fallback}>
       <GraphStoreContext.Provider value={store}>
         <div
           className={className}
@@ -214,6 +214,6 @@ export function KymaGraph(props: KymaGraphProps): JSX.Element {
           {graphView}
         </div>
       </GraphStoreContext.Provider>
-    </KymaErrorBoundary>
+    </PensieveErrorBoundary>
   );
 }

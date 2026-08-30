@@ -1,11 +1,11 @@
 ---
 title: Agent endpoint
-description: POST /v1/agent/ask is kyma's natural-language surface — JSON in, Server-Sent Events out. This is the call reference; the conceptual model lives in /concepts/the-agent-loop.
+description: POST /v1/agent/ask is pensieve's natural-language surface — JSON in, Server-Sent Events out. This is the call reference; the conceptual model lives in /concepts/the-agent-loop.
 ---
 
 # Agent endpoint
 
-`POST /v1/agent/ask` is kyma's natural-language surface. A question goes
+`POST /v1/agent/ask` is pensieve's natural-language surface. A question goes
 in as JSON; an SSE stream of events comes back. The conceptual model —
 how the agent picks tables, why SSE over WebSockets, what the schema RAG
 layer does — is on [The agent loop](/concepts/the-agent-loop). This page
@@ -15,7 +15,7 @@ is the precise call reference.
 
 ```
 POST /v1/agent/ask
-Authorization: Bearer <token>          (when KYMA_AUTH_TOKENS is set)
+Authorization: Bearer <token>          (when PENSIEVE_AUTH_TOKENS is set)
 Content-Type:  application/json
 ```
 

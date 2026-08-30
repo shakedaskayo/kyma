@@ -1,6 +1,6 @@
 ---
 title: Deploy with Pulumi
-description: Deploy kyma with Pulumi via the terraform-module bridge — same stack, Pulumi-native state and config.
+description: Deploy pensieve with Pulumi via the terraform-module bridge — same stack, Pulumi-native state and config.
 ---
 
 # Deploy with Pulumi
@@ -26,14 +26,14 @@ pulumi stack init prod
 
 # Wrap the provider-free stack module (NOT ../../terraform, whose
 # provider blocks confuse the bridge):
-pulumi package add terraform-module ../../terraform/stack kymaengine
+pulumi package add terraform-module ../../terraform/stack pensieveengine
 ```
 
 If `package add` prints a pnpm `pkg set` error *after* "Successfully
 generated an SDK", the SDK is fine — link it manually:
 
 ```sh
-npm pkg set 'dependencies.@pulumi/kymaengine=file:sdks/kymaengine'
+npm pkg set 'dependencies.@pulumi/pensieveengine=file:sdks/pensieveengine'
 npm install
 ```
 
@@ -75,5 +75,5 @@ pulumi stack output engineUrl
 
 Teardown: `pulumi destroy`.
 
-`kyma deploy init --tool pulumi` automates all of the above inside a
+`pensieve deploy init --tool pulumi` automates all of the above inside a
 [workspace](./cli#workspaces).

@@ -24,8 +24,8 @@ use axum::{
     Json, Router,
 };
 use bytes::Bytes;
-use kyma_core::catalog::Catalog;
-use kyma_ingest_core::{
+use pensieve_core::catalog::Catalog;
+use pensieve_ingest_core::{
     ensure_table, evolve_schema_for_records, parse_ndjson, IngestAck, WritePath,
 };
 use serde::Serialize;
@@ -99,7 +99,7 @@ async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Respo
         .and_then(|v| v.to_str().ok())
         .unwrap_or("default")
         .to_owned();
-    // S2.6: token-bucket ingest rate limit (off unless KYMA_INGEST_RATE_RPS set).
+    // S2.6: token-bucket ingest rate limit (off unless PENSIEVE_INGEST_RATE_RPS set).
     // Metered per database; an empty bucket → 429 + Retry-After.
     if let Err(retry_after_secs) = rate_limit::check(&database) {
         return rate_limited_response(retry_after_secs, &request_id);
@@ -126,7 +126,7 @@ async fn ingest_handler(State(state): State<IngestState>, req: Request) -> Respo
     // (the pre-helper behavior).
     let schema_evolve = header_bool(headers, "x-schema-evolve", true);
     let ingest_span = tracing::info_span!(
-        target: "kyma_telemetry",
+        target: "pensieve_telemetry",
         "ingest.batch",
         ingest.table = %table,
         ingest.rows = tracing::field::Empty,
@@ -234,7 +234,7 @@ async fn ingest_batch_inner(
         // and behave identically to the previous direct ReaderBuilder call.
         let batches: Vec<arrow_array::RecordBatch> = {
             let parse_span = tracing::info_span!(
-                target: "kyma_telemetry",
+                target: "pensieve_telemetry",
                 "ingest.parse",
                 ingest.bytes = body.len(),
             );
@@ -255,7 +255,7 @@ async fn ingest_batch_inner(
         // Wraps the WritePath call site only — the self-trace exporter calls
         // WritePath directly, so spans must never live *inside* it (recursion).
         let write_span = tracing::info_span!(
-            target: "kyma_telemetry",
+            target: "pensieve_telemetry",
             "ingest.write",
             ingest.batches = batches.len(),
         );
@@ -320,7 +320,7 @@ async fn admin_ensure_table_handler(
     headers: HeaderMap,
 ) -> Response {
     let request_id = extract_request_id(&headers);
-    match kyma_ingest_core::ensure_table(&*state.catalog, &database, &table).await {
+    match pensieve_ingest_core::ensure_table(&*state.catalog, &database, &table).await {
         Ok(t) => {
             let info = AdminTableInfo {
                 database: database.clone(),

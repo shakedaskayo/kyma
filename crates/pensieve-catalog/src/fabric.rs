@@ -1,7 +1,7 @@
 //! Postgres-backed worker/job fabric store — the control plane's persistence
 //! for the distributed context engine.
 //!
-//! Workers (the server's embedded worker, or remote `kyma worker run`
+//! Workers (the server's embedded worker, or remote `pensieve worker run`
 //! daemons) register here and claim jobs under a lease, mirroring the
 //! `background_tasks` `FOR UPDATE SKIP LOCKED` machinery but with placement:
 //! a job can be pinned to one worker (`affinity_worker_id`, e.g. source_sync
@@ -11,11 +11,11 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use kyma_core::fabric::{
+use pensieve_core::fabric::{
     ClaimedJob, EnqueueJob, Heartbeat, JobStatus, JobView, PresenceSession, WorkerKind,
     WorkerRegistration, WorkerStatus, WorkerView,
 };
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 use serde_json::Value as Json;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -467,17 +467,17 @@ impl PgFabricStore {
 
 /// Portable enqueue so background schedulers can run against Postgres without
 /// downcasting. Delegates to the inherent [`PgFabricStore::enqueue_job`],
-/// mapping its `anyhow` error into the shared `kyma_core` error.
+/// mapping its `anyhow` error into the shared `pensieve_core` error.
 #[async_trait::async_trait]
-impl kyma_core::fabric::JobEnqueuer for PgFabricStore {
+impl pensieve_core::fabric::JobEnqueuer for PgFabricStore {
     async fn enqueue(
         &self,
         tenant: TenantId,
         job: &EnqueueJob,
-    ) -> kyma_core::errors::Result<Option<Uuid>> {
+    ) -> pensieve_core::errors::Result<Option<Uuid>> {
         self.enqueue_job(tenant, job)
             .await
-            .map_err(|e| kyma_core::errors::Error::Internal(e.to_string()))
+            .map_err(|e| pensieve_core::errors::Error::Internal(e.to_string()))
     }
 }
 

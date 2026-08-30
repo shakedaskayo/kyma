@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make `kyma deploy` (wizard + Terraform stack + new Helm chart + docs) pluggable across four orthogonal axes — compute (fargate/eks/helm/local), database (supabase/rds/external), storage (s3/supabase/external), auth (supabase/token/oidc) — selected interactively, with bring-your-own DB URL and S3-compatible storage.
+**Goal:** Make `pensieve deploy` (wizard + Terraform stack + new Helm chart + docs) pluggable across four orthogonal axes — compute (fargate/eks/helm/local), database (supabase/rds/external), storage (s3/supabase/external), auth (supabase/token/oidc) — selected interactively, with bring-your-own DB URL and S3-compatible storage.
 
-**Architecture:** Orthogonal axes + a `validate(combo)` compatibility gate (Approach C). The engine is already backend-agnostic (`kyma-storage` S3Compatible/Local; generic `KYMA_CATALOG_URL`; `supabase`/`oidc`/`env` auth backends), so **no engine code changes** — work is confined to `crates/kyma-cli/src/deploy.rs`, `deploy/terraform/stack/`, a new `deploy/helm/kyma-engine/`, and `docs/site/deploy/`.
+**Architecture:** Orthogonal axes + a `validate(combo)` compatibility gate (Approach C). The engine is already backend-agnostic (`pensieve-storage` S3Compatible/Local; generic `PENSIEVE_CATALOG_URL`; `supabase`/`oidc`/`env` auth backends), so **no engine code changes** — work is confined to `crates/pensieve-cli/src/deploy.rs`, `deploy/terraform/stack/`, a new `deploy/helm/pensieve-engine/`, and `docs/site/deploy/`.
 
 **Tech Stack:** Rust (clap, serde, reqwest, tokio, wiremock for tests), Terraform (AWS + Supabase + kubernetes/helm providers), Helm, VitePress docs.
 
@@ -14,15 +14,15 @@
 
 **Validation boundary:** static/CI-grade only — `cargo test`/`clippy`/`fmt`, `terraform validate`, `helm lint`/`helm template`, and `--print-only` golden snapshots. A live AWS/EKS/RDS `apply` needs real credentials + spend and is out of scope (matches the existing "e2e smoke on a real account" open item).
 
-**Build/test note:** `kyma-cli` is a **binary crate** — run unit tests with `cargo test -p kyma-cli --bins` (not `--lib`). `kyma-cli` and `kyma-bin` both emit `target/debug/kyma`; always pass `-p kyma-cli`. New embedded template files must be added to **both** `deploy/` on disk and the `DEPLOY_FILES` array in `deploy.rs`.
+**Build/test note:** `pensieve-cli` is a **binary crate** — run unit tests with `cargo test -p pensieve-cli --bins` (not `--lib`). `pensieve-cli` and `pensieve-bin` both emit `target/debug/pensieve`; always pass `-p pensieve-cli`. New embedded template files must be added to **both** `deploy/` on disk and the `DEPLOY_FILES` array in `deploy.rs`.
 
 ---
 
 ## File Structure
 
 **Modify**
-- `crates/kyma-cli/src/deploy.rs` — config model, matrix, renderers, CLI flags, lifecycle, `DEPLOY_FILES`, tests (split helpers into submodules if it grows past ~2500 lines).
-- `crates/kyma-cli/src/main.rs` — pass new `deploy init` flags through (clap wiring around the existing `Op::Init`).
+- `crates/pensieve-cli/src/deploy.rs` — config model, matrix, renderers, CLI flags, lifecycle, `DEPLOY_FILES`, tests (split helpers into submodules if it grows past ~2500 lines).
+- `crates/pensieve-cli/src/main.rs` — pass new `deploy init` flags through (clap wiring around the existing `Op::Init`).
 - `deploy/terraform/stack/{main,variables,outputs}.tf` — module gating + new vars/outputs.
 - `deploy/terraform/stack/modules/supabase/*` — make conditionally instantiated.
 - `deploy/terraform/stack/modules/secrets/*`, `.../storage/*` — generalize catalog/storage sources.
@@ -32,18 +32,18 @@
 **Create**
 - `deploy/terraform/stack/modules/rds/{main,variables,outputs,versions}.tf`
 - `deploy/terraform/stack/modules/eks/{main,variables,outputs,versions}.tf`
-- `deploy/helm/kyma-engine/{Chart.yaml,values.yaml,.helmignore}` + `templates/{deployment,service,ingress,serviceaccount,secret,_helpers.tpl,NOTES.txt}.yaml`
+- `deploy/helm/pensieve-engine/{Chart.yaml,values.yaml,.helmignore}` + `templates/{deployment,service,ingress,serviceaccount,secret,_helpers.tpl,NOTES.txt}.yaml`
 - `docs/site/deploy/helm.md`, `docs/site/deploy/kubernetes.md`
 
 ---
 
 ## Phase 1 — Wizard config model + compatibility matrix
 
-Goal: orthogonal axis enums, a generalized `Answers`, a tested `validate()` gate, new CLI flags with `--target` back-compat, and `DeployState` migration. End state: `cargo test -p kyma-cli --bins` green; `kyma deploy init --help` shows new flags.
+Goal: orthogonal axis enums, a generalized `Answers`, a tested `validate()` gate, new CLI flags with `--target` back-compat, and `DeployState` migration. End state: `cargo test -p pensieve-cli --bins` green; `pensieve deploy init --help` shows new flags.
 
 ### Task 1.1: Axis enums + parse
 
-**Files:** Modify `crates/kyma-cli/src/deploy.rs` (near the existing `IacTool`/`Target` enums ~L36); Test: same file `mod tests`.
+**Files:** Modify `crates/pensieve-cli/src/deploy.rs` (near the existing `IacTool`/`Target` enums ~L36); Test: same file `mod tests`.
 
 - [ ] **Step 1: Write failing tests** for enum parsing + the `--target` alias.
 
@@ -71,7 +71,7 @@ fn database_and_storage_and_auth_parse() {
 }
 ```
 
-- [ ] **Step 2: Run, expect fail** (`cargo test -p kyma-cli --bins compute_parses` → unresolved `Compute`).
+- [ ] **Step 2: Run, expect fail** (`cargo test -p pensieve-cli --bins compute_parses` → unresolved `Compute`).
 
 - [ ] **Step 3: Implement** the enums with `clap::ValueEnum` + `as_str`/`from_arg`/`from_target`:
 
@@ -112,7 +112,7 @@ struct ExternalStorage { endpoint: String, bucket: String, region: String, acces
 #[derive(Debug, Clone)]
 struct Answers {
     name: String,                 // workspace name (e.g. "prod")
-    project_name: String,         // "kyma-{name}"
+    project_name: String,         // "pensieve-{name}"
     compute: Compute,
     database: Database,
     storage: Storage,
@@ -145,7 +145,7 @@ struct Answers {
 }
 ```
 
-- [ ] **Step 3:** Make it compile (renderers updated in Phase 2; for now keep `render_tfvars` reading the new fields). **Step 4:** `cargo build -p kyma-cli`. **Step 5:** Commit `refactor(deploy): generalize Answers for all backend axes`.
+- [ ] **Step 3:** Make it compile (renderers updated in Phase 2; for now keep `render_tfvars` reading the new fields). **Step 4:** `cargo build -p pensieve-cli`. **Step 5:** Commit `refactor(deploy): generalize Answers for all backend axes`.
 
 ### Task 1.3: `validate(combo)` compatibility matrix
 
@@ -243,7 +243,7 @@ fn default_auth(d: Database) -> Auth { if d == Database::Supabase { Auth::Supaba
 
 ### Task 1.5: CLI flags + `--target` deprecation
 
-**Files:** Modify `deploy.rs` `Op::Init` (~L52) and `crates/kyma-cli/src/main.rs` (clap wiring).
+**Files:** Modify `deploy.rs` `Op::Init` (~L52) and `crates/pensieve-cli/src/main.rs` (clap wiring).
 
 - [ ] **Step 1:** Add flags to `Op::Init`, keeping `target: Option<Target>` for back-compat:
 
@@ -268,7 +268,7 @@ fn default_auth(d: Database) -> Auth { if d == Database::Supabase { Auth::Supaba
 ```
 
 - [ ] **Step 2:** In `run()`/`cmd_init`, resolve `compute = compute.or(target.and_then(|t| ...)).unwrap_or(Fargate)` and print a deprecation note when `--target` is used. Keep `tool`, `region`, `supabase_org`, `domain`, `admin_email`, `yes`, `print_only`, `force`.
-- [ ] **Step 3:** `cargo build -p kyma-cli`; run `cargo run -p kyma-cli -- deploy init --help` and confirm the flags render. **Step 4:** Commit `feat(deploy): CLI flags for axis selection + --target back-compat`.
+- [ ] **Step 3:** `cargo build -p pensieve-cli`; run `cargo run -p pensieve-cli -- deploy init --help` and confirm the flags render. **Step 4:** Commit `feat(deploy): CLI flags for axis selection + --target back-compat`.
 
 ### Task 1.6: `DeployState` migration
 
@@ -280,7 +280,7 @@ fn default_auth(d: Database) -> Auth { if d == Database::Supabase { Auth::Supaba
 #[test]
 fn deploy_state_migrates_legacy_target() {
     // legacy file with only `target`
-    let legacy = r#"{"target":"aws","tool":"terraform","project_name":"kyma-prod","aws_region":"us-east-1","image_tag":"v1"}"#;
+    let legacy = r#"{"target":"aws","tool":"terraform","project_name":"pensieve-prod","aws_region":"us-east-1","image_tag":"v1"}"#;
     let st: DeployState = serde_json::from_str(legacy).unwrap();
     assert_eq!(st.compute(), Compute::Fargate);
     let legacy_local = r#"{"target":"local","tool":"terraform","project_name":"p","aws_region":"r","image_tag":"v"}"#;
@@ -336,20 +336,20 @@ fn helm_values_render_external_db_and_storage() {
     a.compute = Compute::Helm; a.database = Database::External; a.storage = Storage::External; a.auth = Auth::Token;
     a.database_url = "postgresql://u:p@host:5432/db".into();
     a.admin_token = "tok".into();
-    a.ingress_host = "kyma.example.com".into();
-    a.external_storage = Some(ExternalStorage{ endpoint:"https://minio:9000".into(), bucket:"kyma".into(), region:"us-east-1".into(), access_key_id:"AK".into(), secret_access_key:"SK".into(), path_style:true });
+    a.ingress_host = "pensieve.example.com".into();
+    a.external_storage = Some(ExternalStorage{ endpoint:"https://minio:9000".into(), bucket:"pensieve".into(), region:"us-east-1".into(), access_key_id:"AK".into(), secret_access_key:"SK".into(), path_style:true });
     let y = render_helm_values(&a);
-    assert!(y.contains("repository: ghcr.io/shakedaskayo/kyma-engine"));
-    assert!(y.contains("KYMA_CATALOG_URL: postgresql://u:p@host:5432/db"));
-    assert!(y.contains("KYMA_AUTH_BACKEND: token"));
-    assert!(y.contains("KYMA_AUTH_TOKENS: tok:admin"));
-    assert!(y.contains("KYMA_S3_ENDPOINT: https://minio:9000"));
-    assert!(y.contains("KYMA_S3_PATH_STYLE: \"true\""));
-    assert!(y.contains("host: kyma.example.com"));
+    assert!(y.contains("repository: ghcr.io/shakedaskayo/pensieve-engine"));
+    assert!(y.contains("PENSIEVE_CATALOG_URL: postgresql://u:p@host:5432/db"));
+    assert!(y.contains("PENSIEVE_AUTH_BACKEND: token"));
+    assert!(y.contains("PENSIEVE_AUTH_TOKENS: tok:admin"));
+    assert!(y.contains("PENSIEVE_S3_ENDPOINT: https://minio:9000"));
+    assert!(y.contains("PENSIEVE_S3_PATH_STYLE: \"true\""));
+    assert!(y.contains("host: pensieve.example.com"));
 }
 ```
 
-- [ ] **Step 2-3:** Implement a YAML-emitting function (string template; values are simple — quote numbers/bools as strings to keep env values as strings). Map auth: supabase→`KYMA_SUPABASE_*`, token→`KYMA_AUTH_TOKENS: <token>:admin`, oidc→`KYMA_OIDC_ISSUER`/`KYMA_OIDC_CLIENT_ID`. Storage: external→full `KYMA_S3_*`; s3→bucket+region+`serviceAccount.annotations` for IRSA (no keys); supabase is **not** a Helm path (matrix forbids supabase storage without supabase db, and supabase-db Helm uses external storage or supabase storage keys via env — include keys when present).
+- [ ] **Step 2-3:** Implement a YAML-emitting function (string template; values are simple — quote numbers/bools as strings to keep env values as strings). Map auth: supabase→`PENSIEVE_SUPABASE_*`, token→`PENSIEVE_AUTH_TOKENS: <token>:admin`, oidc→`PENSIEVE_OIDC_ISSUER`/`PENSIEVE_OIDC_CLIENT_ID`. Storage: external→full `PENSIEVE_S3_*`; s3→bucket+region+`serviceAccount.annotations` for IRSA (no keys); supabase is **not** a Helm path (matrix forbids supabase storage without supabase db, and supabase-db Helm uses external storage or supabase storage keys via env — include keys when present).
 - [ ] **Step 4-5:** Run → pass; commit `feat(deploy): render_helm_values`.
 
 ### Task 2.3: Generalize `render_local_env`
@@ -363,10 +363,10 @@ fn helm_values_render_external_db_and_storage() {
 fn local_env_external_db_storage_token() {
     let a = /* Answers: Local/External/External/Token, database_url set, external_storage set, admin_token "tok" */;
     let env = render_local_env_from(&a);
-    assert!(env.contains("KYMA_CATALOG_URL=postgresql://"));
-    assert!(env.contains("KYMA_AUTH_BACKEND=token"));
-    assert!(env.contains("KYMA_AUTH_TOKENS=tok:admin"));
-    assert!(env.contains("KYMA_S3_ENDPOINT="));
+    assert!(env.contains("PENSIEVE_CATALOG_URL=postgresql://"));
+    assert!(env.contains("PENSIEVE_AUTH_BACKEND=token"));
+    assert!(env.contains("PENSIEVE_AUTH_TOKENS=tok:admin"));
+    assert!(env.contains("PENSIEVE_S3_ENDPOINT="));
 }
 ```
 
@@ -404,21 +404,21 @@ validation {
 
 **Files:** Create `deploy/terraform/stack/modules/rds/{main,variables,outputs,versions}.tf`.
 
-- [ ] **Step 1:** `aws_db_subnet_group` (private subnets from network), `aws_security_group` allowing 5432 from the engine SG only, `aws_db_instance` (postgres, `storage_encrypted=true`, `publicly_accessible=false`, `backup_retention_period=7`, `db_name="kyma"`, username/password from vars/random). Output `database_url = "postgresql://${username}:${password}@${endpoint}/kyma"` (sensitive).
+- [ ] **Step 1:** `aws_db_subnet_group` (private subnets from network), `aws_security_group` allowing 5432 from the engine SG only, `aws_db_instance` (postgres, `storage_encrypted=true`, `publicly_accessible=false`, `backup_retention_period=7`, `db_name="pensieve"`, username/password from vars/random). Output `database_url = "postgresql://${username}:${password}@${endpoint}/pensieve"` (sensitive).
 - [ ] **Step 2:** In `main.tf`, instantiate with `count = var.database_backend == "rds" ? 1 : 0`, passing `vpc_id`/private subnet ids/engine SG. Requires the network module to expose private subnets — add them (Task 3.6). **Step 3:** `terraform validate -var database_backend=rds` → pass. **Step 4:** Commit `feat(deploy/tf): RDS Postgres catalog module`.
 
 ### Task 3.4: `modules/eks` (provisions cluster + installs the Helm chart)
 
 **Files:** Create `deploy/terraform/stack/modules/eks/*`; `versions.tf` adds `kubernetes` + `helm` providers.
 
-- [ ] **Step 1:** `aws_eks_cluster` + `aws_eks_node_group` (managed, small), `aws_iam_openid_connect_provider` from the cluster OIDC issuer, an IRSA `aws_iam_role` trusting the SA `system:serviceaccount:<ns>:kyma-engine` with the S3 access policy. Configure `kubernetes`/`helm` providers via the cluster endpoint + `data.aws_eks_cluster_auth` exec token. A `helm_release "kyma"` pointing at `${path.module}/../../../../helm/kyma-engine` (or a packaged chart path) with values set from inputs (image, env, ingress_host, serviceAccount IRSA annotation, S3 bucket/region).
-- [ ] **Step 2:** In `main.tf`, `count = var.compute_backend == "eks" ? 1 : 0`; ecs-service module gets `count = var.compute_backend == "fargate" ? 1 : 0`. **Step 3:** `terraform validate -var compute_backend=eks` (providers require no creds for validate). **Step 4:** Commit `feat(deploy/tf): EKS module installing the kyma Helm chart (IRSA keyless S3)`.
+- [ ] **Step 1:** `aws_eks_cluster` + `aws_eks_node_group` (managed, small), `aws_iam_openid_connect_provider` from the cluster OIDC issuer, an IRSA `aws_iam_role` trusting the SA `system:serviceaccount:<ns>:pensieve-engine` with the S3 access policy. Configure `kubernetes`/`helm` providers via the cluster endpoint + `data.aws_eks_cluster_auth` exec token. A `helm_release "pensieve"` pointing at `${path.module}/../../../../helm/pensieve-engine` (or a packaged chart path) with values set from inputs (image, env, ingress_host, serviceAccount IRSA annotation, S3 bucket/region).
+- [ ] **Step 2:** In `main.tf`, `count = var.compute_backend == "eks" ? 1 : 0`; ecs-service module gets `count = var.compute_backend == "fargate" ? 1 : 0`. **Step 3:** `terraform validate -var compute_backend=eks` (providers require no creds for validate). **Step 4:** Commit `feat(deploy/tf): EKS module installing the pensieve Helm chart (IRSA keyless S3)`.
 
 ### Task 3.5: Generalize secrets + storage env locals
 
 **Files:** `deploy/terraform/stack/main.tf`, `modules/secrets`, `modules/storage`.
 
-- [ ] **Step 1:** `KYMA_CATALOG_URL` source local:
+- [ ] **Step 1:** `PENSIEVE_CATALOG_URL` source local:
 
 ```hcl
 locals {
@@ -430,7 +430,7 @@ locals {
 }
 ```
 
-- [ ] **Step 2:** Extend `storage_environment`/`storage_secrets` with the `external` branch (use `var.storage_endpoint/bucket/region/path_style`, keys to secrets) alongside the existing s3/supabase branches. Auth env local switches on `var.auth_backend` (supabase vars | `KYMA_AUTH_TOKENS=${var.admin_token}:admin` | oidc vars). **Step 3:** `terraform validate` across backends. **Step 4:** Commit `feat(deploy/tf): catalog/storage/auth env selection by backend`.
+- [ ] **Step 2:** Extend `storage_environment`/`storage_secrets` with the `external` branch (use `var.storage_endpoint/bucket/region/path_style`, keys to secrets) alongside the existing s3/supabase branches. Auth env local switches on `var.auth_backend` (supabase vars | `PENSIEVE_AUTH_TOKENS=${var.admin_token}:admin` | oidc vars). **Step 3:** `terraform validate` across backends. **Step 4:** Commit `feat(deploy/tf): catalog/storage/auth env selection by backend`.
 
 ### Task 3.6: Network private subnets + outputs + top-level passthrough
 
@@ -442,13 +442,13 @@ locals {
 
 ## Phase 4 — Helm chart
 
-End state: `helm lint deploy/helm/kyma-engine` clean; `helm template` renders for token/supabase/oidc + s3/external storage value sets.
+End state: `helm lint deploy/helm/pensieve-engine` clean; `helm template` renders for token/supabase/oidc + s3/external storage value sets.
 
 ### Task 4.1: Chart scaffold + values
 
-**Files:** Create `deploy/helm/kyma-engine/Chart.yaml`, `values.yaml`, `.helmignore`, `templates/_helpers.tpl`.
+**Files:** Create `deploy/helm/pensieve-engine/Chart.yaml`, `values.yaml`, `.helmignore`, `templates/_helpers.tpl`.
 
-- [ ] **Step 1:** `Chart.yaml` (apiVersion v2, name kyma-engine, type application, version 0.1.0, appVersion matches engine). `values.yaml` keys: `image.{repository,tag,pullPolicy}`, `replicaCount: 1` (with a comment: engine is single-writer per catalog), `env: {}` (map of KYMA_* → string), `secretEnv: {}` (sensitive KYMA_* → string, rendered into a Secret), `service.{type,port:8080}`, `ingress.{enabled,className,host,tls,annotations}`, `serviceAccount.{create,name,annotations}`, `resources`. **Step 2:** `helm lint deploy/helm/kyma-engine`. **Step 3:** Commit `feat(deploy/helm): chart scaffold + values`.
+- [ ] **Step 1:** `Chart.yaml` (apiVersion v2, name pensieve-engine, type application, version 0.1.0, appVersion matches engine). `values.yaml` keys: `image.{repository,tag,pullPolicy}`, `replicaCount: 1` (with a comment: engine is single-writer per catalog), `env: {}` (map of PENSIEVE_* → string), `secretEnv: {}` (sensitive PENSIEVE_* → string, rendered into a Secret), `service.{type,port:8080}`, `ingress.{enabled,className,host,tls,annotations}`, `serviceAccount.{create,name,annotations}`, `resources`. **Step 2:** `helm lint deploy/helm/pensieve-engine`. **Step 3:** Commit `feat(deploy/helm): chart scaffold + values`.
 
 ### Task 4.2: Templates
 
@@ -458,9 +458,9 @@ End state: `helm lint deploy/helm/kyma-engine` clean; `helm template` renders fo
 - [ ] **Step 2:** Render checks:
 
 ```bash
-helm template t deploy/helm/kyma-engine \
-  --set env.KYMA_AUTH_BACKEND=token --set secretEnv.KYMA_AUTH_TOKENS=tok:admin \
-  --set env.KYMA_S3_ENDPOINT=https://minio:9000 --set ingress.enabled=true --set ingress.host=k.example.com | head -60
+helm template t deploy/helm/pensieve-engine \
+  --set env.PENSIEVE_AUTH_BACKEND=token --set secretEnv.PENSIEVE_AUTH_TOKENS=tok:admin \
+  --set env.PENSIEVE_S3_ENDPOINT=https://minio:9000 --set ingress.enabled=true --set ingress.host=k.example.com | head -60
 ```
 
 Expect a valid Deployment/Service/Ingress/Secret. **Step 3:** Commit `feat(deploy/helm): engine templates (deployment/service/ingress/sa/secret)`.
@@ -469,13 +469,13 @@ Expect a valid Deployment/Service/Ingress/Secret. **Step 3:** Commit `feat(deplo
 
 ## Phase 5 — CLI lifecycle + DEPLOY_FILES
 
-End state: `kyma deploy init/up/status/destroy` work for fargate (unchanged), helm (helm install), eks (terraform), local (docker); `--print-only` prints the right artifact for every combo; all new template files embedded.
+End state: `pensieve deploy init/up/status/destroy` work for fargate (unchanged), helm (helm install), eks (terraform), local (docker); `--print-only` prints the right artifact for every combo; all new template files embedded.
 
 ### Task 5.1: Rewrite `cmd_init` to use the axis model
 
 **Files:** `deploy.rs` `cmd_init` (~L1108).
 
-- [ ] **Step 1:** Resolve axes from flags → interactive prompts (compute→database[+url]→storage[+creds]→auth) → fill defaults via `default_storage`/`default_auth` → `validate_combo()` (bail with the message on error). Mint `admin_token = random_token(40)` when `auth==Token`. For Supabase paths keep the token/org/pooler chain; skip it entirely for external/rds+token. **Step 2:** materialize + write the right artifact (tfvars for fargate/eks, values.yaml for helm, local.env for local) via the Phase 2 renderers; write secrets 0600. **Step 3:** Build + `cargo test -p kyma-cli --bins`. **Step 4:** Commit `feat(deploy): cmd_init drives the axis model + matrix`.
+- [ ] **Step 1:** Resolve axes from flags → interactive prompts (compute→database[+url]→storage[+creds]→auth) → fill defaults via `default_storage`/`default_auth` → `validate_combo()` (bail with the message on error). Mint `admin_token = random_token(40)` when `auth==Token`. For Supabase paths keep the token/org/pooler chain; skip it entirely for external/rds+token. **Step 2:** materialize + write the right artifact (tfvars for fargate/eks, values.yaml for helm, local.env for local) via the Phase 2 renderers; write secrets 0600. **Step 3:** Build + `cargo test -p pensieve-cli --bins`. **Step 4:** Commit `feat(deploy): cmd_init drives the axis model + matrix`.
 
 ### Task 5.2: `--print-only` per artifact (golden smoke)
 
@@ -489,7 +489,7 @@ End state: `kyma deploy init/up/status/destroy` work for fargate (unchanged), he
 
 - [ ] **Step 1:** Switch on `state.compute()`:
   - `Fargate`/`Eks` → existing terraform|pulumi path (Eks reuses it; engine_url from ingress output for eks).
-  - `Helm` → `helm upgrade --install kyma <chart> -f values.yaml -n kyma --create-namespace [--kube-context <ctx>]`; status via `helm status` + `/health`; destroy via `helm uninstall`.
+  - `Helm` → `helm upgrade --install pensieve <chart> -f values.yaml -n pensieve --create-namespace [--kube-context <ctx>]`; status via `helm status` + `/health`; destroy via `helm uninstall`.
   - `Local` → docker (unchanged).
 - [ ] **Step 2:** The Supabase-storage two-phase key-paste stays only on the supabase-storage branch. **Step 3:** Build + tests. **Step 4:** Commit `feat(deploy): up/status/destroy branch on compute (helm/eks)`.
 
@@ -497,7 +497,7 @@ End state: `kyma deploy init/up/status/destroy` work for fargate (unchanged), he
 
 **Files:** `deploy.rs` `DEPLOY_FILES` (~L111); Test `materialize_writes_all_templates_and_never_tfvars` already iterates the list.
 
-- [ ] **Step 1:** Add `include_str!` entries for `modules/rds/*`, `modules/eks/*`, and the helm chart files (`helm/kyma-engine/Chart.yaml`, `values.yaml`, each template). Use a relative `helm/kyma-engine/...` workspace path. **Step 2:** `cargo test -p kyma-cli --bins materialize` → pass (proves every embedded file exists on disk). **Step 3:** Commit `feat(deploy): embed RDS/EKS modules + Helm chart in DEPLOY_FILES`.
+- [ ] **Step 1:** Add `include_str!` entries for `modules/rds/*`, `modules/eks/*`, and the helm chart files (`helm/pensieve-engine/Chart.yaml`, `values.yaml`, each template). Use a relative `helm/pensieve-engine/...` workspace path. **Step 2:** `cargo test -p pensieve-cli --bins materialize` → pass (proves every embedded file exists on disk). **Step 3:** Commit `feat(deploy): embed RDS/EKS modules + Helm chart in DEPLOY_FILES`.
 
 ---
 
@@ -515,18 +515,18 @@ End state: deploy docs describe the matrix and every backend; nav updated.
 
 ### Task 6.3: new `helm.md` + `kubernetes.md` + nav
 
-- [ ] **Step 1:** `helm.md` — `helm repo`/local chart install, full values reference, BYO cluster, ingress/TLS. `kubernetes.md` — EKS via `kyma deploy`, IRSA keyless S3, namespace. Add both to `docs/site/.vitepress/config.*` deploy sidebar. **Step 2:** Commit `docs(deploy): Helm + Kubernetes (EKS) pages`.
+- [ ] **Step 1:** `helm.md` — `helm repo`/local chart install, full values reference, BYO cluster, ingress/TLS. `kubernetes.md` — EKS via `pensieve deploy`, IRSA keyless S3, namespace. Add both to `docs/site/.vitepress/config.*` deploy sidebar. **Step 2:** Commit `docs(deploy): Helm + Kubernetes (EKS) pages`.
 
 ---
 
 ## Phase 7 — Full validation
 
-- [ ] `cargo test -p kyma-cli --bins` → all green (capture `test result: ok`).
-- [ ] `cargo clippy -p kyma-cli --bins -- -D warnings` → clean.
-- [ ] `cargo fmt -p kyma-cli -- --check` → clean.
+- [ ] `cargo test -p pensieve-cli --bins` → all green (capture `test result: ok`).
+- [ ] `cargo clippy -p pensieve-cli --bins -- -D warnings` → clean.
+- [ ] `cargo fmt -p pensieve-cli -- --check` → clean.
 - [ ] `terraform -chdir=deploy/terraform/stack init -backend=false` then `validate` under each: defaults (fargate+supabase), `-var compute_backend=eks -var database_backend=rds -var storage_backend=s3`, `-var database_backend=external -var storage_backend=external -var compute_backend=helm`. Also `terraform fmt -check -recursive deploy/terraform`.
-- [ ] `helm lint deploy/helm/kyma-engine` + `helm template` for token/supabase/oidc value sets.
-- [ ] `cargo run -p kyma-cli -- deploy init --print-only` for ≥4 representative combos (fargate+supabase+supabase, fargate+rds+s3+token, eks+rds+s3+oidc, helm+external+external+token, local+external+external+token) — eyeball each artifact.
+- [ ] `helm lint deploy/helm/pensieve-engine` + `helm template` for token/supabase/oidc value sets.
+- [ ] `cargo run -p pensieve-cli -- deploy init --print-only` for ≥4 representative combos (fargate+supabase+supabase, fargate+rds+s3+token, eks+rds+s3+oidc, helm+external+external+token, local+external+external+token) — eyeball each artifact.
 - [ ] Update the spec's §3.4 note if the storage-only-Supabase narrowing was applied. Commit any doc fixups.
 
 If any command isn't installed (terraform/helm), note it and rely on the unit + `--print-only` golden tests; do not claim a check passed that wasn't run.
@@ -535,7 +535,7 @@ If any command isn't installed (terraform/helm), note it and rely on the unit + 
 
 ## Phase 8 — Merge to main
 
-- [ ] Re-run Phase 7 quick gate (`cargo test -p kyma-cli --bins`) to confirm green.
+- [ ] Re-run Phase 7 quick gate (`cargo test -p pensieve-cli --bins`) to confirm green.
 - [ ] `git -C <main worktree> checkout main && git pull` is NOT used here — instead, per the local-merge preference: from a clean main checkout, `git merge --no-ff worktree-feat+deploy-pluggable-backends` and `git push`. Confirm with the user before pushing if main has moved.
 - [ ] Use `superpowers:requesting-code-review` before merge; address findings.
 - [ ] After merge, offer to remove the worktree (`ExitWorktree`).

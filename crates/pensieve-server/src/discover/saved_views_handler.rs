@@ -16,7 +16,7 @@ use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use kyma_catalog::saved_views::{
+use pensieve_catalog::saved_views::{
     create as cat_create, delete as cat_delete, list as cat_list, update as cat_update,
     NewSavedView, SavedViewError, UpdateSavedView,
 };
@@ -25,7 +25,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::auth::Principal;
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 
 /// Shared state for the saved-views CRUD handlers.
 #[derive(Clone)]

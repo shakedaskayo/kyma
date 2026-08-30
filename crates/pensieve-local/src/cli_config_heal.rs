@@ -1,8 +1,8 @@
-//! Self-heal `~/.kyma/config.json` on `kyma serve` startup.
+//! Self-heal `~/.pensieve/config.json` on `pensieve serve` startup.
 //!
 //! The CLI, the loopback MCP server, and every coding-agent capture hook
-//! authenticate with the token stored in `~/.kyma/config.json`. Web-UI
-//! session tokens expire within the hour, so a `kyma connect` run with a
+//! authenticate with the token stored in `~/.pensieve/config.json`. Web-UI
+//! session tokens expire within the hour, so a `pensieve connect` run with a
 //! browser token silently 401s all of them an hour later (the 2026-06-12
 //! capture outage). On startup the local server validates the stored token
 //! against its own auth backend and mints a durable `api`-kind admin token
@@ -14,8 +14,8 @@
 //! never touched.
 
 use anyhow::{Context, Result};
-use kyma_core::catalog::Catalog;
-use kyma_server::auth::{hash_token, AuthBackend};
+use pensieve_core::catalog::Catalog;
+use pensieve_server::auth::{hash_token, AuthBackend};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -134,8 +134,8 @@ pub(crate) async fn heal_cli_config(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kyma_catalog_sqlite::SqliteCatalog;
-    use kyma_server::auth::{EnvAuthBackend, SessionAuthBackend};
+    use pensieve_catalog_sqlite::SqliteCatalog;
+    use pensieve_server::auth::{EnvAuthBackend, SessionAuthBackend};
 
     const ADDR: &str = "127.0.0.1:7777";
 
@@ -236,7 +236,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (catalog, backend) = fixture(dir.path()).await;
         let cfg_path = dir.path().join("config.json");
-        let original = r#"{"endpoint":"https://cloud.getkyma.dev","token":"remote-token"}"#;
+        let original = r#"{"endpoint":"https://cloud.getpensieve.dev","token":"remote-token"}"#;
         std::fs::write(&cfg_path, original).unwrap();
 
         let out = heal_cli_config(&cfg_path, ADDR.parse().unwrap(), &backend, &catalog)
@@ -276,7 +276,7 @@ mod tests {
         assert!(is_this_serve("http://127.0.0.1:7777", addr));
         assert!(is_this_serve("http://localhost:7777/", addr));
         assert!(!is_this_serve("http://localhost:8080", addr));
-        assert!(!is_this_serve("https://cloud.getkyma.dev", addr));
+        assert!(!is_this_serve("https://cloud.getpensieve.dev", addr));
         assert!(!is_this_serve("not a url", addr));
     }
 }

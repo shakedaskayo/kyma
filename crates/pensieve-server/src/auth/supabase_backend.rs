@@ -1,21 +1,21 @@
 //! Supabase Auth backend: validates Supabase-issued JWTs (asymmetric via the
 //! project JWKS, or HS256 via the legacy shared secret) and JIT-provisions
-//! kyma users from them.
+//! pensieve users from them.
 //!
 //! # Authentication flow
 //!
 //! 1. JWT-shaped tokens (`eyJ…` with two dots) are validated as Supabase
 //!    access tokens: signature (JWKS `kid` lookup with rate-limited refetch
-//!    on rotation, or `KYMA_SUPABASE_JWT_SECRET` for HS256), `exp` (60s
+//!    on rotation, or `PENSIEVE_SUPABASE_JWT_SECRET` for HS256), `exp` (60s
 //!    leeway), `aud`, and `iss = <url>/auth/v1`.
-//! 2. The kyma role is resolved kyma-side: `KYMA_ADMIN_EMAILS` allowlist →
+//! 2. The pensieve role is resolved pensieve-side: `PENSIEVE_ADMIN_EMAILS` allowlist →
 //!    Admin, else a parseable `app_metadata.role` claim, else
-//!    `KYMA_SUPABASE_DEFAULT_ROLE` (Read). Supabase's own `role` claim is the
+//!    `PENSIEVE_SUPABASE_DEFAULT_ROLE` (Read). Supabase's own `role` claim is the
 //!    Postgres RLS role (`authenticated`) and is deliberately ignored.
 //! 3. Valid principals are JIT-upserted into the catalog `users` table keyed
 //!    by `(auth_provider='supabase', external_id=sub)` — rate-limited per
 //!    subject so steady-state requests skip the write.
-//! 4. Everything else (opaque static keys, kyma session/API tokens) falls
+//! 4. Everything else (opaque static keys, pensieve session/API tokens) falls
 //!    through to the wrapped [`SessionAuthBackend`], so CLI/MCP/CI clients
 //!    keep working unchanged.
 
@@ -23,8 +23,8 @@ use super::backend::{AuthBackend, AuthError, Principal, Role};
 use super::session_backend::SessionAuthBackend;
 use async_trait::async_trait;
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
-use kyma_core::catalog::Catalog;
-use kyma_core::tenant::DEFAULT_TENANT;
+use pensieve_core::catalog::Catalog;
+use pensieve_core::tenant::DEFAULT_TENANT;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -56,11 +56,11 @@ pub struct SupabaseAuthConfig {
 }
 
 impl SupabaseAuthConfig {
-    /// Load from `KYMA_SUPABASE_*` / `KYMA_ADMIN_EMAILS` /
-    /// `KYMA_ALLOWED_EMAIL_DOMAINS` env vars. `None` when
-    /// `KYMA_SUPABASE_URL` is unset.
+    /// Load from `PENSIEVE_SUPABASE_*` / `PENSIEVE_ADMIN_EMAILS` /
+    /// `PENSIEVE_ALLOWED_EMAIL_DOMAINS` env vars. `None` when
+    /// `PENSIEVE_SUPABASE_URL` is unset.
     pub fn from_env() -> Option<Self> {
-        let url = std::env::var("KYMA_SUPABASE_URL").ok()?;
+        let url = std::env::var("PENSIEVE_SUPABASE_URL").ok()?;
         let csv = |key: &str| -> Vec<String> {
             std::env::var(key)
                 .unwrap_or_default()
@@ -71,14 +71,14 @@ impl SupabaseAuthConfig {
         };
         Some(Self {
             url: url.trim_end_matches('/').to_string(),
-            jwt_secret: std::env::var("KYMA_SUPABASE_JWT_SECRET")
+            jwt_secret: std::env::var("PENSIEVE_SUPABASE_JWT_SECRET")
                 .ok()
                 .filter(|s| !s.is_empty()),
-            audience: std::env::var("KYMA_SUPABASE_JWT_AUD")
+            audience: std::env::var("PENSIEVE_SUPABASE_JWT_AUD")
                 .unwrap_or_else(|_| "authenticated".to_string()),
-            admin_emails: csv("KYMA_ADMIN_EMAILS"),
-            allowed_email_domains: csv("KYMA_ALLOWED_EMAIL_DOMAINS"),
-            default_role: std::env::var("KYMA_SUPABASE_DEFAULT_ROLE")
+            admin_emails: csv("PENSIEVE_ADMIN_EMAILS"),
+            allowed_email_domains: csv("PENSIEVE_ALLOWED_EMAIL_DOMAINS"),
+            default_role: std::env::var("PENSIEVE_SUPABASE_DEFAULT_ROLE")
                 .ok()
                 .and_then(|v| Role::parse(&v))
                 .unwrap_or(Role::Read),
@@ -103,7 +103,7 @@ struct JwksCache {
 }
 
 /// Bearer-token authenticator for Supabase-issued JWTs, falling back to the
-/// wrapped [`SessionAuthBackend`] for opaque kyma tokens.
+/// wrapped [`SessionAuthBackend`] for opaque pensieve tokens.
 pub struct SupabaseAuthBackend {
     config: SupabaseAuthConfig,
     catalog: Arc<dyn Catalog>,
@@ -115,7 +115,7 @@ pub struct SupabaseAuthBackend {
 }
 
 /// Supabase access tokens are compact JWS: base64url(`{"alg"…`) is always
-/// `eyJ…` and there are exactly two dot separators. kyma's own session/API
+/// `eyJ…` and there are exactly two dot separators. pensieve's own session/API
 /// tokens are opaque CSPRNG strings and never match.
 fn is_jwt_shaped(token: &str) -> bool {
     token.starts_with("eyJ") && token.bytes().filter(|b| *b == b'.').count() == 2
@@ -192,7 +192,7 @@ impl SupabaseAuthBackend {
         cache.keys.get(kid).cloned().ok_or(AuthError::UnknownToken)
     }
 
-    /// Enforce the email-domain allowlist, then resolve the kyma role:
+    /// Enforce the email-domain allowlist, then resolve the pensieve role:
     /// admin allowlist → `app_metadata.role` → configured default.
     fn resolve_role(&self, email: Option<&str>, claims: &Claims) -> Result<Role, AuthError> {
         if !self.config.allowed_email_domains.is_empty() {

@@ -15,8 +15,8 @@
 
 use adk_rust::tool::FunctionTool;
 use adk_rust::{Tool, ToolContext};
-use kyma_core::credentials::{CredentialStore, CredentialValue};
-use kyma_core::tenant::TenantId;
+use pensieve_core::credentials::{CredentialStore, CredentialValue};
+use pensieve_core::tenant::TenantId;
 use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -294,7 +294,7 @@ async fn github_read(ctx: &DataSourceToolCtx, config: &Value, op: &str, params: 
         Ok(c) => c,
         Err(e) => return json!({"error": format!("http client: {e}")}),
     };
-    let client = kyma_datasources::github::client::GithubClient::new(http, token);
+    let client = pensieve_datasources::github::client::GithubClient::new(http, token);
 
     match op {
         "get_repo" => match client.get_repo(owner, name).await {
@@ -408,7 +408,7 @@ async fn postgres_read(ctx: &DataSourceToolCtx, config: &Value, op: &str, params
         return json!({"error": "postgres data_source_read is SELECT-only"});
     }
     // Hard row cap regardless of the query's own LIMIT.
-    let limited = format!("SELECT * FROM ({normalized}) AS _kyma_read LIMIT 100");
+    let limited = format!("SELECT * FROM ({normalized}) AS _pensieve_read LIMIT 100");
 
     // Connection URL: credential_id of kind `url` (preferred) → inline url.
     let url = match config

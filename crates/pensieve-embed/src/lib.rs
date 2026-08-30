@@ -1,4 +1,4 @@
-//! Embedding primitives for kyma.
+//! Embedding primitives for pensieve.
 //!
 //! `EmbeddingBackend` is the single trait. The default impl is
 //! `FastembedBackend` (ONNX, runs in-process, no external service).
@@ -37,7 +37,7 @@ use async_trait::async_trait;
 ///
 /// Implementations MUST be deterministic for the same input when
 /// `backend.id()` stays the same — this is a load-bearing property
-/// of the kyma replay cache.
+/// of the pensieve replay cache.
 #[async_trait]
 pub trait EmbeddingBackend: Send + Sync + std::fmt::Debug {
     /// Stable identifier, e.g. `"fastembed/bge-small-en-v1.5"` or

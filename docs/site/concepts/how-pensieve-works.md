@@ -1,16 +1,16 @@
 ---
-title: How kyma works
+title: How pensieve works
 description: The whole system in one page — the memory → data → graph loop, how your agent connects (plugin/CLI/MCP), the columnar engine underneath, continuous ingestion, background consolidation and dreaming, the two runtime modes, and sync.
 ---
 
-# How kyma works
+# How pensieve works
 
-kyma has a lot of surface area, but the mental model is small. This page is the map:
+pensieve has a lot of surface area, but the mental model is small. This page is the map:
 how the pieces fit, in the order you meet them.
 
 ## The loop: memory → data → graph
 
-Everything kyma does serves one loop — give a coding agent **the right context, at the
+Everything pensieve does serves one loop — give a coding agent **the right context, at the
 right time, grounded in your real systems**:
 
 1. **Memory.** Your agent captures and recalls durable facts across sessions. Recall is
@@ -35,13 +35,13 @@ most useful thing), then **live data**, then watch the **graph** tie them togeth
 ## How your agent connects
 
 MCP is the cross-agent standard, but it's *pull-only* — the agent only sees what it
-explicitly asks for. kyma meets your agent where it is, with three paths that share one
+explicitly asks for. pensieve meets your agent where it is, with three paths that share one
 engine:
 
 | Path | Best for | What's special |
 |---|---|---|
 | **Claude Code plugin** | Claude Code | **Automatic** — hooks capture each turn and inject the most relevant memories into *every* prompt, no tool call; plus slash commands. |
-| **CLI + skill** | Cursor, Aider, Continue, any shell-tool agent | The agent shells out to `kyma recall` / `kyma query`; a skill teaches it *when*. |
+| **CLI + skill** | Cursor, Aider, Continue, any shell-tool agent | The agent shells out to `pensieve recall` / `pensieve query`; a skill teaches it *when*. |
 | **MCP** | Any MCP client | The full tool surface (memory · graph · live data · curation) over stdio or HTTP. |
 
 See [Connect your agent](/agent/connect) for the one-command setup.
@@ -62,7 +62,7 @@ agent ask twenty exploratory questions per prompt:
 
 Two directions, same group-commit write path and the same extents underneath:
 
-- **Push** — your stack sends to kyma: OTLP, REST/NDJSON, Kafka, or file-drop. See [Ingest](/ingest/).
+- **Push** — your stack sends to pensieve: OTLP, REST/NDJSON, Kafka, or file-drop. See [Ingest](/ingest/).
 - **Pull** — **data sources** fetch from sources on a **schedule**: GitHub/GitLab/Bitbucket,
   Prometheus, Postgres/MySQL/MongoDB, Notion/Slack/Jira/Confluence/Gmail/Drive. A data source
   runs periodically and lands rows continuously, so the picture stays current without you
@@ -70,7 +70,7 @@ Two directions, same group-commit write path and the same extents underneath:
 
 ## Keeping memory sharp — consolidation & dreaming
 
-Memory doesn't just accumulate; kyma maintains it:
+Memory doesn't just accumulate; pensieve maintains it:
 
 - **Deterministic consolidation** (always on) — cheap firehose rollups that keep the
   memory tables tidy. No LLM, runs regardless.
@@ -84,7 +84,7 @@ Memory doesn't just accumulate; kyma maintains it:
 
 The same context engine runs two ways, and grows from one to the other without a rewrite:
 
-| | **Local mode** (`kyma`) | **Control plane** (kyma server) |
+| | **Local mode** (`pensieve`) | **Control plane** (pensieve server) |
 |---|---|---|
 | Infra | embedded SQLite + local files — zero infra | Postgres + object store (S3/MinIO) |
 | Who | one developer, offline, instant | a team, always-on, shared |

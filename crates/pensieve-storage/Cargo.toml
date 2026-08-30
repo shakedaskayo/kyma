@@ -1,5 +1,5 @@
 [package]
-name = "kyma-storage"
+name = "pensieve-storage"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ description = "Object-storage abstraction + block-granular local cache."
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
+pensieve-core.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

@@ -13,7 +13,7 @@ for the why; come here for the curl commands, the SQL syntax, and the
 status surface.
 
 The model in one sentence: every external source registers as a
-DataFusion catalog (federation), or replays into kyma extents via CDC
+DataFusion catalog (federation), or replays into pensieve extents via CDC
 (sync), or both — the same connection, the same schema introspection,
 the same status row, on the same data source framework as
 [Prometheus](/data-sources/prometheus).
@@ -49,7 +49,7 @@ Response: `{"id": "<uuid>"}`. After this:
 - The `pg_prod.public.*` and `pg_prod.billing.*` namespaces are valid in
   any KQL or SQL query — federated reads run live against the source.
 - `public.users` and `billing.invoices` have started snapshotting into
-  kyma extents. Once the initial snapshot is done the data source advances
+  pensieve extents. Once the initial snapshot is done the data source advances
   to `phase=streaming` and stays there.
 
 Per-engine config and the type-mapping tables live on each engine page:
@@ -62,7 +62,7 @@ a typo'd `secret_ref` fails at create time, not silently in the runner.
 ## Query it
 
 For sources registered with `mode: "federation"`, references resolve to
-the live source. For `mode: "sync"`, they resolve to the kyma extents
+the live source. For `mode: "sync"`, they resolve to the pensieve extents
 the CDC pipeline lands rows in. For `mode: "both"`, bare references
 resolve to the synced extent (predictable, fast); `live(table)` opts
 into the federated path:
@@ -74,7 +74,7 @@ SELECT * FROM pg_prod.public.users WHERE id = 42;
 -- Federated read — fresh-as-of-now, costs the source a query.
 SELECT * FROM live(pg_prod.public.users) WHERE id = 42;
 
--- Cross-source join — federated small side, kyma big side.
+-- Cross-source join — federated small side, pensieve big side.
 SELECT u.email, COUNT(*) AS errors
   FROM pg_prod.public.users u
   JOIN otel_logs l ON l.user_id = u.id
@@ -131,7 +131,7 @@ The exact list lives on each engine page; the shared rules are:
   AND/OR/NOT trees, `LIMIT`, `ORDER BY`, single-source aggregations.
 - **Pushed when safe:** same-source same-connection joins; verified
   scalar functions (`LOWER`, `UPPER`, `COALESCE`, `date_trunc`).
-- **Never pushed:** kyma UDFs (`cosine_distance`, dynamic accessors),
+- **Never pushed:** pensieve UDFs (`cosine_distance`, dynamic accessors),
   cross-source joins, window functions, anything where source semantics
   diverge from DataFusion's (most notably MySQL case-insensitive
   collations).
@@ -169,26 +169,26 @@ state — `enabled`, `disabled_reason`, `last_run_at`, `last_success_at`,
 Secrets in `config` are redacted to `***` (unless they are unresolved
 `$env:` references, which are returned verbatim).
 
-For time-series observability, kyma exposes per-tick Prometheus metrics
+For time-series observability, pensieve exposes per-tick Prometheus metrics
 for every data source — query these in [Observability](/concepts/observability):
 
 | Metric                                          | Description                                    |
 | ----------------------------------------------- | ---------------------------------------------- |
-| `kyma_data_source_cursor_age_seconds`             | Sync lag — how far behind the source cursor is |
-| `kyma_data_source_rows_ingested_total`            | Cumulative rows landed                         |
-| `kyma_data_source_errors_total`                   | Cumulative tick errors by data source            |
-| `kyma_data_source_last_success_timestamp_seconds` | Unix timestamp of last successful tick         |
-| `kyma_data_source_ticks_total`                    | Total tick count                               |
-| `kyma_data_source_duration_seconds`               | Tick duration histogram                        |
+| `pensieve_data_source_cursor_age_seconds`             | Sync lag — how far behind the source cursor is |
+| `pensieve_data_source_rows_ingested_total`            | Cumulative rows landed                         |
+| `pensieve_data_source_errors_total`                   | Cumulative tick errors by data source            |
+| `pensieve_data_source_last_success_timestamp_seconds` | Unix timestamp of last successful tick         |
+| `pensieve_data_source_ticks_total`                    | Total tick count                               |
+| `pensieve_data_source_duration_seconds`               | Tick duration histogram                        |
 
 Agents check `last_error` / `last_success_at` on the detail endpoint;
 dashboards and alerts consume the Prometheus metrics.
 
 ## System columns on synced tables
 
-Synced rows always have four columns kyma adds automatically:
-`_kyma_pk`, `_kyma_op`, `_kyma_lsn`, `_kyma_event_at`. Deletes are
-tombstone rows with `_kyma_op = 'delete'`; default reads at the
+Synced rows always have four columns pensieve adds automatically:
+`_pensieve_pk`, `_pensieve_op`, `_pensieve_lsn`, `_pensieve_event_at`. Deletes are
+tombstone rows with `_pensieve_op = 'delete'`; default reads at the
 federation/agent layer hide them via predicate. See
 [Multi-source data (concepts)](/concepts/multi-source-data#system-columns-on-synced-tables)
 for the row-semantics rules and

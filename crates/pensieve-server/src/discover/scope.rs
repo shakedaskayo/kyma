@@ -11,8 +11,8 @@
 
 use std::sync::Arc;
 
-use kyma_core::catalog::{Catalog, TableRef};
-use kyma_core::tenant::TenantId;
+use pensieve_core::catalog::{Catalog, TableRef};
+use pensieve_core::tenant::TenantId;
 use serde::Deserialize;
 
 /// A user-supplied scope for a Discover request.
@@ -50,11 +50,11 @@ pub trait SavedViewLookup: Send + Sync {
     async fn load_sources(&self, view_id: &str) -> Result<Option<Vec<String>>, String>;
 }
 
-/// Databases that hold kyma-internal state (agent memory). `Scope::All`
+/// Databases that hold pensieve-internal state (agent memory). `Scope::All`
 /// skips them so "search everything" means the user's data, not the engine's
 /// — embedding vectors and graph edges drown out real results. Explicit
 /// `Sources` patterns (including `*.*`) can still target them.
-const INTERNAL_DATABASES: &[&str] = &[kyma_memory::DEFAULT_DATABASE];
+const INTERNAL_DATABASES: &[&str] = &[pensieve_memory::DEFAULT_DATABASE];
 
 /// Decide whether `db.table` belongs in the resolved scope.
 fn included(scope_is_all: bool, patterns: &[String], db: &str, table: &str) -> bool {
@@ -173,8 +173,8 @@ mod tests {
     #[test]
     fn all_scope_excludes_internal_memory_db() {
         let all = vec!["*.*".to_string()];
-        assert!(!included(true, &all, kyma_memory::DEFAULT_DATABASE, "memory_nodes"));
-        assert!(!included(true, &all, kyma_memory::DEFAULT_DATABASE, "memory_edges"));
+        assert!(!included(true, &all, pensieve_memory::DEFAULT_DATABASE, "memory_nodes"));
+        assert!(!included(true, &all, pensieve_memory::DEFAULT_DATABASE, "memory_edges"));
         // Regular data sources are unaffected.
         assert!(included(true, &all, "prod", "otel_logs"));
     }
@@ -182,9 +182,9 @@ mod tests {
     #[test]
     fn explicit_patterns_still_reach_internal_dbs() {
         let memory_glob = vec!["memory.*".to_string()];
-        assert!(included(false, &memory_glob, kyma_memory::DEFAULT_DATABASE, "memory_nodes"));
+        assert!(included(false, &memory_glob, pensieve_memory::DEFAULT_DATABASE, "memory_nodes"));
         // Even a full wildcard includes them when the user spelled it out.
         let full = vec!["*.*".to_string()];
-        assert!(included(false, &full, kyma_memory::DEFAULT_DATABASE, "memory_nodes"));
+        assert!(included(false, &full, pensieve_memory::DEFAULT_DATABASE, "memory_nodes"));
     }
 }

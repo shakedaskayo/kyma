@@ -73,7 +73,7 @@ pub type SchemaRef = Arc<Schema>;
 
 /// Logical engine data type.
 ///
-/// This is the engine-level (kyma) view of a column type, distinct from
+/// This is the engine-level (pensieve) view of a column type, distinct from
 /// `arrow_schema::DataType` which describes the physical Arrow encoding.
 /// Most primitive columns are represented directly by Arrow types; this
 /// enum exists to carry extra semantic metadata that Arrow alone cannot

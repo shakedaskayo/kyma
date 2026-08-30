@@ -7,7 +7,7 @@
 //! ">80% cache hit on repeated queries" target — and helps local mode too (a
 //! filesystem store still pays a syscall + decode per read).
 //!
-//! **Correctness rests on Kyma's write-once path discipline.** Extents and
+//! **Correctness rests on Pensieve's write-once path discipline.** Extents and
 //! sidecars are content-addressed (`{extent_id}` in the path) and never
 //! rewritten, so a path→bytes memo needs no invalidation for them. The one
 //! mutable case is deterministic-key artifacts ([`crate::put_artifact`], e.g. a
@@ -16,9 +16,9 @@
 //! always fresh. Conditional gets (if-match / if-modified-since / version) and
 //! offset/suffix ranges bypass the cache entirely.
 //!
-//! Off by default: with `KYMA_CACHE_MEM_MB` unset or `0` the store is returned
+//! Off by default: with `PENSIEVE_CACHE_MEM_MB` unset or `0` the store is returned
 //! unwrapped, so existing deployments and the fresh-install are byte-identical.
-//! `KYMA_CACHE_MEM_MB` sets the total budget; `KYMA_CACHE_MAX_OBJECT_KB`
+//! `PENSIEVE_CACHE_MEM_MB` sets the total budget; `PENSIEVE_CACHE_MAX_OBJECT_KB`
 //! (default 4096) caps which single objects are admitted — a few large extents
 //! must not evict the whole footer working set.
 
@@ -391,11 +391,11 @@ impl ObjectStore for CachingObjectStore {
     }
 }
 
-/// Wrap `inner` with a read cache when `KYMA_CACHE_MEM_MB` is set and positive;
+/// Wrap `inner` with a read cache when `PENSIEVE_CACHE_MEM_MB` is set and positive;
 /// otherwise return it unchanged. Centralizes the env contract so
 /// [`crate::build_object_store`] stays a plain factory.
 pub fn maybe_wrap(inner: Arc<dyn ObjectStore>) -> Arc<dyn ObjectStore> {
-    let mb = std::env::var("KYMA_CACHE_MEM_MB")
+    let mb = std::env::var("PENSIEVE_CACHE_MEM_MB")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(0);
@@ -403,7 +403,7 @@ pub fn maybe_wrap(inner: Arc<dyn ObjectStore>) -> Arc<dyn ObjectStore> {
         return inner;
     }
     let max_total = mb.saturating_mul(1024 * 1024).max(1);
-    let max_object = std::env::var("KYMA_CACHE_MAX_OBJECT_KB")
+    let max_object = std::env::var("PENSIEVE_CACHE_MAX_OBJECT_KB")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(4096)

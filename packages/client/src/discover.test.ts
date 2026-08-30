@@ -90,7 +90,7 @@ describe("searchDiscover", () => {
       { type: "done", elapsed_ms: 42 },
     ];
     const fetchMock = vi.fn().mockResolvedValue(ndjsonResponse(frames));
-    const t = createTransport({ endpoint: "https://kyma.test", auth: { token: "tok" }, fetch: fetchMock });
+    const t = createTransport({ endpoint: "https://pensieve.test", auth: { token: "tok" }, fetch: fetchMock });
 
     const out: Frame[] = [];
     for await (const f of searchDiscover(t, REQ)) out.push(f);
@@ -98,7 +98,7 @@ describe("searchDiscover", () => {
     expect(out.map((f) => f.type)).toEqual(["plan", "rows", "done"]);
     expect((out[2] as Extract<Frame, { type: "done" }>).elapsed_ms).toBe(42);
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://kyma.test/v1/explore/search",
+      "https://pensieve.test/v1/explore/search",
       expect.objectContaining({ method: "POST" }),
     );
   });
@@ -107,7 +107,7 @@ describe("searchDiscover", () => {
     const fetchMock = vi.fn().mockResolvedValue(
       errorEnvelopeResponse(422, "invalid_scope", "unknown scope kind"),
     );
-    const t = createTransport({ endpoint: "https://kyma.test", auth: { token: "tok" }, fetch: fetchMock });
+    const t = createTransport({ endpoint: "https://pensieve.test", auth: { token: "tok" }, fetch: fetchMock });
 
     let caught: unknown;
     try {
@@ -127,7 +127,7 @@ describe("searchDiscover", () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response("Service Unavailable", { status: 503 }),
     );
-    const t = createTransport({ endpoint: "https://kyma.test", auth: { token: "tok" }, fetch: fetchMock });
+    const t = createTransport({ endpoint: "https://pensieve.test", auth: { token: "tok" }, fetch: fetchMock });
 
     let caught: unknown;
     try {
@@ -145,7 +145,7 @@ describe("searchDiscover", () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(null, { status: 200 }),
     );
-    const t = createTransport({ endpoint: "https://kyma.test", auth: { token: "tok" }, fetch: fetchMock });
+    const t = createTransport({ endpoint: "https://pensieve.test", auth: { token: "tok" }, fetch: fetchMock });
 
     let caught: unknown;
     try {

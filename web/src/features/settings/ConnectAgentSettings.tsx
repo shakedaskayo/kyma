@@ -9,9 +9,9 @@ import { cn } from "@/lib/utils";
 /**
  * Settings → Connect agent.
  *
- * Walks the user through installing the kyma CLI on their host and wiring
+ * Walks the user through installing the pensieve CLI on their host and wiring
  * it up to this server so any coding agent (Claude Code, Cursor, Aider)
- * can query Kyma directly via the installed skill.
+ * can query Pensieve directly via the installed skill.
  *
  * Each step is a labelled snippet with a Copy button; the server URL is
  * pre-substituted from the active session, and the bearer token is a
@@ -42,20 +42,20 @@ export function ConnectAgentSettings() {
     ? ` --token "${minted}"`
     : ` --token "<generate a token above, or paste your own>"`;
 
-  const installCmd = "cargo install --path crates/kyma-cli";
-  const connectCmd = `kyma connect ${url}${tokenPart}`;
-  const skillCmd = "kyma install-skill --also-link-claude";
-  const tryCmd = 'kyma query "What databases do we have?"';
+  const installCmd = "cargo install --path crates/pensieve-cli";
+  const connectCmd = `pensieve connect ${url}${tokenPart}`;
+  const skillCmd = "pensieve install-skill --also-link-claude";
+  const tryCmd = 'pensieve query "What databases do we have?"';
 
   return (
     <Card>
       <CardContent className="space-y-4 p-5">
         <p className="text-sm text-muted-foreground">
-          Install the <code className="font-mono text-foreground">kyma</code>{" "}
+          Install the <code className="font-mono text-foreground">pensieve</code>{" "}
           CLI on your dev host and any coding agent (Claude Code, Cursor,
           Aider, Codex …) can query this server in real time — the agent
           discovers the installed skill automatically and shells out to
-          <code className="font-mono text-foreground"> kyma query</code> on
+          <code className="font-mono text-foreground"> pensieve query</code> on
           demand.
         </p>
 
@@ -104,8 +104,8 @@ export function ConnectAgentSettings() {
 
         <Step
           n={3}
-          title="Install the Kyma skill"
-          hint="Writes ~/.kyma/skills/kyma/SKILL.md and (with --also-link-claude) symlinks it into ~/.claude/skills/kyma so Claude Code discovers it on next launch."
+          title="Install the Pensieve skill"
+          hint="Writes ~/.pensieve/skills/pensieve/SKILL.md and (with --also-link-claude) symlinks it into ~/.claude/skills/pensieve so Claude Code discovers it on next launch."
           cmd={skillCmd}
         />
 
@@ -124,13 +124,13 @@ export function ConnectAgentSettings() {
             <p>
               After step 3, every coding agent that walks{" "}
               <code className="font-mono">~/.claude/skills/</code> (Claude
-              Code) or <code className="font-mono">~/.kyma/skills/</code> (any
+              Code) or <code className="font-mono">~/.pensieve/skills/</code> (any
               skill-aware agent) sees a SKILL.md whose frontmatter says
-              "when the user asks about their data, use the kyma CLI."
+              "when the user asks about their data, use the pensieve CLI."
             </p>
             <p>
               The agent then issues{" "}
-              <code className="font-mono">kyma query "…"</code> as a Bash
+              <code className="font-mono">pensieve query "…"</code> as a Bash
               call and gets streaming answers back. No MCP server, no extra
               wiring — the agent uses the CLI like any other Unix tool.
             </p>

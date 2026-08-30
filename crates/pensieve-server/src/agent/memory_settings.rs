@@ -11,7 +11,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
-use kyma_core::tenant::TenantId;
+use pensieve_core::tenant::TenantId;
 
 /// Default visibility policy (S3.3) for newly-written memories in a tenant.
 /// `Public` (default) keeps the pre-feature behavior — every memory is shared.
@@ -154,7 +154,7 @@ pub struct DreamingSettings {
 
 /// Knobs for the usage-based reinforcement loop (M8.1) — hit/miss tracking +
 /// forgetting-curve decay layered on top of the existing recall blend. See
-/// [`kyma_memory::reinforcement`]. `#[serde(default)]` keeps older settings
+/// [`pensieve_memory::reinforcement`]. `#[serde(default)]` keeps older settings
 /// rows loading with the feature off.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -174,15 +174,15 @@ impl Default for ReinforcementSettings {
     fn default() -> Self {
         Self {
             enabled: false,
-            hit_weight: kyma_memory::REINFORCEMENT_HIT_WEIGHT,
-            miss_penalty: kyma_memory::REINFORCEMENT_MISS_PENALTY,
-            half_life_days: kyma_memory::HALF_LIFE_DAYS,
+            hit_weight: pensieve_memory::REINFORCEMENT_HIT_WEIGHT,
+            miss_penalty: pensieve_memory::REINFORCEMENT_MISS_PENALTY,
+            half_life_days: pensieve_memory::HALF_LIFE_DAYS,
         }
     }
 }
 
 /// Knobs for worked-example ("precedent") retrieval (M8.2) — see
-/// [`kyma_memory::activities`]. Purely additive to a recall response (a new
+/// [`pensieve_memory::activities`]. Purely additive to a recall response (a new
 /// `precedent` field, never blended into ranking), so unlike
 /// [`ReinforcementSettings`] this defaults *on*.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,7 +200,7 @@ impl Default for PrecedentSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            max_distance: kyma_memory::PRECEDENT_MAX_DISTANCE,
+            max_distance: pensieve_memory::PRECEDENT_MAX_DISTANCE,
             memory_limit: 20,
         }
     }
@@ -313,15 +313,15 @@ impl Default for MemorySettings {
             default_limit: 8,
             default_expand_hops: 1,
             ann_threshold: 0.0,
-            w_rrf: kyma_memory::W_RRF,
-            w_semantic: kyma_memory::W_SEMANTIC,
-            w_keyword: kyma_memory::W_KEYWORD,
-            w_graph: kyma_memory::W_GRAPH,
-            w_importance: kyma_memory::W_IMPORTANCE,
-            w_recency: kyma_memory::W_RECENCY,
-            half_life_days: kyma_memory::HALF_LIFE_DAYS,
-            rrf_k: kyma_memory::RRF_K,
-            w_reinforcement: kyma_memory::W_REINFORCEMENT,
+            w_rrf: pensieve_memory::W_RRF,
+            w_semantic: pensieve_memory::W_SEMANTIC,
+            w_keyword: pensieve_memory::W_KEYWORD,
+            w_graph: pensieve_memory::W_GRAPH,
+            w_importance: pensieve_memory::W_IMPORTANCE,
+            w_recency: pensieve_memory::W_RECENCY,
+            half_life_days: pensieve_memory::HALF_LIFE_DAYS,
+            rrf_k: pensieve_memory::RRF_K,
+            w_reinforcement: pensieve_memory::W_REINFORCEMENT,
             reinforcement: ReinforcementSettings::default(),
             precedent: PrecedentSettings::default(),
             mmr: MmrSettings::default(),
@@ -486,7 +486,7 @@ mod tests {
     #[test]
     fn pre_rename_dreaming_budget_keys_still_load() {
         // Settings persisted before the connectors → data-sources rename
-        // (e.g. kyma-local's JSON file, which no SQL migration touches) carry
+        // (e.g. pensieve-local's JSON file, which no SQL migration touches) carry
         // the old field names — the serde aliases must map them instead of
         // silently resetting the budgets to defaults.
         let legacy = serde_json::json!({
@@ -547,7 +547,7 @@ mod tests {
         assert!(s.precedent.enabled);
         assert_eq!(
             s.precedent.max_distance,
-            kyma_memory::PRECEDENT_MAX_DISTANCE
+            pensieve_memory::PRECEDENT_MAX_DISTANCE
         );
     }
 

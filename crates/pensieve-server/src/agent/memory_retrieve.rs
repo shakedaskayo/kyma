@@ -1,7 +1,7 @@
 //! Graph-aware hybrid memory retrieval — the near-realtime "find anything"
 //! read path. No LLM in the hot path.
 //!
-//! Pipeline (all over kyma's own engine):
+//! Pipeline (all over pensieve's own engine):
 //! 1. embed the query once;
 //! 2. generate candidates two ways IN PARALLEL — semantic (vector
 //!    `cosine_distance`, accelerated by an IVF+RaBitQ ANN sidecar when present)
@@ -23,12 +23,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::Instrument as _;
 
-use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_graph_topo::{CsrGraph, Direction as TopoDir};
-use kyma_memory::reinforcement::{decayed_salience, UsageStats};
-use kyma_memory::rerank::mmr_select;
-use kyma_memory::types::{MemoryClass, MemoryType, RecallFilter};
-use kyma_memory::{sql, MemoryWriter, DEFAULT_DATABASE, EDGE_TABLE, NODE_TABLE};
+use pensieve_core::tenant::DEFAULT_TENANT;
+use pensieve_graph_topo::{CsrGraph, Direction as TopoDir};
+use pensieve_memory::reinforcement::{decayed_salience, UsageStats};
+use pensieve_memory::rerank::mmr_select;
+use pensieve_memory::types::{MemoryClass, MemoryType, RecallFilter};
+use pensieve_memory::{sql, MemoryWriter, DEFAULT_DATABASE, EDGE_TABLE, NODE_TABLE};
 
 use super::memory_settings::{self, MemorySettings, MmrSettings};
 use super::memory_usage_store::UsageHit;
@@ -184,7 +184,7 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     if writer.ensure_provisioned().await.is_err() {
         return done(Vec::new(), Vec::new(), None, started);
     }
-    let embed_span = tracing::info_span!(target: "kyma_telemetry", "memory.embed");
+    let embed_span = tracing::info_span!(target: "pensieve_telemetry", "memory.embed");
     let qvec = match writer.embed_one(&req.query).instrument(embed_span).await {
         Ok(v) => v,
         Err(_) => return done(Vec::new(), Vec::new(), None, started),
@@ -230,7 +230,7 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
         Some(ids) => sql::recall_sql_for_ids(NODE_TABLE, &qvec, &filter, CAND_K, &ids),
         None => sql::recall_sql(NODE_TABLE, &qvec, &filter, CAND_K, ann),
     };
-    let vec_span = tracing::info_span!(target: "kyma_telemetry", "memory.search.vector");
+    let vec_span = tracing::info_span!(target: "pensieve_telemetry", "memory.search.vector");
     let candidates_fut = async {
         if tokens.is_empty() {
             (
@@ -251,7 +251,7 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
                 }
                 None => sql::keyword_recall_sql(NODE_TABLE, &tokens, &filter, CAND_K),
             };
-            let kw_span = tracing::info_span!(target: "kyma_telemetry", "memory.search.keyword");
+            let kw_span = tracing::info_span!(target: "pensieve_telemetry", "memory.search.keyword");
             tokio::join!(
                 execute_sql(shared, DEFAULT_DATABASE, &vec_sql, CAND_K).instrument(vec_span),
                 execute_sql(shared, DEFAULT_DATABASE, &kw_sql, CAND_K).instrument(kw_span),
@@ -294,7 +294,7 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     let mut linked: Vec<LinkedResource> = Vec::new();
     if hops >= 1 && !cands.is_empty() {
         let expand_span = tracing::info_span!(
-            target: "kyma_telemetry",
+            target: "pensieve_telemetry",
             "memory.graph_expand",
             memory.hops = hops,
         );
@@ -306,7 +306,7 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     // 4b. Optional PPR rescoring (S3.4): replace the hop-decay graph_proximity
     // with personalized-PageRank mass over the candidate-induced memory
     // subgraph, seeded by the top fused candidates. Default-off
-    // (KYMA_MEMORY_PPR) → candidates keep their hop-decay proximity and recall
+    // (PENSIEVE_MEMORY_PPR) → candidates keep their hop-decay proximity and recall
     // is byte-identical to the pre-PPR behaviour.
     ppr_rescore(shared, &mut cands, &filter.realms).await;
 
@@ -390,7 +390,7 @@ async fn find_precedent(
 ) -> Option<PrecedentBlock> {
     let sql =
         sql::nearest_activity_sql(NODE_TABLE, qvec, realms, settings.precedent.max_distance, 1);
-    let res = execute_sql(shared, kyma_memory::activities::ACTIVITIES_DB, &sql, 1).await;
+    let res = execute_sql(shared, pensieve_memory::activities::ACTIVITIES_DB, &sql, 1).await;
     let row = rows_of(&res).into_iter().next()?;
     let activity_id = get_str(&row, "id")?;
     let activity_preview = get_str(&row, "content_preview").unwrap_or_default();
@@ -402,7 +402,7 @@ async fn find_precedent(
     let edge_sql = sql::edges_into_sql(
         EDGE_TABLE,
         &activity_id,
-        kyma_memory::EDGE_DERIVED_FROM,
+        pensieve_memory::EDGE_DERIVED_FROM,
         settings.precedent.memory_limit,
     );
     let edge_res = execute_sql(
@@ -553,10 +553,10 @@ const PPR_ALPHA: f64 = 0.15;
 const PPR_EPSILON: f64 = 1e-5;
 
 /// Whether PPR graph-proximity rescoring is enabled. Off unless
-/// `KYMA_MEMORY_PPR` is `1`/`true` — so the default recall path is unchanged
+/// `PENSIEVE_MEMORY_PPR` is `1`/`true` — so the default recall path is unchanged
 /// and every existing test/deployment is byte-identical.
 fn ppr_enabled() -> bool {
-    std::env::var("KYMA_MEMORY_PPR")
+    std::env::var("PENSIEVE_MEMORY_PPR")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
 }
@@ -631,12 +631,12 @@ async fn ppr_rescore(shared: &SharedToolCtx, cands: &mut HashMap<String, Cand>, 
 /// Candidates fed to the cross-encoder reranker (latency cap).
 const RERANK_CANDIDATES: usize = 50;
 
-/// When a reranker is configured ([`kyma_memory::shared_reranker`]), re-score the
+/// When a reranker is configured ([`pensieve_memory::shared_reranker`]), re-score the
 /// blended top candidates jointly against `query` by their content and reorder
 /// in place. No-op (and zero model overhead) when unset; a rerank error leaves
 /// the blended order untouched.
 async fn rerank_memories(query: &str, scored: &mut Vec<RetrievedMemory>) {
-    let Some(reranker) = kyma_memory::shared_reranker().await else {
+    let Some(reranker) = pensieve_memory::shared_reranker().await else {
         return;
     };
     let cand = scored.len().min(RERANK_CANDIDATES);
@@ -745,10 +745,10 @@ fn finalize(
 }
 
 /// Whether class-aware recency decay is enabled. Off unless
-/// `KYMA_MEMORY_CLASS_DECAY` is `1`/`true` — so the default recency term (a
+/// `PENSIEVE_MEMORY_CLASS_DECAY` is `1`/`true` — so the default recency term (a
 /// uniform half-life) is unchanged and every existing test/deployment matches.
 fn class_decay_enabled() -> bool {
-    std::env::var("KYMA_MEMORY_CLASS_DECAY")
+    std::env::var("PENSIEVE_MEMORY_CLASS_DECAY")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
 }
@@ -811,7 +811,7 @@ async fn ann_candidate_ids(shared: &SharedToolCtx, qvec: &[f32], k: usize) -> Op
             DEFAULT_TENANT,
             tref.id,
             tref.current_snapshot_id,
-            &kyma_core::catalog::PrunePredicate::default(),
+            &pensieve_core::catalog::PrunePredicate::default(),
         )
         .await
         .ok()?;
@@ -825,7 +825,7 @@ async fn ann_candidate_ids(shared: &SharedToolCtx, qvec: &[f32], k: usize) -> Op
             DEFAULT_TENANT,
             tref.id,
             &extent_ids,
-            Some(kyma_core::index_sidecar::SidecarKind::IvfRabitq),
+            Some(pensieve_core::index_sidecar::SidecarKind::IvfRabitq),
         )
         .await
         .ok()?;
@@ -834,8 +834,8 @@ async fn ann_candidate_ids(shared: &SharedToolCtx, qvec: &[f32], k: usize) -> Op
     }
 
     let cache = ann_sidecar_cache();
-    let params = kyma_exec::AnnParams::with_k(k.saturating_mul(ANN_OVERSAMPLE).max(k));
-    let hits = kyma_exec::ann_topk(
+    let params = pensieve_exec::AnnParams::with_k(k.saturating_mul(ANN_OVERSAMPLE).max(k));
+    let hits = pensieve_exec::ann_topk(
         &shared.catalog,
         DEFAULT_TENANT,
         &shared.format,
@@ -890,7 +890,7 @@ async fn bm25_candidate_ids(shared: &SharedToolCtx, query: &str, k: usize) -> Op
             DEFAULT_TENANT,
             tref.id,
             tref.current_snapshot_id,
-            &kyma_core::catalog::PrunePredicate::default(),
+            &pensieve_core::catalog::PrunePredicate::default(),
         )
         .await
         .ok()?;
@@ -904,14 +904,14 @@ async fn bm25_candidate_ids(shared: &SharedToolCtx, query: &str, k: usize) -> Op
             DEFAULT_TENANT,
             tref.id,
             &extent_ids,
-            Some(kyma_core::index_sidecar::SidecarKind::TantivyFts),
+            Some(pensieve_core::index_sidecar::SidecarKind::TantivyFts),
         )
         .await
         .ok()?;
     let fts_col = sidecars.first().map(|d| d.column.clone())?;
 
     let cache = ann_sidecar_cache();
-    let hits = match kyma_exec::bm25_topk(
+    let hits = match pensieve_exec::bm25_topk(
         &shared.catalog,
         DEFAULT_TENANT,
         &store,
@@ -946,22 +946,22 @@ async fn bm25_candidate_ids(shared: &SharedToolCtx, query: &str, k: usize) -> Op
 /// matters. Returns `None` on any hard error or an empty result.
 async fn resolve_addr_ids(
     shared: &SharedToolCtx,
-    tref: &kyma_core::catalog::TableRef,
-    extents: &[kyma_core::catalog::ExtentManifest],
-    addrs: &[(kyma_core::types::ExtentId, u32, u32)],
+    tref: &pensieve_core::catalog::TableRef,
+    extents: &[pensieve_core::catalog::ExtentManifest],
+    addrs: &[(pensieve_core::types::ExtentId, u32, u32)],
 ) -> Option<Vec<String>> {
     let manifest_by_id: HashMap<_, _> = extents.iter().map(|m| (m.id, m)).collect();
-    let id_col = kyma_core::segment_format::ColumnId(
+    let id_col = pensieve_core::segment_format::ColumnId(
         tref.schema.fields().iter().position(|f| f.name() == "id")? as u32,
     );
-    let mut by_block: HashMap<(kyma_core::types::ExtentId, u32), Vec<u32>> = HashMap::new();
+    let mut by_block: HashMap<(pensieve_core::types::ExtentId, u32), Vec<u32>> = HashMap::new();
     for (eid, block, row) in addrs {
         by_block.entry((*eid, *block)).or_default().push(*row);
     }
     let mut ids: Vec<String> = Vec::with_capacity(addrs.len());
     let mut readers: HashMap<
-        kyma_core::types::ExtentId,
-        std::sync::Arc<dyn kyma_core::segment_format::ExtentReader>,
+        pensieve_core::types::ExtentId,
+        std::sync::Arc<dyn pensieve_core::segment_format::ExtentReader>,
     > = HashMap::new();
     for ((extent_id, block), rows) in by_block {
         let manifest = manifest_by_id.get(&extent_id)?;
@@ -970,7 +970,7 @@ async fn resolve_addr_ids(
             None => {
                 let r = shared
                     .format
-                    .open_extent(kyma_core::segment_format::OpenExtentInput {
+                    .open_extent(pensieve_core::segment_format::OpenExtentInput {
                         extent_id,
                         table_id: manifest.table_id,
                         schema: tref.schema.clone(),
@@ -984,7 +984,7 @@ async fn resolve_addr_ids(
             }
         };
         let batch = reader
-            .read_block(kyma_core::segment_format::BlockId(block), &[id_col])
+            .read_block(pensieve_core::segment_format::BlockId(block), &[id_col])
             .await
             .ok()?;
         use arrow_array::Array as _;
@@ -1010,10 +1010,10 @@ async fn resolve_addr_ids(
 }
 
 /// Process-shared sidecar disk cache for the memory ANN path.
-fn ann_sidecar_cache() -> &'static kyma_storage::sidecar_cache::SidecarCache {
+fn ann_sidecar_cache() -> &'static pensieve_storage::sidecar_cache::SidecarCache {
     use std::sync::OnceLock;
-    static CACHE: OnceLock<kyma_storage::sidecar_cache::SidecarCache> = OnceLock::new();
-    CACHE.get_or_init(kyma_storage::sidecar_cache::SidecarCache::from_env)
+    static CACHE: OnceLock<pensieve_storage::sidecar_cache::SidecarCache> = OnceLock::new();
+    CACHE.get_or_init(pensieve_storage::sidecar_cache::SidecarCache::from_env)
 }
 
 /// MMR diversity re-ranking (M8.3a): fetch embeddings for the top
@@ -1072,7 +1072,7 @@ async fn mmr_rerank(
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 async fn build_writer(shared: &SharedToolCtx) -> Option<MemoryWriter> {
-    let embed = kyma_memory::shared_embedding().await.ok()?;
+    let embed = pensieve_memory::shared_embedding().await.ok()?;
     Some(MemoryWriter::new(
         shared.catalog.clone(),
         shared.format.clone(),
@@ -1279,7 +1279,7 @@ mod ppr_tests {
     fn class_aware_decay_fades_episodic_not_semantic() {
         // The contract the recency term uses when enabled: episodic memories
         // (e.g. Summary) decay with a 7-day half-life; semantic ones (Fact) do
-        // not. (default_for/decay_weight live in kyma-memory; this pins the
+        // not. (default_for/decay_weight live in pensieve-memory; this pins the
         // mapping the scorer relies on.)
         let episodic = MemoryClass::default_for(MemoryType::parse("summary"));
         let semantic = MemoryClass::default_for(MemoryType::parse("fact"));
@@ -1328,7 +1328,7 @@ mod tests {
             id: "memory:z".into(),
             memory_type: "fact".into(),
             title: None,
-            content_preview: "kyma uses DataFusion".into(),
+            content_preview: "pensieve uses DataFusion".into(),
             score: 0.8,
             distance: Some(0.1),
             kw_score: None,

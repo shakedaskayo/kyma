@@ -1,11 +1,11 @@
-//! Optional OS background worker: `kyma worker install` registers a user
-//! service that runs `kyma sync --watch` with no terminal or session —
+//! Optional OS background worker: `pensieve worker install` registers a user
+//! service that runs `pensieve sync --watch` with no terminal or session —
 //! launchd LaunchAgent on macOS, systemd user unit on Linux.
 //!
 //! Strictly opt-in (nothing is installed by default), fully reversible
-//! (`kyma worker uninstall`), and inspectable (`kyma worker status`). The
-//! service writes its output to `~/.kyma/logs/worker.log`; the sync loop
-//! itself is the same one the CLI runs, with all `KYMA_CC_*` knobs honored.
+//! (`pensieve worker uninstall`), and inspectable (`pensieve worker status`). The
+//! service writes its output to `~/.pensieve/logs/worker.log`; the sync loop
+//! itself is the same one the CLI runs, with all `PENSIEVE_CC_*` knobs honored.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -13,36 +13,36 @@ use std::process::Command;
 use anyhow::{Context, Result};
 
 /// Service label / unit name.
-const LABEL: &str = "dev.getkyma.kyma-sync";
-const UNIT: &str = "kyma-sync.service";
+const LABEL: &str = "dev.getpensieve.pensieve-sync";
+const UNIT: &str = "pensieve-sync.service";
 
 /// What the worker should run.
 #[derive(Debug, Clone, Default)]
 pub struct WorkerOptions {
-    /// Poll interval override (`KYMA_CC_SYNC_POLL_SECS` for the service).
+    /// Poll interval override (`PENSIEVE_CC_SYNC_POLL_SECS` for the service).
     pub interval_secs: Option<u64>,
     /// Only the Claude Code file phase.
     pub cc_only: bool,
     /// Only the control-plane push/pull.
     pub cloud_only: bool,
     /// Store location pinned into the service env (services don't inherit
-    /// the shell's `KYMA_HOME`). Filled by [`install`] when unset.
-    pub kyma_home: Option<String>,
+    /// the shell's `PENSIEVE_HOME`). Filled by [`install`] when unset.
+    pub pensieve_home: Option<String>,
 }
 
 /// `(key, value)` env pairs the service needs.
 fn service_env(opts: &WorkerOptions) -> Vec<(String, String)> {
     let mut env = Vec::new();
-    if let Some(h) = &opts.kyma_home {
-        env.push(("KYMA_HOME".to_string(), h.clone()));
+    if let Some(h) = &opts.pensieve_home {
+        env.push(("PENSIEVE_HOME".to_string(), h.clone()));
     }
     if let Some(secs) = opts.interval_secs {
-        env.push(("KYMA_CC_SYNC_POLL_SECS".to_string(), secs.to_string()));
+        env.push(("PENSIEVE_CC_SYNC_POLL_SECS".to_string(), secs.to_string()));
     }
     env
 }
 
-/// The `kyma` argv the service runs (after the binary path).
+/// The `pensieve` argv the service runs (after the binary path).
 pub(crate) fn sync_args(opts: &WorkerOptions) -> Vec<String> {
     let mut args = vec!["sync".to_string(), "--watch".to_string()];
     if opts.cc_only {
@@ -75,7 +75,7 @@ pub(crate) fn launchd_plist(exe: &str, opts: &WorkerOptions, log_path: &str) -> 
     };
     // Working dir = the store: relative caches (e.g. fastembed's model dir)
     // land somewhere stable and writable, not launchd's default `/`.
-    let cwd = opts.kyma_home.clone().unwrap_or_else(home);
+    let cwd = opts.pensieve_home.clone().unwrap_or_else(home);
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -108,9 +108,9 @@ pub(crate) fn systemd_unit(exe: &str, opts: &WorkerOptions) -> String {
         .iter()
         .map(|(k, v)| format!("Environment={k}={v}\n"))
         .collect();
-    let cwd = opts.kyma_home.clone().unwrap_or_else(home);
+    let cwd = opts.pensieve_home.clone().unwrap_or_else(home);
     format!(
-        "[Unit]\nDescription=kyma memory sync worker (Claude Code files + control plane)\n\n\
+        "[Unit]\nDescription=pensieve memory sync worker (Claude Code files + control plane)\n\n\
          [Service]\nExecStart={exe} {}\nWorkingDirectory={cwd}\nRestart=on-failure\nRestartSec=10\n{env}\n\
          [Install]\nWantedBy=default.target\n",
         sync_args(opts).join(" "),
@@ -124,7 +124,7 @@ pub(crate) fn plist_path(home: &str) -> PathBuf {
         .join(format!("{LABEL}.plist"))
 }
 
-/// `~/.config/systemd/user/kyma-sync.service`.
+/// `~/.config/systemd/user/pensieve-sync.service`.
 pub(crate) fn unit_path(home: &str) -> PathBuf {
     PathBuf::from(home).join(".config/systemd/user").join(UNIT)
 }
@@ -134,8 +134,8 @@ fn home() -> String {
 }
 
 fn log_path() -> String {
-    let kyma_home = std::env::var("KYMA_HOME").unwrap_or_else(|_| format!("{}/.kyma", home()));
-    format!("{kyma_home}/logs/worker.log")
+    let pensieve_home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| format!("{}/.pensieve", home()));
+    format!("{pensieve_home}/logs/worker.log")
 }
 
 /// Best-effort command; returns whether it succeeded.
@@ -159,15 +159,15 @@ fn uid() -> String {
 /// Install + activate the worker for the current OS.
 pub fn install(opts: &WorkerOptions) -> Result<()> {
     let exe = std::env::current_exe()
-        .context("resolving the kyma binary path")?
+        .context("resolving the pensieve binary path")?
         .to_string_lossy()
         .to_string();
     let mut opts = opts.clone();
-    if opts.kyma_home.is_none() {
+    if opts.pensieve_home.is_none() {
         // Pin the resolved store so the service sees the same data the CLI
-        // does, custom KYMA_HOME included.
-        opts.kyma_home =
-            Some(std::env::var("KYMA_HOME").unwrap_or_else(|_| format!("{}/.kyma", home())));
+        // does, custom PENSIEVE_HOME included.
+        opts.pensieve_home =
+            Some(std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| format!("{}/.pensieve", home())));
     }
     let opts = &opts;
     let log = log_path();
@@ -266,8 +266,8 @@ pub fn uninstall() -> Result<()> {
 }
 
 /// Installed/running state of the background worker — the programmatic form
-/// of [`status`], reused by `kyma status` (top-level) so worker state isn't
-/// only discoverable via the separate `kyma worker status` command.
+/// of [`status`], reused by `pensieve status` (top-level) so worker state isn't
+/// only discoverable via the separate `pensieve worker status` command.
 #[derive(Debug, Clone, Default)]
 pub struct WorkerState {
     /// `None` on platforms without a service installer.

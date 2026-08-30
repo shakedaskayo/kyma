@@ -3,14 +3,14 @@ use crate::types::{EdgeRow, Manifest, ManifestEntry, NoteRow};
 use crate::vault::plan_vault;
 
 fn cfg_flat() -> BrainConfig {
-    BrainConfig::new("team", RealmSelector::Realms(vec!["kyma".into()]), "2026-07-08T00:00:00Z")
+    BrainConfig::new("team", RealmSelector::Realms(vec!["pensieve".into()]), "2026-07-08T00:00:00Z")
         .unwrap()
 }
 
 fn cfg_multi() -> BrainConfig {
     BrainConfig::new(
         "team",
-        RealmSelector::Realms(vec!["kyma".into(), "global".into()]),
+        RealmSelector::Realms(vec!["pensieve".into(), "global".into()]),
         "2026-07-08T00:00:00Z",
     )
     .unwrap()
@@ -37,7 +37,7 @@ fn node(id: &str, title: &str, ty: &str, realm: &str) -> NoteRow {
 #[test]
 fn plan_is_deterministic_under_input_permutation() {
     let cfg = cfg_multi();
-    let a = node("aaaa1111-0000-0000-0000-000000000001", "Alpha", "fact", "kyma");
+    let a = node("aaaa1111-0000-0000-0000-000000000001", "Alpha", "fact", "pensieve");
     let b = node("bbbb2222-0000-0000-0000-000000000002", "Beta", "decision", "global");
     let e = EdgeRow {
         src: format!("memory:{}", a.id),
@@ -52,18 +52,18 @@ fn plan_is_deterministic_under_input_permutation() {
 
 #[test]
 fn flat_vs_realm_layout_paths() {
-    let n = node("aaaa1111-0000-0000-0000-000000000001", "Alpha", "fact", "kyma");
+    let n = node("aaaa1111-0000-0000-0000-000000000001", "Alpha", "fact", "pensieve");
     let flat = plan_vault(&cfg_flat(), &Manifest::default(), &[n.clone()], &[]).unwrap();
     assert!(flat.files.iter().any(|f| f.path == "notes/facts/alpha-aaaa1111.md"));
     let multi = plan_vault(&cfg_multi(), &Manifest::default(), &[n], &[]).unwrap();
-    assert!(multi.files.iter().any(|f| f.path == "notes/kyma/facts/alpha-aaaa1111.md"));
-    assert!(multi.files.iter().any(|f| f.path == "notes/kyma/index.md"));
+    assert!(multi.files.iter().any(|f| f.path == "notes/pensieve/facts/alpha-aaaa1111.md"));
+    assert!(multi.files.iter().any(|f| f.path == "notes/pensieve/index.md"));
 }
 
 #[test]
 fn prior_manifest_path_wins_over_title_change() {
     let cfg = cfg_flat();
-    let mut n = node("aaaa1111-0000-0000-0000-000000000001", "Alpha", "fact", "kyma");
+    let mut n = node("aaaa1111-0000-0000-0000-000000000001", "Alpha", "fact", "pensieve");
     let first = plan_vault(&cfg, &Manifest::default(), &[n.clone()], &[]).unwrap();
     let minted = "notes/facts/alpha-aaaa1111.md";
     assert!(first.manifest.entries.iter().any(|e| e.path == minted));
@@ -79,11 +79,11 @@ fn prior_manifest_path_wins_over_title_change() {
 fn filters_exclude_archived_and_low_importance() {
     let mut cfg = cfg_flat();
     cfg.include.min_importance = Some(0.6);
-    let mut keep = node("aaaa1111-0000-0000-0000-000000000001", "Keep", "fact", "kyma");
+    let mut keep = node("aaaa1111-0000-0000-0000-000000000001", "Keep", "fact", "pensieve");
     keep.importance = 0.9;
-    let mut low = node("bbbb2222-0000-0000-0000-000000000002", "Low", "fact", "kyma");
+    let mut low = node("bbbb2222-0000-0000-0000-000000000002", "Low", "fact", "pensieve");
     low.importance = 0.1;
-    let mut archived = node("cccc3333-0000-0000-0000-000000000003", "Gone", "fact", "kyma");
+    let mut archived = node("cccc3333-0000-0000-0000-000000000003", "Gone", "fact", "pensieve");
     archived.importance = 0.9;
     archived.status = "archived".into();
     let plan = plan_vault(&cfg, &Manifest::default(), &[keep, low, archived], &[]).unwrap();
@@ -97,7 +97,7 @@ fn filters_exclude_archived_and_low_importance() {
 #[test]
 fn wiki_topic_key_routes_to_wiki_folder() {
     let cfg = cfg_flat();
-    let mut n = node("aaaa1111-0000-0000-0000-000000000001", "Auth overview", "summary", "kyma");
+    let mut n = node("aaaa1111-0000-0000-0000-000000000001", "Auth overview", "summary", "pensieve");
     n.topic_key = Some("wiki:team:auth".into());
     let plan = plan_vault(&cfg, &Manifest::default(), &[n], &[]).unwrap();
     assert!(plan.files.iter().any(|f| f.path == "wiki/auth.md"));
@@ -109,8 +109,8 @@ fn wiki_topic_key_routes_to_wiki_folder() {
 #[test]
 fn edges_render_related_links_both_directions() {
     let cfg = cfg_flat();
-    let a = node("aaaa1111-0000-0000-0000-000000000001", "Alpha", "fact", "kyma");
-    let b = node("bbbb2222-0000-0000-0000-000000000002", "Beta", "decision", "kyma");
+    let a = node("aaaa1111-0000-0000-0000-000000000001", "Alpha", "fact", "pensieve");
+    let b = node("bbbb2222-0000-0000-0000-000000000002", "Beta", "decision", "pensieve");
     let e = EdgeRow {
         src: format!("memory:{}", a.id),
         dst: format!("memory:{}", b.id),
@@ -128,13 +128,13 @@ fn edges_render_related_links_both_directions() {
 #[test]
 fn manifest_lists_every_generated_path_and_itself() {
     let cfg = cfg_flat();
-    let n = node("aaaa1111-0000-0000-0000-000000000001", "Alpha", "fact", "kyma");
+    let n = node("aaaa1111-0000-0000-0000-000000000001", "Alpha", "fact", "pensieve");
     let plan = plan_vault(&cfg, &Manifest::default(), &[n], &[]).unwrap();
     let owned = plan.manifest.owned_paths();
     for f in &plan.files {
         assert!(owned.contains(&f.path), "{} missing from manifest", f.path);
     }
-    assert!(owned.contains(".kyma/manifest.json"));
+    assert!(owned.contains(".pensieve/manifest.json"));
     // Note entry carries its memory id.
     assert_eq!(
         plan.manifest.memory_ids_by_path().get("notes/facts/alpha-aaaa1111.md").map(String::as_str),

@@ -148,7 +148,7 @@ export function RetentionSettings() {
       <MapEditor
         icon={<Database className="h-4 w-4" />}
         title="By table (columnar)"
-        desc="Explicit per-table retention, keyed database.table, e.g. kyma.github_job_logs → 30. Required to expire table data."
+        desc="Explicit per-table retention, keyed database.table, e.g. pensieve.github_job_logs → 30. Required to expire table data."
         keyPlaceholder="database.table"
         map={s.per_table_days}
         onChange={(m) => setMap("per_table_days", m)}

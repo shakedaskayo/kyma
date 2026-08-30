@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useKymaHealth } from "./useKymaHealth";
+import { usePensieveHealth } from "./usePensieveHealth";
 
 function healthResponse(version: string | null, ok = true): Response {
   const body = version === null ? { status: "ok" } : { status: "ok", version };
@@ -14,10 +14,10 @@ function healthResponse(version: string | null, ok = true): Response {
   } as unknown as Response;
 }
 
-describe("useKymaHealth server-version tracking", () => {
+describe("usePensieveHealth server-version tracking", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    useKymaHealth.setState({ online: true, version: null, updated: false });
+    usePensieveHealth.setState({ online: true, version: null, updated: false });
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -32,17 +32,17 @@ describe("useKymaHealth server-version tracking", () => {
       .mockResolvedValue(healthResponse("0.0.2"));
     vi.stubGlobal("fetch", fetchMock);
 
-    const stop = useKymaHealth.getState().start("http://localhost:8080");
+    const stop = usePensieveHealth.getState().start("http://localhost:8080");
     await vi.advanceTimersByTimeAsync(0); // initial tick
-    expect(useKymaHealth.getState().version).toBe("0.0.1");
-    expect(useKymaHealth.getState().updated).toBe(false);
+    expect(usePensieveHealth.getState().version).toBe("0.0.1");
+    expect(usePensieveHealth.getState().updated).toBe(false);
 
     await vi.advanceTimersByTimeAsync(30_000); // same version → no flag
-    expect(useKymaHealth.getState().updated).toBe(false);
+    expect(usePensieveHealth.getState().updated).toBe(false);
 
     await vi.advanceTimersByTimeAsync(30_000); // server restarted on 0.0.2
-    expect(useKymaHealth.getState().version).toBe("0.0.2");
-    expect(useKymaHealth.getState().updated).toBe(true);
+    expect(usePensieveHealth.getState().version).toBe("0.0.2");
+    expect(usePensieveHealth.getState().updated).toBe(true);
     stop();
   });
 
@@ -54,18 +54,18 @@ describe("useKymaHealth server-version tracking", () => {
       .mockResolvedValue(healthResponse("0.0.1"));
     vi.stubGlobal("fetch", fetchMock);
 
-    const stop = useKymaHealth.getState().start("http://localhost:8080");
+    const stop = usePensieveHealth.getState().start("http://localhost:8080");
     await vi.advanceTimersByTimeAsync(0);
-    expect(useKymaHealth.getState().version).toBe("0.0.1");
+    expect(usePensieveHealth.getState().version).toBe("0.0.1");
 
     await vi.advanceTimersByTimeAsync(30_000); // offline blip
-    expect(useKymaHealth.getState().online).toBe(false);
-    expect(useKymaHealth.getState().version).toBe("0.0.1");
-    expect(useKymaHealth.getState().updated).toBe(false);
+    expect(usePensieveHealth.getState().online).toBe(false);
+    expect(usePensieveHealth.getState().version).toBe("0.0.1");
+    expect(usePensieveHealth.getState().updated).toBe(false);
 
     await vi.advanceTimersByTimeAsync(30_000); // back, same version
-    expect(useKymaHealth.getState().online).toBe(true);
-    expect(useKymaHealth.getState().updated).toBe(false);
+    expect(usePensieveHealth.getState().online).toBe(true);
+    expect(usePensieveHealth.getState().updated).toBe(false);
     stop();
   });
 
@@ -76,11 +76,11 @@ describe("useKymaHealth server-version tracking", () => {
       .mockResolvedValue(healthResponse(null));
     vi.stubGlobal("fetch", fetchMock);
 
-    const stop = useKymaHealth.getState().start("http://localhost:8080");
+    const stop = usePensieveHealth.getState().start("http://localhost:8080");
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(useKymaHealth.getState().version).toBe("0.0.1"); // sticky
-    expect(useKymaHealth.getState().updated).toBe(false);
+    expect(usePensieveHealth.getState().version).toBe("0.0.1"); // sticky
+    expect(usePensieveHealth.getState().updated).toBe(false);
     stop();
   });
 });

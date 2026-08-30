@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Brain, Sparkles } from "lucide-react";
-import { AgentConsole } from "@kyma-ai/react/agent";
+import { AgentConsole } from "@pensieve-ai/react/agent";
 import { MemoryPanel } from "@/features/agent/MemoryPanel";
 
 export const Route = createFileRoute("/_app/agent")({

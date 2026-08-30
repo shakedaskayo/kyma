@@ -1,11 +1,11 @@
 ---
 title: Kafka
-description: Consume NDJSON messages from Kafka topics into kyma tables. One topic maps to one table; offsets are tracked in the catalog.
+description: Consume NDJSON messages from Kafka topics into pensieve tables. One topic maps to one table; offsets are tracked in the catalog.
 ---
 
 # Kafka
 
-kyma's built-in Kafka consumer subscribes to one or more topics, parses
+pensieve's built-in Kafka consumer subscribes to one or more topics, parses
 each message body as NDJSON, and routes records into the configured
 target table. Offsets are committed to Kafka after each successful
 batch ingest, and tracked in the catalog so a restart resumes from the
@@ -17,20 +17,20 @@ layer.
 
 ## Configuration
 
-The consumer is opt-in. With `KYMA_KAFKA_ENABLED=1` and at least one
-mapping in `KYMA_KAFKA_TOPICS`, a worker starts inside the kyma
+The consumer is opt-in. With `PENSIEVE_KAFKA_ENABLED=1` and at least one
+mapping in `PENSIEVE_KAFKA_TOPICS`, a worker starts inside the pensieve
 process at boot.
 
 | Variable                     | Default          | Notes                                                            |
 | ---------------------------- | ---------------- | ---------------------------------------------------------------- |
-| `KYMA_KAFKA_ENABLED`         | `0`              | Set `1` to start the consumer.                                   |
-| `KYMA_KAFKA_BROKERS`         | `localhost:9092` | Comma-separated bootstrap list.                                  |
-| `KYMA_KAFKA_GROUP`           | `kyma-ingest`    | Consumer group id.                                               |
-| `KYMA_KAFKA_TOPICS`          | _(empty)_        | `topic1:db1.tbl1,topic2:db2.tbl2` — required for the consumer to start. |
-| `KYMA_KAFKA_BATCH_SIZE`      | `500`            | Flush a topic's pending bucket at this many messages.            |
-| `KYMA_KAFKA_BATCH_TIMEOUT_MS`| `500`            | Age-trigger flush; flushes any non-empty bucket on tick.         |
+| `PENSIEVE_KAFKA_ENABLED`         | `0`              | Set `1` to start the consumer.                                   |
+| `PENSIEVE_KAFKA_BROKERS`         | `localhost:9092` | Comma-separated bootstrap list.                                  |
+| `PENSIEVE_KAFKA_GROUP`           | `pensieve-ingest`    | Consumer group id.                                               |
+| `PENSIEVE_KAFKA_TOPICS`          | _(empty)_        | `topic1:db1.tbl1,topic2:db2.tbl2` — required for the consumer to start. |
+| `PENSIEVE_KAFKA_BATCH_SIZE`      | `500`            | Flush a topic's pending bucket at this many messages.            |
+| `PENSIEVE_KAFKA_BATCH_TIMEOUT_MS`| `500`            | Age-trigger flush; flushes any non-empty bucket on tick.         |
 
-`KYMA_KAFKA_TOPICS` is the only thing you usually have to pick. The
+`PENSIEVE_KAFKA_TOPICS` is the only thing you usually have to pick. The
 mapping syntax is `topic:database.table` per entry; entries that don't
 match are skipped at startup with a warning.
 
@@ -41,16 +41,16 @@ node rejoins the group quickly instead of stalling in
 
 ## End-to-end example
 
-Boot kyma against a Redpanda or Kafka broker, with a topic-to-table
+Boot pensieve against a Redpanda or Kafka broker, with a topic-to-table
 map:
 
 ```bash
 docker run --rm --net=host \
-  -e KYMA_CATALOG_URL=postgres://kyma:kyma_dev@localhost:5433/kyma \
-  -e KYMA_KAFKA_ENABLED=1 \
-  -e KYMA_KAFKA_BROKERS=localhost:9092 \
-  -e KYMA_KAFKA_TOPICS=app.events:default.events \
-  ghcr.io/shaked/kyma:latest
+  -e PENSIEVE_CATALOG_URL=postgres://pensieve:pensieve_dev@localhost:5433/pensieve \
+  -e PENSIEVE_KAFKA_ENABLED=1 \
+  -e PENSIEVE_KAFKA_BROKERS=localhost:9092 \
+  -e PENSIEVE_KAFKA_TOPICS=app.events:default.events \
+  ghcr.io/shaked/pensieve:latest
 ```
 
 Produce NDJSON-shaped messages — one JSON object per Kafka message,
@@ -61,7 +61,7 @@ echo '{"_timestamp":"2026-05-02T10:00:00Z","service_name":"checkout","message":"
   | rpk topic produce app.events
 ```
 
-After at most `KYMA_KAFKA_BATCH_TIMEOUT_MS`, the message is in
+After at most `PENSIEVE_KAFKA_BATCH_TIMEOUT_MS`, the message is in
 `default.events` and queryable. Sustained producers pack into the
 configured batch size; bursty producers pack into whatever the
 timeout-driven flush picks up.
@@ -69,7 +69,7 @@ timeout-driven flush picks up.
 The consumer logs one line per committed batch:
 
 ```
-INFO kyma_ingest_kafka: kafka batch committed topic=app.events msgs=500 rows=500
+INFO pensieve_ingest_kafka: kafka batch committed topic=app.events msgs=500 rows=500
 ```
 
 ## Message schema
@@ -98,14 +98,14 @@ object) are accepted and become one batch per message.
   mapping and the consumer will pick up from the same offset on the
   next poll.
 - **NDJSON parse failure on a batch.** The whole batch is dropped
-  (logged) and offsets advance — kyma keeps moving rather than
+  (logged) and offsets advance — pensieve keeps moving rather than
   blocking the whole topic on one bad producer. Source the bad
   message from the producer side.
-- **kyma ingest failure.** The batch is *not* cleared; the next flush
+- **pensieve ingest failure.** The batch is *not* cleared; the next flush
   retries from the same in-memory bucket. Offsets stay where they
-  were, so a crashed kyma re-consumes the unflushed window from Kafka
+  were, so a crashed pensieve re-consumes the unflushed window from Kafka
   on restart.
-- **Restart.** kyma seeks to the last Kafka-committed offset. The
+- **Restart.** pensieve seeks to the last Kafka-committed offset. The
   current MVP gives at-least-once at the catalog boundary; on rare
   crash windows a few messages may re-ingest. True
   exactly-once — extent commit and Kafka offset commit in one

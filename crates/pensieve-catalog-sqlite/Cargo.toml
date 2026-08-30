@@ -1,5 +1,5 @@
 [package]
-name = "kyma-catalog-sqlite"
+name = "pensieve-catalog-sqlite"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ description = "Embedded SQLite-backed catalog for local single-binary mode. Same
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
+pensieve-core.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
 tokio.workspace = true

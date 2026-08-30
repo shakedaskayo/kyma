@@ -6,10 +6,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use kyma_core::catalog::{Catalog, PrunePredicate};
-use kyma_embed::{EmbedError, EmbeddingBackend};
-use kyma_format_tlm::TelemetryFormat;
-use kyma_storage::{build_object_store, StorageConfig};
+use pensieve_core::catalog::{Catalog, PrunePredicate};
+use pensieve_embed::{EmbedError, EmbeddingBackend};
+use pensieve_format_tlm::TelemetryFormat;
+use pensieve_storage::{build_object_store, StorageConfig};
 
 use super::{spawn_memory_queue, MemoryIngestConfig, MemoryQueue};
 use crate::types::CreateMemory;
@@ -43,7 +43,7 @@ impl EmbeddingBackend for MockEmbed {
     }
 
     async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedError> {
-        let is_warmup = texts.len() == 1 && texts[0] == "kyma memory warmup";
+        let is_warmup = texts.len() == 1 && texts[0] == "pensieve memory warmup";
         if !is_warmup {
             self.calls.fetch_add(1, Ordering::SeqCst);
             self.batch_sizes.lock().unwrap().push(texts.len());
@@ -67,22 +67,22 @@ struct TestRig {
 
 async fn rig(durable: bool) -> TestRig {
     let catalog: Arc<dyn Catalog> = Arc::new(
-        kyma_catalog_sqlite::SqliteCatalog::connect_in_memory()
+        pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory()
             .await
             .expect("open in-memory catalog"),
     );
-    let tmp = std::env::temp_dir().join(format!("kyma-mem-ingest-{}", uuid::Uuid::new_v4()));
+    let tmp = std::env::temp_dir().join(format!("pensieve-mem-ingest-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&tmp).expect("tmp data dir");
     let store = build_object_store(&StorageConfig::Local {
         root: tmp.to_string_lossy().to_string(),
     })
     .expect("local store");
-    let format: Arc<dyn kyma_core::segment_format::SegmentFormat> =
+    let format: Arc<dyn pensieve_core::segment_format::SegmentFormat> =
         Arc::new(TelemetryFormat::new(store, "test"));
     let embed = MockEmbed::new();
 
     let cfg = MemoryIngestConfig {
-        queue: kyma_queue::QueueConfig {
+        queue: pensieve_queue::QueueConfig {
             name: "memory_ops_test".into(),
             max_batch: 64,
             linger: Duration::from_millis(30),
@@ -236,17 +236,17 @@ async fn durable_ops_replay_after_simulated_crash() {
     // durable rows orphaned in the catalog store — then start a second worker
     // over the same catalog and assert the ops land.
     let catalog: Arc<dyn Catalog> = Arc::new(
-        kyma_catalog_sqlite::SqliteCatalog::connect_in_memory()
+        pensieve_catalog_sqlite::SqliteCatalog::connect_in_memory()
             .await
             .expect("open in-memory catalog"),
     );
-    let tmp = std::env::temp_dir().join(format!("kyma-mem-replay-{}", uuid::Uuid::new_v4()));
+    let tmp = std::env::temp_dir().join(format!("pensieve-mem-replay-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&tmp).expect("tmp data dir");
     let store = build_object_store(&StorageConfig::Local {
         root: tmp.to_string_lossy().to_string(),
     })
     .expect("local store");
-    let format: Arc<dyn kyma_core::segment_format::SegmentFormat> =
+    let format: Arc<dyn pensieve_core::segment_format::SegmentFormat> =
         Arc::new(TelemetryFormat::new(store, "test"));
 
     // "Crashed" process: persist the durable op directly to the store the way
@@ -272,7 +272,7 @@ async fn durable_ops_replay_after_simulated_crash() {
     // Second process: spawn the worker; recovery must replay the op.
     let embed = MockEmbed::new();
     let cfg = MemoryIngestConfig {
-        queue: kyma_queue::QueueConfig {
+        queue: pensieve_queue::QueueConfig {
             name: "memory_ops_test".into(),
             max_batch: 64,
             linger: Duration::from_millis(10),

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add the kyma web app's typed client + data plumbing for the Context Graph — an `sdk/graph.ts` over the `/v1/graph/*` endpoints, the ported pure-JS graph layout, a zustand graph store, and react-query hooks — all unit-tested, with no rendering yet (G1c.2 builds the view on top).
+**Goal:** Add the pensieve web app's typed client + data plumbing for the Context Graph — an `sdk/graph.ts` over the `/v1/graph/*` endpoints, the ported pure-JS graph layout, a zustand graph store, and react-query hooks — all unit-tested, with no rendering yet (G1c.2 builds the view on top).
 
-**Architecture:** Mirror the existing kyma web conventions exactly: per-module fetch helpers (`headers`/`handleResponse`/`base`) like `sdk/dashboards.ts`, `useSession.getState()` for endpoint/token, `useQuery` for reads (route-level pattern), and a `create<T>()(...)` zustand store. The graph layout is ported verbatim from the agentcy project (it is dependency-free) with the label-color palette retuned to kyma's domain.
+**Architecture:** Mirror the existing pensieve web conventions exactly: per-module fetch helpers (`headers`/`handleResponse`/`base`) like `sdk/dashboards.ts`, `useSession.getState()` for endpoint/token, `useQuery` for reads (route-level pattern), and a `create<T>()(...)` zustand store. The graph layout is ported verbatim from the agentcy project (it is dependency-free) with the label-color palette retuned to pensieve's domain.
 
 **Tech Stack:** React 18, TypeScript, `@tanstack/react-query` ^5, `zustand` ^5, Vitest (jsdom). No new runtime dependency in this plan (`@xyflow/react` is added in G1c.2).
 
@@ -23,7 +23,7 @@
 - Create `web/src/features/graph/useGraph.ts` — react-query hooks.
 - Create `web/src/features/graph/useGraph.test.ts` — hook smoke (query key + fn wiring) OR fold into graph.test.ts (see Task 4).
 
-All under the MAIN repo layout but edited in the worktree at `/Users/shakedaskayo/shaked/projects/kyma/.claude/worktrees/feature+graph-layer`. Run web commands from `web/` inside the worktree: `cd web && npm run test`, `npm run typecheck`.
+All under the MAIN repo layout but edited in the worktree at `/Users/shakedaskayo/shaked/projects/pensieve/.claude/worktrees/feature+graph-layer`. Run web commands from `web/` inside the worktree: `cd web && npm run test`, `npm run typecheck`.
 
 ---
 
@@ -94,7 +94,7 @@ test("throws on 401", async () => {
 - [ ] **Step 3: Implement `web/src/sdk/graph.ts`:**
 
 ```ts
-// Typed client for the kyma graph layer (`/v1/graph/*`). JSON in/out.
+// Typed client for the pensieve graph layer (`/v1/graph/*`). JSON in/out.
 // Mirrors the per-module fetch-helper convention used by `sdk/dashboards.ts`.
 
 export type Props = Record<string, unknown>;
@@ -278,7 +278,7 @@ and copy it into `web/src/sdk/graph-layout.ts` with these adaptations:
 
 1. Replace the domain-type import (`import type { GraphNode, GraphRelationship } from "@/lib/types/graph"`) with `import type { GraphNode, GraphRelationship } from "./graph";` (the types created in Task 1 are structurally identical — `id`, `labels[]`, `properties`, `metadata`; relationships have `source_id`/`target_id`/`relationship_type`).
 2. Keep `forceDirectedLayout`, `gridLayout`, `radialLayout`, `computeLayout`, and the `LayoutAlgorithm` type **verbatim** (they are pure, no external imports).
-3. Keep `getLabelColor`/`getRelationshipColor` and the `generateColor` hash. **Retune the `LABEL_COLORS` map to kyma's domain** — replace the agentcy connector labels with kyma's: at minimum `Table: "#7ed957"` (kyma green), `Column: "#60a5fa"`, `Database: "#a78bfa"`, `Service: "#f59e0b"`, `Trace: "#22d3ee"`. Unknown labels fall through to `generateColor` (keep that). Keep `REL_COLORS` but ensure `REFERENCES: "#94a3b8"` is present (the schema-graph's only edge type today).
+3. Keep `getLabelColor`/`getRelationshipColor` and the `generateColor` hash. **Retune the `LABEL_COLORS` map to pensieve's domain** — replace the agentcy connector labels with pensieve's: at minimum `Table: "#7ed957"` (pensieve green), `Column: "#60a5fa"`, `Database: "#a78bfa"`, `Service: "#f59e0b"`, `Trace: "#22d3ee"`. Unknown labels fall through to `generateColor` (keep that). Keep `REL_COLORS` but ensure `REFERENCES: "#94a3b8"` is present (the schema-graph's only edge type today).
 4. Do NOT import anything from `@xyflow/react` here — the layout returns a plain `Map<string, {x:number;y:number}>`.
 
 - [ ] **Step 1: Write the failing test** — `web/src/sdk/graph-layout.test.ts`:
@@ -307,7 +307,7 @@ test("force layout is deterministic for the same input", () => {
   expect(p1.get("c")).toEqual(p2.get("c"));
 });
 
-test("kyma label colors resolve; unknown labels still get a color", () => {
+test("pensieve label colors resolve; unknown labels still get a color", () => {
   expect(getLabelColor("Table")).toBe("#7ed957");
   expect(typeof getLabelColor("SomethingUnknown")).toBe("string");
   expect(getRelationshipColor("REFERENCES")).toBe("#94a3b8");
@@ -334,7 +334,7 @@ If the agentcy `forceDirectedLayout` uses `Math.random()` anywhere (it should us
 - [ ] **Step 5: Commit:**
 ```bash
 git add web/src/sdk/graph-layout.ts web/src/sdk/graph-layout.test.ts
-git commit -m "feat(web/graph): port force/grid/radial layout + kyma label palette"
+git commit -m "feat(web/graph): port force/grid/radial layout + pensieve label palette"
 ```
 
 ---

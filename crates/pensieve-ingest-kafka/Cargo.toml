@@ -1,5 +1,5 @@
 [package]
-name = "kyma-ingest-kafka"
+name = "pensieve-ingest-kafka"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,9 +10,9 @@ description = "Kafka consumer ingest frontend. Exactly-once via catalog-stored o
 workspace = true
 
 [dependencies]
-kyma-core.workspace = true
-kyma-ingest-core.workspace = true
-kyma-catalog.workspace = true
+pensieve-core.workspace = true
+pensieve-ingest-core.workspace = true
+pensieve-catalog.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

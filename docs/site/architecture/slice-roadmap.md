@@ -5,7 +5,7 @@ description: The four-slice plan. Slice 1 ships single-node with distribution-re
 
 # Slice roadmap
 
-kyma ships in four slices. Slice 1 is the engine that runs today: one
+pensieve ships in four slices. Slice 1 is the engine that runs today: one
 binary, one Postgres, one bucket, with the trait surfaces and catalog
 shapes that distribution will eventually use already in place.
 Slices 2, 3, and 4 add read scale-out, ingest scale-out, and
@@ -50,13 +50,13 @@ units. No clustering, no fan-out, no remote nodes.
 against the benchmark suite as it grows. A denser **Parquet** segment
 format has since landed as a second `SegmentFormat` alongside the
 Arrow-IPC TLM format — see [Storage format](/architecture/storage-format) —
-selected with `KYMA_WRITE_FORMAT` and dispatched per extent, so the
+selected with `PENSIEVE_WRITE_FORMAT` and dispatched per extent, so the
 trait contract and the catalog shape are unchanged.
 
 ## Slice 2 — read scale-out
 
 **Status:** partially landed. Stateless query nodes ship today via the
-[Helm role split](/deploy/helm#scaling-out-the-role-split) (`KYMA_ROLE=edge`)
+[Helm role split](/deploy/helm#scaling-out-the-role-split) (`PENSIEVE_ROLE=edge`)
 behind one catalog and bucket, with snapshot/footer caching. The remaining work
 is cross-node *partial-plan* fan-out (scan + partial-aggregate below the
 exchange boundary) and its multi-node validation at scale.
@@ -95,7 +95,7 @@ correctness requirement (Invariant 2).
 ## Slice 3 — ingest scale-out
 
 **Status:** partially landed. Staged ingest ships today — set
-`KYMA_INGEST_MODE=staged` and any node stages writes to object storage and acks
+`PENSIEVE_INGEST_MODE=staged` and any node stages writes to object storage and acks
 immediately, while a lease-elected **committer** drains the staged extents into
 the catalog in one transaction (deployed as a dedicated role via the
 [Helm role split](/deploy/helm#scaling-out-the-role-split)). The remaining work
@@ -138,7 +138,7 @@ tables.
 
 **Status:** committed direction. Catalog shape compatible.
 
-**Scope.** Multiple kyma clusters — typically one per region —
+**Scope.** Multiple pensieve clusters — typically one per region —
 federate at query time. A single Flight query can fan out across
 clusters and merge results. Each cluster owns its own bucket and
 catalog; cross-cluster reads are explicit, not transparent
@@ -172,9 +172,9 @@ replication.
 
 ## Where each slice lives in the codebase
 
-The trait surfaces are in `crates/kyma-core/src/`. The Slice 1
-implementations are in their own crates — `kyma-format-tlm`,
-`kyma-kql`, `kyma-cat-pg`. The architectural tests in
+The trait surfaces are in `crates/pensieve-core/src/`. The Slice 1
+implementations are in their own crates — `pensieve-format-tlm`,
+`pensieve-kql`, `pensieve-cat-pg`. The architectural tests in
 `benches/distribution/` are what fail in CI when a change crosses a
 trait boundary the wrong way.
 

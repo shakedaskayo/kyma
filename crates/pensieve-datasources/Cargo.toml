@@ -1,22 +1,22 @@
 [package]
-name = "kyma-datasources"
+name = "pensieve-datasources"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "kyma data source framework: scheduled pulls from GitHub/GitLab/Bitbucket/Prometheus and other sources."
+description = "pensieve data source framework: scheduled pulls from GitHub/GitLab/Bitbucket/Prometheus and other sources."
 
 [lints]
 workspace = true
 
 [dependencies]
-kyma-core = { workspace = true }
-kyma-catalog = { workspace = true }
-kyma-federation = { workspace = true }
-kyma-storage = { workspace = true }
-kyma-redact = { workspace = true }
-kyma-ingest-core = { workspace = true }
+pensieve-core = { workspace = true }
+pensieve-catalog = { workspace = true }
+pensieve-federation = { workspace = true }
+pensieve-storage = { workspace = true }
+pensieve-redact = { workspace = true }
+pensieve-ingest-core = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
@@ -43,15 +43,15 @@ sha2 = "0.10"
 hostname = "0.4"
 
 # Structural code graph: the tree-sitter parser now lives in the standalone
-# `kyma-codeparse` crate (so server/memory can use it ungated). The data source's
+# `pensieve-codeparse` crate (so server/memory can use it ungated). The data source's
 # deep code-graph still hides behind the `github` feature because it brings in
 # the heavy C grammar crates + git clone.
-kyma-codeparse = { workspace = true, optional = true }
+pensieve-codeparse = { workspace = true, optional = true }
 globset = { version = "0.4", optional = true }
 
 [features]
 github = [
-    "dep:kyma-codeparse",
+    "dep:pensieve-codeparse",
     "dep:globset",
 ]
 

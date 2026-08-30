@@ -1,27 +1,27 @@
 // ── Provider ──────────────────────────────────────────────────────────────────
-export { KymaProvider } from "./provider/KymaProvider";
-export type { KymaProviderProps } from "./provider/KymaProvider";
-export { useKymaClient, useKymaContext } from "./provider/context";
-export type { KymaContextValue } from "./provider/context";
+export { PensieveProvider } from "./provider/PensieveProvider";
+export type { PensieveProviderProps } from "./provider/PensieveProvider";
+export { usePensieveClient, usePensieveContext } from "./provider/context";
+export type { PensieveContextValue } from "./provider/context";
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
-export { useKymaCapabilities } from "./hooks/useKymaCapabilities";
-export { useKymaGraph } from "./hooks/useKymaGraph";
-export type { UseKymaGraphArgs, UseKymaGraphResult } from "./hooks/useKymaGraph";
-export { useKymaQuery } from "./hooks/useKymaQuery";
-export { useKymaSearch } from "./hooks/useKymaSearch";
-export type { UseKymaSearchResult } from "./hooks/useKymaSearch";
-export type { KymaQueryArgs, UseKymaQueryResult } from "./hooks/useKymaQuery";
-export { useKymaDiscover } from "./hooks/useKymaDiscover";
-export type { UseKymaDiscoverResult } from "./hooks/useKymaDiscover";
-export { useKymaDashboards } from "./hooks/useKymaDashboards";
-export type { UseKymaDashboardsResult } from "./hooks/useKymaDashboards";
-export { useKymaAgent } from "./hooks/useKymaAgent";
-export type { AgentMessage, AgentStatus, UseKymaAgentArgs, UseKymaAgentResult } from "./hooks/useKymaAgent";
-export { useKymaHealth } from "./hooks/useKymaHealth";
+export { usePensieveCapabilities } from "./hooks/usePensieveCapabilities";
+export { usePensieveGraph } from "./hooks/usePensieveGraph";
+export type { UsePensieveGraphArgs, UsePensieveGraphResult } from "./hooks/usePensieveGraph";
+export { usePensieveQuery } from "./hooks/usePensieveQuery";
+export { usePensieveSearch } from "./hooks/usePensieveSearch";
+export type { UsePensieveSearchResult } from "./hooks/usePensieveSearch";
+export type { PensieveQueryArgs, UsePensieveQueryResult } from "./hooks/usePensieveQuery";
+export { usePensieveDiscover } from "./hooks/usePensieveDiscover";
+export type { UsePensieveDiscoverResult } from "./hooks/usePensieveDiscover";
+export { usePensieveDashboards } from "./hooks/usePensieveDashboards";
+export type { UsePensieveDashboardsResult } from "./hooks/usePensieveDashboards";
+export { usePensieveAgent } from "./hooks/usePensieveAgent";
+export type { AgentMessage, AgentStatus, UsePensieveAgentArgs, UsePensieveAgentResult } from "./hooks/usePensieveAgent";
+export { usePensieveHealth } from "./hooks/usePensieveHealth";
 
-// ── Re-exported types from @kyma-ai/client ────────────────────────────────────
-// Commonly-needed types so consumers don't need to also import @kyma-ai/client.
+// ── Re-exported types from @pensieve-ai/client ────────────────────────────────────
+// Commonly-needed types so consumers don't need to also import @pensieve-ai/client.
 export type {
   GraphNode,
   GraphRelationship,
@@ -35,21 +35,21 @@ export type {
   Frame,
   Column,
   ColKind,
-} from "@kyma-ai/client";
+} from "@pensieve-ai/client";
 
 // ── Internal UI primitives ────────────────────────────────────────────────────
-export { KymaErrorBoundary } from "./internal/KymaErrorBoundary";
-export type { KymaErrorBoundaryProps } from "./internal/KymaErrorBoundary";
+export { PensieveErrorBoundary } from "./internal/PensieveErrorBoundary";
+export type { PensieveErrorBoundaryProps } from "./internal/PensieveErrorBoundary";
 export { CapabilityGate } from "./internal/CapabilityGate";
 export type { CapabilityGateProps } from "./internal/CapabilityGate";
 
 // View components are NOT re-exported from the root on purpose: each lives on
-// its own subpath (`@kyma-ai/react/graph`, `/query`, `/discover`, `/dashboards`,
+// its own subpath (`@pensieve-ai/react/graph`, `/query`, `/discover`, `/dashboards`,
 // `/agent`) so a consumer importing only the provider/hooks never pulls a
 // view's heavy dependency (echarts, monaco, force-graph, ai-sdk) into their
 // static graph. Dashboard types that hooks return are re-exported above.
 
 // ── Themes ────────────────────────────────────────────────────────────────────
-export { kymaDark, kymaLight } from "./theme/presets";
+export { pensieveDark, pensieveLight } from "./theme/presets";
 export { themeToCssVars } from "./theme/tokens";
-export type { KymaTheme } from "./theme/tokens";
+export type { PensieveTheme } from "./theme/tokens";

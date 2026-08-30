@@ -1,11 +1,11 @@
-//! `kyma data source` + `kyma ingest` — data source lifecycle subcommands.
+//! `pensieve data source` + `pensieve ingest` — data source lifecycle subcommands.
 //!
 //! Wraps the server's `/v1/data sources` + `/v1/credentials` HTTP API so a user
 //! can stand up a GitHub/GitLab/Bitbucket repo ingestion in one command:
 //!
 //! ```text
 //! export GITHUB_TOKEN=ghp_…
-//! kyma data source add github shakedaskayo/kyma --start
+//! pensieve data source add github shakedaskayo/pensieve --start
 //! ```
 //!
 //! Token discovery order (matches the server's [`CredentialResolver`]):
@@ -72,7 +72,7 @@ pub(crate) enum IngestOp {
         interval: u64,
     },
     /// Push NDJSON rows from stdin straight into a table (`POST /v1/ingest`,
-    /// auto-create + schema-evolve on). Used by the kyma-memory plugin's hooks.
+    /// auto-create + schema-evolve on). Used by the pensieve-memory plugin's hooks.
     Push {
         /// Target table (created on first write).
         #[arg(long)]
@@ -93,7 +93,7 @@ pub(crate) enum Source {
     /// calls, imports parsed via tree-sitter). Codebase parsing is ON by
     /// default — disable with `--no-codebase` for metadata-only.
     Github {
-        /// `owner/repo`, e.g. `shakedaskayo/kyma`. Pass multiple comma-separated
+        /// `owner/repo`, e.g. `shakedaskayo/pensieve`. Pass multiple comma-separated
         /// to bundle them under one data source.
         repos: String,
         #[command(flatten)]
@@ -237,7 +237,7 @@ pub(crate) struct CommonAdd {
     /// Human-readable data source name. Defaults to `<source>-<owner>-<repo>`.
     #[arg(long)]
     pub name: Option<String>,
-    /// Target database (created with `kyma create-database`). Defaults to the
+    /// Target database (created with `pensieve create-database`). Defaults to the
     /// source kind ("github", "gitlab", "bitbucket").
     #[arg(long)]
     pub db: Option<String>,
@@ -411,7 +411,7 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
                 config.insert("api_url".into(), Value::String(url));
             }
             // Forward-compatibility: server doesn't read these yet, but the
-            // surface is reserved so today's `kyma data source add gitlab …
+            // surface is reserved so today's `pensieve data source add gitlab …
             // --no-codebase` keeps working when codebase parsing lands.
             config.insert("modules".into(), Value::Object(modules.into_object()));
             if let Some(c) = code.into_object() {
@@ -501,7 +501,7 @@ async fn cmd_add(cfg: &ClientConfig, source: Source) -> Result<()> {
         http_post(cfg, &format!("/v1/data-sources/{id}/trigger"), &json!({})).await?;
         poll_status(cfg, &id, 30).await?;
     } else {
-        println!("\nRun `kyma datasource trigger {id}` to start a manual tick.");
+        println!("\nRun `pensieve datasource trigger {id}` to start a manual tick.");
     }
     Ok(())
 }
@@ -807,7 +807,7 @@ async fn poll_status(cfg: &ClientConfig, id: &str, timeout_secs: u64) -> Result<
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
-    println!("  (no run completed within {timeout_secs}s — check `kyma ingest status` later)");
+    println!("  (no run completed within {timeout_secs}s — check `pensieve ingest status` later)");
     Ok(())
 }
 
@@ -905,7 +905,7 @@ mod tests {
     fn data_source_row_active_with_last_success() {
         let c = json!({
             "type": "github",
-            "name": "kyma",
+            "name": "pensieve",
             "enabled": true,
             "last_success_at": "2026-07-01T00:00:00Z",
         });
@@ -913,7 +913,7 @@ mod tests {
             data_source_row(&c),
             [
                 "github".to_string(),
-                "kyma".to_string(),
+                "pensieve".to_string(),
                 "active".to_string(),
                 "2026-07-01T00:00:00Z".to_string(),
             ]
@@ -955,8 +955,8 @@ mod tests {
 
     #[test]
     fn add_success_line_includes_name_kind_and_id() {
-        let line = add_success_line("kyma", "github", "abc-123");
-        assert!(line.contains("Created data source kyma (github) → id=abc-123"));
+        let line = add_success_line("pensieve", "github", "abc-123");
+        assert!(line.contains("Created data source pensieve (github) → id=abc-123"));
         assert!(line.contains(ux::theme::CHECK));
     }
 
@@ -982,7 +982,7 @@ mod tests {
     #[test]
     fn ingest_status_row_extracts_all_fields() {
         let c = json!({
-            "name": "kyma",
+            "name": "pensieve",
             "type": "github",
             "last_run_at": "t1",
             "last_success_at": "t2",
@@ -991,7 +991,7 @@ mod tests {
         assert_eq!(
             ingest_status_row(&c),
             [
-                "kyma".to_string(),
+                "pensieve".to_string(),
                 "github".to_string(),
                 "t1".to_string(),
                 "t2".to_string(),
@@ -1017,15 +1017,15 @@ mod tests {
 
     #[test]
     fn tail_line_ok_when_no_error() {
-        let line = tail_line("2026-07-01T00:00:00Z", "kyma", "");
-        assert!(line.contains("[2026-07-01T00:00:00Z] kyma: ok"));
+        let line = tail_line("2026-07-01T00:00:00Z", "pensieve", "");
+        assert!(line.contains("[2026-07-01T00:00:00Z] pensieve: ok"));
         assert!(line.contains(ux::theme::CHECK));
     }
 
     #[test]
     fn tail_line_error_includes_message() {
-        let line = tail_line("2026-07-01T00:00:00Z", "kyma", "connection refused");
-        assert!(line.contains("[2026-07-01T00:00:00Z] kyma: ERROR connection refused"));
+        let line = tail_line("2026-07-01T00:00:00Z", "pensieve", "connection refused");
+        assert!(line.contains("[2026-07-01T00:00:00Z] pensieve: ERROR connection refused"));
         assert!(line.contains(ux::theme::CROSS));
     }
 }

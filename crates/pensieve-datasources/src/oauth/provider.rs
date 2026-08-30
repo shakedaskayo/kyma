@@ -37,7 +37,7 @@ pub struct OAuthProvider {
     /// Extra static query params appended to the authorize URL (e.g. Google's
     /// `access_type=offline` + `prompt=consent` to force a refresh token).
     pub extra_authorize_params: &'static [(&'static str, &'static str)],
-    /// Suffix for operator env vars: `KYMA_OAUTH_<ENV_KEY>_CLIENT_ID` / `_SECRET`.
+    /// Suffix for operator env vars: `PENSIEVE_OAUTH_<ENV_KEY>_CLIENT_ID` / `_SECRET`.
     pub env_key: &'static str,
     /// Slack returns the token JSON wrapped in `{ "ok": true, … }` with HTTP 200
     /// even on logical errors — the token parser special-cases this.

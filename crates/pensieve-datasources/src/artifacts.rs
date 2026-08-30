@@ -5,14 +5,14 @@
 //! call, without the data source touching the catalog directly. Handed to the
 //! data source via [`crate::types::DataSourceCtx::artifacts`].
 //!
-//! Bytes are stored verbatim — the caller redacts first (see kyma-redact).
+//! Bytes are stored verbatim — the caller redacts first (see pensieve-redact).
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use kyma_catalog::artifacts::ArtifactRecord;
-use kyma_catalog::PostgresCatalog;
+use pensieve_catalog::artifacts::ArtifactRecord;
+use pensieve_catalog::PostgresCatalog;
 use object_store::path::Path as ObjPath;
 use object_store::ObjectStore;
 use uuid::Uuid;
@@ -53,7 +53,7 @@ impl ArtifactStore for ObjectArtifactStore {
             .register_artifact(&record)
             .await
             .map_err(|e| anyhow::anyhow!("artifact register: {e}"))?;
-        kyma_storage::put_artifact(&self.store, &key, bytes)
+        pensieve_storage::put_artifact(&self.store, &key, bytes)
             .await
             .map_err(|e| anyhow::anyhow!("artifact put: {e}"))?;
         Ok(id)

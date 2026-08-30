@@ -1,7 +1,7 @@
 //! T-SQL flavoring for DataFusion's unparser.
 //!
 //! DataFusion ships Postgres/MySQL/SQLite unparser dialects but no T-SQL one.
-//! Two layers close the gap for the constructs kyma actually pushes down:
+//! Two layers close the gap for the constructs pensieve actually pushes down:
 //!
 //! 1. A [`CustomDialect`](datafusion::sql::unparser::dialect::CustomDialect)
 //!    configured for double-quoted identifiers (valid under T-SQL's default

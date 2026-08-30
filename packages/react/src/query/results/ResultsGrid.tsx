@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronRight } from "lucide-react";
-import type { Column, ColKind } from "@kyma-ai/client";
+import type { Column, ColKind } from "@pensieve-ai/client";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

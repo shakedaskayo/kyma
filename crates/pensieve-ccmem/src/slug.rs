@@ -1,4 +1,4 @@
-//! Claude Code project path slugs and kyma file naming.
+//! Claude Code project path slugs and pensieve file naming.
 //!
 //! Claude Code stores per-project state under
 //! `~/.claude/projects/<path-slug>/` where the slug is the absolute project
@@ -27,13 +27,13 @@ pub fn resolve_project_path(slug_dir_name: &str, known_paths: &[String]) -> Opti
 }
 
 /// The memory realm for a project path — its basename, matching the
-/// `kyma_realm()` convention in the Claude Code plugin hooks.
+/// `pensieve_realm()` convention in the Claude Code plugin hooks.
 pub fn realm_for_path(p: &Path) -> String {
     p.file_name()
         .map_or_else(|| "default".to_string(), |s| s.to_string_lossy().into_owned())
 }
 
-/// Filename for a kyma-promoted memory: `kyma-<kebab-title>.md`. The `kyma-`
+/// Filename for a pensieve-promoted memory: `pensieve-<kebab-title>.md`. The `pensieve-`
 /// prefix namespaces managed files so curation can pre-filter without
 /// reading frontmatter.
 pub fn memory_filename(title: &str) -> String {
@@ -49,5 +49,5 @@ pub fn memory_filename(title: &str) -> String {
         }
     }
     let slug = slug.trim_end_matches('-');
-    format!("kyma-{slug}.md")
+    format!("pensieve-{slug}.md")
 }

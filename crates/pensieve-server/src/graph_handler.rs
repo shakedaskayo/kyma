@@ -5,8 +5,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use kyma_core::catalog::Catalog;
-use kyma_graph::{ColumnDef, SchemaSource};
+use pensieve_core::catalog::Catalog;
+use pensieve_graph::{ColumnDef, SchemaSource};
 
 /// Adapts the full [`Catalog`] down to the narrow [`SchemaSource`] the
 /// schema-graph needs. When `allowed` is `Some`, only those databases are
@@ -54,7 +54,7 @@ impl SchemaSource for CatalogSchemaSource {
 }
 
 // ---------------------------------------------------------------------------
-// QueryEngineExecutor: runs SQL against a database via DataFusion + KymaTable.
+// QueryEngineExecutor: runs SQL against a database via DataFusion + PensieveTable.
 // Mirrors agent/tools.rs::execute_sql exactly.
 // ---------------------------------------------------------------------------
 
@@ -62,20 +62,20 @@ use arrow::json::ArrayWriter;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
-use kyma_exec::KymaTable;
-use kyma_graph::{GraphQueryExecutor, JsonRow};
+use pensieve_exec::PensieveTable;
+use pensieve_graph::{GraphQueryExecutor, JsonRow};
 
 const GRAPH_MEMORY_POOL_BYTES: usize = 256 * 1024 * 1024;
 
 pub(crate) struct QueryEngineExecutor {
-    catalog: Arc<dyn kyma_core::catalog::Catalog>,
-    format: Arc<dyn kyma_core::segment_format::SegmentFormat>,
+    catalog: Arc<dyn pensieve_core::catalog::Catalog>,
+    format: Arc<dyn pensieve_core::segment_format::SegmentFormat>,
 }
 
 #[async_trait]
 impl GraphQueryExecutor for QueryEngineExecutor {
     #[tracing::instrument(
-        target = "kyma_telemetry",
+        target = "pensieve_telemetry",
         name = "graph.query",
         skip_all,
         fields(graph.database = %database)
@@ -94,11 +94,11 @@ impl GraphQueryExecutor for QueryEngineExecutor {
             .map_err(|e| anyhow::anyhow!("runtime_env: {e}"))?;
 
         let ctx = SessionContext::new_with_config_rt(SessionConfig::new(), runtime);
-        kyma_exec::register_vector_udfs(&ctx);
+        pensieve_exec::register_vector_udfs(&ctx);
 
         for t in tables {
             let name = t.name.clone();
-            let table = Arc::new(KymaTable::new(t, self.catalog.clone(), self.format.clone()));
+            let table = Arc::new(PensieveTable::new(t, self.catalog.clone(), self.format.clone()));
             ctx.register_table(&name, table)
                 .map_err(|e| anyhow::anyhow!("register_table({name}): {e}"))?;
         }
@@ -145,7 +145,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use kyma_graph::{Direction, GraphProvider, GraphRef, SchemaGraphProvider, StoredGraphProvider};
+use pensieve_graph::{Direction, GraphProvider, GraphRef, SchemaGraphProvider, StoredGraphProvider};
 use serde::Deserialize;
 
 use crate::QueryState;
@@ -176,13 +176,13 @@ impl GraphProvider for ResolvedProvider {
         &self,
         realm: Option<&str>,
         limit: usize,
-    ) -> anyhow::Result<kyma_graph::GraphPayload> {
+    ) -> anyhow::Result<pensieve_graph::GraphPayload> {
         match self {
             Self::Schema(p) => p.overview(realm, limit).await,
             Self::Stored(p) => p.overview(realm, limit).await,
         }
     }
-    async fn node(&self, id: &str) -> anyhow::Result<Option<kyma_graph::GraphNode>> {
+    async fn node(&self, id: &str) -> anyhow::Result<Option<pensieve_graph::GraphNode>> {
         match self {
             Self::Schema(p) => p.node(id).await,
             Self::Stored(p) => p.node(id).await,
@@ -194,7 +194,7 @@ impl GraphProvider for ResolvedProvider {
         dir: Direction,
         only_internal: bool,
         limit: usize,
-    ) -> anyhow::Result<kyma_graph::EdgeExpansion> {
+    ) -> anyhow::Result<pensieve_graph::EdgeExpansion> {
         match self {
             Self::Schema(p) => p.neighbors(ids, dir, only_internal, limit).await,
             Self::Stored(p) => p.neighbors(ids, dir, only_internal, limit).await,
@@ -204,7 +204,7 @@ impl GraphProvider for ResolvedProvider {
         &self,
         id: &str,
         depth: usize,
-    ) -> anyhow::Result<kyma_graph::GraphPayload> {
+    ) -> anyhow::Result<pensieve_graph::GraphPayload> {
         match self {
             Self::Schema(p) => p.subgraph(id, depth).await,
             Self::Stored(p) => p.subgraph(id, depth).await,
@@ -217,19 +217,19 @@ impl GraphProvider for ResolvedProvider {
         realm: Option<&str>,
         limit: usize,
         offset: usize,
-    ) -> anyhow::Result<kyma_graph::SearchHits> {
+    ) -> anyhow::Result<pensieve_graph::SearchHits> {
         match self {
             Self::Schema(p) => p.search(text, labels, realm, limit, offset).await,
             Self::Stored(p) => p.search(text, labels, realm, limit, offset).await,
         }
     }
-    async fn stats(&self, realm: Option<&str>) -> anyhow::Result<kyma_graph::GraphStats> {
+    async fn stats(&self, realm: Option<&str>) -> anyhow::Result<pensieve_graph::GraphStats> {
         match self {
             Self::Schema(p) => p.stats(realm).await,
             Self::Stored(p) => p.stats(realm).await,
         }
     }
-    async fn schema(&self) -> anyhow::Result<kyma_graph::GraphSchema> {
+    async fn schema(&self) -> anyhow::Result<pensieve_graph::GraphSchema> {
         match self {
             Self::Schema(p) => p.schema().await,
             Self::Stored(p) => p.schema().await,
@@ -254,7 +254,7 @@ async fn resolve(
     resolve_with(
         &state.catalog,
         &state.format,
-        kyma_core::tenant::DEFAULT_TENANT,
+        pensieve_core::tenant::DEFAULT_TENANT,
         graph,
         database,
         allowed_databases,
@@ -269,9 +269,9 @@ async fn resolve(
 /// schema-vs-stored routing + `StoredGraphProvider` wiring instead of
 /// duplicating it. Returns a 404 / 500 `Response` on failure.
 pub(crate) async fn resolve_with(
-    catalog: &Arc<dyn kyma_core::catalog::Catalog>,
-    format: &Arc<dyn kyma_core::segment_format::SegmentFormat>,
-    tenant: kyma_core::tenant::TenantId,
+    catalog: &Arc<dyn pensieve_core::catalog::Catalog>,
+    format: &Arc<dyn pensieve_core::segment_format::SegmentFormat>,
+    tenant: pensieve_core::tenant::TenantId,
     graph: &str,
     database: &str,
     allowed_databases: Option<Vec<String>>,
@@ -301,11 +301,11 @@ pub(crate) async fn resolve_with(
 /// query executor from the catalog + format. The single construction site for
 /// stored-graph providers (HTTP handlers + unified search both route here).
 pub(crate) fn stored_provider(
-    catalog: &Arc<dyn kyma_core::catalog::Catalog>,
-    format: &Arc<dyn kyma_core::segment_format::SegmentFormat>,
-    reg: kyma_core::catalog::GraphRegistration,
+    catalog: &Arc<dyn pensieve_core::catalog::Catalog>,
+    format: &Arc<dyn pensieve_core::segment_format::SegmentFormat>,
+    reg: pensieve_core::catalog::GraphRegistration,
 ) -> StoredGraphProvider {
-    let cfg = kyma_graph::StoredGraphConfig {
+    let cfg = pensieve_graph::StoredGraphConfig {
         database: reg.database,
         node_table: reg.node_table,
         edge_table: reg.edge_table,
@@ -325,17 +325,17 @@ pub(crate) fn stored_provider(
     StoredGraphProvider::new(cfg, exec).with_store(format.object_store())
 }
 
-/// Build a stored-graph provider from a resolved [`kyma_kql::GraphBinding`] +
+/// Build a stored-graph provider from a resolved [`pensieve_kql::GraphBinding`] +
 /// database, without re-resolving the registration. Used by the Cypher
 /// CREATE/MERGE write path for existence checks (realm scoping not needed there,
 /// so `realm_col` is dropped).
 pub(crate) fn stored_provider_from_binding(
-    catalog: &Arc<dyn kyma_core::catalog::Catalog>,
-    format: &Arc<dyn kyma_core::segment_format::SegmentFormat>,
+    catalog: &Arc<dyn pensieve_core::catalog::Catalog>,
+    format: &Arc<dyn pensieve_core::segment_format::SegmentFormat>,
     database: &str,
-    binding: &kyma_kql::GraphBinding,
+    binding: &pensieve_kql::GraphBinding,
 ) -> StoredGraphProvider {
-    let cfg = kyma_graph::StoredGraphConfig {
+    let cfg = pensieve_graph::StoredGraphConfig {
         database: database.to_string(),
         node_table: binding.node_table.clone(),
         edge_table: binding.edge_table.clone(),
@@ -417,7 +417,7 @@ fn default_neighbors_limit() -> usize {
 struct ExportQuery {
     realm: Option<String>,
     #[serde(default)]
-    algorithm: kyma_graph::LayoutAlgorithm,
+    algorithm: pensieve_graph::LayoutAlgorithm,
     cursor: Option<String>,
     #[serde(default = "default_export_page_size")]
     page_size: usize,
@@ -813,7 +813,7 @@ async fn export(
         algorithm: q.algorithm,
     };
     let computing = |key: &CacheKey, fp: (usize, usize)| {
-        Json(kyma_graph::GraphExportPage {
+        Json(pensieve_graph::GraphExportPage {
             layout_status: "computing".into(),
             layout_id: LayoutCache::layout_id(key, fp),
             total_nodes: fp.0,
@@ -832,15 +832,15 @@ async fn export(
             (StatusCode::OK, computing(&key, fingerprint)).into_response()
         }
         None => {
-            let compute = move |payload: kyma_graph::GraphPayload,
+            let compute = move |payload: pensieve_graph::GraphPayload,
                                 key: &CacheKey|
                   -> LaidOutGraph {
-                let positions = kyma_graph::compute_layout(
+                let positions = pensieve_graph::compute_layout(
                     key.algorithm,
                     &payload.nodes,
                     &payload.edges,
-                    kyma_graph::LAYOUT_WIDTH,
-                    kyma_graph::LAYOUT_HEIGHT,
+                    pensieve_graph::LAYOUT_WIDTH,
+                    pensieve_graph::LAYOUT_HEIGHT,
                 );
                 let fp = (payload.nodes.len(), payload.edges.len());
                 LaidOutGraph {
@@ -851,7 +851,7 @@ async fn export(
                         .into_iter()
                         .map(|n| {
                             let (x, y) = positions.get(&n.id).copied().unwrap_or((0.0, 0.0));
-                            kyma_graph::PositionedNode { node: n, x, y }
+                            pensieve_graph::PositionedNode { node: n, x, y }
                         })
                         .collect(),
                     edges: payload.edges,
@@ -916,7 +916,7 @@ pub fn graph_router(state: QueryState) -> Router {
 #[cfg(all(test, feature = "test-support"))]
 mod tests {
     use super::*;
-    use kyma_graph::{GraphProvider, SchemaGraphProvider};
+    use pensieve_graph::{GraphProvider, SchemaGraphProvider};
 
     #[tokio::test]
     async fn adapter_feeds_schema_provider_from_seeded_catalog() {
@@ -1056,7 +1056,7 @@ mod tests {
 
     #[tokio::test]
     async fn graph_registration_crud_roundtrip() {
-        use kyma_core::catalog::GraphSpec;
+        use pensieve_core::catalog::GraphSpec;
         let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
         let cat = &state.catalog;
 
@@ -1096,7 +1096,7 @@ mod tests {
     /// so all SQL is valid even though the data has no real graph semantics.
     #[tokio::test]
     async fn stored_graph_routing_and_executor_wiring() {
-        use kyma_core::catalog::GraphSpec;
+        use pensieve_core::catalog::GraphSpec;
 
         let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
         let cat = &state.catalog;

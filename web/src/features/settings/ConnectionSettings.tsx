@@ -87,13 +87,13 @@ export function ConnectionSettings() {
               type="password"
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder="paste token from KYMA_AUTH_TOKENS"
+              placeholder="paste token from PENSIEVE_AUTH_TOKENS"
             />
             <p className="text-xs text-muted-foreground">
               Configure with{" "}
-              <code className="font-mono">KYMA_AUTH_TOKENS=token:read</code> on
+              <code className="font-mono">PENSIEVE_AUTH_TOKENS=token:read</code> on
               the server; leave blank and set{" "}
-              <code className="font-mono">KYMA_AUTH_DISABLED=1</code> for
+              <code className="font-mono">PENSIEVE_AUTH_DISABLED=1</code> for
               unauthenticated dev.
             </p>
           </CollapsibleContent>

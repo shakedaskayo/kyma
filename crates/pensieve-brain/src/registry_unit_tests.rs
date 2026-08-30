@@ -2,7 +2,7 @@ use crate::registry::*;
 
 #[test]
 fn layout_derived_from_selector_shape() {
-    assert_eq!(RealmSelector::Realms(vec!["kyma".into()]).layout(), VaultLayout::Flat);
+    assert_eq!(RealmSelector::Realms(vec!["pensieve".into()]).layout(), VaultLayout::Flat);
     assert_eq!(
         RealmSelector::Realms(vec!["a".into(), "b".into()]).layout(),
         VaultLayout::ByRealm
@@ -45,7 +45,7 @@ fn run_ring_caps() {
 fn config_serde_round_trips() {
     let cfg = BrainConfig::new(
         "team",
-        RealmSelector::Realms(vec!["kyma".into(), "global".into()]),
+        RealmSelector::Realms(vec!["pensieve".into(), "global".into()]),
         "2026-07-08T00:00:00Z",
     )
     .unwrap();

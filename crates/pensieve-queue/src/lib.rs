@@ -33,7 +33,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use kyma_core::catalog::Catalog;
+use pensieve_core::catalog::Catalog;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
@@ -219,7 +219,7 @@ impl Queue {
                     *e = seq;
                 }
                 ::metrics::counter!(
-                    "kyma_queue_jobs_submitted_total",
+                    "pensieve_queue_jobs_submitted_total",
                     "queue" => self.shared.cfg.name.clone()
                 )
                 .increment(1);
@@ -230,7 +230,7 @@ impl Queue {
                 // No submitted watermark: under overload the barrier does not
                 // cover this job (bounded inconsistency, documented).
                 ::metrics::counter!(
-                    "kyma_queue_overflow_to_store_total",
+                    "pensieve_queue_overflow_to_store_total",
                     "queue" => self.shared.cfg.name.clone()
                 )
                 .increment(1);
@@ -295,7 +295,7 @@ impl Queue {
                 let marks = self.shared.marks.lock().expect("queue marks lock");
                 if reached(&marks) {
                     ::metrics::histogram!(
-                        "kyma_queue_barrier_wait_seconds",
+                        "pensieve_queue_barrier_wait_seconds",
                         "queue" => self.shared.cfg.name.clone()
                     )
                     .record(start.elapsed().as_secs_f64());
@@ -304,7 +304,7 @@ impl Queue {
             }
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
                 ::metrics::counter!(
-                    "kyma_queue_barrier_timeouts_total",
+                    "pensieve_queue_barrier_timeouts_total",
                     "queue" => self.shared.cfg.name.clone()
                 )
                 .increment(1);
@@ -315,7 +315,7 @@ impl Queue {
                 let ok = reached(&marks);
                 if !ok {
                     ::metrics::counter!(
-                        "kyma_queue_barrier_timeouts_total",
+                        "pensieve_queue_barrier_timeouts_total",
                         "queue" => self.shared.cfg.name.clone()
                     )
                     .increment(1);

@@ -5,12 +5,12 @@
 use std::sync::Arc;
 
 use arrow_schema::{DataType, Field, Schema};
-use kyma_catalog::PostgresCatalog;
-use kyma_compaction::IndexScheduler;
-use kyma_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig};
-use kyma_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
-use kyma_core::tenant::DEFAULT_TENANT;
-use kyma_core::types::TableId;
+use pensieve_catalog::PostgresCatalog;
+use pensieve_compaction::IndexScheduler;
+use pensieve_core::catalog::{Catalog, ExtentManifest, SnapshotSummary, TableConfig};
+use pensieve_core::index_sidecar::{IndexSidecarDescriptor, SidecarKind};
+use pensieve_core::tenant::DEFAULT_TENANT;
+use pensieve_core::types::TableId;
 use testcontainers::{runners::AsyncRunner, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 use uuid::Uuid;
@@ -36,14 +36,14 @@ fn scalar_schema() -> Arc<Schema> {
 async fn register_extent(
     catalog: &PostgresCatalog,
     table_id: TableId,
-    tref: &kyma_core::catalog::TableRef,
-) -> kyma_core::types::ExtentId {
-    let id = kyma_core::types::ExtentId::from_uuid(Uuid::new_v4());
+    tref: &pensieve_core::catalog::TableRef,
+) -> pensieve_core::types::ExtentId {
+    let id = pensieve_core::types::ExtentId::from_uuid(Uuid::new_v4());
     let manifest = ExtentManifest {
         id,
         table_id,
         schema_snapshot_id: tref.schema_snapshot_id,
-        object_path: format!("{DEFAULT_TENANT}/extents/{}.kyma", id.as_uuid()),
+        object_path: format!("{DEFAULT_TENANT}/extents/{}.pensieve", id.as_uuid()),
         byte_size: 1024,
         row_count: 100,
         min_timestamp: None,
@@ -143,12 +143,12 @@ async fn enqueues_builds_for_unindexed_vector_extents_only() {
 
     // Register a fresh tree whose fingerprint matches the current sidecar set →
     // the next tick is fully debounced (no ann_maintain re-enqueue).
-    let fp = kyma_index_vector::global_tree::extent_fingerprint(
+    let fp = pensieve_index_vector::global_tree::extent_fingerprint(
         &[e1, _e2].iter().map(|e| *e.as_uuid()).collect::<Vec<_>>(),
     );
     pg.upsert_ann_tree(
         DEFAULT_TENANT,
-        &kyma_core::index_sidecar::AnnTreeDescriptor {
+        &pensieve_core::index_sidecar::AnnTreeDescriptor {
             id: Uuid::new_v4(),
             table_id: vtref.id,
             column: "embedding".into(),
@@ -172,15 +172,15 @@ async fn enqueues_builds_for_unindexed_vector_extents_only() {
 async fn register_extent_stats(
     catalog: &PostgresCatalog,
     table_id: TableId,
-    tref: &kyma_core::catalog::TableRef,
+    tref: &pensieve_core::catalog::TableRef,
     column_stats: serde_json::Value,
-) -> kyma_core::types::ExtentId {
-    let id = kyma_core::types::ExtentId::from_uuid(Uuid::new_v4());
+) -> pensieve_core::types::ExtentId {
+    let id = pensieve_core::types::ExtentId::from_uuid(Uuid::new_v4());
     let manifest = ExtentManifest {
         id,
         table_id,
         schema_snapshot_id: tref.schema_snapshot_id,
-        object_path: format!("{DEFAULT_TENANT}/extents/{}.kyma", id.as_uuid()),
+        object_path: format!("{DEFAULT_TENANT}/extents/{}.pensieve", id.as_uuid()),
         byte_size: 1024,
         row_count: 100,
         min_timestamp: None,
@@ -235,7 +235,7 @@ async fn enqueues_embed_backfill_for_unembedded_extents_only() {
     // Configure auto-embed: msg → embedding.
     pg.set_table_embed_config(
         DEFAULT_TENANT,
-        &kyma_core::catalog::TableEmbedConfig {
+        &pensieve_core::catalog::TableEmbedConfig {
             table_id: tref.id,
             source_column: "msg".into(),
             embedding_column: "embedding".into(),

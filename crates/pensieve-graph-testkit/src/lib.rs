@@ -12,10 +12,10 @@
 //!   vectorized path operator is implemented against.
 //! - [`harness`] — engine-agnostic differential runner:
 //!   [`harness::GraphEngineUnderTest`] + [`harness::run_differential`], with
-//!   an [`harness::HttpKymaEngine`] that drives a live kyma over
+//!   an [`harness::HttpPensieveEngine`] that drives a live pensieve over
 //!   `POST /v1/query` (`application/x-cypher`).
-//! - [`ingest`] — loads a [`model::TestGraph`] into a running kyma (tables via
-//!   `POST /v1/ingest` NDJSON, registration via `kyma-cli create-graph`).
+//! - [`ingest`] — loads a [`model::TestGraph`] into a running pensieve (tables via
+//!   `POST /v1/ingest` NDJSON, registration via `pensieve-cli create-graph`).
 //!
 //! The `graph_differential` binary (see `src/bin/`) ties these together into
 //! the S0 gate: synth → ingest → run the existing Cypher subset through both

@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { KymaGraph } from "./KymaGraph";
-import type { LayoutAlgorithm } from "@kyma-ai/client";
+import { PensieveGraph } from "./PensieveGraph";
+import type { LayoutAlgorithm } from "@pensieve-ai/client";
 
-const meta: Meta<typeof KymaGraph> = {
-  title: "Components/KymaGraph",
-  component: KymaGraph,
+const meta: Meta<typeof PensieveGraph> = {
+  title: "Components/PensieveGraph",
+  component: PensieveGraph,
   argTypes: {
     layout: {
       control: { type: "select" },
@@ -33,7 +33,7 @@ const meta: Meta<typeof KymaGraph> = {
 };
 
 export default meta;
-type Story = StoryObj<typeof KymaGraph>;
+type Story = StoryObj<typeof PensieveGraph>;
 
 /**
  * Default view: loads from the fixture /v1/graph endpoint and renders a 12-node
