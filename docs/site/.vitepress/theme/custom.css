@@ -23,14 +23,14 @@
   --pensieve-muted:     #767880;
   --pensieve-rule:      #2a2e36;
   --pensieve-rule-soft: rgba(20, 23, 28, 0.10);
-  --pensieve-accent:    #2d6f1f;          /* darker green — legible on white */
+  --pensieve-accent:    #1F5FD6;          /* deeper brand blue — legible on white */
   --pensieve-link:      #2a5085;          /* citation blue */
 
   /* VitePress overrides — point its tokens at ours. */
   --vp-c-brand-1: var(--pensieve-accent);
   --vp-c-brand-2: var(--pensieve-accent);
   --vp-c-brand-3: var(--pensieve-accent);
-  --vp-c-brand-soft: rgba(45, 111, 31, 0.10);
+  --vp-c-brand-soft: rgba(31, 95, 214, 0.10);
   --vp-font-family-base: var(--pensieve-font-body);
   --vp-font-family-mono: var(--pensieve-font-mono);
   --vp-home-hero-name-color: var(--pensieve-fg);
@@ -1113,7 +1113,7 @@
   font-family: var(--pensieve-font-mono);
   font-size: 0.85rem;
   line-height: 1.7;
-  color: #d6e4d0;
+  color: #cfe0f7;
 }
 .pensieve-terminal .prompt {
   color: #4C8DFF;
