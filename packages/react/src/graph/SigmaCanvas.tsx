@@ -393,5 +393,5 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSeq]);
 
-  return <div ref={containerRef} className="ky-absolute ky-inset-0" />;
+  return <div ref={containerRef} className="pv-absolute pv-inset-0" />;
 }

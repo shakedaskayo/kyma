@@ -554,7 +554,7 @@ export function GraphCanvas({
   const bg = isDark ? "rgba(0,0,0,0)" : "rgba(0,0,0,0)";
 
   return (
-    <div ref={containerRef} className="ky-absolute ky-inset-0">
+    <div ref={containerRef} className="pv-absolute pv-inset-0">
       <ForceGraph2D
         ref={fgRef as never}
         width={size.width || undefined}
@@ -607,17 +607,17 @@ function CanvasControls({
   onFit: () => void;
 }) {
   const btn =
-    "ky-flex ky-h-8 ky-w-8 ky-items-center ky-justify-center ky-text-muted-foreground ky-transition-colors hover:ky-bg-accent hover:ky-text-foreground";
+    "pv-flex pv-h-8 pv-w-8 pv-items-center pv-justify-center pv-text-muted-foreground pv-transition-colors hover:pv-bg-accent hover:pv-text-foreground";
   return (
-    <div className="ky-glass ky-absolute ky-bottom-4 ky-left-4 ky-flex ky-flex-col ky-overflow-hidden ky-rounded-lg">
+    <div className="pv-glass pv-absolute pv-bottom-4 pv-left-4 pv-flex pv-flex-col pv-overflow-hidden pv-rounded-lg">
       <button type="button" className={btn} onClick={onZoomIn} title="Zoom in" aria-label="Zoom in">
-        <Plus className="ky-h-4 ky-w-4" />
+        <Plus className="pv-h-4 pv-w-4" />
       </button>
-      <button type="button" className={`${btn} ky-border-y ky-border-border/60`} onClick={onFit} title="Fit to view" aria-label="Fit to view">
-        <Maximize2 className="ky-h-3.5 ky-w-3.5" />
+      <button type="button" className={`${btn} pv-border-y pv-border-border/60`} onClick={onFit} title="Fit to view" aria-label="Fit to view">
+        <Maximize2 className="pv-h-3.5 pv-w-3.5" />
       </button>
       <button type="button" className={btn} onClick={onZoomOut} title="Zoom out" aria-label="Zoom out">
-        <Minus className="ky-h-4 ky-w-4" />
+        <Minus className="pv-h-4 pv-w-4" />
       </button>
     </div>
   );

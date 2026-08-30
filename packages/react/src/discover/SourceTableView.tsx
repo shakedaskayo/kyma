@@ -14,33 +14,33 @@ export function SourceTableView({ src, onBack, onOpenRow }: Props) {
   const { shown: cols, hiddenVectors } = useMemo(() => partitionColumns(src.rows), [src]);
   return (
     <div>
-      <div className="ky-flex ky-items-center ky-gap-2 ky-px-3 ky-py-2 ky-border-b">
+      <div className="pv-flex pv-items-center pv-gap-2 pv-px-3 pv-py-2 pv-border-b">
         <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft className="ky-size-4 ky-mr-1" /> Back to stream
+          <ArrowLeft className="pv-size-4 pv-mr-1" /> Back to stream
         </Button>
-        <span className="ky-font-mono ky-text-sm">{src.source}</span>
-        <span className="ky-text-xs ky-text-muted-foreground ky-tabular-nums">
+        <span className="pv-font-mono pv-text-sm">{src.source}</span>
+        <span className="pv-text-xs pv-text-muted-foreground pv-tabular-nums">
           {src.total.toLocaleString()} rows · not in timeline (no timestamp column)
         </span>
       </div>
       {src.rows.length === 0 ? (
-        <div className="ky-p-3 ky-text-sm ky-text-muted-foreground">
+        <div className="pv-p-3 pv-text-sm pv-text-muted-foreground">
           {src.progress === "done" ? "no rows" : "loading…"}
         </div>
       ) : (
-        <table className="ky-w-full ky-text-xs ky-font-mono">
-          <thead className="ky-sticky ky-top-0 ky-bg-background ky-z-10">
+        <table className="pv-w-full pv-text-xs pv-font-mono">
+          <thead className="pv-sticky pv-top-0 pv-bg-background pv-z-10">
             <tr>
               {cols.map((c) => (
-                <th key={c} className="ky-text-left ky-px-2 ky-py-1 ky-border-b ky-font-medium">{c}</th>
+                <th key={c} className="pv-text-left pv-px-2 pv-py-1 pv-border-b pv-font-medium">{c}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {src.rows.slice(0, 500).map((r, i) => (
-              <tr key={i} className="hover:ky-bg-accent ky-cursor-pointer" onClick={() => onOpenRow(r)}>
+              <tr key={i} className="hover:pv-bg-accent pv-cursor-pointer" onClick={() => onOpenRow(r)}>
                 {cols.map((c) => (
-                  <td key={c} className="ky-px-2 ky-py-1 ky-truncate ky-max-w-xs ky-align-top" title={formatCell(r[c])}>
+                  <td key={c} className="pv-px-2 pv-py-1 pv-truncate pv-max-w-xs pv-align-top" title={formatCell(r[c])}>
                     {formatCell(r[c])}
                   </td>
                 ))}
@@ -50,7 +50,7 @@ export function SourceTableView({ src, onBack, onOpenRow }: Props) {
         </table>
       )}
       {hiddenVectors.length > 0 && (
-        <div className="ky-p-2 ky-text-xs ky-text-muted-foreground">
+        <div className="pv-p-2 pv-text-xs pv-text-muted-foreground">
           {hiddenVectors.length} vector column{hiddenVectors.length > 1 ? "s" : ""} hidden — open a row to see {hiddenVectors.length > 1 ? "them" : "it"}
         </div>
       )}

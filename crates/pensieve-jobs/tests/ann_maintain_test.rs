@@ -72,7 +72,7 @@ async fn add_extent_with_sidecar(
         id,
         table_id,
         schema_snapshot_id,
-        object_path: format!("test/extents/{}.pensieve", id.as_uuid()),
+        object_path: format!("test/extents/{}.pnsv", id.as_uuid()),
         byte_size: 64,
         row_count: 100,
         min_timestamp: None,

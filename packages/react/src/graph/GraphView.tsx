@@ -256,30 +256,30 @@ export function GraphView({
   // canvas (which shrinks via SigmaCanvas's ResizeObserver) instead of
   // floating over it, so selecting a node never hides part of the graph.
   return (
-    <div className="ky-flex ky-h-full ky-w-full ky-overflow-hidden">
-      <div className="ky-relative ky-h-full ky-min-w-0 ky-flex-1 ky-overflow-hidden">
+    <div className="pv-flex pv-h-full pv-w-full pv-overflow-hidden">
+      <div className="pv-relative pv-h-full pv-min-w-0 pv-flex-1 pv-overflow-hidden">
       {/* Galaxy substrate (behind the transparent canvas) */}
-      <div className="ky-pointer-events-none ky-absolute ky-inset-0" style={{ background: galaxyBg }} />
+      <div className="pv-pointer-events-none pv-absolute pv-inset-0" style={{ background: galaxyBg }} />
 
       {/* Full loading state */}
       {exp.isLoading && nodes.length === 0 && (
-        <div className="ky-absolute ky-inset-0 ky-z-10 ky-flex ky-items-center ky-justify-center ky-text-sm ky-text-muted-foreground">
+        <div className="pv-absolute pv-inset-0 pv-z-10 pv-flex pv-items-center pv-justify-center pv-text-sm pv-text-muted-foreground">
           Loading graph…
         </div>
       )}
 
       {/* Full error state (no nodes at all) */}
       {exp.isError && nodes.length === 0 && (
-        <div className="ky-absolute ky-inset-0 ky-z-10 ky-flex ky-items-center ky-justify-center ky-text-sm ky-text-destructive">
+        <div className="pv-absolute pv-inset-0 pv-z-10 pv-flex pv-items-center pv-justify-center pv-text-sm pv-text-destructive">
           Failed to load graph: {(exp.error as Error)?.message}
         </div>
       )}
 
       {/* Empty state */}
       {!exp.isLoading && !exp.isError && nodes.length === 0 && (
-        <div className="ky-absolute ky-inset-0 ky-z-10 ky-flex ky-flex-col ky-items-center ky-justify-center ky-gap-2 ky-text-muted-foreground">
-          <Network className="ky-h-8 ky-w-8" />
-          <div className="ky-text-sm">
+        <div className="pv-absolute pv-inset-0 pv-z-10 pv-flex pv-flex-col pv-items-center pv-justify-center pv-gap-2 pv-text-muted-foreground">
+          <Network className="pv-h-8 pv-w-8" />
+          <div className="pv-text-sm">
             No graph data yet — ingest some tables or connect a source to see the graph.
           </div>
         </div>
@@ -336,7 +336,7 @@ export function GraphView({
 
       {/* Vignette to draw the eye to the centre */}
       <div
-        className="ky-pointer-events-none ky-absolute ky-inset-0"
+        className="pv-pointer-events-none pv-absolute pv-inset-0"
         style={{
           background: isDark
             ? "radial-gradient(125% 125% at 50% 50%, transparent 55%, rgba(0,0,0,0.38) 100%)"
@@ -349,8 +349,8 @@ export function GraphView({
 
       {/* Layout computing pill */}
       {exp.layoutComputing && nodes.length > 0 && (
-        <div className="ky-absolute ky-left-1/2 ky-top-3 ky-z-10 -ky-translate-x-1/2">
-          <div className="ky-glass ky-rounded-full ky-px-3 ky-py-1 ky-text-xs ky-text-muted-foreground">
+        <div className="pv-absolute pv-left-1/2 pv-top-3 pv-z-10 -pv-translate-x-1/2">
+          <div className="pv-glass pv-rounded-full pv-px-3 pv-py-1 pv-text-xs pv-text-muted-foreground">
             Computing layout server-side… {nodes.length.toLocaleString()} nodes loaded
           </div>
         </div>
@@ -358,13 +358,13 @@ export function GraphView({
 
       {/* Partial-error retry pill (stream failed but we have some data) */}
       {exp.isError && nodes.length > 0 && (
-        <div className="ky-absolute ky-left-1/2 ky-top-3 ky-z-10 -ky-translate-x-1/2">
+        <div className="pv-absolute pv-left-1/2 pv-top-3 pv-z-10 -pv-translate-x-1/2">
           <button
             type="button"
             onClick={() => exp.refetch()}
-            className="ky-glass ky-flex ky-items-center ky-gap-1.5 ky-rounded-full ky-px-3 ky-py-1 ky-text-xs ky-text-destructive ky-transition-colors hover:ky-text-foreground"
+            className="pv-glass pv-flex pv-items-center pv-gap-1.5 pv-rounded-full pv-px-3 pv-py-1 pv-text-xs pv-text-destructive pv-transition-colors hover:pv-text-foreground"
           >
-            <RefreshCw className="ky-h-3 ky-w-3" />
+            <RefreshCw className="pv-h-3 pv-w-3" />
             Partial graph — a stream failed. Retry
           </button>
         </div>
@@ -388,33 +388,33 @@ export function GraphView({
 
           {/* Zoom controls — WebGL only (canvas fallback has its own CanvasControls) */}
           {useWebGL && (
-            <div className="ky-absolute ky-bottom-4 ky-right-4 ky-z-20 ky-glass ky-flex ky-flex-col ky-overflow-hidden ky-rounded-lg ky-border ky-border-border">
+            <div className="pv-absolute pv-bottom-4 pv-right-4 pv-z-20 pv-glass pv-flex pv-flex-col pv-overflow-hidden pv-rounded-lg pv-border pv-border-border">
               <button
                 type="button"
                 onClick={zoomIn}
                 title="Zoom in"
                 aria-label="Zoom in"
-                className="ky-flex ky-h-8 ky-w-8 ky-items-center ky-justify-center ky-text-muted-foreground ky-transition-colors hover:ky-bg-accent hover:ky-text-foreground"
+                className="pv-flex pv-h-8 pv-w-8 pv-items-center pv-justify-center pv-text-muted-foreground pv-transition-colors hover:pv-bg-accent hover:pv-text-foreground"
               >
-                <Plus className="ky-h-4 ky-w-4" />
+                <Plus className="pv-h-4 pv-w-4" />
               </button>
               <button
                 type="button"
                 onClick={zoomFit}
                 title="Fit to view"
                 aria-label="Fit to view"
-                className="ky-flex ky-h-8 ky-w-8 ky-items-center ky-justify-center ky-border-y ky-border-border/60 ky-text-muted-foreground ky-transition-colors hover:ky-bg-accent hover:ky-text-foreground"
+                className="pv-flex pv-h-8 pv-w-8 pv-items-center pv-justify-center pv-border-y pv-border-border/60 pv-text-muted-foreground pv-transition-colors hover:pv-bg-accent hover:pv-text-foreground"
               >
-                <Maximize2 className="ky-h-3.5 ky-w-3.5" />
+                <Maximize2 className="pv-h-3.5 pv-w-3.5" />
               </button>
               <button
                 type="button"
                 onClick={zoomOut}
                 title="Zoom out"
                 aria-label="Zoom out"
-                className="ky-flex ky-h-8 ky-w-8 ky-items-center ky-justify-center ky-text-muted-foreground ky-transition-colors hover:ky-bg-accent hover:ky-text-foreground"
+                className="pv-flex pv-h-8 pv-w-8 pv-items-center pv-justify-center pv-text-muted-foreground pv-transition-colors hover:pv-bg-accent hover:pv-text-foreground"
               >
-                <Minus className="ky-h-4 ky-w-4" />
+                <Minus className="pv-h-4 pv-w-4" />
               </button>
             </div>
           )}

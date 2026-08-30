@@ -58,14 +58,14 @@ export function ArtifactSourceViewer({ path }: { path: string }) {
   }, [path, client]);
 
   return (
-    <div className="ky-space-y-2">
-      <div className="ky-flex ky-items-center ky-justify-between ky-gap-2">
-        <div className="ky-truncate ky-font-mono ky-text-2xs ky-text-muted-foreground" title={path}>
+    <div className="pv-space-y-2">
+      <div className="pv-flex pv-items-center pv-justify-between pv-gap-2">
+        <div className="pv-truncate pv-font-mono pv-text-2xs pv-text-muted-foreground" title={path}>
           {path}
         </div>
-        <div className="ky-flex ky-items-center ky-gap-1">
+        <div className="pv-flex pv-items-center pv-gap-1">
           <Button variant="ghost" size="xs" onClick={() => setWrap((w) => !w)}>
-            <WrapText className="ky-h-3.5 ky-w-3.5" /> {wrap ? "No wrap" : "Wrap"}
+            <WrapText className="pv-h-3.5 pv-w-3.5" /> {wrap ? "No wrap" : "Wrap"}
           </Button>
           <Button
             variant="ghost"
@@ -73,14 +73,14 @@ export function ArtifactSourceViewer({ path }: { path: string }) {
             disabled={!text}
             onClick={() => void navigator.clipboard.writeText(text)}
           >
-            <Copy className="ky-h-3.5 ky-w-3.5" /> Copy
+            <Copy className="pv-h-3.5 pv-w-3.5" /> Copy
           </Button>
         </div>
       </div>
 
       {error ? (
-        <div className="ky-rounded ky-border ky-border-destructive/40 ky-bg-destructive/10 ky-p-2 ky-text-xs ky-text-destructive">
-          <div className="ky-mb-1">{error}</div>
+        <div className="pv-rounded pv-border pv-border-destructive/40 pv-bg-destructive/10 pv-p-2 pv-text-xs pv-text-destructive">
+          <div className="pv-mb-1">{error}</div>
           <Button variant="outline" size="xs" onClick={() => void fetchWindow(offset, true)}>
             Retry
           </Button>
@@ -88,13 +88,13 @@ export function ArtifactSourceViewer({ path }: { path: string }) {
       ) : (
         <>
           <pre
-            className={`ky-max-h-80 ky-overflow-auto ky-rounded ky-bg-muted ky-p-2 ky-font-mono ky-text-2xs ${
-              wrap ? "ky-whitespace-pre-wrap ky-break-words" : "ky-whitespace-pre"
+            className={`pv-max-h-80 pv-overflow-auto pv-rounded pv-bg-muted pv-p-2 pv-font-mono pv-text-2xs ${
+              wrap ? "pv-whitespace-pre-wrap pv-break-words" : "pv-whitespace-pre"
             }`}
           >
             {text || (loading ? "Loading…" : "No content.")}
           </pre>
-          <div className="ky-flex ky-items-center ky-justify-between ky-text-2xs ky-text-muted-foreground">
+          <div className="pv-flex pv-items-center pv-justify-between pv-text-2xs pv-text-muted-foreground">
             <span>{size != null ? `${Math.min(offset, size)} / ${size} bytes` : ""}</span>
             {!eof && !!text && (
               <Button

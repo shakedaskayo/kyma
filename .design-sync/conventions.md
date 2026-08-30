@@ -25,7 +25,7 @@ Components are full-bleed views — give them an explicitly sized container (`he
 
 ## Styling idiom — theme tokens, not CSS classes
 
-Internal styles are compiled Tailwind utilities under the `ky-` prefix — never write `ky-*` classes yourself, and don't try Tailwind class overrides. Restyle through the theme:
+Internal styles are compiled Tailwind utilities under the `pv-` prefix — never write `pv-*` classes yourself, and don't try Tailwind class overrides. Restyle through the theme:
 
 - `theme` accepts a partial `PensieveTheme`: keys `background, surface, foreground, border, borderStrong, input, ring, primary, primaryForeground, secondary, secondaryForeground, destructive, destructiveForeground, muted, mutedForeground, accent, accentForeground, card, cardForeground, popover, popoverForeground, brandFrom, brandTo, radius, fontSans, fontMono`.
 - Color values are **HSL triplet strings without `hsl()`** — e.g. `"213 26% 7%"`, composed as `hsl(var(--pensieve-*))`. `radius` is a CSS length (`"0.625rem"`); `fontSans`/`fontMono` are font stacks.
@@ -43,4 +43,4 @@ Internal styles are compiled Tailwind utilities under the `ky-` prefix — never
 - `PensieveAgentChat` — natural-language agent chat (`database`, `placeholder`).
 - Headless hooks (`usePensieveQuery`, `usePensieveGraph`, `usePensieveDiscover`, `usePensieveDashboards`, `usePensieveAgent`, `usePensieveCapabilities`) exist on the same global for custom UI.
 
-Per-component props and verified example JSX: `components/<group>/<Name>/<Name>.prompt.md` (the `.d.ts` beside it is the exact contract). `styles.css` → `_ds_bundle.css` is the compiled truth for every `ky-*` rule and `--pensieve-*` usage.
+Per-component props and verified example JSX: `components/<group>/<Name>/<Name>.prompt.md` (the `.d.ts` beside it is the exact contract). `styles.css` → `_ds_bundle.css` is the compiled truth for every `pv-*` rule and `--pensieve-*` usage.

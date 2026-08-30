@@ -180,9 +180,9 @@ function DiscoverInner({ onExportKql, onRowOpen, onSearchChange, onScopeChange, 
   };
 
   return (
-    <div className="ky-flex ky-flex-col ky-h-full">
+    <div className="pv-flex pv-flex-col pv-h-full">
       {/* Top bar */}
-      <div className="ky-flex ky-items-center ky-gap-2 ky-p-3 ky-border-b">
+      <div className="pv-flex pv-items-center pv-gap-2 pv-p-3 pv-border-b">
         <ScopePicker value={scope} onChange={setScope} />
         <QueryBar
           value={search}
@@ -207,8 +207,8 @@ function DiscoverInner({ onExportKql, onRowOpen, onSearchChange, onScopeChange, 
         status={results.status}
       />
 
-      <div className="ky-flex ky-flex-1 ky-min-h-0">
-        <aside className="ky-w-60 ky-border-r ky-overflow-auto">
+      <div className="pv-flex pv-flex-1 pv-min-h-0">
+        <aside className="pv-w-60 pv-border-r pv-overflow-auto">
           <SourcesRail
             results={results}
             visible={visibleSources}
@@ -227,9 +227,9 @@ function DiscoverInner({ onExportKql, onRowOpen, onSearchChange, onScopeChange, 
           />
         </aside>
 
-        <main className="ky-flex-1 ky-min-h-0 ky-flex ky-flex-col">
+        <main className="pv-flex-1 pv-min-h-0 pv-flex pv-flex-col">
           {tableSrc ? (
-            <div className="ky-flex-1 ky-min-h-0 ky-overflow-auto">
+            <div className="pv-flex-1 pv-min-h-0 pv-overflow-auto">
               <SourceTableView
                 src={tableSrc}
                 onBack={() => setViewMode("stream")}
@@ -244,20 +244,20 @@ function DiscoverInner({ onExportKql, onRowOpen, onSearchChange, onScopeChange, 
                 onZoom={(from, to) => setTimeRange({ preset: "custom", from, to })}
               />
               {results.topError && (
-                <div className="ky-p-3 ky-m-3 ky-border ky-border-destructive ky-rounded ky-text-sm ky-text-destructive">
-                  <span className="ky-font-semibold">{results.topError.code}</span>: {results.topError.message}
+                <div className="pv-p-3 pv-m-3 pv-border pv-border-destructive pv-rounded pv-text-sm pv-text-destructive">
+                  <span className="pv-font-semibold">{results.topError.code}</span>: {results.topError.message}
                 </div>
               )}
               {results.status === "done" && results.sources.size === 0 ? (
-                <div className="ky-flex-1 ky-flex ky-items-center ky-justify-center">
-                  <div className="ky-p-6 ky-text-center ky-text-sm ky-text-muted-foreground ky-space-y-2">
+                <div className="pv-flex-1 pv-flex pv-items-center pv-justify-center">
+                  <div className="pv-p-6 pv-text-center pv-text-sm pv-text-muted-foreground pv-space-y-2">
                     <div>No data sources match this scope.</div>
                     {scope.kind === "all" ? (
                       <div>
                         Internal sources (agent memory) are hidden by default.{" "}
                         <button
                           type="button"
-                          className="ky-underline ky-underline-offset-2 hover:ky-text-foreground"
+                          className="pv-underline pv-underline-offset-2 hover:pv-text-foreground"
                           onClick={() => setScope({ kind: "sources", sources: ["memory.*"] })}
                         >
                           Search internal sources

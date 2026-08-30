@@ -12,7 +12,7 @@ export const Response = memo(
   ({ className, ...props }: ResponseProps) => (
     <Streamdown
       className={cn(
-        "ky-size-full ky-space-y-3 ky-text-[15px] ky-leading-relaxed [&>*:first-child]:ky-mt-0 [&>*:last-child]:ky-mb-0",
+        "pv-size-full pv-space-y-3 pv-text-[15px] pv-leading-relaxed [&>*:first-child]:pv-mt-0 [&>*:last-child]:pv-mb-0",
         className,
       )}
       {...props}

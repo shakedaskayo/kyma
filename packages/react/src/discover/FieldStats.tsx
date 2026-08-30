@@ -34,42 +34,42 @@ function FieldStatsSection({ col, rows, onAddFilter }: FieldStatsSectionProps) {
   }, [col, rows]);
 
   return (
-    <div className="ky-border-b ky-border-muted/40 last:ky-border-0">
+    <div className="pv-border-b pv-border-muted/40 last:pv-border-0">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="ky-flex ky-w-full ky-items-center ky-gap-1 ky-px-3 ky-py-1.5 ky-text-left ky-text-xs hover:ky-bg-accent/30 ky-transition-colors"
+        className="pv-flex pv-w-full pv-items-center pv-gap-1 pv-px-3 pv-py-1.5 pv-text-left pv-text-xs hover:pv-bg-accent/30 pv-transition-colors"
       >
         <ChevronRight
-          className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground ky-transition-transform"
+          className="pv-h-3 pv-w-3 pv-shrink-0 pv-text-muted-foreground pv-transition-transform"
           style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
         />
-        <span className="ky-font-medium ky-truncate ky-flex-1">{col.name}</span>
-        <span className="ky-ml-auto ky-shrink-0 ky-text-[10px] ky-text-muted-foreground">{col.kind}</span>
+        <span className="pv-font-medium pv-truncate pv-flex-1">{col.name}</span>
+        <span className="pv-ml-auto pv-shrink-0 pv-text-[10px] pv-text-muted-foreground">{col.kind}</span>
       </button>
       {open && (
-        <div className="ky-px-3 ky-pb-2">
+        <div className="pv-px-3 pv-pb-2">
           {tooMany ? (
-            <p className="ky-text-[10px] ky-text-muted-foreground ky-italic">many unique values</p>
+            <p className="pv-text-[10px] pv-text-muted-foreground pv-italic">many unique values</p>
           ) : (
-            <div className="ky-space-y-0.5">
+            <div className="pv-space-y-0.5">
               {topValues.map(([val, count]) => {
                 const pct = total > 0 ? (count / total) * 100 : 0;
                 return (
                   <button
                     key={val}
                     onClick={() => onAddFilter(col.name, val)}
-                    className="ky-group ky-flex ky-w-full ky-flex-col ky-gap-0.5 ky-rounded ky-px-1 ky-py-0.5 ky-text-left hover:ky-bg-accent/40 ky-transition-colors"
+                    className="pv-group pv-flex pv-w-full pv-flex-col pv-gap-0.5 pv-rounded pv-px-1 pv-py-0.5 pv-text-left hover:pv-bg-accent/40 pv-transition-colors"
                     title={`Filter: ${col.name} == "${val}"`}
                   >
-                    <div className="ky-flex ky-items-center ky-justify-between">
-                      <span className="ky-max-w-[140px] ky-truncate ky-font-mono ky-text-[10px] ky-text-foreground group-hover:ky-text-primary">
-                        {val === "" ? <span className="ky-italic ky-text-muted-foreground">empty</span> : val}
+                    <div className="pv-flex pv-items-center pv-justify-between">
+                      <span className="pv-max-w-[140px] pv-truncate pv-font-mono pv-text-[10px] pv-text-foreground group-hover:pv-text-primary">
+                        {val === "" ? <span className="pv-italic pv-text-muted-foreground">empty</span> : val}
                       </span>
-                      <span className="ky-shrink-0 ky-text-[10px] ky-tabular-nums ky-text-muted-foreground">{count.toLocaleString()}</span>
+                      <span className="pv-shrink-0 pv-text-[10px] pv-tabular-nums pv-text-muted-foreground">{count.toLocaleString()}</span>
                     </div>
-                    <div className="ky-h-[2px] ky-w-full ky-rounded-full ky-bg-muted/60">
+                    <div className="pv-h-[2px] pv-w-full pv-rounded-full pv-bg-muted/60">
                       <div
-                        className="ky-h-full ky-rounded-full ky-bg-primary/60"
+                        className="pv-h-full pv-rounded-full pv-bg-primary/60"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -99,8 +99,8 @@ export function FieldStats({ rows, columns, onAddFilter }: FieldStatsProps) {
   if (nonTimeCols.length === 0) return null;
 
   return (
-    <div className="ky-overflow-y-auto">
-      <div className="ky-px-3 ky-py-1.5 ky-text-[10px] ky-font-semibold ky-uppercase ky-tracking-wider ky-text-muted-foreground ky-border-b ky-border-muted/40">
+    <div className="pv-overflow-y-auto">
+      <div className="pv-px-3 pv-py-1.5 pv-text-[10px] pv-font-semibold pv-uppercase pv-tracking-wider pv-text-muted-foreground pv-border-b pv-border-muted/40">
         Field Values
       </div>
       {nonTimeCols.map((col) => (

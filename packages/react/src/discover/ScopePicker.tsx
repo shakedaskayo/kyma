@@ -30,15 +30,15 @@ export function ScopePicker({ value, onChange }: Props) {
   }, [open]);
 
   return (
-    <div ref={ref} className="ky-relative">
+    <div ref={ref} className="pv-relative">
       <Button variant="outline" size="sm" onClick={() => setOpen(!open)}>
         {label(value, views.data)}
       </Button>
       {open && (
-        <div className="ky-absolute ky-top-full ky-left-0 ky-mt-1 ky-w-72 ky-z-50 ky-rounded-md ky-border ky-bg-popover ky-p-2 ky-shadow-md">
+        <div className="pv-absolute pv-top-full pv-left-0 pv-mt-1 pv-w-72 pv-z-50 pv-rounded-md pv-border pv-bg-popover pv-p-2 pv-shadow-md">
           <button
             type="button"
-            className="ky-block ky-w-full ky-text-left ky-text-sm hover:ky-bg-accent ky-rounded ky-px-2 ky-py-1.5"
+            className="pv-block pv-w-full pv-text-left pv-text-sm hover:pv-bg-accent pv-rounded pv-px-2 pv-py-1.5"
             onClick={() => {
               onChange({ kind: "all" });
               setOpen(false);
@@ -46,13 +46,13 @@ export function ScopePicker({ value, onChange }: Props) {
           >
             All sources
           </button>
-          <div className="ky-border-t ky-my-2 ky-pt-2">
-            <div className="ky-text-xs ky-text-muted-foreground ky-mb-1 ky-px-2">Saved views</div>
+          <div className="pv-border-t pv-my-2 pv-pt-2">
+            <div className="pv-text-xs pv-text-muted-foreground pv-mb-1 pv-px-2">Saved views</div>
             {(views.data ?? []).map((v) => (
               <button
                 key={v.id}
                 type="button"
-                className="ky-block ky-w-full ky-text-left ky-text-sm hover:ky-bg-accent ky-rounded ky-px-2 ky-py-1.5"
+                className="pv-block pv-w-full pv-text-left pv-text-sm hover:pv-bg-accent pv-rounded pv-px-2 pv-py-1.5"
                 onClick={() => {
                   onChange({ kind: "view", view_id: v.id });
                   setOpen(false);
@@ -62,7 +62,7 @@ export function ScopePicker({ value, onChange }: Props) {
               </button>
             ))}
             {(views.data ?? []).length === 0 && (
-              <div className="ky-text-xs ky-text-muted-foreground ky-italic ky-px-2 ky-py-1">
+              <div className="pv-text-xs pv-text-muted-foreground pv-italic pv-px-2 pv-py-1">
                 No saved views yet.
               </div>
             )}

@@ -5,7 +5,7 @@
 //! For the E2E vertical slice, an extent is literally
 //!
 //! ```text
-//! [MAGIC "KYMA\x01"] [arrow IPC file bytes]
+//! [MAGIC "PNSV\x01"] [arrow IPC file bytes]
 //! ```
 //!
 //! We leverage Apache Arrow's own IPC "file" format for the body — it has
@@ -33,9 +33,9 @@ mod reader;
 mod writer;
 
 use async_trait::async_trait;
-use kyma_core::errors::Result;
-use kyma_core::segment_format::{ExtentReader, ExtentWriter, OpenExtentInput, SegmentFormat};
-use kyma_core::types::SchemaRef;
+use pensieve_core::errors::Result;
+use pensieve_core::segment_format::{ExtentReader, ExtentWriter, OpenExtentInput, SegmentFormat};
+use pensieve_core::types::SchemaRef;
 use object_store::ObjectStore;
 use std::sync::Arc;
 
@@ -44,7 +44,7 @@ pub use writer::TelemetryExtentWriter;
 
 /// Magic bytes written at the start of every v1 telemetry-format extent.
 /// Kept for backward-compat: v1 extents can still be read.
-pub const MAGIC: &[u8] = b"KYMA\x01";
+pub const MAGIC: &[u8] = b"PNSV\x01";
 
 /// Magic bytes for v2 extents. Layout:
 /// ```text
@@ -52,7 +52,7 @@ pub const MAGIC: &[u8] = b"KYMA\x01";
 /// ```
 /// The trailing MAGIC_V2 + u32 lets readers walk backward from the end
 /// without mutating the Arrow IPC body.
-pub const MAGIC_V2: &[u8] = b"KYMA\x02";
+pub const MAGIC_V2: &[u8] = b"PNSV\x02";
 
 /// Current format version this implementation writes.
 /// v1 — Arrow IPC only. v2 — adds per-block stats footer.
@@ -62,7 +62,7 @@ pub const CURRENT_VERSION: u32 = 2;
 #[derive(Clone)]
 pub struct TelemetryFormat {
     store: Arc<dyn ObjectStore>,
-    /// Prefix prepended to every extent's object key, e.g. `"kyma"`.
+    /// Prefix prepended to every extent's object key, e.g. `"pensieve"`.
     path_prefix: String,
     /// Tenant segment injected between prefix and `extents/` for cloud
     /// deployments. Empty string = self-hosted / legacy mode (no tenant
@@ -81,11 +81,11 @@ impl TelemetryFormat {
     }
 
     /// Build a format that namespaces every new extent under
-    /// `<prefix>/<tenant_id>/extents/<extent_id>.kyma`.
+    /// `<prefix>/<tenant_id>/extents/<extent_id>.pnsv`.
     pub fn with_tenant(
         store: Arc<dyn ObjectStore>,
         path_prefix: impl Into<String>,
-        tenant: kyma_core::tenant::TenantId,
+        tenant: pensieve_core::tenant::TenantId,
     ) -> Self {
         Self {
             store,
@@ -99,7 +99,7 @@ impl TelemetryFormat {
         &self.store
     }
 
-    /// Borrow the path prefix (e.g. "kyma") used when building extent paths.
+    /// Borrow the path prefix (e.g. "pensieve") used when building extent paths.
     pub(crate) fn path_prefix(&self) -> &str {
         &self.path_prefix
     }
@@ -123,7 +123,7 @@ impl std::fmt::Debug for TelemetryFormat {
 #[async_trait]
 impl SegmentFormat for TelemetryFormat {
     fn name(&self) -> &'static str {
-        "kyma-format-tlm"
+        "pensieve-format-tlm"
     }
 
     fn magic(&self) -> &'static [u8] {

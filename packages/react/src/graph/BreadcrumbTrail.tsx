@@ -10,19 +10,19 @@ export function BreadcrumbTrail({ nodesByCompositeId }: { nodesByCompositeId: Ma
   const visible = trail.slice(-5);
   const offset = trail.length - visible.length;
   return (
-    <div className="ky-absolute ky-left-4 ky-top-6 ky-z-20 ky-flex ky-max-w-[60%] ky-items-center ky-gap-0.5 ky-rounded-full ky-glass ky-border ky-border-border ky-px-2 ky-py-1">
-      {offset > 0 && <span className="ky-text-2xs ky-text-muted-foreground">…</span>}
+    <div className="pv-absolute pv-left-4 pv-top-6 pv-z-20 pv-flex pv-max-w-[60%] pv-items-center pv-gap-0.5 pv-rounded-full pv-glass pv-border pv-border-border pv-px-2 pv-py-1">
+      {offset > 0 && <span className="pv-text-2xs pv-text-muted-foreground">…</span>}
       {visible.map((id, i) => {
         const node = nodesByCompositeId.get(id);
         const name = node ? (node.properties?.name as string) || node.id : id.split("::").pop();
         const last = i === visible.length - 1;
         return (
-          <span key={`${id}-${i}`} className="ky-flex ky-items-center ky-gap-0.5">
-            {(i > 0 || offset > 0) && <ChevronRight className="ky-h-3 ky-w-3 ky-text-muted-foreground" />}
+          <span key={`${id}-${i}`} className="pv-flex pv-items-center pv-gap-0.5">
+            {(i > 0 || offset > 0) && <ChevronRight className="pv-h-3 pv-w-3 pv-text-muted-foreground" />}
             <button
               type="button"
               onClick={() => jumpTrail(offset + i)}
-              className={`ky-max-w-32 ky-truncate ky-text-xs ${last ? "ky-text-foreground" : "ky-text-muted-foreground hover:ky-text-foreground"}`}
+              className={`pv-max-w-32 pv-truncate pv-text-xs ${last ? "pv-text-foreground" : "pv-text-muted-foreground hover:pv-text-foreground"}`}
             >
               {name}
             </button>

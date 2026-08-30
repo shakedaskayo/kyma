@@ -1,5 +1,5 @@
 /**
- * Internal Dialog primitive — wraps @radix-ui/react-dialog with Pensieve ky-
+ * Internal Dialog primitive — wraps @radix-ui/react-dialog with Pensieve pv-
  * class prefix so it is isolated from the host app's CSS. Portal targets
  * usePortalContainer() so it stays inside .pensieve-root CSS variable scope.
  * NOT exported from the public package surface.
@@ -31,7 +31,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "ky-fixed ky-inset-0 ky-z-50 ky-bg-black/60 data-[state=open]:ky-animate-in data-[state=closed]:ky-animate-out data-[state=closed]:ky-fade-out-0 data-[state=open]:ky-fade-in-0",
+      "pv-fixed pv-inset-0 pv-z-50 pv-bg-black/60 data-[state=open]:pv-animate-in data-[state=closed]:pv-animate-out data-[state=closed]:pv-fade-out-0 data-[state=open]:pv-fade-in-0",
       className,
     )}
     {...props}
@@ -48,15 +48,15 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "ky-fixed ky-left-1/2 ky-top-1/2 ky-z-50 ky-grid ky-w-full ky-max-w-lg -ky-translate-x-1/2 -ky-translate-y-1/2 ky-gap-4 ky-border ky-border-border ky-bg-background ky-p-6 ky-shadow-xl ky-duration-200 data-[state=open]:ky-animate-in data-[state=closed]:ky-animate-out data-[state=closed]:ky-fade-out-0 data-[state=open]:ky-fade-in-0 data-[state=closed]:ky-zoom-out-95 data-[state=open]:ky-zoom-in-95 data-[state=closed]:ky-slide-out-to-left-1/2 data-[state=closed]:ky-slide-out-to-top-[48%] data-[state=open]:ky-slide-in-from-left-1/2 data-[state=open]:ky-slide-in-from-top-[48%] ky-rounded-lg",
+        "pv-fixed pv-left-1/2 pv-top-1/2 pv-z-50 pv-grid pv-w-full pv-max-w-lg -pv-translate-x-1/2 -pv-translate-y-1/2 pv-gap-4 pv-border pv-border-border pv-bg-background pv-p-6 pv-shadow-xl pv-duration-200 data-[state=open]:pv-animate-in data-[state=closed]:pv-animate-out data-[state=closed]:pv-fade-out-0 data-[state=open]:pv-fade-in-0 data-[state=closed]:pv-zoom-out-95 data-[state=open]:pv-zoom-in-95 data-[state=closed]:pv-slide-out-to-left-1/2 data-[state=closed]:pv-slide-out-to-top-[48%] data-[state=open]:pv-slide-in-from-left-1/2 data-[state=open]:pv-slide-in-from-top-[48%] pv-rounded-lg",
         className,
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="ky-absolute ky-right-4 ky-top-4 ky-rounded-sm ky-opacity-70 ky-ring-offset-background ky-transition-opacity hover:ky-opacity-100 focus:ky-outline-none focus:ky-ring-2 focus:ky-ring-ring focus:ky-ring-offset-2 disabled:ky-pointer-events-none">
-        <X className="ky-h-4 ky-w-4" />
-        <span className="ky-sr-only">Close</span>
+      <DialogPrimitive.Close className="pv-absolute pv-right-4 pv-top-4 pv-rounded-sm pv-opacity-70 pv-ring-offset-background pv-transition-opacity hover:pv-opacity-100 focus:pv-outline-none focus:pv-ring-2 focus:pv-ring-ring focus:pv-ring-offset-2 disabled:pv-pointer-events-none">
+        <X className="pv-h-4 pv-w-4" />
+        <span className="pv-sr-only">Close</span>
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>
@@ -66,7 +66,7 @@ DialogContent.displayName = "DialogContent";
 function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("ky-flex ky-flex-col ky-space-y-1.5 ky-text-center sm:ky-text-left", className)}
+      className={cn("pv-flex pv-flex-col pv-space-y-1.5 pv-text-center sm:pv-text-left", className)}
       {...props}
     />
   );
@@ -77,7 +77,7 @@ function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
   return (
     <div
       className={cn(
-        "ky-flex ky-flex-col-reverse sm:ky-flex-row sm:ky-justify-end sm:ky-space-x-2",
+        "pv-flex pv-flex-col-reverse sm:pv-flex-row sm:pv-justify-end sm:pv-space-x-2",
         className,
       )}
       {...props}
@@ -92,7 +92,7 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn("ky-text-lg ky-font-semibold ky-leading-none ky-tracking-tight", className)}
+    className={cn("pv-text-lg pv-font-semibold pv-leading-none pv-tracking-tight", className)}
     {...props}
   />
 ));

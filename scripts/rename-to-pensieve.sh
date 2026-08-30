@@ -6,6 +6,7 @@
 #
 #   ./scripts/rename-to-pensieve.sh paths     # Phase 1 — git mv, zero content change
 #   ./scripts/rename-to-pensieve.sh content   # Phase 2 — text replace
+#   ./scripts/rename-to-pensieve.sh prefix    # Phase 3 — Tailwind ky- -> pv-
 #   ./scripts/rename-to-pensieve.sh verify    # report what still says "kyma"
 #
 # Everything it touches comes from `git ls-files`, so untracked and ignored
@@ -14,7 +15,7 @@
 # Four things this script deliberately does NOT do — see the plan, Phases 3-5:
 #   • extent magic bytes  b"KYMA\x01"  (must stay 4 bytes -> PNSV)
 #   • SQL migrations 001-034           (sqlx checksums them; add 035 instead)
-#   • the Tailwind `ky-` prefix        (not a kyma substring; use pv-prefix.mjs)
+#   • the Tailwind class prefix        (not a kyma substring; see do_prefix)
 #   • binary assets                    (mark, icons, screenshots)
 set -euo pipefail
 
@@ -80,16 +81,53 @@ do_paths() {
     n=$((n + 1))
   done < <(git ls-files | grep -i kyma || true)
 
-  # Pass C: the Tailwind prefix codemod (ky- is not a kyma substring).
-  for f in scripts/ky-prefix.mjs scripts/ky-prefix.test.mjs; do
-    if [ -f "$f" ]; then
-      git mv "$f" "${f/ky-prefix/pv-prefix}"
-      echo "FILE  $f -> ${f/ky-prefix/pv-prefix}"
+  # Pass C: the Tailwind prefix codemod. Its old name carries the old class
+  # prefix, which is not a "kyma" substring, so the rules above miss it.
+  local old new2
+  for old in scripts/ky-prefix.mjs scripts/ky-prefix.test.mjs; do
+    if [ -f "$old" ]; then
+      new2=${old/ky-prefix/pv-prefix}
+      git mv "$old" "$new2"
+      echo "FILE  $old -> $new2"
       n=$((n + 1))
     fi
   done
 
   echo "paths: $n renamed"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rewrite the Tailwind utility prefix ky- -> pv- across every tracked file.
+#
+# MUST be anchored: a blind s/ky-/pv-/ corrupts Tailwind's own `sky-*` colour
+# scale (19 occurrences in this tree) into `spv-*`. The lookbehind on an
+# alphanumeric character is what keeps `text-sky-500` intact while still
+# catching `ky-flex`, `!ky-px-2`, `-ky-mt-2` and `group-hover:ky-flex`.
+do_prefix() {
+  python3 - <<'PY'
+import re, subprocess, pathlib
+pat = re.compile(r'(?<![A-Za-z0-9])ky-')
+files = subprocess.run(['git', 'ls-files'], capture_output=True, text=True).stdout.split()
+changed = total = 0
+for f in files:
+    if f == 'scripts/rename-to-pensieve.sh':   # documents both prefixes on purpose
+        continue
+    p = pathlib.Path(f)
+    if not p.is_file():
+        continue
+    try:
+        s = p.read_text()
+    except (UnicodeDecodeError, OSError):
+        continue
+    if 'ky-' not in s:
+        continue
+    n, cnt = pat.subn('pv-', s)
+    if cnt:
+        p.write_text(n)
+        changed += 1
+        total += cnt
+print(f'prefix: {changed} files, {total} substitutions')
+PY
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -121,6 +159,7 @@ do_verify() {
 case "${1:-}" in
   paths)   do_paths   ;;
   content) do_content ;;
+  prefix)  do_prefix  ;;
   verify)  do_verify  ;;
-  *) echo "usage: $0 {paths|content|verify}" >&2; exit 2 ;;
+  *) echo "usage: $0 {paths|content|prefix|verify}" >&2; exit 2 ;;
 esac

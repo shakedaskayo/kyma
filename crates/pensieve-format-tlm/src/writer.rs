@@ -146,9 +146,9 @@ impl ExtentWriter for TelemetryExtentWriter {
 
 fn format_extent_path(prefix: &str, tenant_segment: &str, extent_id: &ExtentId) -> String {
     let core = if tenant_segment.is_empty() {
-        format!("extents/{extent_id}.pensieve")
+        format!("extents/{extent_id}.pnsv")
     } else {
-        format!("{tenant_segment}/extents/{extent_id}.pensieve")
+        format!("{tenant_segment}/extents/{extent_id}.pnsv")
     };
     if prefix.is_empty() {
         core
@@ -169,7 +169,7 @@ mod path_tests {
         let path = format_extent_path("pensieve", "", &id);
         assert_eq!(
             path,
-            "pensieve/extents/00000000-0000-0000-0000-000000000000.pensieve"
+            "pensieve/extents/00000000-0000-0000-0000-000000000000.pnsv"
         );
     }
 
@@ -180,7 +180,7 @@ mod path_tests {
         let path = format_extent_path("pensieve", tenant, &id);
         assert_eq!(
             path,
-            "pensieve/11111111-1111-1111-1111-111111111111/extents/00000000-0000-0000-0000-000000000000.pensieve"
+            "pensieve/11111111-1111-1111-1111-111111111111/extents/00000000-0000-0000-0000-000000000000.pnsv"
         );
     }
 }

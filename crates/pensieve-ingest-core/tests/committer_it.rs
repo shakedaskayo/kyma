@@ -44,7 +44,7 @@ fn manifest_for(tref: &TableRef) -> ExtentManifest {
         id: ExtentId::new(),
         table_id: tref.id,
         schema_snapshot_id: tref.schema_snapshot_id,
-        object_path: format!("staged/{}.pensieve", Uuid::new_v4()),
+        object_path: format!("staged/{}.pnsv", Uuid::new_v4()),
         byte_size: 2048,
         row_count: 100,
         min_timestamp: None,

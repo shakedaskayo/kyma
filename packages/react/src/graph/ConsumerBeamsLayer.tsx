@@ -242,7 +242,7 @@ export function ConsumerBeamsLayer({ sigma }: { sigma: Sigma | null }) {
   return (
     <canvas
       ref={canvasRef}
-      className="ky-pointer-events-none ky-absolute ky-inset-0 ky-z-10"
+      className="pv-pointer-events-none pv-absolute pv-inset-0 pv-z-10"
     />
   );
 }

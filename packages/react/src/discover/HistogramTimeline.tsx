@@ -100,7 +100,7 @@ export function HistogramTimeline({ rows, timeCol, onBucketClick }: HistogramTim
   };
 
   return (
-    <div className="ky-bg-card ky-border-b ky-px-2">
+    <div className="pv-bg-card pv-border-b pv-px-2">
       <ReactECharts
         option={option}
         style={{ height: 80 }}

@@ -139,7 +139,7 @@ Same code paths the L2 components are built on (no drift possible):
 
 ## Theming & CSS isolation
 
-- Library Tailwind build: `prefix: "ky-"`, `preflight: false`; selectors scoped under `.pensieve-root`. Host styles and Pensieve styles cannot collide in either direction.
+- Library Tailwind build: `prefix: "pv-"`, `preflight: false`; selectors scoped under `.pensieve-root`. Host styles and Pensieve styles cannot collide in either direction.
 - All design tokens become `--pensieve-*` CSS vars (mapped from the existing HSL token set in `web/src/styles/globals.css`), set inline on the provider root from a typed `PensieveTheme` object.
 - Presets: `pensieveDark`, `pensieveLight`; `theme="inherit"` maps a documented set of host CSS vars onto `--pensieve-*`.
 - Fonts default to `inherit` (never force-load fonts into a host app); `--pensieve-font-sans`/`--pensieve-font-mono` overridable.

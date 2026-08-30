@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * ky-prefix.mjs — Tailwind class prefix codemod
+ * pv-prefix.mjs — Tailwind class prefix codemod
  *
- * Rewrites Tailwind utility tokens inside .ts/.tsx files so they gain the `ky-`
- * prefix required by packages/react (which sets `prefix: "ky-"` in its
+ * Rewrites Tailwind utility tokens inside .ts/.tsx files so they gain the `pv-`
+ * prefix required by packages/react (which sets `prefix: "pv-"` in its
  * tailwind config).
  *
  * Usage:
- *   node scripts/ky-prefix.mjs <dir-or-file> [--dry]
+ *   node scripts/pv-prefix.mjs <dir-or-file> [--dry]
  *
  * The --dry flag prints unified-diff-style output without writing files.
  */
@@ -21,7 +21,7 @@ import { createRequire } from "module";
 
 /**
  * Tokens that must never be prefixed.
- * These are the pensieve-root/pensieve-dark scope sentinels, and the ky- prefix itself.
+ * These are the pensieve-root/pensieve-dark scope sentinels, and the pv- prefix itself.
  */
 const PRESERVE_EXACT = new Set(["pensieve-root", "pensieve-dark"]);
 
@@ -29,7 +29,7 @@ const PRESERVE_EXACT = new Set(["pensieve-root", "pensieve-dark"]);
  * Returns true when a token is "not class-like" and should be left alone.
  *   • Contains template/interpolation leftovers: { } $ `
  *   • Is a CSS custom-property name starting with --
- *   • Already carries the ky- prefix (idempotent)
+ *   • Already carries the pv- prefix (idempotent)
  */
 function isNonClassLike(token) {
   if (token.startsWith("--")) return true;
@@ -41,28 +41,28 @@ function isNonClassLike(token) {
  * Prefix a single utility segment (the part after the final colon).
  * Handles: negative (-mt-2), important (!px-2), plain, already-prefixed.
  *
- * @param {string} util  e.g. "flex", "-mt-2", "!px-2", "ky-flex"
+ * @param {string} util  e.g. "flex", "-mt-2", "!px-2", "pv-flex"
  * @returns {string}
  */
 function prefixUtil(util) {
   // Already prefixed — idempotent
-  if (util.startsWith("ky-")) return util;
+  if (util.startsWith("pv-")) return util;
 
-  // Important modifier  !px-2 → !ky-px-2
+  // Important modifier  !px-2 → !pv-px-2
   if (util.startsWith("!")) {
     const inner = util.slice(1);
-    if (inner.startsWith("ky-")) return util; // !ky-... already done
-    return "!" + "ky-" + inner;
+    if (inner.startsWith("pv-")) return util; // !pv-... already done
+    return "!" + "pv-" + inner;
   }
 
-  // Negative  -mt-2 → -ky-mt-2
+  // Negative  -mt-2 → -pv-mt-2
   if (util.startsWith("-")) {
     const inner = util.slice(1);
-    if (inner.startsWith("ky-")) return util; // -ky-... already done
-    return "-ky-" + inner;
+    if (inner.startsWith("pv-")) return util; // -pv-... already done
+    return "-pv-" + inner;
   }
 
-  return "ky-" + util;
+  return "pv-" + util;
 }
 
 /**
@@ -112,7 +112,7 @@ export function prefixToken(token) {
 
   const { variants, util } = splitVariantUtil(token);
 
-  // Already fully prefixed (utility part already ky-)
+  // Already fully prefixed (utility part already pv-)
   const prefixed = prefixUtil(util);
   return variants + prefixed;
 }
@@ -369,7 +369,7 @@ function main() {
 
   if (targets.length === 0) {
     console.error(
-      "Usage: node scripts/ky-prefix.mjs <dir-or-file> [--dry]"
+      "Usage: node scripts/pv-prefix.mjs <dir-or-file> [--dry]"
     );
     process.exit(1);
   }

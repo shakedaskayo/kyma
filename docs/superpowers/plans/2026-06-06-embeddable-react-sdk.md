@@ -4,9 +4,9 @@
 
 **Goal:** Ship `@pensieve-ai/client` + `@pensieve-ai/react` npm packages so external apps can embed Pensieve's five views (Graph, Discover, Query, Dashboards, Agent) against any Pensieve server URL, with OIDC auth, theme/props/headless customization, an example app, Storybook, docs, and a publish pipeline — while the `web/` app dogfoods the packages.
 
-**Architecture:** Approach B from the spec (`docs/superpowers/specs/2026-06-06-embeddable-react-sdk-design.md`): extract `web/src/sdk/` into a framework-agnostic client package with an instance-scoped transport (no global fetch patching); build a React package (provider + headless hooks + components) with `ky-`-prefixed Tailwind scoped under `.pensieve-root`; add `OidcAuthBackend`, per-database scoping, and CORS allow-list to the Rust server.
+**Architecture:** Approach B from the spec (`docs/superpowers/specs/2026-06-06-embeddable-react-sdk-design.md`): extract `web/src/sdk/` into a framework-agnostic client package with an instance-scoped transport (no global fetch patching); build a React package (provider + headless hooks + components) with `pv-`-prefixed Tailwind scoped under `.pensieve-root`; add `OidcAuthBackend`, per-database scoping, and CORS allow-list to the Rust server.
 
-**Tech Stack:** pnpm workspaces, Vite library mode + vite-plugin-dts, Tailwind 3 (prefix `ky-`), React Query, Zustand (per-instance stores via context), vitest + Testing Library + msw-free mock fetch, Rust (axum, `jsonwebtoken`), Storybook 8, Changesets.
+**Tech Stack:** pnpm workspaces, Vite library mode + vite-plugin-dts, Tailwind 3 (prefix `pv-`), React Query, Zustand (per-instance stores via context), vitest + Testing Library + msw-free mock fetch, Rust (axum, `jsonwebtoken`), Storybook 8, Changesets.
 
 **Conventions for every task:**
 - Work on branch `feat/embed-react-sdk`.
@@ -301,11 +301,11 @@ export default defineConfig({
 import type { Config } from "tailwindcss";
 import animate from "tailwindcss-animate";
 
-// Embeddable build: every utility is prefixed (`ky-flex`) and every rule is
+// Embeddable build: every utility is prefixed (`pv-flex`) and every rule is
 // scoped under `.pensieve-root` so host-app CSS and Pensieve CSS cannot collide in
 // either direction. Tokens are `--pensieve-*`, set inline by <PensieveProvider>.
 export default {
-  prefix: "ky-",
+  prefix: "pv-",
   important: ".pensieve-root",
   corePlugins: { preflight: false },
   content: ["./src/**/*.{ts,tsx}"],
@@ -366,7 +366,7 @@ Expected: dist artifacts for all entries + `dist/style.css`.
 
 ```bash
 git add packages/react pnpm-lock.yaml
-git commit -m "chore(react): scaffold @pensieve-ai/react package with ky- prefixed scoped tailwind"
+git commit -m "chore(react): scaffold @pensieve-ai/react package with pv- prefixed scoped tailwind"
 ```
 
 ### Task 0.4: Changesets
@@ -1532,20 +1532,20 @@ Same recipe per hook — failing test with mocked client → port logic → pass
 
 1. `git mv` the source files from `web/src/features/<x>/` into `packages/react/src/<view>/` (keep history). Shared UI primitives they import from `web/src/components/ui/*` move (once, first time needed) to `packages/react/src/internal/ui/` — **copy** (not move) any primitive web's shell still uses; web keeps its own copy until Phase 6 decides per-file.
 2. Replace `useSession()`/endpoint/token access with `usePensieveClient()`; replace module-level Zustand stores with **per-instance stores**: `const store = useRef(createGraphStore()).current` + React context within the component subtree (pattern: `createStore` from `zustand/vanilla` + `useStore`).
-3. Prefix every Tailwind class: run the codemod `node scripts/ky-prefix.mjs packages/react/src/<view>` (created in Task 5.1) then **review the diff by hand** — dynamic `cn(cond && "...")` strings are included; template-literal class fragments must be checked manually.
+3. Prefix every Tailwind class: run the codemod `node scripts/pv-prefix.mjs packages/react/src/<view>` (created in Task 5.1) then **review the diff by hand** — dynamic `cn(cond && "...")` strings are included; template-literal class fragments must be checked manually.
 4. Radix portal components must pass `container={usePensieveContext().portalContainer}` to their `*.Portal` part.
 5. Wrap the exported component in `PensieveErrorBoundary` + `CapabilityGate` where the view needs a capability.
 6. Storybook story added in Phase 8 (not here).
 7. Per-view smoke test: renders inside `PensieveProvider` with mocked fetch; asserts the view's main landmark appears and **no global store leaks** (two instances mounted side-by-side hold independent state).
 
-### Task 5.1: ky-prefix codemod
+### Task 5.1: pv-prefix codemod
 
 **Files:**
-- Create: `scripts/ky-prefix.mjs`
+- Create: `scripts/pv-prefix.mjs`
 
-- [x] **Step 1:** Write the codemod: walks `.tsx/.ts` files, rewrites Tailwind tokens inside string literals that appear in `className=`, `cn(...)`, `cva(...)` call expressions. Token rewrite rule: each whitespace-separated class `c` becomes `ky-` + c, preserving variant prefixes (`hover:flex` → `hover:ky-flex`, `md:dark:px-2` → `md:dark:ky-px-2`) and arbitrary values; already-prefixed tokens and non-tailwind tokens pass through (maintain an allowlist by loading the package tailwind config class candidates via `tailwindcss` API — pragmatic fallback: rewrite all tokens, then `pnpm --filter @pensieve-ai/react build:css` + grep dist/style.css to verify generated classes; unknown tokens are inert).
-- [x] **Step 2:** Unit-test the rewrite function with cases: plain, variant-chained, arbitrary value `w-[13px]`, negative `-mt-2` → `-ky-mt-2`, template literal skipped + warning emitted.
-- [x] **Step 3:** Commit `git commit -am "chore: ky- tailwind prefix codemod"`
+- [x] **Step 1:** Write the codemod: walks `.tsx/.ts` files, rewrites Tailwind tokens inside string literals that appear in `className=`, `cn(...)`, `cva(...)` call expressions. Token rewrite rule: each whitespace-separated class `c` becomes `pv-` + c, preserving variant prefixes (`hover:flex` → `hover:pv-flex`, `md:dark:px-2` → `md:dark:pv-px-2`) and arbitrary values; already-prefixed tokens and non-tailwind tokens pass through (maintain an allowlist by loading the package tailwind config class candidates via `tailwindcss` API — pragmatic fallback: rewrite all tokens, then `pnpm --filter @pensieve-ai/react build:css` + grep dist/style.css to verify generated classes; unknown tokens are inert).
+- [x] **Step 2:** Unit-test the rewrite function with cases: plain, variant-chained, arbitrary value `w-[13px]`, negative `-mt-2` → `-pv-mt-2`, template literal skipped + warning emitted.
+- [x] **Step 3:** Commit `git commit -am "chore: pv- tailwind prefix codemod"`
 
 ### Task 5.2: PensieveGraph
 

@@ -26,44 +26,44 @@ interface Props {
 export function PanelCard({ panel, timeRange, editable, onDelete, onEdit, onPanelClick }: Props) {
   return (
     <div
-      className="ky-flex ky-h-full ky-flex-col ky-overflow-hidden ky-rounded-md ky-border ky-bg-background ky-shadow-sm"
+      className="pv-flex pv-h-full pv-flex-col pv-overflow-hidden pv-rounded-md pv-border pv-bg-background pv-shadow-sm"
       onClick={onPanelClick ? () => onPanelClick(panel.id) : undefined}
     >
       {/* Title bar — also serves as drag handle when editable */}
       <div
-        className={`ky-flex ky-items-center ky-justify-between ky-border-b ky-bg-muted/30 ky-px-3 ky-py-1.5 ky-text-xs ky-font-medium ky-select-none pensieve-panel-drag-handle ${
-          editable ? "ky-cursor-grab active:ky-cursor-grabbing" : ""
+        className={`pv-flex pv-items-center pv-justify-between pv-border-b pv-bg-muted/30 pv-px-3 pv-py-1.5 pv-text-xs pv-font-medium pv-select-none pensieve-panel-drag-handle ${
+          editable ? "pv-cursor-grab active:pv-cursor-grabbing" : ""
         }`}
       >
-        <span className="ky-truncate ky-text-foreground">{panel.title}</span>
+        <span className="pv-truncate pv-text-foreground">{panel.title}</span>
         {editable && (
-          <div className="ky-flex ky-items-center ky-gap-1 ky-shrink-0 ky-ml-2">
+          <div className="pv-flex pv-items-center pv-gap-1 pv-shrink-0 pv-ml-2">
             <button
-              className="ky-rounded ky-p-0.5 ky-text-muted-foreground hover:ky-bg-accent hover:ky-text-foreground ky-transition-colors"
+              className="pv-rounded pv-p-0.5 pv-text-muted-foreground hover:pv-bg-accent hover:pv-text-foreground pv-transition-colors"
               title="Edit panel"
               onClick={(e) => {
                 e.stopPropagation();
                 onEdit(panel);
               }}
             >
-              <Settings className="ky-h-3.5 ky-w-3.5" />
+              <Settings className="pv-h-3.5 pv-w-3.5" />
             </button>
             <button
-              className="ky-rounded ky-p-0.5 ky-text-muted-foreground hover:ky-bg-destructive/10 hover:ky-text-destructive ky-transition-colors"
+              className="pv-rounded pv-p-0.5 pv-text-muted-foreground hover:pv-bg-destructive/10 hover:pv-text-destructive pv-transition-colors"
               title="Delete panel"
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(panel.id);
               }}
             >
-              <Trash2 className="ky-h-3.5 ky-w-3.5" />
+              <Trash2 className="pv-h-3.5 pv-w-3.5" />
             </button>
           </div>
         )}
       </div>
 
       {/* Panel body */}
-      <div className="ky-min-h-0 ky-flex-1 ky-overflow-hidden">
+      <div className="pv-min-h-0 pv-flex-1 pv-overflow-hidden">
         <PanelBody panel={panel} timeRange={timeRange} />
       </div>
     </div>
@@ -82,7 +82,7 @@ function PanelBody({ panel, timeRange }: { panel: DashboardPanel; timeRange: Tim
       return <StatPanelViz panel={panel} timeRange={timeRange} />;
     default:
       return (
-        <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-text-xs ky-text-muted-foreground">
+        <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-text-xs pv-text-muted-foreground">
           Unknown panel type.
         </div>
       );

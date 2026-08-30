@@ -6,7 +6,7 @@
 
 **Architecture:** Server-side deterministic layout (Rust port of the TS algorithms) cached per graph version, served through a new paginated `/v1/graph/:graph/export` endpoint that includes node positions. The client builds one graphology instance per view and renders it with Sigma.js v3 (WebGL) using quiet-arrows/loud-focus edge styling and zoom-based LOD. The old canvas renderer stays as a no-WebGL fallback.
 
-**Tech Stack:** Rust (axum, pensieve-graph crate), TypeScript, React, sigma@^3, graphology, @sigma/edge-curve, @sigma/node-image, zustand, React Query, vitest, Tailwind (`ky-` prefix).
+**Tech Stack:** Rust (axum, pensieve-graph crate), TypeScript, React, sigma@^3, graphology, @sigma/edge-curve, @sigma/node-image, zustand, React Query, vitest, Tailwind (`pv-` prefix).
 
 **Spec:** `docs/superpowers/specs/2026-06-11-graph-explorer-redesign-design.md`
 
@@ -2157,7 +2157,7 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSeq]);
 
-  return <div ref={containerRef} className="ky-absolute ky-inset-0" />;
+  return <div ref={containerRef} className="pv-absolute pv-inset-0" />;
 }
 ```
 
@@ -2261,7 +2261,7 @@ export function HullsLayer({
   }, [sigma, communities]);
 
   if (!communityHulls) return null;
-  return <canvas ref={canvasRef} className="ky-pointer-events-none ky-absolute ky-inset-0" />;
+  return <canvas ref={canvasRef} className="pv-pointer-events-none pv-absolute pv-inset-0" />;
 }
 ```
 
@@ -2680,10 +2680,10 @@ export function CommandBar({ graphRef }: { graphRef: React.RefObject<Graph | nul
   };
 
   return (
-    <div className="ky-absolute ky-left-1/2 ky-top-6 ky-z-30 ky-w-[480px] ky-max-w-[90%] -ky-translate-x-1/2">
-      <div className="ky-glass ky-rounded-xl ky-border ky-border-border ky-shadow-elev-3">
-        <div className="ky-flex ky-items-center ky-gap-2 ky-border-b ky-border-border ky-px-3 ky-py-2.5">
-          <Search className="ky-h-4 ky-w-4 ky-text-muted-foreground" />
+    <div className="pv-absolute pv-left-1/2 pv-top-6 pv-z-30 pv-w-[480px] pv-max-w-[90%] -pv-translate-x-1/2">
+      <div className="pv-glass pv-rounded-xl pv-border pv-border-border pv-shadow-elev-3">
+        <div className="pv-flex pv-items-center pv-gap-2 pv-border-b pv-border-border pv-px-3 pv-py-2.5">
+          <Search className="pv-h-4 pv-w-4 pv-text-muted-foreground" />
           <input
             ref={inputRef}
             value={query}
@@ -2698,35 +2698,35 @@ export function CommandBar({ graphRef }: { graphRef: React.RefObject<Graph | nul
               else if (e.key === "Enter" && results[active]) select(results[active].id);
             }}
             placeholder="Search nodes, fly to anything…"
-            className="ky-w-full ky-bg-transparent ky-text-sm ky-text-foreground ky-outline-none placeholder:ky-text-muted-foreground"
+            className="pv-w-full pv-bg-transparent pv-text-sm pv-text-foreground pv-outline-none placeholder:pv-text-muted-foreground"
           />
-          <kbd className="ky-rounded ky-border ky-border-border ky-px-1.5 ky-py-0.5 ky-text-2xs ky-text-muted-foreground">esc</kbd>
+          <kbd className="pv-rounded pv-border pv-border-border pv-px-1.5 pv-py-0.5 pv-text-2xs pv-text-muted-foreground">esc</kbd>
         </div>
         {results.length > 0 && (
-          <ul className="ky-max-h-80 ky-overflow-y-auto ky-py-1">
+          <ul className="pv-max-h-80 pv-overflow-y-auto pv-py-1">
             {results.map((r, i) => (
               <li key={r.id}>
                 <button
                   type="button"
                   onClick={() => select(r.id)}
                   onMouseEnter={() => setActive(i)}
-                  className={`ky-flex ky-w-full ky-items-center ky-gap-2 ky-px-3 ky-py-1.5 ky-text-left ky-text-sm ${
-                    i === active ? "ky-bg-accent ky-text-foreground" : "ky-text-muted-foreground"
+                  className={`pv-flex pv-w-full pv-items-center pv-gap-2 pv-px-3 pv-py-1.5 pv-text-left pv-text-sm ${
+                    i === active ? "pv-bg-accent pv-text-foreground" : "pv-text-muted-foreground"
                   }`}
                 >
                   <span
-                    className="ky-h-2 ky-w-2 ky-shrink-0 ky-rounded-full"
+                    className="pv-h-2 pv-w-2 pv-shrink-0 pv-rounded-full"
                     style={{ background: getLabelColor(r.nodeLabel) }}
                   />
-                  <span className="ky-truncate">{r.label}</span>
-                  <span className="ky-ml-auto ky-shrink-0 ky-text-2xs ky-text-muted-foreground">{r.nodeLabel}</span>
+                  <span className="pv-truncate">{r.label}</span>
+                  <span className="pv-ml-auto pv-shrink-0 pv-text-2xs pv-text-muted-foreground">{r.nodeLabel}</span>
                 </button>
               </li>
             ))}
           </ul>
         )}
         {query.trim() && results.length === 0 && (
-          <div className="ky-px-3 ky-py-3 ky-text-xs ky-text-muted-foreground">No matching nodes.</div>
+          <div className="pv-px-3 pv-py-3 pv-text-xs pv-text-muted-foreground">No matching nodes.</div>
         )}
       </div>
     </div>
@@ -2812,59 +2812,59 @@ export function InspectorPanel({
   const name = (node.properties?.name as string) || (node.properties?.title as string) || node.id;
 
   return (
-    <div className="ky-absolute ky-right-4 ky-top-16 ky-bottom-20 ky-z-20 ky-w-80 ky-overflow-y-auto ky-rounded-xl ky-border ky-border-border ky-glass ky-shadow-elev-3 ky-animate-fade-in">
-      <div className="ky-flex ky-items-start ky-justify-between ky-border-b ky-border-border ky-p-3">
-        <div className="ky-min-w-0">
-          <div className="ky-truncate ky-text-sm ky-font-medium ky-text-foreground">{name}</div>
-          <div className="ky-text-2xs ky-text-muted-foreground">
+    <div className="pv-absolute pv-right-4 pv-top-16 pv-bottom-20 pv-z-20 pv-w-80 pv-overflow-y-auto pv-rounded-xl pv-border pv-border-border pv-glass pv-shadow-elev-3 pv-animate-fade-in">
+      <div className="pv-flex pv-items-start pv-justify-between pv-border-b pv-border-border pv-p-3">
+        <div className="pv-min-w-0">
+          <div className="pv-truncate pv-text-sm pv-font-medium pv-text-foreground">{name}</div>
+          <div className="pv-text-2xs pv-text-muted-foreground">
             {node.labels.join(" · ")} · {node.namespace}
           </div>
         </div>
-        <button type="button" onClick={() => selectNode(null)} className="ky-text-muted-foreground hover:ky-text-foreground">
-          <X className="ky-h-4 ky-w-4" />
+        <button type="button" onClick={() => selectNode(null)} className="pv-text-muted-foreground hover:pv-text-foreground">
+          <X className="pv-h-4 pv-w-4" />
         </button>
       </div>
 
-      <div className="ky-flex ky-gap-2 ky-p-3">
+      <div className="pv-flex pv-gap-2 pv-p-3">
         <button
           type="button"
           onClick={() => setFocusMode(focusModeId === nodeKey ? null : nodeKey)}
-          className="ky-flex ky-items-center ky-gap-1 ky-rounded-md ky-border ky-border-border ky-px-2 ky-py-1 ky-text-xs ky-text-muted-foreground hover:ky-text-foreground"
+          className="pv-flex pv-items-center pv-gap-1 pv-rounded-md pv-border pv-border-border pv-px-2 pv-py-1 pv-text-xs pv-text-muted-foreground hover:pv-text-foreground"
         >
-          <Crosshair className="ky-h-3 ky-w-3" />
+          <Crosshair className="pv-h-3 pv-w-3" />
           {focusModeId === nodeKey ? "Exit focus" : "Focus neighborhood"}
         </button>
         <button
           type="button"
           onClick={() => void navigator.clipboard.writeText(node.id)}
-          className="ky-flex ky-items-center ky-gap-1 ky-rounded-md ky-border ky-border-border ky-px-2 ky-py-1 ky-text-xs ky-text-muted-foreground hover:ky-text-foreground"
+          className="pv-flex pv-items-center pv-gap-1 pv-rounded-md pv-border pv-border-border pv-px-2 pv-py-1 pv-text-xs pv-text-muted-foreground hover:pv-text-foreground"
         >
-          <Copy className="ky-h-3 ky-w-3" /> Copy id
+          <Copy className="pv-h-3 pv-w-3" /> Copy id
         </button>
       </div>
 
       {Object.keys(node.properties ?? {}).length > 0 && (
-        <div className="ky-border-t ky-border-border ky-p-3">
-          <div className="ky-mb-1 ky-text-2xs ky-uppercase ky-text-muted-foreground">Properties</div>
-          <dl className="ky-space-y-1">
+        <div className="pv-border-t pv-border-border pv-p-3">
+          <div className="pv-mb-1 pv-text-2xs pv-uppercase pv-text-muted-foreground">Properties</div>
+          <dl className="pv-space-y-1">
             {Object.entries(node.properties).slice(0, 30).map(([k, v]) => (
-              <div key={k} className="ky-flex ky-gap-2 ky-text-xs">
-                <dt className="ky-w-28 ky-shrink-0 ky-truncate ky-text-muted-foreground">{k}</dt>
-                <dd className="ky-min-w-0 ky-truncate ky-font-mono ky-text-foreground">{String(v)}</dd>
+              <div key={k} className="pv-flex pv-gap-2 pv-text-xs">
+                <dt className="pv-w-28 pv-shrink-0 pv-truncate pv-text-muted-foreground">{k}</dt>
+                <dd className="pv-min-w-0 pv-truncate pv-font-mono pv-text-foreground">{String(v)}</dd>
               </div>
             ))}
           </dl>
         </div>
       )}
 
-      <div className="ky-border-t ky-border-border ky-p-3">
-        <div className="ky-mb-1 ky-text-2xs ky-uppercase ky-text-muted-foreground">Relationships</div>
+      <div className="pv-border-t pv-border-border pv-p-3">
+        <div className="pv-mb-1 pv-text-2xs pv-uppercase pv-text-muted-foreground">Relationships</div>
         {[...incident.entries()].map(([relType, items]) => (
-          <div key={relType} className="ky-mb-2">
-            <div className="ky-flex ky-items-center ky-gap-1.5 ky-text-2xs ky-font-mono" style={{ color: getRelationshipFamilyColor(relType) }}>
-              {relType} <span className="ky-text-muted-foreground">({items.length})</span>
+          <div key={relType} className="pv-mb-2">
+            <div className="pv-flex pv-items-center pv-gap-1.5 pv-text-2xs pv-font-mono" style={{ color: getRelationshipFamilyColor(relType) }}>
+              {relType} <span className="pv-text-muted-foreground">({items.length})</span>
             </div>
-            <ul className="ky-mt-0.5 ky-space-y-0.5">
+            <ul className="pv-mt-0.5 pv-space-y-0.5">
               {items.slice(0, 25).map(({ edge, otherKey, out }) => {
                 const other = nodesByCompositeId.get(otherKey);
                 const otherName = other
@@ -2878,10 +2878,10 @@ export function InspectorPanel({
                         pushTrail(otherKey);
                         focusNode(otherKey);
                       }}
-                      className="ky-flex ky-w-full ky-items-center ky-gap-1.5 ky-rounded ky-px-1 ky-py-0.5 ky-text-left ky-text-xs ky-text-muted-foreground hover:ky-bg-accent hover:ky-text-foreground"
+                      className="pv-flex pv-w-full pv-items-center pv-gap-1.5 pv-rounded pv-px-1 pv-py-0.5 pv-text-left pv-text-xs pv-text-muted-foreground hover:pv-bg-accent hover:pv-text-foreground"
                     >
-                      {out ? <ArrowRight className="ky-h-3 ky-w-3 ky-shrink-0" /> : <ArrowLeft className="ky-h-3 ky-w-3 ky-shrink-0" />}
-                      <span className="ky-truncate">{otherName}</span>
+                      {out ? <ArrowRight className="pv-h-3 pv-w-3 pv-shrink-0" /> : <ArrowLeft className="pv-h-3 pv-w-3 pv-shrink-0" />}
+                      <span className="pv-truncate">{otherName}</span>
                     </button>
                   </li>
                 );
@@ -2889,14 +2889,14 @@ export function InspectorPanel({
             </ul>
           </div>
         ))}
-        {incident.size === 0 && <div className="ky-text-xs ky-text-muted-foreground">No edges.</div>}
+        {incident.size === 0 && <div className="pv-text-xs pv-text-muted-foreground">No edges.</div>}
       </div>
     </div>
   );
 }
 ```
 
-- [ ] **Step 2: LegendDock** — bottom-center chip → expandable panel. Port the filter/toggle sections from `GraphSidebar.tsx` (node-type visibility with counts, namespace visibility, relationship-type isolation via `setRelTypeFilter`, the 6 style toggles, the 4-button layout picker wired to `setLayout`). Collapsed chip: relationship-family color swatches + `{visibleNodes} nodes · {visibleEdges} edges`. Expanded: `ky-glass` panel (max-h-96, overflow-y-auto) with those sections. Props:
+- [ ] **Step 2: LegendDock** — bottom-center chip → expandable panel. Port the filter/toggle sections from `GraphSidebar.tsx` (node-type visibility with counts, namespace visibility, relationship-type isolation via `setRelTypeFilter`, the 6 style toggles, the 4-button layout picker wired to `setLayout`). Collapsed chip: relationship-family color swatches + `{visibleNodes} nodes · {visibleEdges} edges`. Expanded: `pv-glass` panel (max-h-96, overflow-y-auto) with those sections. Props:
 
 ```tsx
 export function LegendDock(props: {
@@ -2925,19 +2925,19 @@ export function BreadcrumbTrail({ nodesByCompositeId }: { nodesByCompositeId: Ma
   const visible = trail.slice(-5);
   const offset = trail.length - visible.length;
   return (
-    <div className="ky-absolute ky-left-4 ky-top-6 ky-z-20 ky-flex ky-max-w-[60%] ky-items-center ky-gap-0.5 ky-rounded-full ky-glass ky-border ky-border-border ky-px-2 ky-py-1">
-      {offset > 0 && <span className="ky-text-2xs ky-text-muted-foreground">…</span>}
+    <div className="pv-absolute pv-left-4 pv-top-6 pv-z-20 pv-flex pv-max-w-[60%] pv-items-center pv-gap-0.5 pv-rounded-full pv-glass pv-border pv-border-border pv-px-2 pv-py-1">
+      {offset > 0 && <span className="pv-text-2xs pv-text-muted-foreground">…</span>}
       {visible.map((id, i) => {
         const node = nodesByCompositeId.get(id);
         const name = node ? (node.properties?.name as string) || node.id : id.split("::").pop();
         const last = i === visible.length - 1;
         return (
-          <span key={`${id}-${i}`} className="ky-flex ky-items-center ky-gap-0.5">
-            {(i > 0 || offset > 0) && <ChevronRight className="ky-h-3 ky-w-3 ky-text-muted-foreground" />}
+          <span key={`${id}-${i}`} className="pv-flex pv-items-center pv-gap-0.5">
+            {(i > 0 || offset > 0) && <ChevronRight className="pv-h-3 pv-w-3 pv-text-muted-foreground" />}
             <button
               type="button"
               onClick={() => jumpTrail(offset + i)}
-              className={`ky-max-w-32 ky-truncate ky-text-xs ${last ? "ky-text-foreground" : "ky-text-muted-foreground hover:ky-text-foreground"}`}
+              className={`pv-max-w-32 pv-truncate pv-text-xs ${last ? "pv-text-foreground" : "pv-text-muted-foreground hover:pv-text-foreground"}`}
             >
               {name}
             </button>
@@ -3040,8 +3040,8 @@ export function Minimap({ sigma }: { sigma: Sigma | null }) {
   }, [sigma]);
 
   return (
-    <div className="ky-absolute ky-bottom-4 ky-left-4 ky-z-20 ky-rounded-lg ky-glass ky-border ky-border-border ky-p-1">
-      <canvas ref={canvasRef} style={{ width: W, height: H }} className="ky-cursor-crosshair ky-rounded" />
+    <div className="pv-absolute pv-bottom-4 pv-left-4 pv-z-20 pv-rounded-lg pv-glass pv-border pv-border-border pv-p-1">
+      <canvas ref={canvasRef} style={{ width: W, height: H }} className="pv-cursor-crosshair pv-rounded" />
     </div>
   );
 }
@@ -3122,8 +3122,8 @@ export function GraphView({ graphs, discover, realm, showChrome = true, renderer
   };
 
   return (
-    <div className="ky-relative ky-h-full ky-w-full ky-overflow-hidden ky-bg-background">
-      <div className="ky-pointer-events-none ky-absolute ky-inset-0" style={{ background: galaxyBg }} />
+    <div className="pv-relative pv-h-full pv-w-full pv-overflow-hidden pv-bg-background">
+      <div className="pv-pointer-events-none pv-absolute pv-inset-0" style={{ background: galaxyBg }} />
       {/* hulls under the sigma canvases */}
       {useWebgl && <HullsLayer sigma={sigmaRef.current} nodes={nodes} edges={edges} version={exp.version} />}
       {useWebgl ? (
@@ -3144,13 +3144,13 @@ export function GraphView({ graphs, discover, realm, showChrome = true, renderer
       )}
       {/* vignette (unchanged) */}
       {exp.layoutComputing && (
-        <div className="ky-absolute ky-left-1/2 ky-top-16 ky-z-10 -ky-translate-x-1/2 ky-glass ky-rounded-full ky-px-3 ky-py-1 ky-text-xs ky-text-muted-foreground">
+        <div className="pv-absolute pv-left-1/2 pv-top-16 pv-z-10 -pv-translate-x-1/2 pv-glass pv-rounded-full pv-px-3 pv-py-1 pv-text-xs pv-text-muted-foreground">
           Computing layout server-side… {exp.acc.nodes.length.toLocaleString()} nodes loaded
         </div>
       )}
       {exp.isError && exp.acc.nodes.length > 0 && (
-        <div className="ky-absolute ky-bottom-20 ky-left-1/2 ky-z-10 -ky-translate-x-1/2 ky-glass ky-rounded-full ky-px-3 ky-py-1 ky-text-xs ky-text-destructive">
-          Partial graph — a stream failed. <button type="button" onClick={exp.refetch} className="ky-underline">Retry</button>
+        <div className="pv-absolute pv-bottom-20 pv-left-1/2 pv-z-10 -pv-translate-x-1/2 pv-glass pv-rounded-full pv-px-3 pv-py-1 pv-text-xs pv-text-destructive">
+          Partial graph — a stream failed. <button type="button" onClick={exp.refetch} className="pv-underline">Retry</button>
         </div>
       )}
       {showChrome && (

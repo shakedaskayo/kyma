@@ -123,16 +123,16 @@ function Setup() {
       {/* ── Left: brand panel ─────────────────────────────────────────── */}
       <aside className="relative hidden w-[42%] shrink-0 flex-col justify-between overflow-hidden border-r border-[#dfdfd6]/[0.07] p-12 lg:flex">
         <Aurora />
-        <div className="relative z-10 flex items-center gap-3 ky-rise" style={{ animationDelay: "40ms" }}>
+        <div className="relative z-10 flex items-center gap-3 pv-rise" style={{ animationDelay: "40ms" }}>
           <PensieveMark className="h-9 w-9" />
           <span className="font-mono text-[17px] font-semibold tracking-[0.18em] text-[#e8e6e0]">
             pensieve
           </span>
         </div>
 
-        <div className="relative z-10 max-w-sm ky-rise" style={{ animationDelay: "120ms" }}>
+        <div className="relative z-10 max-w-sm pv-rise" style={{ animationDelay: "120ms" }}>
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[#7ed957]/20 bg-[#7ed957]/[0.07] px-3 py-1 font-mono text-[11px] tracking-wider text-[#7ed957]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#7ed957] ky-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-[#7ed957] pv-pulse" />
             FIRST-RUN SETUP
           </div>
           <h1 className="font-mono text-[2.6rem] font-bold leading-[1.04] tracking-tight text-[#e8e6e0]">
@@ -145,7 +145,7 @@ function Setup() {
           </p>
         </div>
 
-        <nav className="relative z-10 flex flex-col gap-0.5 ky-rise" style={{ animationDelay: "200ms" }}>
+        <nav className="relative z-10 flex flex-col gap-0.5 pv-rise" style={{ animationDelay: "200ms" }}>
           {STEPS.map((s, i) => {
             const state = i < stepIndex ? "done" : i === stepIndex ? "active" : "todo";
             return (
@@ -156,7 +156,7 @@ function Setup() {
                     (state === "done"
                       ? "border-[#7ed957]/50 bg-[#7ed957]/15 text-[#7ed957]"
                       : state === "active"
-                        ? "border-[#7ed957] bg-[#7ed957] text-[#0d1015] ky-glow"
+                        ? "border-[#7ed957] bg-[#7ed957] text-[#0d1015] pv-glow"
                         : "border-[#dfdfd6]/12 bg-[#dfdfd6]/[0.02] text-[#dfdfd6]/35")
                   }
                 >
@@ -187,7 +187,7 @@ function Setup() {
         {checking ? (
           <Loader2 className="h-6 w-6 animate-spin" style={{ color: GREEN }} />
         ) : (
-          <div key={step} className="w-full max-w-md ky-rise">
+          <div key={step} className="w-full max-w-md pv-rise">
             {step === "account" && (
               <StepShell
                 eyebrow="Step 2 / Account"
@@ -569,8 +569,8 @@ function AgentStep({ endpoint, onNext }: { endpoint: string; onNext: () => void 
 function DoneStep({ onEnter }: { onEnter: () => void }) {
   return (
     <div className="text-center">
-      <div className="mx-auto mb-7 ky-rise">
-        <PensieveMark className="mx-auto h-16 w-16 ky-glow rounded-full" />
+      <div className="mx-auto mb-7 pv-rise">
+        <PensieveMark className="mx-auto h-16 w-16 pv-glow rounded-full" />
       </div>
       <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.18em] text-[#7ed957]">
         Ready
@@ -837,17 +837,17 @@ function PensieveMark({ className }: { className?: string }) {
 function Aurora() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="ky-blob absolute -left-1/4 top-[-12%] h-[58%] w-[70%] rounded-full bg-[#7ed957]/[0.14] blur-[100px]" />
+      <div className="pv-blob absolute -left-1/4 top-[-12%] h-[58%] w-[70%] rounded-full bg-[#7ed957]/[0.14] blur-[100px]" />
       <div
-        className="ky-blob absolute right-[-18%] top-[24%] h-[52%] w-[58%] rounded-full bg-[#34d399]/[0.10] blur-[100px]"
+        className="pv-blob absolute right-[-18%] top-[24%] h-[52%] w-[58%] rounded-full bg-[#34d399]/[0.10] blur-[100px]"
         style={{ animationDelay: "-7s", animationDuration: "28s" }}
       />
       <div
-        className="ky-blob absolute bottom-[-16%] left-[8%] h-[52%] w-[62%] rounded-full bg-[#2dd4bf]/[0.08] blur-[110px]"
+        className="pv-blob absolute bottom-[-16%] left-[8%] h-[52%] w-[62%] rounded-full bg-[#2dd4bf]/[0.08] blur-[110px]"
         style={{ animationDelay: "-13s", animationDuration: "32s" }}
       />
-      <div className="ky-grid absolute inset-0 opacity-[0.16]" />
-      <div className="ky-scan absolute inset-0 opacity-[0.05]" />
+      <div className="pv-grid absolute inset-0 opacity-[0.16]" />
+      <div className="pv-scan absolute inset-0 opacity-[0.05]" />
     </div>
   );
 }
@@ -855,23 +855,23 @@ function Aurora() {
 function WizardStyles() {
   return (
     <style>{`
-      @keyframes ky-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-      .ky-rise { animation: ky-rise 0.6s cubic-bezier(0.22,1,0.36,1) both; }
-      @keyframes ky-blob { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(6%,4%) scale(1.12); } 66% { transform: translate(-5%,-3%) scale(0.95); } }
-      .ky-blob { animation: ky-blob 24s ease-in-out infinite; }
-      @keyframes ky-glow { 0%,100% { filter: drop-shadow(0 0 0 rgba(126,217,87,0.0)); } 50% { filter: drop-shadow(0 0 10px rgba(126,217,87,0.55)); } }
-      .ky-glow { animation: ky-glow 3.6s ease-in-out infinite; }
-      @keyframes ky-pulse { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(126,217,87,0.6); } 50% { opacity: 0.6; box-shadow: 0 0 8px 2px rgba(126,217,87,0.5); } }
-      .ky-pulse { animation: ky-pulse 2.2s ease-in-out infinite; }
-      .ky-grid {
+      @keyframes pv-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+      .pv-rise { animation: pv-rise 0.6s cubic-bezier(0.22,1,0.36,1) both; }
+      @keyframes pv-blob { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(6%,4%) scale(1.12); } 66% { transform: translate(-5%,-3%) scale(0.95); } }
+      .pv-blob { animation: pv-blob 24s ease-in-out infinite; }
+      @keyframes pv-glow { 0%,100% { filter: drop-shadow(0 0 0 rgba(126,217,87,0.0)); } 50% { filter: drop-shadow(0 0 10px rgba(126,217,87,0.55)); } }
+      .pv-glow { animation: pv-glow 3.6s ease-in-out infinite; }
+      @keyframes pv-pulse { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(126,217,87,0.6); } 50% { opacity: 0.6; box-shadow: 0 0 8px 2px rgba(126,217,87,0.5); } }
+      .pv-pulse { animation: pv-pulse 2.2s ease-in-out infinite; }
+      .pv-grid {
         background-image: linear-gradient(rgba(126,217,87,0.10) 1px, transparent 1px),
           linear-gradient(90deg, rgba(126,217,87,0.10) 1px, transparent 1px);
         background-size: 38px 38px;
         mask-image: radial-gradient(ellipse 70% 60% at 28% 42%, #000 25%, transparent 72%);
       }
-      .ky-scan { background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.5) 0px, rgba(255,255,255,0.5) 1px, transparent 1px, transparent 3px); }
+      .pv-scan { background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.5) 0px, rgba(255,255,255,0.5) 1px, transparent 1px, transparent 3px); }
       @media (prefers-reduced-motion: reduce) {
-        .ky-rise, .ky-blob, .ky-glow, .ky-pulse { animation: none !important; }
+        .pv-rise, .pv-blob, .pv-glow, .pv-pulse { animation: none !important; }
       }
     `}</style>
   );

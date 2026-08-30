@@ -11,8 +11,8 @@ export function Message({
   return (
     <div
       className={cn(
-        "ky-group ky-flex ky-w-full",
-        from === "user" ? "ky-justify-end" : "ky-justify-start",
+        "pv-group pv-flex pv-w-full",
+        from === "user" ? "pv-justify-end" : "pv-justify-start",
         className,
       )}
       data-role={from}
@@ -28,11 +28,11 @@ export function MessageContent({
   return (
     <div
       className={cn(
-        "ky-flex ky-min-w-0 ky-flex-col ky-gap-2 ky-overflow-hidden ky-rounded-lg ky-text-sm",
+        "pv-flex pv-min-w-0 pv-flex-col pv-gap-2 pv-overflow-hidden pv-rounded-lg pv-text-sm",
         // User: compact accent bubble.
-        "group-data-[role=user]:ky-max-w-[80%] group-data-[role=user]:ky-bg-primary group-data-[role=user]:ky-px-3 group-data-[role=user]:ky-py-2 group-data-[role=user]:ky-text-primary-foreground group-data-[role=user]:ky-shadow-sm",
+        "group-data-[role=user]:pv-max-w-[80%] group-data-[role=user]:pv-bg-primary group-data-[role=user]:pv-px-3 group-data-[role=user]:pv-py-2 group-data-[role=user]:pv-text-primary-foreground group-data-[role=user]:pv-shadow-sm",
         // Assistant: full-width card.
-        "group-data-[role=assistant]:ky-w-full group-data-[role=assistant]:ky-border group-data-[role=assistant]:ky-bg-card group-data-[role=assistant]:ky-px-4 group-data-[role=assistant]:ky-py-3 group-data-[role=assistant]:ky-text-card-foreground group-data-[role=assistant]:ky-shadow-sm",
+        "group-data-[role=assistant]:pv-w-full group-data-[role=assistant]:pv-border group-data-[role=assistant]:pv-bg-card group-data-[role=assistant]:pv-px-4 group-data-[role=assistant]:pv-py-3 group-data-[role=assistant]:pv-text-card-foreground group-data-[role=assistant]:pv-shadow-sm",
         className,
       )}
       {...props}

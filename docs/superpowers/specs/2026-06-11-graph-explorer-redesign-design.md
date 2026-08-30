@@ -54,7 +54,7 @@ Make the graph explorer render the **full graph every time** (tens of thousands 
 - **Minimap** (bottom-left): whole-graph density map with viewport rectangle, drag-to-jump.
 - **Zoom controls** (bottom-right): +/−, fit-to-graph, reset.
 - **Breadcrumb trail** (top-left): see §4.
-- All panels are floating glass (translucent dark, blur, `ky-` tailwind tokens), consistent with existing design language (IBM Plex Sans, existing radius/shadow scale).
+- All panels are floating glass (translucent dark, blur, `pv-` tailwind tokens), consistent with existing design language (IBM Plex Sans, existing radius/shadow scale).
 
 ## 4. Traveling the graph
 

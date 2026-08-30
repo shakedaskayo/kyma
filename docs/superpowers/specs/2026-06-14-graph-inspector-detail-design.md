@@ -8,7 +8,7 @@ Area: `packages/react/src/graph` (web graph explorer)
 
 When a node is selected in the graph explorer, the docked `InspectorPanel`
 (`packages/react/src/graph/InspectorPanel.tsx`) renders every property as a
-single `ky-truncate` line in a 320px strip. Long values (a memory's `content`,
+single `pv-truncate` line in a 320px strip. Long values (a memory's `content`,
 `provenance` JSON, `topic_key`, timestamps) are cut off with no way to read the
 full value, copy it, or render markdown. There is also no way to open the
 underlying source file for nodes that reference one.

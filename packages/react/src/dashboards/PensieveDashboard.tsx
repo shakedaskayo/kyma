@@ -140,7 +140,7 @@ function TimeRangeSelect({
 }) {
   return (
     <select
-      className="ky-h-7 ky-rounded-md ky-border ky-border-input ky-bg-background ky-px-2 ky-text-xs focus-visible:ky-outline-none focus-visible:ky-ring-2 focus-visible:ky-ring-ring"
+      className="pv-h-7 pv-rounded-md pv-border pv-border-input pv-bg-background pv-px-2 pv-text-xs focus-visible:pv-outline-none focus-visible:pv-ring-2 focus-visible:pv-ring-ring"
       value={value.preset}
       onChange={(e) => onChange({ preset: e.target.value as TimeRangePreset })}
     >
@@ -376,7 +376,7 @@ function PensieveDashboardInner({
   if (isLoading) {
     return (
       fallback ?? (
-        <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-text-sm ky-text-muted-foreground ky-animate-pulse">
+        <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-text-sm pv-text-muted-foreground pv-animate-pulse">
           Loading dashboard…
         </div>
       )
@@ -385,8 +385,8 @@ function PensieveDashboardInner({
 
   if (fetchError || (!draft && !isLoading)) {
     return (
-      <div className="ky-flex ky-h-full ky-items-center ky-justify-center">
-        <p className="ky-text-sm ky-text-muted-foreground">Dashboard not found.</p>
+      <div className="pv-flex pv-h-full pv-items-center pv-justify-center">
+        <p className="pv-text-sm pv-text-muted-foreground">Dashboard not found.</p>
       </div>
     );
   }
@@ -396,14 +396,14 @@ function PensieveDashboardInner({
   const layout = panelsToLayout(draft.panels);
 
   return (
-    <div className={`ky-flex ky-h-full ky-flex-col ky-bg-muted/10 ${className ?? ""}`} style={style}>
+    <div className={`pv-flex pv-h-full pv-flex-col pv-bg-muted/10 ${className ?? ""}`} style={style}>
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
-      <div className="ky-flex ky-items-center ky-gap-2 ky-border-b ky-bg-background ky-px-4 ky-py-2 ky-shadow-sm">
+      <div className="pv-flex pv-items-center pv-gap-2 pv-border-b pv-bg-background pv-px-4 pv-py-2 pv-shadow-sm">
         {/* Dashboard name */}
         {editingName ? (
           <input
             ref={nameRef}
-            className="ky-h-7 ky-rounded-md ky-border ky-border-input ky-bg-background ky-px-2 ky-text-sm ky-font-medium focus-visible:ky-outline-none focus-visible:ky-ring-2 focus-visible:ky-ring-ring"
+            className="pv-h-7 pv-rounded-md pv-border pv-border-input pv-bg-background pv-px-2 pv-text-sm pv-font-medium focus-visible:pv-outline-none focus-visible:pv-ring-2 focus-visible:pv-ring-ring"
             defaultValue={draft.name}
             autoFocus
             onBlur={(e) => {
@@ -419,7 +419,7 @@ function PensieveDashboardInner({
           />
         ) : (
           <button
-            className="ky-rounded ky-px-1 ky-text-sm ky-font-semibold hover:ky-bg-accent/50"
+            className="pv-rounded pv-px-1 pv-text-sm pv-font-semibold hover:pv-bg-accent/50"
             onClick={() => editMode && setEditingName(true)}
             title={editMode ? "Click to rename" : undefined}
           >
@@ -432,16 +432,16 @@ function PensieveDashboardInner({
 
         {/* Auto-refresh indicator */}
         {fetched?.refresh_interval_seconds && !editMode && (
-          <div className="ky-flex ky-items-center ky-gap-1 ky-text-xs ky-text-muted-foreground">
+          <div className="pv-flex pv-items-center pv-gap-1 pv-text-xs pv-text-muted-foreground">
             <RefreshCw
-              className="ky-h-3 ky-w-3 ky-animate-spin"
+              className="pv-h-3 pv-w-3 pv-animate-spin"
               style={{ animationDuration: "3s" }}
             />
             {fetched.refresh_interval_seconds}s
           </div>
         )}
 
-        <div className="ky-ml-auto ky-flex ky-items-center ky-gap-1.5">
+        <div className="pv-ml-auto pv-flex pv-items-center pv-gap-1.5">
           {/* Add panel (edit only) */}
           {editMode && (
             <Button
@@ -450,7 +450,7 @@ function PensieveDashboardInner({
               onClick={() => setAddPanelOpen(true)}
               data-testid="add-panel-btn"
             >
-              <Plus className="ky-mr-1 ky-h-3.5 ky-w-3.5" /> Add panel
+              <Plus className="pv-mr-1 pv-h-3.5 pv-w-3.5" /> Add panel
             </Button>
           )}
 
@@ -458,11 +458,11 @@ function PensieveDashboardInner({
           <Button size="sm" variant="outline" onClick={toggleEditMode} data-testid="edit-toggle-btn">
             {editMode ? (
               <>
-                <Eye className="ky-mr-1 ky-h-3.5 ky-w-3.5" /> View
+                <Eye className="pv-mr-1 pv-h-3.5 pv-w-3.5" /> View
               </>
             ) : (
               <>
-                <Pencil className="ky-mr-1 ky-h-3.5 ky-w-3.5" /> Edit
+                <Pencil className="pv-mr-1 pv-h-3.5 pv-w-3.5" /> Edit
               </>
             )}
           </Button>
@@ -475,7 +475,7 @@ function PensieveDashboardInner({
               disabled={!dirty || saving}
               data-testid="save-btn"
             >
-              <Save className="ky-mr-1 ky-h-3.5 ky-w-3.5" />
+              <Save className="pv-mr-1 pv-h-3.5 pv-w-3.5" />
               {saving ? "Saving…" : "Save"}
             </Button>
           )}
@@ -483,13 +483,13 @@ function PensieveDashboardInner({
       </div>
 
       {/* ── Grid ─────────────────────────────────────────────────────────── */}
-      <div ref={containerRef} className="ky-flex-1 ky-overflow-y-auto ky-p-4">
+      <div ref={containerRef} className="pv-flex-1 pv-overflow-y-auto pv-p-4">
         {draft.panels.length === 0 && (
-          <div className="ky-flex ky-h-64 ky-flex-col ky-items-center ky-justify-center ky-gap-3 ky-rounded-lg ky-border-2 ky-border-dashed ky-border-muted-foreground/20 ky-text-muted-foreground">
-            <p className="ky-text-sm">No panels yet.</p>
+          <div className="pv-flex pv-h-64 pv-flex-col pv-items-center pv-justify-center pv-gap-3 pv-rounded-lg pv-border-2 pv-border-dashed pv-border-muted-foreground/20 pv-text-muted-foreground">
+            <p className="pv-text-sm">No panels yet.</p>
             {editMode && (
               <Button size="sm" variant="outline" onClick={() => setAddPanelOpen(true)}>
-                <Plus className="ky-mr-1 ky-h-3.5 ky-w-3.5" /> Add your first panel
+                <Plus className="pv-mr-1 pv-h-3.5 pv-w-3.5" /> Add your first panel
               </Button>
             )}
           </div>

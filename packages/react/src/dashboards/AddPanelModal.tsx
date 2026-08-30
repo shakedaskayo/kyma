@@ -3,7 +3,7 @@
  *
  * Adapted from web's AddPanelModal with:
  *   - session → usePensieveClient() for catalog schema fetch
- *   - web shadcn components → internal/ui primitives (ky- prefix)
+ *   - web shadcn components → internal/ui primitives (pv- prefix)
  *   - Toast dropped (no router-level notification infra in the SDK)
  *   - Preview uses SDK panel viz components
  */
@@ -59,7 +59,7 @@ const DEFAULT_DRAFT: PanelDraft = {
 function MonacoMini({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <textarea
-      className="ky-h-28 ky-w-full ky-rounded-md ky-border ky-border-input ky-bg-background ky-p-2 ky-font-mono ky-text-xs placeholder:ky-text-muted-foreground focus-visible:ky-outline-none focus-visible:ky-ring-2 focus-visible:ky-ring-ring ky-resize-none"
+      className="pv-h-28 pv-w-full pv-rounded-md pv-border pv-border-input pv-bg-background pv-p-2 pv-font-mono pv-text-xs placeholder:pv-text-muted-foreground focus-visible:pv-outline-none focus-visible:pv-ring-2 focus-visible:pv-ring-ring pv-resize-none"
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder="Enter KQL query…"
@@ -74,7 +74,7 @@ function Label({ htmlFor, children }: { htmlFor?: string; children: React.ReactN
   return (
     <label
       htmlFor={htmlFor}
-      className="ky-text-sm ky-font-medium ky-leading-none peer-disabled:ky-cursor-not-allowed peer-disabled:ky-opacity-70"
+      className="pv-text-sm pv-font-medium pv-leading-none peer-disabled:pv-cursor-not-allowed peer-disabled:pv-opacity-70"
     >
       {children}
     </label>
@@ -154,14 +154,14 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="ky-max-w-2xl ky-max-h-[90vh] ky-overflow-y-auto">
+      <DialogContent className="pv-max-w-2xl pv-max-h-[90vh] pv-overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{initial ? "Edit panel" : "Add panel"}</DialogTitle>
         </DialogHeader>
 
-        <div className="ky-space-y-4 ky-py-1">
+        <div className="pv-space-y-4 pv-py-1">
           {/* Title */}
-          <div className="ky-space-y-1">
+          <div className="pv-space-y-1">
             <Label htmlFor="panel-title">Title *</Label>
             <Input
               id="panel-title"
@@ -172,17 +172,17 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
           </div>
 
           {/* Type */}
-          <div className="ky-space-y-1">
+          <div className="pv-space-y-1">
             <Label>Type</Label>
-            <div className="ky-flex ky-gap-2">
+            <div className="pv-flex pv-gap-2">
               {panelTypes.map((pt) => (
                 <button
                   key={pt.value}
                   onClick={() => up({ panel_type: pt.value })}
-                  className={`ky-rounded-md ky-border ky-px-3 ky-py-1.5 ky-text-xs ky-font-medium ky-transition ${
+                  className={`pv-rounded-md pv-border pv-px-3 pv-py-1.5 pv-text-xs pv-font-medium pv-transition ${
                     draft.panel_type === pt.value
-                      ? "ky-border-primary ky-bg-primary ky-text-primary-foreground"
-                      : "ky-border-border ky-text-muted-foreground hover:ky-border-primary/50 hover:ky-text-foreground"
+                      ? "pv-border-primary pv-bg-primary pv-text-primary-foreground"
+                      : "pv-border-border pv-text-muted-foreground hover:pv-border-primary/50 hover:pv-text-foreground"
                   }`}
                 >
                   {pt.label}
@@ -193,11 +193,11 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
 
           {/* Database */}
           {!isMarkdown && (
-            <div className="ky-space-y-1">
+            <div className="pv-space-y-1">
               <Label htmlFor="panel-db">Database</Label>
               <select
                 id="panel-db"
-                className="ky-w-full ky-rounded-md ky-border ky-border-input ky-bg-background ky-px-3 ky-py-2 ky-text-sm focus-visible:ky-outline-none focus-visible:ky-ring-2 focus-visible:ky-ring-ring"
+                className="pv-w-full pv-rounded-md pv-border pv-border-input pv-bg-background pv-px-3 pv-py-2 pv-text-sm focus-visible:pv-outline-none focus-visible:pv-ring-2 focus-visible:pv-ring-ring"
                 value={draft.database_name ?? ""}
                 onChange={(e) => up({ database_name: e.target.value || null })}
               >
@@ -213,7 +213,7 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
 
           {/* Query */}
           {!isMarkdown && (
-            <div className="ky-space-y-1">
+            <div className="pv-space-y-1">
               <Label>Query</Label>
               <MonacoMini value={draft.query ?? ""} onChange={(v) => up({ query: v })} />
             </div>
@@ -221,10 +221,10 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
 
           {/* Markdown textarea */}
           {isMarkdown && (
-            <div className="ky-space-y-1">
+            <div className="pv-space-y-1">
               <Label>Markdown content</Label>
               <textarea
-                className="ky-h-40 ky-w-full ky-rounded-md ky-border ky-border-input ky-bg-background ky-p-2 ky-font-mono ky-text-xs focus-visible:ky-outline-none focus-visible:ky-ring-2 focus-visible:ky-ring-ring ky-resize-none"
+                className="pv-h-40 pv-w-full pv-rounded-md pv-border pv-border-input pv-bg-background pv-p-2 pv-font-mono pv-text-xs focus-visible:pv-outline-none focus-visible:pv-ring-2 focus-visible:pv-ring-ring pv-resize-none"
                 value={(draft.config.markdown as string | undefined) ?? ""}
                 onChange={(e) => upConfig({ markdown: e.target.value })}
                 placeholder="# My panel&#10;&#10;Write **markdown** here."
@@ -234,7 +234,7 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
 
           {/* Table: max rows */}
           {isTable && (
-            <div className="ky-space-y-1">
+            <div className="pv-space-y-1">
               <Label htmlFor="panel-maxrows">Max rows</Label>
               <Input
                 id="panel-maxrows"
@@ -249,8 +249,8 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
 
           {/* Stat settings */}
           {isStat && (
-            <div className="ky-space-y-3">
-              <div className="ky-space-y-1">
+            <div className="pv-space-y-3">
+              <div className="pv-space-y-1">
                 <Label htmlFor="stat-label">Label</Label>
                 <Input
                   id="stat-label"
@@ -259,7 +259,7 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
                   placeholder="e.g. requests/sec"
                 />
               </div>
-              <div className="ky-space-y-1">
+              <div className="pv-space-y-1">
                 <Label htmlFor="stat-valuecol">Value column (optional)</Label>
                 <Input
                   id="stat-valuecol"
@@ -268,11 +268,11 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
                   placeholder="auto-detect"
                 />
               </div>
-              <div className="ky-space-y-1">
+              <div className="pv-space-y-1">
                 <Label htmlFor="stat-format">Format</Label>
                 <select
                   id="stat-format"
-                  className="ky-w-full ky-rounded-md ky-border ky-border-input ky-bg-background ky-px-3 ky-py-2 ky-text-sm focus-visible:ky-outline-none focus-visible:ky-ring-2 focus-visible:ky-ring-ring"
+                  className="pv-w-full pv-rounded-md pv-border pv-border-input pv-bg-background pv-px-3 pv-py-2 pv-text-sm focus-visible:pv-outline-none focus-visible:pv-ring-2 focus-visible:pv-ring-ring"
                   value={(draft.config.format as string | undefined) ?? "number"}
                   onChange={(e) => upConfig({ format: e.target.value })}
                 >
@@ -290,23 +290,23 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
             <div>
               <button
                 type="button"
-                className="ky-flex ky-items-center ky-gap-1 ky-text-xs ky-text-muted-foreground hover:ky-text-foreground"
+                className="pv-flex pv-items-center pv-gap-1 pv-text-xs pv-text-muted-foreground hover:pv-text-foreground"
                 onClick={() => setAdvancedOpen((v) => !v)}
               >
                 {advancedOpen ? (
-                  <ChevronDown className="ky-h-3.5 ky-w-3.5" />
+                  <ChevronDown className="pv-h-3.5 pv-w-3.5" />
                 ) : (
-                  <ChevronRight className="ky-h-3.5 ky-w-3.5" />
+                  <ChevronRight className="pv-h-3.5 pv-w-3.5" />
                 )}
                 Advanced chart settings
               </button>
               {advancedOpen && (
-                <div className="ky-mt-2 ky-space-y-3 ky-rounded-md ky-border ky-bg-muted/20 ky-p-3">
-                  <div className="ky-space-y-1">
+                <div className="pv-mt-2 pv-space-y-3 pv-rounded-md pv-border pv-bg-muted/20 pv-p-3">
+                  <div className="pv-space-y-1">
                     <Label htmlFor="chart-type">Chart type</Label>
                     <select
                       id="chart-type"
-                      className="ky-w-full ky-rounded-md ky-border ky-border-input ky-bg-background ky-px-3 ky-py-2 ky-text-sm focus-visible:ky-outline-none focus-visible:ky-ring-2 focus-visible:ky-ring-ring"
+                      className="pv-w-full pv-rounded-md pv-border pv-border-input pv-bg-background pv-px-3 pv-py-2 pv-text-sm focus-visible:pv-outline-none focus-visible:pv-ring-2 focus-visible:pv-ring-ring"
                       value={(draft.config.chartType as string | undefined) ?? ""}
                       onChange={(e) => upConfig({ chartType: e.target.value || undefined })}
                     >
@@ -316,8 +316,8 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
                       <option value="scatter">Scatter</option>
                     </select>
                   </div>
-                  <div className="ky-grid ky-grid-cols-2 ky-gap-2">
-                    <div className="ky-space-y-1">
+                  <div className="pv-grid pv-grid-cols-2 pv-gap-2">
+                    <div className="pv-space-y-1">
                       <Label htmlFor="chart-xcol">X column</Label>
                       <Input
                         id="chart-xcol"
@@ -326,7 +326,7 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
                         placeholder="auto"
                       />
                     </div>
-                    <div className="ky-space-y-1">
+                    <div className="pv-space-y-1">
                       <Label htmlFor="chart-ycol">Y column</Label>
                       <Input
                         id="chart-ycol"
@@ -343,7 +343,7 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
 
           {/* Test query button + preview */}
           {!isMarkdown && (
-            <div className="ky-space-y-2">
+            <div className="pv-space-y-2">
               <Button
                 type="button"
                 size="sm"
@@ -351,12 +351,12 @@ export function AddPanelModal({ open, onClose, onSave, initial, defaultDatabase 
                 onClick={handlePreview}
                 disabled={!draft.query?.trim()}
               >
-                <Play className="ky-mr-1.5 ky-h-3.5 ky-w-3.5" /> Test query
+                <Play className="pv-mr-1.5 pv-h-3.5 pv-w-3.5" /> Test query
               </Button>
               {preview && (
                 <div
                   key={previewKey}
-                  className="ky-h-48 ky-rounded-md ky-border ky-bg-muted/10 ky-overflow-hidden"
+                  className="pv-h-48 pv-rounded-md pv-border pv-bg-muted/10 pv-overflow-hidden"
                 >
                   <PanelPreview panel={preview} />
                 </div>

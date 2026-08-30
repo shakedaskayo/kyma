@@ -31,7 +31,7 @@ export function TimeRangePicker({
     ? "No time column"
     : PRESETS.find((p) => p.value === value.preset)?.label ?? "Last 1 hour";
   return (
-    <div className="ky-relative">
+    <div className="pv-relative">
       <Button
         variant="outline"
         size="sm"
@@ -42,11 +42,11 @@ export function TimeRangePicker({
         {label}
       </Button>
       {open && (
-        <div className="ky-absolute ky-z-20 ky-mt-1 ky-w-48 ky-rounded-md ky-border ky-bg-popover ky-p-1 ky-shadow-md">
+        <div className="pv-absolute pv-z-20 pv-mt-1 pv-w-48 pv-rounded-md pv-border pv-bg-popover pv-p-1 pv-shadow-md">
           {PRESETS.map((p) => (
             <button
               key={p.value}
-              className="ky-block ky-w-full ky-rounded ky-px-2 ky-py-1 ky-text-left ky-text-xs hover:ky-bg-accent"
+              className="pv-block pv-w-full pv-rounded pv-px-2 pv-py-1 pv-text-left pv-text-xs hover:pv-bg-accent"
               onClick={() => {
                 onChange({ preset: p.value });
                 setOpen(false);

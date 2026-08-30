@@ -14,21 +14,21 @@ export function FieldsRail({ source, columns, onToggleColumn, onInsertFilter }: 
   const fields = useMemo(() => extractFields(source), [source]);
   if (!source) {
     return (
-      <div className="ky-text-xs ky-text-muted-foreground ky-p-2">
+      <div className="pv-text-xs pv-text-muted-foreground pv-p-2">
         Select a source to see its fields.
       </div>
     );
   }
   if (fields.length === 0) {
     return (
-      <div className="ky-text-xs ky-text-muted-foreground ky-p-2">
+      <div className="pv-text-xs pv-text-muted-foreground pv-p-2">
         {source.progress === "done" ? "No rows in this source." : "Loading…"}
       </div>
     );
   }
   return (
-    <div className="ky-space-y-0.5">
-      <div className="ky-text-xs ky-font-medium ky-text-muted-foreground ky-px-2 ky-py-1 ky-uppercase ky-tracking-wide">
+    <div className="pv-space-y-0.5">
+      <div className="pv-text-xs pv-font-medium pv-text-muted-foreground pv-px-2 pv-py-1 pv-uppercase pv-tracking-wide">
         Fields in {source.source}
       </div>
       {fields.map((f) => {
@@ -36,26 +36,26 @@ export function FieldsRail({ source, columns, onToggleColumn, onInsertFilter }: 
         return (
           <div
             key={f}
-            className="ky-flex ky-items-center ky-gap-1 ky-px-2 ky-py-1 ky-rounded ky-text-xs hover:ky-bg-accent ky-group"
+            className="pv-flex pv-items-center pv-gap-1 pv-px-2 pv-py-1 pv-rounded pv-text-xs hover:pv-bg-accent pv-group"
           >
             <button
               type="button"
-              className={`ky-truncate ky-flex-1 ky-text-left ky-font-mono ${isCol ? "ky-text-primary" : ""}`}
+              className={`pv-truncate pv-flex-1 pv-text-left pv-font-mono ${isCol ? "pv-text-primary" : ""}`}
               title={isCol ? `remove ${f} column from the stream` : `show ${f} as a column in the stream`}
               onClick={() => onToggleColumn(f)}
             >
               {f}
             </button>
-            {isCol && <Columns3 className="ky-size-3 ky-text-primary" />}
+            {isCol && <Columns3 className="pv-size-3 pv-text-primary" />}
             <Button
               variant="ghost"
               size="sm"
-              className="ky-opacity-0 group-hover:ky-opacity-100 ky-h-5 ky-px-1"
+              className="pv-opacity-0 group-hover:pv-opacity-100 pv-h-5 pv-px-1"
               onClick={() => onInsertFilter(`${f}:*`)}
               aria-label={`filter to rows where ${f} exists`}
               title={`add ${f}:* to the query`}
             >
-              <Filter className="ky-size-3" />
+              <Filter className="pv-size-3" />
             </Button>
           </div>
         );

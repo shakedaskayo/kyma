@@ -17,7 +17,7 @@ export function PromptInput({
     <form
       onSubmit={onSubmit}
       className={cn(
-        "ky-rounded-lg ky-border ky-bg-background ky-shadow-sm focus-within:ky-ring-2 focus-within:ky-ring-ring",
+        "pv-rounded-lg pv-border pv-bg-background pv-shadow-sm focus-within:pv-ring-2 focus-within:pv-ring-ring",
         className,
       )}
       {...props}
@@ -33,7 +33,7 @@ export function PromptInputTextarea({
   return (
     <textarea
       className={cn(
-        "ky-w-full ky-resize-none ky-bg-transparent ky-px-3 ky-py-2.5 ky-text-sm ky-outline-none placeholder:ky-text-muted-foreground disabled:ky-opacity-50",
+        "pv-w-full pv-resize-none pv-bg-transparent pv-px-3 pv-py-2.5 pv-text-sm pv-outline-none placeholder:pv-text-muted-foreground disabled:pv-opacity-50",
         className,
       )}
       rows={2}
@@ -56,7 +56,7 @@ export function PromptInputToolbar({
   return (
     <div
       className={cn(
-        "ky-flex ky-items-center ky-gap-2 ky-border-t ky-px-2 ky-py-1.5",
+        "pv-flex pv-items-center pv-gap-2 pv-border-t pv-px-2 pv-py-1.5",
         className,
       )}
       {...props}
@@ -82,14 +82,14 @@ export function PromptInputSubmit({
         type="button"
         size="sm"
         variant="outline"
-        className={cn("ky-ml-auto", className)}
+        className={cn("pv-ml-auto", className)}
         onClick={onStop}
         {...props}
       >
         {status === "submitted" ? (
-          <Loader2 className="ky-mr-1 ky-size-3.5 ky-animate-spin" />
+          <Loader2 className="pv-mr-1 pv-size-3.5 pv-animate-spin" />
         ) : (
-          <Square className="ky-mr-1 ky-size-3 ky-fill-current" />
+          <Square className="pv-mr-1 pv-size-3 pv-fill-current" />
         )}
         Stop
       </Button>
@@ -100,11 +100,11 @@ export function PromptInputSubmit({
     <Button
       type="submit"
       size="sm"
-      className={cn("ky-ml-auto", className)}
+      className={cn("pv-ml-auto", className)}
       disabled={disabled}
       {...props}
     >
-      <Send className="ky-mr-1 ky-size-3.5" />
+      <Send className="pv-mr-1 pv-size-3.5" />
       Send
     </Button>
   );

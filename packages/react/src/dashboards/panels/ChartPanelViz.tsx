@@ -1,6 +1,6 @@
 /**
  * ChartPanelViz — renders a chart-type dashboard panel.
- * Reuses packages/react/src/query/chart/ChartPanel (package version with ky- classes).
+ * Reuses packages/react/src/query/chart/ChartPanel (package version with pv- classes).
  */
 
 import { useEffect } from "react";
@@ -26,7 +26,7 @@ export function ChartPanelViz({ panel, timeRange }: Props) {
 
   if (!panel.query) {
     return (
-      <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-text-xs ky-text-muted-foreground">
+      <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-text-xs pv-text-muted-foreground">
         No query configured.
       </div>
     );
@@ -34,7 +34,7 @@ export function ChartPanelViz({ panel, timeRange }: Props) {
 
   if (result.kind === "idle" || result.kind === "loading") {
     return (
-      <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-text-xs ky-text-muted-foreground ky-animate-pulse">
+      <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-text-xs pv-text-muted-foreground pv-animate-pulse">
         Loading…
       </div>
     );
@@ -42,22 +42,22 @@ export function ChartPanelViz({ panel, timeRange }: Props) {
 
   if (result.kind === "error") {
     return (
-      <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-p-2">
-        <span className="ky-text-xs ky-text-destructive">{result.message}</span>
+      <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-p-2">
+        <span className="pv-text-xs pv-text-destructive">{result.message}</span>
       </div>
     );
   }
 
   if (result.rows.length === 0) {
     return (
-      <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-text-xs ky-text-muted-foreground">
+      <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-text-xs pv-text-muted-foreground">
         No data.
       </div>
     );
   }
 
   return (
-    <div className="ky-h-full ky-w-full">
+    <div className="pv-h-full pv-w-full">
       <ChartPanel columns={result.columns} rows={result.rows} />
     </div>
   );

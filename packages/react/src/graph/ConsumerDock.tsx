@@ -39,23 +39,23 @@ function clock(ts: number): string {
 function StatusDot({ status }: { status: ConsumerStatus }) {
   if (status === "idle") {
     return (
-      <span className="ky-flex ky-items-center ky-gap-1 ky-text-2xs ky-text-muted-foreground">
-        <WifiOff className="ky-h-3 ky-w-3" /> offline
+      <span className="pv-flex pv-items-center pv-gap-1 pv-text-2xs pv-text-muted-foreground">
+        <WifiOff className="pv-h-3 pv-w-3" /> offline
       </span>
     );
   }
-  const cls = status === "live" ? "ky-bg-violet-400" : "ky-bg-sky-400";
+  const cls = status === "live" ? "pv-bg-violet-400" : "pv-bg-sky-400";
   return (
-    <span className="ky-flex ky-items-center ky-gap-1 ky-text-2xs ky-text-muted-foreground">
-      <span className="ky-relative ky-flex ky-h-2 ky-w-2">
+    <span className="pv-flex pv-items-center pv-gap-1 pv-text-2xs pv-text-muted-foreground">
+      <span className="pv-relative pv-flex pv-h-2 pv-w-2">
         <span
           className={cn(
-            "ky-absolute ky-inline-flex ky-h-full ky-w-full ky-rounded-full ky-opacity-60",
+            "pv-absolute pv-inline-flex pv-h-full pv-w-full pv-rounded-full pv-opacity-60",
             cls,
-            status === "live" && "ky-animate-ping",
+            status === "live" && "pv-animate-ping",
           )}
         />
-        <span className={cn("ky-relative ky-inline-flex ky-h-2 ky-w-2 ky-rounded-full", cls)} />
+        <span className={cn("pv-relative pv-inline-flex pv-h-2 pv-w-2 pv-rounded-full", cls)} />
       </span>
       {status === "live" ? "live" : "polling"}
     </span>
@@ -66,11 +66,11 @@ function StatusDot({ status }: { status: ConsumerStatus }) {
 function Detail({ k, v }: { k: string; v: string | null | undefined }) {
   if (!v) return null;
   return (
-    <div className="ky-flex ky-items-baseline ky-gap-2">
-      <span className="ky-w-16 ky-shrink-0 ky-text-2xs ky-uppercase ky-tracking-wide ky-text-muted-foreground/70">
+    <div className="pv-flex pv-items-baseline pv-gap-2">
+      <span className="pv-w-16 pv-shrink-0 pv-text-2xs pv-uppercase pv-tracking-wide pv-text-muted-foreground/70">
         {k}
       </span>
-      <span className="ky-min-w-0 ky-flex-1 ky-truncate ky-font-mono ky-text-2xs ky-text-foreground/90">
+      <span className="pv-min-w-0 pv-flex-1 pv-truncate pv-font-mono pv-text-2xs pv-text-foreground/90">
         {v}
       </span>
     </div>
@@ -108,32 +108,32 @@ function ConsumerRow({ c }: { c: LiveConsumer }) {
         onMouseLeave={() => hoverConsumer(null)}
         onClick={() => expandConsumer(c.id)}
         className={cn(
-          "ky-flex ky-w-full ky-items-center ky-gap-2.5 ky-rounded-md ky-px-2 ky-py-1.5 ky-text-left ky-transition-colors",
-          expanded ? "ky-bg-accent" : "hover:ky-bg-accent/60",
-          !c.active && "ky-opacity-45",
+          "pv-flex pv-w-full pv-items-center pv-gap-2.5 pv-rounded-md pv-px-2 pv-py-1.5 pv-text-left pv-transition-colors",
+          expanded ? "pv-bg-accent" : "hover:pv-bg-accent/60",
+          !c.active && "pv-opacity-45",
         )}
         style={{ boxShadow: `inset 2px 0 0 ${color}` }}
       >
-        <Icon size={15} color={color} className="ky-shrink-0" />
-        <div className="ky-min-w-0 ky-flex-1">
-          <div className="ky-truncate ky-text-xs ky-font-medium ky-text-foreground">{c.label}</div>
-          <div className="ky-truncate ky-text-2xs ky-text-muted-foreground">
+        <Icon size={15} color={color} className="pv-shrink-0" />
+        <div className="pv-min-w-0 pv-flex-1">
+          <div className="pv-truncate pv-text-xs pv-font-medium pv-text-foreground">{c.label}</div>
+          <div className="pv-truncate pv-text-2xs pv-text-muted-foreground">
             {c.lastVerb ? verbLabel(c.lastVerb) : "idle"} · {target}
             {realm ? ` · ${realm}` : ""}
           </div>
         </div>
-        <time className="ky-shrink-0 ky-font-mono ky-text-2xs ky-tabular-nums ky-text-muted-foreground">
+        <time className="pv-shrink-0 pv-font-mono pv-text-2xs pv-tabular-nums pv-text-muted-foreground">
           {ago(c.lastTs)}
         </time>
         {expanded ? (
-          <ChevronLeft className="ky-h-3 ky-w-3 ky-shrink-0 ky-rotate-90 ky-text-muted-foreground" />
+          <ChevronLeft className="pv-h-3 pv-w-3 pv-shrink-0 pv-rotate-90 pv-text-muted-foreground" />
         ) : (
-          <ChevronRight className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground/50" />
+          <ChevronRight className="pv-h-3 pv-w-3 pv-shrink-0 pv-text-muted-foreground/50" />
         )}
       </button>
 
       {expanded && (
-        <div className="ky-mx-2 ky-mb-1 ky-mt-0.5 ky-space-y-1 ky-rounded-md ky-border ky-border-border/60 ky-bg-background/40 ky-p-2">
+        <div className="pv-mx-2 pv-mb-1 pv-mt-0.5 pv-space-y-1 pv-rounded-md pv-border pv-border-border/60 pv-bg-background/40 pv-p-2">
           <Detail k="Transport" v={c.transport} />
           <Detail k="Version" v={c.clientVersion} />
           <Detail k="Host" v={c.host} />
@@ -152,13 +152,13 @@ function ConsumerRow({ c }: { c: LiveConsumer }) {
               pinConsumer(c.id);
             }}
             className={cn(
-              "ky-mt-1 ky-flex ky-items-center ky-gap-1.5 ky-rounded ky-border ky-px-2 ky-py-1 ky-text-2xs ky-transition-colors",
+              "pv-mt-1 pv-flex pv-items-center pv-gap-1.5 pv-rounded pv-border pv-px-2 pv-py-1 pv-text-2xs pv-transition-colors",
               pinned
-                ? "ky-border-primary/60 ky-bg-primary/10 ky-text-primary"
-                : "ky-border-border ky-text-muted-foreground hover:ky-text-foreground",
+                ? "pv-border-primary/60 pv-bg-primary/10 pv-text-primary"
+                : "pv-border-border pv-text-muted-foreground hover:pv-text-foreground",
             )}
           >
-            {pinned ? <PinOff className="ky-h-3 ky-w-3" /> : <Pin className="ky-h-3 ky-w-3" />}
+            {pinned ? <PinOff className="pv-h-3 pv-w-3" /> : <Pin className="pv-h-3 pv-w-3" />}
             {pinned ? "Unpin" : "Pin — keep highlighted"}
           </button>
         </div>
@@ -172,24 +172,24 @@ function CollapsedRail({ consumers, count }: { consumers: LiveConsumer[]; count:
   const toggleConsumerDock = useGraphStore((s) => s.toggleConsumerDock);
   const expandConsumer = useGraphStore((s) => s.expandConsumer);
   return (
-    <div className="ky-flex ky-h-full ky-w-11 ky-shrink-0 ky-flex-col ky-items-center ky-gap-2 ky-border-l ky-border-border ky-glass ky-py-2 ky-animate-fade-in">
+    <div className="pv-flex pv-h-full pv-w-11 pv-shrink-0 pv-flex-col pv-items-center pv-gap-2 pv-border-l pv-border-border pv-glass pv-py-2 pv-animate-fade-in">
       <button
         type="button"
         onClick={toggleConsumerDock}
         title="Expand live consumers"
-        className="ky-flex ky-h-7 ky-w-7 ky-items-center ky-justify-center ky-rounded-md ky-text-muted-foreground hover:ky-bg-accent hover:ky-text-foreground"
+        className="pv-flex pv-h-7 pv-w-7 pv-items-center pv-justify-center pv-rounded-md pv-text-muted-foreground hover:pv-bg-accent hover:pv-text-foreground"
       >
-        <ChevronLeft className="ky-h-4 ky-w-4" />
+        <ChevronLeft className="pv-h-4 pv-w-4" />
       </button>
-      <div className="ky-relative">
-        <Radio className="ky-h-4 ky-w-4 ky-text-primary" />
+      <div className="pv-relative">
+        <Radio className="pv-h-4 pv-w-4 pv-text-primary" />
         {count > 0 && (
-          <span className="ky-absolute -ky-right-2 -ky-top-2 ky-flex ky-h-3.5 ky-min-w-3.5 ky-items-center ky-justify-center ky-rounded-full ky-bg-primary ky-px-1 ky-text-[9px] ky-font-semibold ky-text-primary-foreground">
+          <span className="pv-absolute -pv-right-2 -pv-top-2 pv-flex pv-h-3.5 pv-min-w-3.5 pv-items-center pv-justify-center pv-rounded-full pv-bg-primary pv-px-1 pv-text-[9px] pv-font-semibold pv-text-primary-foreground">
             {count}
           </span>
         )}
       </div>
-      <div className="ky-mt-1 ky-flex ky-flex-col ky-items-center ky-gap-2 ky-overflow-y-auto">
+      <div className="pv-mt-1 pv-flex pv-flex-col pv-items-center pv-gap-2 pv-overflow-y-auto">
         {consumers.map((c) => {
           const Icon = consumerIcon(c.kind);
           return (
@@ -201,7 +201,7 @@ function CollapsedRail({ consumers, count }: { consumers: LiveConsumer[]; count:
                 toggleConsumerDock();
                 expandConsumer(c.id);
               }}
-              className={cn("ky-transition-opacity", !c.active && "ky-opacity-40")}
+              className={cn("pv-transition-opacity", !c.active && "pv-opacity-40")}
             >
               <Icon size={16} color={consumerColor(c.kind)} />
             </button>
@@ -228,42 +228,42 @@ export function ConsumerDock() {
   }
 
   return (
-    <div className="ky-flex ky-h-full ky-w-72 ky-max-w-[85vw] ky-shrink-0 ky-flex-col ky-border-l ky-border-border ky-glass ky-animate-fade-in">
-      <div className="ky-flex ky-items-center ky-justify-between ky-border-b ky-border-border ky-py-3 ky-pl-3 ky-pr-2">
-        <div className="ky-flex ky-items-center ky-gap-2">
-          <Radio className="ky-h-4 ky-w-4 ky-text-primary" />
-          <span className="ky-text-sm ky-font-medium ky-text-foreground">Live consumers</span>
+    <div className="pv-flex pv-h-full pv-w-72 pv-max-w-[85vw] pv-shrink-0 pv-flex-col pv-border-l pv-border-border pv-glass pv-animate-fade-in">
+      <div className="pv-flex pv-items-center pv-justify-between pv-border-b pv-border-border pv-py-3 pv-pl-3 pv-pr-2">
+        <div className="pv-flex pv-items-center pv-gap-2">
+          <Radio className="pv-h-4 pv-w-4 pv-text-primary" />
+          <span className="pv-text-sm pv-font-medium pv-text-foreground">Live consumers</span>
         </div>
-        <div className="ky-flex ky-items-center ky-gap-2">
+        <div className="pv-flex pv-items-center pv-gap-2">
           <StatusDot status={status} />
           <button
             type="button"
             onClick={toggleConsumerDock}
             title="Collapse panel"
-            className="ky-flex ky-h-6 ky-w-6 ky-items-center ky-justify-center ky-rounded ky-text-muted-foreground hover:ky-bg-accent hover:ky-text-foreground"
+            className="pv-flex pv-h-6 pv-w-6 pv-items-center pv-justify-center pv-rounded pv-text-muted-foreground hover:pv-bg-accent hover:pv-text-foreground"
           >
-            <ChevronRight className="ky-h-4 ky-w-4" />
+            <ChevronRight className="pv-h-4 pv-w-4" />
           </button>
         </div>
       </div>
 
       {ordered.length === 0 ? (
-        <div className="ky-flex ky-flex-1 ky-flex-col ky-items-center ky-justify-center ky-gap-2 ky-p-6 ky-text-center">
-          <Radio className="ky-h-7 ky-w-7 ky-text-muted-foreground/50" />
-          <div className="ky-text-xs ky-text-muted-foreground">No active consumers</div>
-          <div className="ky-text-2xs ky-text-muted-foreground/70">
+        <div className="pv-flex pv-flex-1 pv-flex-col pv-items-center pv-justify-center pv-gap-2 pv-p-6 pv-text-center">
+          <Radio className="pv-h-7 pv-w-7 pv-text-muted-foreground/50" />
+          <div className="pv-text-xs pv-text-muted-foreground">No active consumers</div>
+          <div className="pv-text-2xs pv-text-muted-foreground/70">
             Agents reading or writing memory will appear here in realtime.
           </div>
         </div>
       ) : (
-        <ul className="ky-flex-1 ky-space-y-px ky-overflow-y-auto ky-p-2">
+        <ul className="pv-flex-1 pv-space-y-px pv-overflow-y-auto pv-p-2">
           {ordered.map((c) => (
             <ConsumerRow key={c.id} c={c} />
           ))}
         </ul>
       )}
 
-      <div className="ky-border-t ky-border-border ky-px-3 ky-py-2 ky-text-2xs ky-text-muted-foreground">
+      <div className="pv-border-t pv-border-border pv-px-3 pv-py-2 pv-text-2xs pv-text-muted-foreground">
         {activeCount} active · {eventsPerMin}/min
       </div>
     </div>

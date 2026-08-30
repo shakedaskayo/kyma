@@ -141,7 +141,7 @@ export function HullsLayer({
   return (
     <canvas
       ref={canvasRef}
-      className="ky-pointer-events-none ky-absolute ky-inset-0"
+      className="pv-pointer-events-none pv-absolute pv-inset-0"
     />
   );
 }

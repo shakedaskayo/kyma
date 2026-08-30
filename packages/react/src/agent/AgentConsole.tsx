@@ -134,16 +134,16 @@ export function AgentConsole({ database, placeholder, className, onAssistantMess
   const dbLabel = database || client.transport.database;
 
   return (
-    <div className={cn("ky-flex ky-h-full ky-flex-col", className)}>
-      <header className="ky-flex ky-items-center ky-gap-2 ky-border-b ky-px-4 ky-py-2 ky-text-sm">
-        <Sparkles className="ky-h-4 ky-w-4 ky-text-primary" />
-        <h1 className="ky-font-semibold ky-tracking-tight">Agent</h1>
+    <div className={cn("pv-flex pv-h-full pv-flex-col", className)}>
+      <header className="pv-flex pv-items-center pv-gap-2 pv-border-b pv-px-4 pv-py-2 pv-text-sm">
+        <Sparkles className="pv-h-4 pv-w-4 pv-text-primary" />
+        <h1 className="pv-font-semibold pv-tracking-tight">Agent</h1>
         {dbLabel && (
-          <div className="ky-ml-2 ky-flex ky-items-center ky-gap-1 ky-rounded-md ky-border ky-bg-muted/40 ky-px-2 ky-py-0.5 ky-text-xs ky-text-muted-foreground">
-            <Database className="ky-h-3.5 ky-w-3.5" /> {dbLabel}
+          <div className="pv-ml-2 pv-flex pv-items-center pv-gap-1 pv-rounded-md pv-border pv-bg-muted/40 pv-px-2 pv-py-0.5 pv-text-xs pv-text-muted-foreground">
+            <Database className="pv-h-3.5 pv-w-3.5" /> {dbLabel}
           </div>
         )}
-        <span className="ky-ml-auto ky-text-xs ky-text-muted-foreground">
+        <span className="pv-ml-auto pv-text-xs pv-text-muted-foreground">
           Natural-language queries against your data.
         </span>
       </header>
@@ -159,15 +159,15 @@ export function AgentConsole({ database, placeholder, className, onAssistantMess
           ))}
 
           {awaitingFirstToken && (
-            <div className="ky-flex ky-items-center ky-gap-2 ky-pl-1 ky-text-xs ky-text-muted-foreground">
+            <div className="pv-flex pv-items-center pv-gap-2 pv-pl-1 pv-text-xs pv-text-muted-foreground">
               <Loader size={14} />
               Thinking…
             </div>
           )}
 
           {status === "error" && (
-            <div className="ky-flex ky-items-center ky-gap-3 ky-rounded-md ky-border ky-border-destructive/40 ky-bg-destructive/5 ky-px-3 ky-py-2 ky-text-xs ky-text-destructive">
-              <span className="ky-flex-1">
+            <div className="pv-flex pv-items-center pv-gap-3 pv-rounded-md pv-border pv-border-destructive/40 pv-bg-destructive/5 pv-px-3 pv-py-2 pv-text-xs pv-text-destructive">
+              <span className="pv-flex-1">
                 {error?.message ?? "Agent request failed"}
               </span>
               <Button
@@ -176,15 +176,15 @@ export function AgentConsole({ database, placeholder, className, onAssistantMess
                 variant="outline"
                 onClick={() => regenerate()}
               >
-                <RotateCcw className="ky-mr-1 ky-h-3.5 ky-w-3.5" /> Retry
+                <RotateCcw className="pv-mr-1 pv-h-3.5 pv-w-3.5" /> Retry
               </Button>
             </div>
           )}
         </ConversationContent>
       </Conversation>
 
-      <div className="ky-border-t ky-bg-background ky-px-4 ky-py-3">
-        <div className="ky-mx-auto ky-max-w-3xl">
+      <div className="pv-border-t pv-bg-background pv-px-4 pv-py-3">
+        <div className="pv-mx-auto pv-max-w-3xl">
           <PromptInput onSubmit={submit}>
             <PromptInputTextarea
               value={input}
@@ -196,22 +196,22 @@ export function AgentConsole({ database, placeholder, className, onAssistantMess
               disabled={isBusy}
             />
             <PromptInputToolbar>
-              <label className="ky-flex ky-items-center ky-gap-1.5 ky-text-xs ky-text-muted-foreground ky-select-none">
+              <label className="pv-flex pv-items-center pv-gap-1.5 pv-text-xs pv-text-muted-foreground pv-select-none">
                 <input
                   type="checkbox"
                   checked={includeThinking}
                   onChange={(e) => setIncludeThinking(e.target.checked)}
                   disabled={isBusy}
-                  className="ky-h-3.5 ky-w-3.5"
+                  className="pv-h-3.5 pv-w-3.5"
                 />
                 Include thinking
               </label>
-              <span className="ky-text-[11px] ky-text-muted-foreground">
-                <kbd className="ky-rounded ky-border ky-bg-muted ky-px-1">
+              <span className="pv-text-[11px] pv-text-muted-foreground">
+                <kbd className="pv-rounded pv-border pv-bg-muted pv-px-1">
                   ↵
                 </kbd>{" "}
                 to send ·{" "}
-                <kbd className="ky-rounded ky-border ky-bg-muted ky-px-1">
+                <kbd className="pv-rounded pv-border pv-bg-muted pv-px-1">
                   ⇧↵
                 </kbd>{" "}
                 for newline
@@ -238,7 +238,7 @@ function MessageView({ message }: { message: UIMessage }) {
     return (
       <Message from="user">
         <MessageContent>
-          <span className="ky-whitespace-pre-wrap">{text}</span>
+          <span className="pv-whitespace-pre-wrap">{text}</span>
         </MessageContent>
       </Message>
     );
@@ -294,7 +294,7 @@ function MessageView({ message }: { message: UIMessage }) {
         })}
 
         {sql && (
-          <div className="ky-pt-0.5">
+          <div className="pv-pt-0.5">
             <Button
               variant="outline"
               size="sm"
@@ -302,13 +302,13 @@ function MessageView({ message }: { message: UIMessage }) {
                 navigator.clipboard.writeText(sql);
               }}
             >
-              <Copy className="ky-mr-1 ky-h-3.5 ky-w-3.5" /> Copy SQL
+              <Copy className="pv-mr-1 pv-h-3.5 pv-w-3.5" /> Copy SQL
             </Button>
           </div>
         )}
 
         {(usage?.elapsed_ms != null || model) && (
-          <div className="ky-flex ky-items-center ky-gap-2 ky-pt-1 ky-text-[11px] ky-text-muted-foreground">
+          <div className="pv-flex pv-items-center pv-gap-2 pv-pt-1 pv-text-[11px] pv-text-muted-foreground">
             {usage?.elapsed_ms != null && <span>{usage.elapsed_ms}ms</span>}
             {usage?.total_cost_usd != null && (
               <span>· ${usage.total_cost_usd.toFixed(4)}</span>
@@ -328,23 +328,23 @@ function findDataPart<T>(message: UIMessage, type: string): T | undefined {
 
 function EmptyState({ onSuggest }: { onSuggest: (s: string) => void }) {
   return (
-    <div className="ky-flex ky-flex-col ky-items-center ky-justify-center ky-gap-4 ky-px-6 ky-py-12 ky-text-center">
-      <Sparkles className="ky-h-10 ky-w-10 ky-text-muted-foreground" />
+    <div className="pv-flex pv-flex-col pv-items-center pv-justify-center pv-gap-4 pv-px-6 pv-py-12 pv-text-center">
+      <Sparkles className="pv-h-10 pv-w-10 pv-text-muted-foreground" />
       <div>
-        <h2 className="ky-text-lg ky-font-semibold">
+        <h2 className="pv-text-lg pv-font-semibold">
           Ask anything about your data
         </h2>
-        <p className="ky-mt-1 ky-text-sm ky-text-muted-foreground">
+        <p className="pv-mt-1 pv-text-sm pv-text-muted-foreground">
           The agent has access to your tables, schemas, and graph relationships.
         </p>
       </div>
-      <div className="ky-grid ky-w-full ky-max-w-md ky-gap-2">
+      <div className="pv-grid pv-w-full pv-max-w-md pv-gap-2">
         {SUGGESTIONS.map((s) => (
           <button
             key={s}
             type="button"
             onClick={() => onSuggest(s)}
-            className="ky-rounded-md ky-border ky-bg-card ky-px-3 ky-py-2 ky-text-left ky-text-sm ky-transition-colors hover:ky-bg-accent hover:ky-text-accent-foreground"
+            className="pv-rounded-md pv-border pv-bg-card pv-px-3 pv-py-2 pv-text-left pv-text-sm pv-transition-colors hover:pv-bg-accent hover:pv-text-accent-foreground"
           >
             {s}
           </button>

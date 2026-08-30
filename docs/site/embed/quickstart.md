@@ -41,7 +41,7 @@ export function PensievePanel() {
   return (
     <PensieveProvider
       endpoint="https://pensieve.acme.internal"
-      auth={{ token: "ky-abc123" }}
+      auth={{ token: "pv-abc123" }}
       database="prod"
     >
       <div style={{ height: 600 }}>

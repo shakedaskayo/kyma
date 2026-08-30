@@ -107,7 +107,7 @@ describe("PensieveDiscover", () => {
     // Walk up until we find the clickable row div (has cursor-pointer class)
     let clickTarget: Element = textEl;
     while (clickTarget.parentElement) {
-      if (clickTarget.classList.contains("ky-cursor-pointer")) break;
+      if (clickTarget.classList.contains("pv-cursor-pointer")) break;
       clickTarget = clickTarget.parentElement;
     }
 

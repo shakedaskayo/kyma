@@ -56,12 +56,12 @@ class ClassBoundary extends Component<ClassBoundaryProps, ClassBoundaryState> {
         : String(this.state.error ?? "An unexpected error occurred");
 
     return (
-      <div className="ky-rounded-lg ky-border ky-border-border ky-bg-card ky-p-4 ky-text-sm ky-text-foreground">
-        <p className="ky-font-medium ky-text-destructive ky-mb-2">Something went wrong</p>
-        <p className="ky-text-muted-foreground ky-mb-3">{message}</p>
+      <div className="pv-rounded-lg pv-border pv-border-border pv-bg-card pv-p-4 pv-text-sm pv-text-foreground">
+        <p className="pv-font-medium pv-text-destructive pv-mb-2">Something went wrong</p>
+        <p className="pv-text-muted-foreground pv-mb-3">{message}</p>
         <button
           onClick={this.handleRetry}
-          className="ky-rounded-md ky-border ky-border-border ky-bg-background ky-px-3 ky-py-1.5 ky-text-sm ky-text-foreground hover:ky-bg-accent"
+          className="pv-rounded-md pv-border pv-border-border pv-bg-background pv-px-3 pv-py-1.5 pv-text-sm pv-text-foreground hover:pv-bg-accent"
         >
           Retry
         </button>

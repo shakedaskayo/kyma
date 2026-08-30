@@ -230,23 +230,23 @@ function PensieveQueryEditorInner({
 
   return (
     <div
-      className={`ky-pensieve-query-editor ky-flex ky-h-full ky-flex-col ky-overflow-hidden ky-bg-background ky-text-foreground ${className ?? ""}`}
+      className={`pv-pensieve-query-editor pv-flex pv-h-full pv-flex-col pv-overflow-hidden pv-bg-background pv-text-foreground ${className ?? ""}`}
       style={style}
     >
       {/* ── Toolbar ── */}
-      <div className="ky-flex ky-shrink-0 ky-items-center ky-gap-2 ky-border-b ky-bg-background ky-px-3 ky-py-1.5">
+      <div className="pv-flex pv-shrink-0 pv-items-center pv-gap-2 pv-border-b pv-bg-background pv-px-3 pv-py-1.5">
         {showTimeRange && language === "kql" && (
           <TimeRangePicker value={timeRange} onChange={setTimeRange} />
         )}
         {!readOnly && (
           isRunning ? (
             <Button size="sm" variant="destructive" onClick={cancel} data-testid="cancel-btn">
-              <Square className="ky-mr-1 ky-h-3.5 ky-w-3.5" /> Cancel
+              <Square className="pv-mr-1 pv-h-3.5 pv-w-3.5" /> Cancel
             </Button>
           ) : (
             <Button size="sm" onClick={handleRun} data-testid="run-btn">
-              <Play className="ky-mr-1 ky-h-3.5 ky-w-3.5" /> Run
-              <kbd className="ky-ml-2 ky-rounded ky-bg-primary-foreground/20 ky-px-1 ky-py-0.5 ky-text-[10px] ky-text-primary-foreground/80">
+              <Play className="pv-mr-1 pv-h-3.5 pv-w-3.5" /> Run
+              <kbd className="pv-ml-2 pv-rounded pv-bg-primary-foreground/20 pv-px-1 pv-py-0.5 pv-text-[10px] pv-text-primary-foreground/80">
                 ⌘↵
               </kbd>
             </Button>
@@ -255,9 +255,9 @@ function PensieveQueryEditorInner({
       </div>
 
       {/* ── Main row: schema browser + editor ── */}
-      <div className="ky-flex ky-min-h-0 ky-flex-1 ky-overflow-hidden" style={{ maxHeight: "40%" }}>
+      <div className="pv-flex pv-min-h-0 pv-flex-1 pv-overflow-hidden" style={{ maxHeight: "40%" }}>
         {showSchemaBrowser && (
-          <aside className="ky-w-56 ky-shrink-0 ky-overflow-hidden ky-border-r ky-bg-background">
+          <aside className="pv-w-56 pv-shrink-0 pv-overflow-hidden pv-border-r pv-bg-background">
             <SchemaBrowser
               schema={schema}
               onInsert={handleInsert}
@@ -265,7 +265,7 @@ function PensieveQueryEditorInner({
             />
           </aside>
         )}
-        <div className="ky-min-w-0 ky-flex-1 ky-overflow-hidden">
+        <div className="pv-min-w-0 pv-flex-1 pv-overflow-hidden">
           {language === "kql" ? (
             <KqlEditor
               value={query}
@@ -282,28 +282,28 @@ function PensieveQueryEditorInner({
 
       {/* ── Results area ── */}
       {showResults && (
-        <div className="ky-flex ky-min-h-0 ky-flex-1 ky-flex-col ky-overflow-hidden ky-border-t">
+        <div className="pv-flex pv-min-h-0 pv-flex-1 pv-flex-col pv-overflow-hidden pv-border-t">
           {error != null && !isRunning && (
             <div
               role="alert"
-              className="ky-m-3 ky-rounded ky-border ky-border-destructive/50 ky-bg-destructive/10 ky-p-3 ky-text-xs ky-text-destructive"
+              className="pv-m-3 pv-rounded pv-border pv-border-destructive/50 pv-bg-destructive/10 pv-p-3 pv-text-xs pv-text-destructive"
             >
-              <span className="ky-font-semibold">Query failed:</span>{" "}
+              <span className="pv-font-semibold">Query failed:</span>{" "}
               {formatQueryError(error)}
             </div>
           )}
           {error == null && !hasResults && !isRunning && (
-            <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-p-6 ky-text-xs ky-text-muted-foreground">
+            <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-p-6 pv-text-xs pv-text-muted-foreground">
               {columns.length === 0 ? "Run a query to see results." : "0 rows returned."}
             </div>
           )}
           {isRunning && (
-            <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-p-6 ky-text-xs ky-text-muted-foreground">
+            <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-p-6 pv-text-xs pv-text-muted-foreground">
               Streaming results…
             </div>
           )}
           {hasResults && (
-            <div className="ky-flex ky-min-h-0 ky-flex-1 ky-flex-col">
+            <div className="pv-flex pv-min-h-0 pv-flex-1 pv-flex-col">
               <RowFilter
                 value={rowFilter}
                 onChange={setRowFilter}
@@ -320,7 +320,7 @@ function PensieveQueryEditorInner({
                     : rows.length
                 }
               />
-              <div className="ky-min-h-0 ky-flex-1 ky-overflow-hidden">
+              <div className="pv-min-h-0 pv-flex-1 pv-overflow-hidden">
                 <ResultsGrid columns={columns} rows={rows} filter={rowFilter} />
               </div>
             </div>
@@ -330,7 +330,7 @@ function PensieveQueryEditorInner({
 
       {/* ── Chart panel ── */}
       {showChart && isPlottable && hasResults && (
-        <div className="ky-h-48 ky-shrink-0 ky-border-t">
+        <div className="pv-h-48 pv-shrink-0 pv-border-t">
           <ChartPanel columns={columns} rows={rows} />
         </div>
       )}
@@ -382,7 +382,7 @@ function SqlEditor({
   if (!MonacoEditor) {
     return (
       <textarea
-        className="ky-h-full ky-w-full ky-resize-none ky-bg-transparent ky-p-3 ky-font-mono ky-text-xs ky-text-foreground focus:ky-outline-none"
+        className="pv-h-full pv-w-full pv-resize-none pv-bg-transparent pv-p-3 pv-font-mono pv-text-xs pv-text-foreground focus:pv-outline-none"
         value={value}
         readOnly={readOnly}
         onChange={(e) => onChange(e.target.value)}

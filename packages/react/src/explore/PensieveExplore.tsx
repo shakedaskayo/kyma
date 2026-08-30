@@ -179,24 +179,24 @@ function PensieveExploreInner({
   return (
     <div
       className={cn(
-        "ky-flex ky-h-full ky-flex-col ky-overflow-hidden ky-bg-background ky-text-foreground",
+        "pv-flex pv-h-full pv-flex-col pv-overflow-hidden pv-bg-background pv-text-foreground",
         className,
       )}
       style={style}
     >
       {/* ── Smart input bar ── */}
-      <div className="ky-flex ky-items-start ky-gap-2 ky-border-b ky-p-3">
+      <div className="pv-flex pv-items-start pv-gap-2 pv-border-b pv-p-3">
         <button
           type="button"
           title="Detected mode — click to force the other mode (click again for auto)"
           onClick={() => setForcedMode(forcedMode ? null : liveMode === "search" ? "kql" : "search")}
           className={cn(
-            "ky-mt-0.5 ky-flex ky-shrink-0 ky-items-center ky-gap-1 ky-rounded ky-border ky-px-2 ky-py-1 ky-text-[11px] ky-font-medium",
-            liveMode === "search" ? "ky-text-muted-foreground" : "ky-border-primary/40 ky-text-primary",
-            forcedMode && "ky-ring-1 ky-ring-primary/40",
+            "pv-mt-0.5 pv-flex pv-shrink-0 pv-items-center pv-gap-1 pv-rounded pv-border pv-px-2 pv-py-1 pv-text-[11px] pv-font-medium",
+            liveMode === "search" ? "pv-text-muted-foreground" : "pv-border-primary/40 pv-text-primary",
+            forcedMode && "pv-ring-1 pv-ring-primary/40",
           )}
         >
-          {liveMode === "search" ? <SearchIcon className="ky-h-3 ky-w-3" /> : <Code2 className="ky-h-3 ky-w-3" />}
+          {liveMode === "search" ? <SearchIcon className="pv-h-3 pv-w-3" /> : <Code2 className="pv-h-3 pv-w-3" />}
           {modeLabel(liveMode)}
         </button>
         <textarea
@@ -211,25 +211,25 @@ function PensieveExploreInner({
               run();
             }
           }}
-          className="ky-min-h-[36px] ky-max-h-40 ky-flex-1 ky-resize-y ky-rounded-md ky-border ky-bg-background ky-px-3 ky-py-2 ky-font-mono ky-text-xs focus:ky-outline-none focus:ky-ring-1 focus:ky-ring-primary/40"
+          className="pv-min-h-[36px] pv-max-h-40 pv-flex-1 pv-resize-y pv-rounded-md pv-border pv-bg-background pv-px-3 pv-py-2 pv-font-mono pv-text-xs focus:pv-outline-none focus:pv-ring-1 focus:pv-ring-primary/40"
         />
         <TimeRangePicker value={timeRange} onChange={setTimeRange} />
         {running ? (
           <Button size="sm" variant="destructive" onClick={cancel}>
-            <Square className="ky-mr-1 ky-h-3.5 ky-w-3.5" /> Cancel
+            <Square className="pv-mr-1 pv-h-3.5 pv-w-3.5" /> Cancel
           </Button>
         ) : (
           <Button size="sm" onClick={run}>
-            <Play className="ky-mr-1 ky-h-3.5 ky-w-3.5" /> Run
-            <kbd className="ky-ml-2 ky-rounded ky-bg-primary-foreground/20 ky-px-1 ky-text-[10px]">⌘↵</kbd>
+            <Play className="pv-mr-1 pv-h-3.5 pv-w-3.5" /> Run
+            <kbd className="pv-ml-2 pv-rounded pv-bg-primary-foreground/20 pv-px-1 pv-text-[10px]">⌘↵</kbd>
           </Button>
         )}
       </div>
 
       {/* ── Search-target chips (visible only in search mode) ── */}
       {liveMode === "search" && (
-        <div className="ky-flex ky-items-center ky-gap-1 ky-border-b ky-px-3 ky-py-1.5">
-          <span className="ky-mr-1 ky-text-[10px] ky-font-medium ky-uppercase ky-tracking-wider ky-text-muted-foreground">
+        <div className="pv-flex pv-items-center pv-gap-1 pv-border-b pv-px-3 pv-py-1.5">
+          <span className="pv-mr-1 pv-text-[10px] pv-font-medium pv-uppercase pv-tracking-wider pv-text-muted-foreground">
             Search
           </span>
           {(["data", "memory", "graph"] as const).map((t) => {
@@ -242,14 +242,14 @@ function PensieveExploreInner({
                 type="button"
                 onClick={() => setSearchTarget(t)}
                 className={cn(
-                  "ky-inline-flex ky-items-center ky-gap-1 ky-rounded ky-border ky-px-2 ky-py-0.5 ky-text-[11px] ky-font-medium ky-transition-colors",
+                  "pv-inline-flex pv-items-center pv-gap-1 pv-rounded pv-border pv-px-2 pv-py-0.5 pv-text-[11px] pv-font-medium pv-transition-colors",
                   active
-                    ? "ky-border-primary/60 ky-bg-primary/10 ky-text-primary"
-                    : "ky-border-transparent ky-text-muted-foreground hover:ky-border-border hover:ky-text-foreground",
+                    ? "pv-border-primary/60 pv-bg-primary/10 pv-text-primary"
+                    : "pv-border-transparent pv-text-muted-foreground hover:pv-border-border hover:pv-text-foreground",
                 )}
                 title={`Search ${label}`}
               >
-                <Icon className="ky-h-3 ky-w-3" />
+                <Icon className="pv-h-3 pv-w-3" />
                 {label}
               </button>
             );
@@ -402,11 +402,11 @@ function topValues(hits: HybridSearchHit[], field: string, n = 5): { value: stri
 function SourceBadge({ source }: { source: string }) {
   return (
     <span
-      className="ky-inline-flex ky-shrink-0 ky-items-center ky-gap-1 ky-rounded ky-px-1.5 ky-py-0.5 ky-font-mono ky-text-[10px]"
+      className="pv-inline-flex pv-shrink-0 pv-items-center pv-gap-1 pv-rounded pv-px-1.5 pv-py-0.5 pv-font-mono pv-text-[10px]"
       style={{ background: `${colorForKey(source)}1a`, color: colorForKey(source) }}
       title={source}
     >
-      <span className="ky-h-1.5 ky-w-1.5 ky-rounded-full" style={{ background: colorForKey(source) }} />
+      <span className="pv-h-1.5 pv-w-1.5 pv-rounded-full" style={{ background: colorForKey(source) }} />
       {source}
     </span>
   );
@@ -423,18 +423,18 @@ function FieldRow(props: {
   const [open, setOpen] = useState(false);
   const top = open ? topValues(props.hits, props.name) : [];
   return (
-    <li className="ky-border-b ky-border-border/40">
-      <div className="ky-group ky-flex ky-items-center ky-gap-1.5 ky-px-2 ky-py-1 hover:ky-bg-accent/40">
+    <li className="pv-border-b pv-border-border/40">
+      <div className="pv-group pv-flex pv-items-center pv-gap-1.5 pv-px-2 pv-py-1 hover:pv-bg-accent/40">
         <span
           title={props.kind}
-          className="ky-flex ky-h-4 ky-w-4 ky-shrink-0 ky-items-center ky-justify-center ky-rounded ky-bg-muted ky-text-[9px] ky-font-mono ky-text-muted-foreground"
+          className="pv-flex pv-h-4 pv-w-4 pv-shrink-0 pv-items-center pv-justify-center pv-rounded pv-bg-muted pv-text-[9px] pv-font-mono pv-text-muted-foreground"
         >
           {KIND_GLYPH[props.kind]}
         </span>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="ky-min-w-0 ky-flex-1 ky-truncate ky-text-left ky-font-mono ky-text-[11px]"
+          className="pv-min-w-0 pv-flex-1 pv-truncate pv-text-left pv-font-mono pv-text-[11px]"
           title={props.name}
         >
           {props.name}
@@ -444,17 +444,17 @@ function FieldRow(props: {
           title={props.selected ? "Remove column" : "Add as column"}
           onClick={props.onToggleCol}
           className={cn(
-            "ky-shrink-0 ky-rounded ky-px-1 ky-text-[11px] ky-opacity-0 group-hover:ky-opacity-100",
-            props.selected ? "ky-text-primary ky-opacity-100" : "ky-text-muted-foreground hover:ky-text-foreground",
+            "pv-shrink-0 pv-rounded pv-px-1 pv-text-[11px] pv-opacity-0 group-hover:pv-opacity-100",
+            props.selected ? "pv-text-primary pv-opacity-100" : "pv-text-muted-foreground hover:pv-text-foreground",
           )}
         >
           {props.selected ? "✓" : "＋"}
         </button>
       </div>
       {open && (
-        <div className="ky-space-y-1 ky-bg-muted/30 ky-px-2 ky-py-1.5">
+        <div className="pv-space-y-1 pv-bg-muted/30 pv-px-2 pv-py-1.5">
           {top.length === 0 ? (
-            <div className="ky-text-[10px] ky-text-muted-foreground">No values in results.</div>
+            <div className="pv-text-[10px] pv-text-muted-foreground">No values in results.</div>
           ) : (
             top.map((t) => (
               <button
@@ -462,12 +462,12 @@ function FieldRow(props: {
                 type="button"
                 onClick={() => props.onAddFilter(props.name, t.value)}
                 title={`Filter ${props.name} = ${t.value}`}
-                className="ky-flex ky-w-full ky-items-center ky-gap-2 ky-text-left"
+                className="pv-flex pv-w-full pv-items-center pv-gap-2 pv-text-left"
               >
-                <span className="ky-min-w-0 ky-flex-1 ky-truncate ky-font-mono ky-text-[10px]">{t.value}</span>
-                <span className="ky-shrink-0 ky-tabular-nums ky-text-[10px] ky-text-muted-foreground">{t.pct}%</span>
-                <span className="ky-h-1 ky-w-8 ky-shrink-0 ky-overflow-hidden ky-rounded ky-bg-muted">
-                  <span className="ky-block ky-h-full ky-bg-primary/60" style={{ width: `${t.pct}%` }} />
+                <span className="pv-min-w-0 pv-flex-1 pv-truncate pv-font-mono pv-text-[10px]">{t.value}</span>
+                <span className="pv-shrink-0 pv-tabular-nums pv-text-[10px] pv-text-muted-foreground">{t.pct}%</span>
+                <span className="pv-h-1 pv-w-8 pv-shrink-0 pv-overflow-hidden pv-rounded pv-bg-muted">
+                  <span className="pv-block pv-h-full pv-bg-primary/60" style={{ width: `${t.pct}%` }} />
                 </span>
               </button>
             ))
@@ -481,9 +481,9 @@ function FieldRow(props: {
 // ── Memory / graph hit card (no `row`) ───────────────────────────────────────
 
 const KIND_ICON: Record<string, React.ReactNode> = {
-  memory: <Brain className="ky-h-3.5 ky-w-3.5" />,
-  node: <GitFork className="ky-h-3.5 ky-w-3.5" />,
-  edge: <Network className="ky-h-3.5 ky-w-3.5" />,
+  memory: <Brain className="pv-h-3.5 pv-w-3.5" />,
+  node: <GitFork className="pv-h-3.5 pv-w-3.5" />,
+  edge: <Network className="pv-h-3.5 pv-w-3.5" />,
 };
 
 function EnrichedHitCard({
@@ -493,53 +493,53 @@ function EnrichedHitCard({
   hit: HybridSearchHit;
   onViewInGraph?: (nodeId: string, db: string) => void;
 }) {
-  const kindIcon = hit.kind ? KIND_ICON[hit.kind] ?? <SearchIcon className="ky-h-3.5 ky-w-3.5" /> : null;
+  const kindIcon = hit.kind ? KIND_ICON[hit.kind] ?? <SearchIcon className="pv-h-3.5 pv-w-3.5" /> : null;
   const dot = hit.source.indexOf(".");
   const db = dot >= 0 ? hit.source.slice(0, dot) : hit.source;
   const canViewInGraph = hit.kind === "node" && hit.id && onViewInGraph;
 
   return (
-    <li className="ky-rounded-md ky-border ky-border-border/60 ky-bg-card ky-p-3 hover:ky-border-border ky-transition-colors">
-      <div className="ky-flex ky-items-start ky-gap-2">
+    <li className="pv-rounded-md pv-border pv-border-border/60 pv-bg-card pv-p-3 hover:pv-border-border pv-transition-colors">
+      <div className="pv-flex pv-items-start pv-gap-2">
         {/* Kind icon */}
-        <span className="ky-mt-0.5 ky-flex ky-shrink-0 ky-items-center ky-justify-center ky-rounded ky-bg-muted ky-p-1 ky-text-muted-foreground">
+        <span className="pv-mt-0.5 pv-flex pv-shrink-0 pv-items-center pv-justify-center pv-rounded pv-bg-muted pv-p-1 pv-text-muted-foreground">
           {kindIcon}
         </span>
-        <div className="ky-min-w-0 ky-flex-1 ky-space-y-1">
+        <div className="pv-min-w-0 pv-flex-1 pv-space-y-1">
           {/* Title / ID */}
-          <div className="ky-flex ky-items-center ky-gap-2">
-            <span className="ky-truncate ky-text-sm ky-font-medium ky-text-foreground">
+          <div className="pv-flex pv-items-center pv-gap-2">
+            <span className="pv-truncate pv-text-sm pv-font-medium pv-text-foreground">
               {hit.title ?? hit.id ?? hit.source}
             </span>
             {hit.memory_type && (
-              <span className="ky-shrink-0 ky-rounded ky-bg-primary/10 ky-px-1.5 ky-py-0.5 ky-text-[10px] ky-font-medium ky-text-primary">
+              <span className="pv-shrink-0 pv-rounded pv-bg-primary/10 pv-px-1.5 pv-py-0.5 pv-text-[10px] pv-font-medium pv-text-primary">
                 {hit.memory_type}
               </span>
             )}
           </div>
           {/* Content preview */}
           {hit.content_preview && (
-            <p className="ky-line-clamp-3 ky-text-xs ky-text-muted-foreground">{hit.content_preview}</p>
+            <p className="pv-line-clamp-3 pv-text-xs pv-text-muted-foreground">{hit.content_preview}</p>
           )}
           {/* Footer: source + score + actions */}
-          <div className="ky-flex ky-items-center ky-gap-2 ky-pt-0.5">
+          <div className="pv-flex pv-items-center pv-gap-2 pv-pt-0.5">
             <SourceBadge source={hit.source} />
             {hit.id && (
-              <span className="ky-font-mono ky-text-[10px] ky-text-muted-foreground" title="Entity ID">
+              <span className="pv-font-mono pv-text-[10px] pv-text-muted-foreground" title="Entity ID">
                 {hit.id.length > 20 ? `${hit.id.slice(0, 20)}…` : hit.id}
               </span>
             )}
-            <span className="ky-ml-auto ky-tabular-nums ky-text-[10px] ky-text-muted-foreground">
+            <span className="pv-ml-auto pv-tabular-nums pv-text-[10px] pv-text-muted-foreground">
               {hit.score.toFixed(3)}
             </span>
             {canViewInGraph && (
               <button
                 type="button"
                 onClick={() => onViewInGraph!(hit.id!, db)}
-                className="ky-inline-flex ky-items-center ky-gap-1 ky-rounded ky-border ky-border-primary/40 ky-px-1.5 ky-py-0.5 ky-text-[10px] ky-text-primary hover:ky-bg-primary/10"
+                className="pv-inline-flex pv-items-center pv-gap-1 pv-rounded pv-border pv-border-primary/40 pv-px-1.5 pv-py-0.5 pv-text-[10px] pv-text-primary hover:pv-bg-primary/10"
                 title="Open in graph"
               >
-                <Network className="ky-h-3 ky-w-3" /> View in graph
+                <Network className="pv-h-3 pv-w-3" /> View in graph
               </button>
             )}
           </div>
@@ -579,9 +579,9 @@ function SearchResults(props: {
     return (
       <div
         role="alert"
-        className="ky-m-3 ky-rounded ky-border ky-border-destructive/50 ky-bg-destructive/10 ky-p-3 ky-text-xs ky-text-destructive"
+        className="pv-m-3 pv-rounded pv-border pv-border-destructive/50 pv-bg-destructive/10 pv-p-3 pv-text-xs pv-text-destructive"
       >
-        <span className="ky-font-semibold">Search failed:</span> {formatErr(error)}
+        <span className="pv-font-semibold">Search failed:</span> {formatErr(error)}
       </div>
     );
   }
@@ -599,15 +599,15 @@ function SearchResults(props: {
   // Memory/graph mode: card list (no `row`)
   if (isEnrichedMode) {
     return (
-      <div className="ky-flex ky-min-h-0 ky-flex-1 ky-flex-col">
-        <div className="ky-flex ky-items-center ky-gap-3 ky-border-b ky-px-3 ky-py-1 ky-text-[11px] ky-text-muted-foreground">
-          <span className="ky-font-semibold ky-text-foreground">{hits.length.toLocaleString()}</span> hits
+      <div className="pv-flex pv-min-h-0 pv-flex-1 pv-flex-col">
+        <div className="pv-flex pv-items-center pv-gap-3 pv-border-b pv-px-3 pv-py-1 pv-text-[11px] pv-text-muted-foreground">
+          <span className="pv-font-semibold pv-text-foreground">{hits.length.toLocaleString()}</span> hits
           <span>·</span>
           <span>{props.sourcesSearched} sources</span>
-          <span className="ky-ml-auto ky-tabular-nums">{props.elapsedMs} ms</span>
+          <span className="pv-ml-auto pv-tabular-nums">{props.elapsedMs} ms</span>
         </div>
-        <div className="ky-min-h-0 ky-flex-1 ky-overflow-auto ky-p-3">
-          <ul className="ky-space-y-2">
+        <div className="pv-min-h-0 pv-flex-1 pv-overflow-auto pv-p-3">
+          <ul className="pv-space-y-2">
             {enrichedHits.map((h, i) => (
               <EnrichedHitCard
                 key={i}
@@ -623,13 +623,13 @@ function SearchResults(props: {
 
   // Data mode (default): Kibana-style fields rail + document table
   return (
-    <div className="ky-flex ky-min-h-0 ky-flex-1">
+    <div className="pv-flex pv-min-h-0 pv-flex-1">
       {/* Fields rail */}
-      <aside className="ky-flex ky-w-56 ky-shrink-0 ky-flex-col ky-overflow-hidden ky-border-r">
-        <div className="ky-border-b ky-px-2 ky-py-1.5 ky-text-[10px] ky-font-semibold ky-uppercase ky-tracking-wider ky-text-muted-foreground">
+      <aside className="pv-flex pv-w-56 pv-shrink-0 pv-flex-col pv-overflow-hidden pv-border-r">
+        <div className="pv-border-b pv-px-2 pv-py-1.5 pv-text-[10px] pv-font-semibold pv-uppercase pv-tracking-wider pv-text-muted-foreground">
           Fields · {fields.length}
         </div>
-        <ul className="ky-min-h-0 ky-flex-1 ky-overflow-auto">
+        <ul className="pv-min-h-0 pv-flex-1 pv-overflow-auto">
           {fields.map((f) => (
             <FieldRow
               key={f.name}
@@ -645,35 +645,35 @@ function SearchResults(props: {
       </aside>
 
       {/* Histogram + document table */}
-      <main className="ky-flex ky-min-w-0 ky-flex-1 ky-flex-col ky-min-h-0">
-        <div className="ky-flex ky-items-center ky-gap-3 ky-border-b ky-px-3 ky-py-1 ky-text-[11px] ky-text-muted-foreground">
-          <span className="ky-font-semibold ky-text-foreground">{hits.length.toLocaleString()}</span> hits
+      <main className="pv-flex pv-min-w-0 pv-flex-1 pv-flex-col pv-min-h-0">
+        <div className="pv-flex pv-items-center pv-gap-3 pv-border-b pv-px-3 pv-py-1 pv-text-[11px] pv-text-muted-foreground">
+          <span className="pv-font-semibold pv-text-foreground">{hits.length.toLocaleString()}</span> hits
           <span>·</span>
           <span>{props.sourcesSearched} sources</span>
-          <span className="ky-ml-auto ky-tabular-nums">{props.elapsedMs} ms</span>
+          <span className="pv-ml-auto pv-tabular-nums">{props.elapsedMs} ms</span>
         </div>
         {timeField && (
-          <div className="ky-shrink-0 ky-border-b">
+          <div className="pv-shrink-0 pv-border-b">
             <HistogramTimeline rows={rows} timeCol={timeField} onBucketClick={(from, to) => props.onZoom(from.toISOString(), to.toISOString())} />
           </div>
         )}
-        <div className="ky-min-h-0 ky-flex-1 ky-overflow-auto ky-text-xs">
-          <table className="ky-w-full ky-border-collapse">
-            <thead className="ky-sticky ky-top-0 ky-z-10 ky-bg-background">
-              <tr className="ky-border-b ky-text-left ky-text-[10px] ky-uppercase ky-tracking-wider ky-text-muted-foreground">
-                <th className="ky-w-6" />
-                {timeField && <th className="ky-px-2 ky-py-1 ky-font-medium">{timeField}</th>}
+        <div className="pv-min-h-0 pv-flex-1 pv-overflow-auto pv-text-xs">
+          <table className="pv-w-full pv-border-collapse">
+            <thead className="pv-sticky pv-top-0 pv-z-10 pv-bg-background">
+              <tr className="pv-border-b pv-text-left pv-text-[10px] pv-uppercase pv-tracking-wider pv-text-muted-foreground">
+                <th className="pv-w-6" />
+                {timeField && <th className="pv-px-2 pv-py-1 pv-font-medium">{timeField}</th>}
                 {cols.length === 0 ? (
-                  <th className="ky-px-2 ky-py-1 ky-font-medium">Document</th>
+                  <th className="pv-px-2 pv-py-1 pv-font-medium">Document</th>
                 ) : (
                   cols.map((c) => (
-                    <th key={c} className="ky-px-2 ky-py-1 ky-font-mono ky-font-medium ky-normal-case ky-tracking-normal">
+                    <th key={c} className="pv-px-2 pv-py-1 pv-font-mono pv-font-medium pv-normal-case pv-tracking-normal">
                       {c}
                     </th>
                   ))
                 )}
-                <th className="ky-px-2 ky-py-1 ky-font-medium">Source</th>
-                <th className="ky-px-2 ky-py-1 ky-text-right ky-font-medium">_score</th>
+                <th className="pv-px-2 pv-py-1 pv-font-medium">Source</th>
+                <th className="pv-px-2 pv-py-1 pv-text-right pv-font-medium">_score</th>
               </tr>
             </thead>
             <tbody>
@@ -683,24 +683,24 @@ function SearchResults(props: {
                 return (
                   <React.Fragment key={i}>
                     <tr
-                      className="ky-border-b ky-border-border/40 hover:ky-bg-accent/30 ky-cursor-pointer ky-align-top"
+                      className="pv-border-b pv-border-border/40 hover:pv-bg-accent/30 pv-cursor-pointer pv-align-top"
                       onClick={() => toggleExpand(i)}
                     >
-                      <td className="ky-py-1 ky-pl-2 ky-text-muted-foreground">{isOpen ? "▾" : "▸"}</td>
+                      <td className="pv-py-1 pv-pl-2 pv-text-muted-foreground">{isOpen ? "▾" : "▸"}</td>
                       {timeField && (
-                        <td className="ky-whitespace-nowrap ky-px-2 ky-py-1 ky-font-mono ky-text-[11px] ky-text-muted-foreground">
+                        <td className="pv-whitespace-nowrap pv-px-2 pv-py-1 pv-font-mono pv-text-[11px] pv-text-muted-foreground">
                           {formatCell(h.row![timeField])}
                         </td>
                       )}
                       {cols.length === 0 ? (
-                        <td className="ky-px-2 ky-py-1">
-                          <div className="ky-flex ky-flex-wrap ky-gap-x-3 ky-gap-y-0.5 ky-font-mono ky-text-[11px]">
+                        <td className="pv-px-2 pv-py-1">
+                          <div className="pv-flex pv-flex-wrap pv-gap-x-3 pv-gap-y-0.5 pv-font-mono pv-text-[11px]">
                             {Object.entries(h.row!)
                               .filter(([k]) => !HIDDEN_FIELD(k) && k !== timeField)
                               .slice(0, 8)
                               .map(([k, v]) => (
-                                <span key={k} className="ky-truncate">
-                                  <span className="ky-text-muted-foreground">{k}:</span>{" "}
+                                <span key={k} className="pv-truncate">
+                                  <span className="pv-text-muted-foreground">{k}:</span>{" "}
                                   <span>{formatCell(v).slice(0, 120)}</span>
                                 </span>
                               ))}
@@ -708,30 +708,30 @@ function SearchResults(props: {
                         </td>
                       ) : (
                         cols.map((c) => (
-                          <td key={c} className="ky-max-w-[28ch] ky-truncate ky-px-2 ky-py-1 ky-font-mono ky-text-[11px]">
+                          <td key={c} className="pv-max-w-[28ch] pv-truncate pv-px-2 pv-py-1 pv-font-mono pv-text-[11px]">
                             {formatCell(h.row![c])}
                           </td>
                         ))
                       )}
-                      <td className="ky-px-2 ky-py-1">
+                      <td className="pv-px-2 pv-py-1">
                         <SourceBadge source={h.source} />
                       </td>
-                      <td className="ky-px-2 ky-py-1 ky-text-right ky-tabular-nums ky-text-[10px] ky-text-muted-foreground">
+                      <td className="pv-px-2 pv-py-1 pv-text-right pv-tabular-nums pv-text-[10px] pv-text-muted-foreground">
                         {h.score.toFixed(3)}
                       </td>
                     </tr>
                     {isOpen && (
-                      <tr className="ky-border-b ky-border-border/40 ky-bg-muted/20">
+                      <tr className="pv-border-b pv-border-border/40 pv-bg-muted/20">
                         <td />
-                        <td colSpan={colSpan} className="ky-px-2 ky-py-2">
-                          <div className="ky-mb-1 ky-flex ky-items-center ky-gap-2">
+                        <td colSpan={colSpan} className="pv-px-2 pv-py-2">
+                          <div className="pv-mb-1 pv-flex pv-items-center pv-gap-2">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 props.onOpenRow(h.source, h.row!);
                               }}
-                              className="ky-rounded ky-border ky-px-1.5 ky-py-0.5 ky-text-[10px] ky-text-muted-foreground hover:ky-text-foreground"
+                              className="pv-rounded pv-border pv-px-1.5 pv-py-0.5 pv-text-[10px] pv-text-muted-foreground hover:pv-text-foreground"
                             >
                               Open detail
                             </button>
@@ -745,21 +745,21 @@ function SearchResults(props: {
                                     e.stopPropagation();
                                     props.onViewInGraph!(g.id, g.db);
                                   }}
-                                  className="ky-inline-flex ky-items-center ky-gap-1 ky-rounded ky-border ky-border-primary/40 ky-px-1.5 ky-py-0.5 ky-text-[10px] ky-text-primary hover:ky-bg-primary/10"
+                                  className="pv-inline-flex pv-items-center pv-gap-1 pv-rounded pv-border pv-border-primary/40 pv-px-1.5 pv-py-0.5 pv-text-[10px] pv-text-primary hover:pv-bg-primary/10"
                                   title="Open this entity in the graph"
                                 >
-                                  <Network className="ky-h-3 ky-w-3" /> View in graph
+                                  <Network className="pv-h-3 pv-w-3" /> View in graph
                                 </button>
                               );
                             })()}
                           </div>
-                          <dl className="ky-grid ky-grid-cols-[minmax(8rem,12rem)_1fr] ky-gap-x-3 ky-gap-y-0.5 ky-font-mono ky-text-[11px]">
+                          <dl className="pv-grid pv-grid-cols-[minmax(8rem,12rem)_1fr] pv-gap-x-3 pv-gap-y-0.5 pv-font-mono pv-text-[11px]">
                             {Object.entries(h.row!)
                               .filter(([k]) => !HIDDEN_FIELD(k))
                               .map(([k, v]) => (
                                 <React.Fragment key={k}>
-                                  <dt className="ky-truncate ky-text-muted-foreground">{k}</dt>
-                                  <dd className="ky-whitespace-pre-wrap ky-break-words">{formatCell(v)}</dd>
+                                  <dt className="pv-truncate pv-text-muted-foreground">{k}</dt>
+                                  <dd className="pv-whitespace-pre-wrap pv-break-words">{formatCell(v)}</dd>
                                 </React.Fragment>
                               ))}
                           </dl>
@@ -798,9 +798,9 @@ function QueryBody(props: {
   const timeColName = useMemo(() => columns.find((c) => c.kind === "time")?.name ?? null, [columns]);
 
   return (
-    <div className="ky-flex ky-min-h-0 ky-flex-1">
-      <aside className="ky-flex ky-w-60 ky-shrink-0 ky-flex-col ky-overflow-hidden ky-border-r">
-        <div className="ky-min-h-0 ky-flex-1 ky-overflow-auto">
+    <div className="pv-flex pv-min-h-0 pv-flex-1">
+      <aside className="pv-flex pv-w-60 pv-shrink-0 pv-flex-col pv-overflow-hidden pv-border-r">
+        <div className="pv-min-h-0 pv-flex-1 pv-overflow-auto">
           {hasResults ? (
             <FieldStats rows={rows} columns={columns} onAddFilter={(col, value) => props.onInsert(`| where ${col} == "${value}"`)} />
           ) : (
@@ -808,13 +808,13 @@ function QueryBody(props: {
           )}
         </div>
       </aside>
-      <main className="ky-flex ky-min-w-0 ky-flex-1 ky-flex-col ky-min-h-0">
+      <main className="pv-flex pv-min-w-0 pv-flex-1 pv-flex-col pv-min-h-0">
         {error != null && !isRunning && (
           <div
             role="alert"
-            className="ky-m-3 ky-rounded ky-border ky-border-destructive/50 ky-bg-destructive/10 ky-p-3 ky-text-xs ky-text-destructive"
+            className="pv-m-3 pv-rounded pv-border pv-border-destructive/50 pv-bg-destructive/10 pv-p-3 pv-text-xs pv-text-destructive"
           >
-            <span className="ky-font-semibold">Query failed:</span> {formatErr(error)}
+            <span className="pv-font-semibold">Query failed:</span> {formatErr(error)}
           </div>
         )}
         {hasResults && timeColName && <HistogramTimeline rows={rows} timeCol={timeColName} />}
@@ -823,7 +823,7 @@ function QueryBody(props: {
           <Centered>{columns.length === 0 ? "Run a query to see results." : "0 rows returned."}</Centered>
         )}
         {hasResults && (
-          <div className="ky-flex ky-min-h-0 ky-flex-1 ky-flex-col">
+          <div className="pv-flex pv-min-h-0 pv-flex-1 pv-flex-col">
             <RowFilter
               value={rowFilter}
               onChange={props.onRowFilter}
@@ -839,11 +839,11 @@ function QueryBody(props: {
                   : rows.length
               }
             />
-            <div className="ky-min-h-0 ky-flex-1 ky-overflow-hidden">
+            <div className="pv-min-h-0 pv-flex-1 pv-overflow-hidden">
               <ResultsGrid columns={columns} rows={rows} filter={rowFilter} />
             </div>
             {isPlottable && (
-              <div className="ky-h-44 ky-shrink-0 ky-border-t">
+              <div className="pv-h-44 pv-shrink-0 pv-border-t">
                 <ChartPanel columns={columns} rows={rows} />
               </div>
             )}
@@ -856,7 +856,7 @@ function QueryBody(props: {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="ky-flex ky-flex-1 ky-items-center ky-justify-center ky-p-6 ky-text-xs ky-text-muted-foreground">
+    <div className="pv-flex pv-flex-1 pv-items-center pv-justify-center pv-p-6 pv-text-xs pv-text-muted-foreground">
       {children}
     </div>
   );
@@ -864,10 +864,10 @@ function Centered({ children }: { children: React.ReactNode }) {
 
 function EmptyState() {
   return (
-    <div className="ky-flex ky-flex-1 ky-items-center ky-justify-center ky-p-8 ky-text-center ky-text-sm ky-text-muted-foreground">
-      <div className="ky-space-y-1">
+    <div className="pv-flex pv-flex-1 pv-items-center pv-justify-center pv-p-8 pv-text-center pv-text-sm pv-text-muted-foreground">
+      <div className="pv-space-y-1">
         <div>Search your data or run a query.</div>
-        <div className="ky-text-xs ky-opacity-70">
+        <div className="pv-text-xs pv-opacity-70">
           Type keywords for instant hybrid search, or a table name / KQL / SQL to query. Press ⌘↵ to run.
         </div>
       </div>

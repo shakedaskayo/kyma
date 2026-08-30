@@ -41,9 +41,9 @@ export function CapabilityGate({ capability, children, fallback }: CapabilityGat
       return (
         <div
           data-testid="capability-unavailable"
-          className="ky-rounded-lg ky-border ky-border-border ky-bg-card ky-p-4 ky-text-sm ky-text-foreground"
+          className="pv-rounded-lg pv-border pv-border-border pv-bg-card pv-p-4 pv-text-sm pv-text-foreground"
         >
-          <p className="ky-text-muted-foreground">
+          <p className="pv-text-muted-foreground">
             This feature is not available on this Pensieve server.
           </p>
         </div>

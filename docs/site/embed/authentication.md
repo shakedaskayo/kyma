@@ -21,7 +21,7 @@ demos, or local development.
 ```tsx
 <PensieveProvider
   endpoint="http://localhost:8080"
-  auth={{ token: "ky-your-static-token" }}
+  auth={{ token: "pv-your-static-token" }}
 >
   {children}
 </PensieveProvider>

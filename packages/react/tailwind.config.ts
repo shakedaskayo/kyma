@@ -1,11 +1,11 @@
 import type { Config } from "tailwindcss";
 import animate from "tailwindcss-animate";
 
-// Embeddable build: every utility is prefixed (`ky-flex`) and every rule is
+// Embeddable build: every utility is prefixed (`pv-flex`) and every rule is
 // scoped under `.pensieve-root` so host-app CSS and Pensieve CSS cannot collide in
 // either direction. Tokens are `--pensieve-*`, set inline by <PensieveProvider>.
 export default {
-  prefix: "ky-",
+  prefix: "pv-",
   important: ".pensieve-root",
   corePlugins: { preflight: false },
   content: ["./src/**/*.{ts,tsx}"],
