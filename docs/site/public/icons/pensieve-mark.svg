@@ -1,30 +1,41 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="pensieve">
   <title>pensieve</title>
   <defs>
-    <radialGradient id="pensieveCore" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#0d1015"/>
-      <stop offset="80%" stop-color="#0d1015"/>
-      <stop offset="100%" stop-color="#11151b"/>
+    <radialGradient id="pensieveCore" cx="50%" cy="58%" r="62%">
+      <stop offset="0%" stop-color="#101a30"/>
+      <stop offset="65%" stop-color="#080d18"/>
+      <stop offset="100%" stop-color="#050a12"/>
     </radialGradient>
     <linearGradient id="pensieveRing" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#7ed957"/>
-      <stop offset="60%" stop-color="#7ed957" stop-opacity="0.5"/>
-      <stop offset="100%" stop-color="#7ed957" stop-opacity="0.15"/>
+      <stop offset="0%" stop-color="#4C8DFF"/>
+      <stop offset="55%" stop-color="#7C4DFF" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#7C4DFF" stop-opacity="0.16"/>
+    </linearGradient>
+    <linearGradient id="pensieveVortex" x1="0%" y1="100%" x2="55%" y2="0%">
+      <stop offset="0%" stop-color="#BFE4FF"/>
+      <stop offset="42%" stop-color="#7CB0FF"/>
+      <stop offset="100%" stop-color="#7C4DFF"/>
     </linearGradient>
   </defs>
-  <!-- Outer phosphor ring (the aperture) -->
+
+  <!-- Aperture ring -->
   <circle cx="48" cy="48" r="44" fill="none" stroke="url(#pensieveRing)" stroke-width="2"/>
-  <!-- Inner core -->
-  <circle cx="48" cy="48" r="36" fill="url(#pensieveCore)" stroke="#2a2e36" stroke-width="1"/>
-  <!-- Small green status pulse -->
-  <circle cx="48" cy="48" r="36" fill="none" stroke="#7ed957" stroke-width="0.5" opacity="0.4"/>
-  <!-- Stylized "k" — horizontal stem + two angled arms suggesting fan-in/fan-out -->
-  <g stroke="#e8e6e0" stroke-width="3.5" stroke-linecap="round" fill="none">
-    <line x1="34" y1="32" x2="34" y2="64"/>
-    <line x1="34" y1="48" x2="58" y2="34"/>
-    <line x1="34" y1="48" x2="58" y2="62"/>
-  </g>
-  <!-- Phosphor accent dots at the end of each arm -->
-  <circle cx="58" cy="34" r="2.5" fill="#7ed957"/>
-  <circle cx="58" cy="62" r="2.5" fill="#7ed957"/>
+  <!-- Core -->
+  <circle cx="48" cy="48" r="36" fill="url(#pensieveCore)" stroke="#1d2740" stroke-width="1"/>
+
+  <!-- The basin: rim ellipse + bowl underside -->
+  <ellipse cx="48" cy="66" rx="20" ry="5.5" fill="none" stroke="#4C8DFF" stroke-width="3.2"/>
+  <path d="M28 66 Q48 81 68 66" fill="none" stroke="#4C8DFF" stroke-width="3.2"
+        stroke-linecap="round"/>
+
+  <!-- The memory drawn up out of the basin: one tightening turn, clear of the rim -->
+  <path fill="none" stroke="url(#pensieveVortex)" stroke-width="3.6"
+        stroke-linecap="round" stroke-linejoin="round"
+        d="M 48.0 60.3 L 47.5 60.2 L 44.9 59.2 L 42.7 58.1 L 40.8 56.9 L 39.3 55.5
+           L 38.2 54.0 L 37.6 52.5 L 37.5 51.0 L 37.8 49.5 L 38.5 48.1 L 39.5 46.7
+           L 40.9 45.4 L 42.4 44.2 L 44.1 43.1 L 45.9 42.1 L 47.7 41.2 L 49.4 40.5
+           L 50.9 39.8 L 52.2 39.2 L 53.2 38.7 L 54.0 38.2 L 54.5 37.8 L 54.6 37.3
+           L 54.5 36.8 L 54.1 36.3 L 53.5 35.8 L 52.7 35.1 L 51.8 34.4 L 50.7 33.7
+           L 49.6 32.8 L 48.6 31.9 L 47.6 30.9 L 46.7 29.8 L 45.9 28.7 L 45.3 27.6
+           L 44.9 26.4 L 44.6 25.2 L 44.6 24.0 L 44.6 22.8 L 44.9 21.6 L 45.1 20.7"/>
 </svg>

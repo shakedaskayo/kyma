@@ -160,7 +160,7 @@ const useCases = [
     title: 'Replace your observability stack',
     body: 'OTLP logs, traces, metrics in one engine — sub-second queries over years of history. Agents triage incidents from the same data your dashboards render.',
     bullets: ['Logs · traces · metrics over OTLP', 'Sub-second pruning over a decade', 'Agent-driven triage on the same data'],
-    accent: '#7ed957',
+    accent: '#4C8DFF',
   },
   {
     label: 'BI',
@@ -188,7 +188,7 @@ const useCases = [
     title: 'A native graph layer at million-node scale',
     body: 'Beyond rows and columns: pensieve stores entities and relationships as a first-class graph. Trace from a Stripe customer to their auth events to the deploy that broke their checkout — in one query, in milliseconds, at organizational scale.',
     bullets: ['Entities and edges as native types', 'Cypher-style traversals over Arrow', 'Same pruning cascade applies'],
-    accent: '#7ed957',
+    accent: '#4C8DFF',
   },
   {
     label: 'Anything',
@@ -234,19 +234,19 @@ const buildDate = new Date().toISOString().slice(0, 10)
         >
           <defs>
             <radialGradient id="pensieve-orbit-fade" cx="50%" cy="50%" r="50%">
-              <stop offset="0%"  stop-color="#7ed957" stop-opacity="0.15"/>
-              <stop offset="55%" stop-color="#7ed957" stop-opacity="0.04"/>
-              <stop offset="100%" stop-color="#7ed957" stop-opacity="0"/>
+              <stop offset="0%"  stop-color="#4C8DFF" stop-opacity="0.15"/>
+              <stop offset="55%" stop-color="#4C8DFF" stop-opacity="0.04"/>
+              <stop offset="100%" stop-color="#4C8DFF" stop-opacity="0"/>
             </radialGradient>
             <linearGradient id="pensieve-beam-grad-in" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%"   stop-color="#7ed957" stop-opacity="0.0"/>
-              <stop offset="50%"  stop-color="#7ed957" stop-opacity="0.55"/>
-              <stop offset="100%" stop-color="#7ed957" stop-opacity="0.85"/>
+              <stop offset="0%"   stop-color="#4C8DFF" stop-opacity="0.0"/>
+              <stop offset="50%"  stop-color="#4C8DFF" stop-opacity="0.55"/>
+              <stop offset="100%" stop-color="#4C8DFF" stop-opacity="0.85"/>
             </linearGradient>
             <linearGradient id="pensieve-beam-grad-out" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%"   stop-color="#7ed957" stop-opacity="0.85"/>
-              <stop offset="50%"  stop-color="#7ed957" stop-opacity="0.55"/>
-              <stop offset="100%" stop-color="#7ed957" stop-opacity="0.0"/>
+              <stop offset="0%"   stop-color="#4C8DFF" stop-opacity="0.85"/>
+              <stop offset="50%"  stop-color="#4C8DFF" stop-opacity="0.55"/>
+              <stop offset="100%" stop-color="#4C8DFF" stop-opacity="0.0"/>
             </linearGradient>
             <filter id="pensieve-orbit-glow">
               <feGaussianBlur stdDeviation="3" />
@@ -395,8 +395,8 @@ const buildDate = new Date().toISOString().slice(0, 10)
         <svg viewBox="0 0 400 400" class="pensieve-graph-svg">
           <defs>
             <radialGradient id="pensieve-graph-glow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stop-color="#7ed957" stop-opacity="0.25"/>
-              <stop offset="80%" stop-color="#7ed957" stop-opacity="0"/>
+              <stop offset="0%" stop-color="#4C8DFF" stop-opacity="0.25"/>
+              <stop offset="80%" stop-color="#4C8DFF" stop-opacity="0"/>
             </radialGradient>
           </defs>
           <circle cx="200" cy="200" r="180" fill="url(#pensieve-graph-glow)"/>

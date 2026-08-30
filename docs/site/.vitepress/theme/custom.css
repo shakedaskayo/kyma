@@ -44,13 +44,13 @@
   --pensieve-muted:     #818488;
   --pensieve-rule:      #2a2e36;
   --pensieve-rule-soft: rgba(232, 230, 224, 0.10);
-  --pensieve-accent:    #7ed957;          /* phosphor green */
+  --pensieve-accent:    #4C8DFF;          /* brand blue */
   --pensieve-link:      #7eaae6;
 
   --vp-c-brand-1: var(--pensieve-accent);
   --vp-c-brand-2: var(--pensieve-accent);
   --vp-c-brand-3: var(--pensieve-accent);
-  --vp-c-brand-soft: rgba(126, 217, 87, 0.12);
+  --vp-c-brand-soft: rgba(76, 141, 255, 0.12);
 }
 
 /* ---------- Headings ------------------------------------------------------ */
@@ -351,19 +351,19 @@
 
 .pensieve-orbit-ring-svg {
   fill: none;
-  stroke: rgba(126, 217, 87, 0.15);
+  stroke: rgba(76, 141, 255, 0.15);
   stroke-width: 1;
   stroke-dasharray: 2 6;
   animation: pensieve-ring-pulse 6s ease-in-out infinite;
 }
 @keyframes pensieve-ring-pulse {
-  0%, 100% { stroke: rgba(126, 217, 87, 0.10); }
-  50%      { stroke: rgba(126, 217, 87, 0.32); }
+  0%, 100% { stroke: rgba(76, 141, 255, 0.10); }
+  50%      { stroke: rgba(76, 141, 255, 0.32); }
 }
 
 .pensieve-orbit-path {
   fill: none;
-  stroke: rgba(126, 217, 87, 0.32);
+  stroke: rgba(76, 141, 255, 0.32);
   stroke-width: 1;
   stroke-linecap: round;
 }
@@ -375,7 +375,7 @@
   stroke-linecap: round;
   stroke-dasharray: 14 280;
   stroke-dashoffset: 0;
-  filter: drop-shadow(0 0 4px rgba(126, 217, 87, 0.6));
+  filter: drop-shadow(0 0 4px rgba(76, 141, 255, 0.6));
   animation-duration: 2.6s;
   animation-iteration-count: infinite;
   animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
@@ -415,7 +415,7 @@
 .pensieve-orbit-mark img {
   width: 140px;
   height: 140px;
-  filter: drop-shadow(0 0 28px rgba(126, 217, 87, 0.55));
+  filter: drop-shadow(0 0 28px rgba(76, 141, 255, 0.55));
   animation: pensieve-mark-breathe 4s ease-in-out infinite;
 }
 .pensieve-orbit-mark-pulse {
@@ -428,8 +428,8 @@
   pointer-events: none;
 }
 @keyframes pensieve-mark-breathe {
-  0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 28px rgba(126, 217, 87, 0.55)); }
-  50%      { transform: scale(1.05); filter: drop-shadow(0 0 42px rgba(126, 217, 87, 0.85)); }
+  0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 28px rgba(76, 141, 255, 0.55)); }
+  50%      { transform: scale(1.05); filter: drop-shadow(0 0 42px rgba(76, 141, 255, 0.85)); }
 }
 @keyframes pensieve-mark-pulse {
   0%   { transform: scale(0.9); opacity: 0.7; }
@@ -467,7 +467,7 @@
 .pensieve-orbit-node:hover {
   border-color: var(--pensieve-accent);
   transform: translate(-50%, -50%) scale(1.06);
-  box-shadow: 0 0 18px rgba(126, 217, 87, 0.22);
+  box-shadow: 0 0 18px rgba(76, 141, 255, 0.22);
   z-index: 10;
   color: var(--pensieve-fg);
 }
@@ -518,7 +518,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(126,217,87,0.08) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(76,141,255,0.08) 50%, transparent 100%);
   background-size: 200% 100%;
   animation: pensieve-sweep 6s linear infinite;
   pointer-events: none;
@@ -880,7 +880,7 @@
   aspect-ratio: 1;
 }
 .pensieve-graph-edges line {
-  stroke: rgba(126, 217, 87, 0.35);
+  stroke: rgba(76, 141, 255, 0.35);
   stroke-width: 1;
   animation: pensieve-graph-edge-pulse 4s ease-in-out infinite;
 }
@@ -888,8 +888,8 @@
 .pensieve-graph-edges line:nth-child(3n)  { animation-delay: 1.2s; }
 .pensieve-graph-edges line:nth-child(5n)  { animation-delay: 1.8s; }
 @keyframes pensieve-graph-edge-pulse {
-  0%, 100% { stroke: rgba(126, 217, 87, 0.18); stroke-width: 1; }
-  50%      { stroke: rgba(126, 217, 87, 0.55); stroke-width: 1.5; }
+  0%, 100% { stroke: rgba(76, 141, 255, 0.18); stroke-width: 1; }
+  50%      { stroke: rgba(76, 141, 255, 0.55); stroke-width: 1.5; }
 }
 .pensieve-graph-node {
   fill: var(--pensieve-bg);
@@ -899,7 +899,7 @@
 .pensieve-graph-node--center {
   fill: var(--pensieve-accent);
   stroke: var(--pensieve-accent);
-  filter: drop-shadow(0 0 8px rgba(126, 217, 87, 0.6));
+  filter: drop-shadow(0 0 8px rgba(76, 141, 255, 0.6));
 }
 .pensieve-graph-node--small {
   stroke-width: 1.5;
@@ -1101,8 +1101,8 @@
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #7ed957;
-  box-shadow: 0 0 8px 0 rgba(126, 217, 87, 0.9);
+  background: #4C8DFF;
+  box-shadow: 0 0 8px 0 rgba(76, 141, 255, 0.9);
   flex: none;
 }
 .pensieve-terminal pre {
@@ -1116,7 +1116,7 @@
   color: #d6e4d0;
 }
 .pensieve-terminal .prompt {
-  color: #7ed957;
+  color: #4C8DFF;
   font-weight: 700;
   user-select: none;
   margin-right: 0.6rem;
@@ -1127,8 +1127,8 @@
   height: 1.05em;
   margin-left: 0.25rem;
   vertical-align: -0.18em;
-  background: #7ed957;
-  box-shadow: 0 0 8px 0 rgba(126, 217, 87, 0.7);
+  background: #4C8DFF;
+  box-shadow: 0 0 8px 0 rgba(76, 141, 255, 0.7);
   animation: pensieve-blink 1.15s steps(1) infinite;
 }
 @keyframes pensieve-blink { 50% { opacity: 0; } }

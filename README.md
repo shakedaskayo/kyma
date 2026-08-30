@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://shakedaskayo.github.io/pensieve/">
-    <img src="docs/site/public/icons/pensieve-mark.svg" alt="pensieve" width="120" height="120" />
+    <img src="docs/images/pensieve-hero.png" alt="pensieve" width="320" height="320" />
   </a>
 </p>
 
@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <a href="https://shakedaskayo.github.io/pensieve/"><img alt="Docs" src="https://img.shields.io/badge/docs-github%20pages-7ed957?style=flat-square" /></a>
+  <a href="https://shakedaskayo.github.io/pensieve/"><img alt="Docs" src="https://img.shields.io/badge/docs-github%20pages-4C8DFF?style=flat-square" /></a>
   <a href="https://shakedaskayo.github.io/pensieve/agent/memory"><img alt="Context engine" src="https://img.shields.io/badge/context%20engine-memory%20%2B%20data%20%2B%20graph-7c3aed?style=flat-square" /></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-1.95%2B-orange?style=flat-square" />

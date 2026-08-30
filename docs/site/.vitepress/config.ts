@@ -28,16 +28,19 @@ export default withMermaid(defineConfig({
 
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/pensieve/icons/pensieve-mark.svg' }],
+    ['link', { rel: 'icon', type: 'image/x-icon', href: '/pensieve/favicon.ico', sizes: 'any' }],
     ['link', { rel: 'canonical', href: 'https://shakedaskayo.github.io/pensieve/' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:title', content: 'pensieve — production knowledge, as a query' }],
     ['meta', { property: 'og:description', content: 'A unified columnar query engine for every signal your stack emits. Logs, traces, metrics, plus first-class federation to Postgres, MySQL, MongoDB. Sub-second latency over a decade of history.' }],
     ['meta', { property: 'og:url', content: 'https://shakedaskayo.github.io/pensieve/' }],
-    ['meta', { property: 'og:image', content: 'https://shakedaskayo.github.io/pensieve/icons/pensieve-mark.svg' }],
-    ['meta', { name: 'twitter:card', content: 'summary' }],
+    ['meta', { property: 'og:image', content: 'https://shakedaskayo.github.io/pensieve/og.png' }],
+    ['meta', { property: 'og:image:width', content: '1200' }],
+    ['meta', { property: 'og:image:height', content: '630' }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
     ['meta', { name: 'twitter:title', content: 'pensieve — production knowledge, as a query' }],
     ['meta', { name: 'twitter:description', content: 'One columnar query engine for every signal your stack emits.' }],
-    ['meta', { name: 'twitter:image', content: 'https://shakedaskayo.github.io/pensieve/icons/pensieve-mark.svg' }],
+    ['meta', { name: 'twitter:image', content: 'https://shakedaskayo.github.io/pensieve/og.png' }],
   ],
 
   themeConfig: {

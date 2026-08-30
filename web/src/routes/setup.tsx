@@ -39,10 +39,10 @@ export const Route = createFileRoute("/setup")({
 });
 
 // ── Pensieve brand tokens (from the pensieve docs site) ────────────────────────────
-const GREEN = "#7ed957"; // phosphor accent
+const ACCENT = "#4C8DFF"; // brand blue, from the pensieve mark
 const inputCls =
   "h-11 rounded-lg border-[#dfdfd6]/12 bg-[#111317] text-[#e8e6e0] placeholder:text-[#dfdfd6]/30 " +
-  "focus-visible:ring-1 focus-visible:ring-[#7ed957]/60 focus-visible:border-[#7ed957]/50";
+  "focus-visible:ring-1 focus-visible:ring-[#4C8DFF]/60 focus-visible:border-[#4C8DFF]/50";
 
 type StepId = "agent" | "account" | "engine" | "data" | "done";
 const STEPS: { id: StepId; label: string }[] = [
@@ -131,8 +131,8 @@ function Setup() {
         </div>
 
         <div className="relative z-10 max-w-sm pv-rise" style={{ animationDelay: "120ms" }}>
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[#7ed957]/20 bg-[#7ed957]/[0.07] px-3 py-1 font-mono text-[11px] tracking-wider text-[#7ed957]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#7ed957] pv-pulse" />
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[#4C8DFF]/20 bg-[#4C8DFF]/[0.07] px-3 py-1 font-mono text-[11px] tracking-wider text-[#4C8DFF]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#4C8DFF] pv-pulse" />
             FIRST-RUN SETUP
           </div>
           <h1 className="font-mono text-[2.6rem] font-bold leading-[1.04] tracking-tight text-[#e8e6e0]">
@@ -154,9 +154,9 @@ function Setup() {
                   className={
                     "grid h-7 w-7 place-items-center rounded-full border font-mono text-[11px] transition-all duration-500 " +
                     (state === "done"
-                      ? "border-[#7ed957]/50 bg-[#7ed957]/15 text-[#7ed957]"
+                      ? "border-[#4C8DFF]/50 bg-[#4C8DFF]/15 text-[#4C8DFF]"
                       : state === "active"
-                        ? "border-[#7ed957] bg-[#7ed957] text-[#0d1015] pv-glow"
+                        ? "border-[#4C8DFF] bg-[#4C8DFF] text-[#0d1015] pv-glow"
                         : "border-[#dfdfd6]/12 bg-[#dfdfd6]/[0.02] text-[#dfdfd6]/35")
                   }
                 >
@@ -185,7 +185,7 @@ function Setup() {
         </div>
 
         {checking ? (
-          <Loader2 className="h-6 w-6 animate-spin" style={{ color: GREEN }} />
+          <Loader2 className="h-6 w-6 animate-spin" style={{ color: ACCENT }} />
         ) : (
           <div key={step} className="w-full max-w-md pv-rise">
             {step === "account" && (
@@ -487,8 +487,8 @@ function DataStep({ endpoint, onNext }: { endpoint: string; onNext: () => void }
         </div>
 
         {/* Or: let the coding agent ingest */}
-        <div className="rounded-xl border border-[#7ed957]/25 bg-[#7ed957]/[0.05] p-4">
-          <div className="mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-[#7ed957]">
+        <div className="rounded-xl border border-[#4C8DFF]/25 bg-[#4C8DFF]/[0.05] p-4">
+          <div className="mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-[#4C8DFF]">
             <Sparkles className="h-3.5 w-3.5" /> Or let your coding agent do it
           </div>
           <p className="mb-2 text-[12.5px] leading-snug text-[#dfdfd6]/65">
@@ -506,9 +506,9 @@ function DataStep({ endpoint, onNext }: { endpoint: string; onNext: () => void }
         >
           <span className="flex items-center gap-2.5 text-[13px] text-[#dfdfd6]/80">
             {busy ? (
-              <Loader2 className="h-4 w-4 animate-spin text-[#7ed957]" />
+              <Loader2 className="h-4 w-4 animate-spin text-[#4C8DFF]" />
             ) : (
-              <Database className="h-4 w-4 text-[#7ed957]" />
+              <Database className="h-4 w-4 text-[#4C8DFF]" />
             )}
             Just exploring? Load 40 rows of sample telemetry
           </span>
@@ -551,7 +551,7 @@ function AgentStep({ endpoint, onNext }: { endpoint: string; onNext: () => void 
         ))}
       </div>
       <div className="mt-4 flex items-start gap-2 rounded-lg border border-[#dfdfd6]/[0.08] bg-[#dfdfd6]/[0.02] p-3 text-[12px] leading-snug text-[#dfdfd6]/55">
-        <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-[#7ed957]/70" />
+        <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-[#4C8DFF]/70" />
         Your agent then runs <span className="font-mono text-[#dfdfd6]/80">pensieve query "…"</span> to ask
         questions over everything you've ingested.
       </div>
@@ -572,7 +572,7 @@ function DoneStep({ onEnter }: { onEnter: () => void }) {
       <div className="mx-auto mb-7 pv-rise">
         <PensieveMark className="mx-auto h-16 w-16 pv-glow rounded-full" />
       </div>
-      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.18em] text-[#7ed957]">
+      <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.18em] text-[#4C8DFF]">
         Ready
       </div>
       <h2 className="font-mono text-2xl font-bold tracking-tight text-[#e8e6e0]">You're all set</h2>
@@ -605,7 +605,7 @@ function StepShell({
 }) {
   return (
     <div>
-      <div className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-[#7ed957]">
+      <div className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-[#4C8DFF]">
         {eyebrow}
       </div>
       <h2 className="font-mono text-[1.7rem] font-bold leading-tight tracking-tight text-[#e8e6e0]">
@@ -639,7 +639,7 @@ function ProviderTile({
       className={
         "relative flex items-center gap-3 rounded-xl border p-3 text-left transition-all duration-200 " +
         (active
-          ? "border-[#7ed957]/70 bg-[#7ed957]/[0.08]"
+          ? "border-[#4C8DFF]/70 bg-[#4C8DFF]/[0.08]"
           : "border-[#dfdfd6]/[0.08] bg-[#dfdfd6]/[0.02] hover:border-[#dfdfd6]/15")
       }
     >
@@ -653,7 +653,7 @@ function ProviderTile({
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
           <span className="truncate text-[13.5px] font-medium text-[#e8e6e0]">{name}</span>
-          {ready && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#7ed957]" />}
+          {ready && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#4C8DFF]" />}
         </span>
         <span className="block truncate text-[11px] text-[#dfdfd6]/45">{tag}</span>
       </span>
@@ -675,7 +675,7 @@ function BrandSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-11 w-full appearance-none rounded-lg border border-[#dfdfd6]/12 bg-[#111317] px-3 pr-9 font-mono text-[13px] text-[#e8e6e0] focus:outline-none focus:ring-1 focus:ring-[#7ed957]/60"
+        className="h-11 w-full appearance-none rounded-lg border border-[#dfdfd6]/12 bg-[#111317] px-3 pr-9 font-mono text-[13px] text-[#e8e6e0] focus:outline-none focus:ring-1 focus:ring-[#4C8DFF]/60"
       >
         {options.length === 0 && <option value="">—</option>}
         {options.map((o) => (
@@ -704,13 +704,13 @@ function Notice({
       className={
         "rounded-lg border p-3 text-[12.5px] leading-snug " +
         (ok
-          ? "border-[#7ed957]/25 bg-[#7ed957]/[0.06] text-[#dfdfd6]/80"
+          ? "border-[#4C8DFF]/25 bg-[#4C8DFF]/[0.06] text-[#dfdfd6]/80"
           : "border-amber-400/20 bg-amber-400/[0.05] text-[#dfdfd6]/75")
       }
     >
       <div className="flex items-center gap-2 font-medium text-[#e8e6e0]">
         {ok ? (
-          <Check className="h-4 w-4 text-[#7ed957]" />
+          <Check className="h-4 w-4 text-[#4C8DFF]" />
         ) : (
           <AlertCircle className="h-4 w-4 text-amber-400/90" />
         )}
@@ -727,7 +727,7 @@ function RecheckButton({ onClick, busy }: { onClick: () => void; busy?: boolean 
       type="button"
       onClick={onClick}
       disabled={busy}
-      className="mt-2.5 inline-flex items-center gap-1.5 rounded-md border border-[#dfdfd6]/15 bg-[#dfdfd6]/[0.03] px-2.5 py-1.5 font-mono text-[11px] text-[#dfdfd6]/80 transition-colors hover:border-[#7ed957]/40 hover:text-[#e8e6e0] disabled:opacity-60"
+      className="mt-2.5 inline-flex items-center gap-1.5 rounded-md border border-[#dfdfd6]/15 bg-[#dfdfd6]/[0.03] px-2.5 py-1.5 font-mono text-[11px] text-[#dfdfd6]/80 transition-colors hover:border-[#4C8DFF]/40 hover:text-[#e8e6e0] disabled:opacity-60"
     >
       <RefreshCw className={"h-3.5 w-3.5 " + (busy ? "animate-spin" : "")} />
       Re-check
@@ -766,8 +766,8 @@ function PrimaryButton({
       {...props}
       disabled={busy || props.disabled}
       className={
-        "h-11 w-full rounded-lg bg-[#7ed957] text-[14px] font-semibold text-[#0d1015] " +
-        "shadow-[0_10px_34px_-14px_rgba(126,217,87,0.8)] transition-all hover:bg-[#92e36f] " +
+        "h-11 w-full rounded-lg bg-[#4C8DFF] text-[14px] font-semibold text-[#0d1015] " +
+        "shadow-[0_10px_34px_-14px_rgba(76,141,255,0.8)] transition-all hover:bg-[#6FA5FF] " +
         "disabled:opacity-70 " +
         (className ?? "")
       }
@@ -791,45 +791,64 @@ function CopyRow({ text, prefix = "$ " }: { text: string; prefix?: string }) {
           () => toast.error("Could not copy"),
         );
       }}
-      className="group flex w-full items-center justify-between gap-3 rounded-lg border border-[#dfdfd6]/[0.08] bg-[#0d1015] px-3.5 py-2.5 text-left transition-colors hover:border-[#7ed957]/30"
+      className="group flex w-full items-center justify-between gap-3 rounded-lg border border-[#dfdfd6]/[0.08] bg-[#0d1015] px-3.5 py-2.5 text-left transition-colors hover:border-[#4C8DFF]/30"
     >
       <code className="truncate font-mono text-[12.5px] text-[#dfdfd6]/85">
-        <span className="text-[#7ed957]/70">{prefix}</span>
+        <span className="text-[#4C8DFF]/70">{prefix}</span>
         {text}
       </code>
       <span className="shrink-0 text-[#dfdfd6]/40 transition-colors group-hover:text-[#dfdfd6]/80">
-        {copied ? <Check className="h-4 w-4 text-[#7ed957]" /> : <Copy className="h-4 w-4" />}
+        {copied ? <Check className="h-4 w-4 text-[#4C8DFF]" /> : <Copy className="h-4 w-4" />}
       </span>
     </button>
   );
 }
 
-/** The real pensieve mark — phosphor-ring aperture (from the pensieve docs site). */
+/** The pensieve mark — a memory drawn up out of the basin (matches /icons/pensieve-mark.svg). */
 function PensieveMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 96 96" role="img" aria-label="pensieve" className={className}>
       <defs>
-        <radialGradient id="pensieveCore" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#0d1015" />
-          <stop offset="80%" stopColor="#0d1015" />
-          <stop offset="100%" stopColor="#11151b" />
+        <radialGradient id="pensieveCore" cx="50%" cy="58%" r="62%">
+          <stop offset="0%" stopColor="#101a30" />
+          <stop offset="65%" stopColor="#080d18" />
+          <stop offset="100%" stopColor="#050a12" />
         </radialGradient>
         <linearGradient id="pensieveRing" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#7ed957" />
-          <stop offset="60%" stopColor="#7ed957" stopOpacity="0.5" />
-          <stop offset="100%" stopColor="#7ed957" stopOpacity="0.15" />
+          <stop offset="0%" stopColor="#4C8DFF" />
+          <stop offset="55%" stopColor="#7C4DFF" stopOpacity="0.6" />
+          <stop offset="100%" stopColor="#7C4DFF" stopOpacity="0.16" />
+        </linearGradient>
+        <linearGradient id="pensieveVortex" x1="0%" y1="100%" x2="55%" y2="0%">
+          <stop offset="0%" stopColor="#BFE4FF" />
+          <stop offset="42%" stopColor="#7CB0FF" />
+          <stop offset="100%" stopColor="#7C4DFF" />
         </linearGradient>
       </defs>
       <circle cx="48" cy="48" r="44" fill="none" stroke="url(#pensieveRing)" strokeWidth="2" />
-      <circle cx="48" cy="48" r="36" fill="url(#pensieveCore)" stroke="#2a2e36" strokeWidth="1" />
-      <circle cx="48" cy="48" r="36" fill="none" stroke="#7ed957" strokeWidth="0.5" opacity="0.4" />
-      <g stroke="#e8e6e0" strokeWidth="3.5" strokeLinecap="round" fill="none">
-        <line x1="34" y1="32" x2="34" y2="64" />
-        <line x1="34" y1="48" x2="58" y2="34" />
-        <line x1="34" y1="48" x2="58" y2="62" />
-      </g>
-      <circle cx="58" cy="34" r="2.5" fill="#7ed957" />
-      <circle cx="58" cy="62" r="2.5" fill="#7ed957" />
+      <circle cx="48" cy="48" r="36" fill="url(#pensieveCore)" stroke="#1d2740" strokeWidth="1" />
+      <ellipse cx="48" cy="66" rx="20" ry="5.5" fill="none" stroke="#4C8DFF" strokeWidth="3.2" />
+      <path
+        d="M28 66 Q48 81 68 66"
+        fill="none"
+        stroke="#4C8DFF"
+        strokeWidth="3.2"
+        strokeLinecap="round"
+      />
+      <path
+        fill="none"
+        stroke="url(#pensieveVortex)"
+        strokeWidth="3.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M 48.0 60.3 L 47.5 60.2 L 44.9 59.2 L 42.7 58.1 L 40.8 56.9 L 39.3 55.5
+           L 38.2 54.0 L 37.6 52.5 L 37.5 51.0 L 37.8 49.5 L 38.5 48.1 L 39.5 46.7
+           L 40.9 45.4 L 42.4 44.2 L 44.1 43.1 L 45.9 42.1 L 47.7 41.2 L 49.4 40.5
+           L 50.9 39.8 L 52.2 39.2 L 53.2 38.7 L 54.0 38.2 L 54.5 37.8 L 54.6 37.3
+           L 54.5 36.8 L 54.1 36.3 L 53.5 35.8 L 52.7 35.1 L 51.8 34.4 L 50.7 33.7
+           L 49.6 32.8 L 48.6 31.9 L 47.6 30.9 L 46.7 29.8 L 45.9 28.7 L 45.3 27.6
+           L 44.9 26.4 L 44.6 25.2 L 44.6 24.0 L 44.6 22.8 L 44.9 21.6 L 45.1 20.7"
+      />
     </svg>
   );
 }
@@ -837,7 +856,7 @@ function PensieveMark({ className }: { className?: string }) {
 function Aurora() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="pv-blob absolute -left-1/4 top-[-12%] h-[58%] w-[70%] rounded-full bg-[#7ed957]/[0.14] blur-[100px]" />
+      <div className="pv-blob absolute -left-1/4 top-[-12%] h-[58%] w-[70%] rounded-full bg-[#4C8DFF]/[0.14] blur-[100px]" />
       <div
         className="pv-blob absolute right-[-18%] top-[24%] h-[52%] w-[58%] rounded-full bg-[#34d399]/[0.10] blur-[100px]"
         style={{ animationDelay: "-7s", animationDuration: "28s" }}
@@ -859,13 +878,13 @@ function WizardStyles() {
       .pv-rise { animation: pv-rise 0.6s cubic-bezier(0.22,1,0.36,1) both; }
       @keyframes pv-blob { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(6%,4%) scale(1.12); } 66% { transform: translate(-5%,-3%) scale(0.95); } }
       .pv-blob { animation: pv-blob 24s ease-in-out infinite; }
-      @keyframes pv-glow { 0%,100% { filter: drop-shadow(0 0 0 rgba(126,217,87,0.0)); } 50% { filter: drop-shadow(0 0 10px rgba(126,217,87,0.55)); } }
+      @keyframes pv-glow { 0%,100% { filter: drop-shadow(0 0 0 rgba(76,141,255,0.0)); } 50% { filter: drop-shadow(0 0 10px rgba(76,141,255,0.55)); } }
       .pv-glow { animation: pv-glow 3.6s ease-in-out infinite; }
-      @keyframes pv-pulse { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(126,217,87,0.6); } 50% { opacity: 0.6; box-shadow: 0 0 8px 2px rgba(126,217,87,0.5); } }
+      @keyframes pv-pulse { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(76,141,255,0.6); } 50% { opacity: 0.6; box-shadow: 0 0 8px 2px rgba(76,141,255,0.5); } }
       .pv-pulse { animation: pv-pulse 2.2s ease-in-out infinite; }
       .pv-grid {
-        background-image: linear-gradient(rgba(126,217,87,0.10) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(126,217,87,0.10) 1px, transparent 1px);
+        background-image: linear-gradient(rgba(76,141,255,0.10) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(76,141,255,0.10) 1px, transparent 1px);
         background-size: 38px 38px;
         mask-image: radial-gradient(ellipse 70% 60% at 28% 42%, #000 25%, transparent 72%);
       }
