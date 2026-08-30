@@ -85,6 +85,7 @@ async fn dispatch_with_queue() -> (ToolDispatch, Arc<MockEmbed>) {
     );
 
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog,

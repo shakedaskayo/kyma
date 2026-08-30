@@ -250,6 +250,7 @@ async fn recv_event(rx: Option<&mut broadcast::Receiver<ConsumerActivity>>) -> E
 async fn load_backfill(deps: &Deps, tenant: &str) -> Vec<ConsumerActivity> {
     // A minimal tool ctx just for the backfill read (no bus, no federation).
     let shared = crate::agent::SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: deps.state.catalog.clone(),

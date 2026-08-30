@@ -101,6 +101,7 @@ impl AuthBackend for DbAuthBackend {
             role,
             subject,
             allowed_databases: None,
+            allowed_realms: None,
         })
     }
 }

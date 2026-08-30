@@ -84,6 +84,7 @@ impl AuthBackend for SessionAuthBackend {
                 role: Role::parse(&tp.role).unwrap_or(Role::Read),
                 subject: tp.subject,
                 allowed_databases: None,
+                allowed_realms: None,
             }),
             None => Err(AuthError::UnknownToken),
         }

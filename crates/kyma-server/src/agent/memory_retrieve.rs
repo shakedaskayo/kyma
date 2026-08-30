@@ -190,8 +190,21 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
         Err(_) => return done(Vec::new(), Vec::new(), None, started),
     };
 
+    // Realm scope enforcement (single read choke point for MCP recall/search,
+    // REST /memory/query, and unified memory mode). A restricted token's
+    // effective realms are guaranteed NON-EMPTY (requested-empty → the full
+    // allowed list, never the fail-open "all realms" of an empty
+    // `RecallFilter.realms`); a disjoint request short-circuits to zero rows.
+    let effective_realms = match crate::auth::intersect_realms(&shared.realm_scope, &req.realms) {
+        crate::auth::EffectiveRealms::Unrestricted(r)
+        | crate::auth::EffectiveRealms::Scoped(r) => r,
+        crate::auth::EffectiveRealms::Empty => {
+            return done(Vec::new(), Vec::new(), None, started);
+        }
+    };
+
     let filter = RecallFilter {
-        realms: req.realms.clone(),
+        realms: effective_realms,
         memory_type: req.memory_type.as_deref().map(MemoryType::parse),
         tags: req.tags.clone(),
         importance_min: req.importance_min,
@@ -247,7 +260,10 @@ pub async fn retrieve(shared: &SharedToolCtx, req: &RetrieveRequest) -> Retrieve
     };
     let precedent_fut = async {
         if settings.precedent.enabled {
-            find_precedent(shared, &qvec, &req.realms, &settings).await
+            // Use the realm-enforced list, not the raw request — otherwise a
+            // restricted token's precedent lookup (nearest_activity_sql is
+            // fail-open on empty) would reach every realm.
+            find_precedent(shared, &qvec, &filter.realms, &settings).await
         } else {
             None
         }
@@ -437,6 +453,13 @@ async fn graph_expand(
 
     let mut seen_seed: std::collections::HashSet<String> = frontier.iter().cloned().collect();
 
+    // Realm-restricted callers: `neighbors_sql` filters *edges* by realm, but a
+    // permitted edge can still point at a node whose own row lives in another
+    // realm, and cross-graph `LinkedResource`s live outside the realm model
+    // entirely. Fail closed — drop any materialized neighbour outside the
+    // allowed realms and emit no cross-graph resources.
+    let restricted = shared.realm_scope.is_restricted();
+
     for depth in 1..=hops {
         if frontier.is_empty() {
             break;
@@ -470,8 +493,9 @@ async fn graph_expand(
                     // Stash provenance on a placeholder; filled when materialized.
                     cands.insert(far.clone(), graph_cand(&far, &seed, &etype, depth));
                 }
-            } else {
-                // Cross-graph endpoint: a catalog resource / trace.
+            } else if !restricted {
+                // Cross-graph endpoint: a catalog resource / trace. Suppressed
+                // entirely for realm-restricted tokens (outside the realm model).
                 linked.push(LinkedResource {
                     node_id: far,
                     target_namespace: tns,
@@ -487,8 +511,29 @@ async fn graph_expand(
             let nres = execute_sql(shared, DEFAULT_DATABASE, &nsql, new_mem_ids.len().max(1)).await;
             for row in rows_of(&nres) {
                 if let Some(id) = get_str(&row, "id") {
+                    // Fail closed: a neighbour reached via a permitted edge but
+                    // whose own row is outside the allowed realms must not leak.
+                    if restricted {
+                        let node_realm = get_str(&row, "realm").unwrap_or_default();
+                        if !realms.iter().any(|r| r == &node_realm) {
+                            cands.remove(&id);
+                            continue;
+                        }
+                    }
                     if let Some(c) = cands.get_mut(&id) {
                         hydrate(c, &row);
+                    }
+                }
+            }
+            // Any placeholder neighbour that materialization did not return a
+            // row for (deleted, or filtered) — drop it too when restricted, so
+            // an un-hydrated cross-realm id can't survive as a bare candidate.
+            if restricted {
+                let returned: std::collections::HashSet<String> =
+                    rows_of(&nres).iter().filter_map(|r| get_str(r, "id")).collect();
+                for id in &new_mem_ids {
+                    if !returned.contains(id) {
+                        cands.remove(id);
                     }
                 }
             }

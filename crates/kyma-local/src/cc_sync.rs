@@ -190,6 +190,7 @@ async fn sync_project(
         .to_string();
     let (realm, project_path) = resolve_realm(slug_dir, &slug, known_paths);
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: engine.catalog.clone(),

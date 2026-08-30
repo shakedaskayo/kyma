@@ -268,6 +268,13 @@ pub fn tool_save_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     let sync = parsed.sync.unwrap_or(false);
                     let cm = create_from_save_args(parsed);
 
+                    // Realm scope: a realm-restricted token may only write to
+                    // its allowed realms (checked after the DEFAULT_REALM
+                    // default is applied).
+                    if let Some(err) = shared.check_realm_write(&cm.realm) {
+                        return Ok(err);
+                    }
+
                     // M8.4: a `procedure` memory is a generalization, riskier
                     // than a verbatim extracted fact — gate it as InduceSchema
                     // (distinct from Add's usual disposition) when HITL is on.
@@ -464,6 +471,10 @@ pub fn tool_ingest_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         .realm
                         .clone()
                         .unwrap_or_else(|| DEFAULT_REALM.to_string());
+                    // Realm scope: gate the entity + its node/edges/links.
+                    if let Some(err) = shared.check_realm_write(&realm) {
+                        return Ok(err);
+                    }
                     let kind: Option<String> = parsed
                         .kind
                         .as_deref()
@@ -895,8 +906,22 @@ pub fn tool_list_memories(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         .and_then(MemoryStatus::parse)
                         .map(|s| vec![s])
                         .unwrap_or_default();
+                    let requested_realms: Vec<String> =
+                        parsed.realm.map(|r| vec![r]).unwrap_or_default();
+                    // Realm scope: same intersection as retrieve(). A restricted
+                    // token's effective realms are non-empty (empty request →
+                    // allowed list); a disjoint request lists nothing.
+                    let effective_realms =
+                        match crate::auth::intersect_realms(&shared.realm_scope, &requested_realms) {
+                            crate::auth::EffectiveRealms::Unrestricted(r)
+                            | crate::auth::EffectiveRealms::Scoped(r) => r,
+                            crate::auth::EffectiveRealms::Empty => {
+                                // Match execute_sql's envelope shape for zero rows.
+                                return Ok(json!({ "columns": [], "rows": [], "truncated": false }));
+                            }
+                        };
                     let filter = RecallFilter {
-                        realms: parsed.realm.map(|r| vec![r]).unwrap_or_default(),
+                        realms: effective_realms,
                         memory_type: parsed.memory_type.as_deref().map(MemoryType::parse),
                         statuses,
                         tags: parsed.tags.unwrap_or_default(),
@@ -961,6 +986,10 @@ pub fn tool_link_memory_to_entity(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         .relationship_type
                         .unwrap_or_else(|| "REFERENCES".to_string());
                     let realm = parsed.realm.unwrap_or_else(|| DEFAULT_REALM.to_string());
+                    // Realm scope: gate the edge write.
+                    if let Some(err) = shared.check_realm_write(&realm) {
+                        return Ok(err);
+                    }
 
                     // HITL chokepoint: a cross-graph link is the riskier op
                     // (LinkEntityCrossRealm); a same-graph edge is RelationshipWrite.
@@ -1126,6 +1155,10 @@ pub fn tool_update_memory_status(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     row["status"] = json!(status.as_str());
                     row["updated_at"] = json!(now_rfc3339());
                     let realm = row_realm(&row);
+                    // Realm scope: gate this mutation by the fetched row's realm.
+                    if let Some(err) = shared.check_realm_write(&realm) {
+                        return Ok(err);
+                    }
 
                     if let Some(q) = shared.memory.as_ref() {
                         match q.submit_node_row(&realm, row.clone(), true).await {
@@ -1185,6 +1218,10 @@ pub fn tool_update_memory_importance(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     row["importance"] = json!(importance);
                     row["updated_at"] = json!(now_rfc3339());
                     let realm = row_realm(&row);
+                    // Realm scope: gate this mutation by the fetched row's realm.
+                    if let Some(err) = shared.check_realm_write(&realm) {
+                        return Ok(err);
+                    }
 
                     if let Some(q) = shared.memory.as_ref() {
                         match q.submit_node_row(&realm, row.clone(), true).await {
@@ -1284,9 +1321,14 @@ pub fn tool_merge_memories(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         // Archive the source (new version). fetch_latest_node
                         // barriers internally so queued versions are observed.
                         if let Ok(mut row) = fetch_latest_node(&shared, &from_id).await {
+                            let realm = row_realm(&row);
+                            // Realm scope: never archive a source outside the
+                            // token's realms (checked before any mutation).
+                            if let Some(err) = shared.check_realm_write(&realm) {
+                                return Ok(err);
+                            }
                             row["status"] = json!("archived");
                             row["updated_at"] = json!(now);
-                            let realm = row_realm(&row);
                             match (&q, &writer) {
                                 (Some(q), _) => {
                                     let _ = q.submit_node_row(&realm, row, true).await;
@@ -1362,6 +1404,19 @@ pub fn tool_memory_compare(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     };
                     let a = fetch_latest_node(&shared, &node_id_of(&parsed.memory_id)).await;
                     let b = fetch_latest_node(&shared, &node_id_of(&parsed.other_id)).await;
+                    // Realm scope: don't reveal a memory in a realm the token
+                    // can't reach. Deny if either row is out of scope.
+                    if shared.realm_scope.is_restricted() {
+                        for row in [a.as_ref().ok(), b.as_ref().ok()].into_iter().flatten() {
+                            let r = row_realm(row);
+                            if !shared.realm_scope.allows(&r) {
+                                return Ok(json!({
+                                    "error": format!("token not scoped to realm `{r}`"),
+                                    "code": "realm_forbidden",
+                                }));
+                            }
+                        }
+                    }
                     Ok(json!({
                         "a": a.ok(),
                         "b": b.ok(),
@@ -1466,6 +1521,11 @@ pub fn tool_memory_judge(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         .and_then(Value::as_str)
                         .unwrap_or(DEFAULT_REALM)
                         .to_string();
+                    // Realm scope: every judge verdict writes node/edge rows in
+                    // the target memory's realm — gate on it.
+                    if let Some(err) = shared.check_realm_write(&realm) {
+                        return Ok(err);
+                    }
                     let queued = q.is_some();
 
                     // HITL chokepoint: supersede invalidates the target (by an
@@ -1615,6 +1675,10 @@ pub fn tool_memory_session_summary(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     cm.title = Some("Session summary".to_string());
                     cm.memory_type = MemoryType::Summary;
                     cm.realm = parsed.realm.unwrap_or_else(|| DEFAULT_REALM.to_string());
+                    // Realm scope: gate the summary write.
+                    if let Some(err) = shared.check_realm_write(&cm.realm) {
+                        return Ok(err);
+                    }
                     cm.importance = 0.6;
                     cm.tags = vec!["session-summary".to_string()];
                     super::identity::stamp_provenance(&mut cm);
@@ -1683,6 +1747,20 @@ pub fn tool_save_memories(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         .into_iter()
                         .map(create_from_save_args)
                         .collect();
+
+                    // Realm scope: reject the WHOLE batch (atomic) if any entry
+                    // targets a realm outside the token's scope — naming the
+                    // first offender — rather than partially writing.
+                    if shared.realm_scope.is_restricted() {
+                        if let Some(bad) =
+                            items.iter().find(|cm| !shared.realm_scope.allows(&cm.realm))
+                        {
+                            return Ok(json!({
+                                "error": format!("token not scoped to realm `{}`", bad.realm),
+                                "code": "realm_forbidden",
+                            }));
+                        }
+                    }
 
                     let mut ids: Vec<Value> = Vec::with_capacity(items.len());
                     let mut errors: Vec<String> = Vec::new();
@@ -1788,7 +1866,17 @@ pub fn tool_flush_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
-                    let realms = parsed.realms.unwrap_or_default();
+                    let requested = parsed.realms.unwrap_or_default();
+                    // Realm scope: a restricted token may only barrier its own
+                    // realms. Empty request → the allowed list (never the
+                    // all-realms empty slice); disjoint → nothing to flush.
+                    let realms = match crate::auth::intersect_realms(&shared.realm_scope, &requested) {
+                        crate::auth::EffectiveRealms::Unrestricted(r)
+                        | crate::auth::EffectiveRealms::Scoped(r) => r,
+                        crate::auth::EffectiveRealms::Empty => {
+                            return Ok(json!({"flushed": true}));
+                        }
+                    };
                     let flushed = match shared.memory.as_ref() {
                         Some(q) => q.barrier(&realms).await,
                         None => true, // synchronous mode: writes are always committed
@@ -1934,6 +2022,11 @@ pub fn tool_reinforce_memory(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(row) => row_realm(&row),
                         Err(_) => DEFAULT_REALM.to_string(),
                     };
+                    // Realm scope: reinforcement mutates usage counters for the
+                    // memory — gate by its realm.
+                    if let Some(err) = shared.check_realm_write(&realm) {
+                        return Ok(err);
+                    }
                     if let Some(reason) = parsed.reason.as_deref() {
                         tracing::debug!(memory_id = %node_id, outcome = %parsed.outcome, reason, "reinforce_memory");
                     }
@@ -1988,6 +2081,26 @@ pub fn tool_list_memory_usage(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                     let Some(store) = shared.usage_store() else {
                         return Ok(json!({"memories": []}));
                     };
+                    // Realm scope: `list_unreinforced` filters by at most one
+                    // realm, so a restricted token must name an allowed realm —
+                    // an unscoped call would span every realm.
+                    if shared.realm_scope.is_restricted() {
+                        match parsed.realm.as_deref() {
+                            Some(r) if shared.realm_scope.allows(r) => {}
+                            Some(r) => {
+                                return Ok(json!({
+                                    "error": format!("token not scoped to realm `{r}`"),
+                                    "code": "realm_forbidden",
+                                }));
+                            }
+                            None => {
+                                return Ok(json!({
+                                    "error": "realm-scoped token must pass an explicit `realm`",
+                                    "code": "realm_required",
+                                }));
+                            }
+                        }
+                    }
                     let limit = parsed.limit.unwrap_or(50);
                     match store
                         .list_unreinforced(parsed.realm.as_deref(), limit)

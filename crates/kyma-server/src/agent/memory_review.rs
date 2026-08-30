@@ -159,6 +159,7 @@ async fn build_gate(
         source_run_id: None,
     };
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: state.catalog.clone(),

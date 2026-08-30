@@ -65,6 +65,7 @@ async fn build_writer(shared: &SharedToolCtx) -> anyhow::Result<MemoryWriter> {
 
 fn shared_from(state: &AgentState) -> SharedToolCtx {
     SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: Some(kyma_federation::runtime_from(state.credentials.clone())),
         catalog: state.catalog.clone(),

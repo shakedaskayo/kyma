@@ -18,6 +18,7 @@ async fn build_app() -> axum::Router {
     .await
     .unwrap();
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: state.catalog,
@@ -29,6 +30,7 @@ async fn build_app() -> axum::Router {
     };
     router(McpState {
         dispatch: ToolDispatch::new(shared),
+        builder: None,
         server_info: ServerInfo {
             name: "kyma".into(),
             version: "test".into(),

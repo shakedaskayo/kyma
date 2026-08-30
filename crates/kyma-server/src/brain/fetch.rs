@@ -13,6 +13,7 @@ const MAX_ROWS: usize = 1_000_000;
 
 fn shared_ctx(agent: &AgentState) -> SharedToolCtx {
     SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: agent.catalog.clone(),

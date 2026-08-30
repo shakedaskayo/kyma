@@ -101,6 +101,12 @@ pub fn tool_contribute_file(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Ok(v) => v,
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
+                    // Realm scope: gate the file-graph write. Normalize the
+                    // empty serde-default to the same "default" the impl uses.
+                    let eff_realm = if a.realm.is_empty() { "default" } else { &a.realm };
+                    if let Some(err) = shared.check_realm_write(eff_realm) {
+                        return Ok(err);
+                    }
                     match contribute_file_impl(
                         shared.catalog.clone(),
                         shared.format.clone(),
@@ -153,6 +159,14 @@ pub fn tool_describe_file(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
                     let realm = if a.realm.is_empty() { "default" } else { &a.realm };
+                    // Realm scope: file-candidate reads are single-realm; deny
+                    // an out-of-scope realm rather than reading it.
+                    if !shared.realm_scope.allows(realm) {
+                        return Ok(json!({
+                            "error": format!("token not scoped to realm `{realm}`"),
+                            "code": "realm_forbidden",
+                        }));
+                    }
                     let fid = file_candidates::file_node_id(realm, a.repo.as_deref(), &a.path);
                     let sql = format!(
                         "WITH latest AS (SELECT id, title, content, provenance, \
@@ -202,6 +216,14 @@ pub fn tool_file_neighbors(ctx: SharedToolCtx) -> Arc<dyn Tool> {
                         Err(e) => return Ok(json!({"error": format!("args: {e}")})),
                     };
                     let realm = if a.realm.is_empty() { "default" } else { &a.realm };
+                    // Realm scope: file-candidate reads are single-realm; deny
+                    // an out-of-scope realm rather than reading it.
+                    if !shared.realm_scope.allows(realm) {
+                        return Ok(json!({
+                            "error": format!("token not scoped to realm `{realm}`"),
+                            "code": "realm_forbidden",
+                        }));
+                    }
                     let fid = file_candidates::file_node_id(realm, a.repo.as_deref(), &a.path);
                     // Edges out of the file, joined to the latest version of each
                     // neighbour for its human-readable title.

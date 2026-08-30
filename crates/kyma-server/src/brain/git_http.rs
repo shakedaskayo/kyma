@@ -315,6 +315,7 @@ async fn record_push_run(
 
 fn shared_ctx(state: &BrainState) -> SharedToolCtx {
     SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: state.agent.catalog.clone(),

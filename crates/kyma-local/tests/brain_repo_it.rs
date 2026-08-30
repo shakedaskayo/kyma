@@ -57,6 +57,7 @@ fn git_ok(dir: &Path, args: &[&str]) {
 
 fn shared_ctx(catalog: &CatalogArc, format: &FormatArc) -> SharedToolCtx {
     SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog: catalog.clone(),

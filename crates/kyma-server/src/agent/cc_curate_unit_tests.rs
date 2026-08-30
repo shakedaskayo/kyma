@@ -59,6 +59,7 @@ async fn engine() -> (tempfile::TempDir, MemoryWriter, SharedToolCtx) {
     let format: Arc<dyn SegmentFormat> = Arc::new(TelemetryFormat::new(store, "kyma-test"));
     let writer = MemoryWriter::new(catalog.clone(), format.clone(), Arc::new(TestEmbed));
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         consumer_sink: None,
         federation: None,
         catalog,

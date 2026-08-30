@@ -386,6 +386,7 @@ async fn cypher_write_requires_write_role() {
         role: kyma_server::auth::Role::Read,
         subject: None,
         allowed_databases: None,
+        allowed_realms: None,
     });
     let (status, body) = run(state, req).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "read role on write, body: {body}");

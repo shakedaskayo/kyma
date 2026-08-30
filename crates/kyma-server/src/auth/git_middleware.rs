@@ -75,6 +75,7 @@ pub async fn require_git_auth_middleware(
             role: Role::Admin,
             subject: None,
             allowed_databases: None,
+            allowed_realms: None,
         }
     };
     let tenant = principal.tenant;

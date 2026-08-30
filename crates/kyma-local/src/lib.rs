@@ -263,6 +263,7 @@ fn remote_consumer_sink() -> Option<ConsumerSink> {
 fn mcp_state(engine: &Engine, memory: Option<kyma_memory::MemoryQueue>) -> McpState {
     // No Postgres pool in local mode — recall/save run over the engine.
     let shared = SharedToolCtx {
+        realm_scope: Default::default(),
         // Forward to a running serve so stdio agents appear in the live overlay.
         consumer_sink: remote_consumer_sink(),
         federation: None,
@@ -275,6 +276,7 @@ fn mcp_state(engine: &Engine, memory: Option<kyma_memory::MemoryQueue>) -> McpSt
     };
     McpState {
         dispatch: ToolDispatch::new(shared),
+        builder: None,
         server_info: ServerInfo {
             name: "kyma".into(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -513,6 +515,7 @@ pub fn build_local_app(
     // Build McpState from the same catalog + format the rest of the app uses.
     let mcp = McpState {
         dispatch: ToolDispatch::new(SharedToolCtx {
+            realm_scope: Default::default(),
             consumer_sink: Some(std::sync::Arc::new(LocalConsumerPublisher {
                 events: consumer_events.clone(),
                 tenant: kyma_core::tenant::DEFAULT_TENANT,
@@ -525,6 +528,9 @@ pub fn build_local_app(
             hitl: None,
             memory_settings_path: agent_state.memory_settings_path.clone(),
         }),
+        // Local mode has no per-request Principal — realm scoping is a
+        // deployed-server concern.
+        builder: None,
         server_info: ServerInfo {
             name: "kyma".into(),
             version: env!("CARGO_PKG_VERSION").into(),

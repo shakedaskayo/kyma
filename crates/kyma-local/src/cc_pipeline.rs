@@ -54,6 +54,7 @@ pub(crate) async fn run_pass(
     let mut curated = Vec::new();
     if opts.curate {
         let shared = SharedToolCtx {
+            realm_scope: Default::default(),
             consumer_sink: None,
             federation: None,
             catalog: engine.catalog.clone(),
