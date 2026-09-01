@@ -3,9 +3,26 @@
 many tech-stack variants (k8s, aws, gcp, datadog, github, slack, postgres,
 redis, kafka, …), services/repos/people/tables/concepts, and durable memories,
 wired with realistic relationships."""
-import re, subprocess, sys
+import os, pathlib, re, shutil, subprocess, sys
 
-PENSIEVE = "/Users/shakedaskayo/projects/agentcylabs/pensieve/target/debug/pensieve"
+# Resolve the binary rather than hardcoding one developer's absolute path:
+# the old literal pointed at a directory that no longer exists, so this
+# script could not run for anyone, including its author.
+def _find_binary() -> str:
+    if env := os.environ.get("PENSIEVE_BIN"):
+        return env
+    root = pathlib.Path(__file__).resolve().parent.parent
+    for candidate in ("target/debug/pensieve-cli", "target/release/pensieve-cli",
+                      "target/debug/pensieve", "target/release/pensieve"):
+        if (root / candidate).is_file():
+            return str(root / candidate)
+    if found := shutil.which("pensieve"):
+        return found
+    raise SystemExit(
+        "no pensieve binary found — build one (cargo build -p pensieve-cli) "
+        "or set PENSIEVE_BIN")
+
+PENSIEVE = _find_binary()
 NS = "memory/memory"
 ids = {}
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

@@ -154,7 +154,7 @@ Full design: **[Agentic Memory](https://shakedaskayo.github.io/pensieve/agent/me
 A WebGL canvas renders **every property graph from every database on one surface** — your
 repos and services *and* the memories and entities they link to.
 
-![The whole context graph at rest — 800+ nodes: the deterministic code graph from a connected repo, durable memories, and logical entities merged on one canvas with community hulls.](docs/images/graph-tour.gif)
+![The pensieve context graph — services, repos, infra, people and durable memories merged on one canvas, colour-coded by type, carrying real vendor brand marks, with community hulls and a minimap.](docs/images/graph-explorer.png)
 
 Nodes are colour-coded by type, sized by connectivity, and carry real vendor brand marks
 (GitHub, Datadog, Kubernetes, AWS, GCP, Postgres, Redis, Kafka, Slack, PagerDuty, …) plus
