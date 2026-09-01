@@ -45,7 +45,7 @@
       --store-to:   #1e293b;
       --store-fg:   #f1f5f9;
       --store-fg-2: #cbd5e1;
-      --ok:       #047857;
+      --ok:       #1F5FD6;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -64,7 +64,7 @@
         --store-to:   #0f172a;
         --store-fg:   #f1f5f9;
         --store-fg-2: #94a3b8;
-        --ok:       #34d399;
+        --ok:       #54CDF4;
       }
     }
 

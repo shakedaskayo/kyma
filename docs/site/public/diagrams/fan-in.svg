@@ -43,10 +43,10 @@
       --qry:      #6d28d9;
       --qry-from: #6d28d9;
       --qry-to:   #ddd6fe;
-      --ok:       #047857;
+      --ok:       #1F5FD6;
       --rose:     #be185d;
       --amber:    #b45309;
-      --emerald:  #047857;
+      --emerald:  #1F5FD6;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -66,10 +66,10 @@
         --qry:      #a78bfa;
         --qry-from: #a78bfa;
         --qry-to:   #4c1d95;
-        --ok:       #34d399;
+        --ok:       #54CDF4;
         --rose:     #f472b6;
         --amber:    #fbbf24;
-        --emerald:  #34d399;
+        --emerald:  #54CDF4;
       }
     }
 

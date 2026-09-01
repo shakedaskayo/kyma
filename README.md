@@ -47,6 +47,8 @@
 > **A memory store remembers what you told it. A context engine also knows your live
 > systems and how everything connects.**
 
+![How pensieve works — your sessions, your code and your systems go into the basin; Claude Code, Codex, Cursor and any MCP client draw the memories back out](docs/images/how-it-works.svg)
+
 Most memory tools give your agent *facts*. pensieve gives it the facts, the **live logs,
 traces, and code those facts are about**, and the **graph** that ties a decision to the
 service it concerns — one query surface, one MCP server. Recall *plus* live context

@@ -1,12 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" font-family="IBM Plex Sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" role="img" aria-label="pensieve fan-in — your stack and your team's memory into one context engine, out to every agent">
 <defs>
-<linearGradient id="brand" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2dd4bf"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>
-<linearGradient id="flowIn" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#38bdf8" stop-opacity="0.15"/><stop offset="1" stop-color="#2dd4bf" stop-opacity="0.85"/></linearGradient>
-<linearGradient id="flowOut" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2dd4bf" stop-opacity="0.85"/><stop offset="1" stop-color="#38bdf8" stop-opacity="0.15"/></linearGradient>
-<radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#2dd4bf" stop-opacity="0.22"/><stop offset="60%" stop-color="#2dd4bf" stop-opacity="0.06"/><stop offset="100%" stop-color="#2dd4bf" stop-opacity="0"/></radialGradient>
-<radialGradient id="kmCore" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#0d1015"/><stop offset="80%" stop-color="#0d1015"/><stop offset="100%" stop-color="#11151b"/></radialGradient>
+<linearGradient id="pvVortex" x1="0" y1="1" x2="0.55" y2="0"><stop offset="0" stop-color="#BFE4FF"/><stop offset="0.42" stop-color="#7CB0FF"/><stop offset="1" stop-color="#7C4DFF"/></linearGradient>
+<linearGradient id="brand" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4C8DFF"/><stop offset="1" stop-color="#7C4DFF"/></linearGradient>
+<linearGradient id="flowIn" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7C4DFF" stop-opacity="0.15"/><stop offset="1" stop-color="#4C8DFF" stop-opacity="0.85"/></linearGradient>
+<linearGradient id="flowOut" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4C8DFF" stop-opacity="0.85"/><stop offset="1" stop-color="#7C4DFF" stop-opacity="0.15"/></linearGradient>
+<radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#4C8DFF" stop-opacity="0.22"/><stop offset="60%" stop-color="#4C8DFF" stop-opacity="0.06"/><stop offset="100%" stop-color="#4C8DFF" stop-opacity="0"/></radialGradient>
+<radialGradient id="kmCore" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#080d18"/><stop offset="80%" stop-color="#080d18"/><stop offset="100%" stop-color="#101a30"/></radialGradient>
 <linearGradient id="kmRing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4C8DFF"/><stop offset="60%" stop-color="#4C8DFF" stop-opacity="0.5"/><stop offset="100%" stop-color="#4C8DFF" stop-opacity="0.15"/></linearGradient>
-<marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#2dd4bf"/></marker>
+<marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#4C8DFF"/></marker>
 <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="6"/></filter>
 </defs>
 <rect width="1200" height="660" fill="#0e1217"/>
@@ -22,7 +23,7 @@
 <text x="68" y="153.0" font-size="15" font-weight="600" fill="#e6edf3">Code &amp; repos</text>
 <text x="68" y="172.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">GitHub · GitLab · Bitbucket</text>
 <rect x="40" y="204" width="262" height="74" rx="13" fill="#141b24" stroke="#243140"/>
-<rect x="52" y="225.0" width="4" height="32" rx="2" fill="#38bdf8"/>
+<rect x="52" y="225.0" width="4" height="32" rx="2" fill="#7C4DFF"/>
 <text x="68" y="237.0" font-size="15" font-weight="600" fill="#e6edf3">Kubernetes &amp; cloud</text>
 <text x="68" y="256.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">K8s · AWS · GCP</text>
 <rect x="40" y="288" width="262" height="74" rx="13" fill="#141b24" stroke="#243140"/>
@@ -30,7 +31,7 @@
 <text x="68" y="321.0" font-size="15" font-weight="600" fill="#e6edf3">Observability</text>
 <text x="68" y="340.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">Datadog · Prometheus · OTel</text>
 <rect x="40" y="372" width="262" height="74" rx="13" fill="#141b24" stroke="#243140"/>
-<rect x="52" y="393.0" width="4" height="32" rx="2" fill="#34d399"/>
+<rect x="52" y="393.0" width="4" height="32" rx="2" fill="#54CDF4"/>
 <text x="68" y="405.0" font-size="15" font-weight="600" fill="#e6edf3">Data &amp; queues</text>
 <text x="68" y="424.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">Postgres · Kafka · Redis</text>
 <rect x="40" y="456" width="262" height="74" rx="13" fill="#141b24" stroke="#243140"/>
@@ -42,11 +43,11 @@
 <text x="68" y="573.0" font-size="15" font-weight="600" fill="#e6edf3">Apps &amp; signals</text>
 <text x="68" y="592.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">logs · traces · prompts</text>
 <rect x="900" y="154" width="262" height="96" rx="13" fill="#141b24" stroke="#243140"/>
-<rect x="912" y="186.0" width="4" height="32" rx="2" fill="#2dd4bf"/>
+<rect x="912" y="186.0" width="4" height="32" rx="2" fill="#4C8DFF"/>
 <text x="928" y="198.0" font-size="15" font-weight="600" fill="#e6edf3">Coding agents</text>
 <text x="928" y="217.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">Claude Code · Cursor · MCP</text>
 <rect x="900" y="268" width="262" height="96" rx="13" fill="#141b24" stroke="#243140"/>
-<rect x="912" y="300.0" width="4" height="32" rx="2" fill="#38bdf8"/>
+<rect x="912" y="300.0" width="4" height="32" rx="2" fill="#7C4DFF"/>
 <text x="928" y="312.0" font-size="15" font-weight="600" fill="#e6edf3">SRE / on-call</text>
 <text x="928" y="331.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">incidents · RCA · runbooks</text>
 <rect x="900" y="382" width="262" height="96" rx="13" fill="#141b24" stroke="#243140"/>
@@ -54,47 +55,46 @@
 <text x="928" y="426.0" font-size="15" font-weight="600" fill="#e6edf3">Security &amp; audit</text>
 <text x="928" y="445.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">access · anomalies · trails</text>
 <rect x="900" y="496" width="262" height="96" rx="13" fill="#141b24" stroke="#243140"/>
-<rect x="912" y="528.0" width="4" height="32" rx="2" fill="#34d399"/>
+<rect x="912" y="528.0" width="4" height="32" rx="2" fill="#54CDF4"/>
 <text x="928" y="540.0" font-size="15" font-weight="600" fill="#e6edf3">Product &amp; analytics</text>
 <text x="928" y="559.0" font-size="11" font-family="JetBrains Mono, ui-monospace, monospace" fill="#8da2b6">metrics · trends · usage</text>
-<path d="M 302 157.0 C 382.0 157.0 382.0 332.0 462 332.0" fill="none" stroke="#2dd4bf" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 302 157.0 C 382.0 157.0 382.0 332.0 462 332.0" fill="none" stroke="#4C8DFF" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
 <path d="M 302 157.0 C 382.0 157.0 382.0 332.0 462 332.0" fill="none" stroke="url(#flowIn)" stroke-width="2" marker-end="url(#arr)"/>
-<path d="M 302 241.0 C 382.0 241.0 382.0 332.0 462 332.0" fill="none" stroke="#2dd4bf" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 302 241.0 C 382.0 241.0 382.0 332.0 462 332.0" fill="none" stroke="#4C8DFF" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
 <path d="M 302 241.0 C 382.0 241.0 382.0 332.0 462 332.0" fill="none" stroke="url(#flowIn)" stroke-width="2" marker-end="url(#arr)"/>
-<path d="M 302 325.0 C 382.0 325.0 382.0 332.0 462 332.0" fill="none" stroke="#2dd4bf" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 302 325.0 C 382.0 325.0 382.0 332.0 462 332.0" fill="none" stroke="#4C8DFF" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
 <path d="M 302 325.0 C 382.0 325.0 382.0 332.0 462 332.0" fill="none" stroke="url(#flowIn)" stroke-width="2" marker-end="url(#arr)"/>
-<path d="M 302 409.0 C 382.0 409.0 382.0 332.0 462 332.0" fill="none" stroke="#2dd4bf" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 302 409.0 C 382.0 409.0 382.0 332.0 462 332.0" fill="none" stroke="#4C8DFF" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
 <path d="M 302 409.0 C 382.0 409.0 382.0 332.0 462 332.0" fill="none" stroke="url(#flowIn)" stroke-width="2" marker-end="url(#arr)"/>
-<path d="M 302 493.0 C 382.0 493.0 382.0 332.0 462 332.0" fill="none" stroke="#2dd4bf" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 302 493.0 C 382.0 493.0 382.0 332.0 462 332.0" fill="none" stroke="#4C8DFF" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
 <path d="M 302 493.0 C 382.0 493.0 382.0 332.0 462 332.0" fill="none" stroke="url(#flowIn)" stroke-width="2" marker-end="url(#arr)"/>
-<path d="M 302 577.0 C 382.0 577.0 382.0 332.0 462 332.0" fill="none" stroke="#2dd4bf" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 302 577.0 C 382.0 577.0 382.0 332.0 462 332.0" fill="none" stroke="#4C8DFF" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
 <path d="M 302 577.0 C 382.0 577.0 382.0 332.0 462 332.0" fill="none" stroke="url(#flowIn)" stroke-width="2" marker-end="url(#arr)"/>
-<path d="M 738 332.0 C 819.0 332.0 819.0 202.0 900 202.0" fill="none" stroke="#38bdf8" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 738 332.0 C 819.0 332.0 819.0 202.0 900 202.0" fill="none" stroke="#7C4DFF" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
 <path d="M 738 332.0 C 819.0 332.0 819.0 202.0 900 202.0" fill="none" stroke="url(#flowOut)" stroke-width="2" marker-end="url(#arr)"/>
-<path d="M 738 332.0 C 819.0 332.0 819.0 316.0 900 316.0" fill="none" stroke="#38bdf8" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 738 332.0 C 819.0 332.0 819.0 316.0 900 316.0" fill="none" stroke="#7C4DFF" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
 <path d="M 738 332.0 C 819.0 332.0 819.0 316.0 900 316.0" fill="none" stroke="url(#flowOut)" stroke-width="2" marker-end="url(#arr)"/>
-<path d="M 738 332.0 C 819.0 332.0 819.0 430.0 900 430.0" fill="none" stroke="#38bdf8" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 738 332.0 C 819.0 332.0 819.0 430.0 900 430.0" fill="none" stroke="#7C4DFF" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
 <path d="M 738 332.0 C 819.0 332.0 819.0 430.0 900 430.0" fill="none" stroke="url(#flowOut)" stroke-width="2" marker-end="url(#arr)"/>
-<path d="M 738 332.0 C 819.0 332.0 819.0 544.0 900 544.0" fill="none" stroke="#38bdf8" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
+<path d="M 738 332.0 C 819.0 332.0 819.0 544.0 900 544.0" fill="none" stroke="#7C4DFF" stroke-opacity="0.18" stroke-width="6" filter="url(#soft)"/>
 <path d="M 738 332.0 C 819.0 332.0 819.0 544.0 900 544.0" fill="none" stroke="url(#flowOut)" stroke-width="2" marker-end="url(#arr)"/>
-<rect x="456" y="200" width="288" height="264" rx="20" fill="#2dd4bf" opacity="0.10" filter="url(#soft)"/>
-<rect x="462" y="206" width="276" height="252" rx="18" fill="#101822" stroke="#2dd4bf" stroke-opacity="0.45"/>
+<rect x="456" y="200" width="288" height="264" rx="20" fill="#4C8DFF" opacity="0.10" filter="url(#soft)"/>
+<rect x="462" y="206" width="276" height="252" rx="18" fill="#101822" stroke="#4C8DFF" stroke-opacity="0.45"/>
 <g transform="translate(571.0 228) scale(0.6042)">
 <circle cx="48" cy="48" r="44" fill="none" stroke="url(#kmRing)" stroke-width="2"/>
-<circle cx="48" cy="48" r="36" fill="url(#kmCore)" stroke="#2a2e36" stroke-width="1"/>
-<g stroke="#e8e6e0" stroke-width="3.5" stroke-linecap="round" fill="none"><line x1="34" y1="32" x2="34" y2="64"/><line x1="34" y1="48" x2="58" y2="34"/><line x1="34" y1="48" x2="58" y2="62"/></g>
-<circle cx="58" cy="34" r="2.5" fill="#4C8DFF"/><circle cx="58" cy="62" r="2.5" fill="#4C8DFF"/>
+<circle cx="48" cy="48" r="36" fill="url(#kmCore)" stroke="#1d2740" stroke-width="1"/>
+<ellipse cx="48" cy="66" rx="20" ry="5.5" fill="none" stroke="#4C8DFF" stroke-width="3.2"/><path d="M28 66 Q48 81 68 66" fill="none" stroke="#4C8DFF" stroke-width="3.2" stroke-linecap="round"/><path d="M 48.0 60.3 L 47.5 60.2 L 44.9 59.2 L 42.7 58.1 L 40.8 56.9 L 39.3 55.5 L 38.2 54.0 L 37.6 52.5 L 37.5 51.0 L 37.8 49.5 L 38.5 48.1 L 39.5 46.7 L 40.9 45.4 L 42.4 44.2 L 44.1 43.1 L 45.9 42.1 L 47.7 41.2 L 49.4 40.5 L 50.9 39.8 L 52.2 39.2 L 53.2 38.7 L 54.0 38.2 L 54.5 37.8 L 54.6 37.3 L 54.5 36.8 L 54.1 36.3 L 53.5 35.8 L 52.7 35.1 L 51.8 34.4 L 50.7 33.7 L 49.6 32.8 L 48.6 31.9 L 47.6 30.9 L 46.7 29.8 L 45.9 28.7 L 45.3 27.6 L 44.9 26.4 L 44.6 25.2 L 44.6 24.0 L 44.6 22.8 L 44.9 21.6 L 45.1 20.7" fill="none" stroke="url(#pvVortex)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
 </g>
 <text x="600.0" y="314" text-anchor="middle" font-size="26" font-weight="700" fill="url(#brand)">pensieve</text>
 <text x="600.0" y="334" text-anchor="middle" font-size="11" letter-spacing="1.5" fill="#8da2b6">CONTEXT ENGINE</text>
 <line x1="490" y1="350" x2="710" y2="350" stroke="#243140"/>
-<circle cx="496" cy="370" r="3" fill="#2dd4bf"/>
+<circle cx="496" cy="370" r="3" fill="#4C8DFF"/>
 <text x="508" y="374" font-size="13" fill="#e6edf3">Unified knowledge graph</text>
-<circle cx="496" cy="392" r="3" fill="#2dd4bf"/>
+<circle cx="496" cy="392" r="3" fill="#4C8DFF"/>
 <text x="508" y="396" font-size="13" fill="#e6edf3">Durable agent memory</text>
-<circle cx="496" cy="414" r="3" fill="#2dd4bf"/>
+<circle cx="496" cy="414" r="3" fill="#4C8DFF"/>
 <text x="508" y="418" font-size="13" fill="#e6edf3">Live columnar data — KQL / SQL</text>
-<circle cx="496" cy="436" r="3" fill="#2dd4bf"/>
+<circle cx="496" cy="436" r="3" fill="#4C8DFF"/>
 <text x="508" y="440" font-size="13" fill="#e6edf3">One MCP server</text>
-<text x="600.0" y="488" text-anchor="middle" font-size="11.5" font-family="JetBrains Mono, ui-monospace, monospace" fill="#5d6f80"><tspan fill="#2dd4bf">in ▸</tspan> OTLP · REST · Kafka · file-drop      <tspan fill="#38bdf8">out ▸</tspan> KQL · SQL · Arrow Flight · MCP</text>
+<text x="600.0" y="488" text-anchor="middle" font-size="11.5" font-family="JetBrains Mono, ui-monospace, monospace" fill="#5d6f80"><tspan fill="#4C8DFF">in ▸</tspan> OTLP · REST · Kafka · file-drop      <tspan fill="#7C4DFF">out ▸</tspan> KQL · SQL · Arrow Flight · MCP</text>
 </svg>
