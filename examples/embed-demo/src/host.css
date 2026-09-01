@@ -1,7 +1,7 @@
 /* ── Host-app styles ──────────────────────────────────────────────────────────
  *
  * This is deliberately minimal and neutral — the goal is to prove that the
- * Kyma SDK components are isolated from host styles (no CSS leak in or out).
+ * Pensieve SDK components are isolated from host styles (no CSS leak in or out).
  *
  * We intentionally do NOT set box-sizing: content-box or other adversarial
  * overrides — the demo should model real-world embedding conditions, not

@@ -1,0 +1,34 @@
+[package]
+name = "pensieve-artifact-graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Catch-all property-graph writer that mirrors the artifacts catalog into graph nodes for object-store blobs, agent files, and fs-watch snapshots."
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-core.workspace = true
+pensieve-catalog.workspace = true
+pensieve-embed = { workspace = true, default-features = false }
+pensieve-ingest-core.workspace = true
+pensieve-storage.workspace = true
+arrow-schema.workspace = true
+chrono.workspace = true
+object_store.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+pensieve-catalog-sqlite.workspace = true
+pensieve-exec.workspace = true
+pensieve-format-tlm.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+arrow-array.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+datafusion.workspace = true
+uuid.workspace = true

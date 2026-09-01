@@ -11,9 +11,9 @@ policy** that pins the prefix to the authenticated tenant:
 ```json
 { "Version": "2012-10-17", "Statement": [
   { "Effect": "Allow", "Action": ["s3:GetObject","s3:PutObject","s3:DeleteObject"],
-    "Resource": "arn:aws:s3:::kyma-prod-extents/${tenant_id}/*" },
+    "Resource": "arn:aws:s3:::pensieve-prod-extents/${tenant_id}/*" },
   { "Effect": "Allow", "Action": "s3:ListBucket",
-    "Resource": "arn:aws:s3:::kyma-prod-extents",
+    "Resource": "arn:aws:s3:::pensieve-prod-extents",
     "Condition": { "StringLike": { "s3:prefix": "${tenant_id}/*" } } } ]}
 ```
 
@@ -25,7 +25,7 @@ engine adds A4 tenant-segmented paths as defense in depth).
 
 | Input | Purpose |
 |---|---|
-| `env` | role name suffix (`kyma-<env>-tenant-data`) |
+| `env` | role name suffix (`pensieve-<env>-tenant-data`) |
 | `bucket_arn` | extent bucket the role can access (from `s3-extent-bucket`) |
 | `gateway_principal_arn` | the only principal allowed to assume this role |
 

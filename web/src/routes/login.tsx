@@ -183,7 +183,7 @@ function Login() {
       return;
     }
     const { error } = await sb.auth.signInWithOAuth({
-      // Provider ids come from the server's KYMA_SUPABASE_PROVIDERS config.
+      // Provider ids come from the server's PENSIEVE_SUPABASE_PROVIDERS config.
       provider: provider as Parameters<typeof sb.auth.signInWithOAuth>[0]["provider"],
       options: { redirectTo: `${window.location.origin}/login` },
     });
@@ -202,8 +202,8 @@ function Login() {
         {/* Hero (large screens) */}
         <div className="hidden flex-col justify-center lg:flex">
           <div className="flex items-center gap-2.5">
-            <img src="/icons/kyma-mark.svg" alt="kyma" className="h-10 w-10" />
-            <span className="text-2xl font-semibold tracking-tight">kyma</span>
+            <img src="/icons/pensieve-mark.svg" alt="pensieve" className="h-10 w-10" />
+            <span className="text-2xl font-semibold tracking-tight">pensieve</span>
           </div>
           <h1 className="mt-7 text-3xl font-semibold tracking-tight text-foreground">
             Your data, as a living knowledge graph.
@@ -218,8 +218,8 @@ function Login() {
         <div className="mx-auto w-full max-w-sm">
           <div className="glass rounded-xl p-6 shadow-elev-3">
             <div className="mb-5 flex items-center gap-2 lg:hidden">
-              <img src="/icons/kyma-mark.svg" alt="kyma" className="h-8 w-8" />
-              <span className="text-lg font-semibold tracking-tight">kyma</span>
+              <img src="/icons/pensieve-mark.svg" alt="pensieve" className="h-8 w-8" />
+              <span className="text-lg font-semibold tracking-tight">pensieve</span>
             </div>
             <h2 className="mb-4 text-lg font-semibold tracking-tight">Sign in</h2>
 

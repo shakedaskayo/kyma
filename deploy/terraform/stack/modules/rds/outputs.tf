@@ -1,6 +1,6 @@
 output "database_url" {
   value       = "postgresql://${var.username}:${var.password}@${aws_db_instance.this.address}:5432/${var.db_name}"
-  description = "Postgres connection string for the kyma catalog."
+  description = "Postgres connection string for the pensieve catalog."
   sensitive   = true
 }
 

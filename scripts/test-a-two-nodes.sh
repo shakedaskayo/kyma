@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Architectural Test A — "run two copies"
 #
-# Spawn two kyma binaries against the same Postgres + MinIO, fire 100
+# Spawn two pensieve binaries against the same Postgres + MinIO, fire 100
 # concurrent ingest requests split between them, and verify:
 #
 #   - No data loss    (total rows in table == rows sent)
@@ -13,23 +13,23 @@
 #   (1) object storage is the only source of truth,
 #   (2) query nodes are stateless.
 #
-# A kyma node can be added or removed without coordination because all
+# A pensieve node can be added or removed without coordination because all
 # durable state lives in the catalog + object store.
 #
-# Requires: docker-compose stack up, `cargo build -p kyma-bin` done, jq + curl.
+# Requires: docker-compose stack up, `cargo build -p pensieve-bin` done, jq + curl.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-export KYMA_CATALOG_URL="postgres://kyma:kyma_dev@localhost:5433/kyma"
-export KYMA_S3_ENDPOINT="http://localhost:9000"
-export KYMA_S3_BUCKET="kyma"
-export KYMA_S3_ACCESS_KEY_ID="kyma_admin"
-export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
-export KYMA_S3_PATH_STYLE="true"
-export KYMA_S3_ALLOW_HTTP="true"
+export PENSIEVE_CATALOG_URL="postgres://pensieve:pensieve_dev@localhost:5433/pensieve"
+export PENSIEVE_S3_ENDPOINT="http://localhost:9000"
+export PENSIEVE_S3_BUCKET="pensieve"
+export PENSIEVE_S3_ACCESS_KEY_ID="pensieve_admin"
+export PENSIEVE_S3_SECRET_ACCESS_KEY="pensieve_admin_dev"
+export PENSIEVE_S3_PATH_STYLE="true"
+export PENSIEVE_S3_ALLOW_HTTP="true"
 export RUST_LOG="${RUST_LOG:-info,sqlx=warn}"
 
 # ------------------------------------------------------------------
@@ -43,8 +43,8 @@ PARALLEL=20  # concurrent curl workers
 
 NODE_A_ADDR="127.0.0.1:8080"
 NODE_B_ADDR="127.0.0.1:8081"
-LOG_A="/tmp/kyma-node-a.log"
-LOG_B="/tmp/kyma-node-b.log"
+LOG_A="/tmp/pensieve-node-a.log"
+LOG_B="/tmp/pensieve-node-b.log"
 
 PID_A=""; PID_B=""
 
@@ -79,37 +79,37 @@ trap cleanup EXIT
 # ------------------------------------------------------------------
 # Prereqs
 # ------------------------------------------------------------------
-if ! docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1; then
+if ! docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null 2>&1; then
     printf "${RED}docker-compose stack not up. Start it with 'docker-compose up -d'.${NC}\n"
     exit 2
 fi
 
 section "Reset state"
-docker exec kyma-postgres psql -U kyma -d kyma -qc "
+docker exec pensieve-postgres psql -U pensieve -d pensieve -qc "
     TRUNCATE TABLE extents, manifests, snapshots, schema_snapshots, tables, databases, nodes RESTART IDENTITY CASCADE;
 " >/dev/null 2>&1 || true
-docker exec kyma-minio mc alias set local http://localhost:9000 kyma_admin kyma_admin_dev >/dev/null 2>&1 || true
-docker exec kyma-minio mc rm --recursive --force local/kyma >/dev/null 2>&1 || true
-docker exec kyma-minio mc mb --ignore-existing local/kyma >/dev/null
+docker exec pensieve-minio mc alias set local http://localhost:9000 pensieve_admin pensieve_admin_dev >/dev/null 2>&1 || true
+docker exec pensieve-minio mc rm --recursive --force local/pensieve >/dev/null 2>&1 || true
+docker exec pensieve-minio mc mb --ignore-existing local/pensieve >/dev/null
 info "catalog + bucket reset"
 
 # ------------------------------------------------------------------
 # Bootstrap table
 # ------------------------------------------------------------------
 section "Bootstrap database + test_a table"
-./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
-./target/debug/kyma-cli create-table \
+./target/debug/pensieve-cli create-database default --if-not-exists >/dev/null
+./target/debug/pensieve-cli create-table \
     --db default --name test_a \
     --schema 'timestamp:timestamp,req_id:int,row_id:int,message:string' >/dev/null
 info "database=default, table=test_a"
 
 # ------------------------------------------------------------------
-# Start two kyma nodes
+# Start two pensieve nodes
 # ------------------------------------------------------------------
 section "Spawn node A (port 8080) + node B (port 8081)"
-KYMA_HTTP_ADDR="$NODE_A_ADDR" ./target/debug/kyma >"$LOG_A" 2>&1 &
+PENSIEVE_HTTP_ADDR="$NODE_A_ADDR" ./target/debug/pensieve >"$LOG_A" 2>&1 &
 PID_A=$!
-KYMA_HTTP_ADDR="$NODE_B_ADDR" ./target/debug/kyma >"$LOG_B" 2>&1 &
+PENSIEVE_HTTP_ADDR="$NODE_B_ADDR" ./target/debug/pensieve >"$LOG_B" 2>&1 &
 PID_B=$!
 
 wait_healthy() {
@@ -125,7 +125,7 @@ wait_healthy "$NODE_B_ADDR" || { tail -30 "$LOG_B"; fail "node B never healthy";
 info "both nodes healthy (PIDs $PID_A, $PID_B)"
 
 # Confirm both are registered in the catalog.
-node_count=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+node_count=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
     "SELECT COUNT(*) FROM nodes WHERE role='all_in_one'")
 assert_eq "2 nodes registered in catalog" "2" "$node_count"
 
@@ -227,7 +227,7 @@ assert_eq "SUM(row_id) = $EXPECTED_ROW_ID_SUM (no duplicates within request)" "$
 # Verify catalog snapshot chain
 # ------------------------------------------------------------------
 section "Verify catalog snapshot chain"
-snapshot_count=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+snapshot_count=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
     "SELECT COUNT(*) FROM snapshots WHERE table_id = (SELECT id FROM tables WHERE name='test_a')")
 # With group-commit staging, multiple ingests may roll up into a single
 # snapshot — so snapshot count is in [2, N_REQUESTS + 1].
@@ -237,7 +237,7 @@ else
     fail "snapshot chain length = $snapshot_count outside [2, $((N_REQUESTS + 1))]"
 fi
 
-extent_count=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+extent_count=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
     "SELECT COUNT(*) FROM extents WHERE table_id = (SELECT id FROM tables WHERE name='test_a') AND deleted_at IS NULL")
 if (( extent_count >= 1 && extent_count <= N_REQUESTS )); then
     ok "live extent count = $extent_count (in [1, $N_REQUESTS])"

@@ -51,7 +51,7 @@ controls how deep nested objects flatten to dotted columns.
 
 ## Nested-document flattening
 
-Top-level fields each get one inferred kyma column. Nested objects
+Top-level fields each get one inferred pensieve column. Nested objects
 flatten into dotted column names up to `scope.flatten_depth`. Anything
 deeper, or anything polymorphic, lands in `dynamic`.
 
@@ -67,8 +67,8 @@ Mongo doc:
   "tags":  ["a", "b"]
 }
 
-→ kyma columns:
-  _kyma_pk        string  "<ObjectId hex>"
+→ pensieve columns:
+  _pensieve_pk        string  "<ObjectId hex>"
   user.id         int     42
   user.email      string  "a@b.com"
   user.addr       dynamic {city: "Berlin"}    ← depth 3, lands in dynamic
@@ -82,14 +82,14 @@ homogeneous-primitive arrays is a v1.5 follow-up.
 ## Polymorphic field handling
 
 A Mongo collection can have `count` as `int` for 800 docs and then
-`string` for one. Kyma's `SchemaEvolver` notices and:
+`string` for one. Pensieve's `SchemaEvolver` notices and:
 
 1. Stops promoting that field. It stays `dynamic`.
 2. Existing typed-column data is preserved. Reads union the typed and
    dynamic copies via `coalesce(typed_col, dynamic.field)`.
 3. Future events of any type land in `dynamic`.
 
-Schema only widens — kyma never narrows, never deletes, never re-types.
+Schema only widens — pensieve never narrows, never deletes, never re-types.
 
 The default stability threshold is **100 events with one consistent
 type within a sliding window of 1000 events** (or the entire snapshot if
@@ -98,7 +98,7 @@ under 1000 docs). Tunable per-data-source via
 
 ## BSON type coercion
 
-| BSON type                                                 | kyma type                                          |
+| BSON type                                                 | pensieve type                                          |
 | --------------------------------------------------------- | -------------------------------------------------- |
 | `Int32`                                                   | `int`                                              |
 | `Int64`, `Decimal128` (when fits)                         | `long`                                             |
@@ -125,30 +125,30 @@ Two-phase pipeline per source-collection:
    `startAtOperationTime` taken **before** the snapshot read; stream the
    collection's documents in batches; on the final batch advance
    `data_source_cdc_state.phase` to `streaming` with the resume token as
-   the cursor — atomically with the kyma extent CAS.
+   the cursor — atomically with the pensieve extent CAS.
 2. **Streaming.** Open a change stream with `resumeAfter=<token>`;
    group-commit batches. Inserts/updates/deletes become rows tagged with
-   `_kyma_op`; deletes are tombstones.
+   `_pensieve_op`; deletes are tombstones.
 
 Cursor checkpoints are change-stream resume tokens, stored as opaque
 JSON in `data_source_cdc_state.checkpoint`. Reopen-from-token is the
-recovery path; the change stream replays from the token; kyma's
+recovery path; the change stream replays from the token; pensieve's
 idempotency layer dedupes any partway-through events.
 
 ## System columns on synced collections
 
-Every synced row has four extra columns kyma adds automatically:
+Every synced row has four extra columns pensieve adds automatically:
 
 | Column           | Type        | Meaning                                                  |
 | ---------------- | ----------- | -------------------------------------------------------- |
-| `_kyma_pk`       | `string`    | Stringified `_id`. Always present — `_id` is mandatory in MongoDB. |
-| `_kyma_op`       | `string`    | `'insert' \| 'update' \| 'delete'`.                      |
-| `_kyma_lsn`      | `string`    | Resume token at commit time.                             |
-| `_kyma_event_at` | `timestamp` | Wall-clock the source emitted the event.                 |
+| `_pensieve_pk`       | `string`    | Stringified `_id`. Always present — `_id` is mandatory in MongoDB. |
+| `_pensieve_op`       | `string`    | `'insert' \| 'update' \| 'delete'`.                      |
+| `_pensieve_lsn`      | `string`    | Resume token at commit time.                             |
+| `_pensieve_event_at` | `timestamp` | Wall-clock the source emitted the event.                 |
 
 Mongo collections always have `_id`, so the no-PK rejection that affects
 the SQL engines doesn't fire here. Composite or compound shard keys
-don't change `_kyma_pk` — `_id` is enough.
+don't change `_pensieve_pk` — `_id` is enough.
 
 ## Federation pushdown
 

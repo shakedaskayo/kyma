@@ -1,16 +1,16 @@
 import { test, expect, type Page } from "@playwright/test";
 
 // Run against a live server with telemetry enabled:
-//   KYMA_WEB_URL=http://localhost:8080 \
-//   KYMA_E2E_TOKEN=<token> \
+//   PENSIEVE_WEB_URL=http://localhost:8080 \
+//   PENSIEVE_E2E_TOKEN=<token> \
 //   pnpm -C web e2e e2e/traces.spec.ts
 //
-// For local-mode (no token, KYMA_AUTH_DISABLED=1):
-//   HOME=$(mktemp -d) kyma serve --addr 127.0.0.1:9091 &
-//   KYMA_WEB_URL=http://127.0.0.1:9091 pnpm -C web e2e e2e/traces.spec.ts
+// For local-mode (no token, PENSIEVE_AUTH_DISABLED=1):
+//   HOME=$(mktemp -d) pensieve serve --addr 127.0.0.1:9091 &
+//   PENSIEVE_WEB_URL=http://127.0.0.1:9091 pnpm -C web e2e e2e/traces.spec.ts
 
-const TOKEN    = process.env.KYMA_E2E_TOKEN ?? "";
-const ENDPOINT = process.env.KYMA_WEB_URL  ?? "http://localhost:8080";
+const TOKEN    = process.env.PENSIEVE_E2E_TOKEN ?? "";
+const ENDPOINT = process.env.PENSIEVE_WEB_URL  ?? "http://localhost:8080";
 
 /** Mirror the golden-path.spec.ts connect logic exactly. */
 async function connect(page: Page) {

@@ -4,7 +4,7 @@
 
 **Goal:** `GET /v1/explore/live` WebSocket: backfill via the existing search fanout, then push incremental rows the moment ingest commits — driven by an in-process rows-appended broadcast, with timer fallback, heartbeats, and a live UI mode.
 
-**Architecture:** A `tokio::broadcast` bus in `kyma-ingest-core` publishes `{database, table, rows}` after every successful commit (single publish site: `ingest_with_idempotency` returns post-commit in all three commit modes). The WS handler (kyma-server `discover::live`) authenticates via first message against the existing `AuthBackend`, runs the existing fanout for backfill, then loops: notify-event → debounce → incremental fanout over touched sources with `TimeRange{from: cursor, to: now}` → forward `rows` frames. Window cursors (`>=from`, `<to` — already how compile.rs:67-79 builds filters) make scans gap- and overlap-free. The route mounts WITHOUT auth middleware in BOTH kyma-bin and kyma-local (browsers can't set WS headers).
+**Architecture:** A `tokio::broadcast` bus in `pensieve-ingest-core` publishes `{database, table, rows}` after every successful commit (single publish site: `ingest_with_idempotency` returns post-commit in all three commit modes). The WS handler (pensieve-server `discover::live`) authenticates via first message against the existing `AuthBackend`, runs the existing fanout for backfill, then loops: notify-event → debounce → incremental fanout over touched sources with `TimeRange{from: cursor, to: now}` → forward `rows` frames. Window cursors (`>=from`, `<to` — already how compile.rs:67-79 builds filters) make scans gap- and overlap-free. The route mounts WITHOUT auth middleware in BOTH pensieve-bin and pensieve-local (browsers can't set WS headers).
 
 **Tech Stack:** axum 0.7 ws (feature must be added), tokio broadcast, existing discover fanout/compile, React + native WebSocket in the SDK.
 
@@ -13,9 +13,9 @@
 **Branch:** `feat/discover-live` off main. Commit only named paths; the repo may carry other sessions' untracked files.
 
 **Investigation ground truth (verified 2026-06-05):**
-- Commit choke-point: `WritePath::ingest_with_idempotency` (kyma-ingest-core/src/lib.rs:133-279) returns `IngestAck` only after the snapshot commit in all modes (direct lib.rs:297; staging staging.rs:~569; coordinator commit_coordinator.rs:~231 via oneshot responder). REST/Kafka/OTLP/filedrop/memory all call it.
+- Commit choke-point: `WritePath::ingest_with_idempotency` (pensieve-ingest-core/src/lib.rs:133-279) returns `IngestAck` only after the snapshot commit in all modes (direct lib.rs:297; staging staging.rs:~569; coordinator commit_coordinator.rs:~231 via oneshot responder). REST/Kafka/OTLP/filedrop/memory all call it.
 - No existing event bus. `IngestState`/`QueryState` are decoupled; only `Arc<dyn Catalog>` is shared.
-- Construction sites: kyma-local/src/lib.rs ~line 260 (QueryState) and ~290 (WritePath/IngestState); kyma-bin/src/main.rs ~257-279 (WritePath/IngestState) and ~376-384 (QueryState); auth backend built in kyma-local ~296-323 and kyma-bin ~200-244.
+- Construction sites: pensieve-local/src/lib.rs ~line 260 (QueryState) and ~290 (WritePath/IngestState); pensieve-bin/src/main.rs ~257-279 (WritePath/IngestState) and ~376-384 (QueryState); auth backend built in pensieve-local ~296-323 and pensieve-bin ~200-244.
 - `AuthBackend::authenticate(&self, token: &str) -> Result<Principal, AuthError>`; `Principal { tenant, role, subject }`; `Role::Read` ordering comparable.
 - Fanout: `run(FanoutInput, tx: mpsc::Sender<Frame>)` spawns + returns; emits Plan → per-source frames → Done. Reusable per-tick on a source subset.
 - axum workspace dep = `{ version = "0.7", features = ["macros", "http2"] }` — **"ws" feature missing, must be added** (the ws module is feature-gated; do not trust claims otherwise).
@@ -23,12 +23,12 @@
 
 ---
 
-### Task 1: Ingest event bus in kyma-ingest-core
+### Task 1: Ingest event bus in pensieve-ingest-core
 
 **Files:**
-- Create: `crates/kyma-ingest-core/src/events.rs`
-- Modify: `crates/kyma-ingest-core/src/lib.rs` (WritePath field + publish + module export)
-- Modify: `crates/kyma-local/src/lib.rs`, `crates/kyma-bin/src/main.rs` (construct bus, attach to WritePath; keep the Sender around for Task 4 mounting)
+- Create: `crates/pensieve-ingest-core/src/events.rs`
+- Modify: `crates/pensieve-ingest-core/src/lib.rs` (WritePath field + publish + module export)
+- Modify: `crates/pensieve-local/src/lib.rs`, `crates/pensieve-bin/src/main.rs` (construct bus, attach to WritePath; keep the Sender around for Task 4 mounting)
 
 - [ ] **Step 1: Failing test** in `events.rs` `#[cfg(test)]` — construct a WritePath with `.with_events(tx)` over the existing test fixtures used by lib.rs tests (read how WritePath is tested today; if only via integration, write the test at the lowest level available: e.g. a unit test that `RowsAppended` round-trips clone + a test in lib.rs's test module asserting a subscriber receives an event after a successful `ingest_with_idempotency`). If WritePath has no unit-test harness with a fake catalog/format, report it and test the publish helper in isolation instead:
 
@@ -85,9 +85,9 @@ impl IngestEvents {
 }
 ```
 
-- [ ] **Step 3: Wire into WritePath.** Add `events: Option<IngestEvents>` field + builder `pub fn with_events(mut self, events: IngestEvents) -> Self`. In `ingest_with_idempotency`, AFTER the ack is obtained (single post-commit point covering all three commit modes), publish `RowsAppended { database, table, rows }`. **Check what `ingest_with_idempotency` actually has in scope**: it takes `&TableRef` — verify whether TableRef carries the database name (read kyma-core's TableRef). If it does NOT, change the publish site to use whatever identifier the callers pass (or thread `database: &str` through — the REST handler has it; if signature change is needed across the 5 callers, do it, it's mechanical). Report which shape you found.
-- [ ] **Step 4: Construct + attach in both binaries.** kyma-local/src/lib.rs (~290): `let ingest_events = IngestEvents::new(256);` then `WritePath::new(...).with_events(ingest_events.clone())`. Same in kyma-bin/src/main.rs (~257-275, BOTH staging and non-staging arms). Keep `ingest_events` in scope for later mounting (Task 4) — for now just hold it; a TODO comment is fine. Also attach to the memory writer's WritePath ONLY if trivial (kyma-memory/src/writer.rs constructs its own) — if it needs plumbing through MemoryWriter's constructor, skip and note it (memory db is excluded from All-scope anyway).
-- [ ] **Step 5: Verify** `cargo test -p kyma-ingest-core` green; `cargo build -p kyma-cli -p kyma-bin` compiles (kyma-bin needs cmake — if the build fails on rdkafka/cmake env, `cargo check -p kyma-bin` is acceptable evidence).
+- [ ] **Step 3: Wire into WritePath.** Add `events: Option<IngestEvents>` field + builder `pub fn with_events(mut self, events: IngestEvents) -> Self`. In `ingest_with_idempotency`, AFTER the ack is obtained (single post-commit point covering all three commit modes), publish `RowsAppended { database, table, rows }`. **Check what `ingest_with_idempotency` actually has in scope**: it takes `&TableRef` — verify whether TableRef carries the database name (read pensieve-core's TableRef). If it does NOT, change the publish site to use whatever identifier the callers pass (or thread `database: &str` through — the REST handler has it; if signature change is needed across the 5 callers, do it, it's mechanical). Report which shape you found.
+- [ ] **Step 4: Construct + attach in both binaries.** pensieve-local/src/lib.rs (~290): `let ingest_events = IngestEvents::new(256);` then `WritePath::new(...).with_events(ingest_events.clone())`. Same in pensieve-bin/src/main.rs (~257-275, BOTH staging and non-staging arms). Keep `ingest_events` in scope for later mounting (Task 4) — for now just hold it; a TODO comment is fine. Also attach to the memory writer's WritePath ONLY if trivial (pensieve-memory/src/writer.rs constructs its own) — if it needs plumbing through MemoryWriter's constructor, skip and note it (memory db is excluded from All-scope anyway).
+- [ ] **Step 5: Verify** `cargo test -p pensieve-ingest-core` green; `cargo build -p pensieve-cli -p pensieve-bin` compiles (pensieve-bin needs cmake — if the build fails on rdkafka/cmake env, `cargo check -p pensieve-bin` is acceptable evidence).
 - [ ] **Step 6: Commit** the named files: `git commit -m "feat(ingest): rows-appended broadcast bus published post-commit"`.
 
 ---
@@ -95,7 +95,7 @@ impl IngestEvents {
 ### Task 2: Frame variants Live + Heartbeat (+ SDK mirror)
 
 **Files:**
-- Modify: `crates/kyma-server/src/discover/frames.rs`
+- Modify: `crates/pensieve-server/src/discover/frames.rs`
 - Modify: `web/src/sdk/discover.ts` (Frame union), `web/src/features/discover/discover-store.ts` (applyFrame), `web/src/features/discover/types.ts` (status)
 
 - [ ] **Step 1: Failing Rust test** in frames.rs:
@@ -110,7 +110,7 @@ fn live_and_heartbeat_frames_serialize() {
 }
 ```
 
-- [ ] **Step 2: Add unit variants** `Live,` and `Heartbeat,` to the Frame enum (serde tag handles them). Run `cargo test -p kyma-server --lib discover::frames` green.
+- [ ] **Step 2: Add unit variants** `Live,` and `Heartbeat,` to the Frame enum (serde tag handles them). Run `cargo test -p pensieve-server --lib discover::frames` green.
 - [ ] **Step 3: Frontend mirror.** `sdk/discover.ts`: add `| { type: "live" } | { type: "heartbeat" }` to the Frame union. `types.ts`: `DiscoverResultsState["status"]` gains `"live"`. `discover-store.ts` applyFrame: `case "live": next.status = "live"; return next;` and `case "heartbeat": return next;` (no-op, keeps types exhaustive). Add a store test: applying `{type:"live"}` after a plan sets status "live".
 - [ ] **Step 4: Verify** web typecheck + `npx vitest run src/features/discover` green. **Commit** `feat(discover): live + heartbeat frames`.
 
@@ -119,8 +119,8 @@ fn live_and_heartbeat_frames_serialize() {
 ### Task 3: WS session handler — auth, subscribe, backfill, live loop
 
 **Files:**
-- Create: `crates/kyma-server/src/discover/live.rs`
-- Modify: `crates/kyma-server/src/discover/mod.rs` (`pub mod live;`)
+- Create: `crates/pensieve-server/src/discover/live.rs`
+- Modify: `crates/pensieve-server/src/discover/mod.rs` (`pub mod live;`)
 - Modify: root `Cargo.toml` axum workspace dep: add `"ws"` to features
 - Test: unit tests inside live.rs for the pure pieces; WS integration test comes in Task 4
 
@@ -132,7 +132,7 @@ fn live_and_heartbeat_frames_serialize() {
 pub fn explore_live_router(
     state: crate::QueryState,
     backend: std::sync::Arc<dyn crate::auth::AuthBackend>,
-    events: Option<kyma_ingest_core::events::IngestEvents>,
+    events: Option<pensieve_ingest_core::events::IngestEvents>,
 ) -> axum::Router {
     use axum::routing::get;
     let shared = LiveDeps { state, backend, events };
@@ -146,7 +146,7 @@ pub fn explore_live_router(
 }
 ```
 
-(kyma-server must gain a dependency on kyma-ingest-core if it doesn't have one — check Cargo.toml; if adding it is heavy/cyclic, define the event types in a crate both already depend on (kyma-core) instead, and adjust Task 1 — report which you did.)
+(pensieve-server must gain a dependency on pensieve-ingest-core if it doesn't have one — check Cargo.toml; if adding it is heavy/cyclic, define the event types in a crate both already depend on (pensieve-core) instead, and adjust Task 1 — report which you did.)
 
 - [ ] **Step 2: Session control messages** (serde):
 
@@ -220,7 +220,7 @@ Key correctness details to honor:
 - `let _ = ws.send(...)` failures → return (client gone).
 
 - [ ] **Step 4: Pure-logic unit tests** in live.rs: (a) ClientMsg deserialization for all 5 message types; (b) the window math: consecutive `[from,to)` windows from a monotonic clock never overlap (test the small `next_window(cursor, now)` helper you extract); (c) touched-set intersection: events for sources outside the resolved set are ignored. Keep the session loop itself for the integration test (Task 4).
-- [ ] **Step 5: Verify** `cargo test -p kyma-server --lib discover` green; `cargo build -p kyma-cli` (root Cargo.toml change: axum features now `["macros", "http2", "ws"]`).
+- [ ] **Step 5: Verify** `cargo test -p pensieve-server --lib discover` green; `cargo build -p pensieve-cli` (root Cargo.toml change: axum features now `["macros", "http2", "ws"]`).
 - [ ] **Step 6: Commit** `feat(discover): live WebSocket session (auth, backfill, notify-driven tail)`.
 
 ---
@@ -228,12 +228,12 @@ Key correctness details to honor:
 ### Task 4: Mount in both deployments + capabilities + integration test
 
 **Files:**
-- Modify: `crates/kyma-local/src/lib.rs` (merge `explore_live_router` WITHOUT auth layer; pass the Task-1 `ingest_events`)
-- Modify: `crates/kyma-bin/src/main.rs` (same, in the final merge block ~634-649)
-- Modify: `crates/kyma-server/src/capabilities.rs` (`explore_live: bool`, true in BOTH `SERVER` and `LOCAL` consts; check the web SDK's Capabilities type — mirror the field in `web/src/sdk/*` where capabilities are typed)
-- Test: `crates/kyma-local/tests/` or wherever kyma-local's HTTP tests live (find them) — a test that the route exists and is reachable WITHOUT auth: plain GET (no upgrade headers) to `/v1/explore/live` must NOT return 401/404/405 (axum ws responds 426 or 400 to non-upgrade GETs — assert one of those, pinning "mounted + public"). Add tokio-tungstenite as a dev-dependency ONLY if you also write a full upgrade test (optional; the reachability test is the required gate — it prevents the dashboards-405 class of bug).
+- Modify: `crates/pensieve-local/src/lib.rs` (merge `explore_live_router` WITHOUT auth layer; pass the Task-1 `ingest_events`)
+- Modify: `crates/pensieve-bin/src/main.rs` (same, in the final merge block ~634-649)
+- Modify: `crates/pensieve-server/src/capabilities.rs` (`explore_live: bool`, true in BOTH `SERVER` and `LOCAL` consts; check the web SDK's Capabilities type — mirror the field in `web/src/sdk/*` where capabilities are typed)
+- Test: `crates/pensieve-local/tests/` or wherever pensieve-local's HTTP tests live (find them) — a test that the route exists and is reachable WITHOUT auth: plain GET (no upgrade headers) to `/v1/explore/live` must NOT return 401/404/405 (axum ws responds 426 or 400 to non-upgrade GETs — assert one of those, pinning "mounted + public"). Add tokio-tungstenite as a dev-dependency ONLY if you also write a full upgrade test (optional; the reachability test is the required gate — it prevents the dashboards-405 class of bug).
 
-- [ ] Steps: failing mount test → mount in kyma-local → mount in kyma-bin → capabilities + SDK mirror → all tests green (`cargo test -p kyma-local`, `cargo test -p kyma-server --lib`, web typecheck) → commit `feat(discover): mount /v1/explore/live in local + server, capability flag`.
+- [ ] Steps: failing mount test → mount in pensieve-local → mount in pensieve-bin → capabilities + SDK mirror → all tests green (`cargo test -p pensieve-local`, `cargo test -p pensieve-server --lib`, web typecheck) → commit `feat(discover): mount /v1/explore/live in local + server, capability flag`.
 
 ---
 
@@ -281,7 +281,7 @@ URL derivation: `endpoint.replace(/^http/, "ws") + "/v1/explore/live"`. Track `l
 
 ### Task 7: End-to-end verification + docs
 
-- [ ] **Step 1:** Rebuild + restart local serve (see memory: KYMA_AUTH_TOKENS pattern, check `lsof :8080` for squatters). Hard-reload :5173/discover.
+- [ ] **Step 1:** Rebuild + restart local serve (see memory: PENSIEVE_AUTH_TOKENS pattern, check `lsof :8080` for squatters). Hard-reload :5173/discover.
 - [ ] **Step 2:** Scripted WS check (node, run from web/ where `ws` types exist — or use a browser via the user): connect, auth, subscribe `{scope: all}`, observe backfill frames then `live`; then `curl POST /v1/ingest` a row into `demo.events` and assert a `rows` frame arrives within ~1s. Save as `scripts/discover-live-smoke.mjs` (plain node, no deps — Node 22 has built-in WebSocket).
 - [ ] **Step 3:** UI eyeball with the user: toggle Live, ingest a row (`curl`), watch it appear; scroll down, ingest, see the "new events" pill.
 - [ ] **Step 4:** Commit plan doc + smoke script; merge flow per finishing-a-development-branch.

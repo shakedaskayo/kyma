@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" role="img" aria-label="kyma fan-in: one OTLP pipe in, one query language out">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" role="img" aria-label="pensieve fan-in: one OTLP pipe in, one query language out">
   <defs>
     <linearGradient id="engineBg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0"   stop-color="var(--grad-from)"/>
@@ -96,7 +96,7 @@
   </style>
 
   <!-- Hero -->
-  <text x="40" y="34" class="eyebrow">KYMA · THE ANSWER LAYER FOR PRODUCTION-AWARE AGENTS</text>
+  <text x="40" y="34" class="eyebrow">PENSIEVE · THE ANSWER LAYER FOR PRODUCTION-AWARE AGENTS</text>
   <line  x1="40" y1="46" x2="920" y2="46" class="rule"/>
   <text x="40" y="78" class="h1">One OTLP pipe in. One query language out.</text>
   <text x="40" y="102" class="sub">Every layer of your stack — services, infra, CI, data, agents — queryable in KQL or SQL at sub-second over a decade of history.</text>
@@ -149,7 +149,7 @@
   <!-- Engine card -->
   <g filter="url(#glow)">
     <rect x="340" y="152" width="280" height="342" rx="16" fill="url(#engineBg)"/>
-    <text x="480" y="210" class="brand" text-anchor="middle">kyma</text>
+    <text x="480" y="210" class="brand" text-anchor="middle">pensieve</text>
     <text x="480" y="232" class="tagline" text-anchor="middle">unified engine for agent-era observability</text>
     <line x1="380" y1="254" x2="580" y2="254" class="engineDiv"/>
     <g class="capLine" text-anchor="middle">

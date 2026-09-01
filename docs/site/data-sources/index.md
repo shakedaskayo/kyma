@@ -5,16 +5,16 @@ description: The pull-side surface — a generic DataSource trait, the shipped P
 
 # Data sources
 
-Data sources are how kyma pulls from sources that don't push to it. The
+Data sources are how pensieve pulls from sources that don't push to it. The
 trait is small, the registry is one map, and the runner is the same
 group-commit loop the OTLP and Kafka frontends use — so a data source's
 output lands on the same staging buffer, through the same snapshot CAS,
-into the same kyma extents.
+into the same pensieve extents.
 
 One framework. One reference engine in tree. Three operational-database
 engines on the way, each shipping in its own milestone.
 
-![The add-data-source catalog in the kyma UI](/screenshots/data-sources-catalog.png)
+![The add-data-source catalog in the pensieve UI](/screenshots/data-sources-catalog.png)
 *The **Add data source** catalog — code, knowledge, project, and data sources side by side. Available sources are one click to connect; the grid is engine-driven, so a new data source type appears here automatically.*
 
 <div class="feature-grid">
@@ -87,7 +87,7 @@ App-password + username (`basic`) or PAT auth.
 ### [Microsoft Fabric](/data-sources/msfabric)
 
 The first **federated** data source: Lakehouse / Warehouse tables queried
-live over the SQL analytics endpoint. Schemas cataloged in kyma, data
+live over the SQL analytics endpoint. Schemas cataloged in pensieve, data
 stays in Fabric, whole subplans (filters, joins, aggregations) pushed
 down as one T-SQL statement. Shipped today.
 
@@ -144,7 +144,7 @@ conceptual model at [Multi-source data](/concepts/multi-source-data).
 - **One write path.** Rows produced by a tick go through the same
   JSON-to-Arrow coercion, the same staging buffer, and the same snapshot
   CAS as REST/NDJSON ingest. See [Extents and snapshots](/concepts/extents-and-snapshots).
-- **One health surface.** Per-tick Prometheus metrics (`kyma_data_source_cursor_age_seconds`, `kyma_data_source_rows_ingested_total`, etc.) plus `last_error`, `last_rows_ingested`, `last_success_at` on the data source row (`GET /v1/data-sources/:id`). See [Observability](/concepts/observability).
+- **One health surface.** Per-tick Prometheus metrics (`pensieve_data_source_cursor_age_seconds`, `pensieve_data_source_rows_ingested_total`, etc.) plus `last_error`, `last_rows_ingested`, `last_success_at` on the data source row (`GET /v1/data-sources/:id`). See [Observability](/concepts/observability).
 
 ## What you get: a context graph
 
@@ -157,5 +157,5 @@ more; a Notion data source produces `Page`/`Database`/`User` nodes linked by
 traverse from a Slack message to the Jira issue it mentions to the GitHub PR
 that closed it.
 
-![The kyma context graph rendered from data source data](/screenshots/context-graph.png)
+![The pensieve context graph rendered from data source data](/screenshots/context-graph.png)
 *The **Graph** view rendering a GitHub data source's output — repositories, pull requests, issues, branches, and contributors as a navigable property graph. See [Query → Graph traversals](/query/) and the [graph concepts](/concepts/multi-source-data).*

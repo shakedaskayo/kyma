@@ -1,0 +1,31 @@
+[package]
+name = "pensieve-ingest-rest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "HTTP / NDJSON ingest frontend (axum + simd-json)."
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-core.workspace = true
+pensieve-ingest-core.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+hyper.workspace = true
+simd-json.workspace = true
+bytes.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+arrow.workspace = true
+arrow-array.workspace = true
+metrics.workspace = true
+uuid.workspace = true

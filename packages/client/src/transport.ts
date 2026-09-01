@@ -1,12 +1,12 @@
 import { errorFromResponse } from "./errors";
 
 export type GetToken = (opts?: { reason: "initial" | "expired" }) => Promise<string>;
-export type KymaAuth = { token: string } | { getToken: GetToken };
+export type PensieveAuth = { token: string } | { getToken: GetToken };
 
 export interface TransportConfig {
-  /** Kyma server URL, e.g. https://kyma.acme.internal */
+  /** Pensieve server URL, e.g. https://pensieve.acme.internal */
   endpoint: string;
-  auth: KymaAuth;
+  auth: PensieveAuth;
   /** Default database; per-request override via RequestOpts.database. */
   database?: string;
   /** Injectable for tests / non-browser runtimes. Defaults to globalThis.fetch. */
@@ -18,7 +18,7 @@ export interface RequestOpts extends Omit<RequestInit, "headers"> {
   database?: string;
 }
 
-export interface KymaTransport {
+export interface PensieveTransport {
   readonly endpoint: string;
   readonly database?: string;
   request(path: string, opts?: RequestOpts): Promise<Response>;
@@ -52,7 +52,7 @@ function shouldProactiveRefresh(tok: string | null): boolean {
   return exp - Math.floor(Date.now() / 1000) < 60;
 }
 
-export function createTransport(cfg: TransportConfig): KymaTransport {
+export function createTransport(cfg: TransportConfig): PensieveTransport {
   const base = cfg.endpoint.replace(/\/$/, "");
   const fetchImpl = cfg.fetch ?? globalThis.fetch.bind(globalThis);
 

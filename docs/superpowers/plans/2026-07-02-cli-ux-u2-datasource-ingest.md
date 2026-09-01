@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Wire the `ux` toolkit (built in U0, extended slightly here, wired into memory commands in U1 — all already merged to `main`) into kyma's data-source and ingest CLI commands in `crates/kyma-cli/src/datasource.rs`: `datasource list/add/pause/resume/trigger/remove` and `ingest status/tail`. This is the toolkit's first production use of `ux::table` and `ux::table::status_cell` (built in U0, unused ever since).
+**Goal:** Wire the `ux` toolkit (built in U0, extended slightly here, wired into memory commands in U1 — all already merged to `main`) into pensieve's data-source and ingest CLI commands in `crates/pensieve-cli/src/datasource.rs`: `datasource list/add/pause/resume/trigger/remove` and `ingest status/tail`. This is the toolkit's first production use of `ux::table` and `ux::table::status_cell` (built in U0, unused ever since).
 
-**Architecture:** One small addition to the toolkit itself (`ux::theme::ok`/`bad` — a glyph+color convenience the U1 final review recommended, since the hand-rolled `theme::success(&format!("{} ...", CHECK, ...))` shape was already repeating), then five tasks editing `crates/kyma-cli/src/datasource.rs` command-by-command. Row-building logic that's pure JSON-in/String-out gets extracted into small private helpers and unit-tested directly (matching the pattern from U1's `remember_success_line`/`entity_success_line`); the two list-style commands additionally move from manual fixed-width `println!` columns to `ux::table`.
+**Architecture:** One small addition to the toolkit itself (`ux::theme::ok`/`bad` — a glyph+color convenience the U1 final review recommended, since the hand-rolled `theme::success(&format!("{} ...", CHECK, ...))` shape was already repeating), then five tasks editing `crates/pensieve-cli/src/datasource.rs` command-by-command. Row-building logic that's pure JSON-in/String-out gets extracted into small private helpers and unit-tested directly (matching the pattern from U1's `remember_success_line`/`entity_success_line`); the two list-style commands additionally move from manual fixed-width `println!` columns to `ux::table`.
 
 **Tech Stack:** Rust. Consumes `crate::ux::{theme, table}` — `theme` gets one small addition in Task 1, `table` is consumed as-is from U0. Also uses `comfy_table::{Cell, Color}` directly (already a dependency since U0; not previously imported in `datasource.rs`). No `Cargo.toml` change.
 
@@ -12,11 +12,11 @@
 
 - Full spec: `docs/superpowers/specs/2026-07-01-cli-ux-overhaul-design.md`. This plan implements **U2 only** — `datasource list/add/pause/resume/trigger/remove` and `ingest status/tail`. U3 (everything else) and U4 (ratatui) are separate future plans.
 - **`datasource show` is explicitly OUT OF SCOPE.** It prints `serde_json::to_string_pretty` — raw, tool-friendly JSON meant for scripting/debugging. Coloring or restructuring it would work against that use case, the same reasoning that keeps `recall --json` untouched in U1.
-- **`ingest push` is explicitly OUT OF SCOPE.** Its implementation lives in `crates/kyma-cli/src/plugin.rs::ingest_push` (not `datasource.rs`), and — like `distill` before U1 restyled it — it's silent by default (`"Quiet on success unless asked for detail (hooks pipe this to /dev/null)"`, per its own comment) because Claude Code hooks invoke it. Unlike `distill`, it's a single fast POST, not a multi-second LLM call, so there's no dead-air problem a spinner would fix. Leave it alone.
+- **`ingest push` is explicitly OUT OF SCOPE.** Its implementation lives in `crates/pensieve-cli/src/plugin.rs::ingest_push` (not `datasource.rs`), and — like `distill` before U1 restyled it — it's silent by default (`"Quiet on success unless asked for detail (hooks pipe this to /dev/null)"`, per its own comment) because Claude Code hooks invoke it. Unlike `distill`, it's a single fast POST, not a multi-second LLM call, so there's no dead-air problem a spinner would fix. Leave it alone.
 - **`poll_status`** (called by `cmd_add` when `--start` is passed) is a separate function in `datasource.rs` whose source this plan's author did not inspect — its internal output is out of scope here. Do not modify it as part of any task below.
-- `kyma-cli` is a **binary crate** — internal visibility is `pub(crate)` for crate-wide items, plain (private) for file-local helpers.
-- Run tests with `cargo test -p kyma-cli --bins <filter>` (no `--lib` target exists for this crate).
-- `crates/kyma-cli/src/datasource.rs` has **no existing `#[cfg(test)] mod tests` block** and **no existing `use crate::ux;` import** — Task 2 creates both; Tasks 3-6 append to the same test module and reuse the same import.
+- `pensieve-cli` is a **binary crate** — internal visibility is `pub(crate)` for crate-wide items, plain (private) for file-local helpers.
+- Run tests with `cargo test -p pensieve-cli --bins <filter>` (no `--lib` target exists for this crate).
+- `crates/pensieve-cli/src/datasource.rs` has **no existing `#[cfg(test)] mod tests` block** and **no existing `use crate::ux;` import** — Task 2 creates both; Tasks 3-6 append to the same test module and reuse the same import.
 - No new dependency, no `Cargo.toml` change — `comfy-table` is already a direct dependency (added in U0).
 
 ---
@@ -24,7 +24,7 @@
 ### Task 1: `ux::theme` — add `ok`/`bad` glyph+semantic convenience helpers
 
 **Files:**
-- Modify: `crates/kyma-cli/src/ux/theme.rs`
+- Modify: `crates/pensieve-cli/src/ux/theme.rs`
 
 **Interfaces:**
 - Consumes: existing `success`, `error`, `CHECK`, `CROSS` in the same file.
@@ -32,7 +32,7 @@
 
 - [ ] **Step 1: Write the failing tests**
 
-At the end of the existing `#[cfg(test)] mod tests` block in `crates/kyma-cli/src/ux/theme.rs` (after the last test, `stderr_color_enabled_defaults_true_when_uninitialized`), add:
+At the end of the existing `#[cfg(test)] mod tests` block in `crates/pensieve-cli/src/ux/theme.rs` (after the last test, `stderr_color_enabled_defaults_true_when_uninitialized`), add:
 
 ```rust
 
@@ -55,12 +55,12 @@ At the end of the existing `#[cfg(test)] mod tests` block in `crates/kyma-cli/sr
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p kyma-cli --bins ux::theme::tests`
+Run: `cargo test -p pensieve-cli --bins ux::theme::tests`
 Expected: `ok_prefixes_check_glyph_and_matches_success_styling` and `bad_prefixes_cross_glyph_and_matches_error_styling` FAIL to compile (`ok`/`bad` don't exist yet — a compile-error FAIL, same as this skill's own "FAIL with 'function not defined'" example). The existing tests are unaffected.
 
 - [ ] **Step 3: Implement `ok` and `bad`**
 
-In `crates/kyma-cli/src/ux/theme.rs`, immediately after the existing `pub(crate) fn accent(text: &str) -> String { ... }` function and before the `pub(crate) const CHECK: &str = "✓";` block, add:
+In `crates/pensieve-cli/src/ux/theme.rs`, immediately after the existing `pub(crate) fn accent(text: &str) -> String { ... }` function and before the `pub(crate) const CHECK: &str = "✓";` block, add:
 
 ```rust
 pub(crate) fn ok(text: &str) -> String {
@@ -74,18 +74,18 @@ pub(crate) fn bad(text: &str) -> String {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p kyma-cli --bins ux::theme::tests`
+Run: `cargo test -p pensieve-cli --bins ux::theme::tests`
 Expected: all tests in `ux::theme::tests` PASS (the 2 new ones plus all pre-existing ones).
 
 - [ ] **Step 5: Build check**
 
-Run: `cargo build -p kyma-cli`
+Run: `cargo build -p pensieve-cli`
 Expected: builds cleanly. `ok`/`bad` will show as unused (`dead_code`) until Task 2 consumes them — expected and fine.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/kyma-cli/src/ux/theme.rs
+git add crates/pensieve-cli/src/ux/theme.rs
 git commit -m "feat(cli): add ux::theme::ok/bad glyph+semantic convenience helpers"
 ```
 
@@ -94,9 +94,9 @@ git commit -m "feat(cli): add ux::theme::ok/bad glyph+semantic convenience helpe
 ### Task 2: `datasource list` — colored table via `ux::table`
 
 **Files:**
-- Modify: `crates/kyma-cli/src/datasource.rs:19-22` (imports)
-- Modify: `crates/kyma-cli/src/datasource.rs:295-321` (`cmd_list`)
-- Create (in the same file): a new `#[cfg(test)] mod tests` block at the end of `crates/kyma-cli/src/datasource.rs`
+- Modify: `crates/pensieve-cli/src/datasource.rs:19-22` (imports)
+- Modify: `crates/pensieve-cli/src/datasource.rs:295-321` (`cmd_list`)
+- Create (in the same file): a new `#[cfg(test)] mod tests` block at the end of `crates/pensieve-cli/src/datasource.rs`
 
 **Interfaces:**
 - Consumes: `crate::ux::table::{table, status_cell}` (from U0), `comfy_table::Cell` (external crate, already a dependency).
@@ -104,7 +104,7 @@ git commit -m "feat(cli): add ux::theme::ok/bad glyph+semantic convenience helpe
 
 - [ ] **Step 1: Add imports**
 
-The current imports at the top of `crates/kyma-cli/src/datasource.rs` (lines 19-22):
+The current imports at the top of `crates/pensieve-cli/src/datasource.rs` (lines 19-22):
 
 ```rust
 use crate::client::{self, ClientConfig};
@@ -126,7 +126,7 @@ use serde_json::{json, Value};
 
 - [ ] **Step 2: Write the failing tests**
 
-At the very end of `crates/kyma-cli/src/datasource.rs` (after the last line, currently the closing `}` of `http_delete`), add:
+At the very end of `crates/pensieve-cli/src/datasource.rs` (after the last line, currently the closing `}` of `http_delete`), add:
 
 ```rust
 
@@ -138,7 +138,7 @@ mod tests {
     fn data_source_row_enabled_with_last_success() {
         let c = json!({
             "type": "github",
-            "name": "kyma",
+            "name": "pensieve",
             "enabled": true,
             "last_success_at": "2026-07-01T00:00:00Z",
         });
@@ -146,7 +146,7 @@ mod tests {
             data_source_row(&c),
             [
                 "github".to_string(),
-                "kyma".to_string(),
+                "pensieve".to_string(),
                 "enabled".to_string(),
                 "2026-07-01T00:00:00Z".to_string(),
             ]
@@ -190,7 +190,7 @@ mod tests {
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `cargo test -p kyma-cli --bins datasource::tests`
+Run: `cargo test -p pensieve-cli --bins datasource::tests`
 Expected: all 3 tests FAIL to compile (`data_source_row` doesn't exist yet).
 
 - [ ] **Step 4: Implement `data_source_row` and rewrite `cmd_list`**
@@ -281,18 +281,18 @@ fn data_source_row(c: &Value) -> [String; 4] {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cargo test -p kyma-cli --bins datasource::tests`
+Run: `cargo test -p pensieve-cli --bins datasource::tests`
 Expected: all 3 tests PASS.
 
 - [ ] **Step 6: Build check**
 
-Run: `cargo build -p kyma-cli`
+Run: `cargo build -p pensieve-cli`
 Expected: builds cleanly. `dead_code` warnings for `ux::table::{table, status_cell}` should now be GONE (first real callers).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/kyma-cli/src/datasource.rs
+git add crates/pensieve-cli/src/datasource.rs
 git commit -m "feat(cli): restyle datasource list — colored table via ux::table"
 ```
 
@@ -301,7 +301,7 @@ git commit -m "feat(cli): restyle datasource list — colored table via ux::tabl
 ### Task 3: `datasource add` — colored success line
 
 **Files:**
-- Modify: `crates/kyma-cli/src/datasource.rs` (end of `cmd_add`, currently around lines 470-484 — re-locate by searching for the exact text below, since Task 2 shifted line numbers earlier in the file)
+- Modify: `crates/pensieve-cli/src/datasource.rs` (end of `cmd_add`, currently around lines 470-484 — re-locate by searching for the exact text below, since Task 2 shifted line numbers earlier in the file)
 - Modify: the `#[cfg(test)] mod tests` block created in Task 2 (append tests)
 
 **Interfaces:**
@@ -310,21 +310,21 @@ git commit -m "feat(cli): restyle datasource list — colored table via ux::tabl
 
 - [ ] **Step 1: Write the failing test**
 
-Append to the `mod tests` block in `crates/kyma-cli/src/datasource.rs` (after `data_source_row_missing_fields_use_placeholders`'s closing `}`, still inside `mod tests { ... }`):
+Append to the `mod tests` block in `crates/pensieve-cli/src/datasource.rs` (after `data_source_row_missing_fields_use_placeholders`'s closing `}`, still inside `mod tests { ... }`):
 
 ```rust
 
     #[test]
     fn add_success_line_includes_name_kind_and_id() {
-        let line = add_success_line("kyma", "github", "abc-123");
-        assert!(line.contains("Created data source kyma (github) → id=abc-123"));
+        let line = add_success_line("pensieve", "github", "abc-123");
+        assert!(line.contains("Created data source pensieve (github) → id=abc-123"));
         assert!(line.contains(ux::theme::CHECK));
     }
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p kyma-cli --bins datasource::tests`
+Run: `cargo test -p pensieve-cli --bins datasource::tests`
 Expected: `add_success_line_includes_name_kind_and_id` FAILS to compile (`add_success_line` doesn't exist yet). The other 3 tests still PASS.
 
 - [ ] **Step 3: Implement `add_success_line` and wire it in**
@@ -338,7 +338,7 @@ Find this exact block near the end of `cmd_add` (the `println!` calls right afte
     println!("  schedule:      every {}ms", schedule_ms);
 ```
 
-Replace the first line only (leave the three `database:`/`credential:`/`schedule:` detail lines exactly as they are — plain text, matching how `kyma status`'s `Endpoint:` line also stayed plain in U1):
+Replace the first line only (leave the three `database:`/`credential:`/`schedule:` detail lines exactly as they are — plain text, matching how `pensieve status`'s `Endpoint:` line also stayed plain in U1):
 
 ```rust
     println!("{}", add_success_line(&name, kind, &id));
@@ -362,18 +362,18 @@ Note: `name` in `cmd_add` at this point is a `String` (bound via the big `match 
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p kyma-cli --bins datasource::tests`
+Run: `cargo test -p pensieve-cli --bins datasource::tests`
 Expected: all 4 tests PASS.
 
 - [ ] **Step 5: Build check**
 
-Run: `cargo build -p kyma-cli`
+Run: `cargo build -p pensieve-cli`
 Expected: builds cleanly.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/kyma-cli/src/datasource.rs
+git add crates/pensieve-cli/src/datasource.rs
 git commit -m "feat(cli): restyle datasource add — colored success line"
 ```
 
@@ -382,7 +382,7 @@ git commit -m "feat(cli): restyle datasource add — colored success line"
 ### Task 4: `datasource pause/resume/trigger` + `datasource remove` — colored messages
 
 **Files:**
-- Modify: `crates/kyma-cli/src/datasource.rs` (`cmd_simple_op` and `cmd_remove` — locate by exact text, line numbers have shifted from Tasks 2-3)
+- Modify: `crates/pensieve-cli/src/datasource.rs` (`cmd_simple_op` and `cmd_remove` — locate by exact text, line numbers have shifted from Tasks 2-3)
 - Modify: the `#[cfg(test)] mod tests` block (append tests)
 
 **Interfaces:**
@@ -417,7 +417,7 @@ Append to the `mod tests` block:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p kyma-cli --bins datasource::tests`
+Run: `cargo test -p pensieve-cli --bins datasource::tests`
 Expected: the 3 new tests FAIL to compile (`simple_op_success_line` doesn't exist yet). The other 4 tests still PASS.
 
 - [ ] **Step 3: Implement `simple_op_success_line` and update both functions**
@@ -510,18 +510,18 @@ async fn cmd_remove(cfg: &ClientConfig, name_or_id: &str, yes: bool) -> Result<(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p kyma-cli --bins datasource::tests`
+Run: `cargo test -p pensieve-cli --bins datasource::tests`
 Expected: all 7 tests PASS.
 
 - [ ] **Step 5: Build check**
 
-Run: `cargo build -p kyma-cli`
+Run: `cargo build -p pensieve-cli`
 Expected: builds cleanly.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/kyma-cli/src/datasource.rs
+git add crates/pensieve-cli/src/datasource.rs
 git commit -m "feat(cli): restyle datasource pause/resume/trigger/remove — colored messages"
 ```
 
@@ -530,8 +530,8 @@ git commit -m "feat(cli): restyle datasource pause/resume/trigger/remove — col
 ### Task 5: `ingest status` — colored table via `ux::table`
 
 **Files:**
-- Modify: `crates/kyma-cli/src/datasource.rs:19-24` (imports — extend the `comfy_table` import with `Color`)
-- Modify: `crates/kyma-cli/src/datasource.rs` (`cmd_ingest_status` — locate by exact text)
+- Modify: `crates/pensieve-cli/src/datasource.rs:19-24` (imports — extend the `comfy_table` import with `Color`)
+- Modify: `crates/pensieve-cli/src/datasource.rs` (`cmd_ingest_status` — locate by exact text)
 - Modify: the `#[cfg(test)] mod tests` block (append tests)
 
 **Interfaces:**
@@ -561,7 +561,7 @@ Append to the `mod tests` block:
     #[test]
     fn ingest_status_row_extracts_all_fields() {
         let c = json!({
-            "name": "kyma",
+            "name": "pensieve",
             "type": "github",
             "last_run_at": "t1",
             "last_success_at": "t2",
@@ -570,7 +570,7 @@ Append to the `mod tests` block:
         assert_eq!(
             ingest_status_row(&c),
             [
-                "kyma".to_string(),
+                "pensieve".to_string(),
                 "github".to_string(),
                 "t1".to_string(),
                 "t2".to_string(),
@@ -597,7 +597,7 @@ Append to the `mod tests` block:
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `cargo test -p kyma-cli --bins datasource::tests`
+Run: `cargo test -p pensieve-cli --bins datasource::tests`
 Expected: the 2 new tests FAIL to compile (`ingest_status_row` doesn't exist yet). The other 7 tests still PASS.
 
 - [ ] **Step 4: Implement `ingest_status_row` and rewrite `cmd_ingest_status`**
@@ -683,18 +683,18 @@ Note: this task changes `for c in items` to `for c in &items` (iterate by refere
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cargo test -p kyma-cli --bins datasource::tests`
+Run: `cargo test -p pensieve-cli --bins datasource::tests`
 Expected: all 9 tests PASS.
 
 - [ ] **Step 6: Build check**
 
-Run: `cargo build -p kyma-cli`
+Run: `cargo build -p pensieve-cli`
 Expected: builds cleanly.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/kyma-cli/src/datasource.rs
+git add crates/pensieve-cli/src/datasource.rs
 git commit -m "feat(cli): restyle ingest status — colored table with red LAST_ERROR"
 ```
 
@@ -703,7 +703,7 @@ git commit -m "feat(cli): restyle ingest status — colored table with red LAST_
 ### Task 6: `ingest tail` — colored streaming lines
 
 **Files:**
-- Modify: `crates/kyma-cli/src/datasource.rs` (`cmd_ingest_tail` — locate by exact text)
+- Modify: `crates/pensieve-cli/src/datasource.rs` (`cmd_ingest_tail` — locate by exact text)
 - Modify: the `#[cfg(test)] mod tests` block (append tests)
 
 **Interfaces:**
@@ -718,22 +718,22 @@ Append to the `mod tests` block:
 
     #[test]
     fn tail_line_ok_when_no_error() {
-        let line = tail_line("2026-07-01T00:00:00Z", "kyma", "");
-        assert!(line.contains("[2026-07-01T00:00:00Z] kyma: ok"));
+        let line = tail_line("2026-07-01T00:00:00Z", "pensieve", "");
+        assert!(line.contains("[2026-07-01T00:00:00Z] pensieve: ok"));
         assert!(line.contains(ux::theme::CHECK));
     }
 
     #[test]
     fn tail_line_error_includes_message() {
-        let line = tail_line("2026-07-01T00:00:00Z", "kyma", "connection refused");
-        assert!(line.contains("[2026-07-01T00:00:00Z] kyma: ERROR connection refused"));
+        let line = tail_line("2026-07-01T00:00:00Z", "pensieve", "connection refused");
+        assert!(line.contains("[2026-07-01T00:00:00Z] pensieve: ERROR connection refused"));
         assert!(line.contains(ux::theme::CROSS));
     }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p kyma-cli --bins datasource::tests`
+Run: `cargo test -p pensieve-cli --bins datasource::tests`
 Expected: the 2 new tests FAIL to compile (`tail_line` doesn't exist yet). The other 9 tests still PASS.
 
 - [ ] **Step 3: Implement `tail_line` and wire it in**
@@ -779,23 +779,23 @@ fn tail_line(lr: &str, name: &str, err: &str) -> String {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p kyma-cli --bins datasource::tests`
+Run: `cargo test -p pensieve-cli --bins datasource::tests`
 Expected: all 11 tests PASS.
 
 - [ ] **Step 5: Build check**
 
-Run: `cargo build -p kyma-cli`
+Run: `cargo build -p pensieve-cli`
 Expected: builds cleanly.
 
 - [ ] **Step 6: Run the full test suite (regression check)**
 
-Run: `cargo test -p kyma-cli --bins`
+Run: `cargo test -p pensieve-cli --bins`
 Expected: 65 passed, 0 failed (the 52 pre-existing tests from U0/U1 + 2 new `ux::theme::tests` from Task 1 + 11 new `datasource::tests` from Tasks 2-6). If the count differs, something regressed or a test was silently dropped — investigate before committing.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/kyma-cli/src/datasource.rs
+git add crates/pensieve-cli/src/datasource.rs
 git commit -m "feat(cli): restyle ingest tail — colored streaming lines"
 ```
 
@@ -803,4 +803,4 @@ git commit -m "feat(cli): restyle ingest tail — colored streaming lines"
 
 ## Post-plan note
 
-After this plan, `ux::table` and `ux::table::status_cell` gain their first real callers (dead_code warnings for them should disappear from `cargo build -p kyma-cli`'s output). Expected *remaining* dead_code warnings: `ux::format::relative_time` (still no consumer — no timestamp-listing command has been touched yet; `sessions list` in U3 is a candidate), `ux::theme::{info, accent, ARROW}` (reserved, no consumer in any phase's current scope). `datasource show`'s pretty-JSON output and `ingest push`'s hook-silent output are unchanged by design (see Global Constraints) — do not treat their continued plainness as a gap in a future review.
+After this plan, `ux::table` and `ux::table::status_cell` gain their first real callers (dead_code warnings for them should disappear from `cargo build -p pensieve-cli`'s output). Expected *remaining* dead_code warnings: `ux::format::relative_time` (still no consumer — no timestamp-listing command has been touched yet; `sessions list` in U3 is a candidate), `ux::theme::{info, accent, ARROW}` (reserved, no consumer in any phase's current scope). `datasource show`'s pretty-JSON output and `ingest push`'s hook-silent output are unchanged by design (see Global Constraints) — do not treat their continued plainness as a gap in a future review.

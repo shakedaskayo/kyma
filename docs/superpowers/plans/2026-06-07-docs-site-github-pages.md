@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Migrate the kyma docs site from Railway (`getkyma.dev`) to GitHub Pages at `https://shakedaskayo.github.io/kyma/`, end to end — build config, CI deploy workflow, reference updates, and Railway decommission.
+**Goal:** Migrate the pensieve docs site from Railway (`getpensieve.dev`) to GitHub Pages at `https://shakedaskayo.github.io/pensieve/`, end to end — build config, CI deploy workflow, reference updates, and Railway decommission.
 
-**Architecture:** VitePress gains `base: '/kyma/'`; absolute URLs that VitePress does not auto-prefix (head tags, raw HTML/Vue template refs) are fixed manually or via `withBase()`. A new `.github/workflows/docs.yml` builds the site and deploys via the official Pages Actions flow (`upload-pages-artifact` → `deploy-pages`, no `gh-pages` branch). Railway files are deleted; teardown is sequenced **last**, after the Pages deploy is verified live, so there is never an interval with no docs site.
+**Architecture:** VitePress gains `base: '/pensieve/'`; absolute URLs that VitePress does not auto-prefix (head tags, raw HTML/Vue template refs) are fixed manually or via `withBase()`. A new `.github/workflows/docs.yml` builds the site and deploys via the official Pages Actions flow (`upload-pages-artifact` → `deploy-pages`, no `gh-pages` branch). Railway files are deleted; teardown is sequenced **last**, after the Pages deploy is verified live, so there is never an interval with no docs site.
 
 **Tech Stack:** VitePress 1.6.4 (pnpm workspace member `docs/site`), GitHub Actions (`pnpm/action-setup@v4` v9, `setup-node@v4` node 24), GitHub Pages, `gh` CLI.
 
@@ -64,14 +64,14 @@ Expected: `build complete` from VitePress, exit 0. This is the pre-migration bas
 **Files:**
 - Modify: `docs/site/.vitepress/config.ts`
 
-VitePress auto-prefixes markdown links/images and `themeConfig.logo` once `base` is set — those need no edits. The `head` entries, `sitemap.hostname`, and the raw-HTML footer `<img>` are NOT auto-prefixed and are fixed here. (Verified against the installed VitePress 1.6.4: sitemap item URLs are page paths without base, so `hostname` must carry `/kyma/`.)
+VitePress auto-prefixes markdown links/images and `themeConfig.logo` once `base` is set — those need no edits. The `head` entries, `sitemap.hostname`, and the raw-HTML footer `<img>` are NOT auto-prefixed and are fixed here. (Verified against the installed VitePress 1.6.4: sitemap item URLs are page paths without base, so `hostname` must carry `/pensieve/`.)
 
 - [ ] **Step 1: Add `base` to the config**
 
 In `docs/site/.vitepress/config.ts`, change:
 
 ```ts
-  title: 'kyma',
+  title: 'pensieve',
   description: 'Production knowledge, as a query.',
   cleanUrls: true,
 ```
@@ -79,12 +79,12 @@ In `docs/site/.vitepress/config.ts`, change:
 to:
 
 ```ts
-  title: 'kyma',
+  title: 'pensieve',
   description: 'Production knowledge, as a query.',
   cleanUrls: true,
 
-  // Served from GitHub Pages at shakedaskayo.github.io/kyma/.
-  base: '/kyma/',
+  // Served from GitHub Pages at shakedaskayo.github.io/pensieve/.
+  base: '/pensieve/',
 ```
 
 - [ ] **Step 2: Update the sitemap hostname**
@@ -93,7 +93,7 @@ Change:
 
 ```ts
   sitemap: {
-    hostname: 'https://getkyma.dev',
+    hostname: 'https://getpensieve.dev',
   },
 ```
 
@@ -102,7 +102,7 @@ to:
 ```ts
   sitemap: {
     // Must include the base — VitePress sitemap URLs are page paths without it.
-    hostname: 'https://shakedaskayo.github.io/kyma/',
+    hostname: 'https://shakedaskayo.github.io/pensieve/',
   },
 ```
 
@@ -112,17 +112,17 @@ Change:
 
 ```ts
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/icons/kyma-mark.svg' }],
-    ['link', { rel: 'canonical', href: 'https://getkyma.dev/' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/icons/pensieve-mark.svg' }],
+    ['link', { rel: 'canonical', href: 'https://getpensieve.dev/' }],
     ['meta', { property: 'og:type', content: 'website' }],
-    ['meta', { property: 'og:title', content: 'kyma — production knowledge, as a query' }],
+    ['meta', { property: 'og:title', content: 'pensieve — production knowledge, as a query' }],
     ['meta', { property: 'og:description', content: 'A unified columnar query engine for every signal your stack emits. Logs, traces, metrics, plus first-class federation to Postgres, MySQL, MongoDB. Sub-second latency over a decade of history.' }],
-    ['meta', { property: 'og:url', content: 'https://getkyma.dev/' }],
-    ['meta', { property: 'og:image', content: 'https://getkyma.dev/icons/kyma-mark.svg' }],
+    ['meta', { property: 'og:url', content: 'https://getpensieve.dev/' }],
+    ['meta', { property: 'og:image', content: 'https://getpensieve.dev/icons/pensieve-mark.svg' }],
     ['meta', { name: 'twitter:card', content: 'summary' }],
-    ['meta', { name: 'twitter:title', content: 'kyma — production knowledge, as a query' }],
+    ['meta', { name: 'twitter:title', content: 'pensieve — production knowledge, as a query' }],
     ['meta', { name: 'twitter:description', content: 'One columnar query engine for every signal your stack emits. By AgentcyLabs.' }],
-    ['meta', { name: 'twitter:image', content: 'https://getkyma.dev/icons/kyma-mark.svg' }],
+    ['meta', { name: 'twitter:image', content: 'https://getpensieve.dev/icons/pensieve-mark.svg' }],
   ],
 ```
 
@@ -130,17 +130,17 @@ to (only `href`/`content` URLs change — `head` entries are not base-prefixed b
 
 ```ts
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/kyma/icons/kyma-mark.svg' }],
-    ['link', { rel: 'canonical', href: 'https://shakedaskayo.github.io/kyma/' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/pensieve/icons/pensieve-mark.svg' }],
+    ['link', { rel: 'canonical', href: 'https://shakedaskayo.github.io/pensieve/' }],
     ['meta', { property: 'og:type', content: 'website' }],
-    ['meta', { property: 'og:title', content: 'kyma — production knowledge, as a query' }],
+    ['meta', { property: 'og:title', content: 'pensieve — production knowledge, as a query' }],
     ['meta', { property: 'og:description', content: 'A unified columnar query engine for every signal your stack emits. Logs, traces, metrics, plus first-class federation to Postgres, MySQL, MongoDB. Sub-second latency over a decade of history.' }],
-    ['meta', { property: 'og:url', content: 'https://shakedaskayo.github.io/kyma/' }],
-    ['meta', { property: 'og:image', content: 'https://shakedaskayo.github.io/kyma/icons/kyma-mark.svg' }],
+    ['meta', { property: 'og:url', content: 'https://shakedaskayo.github.io/pensieve/' }],
+    ['meta', { property: 'og:image', content: 'https://shakedaskayo.github.io/pensieve/icons/pensieve-mark.svg' }],
     ['meta', { name: 'twitter:card', content: 'summary' }],
-    ['meta', { name: 'twitter:title', content: 'kyma — production knowledge, as a query' }],
+    ['meta', { name: 'twitter:title', content: 'pensieve — production knowledge, as a query' }],
     ['meta', { name: 'twitter:description', content: 'One columnar query engine for every signal your stack emits. By AgentcyLabs.' }],
-    ['meta', { name: 'twitter:image', content: 'https://shakedaskayo.github.io/kyma/icons/kyma-mark.svg' }],
+    ['meta', { name: 'twitter:image', content: 'https://shakedaskayo.github.io/pensieve/icons/pensieve-mark.svg' }],
   ],
 ```
 
@@ -149,37 +149,37 @@ to (only `href`/`content` URLs change — `head` entries are not base-prefixed b
 In `themeConfig.footer`, change:
 
 ```ts
-      message: 'An open project by <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link"><img src="/icons/brand/agentcy.svg" alt="" width="12" height="12" class="kyma-footer-mark"/> AgentcyLabs</a> · MIT licensed.',
+      message: 'An open project by <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="pensieve-footer-link"><img src="/icons/brand/agentcy.svg" alt="" width="12" height="12" class="pensieve-footer-mark"/> AgentcyLabs</a> · MIT licensed.',
 ```
 
 to:
 
 ```ts
-      message: 'An open project by <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="kyma-footer-link"><img src="/kyma/icons/brand/agentcy.svg" alt="" width="12" height="12" class="kyma-footer-mark"/> AgentcyLabs</a> · MIT licensed.',
+      message: 'An open project by <a href="https://agentcylabs.com" target="_blank" rel="noopener" class="pensieve-footer-link"><img src="/pensieve/icons/brand/agentcy.svg" alt="" width="12" height="12" class="pensieve-footer-mark"/> AgentcyLabs</a> · MIT licensed.',
 ```
 
-(`themeConfig.logo` stays `/icons/kyma-mark.svg` — the default theme runs it through `withBase`.)
+(`themeConfig.logo` stays `/icons/pensieve-mark.svg` — the default theme runs it through `withBase`.)
 
 - [ ] **Step 5: Build and assert base-prefixed output**
 
 ```bash
 pnpm -C docs/site build
-grep -c 'href="/kyma/' docs/site/.vitepress/dist/index.html
+grep -c 'href="/pensieve/' docs/site/.vitepress/dist/index.html
 grep -o 'rel="icon"[^>]*' docs/site/.vitepress/dist/index.html
 grep -o '<loc>[^<]*</loc>' docs/site/.vitepress/dist/sitemap.xml | head -3
 ```
 
 Expected:
 - build exits 0
-- `grep -c` ≥ 1 (assets now under `/kyma/`)
-- icon line contains `href="/kyma/icons/kyma-mark.svg"`
-- every `<loc>` starts `https://shakedaskayo.github.io/kyma/` with exactly one `/kyma/` segment
+- `grep -c` ≥ 1 (assets now under `/pensieve/`)
+- icon line contains `href="/pensieve/icons/pensieve-mark.svg"`
+- every `<loc>` starts `https://shakedaskayo.github.io/pensieve/` with exactly one `/pensieve/` segment
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add docs/site/.vitepress/config.ts
-git commit -m "feat(docs): serve docs site under /kyma/ base for GitHub Pages"
+git commit -m "feat(docs): serve docs site under /pensieve/ base for GitHub Pages"
 ```
 
 ---
@@ -213,23 +213,23 @@ Apply each replacement exactly (line numbers from current file; external `https:
 | Line | Old | New |
 |---|---|---|
 | 210 | `<img src="/icons/brand/agentcy.svg" alt="" width="14" height="14" aria-hidden="true" />` | `<img :src="withBase('/icons/brand/agentcy.svg')" alt="" width="14" height="14" aria-hidden="true" />` |
-| 224 | `<a href="/quickstart/five-minute-start" class="kyma-cta kyma-cta--primary">Quickstart</a>` | `<a :href="withBase('/quickstart/five-minute-start')" class="kyma-cta kyma-cta--primary">Quickstart</a>` |
-| 225 | `<a href="/agent/connect" class="kyma-cta">Connect your agent</a>` | `<a :href="withBase('/agent/connect')" class="kyma-cta">Connect your agent</a>` |
-| 226 | `<a href="/agent/memory" class="kyma-cta">Memory</a>` | `<a :href="withBase('/agent/memory')" class="kyma-cta">Memory</a>` |
-| 295 | `<img src="/icons/kyma-mark.svg" alt="kyma" />` | `<img :src="withBase('/icons/kyma-mark.svg')" alt="kyma" />` |
+| 224 | `<a href="/quickstart/five-minute-start" class="pensieve-cta pensieve-cta--primary">Quickstart</a>` | `<a :href="withBase('/quickstart/five-minute-start')" class="pensieve-cta pensieve-cta--primary">Quickstart</a>` |
+| 225 | `<a href="/agent/connect" class="pensieve-cta">Connect your agent</a>` | `<a :href="withBase('/agent/connect')" class="pensieve-cta">Connect your agent</a>` |
+| 226 | `<a href="/agent/memory" class="pensieve-cta">Memory</a>` | `<a :href="withBase('/agent/memory')" class="pensieve-cta">Memory</a>` |
+| 295 | `<img src="/icons/pensieve-mark.svg" alt="pensieve" />` | `<img :src="withBase('/icons/pensieve-mark.svg')" alt="pensieve" />` |
 | 313 | `:href="node.role === 'source' ? '/ingest/' : '/query/'"` | `:href="withBase(node.role === 'source' ? '/ingest/' : '/query/')"` |
 | 315 | `<img :src="`/icons/brand/${node.slug}.svg`" :alt="node.label" width="22" height="22" />` | `<img :src="withBase(`/icons/brand/${node.slug}.svg`)" :alt="node.label" width="22" height="22" />` |
-| 493 | `<a href="/query/kql" class="kyma-cta kyma-cta--primary">KQL reference</a>` | `<a :href="withBase('/query/kql')" class="kyma-cta kyma-cta--primary">KQL reference</a>` |
-| 494 | `<a href="/query/sql" class="kyma-cta">SQL reference</a>` | `<a :href="withBase('/query/sql')" class="kyma-cta">SQL reference</a>` |
-| 533 | `<a href="/concepts/the-pruning-cascade" class="kyma-cta">Read the deep dive →</a>` | `<a :href="withBase('/concepts/the-pruning-cascade')" class="kyma-cta">Read the deep dive →</a>` |
-| 542 | `<a class="kyma-section-card" href="/quickstart/">` | `<a class="kyma-section-card" :href="withBase('/quickstart/')">` |
-| 546 | `<a class="kyma-section-card" href="/concepts/">` | `<a class="kyma-section-card" :href="withBase('/concepts/')">` |
-| 550 | `<a class="kyma-section-card" href="/ingest/">` | `<a class="kyma-section-card" :href="withBase('/ingest/')">` |
-| 554 | `<a class="kyma-section-card" href="/query/">` | `<a class="kyma-section-card" :href="withBase('/query/')">` |
-| 558 | `<a class="kyma-section-card" href="/connectors/">` | `<a class="kyma-section-card" :href="withBase('/connectors/')">` |
-| 562 | `<a class="kyma-section-card" href="/architecture/architecture">` | `<a class="kyma-section-card" :href="withBase('/architecture/architecture')">` |
-| 566 | `<a class="kyma-section-card" href="/recipes/">` | `<a class="kyma-section-card" :href="withBase('/recipes/')">` |
-| 570 | `<a class="kyma-section-card" href="/reference/">` | `<a class="kyma-section-card" :href="withBase('/reference/')">` |
+| 493 | `<a href="/query/kql" class="pensieve-cta pensieve-cta--primary">KQL reference</a>` | `<a :href="withBase('/query/kql')" class="pensieve-cta pensieve-cta--primary">KQL reference</a>` |
+| 494 | `<a href="/query/sql" class="pensieve-cta">SQL reference</a>` | `<a :href="withBase('/query/sql')" class="pensieve-cta">SQL reference</a>` |
+| 533 | `<a href="/concepts/the-pruning-cascade" class="pensieve-cta">Read the deep dive →</a>` | `<a :href="withBase('/concepts/the-pruning-cascade')" class="pensieve-cta">Read the deep dive →</a>` |
+| 542 | `<a class="pensieve-section-card" href="/quickstart/">` | `<a class="pensieve-section-card" :href="withBase('/quickstart/')">` |
+| 546 | `<a class="pensieve-section-card" href="/concepts/">` | `<a class="pensieve-section-card" :href="withBase('/concepts/')">` |
+| 550 | `<a class="pensieve-section-card" href="/ingest/">` | `<a class="pensieve-section-card" :href="withBase('/ingest/')">` |
+| 554 | `<a class="pensieve-section-card" href="/query/">` | `<a class="pensieve-section-card" :href="withBase('/query/')">` |
+| 558 | `<a class="pensieve-section-card" href="/connectors/">` | `<a class="pensieve-section-card" :href="withBase('/connectors/')">` |
+| 562 | `<a class="pensieve-section-card" href="/architecture/architecture">` | `<a class="pensieve-section-card" :href="withBase('/architecture/architecture')">` |
+| 566 | `<a class="pensieve-section-card" href="/recipes/">` | `<a class="pensieve-section-card" :href="withBase('/recipes/')">` |
+| 570 | `<a class="pensieve-section-card" href="/reference/">` | `<a class="pensieve-section-card" :href="withBase('/reference/')">` |
 | 580 | `<img src="/icons/brand/agentcy.svg" alt="" width="16" height="16" aria-hidden="true" />` | `<img :src="withBase('/icons/brand/agentcy.svg')" alt="" width="16" height="16" aria-hidden="true" />` |
 
 - [ ] **Step 3: Build and assert no unprefixed internal URLs remain**
@@ -238,7 +238,7 @@ Apply each replacement exactly (line numbers from current file; external `https:
 pnpm -C docs/site build
 grep -c 'href="/\(quickstart\|concepts\|ingest\|query\|connectors\|agent\|deploy\|architecture\|recipes\|reference\)' docs/site/.vitepress/dist/index.html || echo "NONE"
 grep -c 'src="/icons' docs/site/.vitepress/dist/index.html || echo "NONE"
-grep -c 'href="/kyma/quickstart/' docs/site/.vitepress/dist/index.html
+grep -c 'href="/pensieve/quickstart/' docs/site/.vitepress/dist/index.html
 ```
 
 Expected:
@@ -251,7 +251,7 @@ Expected:
 pnpm -C docs/site preview
 ```
 
-Open `http://localhost:4173/kyma/` — landing renders, orbit brand icons load (no broken images), hero CTAs and section cards navigate under `/kyma/`, footer brand mark loads. Ctrl-C when done.
+Open `http://localhost:4173/pensieve/` — landing renders, orbit brand icons load (no broken images), hero CTAs and section cards navigate under `/pensieve/`, footer brand mark loads. Ctrl-C when done.
 
 - [ ] **Step 5: Commit**
 
@@ -378,13 +378,13 @@ git rm docs/site/Dockerfile docs/site/railway.toml
 In `docs/site/README.md`, change line 3:
 
 ```markdown
-The VitePress site at https://docs.kyma.<your-domain>.
+The VitePress site at https://docs.pensieve.<your-domain>.
 ```
 
 to:
 
 ```markdown
-The VitePress site at https://shakedaskayo.github.io/kyma/.
+The VitePress site at https://shakedaskayo.github.io/pensieve/.
 ```
 
 - [ ] **Step 3: Replace the "Production deployment" section**
@@ -394,7 +394,7 @@ Replace everything from the `## Production deployment` heading through the end o
 ```markdown
 ## Production deployment
 
-The site deploys to **GitHub Pages** at https://shakedaskayo.github.io/kyma/ via
+The site deploys to **GitHub Pages** at https://shakedaskayo.github.io/pensieve/ via
 `.github/workflows/docs.yml`, using the official Pages Actions flow
 (`upload-pages-artifact` → `deploy-pages`). There is no `gh-pages` branch and no
 build output in git.
@@ -408,11 +408,11 @@ build output in git.
   `docs/site/.vitepress/dist` as the Pages artifact.
 - **Deploy job:** `actions/deploy-pages` into the `github-pages` environment —
   deploy history and the live URL are on the repo's Environments page.
-- **Base path:** the site is served under `/kyma/`, set via `base` in
+- **Base path:** the site is served under `/pensieve/`, set via `base` in
   `.vitepress/config.ts`. Markdown links/images and `themeConfig` assets are
   auto-prefixed by VitePress; raw `<a href>` / `<img src>` in theme components
   must go through `withBase()` (see `Landing.vue`), and `head` entries need the
-  literal `/kyma/` prefix.
+  literal `/pensieve/` prefix.
 ```
 
 Keep `## Sections` and everything after it unchanged.
@@ -435,50 +435,50 @@ git commit -m "chore(docs): decommission Railway config; document Pages deploy"
 
 ---
 
-### Task 6: Update getkyma.dev references repo-wide
+### Task 6: Update getpensieve.dev references repo-wide
 
 **Files:**
 - Modify: `README.md`
-- Modify: `crates/kyma-cli/Cargo.toml:9-10`
+- Modify: `crates/pensieve-cli/Cargo.toml:9-10`
 - Modify: `web/index.html:12`
 
-- [ ] **Step 1: README.md — replace all 8 getkyma.dev URLs**
+- [ ] **Step 1: README.md — replace all 8 getpensieve.dev URLs**
 
 | Line | Old | New |
 |---|---|---|
-| 2 | `<a href="https://www.getkyma.dev">` | `<a href="https://shakedaskayo.github.io/kyma/">` |
-| 20 | `<a href="https://www.getkyma.dev"><img alt="Docs" src="https://img.shields.io/badge/docs-getkyma.dev-7ed957?style=flat-square" /></a>` | `<a href="https://shakedaskayo.github.io/kyma/"><img alt="Docs" src="https://img.shields.io/badge/docs-github.io%2Fkyma-7ed957?style=flat-square" /></a>` |
-| 21 | `<a href="https://www.getkyma.dev/agent/memory">` | `<a href="https://shakedaskayo.github.io/kyma/agent/memory">` |
-| 31 | `<a href="https://www.getkyma.dev/agent/memory">Memory</a> ·` | `<a href="https://shakedaskayo.github.io/kyma/agent/memory">Memory</a> ·` |
-| 32 | `<a href="https://www.getkyma.dev/connectors/">Connectors</a> ·` | `<a href="https://shakedaskayo.github.io/kyma/connectors/">Connectors</a> ·` |
-| 33 | `<a href="https://www.getkyma.dev/architecture/architecture">Architecture</a>` | `<a href="https://shakedaskayo.github.io/kyma/architecture/architecture">Architecture</a>` |
-| 204 | `See **[Agentic Memory](https://www.getkyma.dev/agent/memory)** for the full design.` | `See **[Agentic Memory](https://shakedaskayo.github.io/kyma/agent/memory)** for the full design.` |
-| 381 | `Full docs at **[getkyma.dev](https://www.getkyma.dev)**.` | `Full docs at **[shakedaskayo.github.io/kyma](https://shakedaskayo.github.io/kyma/)**.` |
+| 2 | `<a href="https://www.getpensieve.dev">` | `<a href="https://shakedaskayo.github.io/pensieve/">` |
+| 20 | `<a href="https://www.getpensieve.dev"><img alt="Docs" src="https://img.shields.io/badge/docs-getpensieve.dev-7ed957?style=flat-square" /></a>` | `<a href="https://shakedaskayo.github.io/pensieve/"><img alt="Docs" src="https://img.shields.io/badge/docs-github.io%2Fpensieve-7ed957?style=flat-square" /></a>` |
+| 21 | `<a href="https://www.getpensieve.dev/agent/memory">` | `<a href="https://shakedaskayo.github.io/pensieve/agent/memory">` |
+| 31 | `<a href="https://www.getpensieve.dev/agent/memory">Memory</a> ·` | `<a href="https://shakedaskayo.github.io/pensieve/agent/memory">Memory</a> ·` |
+| 32 | `<a href="https://www.getpensieve.dev/connectors/">Connectors</a> ·` | `<a href="https://shakedaskayo.github.io/pensieve/connectors/">Connectors</a> ·` |
+| 33 | `<a href="https://www.getpensieve.dev/architecture/architecture">Architecture</a>` | `<a href="https://shakedaskayo.github.io/pensieve/architecture/architecture">Architecture</a>` |
+| 204 | `See **[Agentic Memory](https://www.getpensieve.dev/agent/memory)** for the full design.` | `See **[Agentic Memory](https://shakedaskayo.github.io/pensieve/agent/memory)** for the full design.` |
+| 381 | `Full docs at **[getpensieve.dev](https://www.getpensieve.dev)**.` | `Full docs at **[shakedaskayo.github.io/pensieve](https://shakedaskayo.github.io/pensieve/)**.` |
 
 - [ ] **Step 2: Cargo.toml — homepage + documentation**
 
-In `crates/kyma-cli/Cargo.toml`, change:
+In `crates/pensieve-cli/Cargo.toml`, change:
 
 ```toml
-homepage = "https://www.getkyma.dev"
-documentation = "https://www.getkyma.dev"
+homepage = "https://www.getpensieve.dev"
+documentation = "https://www.getpensieve.dev"
 ```
 
 to:
 
 ```toml
-homepage = "https://shakedaskayo.github.io/kyma/"
-documentation = "https://shakedaskayo.github.io/kyma/"
+homepage = "https://shakedaskayo.github.io/pensieve/"
+documentation = "https://shakedaskayo.github.io/pensieve/"
 ```
 
 - [ ] **Step 3: web/index.html — stale comment**
 
-Change line 12's comment fragment `Matches getkyma.dev; degrades to the system stack offline.` to `Matches the docs site; degrades to the system stack offline.`
+Change line 12's comment fragment `Matches getpensieve.dev; degrades to the system stack offline.` to `Matches the docs site; degrades to the system stack offline.`
 
 - [ ] **Step 4: Verify no stragglers**
 
 ```bash
-grep -rn "getkyma.dev" README.md crates/kyma-cli/Cargo.toml web/index.html docs/site/ --exclude-dir=node_modules --exclude-dir=.vitepress/dist || echo "NONE"
+grep -rn "getpensieve.dev" README.md crates/pensieve-cli/Cargo.toml web/index.html docs/site/ --exclude-dir=node_modules --exclude-dir=.vitepress/dist || echo "NONE"
 cargo metadata --no-deps --format-version 1 > /dev/null && echo "Cargo.toml OK"
 ```
 
@@ -487,8 +487,8 @@ Expected: `NONE`, then `Cargo.toml OK`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add README.md crates/kyma-cli/Cargo.toml web/index.html
-git commit -m "docs: point docs links at shakedaskayo.github.io/kyma"
+git add README.md crates/pensieve-cli/Cargo.toml web/index.html
+git commit -m "docs: point docs links at shakedaskayo.github.io/pensieve"
 ```
 
 ---
@@ -500,14 +500,14 @@ git commit -m "docs: point docs links at shakedaskayo.github.io/kyma"
 - [ ] **Step 1: Enable GitHub Pages with workflow build type (one-time)**
 
 ```bash
-gh api -X POST repos/shakedaskayo/kyma/pages -f build_type=workflow
+gh api -X POST repos/shakedaskayo/pensieve/pages -f build_type=workflow
 ```
 
 Expected: HTTP 201 with a JSON body containing `"build_type": "workflow"`.
 If it returns 409 (Pages already exists):
 
 ```bash
-gh api -X PUT repos/shakedaskayo/kyma/pages -f build_type=workflow
+gh api -X PUT repos/shakedaskayo/pensieve/pages -f build_type=workflow
 ```
 
 Fallback (UI): repo → Settings → Pages → Source: **GitHub Actions**.
@@ -540,18 +540,18 @@ Expected: `build` and `deploy` jobs both succeed; deploy reports the page URL.
 - [ ] **Step 2: Assert the live site**
 
 ```bash
-curl -sI https://shakedaskayo.github.io/kyma/ | head -1
-curl -sI https://shakedaskayo.github.io/kyma/quickstart/five-minute-start | head -1
-curl -sI https://shakedaskayo.github.io/kyma/icons/kyma-mark.svg | head -1
-curl -s  https://shakedaskayo.github.io/kyma/sitemap.xml | grep -o '<loc>[^<]*</loc>' | head -3
-curl -sI https://shakedaskayo.github.io/kyma/definitely-not-a-page | head -1
+curl -sI https://shakedaskayo.github.io/pensieve/ | head -1
+curl -sI https://shakedaskayo.github.io/pensieve/quickstart/five-minute-start | head -1
+curl -sI https://shakedaskayo.github.io/pensieve/icons/pensieve-mark.svg | head -1
+curl -s  https://shakedaskayo.github.io/pensieve/sitemap.xml | grep -o '<loc>[^<]*</loc>' | head -3
+curl -sI https://shakedaskayo.github.io/pensieve/definitely-not-a-page | head -1
 ```
 
-Expected, in order: `200`, `200` (clean URLs resolve — Pages serves `foo.html` for `/foo`), `200` (public assets under base), three `<loc>` entries each with exactly one `/kyma/`, `404`.
+Expected, in order: `200`, `200` (clean URLs resolve — Pages serves `foo.html` for `/foo`), `200` (public assets under base), three `<loc>` entries each with exactly one `/pensieve/`, `404`.
 
 - [ ] **Step 3: Browser click-through**
 
-Open `https://shakedaskayo.github.io/kyma/` — verify landing visuals (orbit icons, brand marks), nav + sidebar navigation, local search returns results, a mermaid diagram renders (e.g. under concepts), and a `<Diagram />` SVG page renders.
+Open `https://shakedaskayo.github.io/pensieve/` — verify landing visuals (orbit icons, brand marks), nav + sidebar navigation, local search returns results, a mermaid diagram renders (e.g. under concepts), and a `<Diagram />` SVG page renders.
 
 ---
 
@@ -559,16 +559,16 @@ Open `https://shakedaskayo.github.io/kyma/` — verify landing visuals (orbit ic
 
 **Files:** none (Railway dashboard/CLI)
 
-Rollback window ends here: until this task, `getkyma.dev` still serves the old site from Railway.
+Rollback window ends here: until this task, `getpensieve.dev` still serves the old site from Railway.
 
 - [ ] **Step 1: Tear down the Railway service**
 
-Dashboard: https://railway.app → project `kyma-docs` → Settings → Danger → **Delete Project** (this also releases the `getkyma.dev` custom-domain binding).
+Dashboard: https://railway.app → project `pensieve-docs` → Settings → Danger → **Delete Project** (this also releases the `getpensieve.dev` custom-domain binding).
 
 CLI alternative (if `railway` is installed and authed):
 
 ```bash
-railway list                 # find the kyma-docs project id
+railway list                 # find the pensieve-docs project id
 railway environment          # confirm context
 railway down                 # or delete the project from the dashboard
 ```
@@ -576,7 +576,7 @@ railway down                 # or delete the project from the dashboard
 - [ ] **Step 2: Confirm old hosting is gone**
 
 ```bash
-curl -sI --max-time 10 https://getkyma.dev/ | head -1
+curl -sI --max-time 10 https://getpensieve.dev/ | head -1
 ```
 
 Expected: connection failure or a non-200 (Railway no longer serving). The domain's future (parking, redirect, marketing site) is out of scope per the spec.
@@ -587,4 +587,4 @@ Expected: connection failure or a non-200 (Railway no longer serving). The domai
 
 - **Spec coverage:** base path + config URLs → Task 2; Landing.vue `withBase` → Task 3; workflow + repo setting → Tasks 4, 7; Railway file removal + operator notes → Task 5; reference updates → Task 6; verification → Task 8; teardown-last sequencing/rollback → Task 9. All spec sections covered.
 - **Placeholder scan:** none — every step has exact code/commands and expected output.
-- **Consistency:** the served URL `https://shakedaskayo.github.io/kyma/` and base `/kyma/` are identical across Tasks 2–8; workflow path filters match `railway.toml` watchPatterns plus the workflow file itself.
+- **Consistency:** the served URL `https://shakedaskayo.github.io/pensieve/` and base `/pensieve/` are identical across Tasks 2–8; workflow path filters match `railway.toml` watchPatterns plus the workflow file itself.

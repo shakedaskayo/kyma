@@ -5,7 +5,7 @@ import { test, expect, type Page } from "@playwright/test";
 // SIDEBAR LINKS (in-app SPA navigation, not full reloads) and assert the URL
 // and content actually change.
 
-const ENDPOINT = process.env.KYMA_API_URL ?? "http://127.0.0.1:8080";
+const ENDPOINT = process.env.PENSIEVE_API_URL ?? "http://127.0.0.1:8080";
 
 async function signIn(page: Page) {
   await page.goto("/login");

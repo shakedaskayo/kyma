@@ -5,9 +5,9 @@
  * report `layout_status: "computing"` are polled until ready.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LayoutAlgorithm } from "@kyma-ai/client";
-import { useKymaClient } from "../provider/context";
-import { graphKey, useGraphCoords, type UseKymaGraphArgs } from "./useKymaGraph";
+import type { LayoutAlgorithm } from "@pensieve-ai/client";
+import { usePensieveClient } from "../provider/context";
+import { graphKey, useGraphCoords, type UsePensieveGraphArgs } from "./usePensieveGraph";
 import {
   createExportAccumulator,
   mergeExportPage,
@@ -31,9 +31,9 @@ export interface UseGraphExportResult {
 }
 
 export function useGraphExport(
-  args: UseKymaGraphArgs & { algorithm: LayoutAlgorithm },
+  args: UsePensieveGraphArgs & { algorithm: LayoutAlgorithm },
 ): UseGraphExportResult {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   const { coords, isLoading: discovering, error: discoveryError } = useGraphCoords(args);
   const [version, setVersion] = useState(0);
   const [layoutComputing, setLayoutComputing] = useState(false);

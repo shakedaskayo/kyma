@@ -6,9 +6,9 @@ import { useSession } from "@/sdk/session";
 import { fetchSchema } from "@/sdk/catalog";
 import { cn } from "@/lib/utils";
 
-/** Databases that hold kyma-internal state (agent memory). Hidden from the
+/** Databases that hold pensieve-internal state (agent memory). Hidden from the
  *  switcher and excluded from the "All databases" union — mirrors the backend's
- *  `INTERNAL_DATABASES` (`crates/kyma-server/src/discover/scope.rs`). */
+ *  `INTERNAL_DATABASES` (`crates/pensieve-server/src/discover/scope.rs`). */
 export const INTERNAL_DATABASES = ["memory"];
 
 /** Sentinel for "span every database" — sent verbatim as `x-database: *`, which

@@ -1,6 +1,6 @@
 output "engine_url" {
   value       = local.engine_url
-  description = "Base URL of the engine (web UI + API). Empty for EKS until the ingress is up — the CLI resolves it via kubectl. Use with `kyma connect`."
+  description = "Base URL of the engine (web UI + API). Empty for EKS until the ingress is up — the CLI resolves it via kubectl. Use with `pensieve connect`."
 }
 
 output "compute_backend" {
@@ -35,7 +35,7 @@ output "bucket_name" {
     local.ext_storage ? "${var.storage_bucket} (external S3-compatible)" :
     "${var.storage_bucket} (Supabase Storage)"
   )
-  description = "Bucket holding kyma's columnar extents."
+  description = "Bucket holding pensieve's columnar extents."
 }
 
 output "supabase_project_ref" {

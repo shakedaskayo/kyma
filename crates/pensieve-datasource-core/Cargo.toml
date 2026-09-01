@@ -1,0 +1,14 @@
+[package]
+name = "pensieve-datasource-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Stable extension API for third-party pensieve data sources — the DataSource trait, DataSourceCtx/Run, CatalogEntry, and the Credential interfaces. Customers depend on this crate (not pensieve-datasources) so adding a new data source requires no core-repo changes."
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-datasources.workspace = true
+pensieve-core.workspace = true

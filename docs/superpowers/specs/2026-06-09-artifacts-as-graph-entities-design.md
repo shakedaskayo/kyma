@@ -12,7 +12,7 @@ UI share one retrieval/graph substrate. Build order (dependency-first):
 1. **Piece 4 — Artifacts as graph entities** ← *this spec*
 2. **Piece 1 — Unified `/v1/search` substrate** (route memory-recall + graph + MCP through one engine)
 3. **Piece 3 — Cypher in the smart input** (new parser → KQL graph ops)
-4. **Piece 2 — Dreaming via the kyma skill** (Claude-CLI skill-delivery design)
+4. **Piece 2 — Dreaming via the pensieve skill** (Claude-CLI skill-delivery design)
 
 Each piece gets its own spec → plan → implementation cycle. This piece advances the
 existing **Platform Enrichment (E-series)** program (E0 storage+catalog substrate is
@@ -23,22 +23,22 @@ built); cross-referenced here so we do not double-track.
 Artifacts exist in storage but are invisible as graph entities — the gap behind
 "I don't see artifacts on the graph page."
 
-- The `artifacts` catalog (`crates/kyma-catalog/migrations/022_artifacts.sql`) is the
+- The `artifacts` catalog (`crates/pensieve-catalog/migrations/022_artifacts.sql`) is the
   system-of-record for object-store blobs: `id, tenant_id, object_path, source,
   artifact_class, table_ref, connector_id, size_bytes, sha256, created_at,
   expires_at, deleted_at`. The blob is retrievable via
-  `GET /v1/artifacts/by-path?path=` (`crates/kyma-server/src/artifacts_handler.rs:100`,
+  `GET /v1/artifacts/by-path?path=` (`crates/pensieve-server/src/artifacts_handler.rs:100`,
   byte-window capable via `offset`/`limit`).
 - CI logs get graph representation **only inside the github graph**: the connector
   emits `Repository --HAS_RUN--> WorkflowRun --RUN_CONTAINS_JOB--> Job --JOB_HAS_LOG-->
-  LogFile` (`crates/kyma-connectors/src/github/transform.rs:161`). The `LogFile` node
+  LogFile` (`crates/pensieve-connectors/src/github/transform.rs:161`). The `LogFile` node
   already carries `object_path`, `sha256`, `size_bytes`, `artifact_class:"log"`
   (`transform.rs:257-288`) — but is **not labeled `Artifact`**, is **not linked to its
   catalog `artifacts.id`**, and the edge type is the log-specific `JOB_HAS_LOG`.
 - The artifact **blob itself is never a node**. Object-store / fswatch / agent-contributed
   artifacts (the migration's named cases) have **no graph node at all** and **no graph is
   registered for them**, so `/v1/graph` discovery (`graph_handler.rs` list) never lists
-  them, the unified canvas (`packages/react/src/hooks/useKymaGraph.ts`) never loads them,
+  them, the unified canvas (`packages/react/src/hooks/usePensieveGraph.ts`) never loads them,
   and they are not searchable via `/v1/graph/:graph/search` (`graph_handler.rs:~514`).
 
 Net: artifacts cannot be seen, traversed, searched, or opened from the graph page.
@@ -63,8 +63,8 @@ Net: artifacts cannot be seen, traversed, searched, or opened from the graph pag
 
 A single function turns a catalog `Artifact` record into a graph node row, so both
 materialization paths (below) produce identical shapes. Lives where both the github
-connector and the catch-all sync can reach it (proposed: `kyma-connectors::artifacts`
-module, alongside the `ArtifactStore` trait at `crates/kyma-connectors/src/artifacts.rs`).
+connector and the catch-all sync can reach it (proposed: `pensieve-connectors::artifacts`
+module, alongside the `ArtifactStore` trait at `crates/pensieve-connectors/src/artifacts.rs`).
 
 - **id:** stable, reusing the producer's existing node id where one exists (github:
   `log_file_node_id(owner, repo, job_id)`). Catch-all artifacts use `artifact::{uuid}`.
@@ -112,7 +112,7 @@ nodes are edge-free (standalone) unless a `table_ref`/producer linkage is availa
   unified canvas loads it automatically (no UI change for discovery).
 - **Provisioner:** a small `ensure_provisioned`-style routine that creates the two tables
   + the registration if absent, modeled on the memory writer
-  (`crates/kyma-memory/src/writer.rs` `ensure_provisioned` / `create_graph`). Invoked on
+  (`crates/pensieve-memory/src/writer.rs` `ensure_provisioned` / `create_graph`). Invoked on
   first catch-all write and at startup.
 
 ### 4. Searchability
@@ -122,7 +122,7 @@ Rides existing infrastructure — no new search endpoint:
 - Per-graph `/v1/graph/:graph/search` matches case-insensitively over **id + labels**
   (`stored_graph.rs:76`); Artifact nodes match on the `Artifact` label and the id's
   repo/job context (e.g. `log:acme/app#900`).
-- All-DB discovery (`useKymaGraph.ts`) already fans out across graphs, so artifacts in
+- All-DB discovery (`usePensieveGraph.ts`) already fans out across graphs, so artifacts in
   github / `artifacts` graphs are searchable together.
 - **Content search is Piece 1** (`/v1/search` over the blobs), explicitly excluded here.
 
@@ -150,7 +150,7 @@ Rides existing infrastructure — no new search endpoint:
   a node whose artifact later expires is removed/marked on the next sync.
 ## Testing
 
-**Rust (`kyma-connectors`, `kyma-server`, `kyma-catalog`):**
+**Rust (`pensieve-connectors`, `pensieve-server`, `pensieve-catalog`):**
 
 - Unit: artifact node-shape contract — single `"Artifact"` label, `artifact_id` set
   (conditional), `artifact_class` prop, `retrievable` logic.
@@ -172,15 +172,15 @@ Rides existing infrastructure — no new search endpoint:
 
 ## File touch list (anticipated)
 
-- `crates/kyma-connectors/src/artifacts.rs` — shared artifact node contract helper.
-- `crates/kyma-connectors/src/github/transform.rs` — `log_file_rows` enrich +
+- `crates/pensieve-connectors/src/artifacts.rs` — shared artifact node contract helper.
+- `crates/pensieve-connectors/src/github/transform.rs` — `log_file_rows` enrich +
   `JOB_HAS_LOG`→`HAS_ARTIFACT`; `make_node` labels-array support.
-- `crates/kyma-connectors/src/github/joblogs.rs` — thread `artifact_id` from
+- `crates/pensieve-connectors/src/github/joblogs.rs` — thread `artifact_id` from
   `register_artifact` into node props.
 - New: catch-all sync + `artifacts`-graph provisioner that creates
   `artifact_nodes`/`artifact_edges` **programmatically** (mirroring the memory writer's
   `ensure_provisioned`, not a SQL migration) and registers the graph.
-- `crates/kyma-server/src/graph_handler.rs` — verify artifact nodes flow through
+- `crates/pensieve-server/src/graph_handler.rs` — verify artifact nodes flow through
   existing search/overview (likely no change).
 - `packages/client/src/artifacts.ts` — confirm `byPath` shape for preview.
 - `packages/react/src/graph/*` — node detail artifact preview; label legend.

@@ -1,6 +1,6 @@
 /* ============================================================================
-   kyma docs — quiet docs-site styling
-   The job is to make a *VitePress* docs site look like a kyma docs site,
+   pensieve docs — quiet docs-site styling
+   The job is to make a *VitePress* docs site look like a pensieve docs site,
    not to redesign VitePress.
    ============================================================================ */
 
@@ -8,53 +8,53 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
 :root {
-  --kyma-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-  --kyma-font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --pensieve-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --pensieve-font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
 }
 
 /* ---------- Brand palette ------------------------------------------------- */
 
 /* Light theme — kept understated; many readers stay in light mode. */
 :root {
-  --kyma-bg:        #ffffff;
-  --kyma-bg-soft:   #f7f7f6;
-  --kyma-fg:        #14171c;
-  --kyma-fg-soft:   #51555c;
-  --kyma-muted:     #767880;
-  --kyma-rule:      #2a2e36;
-  --kyma-rule-soft: rgba(20, 23, 28, 0.10);
-  --kyma-accent:    #2d6f1f;          /* darker green — legible on white */
-  --kyma-link:      #2a5085;          /* citation blue */
+  --pensieve-bg:        #ffffff;
+  --pensieve-bg-soft:   #f7f7f6;
+  --pensieve-fg:        #14171c;
+  --pensieve-fg-soft:   #51555c;
+  --pensieve-muted:     #767880;
+  --pensieve-rule:      #2a2e36;
+  --pensieve-rule-soft: rgba(20, 23, 28, 0.10);
+  --pensieve-accent:    #1F5FD6;          /* deeper brand blue — legible on white */
+  --pensieve-link:      #2a5085;          /* citation blue */
 
   /* VitePress overrides — point its tokens at ours. */
-  --vp-c-brand-1: var(--kyma-accent);
-  --vp-c-brand-2: var(--kyma-accent);
-  --vp-c-brand-3: var(--kyma-accent);
-  --vp-c-brand-soft: rgba(45, 111, 31, 0.10);
-  --vp-font-family-base: var(--kyma-font-body);
-  --vp-font-family-mono: var(--kyma-font-mono);
-  --vp-home-hero-name-color: var(--kyma-fg);
+  --vp-c-brand-1: var(--pensieve-accent);
+  --vp-c-brand-2: var(--pensieve-accent);
+  --vp-c-brand-3: var(--pensieve-accent);
+  --vp-c-brand-soft: rgba(31, 95, 214, 0.10);
+  --vp-font-family-base: var(--pensieve-font-body);
+  --vp-font-family-mono: var(--pensieve-font-mono);
+  --vp-home-hero-name-color: var(--pensieve-fg);
 }
 
 .dark {
-  --kyma-bg:        #0d1015;
-  --kyma-bg-soft:   #14181f;
-  --kyma-fg:        #e8e6e0;
-  --kyma-fg-soft:   #b3b0a8;
-  --kyma-muted:     #818488;
-  --kyma-rule:      #2a2e36;
-  --kyma-rule-soft: rgba(232, 230, 224, 0.10);
-  --kyma-accent:    #7ed957;          /* phosphor green */
-  --kyma-link:      #7eaae6;
+  --pensieve-bg:        #0d1015;
+  --pensieve-bg-soft:   #14181f;
+  --pensieve-fg:        #e8e6e0;
+  --pensieve-fg-soft:   #b3b0a8;
+  --pensieve-muted:     #818488;
+  --pensieve-rule:      #2a2e36;
+  --pensieve-rule-soft: rgba(232, 230, 224, 0.10);
+  --pensieve-accent:    #4C8DFF;          /* brand blue */
+  --pensieve-link:      #7eaae6;
 
-  --vp-c-brand-1: var(--kyma-accent);
-  --vp-c-brand-2: var(--kyma-accent);
-  --vp-c-brand-3: var(--kyma-accent);
-  --vp-c-brand-soft: rgba(126, 217, 87, 0.12);
+  --vp-c-brand-1: var(--pensieve-accent);
+  --vp-c-brand-2: var(--pensieve-accent);
+  --vp-c-brand-3: var(--pensieve-accent);
+  --vp-c-brand-soft: rgba(76, 141, 255, 0.12);
 }
 
 /* ---------- Headings ------------------------------------------------------ */
-/* Mono headings are kyma's identity, but only on doc pages — not so heavy
+/* Mono headings are pensieve's identity, but only on doc pages — not so heavy
    it overrides VitePress nav typography. */
 .vp-doc h1,
 .vp-doc h2,
@@ -62,7 +62,7 @@
 .vp-doc h4,
 .vp-doc h5,
 .vp-doc h6 {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   letter-spacing: -0.005em;
   font-weight: 600;
 }
@@ -73,143 +73,143 @@
    Landing — quiet docs-site shape
    ============================================================================ */
 
-.kyma-landing {
+.pensieve-landing {
   max-width: 960px;
   margin: 0 auto;
   padding: 4rem 2rem 5rem;
-  font-family: var(--kyma-font-body);
+  font-family: var(--pensieve-font-body);
 }
 
-.kyma-hero {
+.pensieve-hero {
   margin-bottom: 4rem;
 }
 
-.kyma-hero h1 {
-  font-family: var(--kyma-font-mono);
+.pensieve-hero h1 {
+  font-family: var(--pensieve-font-mono);
   font-size: clamp(3rem, 6vw, 4.5rem);
   font-weight: 700;
   letter-spacing: -0.02em;
   margin: 0 0 0.5rem;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
   line-height: 1;
 }
 
-.kyma-tagline {
-  font-family: var(--kyma-font-body);
+.pensieve-tagline {
+  font-family: var(--pensieve-font-body);
   font-size: 1.4rem;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
   margin: 0 0 1.5rem;
   font-weight: 400;
 }
 
-.kyma-lede {
+.pensieve-lede {
   font-size: 1.05rem;
   line-height: 1.6;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
   max-width: 60ch;
   margin: 0 0 2rem;
 }
 
-.kyma-cta-row {
+.pensieve-cta-row {
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
 }
 
-.kyma-cta {
+.pensieve-cta {
   display: inline-block;
   padding: 0.6rem 1.1rem;
-  font-family: var(--kyma-font-body);
+  font-family: var(--pensieve-font-body);
   font-size: 0.95rem;
   font-weight: 500;
-  border: 1px solid var(--kyma-rule-soft);
-  background: var(--kyma-bg-soft);
-  color: var(--kyma-fg);
+  border: 1px solid var(--pensieve-rule-soft);
+  background: var(--pensieve-bg-soft);
+  color: var(--pensieve-fg);
   text-decoration: none;
   border-radius: 6px;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
-.kyma-cta:hover {
-  border-color: var(--kyma-accent);
+.pensieve-cta:hover {
+  border-color: var(--pensieve-accent);
 }
-.kyma-cta--primary {
-  background: var(--kyma-accent);
-  border-color: var(--kyma-accent);
-  color: var(--kyma-bg);
+.pensieve-cta--primary {
+  background: var(--pensieve-accent);
+  border-color: var(--pensieve-accent);
+  color: var(--pensieve-bg);
 }
-.kyma-cta--primary:hover {
-  background: var(--kyma-accent);
+.pensieve-cta--primary:hover {
+  background: var(--pensieve-accent);
   filter: brightness(1.08);
 }
 
-.kyma-sections {
+.pensieve-sections {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 0.75rem;
 }
 
-.kyma-section-card {
+.pensieve-section-card {
   display: block;
   padding: 1.25rem 1.4rem;
-  border: 1px solid var(--kyma-rule-soft);
+  border: 1px solid var(--pensieve-rule-soft);
   border-radius: 6px;
-  background: var(--kyma-bg);
+  background: var(--pensieve-bg);
   text-decoration: none;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
   transition: border-color 0.15s ease, background 0.15s ease;
 }
-.kyma-section-card:hover {
-  border-color: var(--kyma-accent);
-  background: var(--kyma-bg-soft);
+.pensieve-section-card:hover {
+  border-color: var(--pensieve-accent);
+  background: var(--pensieve-bg-soft);
 }
-.kyma-section-card h3 {
-  font-family: var(--kyma-font-mono);
+.pensieve-section-card h3 {
+  font-family: var(--pensieve-font-mono);
   font-size: 1rem;
   margin: 0 0 0.4rem;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
 }
-.kyma-section-card p {
+.pensieve-section-card p {
   margin: 0;
   font-size: 0.9rem;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
   line-height: 1.5;
 }
-.kyma-section-card code {
-  font-family: var(--kyma-font-mono);
+.pensieve-section-card code {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.85em;
-  background: var(--kyma-bg-soft);
+  background: var(--pensieve-bg-soft);
   padding: 1px 5px;
   border-radius: 3px;
 }
 
-.kyma-landing-footer {
+.pensieve-landing-footer {
   margin-top: 4rem;
   padding-top: 2rem;
-  border-top: 1px solid var(--kyma-rule-soft);
+  border-top: 1px solid var(--pensieve-rule-soft);
   text-align: center;
 }
-.kyma-landing-footer-meta {
-  font-family: var(--kyma-font-mono);
+.pensieve-landing-footer-meta {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.75rem;
-  color: var(--kyma-muted);
+  color: var(--pensieve-muted);
   margin: 1rem 0 0;
 }
-.kyma-landing-footer-meta a {
-  color: var(--kyma-link);
+.pensieve-landing-footer-meta a {
+  color: var(--pensieve-link);
   text-decoration: none;
 }
-.kyma-landing-footer-meta a:hover {
+.pensieve-landing-footer-meta a:hover {
   text-decoration: underline;
 }
 
 /* Doc-page footer — slim, two lines (message + copyright). VitePress
    already styles the container; we only need to polish the links. */
-.VPFooter .kyma-footer-link {
-  color: var(--kyma-link);
+.VPFooter .pensieve-footer-link {
+  color: var(--pensieve-link);
   text-decoration: none;
   white-space: nowrap;
 }
-.VPFooter .kyma-footer-link:hover {
+.VPFooter .pensieve-footer-link:hover {
   text-decoration: underline;
 }
 
@@ -224,8 +224,8 @@
 }
 .feature-card {
   position: relative;
-  background: var(--kyma-bg-soft);
-  border: 1px solid var(--kyma-rule-soft);
+  background: var(--pensieve-bg-soft);
+  border: 1px solid var(--pensieve-rule-soft);
   border-radius: 10px;
   padding: 1.35rem 1.45rem 1.4rem;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
@@ -239,33 +239,33 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--kyma-accent);
+  background: var(--pensieve-accent);
   box-shadow: 0 0 0 3px var(--vp-c-brand-soft);
   opacity: 0.5;
   transition: opacity 0.18s ease, box-shadow 0.18s ease;
 }
 .feature-card:hover {
-  border-color: var(--kyma-accent);
-  box-shadow: 0 0 0 1px var(--kyma-accent), 0 14px 34px -18px var(--vp-c-brand-soft);
+  border-color: var(--pensieve-accent);
+  box-shadow: 0 0 0 1px var(--pensieve-accent), 0 14px 34px -18px var(--vp-c-brand-soft);
   transform: translateY(-2px);
 }
 .feature-card:hover::after {
   opacity: 1;
-  box-shadow: 0 0 10px 1px var(--kyma-accent);
+  box-shadow: 0 0 10px 1px var(--pensieve-accent);
 }
 .feature-card h3 {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 1.02rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   margin: 0 0 0.5rem;
   padding-right: 1rem;
 }
-.feature-card h3 a { color: var(--kyma-fg); }
-.feature-card h3 a:hover { color: var(--kyma-accent); }
+.feature-card h3 a { color: var(--pensieve-fg); }
+.feature-card h3 a:hover { color: var(--pensieve-accent); }
 .feature-card p {
   margin: 0.4rem 0 0;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
   font-size: 0.92rem;
   line-height: 1.6;
 }
@@ -278,59 +278,59 @@
    Animated landing — fan-in / fan-out hero + use-case framing
    ============================================================================ */
 
-.kyma-landing {
+.pensieve-landing {
   /* Override the original max-width + padding from the quiet landing.
      The animated version goes wider and sectioned. */
   max-width: 1200px;
   padding: 3rem 1.5rem 4rem;
 }
 
-.kyma-hero--orbit {
+.pensieve-hero--orbit {
   position: relative;
   text-align: center;
   margin-bottom: 5rem;
 }
 
-.kyma-hero-title {
-  font-family: var(--kyma-font-mono);
+.pensieve-hero-title {
+  font-family: var(--pensieve-font-mono);
   font-size: clamp(3.5rem, 8vw, 6rem);
   font-weight: 700;
   letter-spacing: -0.04em;
   line-height: 0.95;
   margin: 0 0 0.4rem;
-  background: linear-gradient(180deg, var(--kyma-fg) 0%, var(--kyma-fg-soft) 100%);
+  background: linear-gradient(180deg, var(--pensieve-fg) 0%, var(--pensieve-fg-soft) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
 }
 
-.kyma-hero--orbit .kyma-tagline {
+.pensieve-hero--orbit .pensieve-tagline {
   font-size: clamp(1.2rem, 2.4vw, 1.6rem);
   margin: 0 auto 1.2rem;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
 }
 
-.kyma-hero--orbit .kyma-lede {
+.pensieve-hero--orbit .pensieve-lede {
   max-width: 64ch;
   margin: 0 auto 2rem;
   font-size: 1.05rem;
   line-height: 1.6;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
 }
-.kyma-hero--orbit .kyma-lede strong {
-  color: var(--kyma-fg);
+.pensieve-hero--orbit .pensieve-lede strong {
+  color: var(--pensieve-fg);
   font-weight: 600;
 }
 
-.kyma-hero--orbit .kyma-cta-row {
+.pensieve-hero--orbit .pensieve-cta-row {
   justify-content: center;
   margin-bottom: 3rem;
 }
 
 /* ─────────────────────────  The orbit  ──────────────────────── */
 
-.kyma-orbit {
+.pensieve-orbit {
   position: relative;
   width: 100%;
   max-width: 1100px;
@@ -340,7 +340,7 @@
   overflow: visible;
 }
 
-.kyma-orbit-svg {
+.pensieve-orbit-svg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -349,54 +349,54 @@
   z-index: 1;
 }
 
-.kyma-orbit-ring-svg {
+.pensieve-orbit-ring-svg {
   fill: none;
-  stroke: rgba(126, 217, 87, 0.15);
+  stroke: rgba(76, 141, 255, 0.15);
   stroke-width: 1;
   stroke-dasharray: 2 6;
-  animation: kyma-ring-pulse 6s ease-in-out infinite;
+  animation: pensieve-ring-pulse 6s ease-in-out infinite;
 }
-@keyframes kyma-ring-pulse {
-  0%, 100% { stroke: rgba(126, 217, 87, 0.10); }
-  50%      { stroke: rgba(126, 217, 87, 0.32); }
+@keyframes pensieve-ring-pulse {
+  0%, 100% { stroke: rgba(76, 141, 255, 0.10); }
+  50%      { stroke: rgba(76, 141, 255, 0.32); }
 }
 
-.kyma-orbit-path {
+.pensieve-orbit-path {
   fill: none;
-  stroke: rgba(126, 217, 87, 0.32);
+  stroke: rgba(76, 141, 255, 0.32);
   stroke-width: 1;
   stroke-linecap: round;
 }
 
-.kyma-orbit-flow {
+.pensieve-orbit-flow {
   fill: none;
-  stroke: var(--kyma-accent);
+  stroke: var(--pensieve-accent);
   stroke-width: 2;
   stroke-linecap: round;
   stroke-dasharray: 14 280;
   stroke-dashoffset: 0;
-  filter: drop-shadow(0 0 4px rgba(126, 217, 87, 0.6));
+  filter: drop-shadow(0 0 4px rgba(76, 141, 255, 0.6));
   animation-duration: 2.6s;
   animation-iteration-count: infinite;
   animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
   animation-delay: var(--delay, 0s);
 }
-.kyma-orbit-flow--source   { animation-name: kyma-flow-inward;  }
-.kyma-orbit-flow--consumer { animation-name: kyma-flow-outward; }
-@keyframes kyma-flow-inward {
+.pensieve-orbit-flow--source   { animation-name: pensieve-flow-inward;  }
+.pensieve-orbit-flow--consumer { animation-name: pensieve-flow-outward; }
+@keyframes pensieve-flow-inward {
   0%   { stroke-dashoffset:  280; opacity: 0; }
   10%  { opacity: 1; }
   90%  { opacity: 1; }
   100% { stroke-dashoffset: -280; opacity: 0; }
 }
-@keyframes kyma-flow-outward {
+@keyframes pensieve-flow-outward {
   0%   { stroke-dashoffset: -280; opacity: 0; }
   10%  { opacity: 1; }
   90%  { opacity: 1; }
   100% { stroke-dashoffset:  280; opacity: 0; }
 }
 
-.kyma-orbit-center {
+.pensieve-orbit-center {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -404,7 +404,7 @@
   z-index: 5;
   pointer-events: none;
 }
-.kyma-orbit-mark {
+.pensieve-orbit-mark {
   position: relative;
   width: 140px;
   height: 140px;
@@ -412,67 +412,67 @@
   align-items: center;
   justify-content: center;
 }
-.kyma-orbit-mark img {
+.pensieve-orbit-mark img {
   width: 140px;
   height: 140px;
-  filter: drop-shadow(0 0 28px rgba(126, 217, 87, 0.55));
-  animation: kyma-mark-breathe 4s ease-in-out infinite;
+  filter: drop-shadow(0 0 28px rgba(76, 141, 255, 0.55));
+  animation: pensieve-mark-breathe 4s ease-in-out infinite;
 }
-.kyma-orbit-mark-pulse {
+.pensieve-orbit-mark-pulse {
   position: absolute;
   inset: -6px;
   border-radius: 50%;
-  border: 2px solid var(--kyma-accent);
+  border: 2px solid var(--pensieve-accent);
   opacity: 0;
-  animation: kyma-mark-pulse 2.6s ease-out infinite;
+  animation: pensieve-mark-pulse 2.6s ease-out infinite;
   pointer-events: none;
 }
-@keyframes kyma-mark-breathe {
-  0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 28px rgba(126, 217, 87, 0.55)); }
-  50%      { transform: scale(1.05); filter: drop-shadow(0 0 42px rgba(126, 217, 87, 0.85)); }
+@keyframes pensieve-mark-breathe {
+  0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 28px rgba(76, 141, 255, 0.55)); }
+  50%      { transform: scale(1.05); filter: drop-shadow(0 0 42px rgba(76, 141, 255, 0.85)); }
 }
-@keyframes kyma-mark-pulse {
+@keyframes pensieve-mark-pulse {
   0%   { transform: scale(0.9); opacity: 0.7; }
   100% { transform: scale(1.7); opacity: 0; }
 }
 
-.kyma-orbit-node {
+.pensieve-orbit-node {
   position: absolute;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.4rem 0.8rem 0.4rem 0.5rem;
-  background: var(--kyma-bg-soft);
-  border: 1px solid var(--kyma-rule-soft);
+  background: var(--pensieve-bg-soft);
+  border: 1px solid var(--pensieve-rule-soft);
   border-radius: 999px;
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 0.78rem;
   letter-spacing: 0.02em;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
   text-decoration: none;
   white-space: nowrap;
   transform: translate(-50%, -50%);
   z-index: 4;
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
-  animation: kyma-node-fade-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  animation: pensieve-node-fade-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
   animation-delay: calc(var(--i) * 0.06s);
 }
-.kyma-orbit-node img {
+.pensieve-orbit-node img {
   width: 22px;
   height: 22px;
   flex-shrink: 0;
   border-radius: 4px;
   display: block;
 }
-.kyma-orbit-node:hover {
-  border-color: var(--kyma-accent);
+.pensieve-orbit-node:hover {
+  border-color: var(--pensieve-accent);
   transform: translate(-50%, -50%) scale(1.06);
-  box-shadow: 0 0 18px rgba(126, 217, 87, 0.22);
+  box-shadow: 0 0 18px rgba(76, 141, 255, 0.22);
   z-index: 10;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
 }
-.kyma-orbit-label { font-weight: 500; }
-@keyframes kyma-node-fade-in {
+.pensieve-orbit-label { font-weight: 500; }
+@keyframes pensieve-node-fade-in {
   from { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
   to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
@@ -481,32 +481,32 @@
   /* Strip all decorative motion across the landing — orbit, readout,
      graph edges, ring pulses, sweeps. Static positions kept; transitions
      stay (so hover still feels alive). */
-  .kyma-landing *,
-  .kyma-landing *::before,
-  .kyma-landing *::after {
+  .pensieve-landing *,
+  .pensieve-landing *::before,
+  .pensieve-landing *::after {
     animation: none !important;
   }
 }
 
 @media (max-width: 800px) {
-  .kyma-orbit-mark, .kyma-orbit-mark img { width: 92px; height: 92px; }
-  .kyma-orbit-node {
+  .pensieve-orbit-mark, .pensieve-orbit-mark img { width: 92px; height: 92px; }
+  .pensieve-orbit-node {
     font-size: 0;
     padding: 0.35rem;
   }
-  .kyma-orbit-node img { width: 20px; height: 20px; }
+  .pensieve-orbit-node img { width: 20px; height: 20px; }
 }
 
 /* ─────────────────────────  Live readout  ──────────────────────── */
 
-.kyma-readout {
+.pensieve-readout {
   max-width: 800px;
   margin: 2rem auto 0;
   padding: 1rem 1.4rem;
-  background: var(--kyma-bg-soft);
-  border: 1px solid var(--kyma-rule-soft);
+  background: var(--pensieve-bg-soft);
+  border: 1px solid var(--pensieve-rule-soft);
   border-radius: 10px;
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   text-align: left;
   display: grid;
   grid-template-columns: 1fr;
@@ -514,152 +514,152 @@
   position: relative;
   overflow: hidden;
 }
-.kyma-readout::before {
+.pensieve-readout::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(126,217,87,0.08) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(76,141,255,0.08) 50%, transparent 100%);
   background-size: 200% 100%;
-  animation: kyma-sweep 6s linear infinite;
+  animation: pensieve-sweep 6s linear infinite;
   pointer-events: none;
 }
-@keyframes kyma-sweep {
+@keyframes pensieve-sweep {
   0%   { background-position:  100% 0; }
   100% { background-position: -100% 0; }
 }
-.kyma-readout-question {
+.pensieve-readout-question {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
 }
-.kyma-readout-label {
+.pensieve-readout-label {
   font-size: 0.65rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--kyma-muted);
+  color: var(--pensieve-muted);
 }
-.kyma-readout-q {
+.pensieve-readout-q {
   font-size: 0.95rem;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
   font-style: italic;
 }
-.kyma-readout-stats {
+.pensieve-readout-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 0.5rem 1.2rem;
   margin: 0;
   font-size: 0.78rem;
 }
-.kyma-readout-stats > div { display: flex; flex-direction: column; gap: 0.1rem; }
-.kyma-readout-stats dt {
+.pensieve-readout-stats > div { display: flex; flex-direction: column; gap: 0.1rem; }
+.pensieve-readout-stats dt {
   font-size: 0.62rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--kyma-muted);
+  color: var(--pensieve-muted);
 }
-.kyma-readout-stats dd {
+.pensieve-readout-stats dd {
   margin: 0;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
   font-weight: 500;
 }
-.kyma-num { color: var(--kyma-accent); }
+.pensieve-num { color: var(--pensieve-accent); }
 
 /* ─────────────────────────  Sections shared ──────────────────── */
 
-.kyma-section-eyebrow {
-  font-family: var(--kyma-font-mono);
+.pensieve-section-eyebrow {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.72rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--kyma-muted);
+  color: var(--pensieve-muted);
   margin: 0 0 0.5rem;
 }
-.kyma-section-title {
-  font-family: var(--kyma-font-mono);
+.pensieve-section-title {
+  font-family: var(--pensieve-font-mono);
   font-size: clamp(1.6rem, 3.2vw, 2.4rem);
   font-weight: 600;
   letter-spacing: -0.015em;
   line-height: 1.2;
   margin: 0 0 1rem;
 }
-.kyma-section-title em {
-  font-family: var(--kyma-font-body);
+.pensieve-section-title em {
+  font-family: var(--pensieve-font-body);
   font-style: italic;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
   font-weight: 400;
 }
-.kyma-section-lede {
+.pensieve-section-lede {
   font-size: 1.05rem;
   line-height: 1.6;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
   max-width: 65ch;
 }
 
 /* ─────────────────────────  The big claim ─────────────────────── */
 
-.kyma-claim {
+.pensieve-claim {
   text-align: center;
   max-width: 900px;
   margin: 0 auto 5rem;
   padding: 3rem 1rem;
-  border-top: 1px solid var(--kyma-rule-soft);
-  border-bottom: 1px solid var(--kyma-rule-soft);
+  border-top: 1px solid var(--pensieve-rule-soft);
+  border-bottom: 1px solid var(--pensieve-rule-soft);
 }
-.kyma-claim .kyma-claim-eyebrow {
-  font-family: var(--kyma-font-mono);
+.pensieve-claim .pensieve-claim-eyebrow {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.72rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--kyma-accent);
+  color: var(--pensieve-accent);
   margin: 0 0 1rem;
 }
-.kyma-claim-title {
-  font-family: var(--kyma-font-mono);
+.pensieve-claim-title {
+  font-family: var(--pensieve-font-mono);
   font-size: clamp(1.8rem, 4vw, 3rem);
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.15;
   margin: 0 0 1.5rem;
 }
-.kyma-claim-title em {
-  font-family: var(--kyma-font-body);
+.pensieve-claim-title em {
+  font-family: var(--pensieve-font-body);
   font-style: italic;
-  color: var(--kyma-accent);
+  color: var(--pensieve-accent);
   font-weight: 500;
 }
-.kyma-claim-body {
+.pensieve-claim-body {
   max-width: 60ch;
   margin: 0 auto;
   font-size: 1.05rem;
   line-height: 1.65;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
 }
 
 /* ─────────────────────────  Use cases  ────────────────────────── */
 
-.kyma-usecases {
+.pensieve-usecases {
   margin-bottom: 5rem;
 }
-.kyma-usecases-header {
+.pensieve-usecases-header {
   text-align: center;
   margin-bottom: 2.5rem;
   max-width: 700px;
   margin-left: auto;
   margin-right: auto;
 }
-.kyma-usecases-header .kyma-section-lede { margin: 0 auto; }
+.pensieve-usecases-header .pensieve-section-lede { margin: 0 auto; }
 
-.kyma-usecases-grid {
+.pensieve-usecases-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1rem;
 }
-.kyma-usecase {
-  --accent: var(--kyma-accent);
+.pensieve-usecase {
+  --accent: var(--pensieve-accent);
   position: relative;
   padding: 1.5rem 1.6rem;
-  background: var(--kyma-bg-soft);
-  border: 1px solid var(--kyma-rule-soft);
+  background: var(--pensieve-bg-soft);
+  border: 1px solid var(--pensieve-rule-soft);
   border-radius: 10px;
   display: flex;
   flex-direction: column;
@@ -667,7 +667,7 @@
   transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
   overflow: hidden;
 }
-.kyma-usecase::before {
+.pensieve-usecase::before {
   content: '';
   position: absolute;
   top: 0;
@@ -677,33 +677,33 @@
   background: var(--accent);
   opacity: 0.85;
 }
-.kyma-usecase:hover {
+.pensieve-usecase:hover {
   border-color: var(--accent);
   transform: translateY(-2px);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
 }
-.kyma-usecase-label {
-  font-family: var(--kyma-font-mono);
+.pensieve-usecase-label {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.7rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--accent);
   font-weight: 600;
 }
-.kyma-usecase h3 {
-  font-family: var(--kyma-font-mono);
+.pensieve-usecase h3 {
+  font-family: var(--pensieve-font-mono);
   font-size: 1.15rem;
   margin: 0;
   letter-spacing: -0.005em;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
 }
-.kyma-usecase p {
+.pensieve-usecase p {
   margin: 0;
   font-size: 0.92rem;
   line-height: 1.55;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
 }
-.kyma-usecase ul {
+.pensieve-usecase ul {
   margin: 0.5rem 0 0;
   padding-left: 0;
   list-style: none;
@@ -711,14 +711,14 @@
   flex-direction: column;
   gap: 0.3rem;
 }
-.kyma-usecase ul li {
-  font-family: var(--kyma-font-mono);
+.pensieve-usecase ul li {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.78rem;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
   position: relative;
   padding-left: 1rem;
 }
-.kyma-usecase ul li::before {
+.pensieve-usecase ul li::before {
   content: '·';
   position: absolute;
   left: 0;
@@ -728,121 +728,121 @@
 
 /* ─────────────────────────  KQL example  ──────────────────────── */
 
-.kyma-example {
+.pensieve-example {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 3rem;
   align-items: center;
   margin-bottom: 5rem;
 }
-.kyma-example .kyma-cta-row { margin-top: 1.5rem; }
-.kyma-codeblock {
-  font-family: var(--kyma-font-mono);
+.pensieve-example .pensieve-cta-row { margin-top: 1.5rem; }
+.pensieve-codeblock {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.92rem;
   line-height: 1.7;
-  background: var(--kyma-bg-soft);
-  border: 1px solid var(--kyma-rule-soft);
+  background: var(--pensieve-bg-soft);
+  border: 1px solid var(--pensieve-rule-soft);
   border-radius: 10px;
   padding: 1.5rem 1.75rem;
   margin: 0;
   overflow-x: auto;
   white-space: pre;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
 }
-.kyma-kw  { color: var(--kyma-accent); font-weight: 600; }
-.kyma-str { color: var(--kyma-link); }
-.kyma-num { color: var(--kyma-warn, #f0a060); }
-.kyma-cm  { color: var(--kyma-muted); font-style: italic; }
+.pensieve-kw  { color: var(--pensieve-accent); font-weight: 600; }
+.pensieve-str { color: var(--pensieve-link); }
+.pensieve-num { color: var(--pensieve-warn, #f0a060); }
+.pensieve-cm  { color: var(--pensieve-muted); font-style: italic; }
 
 @media (max-width: 800px) {
-  .kyma-example { grid-template-columns: 1fr; gap: 1.5rem; }
+  .pensieve-example { grid-template-columns: 1fr; gap: 1.5rem; }
 }
 
 /* ─────────────────────────  Pruning stats section  ────────────── */
 
-.kyma-cascade-section {
+.pensieve-cascade-section {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 3rem;
   align-items: center;
   margin-bottom: 5rem;
   padding: 2.5rem 0;
-  border-top: 1px solid var(--kyma-rule-soft);
-  border-bottom: 1px solid var(--kyma-rule-soft);
+  border-top: 1px solid var(--pensieve-rule-soft);
+  border-bottom: 1px solid var(--pensieve-rule-soft);
 }
-.kyma-cascade-stats {
+.pensieve-cascade-stats {
   display: grid;
   grid-template-columns: 1fr;
   gap: 1.5rem;
 }
-.kyma-stat {
+.pensieve-stat {
   text-align: left;
   padding: 1rem 0;
-  border-left: 3px solid var(--kyma-accent);
+  border-left: 3px solid var(--pensieve-accent);
   padding-left: 1.5rem;
 }
-.kyma-stat-num {
-  font-family: var(--kyma-font-mono);
+.pensieve-stat-num {
+  font-family: var(--pensieve-font-mono);
   font-size: clamp(2.4rem, 5vw, 3.6rem);
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1;
-  color: var(--kyma-accent);
+  color: var(--pensieve-accent);
 }
-.kyma-stat-pct {
+.pensieve-stat-pct {
   font-size: 0.5em;
   margin-left: 0.15em;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
   font-weight: 500;
 }
-.kyma-stat-label {
-  font-family: var(--kyma-font-mono);
+.pensieve-stat-label {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.78rem;
   letter-spacing: 0.04em;
-  color: var(--kyma-muted);
+  color: var(--pensieve-muted);
   margin-top: 0.4rem;
 }
 
 @media (max-width: 800px) {
-  .kyma-cascade-section { grid-template-columns: 1fr; }
+  .pensieve-cascade-section { grid-template-columns: 1fr; }
 }
 
 /* ─────────────────────────  Sections grid wrap  ───────────────── */
 
-.kyma-sections-wrap {
+.pensieve-sections-wrap {
   margin-bottom: 4rem;
 }
-.kyma-sections-wrap .kyma-section-eyebrow,
-.kyma-sections-wrap .kyma-section-title {
+.pensieve-sections-wrap .pensieve-section-eyebrow,
+.pensieve-sections-wrap .pensieve-section-title {
   text-align: center;
   margin-left: auto;
   margin-right: auto;
 }
-.kyma-sections-wrap .kyma-sections {
+.pensieve-sections-wrap .pensieve-sections {
   margin-top: 2rem;
 }
 
 /* ─────────────────────────  Context Graph section  ───────────── */
 
-.kyma-graph {
+.pensieve-graph {
   display: grid;
   grid-template-columns: 1.1fr 1fr;
   gap: 3rem;
   align-items: center;
   margin: 0 0 5rem;
   padding: 3rem 0;
-  border-top: 1px solid var(--kyma-rule-soft);
-  border-bottom: 1px solid var(--kyma-rule-soft);
+  border-top: 1px solid var(--pensieve-rule-soft);
+  border-bottom: 1px solid var(--pensieve-rule-soft);
 }
-.kyma-graph-text .kyma-section-lede strong { color: var(--kyma-fg); font-weight: 600; }
-.kyma-graph-text .kyma-section-lede a {
-  color: var(--kyma-link);
+.pensieve-graph-text .pensieve-section-lede strong { color: var(--pensieve-fg); font-weight: 600; }
+.pensieve-graph-text .pensieve-section-lede a {
+  color: var(--pensieve-link);
   text-decoration: none;
   border-bottom: 1px solid transparent;
 }
-.kyma-graph-text .kyma-section-lede a:hover { border-bottom-color: var(--kyma-link); }
+.pensieve-graph-text .pensieve-section-lede a:hover { border-bottom-color: var(--pensieve-link); }
 
-.kyma-graph-bullets {
+.pensieve-graph-bullets {
   list-style: none;
   padding: 0;
   margin: 1.5rem 0 0;
@@ -850,67 +850,67 @@
   flex-direction: column;
   gap: 0.85rem;
 }
-.kyma-graph-bullets li {
+.pensieve-graph-bullets li {
   position: relative;
   padding-left: 1.4rem;
   font-size: 0.95rem;
   line-height: 1.55;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
 }
-.kyma-graph-bullets li::before {
+.pensieve-graph-bullets li::before {
   content: '→';
   position: absolute;
   left: 0;
   top: 0;
-  color: var(--kyma-accent);
-  font-family: var(--kyma-font-mono);
+  color: var(--pensieve-accent);
+  font-family: var(--pensieve-font-mono);
   font-weight: 600;
 }
-.kyma-graph-bullets li strong { color: var(--kyma-fg); font-weight: 600; }
+.pensieve-graph-bullets li strong { color: var(--pensieve-fg); font-weight: 600; }
 
-.kyma-graph-visual {
+.pensieve-graph-visual {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1.5rem;
 }
-.kyma-graph-svg {
+.pensieve-graph-svg {
   width: 100%;
   max-width: 400px;
   aspect-ratio: 1;
 }
-.kyma-graph-edges line {
-  stroke: rgba(126, 217, 87, 0.35);
+.pensieve-graph-edges line {
+  stroke: rgba(76, 141, 255, 0.35);
   stroke-width: 1;
-  animation: kyma-graph-edge-pulse 4s ease-in-out infinite;
+  animation: pensieve-graph-edge-pulse 4s ease-in-out infinite;
 }
-.kyma-graph-edges line:nth-child(2n)  { animation-delay: 0.5s; }
-.kyma-graph-edges line:nth-child(3n)  { animation-delay: 1.2s; }
-.kyma-graph-edges line:nth-child(5n)  { animation-delay: 1.8s; }
-@keyframes kyma-graph-edge-pulse {
-  0%, 100% { stroke: rgba(126, 217, 87, 0.18); stroke-width: 1; }
-  50%      { stroke: rgba(126, 217, 87, 0.55); stroke-width: 1.5; }
+.pensieve-graph-edges line:nth-child(2n)  { animation-delay: 0.5s; }
+.pensieve-graph-edges line:nth-child(3n)  { animation-delay: 1.2s; }
+.pensieve-graph-edges line:nth-child(5n)  { animation-delay: 1.8s; }
+@keyframes pensieve-graph-edge-pulse {
+  0%, 100% { stroke: rgba(76, 141, 255, 0.18); stroke-width: 1; }
+  50%      { stroke: rgba(76, 141, 255, 0.55); stroke-width: 1.5; }
 }
-.kyma-graph-node {
-  fill: var(--kyma-bg);
-  stroke: var(--kyma-accent);
+.pensieve-graph-node {
+  fill: var(--pensieve-bg);
+  stroke: var(--pensieve-accent);
   stroke-width: 2;
 }
-.kyma-graph-node--center {
-  fill: var(--kyma-accent);
-  stroke: var(--kyma-accent);
-  filter: drop-shadow(0 0 8px rgba(126, 217, 87, 0.6));
+.pensieve-graph-node--center {
+  fill: var(--pensieve-accent);
+  stroke: var(--pensieve-accent);
+  filter: drop-shadow(0 0 8px rgba(76, 141, 255, 0.6));
 }
-.kyma-graph-node--small {
+.pensieve-graph-node--small {
   stroke-width: 1.5;
 }
-.kyma-graph-node--distant {
-  fill: var(--kyma-accent);
+.pensieve-graph-node--distant {
+  fill: var(--pensieve-accent);
   stroke: none;
   opacity: 0.5;
 }
 
-.kyma-graph-stats {
+.pensieve-graph-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1.5rem;
@@ -918,38 +918,38 @@
   max-width: 400px;
   text-align: center;
   padding-top: 1rem;
-  border-top: 1px solid var(--kyma-rule-soft);
+  border-top: 1px solid var(--pensieve-rule-soft);
 }
-.kyma-graph-stats > div {
+.pensieve-graph-stats > div {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
 }
-.kyma-graph-stats .kyma-num {
-  font-family: var(--kyma-font-mono);
+.pensieve-graph-stats .pensieve-num {
+  font-family: var(--pensieve-font-mono);
   font-size: 1.4rem;
   font-weight: 600;
 }
-.kyma-graph-stat-label {
-  font-family: var(--kyma-font-mono);
+.pensieve-graph-stat-label {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.62rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--kyma-muted);
+  color: var(--pensieve-muted);
 }
 
 @media (max-width: 800px) {
-  .kyma-graph { grid-template-columns: 1fr; gap: 2rem; }
+  .pensieve-graph { grid-template-columns: 1fr; gap: 2rem; }
 }
 
 /* ─────────────────────────  Recursive Intelligence  ───────────── */
 
-.kyma-recursive {
+.pensieve-recursive {
   text-align: center;
   margin-bottom: 5rem;
 }
-.kyma-recursive-title {
-  font-family: var(--kyma-font-mono);
+.pensieve-recursive-title {
+  font-family: var(--pensieve-font-mono);
   font-size: clamp(1.6rem, 3.4vw, 2.4rem);
   font-weight: 600;
   letter-spacing: -0.015em;
@@ -957,73 +957,73 @@
   max-width: 24ch;
   margin: 0 auto 1.5rem;
 }
-.kyma-recursive-title em {
-  font-family: var(--kyma-font-body);
+.pensieve-recursive-title em {
+  font-family: var(--pensieve-font-body);
   font-style: italic;
-  color: var(--kyma-accent);
+  color: var(--pensieve-accent);
   font-weight: 500;
 }
-.kyma-recursive-body {
+.pensieve-recursive-body {
   max-width: 70ch;
   margin: 0 auto 3rem;
   font-size: 1.05rem;
   line-height: 1.65;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
 }
-.kyma-recursive-body strong { color: var(--kyma-fg); font-weight: 600; }
+.pensieve-recursive-body strong { color: var(--pensieve-fg); font-weight: 600; }
 
-.kyma-recursive-grid {
+.pensieve-recursive-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
   text-align: left;
 }
-.kyma-recursive-card {
+.pensieve-recursive-card {
   position: relative;
   padding: 2rem 1.5rem 1.5rem;
-  background: var(--kyma-bg-soft);
-  border: 1px solid var(--kyma-rule-soft);
+  background: var(--pensieve-bg-soft);
+  border: 1px solid var(--pensieve-rule-soft);
   border-radius: 10px;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
   transition: border-color 0.18s, transform 0.18s;
 }
-.kyma-recursive-card:hover {
-  border-color: var(--kyma-accent);
+.pensieve-recursive-card:hover {
+  border-color: var(--pensieve-accent);
   transform: translateY(-2px);
 }
-.kyma-recursive-step {
-  font-family: var(--kyma-font-mono);
+.pensieve-recursive-step {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.78rem;
   letter-spacing: 0.12em;
-  color: var(--kyma-accent);
+  color: var(--pensieve-accent);
   font-weight: 600;
 }
-.kyma-recursive-card h3 {
-  font-family: var(--kyma-font-mono);
+.pensieve-recursive-card h3 {
+  font-family: var(--pensieve-font-mono);
   font-size: 1.1rem;
   margin: 0;
   letter-spacing: -0.005em;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
 }
-.kyma-recursive-card p {
+.pensieve-recursive-card p {
   margin: 0;
   font-size: 0.92rem;
   line-height: 1.55;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
 }
-.kyma-recursive-card code {
-  font-family: var(--kyma-font-mono);
+.pensieve-recursive-card code {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.85em;
-  background: var(--kyma-bg);
+  background: var(--pensieve-bg);
   padding: 1px 6px;
   border-radius: 3px;
-  color: var(--kyma-accent);
+  color: var(--pensieve-accent);
 }
 
 @media (max-width: 800px) {
-  .kyma-recursive-grid { grid-template-columns: 1fr; }
+  .pensieve-recursive-grid { grid-template-columns: 1fr; }
 }
 
 /* ── Documentation UI screenshots (public/screenshots/*) ─────────────────── */
@@ -1049,34 +1049,34 @@
    ============================================================================ */
 
 /* ---- Mono eyebrow / kicker ----------------------------------------------- */
-.vp-doc .kyma-eyebrow {
-  font-family: var(--kyma-font-mono);
+.vp-doc .pensieve-eyebrow {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--kyma-accent);
+  color: var(--pensieve-accent);
   margin: 0 0 0.7rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
-.vp-doc .kyma-eyebrow::before {
+.vp-doc .pensieve-eyebrow::before {
   content: "//";
   opacity: 0.55;
 }
 
 /* ---- Quickstart hero ------------------------------------------------------ */
-.vp-doc .kyma-qs-lede {
+.vp-doc .pensieve-qs-lede {
   font-size: 1.18rem;
   line-height: 1.55;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
   max-width: 48ch;
   margin: 0.2rem 0 1.7rem;
 }
 
 /* ---- Command-first terminal (dark even in light mode) --------------------- */
-.kyma-terminal {
+.pensieve-terminal {
   max-width: 720px;
   margin: 0 0 2.6rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1085,196 +1085,196 @@
   background: #0b0e13;
   box-shadow: 0 22px 48px -26px rgba(0, 0, 0, 0.6);
 }
-.kyma-terminal-bar {
+.pensieve-terminal-bar {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   padding: 0.62rem 0.95rem;
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 0.73rem;
   letter-spacing: 0.05em;
   color: #8b9bb0;
   background: #11151c;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
-.kyma-terminal-bar .led {
+.pensieve-terminal-bar .led {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #7ed957;
-  box-shadow: 0 0 8px 0 rgba(126, 217, 87, 0.9);
+  background: #4C8DFF;
+  box-shadow: 0 0 8px 0 rgba(76, 141, 255, 0.9);
   flex: none;
 }
-.kyma-terminal pre {
+.pensieve-terminal pre {
   margin: 0;
   padding: 1rem 1.1rem 1.1rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 0.85rem;
   line-height: 1.7;
-  color: #d6e4d0;
+  color: #cfe0f7;
 }
-.kyma-terminal .prompt {
-  color: #7ed957;
+.pensieve-terminal .prompt {
+  color: #4C8DFF;
   font-weight: 700;
   user-select: none;
   margin-right: 0.6rem;
 }
-.kyma-terminal .caret {
+.pensieve-terminal .caret {
   display: inline-block;
   width: 0.55ch;
   height: 1.05em;
   margin-left: 0.25rem;
   vertical-align: -0.18em;
-  background: #7ed957;
-  box-shadow: 0 0 8px 0 rgba(126, 217, 87, 0.7);
-  animation: kyma-blink 1.15s steps(1) infinite;
+  background: #4C8DFF;
+  box-shadow: 0 0 8px 0 rgba(76, 141, 255, 0.7);
+  animation: pensieve-blink 1.15s steps(1) infinite;
 }
-@keyframes kyma-blink { 50% { opacity: 0; } }
+@keyframes pensieve-blink { 50% { opacity: 0; } }
 
 /* ---- Primary path cards --------------------------------------------------- */
-.kyma-paths {
+.pensieve-paths {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.15rem;
   margin: 0.4rem 0 2.6rem;
 }
-.kyma-path {
+.pensieve-path {
   position: relative;
   display: block;
   padding: 1.4rem 1.5rem 1.45rem 1.7rem;
-  border: 1px solid var(--kyma-rule-soft);
+  border: 1px solid var(--pensieve-rule-soft);
   border-radius: 12px;
-  background: var(--kyma-bg-soft);
-  color: var(--kyma-fg);
+  background: var(--pensieve-bg-soft);
+  color: var(--pensieve-fg);
   text-decoration: none !important;
   overflow: hidden;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
-.kyma-path::before {  /* phosphor accent rail */
+.pensieve-path::before {  /* phosphor accent rail */
   content: "";
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
   width: 3px;
-  background: var(--kyma-accent);
+  background: var(--pensieve-accent);
   opacity: 0.45;
   transition: opacity 0.18s ease, box-shadow 0.18s ease;
 }
-.kyma-path:hover {
-  border-color: var(--kyma-accent);
+.pensieve-path:hover {
+  border-color: var(--pensieve-accent);
   box-shadow: 0 16px 38px -18px var(--vp-c-brand-soft);
   transform: translateY(-2px);
 }
-.kyma-path:hover::before {
+.pensieve-path:hover::before {
   opacity: 1;
-  box-shadow: 0 0 14px 0 var(--kyma-accent);
+  box-shadow: 0 0 14px 0 var(--pensieve-accent);
 }
-.kyma-path--primary {
+.pensieve-path--primary {
   background: var(--vp-c-brand-soft);
-  border-color: color-mix(in srgb, var(--kyma-accent) 32%, transparent);
+  border-color: color-mix(in srgb, var(--pensieve-accent) 32%, transparent);
 }
-.kyma-path-kicker {
+.pensieve-path-kicker {
   display: block;
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: var(--kyma-accent);
+  color: var(--pensieve-accent);
   margin-bottom: 0.6rem;
 }
-.kyma-path-title {
+.pensieve-path-title {
   display: block;
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 1.24rem;
   font-weight: 600;
   letter-spacing: -0.015em;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
   margin-bottom: 0.45rem;
 }
-.kyma-path-desc {
+.pensieve-path-desc {
   display: block;
   font-size: 0.93rem;
   line-height: 1.6;
-  color: var(--kyma-fg-soft);
+  color: var(--pensieve-fg-soft);
   margin-bottom: 0.95rem;
 }
-.kyma-path-cmd {
+.pensieve-path-cmd {
   display: block;
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 0.82rem;
-  color: var(--kyma-fg);
-  background: var(--kyma-bg);
-  border: 1px solid var(--kyma-rule-soft);
+  color: var(--pensieve-fg);
+  background: var(--pensieve-bg);
+  border: 1px solid var(--pensieve-rule-soft);
   border-radius: 7px;
   padding: 0.5rem 0.72rem;
   margin-bottom: 1rem;
   overflow-x: auto;
   white-space: nowrap;
 }
-.kyma-path-cmd::before {
+.pensieve-path-cmd::before {
   content: "$ ";
-  color: var(--kyma-accent);
+  color: var(--pensieve-accent);
   font-weight: 700;
 }
-.kyma-path-cta {
-  font-family: var(--kyma-font-mono);
+.pensieve-path-cta {
+  font-family: var(--pensieve-font-mono);
   font-size: 0.82rem;
   font-weight: 600;
   letter-spacing: 0.01em;
-  color: var(--kyma-accent);
+  color: var(--pensieve-accent);
 }
-.kyma-path:hover .kyma-path-cta { text-decoration: underline; }
+.pensieve-path:hover .pensieve-path-cta { text-decoration: underline; }
 
 /* ---- "Then" — de-emphasized secondary links ------------------------------ */
-.kyma-next {
+.pensieve-next {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.55rem 1.15rem;
   margin: 0.3rem 0 2.4rem;
 }
-.kyma-next a {
+.pensieve-next a {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.1rem 0.55rem;
   padding: 0.72rem 0.25rem;
-  border-bottom: 1px solid var(--kyma-rule-soft);
-  font-family: var(--kyma-font-mono);
+  border-bottom: 1px solid var(--pensieve-rule-soft);
+  font-family: var(--pensieve-font-mono);
   font-size: 0.92rem;
   font-weight: 600;
-  color: var(--kyma-fg);
+  color: var(--pensieve-fg);
   text-decoration: none !important;
   transition: color 0.15s ease, border-color 0.15s ease;
 }
-.kyma-next a::before {
+.pensieve-next a::before {
   content: "→";
-  color: var(--kyma-accent);
+  color: var(--pensieve-accent);
 }
-.kyma-next a span {
+.pensieve-next a span {
   flex: 1 0 100%;
   padding-left: 1.1rem;
-  font-family: var(--kyma-font-body);
+  font-family: var(--pensieve-font-body);
   font-weight: 400;
   font-size: 0.85rem;
-  color: var(--kyma-muted);
+  color: var(--pensieve-muted);
 }
-.kyma-next a:hover {
-  color: var(--kyma-accent);
-  border-color: var(--kyma-accent);
+.pensieve-next a:hover {
+  color: var(--pensieve-accent);
+  border-color: var(--pensieve-accent);
 }
 
 /* ---- Callouts: terminal panels with a mono label ------------------------- */
 .vp-doc .custom-block {
   border-radius: 10px;
-  border: 1px solid var(--kyma-rule-soft);
-  border-left: 3px solid var(--kyma-accent);
+  border: 1px solid var(--pensieve-rule-soft);
+  border-left: 3px solid var(--pensieve-accent);
 }
 .vp-doc .custom-block-title {
-  font-family: var(--kyma-font-mono);
+  font-family: var(--pensieve-font-mono);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -1282,21 +1282,21 @@
 }
 .vp-doc .custom-block.warning { border-left-color: #d99a2b; }
 .vp-doc .custom-block.danger  { border-left-color: #d9534f; }
-.vp-doc .custom-block.info    { border-left-color: var(--kyma-link); }
+.vp-doc .custom-block.info    { border-left-color: var(--pensieve-link); }
 
 /* ---- Code blocks: a quieter terminal rail -------------------------------- */
 .vp-doc div[class*="language-"] {
   border-radius: 10px;
-  border: 1px solid var(--kyma-rule-soft);
+  border: 1px solid var(--pensieve-rule-soft);
 }
 .vp-doc div[class*="language-"] > span.lang {
-  font-family: var(--kyma-font-mono);
-  color: var(--kyma-accent);
+  font-family: var(--pensieve-font-mono);
+  color: var(--pensieve-accent);
   opacity: 0.7;
 }
 
 /* ---- Responsive ----------------------------------------------------------- */
 @media (max-width: 640px) {
-  .kyma-paths,
-  .kyma-next { grid-template-columns: 1fr; }
+  .pensieve-paths,
+  .pensieve-next { grid-template-columns: 1fr; }
 }

@@ -14,7 +14,7 @@ import { useDataSourceWatchers } from "@/features/datasources/useDataSources";
 // lives in the `_app.data-sources.tsx` layout; the detail in `$id`.
 //
 // NOTE: the engine's OAuth callback fallback redirect lands on
-// /data-sources/new (see crates/kyma-datasources/src/oauth/handler.rs), which
+// /data-sources/new (see crates/pensieve-datasources/src/oauth/handler.rs), which
 // matches the sibling $id route with id="new" — the actual OAuth result is
 // delivered via postMessage/polling in useOAuthConnect, not via that URL.
 export const Route = createFileRoute("/_app/data-sources/")({

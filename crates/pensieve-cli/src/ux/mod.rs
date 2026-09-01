@@ -1,0 +1,9 @@
+//! Shared terminal-output toolkit for the pensieve CLI. Commands use these
+//! helpers instead of hand-rolled `println!` formatting, so color, tables,
+//! spinners, and error rendering stay consistent across every subcommand.
+
+pub(crate) mod theme;
+pub(crate) mod format;
+pub(crate) mod table;
+pub(crate) mod spinner;
+pub(crate) mod error;

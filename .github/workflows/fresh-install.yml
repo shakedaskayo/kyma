@@ -3,7 +3,7 @@ name: fresh-install
 # The scale program's acceptance gate (per the user directive): after merging
 # tested work to main, prove the engine runs from a *fresh* state with no
 # pre-existing data or infra. This exercises the LOCAL single-binary path
-# (`kyma serve`: SQLite catalog + local-filesystem store, zero external infra) —
+# (`pensieve serve`: SQLite catalog + local-filesystem store, zero external infra) —
 # the same path a new user gets from install.sh / `cargo install`.
 #
 # Runs scripts/fresh-install-validate.sh, which builds the binary, serves from
@@ -24,8 +24,8 @@ jobs:
     timeout-minutes: 60
     env:
       # Local mode needs no external infra; only a secret key for auth.
-      KYMA_SECRET_KEY: kyma-ci-secret-not-for-production
-      KYMA_FRESH_PORT: "7799"
+      PENSIEVE_SECRET_KEY: pensieve-ci-secret-not-for-production
+      PENSIEVE_FRESH_PORT: "7799"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

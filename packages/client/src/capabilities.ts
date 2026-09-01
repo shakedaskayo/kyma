@@ -1,6 +1,6 @@
 // Feature discovery (`/v1/capabilities`) — which surfaces this server has.
 //
-// Local mode (`kyma serve`, embedded SQLite) deliberately omits the
+// Local mode (`pensieve serve`, embedded SQLite) deliberately omits the
 // control-plane surfaces (data sources, credentials, OAuth, saved Discover
 // views); pages gate on these flags and explain instead of hitting 404s.
 // Servers that predate the endpoint 404 here — we then assume the full
@@ -11,7 +11,7 @@
 // Those dependencies are NOT included here; the hook lives in web/src/sdk.
 // Only the framework-agnostic `fetchCapabilities` function is exported.
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 
 export type Capabilities = {
   mode: "local" | "server";
@@ -37,7 +37,7 @@ export const FULL_CAPABILITIES: Capabilities = {
   agent: true,
 };
 
-export async function fetchCapabilities(t: KymaTransport): Promise<Capabilities> {
+export async function fetchCapabilities(t: PensieveTransport): Promise<Capabilities> {
   try {
     const res = await t.request("/v1/capabilities");
     if (!res.ok) return FULL_CAPABILITIES;

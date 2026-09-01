@@ -5,12 +5,12 @@ variable "project_id" {
 
 variable "name" {
   type        = string
-  description = "Service name, e.g. kyma-dev-engine."
+  description = "Service name, e.g. pensieve-dev-engine."
 }
 
 variable "image" {
   type        = string
-  description = "Container image reference to deploy (e.g. ghcr.io/.../kyma-bin:tag)."
+  description = "Container image reference to deploy (e.g. ghcr.io/.../pensieve-bin:tag)."
 }
 
 variable "region" {
@@ -27,7 +27,7 @@ variable "replicas" {
 
 variable "env_vars" {
   type        = map(string)
-  description = "Service environment variables (KYMA_* config; may hold secrets)."
+  description = "Service environment variables (PENSIEVE_* config; may hold secrets)."
   default     = {}
   sensitive   = true
 }

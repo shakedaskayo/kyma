@@ -1,9 +1,9 @@
 name: npm release
 
-# Changesets release automation for @kyma-ai/* packages.
+# Changesets release automation for @pensieve-ai/* packages.
 # On every push to main:
 #   - If there are pending changesets: opens/updates a version-bump PR
-#     titled "chore: release @kyma-ai packages".
+#     titled "chore: release @pensieve-ai packages".
 #   - If the version-bump PR is merged: publishes to npm.
 
 on:
@@ -47,10 +47,10 @@ jobs:
         uses: changesets/action@v1
         with:
           publish: pnpm changeset publish
-          title: "chore: release @kyma-ai packages"
-          commit: "chore: release @kyma-ai packages"
+          title: "chore: release @pensieve-ai packages"
+          commit: "chore: release @pensieve-ai packages"
           # npm + CHANGELOG.md are the record for SDK versions. GitHub releases
-          # for @kyma-ai/* tags would steal the repo's "latest" release slot
+          # for @pensieve-ai/* tags would steal the repo's "latest" release slot
           # from CLI releases (vX.Y.Z), breaking install.sh's prebuilt-binary
           # resolution and forcing every install into a source build.
           createGithubReleases: false

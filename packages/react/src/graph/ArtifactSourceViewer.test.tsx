@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { KymaProvider } from "../provider/KymaProvider";
+import { PensieveProvider } from "../provider/PensieveProvider";
 import { ArtifactSourceViewer } from "./ArtifactSourceViewer";
 
 function windowResponse(offset: number, content: string, eof: boolean, size: number) {
@@ -40,9 +40,9 @@ describe("ArtifactSourceViewer", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
         <ArtifactSourceViewer path="artifacts/t/logs/build.log" />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
 
     await waitFor(() =>
@@ -61,9 +61,9 @@ describe("ArtifactSourceViewer", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nope", { status: 500 })));
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
         <ArtifactSourceViewer path="artifacts/t/logs/build.log" />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
 
     await waitFor(() => expect(screen.getByRole("button", { name: /retry/i })).toBeTruthy());
@@ -87,9 +87,9 @@ describe("ArtifactSourceViewer", () => {
     );
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
         <ArtifactSourceViewer path="artifacts/t/logs/build.log" />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
 
     const retry = await screen.findByRole("button", { name: /retry/i });

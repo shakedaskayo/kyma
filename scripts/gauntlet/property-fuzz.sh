@@ -25,7 +25,7 @@ esac
 START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 LOG="$(mktemp)"
 if cargo test --quiet \
-     -p kyma-graph-testkit -p kyma-graph-topo -p kyma-retrieval-eval \
+     -p pensieve-graph-testkit -p pensieve-graph-topo -p pensieve-retrieval-eval \
      >"$LOG" 2>&1; then
   PASS=true
   OBS="graph differential-vs-petgraph + CSR topo differential + retrieval recall/NDCG-vs-oracle suites green (tier=$TIER)"

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Lock down the v1.0 stability contract — produce `docs/stability.md` enumerating every surface kyma promises not to break, a deprecation policy section in `CONTRIBUTING.md`, the shared metrics-taxonomy rules at `docs/metrics-taxonomy.md`, and a back-compat CI workflow that grows organically as `v1.0.0-pre.N` tags get cut.
+**Goal:** Lock down the v1.0 stability contract — produce `docs/stability.md` enumerating every surface pensieve promises not to break, a deprecation policy section in `CONTRIBUTING.md`, the shared metrics-taxonomy rules at `docs/metrics-taxonomy.md`, and a back-compat CI workflow that grows organically as `v1.0.0-pre.N` tags get cut.
 
 **Architecture:** Mostly authored markdown plus one new CI workflow. The CI workflow snapshots fixtures (extents + catalog dumps) from each tagged version into the repo's GitHub release assets and replays a fixed query set on every PR. Today the repo has zero tags, so the workflow ships with a single synthetic "main-HEAD-at-F1-time" snapshot; it grows as `v1.0.0-pre.N` tags land. The format-freeze section of `stability.md` ships as a placeholder until P0 completes, then gets filled in.
 
@@ -33,13 +33,13 @@ Each file has one clear responsibility. The replay script is reused for every fi
 Write the file with this exact content:
 
 ````markdown
-# kyma Stability Contract
+# pensieve Stability Contract
 
 > **Status:** in force from `v1.0.0`. Until then, this document is the
-> contract kyma is being hardened to meet. Any change to a "frozen" surface
+> contract pensieve is being hardened to meet. Any change to a "frozen" surface
 > below requires the deprecation policy at the bottom of this file.
 
-This document names every surface kyma promises not to break across minor
+This document names every surface pensieve promises not to break across minor
 versions in the v1.x series, and the deprecation policy that governs
 intentional changes.
 
@@ -109,21 +109,21 @@ git commit -m "docs(stability): bootstrap stability contract skeleton (F1)"
 
 **Files:**
 - Modify: `docs/stability.md` (section 1)
-- Reference: `crates/kyma-server/src/lib.rs`, any `axum::Router::route(...)` call sites
+- Reference: `crates/pensieve-server/src/lib.rs`, any `axum::Router::route(...)` call sites
 
 - [ ] **Step 1: Inventory every HTTP route the server exposes**
 
 Run:
 
 ```bash
-grep -rn 'route\|Router::new\|\.route_layer\|\.nest' crates/kyma-server/src \
+grep -rn 'route\|Router::new\|\.route_layer\|\.nest' crates/pensieve-server/src \
   | grep -v 'test' | grep -v '//' | sort
 ```
 
 Also grep ingest crates:
 
 ```bash
-grep -rn 'route\|Router::new' crates/kyma-ingest-rest/src crates/kyma-mcp/src 2>/dev/null
+grep -rn 'route\|Router::new' crates/pensieve-ingest-rest/src crates/pensieve-mcp/src 2>/dev/null
 ```
 
 For each route, capture: HTTP method, path, what it does, request shape, response shape. Read the handler if the route's purpose isn't obvious from the name.
@@ -151,7 +151,7 @@ policy in section 10.
   - `Idempotency-Key: <key>` (optional; documented in A1's idempotency contract)
 - Request body: NDJSON or JSON array of row objects. Field shapes match
   the table schema. Unknown columns are rejected unless dynamic-schema
-  mode is enabled (see `KYMA_INGEST_DYNAMIC_SCHEMA` in section 7).
+  mode is enabled (see `PENSIEVE_INGEST_DYNAMIC_SCHEMA` in section 7).
 - Response: `200 OK` with `{ "ingested": <n>, "snapshot_id": "..." }`
   on success. Error shape: `{ "error": "<code>", "message": "..." }`
   with HTTP 4xx/5xx.
@@ -183,7 +183,7 @@ Run:
 
 ```bash
 grep -oE '/v[0-9]+/[a-zA-Z_/{}-]+' docs/stability.md | sort -u > /tmp/doc-routes.txt
-grep -rEoh '"/v[0-9]+/[a-zA-Z_/{}-]+"' crates/kyma-server/src crates/kyma-ingest-rest/src \
+grep -rEoh '"/v[0-9]+/[a-zA-Z_/{}-]+"' crates/pensieve-server/src crates/pensieve-ingest-rest/src \
   | tr -d '"' | sort -u > /tmp/code-routes.txt
 diff /tmp/code-routes.txt /tmp/doc-routes.txt
 ```
@@ -203,11 +203,11 @@ git commit -m "docs(stability): freeze HTTP REST API surface (F1)"
 
 **Files:**
 - Modify: `docs/stability.md` (section 2)
-- Reference: `crates/kyma-server/src/flight.rs`
+- Reference: `crates/pensieve-server/src/flight.rs`
 
 - [ ] **Step 1: Read the Flight handler and inventory the surface**
 
-Open `crates/kyma-server/src/flight.rs`. List every Flight RPC the server implements (`do_get`, `do_action`, `list_actions`, `get_flight_info`, etc.) and, for each, the ticket / action shape kyma expects.
+Open `crates/pensieve-server/src/flight.rs`. List every Flight RPC the server implements (`do_get`, `do_action`, `list_actions`, `get_flight_info`, etc.) and, for each, the ticket / action shape pensieve expects.
 
 - [ ] **Step 2: Replace section 2 with the inventory**
 
@@ -224,7 +224,7 @@ following surface is part of the v1.0 contract.
 - `do_action(action)` — execute one of the actions enumerated below.
 - `list_actions()` — returns the action list below.
 - `get_flight_info(descriptor)` — [behavior].
-- (enumerate every Flight method `crates/kyma-server/src/flight.rs` implements)
+- (enumerate every Flight method `crates/pensieve-server/src/flight.rs` implements)
 
 ### `do_get` ticket shape
 
@@ -267,11 +267,11 @@ git commit -m "docs(stability): freeze Arrow Flight gRPC surface (F1)"
 
 **Files:**
 - Modify: `docs/stability.md` (section 3)
-- Reference: `crates/kyma-kql/src/` (parser and translator)
+- Reference: `crates/pensieve-kql/src/` (parser and translator)
 
 - [ ] **Step 1: Inventory implemented KQL operators, functions, types**
 
-Read `crates/kyma-kql/src/lib.rs` and the parser modules. Enumerate every operator (`where`, `project`, `summarize`, `extend`, `join`, `order`, `take`, `top`, etc.) and every scalar/aggregate function the parser accepts (`count`, `sum`, `avg`, `min`, `max`, `bin`, `ago`, `now`, `tostring`, `toint`, `between`, ...).
+Read `crates/pensieve-kql/src/lib.rs` and the parser modules. Enumerate every operator (`where`, `project`, `summarize`, `extend`, `join`, `order`, `take`, `top`, etc.) and every scalar/aggregate function the parser accepts (`count`, `sum`, `avg`, `min`, `max`, `bin`, `ago`, `now`, `tostring`, `toint`, `between`, ...).
 
 Also list type names accepted in casts (`int`, `long`, `real`, `string`, `bool`, `datetime`, `timespan`, `dynamic`).
 
@@ -373,7 +373,7 @@ git commit -m "docs(stability): freeze KQL dialect subset (F1)"
 
 **Files:**
 - Modify: `docs/stability.md` (section 4)
-- Reference: `crates/kyma-exec/src/df_adapter.rs` (or wherever DataFusion is integrated)
+- Reference: `crates/pensieve-exec/src/df_adapter.rs` (or wherever DataFusion is integrated)
 
 - [ ] **Step 1: Identify the DataFusion version + SQL features we expose**
 
@@ -385,7 +385,7 @@ grep -rn 'datafusion' Cargo.toml crates/*/Cargo.toml | head
 
 Note the pinned DataFusion version.
 
-Open `crates/kyma-exec/src/` and identify any features explicitly disabled (e.g. UDF registration, write DDL, federated catalogs).
+Open `crates/pensieve-exec/src/` and identify any features explicitly disabled (e.g. UDF registration, write DDL, federated catalogs).
 
 - [ ] **Step 2: Replace section 4 with the SQL freeze**
 
@@ -405,7 +405,7 @@ expressions, scalar/aggregate functions documented at
 ### Opt-outs
 
 - DDL statements (`CREATE TABLE`, `DROP TABLE`, `ALTER TABLE`, ...) — not
-  supported through SQL. Use the catalog API or `kyma-cli` instead.
+  supported through SQL. Use the catalog API or `pensieve-cli` instead.
 - DML other than `INSERT INTO ... SELECT` — not supported.
 - User-defined functions — not registrable at runtime in v1.0.
 - (Enumerate every other opt-out.)
@@ -436,18 +436,18 @@ git commit -m "docs(stability): freeze SQL dialect surface (F1)"
 
 **Files:**
 - Modify: `docs/stability.md` (section 5)
-- Reference: `crates/kyma-mcp/src/`
+- Reference: `crates/pensieve-mcp/src/`
 
 - [ ] **Step 1: Inventory MCP tools, resources, prompts**
 
-Read `crates/kyma-mcp/src/lib.rs`. List every MCP tool, resource template, and prompt the server registers. For each tool, capture the JSON schema for its arguments and the return shape.
+Read `crates/pensieve-mcp/src/lib.rs`. List every MCP tool, resource template, and prompt the server registers. For each tool, capture the JSON schema for its arguments and the return shape.
 
 - [ ] **Step 2: Replace section 5 with the MCP freeze**
 
 ````markdown
 ## 5. MCP surface
 
-The MCP server exposed by `kyma-mcp` is part of the v1.0 frozen surface.
+The MCP server exposed by `pensieve-mcp` is part of the v1.0 frozen surface.
 Agents that consume this surface can rely on tool names, argument schemas,
 and return shapes across the v1.x series.
 
@@ -456,12 +456,12 @@ and return shapes across the v1.x series.
 - `query` — execute a KQL or SQL query.
   - Arguments: `{ database: string, query: string, dialect: "kql"|"sql", limit?: int }`.
   - Returns: `{ rows: [...], schema: [...], stats: { rows_scanned, rows_returned, ms } }`.
-- (Enumerate every tool registered by `kyma-mcp`.)
+- (Enumerate every tool registered by `pensieve-mcp`.)
 
 ### Resources (frozen)
 
-- `kyma://databases` — list available databases.
-- `kyma://databases/{db}/tables` — list tables in a database.
+- `pensieve://databases` — list available databases.
+- `pensieve://databases/{db}/tables` — list tables in a database.
 - (Enumerate.)
 
 ### Prompts (frozen)
@@ -471,7 +471,7 @@ and return shapes across the v1.x series.
 ### Tests proving the freeze
 
 `scripts/test-*-mcp.sh` (to be added by A2). Until A2 exists, MCP surface
-is exercised only by `crates/kyma-mcp/tests/`.
+is exercised only by `crates/pensieve-mcp/tests/`.
 ````
 
 - [ ] **Step 3: Commit**
@@ -487,15 +487,15 @@ git commit -m "docs(stability): freeze MCP surface (F1)"
 
 **Files:**
 - Modify: `docs/stability.md` (section 6)
-- Reference: `crates/kyma-catalog/migrations/` (or wherever migrations live)
+- Reference: `crates/pensieve-catalog/migrations/` (or wherever migrations live)
 
 - [ ] **Step 1: Find migrations and list every table/column**
 
 Run:
 
 ```bash
-find crates/kyma-catalog -name '*.sql' -o -name 'migrations*' | head
-ls crates/kyma-catalog/migrations/ 2>/dev/null
+find crates/pensieve-catalog -name '*.sql' -o -name 'migrations*' | head
+ls crates/pensieve-catalog/migrations/ 2>/dev/null
 ```
 
 Open every migration in order. List every table, every column, every index. Note constraints (PK, FK, UNIQUE).
@@ -539,7 +539,7 @@ the deprecation policy in section 10.
 
 ### Migration discipline
 
-- Each migration is a single `.sql` file under `crates/kyma-catalog/migrations/`.
+- Each migration is a single `.sql` file under `crates/pensieve-catalog/migrations/`.
 - File name: `NNNN_<short_snake_case>.sql`.
 - Numbering is monotonic and gapless within a release line.
 - The back-compat workflow (Task 14) runs every PR's migrations against
@@ -562,23 +562,23 @@ git commit -m "docs(stability): freeze catalog Postgres schema (F1)"
 - Modify: `docs/stability.md` (section 7)
 - Reference: every `std::env::var` call in the codebase
 
-- [ ] **Step 1: Inventory every KYMA_* env var**
+- [ ] **Step 1: Inventory every PENSIEVE_* env var**
 
 Run:
 
 ```bash
-grep -rohE 'KYMA_[A-Z0-9_]+' crates/*/src 2>/dev/null | sort -u > /tmp/all-env-vars.txt
+grep -rohE 'PENSIEVE_[A-Z0-9_]+' crates/*/src 2>/dev/null | sort -u > /tmp/all-env-vars.txt
 cat /tmp/all-env-vars.txt
 ```
 
-For each: read its call site to capture its meaning, default, and accepted values. Also note any env var that's clearly test-only (`KYMA_TEST_*`).
+For each: read its call site to capture its meaning, default, and accepted values. Also note any env var that's clearly test-only (`PENSIEVE_TEST_*`).
 
 - [ ] **Step 2: Replace section 7 with the config freeze**
 
 ````markdown
 ## 7. Configuration keys and environment variables
 
-Every `KYMA_*` env var below is part of the v1.0 contract. Removing or
+Every `PENSIEVE_*` env var below is part of the v1.0 contract. Removing or
 renaming any of them requires the deprecation policy in section 10. New
 env vars may be added at any v1.x minor release.
 
@@ -586,25 +586,25 @@ env vars may be added at any v1.x minor release.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KYMA_HTTP_ADDR` | `0.0.0.0:8080` | HTTP server bind address |
-| `KYMA_FLIGHT_ADDR` | `0.0.0.0:9090` | Arrow Flight bind address |
-| `KYMA_DATABASE_URL` | (required) | Postgres connection string for the catalog |
-| `KYMA_OBJECT_STORE_URL` | (required) | object-store URL (e.g. `s3://bucket/prefix`) |
-| `KYMA_AUTH_BACKEND` | `env` | auth backend selector (`env`, `none`, ...) |
-| `KYMA_AUTH_TOKENS` | (empty) | env-backend token list, format documented under A4 |
-| `KYMA_INGEST_DYNAMIC_SCHEMA` | `false` | enable auto-add columns from inbound rows |
-| `KYMA_STAGING_DISABLED` | `false` | bypass the staging buffer (test/debug) |
-| `KYMA_COMPACTION_IDLE_SLEEP_MS` | (...) | compaction worker idle sleep |
-| `KYMA_COMPACTION_POLL_SECS` | (...) | compaction worker poll interval |
-| `KYMA_COMPACTION_MIN_EXTENTS` | (...) | minimum extents per compaction |
-| `KYMA_RETENTION_POLL_SECS` | (...) | retention worker poll interval |
-| `KYMA_PHYSICAL_GC_POLL_SECS` | (...) | GC worker poll interval |
-| `KYMA_PHYSICAL_GC_GRACE_SECS` | (...) | grace window before GC deletes soft-deleted extents |
-| `KYMA_FILEDROP_ENABLED` | `false` | enable the file-drop ingest frontend |
-| `KYMA_CONNECTOR_WORKERS` | (...) | connector worker count |
-| `KYMA_SCHEMA_CACHE_TTL_SECS` | (...) | catalog schema cache TTL |
-| `KYMA_AGENT_OLLAMA_HOST` | (...) | local-agent Ollama host |
-| `KYMA_AGENT_MODEL` | (...) | local-agent model name |
+| `PENSIEVE_HTTP_ADDR` | `0.0.0.0:8080` | HTTP server bind address |
+| `PENSIEVE_FLIGHT_ADDR` | `0.0.0.0:9090` | Arrow Flight bind address |
+| `PENSIEVE_DATABASE_URL` | (required) | Postgres connection string for the catalog |
+| `PENSIEVE_OBJECT_STORE_URL` | (required) | object-store URL (e.g. `s3://bucket/prefix`) |
+| `PENSIEVE_AUTH_BACKEND` | `env` | auth backend selector (`env`, `none`, ...) |
+| `PENSIEVE_AUTH_TOKENS` | (empty) | env-backend token list, format documented under A4 |
+| `PENSIEVE_INGEST_DYNAMIC_SCHEMA` | `false` | enable auto-add columns from inbound rows |
+| `PENSIEVE_STAGING_DISABLED` | `false` | bypass the staging buffer (test/debug) |
+| `PENSIEVE_COMPACTION_IDLE_SLEEP_MS` | (...) | compaction worker idle sleep |
+| `PENSIEVE_COMPACTION_POLL_SECS` | (...) | compaction worker poll interval |
+| `PENSIEVE_COMPACTION_MIN_EXTENTS` | (...) | minimum extents per compaction |
+| `PENSIEVE_RETENTION_POLL_SECS` | (...) | retention worker poll interval |
+| `PENSIEVE_PHYSICAL_GC_POLL_SECS` | (...) | GC worker poll interval |
+| `PENSIEVE_PHYSICAL_GC_GRACE_SECS` | (...) | grace window before GC deletes soft-deleted extents |
+| `PENSIEVE_FILEDROP_ENABLED` | `false` | enable the file-drop ingest frontend |
+| `PENSIEVE_CONNECTOR_WORKERS` | (...) | connector worker count |
+| `PENSIEVE_SCHEMA_CACHE_TTL_SECS` | (...) | catalog schema cache TTL |
+| `PENSIEVE_AGENT_OLLAMA_HOST` | (...) | local-agent Ollama host |
+| `PENSIEVE_AGENT_MODEL` | (...) | local-agent model name |
 | ... | ... | ... |
 
 (Fill in every var from Step 1, real defaults, real meanings. Read the
@@ -614,8 +614,8 @@ call site if unsure.)
 
 These are not part of the v1.0 contract; they may change at any time.
 
-- `KYMA_TEST_DATABASE_URL` — override catalog DB in tests.
-- (Enumerate any other `KYMA_TEST_*`.)
+- `PENSIEVE_TEST_DATABASE_URL` — override catalog DB in tests.
+- (Enumerate any other `PENSIEVE_TEST_*`.)
 ````
 
 - [ ] **Step 3: Commit**
@@ -645,7 +645,7 @@ The v1.0 extent format will be frozen when P0 lands. Until then, the
 following invariants are committed:
 
 - Every extent carries a leading magic + version byte: `0x4B 0x59 0x4D 0x41`
-  ("KYMA") followed by a `u8` format version.
+  ("PENSIEVE") followed by a `u8` format version.
 - v1.x readers will read every extent any v1.x writer produces. v1.x
   readers will read extents written by P0-era pre-v1.0 builds on a
   best-effort basis (back-compat fixture pinned at the first `v1.0.0-pre.N`
@@ -696,8 +696,8 @@ A deprecated surface must continue to work for at least **6 months**
 2. **Land the replacement.** The new surface ships in the same release
    as (or before) the deprecation warning.
 3. **Warn.** Calls to the deprecated surface emit a structured warning:
-   - HTTP / Flight: response carries `X-Kyma-Deprecation: <surface>; sunset=<version>; replacement=<surface>`.
-   - Log: `kyma_deprecation_used_total{surface, replacement}` counter increments; structured log entry at WARN with `event=deprecation_used`.
+   - HTTP / Flight: response carries `X-Pensieve-Deprecation: <surface>; sunset=<version>; replacement=<surface>`.
+   - Log: `pensieve_deprecation_used_total{surface, replacement}` counter increments; structured log entry at WARN with `event=deprecation_used`.
 4. **Document.** Changelog entry under "Deprecated" with the sunset version.
 5. **Wait.** At least 6 months and 2 minor releases.
 6. **Remove.** In the sunset release, drop the surface. Changelog entry
@@ -739,8 +739,8 @@ Insert this block before the `## License` heading:
 ````markdown
 ## Stability and deprecation policy
 
-From `v1.0.0` onward, kyma maintains a written stability contract:
-[`docs/stability.md`](docs/stability.md). It lists every surface kyma
+From `v1.0.0` onward, pensieve maintains a written stability contract:
+[`docs/stability.md`](docs/stability.md). It lists every surface pensieve
 promises not to break across the v1.x series — HTTP REST API, Flight
 gRPC, KQL dialect, SQL dialect, MCP surface, catalog schema, config
 keys, extent format, metrics naming.
@@ -776,32 +776,32 @@ git commit -m "docs(contributing): point at stability contract and deprecation p
 
 **Files:**
 - Create: `docs/metrics-taxonomy.md`
-- Reference: `crates/kyma-server/src/metrics.rs`
+- Reference: `crates/pensieve-server/src/metrics.rs`
 
 - [ ] **Step 1: Inventory current metric names**
 
 Run:
 
 ```bash
-grep -rEoh '"kyma_[a-z0-9_]+"' crates/*/src 2>/dev/null | sort -u
+grep -rEoh '"pensieve_[a-z0-9_]+"' crates/*/src 2>/dev/null | sort -u
 grep -rEoh 'metrics::(counter|gauge|histogram)!\("[a-z0-9_]+' crates/*/src 2>/dev/null | sort -u
 ```
 
-These are the existing names. Some may not start with `kyma_`; the taxonomy will require they do post-v1.0.
+These are the existing names. Some may not start with `pensieve_`; the taxonomy will require they do post-v1.0.
 
 - [ ] **Step 2: Write `docs/metrics-taxonomy.md`**
 
 ````markdown
-# kyma Metrics Taxonomy
+# pensieve Metrics Taxonomy
 
-The shared rules every metric kyma exports must follow. Area specs
+The shared rules every metric pensieve exports must follow. Area specs
 (A1–A4) define which metrics each subsystem ships; this file defines the
 naming, label, and lifecycle rules they all follow.
 
 ## Naming
 
-- Every metric name starts with `kyma_`.
-- Format: `kyma_<subsystem>_<metric>_<unit>` where:
+- Every metric name starts with `pensieve_`.
+- Format: `pensieve_<subsystem>_<metric>_<unit>` where:
   - `<subsystem>` is `ingest`, `query`, `catalog`, `storage`,
     `compaction`, `retention`, `gc`, `auth`, `mcp`, `server`, ...
   - `<metric>` is a short snake_case noun.
@@ -810,10 +810,10 @@ naming, label, and lifecycle rules they all follow.
 
 Examples:
 
-- `kyma_ingest_rows_total` (counter)
-- `kyma_ingest_commit_seconds` (histogram)
-- `kyma_query_pruning_extents_skipped_ratio` (gauge)
-- `kyma_storage_extent_bytes` (histogram)
+- `pensieve_ingest_rows_total` (counter)
+- `pensieve_ingest_commit_seconds` (histogram)
+- `pensieve_query_pruning_extents_skipped_ratio` (gauge)
+- `pensieve_storage_extent_bytes` (histogram)
 
 ## Labels
 
@@ -838,7 +838,7 @@ Examples:
 
 Removing or renaming a metric follows the same 6-month / 2-minor-release
 policy as `docs/stability.md` section 10. The deprecated metric continues
-to be exported, with `kyma_deprecation_used_total{surface}` ticking for
+to be exported, with `pensieve_deprecation_used_total{surface}` ticking for
 each scrape of a deprecated name.
 
 ## Verification
@@ -921,7 +921,7 @@ Create `scripts/tests/test-backcompat-snapshot.sh`:
 ```bash
 #!/usr/bin/env bash
 # Test: backcompat-snapshot.sh produces a fixture directory with the
-# expected files against a running kyma engine.
+# expected files against a running pensieve engine.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -956,7 +956,7 @@ echo PASS
 ```bash
 chmod +x scripts/tests/test-backcompat-snapshot.sh
 docker-compose up -d  # if not already running
-cargo run --release -p kyma-bin &
+cargo run --release -p pensieve-bin &
 ENGINE_PID=$!
 sleep 5
 scripts/tests/test-backcompat-snapshot.sh
@@ -981,13 +981,13 @@ mkdir -p "$OUT_DIR/sample-extents"
 
 # 1. git sha + build version
 git rev-parse HEAD > "$OUT_DIR/git-sha.txt"
-# build version: cargo metadata for kyma-bin
+# build version: cargo metadata for pensieve-bin
 cargo metadata --format-version 1 --no-deps \
-  | python3 -c "import json,sys; m=json.load(sys.stdin); print(next(p['version'] for p in m['packages'] if p['name']=='kyma-bin'))" \
+  | python3 -c "import json,sys; m=json.load(sys.stdin); print(next(p['version'] for p in m['packages'] if p['name']=='pensieve-bin'))" \
   > "$OUT_DIR/build-version.txt"
 
 # 2. catalog schema dump (DDL only, no data)
-PG_URL="${KYMA_DATABASE_URL:?KYMA_DATABASE_URL must be set}"
+PG_URL="${PENSIEVE_DATABASE_URL:?PENSIEVE_DATABASE_URL must be set}"
 pg_dump --schema-only --no-owner --no-privileges "$PG_URL" > "$OUT_DIR/catalog-schema.sql"
 
 # 3. sample extents — copy a small subset from object storage
@@ -1193,7 +1193,7 @@ git commit -m "test(backcompat): replay script with TDD (F1)"
 ```bash
 docker-compose down -v
 docker-compose up -d
-cargo run --release -p kyma-bin &
+cargo run --release -p pensieve-bin &
 ENGINE_PID=$!
 sleep 8
 curl -sS http://localhost:8080/health
@@ -1318,28 +1318,28 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: kyma
-          POSTGRES_PASSWORD: kyma
-          POSTGRES_DB: kyma
+          POSTGRES_USER: pensieve
+          POSTGRES_PASSWORD: pensieve
+          POSTGRES_DB: pensieve
         ports: ["5432:5432"]
         options: >-
-          --health-cmd="pg_isready -U kyma"
+          --health-cmd="pg_isready -U pensieve"
           --health-interval=5s
           --health-timeout=3s
           --health-retries=10
       minio:
         image: bitnami/minio:latest
         env:
-          MINIO_ROOT_USER: kyma
-          MINIO_ROOT_PASSWORD: kyma-secret
-          MINIO_DEFAULT_BUCKETS: kyma
+          MINIO_ROOT_USER: pensieve
+          MINIO_ROOT_PASSWORD: pensieve-secret
+          MINIO_DEFAULT_BUCKETS: pensieve
         ports: ["9000:9000"]
     env:
-      KYMA_DATABASE_URL: postgresql://kyma:kyma@localhost:5432/kyma
-      KYMA_OBJECT_STORE_URL: s3://kyma?endpoint=http://localhost:9000&region=us-east-1&access_key_id=kyma&secret_access_key=kyma-secret
-      KYMA_HTTP_ADDR: 0.0.0.0:8080
-      AWS_ACCESS_KEY_ID: kyma
-      AWS_SECRET_ACCESS_KEY: kyma-secret
+      PENSIEVE_DATABASE_URL: postgresql://pensieve:pensieve@localhost:5432/pensieve
+      PENSIEVE_OBJECT_STORE_URL: s3://pensieve?endpoint=http://localhost:9000&region=us-east-1&access_key_id=pensieve&secret_access_key=pensieve-secret
+      PENSIEVE_HTTP_ADDR: 0.0.0.0:8080
+      AWS_ACCESS_KEY_ID: pensieve
+      AWS_SECRET_ACCESS_KEY: pensieve-secret
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -1352,11 +1352,11 @@ jobs:
           key: backcompat-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
       - name: build engine
-        run: cargo build --release -p kyma-bin
+        run: cargo build --release -p pensieve-bin
 
       - name: start engine
         run: |
-          ./target/release/kyma-bin &
+          ./target/release/pensieve-bin &
           echo $! > /tmp/engine.pid
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:8080/health >/dev/null; then break; fi
@@ -1414,7 +1414,7 @@ git commit -m "ci(backcompat): replay fixed query set against fixtures (F1)"
 ```bash
 docker-compose down -v
 docker-compose up -d
-cargo run --release -p kyma-bin &
+cargo run --release -p pensieve-bin &
 ENGINE_PID=$!
 for i in $(seq 1 30); do
   if curl -fsS http://localhost:8080/health >/dev/null 2>&1; then break; fi
@@ -1463,12 +1463,12 @@ Read every section. Verify:
 
 - Every section has been filled in (no `_Filled in by Task N._` placeholders left, except section 8 which is explicitly placeholder-pending-P0).
 - Every surface enumerated by the inventory greps in Tasks 2, 3, 6, 8 is present in the doc.
-- Every "frozen" claim has a test backing it (REST → `scripts/backcompat-queries.txt`, KQL → `scripts/test-kql.sh` + back-compat replay, SQL → back-compat replay, Flight → `scripts/test-flight.sh`, MCP → `crates/kyma-mcp/tests/`, catalog → migration policy + workflow, config → workflow loads env vars from `docs/stability.md`).
+- Every "frozen" claim has a test backing it (REST → `scripts/backcompat-queries.txt`, KQL → `scripts/test-kql.sh` + back-compat replay, SQL → back-compat replay, Flight → `scripts/test-flight.sh`, MCP → `crates/pensieve-mcp/tests/`, catalog → migration policy + workflow, config → workflow loads env vars from `docs/stability.md`).
 - The deprecation policy is consistent with the wording in `CONTRIBUTING.md`.
 
 - [ ] **Step 2: Cross-check against the master spec**
 
-Open `docs/superpowers/specs/2026-05-19-kyma-v1-production-readiness-design.md` section 2 (Axis 2). Every "frozen surface" bullet there must map to a section in `stability.md`. Fix any miss inline.
+Open `docs/superpowers/specs/2026-05-19-pensieve-v1-production-readiness-design.md` section 2 (Axis 2). Every "frozen surface" bullet there must map to a section in `stability.md`. Fix any miss inline.
 
 - [ ] **Step 3: Commit any fixes**
 
@@ -1518,7 +1518,7 @@ Expected: no errors.
 
 - [ ] **Step 3: Tag the F1 completion in the master spec**
 
-Open `docs/superpowers/specs/2026-05-19-kyma-v1-production-readiness-design.md`, find the F1 entry in section 3, append after its line:
+Open `docs/superpowers/specs/2026-05-19-pensieve-v1-production-readiness-design.md`, find the F1 entry in section 3, append after its line:
 
 ```markdown
 **Status:** ✅ F1 implementation complete — see `docs/superpowers/plans/2026-05-19-f1-stability-contract.md`. Format clause in `docs/stability.md` section 8 is a placeholder until P0 lands.
@@ -1527,7 +1527,7 @@ Open `docs/superpowers/specs/2026-05-19-kyma-v1-production-readiness-design.md`,
 - [ ] **Step 4: Final commit**
 
 ```bash
-git add docs/superpowers/specs/2026-05-19-kyma-v1-production-readiness-design.md
+git add docs/superpowers/specs/2026-05-19-pensieve-v1-production-readiness-design.md
 git commit -m "docs(specs): mark F1 (stability contract) complete"
 ```
 

@@ -1,0 +1,65 @@
+[package]
+name = "pensieve-bin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Main pensieve binary. Composes services, registers the node in the catalog, runs background workers."
+
+[[bin]]
+name = "pensieve"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-core.workspace = true
+pensieve-catalog.workspace = true
+pensieve-jobs.workspace = true
+pensieve-index-vector.workspace = true
+pensieve-index-fts.workspace = true
+hostname = "0.4"
+uuid.workspace = true
+pensieve-storage.workspace = true
+pensieve-format-tlm.workspace = true
+pensieve-format-parquet.workspace = true
+pensieve-compaction.workspace = true
+pensieve-datasources.workspace = true
+pensieve-ingest-core.workspace = true
+pensieve-ingest-rest.workspace = true
+pensieve-ingest-filedrop.workspace = true
+pensieve-ingest-otlp.workspace = true
+pensieve-ingest-kafka.workspace = true
+pensieve-mcp.workspace = true
+pensieve-memory.workspace = true
+pensieve-plan.workspace = true
+pensieve-kql.workspace = true
+pensieve-exec.workspace = true
+pensieve-federation.workspace = true
+pensieve-brain.workspace = true
+pensieve-server.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-opentelemetry.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+tonic.workspace = true
+tonic-web.workspace = true
+opentelemetry-proto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap = { version = "4", features = ["derive", "env"] }
+chrono.workspace = true
+
+[features]
+default = ["github"]
+web-ui  = ["pensieve-server/web-ui"]
+cloud-auth = ["pensieve-server/cloud-auth"]
+github = ["pensieve-datasources/github"]

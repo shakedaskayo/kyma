@@ -6,28 +6,28 @@
 
 **Architecture:** Server-side deterministic layout (Rust port of the TS algorithms) cached per graph version, served through a new paginated `/v1/graph/:graph/export` endpoint that includes node positions. The client builds one graphology instance per view and renders it with Sigma.js v3 (WebGL) using quiet-arrows/loud-focus edge styling and zoom-based LOD. The old canvas renderer stays as a no-WebGL fallback.
 
-**Tech Stack:** Rust (axum, kyma-graph crate), TypeScript, React, sigma@^3, graphology, @sigma/edge-curve, @sigma/node-image, zustand, React Query, vitest, Tailwind (`ky-` prefix).
+**Tech Stack:** Rust (axum, pensieve-graph crate), TypeScript, React, sigma@^3, graphology, @sigma/edge-curve, @sigma/node-image, zustand, React Query, vitest, Tailwind (`pv-` prefix).
 
 **Spec:** `docs/superpowers/specs/2026-06-11-graph-explorer-redesign-design.md`
 
-**Run commands from repo root.** Rust tests: `cargo test -p <crate>`. JS: `pnpm --filter @kyma-ai/client test`, `pnpm --filter @kyma-ai/react test`, `pnpm --filter @kyma-ai/react typecheck`.
+**Run commands from repo root.** Rust tests: `cargo test -p <crate>`. JS: `pnpm --filter @pensieve-ai/client test`, `pnpm --filter @pensieve-ai/react test`, `pnpm --filter @pensieve-ai/react typecheck`.
 
 ---
 
 ## Phase A — Server: layout + export
 
-### Task 1: Rust layout module in kyma-graph
+### Task 1: Rust layout module in pensieve-graph
 
-Port the four deterministic layout algorithms from `packages/client/src/graph-layout.ts` (the reference implementation — keep semantics identical) into the `kyma-graph` crate.
+Port the four deterministic layout algorithms from `packages/client/src/graph-layout.ts` (the reference implementation — keep semantics identical) into the `pensieve-graph` crate.
 
 **Files:**
-- Create: `crates/kyma-graph/src/layout.rs`
-- Modify: `crates/kyma-graph/src/lib.rs` (add `pub mod layout;` + re-export `layout::{LayoutAlgorithm, compute_layout}`)
+- Create: `crates/pensieve-graph/src/layout.rs`
+- Modify: `crates/pensieve-graph/src/lib.rs` (add `pub mod layout;` + re-export `layout::{LayoutAlgorithm, compute_layout}`)
 - Test: inline `#[cfg(test)]` in `layout.rs`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `crates/kyma-graph/src/layout.rs` with the types, an unimplemented body (`todo!()`), and these tests at the bottom:
+Create `crates/pensieve-graph/src/layout.rs` with the types, an unimplemented body (`todo!()`), and these tests at the bottom:
 
 ```rust
 //! Deterministic layout algorithms, ported from packages/client/src/graph-layout.ts.
@@ -185,7 +185,7 @@ mod tests {
 }
 ```
 
-Add to `crates/kyma-graph/src/lib.rs` next to the other `pub mod` lines:
+Add to `crates/pensieve-graph/src/lib.rs` next to the other `pub mod` lines:
 
 ```rust
 pub mod layout;
@@ -194,7 +194,7 @@ pub use layout::{compute_layout, LayoutAlgorithm, LAYOUT_HEIGHT, LAYOUT_WIDTH};
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p kyma-graph layout`
+Run: `cargo test -p pensieve-graph layout`
 Expected: panics at `todo!()` (compiles, tests fail).
 
 - [ ] **Step 3: Implement the algorithms**
@@ -608,14 +608,14 @@ fn force_layout(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p kyma-graph layout`
-Expected: all 6 tests PASS. Also run `cargo clippy -p kyma-graph` — no new warnings.
+Run: `cargo test -p pensieve-graph layout`
+Expected: all 6 tests PASS. Also run `cargo clippy -p pensieve-graph` — no new warnings.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-graph/src/layout.rs crates/kyma-graph/src/lib.rs
-git commit -m "feat(graph): server-side deterministic layout algorithms in kyma-graph"
+git add crates/pensieve-graph/src/layout.rs crates/pensieve-graph/src/lib.rs
+git commit -m "feat(graph): server-side deterministic layout algorithms in pensieve-graph"
 ```
 
 ---
@@ -623,14 +623,14 @@ git commit -m "feat(graph): server-side deterministic layout algorithms in kyma-
 ### Task 2: Export wire types + layout cache
 
 **Files:**
-- Modify: `crates/kyma-graph/src/types.rs` (add `PositionedNode`, `GraphExportPage`)
-- Create: `crates/kyma-server/src/graph_layout_cache.rs`
-- Modify: `crates/kyma-server/src/lib.rs` (declare `pub mod graph_layout_cache;` next to the other module declarations; find the exact spot with `rg -n "mod graph_handler" crates/kyma-server/src/lib.rs`)
+- Modify: `crates/pensieve-graph/src/types.rs` (add `PositionedNode`, `GraphExportPage`)
+- Create: `crates/pensieve-server/src/graph_layout_cache.rs`
+- Modify: `crates/pensieve-server/src/lib.rs` (declare `pub mod graph_layout_cache;` next to the other module declarations; find the exact spot with `rg -n "mod graph_handler" crates/pensieve-server/src/lib.rs`)
 - Test: inline `#[cfg(test)]` in `graph_layout_cache.rs`
 
-- [ ] **Step 1: Add wire types to kyma-graph**
+- [ ] **Step 1: Add wire types to pensieve-graph**
 
-Append to `crates/kyma-graph/src/types.rs`:
+Append to `crates/pensieve-graph/src/types.rs`:
 
 ```rust
 /// Node + its precomputed layout position, as served by `/v1/graph/:graph/export`.
@@ -661,7 +661,7 @@ pub struct GraphExportPage {
 
 - [ ] **Step 2: Write the failing cache tests**
 
-Create `crates/kyma-server/src/graph_layout_cache.rs`:
+Create `crates/pensieve-server/src/graph_layout_cache.rs`:
 
 ```rust
 //! Cache of laid-out full graphs keyed by (database, graph, realm, algorithm).
@@ -672,7 +672,7 @@ Create `crates/kyma-server/src/graph_layout_cache.rs`:
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use kyma_graph::{GraphExportPage, GraphRelationship, PositionedNode};
+use pensieve_graph::{GraphExportPage, GraphRelationship, PositionedNode};
 
 pub const PAGE_SIZE_DEFAULT: usize = 10_000;
 /// Above this node count, layout is computed in a background task and the
@@ -685,7 +685,7 @@ pub struct CacheKey {
     pub database: String,
     pub graph: String,
     pub realm: Option<String>,
-    pub algorithm: kyma_graph::LayoutAlgorithm,
+    pub algorithm: pensieve_graph::LayoutAlgorithm,
 }
 
 #[derive(Debug)]
@@ -838,7 +838,7 @@ pub fn slice_page(g: &LaidOutGraph, kind: char, offset: usize, page_size: usize)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kyma_graph::{GraphNode, NodeMetadata};
+    use pensieve_graph::{GraphNode, NodeMetadata};
 
     fn laid(n: usize, e: usize) -> LaidOutGraph {
         let nodes = (0..n)
@@ -903,7 +903,7 @@ mod tests {
             database: "db".into(),
             graph: "g".into(),
             realm: None,
-            algorithm: kyma_graph::LayoutAlgorithm::Force,
+            algorithm: pensieve_graph::LayoutAlgorithm::Force,
         };
         cache.insert_ready(key.clone(), laid(5, 2));
         assert!(matches!(cache.get_fresh(&key, (5, 2)), Some(CacheState::Ready(_))));
@@ -918,7 +918,7 @@ mod tests {
             database: "db".into(),
             graph: "g".into(),
             realm: None,
-            algorithm: kyma_graph::LayoutAlgorithm::Force,
+            algorithm: pensieve_graph::LayoutAlgorithm::Force,
         };
         assert!(cache.begin_compute(&key));
         assert!(!cache.begin_compute(&key));
@@ -928,22 +928,22 @@ mod tests {
 }
 ```
 
-Note: `CacheKey` derives `Hash` — `kyma_graph::LayoutAlgorithm` already derives `Hash` (Task 1).
+Note: `CacheKey` derives `Hash` — `pensieve_graph::LayoutAlgorithm` already derives `Hash` (Task 1).
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `cargo test -p kyma-server graph_layout_cache`
-Expected: compile error (module not declared) — add `pub mod graph_layout_cache;` to `crates/kyma-server/src/lib.rs`, re-run, tests should now PASS (this module is written test-with-implementation in one file; the failing state is the missing module declaration).
+Run: `cargo test -p pensieve-server graph_layout_cache`
+Expected: compile error (module not declared) — add `pub mod graph_layout_cache;` to `crates/pensieve-server/src/lib.rs`, re-run, tests should now PASS (this module is written test-with-implementation in one file; the failing state is the missing module declaration).
 
 - [ ] **Step 4: Run full crate checks**
 
-Run: `cargo test -p kyma-server graph_layout_cache && cargo clippy -p kyma-server`
+Run: `cargo test -p pensieve-server graph_layout_cache && cargo clippy -p pensieve-server`
 Expected: 4 tests PASS, no new clippy warnings.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-graph/src/types.rs crates/kyma-server/src/graph_layout_cache.rs crates/kyma-server/src/lib.rs
+git add crates/pensieve-graph/src/types.rs crates/pensieve-server/src/graph_layout_cache.rs crates/pensieve-server/src/lib.rs
 git commit -m "feat(graph): export wire types + layout cache with fingerprint invalidation"
 ```
 
@@ -952,20 +952,20 @@ git commit -m "feat(graph): export wire types + layout cache with fingerprint in
 ### Task 3: `/v1/graph/:graph/export` endpoint
 
 **Files:**
-- Modify: `crates/kyma-server/src/graph_handler.rs` (new query struct, handler, route)
-- Modify: `crates/kyma-server/src/lib.rs` (add `layout_cache: Arc<graph_layout_cache::LayoutCache>` to `QueryState`; find the struct with `rg -n "struct QueryState" crates/kyma-server/src`; initialize with `Arc::new(LayoutCache::new())` at every construction site — find them with `rg -n "QueryState\s*\{" crates/kyma-server crates/kyma-cli`)
-- Test: `crates/kyma-server/tests/` — follow the existing integration-test pattern for graph endpoints (find with `rg -ln "overview" crates/kyma-server/tests/`); if no graph integration harness exists, the unit tests from Task 2 plus a manual `curl` verification in Step 4 are the test surface.
+- Modify: `crates/pensieve-server/src/graph_handler.rs` (new query struct, handler, route)
+- Modify: `crates/pensieve-server/src/lib.rs` (add `layout_cache: Arc<graph_layout_cache::LayoutCache>` to `QueryState`; find the struct with `rg -n "struct QueryState" crates/pensieve-server/src`; initialize with `Arc::new(LayoutCache::new())` at every construction site — find them with `rg -n "QueryState\s*\{" crates/pensieve-server crates/pensieve-cli`)
+- Test: `crates/pensieve-server/tests/` — follow the existing integration-test pattern for graph endpoints (find with `rg -ln "overview" crates/pensieve-server/tests/`); if no graph integration harness exists, the unit tests from Task 2 plus a manual `curl` verification in Step 4 are the test surface.
 
 - [ ] **Step 1: Add the handler**
 
-In `crates/kyma-server/src/graph_handler.rs`, add below `NeighborsBody`:
+In `crates/pensieve-server/src/graph_handler.rs`, add below `NeighborsBody`:
 
 ```rust
 #[derive(Deserialize)]
 struct ExportQuery {
     realm: Option<String>,
     #[serde(default)]
-    algorithm: kyma_graph::LayoutAlgorithm,
+    algorithm: pensieve_graph::LayoutAlgorithm,
     cursor: Option<String>,
     #[serde(default = "default_export_page_size")]
     page_size: usize,
@@ -1039,7 +1039,7 @@ async fn export(
         algorithm: q.algorithm,
     };
     let computing = |key: &CacheKey, fp: (usize, usize)| {
-        Json(kyma_graph::GraphExportPage {
+        Json(pensieve_graph::GraphExportPage {
             layout_status: "computing".into(),
             layout_id: LayoutCache::layout_id(key, fp),
             total_nodes: fp.0,
@@ -1058,15 +1058,15 @@ async fn export(
             (StatusCode::OK, computing(&key, fingerprint)).into_response()
         }
         None => {
-            let compute = move |payload: kyma_graph::GraphPayload,
+            let compute = move |payload: pensieve_graph::GraphPayload,
                                 key: &CacheKey|
                   -> LaidOutGraph {
-                let positions = kyma_graph::compute_layout(
+                let positions = pensieve_graph::compute_layout(
                     key.algorithm,
                     &payload.nodes,
                     &payload.edges,
-                    kyma_graph::LAYOUT_WIDTH,
-                    kyma_graph::LAYOUT_HEIGHT,
+                    pensieve_graph::LAYOUT_WIDTH,
+                    pensieve_graph::LAYOUT_HEIGHT,
                 );
                 let fp = (payload.nodes.len(), payload.edges.len());
                 LaidOutGraph {
@@ -1077,7 +1077,7 @@ async fn export(
                         .into_iter()
                         .map(|n| {
                             let (x, y) = positions.get(&n.id).copied().unwrap_or((0.0, 0.0));
-                            kyma_graph::PositionedNode { node: n, x, y }
+                            pensieve_graph::PositionedNode { node: n, x, y }
                         })
                         .collect(),
                     edges: payload.edges,
@@ -1128,14 +1128,14 @@ Note: `ResolvedProvider` must be moved into the spawned task — it already owns
 
 - [ ] **Step 2: Compile + add integration coverage if the harness exists**
 
-Run: `rg -ln "overview" crates/kyma-server/tests/` — if a graph endpoint integration test exists, add an export case asserting: (a) first call returns `layout_status: "ready"` with positioned nodes for a small registered graph; (b) following `next_cursor` chains to `null` and the union of pages equals the overview payload; (c) a garbage cursor returns 400. Mirror the file's existing setup verbatim.
+Run: `rg -ln "overview" crates/pensieve-server/tests/` — if a graph endpoint integration test exists, add an export case asserting: (a) first call returns `layout_status: "ready"` with positioned nodes for a small registered graph; (b) following `next_cursor` chains to `null` and the union of pages equals the overview payload; (c) a garbage cursor returns 400. Mirror the file's existing setup verbatim.
 
-Run: `cargo build -p kyma-server`
+Run: `cargo build -p pensieve-server`
 Expected: clean build.
 
 - [ ] **Step 3: Run tests**
 
-Run: `cargo test -p kyma-server`
+Run: `cargo test -p pensieve-server`
 Expected: PASS (including any new integration cases).
 
 - [ ] **Step 4: Manual smoke (if a dev deployment is running)**
@@ -1148,7 +1148,7 @@ Expected: JSON with `"layout_status":"ready"`, nodes carrying `x`/`y`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-server/src/graph_handler.rs crates/kyma-server/src/lib.rs crates/kyma-server/tests
+git add crates/pensieve-server/src/graph_handler.rs crates/pensieve-server/src/lib.rs crates/pensieve-server/tests
 git commit -m "feat(server): paginated full-graph export endpoint with cached server-side layout"
 ```
 
@@ -1202,7 +1202,7 @@ describe("exportGraph", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/client test -- graph`
+Run: `pnpm --filter @pensieve-ai/client test -- graph`
 Expected: FAIL — `exportGraph is not a function`.
 
 - [ ] **Step 3: Implement**
@@ -1251,7 +1251,7 @@ async exportGraph(args: ExportGraphArgs): Promise<GraphExportPage> {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pnpm --filter @kyma-ai/client test && pnpm --filter @kyma-ai/client typecheck`
+Run: `pnpm --filter @pensieve-ai/client test && pnpm --filter @pensieve-ai/client typecheck`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1270,7 +1270,7 @@ git commit -m "feat(client): graph.exportGraph — paginated full-graph export w
 **Files:**
 - Create: `packages/react/src/graph/graph-export-merge.ts` (pure merge logic)
 - Create: `packages/react/src/hooks/useGraphExport.ts`
-- Modify: `packages/react/src/hooks/useKymaGraph.ts` (extract + export `useGraphCoords` — the discovery section, lines 90–129, verbatim into a standalone hook used by both)
+- Modify: `packages/react/src/hooks/usePensieveGraph.ts` (extract + export `useGraphCoords` — the discovery section, lines 90–129, verbatim into a standalone hook used by both)
 - Test: `packages/react/src/graph/graph-export-merge.test.ts`
 
 - [ ] **Step 1: Write the failing merge tests**
@@ -1278,7 +1278,7 @@ git commit -m "feat(client): graph.exportGraph — paginated full-graph export w
 ```ts
 import { describe, expect, it } from "vitest";
 import { createExportAccumulator, mergeExportPage } from "./graph-export-merge";
-import type { GraphExportPage } from "@kyma-ai/client";
+import type { GraphExportPage } from "@pensieve-ai/client";
 
 const meta = { created_at: "", updated_at: "", realm: "default" };
 const pnode = (id: string, x: number, y: number) => ({
@@ -1325,7 +1325,7 @@ describe("mergeExportPage", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react test -- graph-export-merge`
+Run: `pnpm --filter @pensieve-ai/react test -- graph-export-merge`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement the accumulator**
@@ -1336,9 +1336,9 @@ Expected: FAIL — module not found.
 /**
  * Mutable accumulator for progressive full-graph export loading. Pages from
  * multiple (database, graph) streams merge into one node/edge set with
- * composite-id dedup (same scheme as useKymaGraph) plus a position map.
+ * composite-id dedup (same scheme as usePensieveGraph) plus a position map.
  */
-import type { GraphExportPage, GraphNode, GraphRelationship, GraphStats } from "@kyma-ai/client";
+import type { GraphExportPage, GraphNode, GraphRelationship, GraphStats } from "@pensieve-ai/client";
 
 export interface ExportAccumulator {
   nodes: GraphNode[];
@@ -1398,15 +1398,15 @@ export function mergeExportPage(
 
 - [ ] **Step 4: Run merge tests**
 
-Run: `pnpm --filter @kyma-ai/react test -- graph-export-merge`
+Run: `pnpm --filter @pensieve-ai/react test -- graph-export-merge`
 Expected: PASS.
 
 - [ ] **Step 5: Extract `useGraphCoords` and implement `useGraphExport`**
 
-In `useKymaGraph.ts`, lift the two discovery queries + `resolvedCoords` memo (current lines 90–129) into an exported hook in the same file — `useKymaGraph` calls it so its behavior is unchanged:
+In `usePensieveGraph.ts`, lift the two discovery queries + `resolvedCoords` memo (current lines 90–129) into an exported hook in the same file — `usePensieveGraph` calls it so its behavior is unchanged:
 
 ```ts
-export function useGraphCoords(args?: Pick<UseKymaGraphArgs, "graphs" | "discover">): {
+export function useGraphCoords(args?: Pick<UsePensieveGraphArgs, "graphs" | "discover">): {
   coords: GraphCoord[];
   isLoading: boolean;
   error: unknown;
@@ -1423,9 +1423,9 @@ Create `packages/react/src/hooks/useGraphExport.ts`:
  * report `layout_status: "computing"` are polled until ready.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LayoutAlgorithm } from "@kyma-ai/client";
-import { useKymaClient } from "../provider/context";
-import { graphKey, useGraphCoords, type UseKymaGraphArgs } from "./useKymaGraph";
+import type { LayoutAlgorithm } from "@pensieve-ai/client";
+import { usePensieveClient } from "../provider/context";
+import { graphKey, useGraphCoords, type UsePensieveGraphArgs } from "./usePensieveGraph";
 import {
   createExportAccumulator,
   mergeExportPage,
@@ -1449,9 +1449,9 @@ export interface UseGraphExportResult {
 }
 
 export function useGraphExport(
-  args: UseKymaGraphArgs & { algorithm: LayoutAlgorithm },
+  args: UsePensieveGraphArgs & { algorithm: LayoutAlgorithm },
 ): UseGraphExportResult {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   const { coords, isLoading: discovering, error: discoveryError } = useGraphCoords(args);
   const [version, setVersion] = useState(0);
   const [layoutComputing, setLayoutComputing] = useState(false);
@@ -1529,13 +1529,13 @@ export function useGraphExport(
 
 - [ ] **Step 6: Verify**
 
-Run: `pnpm --filter @kyma-ai/react test && pnpm --filter @kyma-ai/react typecheck`
-Expected: PASS — existing `useKymaGraph` consumers unaffected (its public return is unchanged).
+Run: `pnpm --filter @pensieve-ai/react test && pnpm --filter @pensieve-ai/react typecheck`
+Expected: PASS — existing `usePensieveGraph` consumers unaffected (its public return is unchanged).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages/react/src/graph/graph-export-merge.ts packages/react/src/graph/graph-export-merge.test.ts packages/react/src/hooks/useGraphExport.ts packages/react/src/hooks/useKymaGraph.ts
+git add packages/react/src/graph/graph-export-merge.ts packages/react/src/graph/graph-export-merge.test.ts packages/react/src/hooks/useGraphExport.ts packages/react/src/hooks/usePensieveGraph.ts
 git commit -m "feat(react): chunked full-graph export loading with positions + progressive merge"
 ```
 
@@ -1555,7 +1555,7 @@ Pure display functions first — they're the testable heart of the renderer.
 - [ ] **Step 1: Install dependencies**
 
 ```bash
-pnpm --filter @kyma-ai/react add sigma@^3.0.0 graphology@^0.26.0 graphology-types@^0.24.8 @sigma/edge-curve@^3.0.0 @sigma/node-image@^3.0.0
+pnpm --filter @pensieve-ai/react add sigma@^3.0.0 graphology@^0.26.0 graphology-types@^0.24.8 @sigma/edge-curve@^3.0.0 @sigma/node-image@^3.0.0
 ```
 
 Expected: lockfile updated, install clean.
@@ -1658,7 +1658,7 @@ describe("edgeDisplay (quiet/loud)", () => {
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react test -- graph-display`
+Run: `pnpm --filter @pensieve-ai/react test -- graph-display`
 Expected: FAIL — module not found.
 
 - [ ] **Step 4: Implement**
@@ -1797,7 +1797,7 @@ export function edgeDisplay(
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `pnpm --filter @kyma-ai/react test -- graph-display`
+Run: `pnpm --filter @pensieve-ai/react test -- graph-display`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -1898,7 +1898,7 @@ describe("buildGraphologyGraph", () => {
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react test -- SigmaCanvas`
+Run: `pnpm --filter @pensieve-ai/react test -- SigmaCanvas`
 Expected: FAIL — module not found.
 
 - [ ] **Step 4: Implement SigmaCanvas**
@@ -1918,8 +1918,8 @@ import Sigma from "sigma";
 import { createNodeImageProgram } from "@sigma/node-image";
 import { EdgeCurvedArrowProgram } from "@sigma/edge-curve";
 import { EdgeArrowProgram } from "sigma/rendering";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
-import { useKymaContext } from "../provider/context";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
+import { usePensieveContext } from "../provider/context";
 import { useGraphStore } from "./graph-store";
 import { edgeDisplay, lodTier, nodeDisplay, type DisplayCtx } from "./graph-display";
 import { getRelationshipFamilyColor, alpha as withAlpha, radiusForDegree } from "./graph-style";
@@ -2004,7 +2004,7 @@ export interface SigmaCanvasProps {
 export function SigmaCanvas(props: SigmaCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
-  const { isDark } = useKymaContext();
+  const { isDark } = usePensieveContext();
 
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const hoveredNodeId = useGraphStore((s) => s.hoveredNodeId);
@@ -2157,7 +2157,7 @@ export function SigmaCanvas(props: SigmaCanvasProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSeq]);
 
-  return <div ref={containerRef} className="ky-absolute ky-inset-0" />;
+  return <div ref={containerRef} className="pv-absolute pv-inset-0" />;
 }
 ```
 
@@ -2165,7 +2165,7 @@ Note on `radiusForDegree`: it exists in `graph-style.ts:100` — verify its sign
 
 - [ ] **Step 5: Run tests + typecheck**
 
-Run: `pnpm --filter @kyma-ai/react test -- SigmaCanvas && pnpm --filter @kyma-ai/react typecheck`
+Run: `pnpm --filter @pensieve-ai/react test -- SigmaCanvas && pnpm --filter @pensieve-ai/react typecheck`
 Expected: builder tests PASS, typecheck clean. (Sigma's reducer/setting types moved around in v3 minors — fix signatures per the installed version's `.d.ts`, not by casting to `any`.)
 
 - [ ] **Step 6: Commit**
@@ -2194,9 +2194,9 @@ git commit -m "feat(react): SigmaCanvas WebGL renderer with quiet/loud reducers 
  */
 import { useEffect, useMemo, useRef } from "react";
 import type Sigma from "sigma";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
 import { convexHull, detectCommunities, padHull } from "./graph-community";
-import { getLabelColor } from "@kyma-ai/client";
+import { getLabelColor } from "@pensieve-ai/client";
 import { useGraphStore } from "./graph-store";
 
 export function HullsLayer({
@@ -2261,7 +2261,7 @@ export function HullsLayer({
   }, [sigma, communities]);
 
   if (!communityHulls) return null;
-  return <canvas ref={canvasRef} className="ky-pointer-events-none ky-absolute ky-inset-0" />;
+  return <canvas ref={canvasRef} className="pv-pointer-events-none pv-absolute pv-inset-0" />;
 }
 ```
 
@@ -2269,7 +2269,7 @@ Check `detectCommunities`'s actual return shape at `graph-community.ts:20` (it m
 
 - [ ] **Step 2: Typecheck + commit**
 
-Run: `pnpm --filter @kyma-ai/react typecheck`
+Run: `pnpm --filter @pensieve-ai/react typecheck`
 
 ```bash
 git add packages/react/src/graph/HullsLayer.tsx
@@ -2341,7 +2341,7 @@ describe("focus mode + command bar", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react test -- graph-store`
+Run: `pnpm --filter @pensieve-ai/react test -- graph-store`
 Expected: FAIL — `pushTrail is not a function`.
 
 - [ ] **Step 3: Implement**
@@ -2391,7 +2391,7 @@ And in the existing `setGraph` action add `focusModeId: null` to the reset objec
 
 - [ ] **Step 4: Run tests**
 
-Run: `pnpm --filter @kyma-ai/react test -- graph-store`
+Run: `pnpm --filter @pensieve-ai/react test -- graph-store`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -2441,7 +2441,7 @@ describe("sortedNeighbors", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react test -- graph-walk`
+Run: `pnpm --filter @pensieve-ai/react test -- graph-walk`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement**
@@ -2543,7 +2543,7 @@ export function useKeyboardWalk(graphRef: React.RefObject<Graph | null>) {
 
 - [ ] **Step 4: Run tests**
 
-Run: `pnpm --filter @kyma-ai/react test -- graph-walk && pnpm --filter @kyma-ai/react typecheck`
+Run: `pnpm --filter @pensieve-ai/react test -- graph-walk && pnpm --filter @pensieve-ai/react typecheck`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -2607,7 +2607,7 @@ describe("CommandBar", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react test -- CommandBar`
+Run: `pnpm --filter @pensieve-ai/react test -- CommandBar`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement**
@@ -2622,7 +2622,7 @@ Expected: FAIL.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type Graph from "graphology";
 import { Search } from "lucide-react";
-import { getLabelColor } from "@kyma-ai/client";
+import { getLabelColor } from "@pensieve-ai/client";
 import { useGraphStore } from "./graph-store";
 
 const MAX_RESULTS = 20;
@@ -2680,10 +2680,10 @@ export function CommandBar({ graphRef }: { graphRef: React.RefObject<Graph | nul
   };
 
   return (
-    <div className="ky-absolute ky-left-1/2 ky-top-6 ky-z-30 ky-w-[480px] ky-max-w-[90%] -ky-translate-x-1/2">
-      <div className="ky-glass ky-rounded-xl ky-border ky-border-border ky-shadow-elev-3">
-        <div className="ky-flex ky-items-center ky-gap-2 ky-border-b ky-border-border ky-px-3 ky-py-2.5">
-          <Search className="ky-h-4 ky-w-4 ky-text-muted-foreground" />
+    <div className="pv-absolute pv-left-1/2 pv-top-6 pv-z-30 pv-w-[480px] pv-max-w-[90%] -pv-translate-x-1/2">
+      <div className="pv-glass pv-rounded-xl pv-border pv-border-border pv-shadow-elev-3">
+        <div className="pv-flex pv-items-center pv-gap-2 pv-border-b pv-border-border pv-px-3 pv-py-2.5">
+          <Search className="pv-h-4 pv-w-4 pv-text-muted-foreground" />
           <input
             ref={inputRef}
             value={query}
@@ -2698,35 +2698,35 @@ export function CommandBar({ graphRef }: { graphRef: React.RefObject<Graph | nul
               else if (e.key === "Enter" && results[active]) select(results[active].id);
             }}
             placeholder="Search nodes, fly to anything…"
-            className="ky-w-full ky-bg-transparent ky-text-sm ky-text-foreground ky-outline-none placeholder:ky-text-muted-foreground"
+            className="pv-w-full pv-bg-transparent pv-text-sm pv-text-foreground pv-outline-none placeholder:pv-text-muted-foreground"
           />
-          <kbd className="ky-rounded ky-border ky-border-border ky-px-1.5 ky-py-0.5 ky-text-2xs ky-text-muted-foreground">esc</kbd>
+          <kbd className="pv-rounded pv-border pv-border-border pv-px-1.5 pv-py-0.5 pv-text-2xs pv-text-muted-foreground">esc</kbd>
         </div>
         {results.length > 0 && (
-          <ul className="ky-max-h-80 ky-overflow-y-auto ky-py-1">
+          <ul className="pv-max-h-80 pv-overflow-y-auto pv-py-1">
             {results.map((r, i) => (
               <li key={r.id}>
                 <button
                   type="button"
                   onClick={() => select(r.id)}
                   onMouseEnter={() => setActive(i)}
-                  className={`ky-flex ky-w-full ky-items-center ky-gap-2 ky-px-3 ky-py-1.5 ky-text-left ky-text-sm ${
-                    i === active ? "ky-bg-accent ky-text-foreground" : "ky-text-muted-foreground"
+                  className={`pv-flex pv-w-full pv-items-center pv-gap-2 pv-px-3 pv-py-1.5 pv-text-left pv-text-sm ${
+                    i === active ? "pv-bg-accent pv-text-foreground" : "pv-text-muted-foreground"
                   }`}
                 >
                   <span
-                    className="ky-h-2 ky-w-2 ky-shrink-0 ky-rounded-full"
+                    className="pv-h-2 pv-w-2 pv-shrink-0 pv-rounded-full"
                     style={{ background: getLabelColor(r.nodeLabel) }}
                   />
-                  <span className="ky-truncate">{r.label}</span>
-                  <span className="ky-ml-auto ky-shrink-0 ky-text-2xs ky-text-muted-foreground">{r.nodeLabel}</span>
+                  <span className="pv-truncate">{r.label}</span>
+                  <span className="pv-ml-auto pv-shrink-0 pv-text-2xs pv-text-muted-foreground">{r.nodeLabel}</span>
                 </button>
               </li>
             ))}
           </ul>
         )}
         {query.trim() && results.length === 0 && (
-          <div className="ky-px-3 ky-py-3 ky-text-xs ky-text-muted-foreground">No matching nodes.</div>
+          <div className="pv-px-3 pv-py-3 pv-text-xs pv-text-muted-foreground">No matching nodes.</div>
         )}
       </div>
     </div>
@@ -2736,7 +2736,7 @@ export function CommandBar({ graphRef }: { graphRef: React.RefObject<Graph | nul
 
 - [ ] **Step 4: Run tests**
 
-Run: `pnpm --filter @kyma-ai/react test -- CommandBar`
+Run: `pnpm --filter @pensieve-ai/react test -- CommandBar`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -2770,7 +2770,7 @@ Four presentational components. They read store + props; logic-heavy parts (disp
  */
 import { useMemo } from "react";
 import { ArrowLeft, ArrowRight, Copy, Crosshair, X } from "lucide-react";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
 import { useGraphStore } from "./graph-store";
 import { getRelationshipFamilyColor } from "./graph-style";
 
@@ -2812,59 +2812,59 @@ export function InspectorPanel({
   const name = (node.properties?.name as string) || (node.properties?.title as string) || node.id;
 
   return (
-    <div className="ky-absolute ky-right-4 ky-top-16 ky-bottom-20 ky-z-20 ky-w-80 ky-overflow-y-auto ky-rounded-xl ky-border ky-border-border ky-glass ky-shadow-elev-3 ky-animate-fade-in">
-      <div className="ky-flex ky-items-start ky-justify-between ky-border-b ky-border-border ky-p-3">
-        <div className="ky-min-w-0">
-          <div className="ky-truncate ky-text-sm ky-font-medium ky-text-foreground">{name}</div>
-          <div className="ky-text-2xs ky-text-muted-foreground">
+    <div className="pv-absolute pv-right-4 pv-top-16 pv-bottom-20 pv-z-20 pv-w-80 pv-overflow-y-auto pv-rounded-xl pv-border pv-border-border pv-glass pv-shadow-elev-3 pv-animate-fade-in">
+      <div className="pv-flex pv-items-start pv-justify-between pv-border-b pv-border-border pv-p-3">
+        <div className="pv-min-w-0">
+          <div className="pv-truncate pv-text-sm pv-font-medium pv-text-foreground">{name}</div>
+          <div className="pv-text-2xs pv-text-muted-foreground">
             {node.labels.join(" · ")} · {node.namespace}
           </div>
         </div>
-        <button type="button" onClick={() => selectNode(null)} className="ky-text-muted-foreground hover:ky-text-foreground">
-          <X className="ky-h-4 ky-w-4" />
+        <button type="button" onClick={() => selectNode(null)} className="pv-text-muted-foreground hover:pv-text-foreground">
+          <X className="pv-h-4 pv-w-4" />
         </button>
       </div>
 
-      <div className="ky-flex ky-gap-2 ky-p-3">
+      <div className="pv-flex pv-gap-2 pv-p-3">
         <button
           type="button"
           onClick={() => setFocusMode(focusModeId === nodeKey ? null : nodeKey)}
-          className="ky-flex ky-items-center ky-gap-1 ky-rounded-md ky-border ky-border-border ky-px-2 ky-py-1 ky-text-xs ky-text-muted-foreground hover:ky-text-foreground"
+          className="pv-flex pv-items-center pv-gap-1 pv-rounded-md pv-border pv-border-border pv-px-2 pv-py-1 pv-text-xs pv-text-muted-foreground hover:pv-text-foreground"
         >
-          <Crosshair className="ky-h-3 ky-w-3" />
+          <Crosshair className="pv-h-3 pv-w-3" />
           {focusModeId === nodeKey ? "Exit focus" : "Focus neighborhood"}
         </button>
         <button
           type="button"
           onClick={() => void navigator.clipboard.writeText(node.id)}
-          className="ky-flex ky-items-center ky-gap-1 ky-rounded-md ky-border ky-border-border ky-px-2 ky-py-1 ky-text-xs ky-text-muted-foreground hover:ky-text-foreground"
+          className="pv-flex pv-items-center pv-gap-1 pv-rounded-md pv-border pv-border-border pv-px-2 pv-py-1 pv-text-xs pv-text-muted-foreground hover:pv-text-foreground"
         >
-          <Copy className="ky-h-3 ky-w-3" /> Copy id
+          <Copy className="pv-h-3 pv-w-3" /> Copy id
         </button>
       </div>
 
       {Object.keys(node.properties ?? {}).length > 0 && (
-        <div className="ky-border-t ky-border-border ky-p-3">
-          <div className="ky-mb-1 ky-text-2xs ky-uppercase ky-text-muted-foreground">Properties</div>
-          <dl className="ky-space-y-1">
+        <div className="pv-border-t pv-border-border pv-p-3">
+          <div className="pv-mb-1 pv-text-2xs pv-uppercase pv-text-muted-foreground">Properties</div>
+          <dl className="pv-space-y-1">
             {Object.entries(node.properties).slice(0, 30).map(([k, v]) => (
-              <div key={k} className="ky-flex ky-gap-2 ky-text-xs">
-                <dt className="ky-w-28 ky-shrink-0 ky-truncate ky-text-muted-foreground">{k}</dt>
-                <dd className="ky-min-w-0 ky-truncate ky-font-mono ky-text-foreground">{String(v)}</dd>
+              <div key={k} className="pv-flex pv-gap-2 pv-text-xs">
+                <dt className="pv-w-28 pv-shrink-0 pv-truncate pv-text-muted-foreground">{k}</dt>
+                <dd className="pv-min-w-0 pv-truncate pv-font-mono pv-text-foreground">{String(v)}</dd>
               </div>
             ))}
           </dl>
         </div>
       )}
 
-      <div className="ky-border-t ky-border-border ky-p-3">
-        <div className="ky-mb-1 ky-text-2xs ky-uppercase ky-text-muted-foreground">Relationships</div>
+      <div className="pv-border-t pv-border-border pv-p-3">
+        <div className="pv-mb-1 pv-text-2xs pv-uppercase pv-text-muted-foreground">Relationships</div>
         {[...incident.entries()].map(([relType, items]) => (
-          <div key={relType} className="ky-mb-2">
-            <div className="ky-flex ky-items-center ky-gap-1.5 ky-text-2xs ky-font-mono" style={{ color: getRelationshipFamilyColor(relType) }}>
-              {relType} <span className="ky-text-muted-foreground">({items.length})</span>
+          <div key={relType} className="pv-mb-2">
+            <div className="pv-flex pv-items-center pv-gap-1.5 pv-text-2xs pv-font-mono" style={{ color: getRelationshipFamilyColor(relType) }}>
+              {relType} <span className="pv-text-muted-foreground">({items.length})</span>
             </div>
-            <ul className="ky-mt-0.5 ky-space-y-0.5">
+            <ul className="pv-mt-0.5 pv-space-y-0.5">
               {items.slice(0, 25).map(({ edge, otherKey, out }) => {
                 const other = nodesByCompositeId.get(otherKey);
                 const otherName = other
@@ -2878,10 +2878,10 @@ export function InspectorPanel({
                         pushTrail(otherKey);
                         focusNode(otherKey);
                       }}
-                      className="ky-flex ky-w-full ky-items-center ky-gap-1.5 ky-rounded ky-px-1 ky-py-0.5 ky-text-left ky-text-xs ky-text-muted-foreground hover:ky-bg-accent hover:ky-text-foreground"
+                      className="pv-flex pv-w-full pv-items-center pv-gap-1.5 pv-rounded pv-px-1 pv-py-0.5 pv-text-left pv-text-xs pv-text-muted-foreground hover:pv-bg-accent hover:pv-text-foreground"
                     >
-                      {out ? <ArrowRight className="ky-h-3 ky-w-3 ky-shrink-0" /> : <ArrowLeft className="ky-h-3 ky-w-3 ky-shrink-0" />}
-                      <span className="ky-truncate">{otherName}</span>
+                      {out ? <ArrowRight className="pv-h-3 pv-w-3 pv-shrink-0" /> : <ArrowLeft className="pv-h-3 pv-w-3 pv-shrink-0" />}
+                      <span className="pv-truncate">{otherName}</span>
                     </button>
                   </li>
                 );
@@ -2889,14 +2889,14 @@ export function InspectorPanel({
             </ul>
           </div>
         ))}
-        {incident.size === 0 && <div className="ky-text-xs ky-text-muted-foreground">No edges.</div>}
+        {incident.size === 0 && <div className="pv-text-xs pv-text-muted-foreground">No edges.</div>}
       </div>
     </div>
   );
 }
 ```
 
-- [ ] **Step 2: LegendDock** — bottom-center chip → expandable panel. Port the filter/toggle sections from `GraphSidebar.tsx` (node-type visibility with counts, namespace visibility, relationship-type isolation via `setRelTypeFilter`, the 6 style toggles, the 4-button layout picker wired to `setLayout`). Collapsed chip: relationship-family color swatches + `{visibleNodes} nodes · {visibleEdges} edges`. Expanded: `ky-glass` panel (max-h-96, overflow-y-auto) with those sections. Props:
+- [ ] **Step 2: LegendDock** — bottom-center chip → expandable panel. Port the filter/toggle sections from `GraphSidebar.tsx` (node-type visibility with counts, namespace visibility, relationship-type isolation via `setRelTypeFilter`, the 6 style toggles, the 4-button layout picker wired to `setLayout`). Collapsed chip: relationship-family color swatches + `{visibleNodes} nodes · {visibleEdges} edges`. Expanded: `pv-glass` panel (max-h-96, overflow-y-auto) with those sections. Props:
 
 ```tsx
 export function LegendDock(props: {
@@ -2915,7 +2915,7 @@ All state flows through the existing store actions (`toggleHiddenLabel`, `toggle
 ```tsx
 /** BreadcrumbTrail — visited nodes, click to fly back (jumpTrail). */
 import { ChevronRight } from "lucide-react";
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 import { useGraphStore } from "./graph-store";
 
 export function BreadcrumbTrail({ nodesByCompositeId }: { nodesByCompositeId: Map<string, GraphNode> }) {
@@ -2925,19 +2925,19 @@ export function BreadcrumbTrail({ nodesByCompositeId }: { nodesByCompositeId: Ma
   const visible = trail.slice(-5);
   const offset = trail.length - visible.length;
   return (
-    <div className="ky-absolute ky-left-4 ky-top-6 ky-z-20 ky-flex ky-max-w-[60%] ky-items-center ky-gap-0.5 ky-rounded-full ky-glass ky-border ky-border-border ky-px-2 ky-py-1">
-      {offset > 0 && <span className="ky-text-2xs ky-text-muted-foreground">…</span>}
+    <div className="pv-absolute pv-left-4 pv-top-6 pv-z-20 pv-flex pv-max-w-[60%] pv-items-center pv-gap-0.5 pv-rounded-full pv-glass pv-border pv-border-border pv-px-2 pv-py-1">
+      {offset > 0 && <span className="pv-text-2xs pv-text-muted-foreground">…</span>}
       {visible.map((id, i) => {
         const node = nodesByCompositeId.get(id);
         const name = node ? (node.properties?.name as string) || node.id : id.split("::").pop();
         const last = i === visible.length - 1;
         return (
-          <span key={`${id}-${i}`} className="ky-flex ky-items-center ky-gap-0.5">
-            {(i > 0 || offset > 0) && <ChevronRight className="ky-h-3 ky-w-3 ky-text-muted-foreground" />}
+          <span key={`${id}-${i}`} className="pv-flex pv-items-center pv-gap-0.5">
+            {(i > 0 || offset > 0) && <ChevronRight className="pv-h-3 pv-w-3 pv-text-muted-foreground" />}
             <button
               type="button"
               onClick={() => jumpTrail(offset + i)}
-              className={`ky-max-w-32 ky-truncate ky-text-xs ${last ? "ky-text-foreground" : "ky-text-muted-foreground hover:ky-text-foreground"}`}
+              className={`pv-max-w-32 pv-truncate pv-text-xs ${last ? "pv-text-foreground" : "pv-text-muted-foreground hover:pv-text-foreground"}`}
             >
               {name}
             </button>
@@ -3040,8 +3040,8 @@ export function Minimap({ sigma }: { sigma: Sigma | null }) {
   }, [sigma]);
 
   return (
-    <div className="ky-absolute ky-bottom-4 ky-left-4 ky-z-20 ky-rounded-lg ky-glass ky-border ky-border-border ky-p-1">
-      <canvas ref={canvasRef} style={{ width: W, height: H }} className="ky-cursor-crosshair ky-rounded" />
+    <div className="pv-absolute pv-bottom-4 pv-left-4 pv-z-20 pv-rounded-lg pv-glass pv-border pv-border-border pv-p-1">
+      <canvas ref={canvasRef} style={{ width: W, height: H }} className="pv-cursor-crosshair pv-rounded" />
     </div>
   );
 }
@@ -3053,7 +3053,7 @@ The camera-centering math in `moveCamera` is the fiddly part — verify against 
 
 `chrome.test.tsx`: render each component inside `GraphStoreContext.Provider` (store from `createGraphStore()`); assert InspectorPanel shows node name + relationship group, BreadcrumbTrail renders trail entries and `jumpTrail` fires on click, LegendDock chip shows counts and expands on click, Minimap renders a canvas with `sigma={null}` without crashing.
 
-Run: `pnpm --filter @kyma-ai/react test -- chrome`
+Run: `pnpm --filter @pensieve-ai/react test -- chrome`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -3069,10 +3069,10 @@ git commit -m "feat(react): graph chrome — inspector, legend dock, breadcrumbs
 
 **Files:**
 - Rewrite: `packages/react/src/graph/GraphView.tsx`
-- Modify: `packages/react/src/graph/KymaGraph.tsx` (new props `renderer`, `chrome`)
+- Modify: `packages/react/src/graph/PensieveGraph.tsx` (new props `renderer`, `chrome`)
 - Modify: `packages/react/src/graph/GraphSidebar.tsx` → delete, plus `GraphSidebar.test.tsx`
 - Modify: `packages/react/src/graph/index.ts` (exports — check current contents first)
-- Test: existing `KymaGraph.test.tsx` (update), `pnpm --filter @kyma-ai/react test`
+- Test: existing `PensieveGraph.test.tsx` (update), `pnpm --filter @pensieve-ai/react test`
 
 - [ ] **Step 1: Rewrite GraphView**
 
@@ -3122,8 +3122,8 @@ export function GraphView({ graphs, discover, realm, showChrome = true, renderer
   };
 
   return (
-    <div className="ky-relative ky-h-full ky-w-full ky-overflow-hidden ky-bg-background">
-      <div className="ky-pointer-events-none ky-absolute ky-inset-0" style={{ background: galaxyBg }} />
+    <div className="pv-relative pv-h-full pv-w-full pv-overflow-hidden pv-bg-background">
+      <div className="pv-pointer-events-none pv-absolute pv-inset-0" style={{ background: galaxyBg }} />
       {/* hulls under the sigma canvases */}
       {useWebgl && <HullsLayer sigma={sigmaRef.current} nodes={nodes} edges={edges} version={exp.version} />}
       {useWebgl ? (
@@ -3144,13 +3144,13 @@ export function GraphView({ graphs, discover, realm, showChrome = true, renderer
       )}
       {/* vignette (unchanged) */}
       {exp.layoutComputing && (
-        <div className="ky-absolute ky-left-1/2 ky-top-16 ky-z-10 -ky-translate-x-1/2 ky-glass ky-rounded-full ky-px-3 ky-py-1 ky-text-xs ky-text-muted-foreground">
+        <div className="pv-absolute pv-left-1/2 pv-top-16 pv-z-10 -pv-translate-x-1/2 pv-glass pv-rounded-full pv-px-3 pv-py-1 pv-text-xs pv-text-muted-foreground">
           Computing layout server-side… {exp.acc.nodes.length.toLocaleString()} nodes loaded
         </div>
       )}
       {exp.isError && exp.acc.nodes.length > 0 && (
-        <div className="ky-absolute ky-bottom-20 ky-left-1/2 ky-z-10 -ky-translate-x-1/2 ky-glass ky-rounded-full ky-px-3 ky-py-1 ky-text-xs ky-text-destructive">
-          Partial graph — a stream failed. <button type="button" onClick={exp.refetch} className="ky-underline">Retry</button>
+        <div className="pv-absolute pv-bottom-20 pv-left-1/2 pv-z-10 -pv-translate-x-1/2 pv-glass pv-rounded-full pv-px-3 pv-py-1 pv-text-xs pv-text-destructive">
+          Partial graph — a stream failed. <button type="button" onClick={exp.refetch} className="pv-underline">Retry</button>
         </div>
       )}
       {showChrome && (
@@ -3171,21 +3171,21 @@ export function GraphView({ graphs, discover, realm, showChrome = true, renderer
 
 `namespaceCounts` derives from `exp.acc.nodes` (count per `namespace`). The layout picker in LegendDock calls `setLayout` → `layout` changes → `useGraphExport` algorithm arg changes → automatic refetch with the new server-side layout.
 
-- [ ] **Step 2: KymaGraph props**
+- [ ] **Step 2: PensieveGraph props**
 
-In `KymaGraph.tsx`: add `renderer?: "webgl" | "canvas"` and `chrome?: boolean` (default true); keep `toolbar`/`sidebar` working — `showChrome = (chrome ?? true) && sidebar && toolbar`. Pass `renderer` + `showChrome` to GraphView. Update the doc comment (the sidebar note is obsolete). `limit` prop: keep accepted but unused (full graph always) — note it as deprecated in the JSDoc.
+In `PensieveGraph.tsx`: add `renderer?: "webgl" | "canvas"` and `chrome?: boolean` (default true); keep `toolbar`/`sidebar` working — `showChrome = (chrome ?? true) && sidebar && toolbar`. Pass `renderer` + `showChrome` to GraphView. Update the doc comment (the sidebar note is obsolete). `limit` prop: keep accepted but unused (full graph always) — note it as deprecated in the JSDoc.
 
 - [ ] **Step 3: Delete GraphSidebar + fix exports/tests**
 
 ```bash
 git rm packages/react/src/graph/GraphSidebar.tsx packages/react/src/graph/GraphSidebar.test.tsx
 ```
-Check `packages/react/src/graph/index.ts` for a GraphSidebar export and remove it. Update `KymaGraph.test.tsx` expectations that referenced sidebar DOM.
+Check `packages/react/src/graph/index.ts` for a GraphSidebar export and remove it. Update `PensieveGraph.test.tsx` expectations that referenced sidebar DOM.
 
 - [ ] **Step 4: Full verification**
 
-Run: `pnpm --filter @kyma-ai/react test && pnpm --filter @kyma-ai/react typecheck && pnpm --filter @kyma-ai/react build`
-Expected: all PASS, build clean. The web route `web/src/routes/_app.graph.tsx` needs no change (KymaGraph defaults now render full-bleed chrome).
+Run: `pnpm --filter @pensieve-ai/react test && pnpm --filter @pensieve-ai/react typecheck && pnpm --filter @pensieve-ai/react build`
+Expected: all PASS, build clean. The web route `web/src/routes/_app.graph.tsx` needs no change (PensieveGraph defaults now render full-bleed chrome).
 
 - [ ] **Step 5: Commit**
 
@@ -3217,7 +3217,7 @@ import { createFileRoute } from "@tanstack/react-router";
 // Overlay: requestAnimationFrame counter → fps readout in a corner chip.
 ```
 
-(Match the file-route conventions of `web/src/routes/_app.graph.tsx`. Wrap in KymaGraph's store context via `createGraphStore` + `GraphStoreContext.Provider`. Guard with `import.meta.env.DEV ? route : null` if the router requires static routes, otherwise just leave it — it's behind auth like other app routes.)
+(Match the file-route conventions of `web/src/routes/_app.graph.tsx`. Wrap in PensieveGraph's store context via `createGraphStore` + `GraphStoreContext.Provider`. Guard with `import.meta.env.DEV ? route : null` if the router requires static routes, otherwise just leave it — it's behind auth like other app routes.)
 
 - [ ] **Step 2: Benchmark**
 
@@ -3267,6 +3267,6 @@ git commit -m "feat(web): synthetic graph benchmark route for renderer perf veri
 
 Overrides specifics in Tasks 6–7 and adds Task 1b. See the spec's same-dated amendment.
 
-- **Task 1b (new, server):** in `crates/kyma-graph/src/layout.rs`, add a deterministic orbit post-pass to `force_layout`: collect degree-1 nodes per hub (their sole neighbor); for each hub with ≥4 leaves, place its leaves on concentric rings centered on the hub — ring radius `r_k = 90 + 55*k`, ring capacity `floor(2π r_k / 34)`, angles evenly spaced starting at the hub's angle-to-graph-center (deterministic), leaves ordered by id. Then re-run the existing overlap pass. Tests: star(60) → all leaves within ring radii of hub ± tolerance and min pairwise leaf distance ≥ 25; determinism re-asserted.
+- **Task 1b (new, server):** in `crates/pensieve-graph/src/layout.rs`, add a deterministic orbit post-pass to `force_layout`: collect degree-1 nodes per hub (their sole neighbor); for each hub with ≥4 leaves, place its leaves on concentric rings centered on the hub — ring radius `r_k = 90 + 55*k`, ring capacity `floor(2π r_k / 34)`, angles evenly spaced starting at the hub's angle-to-graph-center (deterministic), leaves ordered by id. Then re-run the existing overlap pass. Tests: star(60) → all leaves within ring radii of hub ± tolerance and min pairwise leaf distance ≥ 25; determinism re-asserted.
 - **Task 6 override (`edgeDisplay`):** at-rest edges return a NEUTRAL color signal (`loud: false` → renderer uses neutral hairline rgba(148,163,184,alpha) with alpha 0.16 far / 0.22 mid-near dark mode, 0.28 light), ignoring family color. Loud state (incident to focus / relType isolation match) uses the family color as before. `edgeDisplay` gains a `neutral: boolean` field (true at rest, false when loud) so the reducer picks the palette.
 - **Task 7 override (`buildGraphologyGraph` + reducers):** node `image` attribute still computed, but the node reducer only renders type "image" at mid/near LOD or for landmark hubs (size ≥ landmark threshold — top-decile degree); otherwise plain circle. Radius range widens: `radiusForDegree` output rescaled to [2.5, 22] so hubs visibly dominate. Edge reducer uses `neutral` per Task 6 override.

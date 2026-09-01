@@ -1,5 +1,5 @@
 {
-  "name": "kyma-embed-demo",
+  "name": "pensieve-embed-demo",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
     "mint-token": "node mint-token-server.mjs"
   },
   "dependencies": {
-    "@kyma-ai/client": "workspace:*",
-    "@kyma-ai/react": "workspace:*",
+    "@pensieve-ai/client": "workspace:*",
+    "@pensieve-ai/react": "workspace:*",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },

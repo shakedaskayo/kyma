@@ -1,0 +1,33 @@
+[package]
+name = "pensieve-ingest-filedrop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Object-store file-drop watcher. SHA256-keyed idempotency via the ingest_ledger."
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-core.workspace = true
+pensieve-ingest-core.workspace = true
+pensieve-storage.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+object_store.workspace = true
+bytes.workspace = true
+futures.workspace = true
+arrow.workspace = true
+arrow-array.workspace = true
+arrow-schema.workspace = true
+chrono.workspace = true
+metrics.workspace = true
+sha2 = "0.10"
+serde_json.workspace = true
+
+[dev-dependencies]
+pensieve-catalog-sqlite.workspace = true
+pensieve-format-tlm.workspace = true

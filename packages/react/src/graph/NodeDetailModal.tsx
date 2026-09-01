@@ -6,7 +6,7 @@
  */
 import { useState } from "react";
 import { Copy } from "lucide-react";
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../internal/ui/dialog";
 import { Button } from "../internal/ui/button";
 import { Markdown } from "../internal/ui/markdown";
@@ -36,53 +36,53 @@ export function NodeDetailModal({
         if (!o) onClose();
       }}
     >
-      <DialogContent className="ky-max-w-3xl ky-max-h-[85vh] ky-overflow-y-auto">
+      <DialogContent className="pv-max-w-3xl pv-max-h-[85vh] pv-overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="ky-truncate ky-pr-8">{name}</DialogTitle>
-          <div className="ky-text-2xs ky-text-muted-foreground">{nodeSubtitle(node)}</div>
+          <DialogTitle className="pv-truncate pv-pr-8">{name}</DialogTitle>
+          <div className="pv-text-2xs pv-text-muted-foreground">{nodeSubtitle(node)}</div>
         </DialogHeader>
 
         {content != null && (
-          <section className="ky-space-y-1">
-            <div className="ky-flex ky-items-center ky-justify-between">
-              <div className="ky-text-2xs ky-uppercase ky-text-muted-foreground">Content</div>
+          <section className="pv-space-y-1">
+            <div className="pv-flex pv-items-center pv-justify-between">
+              <div className="pv-text-2xs pv-uppercase pv-text-muted-foreground">Content</div>
               <Button variant="ghost" size="xs" onClick={() => setRaw((r) => !r)}>
                 {raw ? "Rendered" : "Raw"}
               </Button>
             </div>
             {raw ? (
-              <pre className="ky-overflow-x-auto ky-rounded ky-bg-muted ky-p-3 ky-font-mono ky-text-xs ky-whitespace-pre-wrap ky-break-words">
+              <pre className="pv-overflow-x-auto pv-rounded pv-bg-muted pv-p-3 pv-font-mono pv-text-xs pv-whitespace-pre-wrap pv-break-words">
                 {content}
               </pre>
             ) : (
-              <div className="ky-rounded ky-border ky-border-border ky-p-3">
+              <div className="pv-rounded pv-border pv-border-border pv-p-3">
                 <Markdown source={content} />
               </div>
             )}
           </section>
         )}
 
-        <section className="ky-space-y-1">
-          <div className="ky-text-2xs ky-uppercase ky-text-muted-foreground">Properties</div>
-          <dl className="ky-space-y-1.5">
+        <section className="pv-space-y-1">
+          <div className="pv-text-2xs pv-uppercase pv-text-muted-foreground">Properties</div>
+          <dl className="pv-space-y-1.5">
             {orderedProps(node).map(([k, v]) => {
               const f = formatValue(v);
               return (
-                <div key={k} className="ky-group ky-grid ky-grid-cols-[140px_1fr] ky-gap-2 ky-text-xs">
-                  <dt className="ky-truncate ky-text-muted-foreground" title={k}>
+                <div key={k} className="pv-group pv-grid pv-grid-cols-[140px_1fr] pv-gap-2 pv-text-xs">
+                  <dt className="pv-truncate pv-text-muted-foreground" title={k}>
                     {k}
                   </dt>
-                  <dd className="ky-flex ky-min-w-0 ky-items-start ky-gap-1">
-                    <span className="ky-min-w-0 ky-flex-1 ky-whitespace-pre-wrap ky-break-words ky-font-mono ky-text-foreground">
+                  <dd className="pv-flex pv-min-w-0 pv-items-start pv-gap-1">
+                    <span className="pv-min-w-0 pv-flex-1 pv-whitespace-pre-wrap pv-break-words pv-font-mono pv-text-foreground">
                       {f.text}
                     </span>
                     <button
                       type="button"
                       onClick={() => void navigator.clipboard.writeText(f.text)}
-                      className="ky-text-muted-foreground ky-opacity-0 group-hover:ky-opacity-100 hover:ky-text-foreground"
+                      className="pv-text-muted-foreground pv-opacity-0 group-hover:pv-opacity-100 hover:pv-text-foreground"
                       aria-label={`copy ${k}`}
                     >
-                      <Copy className="ky-h-3 ky-w-3" />
+                      <Copy className="pv-h-3 pv-w-3" />
                     </button>
                   </dd>
                 </div>
@@ -92,8 +92,8 @@ export function NodeDetailModal({
         </section>
 
         {sourcePath != null && (
-          <section className="ky-space-y-1">
-            <div className="ky-text-2xs ky-uppercase ky-text-muted-foreground">Source file</div>
+          <section className="pv-space-y-1">
+            <div className="pv-text-2xs pv-uppercase pv-text-muted-foreground">Source file</div>
             <ArtifactSourceViewer path={sourcePath} />
           </section>
         )}

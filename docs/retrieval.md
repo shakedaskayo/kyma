@@ -1,4 +1,4 @@
-# kyma — Retrieval & scale subsystems
+# pensieve — Retrieval & scale subsystems
 
 Developer/operator reference for the retrieval path (vector ANN, BM25 full-text,
 hybrid search) and the scale-out machinery (Parquet at rest, staged ingest +
@@ -14,7 +14,7 @@ identically over TLM and Parquet extents and never change the extent bytes.
 
 ## Index sidecars
 
-`crates/kyma-core/src/index_sidecar.rs` defines the contract:
+`crates/pensieve-core/src/index_sidecar.rs` defines the contract:
 
 - `SidecarKind` — `IvfRabitq` (code `"ivf_rabitq"`) and `TantivyFts` (code
   `"tantivy_fts"`).
@@ -24,19 +24,19 @@ identically over TLM and Parquet extents and never change the extent bytes.
   byte_size, params, embedding_model_id, created_at }` — the catalog row.
 
 Sidecars are registered in the **`extent_indexes`** catalog table
-(`crates/kyma-catalog/migrations/028_extent_indexes.sql`, mirrored in the SQLite
+(`crates/pensieve-catalog/migrations/028_extent_indexes.sql`, mirrored in the SQLite
 catalog for local mode). The descriptor's `embedding_model_id` pins the
 embedding model generation: query-time code never mixes vectors from different
 models.
 
-Sidecar blobs are cached on disk under `KYMA_CACHE_DIR` (default
-`~/.kyma/cache`) by `crates/kyma-storage/src/sidecar_cache.rs`.
+Sidecar blobs are cached on disk under `PENSIEVE_CACHE_DIR` (default
+`~/.pensieve/cache`) by `crates/pensieve-storage/src/sidecar_cache.rs`.
 
 ---
 
 ## Vector ANN
 
-Crate `kyma-index-vector` builds a per-extent **IVF + 1-bit RaBitQ** sidecar:
+Crate `pensieve-index-vector` builds a per-extent **IVF + 1-bit RaBitQ** sidecar:
 
 ```
 extent embedding column
@@ -46,7 +46,7 @@ extent embedding column
   → KYIV sidecar blob (footer + per-partition layout, range-GET friendly)
 ```
 
-Query side — `kyma_exec::ann::ann_topk` (`crates/kyma-exec/src/ann.rs`):
+Query side — `pensieve_exec::ann::ann_topk` (`crates/pensieve-exec/src/ann.rs`):
 
 1. adaptive-threshold extent prune,
 2. sidecar probe (`nprobe` partitions),
@@ -55,12 +55,12 @@ Query side — `kyma_exec::ann::ann_topk` (`crates/kyma-exec/src/ann.rs`):
    oracle and the rerank kernel — it is never removed).
 
 `ann_topk` is wired into the vector leg of unified search
-(`crates/kyma-server/src/search/mod.rs`) and agent memory retrieval
-(`crates/kyma-server/src/agent/memory_retrieve.rs`). The SQL/UDF cosine path
+(`crates/pensieve-server/src/search/mod.rs`) and agent memory retrieval
+(`crates/pensieve-server/src/agent/memory_retrieve.rs`). The SQL/UDF cosine path
 remains as the fallback for unindexed extents and as the CI recall oracle.
 
 For server-mode scale-out across many extents, a **global centroid tree**
-(SPANN-style, `kyma-index-vector::global_tree` + the `ann_tree` catalog table)
+(SPANN-style, `pensieve-index-vector::global_tree` + the `ann_tree` catalog table)
 fixes the per-extent fan-out: `ann_topk` routes the query through the tree's
 selected partitions (`ann_tree::select`) when a fresh tree exists, and falls
 back to per-extent fan-out otherwise — so the tree is a pure latency
@@ -72,8 +72,8 @@ one server-only piece.
 
 ## Full-text (BM25)
 
-Crate `kyma-index-fts` builds a per-extent **Tantivy** index as a sidecar.
-Query side — `kyma_exec::fts::bm25_topk` (`crates/kyma-exec/src/fts.rs`) —
+Crate `pensieve-index-fts` builds a per-extent **Tantivy** index as a sidecar.
+Query side — `pensieve_exec::fts::bm25_topk` (`crates/pensieve-exec/src/fts.rs`) —
 replaces the catalog's coarse `LIKE`/token-set prune for the lexical leg with
 real BM25 ranking, and is wired into the same two call sites (unified search +
 memory retrieval). The `LIKE` path remains the fallback for unindexed extents.
@@ -93,18 +93,18 @@ are always correct — only latency differs.
 
 `SegmentFormat` is the storage trait boundary. Two implementations ship:
 
-- `kyma-format-tlm` — the original Arrow-IPC-derived format (default).
-- `kyma-format-parquet` — ZSTD-compressed Parquet, one row group per appended
+- `pensieve-format-tlm` — the original Arrow-IPC-derived format (default).
+- `pensieve-format-parquet` — ZSTD-compressed Parquet, one row group per appended
   batch.
 
-`FormatRegistry` (`crates/kyma-core/src/segment_format.rs`) holds one **write**
+`FormatRegistry` (`crates/pensieve-core/src/segment_format.rs`) holds one **write**
 format plus a list of **reader** formats and dispatches reads by sniffing each
 extent's magic bytes — so a table can hold a mix of TLM and Parquet extents and
 old extents stay readable forever.
 
 | Env | Default | Effect |
 |---|---|---|
-| `KYMA_WRITE_FORMAT` | `tlm` | `parquet` makes new extents Parquet; TLM stays registered as a reader. |
+| `PENSIEVE_WRITE_FORMAT` | `tlm` | `parquet` makes new extents Parquet; TLM stays registered as a reader. |
 
 Compaction is the organic migration vehicle: rewriting an extent re-emits it in
 the current write format.
@@ -114,20 +114,20 @@ the current write format.
 ## Ingest: synchronous vs staged + committer
 
 Default ingest is synchronous (router commits inline; read-your-writes).
-Setting `KYMA_INGEST_MODE=staged` splits the path:
+Setting `PENSIEVE_INGEST_MODE=staged` splits the path:
 
 - **Routers** flush a batch to object storage, record its manifest in the
   **`staged_extents`** catalog table, and ack — object storage is the WAL.
-- A **committer** (`crates/kyma-ingest-core/src/committer.rs`) drains staged
+- A **committer** (`crates/pensieve-ingest-core/src/committer.rs`) drains staged
   rows, groups them by table, and commits each group via
   `Catalog::commit_staged_group` in one transaction (snapshot CAS + staged-row
   delete), so a row becomes visible atomically.
 
 | Env | Default | Effect |
 |---|---|---|
-| `KYMA_INGEST_MODE` | (unset → synchronous) | `staged` enables the router/committer split. |
-| `KYMA_ROLE` | `all_in_one` | Role of this node; only committer-eligible roles run the committer loop. |
-| `KYMA_COMMIT_WINDOW_MS` | `1000` | Committer drain interval. |
+| `PENSIEVE_INGEST_MODE` | (unset → synchronous) | `staged` enables the router/committer split. |
+| `PENSIEVE_ROLE` | `all_in_one` | Role of this node; only committer-eligible roles run the committer loop. |
+| `PENSIEVE_COMMIT_WINDOW_MS` | `1000` | Committer drain interval. |
 
 Local mode keeps the in-process synchronous path (staged mode is a server/PG
 feature).
@@ -138,19 +138,19 @@ feature).
 
 | Env | Default | Effect |
 |---|---|---|
-| `KYMA_PG_MAX_CONNS` | `16` | Postgres catalog pool size (min 1). |
-| `KYMA_CACHE_DIR` | `~/.kyma/cache` | On-disk sidecar/extent cache root. |
-| `KYMA_QUERY_MAX_CONCURRENT` | `0` (unlimited) | Per-process cap on in-flight `/v1/query` + `/v1/search`; over the cap returns `429` + `Retry-After`. |
-| `KYMA_QUERY_MAX_CONCURRENT_PER_TENANT` | `0` (unlimited) | Per-tenant concurrency cap — each tenant gets its own semaphore, so one tenant saturating its budget can't starve another. |
-| `KYMA_QUERY_RETRY_AFTER_SECS` | `1` | `Retry-After` value sent with the 429. |
-| `KYMA_AGENT_MAX_CONCURRENT` / `_PER_TENANT` | `0` (unlimited) | Same, for the heavier agent-run path. |
-| `KYMA_INGEST_RATE_RPS` | `0` (unlimited) | Token-bucket ingest rate limit (refill/sec), keyed by database; empty bucket → `429` + `Retry-After`. |
-| `KYMA_INGEST_RATE_BURST` | `2×rps` | Ingest token-bucket burst cap. |
-| `KYMA_QUOTA_REFRESH_SECS` | `30` | How often the per-tenant quota cache reloads from the `tenant_quotas` catalog table. |
+| `PENSIEVE_PG_MAX_CONNS` | `16` | Postgres catalog pool size (min 1). |
+| `PENSIEVE_CACHE_DIR` | `~/.pensieve/cache` | On-disk sidecar/extent cache root. |
+| `PENSIEVE_QUERY_MAX_CONCURRENT` | `0` (unlimited) | Per-process cap on in-flight `/v1/query` + `/v1/search`; over the cap returns `429` + `Retry-After`. |
+| `PENSIEVE_QUERY_MAX_CONCURRENT_PER_TENANT` | `0` (unlimited) | Per-tenant concurrency cap — each tenant gets its own semaphore, so one tenant saturating its budget can't starve another. |
+| `PENSIEVE_QUERY_RETRY_AFTER_SECS` | `1` | `Retry-After` value sent with the 429. |
+| `PENSIEVE_AGENT_MAX_CONCURRENT` / `_PER_TENANT` | `0` (unlimited) | Same, for the heavier agent-run path. |
+| `PENSIEVE_INGEST_RATE_RPS` | `0` (unlimited) | Token-bucket ingest rate limit (refill/sec), keyed by database; empty bucket → `429` + `Retry-After`. |
+| `PENSIEVE_INGEST_RATE_BURST` | `2×rps` | Ingest token-bucket burst cap. |
+| `PENSIEVE_QUOTA_REFRESH_SECS` | `30` | How often the per-tenant quota cache reloads from the `tenant_quotas` catalog table. |
 
-Query/agent admission lives in `crates/kyma-server/src/concurrency.rs` (per-
+Query/agent admission lives in `crates/pensieve-server/src/concurrency.rs` (per-
 process and per-tenant semaphores); ingest rate limiting lives in
-`crates/kyma-ingest-rest/src/rate_limit.rs` — all wired and off by default.
+`crates/pensieve-ingest-rest/src/rate_limit.rs` — all wired and off by default.
 
 **Per-tenant configurable quotas.** Beyond the env-global defaults above, an
 operator can set DIFFERENT query/agent concurrency limits per tenant via the
@@ -165,7 +165,7 @@ GET /v1/admin/tenant-quotas
 Both require an admin token. A configured value overrides the env default for
 that tenant; an unset field (or no row) falls back to the env default. The
 limiter reads an in-RAM cache (`quota_cache.rs`) refreshed every
-`KYMA_QUOTA_REFRESH_SECS`, so there is no per-request catalog hit; an upsert
+`PENSIEVE_QUOTA_REFRESH_SECS`, so there is no per-request catalog hit; an upsert
 also refreshes the cache immediately. Ingest rate limiting stays per-database
 (the ingest path carries a database, not a tenant).
 
@@ -178,10 +178,10 @@ also refreshes the cache immediately. Ingest rate limiting stays per-database
 these clauses map to **appends**; `SET` / `DELETE` / `REMOVE` are rejected by
 design (no in-place mutation).
 
-- `parse_cypher_write` (`crates/kyma-kql/src/cypher.rs`) returns `Some(write)`
+- `parse_cypher_write` (`crates/pensieve-kql/src/cypher.rs`) returns `Some(write)`
   for a `CREATE`/`MERGE` statement and `None` for a read query (which falls
   through to the read path).
-- `handle_cypher_write` (`crates/kyma-server/src/lib.rs`) enforces the write
+- `handle_cypher_write` (`crates/pensieve-server/src/lib.rs`) enforces the write
   role, then ingests node/edge rows via the `WritePath`. `MERGE` runs an
   existence check first and appends only when absent.
 
@@ -211,7 +211,7 @@ acceptance gates:
   `compose-smoke.yml` (runs on push to main + on demand).
 - **Kubernetes / Helm** — `scripts/fresh-install-validate-k8s.sh` spins a
   throwaway `kind` cluster, deploys in-cluster Postgres + MinIO, helm-installs
-  the chart (`deploy/helm/kyma-engine`) from the built image, waits for the pod
+  the chart (`deploy/helm/pensieve-engine`) from the built image, waits for the pod
   rollout, then asserts health/login/ingest/query/search over a port-forward and
   deletes the cluster. Wired into CI as `k8s-smoke.yml` (push to main + on
   demand).

@@ -9,7 +9,7 @@
 // All mode fields are optional; omitting `mode` preserves the pre-existing
 // data-only behaviour and response shape.
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import type { Scope } from "./discover";
 import { errorFromResponse } from "./errors";
 
@@ -83,7 +83,7 @@ export interface HybridSearchResponse {
   linked?: unknown[];
 }
 
-export async function search(t: KymaTransport, req: HybridSearchRequest): Promise<HybridSearchResponse> {
+export async function search(t: PensieveTransport, req: HybridSearchRequest): Promise<HybridSearchResponse> {
   const res = await t.request("/v1/search", {
     method: "POST",
     headers: { "content-type": "application/json" },

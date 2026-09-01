@@ -1,17 +1,17 @@
 /**
  * usePanelQuery — per-panel query runner for dashboard panels.
  *
- * Wraps useKymaQuery (per-instance, no shared store) with:
+ * Wraps usePensieveQuery (per-instance, no shared store) with:
  *   - time-range injection via prependTimeFilter
  *   - panel-level abort on re-run
  *
  * Decoupled from web's useDashboardQuery (which called useSession.getState()
- * from Zustand — here we use the client from KymaProvider context instead).
+ * from Zustand — here we use the client from PensieveProvider context instead).
  */
 
 import { useCallback, useRef, useState } from "react";
-import type { Column } from "@kyma-ai/client";
-import { useKymaClient } from "../provider/context";
+import type { Column } from "@pensieve-ai/client";
+import { usePensieveClient } from "../provider/context";
 import { prependTimeFilter } from "../query/time-range/time-range";
 import type { TimeRange } from "../query/time-range/time-range-types";
 
@@ -23,7 +23,7 @@ export type PanelResult =
 
 /** Runs a single dashboard-panel query with time-range prepended. */
 export function usePanelQuery() {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   const [result, setResult] = useState<PanelResult>({ kind: "idle" });
   const abortRef = useRef<AbortController | null>(null);
 

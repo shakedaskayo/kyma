@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pensieve-engine.fullname" . }}
+  labels:
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- if .Values.roles.enabled }}
+    {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "edge") | nindent 4 }}
+    {{- else }}
+    {{- include "pensieve-engine.selectorLabels" . | nindent 4 }}
+    {{- end }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP

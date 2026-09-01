@@ -11,7 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-ENGINE_URL="${KYMA_HTTP_ADDR:-http://localhost:8080}"
+ENGINE_URL="${PENSIEVE_HTTP_ADDR:-http://localhost:8080}"
 TARGET_ROWS=100000
 OUT="$ROOT/scripts/fixtures/perf-baseline.json"
 

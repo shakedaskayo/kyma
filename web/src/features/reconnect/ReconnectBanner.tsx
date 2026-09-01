@@ -5,7 +5,7 @@ export function ReconnectBanner() {
   if (online) return null;
   return (
     <div className="border-b border-destructive/40 bg-destructive/10 px-4 py-1 text-xs text-destructive">
-      Reconnecting to kyma…
+      Reconnecting to pensieve…
     </div>
   );
 }

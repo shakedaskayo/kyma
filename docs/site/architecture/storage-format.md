@@ -1,14 +1,14 @@
 ---
 title: Storage format
-description: The on-disk extent formats — kyma-format-tlm (magic-framed Arrow IPC body, JSON-tail block-stats footer, per-column distinct sets, token index) and kyma-format-parquet (ZSTD Parquet), the SegmentFormat trait they implement, and per-extent format dispatch via KYMA_WRITE_FORMAT.
+description: The on-disk extent formats — pensieve-format-tlm (magic-framed Arrow IPC body, JSON-tail block-stats footer, per-column distinct sets, token index) and pensieve-format-parquet (ZSTD Parquet), the SegmentFormat trait they implement, and per-extent format dispatch via PENSIEVE_WRITE_FORMAT.
 ---
 
 # Storage format
 
-`kyma-format-tlm` is the shipping implementation of the
+`pensieve-format-tlm` is the shipping implementation of the
 `SegmentFormat` trait. It defines the byte-level layout of every
-extent kyma writes today. This page is the reference for someone
-implementing on top of kyma — building a new format, decoding extents
+extent pensieve writes today. This page is the reference for someone
+implementing on top of pensieve — building a new format, decoding extents
 out-of-band, or planning how the catalog and the format collaborate.
 
 The conceptual companion is
@@ -19,7 +19,7 @@ table data on object storage. This page covers what an extent
 
 ## The trait surface
 
-The format trait — defined in `crates/kyma-core/src/segment_format.rs`
+The format trait — defined in `crates/pensieve-core/src/segment_format.rs`
 — is intentionally small.
 
 - `SegmentFormat` is a factory: `open_extent` and `start_extent`.
@@ -46,7 +46,7 @@ MAGIC_V2  ||  arrow_ipc_bytes  ||  block_stats_json  ||  stats_len u32 LE  ||  M
 
 Where:
 
-- **`MAGIC_V2`** is the byte string `KYMA\x02`. It appears at both
+- **`MAGIC_V2`** is the byte string `PENSIEVE\x02`. It appears at both
   the start of the object and the very end. The trailing copy lets a
   reader walk *backwards* from the file end to find the footer
   without parsing the Arrow IPC body first.
@@ -60,7 +60,7 @@ Where:
 - **`stats_len`** is the JSON byte length encoded as a little-endian
   u32, so the footer-walk reader knows where the JSON starts.
 
-A v1 extent — `KYMA\x01` magic — has the magic followed directly by
+A v1 extent — `PENSIEVE\x01` magic — has the magic followed directly by
 Arrow IPC bytes, no trailing footer. v1 extents stay readable; their
 `pruned_blocks` falls back conservatively to "return every block."
 
@@ -180,7 +180,7 @@ pass can light it up without any catalog change.
 ## A second format: Parquet
 
 `SegmentFormat` is a trait precisely so a denser format can slot in beside TLM,
-and one has: **`kyma-format-parquet`** is a second shipping implementation.
+and one has: **`pensieve-format-parquet`** is a second shipping implementation.
 Rather than a bespoke encoder, it writes standard Apache Parquet so the bytes
 are readable by any Parquet tool:
 
@@ -192,7 +192,7 @@ are readable by any Parquet tool:
   the `BlockPredicate` lowering are unchanged — the format maps the predicate
   onto row-group / page / bloom skipping internally.
 
-A `FormatRegistry` chooses the writer by `KYMA_WRITE_FORMAT` (`tlm` default, or
+A `FormatRegistry` chooses the writer by `PENSIEVE_WRITE_FORMAT` (`tlm` default, or
 `parquet`). Reads dispatch **per extent** on the `extents.format` catalog
 column, so a table can hold a mix of TLM and Parquet extents — old extents stay
 readable forever and compaction migrates them to the configured format
@@ -220,9 +220,9 @@ work-unit will eventually sweep.
 
 ## Where to go next
 
-- The trait definitions (+ `FormatRegistry`): `crates/kyma-core/src/segment_format.rs`.
-- The format implementations: `crates/kyma-format-tlm/src/` (Arrow IPC) and
-  `crates/kyma-format-parquet/src/` (Parquet). Select with `KYMA_WRITE_FORMAT`.
+- The trait definitions (+ `FormatRegistry`): `crates/pensieve-core/src/segment_format.rs`.
+- The format implementations: `crates/pensieve-format-tlm/src/` (Arrow IPC) and
+  `crates/pensieve-format-parquet/src/` (Parquet). Select with `PENSIEVE_WRITE_FORMAT`.
 - The query side that consumes these footers:
   [The pruning cascade](/concepts/the-pruning-cascade) and
   [Pruning and performance](/query/pruning-and-performance).

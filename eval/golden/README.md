@@ -37,7 +37,7 @@ this set within the tolerance committed in `baseline.json`.
 
 ## How queries get here
 
-1. **Mine** real queries from Ask-Kyma traces (`otel_traces` /
+1. **Mine** real queries from Ask-Pensieve traces (`otel_traces` /
    `agent_sessions`): frequent, diverse, anonymized. No synthetic phrasing —
    the set must reflect what users actually ask.
 2. **Collect candidates** per query from the current engine (`/v1/search`,
@@ -54,9 +54,9 @@ this set within the tolerance committed in `baseline.json`.
 ## Running
 
 ```sh
-cargo test -p kyma-retrieval-eval          # unit + wiring tests (CI-safe)
-cargo run -p kyma-retrieval-eval --bin judge_calibrate -- --help   # local only
+cargo test -p pensieve-retrieval-eval          # unit + wiring tests (CI-safe)
+cargo run -p pensieve-retrieval-eval --bin judge_calibrate -- --help   # local only
 ```
 
-The runner itself lives in `kyma_retrieval_eval::golden` —
+The runner itself lives in `pensieve_retrieval_eval::golden` —
 `load_fixtures` → `evaluate` → `check_regression`.

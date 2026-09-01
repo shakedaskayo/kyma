@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 import { nodeContent, nodeSourcePath, nodeName, nodeSubtitle, formatValue, orderedProps } from "./node-detail";
 
 function node(properties: Record<string, unknown>, labels: string[] = ["Memory"]): GraphNode {

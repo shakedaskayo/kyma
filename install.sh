@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# kyma installer — the context engine for coding agents.
-# https://github.com/shakedaskayo/kyma
+# pensieve installer — the context engine for coding agents.
+# https://github.com/shakedaskayo/pensieve
 #
 # Quick start (interactive wizard if run in a terminal):
-#   curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/shakedaskayo/pensieve/main/install.sh | bash
 #
 # Non-interactive examples:
 #   ... | bash -s -- --yes                      # install the binary only
@@ -16,34 +16,34 @@
 #                       already writable, else ~/.local/bin — NO sudo needed;
 #                       sudo is only used if you explicitly pick a root-owned dir.
 #   --from-source       Build from a git clone instead of a prebuilt binary
-#   --src-dir DIR       Where to clone for --source builds (default: ~/kyma)
-#   --serve             Start `kyma serve` (local web UI + API) after install
+#   --src-dir DIR       Where to clone for --source builds (default: ~/pensieve)
+#   --serve             Start `pensieve serve` (local web UI + API) after install
 #   --no-serve          Don't start the server (skip the prompt)
 #   --plugin            Install the Claude Code memory plugin (implies --serve)
 #   --no-plugin         Don't install the plugin (skip the prompt)
-#   --port PORT         Port for `kyma serve` (default: 7777)
+#   --port PORT         Port for `pensieve serve` (default: 7777)
 #   --token TOKEN       Static API token to use (default: generated)
-#   --prod-deploy       After install, launch `kyma deploy init` (AWS+Supabase
+#   --prod-deploy       After install, launch `pensieve deploy init` (AWS+Supabase
 #                       production wizard) instead of the local-dev flow
-#   --uninstall         Remove kyma: server service, sync worker, plugin, skills,
-#                       binary. Keeps your data (~/.kyma) unless --purge is given
-#   --purge             With --uninstall: also delete ~/.kyma (memories, config)
+#   --uninstall         Remove pensieve: server service, sync worker, plugin, skills,
+#                       binary. Keeps your data (~/.pensieve) unless --purge is given
+#   --purge             With --uninstall: also delete ~/.pensieve (memories, config)
 #   --yes, -y           Assume defaults; no prompts
 #   --help, -h          Show this help
 #
-# Env: KYMA_INSTALL_DIR, KYMA_SRC_DIR, KYMA_PORT, GITHUB_TOKEN (private/rate-limit),
-#      KYMA_NO_MODIFY_PATH=1 (don't touch shell rc files)
+# Env: PENSIEVE_INSTALL_DIR, PENSIEVE_SRC_DIR, PENSIEVE_PORT, GITHUB_TOKEN (private/rate-limit),
+#      PENSIEVE_NO_MODIFY_PATH=1 (don't touch shell rc files)
 #
 # Note: we deliberately do NOT use `set -e` — the interactive wizard relies on
 # `[ … ] && …` tests whose "false" result is normal control flow. Must-succeed
 # steps are guarded explicitly with `|| die`.
 set -uo pipefail
 
-REPO="shakedaskayo/kyma"
+REPO="shakedaskayo/pensieve"
 RAW_BASE="https://raw.githubusercontent.com/${REPO}/main"
-INSTALL_DIR="${KYMA_INSTALL_DIR:-}"   # empty → resolved after flags (no-sudo default)
-SRC_DIR="${KYMA_SRC_DIR:-$HOME/kyma}"
-PORT="${KYMA_PORT:-7777}"
+INSTALL_DIR="${PENSIEVE_INSTALL_DIR:-}"   # empty → resolved after flags (no-sudo default)
+SRC_DIR="${PENSIEVE_SRC_DIR:-$HOME/pensieve}"
+PORT="${PENSIEVE_PORT:-7777}"
 VERSION=""
 TOKEN=""
 FROM_SOURCE=0
@@ -115,11 +115,11 @@ AUTH_HEADER=""
 curl_gh() { if [ -n "$AUTH_HEADER" ]; then curl -H "$AUTH_HEADER" "$@"; else curl "$@"; fi; }
 
 # ── install dir (no sudo by default) ────────────────────────────────────────
-# kyma needs NO root: the binary runs as your user and all data lives in
-# ~/.kyma. sudo only ever comes into play if you explicitly choose a
+# pensieve needs NO root: the binary runs as your user and all data lives in
+# ~/.pensieve. sudo only ever comes into play if you explicitly choose a
 # root-owned dir (--dir /usr/local/bin or the interactive system-wide option).
 resolve_install_dir() {
-  [ -n "$INSTALL_DIR" ] && return   # --dir / KYMA_INSTALL_DIR: explicit choice
+  [ -n "$INSTALL_DIR" ] && return   # --dir / PENSIEVE_INSTALL_DIR: explicit choice
   # Already-writable /usr/local/bin (Intel-Mac Homebrew, root, custom): use it.
   if [ -d /usr/local/bin ] && [ -w /usr/local/bin ]; then
     INSTALL_DIR=/usr/local/bin
@@ -139,12 +139,12 @@ resolve_install_dir() {
 
 # Make INSTALL_DIR reachable in future shells (current shell is handled by
 # ensure_on_path). Appends one guarded line to the shell rc; opt out with
-# KYMA_NO_MODIFY_PATH=1.
+# PENSIEVE_NO_MODIFY_PATH=1.
 persist_path() {
   case ":$PATH:" in *":$INSTALL_DIR:"*) return ;; esac
   local line rc
   line="export PATH=\"$INSTALL_DIR:\$PATH\""
-  if [ -n "${KYMA_NO_MODIFY_PATH:-}" ]; then
+  if [ -n "${PENSIEVE_NO_MODIFY_PATH:-}" ]; then
     warn "$INSTALL_DIR is not on your PATH — add it yourself: $line"
     return
   fi
@@ -157,7 +157,7 @@ persist_path() {
   if [ "$INTERACTIVE" = "1" ]; then
     ask "Add ${INSTALL_DIR} to PATH in ${rc}?" "Y" || { say "  Add it yourself: $line"; return; }
   fi
-  grep -qsF "$INSTALL_DIR" "$rc" 2>/dev/null || printf '\n# kyma\n%s\n' "$line" >> "$rc"
+  grep -qsF "$INSTALL_DIR" "$rc" 2>/dev/null || printf '\n# pensieve\n%s\n' "$line" >> "$rc"
   info "Added $INSTALL_DIR to PATH in $rc — restart your shell (or: source $rc)"
 }
 
@@ -174,14 +174,14 @@ detect_platform() {
     aarch64|arm64) arch="arm64" ;;
     *) die "Unsupported arch: $(uname -m) — use --from-source" ;;
   esac
-  printf 'kyma-%s-%s' "$os" "$arch"
+  printf 'pensieve-%s-%s' "$os" "$arch"
 }
 
 resolve_version() {
   [ -n "$VERSION" ] && { printf '%s' "$VERSION"; return; }
   local v
   # Only CLI releases (vX.Y.Z) carry binaries — the repo also cuts npm-package
-  # releases (@kyma-ai/*) that must never win "latest" here.
+  # releases (@pensieve-ai/*) that must never win "latest" here.
   v=$(curl_gh -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
       | grep '"tag_name"' | head -1 | cut -d'"' -f4 || true)
   case "$v" in
@@ -201,7 +201,7 @@ install_binary() {
   artifact="${platform}.tar.gz"
   url="https://github.com/${REPO}/releases/download/${version}/${artifact}"
 
-  info "Installing kyma ${bold}${version}${rst} (${platform}) → ${INSTALL_DIR}/kyma"
+  info "Installing pensieve ${bold}${version}${rst} (${platform}) → ${INSTALL_DIR}/pensieve"
   tmp=$(mktemp -d); trap 'rm -rf "$tmp"' RETURN
   if ! curl_gh -fSL --progress-bar "$url" -o "$tmp/$artifact"; then
     warn "No prebuilt binary at $url"
@@ -216,14 +216,14 @@ install_binary() {
     info "Checksum OK"
   fi
   tar xzf "$tmp/$artifact" -C "$tmp"
-  "$tmp/kyma" --help >/dev/null 2>&1 || die "Downloaded binary won't run — wrong platform?"
+  "$tmp/pensieve" --help >/dev/null 2>&1 || die "Downloaded binary won't run — wrong platform?"
   mkdir -p "$INSTALL_DIR" 2>/dev/null || true
-  if [ -w "$INSTALL_DIR" ]; then mv "$tmp/kyma" "$INSTALL_DIR/kyma"
+  if [ -w "$INSTALL_DIR" ]; then mv "$tmp/pensieve" "$INSTALL_DIR/pensieve"
   else
     warn "Need sudo to write ${INSTALL_DIR} (a system dir — use --dir ~/.local/bin for a sudo-free install)"
-    sudo mv "$tmp/kyma" "$INSTALL_DIR/kyma"
+    sudo mv "$tmp/pensieve" "$INSTALL_DIR/pensieve"
   fi
-  chmod +x "$INSTALL_DIR/kyma"
+  chmod +x "$INSTALL_DIR/pensieve"
   return 0
 }
 
@@ -234,7 +234,7 @@ install_source() {
   have pnpm  || die "pnpm not found (needed to build the web UI). Install Node + pnpm, or use a prebuilt binary."
 
   local repo_root
-  if [ -f "crates/kyma-cli/Cargo.toml" ]; then
+  if [ -f "crates/pensieve-cli/Cargo.toml" ]; then
     repo_root="$PWD"; info "Building from the current checkout: $repo_root"
   else
     if [ -d "$SRC_DIR/.git" ]; then
@@ -249,26 +249,26 @@ install_source() {
   ( cd "$repo_root" && pnpm install --frozen-lockfile && pnpm -C web build ) \
     || die "web UI build failed"
   info "Building + installing the CLI (cargo install) — this can take several minutes…"
-  ( cd "$repo_root" && cargo install --path crates/kyma-cli --locked --force ) \
+  ( cd "$repo_root" && cargo install --path crates/pensieve-cli --locked --force ) \
     || die "cargo install failed"
-  # cargo installs the `kyma-cli` binary to ~/.cargo/bin. End users invoke it as
-  # `kyma`, matching the prebuilt-tarball path — symlink (fall back to copy).
+  # cargo installs the `pensieve-cli` binary to ~/.cargo/bin. End users invoke it as
+  # `pensieve`, matching the prebuilt-tarball path — symlink (fall back to copy).
   local cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
-  if [ -f "$cargo_bin/kyma-cli" ]; then
-    ln -sf "$cargo_bin/kyma-cli" "$cargo_bin/kyma" 2>/dev/null \
-      || cp -f "$cargo_bin/kyma-cli" "$cargo_bin/kyma"
+  if [ -f "$cargo_bin/pensieve-cli" ]; then
+    ln -sf "$cargo_bin/pensieve-cli" "$cargo_bin/pensieve" 2>/dev/null \
+      || cp -f "$cargo_bin/pensieve-cli" "$cargo_bin/pensieve"
   fi
   return 0
 }
 
 ensure_on_path() {
-  have kyma && return 0
+  have pensieve && return 0
   case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
     *) export PATH="$INSTALL_DIR:$PATH" ;;
   esac
   [ -d "$HOME/.cargo/bin" ] && export PATH="$HOME/.cargo/bin:$PATH"
-  have kyma || die "kyma not found on PATH after install."
+  have pensieve || die "pensieve not found on PATH after install."
 }
 
 # ── end-to-end wiring ────────────────────────────────────────────────────────
@@ -280,15 +280,15 @@ server_version() {  # /health version of whatever is listening on :PORT
 stop_stale_server() {  # the web UI is embedded in the binary → old process = old UI
   # Service-managed? Tear the supervision down first or launchd/systemd
   # instantly respawns whatever we kill below.
-  kyma service uninstall >/dev/null 2>&1 || true
+  pensieve service uninstall >/dev/null 2>&1 || true
   local pid="" i
-  [ -f "$HOME/.kyma/serve.pid" ] && pid=$(cat "$HOME/.kyma/serve.pid" 2>/dev/null)
+  [ -f "$HOME/.pensieve/serve.pid" ] && pid=$(cat "$HOME/.pensieve/serve.pid" 2>/dev/null)
   if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
     pid=""
     if have lsof; then
       pid=$(lsof -ti "tcp:${PORT}" 2>/dev/null | head -1)
-      # Only kill it if it really is a kyma process.
-      [ -n "$pid" ] && { ps -p "$pid" -o comm= 2>/dev/null | grep -q kyma || pid=""; }
+      # Only kill it if it really is a pensieve process.
+      [ -n "$pid" ] && { ps -p "$pid" -o comm= 2>/dev/null | grep -q pensieve || pid=""; }
     fi
   fi
   if [ -z "$pid" ]; then
@@ -297,7 +297,7 @@ stop_stale_server() {  # the web UI is embedded in the binary → old process = 
   fi
   kill "$pid" 2>/dev/null
   for i in $(seq 1 20); do
-    kill -0 "$pid" 2>/dev/null || { rm -f "$HOME/.kyma/serve.pid"; return 0; }
+    kill -0 "$pid" 2>/dev/null || { rm -f "$HOME/.pensieve/serve.pid"; return 0; }
     sleep 0.5
   done
   warn "Old server (pid $pid) didn't exit; restart it yourself to load the new web UI."
@@ -310,10 +310,10 @@ stop_stale_server() {  # the web UI is embedded in the binary → old process = 
 existing_service_token() {
   local f="$1"
   [ -f "$f" ] || return 0
-  # plist:  <key>KYMA_AUTH_TOKENS</key>\n    <string>TOKEN:admin</string>
-  # systemd: Environment=KYMA_AUTH_TOKENS=TOKEN:admin
-  grep -A1 'KYMA_AUTH_TOKENS' "$f" 2>/dev/null \
-    | sed -nE 's/.*<string>([^:<]+):admin<\/string>.*/\1/p; s/.*KYMA_AUTH_TOKENS=([^:]+):admin.*/\1/p' \
+  # plist:  <key>PENSIEVE_AUTH_TOKENS</key>\n    <string>TOKEN:admin</string>
+  # systemd: Environment=PENSIEVE_AUTH_TOKENS=TOKEN:admin
+  grep -A1 'PENSIEVE_AUTH_TOKENS' "$f" 2>/dev/null \
+    | sed -nE 's/.*<string>([^:<]+):admin<\/string>.*/\1/p; s/.*PENSIEVE_AUTH_TOKENS=([^:]+):admin.*/\1/p' \
     | head -1 || true
 }
 
@@ -322,22 +322,22 @@ start_serve() {
   # re-run never desyncs the CLI from a server we are NOT restarting.
   local existing_service_file=""
   case "$(uname -s)" in
-    Darwin) existing_service_file="$HOME/Library/LaunchAgents/dev.getkyma.kyma-server.plist" ;;
-    Linux)  existing_service_file="$HOME/.config/systemd/user/kyma-server.service" ;;
+    Darwin) existing_service_file="$HOME/Library/LaunchAgents/dev.getpensieve.pensieve-server.plist" ;;
+    Linux)  existing_service_file="$HOME/.config/systemd/user/pensieve-server.service" ;;
   esac
   if [ -z "$TOKEN" ]; then
     TOKEN="$(existing_service_token "$existing_service_file")"
   fi
-  [ -z "$TOKEN" ] && TOKEN="kyma-local-$(rand_hex)"
-  mkdir -p "$HOME/.kyma/logs"
-  local log="$HOME/.kyma/logs/server.log"
+  [ -z "$TOKEN" ] && TOKEN="pensieve-local-$(rand_hex)"
+  mkdir -p "$HOME/.pensieve/logs"
+  local log="$HOME/.pensieve/logs/server.log"
   local need_start=1
-  # The service files written by `kyma service install` — their presence
+  # The service files written by `pensieve service install` — their presence
   # means the server is supervised (starts at login, restarts on crash).
   local service_file=""
   case "$(uname -s)" in
-    Darwin) service_file="$HOME/Library/LaunchAgents/dev.getkyma.kyma-server.plist" ;;
-    Linux)  service_file="$HOME/.config/systemd/user/kyma-server.service" ;;
+    Darwin) service_file="$HOME/Library/LaunchAgents/dev.getpensieve.pensieve-server.plist" ;;
+    Linux)  service_file="$HOME/.config/systemd/user/pensieve-server.service" ;;
   esac
   if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
     # A server is up — but if it predates the binary we just installed, it is
@@ -345,7 +345,7 @@ start_serve() {
     # An up-to-date but UNSUPERVISED server (old nohup installs) is migrated
     # to the service so it stops disappearing on reboot.
     local new_ver running_ver
-    new_ver=$(kyma version 2>/dev/null | awk '{print $2}')
+    new_ver=$(pensieve version 2>/dev/null | awk '{print $2}')
     running_ver=$(server_version)
     if [ -n "$new_ver" ] && [ "$running_ver" = "$new_ver" ] && [ -n "$service_file" ] && [ -f "$service_file" ]; then
       info "A supervised server is already running on :${PORT} (v${running_ver})"
@@ -360,14 +360,14 @@ start_serve() {
     fi
   fi
   if [ "$need_start" = "1" ]; then
-    info "Installing the kyma server as a background service (starts at login, restarts on crash)…"
-    if kyma service install --addr "127.0.0.1:${PORT}" --token "$TOKEN" >/dev/null 2>&1; then
+    info "Installing the pensieve server as a background service (starts at login, restarts on crash)…"
+    if pensieve service install --addr "127.0.0.1:${PORT}" --token "$TOKEN" >/dev/null 2>&1; then
       :
     else
       warn "Service install failed — starting a plain background process instead."
-      KYMA_AUTH_TOKENS="${TOKEN}:admin" nohup "$(command -v kyma)" serve \
+      PENSIEVE_AUTH_TOKENS="${TOKEN}:admin" nohup "$(command -v pensieve)" serve \
         --addr "127.0.0.1:${PORT}" >"$log" 2>&1 &
-      echo $! >"$HOME/.kyma/serve.pid"
+      echo $! >"$HOME/.pensieve/serve.pid"
     fi
     local ok=0 i
     for i in $(seq 1 60); do
@@ -375,75 +375,75 @@ start_serve() {
       sleep 1
     done
     [ "$ok" = "1" ] || { warn "Server didn't become healthy; see $log"; return 1; }
-    info "Server healthy and supervised (logs: $log; manage with: kyma service status|uninstall)"
+    info "Server healthy and supervised (logs: $log; manage with: pensieve service status|uninstall)"
   fi
-  info "Connecting the CLI (kyma connect)…"
-  kyma connect "http://127.0.0.1:${PORT}" --token "$TOKEN" >/dev/null
+  info "Connecting the CLI (pensieve connect)…"
+  pensieve connect "http://127.0.0.1:${PORT}" --token "$TOKEN" >/dev/null
 }
 
 run_smoke_test() {
   info "Smoke test: save + recall a memory (first run may download the embedding model)…"
-  kyma remember "kyma install smoke-test — wired up via install.sh" \
+  pensieve remember "pensieve install smoke-test — wired up via install.sh" \
     --topic-key install/smoke >/dev/null 2>&1 || { warn "remember failed (skipping)"; return 0; }
-  if kyma recall "install smoke test" --limit 1 2>/dev/null | grep -qi "smoke-test"; then
+  if pensieve recall "install smoke test" --limit 1 2>/dev/null | grep -qi "smoke-test"; then
     info "${grn}Memory round-trip OK${rst} — save → recall works end to end."
   else
     warn "recall didn't return the test memory yet (the model may still be downloading)."
   fi
 }
 
-uninstall_kyma() {
+uninstall_pensieve() {
   say ""
-  say "${bold}Removing kyma…${rst}"
+  say "${bold}Removing pensieve…${rst}"
   local bin
-  bin="$(command -v kyma 2>/dev/null || true)"
+  bin="$(command -v pensieve 2>/dev/null || true)"
   if [ -n "$bin" ]; then
     # Stop supervised processes first so nothing respawns mid-removal.
     "$bin" service uninstall >/dev/null 2>&1 || true
     "$bin" worker uninstall  >/dev/null 2>&1 || true
   fi
   # Old nohup-era server, if any.
-  if [ -f "$HOME/.kyma/serve.pid" ]; then
-    kill "$(cat "$HOME/.kyma/serve.pid")" 2>/dev/null || true
-    rm -f "$HOME/.kyma/serve.pid"
+  if [ -f "$HOME/.pensieve/serve.pid" ]; then
+    kill "$(cat "$HOME/.pensieve/serve.pid")" 2>/dev/null || true
+    rm -f "$HOME/.pensieve/serve.pid"
   fi
   # Claude Code plugin + standalone skills.
-  rm -rf "$HOME/.claude/skills/kyma-memory" "$HOME/.claude/skills/kyma" \
-         "$HOME/.claude/skills/kyma-deploy" "$HOME/.kyma/skills" 2>/dev/null || true
+  rm -rf "$HOME/.claude/skills/pensieve-memory" "$HOME/.claude/skills/pensieve" \
+         "$HOME/.claude/skills/pensieve-deploy" "$HOME/.pensieve/skills" 2>/dev/null || true
   info "Service, worker, and agent plugin removed"
   # The binary (every default location + whatever is on PATH).
   local p
-  for p in "$bin" "/usr/local/bin/kyma" "$HOME/.local/bin/kyma"; do
+  for p in "$bin" "/usr/local/bin/pensieve" "$HOME/.local/bin/pensieve"; do
     [ -n "$p" ] && [ -f "$p" ] && { rm -f "$p" 2>/dev/null || sudo rm -f "$p"; info "Removed $p"; }
   done
-  # The guarded PATH block (a "# kyma" marker line + its export line),
+  # The guarded PATH block (a "# pensieve" marker line + its export line),
   # removed pairwise — never a ranged delete that could overshoot.
   local rc
   for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.profile"; do
-    [ -f "$rc" ] && grep -qxF '# kyma' "$rc" || continue
+    [ -f "$rc" ] && grep -qxF '# pensieve' "$rc" || continue
     awk 'prev_marker && /^export PATH=/ { prev_marker=0; next }
-         { if (prev_marker) print "# kyma" }
-         /^# kyma$/ { prev_marker=1; next }
-         { prev_marker=0; print }' "$rc" > "$rc.kyma-tmp" \
-      && mv "$rc.kyma-tmp" "$rc" && info "Removed PATH entry from $rc"
+         { if (prev_marker) print "# pensieve" }
+         /^# pensieve$/ { prev_marker=1; next }
+         { prev_marker=0; print }' "$rc" > "$rc.pensieve-tmp" \
+      && mv "$rc.pensieve-tmp" "$rc" && info "Removed PATH entry from $rc"
   done
   if [ "$DO_PURGE" = "1" ]; then
-    rm -rf "$HOME/.kyma"
-    info "Purged ~/.kyma (memories, config, logs)"
+    rm -rf "$HOME/.pensieve"
+    info "Purged ~/.pensieve (memories, config, logs)"
   else
-    say "  Your data is untouched: ${bold}~/.kyma${rst}  (pass --purge to delete it)"
+    say "  Your data is untouched: ${bold}~/.pensieve${rst}  (pass --purge to delete it)"
   fi
-  say "${grn}${bold}kyma removed.${rst}"
+  say "${grn}${bold}pensieve removed.${rst}"
   exit 0
 }
 
 # ── run ──────────────────────────────────────────────────────────────────────
 say ""
-say "${bold}kyma${rst} — the context engine for coding agents"
+say "${bold}pensieve${rst} — the context engine for coding agents"
 say "${dim}https://github.com/${REPO}${rst}"
 say ""
 
-[ "$DO_UNINSTALL" = "1" ] && uninstall_kyma
+[ "$DO_UNINSTALL" = "1" ] && uninstall_pensieve
 
 resolve_install_dir
 if [ "$FROM_SOURCE" = "1" ]; then
@@ -457,11 +457,11 @@ persist_path
 ensure_on_path
 # A leftover copy elsewhere (e.g. an old sudo install in /usr/local/bin) can
 # shadow the fresh one depending on PATH order — surface it.
-resolved="$(command -v kyma 2>/dev/null || true)"
-if [ "$FROM_SOURCE" = "0" ] && [ -n "$resolved" ] && [ "$resolved" != "$INSTALL_DIR/kyma" ]; then
-  warn "Another kyma is on your PATH at ${resolved} — the new install is ${INSTALL_DIR}/kyma."
+resolved="$(command -v pensieve 2>/dev/null || true)"
+if [ "$FROM_SOURCE" = "0" ] && [ -n "$resolved" ] && [ "$resolved" != "$INSTALL_DIR/pensieve" ]; then
+  warn "Another pensieve is on your PATH at ${resolved} — the new install is ${INSTALL_DIR}/pensieve."
 fi
-info "Installed: $(command -v kyma)  ($(kyma version 2>/dev/null || echo kyma))"
+info "Installed: $(command -v pensieve)  ($(pensieve version 2>/dev/null || echo pensieve))"
 say ""
 
 # ── production deployment hand-off ────────────────────────────────────────
@@ -469,7 +469,7 @@ say ""
 # all prompts from here (AWS Fargate + S3 + Supabase, Terraform/Pulumi).
 if [ "$PROD_DEPLOY" = "1" ]; then
   info "Launching the production deployment wizard…"
-  exec kyma deploy init
+  exec pensieve deploy init
 fi
 
 # Decide serve / plugin (flags > prompt > non-interactive default of NO).
@@ -487,7 +487,7 @@ if [ "$INTERACTIVE" = "1" ] && [ "$DO_SERVE" = "1" ]; then
 fi
 
 # One-line plan so the wizard's answers are visible before anything runs.
-plan="install ${bold}kyma$(kyma version 2>/dev/null | awk '{printf " %s", $2}')${rst} → ${INSTALL_DIR}"
+plan="install ${bold}pensieve$(pensieve version 2>/dev/null | awk '{printf " %s", $2}')${rst} → ${INSTALL_DIR}"
 [ "$DO_SERVE" = "1" ] && plan="$plan, run a supervised server on :${PORT}"
 [ "$DO_PLUGIN" = "1" ] && plan="$plan, wire the Claude Code plugin"
 say ""
@@ -499,24 +499,24 @@ if [ "$DO_SERVE" = "1" ]; then
   if start_serve; then SERVED=1; fi
 fi
 if [ "$DO_PLUGIN" = "1" ] && [ "$SERVED" = "1" ]; then
-  info "Installing the kyma-memory plugin…"
-  kyma install-plugin >/dev/null && info "Plugin installed → ~/.claude/skills/kyma-memory"
+  info "Installing the pensieve-memory plugin…"
+  pensieve install-plugin >/dev/null && info "Plugin installed → ~/.claude/skills/pensieve-memory"
 fi
 [ "$SERVED" = "1" ] && run_smoke_test
 
 # ── summary ───────────────────────────────────────────────────────────────
 say ""
-say "${grn}${bold}kyma is installed.${rst}"
+say "${grn}${bold}pensieve is installed.${rst}"
 if [ "$SERVED" = "1" ]; then
   say "  Web UI:   ${bold}http://127.0.0.1:${PORT}/${rst}   (first visit creates your admin user)"
   say "  Service:  runs in the background — starts at login, restarts on crash"
-  say "            kyma service status | uninstall"
-  [ "$DO_PLUGIN" = "1" ] && say "  Plugin:   restart Claude Code, then run ${bold}/kyma-status${rst}"
+  say "            pensieve service status | uninstall"
+  [ "$DO_PLUGIN" = "1" ] && say "  Plugin:   restart Claude Code, then run ${bold}/pensieve-status${rst}"
 else
-  say "  Start it: ${bold}kyma serve${rst}   →  http://127.0.0.1:7777/  (admin / admin)"
-  say "  Wire an agent: ${bold}kyma setup claude-code${rst}   (stdio MCP, zero infra)"
-  say "  Or the plugin: ${bold}kyma connect <url> && kyma install-plugin${rst}"
+  say "  Start it: ${bold}pensieve serve${rst}   →  http://127.0.0.1:7777/  (admin / admin)"
+  say "  Wire an agent: ${bold}pensieve setup claude-code${rst}   (stdio MCP, zero infra)"
+  say "  Or the plugin: ${bold}pensieve connect <url> && pensieve install-plugin${rst}"
 fi
-say "  Update:   ${bold}kyma update${rst}   (new binary + web UI, restarts the local server)"
-say "  Docs:     https://shakedaskayo.github.io/kyma/"
+say "  Update:   ${bold}pensieve update${rst}   (new binary + web UI, restarts the local server)"
+say "  Docs:     https://shakedaskayo.github.io/pensieve/"
 say ""

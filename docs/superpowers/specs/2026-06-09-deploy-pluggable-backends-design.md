@@ -3,11 +3,11 @@
 **Date:** 2026-06-09
 **Status:** Design — approved, pending spec review
 **Branch (current):** `feat/platform-enrichment` (work to land on its own branch)
-**Related:** `deploy/README.md`, `crates/kyma-cli/src/deploy.rs`, `deploy/terraform/stack/`, prior prod-deploy track (AWS Fargate + Supabase)
+**Related:** `deploy/README.md`, `crates/pensieve-cli/src/deploy.rs`, `deploy/terraform/stack/`, prior prod-deploy track (AWS Fargate + Supabase)
 
 ## 1. Summary
 
-Make `kyma deploy` (wizard + IaC + docs) **backend-pluggable** along four
+Make `pensieve deploy` (wizard + IaC + docs) **backend-pluggable** along four
 orthogonal axes the user selects interactively:
 
 | Axis | Options |
@@ -20,15 +20,15 @@ orthogonal axes the user selects interactively:
 The key enabling fact: **the engine is already backend-agnostic.** No engine
 code changes are required.
 
-- Object store (`crates/kyma-storage/src/lib.rs`): `StorageConfig::S3Compatible`
+- Object store (`crates/pensieve-storage/src/lib.rs`): `StorageConfig::S3Compatible`
   already serves native AWS S3, Supabase Storage, MinIO, R2 and GCS-interop via
   `endpoint` + `path_style` + optional keys, with keyless fallback to the AWS
   provider chain (task role / IRSA / IMDS). `Local`/`Memory` exist for dev/test.
-- Catalog: generic Postgres via `KYMA_CATALOG_URL` — any provider, including a
+- Catalog: generic Postgres via `PENSIEVE_CATALOG_URL` — any provider, including a
   user-supplied URL. The engine self-migrates on first connect.
-- Auth (`crates/kyma-server/src/auth/`): `supabase_backend`, `oidc_backend`,
-  and static-token `env_backend` (`KYMA_AUTH_TOKENS=tok:role`) all exist;
-  `KYMA_AUTH_BACKEND` selects.
+- Auth (`crates/pensieve-server/src/auth/`): `supabase_backend`, `oidc_backend`,
+  and static-token `env_backend` (`PENSIEVE_AUTH_TOKENS=tok:role`) all exist;
+  `PENSIEVE_AUTH_BACKEND` selects.
 
 All work is therefore confined to: the wizard (`deploy.rs`), the Terraform
 `stack/`, a new Helm chart, and the deploy docs.
@@ -147,18 +147,18 @@ else `external`.
 | helm | `values.yaml` | helm |
 | local | `local.env` | docker |
 
-**Catalog URL resolution** into `KYMA_CATALOG_URL`:
+**Catalog URL resolution** into `PENSIEVE_CATALOG_URL`:
 - supabase → derived pooler URL (existing token/pooler chain),
 - rds → Terraform output,
 - external → the pasted URL verbatim.
 
 **Storage env** extends today's `storage_environment` / `storage_secrets` locals
-with an `external` branch (`KYMA_S3_ENDPOINT/BUCKET/REGION/PATH_STYLE` +
-`KYMA_S3_ACCESS_KEY_ID/SECRET` in secrets). Native S3 stays keyless (no keys
+with an `external` branch (`PENSIEVE_S3_ENDPOINT/BUCKET/REGION/PATH_STYLE` +
+`PENSIEVE_S3_ACCESS_KEY_ID/SECRET` in secrets). Native S3 stays keyless (no keys
 emitted). Supabase Storage unchanged (paste flow).
 
-**Auth env**: `KYMA_AUTH_BACKEND` + the matching vars (`KYMA_SUPABASE_*` |
-`KYMA_OIDC_*` | `KYMA_AUTH_TOKENS=<minted>:admin`).
+**Auth env**: `PENSIEVE_AUTH_BACKEND` + the matching vars (`PENSIEVE_SUPABASE_*` |
+`PENSIEVE_OIDC_*` | `PENSIEVE_AUTH_TOKENS=<minted>:admin`).
 
 Secrets (`database_url`, storage keys, minted token) are written with
 `write_private` and pushed to SSM (Fargate/EKS) or a k8s `Secret` (helm); never
@@ -178,10 +178,10 @@ Add `compute_backend` and `database_backend` variables. Gate modules with
   the no-args `terraform init` working for the Pulumi bridge.
 - **new `modules/rds`** → `count = database_backend == "rds" ? 1 : 0`: a Postgres
   instance in the stack VPC (private, encrypted, automated backups, SG limited to
-  the engine SG), URL written to SSM as `KYMA_CATALOG_URL`.
+  the engine SG), URL written to SSM as `PENSIEVE_CATALOG_URL`.
 - **new `modules/eks`** → `count = compute_backend == "eks" ? 1 : 0`: cluster +
   managed node group + OIDC provider + an IRSA IAM role for keyless S3, then a
-  `helm_release` installing **the kyma Helm chart** (§6). kubernetes/helm
+  `helm_release` installing **the pensieve Helm chart** (§6). kubernetes/helm
   providers are configured from the created cluster via exec-auth (standard
   pattern; introduces no required no-default vars).
 - `modules/ecs-service` → `count = compute_backend == "fargate" ? 1 : 0`.
@@ -193,7 +193,7 @@ Add `compute_backend` and `database_backend` variables. Gate modules with
 keys default to the current behavior (`compute_backend="fargate"`,
 `database_backend="supabase"`).
 
-## 6. New Helm chart — `deploy/helm/kyma-engine/`
+## 6. New Helm chart — `deploy/helm/pensieve-engine/`
 
 The single "engine on Kubernetes" artifact, reused by both the `helm` compute
 target and the `eks` module's `helm_release`.
@@ -202,8 +202,8 @@ Templates: `Deployment` (replicaCount default **1** — engine is single-writer 
 catalog; documented), `Service`, `Ingress` (host + TLS, annotations passthrough
 for ALB controller / cert-manager), `ServiceAccount` (optional IRSA annotation
 for keyless S3 on EKS), `Secret` (catalog URL, storage keys, minted token from
-values, flagged sensitive), and env wiring (`KYMA_AUTH_BACKEND` + auth vars,
-`KYMA_S3_*`, `KYMA_HTTP_ADDR`). `values.yaml` exposes image repo/tag, env, ingress,
+values, flagged sensitive), and env wiring (`PENSIEVE_AUTH_BACKEND` + auth vars,
+`PENSIEVE_S3_*`, `PENSIEVE_HTTP_ADDR`). `values.yaml` exposes image repo/tag, env, ingress,
 resources, serviceAccount annotations, replicaCount.
 
 Wizard `helm` path renders `values.yaml` and runs `helm upgrade --install`.
@@ -226,7 +226,7 @@ lockstep with `deploy/` per the existing rule.
 
 `DeployState` gains `compute`/`database`/`storage`/`auth` string fields with
 serde defaults; the legacy `target` field is still read and migrated
-(`aws→fargate`, `local→local`) so existing `~/.kyma/deploy/<name>` workspaces
+(`aws→fargate`, `local→local`) so existing `~/.pensieve/deploy/<name>` workspaces
 keep working with `up`/`status`/`destroy`.
 
 ## 8. Security best practices (baked in)
@@ -266,8 +266,8 @@ first, no marketing):
 ## 11. Build/deploy mechanics (for the implementer)
 
 UI is embedded at compile time; this work touches no web assets, so the rebuild
-is just `cargo build -p kyma-cli`. The CLI binary collides with `kyma-bin`
-(`target/debug/kyma`) — build/test the specific package. New embedded template
+is just `cargo build -p pensieve-cli`. The CLI binary collides with `pensieve-bin`
+(`target/debug/pensieve`) — build/test the specific package. New embedded template
 files must be added to both `deploy/` on disk and `DEPLOY_FILES`.
 
 ## 12. Resolved decisions

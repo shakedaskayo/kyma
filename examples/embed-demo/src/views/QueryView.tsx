@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { KymaQueryEditor } from "@kyma-ai/react/query";
-import type { Column } from "@kyma-ai/react";
+import { PensieveQueryEditor } from "@pensieve-ai/react/query";
+import type { Column } from "@pensieve-ai/react";
 
 /**
- * Query tab: KymaQueryEditor with a default KQL query.
+ * Query tab: PensieveQueryEditor with a default KQL query.
  * onResults updates a row-count badge proving the callback fires.
  */
 export function QueryView() {
@@ -28,7 +28,7 @@ export function QueryView() {
       )}
 
       <div style={{ flex: 1, overflow: "hidden" }}>
-        <KymaQueryEditor
+        <PensieveQueryEditor
           language="kql"
           defaultQuery="// Edit this query and press Run\ntrace\n| limit 20"
           showSchemaBrowser

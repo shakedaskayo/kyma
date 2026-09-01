@@ -1,6 +1,6 @@
 ---
 title: Schema mappings
-description: Postgres / MySQL / MongoDB type → kyma type mappings the data source framework will use when DB-M1, DB-M2, and DB-M3 ship.
+description: Postgres / MySQL / MongoDB type → pensieve type mappings the data source framework will use when DB-M1, DB-M2, and DB-M3 ship.
 ---
 
 # Schema mappings
@@ -12,12 +12,12 @@ description: Postgres / MySQL / MongoDB type → kyma type mappings the data sou
 > doesn't introspect a relational schema — it ingests metrics with a
 > fixed shape.
 
-When a relational or document source is synced, kyma's data source
+When a relational or document source is synced, pensieve's data source
 framework introspects the source's schema and projects each source
-column / field to a kyma column type. Three rules govern the
+column / field to a pensieve column type. Three rules govern the
 projection:
 
-1. Synced data lands in normal kyma extents using the eight kyma
+1. Synced data lands in normal pensieve extents using the eight pensieve
    column types (`int`, `long`, `real`, `bool`, `string`,
    `timestamp`, `dynamic`, `vector(N)`).
 2. Schema only widens — never narrows, never drops, never re-types.
@@ -28,18 +28,18 @@ Every synced row also carries four system identity columns:
 
 | Column            | Type        | Meaning                                                    |
 | ----------------- | ----------- | ---------------------------------------------------------- |
-| `_kyma_pk`        | `string`    | Concatenated source primary key (or `_id` for Mongo).      |
-| `_kyma_op`        | `string`    | One of `'insert'`, `'update'`, `'delete'`.                 |
-| `_kyma_lsn`       | `string`    | Engine-specific cursor at commit time.                     |
-| `_kyma_event_at`  | `timestamp` | Wall-clock time the source emitted the event.              |
+| `_pensieve_pk`        | `string`    | Concatenated source primary key (or `_id` for Mongo).      |
+| `_pensieve_op`        | `string`    | One of `'insert'`, `'update'`, `'delete'`.                 |
+| `_pensieve_lsn`       | `string`    | Engine-specific cursor at commit time.                     |
+| `_pensieve_event_at`  | `timestamp` | Wall-clock time the source emitted the event.              |
 
 Deletes are tombstones, not row removal — reads filter
-`_kyma_op != 'delete'` by default. Compaction collapses tombstones
+`_pensieve_op != 'delete'` by default. Compaction collapses tombstones
 older than `retention.tombstone_days` (default 30).
 
-## Postgres → kyma
+## Postgres → pensieve
 
-| Postgres type                                    | kyma type                                  | Notes                                                                                |
+| Postgres type                                    | pensieve type                                  | Notes                                                                                |
 | ------------------------------------------------ | ------------------------------------------ | ------------------------------------------------------------------------------------ |
 | `smallint`, `int`                                | `int`                                      | 32-bit signed.                                                                       |
 | `bigint`, `oid`                                  | `long`                                     |                                                                                      |
@@ -62,9 +62,9 @@ Composite types and domains unwrap to their base type. Out-of-band
 types not in this table land in `dynamic` with a `last_error`
 warning surfaced through the data source status endpoint.
 
-## MySQL → kyma
+## MySQL → pensieve
 
-| MySQL type                                                   | kyma type                                       | Notes                                                                                  |
+| MySQL type                                                   | pensieve type                                       | Notes                                                                                  |
 | ------------------------------------------------------------ | ----------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `tinyint`, `smallint`, `mediumint`, `int`                    | `int`                                           | `tinyint(1)` → `bool`.                                                                 |
 | `bigint`, `bigint unsigned`                                  | `long`                                          | `bigint unsigned` > i64 max → `string` with warning.                                  |
@@ -85,13 +85,13 @@ above the scan in DataFusion. Without this rule, federated queries
 on case-insensitive collations would return silently incorrect
 results.
 
-## MongoDB → kyma
+## MongoDB → pensieve
 
-Top-level fields each get one inferred kyma column. Nested objects
+Top-level fields each get one inferred pensieve column. Nested objects
 flatten with dotted names up to `scope.flatten_depth` (default 2).
 Anything deeper, polymorphic, or array-shaped lands in `dynamic`.
 
-| BSON type                                                                | kyma type                                       |
+| BSON type                                                                | pensieve type                                       |
 | ------------------------------------------------------------------------ | ----------------------------------------------- |
 | `Int32`                                                                  | `int`                                           |
 | `Int64`, `Decimal128` (when fits)                                        | `long`                                          |
@@ -117,9 +117,9 @@ data is preserved. Future events go into `dynamic`. Queries
 union-read the typed and dynamic copies via
 `coalesce(typed_col, dynamic.field)`.
 
-## `_kyma_pk` derivation
+## `_pensieve_pk` derivation
 
-| Source                                       | `_kyma_pk` is                                                                                |
+| Source                                       | `_pensieve_pk` is                                                                                |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Postgres / MySQL — single-column PK          | string-cast of the PK.                                                                       |
 | Postgres / MySQL — composite PK              | `<col1>:<col2>:...` (URL-safe, ordered by `information_schema`).                            |

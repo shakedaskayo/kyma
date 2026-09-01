@@ -1,13 +1,13 @@
 ---
 title: SQL
-description: POST /v1/query with Content-Type application/sql. Standard SQL parsed and executed by DataFusion against every kyma table, plus three vector-distance UDFs and federation across registered external sources.
+description: POST /v1/query with Content-Type application/sql. Standard SQL parsed and executed by DataFusion against every pensieve table, plus three vector-distance UDFs and federation across registered external sources.
 ---
 
 # SQL
 
 SQL is one of three frontends on the same query path. The body of a `POST
 /v1/query` request is parsed by DataFusion, lowered to the same logical plan
-KQL produces via `kyma-plan`, and executed against the registered kyma
+KQL produces via `pensieve-plan`, and executed against the registered pensieve
 tables. Use it when you want SQL — joins, CTEs, window functions, the works.
 
 ## Request shape
@@ -23,7 +23,7 @@ The body is the SQL text. The default `Content-Type` is already
 the SQL path. Set `application/x-kql` for KQL.
 
 The response is NDJSON — one JSON object per row, terminated by `\n`. The
-`X-Kyma-Rows` response header carries the row count for cheap header-only
+`X-Pensieve-Rows` response header carries the row count for cheap header-only
 pagination checks.
 
 ## Example
@@ -69,9 +69,9 @@ The full DataFusion SQL surface is available. Highlights:
 For the complete grammar — every function, every operator, every type
 coercion rule — see the [DataFusion SQL
 reference](https://datafusion.apache.org/user-guide/sql/index.html). What
-DataFusion supports, kyma supports.
+DataFusion supports, pensieve supports.
 
-## kyma-specific UDFs
+## pensieve-specific UDFs
 
 Three vector-distance scalar functions register on every query session.
 They take two list-typed arguments (`FixedSizeList<Float32, N>` or
@@ -102,7 +102,7 @@ are downcast automatically.
 
 Every external source registered with `mode: "federation"` or `mode:
 "both"` shows up as a first-class DataFusion catalog. A single SQL query
-can join a kyma-native table with a remote Postgres table:
+can join a pensieve-native table with a remote Postgres table:
 
 ```sql
 SELECT u.email, COUNT(*) AS errors
@@ -116,7 +116,7 @@ SELECT u.email, COUNT(*) AS errors
 ```
 
 DataFusion plans this as: filtered + projected scan pushed down to
-Postgres for the small side, kyma's pruning cascade for the big side,
+Postgres for the small side, pensieve's pruning cascade for the big side,
 hash-join in the middle. Pushdown rules and the `pushdown_summary`
 returned with every federated response are documented in [Multi-source
 data](/concepts/multi-source-data).
@@ -130,11 +130,11 @@ data](/concepts/multi-source-data).
   that exist in the database, so `FROM not_a_table` fails to resolve at
   plan time.
 - **Wall-clock budget exceeded.** `429 wall_clock_exceeded` with
-  `Retry-After: 1` and `X-Kyma-Budget-Limit: <ms> wall_clock_ms`. Override
-  the default with `X-Kyma-Max-Wall-Clock-Ms`.
+  `Retry-After: 1` and `X-Pensieve-Budget-Limit: <ms> wall_clock_ms`. Override
+  the default with `X-Pensieve-Max-Wall-Clock-Ms`.
 - **Memory budget exceeded.** `429 memory_exceeded` when DataFusion's
   memory pool runs dry — typically a hash join with too-large a build
-  side. Override with `X-Kyma-Max-Memory-Bytes`.
+  side. Override with `X-Pensieve-Max-Memory-Bytes`.
 - **Empty database.** `404 database_empty` when the named database has
   no tables registered. `404 database_not_found` when the database
   itself is unknown.

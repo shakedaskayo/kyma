@@ -2,7 +2,7 @@
 
 **Status:** approved 2026-05-19. Decomposes into 5 sub-specs (F2.1–F2.5). Each sub-spec gets its own brainstorm → plan → execution cycle.
 
-**Parent:** v1.0 master spec at `docs/superpowers/specs/2026-05-19-kyma-v1-production-readiness-design.md`. F2 is the "Test Gauntlet" foundation sub-spec from that document.
+**Parent:** v1.0 master spec at `docs/superpowers/specs/2026-05-19-pensieve-v1-production-readiness-design.md`. F2 is the "Test Gauntlet" foundation sub-spec from that document.
 
 **Budget:** ~3–5 weeks if F2.2–F2.5 parallelize; ~6–9 weeks if serial. Fits inside the v1.0 M1 budget alongside F1 (already merged).
 
@@ -12,7 +12,7 @@
 
 ### Goal
 
-F2 produces the gauntlet — the harness that proves kyma's five architectural invariants hold across every documented failure mode. From v1.0 forward, the claim *"kyma doesn't lose data"* is backed by a passing CI scenario for each way it could.
+F2 produces the gauntlet — the harness that proves pensieve's five architectural invariants hold across every documented failure mode. From v1.0 forward, the claim *"pensieve doesn't lose data"* is backed by a passing CI scenario for each way it could.
 
 Deliverable: `scripts/gauntlet.sh` orchestrates six test families and runs in three CI tiers (PR / nightly / weekly). Every scenario maps to a specific invariant + failure mode from `docs/stability.md` and `docs/architecture.md`.
 
@@ -28,7 +28,7 @@ The six test families:
 ### Non-goals for F2
 
 - Feature coverage. The gauntlet is for *invariants*, not features. Existing `scripts/test-*.sh` keep feature coverage; F2 doesn't duplicate.
-- Tokio scheduling-race testing (madsim/shuttle/turmoil). Kyma's invariants don't depend on scheduler-level determinism; converting the engine to a deterministic runtime is weeks of work disconnected from the v1.0 bar.
+- Tokio scheduling-race testing (madsim/shuttle/turmoil). Pensieve's invariants don't depend on scheduler-level determinism; converting the engine to a deterministic runtime is weeks of work disconnected from the v1.0 bar.
 - Runner provisioning beyond GitHub Actions. The 24h soak runs as a manual / self-hosted RC qualification, not on hosted CI.
 - Detecting code regressions outside the five architectural invariants. The gauntlet's job is "the contract still holds," not "all behavior unchanged."
 
@@ -45,7 +45,7 @@ Done when:
   - `.github/workflows/gauntlet-pr.yml` (runs on PR; ~5–10 min)
   - `.github/workflows/gauntlet-nightly.yml` (scheduled; ~1–2 h)
   - `.github/workflows/gauntlet-weekly.yml` (scheduled; 6 h cap on hosted runners).
-- Perf-regression baseline: `scripts/perf-baseline.sh` runs a fixed workload against fresh kyma and emits `{ ingest_rps, query_p50_ms, query_p99_ms, ... }`. PR CI compares against a checked-in `scripts/fixtures/perf-baseline.json` and fails if a metric regresses past its tolerance band (e.g. `ingest_rps < 90% of baseline`, `query_p99 > 110% of baseline`).
+- Perf-regression baseline: `scripts/perf-baseline.sh` runs a fixed workload against fresh pensieve and emits `{ ingest_rps, query_p50_ms, query_p99_ms, ... }`. PR CI compares against a checked-in `scripts/fixtures/perf-baseline.json` and fails if a metric regresses past its tolerance band (e.g. `ingest_rps < 90% of baseline`, `query_p99 > 110% of baseline`).
 - Reference dataset is a deterministic seed under `scripts/fixtures/perf-baseline/` (reuses or extends `scripts/seed-demo-data.sh`).
 - Baseline numbers captured on `ubuntu-22.04` GHA hosted runner. Hardware notes documented alongside the baseline JSON.
 
@@ -54,13 +54,13 @@ Done when:
 Done when:
 
 - cargo-fuzz targets:
-  - `crates/kyma-kql/fuzz/fuzz_targets/parse_kql_random.rs` — random bytes → parser must not panic; if it returns an error the error must be a structured `Result`, never `unreachable!()` or `panic!()`.
-  - `crates/kyma-format-tlm/fuzz/fuzz_targets/extent_roundtrip.rs` — random valid extent bytes → decode → re-encode must equal input.
-  - `crates/kyma-catalog/fuzz/fuzz_targets/migration_forward_only.rs` — randomly-generated migration sequences must satisfy the forward-only invariants from `docs/stability.md` §6.
+  - `crates/pensieve-kql/fuzz/fuzz_targets/parse_kql_random.rs` — random bytes → parser must not panic; if it returns an error the error must be a structured `Result`, never `unreachable!()` or `panic!()`.
+  - `crates/pensieve-format-tlm/fuzz/fuzz_targets/extent_roundtrip.rs` — random valid extent bytes → decode → re-encode must equal input.
+  - `crates/pensieve-catalog/fuzz/fuzz_targets/migration_forward_only.rs` — randomly-generated migration sequences must satisfy the forward-only invariants from `docs/stability.md` §6.
 - `proptest` tests in:
-  - `crates/kyma-kql/` — arbitrary well-formed KQL parses → re-prints → re-parses to equivalent IR.
-  - `crates/kyma-format-tlm/` — row → extent → row preserves all values (including dynamic, datetime, null).
-  - `crates/kyma-catalog/` — a randomized series of valid migrations applied in order leaves a schema satisfying every forward-only rule.
+  - `crates/pensieve-kql/` — arbitrary well-formed KQL parses → re-prints → re-parses to equivalent IR.
+  - `crates/pensieve-format-tlm/` — row → extent → row preserves all values (including dynamic, datetime, null).
+  - `crates/pensieve-catalog/` — a randomized series of valid migrations applied in order leaves a schema satisfying every forward-only rule.
 - Seed corpora committed under `crates/*/fuzz/corpus/` (small, hand-picked tricky inputs).
 - Tier coverage: PR runs proptest + 60s/fuzz target (smoke); nightly runs 10 min/fuzz target.
 - Per-crate `rust-toolchain.toml` pinning nightly Rust for the fuzz subcrates only. Production crates stay on stable.
@@ -69,7 +69,7 @@ Done when:
 
 Done when:
 
-- New `crates/kyma-sim/` crate (test/dev-only, not shipped in release binaries). Provides:
+- New `crates/pensieve-sim/` crate (test/dev-only, not shipped in release binaries). Provides:
   - Mock impls of `Catalog`, `ObjectStore`, `IngestRouter` traits with controllable failure injection (errors, delays, partial responses).
   - Per-scenario test harness that builds an engine wired to the mocks, runs a scripted sequence of operations, asserts invariants.
 - **One scenario per architectural invariant** (the 5 from `docs/architecture.md`):
@@ -123,7 +123,7 @@ Five sub-specs. Each is sized for its own brainstorm → plan → execution cycl
 |---|---|---|---|
 | **F2.1** Orchestrator + CI tiers + perf baseline | Connective tissue; defines the tier contract every other sub-spec plugs into | n/a — comes first | 1 week |
 | **F2.2** Property + fuzz | cargo-fuzz targets + proptest tests in 3 crates + nightly Rust pin for fuzz subcrates | F2.3, F2.4, F2.5 | 1–2 weeks |
-| **F2.3** Deterministic sim + invariant scenarios | `crates/kyma-sim/` new dev crate + 9+ scenarios | F2.2, F2.4, F2.5 | **2–3 weeks (long pole)** |
+| **F2.3** Deterministic sim + invariant scenarios | `crates/pensieve-sim/` new dev crate + 9+ scenarios | F2.2, F2.4, F2.5 | **2–3 weeks (long pole)** |
 | **F2.4** Chaos extensions | `scripts/chaos/` restructure + 4 new scenarios + toxiproxy/libfaketime | F2.2, F2.3, F2.5 | 1–2 weeks |
 | **F2.5** Soak harness | `scripts/soak.sh` + 3 health checks + failure-artifact tarball | F2.2, F2.3, F2.4 | 1 week |
 
@@ -192,7 +192,7 @@ Each stub is the seed for a per-sub-spec brainstorming/writing-plans cycle. They
 ### F2.2 — Property + fuzz
 
 - Audit the KQL parser, extent format, and catalog migration surfaces for fuzz attack points.
-- Add cargo-fuzz subcrates under `crates/{kyma-kql,kyma-format-tlm,kyma-catalog}/fuzz/`.
+- Add cargo-fuzz subcrates under `crates/{pensieve-kql,pensieve-format-tlm,pensieve-catalog}/fuzz/`.
 - Pin nightly Rust per fuzz subcrate via `rust-toolchain.toml`.
 - Write fuzz targets per Section 2 F2.2.
 - Build seed corpora.
@@ -202,7 +202,7 @@ Each stub is the seed for a per-sub-spec brainstorming/writing-plans cycle. They
 ### F2.3 — Deterministic sim + invariant scenarios
 
 - **First task: trait-surface audit.** Read `Catalog`, `ObjectStore`, `IngestRouter` trait definitions. List the failure-injection hooks each scenario needs. Decide: extend traits, wrap with middleware, or both?
-- Create `crates/kyma-sim/` dev crate.
+- Create `crates/pensieve-sim/` dev crate.
 - Build mock impls of the 3 traits with injection control.
 - Write the 5 invariant scenarios.
 - Write the 4 Axis-1 failure-mode scenarios.

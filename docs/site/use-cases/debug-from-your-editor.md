@@ -5,13 +5,13 @@ description: The full loop — your coding agent recalls similar past incidents,
 
 # Debug a prod incident from your editor
 
-This is kyma's whole thesis in one task: **memory + live data + the graph**, used by an
+This is pensieve's whole thesis in one task: **memory + live data + the graph**, used by an
 agent in your editor. A user filed "checkout broke around 14:32." You ask your agent.
 It doesn't guess — it remembers, queries, and traverses.
 
 ## Setup
 
-Your agent is [connected](/agent/connect), your services ship OTLP logs to kyma, and your
+Your agent is [connected](/agent/connect), your services ship OTLP logs to pensieve, and your
 repo is [connected as a graph](/data-sources/github). Now, in the editor:
 
 > **You:** checkout is throwing 502s around 14:32 — what broke?
@@ -24,7 +24,7 @@ Each step is a tool you can also run by hand.
 Before touching logs, the agent recalls prior context:
 
 ```bash
-kyma recall "checkout 502 / payments timeout incidents"
+pensieve recall "checkout 502 / payments timeout incidents"
 # → "2026-04-20: checkout 502s were stripe-api timeouts in payments-svc; error budget 0.1%"
 ```
 
@@ -80,14 +80,14 @@ client timeout. From "got the bug" to "here's the PR" — in the editor, in abou
 
 A memory tool would recall the past incident but couldn't see the live logs. An
 observability tool would show the errors but not the decision history or the repo graph.
-kyma does the whole loop on one surface — which is the only reason the agent can answer
+pensieve does the whole loop on one surface — which is the only reason the agent can answer
 end-to-end without you stitching three tools together.
 
 ## Variations
 
 - **No specific window:** replace the `between` filter with `where _timestamp > ago(15m)`.
 - **Error rate over time:** add `extend bucket = bin(_timestamp, 30s)` and group by it.
-- **Let the agent narrate it:** `kyma query "what broke in checkout around 14:32 and what deploy caused it?"` runs the same shape through the [agent endpoint](/use-cases/ask-your-stack).
+- **Let the agent narrate it:** `pensieve query "what broke in checkout around 14:32 and what deploy caused it?"` runs the same shape through the [agent endpoint](/use-cases/ask-your-stack).
 
 ## Next
 

@@ -1,4 +1,4 @@
-# AWS RDS Postgres as the kyma catalog. Private (not publicly accessible),
+# AWS RDS Postgres as the pensieve catalog. Private (not publicly accessible),
 # encrypted, with automated backups. Reachable only from inside the VPC where
 # the engine runs (Fargate task / EKS node). The engine self-migrates the
 # schema on first connect — no bootstrap job.
@@ -11,7 +11,7 @@ resource "aws_db_subnet_group" "this" {
 
 resource "aws_security_group" "this" {
   name        = "${var.name}-catalog-db"
-  description = "kyma catalog Postgres: 5432 from inside the VPC only"
+  description = "pensieve catalog Postgres: 5432 from inside the VPC only"
   vpc_id      = var.vpc_id
 
   ingress {

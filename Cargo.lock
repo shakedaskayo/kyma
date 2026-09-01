@@ -4839,8 +4839,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-artifact-graph"
-version = "0.0.22"
+name = "pensieve-artifact-graph"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow-array",
@@ -4849,14 +4849,14 @@ dependencies = [
  "bytes",
  "chrono",
  "datafusion",
- "kyma-catalog",
- "kyma-catalog-sqlite",
- "kyma-core",
- "kyma-embed",
- "kyma-exec",
- "kyma-format-tlm",
- "kyma-ingest-core",
- "kyma-storage",
+ "pensieve-catalog",
+ "pensieve-catalog-sqlite",
+ "pensieve-core",
+ "pensieve-embed",
+ "pensieve-exec",
+ "pensieve-format-tlm",
+ "pensieve-ingest-core",
+ "pensieve-storage",
  "object_store",
  "serde_json",
  "tokio",
@@ -4865,8 +4865,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-bin"
-version = "0.0.22"
+name = "pensieve-bin"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4875,29 +4875,29 @@ dependencies = [
  "clap",
  "futures",
  "hostname",
- "kyma-brain",
- "kyma-catalog",
- "kyma-compaction",
- "kyma-core",
- "kyma-datasources",
- "kyma-exec",
- "kyma-federation",
- "kyma-format-parquet",
- "kyma-format-tlm",
- "kyma-index-fts",
- "kyma-index-vector",
- "kyma-ingest-core",
- "kyma-ingest-filedrop",
- "kyma-ingest-kafka",
- "kyma-ingest-otlp",
- "kyma-ingest-rest",
- "kyma-jobs",
- "kyma-kql",
- "kyma-mcp",
- "kyma-memory",
- "kyma-plan",
- "kyma-server",
- "kyma-storage",
+ "pensieve-brain",
+ "pensieve-catalog",
+ "pensieve-compaction",
+ "pensieve-core",
+ "pensieve-datasources",
+ "pensieve-exec",
+ "pensieve-federation",
+ "pensieve-format-parquet",
+ "pensieve-format-tlm",
+ "pensieve-index-fts",
+ "pensieve-index-vector",
+ "pensieve-ingest-core",
+ "pensieve-ingest-filedrop",
+ "pensieve-ingest-kafka",
+ "pensieve-ingest-otlp",
+ "pensieve-ingest-rest",
+ "pensieve-jobs",
+ "pensieve-kql",
+ "pensieve-mcp",
+ "pensieve-memory",
+ "pensieve-plan",
+ "pensieve-server",
+ "pensieve-storage",
  "opentelemetry 0.27.1",
  "opentelemetry-proto 0.27.0",
  "opentelemetry_sdk 0.27.1",
@@ -4914,12 +4914,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-brain"
-version = "0.0.22"
+name = "pensieve-brain"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "blake3",
- "kyma-ccmem",
+ "pensieve-ccmem",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -4930,8 +4930,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-catalog"
-version = "0.0.22"
+name = "pensieve-catalog"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow-schema",
@@ -4939,7 +4939,7 @@ dependencies = [
  "bytes",
  "chrono",
  "futures",
- "kyma-core",
+ "pensieve-core",
  "metrics",
  "pgvector",
  "serde",
@@ -4954,13 +4954,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-catalog-sqlite"
-version = "0.0.22"
+name = "pensieve-catalog-sqlite"
+version = "0.1.0"
 dependencies = [
  "arrow-schema",
  "async-trait",
  "chrono",
- "kyma-core",
+ "pensieve-core",
  "serde",
  "serde_json",
  "sqlx",
@@ -4970,8 +4970,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-ccmem"
-version = "0.0.22"
+name = "pensieve-ccmem"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "serde",
@@ -4979,8 +4979,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-cli"
-version = "0.0.22"
+name = "pensieve-cli"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow-schema",
@@ -4995,9 +4995,9 @@ dependencies = [
  "ignore",
  "indicatif",
  "insta",
- "kyma-catalog",
- "kyma-core",
- "kyma-local",
+ "pensieve-catalog",
+ "pensieve-core",
+ "pensieve-local",
  "notify",
  "openssl",
  "rand 0.8.6",
@@ -5017,8 +5017,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-codeparse"
-version = "0.0.22"
+name = "pensieve-codeparse"
+version = "0.1.0"
 dependencies = [
  "tree-sitter",
  "tree-sitter-go",
@@ -5029,8 +5029,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-compaction"
-version = "0.0.22"
+name = "pensieve-compaction"
+version = "0.1.0"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -5039,10 +5039,10 @@ dependencies = [
  "bytes",
  "chrono",
  "futures",
- "kyma-catalog",
- "kyma-core",
- "kyma-index-vector",
- "kyma-ingest-core",
+ "pensieve-catalog",
+ "pensieve-core",
+ "pensieve-index-vector",
+ "pensieve-ingest-core",
  "metrics",
  "object_store",
  "serde",
@@ -5057,8 +5057,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-core"
-version = "0.0.22"
+name = "pensieve-core"
+version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -5080,16 +5080,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-datasource-core"
-version = "0.0.22"
+name = "pensieve-datasource-core"
+version = "0.1.0"
 dependencies = [
- "kyma-core",
- "kyma-datasources",
+ "pensieve-core",
+ "pensieve-datasources",
 ]
 
 [[package]]
-name = "kyma-datasources"
-version = "0.0.22"
+name = "pensieve-datasources"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -5104,13 +5104,13 @@ dependencies = [
  "futures",
  "globset",
  "hostname",
- "kyma-catalog",
- "kyma-codeparse",
- "kyma-core",
- "kyma-federation",
- "kyma-ingest-core",
- "kyma-redact",
- "kyma-storage",
+ "pensieve-catalog",
+ "pensieve-codeparse",
+ "pensieve-core",
+ "pensieve-federation",
+ "pensieve-ingest-core",
+ "pensieve-redact",
+ "pensieve-storage",
  "metrics",
  "object_store",
  "reqwest 0.12.28",
@@ -5129,14 +5129,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-embed"
-version = "0.0.22"
+name = "pensieve-embed"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "fastembed",
  "insta",
- "kyma-core",
+ "pensieve-core",
  "ndarray",
  "reqwest 0.12.28",
  "serde",
@@ -5147,8 +5147,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-exec"
-version = "0.0.22"
+name = "pensieve-exec"
+version = "0.1.0"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -5158,16 +5158,16 @@ dependencies = [
  "chrono",
  "datafusion",
  "futures",
- "kyma-catalog",
- "kyma-catalog-sqlite",
- "kyma-core",
- "kyma-format-tlm",
- "kyma-graph-testkit",
- "kyma-index-fts",
- "kyma-index-vector",
- "kyma-kql",
- "kyma-plan",
- "kyma-storage",
+ "pensieve-catalog",
+ "pensieve-catalog-sqlite",
+ "pensieve-core",
+ "pensieve-format-tlm",
+ "pensieve-graph-testkit",
+ "pensieve-index-fts",
+ "pensieve-index-vector",
+ "pensieve-kql",
+ "pensieve-plan",
+ "pensieve-storage",
  "metrics",
  "object_store",
  "serde_json",
@@ -5179,8 +5179,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-federation"
-version = "0.0.22"
+name = "pensieve-federation"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow-array",
@@ -5191,7 +5191,7 @@ dependencies = [
  "datafusion",
  "datafusion-federation",
  "futures",
- "kyma-core",
+ "pensieve-core",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -5203,8 +5203,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-format-parquet"
-version = "0.0.22"
+name = "pensieve-format-parquet"
+version = "0.1.0"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -5212,8 +5212,8 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
- "kyma-core",
- "kyma-format-tlm",
+ "pensieve-core",
+ "pensieve-format-tlm",
  "object_store",
  "parquet",
  "serde_json",
@@ -5221,21 +5221,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-format-stub-vec"
-version = "0.0.22"
+name = "pensieve-format-stub-vec"
+version = "0.1.0"
 dependencies = [
  "arrow",
  "arrow-array",
  "arrow-schema",
  "async-trait",
  "bytes",
- "kyma-core",
+ "pensieve-core",
  "thiserror 2.0.18",
 ]
 
 [[package]]
-name = "kyma-format-tlm"
-version = "0.0.22"
+name = "pensieve-format-tlm"
+version = "0.1.0"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -5246,8 +5246,8 @@ dependencies = [
  "ciborium",
  "fst",
  "futures",
- "kyma-core",
- "kyma-storage",
+ "pensieve-core",
+ "pensieve-storage",
  "lz4_flex",
  "object_store",
  "proptest",
@@ -5261,12 +5261,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-graph"
-version = "0.0.22"
+name = "pensieve-graph"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "kyma-graph-topo",
+ "pensieve-graph-topo",
  "object_store",
  "serde",
  "serde_json",
@@ -5274,17 +5274,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-graph-bench"
-version = "0.0.22"
+name = "pensieve-graph-bench"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "criterion",
- "kyma-graph-testkit",
+ "pensieve-graph-testkit",
 ]
 
 [[package]]
-name = "kyma-graph-testkit"
-version = "0.0.22"
+name = "pensieve-graph-testkit"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5298,16 +5298,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-graph-topo"
-version = "0.0.22"
+name = "pensieve-graph-topo"
+version = "0.1.0"
 dependencies = [
- "kyma-graph-testkit",
+ "pensieve-graph-testkit",
  "proptest",
 ]
 
 [[package]]
-name = "kyma-index-fts"
-version = "0.0.22"
+name = "pensieve-index-fts"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow-array",
@@ -5316,7 +5316,7 @@ dependencies = [
  "bytes",
  "chrono",
  "futures",
- "kyma-core",
+ "pensieve-core",
  "serde",
  "serde_json",
  "tantivy",
@@ -5326,8 +5326,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-index-vector"
-version = "0.0.22"
+name = "pensieve-index-vector"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow-array",
@@ -5336,7 +5336,7 @@ dependencies = [
  "bytes",
  "chrono",
  "futures",
- "kyma-core",
+ "pensieve-core",
  "proptest",
  "serde",
  "serde_json",
@@ -5346,8 +5346,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-ingest-core"
-version = "0.0.22"
+name = "pensieve-ingest-core"
+version = "0.1.0"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -5358,10 +5358,10 @@ dependencies = [
  "chrono",
  "fastrand",
  "futures",
- "kyma-catalog",
- "kyma-core",
- "kyma-format-tlm",
- "kyma-storage",
+ "pensieve-catalog",
+ "pensieve-core",
+ "pensieve-format-tlm",
+ "pensieve-storage",
  "metrics",
  "object_store",
  "serde",
@@ -5376,8 +5376,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-ingest-filedrop"
-version = "0.0.22"
+name = "pensieve-ingest-filedrop"
+version = "0.1.0"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -5386,11 +5386,11 @@ dependencies = [
  "bytes",
  "chrono",
  "futures",
- "kyma-catalog-sqlite",
- "kyma-core",
- "kyma-format-tlm",
- "kyma-ingest-core",
- "kyma-storage",
+ "pensieve-catalog-sqlite",
+ "pensieve-core",
+ "pensieve-format-tlm",
+ "pensieve-ingest-core",
+ "pensieve-storage",
  "metrics",
  "object_store",
  "serde_json",
@@ -5401,8 +5401,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-ingest-kafka"
-version = "0.0.22"
+name = "pensieve-ingest-kafka"
+version = "0.1.0"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -5411,9 +5411,9 @@ dependencies = [
  "bytes",
  "chrono",
  "futures",
- "kyma-catalog",
- "kyma-core",
- "kyma-ingest-core",
+ "pensieve-catalog",
+ "pensieve-core",
+ "pensieve-ingest-core",
  "metrics",
  "rdkafka",
  "serde",
@@ -5425,8 +5425,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-ingest-otlp"
-version = "0.0.22"
+name = "pensieve-ingest-otlp"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -5435,9 +5435,9 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
- "kyma-catalog",
- "kyma-core",
- "kyma-ingest-core",
+ "pensieve-catalog",
+ "pensieve-core",
+ "pensieve-ingest-core",
  "metrics",
  "opentelemetry 0.27.1",
  "opentelemetry-proto 0.27.0",
@@ -5454,8 +5454,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-ingest-rest"
-version = "0.0.22"
+name = "pensieve-ingest-rest"
+version = "0.1.0"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -5464,8 +5464,8 @@ dependencies = [
  "bytes",
  "futures",
  "hyper",
- "kyma-core",
- "kyma-ingest-core",
+ "pensieve-core",
+ "pensieve-ingest-core",
  "metrics",
  "serde",
  "serde_json",
@@ -5479,8 +5479,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-jobs"
-version = "0.0.22"
+name = "pensieve-jobs"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow-array",
@@ -5489,13 +5489,13 @@ dependencies = [
  "bytes",
  "chrono",
  "futures",
- "kyma-catalog",
- "kyma-catalog-sqlite",
- "kyma-core",
- "kyma-datasources",
- "kyma-embed",
- "kyma-format-tlm",
- "kyma-index-vector",
+ "pensieve-catalog",
+ "pensieve-catalog-sqlite",
+ "pensieve-core",
+ "pensieve-datasources",
+ "pensieve-embed",
+ "pensieve-format-tlm",
+ "pensieve-index-vector",
  "object_store",
  "serde",
  "serde_json",
@@ -5508,22 +5508,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-kql"
-version = "0.0.22"
+name = "pensieve-kql"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
  "chumsky",
- "kyma-core",
- "kyma-plan",
+ "pensieve-core",
+ "pensieve-plan",
  "serde",
  "thiserror 2.0.18",
  "tracing",
 ]
 
 [[package]]
-name = "kyma-local"
-version = "0.0.22"
+name = "pensieve-local"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow-schema",
@@ -5531,25 +5531,25 @@ dependencies = [
  "axum",
  "chrono",
  "hostname",
- "kyma-brain",
- "kyma-catalog-sqlite",
- "kyma-ccmem",
- "kyma-compaction",
- "kyma-core",
- "kyma-datasources",
- "kyma-embed",
- "kyma-format-parquet",
- "kyma-format-tlm",
- "kyma-index-fts",
- "kyma-index-vector",
- "kyma-ingest-core",
- "kyma-ingest-otlp",
- "kyma-ingest-rest",
- "kyma-jobs",
- "kyma-mcp",
- "kyma-memory",
- "kyma-server",
- "kyma-storage",
+ "pensieve-brain",
+ "pensieve-catalog-sqlite",
+ "pensieve-ccmem",
+ "pensieve-compaction",
+ "pensieve-core",
+ "pensieve-datasources",
+ "pensieve-embed",
+ "pensieve-format-parquet",
+ "pensieve-format-tlm",
+ "pensieve-index-fts",
+ "pensieve-index-vector",
+ "pensieve-ingest-core",
+ "pensieve-ingest-otlp",
+ "pensieve-ingest-rest",
+ "pensieve-jobs",
+ "pensieve-mcp",
+ "pensieve-memory",
+ "pensieve-server",
+ "pensieve-storage",
  "notify",
  "object_store",
  "opentelemetry 0.27.1",
@@ -5569,21 +5569,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-mcp"
-version = "0.0.22"
+name = "pensieve-mcp"
+version = "0.1.0"
 dependencies = [
  "adk-rust",
  "async-trait",
  "axum",
  "futures",
- "kyma-catalog-sqlite",
- "kyma-core",
- "kyma-embed",
- "kyma-format-tlm",
- "kyma-memory",
- "kyma-queue",
- "kyma-server",
- "kyma-storage",
+ "pensieve-catalog-sqlite",
+ "pensieve-core",
+ "pensieve-embed",
+ "pensieve-format-tlm",
+ "pensieve-memory",
+ "pensieve-queue",
+ "pensieve-server",
+ "pensieve-storage",
  "metrics",
  "object_store",
  "reqwest 0.12.28",
@@ -5601,21 +5601,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-memory"
-version = "0.0.22"
+name = "pensieve-memory"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow-schema",
  "async-trait",
  "chrono",
- "kyma-catalog-sqlite",
- "kyma-codeparse",
- "kyma-core",
- "kyma-embed",
- "kyma-format-tlm",
- "kyma-ingest-core",
- "kyma-queue",
- "kyma-storage",
+ "pensieve-catalog-sqlite",
+ "pensieve-codeparse",
+ "pensieve-core",
+ "pensieve-embed",
+ "pensieve-format-tlm",
+ "pensieve-ingest-core",
+ "pensieve-queue",
+ "pensieve-storage",
  "serde",
  "serde_json",
  "sqlx",
@@ -5626,28 +5626,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-plan"
-version = "0.0.22"
+name = "pensieve-plan"
+version = "0.1.0"
 dependencies = [
  "arrow-schema",
  "async-trait",
  "chrono",
- "kyma-core",
+ "pensieve-core",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
 ]
 
 [[package]]
-name = "kyma-queue"
-version = "0.0.22"
+name = "pensieve-queue"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
  "fastrand",
- "kyma-catalog-sqlite",
- "kyma-core",
+ "pensieve-catalog-sqlite",
+ "pensieve-core",
  "metrics",
  "serde_json",
  "thiserror 2.0.18",
@@ -5657,8 +5657,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-redact"
-version = "0.0.22"
+name = "pensieve-redact"
+version = "0.1.0"
 dependencies = [
  "aho-corasick",
  "regex",
@@ -5667,8 +5667,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-retrieval-eval"
-version = "0.0.22"
+name = "pensieve-retrieval-eval"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5681,8 +5681,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-server"
-version = "0.0.22"
+name = "pensieve-server"
+version = "0.1.0"
 dependencies = [
  "adk-rust",
  "anyhow",
@@ -5704,26 +5704,26 @@ dependencies = [
  "hex",
  "http-body-util",
  "jsonwebtoken",
- "kyma-artifact-graph",
- "kyma-brain",
- "kyma-catalog",
- "kyma-catalog-sqlite",
- "kyma-ccmem",
- "kyma-core",
- "kyma-datasources",
- "kyma-embed",
- "kyma-exec",
- "kyma-federation",
- "kyma-format-tlm",
- "kyma-graph",
- "kyma-graph-topo",
- "kyma-ingest-core",
- "kyma-kql",
- "kyma-memory",
- "kyma-plan",
- "kyma-redact",
- "kyma-storage",
- "kyma-web-assets",
+ "pensieve-artifact-graph",
+ "pensieve-brain",
+ "pensieve-catalog",
+ "pensieve-catalog-sqlite",
+ "pensieve-ccmem",
+ "pensieve-core",
+ "pensieve-datasources",
+ "pensieve-embed",
+ "pensieve-exec",
+ "pensieve-federation",
+ "pensieve-format-tlm",
+ "pensieve-graph",
+ "pensieve-graph-topo",
+ "pensieve-ingest-core",
+ "pensieve-kql",
+ "pensieve-memory",
+ "pensieve-plan",
+ "pensieve-redact",
+ "pensieve-storage",
+ "pensieve-web-assets",
  "metrics",
  "metrics-exporter-prometheus",
  "object_store",
@@ -5757,13 +5757,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-storage"
-version = "0.0.22"
+name = "pensieve-storage"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
  "futures",
- "kyma-core",
+ "pensieve-core",
  "object_store",
  "sha2",
  "thiserror 2.0.18",
@@ -5773,8 +5773,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kyma-web-assets"
-version = "0.0.22"
+name = "pensieve-web-assets"
+version = "0.1.0"
 dependencies = [
  "include_dir",
 ]

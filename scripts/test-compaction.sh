@@ -13,23 +13,23 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-export KYMA_CATALOG_URL="postgres://kyma:kyma_dev@localhost:5433/kyma"
-export KYMA_S3_ENDPOINT="http://localhost:9000"
-export KYMA_S3_BUCKET="kyma"
-export KYMA_S3_ACCESS_KEY_ID="kyma_admin"
-export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
-export KYMA_S3_PATH_STYLE="true"
-export KYMA_S3_ALLOW_HTTP="true"
-export KYMA_HTTP_ADDR="127.0.0.1:8080"
-export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
+export PENSIEVE_CATALOG_URL="postgres://pensieve:pensieve_dev@localhost:5433/pensieve"
+export PENSIEVE_S3_ENDPOINT="http://localhost:9000"
+export PENSIEVE_S3_BUCKET="pensieve"
+export PENSIEVE_S3_ACCESS_KEY_ID="pensieve_admin"
+export PENSIEVE_S3_SECRET_ACCESS_KEY="pensieve_admin_dev"
+export PENSIEVE_S3_PATH_STYLE="true"
+export PENSIEVE_S3_ALLOW_HTTP="true"
+export PENSIEVE_HTTP_ADDR="127.0.0.1:8080"
+export PENSIEVE_SELF_TRACE="off"   # deterministic storage-layout assertions
 # Aggressive for a fast test:
-export KYMA_COMPACTION_POLL_SECS="2"
-export KYMA_COMPACTION_IDLE_SLEEP_MS="200"
-export KYMA_COMPACTION_MIN_EXTENTS="3"
+export PENSIEVE_COMPACTION_POLL_SECS="2"
+export PENSIEVE_COMPACTION_IDLE_SLEEP_MS="200"
+export PENSIEVE_COMPACTION_MIN_EXTENTS="3"
 export RUST_LOG="${RUST_LOG:-info,sqlx=warn}"
 
 HTTP_BASE="http://127.0.0.1:8080"
-LOG_FILE="/tmp/kyma-compaction.log"
+LOG_FILE="/tmp/pensieve-compaction.log"
 SERVER_PID=""
 
 if [[ -t 1 ]]; then
@@ -54,18 +54,18 @@ cleanup() {
 trap cleanup EXIT
 
 # --- bring up stack if needed ---
-if ! docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1; then
+if ! docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null 2>&1; then
     printf "${RED}docker-compose stack not up.${NC}\n"; exit 2
 fi
 
 section "Reset state"
-docker exec kyma-postgres psql -U kyma -d kyma -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
-docker exec kyma-minio mc rm --recursive --force local/kyma >/dev/null 2>&1 || true
-docker exec kyma-minio mc mb --ignore-existing local/kyma >/dev/null
+docker exec pensieve-postgres psql -U pensieve -d pensieve -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
+docker exec pensieve-minio mc rm --recursive --force local/pensieve >/dev/null 2>&1 || true
+docker exec pensieve-minio mc mb --ignore-existing local/pensieve >/dev/null
 printf "  ${DIM}catalog dropped; bucket cleared${NC}\n"
 
-section "Start kyma with fast-poll compaction scheduler"
-./target/debug/kyma >"$LOG_FILE" 2>&1 &
+section "Start pensieve with fast-poll compaction scheduler"
+./target/debug/pensieve >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 for i in 1 2 3 4 5 6 7 8 9 10; do
     if curl -sf "$HTTP_BASE/health" >/dev/null 2>&1; then break; fi
@@ -74,8 +74,8 @@ done
 printf "  ${DIM}server PID $SERVER_PID${NC}\n"
 
 section "Create table, ingest 10 extents"
-./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
-./target/debug/kyma-cli create-table --db default --name compact_me \
+./target/debug/pensieve-cli create-database default --if-not-exists >/dev/null
+./target/debug/pensieve-cli create-table --db default --name compact_me \
     --schema 'timestamp:timestamp,n:int,label:string' >/dev/null
 for i in $(seq 1 10); do
     curl -s -X POST "$HTTP_BASE/v1/ingest" \
@@ -87,7 +87,7 @@ done
 
 before_rows=$(curl -s -X POST "$HTTP_BASE/v1/query" -H 'X-Database: default' \
     -H 'Content-Type: application/sql' --data 'SELECT COUNT(*) AS n FROM compact_me' | jq -r .n)
-before_extents=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+before_extents=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
     "SELECT COUNT(*) FROM extents WHERE deleted_at IS NULL AND table_id = (SELECT id FROM tables WHERE name='compact_me')")
 assert_eq "ingested 10 rows" "10" "$before_rows"
 assert_eq "created 10 live extents" "10" "$before_extents"
@@ -97,7 +97,7 @@ section "Wait for scheduler to submit + worker to compact"
 deadline=$((SECONDS + 30))
 compacted=0
 while (( SECONDS < deadline )); do
-    live=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+    live=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
         "SELECT COUNT(*) FROM extents WHERE deleted_at IS NULL AND table_id = (SELECT id FROM tables WHERE name='compact_me')")
     if (( live < before_extents )); then
         compacted=1
@@ -121,7 +121,7 @@ after_rows=$(curl -s -X POST "$HTTP_BASE/v1/query" -H 'X-Database: default' \
 assert_eq "row count unchanged after compaction" "10" "$after_rows"
 
 section "Verify compaction snapshot in chain"
-compaction_snaps=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+compaction_snaps=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
     "SELECT COUNT(*) FROM snapshots WHERE table_id = (SELECT id FROM tables WHERE name='compact_me') AND summary->>'operation' = 'compaction'")
 if (( compaction_snaps >= 1 )); then
     ok "at least one compaction snapshot committed ($compaction_snaps)"
@@ -131,12 +131,12 @@ fi
 
 section "Verify metrics"
 metrics=$(curl -s "$HTTP_BASE/metrics")
-if echo "$metrics" | grep -q 'kyma_compaction_tasks_total{result="ok"}'; then ok "compaction_tasks_total counter fired"; else f "no compaction_tasks_total metric"; fi
-if echo "$metrics" | grep -q 'kyma_compaction_tasks_submitted_total'; then ok "compaction_tasks_submitted_total counter fired"; else f "no compaction_tasks_submitted_total metric"; fi
-if echo "$metrics" | grep -q 'kyma_compaction_bytes_out'; then ok "compaction_bytes_out histogram fired"; else f "no compaction_bytes_out metric"; fi
+if echo "$metrics" | grep -q 'pensieve_compaction_tasks_total{result="ok"}'; then ok "compaction_tasks_total counter fired"; else f "no compaction_tasks_total metric"; fi
+if echo "$metrics" | grep -q 'pensieve_compaction_tasks_submitted_total'; then ok "compaction_tasks_submitted_total counter fired"; else f "no compaction_tasks_submitted_total metric"; fi
+if echo "$metrics" | grep -q 'pensieve_compaction_bytes_out'; then ok "compaction_bytes_out histogram fired"; else f "no compaction_bytes_out metric"; fi
 
 section "Verify MinIO has the new merged extent + source extents GC-pending"
-live_objects=$(docker exec kyma-minio mc ls -r local/kyma/ | grep -c '\.kyma$')
+live_objects=$(docker exec pensieve-minio mc ls -r local/pensieve/ | grep -c '\.pensieve$')
 # Source extents still in MinIO (soft-deleted in catalog, physical delete = later GC).
 printf "  ${DIM}MinIO object count: $live_objects (source extents await physical GC)${NC}\n"
 

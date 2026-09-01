@@ -5,8 +5,8 @@
 **Prerequisites:** a worker identity from the control plane (see [Register a worker](#register-a-worker)).
 
 ```bash
-kyma worker run \
-  --server https://kyma.example.com \
+pensieve worker run \
+  --server https://pensieve.example.com \
   --token  kyw_…
 ```
 
@@ -14,13 +14,13 @@ Environment variables are accepted in place of flags:
 
 | Flag | Env fallback | Required |
 |---|---|---|
-| `--server` | `KYMA_SERVER_URL` | Yes |
-| `--token` | `KYMA_WORKER_TOKEN` | Yes |
+| `--server` | `PENSIEVE_SERVER_URL` | Yes |
+| `--token` | `PENSIEVE_WORKER_TOKEN` | Yes |
 | `--name` | — | No (inherits registered name) |
 | `--accept <kinds>` | — | No (default: `source_sync`) |
 | `--max-concurrent <n>` | — | No |
 
-Set `KYMA_WORKER_INSECURE=1` to allow plain `http://` to non-local control planes (not recommended in production). See [worker-daemon env vars](/reference/env#worker-daemon--node).
+Set `PENSIEVE_WORKER_INSECURE=1` to allow plain `http://` to non-local control planes (not recommended in production). See [worker-daemon env vars](/reference/env#worker-daemon--node).
 
 Once running, the daemon sends a heartbeat every 30 s. The heartbeat carries **presence** (which coding-agent sessions are active on this machine) and a **source inventory** (which agents were detected). It then claims and runs `source_sync` jobs for each detected agent.
 
@@ -30,13 +30,13 @@ These commands require admin credentials on the control plane.
 
 ```bash
 # Create a new worker identity — prints worker_id + token (shown once)
-kyma worker create --name laptop-rosa
+pensieve worker create --name laptop-rosa
 
 # List all registered workers with status, capabilities, and liveness
-kyma worker list
+pensieve worker list
 
 # Revoke a node's token (outstanding jobs are re-queued on next sweep)
-kyma worker revoke <worker_id>
+pensieve worker revoke <worker_id>
 ```
 
 The token prefix is `kyw_`. Tokens are stored as SHA-256 hashes server-side; there is no way to recover a lost token — revoke and re-create. See [worker-fabric HTTP endpoints](/reference/api#worker-fabric) for the raw API surface.
@@ -49,7 +49,7 @@ A worker on a developer machine is more than compute — it is a **node of the d
 2. Reports *presence* — which agent sessions are active — on every heartbeat.
 3. Runs `source_sync` jobs: reads local coding-agent files and pushes them into the shared engine so memories from this machine are recallable everywhere.
 
-Kyma is engine-agnostic. Claude Code (`~/.claude/projects`) ships with a full ingestion pipeline today. Cursor, Windsurf, and Codex are detected and appear in node inventory and capabilities; their ingestion pipelines are queued. Adding a new agent is one entry in the detector registry — see [coding agents](/agent/coding-agents).
+Pensieve is engine-agnostic. Claude Code (`~/.claude/projects`) ships with a full ingestion pipeline today. Cursor, Windsurf, and Codex are detected and appear in node inventory and capabilities; their ingestion pipelines are queued. Adding a new agent is one entry in the detector registry — see [coding agents](/agent/coding-agents).
 
 ## Job kinds
 
@@ -68,5 +68,5 @@ Default `--accept` is `source_sync`. Pass `--accept dreaming,source_sync` to wid
 ## Security
 
 - Worker tokens (`kyw_…`) are 256-bit secrets, stored as SHA-256 hashes; the plain token is shown once at creation time.
-- The daemon refuses plain `http://` to non-local control planes unless `KYMA_WORKER_INSECURE=1`.
-- Dead workers release their jobs via lease expiry; the control plane sweeps stale leases and marks silent workers offline (configurable via [`KYMA_FABRIC_OFFLINE_SECS`](/reference/env#worker-fabric)).
+- The daemon refuses plain `http://` to non-local control planes unless `PENSIEVE_WORKER_INSECURE=1`.
+- Dead workers release their jobs via lease expiry; the control plane sweeps stale leases and marks silent workers offline (configurable via [`PENSIEVE_FABRIC_OFFLINE_SECS`](/reference/env#worker-fabric)).

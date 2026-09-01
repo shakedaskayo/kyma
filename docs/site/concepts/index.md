@@ -1,16 +1,16 @@
 ---
 title: Concepts
-description: The mental model behind kyma — five invariants, three pruning levels, one agent loop, and the storage shape that ties them together.
+description: The mental model behind pensieve — five invariants, three pruning levels, one agent loop, and the storage shape that ties them together.
 ---
 
 # Concepts
 
-Kyma is opinionated about a small number of things. Almost every
+Pensieve is opinionated about a small number of things. Almost every
 load-bearing decision in the engine traces back to one of those
 opinions. The pages below are the mental model — read in order if
 you're starting; read by topic if you're deep on one.
 
-New here? [**How kyma works**](/concepts/how-kyma-works) is the whole system on one
+New here? [**How pensieve works**](/concepts/how-pensieve-works) is the whole system on one
 page — the memory → data → graph loop, the runtime modes, and how the pieces fit.
 For the engine internals specifically, start with
 [**The five invariants**](/concepts/the-five-invariants) and
@@ -21,7 +21,7 @@ else is an instance of those two ideas.
 
 <div class="feature-card">
 
-### [What kyma is](/concepts/what-is-kyma)
+### [What pensieve is](/concepts/what-is-pensieve)
 
 The ten-minute version of the value prop. What the engine ingests, how
 it stores, how it answers, who it's for, and — explicitly — what it
@@ -31,7 +31,7 @@ isn't.
 
 <div class="feature-card">
 
-### [How kyma works](/concepts/how-kyma-works)
+### [How pensieve works](/concepts/how-pensieve-works)
 
 The whole system on one page — the memory → data → graph loop, how your
 agent connects, the engine underneath, continuous ingestion, dreaming,
@@ -123,7 +123,7 @@ Claude Code file-memory phase. Work offline; converge when you reconnect.
 
 ### [Multi-source data](/concepts/multi-source-data)
 
-How kyma joins your operational databases — Postgres, MySQL, MongoDB —
+How pensieve joins your operational databases — Postgres, MySQL, MongoDB —
 with its own tables. Federation for live reads; CDC sync for fast
 historical queries; both at once via `live(table)`.
 
@@ -144,7 +144,7 @@ node.
 
 ### [Observability](/concepts/observability)
 
-How to tell what kyma is doing. Prometheus `/metrics`, the agent run
+How to tell what pensieve is doing. Prometheus `/metrics`, the agent run
 trace, data source run state (`GET /v1/data-sources/:id`), and
 `pushdown_summary` — the trust mechanism for federation.
 

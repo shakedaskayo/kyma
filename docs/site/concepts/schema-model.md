@@ -1,11 +1,11 @@
 ---
 title: Schema model
-description: kyma's column types, schema-only-widens rule, and how late-arriving fields land in the dynamic overflow column.
+description: pensieve's column types, schema-only-widens rule, and how late-arriving fields land in the dynamic overflow column.
 ---
 
 # Schema model
 
-kyma is column-aware. Every table is a sequence of typed columns; every
+pensieve is column-aware. Every table is a sequence of typed columns; every
 write is checked against — and may evolve — the catalog-stored schema.
 Two non-obvious rules: schema only widens, and anything you didn't predict
 lands in the `dynamic` column.
@@ -25,9 +25,9 @@ The catalog recognizes eight types:
 | `dynamic`   | CBOR-encoded `Binary`               | Arbitrary structured data; see below.  |
 | `vector(N)` | `FixedSizeList<Float32, N>`         | Fixed dimension; ANN indices in M-B.   |
 
-Plus the four system columns kyma adds to tables synced from external
-sources via the data source framework — `_kyma_pk`, `_kyma_op`, `_kyma_lsn`,
-`_kyma_event_at`. Internal kyma tables don't carry these.
+Plus the four system columns pensieve adds to tables synced from external
+sources via the data source framework — `_pensieve_pk`, `_pensieve_op`, `_pensieve_lsn`,
+`_pensieve_event_at`. Internal pensieve tables don't carry these.
 
 ## Schema only widens
 
@@ -42,7 +42,7 @@ either keeps the schema or widens it. Widening means:
 - **Loosen a constraint.** Nullable becomes nullable-still; never the
   other way.
 
-Things kyma does not do:
+Things pensieve does not do:
 
 - **Narrow a type.** Once a column is `long`, it cannot become `int`.
 - **Delete a column.** Schemas only ever add. The visual hint that a

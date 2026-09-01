@@ -17,7 +17,7 @@ export function TabBar() {
   const { tabs, activeId, setActive, closeTab, newTab } = useWorkspace();
   const navigate = useNavigate();
 
-  // All tabs render on the unified Explore page (KymaExplore handles both
+  // All tabs render on the unified Explore page (PensieveExplore handles both
   // keyword search and KQL/SQL from one input).
   const activate = (t: Tab) => {
     setActive(t.id);

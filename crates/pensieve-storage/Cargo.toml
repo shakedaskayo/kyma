@@ -1,0 +1,22 @@
+[package]
+name = "pensieve-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Object-storage abstraction + block-granular local cache."
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-core.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+object_store.workspace = true
+bytes.workspace = true
+futures.workspace = true
+uuid.workspace = true
+sha2 = "0.10"

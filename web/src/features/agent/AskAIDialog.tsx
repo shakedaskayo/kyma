@@ -134,7 +134,7 @@ export function AskAIDialog({ open, onOpenChange, onSql, onNoSql }: Props) {
             <Sparkles className="h-4 w-4 text-primary" /> Ask AI
           </DialogTitle>
           <DialogDescription className="text-xs">
-            Describe the query in natural language. Kyma will generate SQL and inject it
+            Describe the query in natural language. Pensieve will generate SQL and inject it
             into the editor.
           </DialogDescription>
         </DialogHeader>

@@ -1,9 +1,9 @@
 name: Release
 
-# Cuts a GitHub Release with prebuilt `kyma` CLI binaries (the install.sh path)
+# Cuts a GitHub Release with prebuilt `pensieve` CLI binaries (the install.sh path)
 # plus the Tauri desktop bundles. crates.io publishing is a SEPARATE, manual
 # workflow (publish-crates.yml) — see the note there about the arrow-arith
-# patch, which means `cargo install kyma-cli` can't build downstream yet.
+# patch, which means `cargo install pensieve-cli` can't build downstream yet.
 on:
   push:
     tags: ["v*"]
@@ -32,19 +32,19 @@ jobs:
           - name: macOS (Apple Silicon)
             os: macos-14
             target: aarch64-apple-darwin
-            artifact: kyma-darwin-arm64
+            artifact: pensieve-darwin-arm64
           - name: macOS (Intel)
             os: macos-14   # cross-compile x86_64 on Apple Silicon; macos-13 (Intel) runners are scarce/queued
             target: x86_64-apple-darwin
-            artifact: kyma-darwin-x64
+            artifact: pensieve-darwin-x64
           - name: Linux (x86_64)
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: kyma-linux-x64
+            artifact: pensieve-linux-x64
           - name: Linux (ARM64)
             os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact: kyma-linux-arm64
+            artifact: pensieve-linux-arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -62,24 +62,24 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: "pnpm" }
 
-      # The CLI embeds the web UI (kyma-web-assets) at compile time, so the
+      # The CLI embeds the web UI (pensieve-web-assets) at compile time, so the
       # frontend must be built BEFORE the Rust build.
       - name: Build web UI
         run: |
           pnpm install --frozen-lockfile
-          # web imports @kyma-ai/client + @kyma-ai/react via their built dist/
+          # web imports @pensieve-ai/client + @pensieve-ai/react via their built dist/
           pnpm build:packages
           pnpm -C web build
 
       - name: Build CLI
-        run: cargo build --release --target ${{ matrix.target }} -p kyma-cli
+        run: cargo build --release --target ${{ matrix.target }} -p pensieve-cli
 
       - name: Package binary
         run: |
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/kyma" dist/kyma
+          cp "target/${{ matrix.target }}/release/pensieve" dist/pensieve
           cd dist
-          tar czf "${{ matrix.artifact }}.tar.gz" kyma
+          tar czf "${{ matrix.artifact }}.tar.gz" pensieve
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "${{ matrix.artifact }}.tar.gz" > "${{ matrix.artifact }}.tar.gz.sha256"
           else
@@ -116,7 +116,7 @@ jobs:
       - run: pnpm -C web tauri build
       - uses: actions/upload-artifact@v4
         with:
-          name: kyma-desktop-${{ matrix.os }}
+          name: pensieve-desktop-${{ matrix.os }}
           path: web/src-tauri/target/release/bundle/**
 
   # ── GitHub Release ───────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.version }}
-          name: kyma ${{ steps.tag.outputs.version }}
+          name: pensieve ${{ steps.tag.outputs.version }}
           draft: false
           prerelease: ${{ contains(steps.tag.outputs.version, '-') }}
           generate_release_notes: true

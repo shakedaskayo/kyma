@@ -1,0 +1,692 @@
+//! `pensieve ingest push` · `pensieve recall` · `pensieve distill` · `pensieve install-plugin`.
+//!
+//! These four verbs back the **pensieve-memory Claude Code plugin** (see
+//! `integrations/claude-code/pensieve-memory/`). They all reuse the saved client
+//! connection (`~/.pensieve/config.json` or `PENSIEVE_SERVER_URL`/`PENSIEVE_TOKEN`) and the
+//! shared reqwest client, so the plugin holds no credentials of its own.
+//!
+//!   - `ingest push`     firehose: stdin NDJSON → `POST /v1/ingest`
+//!   - `recall`          fast semantic recall via MCP `tools/call recall_memory`
+//!   - `distill`         stdin transcript → `/v1/agent/ask` (agent owns save_memory)
+//!   - `install-plugin`  materialize the bundled plugin into ~/.claude/skills/
+
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use anyhow::{anyhow, Context, Result};
+use serde_json::{json, Value};
+
+use crate::client::{self, ClientConfig};
+use crate::ux;
+
+// ── ingest push ──────────────────────────────────────────────────────────────
+
+/// Read NDJSON from stdin and POST it to `/v1/ingest`. Auto-create +
+/// schema-evolve are on so the firehose table appears on first write.
+pub(crate) async fn ingest_push(
+    table: String,
+    db: Option<String>,
+    idempotency_key: Option<String>,
+) -> Result<()> {
+    let cfg = client::effective_config()?;
+    let mut body = String::new();
+    std::io::stdin()
+        .read_to_string(&mut body)
+        .context("reading NDJSON from stdin")?;
+    if body.trim().is_empty() {
+        return Ok(()); // nothing to send — stay quiet for hook use
+    }
+    let db = db.unwrap_or_else(|| "default".to_string());
+    let url = format!("{}/v1/ingest", cfg.endpoint.trim_end_matches('/'));
+    let mut req = client::http_client()
+        .post(url)
+        .header("X-Table", table.as_str())
+        .header("X-Database", db.as_str())
+        .header("X-Schema-Evolve", "true")
+        .header("content-type", "application/x-ndjson")
+        .body(body);
+    if let Some(k) = idempotency_key {
+        req = req.header("X-Idempotency-Key", k);
+    }
+    if let Some(t) = &cfg.token {
+        req = req.bearer_auth(t);
+    }
+    let res = req.send().await.context("POST /v1/ingest")?;
+    let status = res.status();
+    let text = res.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(anyhow!("ingest returned {status}: {text}"));
+    }
+    // Quiet on success unless asked for detail (hooks pipe this to /dev/null).
+    if std::env::var_os("PENSIEVE_INGEST_VERBOSE").is_some() {
+        println!("{text}");
+    }
+    Ok(())
+}
+
+// ── recall ───────────────────────────────────────────────────────────────────
+
+/// Semantic recall via the MCP `recall_memory` tool. Prints a compact ranked
+/// list (for hook context injection) or raw JSON with `--json`.
+pub(crate) async fn recall(
+    query: String,
+    realm: Option<String>,
+    limit: usize,
+    as_json: bool,
+) -> Result<()> {
+    let cfg = client::effective_config()?;
+    let mut realms: Vec<String> = Vec::new();
+    if let Some(r) = realm {
+        if !r.is_empty() {
+            realms.push(r);
+            realms.push("global".to_string());
+        }
+    }
+    let arguments = json!({
+        "query": query,
+        "limit": limit,
+        "realms": realms,
+    });
+    let result = mcp_call(&cfg, "recall_memory", arguments).await?;
+
+    if as_json {
+        println!("{}", serde_json::to_string(&result)?);
+        return Ok(());
+    }
+    // The graph-aware recall returns a ready-to-inject `context` block (memories
+    // + connected resources, citation-rich). Prefer it for hook injection. The
+    // block itself is shared verbatim with hook/agent-prompt consumers (see
+    // `render_context_block`'s doc comment) — only this human-facing print
+    // path applies terminal styling.
+    if let Some(ctx) = result.get("context").and_then(Value::as_str) {
+        let ctx = ctx.trim();
+        if !ctx.is_empty() {
+            println!("{}", render_context_block(ctx));
+            return Ok(());
+        }
+    }
+    // Fall back to a compact ranked list (`memories` from the orchestrator, or
+    // legacy `rows`).
+    let rows = result
+        .get("memories")
+        .and_then(Value::as_array)
+        .or_else(|| result.get("rows").and_then(Value::as_array))
+        .cloned()
+        .unwrap_or_default();
+    for row in rows {
+        println!("{}", render_memory_line(&row));
+    }
+    Ok(())
+}
+
+// ── remember ───────────────────────────────────────────────────────────────
+
+/// Save a durable memory via the MCP `save_memory` tool. With `topic_key`, a
+/// re-save updates the memory in place instead of duplicating.
+pub(crate) async fn remember(
+    content: String,
+    memory_type: Option<String>,
+    realm: Option<String>,
+    importance: Option<f32>,
+    topic_key: Option<String>,
+) -> Result<()> {
+    let cfg = client::effective_config()?;
+    let mut args = json!({ "content": content });
+    if let Some(t) = memory_type { args["memory_type"] = json!(t); }
+    if let Some(r) = realm { args["realm"] = json!(r); }
+    if let Some(i) = importance { args["importance"] = json!(i); }
+    if let Some(tk) = topic_key { args["topic_key"] = json!(tk); }
+    let result = mcp_call(&cfg, "save_memory", args).await?;
+    if let Some(err) = result.get("error").and_then(Value::as_str) {
+        return Err(anyhow!("{err}"));
+    }
+    let id = result.get("id").and_then(Value::as_str).unwrap_or("?");
+    let verb = if result.get("upserted").and_then(Value::as_bool).unwrap_or(false) {
+        "updated"
+    } else {
+        "saved"
+    };
+    println!("{}", remember_success_line(verb, id));
+    Ok(())
+}
+
+/// Builds the one-line success message for `remember`: a green check mark
+/// followed by plain-colored text.
+fn remember_success_line(verb: &str, id: &str) -> String {
+    format!("{} {verb} memory {id}", ux::theme::success(ux::theme::CHECK))
+}
+
+// ── entity ─────────────────────────────────────────────────────────────────
+
+/// Create or update a virtual graph entity via the MCP `ingest_entity` tool,
+/// wiring it to existing graph nodes / memories. Idempotent per (realm, kind, name).
+pub(crate) async fn entity(
+    name: String,
+    kind: Option<String>,
+    realm: Option<String>,
+    props: Vec<String>,
+    links: Vec<String>,
+    icon: Option<String>,
+    entity_type: Option<String>,
+) -> Result<()> {
+    let cfg = client::effective_config()?;
+    let mut args = json!({ "name": name });
+    if let Some(k) = kind { args["kind"] = json!(k); }
+    if let Some(r) = realm { args["realm"] = json!(r); }
+    if let Some(i) = icon { args["icon"] = json!(i); }
+    if let Some(t) = entity_type { args["type"] = json!(t); }
+    if !props.is_empty() {
+        let mut obj = serde_json::Map::new();
+        for p in &props {
+            if let Some((k, v)) = p.split_once('=') {
+                obj.insert(k.trim().to_string(), json!(v.trim()));
+            }
+        }
+        if !obj.is_empty() {
+            args["properties"] = Value::Object(obj);
+        }
+    }
+    // Each `--link` is `node_id[|namespace[|rel]]`:
+    //   repo:owner/name|github|LIVES_IN   ·   memory:<uuid>||DOCUMENTED_BY
+    if !links.is_empty() {
+        let parsed: Vec<Value> = links
+            .iter()
+            .map(|l| {
+                let mut parts = l.splitn(3, '|');
+                let node = parts.next().unwrap_or("").trim().to_string();
+                let mut o = json!({ "target_node_id": node });
+                if let Some(ns) = parts.next().map(str::trim).filter(|s| !s.is_empty()) {
+                    o["target_namespace"] = json!(ns);
+                }
+                if let Some(rel) = parts.next().map(str::trim).filter(|s| !s.is_empty()) {
+                    o["relationship_type"] = json!(rel);
+                }
+                o
+            })
+            .collect();
+        args["links"] = json!(parsed);
+    }
+    let result = mcp_call(&cfg, "ingest_entity", args).await?;
+    if let Some(err) = result.get("error").and_then(Value::as_str) {
+        return Err(anyhow!("{err}"));
+    }
+    let id = result.get("id").and_then(Value::as_str).unwrap_or("?");
+    let n = result.get("links").and_then(Value::as_u64).unwrap_or(0);
+    let verb = if result.get("upserted").and_then(Value::as_bool).unwrap_or(false) {
+        "updated"
+    } else {
+        "created"
+    };
+    println!("{}", entity_success_line(verb, id, n));
+    Ok(())
+}
+
+/// Builds the one-line success message for `entity`: a green check mark
+/// followed by plain-colored text.
+fn entity_success_line(verb: &str, id: &str, n: u64) -> String {
+    format!(
+        "{} {verb} entity {id} ({n} links)",
+        ux::theme::success(ux::theme::CHECK)
+    )
+}
+
+/// Render one recalled memory row as a single compact line. Tolerant of which
+/// columns the recall SQL projected.
+fn render_memory_line(row: &Value) -> String {
+    let mtype = row
+        .get("memory_type")
+        .and_then(Value::as_str)
+        .unwrap_or("memory");
+    let score = row
+        .get("score")
+        .and_then(Value::as_f64)
+        .or_else(|| row.get("distance").and_then(Value::as_f64).map(|d| 1.0 - d));
+    let body = row
+        .get("title")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| row.get("content_preview").and_then(Value::as_str))
+        .or_else(|| row.get("content").and_then(Value::as_str))
+        .unwrap_or("")
+        .trim();
+    let body = ux::format::truncate(body, 280);
+    let prefix = match score {
+        Some(s) => ux::format::score_style(s as f32, &format!("[{mtype} {s:.2}]")),
+        None => ux::theme::muted(&format!("[{mtype}]")),
+    };
+    format!("{} {prefix} {body}", ux::theme::BULLET)
+}
+
+/// Adds terminal styling to the server's plain-text `context` block. That
+/// block is shared verbatim with hook/agent-prompt consumers (see
+/// `build_context()` in pensieve-server), where ANSI codes would be harmful —
+/// this transform is purely for the interactive `recall` command's
+/// human-facing output and never touches the underlying string other
+/// consumers see.
+fn render_context_block(ctx: &str) -> String {
+    ctx.lines()
+        .map(render_context_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Style one line of the `context` block. Any line shape not specifically
+/// recognized passes through unchanged, so the transform can never corrupt
+/// or drop information if the server's wording changes later.
+fn render_context_line(line: &str) -> String {
+    if line.is_empty() {
+        return String::new();
+    }
+    if line == "Relevant memories:"
+        || line == "Connected resources/traces:"
+        || line.starts_with("Precedent —")
+    {
+        return ux::theme::accent(line);
+    }
+    if let Some(body) = line.strip_prefix("- ") {
+        if body.starts_with('[') {
+            // Memory bullet: "[type] content... (score N.NN) memory:xxx"
+            if let Some(score_pos) = body.rfind("(score ") {
+                let (head, tail) = body.split_at(score_pos);
+                let score: f32 = tail
+                    .strip_prefix("(score ")
+                    .and_then(|s| s.split(')').next())
+                    .and_then(|s| s.trim().parse().ok())
+                    .unwrap_or(0.0);
+                return format!(
+                    "{} {} {}",
+                    ux::theme::BULLET,
+                    ux::format::score_style(score, head.trim_end()),
+                    ux::theme::muted(tail)
+                );
+            }
+        }
+        // Connected-resource bullet (or any other "- " line without a score).
+        return format!("{} {}", ux::theme::BULLET, ux::theme::muted(body));
+    }
+    line.to_string()
+}
+
+/// Issue a single stateless MCP `tools/call` and return its `structuredContent`.
+async fn mcp_call(cfg: &ClientConfig, tool: &str, arguments: Value) -> Result<Value> {
+    let url = format!("{}/mcp/v1", cfg.endpoint.trim_end_matches('/'));
+    let body = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": { "name": tool, "arguments": arguments },
+    });
+    let mut req = client::http_client()
+        .post(url)
+        .header("accept", "application/json")
+        .json(&body);
+    if let Some(t) = &cfg.token {
+        req = req.bearer_auth(t);
+    }
+    let res = req.send().await.context("POST /mcp/v1")?;
+    let status = res.status();
+    let text = res.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(anyhow!("mcp returned {status}: {text}"));
+    }
+    let v: Value = serde_json::from_str(&text).with_context(|| format!("parse mcp response: {text}"))?;
+    if let Some(err) = v.get("error") {
+        return Err(anyhow!("mcp error: {err}"));
+    }
+    Ok(v.get("result")
+        .and_then(|r| r.get("structuredContent"))
+        .cloned()
+        .unwrap_or(Value::Null))
+}
+
+// ── distill ──────────────────────────────────────────────────────────────────
+
+const DISTILL_MAX_CHARS: usize = 60_000;
+
+/// Read a session transcript from stdin and hand it to the pensieve agent (which
+/// owns `save_memory`) with an extraction instruction. The agent persists the
+/// durable memories. Shows a progress spinner while waiting (silent plain
+/// fallback when stderr isn't a terminal — e.g. when a hook pipes it to a
+/// log file); stays quiet about the *extracted memories themselves* unless
+/// `PENSIEVE_DISTILL_VERBOSE` is set.
+pub(crate) async fn distill(_session: Option<String>, realm: Option<String>) -> Result<()> {
+    let cfg = client::effective_config()?;
+    let mut transcript = String::new();
+    std::io::stdin()
+        .read_to_string(&mut transcript)
+        .context("reading transcript from stdin")?;
+    if transcript.trim().is_empty() {
+        return Ok(());
+    }
+    // Keep the tail if it's large (most recent context matters most).
+    if transcript.len() > DISTILL_MAX_CHARS {
+        let start = transcript.len() - DISTILL_MAX_CHARS;
+        transcript = transcript[start..].to_string();
+    }
+    let realm = realm.unwrap_or_else(|| "default".to_string());
+    let instruction = format!(
+        "You are curating durable memory from a Claude Code coding session. Below is the \
+session transcript (JSONL or text). Extract the SMALL set of genuinely durable, reusable \
+memories: decisions (with rationale), preferences, conventions, non-obvious facts, \
+learnings, and open threads worth resuming. For each, call save_memory with realm \
+\"{realm}\", an appropriate memory_type (fact/decision/preference/learning/summary) and \
+importance 0.3-0.9. Recall first to avoid duplicates; skip transient details and anything \
+secret. Quality over quantity (typically 0-6). Then reply with a one-line summary of what \
+you saved.\n\n--- SESSION TRANSCRIPT ---\n{transcript}"
+    );
+
+    let verbose = std::env::var_os("PENSIEVE_DISTILL_VERBOSE").is_some();
+    let spinner = (!verbose).then(|| ux::spinner::spinner("distilling memories"));
+    let result = client::stream_agent_ask(&cfg, &instruction, None, |event, data| {
+        if !verbose {
+            return;
+        }
+        if event == "answer_delta" || event == "answer_final" {
+            if let Ok(v) = serde_json::from_str::<Value>(data) {
+                if let Some(t) = v.get("text").and_then(Value::as_str) {
+                    print!("{t}");
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
+                }
+            }
+        }
+    })
+    .await;
+    if let Some(s) = &spinner {
+        match &result {
+            Ok(()) => s.finish_success("distilled memories"),
+            // Deliberately short — the full cause chain + hint is printed by
+            // main()'s unified error handler once this Err propagates; a
+            // second copy of the same text here would just be noise.
+            Err(_) => s.finish_error("distill failed"),
+        }
+    }
+    result
+}
+
+// ── install-plugin ───────────────────────────────────────────────────────────
+
+/// (relative path, file contents, is_executable). `.mcp.json` is generated
+/// (templated with the live server URL + token) rather than embedded verbatim.
+const PLUGIN_FILES: &[(&str, &str, bool)] = &[
+    (
+        ".claude-plugin/plugin.json",
+        include_str!("../../../integrations/claude-code/pensieve-memory/.claude-plugin/plugin.json"),
+        false,
+    ),
+    (
+        "hooks/hooks.json",
+        include_str!("../../../integrations/claude-code/pensieve-memory/hooks/hooks.json"),
+        false,
+    ),
+    (
+        "scripts/lib.sh",
+        include_str!("../../../integrations/claude-code/pensieve-memory/scripts/lib.sh"),
+        true,
+    ),
+    (
+        "scripts/on-session-start.sh",
+        include_str!("../../../integrations/claude-code/pensieve-memory/scripts/on-session-start.sh"),
+        true,
+    ),
+    (
+        "scripts/on-user-prompt.sh",
+        include_str!("../../../integrations/claude-code/pensieve-memory/scripts/on-user-prompt.sh"),
+        true,
+    ),
+    (
+        "scripts/on-post-tool.sh",
+        include_str!("../../../integrations/claude-code/pensieve-memory/scripts/on-post-tool.sh"),
+        true,
+    ),
+    (
+        "scripts/on-stop.sh",
+        include_str!("../../../integrations/claude-code/pensieve-memory/scripts/on-stop.sh"),
+        true,
+    ),
+    (
+        "scripts/on-session-end.sh",
+        include_str!("../../../integrations/claude-code/pensieve-memory/scripts/on-session-end.sh"),
+        true,
+    ),
+    (
+        "commands/pensieve-recall.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/commands/pensieve-recall.md"),
+        false,
+    ),
+    (
+        "commands/pensieve-remember.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/commands/pensieve-remember.md"),
+        false,
+    ),
+    (
+        "commands/pensieve-ask.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/commands/pensieve-ask.md"),
+        false,
+    ),
+    (
+        "commands/pensieve-status.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/commands/pensieve-status.md"),
+        false,
+    ),
+    (
+        "commands/pensieve-ingest.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/commands/pensieve-ingest.md"),
+        false,
+    ),
+    (
+        "skills/pensieve-memory/SKILL.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/skills/pensieve-memory/SKILL.md"),
+        false,
+    ),
+    (
+        "agents/memory-curator.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/agents/memory-curator.md"),
+        false,
+    ),
+    (
+        "README.md",
+        include_str!("../../../integrations/claude-code/pensieve-memory/README.md"),
+        false,
+    ),
+];
+
+/// Materialize the bundled plugin into a Claude Code skills-dir plugin
+/// (`~/.claude/skills/pensieve-memory/` by default), templating the live Pensieve URL +
+/// token into `.mcp.json` so both hooks and the MCP server work immediately.
+pub(crate) async fn install_plugin(target: Option<PathBuf>, force: bool) -> Result<()> {
+    let dir = match target {
+        Some(p) => p,
+        None => claude_skills_dir()?.join("pensieve-memory"),
+    };
+
+    if dir.exists() && !force {
+        // Re-installing over an existing dir is fine (we overwrite files), but
+        // warn so an accidental run is visible.
+        eprintln!(
+            "note: {} already exists — overwriting plugin files (use --force to silence)",
+            dir.display()
+        );
+    }
+
+    for (rel, contents, exec) in PLUGIN_FILES {
+        let path = dir.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("mkdir {}", parent.display()))?;
+        }
+        std::fs::write(&path, contents).with_context(|| format!("write {}", path.display()))?;
+        if *exec {
+            set_executable(&path);
+        }
+    }
+
+    // Resolve the live connection (best-effort) for the MCP server config.
+    let cfg = client::effective_config().ok();
+    let url = cfg
+        .as_ref()
+        .map(|c| c.endpoint.clone())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "http://localhost:8080".to_string());
+    let token = cfg.as_ref().and_then(|c| c.token.clone());
+
+    let mcp_path = dir.join(".mcp.json");
+    std::fs::write(&mcp_path, mcp_json(&url, token.as_deref())?)
+        .with_context(|| format!("write {}", mcp_path.display()))?;
+    // The MCP config may embed a bearer token — keep it private.
+    set_private(&mcp_path);
+
+    println!("Installed pensieve-memory plugin → {}", dir.display());
+    println!("  MCP server → {}/mcp/v1", url.trim_end_matches('/'));
+    if cfg.is_none() {
+        println!(
+            "  ⚠  no Pensieve connection found — run `pensieve connect <url> --token <token>` then \
+re-run `pensieve install-plugin` so the MCP server is authenticated."
+        );
+    } else if token.is_none() {
+        println!("  ⚠  no token saved — the MCP server will connect unauthenticated.");
+    }
+    println!("\nRestart Claude Code, then run /pensieve-status to verify.");
+    Ok(())
+}
+
+/// `~/.claude/skills` — where skills-dir plugins auto-load from.
+fn claude_skills_dir() -> Result<PathBuf> {
+    let home = std::env::var_os("HOME").ok_or_else(|| anyhow!("$HOME is not set"))?;
+    Ok(PathBuf::from(home).join(".claude").join("skills"))
+}
+
+/// Build the `.mcp.json` for a Streamable-HTTP connection to pensieve's MCP server.
+fn mcp_json(url: &str, token: Option<&str>) -> Result<String> {
+    let url = url.trim_end_matches('/');
+    let mut server = json!({
+        "type": "http",
+        "url": format!("{url}/mcp/v1"),
+    });
+    if let Some(t) = token {
+        if !t.is_empty() {
+            server["headers"] = json!({ "Authorization": format!("Bearer {t}") });
+        }
+    }
+    let doc = json!({ "mcpServers": { "pensieve": server } });
+    Ok(serde_json::to_string_pretty(&doc)?)
+}
+
+#[cfg(unix)]
+fn set_executable(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755));
+}
+#[cfg(not(unix))]
+fn set_executable(_path: &Path) {}
+
+#[cfg(unix)]
+fn set_private(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+}
+#[cfg(not(unix))]
+fn set_private(_path: &Path) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_memory_line_includes_type_and_body() {
+        let row = json!({
+            "memory_type": "decision",
+            "score": 0.92,
+            "content": "use worktrees for all branch work",
+        });
+        let line = render_memory_line(&row);
+        assert!(line.contains("decision"));
+        assert!(line.contains("0.92"));
+        assert!(line.contains("use worktrees for all branch work"));
+    }
+
+    #[test]
+    fn render_memory_line_falls_back_to_title_then_preview_then_content() {
+        let row = json!({
+            "memory_type": "fact",
+            "title": "preferred title",
+            "content_preview": "should not appear",
+            "content": "should not appear either",
+        });
+        let line = render_memory_line(&row);
+        assert!(line.contains("preferred title"));
+        assert!(!line.contains("should not appear"));
+    }
+
+    #[test]
+    fn render_memory_line_handles_missing_score() {
+        let row = json!({ "memory_type": "learning", "content": "no score here" });
+        let line = render_memory_line(&row);
+        assert!(line.contains("learning"));
+        assert!(line.contains("no score here"));
+        assert!(!line.contains("0."));
+    }
+
+    #[test]
+    fn render_memory_line_truncates_long_body_with_ellipsis() {
+        let long_body = "word ".repeat(100); // 500 chars, trims to 499
+        let row = json!({ "memory_type": "fact", "content": long_body });
+        let line = render_memory_line(&row);
+        assert!(line.contains('…'));
+    }
+
+    #[test]
+    fn render_context_line_styles_memory_bullet() {
+        let line = render_context_line("- [fact] some content (score 0.92) memory:abc-123");
+        assert!(line.contains("some content"));
+        assert!(line.contains("memory:abc-123"));
+        assert!(line.contains(ux::theme::BULLET));
+    }
+
+    #[test]
+    fn render_context_line_styles_section_headers() {
+        let line = render_context_line("Relevant memories:");
+        assert!(line.contains("Relevant memories:"));
+    }
+
+    #[test]
+    fn render_context_line_styles_connected_resource_bullet() {
+        let line = render_context_line(
+            "- cand:file:default::foo.tsx (file_candidates/default) via REFERENCES",
+        );
+        assert!(line.contains("cand:file:default::foo.tsx"));
+        assert!(line.contains(ux::theme::BULLET));
+    }
+
+    #[test]
+    fn render_context_line_passes_through_unrecognized_lines() {
+        assert_eq!(render_context_line(""), "");
+        assert_eq!(
+            render_context_line("Memories from that occasion: id1, id2"),
+            "Memories from that occasion: id1, id2"
+        );
+    }
+
+    #[test]
+    fn render_context_block_joins_multiple_lines() {
+        let ctx = "Relevant memories:\n- [fact] hello (score 0.9) memory:x\n\nConnected resources/traces:\n- foo (ns) via REFERENCES";
+        let out = render_context_block(ctx);
+        assert!(out.contains("hello"));
+        assert!(out.contains("foo"));
+        assert_eq!(out.lines().count(), ctx.lines().count());
+    }
+
+    #[test]
+    fn remember_success_line_includes_verb_and_id() {
+        let line = remember_success_line("saved", "abc-123");
+        assert!(line.contains("saved memory abc-123"));
+        assert!(line.contains(ux::theme::CHECK));
+    }
+
+    #[test]
+    fn entity_success_line_includes_verb_id_and_link_count() {
+        let line = entity_success_line("created", "xyz-789", 3);
+        assert!(line.contains("created entity xyz-789 (3 links)"));
+        assert!(line.contains(ux::theme::CHECK));
+    }
+}

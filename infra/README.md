@@ -1,7 +1,7 @@
-# Kyma Cloud — Infrastructure
+# Pensieve Cloud — Infrastructure
 
-Terraform (OpenTofu-compatible) for Kyma Cloud. See
-`docs/superpowers/specs/2026-05-25-kyma-cloud-platform-design.md` for the
+Terraform (OpenTofu-compatible) for Pensieve Cloud. See
+`docs/superpowers/specs/2026-05-25-pensieve-cloud-platform-design.md` for the
 architecture and `docs/cloud/decisions.md` for locked decisions.
 
 ## Layout
@@ -13,10 +13,10 @@ architecture and `docs/cloud/decisions.md` for locked decisions.
 
 ## Conventions
 - **Region:** `us-east-1` for AWS + Supabase + (logical) Railway region. One metro.
-- **Naming:** `kyma-<env>-<purpose>`. Pooled tenants are an S3 *prefix*
-  (`s3://kyma-<env>-extents/<tenant_id>/`), never a new bucket.
+- **Naming:** `pensieve-<env>-<purpose>`. Pooled tenants are an S3 *prefix*
+  (`s3://pensieve-<env>-extents/<tenant_id>/`), never a new bucket.
 - **State keys:** `env/<env>/<component>.tfstate` in the bootstrap state bucket.
-- **Tags:** every AWS resource carries `Project=kyma-cloud`, `Env=<env>`,
+- **Tags:** every AWS resource carries `Project=pensieve-cloud`, `Env=<env>`,
   `ManagedBy=terraform`.
 - **Secrets:** never in state or tfvars. CI uses GitHub OIDC for AWS; Railway/
   Supabase/Stripe tokens come from GH Actions secrets.

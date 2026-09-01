@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **REVISION 2026-05-25:** Original C2 built a Rust `kyma-gateway` that did API-key auth, tenant resolution, and X-Database injection. That was largely **already built in the engine** — branch `feature/cloud-slice-0-engine-tenancy` adds a pluggable `AuthBackend` with a `DbAuthBackend` that reads a shared Postgres `api_tokens` table, resolves token → `tenant_id` → `Role`, and the engine already segments catalog rows and S3 extent paths by `tenant_id` (migration 007 + `TelemetryFormat::with_tenant`). So the engine authenticates and isolates tenants itself. This revision: (1) the **control plane writes `api_tokens`** (the engine reads them); (2) the engine runs with the `cloud-auth` feature; (3) the "gateway" collapses to a thin **edge** doing only what the engine does NOT — public TLS/routing, per-tenant **rate-limit + usage metering**, and **optional scoped-STS** as storage defense-in-depth. Aligns to the pre-existing master spec `docs/superpowers/specs/2026-05-02-kyma-cloud-platform-design.md` (Slice 0 + Slice 2).
+> **REVISION 2026-05-25:** Original C2 built a Rust `pensieve-gateway` that did API-key auth, tenant resolution, and X-Database injection. That was largely **already built in the engine** — branch `feature/cloud-slice-0-engine-tenancy` adds a pluggable `AuthBackend` with a `DbAuthBackend` that reads a shared Postgres `api_tokens` table, resolves token → `tenant_id` → `Role`, and the engine already segments catalog rows and S3 extent paths by `tenant_id` (migration 007 + `TelemetryFormat::with_tenant`). So the engine authenticates and isolates tenants itself. This revision: (1) the **control plane writes `api_tokens`** (the engine reads them); (2) the engine runs with the `cloud-auth` feature; (3) the "gateway" collapses to a thin **edge** doing only what the engine does NOT — public TLS/routing, per-tenant **rate-limit + usage metering**, and **optional scoped-STS** as storage defense-in-depth. Aligns to the pre-existing master spec `docs/superpowers/specs/2026-05-02-pensieve-cloud-platform-design.md` (Slice 0 + Slice 2).
 
 **Goal:** Stand up the cloud control plane (`cloud/api`) that owns workspaces, users, and `api_tokens`, deploy the engine with `cloud-auth` so those tokens authenticate and resolve to tenants natively, and add a thin edge for per-tenant rate-limiting + usage metering (and optional scoped-STS). After C2, a workspace can be created, a token minted, and a request bearing that token reaches the engine, authenticates via `DbAuthBackend`, and is hard-isolated to that workspace's `tenant_id` at catalog + storage layers — provably unable to read another workspace's data.
 
@@ -53,12 +53,12 @@ docs/cloud/
 
 Run:
 ```bash
-git show feature/cloud-slice-0-engine-tenancy:crates/kyma-server/src/auth/db_backend.rs | sed -n '1,40p'
-git show feature/cloud-slice-0-engine-tenancy:crates/kyma-catalog/migrations/007_tenant_id.sql | head -60
+git show feature/cloud-slice-0-engine-tenancy:crates/pensieve-server/src/auth/db_backend.rs | sed -n '1,40p'
+git show feature/cloud-slice-0-engine-tenancy:crates/pensieve-catalog/migrations/007_tenant_id.sql | head -60
 ```
 Record the exact `api_tokens` columns the engine expects: `id, tenant_id (uuid), token_hash (bytea = SHA-256(token)), scopes (csv: admin|write|read), subject, last_used_at, revoked_at, created_at`.
 
-- [ ] **Step 2: Confirm the engine build flags** — engine must run with `--features cloud-auth` and `DbAuthBackend` pointed at the control-plane Postgres. Confirm `kyma-bin` selects the db backend from env (commit `40887172`).
+- [ ] **Step 2: Confirm the engine build flags** — engine must run with `--features cloud-auth` and `DbAuthBackend` pointed at the control-plane Postgres. Confirm `pensieve-bin` selects the db backend from env (commit `40887172`).
 
 - [ ] **Step 3: Write `docs/cloud/c2-engine-contract.md`** — the frozen `api_tokens` schema, the hashing rule (raw SHA-256, ≥128-bit CSPRNG token), the `tenant_id` semantics, and the statement: "control plane writes; engine reads; never diverge this schema."
 
@@ -81,7 +81,7 @@ git commit -m "docs(c2): freeze api_tokens contract shared with engine DbAuthBac
 
 - [ ] **Step 1: Decide the DB topology** — the existing spec shares the control-plane Postgres with the engine catalog Postgres for v1 (so `DbAuthBackend` reads `api_tokens` via a direct connection, no cross-DB hop). Record this in `c2-engine-contract.md`; it simplifies the `DbAuthBackend` wiring. (My original two-Supabase split remains the post-v1 option if it gets hot.)
 
-- [ ] **Step 2: Write `cloud/api/src/db/schema.ts`** (Drizzle) with: `users`, `workspaces` (slug, owner_user_id, plan, kind `shared|dedicated`, tenant_id, kyma_endpoint, mcp_endpoint, stripe_* nullable), `workspace_members`, **`api_tokens` exactly matching the engine contract from Task 0**, `usage_events` (workspace_id, kind, value, occurred_at). Forward-only migrations.
+- [ ] **Step 2: Write `cloud/api/src/db/schema.ts`** (Drizzle) with: `users`, `workspaces` (slug, owner_user_id, plan, kind `shared|dedicated`, tenant_id, pensieve_endpoint, mcp_endpoint, stripe_* nullable), `workspace_members`, **`api_tokens` exactly matching the engine contract from Task 0**, `usage_events` (workspace_id, kind, value, occurred_at). Forward-only migrations.
 
 - [ ] **Step 3: Apply + verify**
 
@@ -112,7 +112,7 @@ git commit -m "feat(cloud/api): control-plane schema; api_tokens matches engine 
 
 - [ ] **Step 2: Run — expect failure.**
 
-- [ ] **Step 3: Implement `tokens.ts`** — `randomBytes(32)` → base64url token with a `kyma_` prefix; `hashToken` = `createHash("sha256").update(token).digest()` returning bytes for the `bytea` column. **Critical:** the hash must be byte-identical to the engine's (raw SHA-256 of the presented bearer string, no salt) or auth silently fails.
+- [ ] **Step 3: Implement `tokens.ts`** — `randomBytes(32)` → base64url token with a `pensieve_` prefix; `hashToken` = `createHash("sha256").update(token).digest()` returning bytes for the `bytea` column. **Critical:** the hash must be byte-identical to the engine's (raw SHA-256 of the presented bearer string, no salt) or auth silently fails.
 
 - [ ] **Step 4: Run — expect pass.**
 
@@ -136,7 +136,7 @@ git commit -m "feat(cloud/api): token mint + SHA-256 hash matching engine DbAuth
 
 - [ ] **Step 2: Run — expect failure.**
 
-- [ ] **Step 3: Implement `provision.ts`** — single transaction: insert workspace (uuid `tenant_id`), `workspace_members` (owner), set `kyma_endpoint` + `mcp_endpoint`. Idempotency via an `idempotency_keys` table. The engine needs no notification — it discovers the tenant lazily when the first token authenticates and the first ingest auto-creates the database under that `tenant_id`.
+- [ ] **Step 3: Implement `provision.ts`** — single transaction: insert workspace (uuid `tenant_id`), `workspace_members` (owner), set `pensieve_endpoint` + `mcp_endpoint`. Idempotency via an `idempotency_keys` table. The engine needs no notification — it discovers the tenant lazily when the first token authenticates and the first ingest auto-creates the database under that `tenant_id`.
 
 - [ ] **Step 4: Run — expect pass.**
 
@@ -189,7 +189,7 @@ git commit -m "feat(cloud/api): workspace + token routes; deploy to railway"
 **Files:**
 - Modify: `infra/envs/dev/main.tf` (engine env: enable cloud-auth, point at control-plane Postgres)
 
-- [ ] **Step 1: Rebuild/redeploy the engine with `--features cloud-auth`** and env selecting `DbAuthBackend` against `CONTROL_PLANE_DB_URL`. Remove the C1 single shared `KYMA_AUTH_TOKENS` env (real per-tenant auth replaces it).
+- [ ] **Step 1: Rebuild/redeploy the engine with `--features cloud-auth`** and env selecting `DbAuthBackend` against `CONTROL_PLANE_DB_URL`. Remove the C1 single shared `PENSIEVE_AUTH_TOKENS` env (real per-tenant auth replaces it).
 
 - [ ] **Step 2: Verify token → tenant end to end**
 
@@ -221,7 +221,7 @@ git commit -m "feat(infra): engine runs cloud-auth (DbAuthBackend) against contr
 
 - [ ] **Step 1: Rate-limit** — per-token/workspace token-bucket keyed on the bearer token prefix; over-limit → 429. In production this is Cloudflare rate-limiting rules per the existing spec; in dev, a thin proxy.
 
-- [ ] **Step 2: Metering** — capture `usage_events` (`ingest_bytes`, `mcp_calls`, `query_*`) from request/response sizes + engine response headers (`X-Kyma-Rows`); async batch-insert into the control-plane `usage_events`. Never block or fail a customer request on a metering write; log drops.
+- [ ] **Step 2: Metering** — capture `usage_events` (`ingest_bytes`, `mcp_calls`, `query_*`) from request/response sizes + engine response headers (`X-Pensieve-Rows`); async batch-insert into the control-plane `usage_events`. Never block or fail a customer request on a metering write; log drops.
 
 - [ ] **Step 3: Deploy edge** in front of the engine; route `/v1/*` and `/mcp/v1`. Verify a flood trips 429 and `usage_events` rows accrue.
 
@@ -268,8 +268,8 @@ git commit -m "feat(cloud/edge): optional per-request scoped-STS storage hardeni
 
 Run:
 ```bash
-cargo test -p kyma-catalog tenant_isolation
-cargo test -p kyma-server auth_backends
+cargo test -p pensieve-catalog tenant_isolation
+cargo test -p pensieve-server auth_backends
 GW_OR_ENGINE_URL=... API=... bash scripts/cloud/c2-isolation-test.sh
 ```
 Expected: engine gate tests pass; end-to-end cross-workspace denial holds.
@@ -331,7 +331,7 @@ git commit -m "test(c2): cross-workspace isolation evidence + report"
 - [ ] **Mark C2 complete in the master design**
 
 ```bash
-git add docs/superpowers/specs/2026-05-25-kyma-cloud-platform-design.md
+git add docs/superpowers/specs/2026-05-25-pensieve-cloud-platform-design.md
 git commit -m "docs(cloud): mark C2 complete (consumes engine DbAuthBackend + tenancy)"
 ```
 
@@ -343,5 +343,5 @@ git commit -m "docs(cloud): mark C2 complete (consumes engine DbAuthBackend + te
 - **`api_tokens` hashing must be byte-identical to the engine.** Raw SHA-256 of the presented token, no salt (the engine's `db_backend.rs` documents why: server-issued, ≥128-bit tokens). A mismatch fails auth silently. Test against a vector copied from the engine source.
 - **Share the Postgres for v1.** The existing spec shares control-plane Postgres with the engine catalog so `DbAuthBackend` reads `api_tokens` with no cross-DB hop. Don't split into two databases until it's measurably hot.
 - **The edge is thin and optional-heavy.** Its only must-haves are rate-limit + metering. Auth, tenant, X-Database, storage isolation are all the engine's. Scoped-STS is opt-in hardening, not a v1 requirement.
-- **Names match the existing spec.** `workspaces` (not "projects"), `api_tokens` (not "api_keys"), `tenant_id` (uuid). Aligning to `2026-05-02-kyma-cloud-platform-design.md` keeps one architecture, not two.
+- **Names match the existing spec.** `workspaces` (not "projects"), `api_tokens` (not "api_keys"), `tenant_id` (uuid). Aligning to `2026-05-02-pensieve-cloud-platform-design.md` keeps one architecture, not two.
 - **Metering is best-effort but auditable.** Never fail a customer request on a `usage_events` write; buffer + batch; log drops (C4 billing integrity depends on it).

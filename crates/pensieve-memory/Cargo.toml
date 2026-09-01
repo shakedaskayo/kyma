@@ -1,0 +1,30 @@
+[package]
+name = "pensieve-memory"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+repository.workspace = true
+description = "pensieve agentic memory: bi-temporal knowledge graph with hybrid (vector + keyword + graph) recall."
+
+[dependencies]
+pensieve-core = { workspace = true }
+pensieve-ingest-core = { workspace = true }
+pensieve-embed = { workspace = true }
+pensieve-queue = { workspace = true }
+pensieve-codeparse = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+arrow-schema = { workspace = true }
+sqlx = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+pensieve-catalog-sqlite = { workspace = true }
+pensieve-format-tlm = { workspace = true }
+pensieve-storage = { workspace = true }

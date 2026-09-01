@@ -8,7 +8,7 @@ Area: `packages/react/src/graph` (web graph explorer)
 
 When a node is selected in the graph explorer, the docked `InspectorPanel`
 (`packages/react/src/graph/InspectorPanel.tsx`) renders every property as a
-single `ky-truncate` line in a 320px strip. Long values (a memory's `content`,
+single `pv-truncate` line in a 320px strip. Long values (a memory's `content`,
 `provenance` JSON, `topic_key`, timestamps) are cut off with no way to read the
 full value, copy it, or render markdown. There is also no way to open the
 underlying source file for nodes that reference one.
@@ -47,12 +47,12 @@ Three asks:
   `{ object_path, size_bytes, offset, returned_bytes, eof, content }` — a paged,
   tenant-scoped, lossy-UTF-8 window (default 64 KiB, server-capped at 4 MiB).
   → **Source-file availability = node has a string `object_path` property.**
-- Components read the client via `useKymaClient()`
+- Components read the client via `usePensieveClient()`
   (`packages/react/src/provider/context.ts`) and fetch with `@tanstack/react-query`.
 - A zero-dependency markdown renderer already exists inside
   `packages/react/src/dashboards/panels/MarkdownPanelViz.tsx` (`renderMarkdown`).
 - Reusable primitives: Radix `Dialog` (`packages/react/src/internal/ui/dialog.tsx`,
-  portal-scoped to `.kyma-root`), `RowDetailDrawer` pattern (wrapped values + per-value
+  portal-scoped to `.pensieve-root`), `RowDetailDrawer` pattern (wrapped values + per-value
   copy/filter), `Button`.
 - Test runner: `vitest` (`packages/react` → `vitest run`).
 
@@ -82,7 +82,7 @@ current feature set — no new markdown features in this change).
   consistent.
 
 ### 3. `packages/react/src/graph/ArtifactSourceViewer.tsx` *(new)*
-Props: `{ path: string }`. Uses `useKymaClient()` + react-query to page through
+Props: `{ path: string }`. Uses `usePensieveClient()` + react-query to page through
 the artifact:
 - Manual `offset` state; "Load more" calls `fetchArtifactByPath(path, { offset })`
   and appends `content`, advancing `offset` by `returned_bytes` until `eof`.
@@ -116,7 +116,7 @@ the Radix `Dialog` primitive, wide (`max-w-3xl`, scrollable). Sections:
 
 `InspectorPanel` (already receives `node`) → local `open` state →
 `NodeDetailModal(node)` → `ArtifactSourceViewer(object_path)` →
-`useKymaClient()` + react-query → `/v1/artifacts/by-path`. No store or server
+`usePensieveClient()` + react-query → `/v1/artifacts/by-path`. No store or server
 changes.
 
 ## Error / edge handling

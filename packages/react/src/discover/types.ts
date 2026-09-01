@@ -1,4 +1,4 @@
-import type { Frame, Scope } from "@kyma-ai/client";
+import type { Frame, Scope } from "@pensieve-ai/client";
 
 export type Pill =
   | { kind: "substring"; value: string }

@@ -1,6 +1,6 @@
-# Contributing to kyma
+# Contributing to pensieve
 
-Thanks for your interest in kyma. The project is pre-alpha — the design is
+Thanks for your interest in pensieve. The project is pre-alpha — the design is
 stable, the surface is not. Contributions are very welcome; please read this
 short guide before opening a PR.
 
@@ -18,7 +18,7 @@ short guide before opening a PR.
 docker-compose up -d
 
 # build + run the engine
-cargo run --release -p kyma-bin
+cargo run --release -p pensieve-bin
 
 # web UI (optional)
 pnpm install
@@ -52,12 +52,12 @@ ci(image): bump base image to debian:12-slim
 test(kql): cover summarize-by + having
 ```
 
-The scope (in parens) is usually the crate name (`kyma-server`, `kyma-catalog`,
+The scope (in parens) is usually the crate name (`pensieve-server`, `pensieve-catalog`,
 ...) or a subsystem (`web`, `docs`, `ci`).
 
 ## Architectural invariants
 
-kyma has five hard invariants (see [`docs/architecture.md`](docs/architecture.md)):
+pensieve has five hard invariants (see [`docs/architecture.md`](docs/architecture.md)):
 
 1. Object storage is the only durable source of truth.
 2. Compute is stateless.
@@ -71,7 +71,7 @@ always another way.
 
 ## Stability and deprecation policy
 
-From `v1.0.0` onward, kyma maintains a written stability contract: [`docs/stability.md`](docs/stability.md). It lists every surface kyma promises not to break across the v1.x series — HTTP REST API, Flight gRPC, KQL dialect, SQL dialect, MCP surface, catalog schema, config keys, extent format, metrics naming.
+From `v1.0.0` onward, pensieve maintains a written stability contract: [`docs/stability.md`](docs/stability.md). It lists every surface pensieve promises not to break across the v1.x series — HTTP REST API, Flight gRPC, KQL dialect, SQL dialect, MCP surface, catalog schema, config keys, extent format, metrics naming.
 
 If your change touches any frozen surface, your PR must either:
 

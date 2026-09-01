@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
-const TOKEN    = process.env.KYMA_E2E_TOKEN ?? "";
-const ENDPOINT = process.env.KYMA_WEB_URL  ?? "http://localhost:8080";
+const TOKEN    = process.env.PENSIEVE_E2E_TOKEN ?? "";
+const ENDPOINT = process.env.PENSIEVE_WEB_URL  ?? "http://localhost:8080";
 
 test("settings → run KQL → see results → share URL → reload restores", async ({ page }) => {
   await page.goto("/");

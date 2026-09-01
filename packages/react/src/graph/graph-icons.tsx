@@ -63,7 +63,7 @@ import {
   SiTerraform,
 } from "@icons-pack/react-simple-icons";
 import { SlackIcon, AmazonS3Icon } from "../internal/vendor-icons";
-import { getLabelColor } from "@kyma-ai/client";
+import { getLabelColor } from "@pensieve-ai/client";
 
 /**
  * Graph icon gallery — a single registry mapping entity kinds/labels and vendor

@@ -19,7 +19,7 @@ const span = (over: Partial<SpanRow>): SpanRow => ({
   kind: "SERVER",
   status_code: "OK",
   status_message: null,
-  service_name: "kyma-server",
+  service_name: "pensieve-server",
   subject: "ws-1",
   tenant: "default",
   attributes_json: "{}",

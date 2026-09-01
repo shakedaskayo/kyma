@@ -19,39 +19,39 @@ import type { ConsumerKind, ConsumerVerb } from "./consumer-types";
 export type ConsumerIcon = ComponentType<any>;
 
 /** Real vendor marks where they exist (Claude, Cursor, Windsurf, the MCP logo);
- *  a brain for Kyma's own agent and a neutral bot for unknown clients. */
+ *  a brain for Pensieve's own agent and a neutral bot for unknown clients. */
 const ICON: Record<ConsumerKind, ConsumerIcon> = {
   claude_code: SiClaude,
   cursor: SiCursor,
   windsurf: SiWindsurf,
-  kyma_agent: Brain,
+  pensieve_agent: Brain,
   mcp: SiModelcontextprotocol,
   unknown: Bot,
 };
 
 /** Per-kind accent colour (hex) — drives the beam/marker hue and the dock
- *  thread. Claude clay, cursor sky, windsurf cyan, kyma amber, mcp violet,
+ *  thread. Claude clay, cursor sky, windsurf cyan, pensieve amber, mcp violet,
  *  unknown slate. */
 const COLOR: Record<ConsumerKind, string> = {
   claude_code: "#d97757",
   cursor: "#60a5fa",
   windsurf: "#22d3ee",
-  kyma_agent: "#fbbf24",
+  pensieve_agent: "#fbbf24",
   mcp: "#a78bfa",
   unknown: "#94a3b8",
 };
 
 /** Map a raw backend source string to a normalized kind. The backend sends the
  *  MCP client name when known (`claude-code`, `cursor`, …) else the transport
- *  source (`local-serve`, `server`, `mcp-stdio`, `kyma`). */
+ *  source (`local-serve`, `server`, `mcp-stdio`, `pensieve`). */
 export function resolveConsumerKind(source: string): ConsumerKind {
   const s = source.toLowerCase();
   if (s.includes("claude")) return "claude_code";
   if (s.includes("cursor")) return "cursor";
   if (s.includes("windsurf")) return "windsurf";
-  // kyma's own agent (interactive ask / dreaming) shows up as the transport.
-  if (s === "kyma" || s.includes("serve") || s === "server" || s.includes("dream"))
-    return "kyma_agent";
+  // pensieve's own agent (interactive ask / dreaming) shows up as the transport.
+  if (s === "pensieve" || s.includes("serve") || s === "server" || s.includes("dream"))
+    return "pensieve_agent";
   if (s.includes("mcp")) return "mcp";
   return "unknown";
 }

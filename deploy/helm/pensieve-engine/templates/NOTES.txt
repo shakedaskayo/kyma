@@ -1,0 +1,22 @@
+pensieve-engine is deploying.
+
+{{- if .Values.ingress.enabled }}
+
+  Engine URL: http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}
+{{- else }}
+
+  No ingress is enabled. Reach the engine by port-forwarding:
+
+    kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "pensieve-engine.fullname" . }} 8080:{{ .Values.service.port }}
+
+  then open http://localhost:8080
+{{- end }}
+
+Check rollout:
+
+  kubectl --namespace {{ .Release.Namespace }} rollout status deploy/{{ include "pensieve-engine.fullname" . }}
+
+Connect the CLI (mint an API token in the web UI under Settings → API tokens,
+or use the admin token you set at deploy time):
+
+  pensieve connect <engine-url> --token <api-token>

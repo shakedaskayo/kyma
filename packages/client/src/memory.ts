@@ -1,7 +1,7 @@
 //! Typed client for `GET /v1/agent/memory/overview` — powers the Agent-tab
 //! Memory ingestion panel (firehose activity, memory store, pipeline runs).
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import { errorFromResponse } from "./errors";
 
 export type Row = Record<string, unknown>;
@@ -33,7 +33,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function fetchMemoryOverview(t: KymaTransport): Promise<MemoryOverview> {
+export async function fetchMemoryOverview(t: PensieveTransport): Promise<MemoryOverview> {
   return handleResponse<MemoryOverview>(await t.request("/v1/agent/memory/overview"));
 }
 
@@ -84,7 +84,7 @@ export interface MemoryQueryRequest {
 }
 
 export async function queryMemory(
-  t: KymaTransport,
+  t: PensieveTransport,
   req: MemoryQueryRequest,
 ): Promise<MemoryQueryResult> {
   return handleResponse<MemoryQueryResult>(
@@ -161,12 +161,12 @@ export interface MemorySettings {
   hitl: HitlPolicy;
 }
 
-export async function getMemorySettings(t: KymaTransport): Promise<MemorySettings> {
+export async function getMemorySettings(t: PensieveTransport): Promise<MemorySettings> {
   return handleResponse<MemorySettings>(await t.request("/v1/agent/memory/settings"));
 }
 
 export async function putMemorySettings(
-  t: KymaTransport,
+  t: PensieveTransport,
   s: MemorySettings,
 ): Promise<void> {
   const res = await t.request("/v1/agent/memory/settings", {
@@ -189,7 +189,7 @@ export interface MemorySourceSummary {
 }
 
 export async function memorySourceSummary(
-  t: KymaTransport,
+  t: PensieveTransport,
 ): Promise<MemorySourceSummary[]> {
   const body = await handleResponse<{ items: MemorySourceSummary[] }>(
     await t.request("/v1/agent/memory/source-summary"),

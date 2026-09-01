@@ -1,7 +1,7 @@
 import ReactECharts from "echarts-for-react";
 import { useMemo } from "react";
 import { pickBucketSize, BUCKET_MS, bucketLabel } from "./time-bucket";
-import { useKymaContext } from "../provider/context";
+import { usePensieveContext } from "../provider/context";
 
 export type HistogramTimelineProps = {
   rows: Record<string, unknown>[];
@@ -10,7 +10,7 @@ export type HistogramTimelineProps = {
 };
 
 export function HistogramTimeline({ rows, timeCol, onBucketClick }: HistogramTimelineProps) {
-  const { isDark } = useKymaContext();
+  const { isDark } = usePensieveContext();
   const { buckets, size } = useMemo(() => {
     const times: number[] = [];
     for (const row of rows) {
@@ -100,7 +100,7 @@ export function HistogramTimeline({ rows, timeCol, onBucketClick }: HistogramTim
   };
 
   return (
-    <div className="ky-bg-card ky-border-b ky-px-2">
+    <div className="pv-bg-card pv-border-b pv-px-2">
       <ReactECharts
         option={option}
         style={{ height: 80 }}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # File-drop ingest E2E test.
 #
-# 1. Start kyma with filedrop watcher enabled + aggressive poll (2s).
+# 1. Start pensieve with filedrop watcher enabled + aggressive poll (2s).
 # 2. Create target table.
 # 3. Drop an NDJSON file into minio at ingest/{db}/{table}/file.ndjson.
 # 4. Wait for the watcher to pick it up and ingest.
@@ -15,25 +15,25 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-export KYMA_CATALOG_URL="postgres://kyma:kyma_dev@localhost:5433/kyma"
-export KYMA_S3_ENDPOINT="http://localhost:9000"
-export KYMA_S3_BUCKET="kyma"
-export KYMA_S3_ACCESS_KEY_ID="kyma_admin"
-export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
-export KYMA_S3_PATH_STYLE="true"
-export KYMA_S3_ALLOW_HTTP="true"
-export KYMA_HTTP_ADDR="127.0.0.1:8080"
-export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
-export KYMA_FILEDROP_ENABLED=1
-export KYMA_FILEDROP_PREFIX=ingest
-export KYMA_FILEDROP_POLL_SECS=2
-export KYMA_COMPACTION_POLL_SECS="3600"
-export KYMA_RETENTION_POLL_SECS="3600"
-export KYMA_PHYSICAL_GC_POLL_SECS="3600"
+export PENSIEVE_CATALOG_URL="postgres://pensieve:pensieve_dev@localhost:5433/pensieve"
+export PENSIEVE_S3_ENDPOINT="http://localhost:9000"
+export PENSIEVE_S3_BUCKET="pensieve"
+export PENSIEVE_S3_ACCESS_KEY_ID="pensieve_admin"
+export PENSIEVE_S3_SECRET_ACCESS_KEY="pensieve_admin_dev"
+export PENSIEVE_S3_PATH_STYLE="true"
+export PENSIEVE_S3_ALLOW_HTTP="true"
+export PENSIEVE_HTTP_ADDR="127.0.0.1:8080"
+export PENSIEVE_SELF_TRACE="off"   # deterministic storage-layout assertions
+export PENSIEVE_FILEDROP_ENABLED=1
+export PENSIEVE_FILEDROP_PREFIX=ingest
+export PENSIEVE_FILEDROP_POLL_SECS=2
+export PENSIEVE_COMPACTION_POLL_SECS="3600"
+export PENSIEVE_RETENTION_POLL_SECS="3600"
+export PENSIEVE_PHYSICAL_GC_POLL_SECS="3600"
 export RUST_LOG="${RUST_LOG:-info,sqlx=warn,hyper=warn}"
 
 HTTP_BASE="http://127.0.0.1:8080"
-LOG_FILE="/tmp/kyma-filedrop.log"
+LOG_FILE="/tmp/pensieve-filedrop.log"
 SERVER_PID=""
 
 if [[ -t 1 ]]; then
@@ -53,15 +53,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if ! docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1; then
+if ! docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null 2>&1; then
     printf "${RED}docker-compose stack not up.${NC}\n"; exit 2
 fi
 
-section "Reset + start kyma (filedrop watcher enabled)"
-docker exec kyma-postgres psql -U kyma -d kyma -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
-docker exec kyma-minio mc rm --recursive --force local/kyma >/dev/null 2>&1 || true
-docker exec kyma-minio mc mb --ignore-existing local/kyma >/dev/null
-./target/debug/kyma >"$LOG_FILE" 2>&1 &
+section "Reset + start pensieve (filedrop watcher enabled)"
+docker exec pensieve-postgres psql -U pensieve -d pensieve -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
+docker exec pensieve-minio mc rm --recursive --force local/pensieve >/dev/null 2>&1 || true
+docker exec pensieve-minio mc mb --ignore-existing local/pensieve >/dev/null
+./target/debug/pensieve >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 for i in 1 2 3 4 5 6 7 8 9 10; do
     if curl -sf "$HTTP_BASE/health" >/dev/null 2>&1; then break; fi; sleep 1
@@ -73,8 +73,8 @@ else
 fi
 
 section "Create target table (events)"
-./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
-./target/debug/kyma-cli create-table --db default --name events \
+./target/debug/pensieve-cli create-database default --if-not-exists >/dev/null
+./target/debug/pensieve-cli create-table --db default --name events \
     --schema 'timestamp:timestamp,level:string,message:string' >/dev/null
 
 section "Drop NDJSON file into ingest/default/events/*.ndjson"
@@ -83,8 +83,8 @@ cat > /tmp/filedrop-batch-a.ndjson <<'EOF'
 {"timestamp":"2026-04-20T11:00:01Z","level":"WARN","message":"second line"}
 {"timestamp":"2026-04-20T11:00:02Z","level":"ERROR","message":"third line"}
 EOF
-docker cp /tmp/filedrop-batch-a.ndjson kyma-minio:/tmp/a.ndjson
-docker exec kyma-minio mc cp /tmp/a.ndjson local/kyma/ingest/default/events/a.ndjson >/dev/null
+docker cp /tmp/filedrop-batch-a.ndjson pensieve-minio:/tmp/a.ndjson
+docker exec pensieve-minio mc cp /tmp/a.ndjson local/pensieve/ingest/default/events/a.ndjson >/dev/null
 
 info "waiting up to 15s for watcher..."
 got=0
@@ -116,7 +116,7 @@ fi
 
 section "Drop IDENTICAL file a second time → expect SHA dedup"
 # Same content, different S3 object name — watcher computes SHA of content.
-docker exec kyma-minio mc cp /tmp/a.ndjson local/kyma/ingest/default/events/a-copy.ndjson >/dev/null
+docker exec pensieve-minio mc cp /tmp/a.ndjson local/pensieve/ingest/default/events/a-copy.ndjson >/dev/null
 
 # Wait a couple of poll cycles.
 sleep 6
@@ -129,8 +129,8 @@ else
 fi
 
 section "Idempotency metric fired"
-if curl -s "$HTTP_BASE/metrics" | grep -q 'kyma_ingest_idempotency_hits_total'; then
-    ok "kyma_ingest_idempotency_hits_total exported"
+if curl -s "$HTTP_BASE/metrics" | grep -q 'pensieve_ingest_idempotency_hits_total'; then
+    ok "pensieve_ingest_idempotency_hits_total exported"
 else
     f "no idempotency-hit metric"
 fi
@@ -140,8 +140,8 @@ cat > /tmp/filedrop-batch-b.ndjson <<'EOF'
 {"timestamp":"2026-04-20T12:00:00Z","level":"INFO","message":"second batch row 1"}
 {"timestamp":"2026-04-20T12:00:01Z","level":"INFO","message":"second batch row 2"}
 EOF
-docker cp /tmp/filedrop-batch-b.ndjson kyma-minio:/tmp/b.ndjson
-docker exec kyma-minio mc cp /tmp/b.ndjson local/kyma/ingest/default/events/b.ndjson >/dev/null
+docker cp /tmp/filedrop-batch-b.ndjson pensieve-minio:/tmp/b.ndjson
+docker exec pensieve-minio mc cp /tmp/b.ndjson local/pensieve/ingest/default/events/b.ndjson >/dev/null
 
 got=0
 for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -158,13 +158,13 @@ else
 fi
 
 section "Filedrop metrics"
-if curl -s "$HTTP_BASE/metrics" | grep -q 'kyma_filedrop_objects_processed_total'; then
-    ok "kyma_filedrop_objects_processed_total exported"
+if curl -s "$HTTP_BASE/metrics" | grep -q 'pensieve_filedrop_objects_processed_total'; then
+    ok "pensieve_filedrop_objects_processed_total exported"
 else
     f "no filedrop-processed metric"
 fi
-if curl -s "$HTTP_BASE/metrics" | grep -q 'kyma_filedrop_rows_total'; then
-    ok "kyma_filedrop_rows_total exported"
+if curl -s "$HTTP_BASE/metrics" | grep -q 'pensieve_filedrop_rows_total'; then
+    ok "pensieve_filedrop_rows_total exported"
 else
     f "no filedrop-rows metric"
 fi

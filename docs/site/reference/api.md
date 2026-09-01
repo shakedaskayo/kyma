@@ -1,20 +1,20 @@
 ---
 title: HTTP API
-description: Every HTTP route the kyma engine serves — method, path, auth role, content-type, request and response shapes. Arrow Flight (gRPC, separate port) included.
+description: Every HTTP route the pensieve engine serves — method, path, auth role, content-type, request and response shapes. Arrow Flight (gRPC, separate port) included.
 ---
 
 # HTTP API
 
-Every HTTP route the engine mounts when `kyma` is running. Auth is
-optional — when `KYMA_AUTH_TOKENS` is empty the role column is
+Every HTTP route the engine mounts when `pensieve` is running. Auth is
+optional — when `PENSIEVE_AUTH_TOKENS` is empty the role column is
 informational and every route accepts any caller. When auth is on,
 the listed minimum role is required, presented as
 `Authorization: Bearer <token>`.
 
-The HTTP server listens on `KYMA_HTTP_ADDR` (default `0.0.0.0:8080`).
+The HTTP server listens on `PENSIEVE_HTTP_ADDR` (default `0.0.0.0:8080`).
 Arrow Flight runs on its own port (default `0.0.0.0:9090`,
-configurable via `KYMA_GRPC_ADDR`); OTLP gRPC, when enabled, runs on
-`KYMA_OTLP_ADDR` (off by default; conventional port `4317`).
+configurable via `PENSIEVE_GRPC_ADDR`); OTLP gRPC, when enabled, runs on
+`PENSIEVE_OTLP_ADDR` (off by default; conventional port `4317`).
 
 Every JSON error response uses the same shape:
 
@@ -52,21 +52,21 @@ Query request headers:
 | --------------------------------- | ----------- | ------------------------------------------------------- |
 | `X-Database`                      | `default`   | Target database.                                        |
 | `Content-Type`                    | `application/sql` | `application/x-kql` switches to KQL parsing.       |
-| `X-Kyma-Max-Wall-Clock-Ms`        | server-side | Per-query wall-clock budget; min 10 ms.                 |
-| `X-Kyma-Max-Memory-Bytes`         | server-side | Memory pool ceiling for the DataFusion run; min 1 MiB.  |
-| `X-Kyma-Max-Object-Store-Bytes`   | server-side | Bytes the scan may read from object store.              |
+| `X-Pensieve-Max-Wall-Clock-Ms`        | server-side | Per-query wall-clock budget; min 10 ms.                 |
+| `X-Pensieve-Max-Memory-Bytes`         | server-side | Memory pool ceiling for the DataFusion run; min 1 MiB.  |
+| `X-Pensieve-Max-Object-Store-Bytes`   | server-side | Bytes the scan may read from object store.              |
 
 Query response headers:
 
 | Header           | Meaning                                              |
 | ---------------- | ---------------------------------------------------- |
 | `Content-Type`   | `application/x-ndjson; charset=utf-8`.               |
-| `X-Kyma-Rows`    | Total row count returned.                            |
+| `X-Pensieve-Rows`    | Total row count returned.                            |
 | `X-Request-ID`   | Echo of the request id.                              |
 
 Status codes: `200` (rows in body), `400` (parse error / empty body),
 `404` (database empty or unknown), `413` (body > 16 MiB),
-`429` (budget exceeded — `X-Kyma-Budget-Limit` header included),
+`429` (budget exceeded — `X-Pensieve-Budget-Limit` header included),
 `500` (execution error).
 
 ## Ingest
@@ -118,11 +118,11 @@ NDJSON), `404` (table not found with `X-Auto-Create: false`),
   "database": "default",
   "include_thinking": false,
   "session_id": "<uuid>",
-  "source": "kyma"
+  "source": "pensieve"
 }
 ```
 
-Pass `session_id` (a uuid returned in a prior turn's `data-session` SSE part) to continue a conversation. `source` is a free-form label stored on the session row (`"claude_code"`, `"kyma"`, etc.).
+Pass `session_id` (a uuid returned in a prior turn's `data-session` SSE part) to continue a conversation. `source` is a free-form label stored on the session row (`"claude_code"`, `"pensieve"`, etc.).
 
 The SSE response carries seven event names: `run_started`,
 `thinking_delta` (only when `include_thinking: true`),
@@ -308,7 +308,7 @@ data source type.
 
 Typed, encrypted secrets referenced by data sources (and other subsystems) via a
 `credential_id` in their config. List/get return a masked **preview**, never
-plaintext. Requires `KYMA_SECRET_KEY`. See [OAuth data sources](/data-sources/oauth).
+plaintext. Requires `PENSIEVE_SECRET_KEY`. See [OAuth data sources](/data-sources/oauth).
 
 | Method | Path                     | Min role | Effect                                                                          |
 | ------ | ------------------------ | -------- | ------------------------------------------------------------------------------- |
@@ -358,7 +358,7 @@ token.
 | POST   | `/v1/jobs/{id}/lease`         | Extend the job lease (10–3 600 s). Call before the lease expires to avoid a reclaim.               |
 
 Claim / lease lifecycle: `POST /v1/jobs/claim` atomically assigns jobs and starts their lease
-(`KYMA_FABRIC_LEASE_SECS`, default 300 s). The worker must call `/v1/jobs/{id}/lease` before
+(`PENSIEVE_FABRIC_LEASE_SECS`, default 300 s). The worker must call `/v1/jobs/{id}/lease` before
 the lease expires to retain ownership; otherwise the job is re-queued. `/progress` accepts any
 JSON snapshot and stores it on the job row for operator visibility. `complete` and `fail` both
 return `204`; `409` means the lease was lost.
@@ -433,7 +433,7 @@ name of a stored graph.
 
 ## MCP over HTTP
 
-The Model Context Protocol surface exposes kyma's query and memory tools as
+The Model Context Protocol surface exposes pensieve's query and memory tools as
 JSON-RPC 2.0 methods so any MCP-capable agent can interact with the engine.
 
 | Method | Path       | Min role | Content-Type       | Effect                                       |
@@ -445,13 +445,13 @@ Auth is the same bearer token as `/v1/*` (`Role::Read`). Scoped tokens
 (per-database) are blocked at the middleware level because MCP tools address
 databases internally.
 
-For a stdio alternative, `kyma mcp` (the CLI subcommand) exposes the same
+For a stdio alternative, `pensieve mcp` (the CLI subcommand) exposes the same
 tools without an HTTP server. See the [MCP reference](/reference/mcp) for
 tool names, input schemas, and capability negotiation.
 
 ## Arrow Flight (gRPC)
 
-Separate port — default `:9090`, configurable via `KYMA_GRPC_ADDR`
+Separate port — default `:9090`, configurable via `PENSIEVE_GRPC_ADDR`
 (set to `off` to disable). Auth on the gRPC surface is not yet
 enforced; treat it as deployment-firewalled.
 
@@ -463,7 +463,7 @@ The Flight `do_get` ticket is a JSON envelope:
 
 `language` is `"sql"` (default) or `"kql"`. The server returns a
 streaming sequence of `FlightData` messages — Arrow IPC framing,
-zero-copy from kyma's columnar buffers to the wire. See
+zero-copy from pensieve's columnar buffers to the wire. See
 [Arrow Flight](/query/arrow-flight) for client examples.
 
 `handshake`, `get_flight_info`, `get_schema`, `do_put`, `do_exchange`,
@@ -477,7 +477,7 @@ gRPC client.
 
 ## OTLP gRPC (logs)
 
-Separate gRPC server on `KYMA_OTLP_ADDR` (default `off`;
+Separate gRPC server on `PENSIEVE_OTLP_ADDR` (default `off`;
 conventional port `4317`). Phase A is logs-only; received batches
-land in `KYMA_OTLP_DATABASE` (default `default`) in a fixed
+land in `PENSIEVE_OTLP_DATABASE` (default `default`) in a fixed
 `otel_logs` table. See [OTLP gRPC](/ingest/otlp-grpc).

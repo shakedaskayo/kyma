@@ -10,17 +10,17 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 # Baseline (the "known good" numbers)
 cat > "$TMPDIR/baseline.json" <<EOF
-{"ingest_rps":1000.0,"query_p50_ms":10.0,"query_p99_ms":50.0,"ingest_total_rows":100000,"ingest_total_seconds":100.0,"captured_at":"2026-01-01T00:00:00Z","hardware_label":"ubuntu-22.04-gha","kyma_git_sha":"abc"}
+{"ingest_rps":1000.0,"query_p50_ms":10.0,"query_p99_ms":50.0,"ingest_total_rows":100000,"ingest_total_seconds":100.0,"captured_at":"2026-01-01T00:00:00Z","hardware_label":"ubuntu-22.04-gha","pensieve_git_sha":"abc"}
 EOF
 
 # Current run within tolerance (ingest 950 / 0.95*1000 = OK; query_p99 55 / 50*1.1 = 55 OK)
 cat > "$TMPDIR/current-ok.json" <<EOF
-{"ingest_rps":950.0,"query_p50_ms":10.5,"query_p99_ms":55.0,"ingest_total_rows":100000,"ingest_total_seconds":105.0,"captured_at":"2026-01-02T00:00:00Z","hardware_label":"ubuntu-22.04-gha","kyma_git_sha":"def"}
+{"ingest_rps":950.0,"query_p50_ms":10.5,"query_p99_ms":55.0,"ingest_total_rows":100000,"ingest_total_seconds":105.0,"captured_at":"2026-01-02T00:00:00Z","hardware_label":"ubuntu-22.04-gha","pensieve_git_sha":"def"}
 EOF
 
 # Current run out of tolerance on ingest_rps (800 < 900)
 cat > "$TMPDIR/current-bad.json" <<EOF
-{"ingest_rps":800.0,"query_p50_ms":10.0,"query_p99_ms":50.0,"ingest_total_rows":100000,"ingest_total_seconds":125.0,"captured_at":"2026-01-02T00:00:00Z","hardware_label":"ubuntu-22.04-gha","kyma_git_sha":"def"}
+{"ingest_rps":800.0,"query_p50_ms":10.0,"query_p99_ms":50.0,"ingest_total_rows":100000,"ingest_total_seconds":125.0,"captured_at":"2026-01-02T00:00:00Z","hardware_label":"ubuntu-22.04-gha","pensieve_git_sha":"def"}
 EOF
 
 # --- Test 1: warn-only mode passes regardless of tolerance ---

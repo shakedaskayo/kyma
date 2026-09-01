@@ -1,9 +1,9 @@
-// App-level KymaClient bound to the live session store. Token rotation and
+// App-level PensieveClient bound to the live session store. Token rotation and
 // dead-session redirects reuse the app's refresh flow via getToken.
-import { createKymaClient, refresh, KymaAuthError, type KymaClient } from "@kyma-ai/client";
+import { createPensieveClient, refresh, PensieveAuthError, type PensieveClient } from "@pensieve-ai/client";
 import { useSession } from "./session";
 
-let cached: { key: string; client: KymaClient } | null = null;
+let cached: { key: string; client: PensieveClient } | null = null;
 let refreshInFlight: Promise<string> | null = null;
 
 /**
@@ -19,14 +19,14 @@ export async function sessionGetToken(opts?: { reason?: string }): Promise<strin
     const s = useSession.getState();
     try {
       // Supabase sessions refresh through supabase-js (which owns the refresh
-      // token); password sessions exchange kyma's refresh token directly.
+      // token); password sessions exchange pensieve's refresh token directly.
       if (s.provider === "supabase") {
         const { refreshSupabaseToken } = await import("./supabase");
         const tok = await refreshSupabaseToken();
-        if (!tok) throw new KymaAuthError(401, "supabase refresh failed");
+        if (!tok) throw new PensieveAuthError(401, "supabase refresh failed");
         return tok;
       }
-      if (!s.endpoint || !s.refreshToken) throw new KymaAuthError(401, "no session");
+      if (!s.endpoint || !s.refreshToken) throw new PensieveAuthError(401, "no session");
       const pair = await refresh({ endpoint: s.endpoint, refreshToken: s.refreshToken });
       useSession.getState().set({
         token: pair.access_token,
@@ -50,14 +50,14 @@ export async function sessionGetToken(opts?: { reason?: string }): Promise<strin
 }
 
 /**
- * Returns the session-level KymaClient, cached by endpoint+database.
+ * Returns the session-level PensieveClient, cached by endpoint+database.
  * Token is always read from the live Zustand store — no stale closures.
  */
-export function sessionClient(): KymaClient {
+export function sessionClient(): PensieveClient {
   const { endpoint, database } = useSession.getState();
   const key = `${endpoint}|${database ?? ""}`;
   if (cached?.key === key) return cached.client;
-  const client = createKymaClient({
+  const client = createPensieveClient({
     endpoint,
     database,
     auth: {

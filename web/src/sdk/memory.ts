@@ -1,4 +1,4 @@
-// Shim: backwards-compatible wrappers around @kyma-ai/client memory functions.
+// Shim: backwards-compatible wrappers around @pensieve-ai/client memory functions.
 
 export type {
   Row,
@@ -14,9 +14,9 @@ export type {
   MemoryOp,
   OpMode,
   MemorySourceSummary,
-} from "@kyma-ai/client";
+} from "@pensieve-ai/client";
 
-import type { MemoryQueryRequest, MemorySettings } from "@kyma-ai/client";
+import type { MemoryQueryRequest, MemorySettings } from "@pensieve-ai/client";
 import { sessionClient } from "./client";
 
 type Args = { endpoint: string; token: string; database?: string };

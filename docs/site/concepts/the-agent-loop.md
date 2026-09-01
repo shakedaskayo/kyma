@@ -5,8 +5,8 @@ description: How `/v1/agent/ask` turns a natural-language question into KQL, run
 
 # The agent loop
 
-`/v1/agent/ask` is kyma's natural-language surface. A user (or another
-agent) sends a question; kyma figures out which table to look at, runs
+`/v1/agent/ask` is pensieve's natural-language surface. A user (or another
+agent) sends a question; pensieve figures out which table to look at, runs
 the query, and streams the answer back as Server-Sent Events.
 
 The shape is intentionally narrow. The agent doesn't replace KQL or SQL
@@ -65,7 +65,7 @@ into which queries were run — useful for debugging a wrong answer.
 Eight built-in tools, plus a schema RAG layer:
 
 - **`list_databases`** returns every database the catalog knows about
-  (kyma-native plus any registered external sources).
+  (pensieve-native plus any registered external sources).
 - **`describe_table`** returns the schema of a specific table —
   columns, types, recent sample rows, present `dynamic` paths.
 - **`run_sql`** executes a SQL query and returns the result rows.
@@ -79,7 +79,7 @@ Eight built-in tools, plus a schema RAG layer:
 - **`find_references_to`** traverses the catalog for tables that
   reference a given entity — e.g., "every table that has a `user_id`
   column."
-- **`graph_traverse`** walks the kyma graph layer. Wraps the KQL
+- **`graph_traverse`** walks the pensieve graph layer. Wraps the KQL
   `graph-traverse` operator for multi-hop entity-relationship queries.
 
 Plus the **memory tools** — `memory_search` (graph-aware hybrid recall),
@@ -126,9 +126,9 @@ curl http://localhost:8080/v1/agent/runs/01HZABCDE...
 
 The agent's LLM is **Ollama**, configured at startup via two env vars:
 
-- `KYMA_AGENT_OLLAMA_HOST` — Ollama daemon URL. Defaults to the host's
+- `PENSIEVE_AGENT_OLLAMA_HOST` — Ollama daemon URL. Defaults to the host's
   local Ollama installation.
-- `KYMA_AGENT_MODEL` — model name. Defaults to `gemma4:latest`.
+- `PENSIEVE_AGENT_MODEL` — model name. Defaults to `gemma4:latest`.
 
 The choice of Ollama is deliberate: the agent runs against your
 infrastructure, with no telemetry leaving the cluster, and you control

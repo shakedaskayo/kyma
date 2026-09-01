@@ -61,8 +61,8 @@ redesign.
 
 ### Live: `/v1/explore/live` (WebSocket)
 
-- `GET /v1/explore/live` upgrades to WS. Registered in kyma-server and mounted
-  in kyma-local, **outside** Bearer-auth middleware (browsers cannot set WS
+- `GET /v1/explore/live` upgrades to WS. Registered in pensieve-server and mounted
+  in pensieve-local, **outside** Bearer-auth middleware (browsers cannot set WS
   headers). See `docs` note on local-mode capabilities: new /v1 surfaces need
   both mounts.
 - **Auth**: first client message `{"type":"auth","token"}` within 5s, validated
@@ -112,7 +112,7 @@ redesign.
 
 - **Backend**: unit tests for cursor/incremental-scan and debounce; WS
   integration test (auth timeout, subscribe → backfill order → `live` marker →
-  incremental rows); kyma-local test asserting `/v1/explore/live` is mounted
+  incremental rows); pensieve-local test asserting `/v1/explore/live` is mounted
   and upgrades (prevents the dashboards-405 class of dual-mount bug).
 - **Frontend**: pure-function tests for time-ordered merge/insert + dedupe,
   summary-line formatter, query-bar text insertion, message-field picker;

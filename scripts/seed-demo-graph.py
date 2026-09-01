@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Seed a rich, diverse kyma knowledge graph for the README screenshots:
+"""Seed a rich, diverse pensieve knowledge graph for the README screenshots:
 many tech-stack variants (k8s, aws, gcp, datadog, github, slack, postgres,
 redis, kafka, …), services/repos/people/tables/concepts, and durable memories,
 wired with realistic relationships."""
 import re, subprocess, sys
 
-KYMA = "/Users/shakedaskayo/projects/agentcylabs/kyma/target/debug/kyma"
+PENSIEVE = "/Users/shakedaskayo/projects/agentcylabs/pensieve/target/debug/pensieve"
 NS = "memory/memory"
 ids = {}
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 def run(args):
-    out = subprocess.run([KYMA] + args, capture_output=True, text=True)
+    out = subprocess.run([PENSIEVE] + args, capture_output=True, text=True)
     m = UUID.search(out.stdout + out.stderr)
     return m.group(0) if m else None
 
@@ -116,7 +116,7 @@ ent("o_pd","oncall", type="pagerduty::service", links=[("o_dd","ESCALATES"),("o_
 print("collaboration…")
 ent("c_slack","#incidents", type="slack::channel", links=[("o_pd","NOTIFIES")])
 ent("c_jira","ORD-412", type="jira::issue", links=[("s_orders","ABOUT")])
-ent("c_linear","KYMA-45", type="linear::issue", links=[("s_search","ABOUT")])
+ent("c_linear","PENSIEVE-45", type="linear::issue", links=[("s_search","ABOUT")])
 ent("c_conf","orders runbook", type="confluence::page", links=[("s_orders","DOCUMENTS"),("m_rollback","DOCUMENTED_BY")])
 ent("c_notion","payments design", type="notion::page", links=[("s_pay","DOCUMENTS")])
 

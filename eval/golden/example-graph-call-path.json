@@ -7,5 +7,5 @@
     { "key": "graph:code/fn:write_path_commit", "grade": 2 },
     { "key": "graph:code/fn:query_handler", "grade": 0 }
   ],
-  "notes": "EXAMPLE fixture — synthetic keys, exists only to test the golden-runner wiring. Replace with a query mined from Ask-Kyma traces + frozen LLM-judge grades."
+  "notes": "EXAMPLE fixture — synthetic keys, exists only to test the golden-runner wiring. Replace with a query mined from Ask-Pensieve traces + frozen LLM-judge grades."
 }

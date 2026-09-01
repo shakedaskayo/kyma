@@ -1,6 +1,6 @@
 import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
-import { KymaExplore } from "@kyma-ai/react/explore";
+import { PensieveExplore } from "@pensieve-ai/react/explore";
 import { TabBar } from "@/features/tabs/TabBar";
 import { useWorkspace } from "@/features/tabs/workspace-store";
 import { useSession } from "@/sdk/session";
@@ -13,7 +13,7 @@ import { decodeQueryState } from "@/lib/url-state";
  *
  * It renders whichever tab is active regardless of its kind: a `query` tab's
  * text lives in `state.query`, a (legacy) `discover` tab's in `state.search`.
- * KymaExplore is mode-agnostic — the input text drives keyword-vs-KQL/SQL.
+ * PensieveExplore is mode-agnostic — the input text drives keyword-vs-KQL/SQL.
  */
 export const Route = createFileRoute("/_app/explore")({
   validateSearch: (s: Record<string, unknown>) => ({ q: typeof s.q === "string" ? s.q : undefined }),
@@ -59,7 +59,7 @@ function ExplorePage() {
       <TabBar />
       <div className="min-h-0 flex-1">
         {active ? (
-          <KymaExplore
+          <PensieveExplore
             key={`${active.id}:${queryScope}`}
             defaultQuery={text}
             timeRange={active.state.timeRange}

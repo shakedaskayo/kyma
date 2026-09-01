@@ -1,16 +1,16 @@
 import { test, expect, type Page } from "@playwright/test";
 
 // Walks every page of the web UI against a FRESH local-mode server
-// (`kyma serve` over an empty store — the exact post-install state).
+// (`pensieve serve` over an empty store — the exact post-install state).
 // Every surface must render: working pages show their content/empty states,
 // control-plane-only pages (data sources, credentials) show the capability
 // gate — never a parse error, never a dead fetch.
 //
 // Run:
-//   HOME=$(mktemp -d) kyma serve --addr 127.0.0.1:9091 &
-//   KYMA_WEB_URL=http://127.0.0.1:9091 pnpm -C web e2e e2e/local-mode.spec.ts
+//   HOME=$(mktemp -d) pensieve serve --addr 127.0.0.1:9091 &
+//   PENSIEVE_WEB_URL=http://127.0.0.1:9091 pnpm -C web e2e e2e/local-mode.spec.ts
 
-const ENDPOINT = process.env.KYMA_WEB_URL ?? "http://127.0.0.1:9091";
+const ENDPOINT = process.env.PENSIEVE_WEB_URL ?? "http://127.0.0.1:9091";
 
 async function signIn(page: Page) {
   await page.goto("/login");
@@ -39,7 +39,7 @@ test("fresh local mode: every page renders, no fetch/parse errors", async ({ pag
 
   // Brand assets ship in the embedded bundle: the sidebar logo must actually
   // render (the server used to answer /icons/* with the SPA's HTML).
-  const logo = page.locator('img[src="/icons/kyma-mark.svg"]').first();
+  const logo = page.locator('img[src="/icons/pensieve-mark.svg"]').first();
   await expect(logo).toBeVisible({ timeout: 10_000 });
   await expect
     .poll(async () => logo.evaluate((el: HTMLImageElement) => el.naturalWidth))

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stand up the Infrastructure-as-Code foundation for Kyma Cloud — a bootstrapped AWS ops account holding remote Terraform state, GitHub OIDC so CI authenticates with no long-lived keys, pinned providers for AWS + Railway + Supabase + Stripe, a skeleton of reusable modules, a `dev` environment that composes them, and a CI pipeline that plans on PR and applies on merge. Closes every open decision from §7 of the master design.
+**Goal:** Stand up the Infrastructure-as-Code foundation for Pensieve Cloud — a bootstrapped AWS ops account holding remote Terraform state, GitHub OIDC so CI authenticates with no long-lived keys, pinned providers for AWS + Railway + Supabase + Stripe, a skeleton of reusable modules, a `dev` environment that composes them, and a CI pipeline that plans on PR and applies on merge. Closes every open decision from §7 of the master design.
 
 **Architecture:** Terraform (OpenTofu-compatible) with an S3 + DynamoDB-lock remote backend living in a dedicated bootstrap AWS account. The bootstrap layer is applied once, by hand, with local state, then migrated to the remote backend it just created (the standard chicken-and-egg bootstrap). Everything after authenticates via GitHub OIDC. Modules are thin and single-purpose; environments compose them. "Tests" for infra are `terraform fmt -check`, `terraform validate`, `tflint`, and a successful `terraform plan` — these are the RED/GREEN gates.
 
@@ -33,9 +33,9 @@ docs/cloud/
 
 **Conventions locked here (used by all later phases):**
 - Region: single AWS region for everything — `us-east-1` (override per §7; confirm Supabase availability in Task 7).
-- Naming: `kyma-<env>-<purpose>` (e.g. `kyma-dev-extents`, `kyma-prod-extents`). Tenants add `<tenant_id>` as an S3 *prefix*, never a new bucket (pooled).
+- Naming: `pensieve-<env>-<purpose>` (e.g. `pensieve-dev-extents`, `pensieve-prod-extents`). Tenants add `<tenant_id>` as an S3 *prefix*, never a new bucket (pooled).
 - State key per env/component: `env/<env>/<component>.tfstate`.
-- Tags on every AWS resource: `Project=kyma-cloud`, `Env=<env>`, `ManagedBy=terraform`.
+- Tags on every AWS resource: `Project=pensieve-cloud`, `Env=<env>`, `ManagedBy=terraform`.
 
 ---
 
@@ -49,10 +49,10 @@ docs/cloud/
 - [ ] **Step 1: Write `infra/README.md`**
 
 ````markdown
-# Kyma Cloud — Infrastructure
+# Pensieve Cloud — Infrastructure
 
-Terraform (OpenTofu-compatible) for Kyma Cloud. See
-`docs/superpowers/specs/2026-05-25-kyma-cloud-platform-design.md` for the
+Terraform (OpenTofu-compatible) for Pensieve Cloud. See
+`docs/superpowers/specs/2026-05-25-pensieve-cloud-platform-design.md` for the
 architecture and `docs/cloud/decisions.md` for locked decisions.
 
 ## Layout
@@ -64,10 +64,10 @@ architecture and `docs/cloud/decisions.md` for locked decisions.
 
 ## Conventions
 - **Region:** `us-east-1` for AWS + Supabase + (logical) Railway region. One metro.
-- **Naming:** `kyma-<env>-<purpose>`. Pooled tenants are an S3 *prefix*
-  (`s3://kyma-<env>-extents/<tenant_id>/`), never a new bucket.
+- **Naming:** `pensieve-<env>-<purpose>`. Pooled tenants are an S3 *prefix*
+  (`s3://pensieve-<env>-extents/<tenant_id>/`), never a new bucket.
 - **State keys:** `env/<env>/<component>.tfstate` in the bootstrap state bucket.
-- **Tags:** every AWS resource carries `Project=kyma-cloud`, `Env=<env>`,
+- **Tags:** every AWS resource carries `Project=pensieve-cloud`, `Env=<env>`,
   `ManagedBy=terraform`.
 - **Secrets:** never in state or tfvars. CI uses GitHub OIDC for AWS; Railway/
   Supabase/Stripe tokens come from GH Actions secrets.
@@ -104,9 +104,9 @@ git commit -m "docs(cloud): add infra conventions readme"
 - [ ] **Step 1: Write `docs/cloud/decisions.md`**
 
 ````markdown
-# Kyma Cloud — Decisions Record
+# Pensieve Cloud — Decisions Record
 
-Locks §7 of `2026-05-25-kyma-cloud-platform-design.md`. One row per decision;
+Locks §7 of `2026-05-25-pensieve-cloud-platform-design.md`. One row per decision;
 change requires a new dated entry, not an edit.
 
 ## 2026-05-25 — initial locks
@@ -118,7 +118,7 @@ change requires a new dated entry, not an edit.
 | 3 | Pooled isolation | Scoped STS session creds + `X-Database` + gateway quotas | Strongest practical isolation without per-tenant processes |
 | 4 | Supabase split | Two projects: A control-plane, B catalog | Independent blast radius / backups / roles |
 | 5 | Control-plane lang | TypeScript (Node) | Native to Supabase/Next.js/Stripe; CRUD not hot-path |
-| 6 | Gateway lang | Rust, reuse `kyma-server` crates | Hot path; keep OSS engine unmodified |
+| 6 | Gateway lang | Rust, reuse `pensieve-server` crates | Hot path; keep OSS engine unmodified |
 | 7 | Region | `us-east-1` for AWS + Supabase + Railway | Kill cross-cloud hot-path latency |
 | 8 | Provisioning split | Pooled = app logic; silo + envs = Terraform | Never terraform-apply per signup |
 | 9 | Billing meters | Ingest bytes/rows · storage GB-mo · query bytes-scanned/Flight-time | Maps to real S3 + compute cost; engine already emits these |
@@ -167,7 +167,7 @@ provider "aws" {
   region = var.aws_region
   default_tags {
     tags = {
-      Project   = "kyma-cloud"
+      Project   = "pensieve-cloud"
       Env       = "bootstrap"
       ManagedBy = "terraform"
     }
@@ -258,22 +258,22 @@ variable "aws_region" {
 variable "state_bucket_name" {
   type        = string
   description = "Globally-unique S3 bucket for Terraform remote state."
-  default     = "kyma-cloud-tfstate"
+  default     = "pensieve-cloud-tfstate"
 }
 
 variable "lock_table_name" {
   type    = string
-  default = "kyma-cloud-tflock"
+  default = "pensieve-cloud-tflock"
 }
 
 variable "github_org" {
   type        = string
-  description = "GitHub org/owner that hosts the kyma repo."
+  description = "GitHub org/owner that hosts the pensieve repo."
 }
 
 variable "github_repo" {
   type    = string
-  default = "kyma"
+  default = "pensieve"
 }
 ```
 
@@ -347,7 +347,7 @@ data "aws_iam_policy_document" "ci_assume" {
 }
 
 resource "aws_iam_role" "ci" {
-  name               = "kyma-cloud-ci"
+  name               = "pensieve-cloud-ci"
   assume_role_policy = data.aws_iam_policy_document.ci_assume.json
 }
 
@@ -440,10 +440,10 @@ Expected: bucket, table, OIDC provider, role created. Record outputs.
 ```hcl
 terraform {
   backend "s3" {
-    bucket         = "kyma-cloud-tfstate"
+    bucket         = "pensieve-cloud-tfstate"
     key            = "bootstrap/bootstrap.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "kyma-cloud-tflock"
+    dynamodb_table = "pensieve-cloud-tflock"
     encrypt        = true
   }
 }
@@ -484,7 +484,7 @@ variable "noncurrent_expiration_days" {
 ```hcl
 resource "aws_s3_bucket" "this" {
   bucket = var.bucket_name
-  tags   = { Project = "kyma-cloud", Env = var.env, ManagedBy = "terraform" }
+  tags   = { Project = "pensieve-cloud", Env = var.env, ManagedBy = "terraform" }
 }
 
 resource "aws_s3_bucket_versioning" "this" {
@@ -573,7 +573,7 @@ data "aws_iam_policy_document" "assume" {
 }
 
 resource "aws_iam_role" "tenant_data" {
-  name               = "kyma-${var.env}-tenant-data"
+  name               = "pensieve-${var.env}-tenant-data"
   assume_role_policy = data.aws_iam_policy_document.assume.json
 }
 
@@ -611,9 +611,9 @@ the session policy pins the prefix:
 ```json
 { "Version": "2012-10-17", "Statement": [
   { "Effect": "Allow", "Action": ["s3:GetObject","s3:PutObject","s3:DeleteObject"],
-    "Resource": "arn:aws:s3:::kyma-prod-extents/${tenant_id}/*" },
+    "Resource": "arn:aws:s3:::pensieve-prod-extents/${tenant_id}/*" },
   { "Effect": "Allow", "Action": "s3:ListBucket",
-    "Resource": "arn:aws:s3:::kyma-prod-extents",
+    "Resource": "arn:aws:s3:::pensieve-prod-extents",
     "Condition": { "StringLike": { "s3:prefix": "${tenant_id}/*" } } } ]}
 ```
 The effective permission is the INTERSECTION of role policy and session policy,
@@ -683,17 +683,17 @@ git commit -m "infra(modules): supabase/stripe/railway service module skeletons"
 ```hcl
 terraform {
   backend "s3" {
-    bucket         = "kyma-cloud-tfstate"
+    bucket         = "pensieve-cloud-tfstate"
     key            = "env/dev/main.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "kyma-cloud-tflock"
+    dynamodb_table = "pensieve-cloud-tflock"
     encrypt        = true
   }
 }
 ```
 
 - [ ] **Step 3: `main.tf`** — instantiate:
-  - `module "extents"` → `s3-extent-bucket` (`bucket_name = "kyma-dev-extents"`)
+  - `module "extents"` → `s3-extent-bucket` (`bucket_name = "pensieve-dev-extents"`)
   - `module "catalog"` → `supabase-project` (Supabase B — engine catalog)
   - `module "control_plane_db"` → `supabase-project` (Supabase A — control plane)
   - `module "tenant_role"` → `iam-scoped-role` (bucket_arn from extents)
@@ -837,11 +837,11 @@ git commit -m "ci(infra): plan on PR, apply on merge via github oidc"
 
 - [ ] **Commit the checklist result** into the master design as a status line:
 
-In `docs/superpowers/specs/2026-05-25-kyma-cloud-platform-design.md`, under the C0 appendix stub, add:
+In `docs/superpowers/specs/2026-05-25-pensieve-cloud-platform-design.md`, under the C0 appendix stub, add:
 `**Status:** ✅ C0 complete — see docs/superpowers/plans/2026-05-25-c0-foundations.md`
 
 ```bash
-git add docs/superpowers/specs/2026-05-25-kyma-cloud-platform-design.md
+git add docs/superpowers/specs/2026-05-25-pensieve-cloud-platform-design.md
 git commit -m "docs(cloud): mark C0 foundations complete"
 ```
 
@@ -852,5 +852,5 @@ git commit -m "docs(cloud): mark C0 foundations complete"
 - **Bootstrap is the only manual apply.** Everything else goes through CI. If you find yourself running `apply` locally for anything but `bootstrap/`, stop.
 - **Never put a secret in `.tf`, `.tfvars`, or state.** Secrets arrive as `TF_VAR_*` / provider env vars in CI only.
 - **Pooled tenants are not in this plan and never will be.** This phase builds the *shared* substrate. Tenant creation is C2 app logic. The only per-tenant TF is the silo module in C6.
-- **Match the engine's env conventions** (`KYMA_S3_BUCKET`, `KYMA_S3_REGION`, `KYMA_CATALOG_URL`, `KYMA_S3_PATH_STYLE`) when C1 wires the engine container — they're already used in `.github/workflows/gauntlet-pr.yml`.
+- **Match the engine's env conventions** (`PENSIEVE_S3_BUCKET`, `PENSIEVE_S3_REGION`, `PENSIEVE_CATALOG_URL`, `PENSIEVE_S3_PATH_STYLE`) when C1 wires the engine container — they're already used in `.github/workflows/gauntlet-pr.yml`.
 - **Keep modules dumb.** No environment-specific values inside `modules/`. If a module needs to know it's "dev", that's a variable.

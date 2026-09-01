@@ -68,7 +68,7 @@ Response (NDJSON, one row per line):
 {"service_name":"auth","n":1}
 ```
 
-KQL is parsed by `kyma-kql` (a chumsky-based parser), lowered to SQL, and
+KQL is parsed by `pensieve-kql` (a chumsky-based parser), lowered to SQL, and
 executed by DataFusion. Pipe-stage operators like `where`, `summarize`,
 `extend`, `project`, `order by`, and `take` map onto the same logical plan
 the SQL frontend uses.

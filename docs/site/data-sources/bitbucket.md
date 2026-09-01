@@ -13,14 +13,14 @@ Ingests Bitbucket Cloud metadata into `bitbucket_nodes` and
 ```bash
 # App-password auth (most common):
 export BITBUCKET_TOKEN=<app-password>
-kyma create-database bitbucket
-kyma datasource add bitbucket atlassian/python-bitbucket \
+pensieve create-database bitbucket
+pensieve datasource add bitbucket atlassian/python-bitbucket \
   --username me@example.com \
   --app-password "$BITBUCKET_TOKEN" \
   --start
 
 # Or with a PAT (Bitbucket Server / Data Center):
-kyma datasource add bitbucket my-ws/my-repo --token bbtok-... --start
+pensieve datasource add bitbucket my-ws/my-repo --token bbtok-... --start
 ```
 
 ## Auth

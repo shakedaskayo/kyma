@@ -6,7 +6,7 @@
 // the server caps the window and reports `eof` when the tail is reached.
 
 import { errorFromResponse } from "./errors";
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 
 export interface ArtifactWindow {
   /** Echoed object-store key. */
@@ -29,7 +29,7 @@ export interface ArtifactWindow {
  * default window (64 KiB); the server clamps oversized requests.
  */
 export async function fetchArtifactByPath(
-  t: KymaTransport,
+  t: PensieveTransport,
   path: string,
   opts?: { offset?: number; limit?: number },
 ): Promise<ArtifactWindow> {

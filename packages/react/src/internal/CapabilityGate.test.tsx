@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
-import { KymaProvider } from "../provider/KymaProvider";
+import { PensieveProvider } from "../provider/PensieveProvider";
 import { CapabilityGate } from "./CapabilityGate";
 
 afterEach(() => {
@@ -20,11 +20,11 @@ function CapWrapper({
   fallback?: React.ReactNode;
 }) {
   return (
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
       <CapabilityGate capability={capability} fallback={fallback}>
         <div data-testid="content">content</div>
       </CapabilityGate>
-    </KymaProvider>
+    </PensieveProvider>
   );
 }
 
@@ -49,11 +49,11 @@ describe("CapabilityGate", () => {
       }),
     );
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
         <CapabilityGate capability="data_sources">
           <div data-testid="content">content</div>
         </CapabilityGate>
-      </KymaProvider>,
+      </PensieveProvider>,
     );
     // While loading (or on success), children are rendered (fail-open)
     expect(screen.getByTestId("content")).toBeTruthy();
@@ -64,11 +64,11 @@ describe("CapabilityGate", () => {
     // Never resolves — simulates slow/hung capabilities fetch
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "t" }} queryClient={qc}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "t" }} queryClient={qc}>
         <CapabilityGate capability="data_sources">
           <div data-testid="content">content</div>
         </CapabilityGate>
-      </KymaProvider>,
+      </PensieveProvider>,
     );
     // Should render children even while loading — fail-open for availability
     expect(screen.getByTestId("content")).toBeTruthy();

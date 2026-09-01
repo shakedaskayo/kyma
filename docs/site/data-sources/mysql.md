@@ -76,18 +76,18 @@ Two-phase pipeline per source-table, mirroring the Postgres flow:
 1. **Initial snapshot.** `START TRANSACTION WITH CONSISTENT SNAPSHOT`,
    capture `gtid_executed`, stream rows, advance
    `data_source_cdc_state.phase` to `streaming` with the captured GTID set
-   as the cursor — atomically with the kyma extent CAS.
+   as the cursor — atomically with the pensieve extent CAS.
 2. **Streaming.** `COM_BINLOG_DUMP_GTID` with the executed-GTID set as
-   the resume point. Row events become rows tagged with `_kyma_op`;
+   the resume point. Row events become rows tagged with `_pensieve_op`;
    deletes are tombstones.
 
 Cursor checkpoints are GTID sets, stored as opaque JSON in
 `data_source_cdc_state.checkpoint`. Reopen-from-checkpoint is the only
-recovery path; the source replays, kyma's idempotency layer dedupes.
+recovery path; the source replays, pensieve's idempotency layer dedupes.
 
 ## Type mapping
 
-| MySQL type                                                  | kyma type                                  | Notes                                                                 |
+| MySQL type                                                  | pensieve type                                  | Notes                                                                 |
 | ----------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------- |
 | `tinyint`, `smallint`, `mediumint`, `int`                   | `int`                                      | `tinyint(1)` → `bool`                                                 |
 | `bigint`, `bigint unsigned`                                 | `long`                                     | `bigint unsigned` > i64 max → `string` with warning                   |
@@ -102,14 +102,14 @@ recovery path; the source replays, kyma's idempotency layer dedupes.
 
 ## System columns on synced tables
 
-Every synced row has four extra columns kyma adds automatically:
+Every synced row has four extra columns pensieve adds automatically:
 
 | Column           | Type        | Meaning                                                                 |
 | ---------------- | ----------- | ----------------------------------------------------------------------- |
-| `_kyma_pk`       | `string`    | Source PK; for composite PKs, `<col1>:<col2>:...` in `information_schema` order. |
-| `_kyma_op`       | `string`    | `'insert' \| 'update' \| 'delete'`.                                     |
-| `_kyma_lsn`      | `string`    | GTID at commit time.                                                    |
-| `_kyma_event_at` | `timestamp` | Wall-clock the source emitted the event.                                |
+| `_pensieve_pk`       | `string`    | Source PK; for composite PKs, `<col1>:<col2>:...` in `information_schema` order. |
+| `_pensieve_op`       | `string`    | `'insert' \| 'update' \| 'delete'`.                                     |
+| `_pensieve_lsn`      | `string`    | GTID at commit time.                                                    |
+| `_pensieve_event_at` | `timestamp` | Wall-clock the source emitted the event.                                |
 
 A source table with no primary key is rejected at data source start with
 `disabled_reason="table has no primary key — cannot CDC sync"`. Use

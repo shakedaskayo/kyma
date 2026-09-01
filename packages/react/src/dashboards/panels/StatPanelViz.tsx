@@ -1,12 +1,12 @@
 /**
  * StatPanelViz — renders a stat (single-value KPI) dashboard panel.
- * Adapted from web's StatPanelViz with ky- CSS class prefix.
+ * Adapted from web's StatPanelViz with pv- CSS class prefix.
  */
 
 import { useEffect } from "react";
 import { usePanelQuery } from "../usePanelQuery";
 import type { TimeRange } from "../../query/time-range/time-range-types";
-import type { DashboardPanel } from "@kyma-ai/client";
+import type { DashboardPanel } from "@pensieve-ai/client";
 
 interface Props {
   panel: DashboardPanel;
@@ -55,7 +55,7 @@ export function StatPanelViz({ panel, timeRange }: Props) {
 
   if (!panel.query) {
     return (
-      <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-text-xs ky-text-muted-foreground">
+      <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-text-xs pv-text-muted-foreground">
         No query configured.
       </div>
     );
@@ -63,7 +63,7 @@ export function StatPanelViz({ panel, timeRange }: Props) {
 
   if (result.kind === "idle" || result.kind === "loading") {
     return (
-      <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-text-xs ky-text-muted-foreground ky-animate-pulse">
+      <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-text-xs pv-text-muted-foreground pv-animate-pulse">
         Loading…
       </div>
     );
@@ -71,8 +71,8 @@ export function StatPanelViz({ panel, timeRange }: Props) {
 
   if (result.kind === "error") {
     return (
-      <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-p-2">
-        <span className="ky-text-xs ky-text-destructive">{result.message}</span>
+      <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-p-2">
+        <span className="pv-text-xs pv-text-destructive">{result.message}</span>
       </div>
     );
   }
@@ -80,9 +80,9 @@ export function StatPanelViz({ panel, timeRange }: Props) {
   const firstRow = result.rows[0];
   if (!firstRow) {
     return (
-      <div className="ky-flex ky-h-full ky-flex-col ky-items-center ky-justify-center">
-        <div className="ky-text-5xl ky-font-bold ky-tabular-nums">—</div>
-        {label && <div className="ky-mt-1 ky-text-xs ky-text-muted-foreground">{label}</div>}
+      <div className="pv-flex pv-h-full pv-flex-col pv-items-center pv-justify-center">
+        <div className="pv-text-5xl pv-font-bold pv-tabular-nums">—</div>
+        {label && <div className="pv-mt-1 pv-text-xs pv-text-muted-foreground">{label}</div>}
       </div>
     );
   }
@@ -104,10 +104,10 @@ export function StatPanelViz({ panel, timeRange }: Props) {
   const displayValue = rawValue !== undefined ? formatValue(rawValue, format) : "—";
 
   return (
-    <div className="ky-flex ky-h-full ky-flex-col ky-items-center ky-justify-center ky-gap-1">
-      <div className="ky-text-5xl ky-font-bold ky-tabular-nums ky-text-foreground">{displayValue}</div>
+    <div className="pv-flex pv-h-full pv-flex-col pv-items-center pv-justify-center pv-gap-1">
+      <div className="pv-text-5xl pv-font-bold pv-tabular-nums pv-text-foreground">{displayValue}</div>
       {label && (
-        <div className="ky-text-xs ky-text-muted-foreground">{label}</div>
+        <div className="pv-text-xs pv-text-muted-foreground">{label}</div>
       )}
     </div>
   );

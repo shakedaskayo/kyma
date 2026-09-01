@@ -14,10 +14,10 @@ No JSON encode, no JSON decode, no row-by-row materialization.
 ## Endpoint
 
 ```
-KYMA_GRPC_ADDR  default: 0.0.0.0:9090
+PENSIEVE_GRPC_ADDR  default: 0.0.0.0:9090
 ```
 
-Set `KYMA_GRPC_ADDR=off` to disable the gRPC listener entirely (useful
+Set `PENSIEVE_GRPC_ADDR=off` to disable the gRPC listener entirely (useful
 on deployments where only HTTP is exposed). The HTTP query surface keeps
 working either way.
 
@@ -26,7 +26,7 @@ brings this up automatically alongside HTTP `8080`.
 
 ## Protocol
 
-kyma implements the standard Arrow Flight RPC service. Clients use any
+pensieve implements the standard Arrow Flight RPC service. Clients use any
 Arrow Flight client — `pyarrow.flight`, the Rust `arrow-flight` crate,
 the Java `flight-core` package, browser clients via gRPC-web.
 
@@ -47,7 +47,7 @@ with a JSON ticket.
 
 ## The ticket
 
-A Flight ticket is opaque bytes. kyma defines a tiny JSON envelope:
+A Flight ticket is opaque bytes. pensieve defines a tiny JSON envelope:
 
 ```json
 {
@@ -65,8 +65,8 @@ A Flight ticket is opaque bytes. kyma defines a tiny JSON envelope:
 ## Auth
 
 Bearer tokens travel in gRPC metadata under the `authorization` key,
-exactly the same `KYMA_AUTH_TOKENS` value as the HTTP path. With auth
-disabled (`KYMA_AUTH_TOKENS` empty), the Flight surface is open — the
+exactly the same `PENSIEVE_AUTH_TOKENS` value as the HTTP path. With auth
+disabled (`PENSIEVE_AUTH_TOKENS` empty), the Flight surface is open — the
 same bypass as HTTP.
 
 ```python
@@ -134,8 +134,8 @@ gRPC plaintext is fine on a trusted network. In production, terminate
 TLS at the right layer:
 
 - **Cloud Run / App Runner / Fargate** — the platform's load balancer
-  handles TLS; kyma sees plaintext gRPC inside the network.
-- **Self-managed** — front kyma with a reverse proxy that terminates
+  handles TLS; pensieve sees plaintext gRPC inside the network.
+- **Self-managed** — front pensieve with a reverse proxy that terminates
   TLS and forwards gRPC (Envoy, Caddy with `reverse_proxy ... h2c`,
   Nginx with `grpc_pass`).
 

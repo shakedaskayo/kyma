@@ -12,7 +12,7 @@ output "project_url" {
 # if the pooler data source returns nothing.
 output "database_url" {
   value       = local.database_url
-  description = "Postgres connection string (kyma catalog)."
+  description = "Postgres connection string (pensieve catalog)."
   sensitive   = true
 }
 

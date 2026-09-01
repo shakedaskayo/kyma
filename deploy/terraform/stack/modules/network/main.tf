@@ -83,7 +83,7 @@ resource "aws_route_table_association" "private" {
 resource "aws_security_group" "alb" {
   count       = var.create_alb ? 1 : 0
   name        = "${var.name}-alb"
-  description = "Public HTTP(S) into the kyma ALB"
+  description = "Public HTTP(S) into the pensieve ALB"
   vpc_id      = aws_vpc.this.id
 
   ingress {
@@ -114,7 +114,7 @@ resource "aws_security_group" "alb" {
 resource "aws_security_group" "service" {
   count       = var.create_alb ? 1 : 0
   name        = "${var.name}-engine"
-  description = "kyma engine tasks: ALB in, internet out (S3/Supabase/GHCR)"
+  description = "pensieve engine tasks: ALB in, internet out (S3/Supabase/GHCR)"
   vpc_id      = aws_vpc.this.id
 
   ingress {

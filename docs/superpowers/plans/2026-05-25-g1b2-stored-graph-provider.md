@@ -4,24 +4,24 @@
 
 **Goal:** Serve **registered** property-graphs (G1b.1) through the same `/v1/graph/*` endpoints and `/graph` UI as the synthetic schema-graph — by querying their node/edge tables and shaping rows into the wire types.
 
-**Architecture:** Keep `kyma-graph` decoupled from the engine. Add a narrow `GraphQueryExecutor` trait (run SQL against a database → JSON rows) — mirroring how `SchemaSource` decoupled G1a. `StoredGraphProvider` holds a plain `StoredGraphConfig` (column roles + table names, mapped from the catalog's `GraphRegistration`) + an executor, builds SQL, and shapes rows. `kyma-server` implements the executor over the existing `SessionContext`/`KymaTable` query path (the `execute_sql` pattern in `agent/tools.rs:341`) and routes `/v1/graph/{name}` to schema-vs-stored by catalog lookup keyed on the `X-Database` header.
+**Architecture:** Keep `pensieve-graph` decoupled from the engine. Add a narrow `GraphQueryExecutor` trait (run SQL against a database → JSON rows) — mirroring how `SchemaSource` decoupled G1a. `StoredGraphProvider` holds a plain `StoredGraphConfig` (column roles + table names, mapped from the catalog's `GraphRegistration`) + an executor, builds SQL, and shapes rows. `pensieve-server` implements the executor over the existing `SessionContext`/`PensieveTable` query path (the `execute_sql` pattern in `agent/tools.rs:341`) and routes `/v1/graph/{name}` to schema-vs-stored by catalog lookup keyed on the `X-Database` header.
 
 **Tech Stack:** Rust, `async-trait`, `serde_json`, DataFusion (server-side only).
 
-**Reference:** `crates/kyma-graph/src/{provider,schema_graph,types}.rs` (existing patterns), `crates/kyma-server/src/graph_handler.rs` (handlers/router), `crates/kyma-server/src/agent/tools.rs:341` `execute_sql` (SessionContext build + Arrow→JSON), `kyma_core::catalog::GraphRegistration` (G1b.1).
+**Reference:** `crates/pensieve-graph/src/{provider,schema_graph,types}.rs` (existing patterns), `crates/pensieve-server/src/graph_handler.rs` (handlers/router), `crates/pensieve-server/src/agent/tools.rs:341` `execute_sql` (SessionContext build + Arrow→JSON), `pensieve_core::catalog::GraphRegistration` (G1b.1).
 
 **Working dir:** worktree `…/.claude/worktrees/feature+graph-layer`. Docker for tests.
 
 ---
 
-## Task 1: `GraphQueryExecutor` trait + `StoredGraphConfig` (kyma-graph)
+## Task 1: `GraphQueryExecutor` trait + `StoredGraphConfig` (pensieve-graph)
 
-**Files:** create `crates/kyma-graph/src/executor.rs`; modify `crates/kyma-graph/src/lib.rs`.
+**Files:** create `crates/pensieve-graph/src/executor.rs`; modify `crates/pensieve-graph/src/lib.rs`.
 
-- [ ] **Step 1: `crates/kyma-graph/src/executor.rs`:**
+- [ ] **Step 1: `crates/pensieve-graph/src/executor.rs`:**
 ```rust
 //! The seam that lets the stored-graph provider run SQL over node/edge tables
-//! without `kyma-graph` depending on the engine. `kyma-server` implements this
+//! without `pensieve-graph` depending on the engine. `pensieve-server` implements this
 //! over its DataFusion query path.
 
 use async_trait::async_trait;
@@ -51,11 +51,11 @@ pub struct StoredGraphConfig {
 }
 ```
 
-- [ ] **Step 2:** in `lib.rs` add `pub mod executor;` and `pub use executor::{GraphQueryExecutor, JsonRow, StoredGraphConfig};`. Also add `pub use stored_graph::StoredGraphProvider;` (the module created in Task 2 — add it now; the build will be green after Task 2). To keep this task building on its own, create a stub `crates/kyma-graph/src/stored_graph.rs` with just `//! Stored-graph provider (Task 2).` and DON'T add the `pub use stored_graph::StoredGraphProvider;` line yet (add it in Task 2). Add `pub mod stored_graph;`.
+- [ ] **Step 2:** in `lib.rs` add `pub mod executor;` and `pub use executor::{GraphQueryExecutor, JsonRow, StoredGraphConfig};`. Also add `pub use stored_graph::StoredGraphProvider;` (the module created in Task 2 — add it now; the build will be green after Task 2). To keep this task building on its own, create a stub `crates/pensieve-graph/src/stored_graph.rs` with just `//! Stored-graph provider (Task 2).` and DON'T add the `pub use stored_graph::StoredGraphProvider;` line yet (add it in Task 2). Add `pub mod stored_graph;`.
 
-- [ ] **Step 3:** `cargo build -p kyma-graph` clean. Commit:
+- [ ] **Step 3:** `cargo build -p pensieve-graph` clean. Commit:
 ```bash
-git add crates/kyma-graph/src/executor.rs crates/kyma-graph/src/lib.rs crates/kyma-graph/src/stored_graph.rs
+git add crates/pensieve-graph/src/executor.rs crates/pensieve-graph/src/lib.rs crates/pensieve-graph/src/stored_graph.rs
 git commit -m "feat(graph): GraphQueryExecutor seam + StoredGraphConfig"
 ```
 
@@ -63,7 +63,7 @@ git commit -m "feat(graph): GraphQueryExecutor seam + StoredGraphConfig"
 
 ## Task 2: SQL builders + row shaping (pure, unit-tested)
 
-**Files:** `crates/kyma-graph/src/stored_graph.rs`.
+**Files:** `crates/pensieve-graph/src/stored_graph.rs`.
 
 These are pure functions so they're testable without an executor. **Identifier quoting:** wrap table/column names in double quotes. **Literal escaping:** single-quote values via `'` → `''` (helper `lit`). Node ids etc. come from trusted catalog data but escape anyway.
 
@@ -130,7 +130,7 @@ mod sql_tests {
 }
 ```
 
-- [ ] **Step 2:** run `cargo test -p kyma-graph stored_graph::sql_tests` → FAIL.
+- [ ] **Step 2:** run `cargo test -p pensieve-graph stored_graph::sql_tests` → FAIL.
 
 - [ ] **Step 3: implement** (prepend above the test module). Replace the stub file's contents:
 ```rust
@@ -416,33 +416,33 @@ mod provider_tests {
 }
 ```
 
-- [ ] **Step 5:** in `lib.rs` add the re-export `pub use stored_graph::StoredGraphProvider;`. Run `cargo test -p kyma-graph` → all pass; `cargo build -p kyma-graph` + clippy clean.
+- [ ] **Step 5:** in `lib.rs` add the re-export `pub use stored_graph::StoredGraphProvider;`. Run `cargo test -p pensieve-graph` → all pass; `cargo build -p pensieve-graph` + clippy clean.
 
 - [ ] **Step 6: Commit:**
 ```bash
-git add crates/kyma-graph/src/stored_graph.rs crates/kyma-graph/src/lib.rs
+git add crates/pensieve-graph/src/stored_graph.rs crates/pensieve-graph/src/lib.rs
 git commit -m "feat(graph): StoredGraphProvider (SQL builders + row shaping) over the executor"
 ```
 
 ---
 
-## Task 3: `GraphQueryExecutor` impl + routing in kyma-server
+## Task 3: `GraphQueryExecutor` impl + routing in pensieve-server
 
-**Files:** `crates/kyma-server/src/graph_handler.rs`.
+**Files:** `crates/pensieve-server/src/graph_handler.rs`.
 
-- [ ] **Step 1: the executor** — add a `QueryEngineExecutor` that mirrors `agent/tools.rs::execute_sql` (READ that fn): build a `SessionContext`, register every `KymaTable` in `database`, run `ctx.sql(sql)`, collect batches, convert each row to a `serde_json::Map` (use the same `arrow::json` writer pattern `execute_sql` uses, then split the array into rows). Hold `catalog: Arc<dyn Catalog>` + `format: Arc<dyn SegmentFormat>` (both on `QueryState`).
+- [ ] **Step 1: the executor** — add a `QueryEngineExecutor` that mirrors `agent/tools.rs::execute_sql` (READ that fn): build a `SessionContext`, register every `PensieveTable` in `database`, run `ctx.sql(sql)`, collect batches, convert each row to a `serde_json::Map` (use the same `arrow::json` writer pattern `execute_sql` uses, then split the array into rows). Hold `catalog: Arc<dyn Catalog>` + `format: Arc<dyn SegmentFormat>` (both on `QueryState`).
 ```rust
-use kyma_graph::{GraphQueryExecutor, JsonRow};
+use pensieve_graph::{GraphQueryExecutor, JsonRow};
 
 struct QueryEngineExecutor {
-    catalog: std::sync::Arc<dyn kyma_core::catalog::Catalog>,
-    format: std::sync::Arc<dyn kyma_core::segment_format::SegmentFormat>,
+    catalog: std::sync::Arc<dyn pensieve_core::catalog::Catalog>,
+    format: std::sync::Arc<dyn pensieve_core::segment_format::SegmentFormat>,
 }
 
 #[async_trait]
 impl GraphQueryExecutor for QueryEngineExecutor {
     async fn query(&self, database: &str, sql: String) -> anyhow::Result<Vec<JsonRow>> {
-        // mirror execute_sql: SessionContext + register KymaTable per table, run sql,
+        // mirror execute_sql: SessionContext + register PensieveTable per table, run sql,
         // serialize batches to JSON via arrow::json::ArrayWriter, return rows as objects.
         // (Implement per the execute_sql pattern; return anyhow::Error on failure.)
         todo!("implement per agent/tools.rs execute_sql; see plan")
@@ -461,7 +461,7 @@ async fn resolve(state: &QueryState, graph: &str, database: &str) -> Result<Reso
     }
     match state.catalog.get_graph(database, graph).await {
         Ok(Some(reg)) => {
-            let cfg = kyma_graph::StoredGraphConfig {
+            let cfg = pensieve_graph::StoredGraphConfig {
                 database: reg.database, node_table: reg.node_table, edge_table: reg.edge_table,
                 id_col: reg.id_col, label_col: reg.label_col, src_col: reg.src_col, dst_col: reg.dst_col,
                 type_col: reg.type_col, realm_col: reg.realm_col,
@@ -496,23 +496,23 @@ async fn list_graphs(State(state): State<QueryState>, headers: axum::http::Heade
 
 - [ ] **Step 5: integration test** — register a graph over real node/edge tables, ingest a couple rows via the catalog/ingest path, hit the endpoints. Simplest: in the test, create two tables `kg_nodes(id,labels)` / `kg_edges(src,dst,type)` through the catalog + ingest a row each (reuse how other tests ingest, or insert via the staging/ingest API on `QueryState`), `catalog.create_graph("obs","kg", spec)`, then call `resolve` + `overview`. If ingesting rows in-test is heavy, assert the simpler path: registered graph resolves and `stats()`/`overview()` return without error against empty tables (total_nodes==0), and `GET /v1/graph` (with `x-database: obs`) lists the `kg` stored graph. Write whichever is reliable; the must-have assertion is **`GET /v1/graph` lists a registered graph and `/v1/graph/kg/stats` returns 200** (proves routing + executor wiring).
 
-- [ ] **Step 6:** `cargo build -p kyma-server`; `cargo test -p kyma-server --features test-support graph_handler::` all pass; clippy clean. Commit:
+- [ ] **Step 6:** `cargo build -p pensieve-server`; `cargo test -p pensieve-server --features test-support graph_handler::` all pass; clippy clean. Commit:
 ```bash
-git add crates/kyma-server/src/graph_handler.rs
+git add crates/pensieve-server/src/graph_handler.rs
 git commit -m "feat(graph): route /v1/graph/{name} to stored vs schema provider + list registered"
 ```
 
 ---
 
 ## Task 4: verify
-- [ ] `cargo build -p kyma-graph -p kyma-server` clean.
-- [ ] `cargo test -p kyma-graph` (SQL + provider tests) + `cargo test -p kyma-server --features test-support graph_handler::` all pass.
-- [ ] `cargo clippy -p kyma-graph -p kyma-server 2>&1 | tail -20` — no new warnings from changed files.
+- [ ] `cargo build -p pensieve-graph -p pensieve-server` clean.
+- [ ] `cargo test -p pensieve-graph` (SQL + provider tests) + `cargo test -p pensieve-server --features test-support graph_handler::` all pass.
+- [ ] `cargo clippy -p pensieve-graph -p pensieve-server 2>&1 | tail -20` — no new warnings from changed files.
 
 ---
 
 ## Self-review notes
-- **Decoupling preserved:** `kyma-graph` gains no engine dependency; `StoredGraphConfig` mirrors the catalog registration, mapped server-side. `GraphQueryExecutor` is the only new seam.
+- **Decoupling preserved:** `pensieve-graph` gains no engine dependency; `StoredGraphConfig` mirrors the catalog registration, mapped server-side. `GraphQueryExecutor` is the only new seam.
 - **SQL safety:** identifiers double-quoted, literals single-quote-escaped (`lit`). Inputs are catalog/UI-supplied; escaping defends against quote injection regardless.
 - **`X-Database` scoping:** stored-graph resolution + listing are scoped to the request's `x-database` header (the UI already sends it). `schema` ignores it (spans the catalog) — unchanged.
 - **`ResolvedProvider` impls `GraphProvider`** so handlers call one method regardless of provider kind.

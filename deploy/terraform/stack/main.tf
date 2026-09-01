@@ -1,4 +1,4 @@
-# kyma self-hosted production deployment. Pluggable along four axes:
+# pensieve self-hosted production deployment. Pluggable along four axes:
 #   compute_backend  : fargate | eks
 #   database_backend : supabase | rds | external
 #   storage_backend  : supabase | s3 | external
@@ -27,7 +27,7 @@ resource "random_id" "suffix" {
   byte_length = 3
 }
 
-# Encrypts data source credentials at rest inside kyma.
+# Encrypts data source credentials at rest inside pensieve.
 resource "random_password" "secret_key" {
   length  = 48
   special = false
@@ -101,24 +101,24 @@ locals {
   # Non-secret storage env (S3/Supabase/external).
   storage_environment = (
     local.s3_native ? {
-      KYMA_S3_BUCKET     = one(module.storage[*].bucket_name)
-      KYMA_S3_REGION     = var.aws_region
-      KYMA_S3_PATH_STYLE = "false"
-      KYMA_S3_ALLOW_HTTP = "false"
+      PENSIEVE_S3_BUCKET     = one(module.storage[*].bucket_name)
+      PENSIEVE_S3_REGION     = var.aws_region
+      PENSIEVE_S3_PATH_STYLE = "false"
+      PENSIEVE_S3_ALLOW_HTTP = "false"
     } :
     local.ext_storage ? {
-      KYMA_S3_ENDPOINT   = var.storage_endpoint
-      KYMA_S3_BUCKET     = var.storage_bucket
-      KYMA_S3_REGION     = var.storage_region != "" ? var.storage_region : var.aws_region
-      KYMA_S3_PATH_STYLE = tostring(var.storage_path_style)
-      KYMA_S3_ALLOW_HTTP = "false"
+      PENSIEVE_S3_ENDPOINT   = var.storage_endpoint
+      PENSIEVE_S3_BUCKET     = var.storage_bucket
+      PENSIEVE_S3_REGION     = var.storage_region != "" ? var.storage_region : var.aws_region
+      PENSIEVE_S3_PATH_STYLE = tostring(var.storage_path_style)
+      PENSIEVE_S3_ALLOW_HTTP = "false"
     } :
     {
-      KYMA_S3_ENDPOINT   = local.sb_s3_ep
-      KYMA_S3_BUCKET     = var.storage_bucket
-      KYMA_S3_REGION     = var.supabase_region
-      KYMA_S3_PATH_STYLE = "true"
-      KYMA_S3_ALLOW_HTTP = "false"
+      PENSIEVE_S3_ENDPOINT   = local.sb_s3_ep
+      PENSIEVE_S3_BUCKET     = var.storage_bucket
+      PENSIEVE_S3_REGION     = var.supabase_region
+      PENSIEVE_S3_PATH_STYLE = "true"
+      PENSIEVE_S3_ALLOW_HTTP = "false"
     }
   )
 
@@ -126,12 +126,12 @@ locals {
   storage_secrets = (
     local.s3_native ? {} :
     local.ext_storage ? {
-      KYMA_S3_ACCESS_KEY_ID     = var.storage_access_key
-      KYMA_S3_SECRET_ACCESS_KEY = var.storage_secret
+      PENSIEVE_S3_ACCESS_KEY_ID     = var.storage_access_key
+      PENSIEVE_S3_SECRET_ACCESS_KEY = var.storage_secret
     } :
     {
-      KYMA_S3_ACCESS_KEY_ID     = var.supabase_s3_access_key_id
-      KYMA_S3_SECRET_ACCESS_KEY = var.supabase_s3_secret_access_key
+      PENSIEVE_S3_ACCESS_KEY_ID     = var.supabase_s3_access_key_id
+      PENSIEVE_S3_SECRET_ACCESS_KEY = var.supabase_s3_secret_access_key
     }
   )
 }
@@ -143,27 +143,27 @@ locals {
 locals {
   auth_environment = (
     var.auth_backend == "supabase" ? {
-      KYMA_AUTH_BACKEND          = "supabase"
-      KYMA_SUPABASE_URL          = local.sb_project
-      KYMA_SUPABASE_ANON_KEY     = local.sb_anon
-      KYMA_SUPABASE_PROVIDERS    = join(",", var.oauth_providers)
-      KYMA_ADMIN_EMAILS          = join(",", var.admin_emails)
-      KYMA_ALLOWED_EMAIL_DOMAINS = join(",", var.allowed_email_domains)
-      KYMA_OAUTH_REDIRECT_BASE   = local.engine_url
+      PENSIEVE_AUTH_BACKEND          = "supabase"
+      PENSIEVE_SUPABASE_URL          = local.sb_project
+      PENSIEVE_SUPABASE_ANON_KEY     = local.sb_anon
+      PENSIEVE_SUPABASE_PROVIDERS    = join(",", var.oauth_providers)
+      PENSIEVE_ADMIN_EMAILS          = join(",", var.admin_emails)
+      PENSIEVE_ALLOWED_EMAIL_DOMAINS = join(",", var.allowed_email_domains)
+      PENSIEVE_OAUTH_REDIRECT_BASE   = local.engine_url
     } :
     var.auth_backend == "oidc" ? {
-      KYMA_AUTH_BACKEND   = "oidc"
-      KYMA_OIDC_ISSUER    = var.oidc_issuer
-      KYMA_OIDC_CLIENT_ID = var.oidc_client_id
-      KYMA_ADMIN_EMAILS   = join(",", var.admin_emails)
+      PENSIEVE_AUTH_BACKEND   = "oidc"
+      PENSIEVE_OIDC_ISSUER    = var.oidc_issuer
+      PENSIEVE_OIDC_CLIENT_ID = var.oidc_client_id
+      PENSIEVE_ADMIN_EMAILS   = join(",", var.admin_emails)
     } :
     {
-      KYMA_AUTH_BACKEND = "token"
+      PENSIEVE_AUTH_BACKEND = "token"
     }
   )
 
   auth_secrets = var.auth_backend == "token" ? {
-    KYMA_AUTH_TOKENS = "${var.admin_token}:admin"
+    PENSIEVE_AUTH_TOKENS = "${var.admin_token}:admin"
   } : {}
 }
 
@@ -191,10 +191,10 @@ module "secrets" {
 
   name = local.name
   parameters = merge({
-    KYMA_CATALOG_URL    = local.catalog_url
-    KYMA_SECRET_KEY     = random_password.secret_key.result
-    KYMA_ADMIN_USER     = "admin"
-    KYMA_ADMIN_PASSWORD = random_password.admin_password.result
+    PENSIEVE_CATALOG_URL    = local.catalog_url
+    PENSIEVE_SECRET_KEY     = random_password.secret_key.result
+    PENSIEVE_ADMIN_USER     = "admin"
+    PENSIEVE_ADMIN_PASSWORD = random_password.admin_password.result
   }, local.storage_secrets, local.auth_secrets)
 }
 
@@ -219,11 +219,11 @@ module "engine" {
   ssm_param_arns = module.secrets[0].parameter_arns
 
   environment = merge({
-    KYMA_HTTP_ADDR = "0.0.0.0:8080"
+    PENSIEVE_HTTP_ADDR = "0.0.0.0:8080"
     # gRPC (Arrow Flight) + OTLP-gRPC need an NLB; disabled in this stack.
     # OTLP/HTTP ingest works through the ALB at /v1/ingest.
-    KYMA_GRPC_ADDR = "off"
-    KYMA_OTLP_ADDR = "off"
+    PENSIEVE_GRPC_ADDR = "off"
+    PENSIEVE_OTLP_ADDR = "off"
   }, local.auth_environment, local.storage_environment)
 
   secrets = module.secrets[0].parameter_arns

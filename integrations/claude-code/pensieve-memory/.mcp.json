@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "pensieve": {
+      "type": "http",
+      "url": "${PENSIEVE_SERVER_URL}/mcp/v1",
+      "headers": {
+        "Authorization": "Bearer ${PENSIEVE_TOKEN}"
+      }
+    }
+  }
+}

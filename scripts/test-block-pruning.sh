@@ -3,7 +3,7 @@
 #
 # Proves: inside ONE extent containing multiple blocks (batches), a query
 # whose predicate only matches some blocks scans only those blocks, not
-# all of them. The `kyma_scan_blocks_{scanned,pruned}_total` counters
+# all of them. The `pensieve_scan_blocks_{scanned,pruned}_total` counters
 # expose the outcome.
 
 set -euo pipefail
@@ -11,29 +11,29 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-export KYMA_CATALOG_URL="postgres://kyma:kyma_dev@localhost:5433/kyma"
-export KYMA_S3_ENDPOINT="http://localhost:9000"
-export KYMA_S3_BUCKET="kyma"
-export KYMA_S3_ACCESS_KEY_ID="kyma_admin"
-export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
-export KYMA_S3_PATH_STYLE="true"
-export KYMA_S3_ALLOW_HTTP="true"
-export KYMA_HTTP_ADDR="127.0.0.1:8080"
-export KYMA_SELF_TRACE="off"   # deterministic storage-layout assertions
-export KYMA_GRPC_ADDR=off
-export KYMA_OTLP_ADDR=off
+export PENSIEVE_CATALOG_URL="postgres://pensieve:pensieve_dev@localhost:5433/pensieve"
+export PENSIEVE_S3_ENDPOINT="http://localhost:9000"
+export PENSIEVE_S3_BUCKET="pensieve"
+export PENSIEVE_S3_ACCESS_KEY_ID="pensieve_admin"
+export PENSIEVE_S3_SECRET_ACCESS_KEY="pensieve_admin_dev"
+export PENSIEVE_S3_PATH_STYLE="true"
+export PENSIEVE_S3_ALLOW_HTTP="true"
+export PENSIEVE_HTTP_ADDR="127.0.0.1:8080"
+export PENSIEVE_SELF_TRACE="off"   # deterministic storage-layout assertions
+export PENSIEVE_GRPC_ADDR=off
+export PENSIEVE_OTLP_ADDR=off
 # Staging enabled so multiple HTTP ingests coalesce into a single extent
 # with multiple batches = multiple blocks. That's the shape we want to test.
-export KYMA_FLUSH_MAX_ROWS=1000000      # huge row cap — don't flush by row count
-export KYMA_FLUSH_MAX_BYTES=1073741824  # 1 GiB — don't flush by bytes
-export KYMA_FLUSH_MAX_AGE_MS=3000       # flush after 3s (oldest-waiter)
-export KYMA_COMPACTION_POLL_SECS="3600"
-export KYMA_RETENTION_POLL_SECS="3600"
-export KYMA_PHYSICAL_GC_POLL_SECS="3600"
+export PENSIEVE_FLUSH_MAX_ROWS=1000000      # huge row cap — don't flush by row count
+export PENSIEVE_FLUSH_MAX_BYTES=1073741824  # 1 GiB — don't flush by bytes
+export PENSIEVE_FLUSH_MAX_AGE_MS=3000       # flush after 3s (oldest-waiter)
+export PENSIEVE_COMPACTION_POLL_SECS="3600"
+export PENSIEVE_RETENTION_POLL_SECS="3600"
+export PENSIEVE_PHYSICAL_GC_POLL_SECS="3600"
 export RUST_LOG="${RUST_LOG:-warn}"
 
 HTTP_BASE="http://127.0.0.1:8080"
-LOG_FILE="/tmp/kyma-block-pruning.log"
+LOG_FILE="/tmp/pensieve-block-pruning.log"
 SERVER_PID=""
 
 if [[ -t 1 ]]; then
@@ -49,23 +49,23 @@ info()    { printf "  ${DIM}%s${NC}\n" "$*"; }
 cleanup() { [[ -n "${SERVER_PID:-}" ]] && kill -9 "$SERVER_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
-if ! docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1; then
+if ! docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null 2>&1; then
     printf "${RED}docker-compose stack not up.${NC}\n"; exit 2
 fi
 
-section "Reset + start kyma"
-docker exec kyma-postgres psql -U kyma -d kyma -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
-docker exec kyma-minio mc rm --recursive --force local/kyma >/dev/null 2>&1 || true
-docker exec kyma-minio mc mb --ignore-existing local/kyma >/dev/null
-./target/debug/kyma >"$LOG_FILE" 2>&1 &
+section "Reset + start pensieve"
+docker exec pensieve-postgres psql -U pensieve -d pensieve -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
+docker exec pensieve-minio mc rm --recursive --force local/pensieve >/dev/null 2>&1 || true
+docker exec pensieve-minio mc mb --ignore-existing local/pensieve >/dev/null
+./target/debug/pensieve >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 for i in 1 2 3 4 5 6 7 8 9 10; do
     if curl -sf "$HTTP_BASE/health" >/dev/null 2>&1; then break; fi; sleep 1
 done
 
 section "Create table + ingest multiple batches into a single extent"
-./target/debug/kyma-cli create-database default --if-not-exists >/dev/null
-./target/debug/kyma-cli create-table --db default --name events \
+./target/debug/pensieve-cli create-database default --if-not-exists >/dev/null
+./target/debug/pensieve-cli create-table --db default --name events \
     --schema 'timestamp:timestamp,status:int,region:string,message:string' >/dev/null
 
 # Send 5 PARALLEL HTTP POSTs, each with 1 row in a distinct time slot.
@@ -73,7 +73,7 @@ section "Create table + ingest multiple batches into a single extent"
 # before the oldest-waiter timer fires — then one flush = one extent
 # with 5 batches = 5 blocks.
 #
-# Collect PIDs explicitly — bare `wait` blocks on the kyma server too.
+# Collect PIDs explicitly — bare `wait` blocks on the pensieve server too.
 curl_pids=()
 for i in 0 1 2 3 4; do
     ts=$(printf '2026-04-20T10:0%d:00Z' $i)
@@ -90,17 +90,17 @@ for pid in "${curl_pids[@]}"; do wait "$pid" || true; done
 # Extra second to make sure catalog rows are visible.
 sleep 1
 
-live=$(docker exec kyma-postgres psql -U kyma -d kyma -tAc \
+live=$(docker exec pensieve-postgres psql -U pensieve -d pensieve -tAc \
     "SELECT COUNT(*) FROM extents WHERE deleted_at IS NULL AND table_id = (SELECT id FROM tables WHERE name='events')")
 [[ "$live" == "1" ]] && ok "5 batches coalesced into 1 extent" || f "extent count = $live, want 1"
 # Block count isn't stored in the catalog; we infer it by doing an
-# unfiltered scan and reading the `kyma_scan_blocks_scanned_total` counter.
+# unfiltered scan and reading the `pensieve_scan_blocks_scanned_total` counter.
 
 scanned_counter() {
-    curl -s "$HTTP_BASE/metrics" | awk '/^kyma_scan_blocks_scanned_total/{print $2}'
+    curl -s "$HTTP_BASE/metrics" | awk '/^pensieve_scan_blocks_scanned_total/{print $2}'
 }
 pruned_counter() {
-    curl -s "$HTTP_BASE/metrics" | awk '/^kyma_scan_blocks_pruned_total/{print $2}'
+    curl -s "$HTTP_BASE/metrics" | awk '/^pensieve_scan_blocks_pruned_total/{print $2}'
 }
 
 section "Unfiltered query: scans all 5 blocks"

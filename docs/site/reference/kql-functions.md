@@ -1,11 +1,11 @@
 ---
 title: KQL functions
-description: Lookup index for every KQL pipe-operator and every scalar / aggregation function the kyma-kql parser recognises today.
+description: Lookup index for every KQL pipe-operator and every scalar / aggregation function the pensieve-kql parser recognises today.
 ---
 
 # KQL functions
 
-Every operator and every function `kyma-kql` knows about today. Use
+Every operator and every function `pensieve-kql` knows about today. Use
 this page as the lookup index — see [KQL](/query/kql) for the
 prose-and-examples version.
 
@@ -153,6 +153,6 @@ format-v1)"). Functions outside this list error as
 `unsupported function: <name>/<arity>` — the parser is closed,
 not extensible.
 
-The complete operator set lives in `crates/kyma-kql/src/parser.rs`.
+The complete operator set lives in `crates/pensieve-kql/src/parser.rs`.
 This page is current as of the source there; D2 will replace it with
 generated content from the parser itself.

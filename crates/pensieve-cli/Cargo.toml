@@ -1,0 +1,74 @@
+[package]
+name = "pensieve-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "pensieve — the context engine for coding agents. A single binary: stdio/HTTP MCP, a zero-infra local web UI + API (serve), memory recall/save, and control-plane sync. Installs as `pensieve`."
+homepage = "https://shakedaskayo.github.io/pensieve/"
+documentation = "https://shakedaskayo.github.io/pensieve/"
+keywords = ["mcp", "memory", "agent", "context", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+# Build output is `pensieve-cli` so a `cargo build --workspace` does not collide
+# with pensieve-bin's `pensieve` (the server). Distribution channels that present this
+# CLI to end users as `pensieve` (release-cli.yml tarball, install.sh, Dockerfile)
+# rename the artifact themselves.
+[[bin]]
+name = "pensieve-cli"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-core.workspace = true
+pensieve-catalog.workspace = true
+# Local-engine commands (mcp/serve/setup/sync) — one `pensieve` binary, no separate tool.
+pensieve-local.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+arrow-schema.workspace = true
+sqlx.workspace = true
+# clap will be needed for subcommands — adding directly here since only pensieve-cli uses it
+clap = { version = "4", features = ["derive", "env"] }
+# Terminal UX toolkit (crates/pensieve-cli/src/ux/): color/TTY detection, tables, spinners.
+console = "0.15"
+comfy-table = "7"
+indicatif = "0.17"
+reqwest = { workspace = true, features = ["json"] }
+futures-util = "0.3"
+directories = "5"
+# `pensieve update` self-update: unpack release tarballs + verify checksums.
+flate2 = "1"
+tar = "0.4"
+sha2 = "0.10"
+# Hidden interactive password prompts for `pensieve user create|passwd`.
+rpassword = "7"
+# `pensieve scrape`/`watch`: gitignore-aware recursive walk + filesystem events.
+ignore = "0.4"
+notify = "6"
+# `pensieve deploy`: PKCE verifiers + generated passwords.
+rand = "0.8"
+
+# Linux release binaries are cross-compiled (release-cli.yml: `cross build` for
+# aarch64/x86_64-unknown-linux-gnu). openssl-sys is pulled in transitively +
+# Linux-only through native-tls (fastembed → hf-hub, and the agent SDK's
+# reqwest), and the cross sysroot ships no target libssl, so the build can't find
+# OpenSSL. Vendoring builds OpenSSL from source for the target — no system/sysroot
+# lib needed. Linux-gated so macOS (where the system lib is found) is unchanged.
+[target.'cfg(target_os = "linux")'.dependencies]
+openssl = { version = "0.10", features = ["vendored"] }
+
+[dev-dependencies]
+wiremock = "0.6"
+insta = "1"

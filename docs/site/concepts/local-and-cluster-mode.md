@@ -13,21 +13,21 @@ coherent across the spectrum via [sync](/concepts/sync).
 
 | | **Local mode** | **Control plane** | **Cluster** |
 |---|---|---|---|
-| Command | `kyma` (CLI / `mcp` / `serve`) | `kyma server` (Docker) | `kyma server`, N nodes |
+| Command | `pensieve` (CLI / `mcp` / `serve`) | `pensieve server` (Docker) | `pensieve server`, N nodes |
 | Catalog | embedded **SQLite** | **Postgres** | Postgres (shared) |
-| Storage | local files (`~/.kyma`) | object store (S3 / MinIO) | object store (shared) |
+| Storage | local files (`~/.pensieve`) | object store (S3 / MinIO) | object store (shared) |
 | Infra | none | Postgres + object store | + a load balancer |
 | Best for | one developer, offline, instant | a team, always-on | read scale-out, HA |
 | Extras | on-demand ingest + query, local web UI | scheduled data sources, [dreaming](/agent/dreaming), full web app | everything, horizontally |
 
-### Local mode — `kyma`
+### Local mode — `pensieve`
 
 One binary per developer. No Postgres, no Docker, no sudo — the catalog is embedded
-SQLite and data lives under `~/.kyma`. It gives your agent the full toolset over stdio
-MCP (`kyma mcp`), an optional local web UI (`kyma serve`), and on-demand ingest + query.
+SQLite and data lives under `~/.pensieve`. It gives your agent the full toolset over stdio
+MCP (`pensieve mcp`), an optional local web UI (`pensieve serve`), and on-demand ingest + query.
 This is where [Give your agent memory](/quickstart/give-your-agent-memory) starts.
 
-### Control plane — `kyma server`
+### Control plane — `pensieve server`
 
 The team tier: Postgres for the catalog, an object store (S3 or MinIO) for extents.
 On top of local mode it adds the things that need to be always-on and shared — scheduled
@@ -39,7 +39,7 @@ On top of local mode it adds the things that need to be always-on and shared —
 
 The control plane scales out without a rewrite, because of [the five
 invariants](/concepts/the-five-invariants): object storage is the only source of truth and
-compute is stateless. Run N `kyma server` nodes against the same Postgres catalog and the
+compute is stateless. Run N `pensieve server` nodes against the same Postgres catalog and the
 same object store, behind a load balancer. Any node can answer any query; ingest commits
 serialize through catalog CAS. Read throughput scales with node count.
 
@@ -55,6 +55,6 @@ team needs it, add nodes when load demands it. Same binary, same data.
 ## Read next
 
 - Keep machines coherent: [Sync](/concepts/sync).
-- The whole picture: [How kyma works](/concepts/how-kyma-works).
+- The whole picture: [How pensieve works](/concepts/how-pensieve-works).
 - Why stateless compute scales: [The five invariants](/concepts/the-five-invariants).
 - Run the control plane in production: [Deploy](/deploy/).

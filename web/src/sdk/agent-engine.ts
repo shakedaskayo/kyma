@@ -1,4 +1,4 @@
-// Shim: backwards-compatible wrappers around @kyma-ai/client agent-engine functions.
+// Shim: backwards-compatible wrappers around @pensieve-ai/client agent-engine functions.
 
 export type {
   EngineKind,
@@ -6,9 +6,9 @@ export type {
   EngineSummary,
   EngineList,
   TestEngineResult,
-} from "@kyma-ai/client";
+} from "@pensieve-ai/client";
 
-import type { EngineConfig } from "@kyma-ai/client";
+import type { EngineConfig } from "@pensieve-ai/client";
 import { sessionClient } from "./client";
 
 type Args = { endpoint: string; token: string; database?: string };

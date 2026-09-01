@@ -1,4 +1,4 @@
-import type { Frame } from "@kyma-ai/client";
+import type { Frame } from "@pensieve-ai/client";
 
 export const DISCOVER_FRAMES: Frame[] = [
   {

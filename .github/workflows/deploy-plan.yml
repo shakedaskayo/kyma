@@ -12,7 +12,7 @@ on:
         "deploy/**",
         ".tflint.hcl",
         ".github/workflows/deploy-plan.yml",
-        "crates/kyma-cli/src/deploy.rs",
+        "crates/pensieve-cli/src/deploy.rs",
       ]
 permissions:
   contents: read
@@ -59,7 +59,7 @@ jobs:
         working-directory: deploy/pulumi/typescript
 
       - name: generate SDK from the terraform module
-        run: pulumi package add terraform-module ../../terraform/stack kymaengine || true
+        run: pulumi package add terraform-module ../../terraform/stack pensieveengine || true
         working-directory: deploy/pulumi/typescript
         env:
           PULUMI_CONFIG_PASSPHRASE: ""
@@ -68,8 +68,8 @@ jobs:
       # then fail loudly if the SDK itself is missing.
       - name: link generated SDK
         run: |
-          test -d sdks/kymaengine || { echo "SDK generation failed"; exit 1; }
-          npm pkg set 'dependencies.@pulumi/kymaengine=file:sdks/kymaengine'
+          test -d sdks/pensieveengine || { echo "SDK generation failed"; exit 1; }
+          npm pkg set 'dependencies.@pulumi/pensieveengine=file:sdks/pensieveengine'
           npm install --no-fund --no-audit
         working-directory: deploy/pulumi/typescript
 

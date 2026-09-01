@@ -1,6 +1,6 @@
 /**
  * Internal Collapsible primitive — wraps @radix-ui/react-collapsible with
- * Kyma ky- class prefix so it is isolated from the host app's CSS.
+ * Pensieve pv- class prefix so it is isolated from the host app's CSS.
  * NOT exported from the public package surface.
  */
 import * as React from "react";
@@ -17,7 +17,7 @@ const CollapsibleContent = React.forwardRef<
   <CollapsiblePrimitive.Content
     ref={ref}
     className={cn(
-      "ky-overflow-hidden data-[state=closed]:ky-animate-none data-[state=open]:ky-animate-none",
+      "pv-overflow-hidden data-[state=closed]:pv-animate-none data-[state=open]:pv-animate-none",
       className,
     )}
     {...props}

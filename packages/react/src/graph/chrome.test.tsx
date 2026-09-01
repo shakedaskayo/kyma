@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { GraphNode, GraphRelationship, GraphStats } from "@kyma-ai/client";
+import type { GraphNode, GraphRelationship, GraphStats } from "@pensieve-ai/client";
 import { GraphStoreContext, createGraphStore } from "./graph-store";
-import { KymaProvider } from "../provider/KymaProvider";
+import { PensieveProvider } from "../provider/PensieveProvider";
 import { InspectorPanel } from "./InspectorPanel";
 import { BreadcrumbTrail } from "./BreadcrumbTrail";
 import { LegendDock } from "./LegendDock";
@@ -68,13 +68,13 @@ describe("InspectorPanel", () => {
     ]);
 
     withStore(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
         <InspectorPanel
           node={node}
           edges={[edge]}
           nodesByCompositeId={nodesByCompositeId}
         />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
 
     // Node name appears (may appear multiple times - header + properties)
@@ -93,13 +93,13 @@ describe("InspectorPanel", () => {
     ]);
 
     const { container } = withStore(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
         <InspectorPanel
           node={node}
           edges={[edge]}
           nodesByCompositeId={nodesByCompositeId}
         />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
 
     // ArrowRight should be present (outgoing direction)
@@ -111,9 +111,9 @@ describe("InspectorPanel", () => {
   it("closes on X click (selectNode null)", () => {
     const node = makeNode("a", "api");
     const { store } = withStore(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
         <InspectorPanel node={node} edges={[]} nodesByCompositeId={new Map()} />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
     store.getState().selectNode("db/g::a"); // prime state
 
@@ -129,9 +129,9 @@ describe("InspectorPanel", () => {
   it("shows empty state when no edges", () => {
     const node = makeNode("a", "isolated");
     withStore(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
         <InspectorPanel node={node} edges={[]} nodesByCompositeId={new Map()} />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
     expect(screen.getByText("No edges.")).toBeTruthy();
   });

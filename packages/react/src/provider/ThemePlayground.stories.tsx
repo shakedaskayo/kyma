@@ -1,27 +1,27 @@
 /**
- * ThemePlayground — lets designers tweak every KymaTheme token live.
+ * ThemePlayground — lets designers tweak every PensieveTheme token live.
  *
  * Each token is exposed as a Storybook control (colour strings use a text
  * control because Storybook's colour picker does not handle HSL triplets
- * like "213 26% 7%" natively). The story renders swatches of all --kyma-*
- * colour tokens plus a live KymaQueryEditor so the result is visible
+ * like "213 26% 7%" natively). The story renders swatches of all --pensieve-*
+ * colour tokens plus a live PensieveQueryEditor so the result is visible
  * immediately in context.
  *
- * The KymaProvider decorator in preview.tsx is bypassed for this story
+ * The PensieveProvider decorator in preview.tsx is bypassed for this story
  * (we render our own provider so args feed directly into it). We do this
  * by wrapping in a plain div — the outer decorator adds an extra provider
  * but since CSS custom properties cascade, the inner one wins.
  */
 
 import type { Meta, StoryObj } from "@storybook/react";
-import { KymaProvider } from "./KymaProvider";
-import { KymaQueryEditor } from "../query/KymaQueryEditor";
-import { kymaDark } from "../theme/presets";
-import type { KymaTheme } from "../theme/tokens";
+import { PensieveProvider } from "./PensieveProvider";
+import { PensieveQueryEditor } from "../query/PensieveQueryEditor";
+import { pensieveDark } from "../theme/presets";
+import type { PensieveTheme } from "../theme/tokens";
 
 // ── Swatch grid ──────────────────────────────────────────────────────────────
 
-const COLOR_TOKENS: Array<keyof KymaTheme> = [
+const COLOR_TOKENS: Array<keyof PensieveTheme> = [
   "background", "surface", "foreground",
   "border", "borderStrong", "input", "ring",
   "primary", "primaryForeground",
@@ -35,35 +35,35 @@ const COLOR_TOKENS: Array<keyof KymaTheme> = [
 ];
 
 function Swatch({ token, value }: { token: string; value: string }) {
-  const cssVar = `--kyma-${token.replace(/([A-Z])/g, (c) => `-${c.toLowerCase()}`)}`;
+  const cssVar = `--pensieve-${token.replace(/([A-Z])/g, (c) => `-${c.toLowerCase()}`)}`;
   return (
-    <div className="ky-flex ky-flex-col ky-gap-1">
+    <div className="pv-flex pv-flex-col pv-gap-1">
       <div
-        className="ky-h-10 ky-w-full ky-rounded-md ky-border ky-border-border"
+        className="pv-h-10 pv-w-full pv-rounded-md pv-border pv-border-border"
         style={{ background: `hsl(${value})` }}
       />
-      <p className="ky-text-2xs ky-font-mono ky-text-muted-foreground">{cssVar}</p>
-      <p className="ky-text-2xs ky-text-muted-foreground">{value}</p>
+      <p className="pv-text-2xs pv-font-mono pv-text-muted-foreground">{cssVar}</p>
+      <p className="pv-text-2xs pv-text-muted-foreground">{value}</p>
     </div>
   );
 }
 
 // ── Story component ──────────────────────────────────────────────────────────
 
-type ThemePlaygroundArgs = KymaTheme;
+type ThemePlaygroundArgs = PensieveTheme;
 
 function ThemePlaygroundStory(args: ThemePlaygroundArgs) {
-  const theme: Partial<KymaTheme> = { ...args };
+  const theme: Partial<PensieveTheme> = { ...args };
 
   return (
-    <KymaProvider endpoint="https://kyma.demo" auth={{ token: "storybook" }} theme={theme}>
-      <div className="ky-flex ky-h-screen ky-flex-col ky-gap-0 ky-overflow-hidden ky-bg-background ky-text-foreground">
+    <PensieveProvider endpoint="https://pensieve.demo" auth={{ token: "storybook" }} theme={theme}>
+      <div className="pv-flex pv-h-screen pv-flex-col pv-gap-0 pv-overflow-hidden pv-bg-background pv-text-foreground">
         {/* Token swatches */}
-        <div className="ky-shrink-0 ky-overflow-x-auto ky-border-b ky-p-4">
-          <h2 className="ky-mb-3 ky-text-sm ky-font-semibold ky-text-foreground">
-            Color tokens — all --kyma-* variables
+        <div className="pv-shrink-0 pv-overflow-x-auto pv-border-b pv-p-4">
+          <h2 className="pv-mb-3 pv-text-sm pv-font-semibold pv-text-foreground">
+            Color tokens — all --pensieve-* variables
           </h2>
-          <div className="ky-grid ky-grid-cols-6 ky-gap-3" style={{ minWidth: 720 }}>
+          <div className="pv-grid pv-grid-cols-6 pv-gap-3" style={{ minWidth: 720 }}>
             {COLOR_TOKENS.map((token) => (
               <Swatch
                 key={token}
@@ -72,14 +72,14 @@ function ThemePlaygroundStory(args: ThemePlaygroundArgs) {
               />
             ))}
           </div>
-          <div className="ky-mt-4 ky-flex ky-items-center ky-gap-6 ky-text-xs ky-text-muted-foreground">
+          <div className="pv-mt-4 pv-flex pv-items-center pv-gap-6 pv-text-xs pv-text-muted-foreground">
             <span>
-              radius: <code className="ky-font-mono">{args.radius}</code>
+              radius: <code className="pv-font-mono">{args.radius}</code>
             </span>
             <span>
               brand gradient:{" "}
               <span
-                className="ky-inline-block ky-h-4 ky-w-24 ky-rounded"
+                className="pv-inline-block pv-h-4 pv-w-24 pv-rounded"
                 style={{
                   background: `linear-gradient(90deg, hsl(${args.brandFrom}), hsl(${args.brandTo}))`,
                 }}
@@ -89,14 +89,14 @@ function ThemePlaygroundStory(args: ThemePlaygroundArgs) {
         </div>
 
         {/* Live query editor */}
-        <div className="ky-min-h-0 ky-flex-1">
-          <KymaQueryEditor
+        <div className="pv-min-h-0 pv-flex-1">
+          <PensieveQueryEditor
             defaultQuery="events | take 10"
             style={{ height: "100%" }}
           />
         </div>
       </div>
-    </KymaProvider>
+    </PensieveProvider>
   );
 }
 
@@ -137,15 +137,15 @@ const meta: Meta<ThemePlaygroundArgs> = {
     fontSans:             tokenControl("Sans-serif font stack"),
     fontMono:             tokenControl("Monospace font stack"),
   },
-  args: { ...kymaDark },
+  args: { ...pensieveDark },
 };
 
 export default meta;
 type Story = StoryObj<ThemePlaygroundArgs>;
 
-/** Dark preset — default Kyma dark theme with all tokens editable. */
+/** Dark preset — default Pensieve dark theme with all tokens editable. */
 export const Dark: Story = {
-  args: { ...kymaDark },
+  args: { ...pensieveDark },
 };
 
 /** Light preset — all tokens editable. */

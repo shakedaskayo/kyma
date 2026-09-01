@@ -1,57 +1,57 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/kyma-core",
-    "crates/kyma-format-tlm",
-    "crates/kyma-format-parquet",
-    "crates/kyma-format-stub-vec",
-    "crates/kyma-catalog",
-    "crates/kyma-catalog-sqlite",
-    "crates/kyma-storage",
-    "crates/kyma-ingest-core",
-    "crates/kyma-ingest-rest",
-    "crates/kyma-ingest-filedrop",
-    "crates/kyma-ingest-otlp",
-    "crates/kyma-ingest-kafka",
-    "crates/kyma-compaction",
-    "crates/kyma-datasources",
-    "crates/kyma-datasource-core",
-    "crates/kyma-codeparse",
-    "crates/kyma-jobs",
-    "crates/kyma-index-vector",
-    "crates/kyma-index-fts",
-    "crates/kyma-kql",
-    "crates/kyma-graph",
-    "crates/kyma-plan",
-    "crates/kyma-exec",
-    "crates/kyma-federation",
-    "crates/kyma-server",
-    "crates/kyma-cli",
-    "crates/kyma-bin",
-    "crates/kyma-local",
-    "crates/kyma-web-assets",
-    "crates/kyma-embed",
-    "crates/kyma-memory",
-    "crates/kyma-artifact-graph",
-    "crates/kyma-mcp",
-    "crates/kyma-queue",
-    "crates/kyma-redact",
-    "crates/kyma-ccmem",
-    "crates/kyma-brain",
-    "crates/kyma-retrieval-eval",
-    "crates/kyma-graph-testkit",
-    "crates/kyma-graph-bench",
-    "crates/kyma-graph-topo",
+    "crates/pensieve-core",
+    "crates/pensieve-format-tlm",
+    "crates/pensieve-format-parquet",
+    "crates/pensieve-format-stub-vec",
+    "crates/pensieve-catalog",
+    "crates/pensieve-catalog-sqlite",
+    "crates/pensieve-storage",
+    "crates/pensieve-ingest-core",
+    "crates/pensieve-ingest-rest",
+    "crates/pensieve-ingest-filedrop",
+    "crates/pensieve-ingest-otlp",
+    "crates/pensieve-ingest-kafka",
+    "crates/pensieve-compaction",
+    "crates/pensieve-datasources",
+    "crates/pensieve-datasource-core",
+    "crates/pensieve-codeparse",
+    "crates/pensieve-jobs",
+    "crates/pensieve-index-vector",
+    "crates/pensieve-index-fts",
+    "crates/pensieve-kql",
+    "crates/pensieve-graph",
+    "crates/pensieve-plan",
+    "crates/pensieve-exec",
+    "crates/pensieve-federation",
+    "crates/pensieve-server",
+    "crates/pensieve-cli",
+    "crates/pensieve-bin",
+    "crates/pensieve-local",
+    "crates/pensieve-web-assets",
+    "crates/pensieve-embed",
+    "crates/pensieve-memory",
+    "crates/pensieve-artifact-graph",
+    "crates/pensieve-mcp",
+    "crates/pensieve-queue",
+    "crates/pensieve-redact",
+    "crates/pensieve-ccmem",
+    "crates/pensieve-brain",
+    "crates/pensieve-retrieval-eval",
+    "crates/pensieve-graph-testkit",
+    "crates/pensieve-graph-bench",
+    "crates/pensieve-graph-topo",
     "web/src-tauri",
 ]
 
 [workspace.package]
-version = "0.0.22"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.95"
 license = "MIT"
-repository = "https://github.com/shakedaskayo/kyma"
-authors = ["kyma contributors"]
+repository = "https://github.com/shakedaskayo/pensieve"
+authors = ["pensieve contributors"]
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
@@ -159,44 +159,44 @@ fastrand = "2"
 # `version` alongside `path` so the closure is publishable to crates.io: cargo
 # uses the path for workspace builds and the version requirement for published
 # crates. Kept in lockstep with [workspace.package] version.
-kyma-core              = { path = "crates/kyma-core",            version = "0.0.22" }
-kyma-format-tlm        = { path = "crates/kyma-format-tlm",      version = "0.0.22" }
-kyma-format-parquet    = { path = "crates/kyma-format-parquet",  version = "0.0.22" }
-kyma-format-stub-vec   = { path = "crates/kyma-format-stub-vec", version = "0.0.22" }
-kyma-graph-testkit     = { path = "crates/kyma-graph-testkit",   version = "0.0.22" }
-kyma-graph-topo        = { path = "crates/kyma-graph-topo",      version = "0.0.22" }
-kyma-catalog           = { path = "crates/kyma-catalog",         version = "0.0.22" }
-kyma-catalog-sqlite    = { path = "crates/kyma-catalog-sqlite",  version = "0.0.22" }
-kyma-local             = { path = "crates/kyma-local",           version = "0.0.22" }
-kyma-storage           = { path = "crates/kyma-storage",         version = "0.0.22" }
-kyma-ingest-core       = { path = "crates/kyma-ingest-core",     version = "0.0.22" }
-kyma-ingest-rest       = { path = "crates/kyma-ingest-rest",     version = "0.0.22" }
-kyma-ingest-filedrop   = { path = "crates/kyma-ingest-filedrop", version = "0.0.22" }
-kyma-ingest-otlp       = { path = "crates/kyma-ingest-otlp",     version = "0.0.22" }
-kyma-ingest-kafka      = { path = "crates/kyma-ingest-kafka",    version = "0.0.22" }
-kyma-graph             = { path = "crates/kyma-graph",           version = "0.0.22" }
-kyma-kql               = { path = "crates/kyma-kql",             version = "0.0.22" }
-kyma-compaction        = { path = "crates/kyma-compaction",      version = "0.0.22" }
-kyma-datasources        = { path = "crates/kyma-datasources",      version = "0.0.22" }
-kyma-datasource-core    = { path = "crates/kyma-datasource-core",  version = "0.0.22" }
-kyma-codeparse         = { path = "crates/kyma-codeparse",       version = "0.0.22" }
-kyma-jobs              = { path = "crates/kyma-jobs",            version = "0.0.22" }
-kyma-index-vector      = { path = "crates/kyma-index-vector",    version = "0.0.22" }
-kyma-index-fts         = { path = "crates/kyma-index-fts",        version = "0.0.22" }
-kyma-plan              = { path = "crates/kyma-plan",            version = "0.0.22" }
-kyma-exec              = { path = "crates/kyma-exec",            version = "0.0.22" }
-kyma-federation        = { path = "crates/kyma-federation",      version = "0.0.22" }
-kyma-server            = { path = "crates/kyma-server",          version = "0.0.22" }
-kyma-cli               = { path = "crates/kyma-cli",             version = "0.0.22" }
-kyma-web-assets        = { path = "crates/kyma-web-assets",      version = "0.0.22" }
-kyma-embed             = { path = "crates/kyma-embed",           version = "0.0.22" }
-kyma-memory            = { path = "crates/kyma-memory",          version = "0.0.22" }
-kyma-artifact-graph    = { path = "crates/kyma-artifact-graph",  version = "0.0.22" }
-kyma-mcp               = { path = "crates/kyma-mcp",             version = "0.0.22" }
-kyma-queue             = { path = "crates/kyma-queue",           version = "0.0.22" }
-kyma-redact            = { path = "crates/kyma-redact",          version = "0.0.22" }
-kyma-ccmem             = { path = "crates/kyma-ccmem",           version = "0.0.22" }
-kyma-brain             = { path = "crates/kyma-brain",           version = "0.0.22" }
+pensieve-core              = { path = "crates/pensieve-core",            version = "0.1.0" }
+pensieve-format-tlm        = { path = "crates/pensieve-format-tlm",      version = "0.1.0" }
+pensieve-format-parquet    = { path = "crates/pensieve-format-parquet",  version = "0.1.0" }
+pensieve-format-stub-vec   = { path = "crates/pensieve-format-stub-vec", version = "0.1.0" }
+pensieve-graph-testkit     = { path = "crates/pensieve-graph-testkit",   version = "0.1.0" }
+pensieve-graph-topo        = { path = "crates/pensieve-graph-topo",      version = "0.1.0" }
+pensieve-catalog           = { path = "crates/pensieve-catalog",         version = "0.1.0" }
+pensieve-catalog-sqlite    = { path = "crates/pensieve-catalog-sqlite",  version = "0.1.0" }
+pensieve-local             = { path = "crates/pensieve-local",           version = "0.1.0" }
+pensieve-storage           = { path = "crates/pensieve-storage",         version = "0.1.0" }
+pensieve-ingest-core       = { path = "crates/pensieve-ingest-core",     version = "0.1.0" }
+pensieve-ingest-rest       = { path = "crates/pensieve-ingest-rest",     version = "0.1.0" }
+pensieve-ingest-filedrop   = { path = "crates/pensieve-ingest-filedrop", version = "0.1.0" }
+pensieve-ingest-otlp       = { path = "crates/pensieve-ingest-otlp",     version = "0.1.0" }
+pensieve-ingest-kafka      = { path = "crates/pensieve-ingest-kafka",    version = "0.1.0" }
+pensieve-graph             = { path = "crates/pensieve-graph",           version = "0.1.0" }
+pensieve-kql               = { path = "crates/pensieve-kql",             version = "0.1.0" }
+pensieve-compaction        = { path = "crates/pensieve-compaction",      version = "0.1.0" }
+pensieve-datasources        = { path = "crates/pensieve-datasources",      version = "0.1.0" }
+pensieve-datasource-core    = { path = "crates/pensieve-datasource-core",  version = "0.1.0" }
+pensieve-codeparse         = { path = "crates/pensieve-codeparse",       version = "0.1.0" }
+pensieve-jobs              = { path = "crates/pensieve-jobs",            version = "0.1.0" }
+pensieve-index-vector      = { path = "crates/pensieve-index-vector",    version = "0.1.0" }
+pensieve-index-fts         = { path = "crates/pensieve-index-fts",        version = "0.1.0" }
+pensieve-plan              = { path = "crates/pensieve-plan",            version = "0.1.0" }
+pensieve-exec              = { path = "crates/pensieve-exec",            version = "0.1.0" }
+pensieve-federation        = { path = "crates/pensieve-federation",      version = "0.1.0" }
+pensieve-server            = { path = "crates/pensieve-server",          version = "0.1.0" }
+pensieve-cli               = { path = "crates/pensieve-cli",             version = "0.1.0" }
+pensieve-web-assets        = { path = "crates/pensieve-web-assets",      version = "0.1.0" }
+pensieve-embed             = { path = "crates/pensieve-embed",           version = "0.1.0" }
+pensieve-memory            = { path = "crates/pensieve-memory",          version = "0.1.0" }
+pensieve-artifact-graph    = { path = "crates/pensieve-artifact-graph",  version = "0.1.0" }
+pensieve-mcp               = { path = "crates/pensieve-mcp",             version = "0.1.0" }
+pensieve-queue             = { path = "crates/pensieve-queue",           version = "0.1.0" }
+pensieve-redact            = { path = "crates/pensieve-redact",          version = "0.1.0" }
+pensieve-ccmem             = { path = "crates/pensieve-ccmem",           version = "0.1.0" }
+pensieve-brain             = { path = "crates/pensieve-brain",           version = "0.1.0" }
 
 # Auth
 jsonwebtoken = "9"
@@ -208,7 +208,7 @@ ndarray = "0.16"
 schemars = "0.8"
 
 # Agent stack (ADK-Rust) — feature set trimmed to only what the inline
-# `/v1/agent/ask` endpoint needs. See crates/kyma-server/src/agent/.
+# `/v1/agent/ask` endpoint needs. See crates/pensieve-server/src/agent/.
 adk-rust = { version = "0.6", default-features = false, features = [
     "agents",
     "models",

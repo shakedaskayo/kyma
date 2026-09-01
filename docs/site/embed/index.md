@@ -1,15 +1,15 @@
 ---
-title: Embedding Kyma — overview
-description: Drop Kyma's Graph, Query, Discover, Dashboards, and Agent views into any React app with @kyma-ai/react.
+title: Embedding Pensieve — overview
+description: Drop Pensieve's Graph, Query, Discover, Dashboards, and Agent views into any React app with @pensieve-ai/react.
 ---
 
-# Embedding Kyma in React
+# Embedding Pensieve in React
 
-`@kyma-ai/react` is an Apache-2.0 licensed embeddable SDK that drops five
-production-quality Kyma views — **Graph**, **Query Editor**, **Discover**,
+`@pensieve-ai/react` is an Apache-2.0 licensed embeddable SDK that drops five
+production-quality Pensieve views — **Graph**, **Query Editor**, **Discover**,
 **Dashboards**, and **Agent Chat** — into any React 18+ host application.
 Each view is a fully self-contained component backed by the same UI rendered
-in the Kyma web app itself.
+in the Pensieve web app itself.
 
 ## In this section
 
@@ -17,7 +17,7 @@ in the Kyma web app itself.
 |---|---|
 | [Quickstart](/embed/quickstart) | Install, wire the provider, render a view in under 20 lines |
 | [Authentication](/embed/authentication) | Static tokens, server-side minting, full OIDC setup |
-| [CORS](/embed/cors) | `KYMA_CORS_ALLOWED_ORIGINS` — permissive dev vs. production lock-down |
+| [CORS](/embed/cors) | `PENSIEVE_CORS_ALLOWED_ORIGINS` — permissive dev vs. production lock-down |
 | [Theming](/embed/theming) | All 26 design tokens, presets, partial overrides, `inherit` mode |
 | [Components](/embed/components) | Per-component prop tables and bundle notes |
 | [Headless hooks](/embed/hooks) | Raw data layer without the bundled UI |

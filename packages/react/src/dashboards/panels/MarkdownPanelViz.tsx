@@ -3,7 +3,7 @@
  * minimal markdown renderer (packages/react/src/internal/ui/markdown.tsx).
  */
 
-import type { DashboardPanel } from "@kyma-ai/client";
+import type { DashboardPanel } from "@pensieve-ai/client";
 import { renderMarkdown } from "../../internal/ui/markdown";
 
 interface Props {
@@ -15,11 +15,11 @@ export function MarkdownPanelViz({ panel }: Props) {
 
   if (!markdown.trim()) {
     return (
-      <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-text-xs ky-text-muted-foreground">
+      <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-text-xs pv-text-muted-foreground">
         No content.
       </div>
     );
   }
 
-  return <div className="ky-h-full ky-overflow-y-auto ky-px-3 ky-py-2">{renderMarkdown(markdown)}</div>;
+  return <div className="pv-h-full pv-overflow-y-auto pv-px-3 pv-py-2">{renderMarkdown(markdown)}</div>;
 }

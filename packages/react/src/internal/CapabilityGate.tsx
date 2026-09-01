@@ -2,7 +2,7 @@
  * CapabilityGate — conditionally renders children based on server capability flags.
  *
  * ## Data shape
- * `fetchCapabilities()` (from @kyma-ai/client) returns `Capabilities`:
+ * `fetchCapabilities()` (from @pensieve-ai/client) returns `Capabilities`:
  *   { mode: "local"|"server", data_sources: boolean, credentials: boolean,
  *     oauth: boolean, saved_views: boolean, users_admin: boolean, explore_live: boolean }
  *
@@ -17,8 +17,8 @@
  * "not available on this server" card.
  */
 import type { ReactNode } from "react";
-import type { Capabilities } from "@kyma-ai/client";
-import { useKymaCapabilities } from "../hooks/useKymaCapabilities";
+import type { Capabilities } from "@pensieve-ai/client";
+import { usePensieveCapabilities } from "../hooks/usePensieveCapabilities";
 
 export interface CapabilityGateProps {
   /** A key of the Capabilities object, e.g. "data_sources", "saved_views". */
@@ -29,7 +29,7 @@ export interface CapabilityGateProps {
 }
 
 export function CapabilityGate({ capability, children, fallback }: CapabilityGateProps) {
-  const { data, isSuccess } = useKymaCapabilities();
+  const { data, isSuccess } = usePensieveCapabilities();
 
   // Fail-open: render children while loading or on error.
   // Only gate when we have a definitive false value.
@@ -41,10 +41,10 @@ export function CapabilityGate({ capability, children, fallback }: CapabilityGat
       return (
         <div
           data-testid="capability-unavailable"
-          className="ky-rounded-lg ky-border ky-border-border ky-bg-card ky-p-4 ky-text-sm ky-text-foreground"
+          className="pv-rounded-lg pv-border pv-border-border pv-bg-card pv-p-4 pv-text-sm pv-text-foreground"
         >
-          <p className="ky-text-muted-foreground">
-            This feature is not available on this Kyma server.
+          <p className="pv-text-muted-foreground">
+            This feature is not available on this Pensieve server.
           </p>
         </div>
       );

@@ -1,4 +1,4 @@
-// Typed client for the kyma "dreaming" layer — the agentic memory consolidation
+// Typed client for the pensieve "dreaming" layer — the agentic memory consolidation
 // runs (`/v1/agent/memory/dreaming/*`), the worker registry (`/v1/workers`), and
 // the agent-run trace drilldown (`/v1/agent/runs/:id`). JSON in/out.
 //

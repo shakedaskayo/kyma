@@ -6,8 +6,8 @@ import type { SourceState, SourceKey } from "./types";
 
 const PAGE = 200;
 const CHIP_COLORS = [
-  "ky-border-blue-500/50", "ky-border-emerald-500/50", "ky-border-amber-500/50", "ky-border-red-500/50",
-  "ky-border-violet-500/50", "ky-border-pink-500/50", "ky-border-teal-500/50", "ky-border-orange-500/50",
+  "pv-border-blue-500/50", "pv-border-emerald-500/50", "pv-border-amber-500/50", "pv-border-red-500/50",
+  "pv-border-violet-500/50", "pv-border-pink-500/50", "pv-border-teal-500/50", "pv-border-orange-500/50",
 ];
 
 // ── Pure freeze-logic helpers (exported for unit tests) ─────────────────────
@@ -91,12 +91,12 @@ export function StreamView({ rows, sources, columns, onOpenRow }: Props) {
     ts == null ? "—" : new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   return (
-    <div className="ky-relative ky-h-full ky-overflow-auto ky-text-xs ky-font-mono" ref={scrollRef} onScroll={handleScroll}>
+    <div className="pv-relative pv-h-full pv-overflow-auto pv-text-xs pv-font-mono" ref={scrollRef} onScroll={handleScroll}>
       {pendingCount > 0 && (
-        <div className="ky-sticky ky-top-0 ky-z-10 ky-flex ky-justify-center ky-pointer-events-none">
+        <div className="pv-sticky pv-top-0 pv-z-10 pv-flex pv-justify-center pv-pointer-events-none">
           <button
             type="button"
-            className="ky-pointer-events-auto ky-mt-1 ky-px-3 ky-py-1 ky-rounded-full ky-bg-primary ky-text-primary-foreground ky-text-xs ky-shadow-md hover:ky-bg-primary/90"
+            className="pv-pointer-events-auto pv-mt-1 pv-px-3 pv-py-1 pv-rounded-full pv-bg-primary pv-text-primary-foreground pv-text-xs pv-shadow-md hover:pv-bg-primary/90"
             onClick={jumpToTop}
           >
             {pendingCount} new event{pendingCount === 1 ? "" : "s"} ↑
@@ -113,25 +113,25 @@ export function StreamView({ rows, sources, columns, onOpenRow }: Props) {
         return (
           <div
             key={i}
-            className="ky-flex ky-items-start ky-gap-2 ky-px-3 ky-py-1.5 ky-border-b ky-border-border/50 hover:ky-bg-accent ky-cursor-pointer"
+            className="pv-flex pv-items-start pv-gap-2 pv-px-3 pv-py-1.5 pv-border-b pv-border-border/50 hover:pv-bg-accent pv-cursor-pointer"
             onClick={() => onOpenRow(r.source, r.row)}
           >
-            <span className="ky-text-muted-foreground ky-tabular-nums ky-shrink-0 ky-w-[8ch]">{fmtTs(r.ts)}</span>
+            <span className="pv-text-muted-foreground pv-tabular-nums pv-shrink-0 pv-w-[8ch]">{fmtTs(r.ts)}</span>
             <span
-              className={`ky-shrink-0 ky-rounded ky-border ky-px-1 ky-text-[10px] ky-text-muted-foreground ${chipColor.get(r.source) ?? ""}`}
+              className={`pv-shrink-0 pv-rounded pv-border pv-px-1 pv-text-[10px] pv-text-muted-foreground ${chipColor.get(r.source) ?? ""}`}
               title={r.source}
             >
               {r.source.split(".")[1] ?? r.source}
             </span>
             {columns.map((c) => (
-              <span key={c} className="ky-shrink-0 ky-max-w-[24ch] ky-truncate" title={`${c}=${formatCell(r.row[c])}`}>
+              <span key={c} className="pv-shrink-0 pv-max-w-[24ch] pv-truncate" title={`${c}=${formatCell(r.row[c])}`}>
                 {formatCell(r.row[c])}
               </span>
             ))}
-            <span className="ky-min-w-0 ky-truncate">
+            <span className="pv-min-w-0 pv-truncate">
               {sum.primary && <span>{sum.primary}</span>}
               {sum.rest.length > 0 && (
-                <span className="ky-text-muted-foreground">
+                <span className="pv-text-muted-foreground">
                   {sum.primary ? "  " : ""}
                   {sum.rest.map(([k, v]) => `${k}=${v}`).join(" ")}
                 </span>
@@ -143,7 +143,7 @@ export function StreamView({ rows, sources, columns, onOpenRow }: Props) {
       {displayRows.length > limit && (
         <button
           type="button"
-          className="ky-w-full ky-p-2 ky-text-center ky-text-muted-foreground hover:ky-bg-accent"
+          className="pv-w-full pv-p-2 pv-text-center pv-text-muted-foreground hover:pv-bg-accent"
           onClick={() => setLimit((l) => l + PAGE)}
         >
           show {Math.min(PAGE, displayRows.length - limit)} more of {displayRows.length.toLocaleString()} loaded

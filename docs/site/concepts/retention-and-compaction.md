@@ -1,11 +1,11 @@
 ---
 title: Retention and compaction
-description: How kyma keeps storage tidy without rewriting history. Per-table retention policies drop old data; compaction merges small extents into larger ones for better pruning.
+description: How pensieve keeps storage tidy without rewriting history. Per-table retention policies drop old data; compaction merges small extents into larger ones for better pruning.
 ---
 
 # Retention and compaction
 
-kyma's storage shape — append-only columnar extents on object storage —
+pensieve's storage shape — append-only columnar extents on object storage —
 makes ingest fast and queries predictable. It doesn't, by itself, keep
 the bucket tidy. Two background workers handle that: **retention**
 drops data older than a per-table policy, and **compaction** merges
@@ -21,7 +21,7 @@ A retention policy is per-table, set at table creation time and
 adjustable later via `ALTER TABLE`:
 
 ```bash
-kyma-cli alter-table otel_logs set-retention --days 30
+pensieve-cli alter-table otel_logs set-retention --days 30
 ```
 
 The retention sweeper does two things:
@@ -78,19 +78,19 @@ Compaction is also where tombstone collapse happens.
 ## Tombstone collapse
 
 Synced tables (from data sources in sync mode) get tombstone rows when
-the source deletes a row. A tombstone is `_kyma_op = 'delete'` plus
+the source deletes a row. A tombstone is `_pensieve_op = 'delete'` plus
 the primary key.
 
-Default reads filter `_kyma_op != 'delete'`, so tombstones are
+Default reads filter `_pensieve_op != 'delete'`, so tombstones are
 invisible by default. They still occupy storage. Compaction collapses
 them: a compacted extent drops any row whose latest event for the same
-`_kyma_pk` is a delete older than `retention.tombstone_days` (default
+`_pensieve_pk` is a delete older than `retention.tombstone_days` (default
 30).
 
 Tunable per-table:
 
 ```bash
-kyma-cli alter-table pg_prod.public.users \
+pensieve-cli alter-table pg_prod.public.users \
   set-tombstone-retention --days 7
 ```
 
@@ -119,12 +119,12 @@ is for known patterns, not pre-emptive optimization.
 
 Both workers emit metrics on the `/metrics` endpoint:
 
-- `kyma_retention_runs_total{table, status}`
-- `kyma_retention_rows_dropped_total{table}`
-- `kyma_retention_bytes_freed_total{table}`
-- `kyma_compaction_runs_total{table, status}`
-- `kyma_compaction_extents_merged_total{table}`
-- `kyma_compaction_duration_seconds{table}`
+- `pensieve_retention_runs_total{table, status}`
+- `pensieve_retention_rows_dropped_total{table}`
+- `pensieve_retention_bytes_freed_total{table}`
+- `pensieve_compaction_runs_total{table, status}`
+- `pensieve_compaction_extents_merged_total{table}`
+- `pensieve_compaction_duration_seconds{table}`
 
 Plus structured logs from the work-unit dispatcher. See
 [Observability](/concepts/observability) for the full list.

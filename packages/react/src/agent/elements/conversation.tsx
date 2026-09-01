@@ -48,13 +48,13 @@ export function Conversation({
 
   return (
     <div
-      className={cn("ky-relative ky-flex-1 ky-overflow-hidden", className)}
+      className={cn("pv-relative pv-flex-1 pv-overflow-hidden", className)}
       {...props}
     >
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="ky-h-full ky-overflow-y-auto"
+        className="pv-h-full pv-overflow-y-auto"
       >
         {children}
       </div>
@@ -64,10 +64,10 @@ export function Conversation({
           size="icon"
           variant="outline"
           onClick={() => scrollToBottom()}
-          className="ky-absolute ky-bottom-4 ky-left-1/2 ky-size-8 -ky-translate-x-1/2 ky-rounded-full ky-shadow-md"
+          className="pv-absolute pv-bottom-4 pv-left-1/2 pv-size-8 -pv-translate-x-1/2 pv-rounded-full pv-shadow-md"
           aria-label="Scroll to bottom"
         >
-          <ArrowDown className="ky-size-4" />
+          <ArrowDown className="pv-size-4" />
         </Button>
       )}
     </div>
@@ -81,7 +81,7 @@ export function ConversationContent({
   return (
     <div
       className={cn(
-        "ky-mx-auto ky-max-w-3xl ky-space-y-4 ky-px-4 ky-py-4",
+        "pv-mx-auto pv-max-w-3xl pv-space-y-4 pv-px-4 pv-py-4",
         className,
       )}
       {...props}

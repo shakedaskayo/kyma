@@ -1,6 +1,6 @@
 // Primary public export
-export { KymaAgentChat } from "./KymaAgentChat";
-export type { KymaAgentChatProps } from "./KymaAgentChat";
+export { PensieveAgentChat } from "./PensieveAgentChat";
+export type { PensieveAgentChatProps } from "./PensieveAgentChat";
 
 // Secondary export: the full console panel (database label, thinking toggle)
 export { AgentConsole } from "./AgentConsole";

@@ -1,42 +1,42 @@
 import type { Config } from "tailwindcss";
 import animate from "tailwindcss-animate";
 
-// Embeddable build: every utility is prefixed (`ky-flex`) and every rule is
-// scoped under `.kyma-root` so host-app CSS and Kyma CSS cannot collide in
-// either direction. Tokens are `--kyma-*`, set inline by <KymaProvider>.
+// Embeddable build: every utility is prefixed (`pv-flex`) and every rule is
+// scoped under `.pensieve-root` so host-app CSS and Pensieve CSS cannot collide in
+// either direction. Tokens are `--pensieve-*`, set inline by <PensieveProvider>.
 export default {
-  prefix: "ky-",
-  important: ".kyma-root",
+  prefix: "pv-",
+  important: ".pensieve-root",
   corePlugins: { preflight: false },
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        border: "hsl(var(--kyma-border))",
-        "border-strong": "hsl(var(--kyma-border-strong))",
-        input: "hsl(var(--kyma-input))",
-        ring: "hsl(var(--kyma-ring))",
-        background: "hsl(var(--kyma-background))",
-        surface: "hsl(var(--kyma-surface))",
-        foreground: "hsl(var(--kyma-foreground))",
-        primary:   { DEFAULT: "hsl(var(--kyma-primary))",   foreground: "hsl(var(--kyma-primary-foreground))" },
-        secondary: { DEFAULT: "hsl(var(--kyma-secondary))", foreground: "hsl(var(--kyma-secondary-foreground))" },
-        destructive: { DEFAULT: "hsl(var(--kyma-destructive))", foreground: "hsl(var(--kyma-destructive-foreground))" },
-        muted:     { DEFAULT: "hsl(var(--kyma-muted))",     foreground: "hsl(var(--kyma-muted-foreground))" },
-        accent:    { DEFAULT: "hsl(var(--kyma-accent))",    foreground: "hsl(var(--kyma-accent-foreground))" },
-        card:      { DEFAULT: "hsl(var(--kyma-card))",      foreground: "hsl(var(--kyma-card-foreground))" },
-        popover:   { DEFAULT: "hsl(var(--kyma-popover))",   foreground: "hsl(var(--kyma-popover-foreground))" },
-        brand:     { from: "hsl(var(--kyma-brand-from))",   to: "hsl(var(--kyma-brand-to))" },
+        border: "hsl(var(--pensieve-border))",
+        "border-strong": "hsl(var(--pensieve-border-strong))",
+        input: "hsl(var(--pensieve-input))",
+        ring: "hsl(var(--pensieve-ring))",
+        background: "hsl(var(--pensieve-background))",
+        surface: "hsl(var(--pensieve-surface))",
+        foreground: "hsl(var(--pensieve-foreground))",
+        primary:   { DEFAULT: "hsl(var(--pensieve-primary))",   foreground: "hsl(var(--pensieve-primary-foreground))" },
+        secondary: { DEFAULT: "hsl(var(--pensieve-secondary))", foreground: "hsl(var(--pensieve-secondary-foreground))" },
+        destructive: { DEFAULT: "hsl(var(--pensieve-destructive))", foreground: "hsl(var(--pensieve-destructive-foreground))" },
+        muted:     { DEFAULT: "hsl(var(--pensieve-muted))",     foreground: "hsl(var(--pensieve-muted-foreground))" },
+        accent:    { DEFAULT: "hsl(var(--pensieve-accent))",    foreground: "hsl(var(--pensieve-accent-foreground))" },
+        card:      { DEFAULT: "hsl(var(--pensieve-card))",      foreground: "hsl(var(--pensieve-card-foreground))" },
+        popover:   { DEFAULT: "hsl(var(--pensieve-popover))",   foreground: "hsl(var(--pensieve-popover-foreground))" },
+        brand:     { from: "hsl(var(--pensieve-brand-from))",   to: "hsl(var(--pensieve-brand-to))" },
       },
       borderRadius: {
-        xl: "calc(var(--kyma-radius) + 4px)",
-        lg: "var(--kyma-radius)",
-        md: "calc(var(--kyma-radius) - 2px)",
-        sm: "calc(var(--kyma-radius) - 4px)",
+        xl: "calc(var(--pensieve-radius) + 4px)",
+        lg: "var(--pensieve-radius)",
+        md: "calc(var(--pensieve-radius) - 2px)",
+        sm: "calc(var(--pensieve-radius) - 4px)",
       },
       fontFamily: {
-        sans: ["var(--kyma-font-sans)"],
-        mono: ["var(--kyma-font-mono)"],
+        sans: ["var(--pensieve-font-sans)"],
+        mono: ["var(--pensieve-font-mono)"],
       },
       fontSize: {
         "2xs": ["0.6875rem", { lineHeight: "1.4" }],            // 11px
@@ -53,10 +53,10 @@ export default {
         "elev-1": "0 1px 2px hsl(213 40% 3% / 0.40)",
         "elev-2": "0 2px 6px hsl(213 40% 3% / 0.30), 0 4px 16px hsl(213 40% 3% / 0.22)",
         "elev-3": "0 10px 32px hsl(213 50% 2% / 0.50), 0 2px 8px hsl(213 50% 2% / 0.35)",
-        glow: "0 0 0 1px hsl(var(--kyma-ring) / 0.5), 0 0 18px hsl(var(--kyma-ring) / 0.35)",
+        glow: "0 0 0 1px hsl(var(--pensieve-ring) / 0.5), 0 0 18px hsl(var(--pensieve-ring) / 0.35)",
       },
       backgroundImage: {
-        "brand-gradient": "linear-gradient(100deg, hsl(var(--kyma-brand-from)), hsl(var(--kyma-brand-to)))",
+        "brand-gradient": "linear-gradient(100deg, hsl(var(--pensieve-brand-from)), hsl(var(--pensieve-brand-to)))",
       },
       keyframes: {
         shimmer: {

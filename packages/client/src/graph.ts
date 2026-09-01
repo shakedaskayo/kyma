@@ -1,6 +1,6 @@
-// Typed client for the kyma graph layer (`/v1/graph/*`). JSON in/out.
+// Typed client for the pensieve graph layer (`/v1/graph/*`). JSON in/out.
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import { errorFromResponse } from "./errors";
 import type { LayoutAlgorithm } from "./graph-layout";
 
@@ -93,12 +93,12 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function listGraphs(t: KymaTransport): Promise<GraphRef[]> {
+export async function listGraphs(t: PensieveTransport): Promise<GraphRef[]> {
   return handleResponse<GraphRef[]>(await t.request("/v1/graph"));
 }
 
 export async function getOverview(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { graph: string; realm?: string; limit?: number },
 ): Promise<GraphPayload> {
   const q = new URLSearchParams();
@@ -111,7 +111,7 @@ export async function getOverview(
 }
 
 export async function getStats(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { graph: string; realm?: string },
 ): Promise<GraphStats> {
   const q = new URLSearchParams();
@@ -123,14 +123,14 @@ export async function getStats(
 }
 
 export async function getGraphSchema(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { graph: string },
 ): Promise<GraphSchema> {
   return handleResponse<GraphSchema>(await t.request(`/v1/graph/${args.graph}/schema`));
 }
 
 export async function getNode(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { graph: string; id: string },
 ): Promise<GraphNode> {
   return handleResponse<GraphNode>(
@@ -139,7 +139,7 @@ export async function getNode(
 }
 
 export async function getSubgraph(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { graph: string; id: string; depth?: number },
 ): Promise<GraphPayload> {
   const qs = args.depth != null ? `?depth=${args.depth}` : "";
@@ -151,7 +151,7 @@ export async function getSubgraph(
 }
 
 export async function searchNodes(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { graph: string; text: string; labels?: string[]; realm?: string; limit?: number; offset?: number },
 ): Promise<SearchHits> {
   return handleResponse<SearchHits>(
@@ -170,7 +170,7 @@ export async function searchNodes(
 }
 
 export async function expandNeighbors(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { graph: string; nodeIds: string[]; direction?: Direction; onlyInternal?: boolean; limit?: number },
 ): Promise<EdgeExpansion> {
   return handleResponse<EdgeExpansion>(
@@ -188,7 +188,7 @@ export async function expandNeighbors(
 }
 
 export async function exportGraph(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: ExportGraphArgs,
 ): Promise<GraphExportPage> {
   const q = new URLSearchParams();

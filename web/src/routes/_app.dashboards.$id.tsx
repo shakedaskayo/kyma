@@ -2,8 +2,8 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { ArrowLeft, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { KymaDashboard } from "@kyma-ai/react/dashboards";
-import type { DashboardWithPanels } from "@kyma-ai/react";
+import { PensieveDashboard } from "@pensieve-ai/react/dashboards";
+import type { DashboardWithPanels } from "@pensieve-ai/react";
 
 export const Route = createFileRoute("/_app/dashboards/$id")({
   validateSearch: (s: Record<string, unknown>) => ({
@@ -61,7 +61,7 @@ function DashboardPage() {
       </div>
 
       {/* ── Package dashboard (toolbar + grid) ───────────────────────────── */}
-      <KymaDashboard
+      <PensieveDashboard
         dashboardId={id}
         editable={editable}
         onEditChange={handleEditChange}

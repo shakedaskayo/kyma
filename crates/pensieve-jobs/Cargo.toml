@@ -1,0 +1,39 @@
+[package]
+name = "pensieve-jobs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "pensieve worker/job fabric: executor trait, queue front-ends, and the worker run loop shared by the embedded worker and remote daemons."
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-core = { workspace = true }
+pensieve-catalog = { workspace = true }
+pensieve-datasources = { workspace = true }
+pensieve-embed = { workspace = true }
+pensieve-index-vector = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+object_store = { workspace = true }
+bytes = { workspace = true }
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+testcontainers = { workspace = true }
+testcontainers-modules = { workspace = true }
+sqlx = { workspace = true }
+pensieve-catalog-sqlite = { workspace = true }
+pensieve-format-tlm = { workspace = true }

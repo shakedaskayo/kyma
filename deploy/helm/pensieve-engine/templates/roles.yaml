@@ -1,0 +1,129 @@
+{{- /*
+  Role-split topology (S2.4/S2.6). Rendered only when roles.enabled. Replaces the
+  single all-in-one Deployment with three role Deployments, each setting PENSIEVE_ROLE
+  (honored by the engine's role_components()):
+
+    edge       — stateless query + ingest staging. RollingUpdate, behind the
+                 Service, optionally autoscaled. Runs no committer, no jobs.
+    committer  — drains staged extents into the catalog. Single active instance is
+                 elected by a Postgres advisory-lock lease; Recreate strategy +
+                 maxUnavailable:1 PDB keep node drains from taking out more than one
+                 committer pod at a time (the lease handles fast failover).
+    worker     — background jobs (compaction / index / graph / retention). Jobs are
+                 claimed via SKIP LOCKED, so it scales horizontally.
+
+  For the committer to have anything to drain, set PENSIEVE_INGEST_MODE=staged in `env`.
+*/ -}}
+{{- if .Values.roles.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pensieve-engine.fullname" . }}-edge
+  labels:
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
+    pensieve.io/role: edge
+spec:
+  {{- if not .Values.roles.edge.autoscaling.enabled }}
+  replicas: {{ .Values.roles.edge.replicas }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "edge") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "edge") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "pensieve-engine.serviceAccountName" . }}
+      containers:
+        {{- include "pensieve-engine.roleContainer" (dict "ctx" . "role" "edge") | nindent 8 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pensieve-engine.fullname" . }}-committer
+  labels:
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
+    pensieve.io/role: committer
+spec:
+  replicas: 1
+  # Lease-elected singleton — never roll a second active committer over the first.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "committer") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "committer") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "pensieve-engine.serviceAccountName" . }}
+      containers:
+        {{- include "pensieve-engine.roleContainer" (dict "ctx" . "role" "committer") | nindent 8 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pensieve-engine.fullname" . }}-worker
+  labels:
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
+    pensieve.io/role: worker
+spec:
+  replicas: {{ .Values.roles.worker.replicas }}
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "worker") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "pensieve-engine.serviceAccountName" . }}
+      containers:
+        {{- include "pensieve-engine.roleContainer" (dict "ctx" . "role" "worker") | nindent 8 }}
+{{- if .Values.roles.edge.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "pensieve-engine.fullname" . }}-edge
+  labels:
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
+    pensieve.io/role: edge
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "pensieve-engine.fullname" . }}-edge
+  minReplicas: {{ .Values.roles.edge.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.roles.edge.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.roles.edge.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- if .Values.roles.committer.pdb }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "pensieve-engine.fullname" . }}-committer
+  labels:
+    {{- include "pensieve-engine.labels" . | nindent 4 }}
+    pensieve.io/role: committer
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "pensieve-engine.roleSelectorLabels" (dict "ctx" . "role" "committer") | nindent 6 }}
+{{- end }}
+{{- end }}

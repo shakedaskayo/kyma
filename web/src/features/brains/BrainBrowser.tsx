@@ -87,7 +87,7 @@ interface TreeDir {
 }
 
 const HIDDEN = (p: string) =>
-  p.startsWith(".kyma/") || p.startsWith(".obsidian/") || p === ".gitignore";
+  p.startsWith(".pensieve/") || p.startsWith(".obsidian/") || p === ".gitignore";
 
 function buildTree(paths: string[]): TreeDir {
   const root: TreeDir = { name: "", path: "", dirs: new Map(), files: [] };

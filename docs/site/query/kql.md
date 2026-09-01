@@ -1,6 +1,6 @@
 ---
 title: KQL
-description: kyma's pipe-style query language. Operators, aggregations, time helpers, and the operator order that keeps queries fast. Translates to the same logical plan as SQL via `kyma-kql`.
+description: pensieve's pipe-style query language. Operators, aggregations, time helpers, and the operator order that keeps queries fast. Translates to the same logical plan as SQL via `pensieve-kql`.
 ---
 
 # KQL
@@ -20,7 +20,7 @@ otel_logs
 Same query in SQL costs three `WHERE` clauses, a `GROUP BY`, an `ORDER
 BY`, and a `LIMIT`. KQL reads the way you write the question.
 
-`kyma-kql` parses KQL into kyma's unified logical plan, which is the
+`pensieve-kql` parses KQL into pensieve's unified logical plan, which is the
 same IR SQL produces. From there, the planner, the
 [pruning cascade](/concepts/the-pruning-cascade), and DataFusion don't
 know — or care — which surface the query came in through.
@@ -149,7 +149,7 @@ otel_logs
 ```
 
 `kind=inner` is the default; `leftouter`, `rightouter`, `fullouter` are
-also recognized. The cross-source case here — a kyma table joined with
+also recognized. The cross-source case here — a pensieve table joined with
 a Postgres table — works because of
 [multi-source data](/concepts/multi-source-data).
 
@@ -180,7 +180,7 @@ for the full rules.
 
 ## What KQL doesn't do (yet)
 
-Compared to Kusto KQL, kyma's KQL is a working subset:
+Compared to Kusto KQL, pensieve's KQL is a working subset:
 
 - No `let` bindings yet — use SQL CTEs if you need named subqueries.
 - No `materialize()`, no `mv-expand`, no `parse_json` (`dynamic` access

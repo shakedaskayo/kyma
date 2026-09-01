@@ -1,11 +1,11 @@
 {
-  "name": "@kyma-ai/client",
-  "version": "0.2.0",
-  "description": "Framework-agnostic TypeScript client for the Kyma context engine API",
+  "name": "@pensieve-ai/client",
+  "version": "0.3.0",
+  "description": "Framework-agnostic TypeScript client for the Pensieve context engine API",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/shakedaskayo/kyma.git",
+    "url": "https://github.com/shakedaskayo/pensieve.git",
     "directory": "packages/client"
   },
   "publishConfig": {

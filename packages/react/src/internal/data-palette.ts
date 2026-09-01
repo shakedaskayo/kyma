@@ -1,5 +1,5 @@
 /**
- * kyma data palette — categorical colors for graph nodes, charts, and badges.
+ * pensieve data palette — categorical colors for graph nodes, charts, and badges.
  * Copied from web/src/lib/data-palette.ts (do not import from web).
  */
 
@@ -63,17 +63,17 @@ export interface ChartTheme {
 }
 
 /**
- * Theme colors for ECharts. Maps Kyma CSS custom properties so charts track
+ * Theme colors for ECharts. Maps Pensieve CSS custom properties so charts track
  * the embedded SDK palette automatically. `isDark` only drives fallbacks.
  */
 export function chartTheme(isDark: boolean): ChartTheme {
   return {
     palette: DATA_PALETTE,
-    axis: readToken("--kyma-muted-foreground", isDark ? "hsl(214 16% 64%)" : "hsl(215 16% 42%)"),
-    grid: readToken("--kyma-border", isDark ? "hsl(213 18% 17%)" : "hsl(214 28% 90%)"),
-    text: readToken("--kyma-foreground", isDark ? "hsl(200 24% 96%)" : "hsl(214 32% 14%)"),
-    tooltipBg: readToken("--kyma-popover", isDark ? "hsl(213 22% 13%)" : "hsl(0 0% 100%)"),
-    tooltipBorder: readToken("--kyma-border", isDark ? "hsl(213 18% 17%)" : "hsl(214 28% 90%)"),
-    tooltipText: readToken("--kyma-foreground", isDark ? "hsl(200 24% 96%)" : "hsl(214 32% 14%)"),
+    axis: readToken("--pensieve-muted-foreground", isDark ? "hsl(214 16% 64%)" : "hsl(215 16% 42%)"),
+    grid: readToken("--pensieve-border", isDark ? "hsl(213 18% 17%)" : "hsl(214 28% 90%)"),
+    text: readToken("--pensieve-foreground", isDark ? "hsl(200 24% 96%)" : "hsl(214 32% 14%)"),
+    tooltipBg: readToken("--pensieve-popover", isDark ? "hsl(213 22% 13%)" : "hsl(0 0% 100%)"),
+    tooltipBorder: readToken("--pensieve-border", isDark ? "hsl(213 18% 17%)" : "hsl(214 28% 90%)"),
+    tooltipText: readToken("--pensieve-foreground", isDark ? "hsl(200 24% 96%)" : "hsl(214 32% 14%)"),
   };
 }

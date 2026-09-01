@@ -1,6 +1,6 @@
 variable "name" {
   type        = string
-  description = "Product name, e.g. \"Kyma Cloud — Pro\"."
+  description = "Product name, e.g. \"Pensieve Cloud — Pro\"."
 }
 
 variable "unit_label" {

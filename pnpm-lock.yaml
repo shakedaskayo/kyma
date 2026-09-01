@@ -32,10 +32,10 @@ importers:
 
   examples/embed-demo:
     dependencies:
-      '@kyma-ai/client':
+      '@pensieve-ai/client':
         specifier: workspace:*
         version: link:../../packages/client
-      '@kyma-ai/react':
+      '@pensieve-ai/react':
         specifier: workspace:*
         version: link:../../packages/react
       react:
@@ -88,12 +88,12 @@ importers:
       '@icons-pack/react-simple-icons':
         specifier: ^13.13.0
         version: 13.13.0(react@18.3.1)
-      '@kyma-ai/client':
-        specifier: workspace:^
-        version: link:../client
       '@monaco-editor/react':
         specifier: 4.6.0
         version: 4.6.0(monaco-editor@0.52.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@pensieve-ai/client':
+        specifier: workspace:^
+        version: link:../client
       '@radix-ui/react-collapsible':
         specifier: ^1.1.12
         version: 1.1.12(@types/react-dom@18.3.0)(@types/react@18.3.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -239,15 +239,15 @@ importers:
       '@icons-pack/react-simple-icons':
         specifier: ^13.13.0
         version: 13.13.0(react@18.3.1)
-      '@kyma-ai/client':
-        specifier: workspace:*
-        version: link:../packages/client
-      '@kyma-ai/react':
-        specifier: workspace:*
-        version: link:../packages/react
       '@monaco-editor/react':
         specifier: 4.6.0
         version: 4.6.0(monaco-editor@0.52.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@pensieve-ai/client':
+        specifier: workspace:*
+        version: link:../packages/client
+      '@pensieve-ai/react':
+        specifier: workspace:*
+        version: link:../packages/react
       '@radix-ui/react-collapsible':
         specifier: ^1.1.12
         version: 1.1.12(@types/react-dom@18.3.0)(@types/react@18.3.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)

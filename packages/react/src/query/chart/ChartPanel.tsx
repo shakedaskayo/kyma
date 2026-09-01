@@ -1,8 +1,8 @@
 import ReactECharts from "echarts-for-react";
 import { useMemo } from "react";
 import { BarChart3 } from "lucide-react";
-import { autoChartAxes, type Column } from "@kyma-ai/client";
-import { useKymaContext } from "../../provider/context";
+import { autoChartAxes, type Column } from "@pensieve-ai/client";
+import { usePensieveContext } from "../../provider/context";
 import { DATA_PALETTE, chartTheme } from "../../internal/data-palette";
 
 // ── time formatter ────────────────────────────────────────────────────────────
@@ -47,8 +47,8 @@ function makeTooltipFmt(yName: string) {
 // ── component ─────────────────────────────────────────────────────────────────
 
 export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<string, unknown>[] }) {
-  // Theme-aware: derive isDark from KymaProvider context (no web-app Zustand store).
-  const { isDark } = useKymaContext();
+  // Theme-aware: derive isDark from PensieveProvider context (no web-app Zustand store).
+  const { isDark } = usePensieveContext();
 
   const option = useMemo(() => {
     const spec = autoChartAxes(columns);
@@ -58,8 +58,8 @@ export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<
     const symbol = isSparse ? "circle" : "none";
     const symbolSize = 4;
 
-    // Theme-aware axis + tooltip + gridline colors sourced from the Kyma CSS
-    // custom properties (--kyma-*) via chartTheme(). Falls back gracefully when
+    // Theme-aware axis + tooltip + gridline colors sourced from the Pensieve CSS
+    // custom properties (--pensieve-*) via chartTheme(). Falls back gracefully when
     // no DOM is available (tests/SSR).
     const theme = chartTheme(isDark);
     const axisLabelColor = theme.axis;
@@ -137,17 +137,17 @@ export function ChartPanel({ columns, rows }: { columns: Column[]; rows: Record<
     if (spec.type === "stat") {
       const v = rows.at(-1)?.[spec.y];
       return (
-        <div className="ky-flex ky-h-full ky-flex-col ky-items-center ky-justify-center">
-          <div className="ky-text-sm ky-text-muted-foreground">{spec.y}</div>
-          <div className="ky-text-5xl ky-font-bold ky-tabular-nums">{String(v ?? "—")}</div>
+        <div className="pv-flex pv-h-full pv-flex-col pv-items-center pv-justify-center">
+          <div className="pv-text-sm pv-text-muted-foreground">{spec.y}</div>
+          <div className="pv-text-5xl pv-font-bold pv-tabular-nums">{String(v ?? "—")}</div>
         </div>
       );
     }
     // "none" state
     return (
-      <div className="ky-flex ky-h-full ky-flex-col ky-items-center ky-justify-center ky-gap-3 ky-rounded ky-border ky-border-border/40 ky-bg-muted/20 ky-p-6">
-        <BarChart3 className="ky-h-8 ky-w-8 ky-text-muted-foreground" />
-        <p className="ky-text-sm ky-text-muted-foreground">No auto-chart for this shape.</p>
+      <div className="pv-flex pv-h-full pv-flex-col pv-items-center pv-justify-center pv-gap-3 pv-rounded pv-border pv-border-border/40 pv-bg-muted/20 pv-p-6">
+        <BarChart3 className="pv-h-8 pv-w-8 pv-text-muted-foreground" />
+        <p className="pv-text-sm pv-text-muted-foreground">No auto-chart for this shape.</p>
       </div>
     );
   }

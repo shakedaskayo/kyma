@@ -1,0 +1,46 @@
+[package]
+name = "pensieve-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "JSON-RPC 2.0 Model Context Protocol server over Streamable HTTP."
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-server = { workspace = true }
+adk-rust = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tower-http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+metrics = { workspace = true }
+object_store = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+tower = { workspace = true, features = ["util"] }
+pensieve-server = { workspace = true, features = ["test-support"] }
+testcontainers = { workspace = true }
+testcontainers-modules = { workspace = true }
+sqlx = { workspace = true }
+reqwest = { workspace = true }
+# DB-free fixtures for the stdio framing test (embedded catalog + in-mem store).
+pensieve-catalog-sqlite = { workspace = true }
+pensieve-format-tlm = { workspace = true }
+# Async-memory e2e: real queue over the embedded catalog + a mock embedder.
+pensieve-memory = { workspace = true }
+pensieve-queue = { workspace = true }
+pensieve-embed = { workspace = true }
+pensieve-storage = { workspace = true }
+pensieve-core = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true }

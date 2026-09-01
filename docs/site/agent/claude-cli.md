@@ -1,11 +1,11 @@
 ---
 title: Claude Code CLI engine
-description: Use your local Claude Code OAuth, MCPs, and skills with Kyma — no API key required.
+description: Use your local Claude Code OAuth, MCPs, and skills with Pensieve — no API key required.
 ---
 
 # Claude Code CLI engine
 
-The `claude_cli` engine lets Kyma reuse your local Claude Code installation: OAuth credentials, tool loop, MCPs, and skills all come along for free. No API key required. Use it for local development; use the `anthropic` engine (with an API key) for production or multi-tenant deployments.
+The `claude_cli` engine lets Pensieve reuse your local Claude Code installation: OAuth credentials, tool loop, MCPs, and skills all come along for free. No API key required. Use it for local development; use the `anthropic` engine (with an API key) for production or multi-tenant deployments.
 
 ## When to use it
 
@@ -28,7 +28,7 @@ That single invocation inherits **everything** from your local Claude Code insta
 
 - **Auth.** OAuth token from the macOS Keychain. Refreshes itself.
 - **Skills.** Every skill under `~/.claude/skills/` and
-  `~/.claude/plugins/cache/<vendor>/<plugin>/<version>/skills/`. Kyma
+  `~/.claude/plugins/cache/<vendor>/<plugin>/<version>/skills/`. Pensieve
   does NOT inject skills via system-prompt for this engine — Claude Code
   already knows how.
 - **MCPs.** Any MCP server configured in
@@ -36,7 +36,7 @@ That single invocation inherits **everything** from your local Claude Code insta
 - **Tool loop.** Edit, Read, Bash, search — all the standard Claude
   Code tools.
 
-This makes it the most capable engine for local development: "answer questions about my Kyma deployment" can lean on the entire agent stack you already have.
+This makes it the most capable engine for local development: "answer questions about my Pensieve deployment" can lean on the entire agent stack you already have.
 
 ## How it works
 
@@ -54,7 +54,7 @@ anthropic-beta: oauth-2025-04-20
 ```
 
 The CLI engine sidesteps the issue entirely: `claude --print` already
-knows how to authenticate. Kyma's only job is to spawn it with the
+knows how to authenticate. Pensieve's only job is to spawn it with the
 right prompt and pipe the result through `/v1/agent/ask` as
 `answer_delta` SSE events.
 
@@ -75,9 +75,9 @@ right prompt and pipe the result through `/v1/agent/ask` as
 - **`claude` must be on `$PATH`.** The server's locator checks
   `$PATH` plus a few well-known install paths
   (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`).
-- **The Keychain entry is host-specific.** A Kyma server running in
+- **The Keychain entry is host-specific.** A Pensieve server running in
   Docker on macOS does NOT inherit the host's Keychain. Use this engine
-  only when the Kyma server process can see your user's Keychain — i.e.
+  only when the Pensieve server process can see your user's Keychain — i.e.
   native `cargo run` or a `launchd`-managed service running as your
   user.
 - **One process per turn.** Each agent turn spawns a fresh `claude

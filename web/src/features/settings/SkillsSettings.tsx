@@ -81,7 +81,7 @@ export function SkillsSettings() {
     <Card>
       <CardContent className="space-y-4 p-4">
         <p className="text-xs text-muted-foreground">
-          Skills are markdown files Kyma discovers in{" "}
+          Skills are markdown files Pensieve discovers in{" "}
           <code className="font-mono">~/.claude/skills/</code>, Claude Code
           plugin caches, and{" "}
           <code className="font-mono">./.claude/skills/</code>. Enabled skills

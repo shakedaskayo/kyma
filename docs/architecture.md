@@ -1,4 +1,4 @@
-# kyma — Architecture (living document)
+# pensieve — Architecture (living document)
 
 This document is the source of truth for the engine's architecture. The
 companion **slice-1 implementation plan** lives at
@@ -20,10 +20,10 @@ These five are encoded in CI via the architectural tests in
    Postgres in a separate process. There is no embedded-catalog code path to
    delete later.
 4. **Format is pluggable.** `SegmentFormat` is the trait boundary between
-   storage and everything else. `kyma-format-tlm` is one implementation of
+   storage and everything else. `pensieve-format-tlm` is one implementation of
    many possible formats.
 5. **Parser is pluggable.** `QueryFrontend` is the trait boundary for query
-   languages. `kyma-kql` is one frontend; SQL / PromQL / custom DSLs layer on
+   languages. `pensieve-kql` is one frontend; SQL / PromQL / custom DSLs layer on
    as peers.
 
 Violating any of these = distribution becomes a rewrite.
@@ -43,7 +43,7 @@ documents its responsibility and the trait surface it implements or consumes.
 - **MinIO / S3-compatible object storage** — the source of truth. Pluggable
   behind `object_store::ObjectStore`.
 - **Apache DataFusion** — the query execution runtime. Isolated from the rest
-  of the engine by `kyma-exec::df_adapter`, so DataFusion version churn touches
+  of the engine by `pensieve-exec::df_adapter`, so DataFusion version churn touches
   one file.
 
 All three replaceable behind traits. Swapping catalogs (to FoundationDB /
@@ -98,7 +98,7 @@ Raft) or execution runtimes is a bounded change, not a rewrite.
 
 ## Self-telemetry
 
-Kyma instruments itself via OpenTelemetry and writes traces into its own store.
+Pensieve instruments itself via OpenTelemetry and writes traces into its own store.
 
 ### OTLP receiver signals
 
@@ -107,7 +107,7 @@ Kyma instruments itself via OpenTelemetry and writes traces into its own store.
 | Logs    | `otel.otel_logs`    | `opentelemetry.proto.collector.logs.v1.LogsService/Export` |
 | Traces  | `otel.otel_traces`  | `opentelemetry.proto.collector.trace.v1.TraceService/Export` |
 
-Both listeners share port 4317 (configurable via `KYMA_OTLP_ADDR`; disabled by default — set to `0.0.0.0:4317` to enable).
+Both listeners share port 4317 (configurable via `PENSIEVE_OTLP_ADDR`; disabled by default — set to `0.0.0.0:4317` to enable).
 
 ### `otel.otel_traces` schema
 
@@ -124,20 +124,20 @@ Both listeners share port 4317 (configurable via `KYMA_OTLP_ADDR`; disabled by d
 | `status_code`    | Utf8                        | OK / ERROR / UNSET |
 | `status_message` | Utf8 (nullable)             | error description |
 | `service_name`   | Utf8 (nullable)             | promoted from `service.name` resource attr |
-| `subject`        | Utf8 (nullable)             | promoted from `kyma.subject` span attr |
-| `tenant`         | Utf8 (nullable)             | promoted from `kyma.tenant` span attr |
+| `subject`        | Utf8 (nullable)             | promoted from `pensieve.subject` span attr |
+| `tenant`         | Utf8 (nullable)             | promoted from `pensieve.tenant` span attr |
 | `attributes_json`| Utf8                        | remaining span attributes as JSON |
 | `resource_json`  | Utf8                        | remaining resource attributes as JSON |
 
-### Self-instrumentation (`kyma_telemetry` target)
+### Self-instrumentation (`pensieve_telemetry` target)
 
-The server instruments its own API operations by emitting tracing spans with `target: "kyma_telemetry"`. A layered tracing registry filters the OTel exporter layer to this target only — spans outside `kyma_telemetry` go to the log formatter but not to storage, preventing recursion.
+The server instruments its own API operations by emitting tracing spans with `target: "pensieve_telemetry"`. A layered tracing registry filters the OTel exporter layer to this target only — spans outside `pensieve_telemetry` go to the log formatter but not to storage, preventing recursion.
 
 Instrumented operations:
 
 | Span name        | Handler                  | Key attributes |
 |------------------|--------------------------|----------------|
-| `request`        | auth middleware          | `http.method`, `http.route`, `kyma.tenant`, `kyma.subject`, `http.status` |
+| `request`        | auth middleware          | `http.method`, `http.route`, `pensieve.tenant`, `pensieve.subject`, `http.status` |
 | `memory.recall`  | memory query handler     | `memory.query`, `memory.results`, `memory.took_ms` |
 | `memory.import`  | memory import handler    | `memory.imported` |
 | `memory.export`  | memory export handler    | `memory.exported` |
@@ -150,7 +150,7 @@ Spans are excluded from self-tracing for: `GET /health`, `GET /metrics*`, and `G
 
 ### Capture-health monitoring
 
-The Claude Code integration hooks write `~/.kyma/capture-health.json` on every failed ingest attempt (and delete it on success). `kyma status` reads this file and surfaces capture failures alongside the auth probe result, so a silent 401 streak no longer goes undetected.
+The Claude Code integration hooks write `~/.pensieve/capture-health.json` on every failed ingest attempt (and delete it on success). `pensieve status` reads this file and surfaces capture failures alongside the auth probe result, so a silent 401 streak no longer goes undetected.
 
 ---
 
@@ -173,30 +173,30 @@ for the retrieval + scale subsystems and their config. Honest status:
 
 **Wired and active**
 
-- **Vector ANN** — per-extent IVF + 1-bit RaBitQ sidecars (`kyma-index-vector`,
-  `kyma_exec::ann::ann_topk`), wired into unified search + agent memory
+- **Vector ANN** — per-extent IVF + 1-bit RaBitQ sidecars (`pensieve-index-vector`,
+  `pensieve_exec::ann::ann_topk`), wired into unified search + agent memory
   retrieval, with exact-cosine rerank and the brute-force UDF as fallback/oracle.
-- **Global centroid tree (SPANN, server mode)** — `kyma-index-vector::global_tree`
+- **Global centroid tree (SPANN, server mode)** — `pensieve-index-vector::global_tree`
   + the `ann_tree` catalog table (migration 030); `ann_topk` routes through the
   tree (`ann_tree::select`) when a fresh one exists and falls back to per-extent
   fan-out otherwise, so it is a pure latency optimization, never load-bearing.
-- **BM25 full-text** — per-extent Tantivy sidecars (`kyma-index-fts`,
-  `kyma_exec::fts::bm25_topk`) replacing the `LIKE`/token-set lexical leg.
+- **BM25 full-text** — per-extent Tantivy sidecars (`pensieve-index-fts`,
+  `pensieve_exec::fts::bm25_topk`) replacing the `LIKE`/token-set lexical leg.
 - **Index sidecar contract** — `index_sidecar.rs` + `extent_indexes` catalog
   table (+ SQLite mirror); format-agnostic, embedding-model-pinned.
-- **Parquet at rest** — `kyma-format-parquet` + `FormatRegistry` magic-byte
-  read dispatch; `KYMA_WRITE_FORMAT` selects the write format; mixed-format
+- **Parquet at rest** — `pensieve-format-parquet` + `FormatRegistry` magic-byte
+  read dispatch; `PENSIEVE_WRITE_FORMAT` selects the write format; mixed-format
   tables stay readable.
-- **Staged ingest + committer** — `KYMA_INGEST_MODE=staged` + `staged_extents`
+- **Staged ingest + committer** — `PENSIEVE_INGEST_MODE=staged` + `staged_extents`
   + `committer.rs`; object storage as the WAL, atomic group commit.
-- **Graph traversal** — `kyma-graph-topo` CSR is used in the live retrieval
-  path; the Cypher dialect (`kyma-kql`) supports multi-hop chains,
+- **Graph traversal** — `pensieve-graph-topo` CSR is used in the live retrieval
+  path; the Cypher dialect (`pensieve-kql`) supports multi-hop chains,
   variable-length `-[*M..N]->`, and `shortestPath`, plus `CREATE`/`MERGE`
   writes (write-role gated). The memory-expansion default is capped at
   `MAX_HOPS = 2` — a product choice for agent recall, not an engine limit.
 - **Ops hardening** — per-process **and** per-tenant query/agent concurrency
   isolation (`concurrency.rs`, each tenant its own semaphore) + token-bucket
-  **ingest** rate limiting (`kyma-ingest-rest::rate_limit`), all with `429` +
+  **ingest** rate limiting (`pensieve-ingest-rest::rate_limit`), all with `429` +
   `Retry-After`. Off by default (env-gated). Per-tenant limits are also
   **catalog-configurable** via the `tenant_quotas` table (migration 032 +
   SQLite mirror) and the admin `PUT/GET /v1/admin/tenant-quotas` endpoint, read

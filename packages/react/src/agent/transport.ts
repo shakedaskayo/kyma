@@ -1,5 +1,5 @@
 import { DefaultChatTransport, type UIMessage } from "ai";
-import type { KymaClient } from "@kyma-ai/client";
+import type { PensieveClient } from "@pensieve-ai/client";
 
 /** Per-turn request options posted to `/v1/agent/ask`. */
 export type AgentRequestOptions = {
@@ -10,11 +10,11 @@ export type AgentRequestOptions = {
 };
 
 /**
- * Build a `useChat` transport for the Kyma agent endpoint.
+ * Build a `useChat` transport for the Pensieve agent endpoint.
  *
  * Instead of carrying endpoint/token directly, we route every fetch through
  * `client.transport.request()` so auth/refresh (including JWT expiry and token
- * rotation) is handled by the same transport that all other Kyma hooks use.
+ * rotation) is handled by the same transport that all other Pensieve hooks use.
  *
  * `prepareSendMessagesRequest` sends exactly the existing AskRequest shape:
  * only the latest question + a few options. The backend does not need the full
@@ -24,7 +24,7 @@ export type AgentRequestOptions = {
  * toggle, or session id between turns without rebuilding the transport.
  */
 export function createAgentTransport(
-  client: KymaClient,
+  client: PensieveClient,
   getOptions: () => AgentRequestOptions,
 ) {
   const base = client.transport.endpoint.replace(/\/$/, "");

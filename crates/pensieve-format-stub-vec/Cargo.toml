@@ -1,0 +1,19 @@
+[package]
+name = "pensieve-format-stub-vec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Stub vector / ANN format implementation. Proves the SegmentFormat trait boundary under two concrete consumers."
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-core.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+arrow.workspace = true
+arrow-array.workspace = true
+arrow-schema.workspace = true
+bytes.workspace = true

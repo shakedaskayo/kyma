@@ -38,13 +38,13 @@ variable "max_size" {
 variable "namespace" {
   type        = string
   description = "Kubernetes namespace the engine runs in (for the IRSA trust)."
-  default     = "kyma"
+  default     = "pensieve"
 }
 
 variable "service_account" {
   type        = string
   description = "Kubernetes service account name (for the IRSA trust)."
-  default     = "kyma-engine"
+  default     = "pensieve-engine"
 }
 
 variable "s3_bucket_arn" {

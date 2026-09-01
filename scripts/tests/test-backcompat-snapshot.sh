@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Test: backcompat-snapshot.sh produces a fixture directory with the
-# expected files against a running kyma engine.
+# expected files against a running pensieve engine.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

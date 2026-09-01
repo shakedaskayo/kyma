@@ -4,11 +4,11 @@
 
 **Goal:** Replace the "paste a bearer token in Settings" UX with a real **login screen** backed by a **users table + an admin user**. Login issues a **session token** that the existing bearer-token middleware validates unchanged. OIDC (Okta/Keycloak) is a later phase — design the seam.
 
-**Architecture (reuse, don't rebuild):** Kyma already has `AuthBackend`/`Principal`/`Role(Read<Write<Admin)` + bearer middleware (`crates/kyma-server/src/auth/`). A login = INSERT an `api_tokens` row (random ≥128-bit token; store `SHA-256(token)`); subsequent requests authenticate via the same SHA-256 lookup. Add: a `users` table (argon2 password), an `api_tokens` migration (it only exists as a doc-comment/test fixture today), a **`SessionAuthBackend`** that validates `api_tokens` *and* falls back to env tokens (so static `KYMA_AUTH_TOKENS` API tokens keep working), unauthenticated `POST /v1/auth/login`, authenticated `/v1/auth/me` + `/logout`, admin seeding from env, and a web `/login` route. Passwords use **argon2** (db_backend.rs explicitly warns SHA-256 is only for high-entropy tokens, not passwords).
+**Architecture (reuse, don't rebuild):** Pensieve already has `AuthBackend`/`Principal`/`Role(Read<Write<Admin)` + bearer middleware (`crates/pensieve-server/src/auth/`). A login = INSERT an `api_tokens` row (random ≥128-bit token; store `SHA-256(token)`); subsequent requests authenticate via the same SHA-256 lookup. Add: a `users` table (argon2 password), an `api_tokens` migration (it only exists as a doc-comment/test fixture today), a **`SessionAuthBackend`** that validates `api_tokens` *and* falls back to env tokens (so static `PENSIEVE_AUTH_TOKENS` API tokens keep working), unauthenticated `POST /v1/auth/login`, authenticated `/v1/auth/me` + `/logout`, admin seeding from env, and a web `/login` route. Passwords use **argon2** (db_backend.rs explicitly warns SHA-256 is only for high-entropy tokens, not passwords).
 
 **Scope:** v1 = a single seeded admin user + username/password login. Multi-user management UI + OIDC are later phases (seams designed). Connectors work is paused (P1-engine-A committed).
 
-**Reference (verified):** `crates/kyma-server/src/auth/{backend,db_backend,env_backend,middleware,mod}.rs`; `crates/kyma-bin/src/main.rs` (backend selection ~148-178, router merge ~369-401); migration pattern `crates/kyma-catalog/migrations/006_dashboards.sql`/`008_graphs.sql` + `Catalog` trait `*_in_tenant` pattern (`crates/kyma-core/src/catalog.rs`); web guard `web/src/routes/_app.tsx`, top-level `settings.tsx`, `web/src/sdk/session.ts`.
+**Reference (verified):** `crates/pensieve-server/src/auth/{backend,db_backend,env_backend,middleware,mod}.rs`; `crates/pensieve-bin/src/main.rs` (backend selection ~148-178, router merge ~369-401); migration pattern `crates/pensieve-catalog/migrations/006_dashboards.sql`/`008_graphs.sql` + `Catalog` trait `*_in_tenant` pattern (`crates/pensieve-core/src/catalog.rs`); web guard `web/src/routes/_app.tsx`, top-level `settings.tsx`, `web/src/sdk/session.ts`.
 
 **Working dir:** worktree `…/.claude/worktrees/feature+graph-layer`. Docker for tests.
 
@@ -23,7 +23,7 @@
 
 ## A1 — Engine
 
-### Migration `crates/kyma-catalog/migrations/009_auth.sql`
+### Migration `crates/pensieve-catalog/migrations/009_auth.sql`
 ```sql
 CREATE TABLE users (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -54,7 +54,7 @@ CREATE TABLE api_tokens (
 CREATE INDEX api_tokens_tenant_idx ON api_tokens (tenant_id);
 ```
 
-### Catalog (`kyma-core/src/catalog.rs` trait + `kyma-catalog/src/lib.rs` impl)
+### Catalog (`pensieve-core/src/catalog.rs` trait + `pensieve-catalog/src/lib.rs` impl)
 Mirror the dashboards/graphs `*_in_tenant` pattern. Add types `User { id, username, role, ... }`, `SessionToken`. Methods:
 - `create_user_in_tenant(tenant, username, password_hash, role) -> User`
 - `get_user_by_username_in_tenant(tenant, username) -> Option<UserWithHash>` (returns the hash for verification — keep `password_hash` off the public `User` type; a separate internal struct)
@@ -65,16 +65,16 @@ Mirror the dashboards/graphs `*_in_tenant` pattern. Add types `User { id, userna
 (Default-tenant wrappers delegate to `_in_tenant`, per convention.)
 
 ### Password + token crypto
-- Add `argon2` + `rand` to `crates/kyma-server` (or a small `kyma-server/src/auth/passwords.rs`): `hash_password(pw) -> String` (argon2id PHC), `verify_password(pw, phc) -> bool`.
+- Add `argon2` + `rand` to `crates/pensieve-server` (or a small `pensieve-server/src/auth/passwords.rs`): `hash_password(pw) -> String` (argon2id PHC), `verify_password(pw, phc) -> bool`.
 - Session token: 32 random bytes → base64url (≥128-bit). Store `Sha256::digest(token)` (reuse db_backend's `hash_token`). Default session expiry e.g. 30 days (`expires_at`).
 
-### `SessionAuthBackend` (`crates/kyma-server/src/auth/session_backend.rs`, NOT feature-gated)
+### `SessionAuthBackend` (`crates/pensieve-server/src/auth/session_backend.rs`, NOT feature-gated)
 `struct SessionAuthBackend { pool: PgPool, env: EnvAuthBackend }`. `authenticate(token)`:
-1. Try `env.authenticate(token)` (in-memory `KYMA_AUTH_TOKENS`) → if Ok, return (preserves static API tokens).
+1. Try `env.authenticate(token)` (in-memory `PENSIEVE_AUTH_TOKENS`) → if Ok, return (preserves static API tokens).
 2. Else `catalog.lookup_api_token(SHA256(token))` → if found, not revoked, not expired → `Principal { tenant, role, subject }`; else `UnknownToken`.
 `enabled()` = `env.enabled() || users_exist` (cache a bool at startup, or always-true once login is on). Honors the existing auth-disabled passthrough when neither users nor env tokens exist.
 
-### Auth routes (`crates/kyma-server/src/auth_handler.rs`)
+### Auth routes (`crates/pensieve-server/src/auth_handler.rs`)
 - **Unauthenticated** `auth_login_router(catalog)`:
   - `POST /v1/auth/login {username, password}` → look up user, `verify_password`, on success `insert_api_token(kind:"session", scopes:role, subject:username, expires_at)` → `{ token, user:{username, role}, expires_at }`. Rate-limit/constant-time-ish; generic error on failure (no user-enumeration).
 - **Authenticated** routes (mounted on a `Role::Read`-wrapped router, so the session token is validated):
@@ -82,11 +82,11 @@ Mirror the dashboards/graphs `*_in_tenant` pattern. Add types `User { id, userna
   - `POST /v1/auth/logout` → `revoke_api_token(SHA256(presented token))`.
 - Mount: `app.merge(auth_login_router)` **without** the auth layer (sibling to `health_router` at main.rs router-merge); mount me/logout on an authenticated router.
 
-### main.rs wiring (`crates/kyma-bin/src/main.rs`)
-- After catalog connect: **seed admin** — if `KYMA_ADMIN_USER` + `KYMA_ADMIN_PASSWORD` set and `count_users()==0`, `create_user(admin, argon2(pw), Admin)`. (Log a one-time generated password if only `KYMA_ADMIN_USER` set — or require both; pick: require both, else skip seeding.)
-- **Backend selection**: when users exist or `KYMA_AUTH_BACKEND=session`, use `SessionAuthBackend::new(pool, EnvAuthBackend::from_env())`. Keep env-only path for pure token deployments. (Self-hosted with a seeded admin → session backend automatically.)
+### main.rs wiring (`crates/pensieve-bin/src/main.rs`)
+- After catalog connect: **seed admin** — if `PENSIEVE_ADMIN_USER` + `PENSIEVE_ADMIN_PASSWORD` set and `count_users()==0`, `create_user(admin, argon2(pw), Admin)`. (Log a one-time generated password if only `PENSIEVE_ADMIN_USER` set — or require both; pick: require both, else skip seeding.)
+- **Backend selection**: when users exist or `PENSIEVE_AUTH_BACKEND=session`, use `SessionAuthBackend::new(pool, EnvAuthBackend::from_env())`. Keep env-only path for pure token deployments. (Self-hosted with a seeded admin → session backend automatically.)
 - Merge the unauthenticated `auth_login_router`.
-- Deps: `argon2`, `rand`, `base64` (root + kyma-server `Cargo.toml`).
+- Deps: `argon2`, `rand`, `base64` (root + pensieve-server `Cargo.toml`).
 
 ### Tests
 - `passwords.rs`: hash→verify round-trip; wrong password fails.
@@ -122,12 +122,12 @@ Form: **Server URL** (default `http://localhost:8080`), **Username**, **Password
 ---
 
 ## Critical files
-- Engine: `crates/kyma-catalog/migrations/009_auth.sql`; `crates/kyma-core/src/catalog.rs` + `crates/kyma-catalog/src/lib.rs` (user/token methods); `crates/kyma-server/src/auth/{session_backend.rs,passwords.rs}` + `auth_handler.rs` + `mod.rs`; `crates/kyma-bin/src/main.rs` (seed + backend select + mount). Reuse `db_backend.rs` `hash_token`, `backend.rs` `Principal/Role`, `middleware.rs`.
+- Engine: `crates/pensieve-catalog/migrations/009_auth.sql`; `crates/pensieve-core/src/catalog.rs` + `crates/pensieve-catalog/src/lib.rs` (user/token methods); `crates/pensieve-server/src/auth/{session_backend.rs,passwords.rs}` + `auth_handler.rs` + `mod.rs`; `crates/pensieve-bin/src/main.rs` (seed + backend select + mount). Reuse `db_backend.rs` `hash_token`, `backend.rs` `Principal/Role`, `middleware.rs`.
 - Web: `web/src/sdk/auth.ts`, `web/src/sdk/session.ts`, `web/src/routes/login.tsx`, `_app.tsx`, `settings.tsx`, `web/src/app/shell.tsx`.
 
 ## Verification (end-to-end)
-1. Unit: `cargo test -p kyma-server --features test-support auth` + catalog user/token tests; web vitest `sdk/auth`.
-2. Live: start the stack with `KYMA_ADMIN_USER=admin KYMA_ADMIN_PASSWORD=…`; engine seeds the admin. Open the web → redirected to `/login` → log in as admin → lands on Explore; protected endpoints work with the issued session token; `/v1/auth/me` returns the user; **Log out** → back to `/login`, old token rejected (401). A static `KYMA_AUTH_TOKENS` token still authenticates the API. Auth-disabled engine (no users, empty tokens) → "connect without login" still works.
+1. Unit: `cargo test -p pensieve-server --features test-support auth` + catalog user/token tests; web vitest `sdk/auth`.
+2. Live: start the stack with `PENSIEVE_ADMIN_USER=admin PENSIEVE_ADMIN_PASSWORD=…`; engine seeds the admin. Open the web → redirected to `/login` → log in as admin → lands on Explore; protected endpoints work with the issued session token; `/v1/auth/me` returns the user; **Log out** → back to `/login`, old token rejected (401). A static `PENSIEVE_AUTH_TOKENS` token still authenticates the API. Auth-disabled engine (no users, empty tokens) → "connect without login" still works.
 
 ## Risks
 1. **Don't lock yourself out / don't break auth-disabled dev.** Keep the env-token + auth-disabled passthrough intact; the session backend is additive. The blank-token web fix must coexist (auth-disabled → no login needed).

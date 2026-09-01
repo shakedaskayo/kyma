@@ -1,8 +1,8 @@
-// Typed client for kyma auth endpoints (`/v1/auth/*`).
+// Typed client for pensieve auth endpoints (`/v1/auth/*`).
 // `login` and `refresh` are unauthenticated — they use plain fetch + endpoint.
-// `me` and `logout` require a Bearer token and use KymaTransport.
+// `me` and `logout` require a Bearer token and use PensieveTransport.
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import { errorFromResponse } from "./errors";
 
 export interface AuthUser {
@@ -74,7 +74,7 @@ export async function refresh(args: {
 /**
  * GET /v1/auth/me — requires Bearer token.
  */
-export async function me(t: KymaTransport): Promise<AuthUser> {
+export async function me(t: PensieveTransport): Promise<AuthUser> {
   const res = await t.request("/v1/auth/me");
   if (!res.ok) throw await errorFromResponse(res);
   return res.json() as Promise<AuthUser>;
@@ -83,7 +83,7 @@ export async function me(t: KymaTransport): Promise<AuthUser> {
 /**
  * POST /v1/auth/logout — requires Bearer token. Returns void (204).
  */
-export async function logout(t: KymaTransport): Promise<void> {
+export async function logout(t: PensieveTransport): Promise<void> {
   const res = await t.request("/v1/auth/logout", { method: "POST" });
   if (res.status === 204) return;
   if (!res.ok) throw await errorFromResponse(res);

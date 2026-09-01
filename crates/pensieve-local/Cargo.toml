@@ -1,0 +1,60 @@
+[package]
+name = "pensieve-local"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Local-engine library behind the pensieve CLI's mcp/serve/setup/sync commands — embedded SQLite catalog + local-filesystem store + stdio/HTTP MCP, zero infra."
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-core.workspace = true
+pensieve-jobs.workspace = true
+pensieve-datasources.workspace = true
+pensieve-compaction.workspace = true
+pensieve-catalog-sqlite.workspace = true
+pensieve-ingest-otlp.workspace = true
+pensieve-storage.workspace = true
+pensieve-format-tlm.workspace = true
+pensieve-format-parquet.workspace = true
+# Sidecar builders for local-mode ANN + BM25 activation (S1.5).
+pensieve-index-vector.workspace = true
+pensieve-index-fts.workspace = true
+# web-ui embeds the same web interface the hosted server serves.
+pensieve-server = { workspace = true, features = ["web-ui"] }
+pensieve-mcp.workspace = true
+pensieve-memory.workspace = true
+pensieve-ccmem.workspace = true
+pensieve-brain.workspace = true
+pensieve-ingest-rest.workspace = true
+pensieve-ingest-core.workspace = true
+tokio.workspace = true
+axum.workspace = true
+# Node provenance for the local watcher status (same version
+# pensieve-datasources pins for its node_identity helper).
+hostname = "0.4"
+reqwest.workspace = true
+sqlx = { workspace = true, features = ["sqlite"] }
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml = "0.9"
+notify = "6"
+chrono.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-opentelemetry.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+pensieve-embed.workspace = true
+async-trait.workspace = true
+tempfile = "3"
+tower.workspace = true
+object_store.workspace = true
+arrow-schema.workspace = true

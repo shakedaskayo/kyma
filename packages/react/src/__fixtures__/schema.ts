@@ -1,4 +1,4 @@
-import type { SchemaDoc } from "@kyma-ai/client";
+import type { SchemaDoc } from "@pensieve-ai/client";
 
 export const SCHEMA_FIXTURE: SchemaDoc = {
   databases: [

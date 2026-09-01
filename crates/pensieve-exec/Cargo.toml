@@ -1,0 +1,41 @@
+[package]
+name = "pensieve-exec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "DataFusion integration: custom TableProvider, PensieveScanExec, three-level pruning cascade. Isolates DataFusion API churn behind df_adapter."
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-core.workspace = true
+pensieve-plan.workspace = true
+pensieve-storage.workspace = true
+pensieve-catalog.workspace = true
+pensieve-format-tlm.workspace = true
+pensieve-index-vector.workspace = true
+pensieve-index-fts.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+arrow.workspace = true
+arrow-array.workspace = true
+arrow-schema.workspace = true
+arrow-flight.workspace = true
+datafusion.workspace = true
+futures.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+metrics.workspace = true
+serde_json.workspace = true
+object_store = { workspace = true }
+tonic = { workspace = true }
+
+[dev-dependencies]
+pensieve-catalog-sqlite.workspace = true
+pensieve-kql.workspace = true
+pensieve-graph-testkit.workspace = true
+tokio = { workspace = true, features = ["full"] }

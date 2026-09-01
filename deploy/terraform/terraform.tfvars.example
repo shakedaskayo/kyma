@@ -1,9 +1,9 @@
 # Copy to terraform.tfvars and fill in. Secrets (passwords, URLs, tokens) are
 # better passed via env: export TF_VAR_supabase_db_password=... etc.
 #
-# `kyma deploy init` renders this file for you from the wizard answers.
+# `pensieve deploy init` renders this file for you from the wizard answers.
 
-project_name = "kyma"
+project_name = "pensieve"
 aws_region   = "us-east-1"
 
 # ── Backend selectors ──────────────────────────────────────────────────────
@@ -21,19 +21,19 @@ auth_backend     = "supabase"
 supabase_org_id = "your-org-id" # https://supabase.com/dashboard/org → settings
 supabase_region = "us-east-1"
 # Create S3 access keys in the dashboard (Project Settings → Storage), or let
-# `kyma deploy up` walk you through it:
+# `pensieve deploy up` walk you through it:
 # supabase_s3_access_key_id     = ""
 # supabase_s3_secret_access_key = ""
 
 # ── Bring-your-own Postgres (database_backend = "external") ─────────────────
-# database_url = "postgresql://user:pass@host:5432/kyma"   # via TF_VAR_database_url
+# database_url = "postgresql://user:pass@host:5432/pensieve"   # via TF_VAR_database_url
 
 # ── AWS RDS catalog (database_backend = "rds") ──────────────────────────────
 # rds_instance_class = "db.t4g.micro"
 
 # ── Bring-your-own S3-compatible storage (storage_backend = "external") ─────
 # storage_endpoint   = "https://minio.example.com:9000"
-# storage_bucket     = "kyma"
+# storage_bucket     = "pensieve"
 # storage_region     = "us-east-1"
 # storage_path_style = true
 # storage_access_key = ""                # via TF_VAR_storage_access_key
@@ -42,9 +42,9 @@ supabase_region = "us-east-1"
 # ── Auth: token / oidc (non-Supabase) ───────────────────────────────────────
 # admin_token    = ""                    # via TF_VAR_admin_token (auth=token)
 # oidc_issuer    = "https://issuer.example.com"
-# oidc_client_id = "kyma"
+# oidc_client_id = "pensieve"
 
-# Who gets the kyma admin role (Supabase Auth / OIDC email claim).
+# Who gets the pensieve admin role (Supabase Auth / OIDC email claim).
 admin_emails = ["you@company.com"]
 
 # Lock sign-in to your team's email domain(s). Strongly recommended for the
@@ -55,7 +55,7 @@ allowed_email_domains = ["company.com"]
 oauth_providers = [] # e.g. ["google", "github"]
 
 # Custom domain + automated TLS (recommended for production; Fargate).
-# domain          = "kyma.company.com"
+# domain          = "pensieve.company.com"
 # route53_zone_id = "Z0123456789ABC"
 
 # ── EKS sizing (compute_backend = "eks") ────────────────────────────────────

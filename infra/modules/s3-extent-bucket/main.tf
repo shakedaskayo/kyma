@@ -1,7 +1,7 @@
 # tfsec:ignore:aws-s3-enable-bucket-logging access logging needs a separate log-target bucket; tracked for C5 hardening.
 resource "aws_s3_bucket" "this" {
   bucket = var.bucket_name
-  tags   = { Project = "kyma-cloud", Env = var.env, ManagedBy = "terraform" }
+  tags   = { Project = "pensieve-cloud", Env = var.env, ManagedBy = "terraform" }
 }
 
 resource "aws_s3_bucket_versioning" "this" {

@@ -12,7 +12,7 @@ naming conventions, the one service that's load-bearing-and-fragile, the decisio
 last week and *why*. The agent is brilliant and amnesiac — and the re-explaining tax
 compounds across a team.
 
-kyma gives it durable memory: facts you (or the agent) save once, recalled into the right
+pensieve gives it durable memory: facts you (or the agent) save once, recalled into the right
 prompts forever, across sessions and machines.
 
 ## Setup
@@ -20,8 +20,8 @@ prompts forever, across sessions and machines.
 One binary, zero infra, then wire your agent ([full options](/agent/connect)):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/shakedaskayo/kyma/main/install.sh | bash
-kyma setup claude-code        # MCP — or: kyma install-plugin (automatic capture + recall)
+curl -fsSL https://raw.githubusercontent.com/shakedaskayo/pensieve/main/install.sh | bash
+pensieve setup claude-code        # MCP — or: pensieve install-plugin (automatic capture + recall)
 ```
 
 ## Save what's durable
@@ -29,8 +29,8 @@ kyma setup claude-code        # MCP — or: kyma install-plugin (automatic captu
 Save a fact explicitly from the CLI, or let the agent call `save_memory` over MCP:
 
 ```bash
-kyma remember "payments-svc deploys behind the Aurora gateway; error budget is 0.1%."
-kyma remember "Prefer KQL over SQL in examples." --type preference
+pensieve remember "payments-svc deploys behind the Aurora gateway; error budget is 0.1%."
+pensieve remember "Prefer KQL over SQL in examples." --type preference
 ```
 
 Memory is typed (fact, preference, decision, …) and **graph-aware**: a memory about
@@ -43,7 +43,7 @@ embedded or stored.
 Ask for it explicitly:
 
 ```bash
-kyma recall "how do we deploy payments and what's the error budget?"
+pensieve recall "how do we deploy payments and what's the error budget?"
 # → returns the memory, scored by vector + keyword + graph
 ```
 
@@ -66,11 +66,11 @@ you prefer KQL examples, that the error budget is tight. No prologue, no re-expl
 - **Kept sharp automatically** — [dreaming](/agent/dreaming) reviews memories on a schedule,
   merges duplicates, supersedes contradictions (bi-temporal — nothing is hard-deleted), and
   wires memories to the resources they're about.
-- **From the agent's own files** — `kyma sync` also ingests Claude Code's file memory
-  (`~/.claude/projects/*/memory`) into queryable kyma memory.
+- **From the agent's own files** — `pensieve sync` also ingests Claude Code's file memory
+  (`~/.claude/projects/*/memory`) into queryable pensieve memory.
 
 ## Next
 
 - The recall internals: [Agentic Memory](/agent/memory).
 - The full loop in action: [Debug a prod incident from your editor](/use-cases/debug-from-your-editor).
-- How it all fits: [How kyma works](/concepts/how-kyma-works).
+- How it all fits: [How pensieve works](/concepts/how-pensieve-works).

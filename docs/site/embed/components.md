@@ -1,49 +1,49 @@
 ---
-title: Components — @kyma-ai/react
-description: Full prop tables for KymaProvider, KymaGraph, KymaQueryEditor, KymaDiscover, KymaDashboard, and KymaAgentChat.
+title: Components — @pensieve-ai/react
+description: Full prop tables for PensieveProvider, PensieveGraph, PensieveQueryEditor, PensieveDiscover, PensieveDashboard, and PensieveAgentChat.
 ---
 
 # Components
 
-All components must be rendered inside a `KymaProvider`. Each component wraps
-its inner content in a `KymaErrorBoundary`, so a render error inside the
+All components must be rendered inside a `PensieveProvider`. Each component wraps
+its inner content in a `PensieveErrorBoundary`, so a render error inside the
 component never crashes the host application.
 
 ---
 
-## `KymaProvider`
+## `PensieveProvider`
 
-**Import:** `import { KymaProvider } from "@kyma-ai/react"`
+**Import:** `import { PensieveProvider } from "@pensieve-ai/react"`
 
-Root provider. Creates a `KymaClient`, optionally a `QueryClient`, applies the
+Root provider. Creates a `PensieveClient`, optionally a `QueryClient`, applies the
 theme as CSS custom properties, and renders a portal target for Radix UI
 popovers/dialogs.
 
 | Prop | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `endpoint` | `string` | yes | — | Kyma server URL, e.g. `https://kyma.acme.internal`. Trailing slashes are stripped. |
-| `auth` | `KymaAuth` | yes | — | `{ token: string }` or `{ getToken: (opts?) => Promise<string> }`. See [Authentication](/embed/authentication). |
+| `endpoint` | `string` | yes | — | Pensieve server URL, e.g. `https://pensieve.acme.internal`. Trailing slashes are stripped. |
+| `auth` | `PensieveAuth` | yes | — | `{ token: string }` or `{ getToken: (opts?) => Promise<string> }`. See [Authentication](/embed/authentication). |
 | `database` | `string` | no | — | Default database sent as `x-database` on every request. Per-component `database` props override this. |
-| `theme` | `Partial<KymaTheme> \| "inherit"` | no | `kymaDark` | Theme tokens merged over `kymaDark`, or `"inherit"` to use host CSS vars. See [Theming](/embed/theming). |
+| `theme` | `Partial<PensieveTheme> \| "inherit"` | no | `pensieveDark` | Theme tokens merged over `pensieveDark`, or `"inherit"` to use host CSS vars. See [Theming](/embed/theming). |
 | `queryClient` | `QueryClient` | no | isolated instance | Reuse the host app's TanStack Query client. The provider creates its own (with `staleTime: 30 000`, `refetchOnWindowFocus: false`, `retry: 1`) when omitted. |
 | `onError` | `(err: unknown) => void` | no | — | Error handler propagated via context for components that bubble non-render errors (e.g. auth failures). |
 | `children` | `ReactNode` | yes | — | Component tree. |
 
 ---
 
-## `KymaGraph`
+## `PensieveGraph`
 
-**Import:** `import { KymaGraph } from "@kyma-ai/react/graph"`
+**Import:** `import { PensieveGraph } from "@pensieve-ai/react/graph"`
 
 **Bundle note:** pulls in `react-force-graph-2d` (WebGL force-directed graph
-canvas). If you never render `KymaGraph`, this library is not bundled.
+canvas). If you never render `PensieveGraph`, this library is not bundled.
 
-Self-contained interactive property graph. Fetches graph data from the Kyma
+Self-contained interactive property graph. Fetches graph data from the Pensieve
 server, merges multi-database graphs onto a single canvas, and renders a
 force-directed layout with a sidebar showing controls, an inspector, and a
 legend.
 
-Each mounted `KymaGraph` owns its own isolated Zustand store — two instances
+Each mounted `PensieveGraph` owns its own isolated Zustand store — two instances
 on the same page never share selection or layout state.
 
 | Prop | Type | Default | Description |
@@ -64,16 +64,16 @@ on the same page never share selection or layout state.
 
 ---
 
-## `KymaQueryEditor`
+## `PensieveQueryEditor`
 
-**Import:** `import { KymaQueryEditor } from "@kyma-ai/react/query"`
+**Import:** `import { PensieveQueryEditor } from "@pensieve-ai/react/query"`
 
 **Bundle note:** pulls in `@monaco-editor/react` and `monaco-editor`. If you
-never render `KymaQueryEditor`, Monaco is not bundled.
+never render `PensieveQueryEditor`, Monaco is not bundled.
 
 Full-featured embedded query surface: KQL/SQL editor with syntax highlighting
 and completions, a schema browser, a results grid, optional chart panel, and
-a time range picker. Uses `useKymaQuery` internally.
+a time range picker. Uses `usePensieveQuery` internally.
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
@@ -100,17 +100,17 @@ In SQL mode, time-range injection is skipped; write your own `WHERE` clause.
 
 ---
 
-## `KymaDiscover`
+## `PensieveDiscover`
 
-**Import:** `import { KymaDiscover } from "@kyma-ai/react/discover"`
+**Import:** `import { PensieveDiscover } from "@pensieve-ai/react/discover"`
 
 Streaming log/event search surface with a scope picker, histogram timeline,
 field stats rail, and expandable row detail drawer. The discover grammar
 accepts free-text and field filters (`service_name == "api"`, `level != "debug"`,
 `status_code > 400`, full-text `error`).
 
-When `database` is set, `KymaDiscover` calls `client.withDatabase(database)`
-internally and overrides the `KymaContext` client for all child components.
+When `database` is set, `PensieveDiscover` calls `client.withDatabase(database)`
+internally and overrides the `PensieveContext` client for all child components.
 Every search request and the scope picker list both use the scoped client.
 
 | Prop | Type | Default | Description |
@@ -130,16 +130,16 @@ Every search request and the scope picker list both use the scoped client.
 
 ---
 
-## `KymaDashboard`
+## `PensieveDashboard`
 
-**Import:** `import { KymaDashboard } from "@kyma-ai/react/dashboards"`
+**Import:** `import { PensieveDashboard } from "@pensieve-ai/react/dashboards"`
 
 **Bundle note:** pulls in `react-grid-layout` for the drag-resize grid and
 `echarts` for panel charts.
 
-Embeds a Kyma dashboard by ID. Read-only by default; `editable={true}` enables
+Embeds a Pensieve dashboard by ID. Read-only by default; `editable={true}` enables
 drag-to-reorder, panel resize, add/edit/delete, and inline name editing. Saves
-go directly to the Kyma API.
+go directly to the Pensieve API.
 
 When `database` is set, all panel queries, the dashboard load, and the schema
 fetch in the add-panel modal all use a scoped client (same token cache,
@@ -166,17 +166,17 @@ invalidates the React Query cache for this dashboard.
 
 ---
 
-## `KymaAgentChat`
+## `PensieveAgentChat`
 
-**Import:** `import { KymaAgentChat } from "@kyma-ai/react/agent"`
+**Import:** `import { PensieveAgentChat } from "@pensieve-ai/react/agent"`
 
-Embedded AI assistant chat backed by the Kyma agent (`POST /v1/agent/ask`).
+Embedded AI assistant chat backed by the Pensieve agent (`POST /v1/agent/ask`).
 The component wraps `AgentConsole` in a `CapabilityGate` on the `agent`
 capability flag: servers without the inline agent surface render a "not
 available" card rather than 404-ing. The gate fails **open** while capabilities
 load (pre-capabilities servers are treated as capable).
 
-**Note:** `KymaAgentChat` requires a full-access token (no `kyma_databases`
+**Note:** `PensieveAgentChat` requires a full-access token (no `pensieve_databases`
 scope). Database-scoped tokens receive 403 from the server because the agent's
 tool loop can address any database internally. See [Authentication](/embed/authentication#fail-closed-surfaces).
 

@@ -12,7 +12,7 @@ node_modules
 # Web app build outputs
 web/dist
 
-# Docs site build outputs (kyma-docs)
+# Docs site build outputs (pensieve-docs)
 docs/site/.vitepress/cache
 docs/site/.vitepress/dist
 docs/site/architecture/architecture.md

@@ -112,7 +112,7 @@ export function useOAuthConnect(provider: string | undefined, dataSourceType: st
       const data = ev.data as
         | { type?: string; ok?: boolean; state?: string; credential_id?: string; label?: string; error?: string }
         | undefined;
-      if (!data || data.type !== "kyma-oauth") return;
+      if (!data || data.type !== "pensieve-oauth") return;
       if (stateRef.current && data.state && data.state !== stateRef.current) return;
       if (data.ok && data.credential_id) succeed(data.credential_id, data.label);
       else fail(data.error || "Authorization failed.");
@@ -153,7 +153,7 @@ export function useOAuthConnect(provider: string | undefined, dataSourceType: st
         setAuthorizeUrl(authorize_url);
         setPhase("awaiting");
 
-        const popup = window.open(authorize_url, "kyma-oauth", "width=620,height=760");
+        const popup = window.open(authorize_url, "pensieve-oauth", "width=620,height=760");
         if (!popup) {
           // Popup blocked (or a webview that won't open one) → poll for the
           // result and surface an "open in a new tab" link to the caller.

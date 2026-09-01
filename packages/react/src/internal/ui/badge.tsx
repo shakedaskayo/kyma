@@ -1,5 +1,5 @@
 /**
- * Internal Badge primitive with Kyma ky- class prefix.
+ * Internal Badge primitive with Pensieve pv- class prefix.
  * NOT exported from the public package surface.
  */
 import * as React from "react";
@@ -7,17 +7,17 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../cn";
 
 const badgeVariants = cva(
-  "ky-inline-flex ky-items-center ky-rounded-md ky-border ky-px-2.5 ky-py-0.5 ky-text-xs ky-font-semibold ky-transition-colors",
+  "pv-inline-flex pv-items-center pv-rounded-md pv-border pv-px-2.5 pv-py-0.5 pv-text-xs pv-font-semibold pv-transition-colors",
   {
     variants: {
       variant: {
         default:
-          "ky-border-transparent ky-bg-primary ky-text-primary-foreground",
+          "pv-border-transparent pv-bg-primary pv-text-primary-foreground",
         secondary:
-          "ky-border-transparent ky-bg-secondary ky-text-secondary-foreground",
+          "pv-border-transparent pv-bg-secondary pv-text-secondary-foreground",
         destructive:
-          "ky-border-transparent ky-bg-destructive ky-text-destructive-foreground",
-        outline: "ky-text-foreground",
+          "pv-border-transparent pv-bg-destructive pv-text-destructive-foreground",
+        outline: "pv-text-foreground",
       },
     },
     defaultVariants: {

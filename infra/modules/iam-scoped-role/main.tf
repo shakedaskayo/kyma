@@ -9,7 +9,7 @@ data "aws_iam_policy_document" "assume" {
 }
 
 resource "aws_iam_role" "tenant_data" {
-  name               = "kyma-${var.env}-tenant-data"
+  name               = "pensieve-${var.env}-tenant-data"
   assume_role_policy = data.aws_iam_policy_document.assume.json
 }
 

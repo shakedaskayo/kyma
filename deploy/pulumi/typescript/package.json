@@ -1,5 +1,5 @@
 {
-  "name": "kyma-deploy",
+  "name": "pensieve-deploy",
   "private": true,
   "main": "index.ts",
   "devDependencies": {
@@ -7,7 +7,7 @@
     "typescript": "^5.5"
   },
   "dependencies": {
-    "@pulumi/kymaengine": "file:sdks/kymaengine",
+    "@pulumi/pensieveengine": "file:sdks/pensieveengine",
     "@pulumi/pulumi": "^3.150.0"
   }
 }

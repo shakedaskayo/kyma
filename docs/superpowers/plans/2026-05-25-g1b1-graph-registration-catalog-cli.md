@@ -2,41 +2,41 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Make a property-graph a first-class, catalog-registered object: a `graph_registrations` table, a `GraphRegistration` type + `Catalog` CRUD methods, and `kyma-cli create-graph / list-graphs / drop-graph`. This is what `StoredGraphProvider` (G1b.2) reads to serve `/v1/graph/{name}/*` over registered node/edge tables, and what the self-learning feature later writes into.
+**Goal:** Make a property-graph a first-class, catalog-registered object: a `graph_registrations` table, a `GraphRegistration` type + `Catalog` CRUD methods, and `pensieve-cli create-graph / list-graphs / drop-graph`. This is what `StoredGraphProvider` (G1b.2) reads to serve `/v1/graph/{name}/*` over registered node/edge tables, and what the self-learning feature later writes into.
 
-**Architecture:** Mirror the existing **Dashboard CRUD** exactly (the closest analog). A graph registration binds a `database`, a `name`, a `node_table` + `edge_table`, and the column roles (`id/label/src/dst/type`, optional `realm`). One `impl Catalog` exists (`PostgresCatalog`); tests drive it via testcontainers through `kyma-server::test_support`.
+**Architecture:** Mirror the existing **Dashboard CRUD** exactly (the closest analog). A graph registration binds a `database`, a `name`, a `node_table` + `edge_table`, and the column roles (`id/label/src/dst/type`, optional `realm`). One `impl Catalog` exists (`PostgresCatalog`); tests drive it via testcontainers through `pensieve-server::test_support`.
 
 **Tech Stack:** Rust, `sqlx` (Postgres), `clap` (CLI), `uuid`, `chrono`. Migration via `sqlx::migrate!("./migrations")`.
 
-**Reference (exact templates):** `crates/kyma-core/src/catalog.rs` (Dashboard struct + trait methods at ~207-216, ~539-610), `crates/kyma-catalog/src/lib.rs` (PostgresCatalog dashboard impls ~917-998 + `row_to_dashboard`/`sql_err` ~1212-1227 + `sqlx::migrate!` at ~59), `crates/kyma-catalog/migrations/006_dashboards.sql`, `crates/kyma-core/src/errors.rs` (`CatalogError` ~44-67), `crates/kyma-cli/src/main.rs` (clap enum + `connect()` ~148 + `parse_schema_spec`).
+**Reference (exact templates):** `crates/pensieve-core/src/catalog.rs` (Dashboard struct + trait methods at ~207-216, ~539-610), `crates/pensieve-catalog/src/lib.rs` (PostgresCatalog dashboard impls ~917-998 + `row_to_dashboard`/`sql_err` ~1212-1227 + `sqlx::migrate!` at ~59), `crates/pensieve-catalog/migrations/006_dashboards.sql`, `crates/pensieve-core/src/errors.rs` (`CatalogError` ~44-67), `crates/pensieve-cli/src/main.rs` (clap enum + `connect()` ~148 + `parse_schema_spec`).
 
-**Working dir:** worktree `/Users/shakedaskayo/shaked/projects/kyma/.claude/worktrees/feature+graph-layer`. Tests need Docker (testcontainers). Scope builds: `cargo build -p kyma-core -p kyma-catalog -p kyma-cli`.
+**Working dir:** worktree `/Users/shakedaskayo/shaked/projects/pensieve/.claude/worktrees/feature+graph-layer`. Tests need Docker (testcontainers). Scope builds: `cargo build -p pensieve-core -p pensieve-catalog -p pensieve-cli`.
 
 **Reserved name:** `schema` is reserved for the synthetic schema-graph — the CLI and `create_graph` must reject a registration named `schema` (G1b.2's router resolves `schema` to `SchemaGraphProvider`).
 
 ---
 
 ## File structure
-- `crates/kyma-core/src/catalog.rs` — add `GraphRegistration` + `GraphSpec` structs + 4 `Catalog` trait methods (each with the default→`_in_tenant` delegation).
-- `crates/kyma-core/src/errors.rs` — add `CatalogError::GraphNotFound`.
-- `crates/kyma-catalog/migrations/008_graphs.sql` — new table.
-- `crates/kyma-catalog/src/lib.rs` — `PostgresCatalog` impl of the 4 `_in_tenant` methods + `row_to_graph` helper.
-- `crates/kyma-server/src/graph_handler.rs` (test module) OR a new `crates/kyma-catalog/tests/graphs.rs` — registration roundtrip test (use whichever testcontainers harness is simplest; this plan uses `kyma-server::test_support`).
-- `crates/kyma-cli/src/main.rs` — `CreateGraph` / `ListGraphs` / `DropGraph` subcommands.
+- `crates/pensieve-core/src/catalog.rs` — add `GraphRegistration` + `GraphSpec` structs + 4 `Catalog` trait methods (each with the default→`_in_tenant` delegation).
+- `crates/pensieve-core/src/errors.rs` — add `CatalogError::GraphNotFound`.
+- `crates/pensieve-catalog/migrations/008_graphs.sql` — new table.
+- `crates/pensieve-catalog/src/lib.rs` — `PostgresCatalog` impl of the 4 `_in_tenant` methods + `row_to_graph` helper.
+- `crates/pensieve-server/src/graph_handler.rs` (test module) OR a new `crates/pensieve-catalog/tests/graphs.rs` — registration roundtrip test (use whichever testcontainers harness is simplest; this plan uses `pensieve-server::test_support`).
+- `crates/pensieve-cli/src/main.rs` — `CreateGraph` / `ListGraphs` / `DropGraph` subcommands.
 
 ---
 
-## Task 1: types + trait methods + error variant (kyma-core)
+## Task 1: types + trait methods + error variant (pensieve-core)
 
-**Files:** `crates/kyma-core/src/catalog.rs`, `crates/kyma-core/src/errors.rs`.
+**Files:** `crates/pensieve-core/src/catalog.rs`, `crates/pensieve-core/src/errors.rs`.
 
-- [ ] **Step 1: add the error variant** in `crates/kyma-core/src/errors.rs`, in the `CatalogError` enum (after `DashboardNotFound`):
+- [ ] **Step 1: add the error variant** in `crates/pensieve-core/src/errors.rs`, in the `CatalogError` enum (after `DashboardNotFound`):
 ```rust
     #[error("graph registration not found: {database}.{name}")]
     GraphNotFound { database: String, name: String },
 ```
 
-- [ ] **Step 2: add the structs** in `crates/kyma-core/src/catalog.rs` (near the `Dashboard` struct, e.g. just before the `// -------------------- Dashboards` section or in a new `// -------------------- Graphs` section):
+- [ ] **Step 2: add the structs** in `crates/pensieve-core/src/catalog.rs` (near the `Dashboard` struct, e.g. just before the `// -------------------- Dashboards` section or in a new `// -------------------- Graphs` section):
 ```rust
 /// A registered property-graph: binds a node table + edge table in a database,
 /// with the column roles that identify nodes/edges. Read by the graph layer's
@@ -149,11 +149,11 @@ impl GraphSpec {
     ) -> Result<bool, CatalogError>;
 ```
 
-- [ ] **Step 4:** `cargo build -p kyma-core` → it will FAIL to compile `kyma-catalog` later (PostgresCatalog doesn't yet implement the new methods), but `kyma-core` itself compiles. Run `cargo build -p kyma-core` → clean. (kyma-catalog impl is Task 2.)
+- [ ] **Step 4:** `cargo build -p pensieve-core` → it will FAIL to compile `pensieve-catalog` later (PostgresCatalog doesn't yet implement the new methods), but `pensieve-core` itself compiles. Run `cargo build -p pensieve-core` → clean. (pensieve-catalog impl is Task 2.)
 
 - [ ] **Step 5: Commit:**
 ```bash
-git add crates/kyma-core/src/catalog.rs crates/kyma-core/src/errors.rs
+git add crates/pensieve-core/src/catalog.rs crates/pensieve-core/src/errors.rs
 git commit -m "feat(catalog): GraphRegistration type + Catalog graph CRUD trait methods"
 ```
 
@@ -161,13 +161,13 @@ git commit -m "feat(catalog): GraphRegistration type + Catalog graph CRUD trait 
 
 ## Task 2: migration + PostgresCatalog implementation
 
-**Files:** `crates/kyma-catalog/migrations/008_graphs.sql`, `crates/kyma-catalog/src/lib.rs`.
+**Files:** `crates/pensieve-catalog/migrations/008_graphs.sql`, `crates/pensieve-catalog/src/lib.rs`.
 
-- [ ] **Step 1: migration** — READ `crates/kyma-catalog/migrations/006_dashboards.sql` to match the exact `id` default + style, then create `crates/kyma-catalog/migrations/008_graphs.sql`:
+- [ ] **Step 1: migration** — READ `crates/pensieve-catalog/migrations/006_dashboards.sql` to match the exact `id` default + style, then create `crates/pensieve-catalog/migrations/008_graphs.sql`:
 ```sql
 -- Graph registrations: bind a node table + edge table (with column roles)
 -- in a database to a named property-graph. Tables themselves are ordinary
--- kyma tables; this is metadata only.
+-- pensieve tables; this is metadata only.
 CREATE TABLE graph_registrations (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id   uuid NOT NULL,
@@ -189,11 +189,11 @@ CREATE INDEX graph_registrations_tenant_idx ON graph_registrations (tenant_id);
 ```
 (If `006_dashboards.sql` uses a different uuid-default idiom than `gen_random_uuid()`, match it. pg16 has `gen_random_uuid()` built in.)
 
-- [ ] **Step 2: row mapper** — add near `row_to_dashboard` in `crates/kyma-catalog/src/lib.rs`:
+- [ ] **Step 2: row mapper** — add near `row_to_dashboard` in `crates/pensieve-catalog/src/lib.rs`:
 ```rust
-fn row_to_graph(row: &sqlx::postgres::PgRow) -> std::result::Result<kyma_core::catalog::GraphRegistration, CatalogError> {
+fn row_to_graph(row: &sqlx::postgres::PgRow) -> std::result::Result<pensieve_core::catalog::GraphRegistration, CatalogError> {
     use sqlx::Row as _;
-    Ok(kyma_core::catalog::GraphRegistration {
+    Ok(pensieve_core::catalog::GraphRegistration {
         id: row.try_get("id").map_err(sql_err)?,
         database: row.try_get("database").map_err(sql_err)?,
         name: row.try_get("name").map_err(sql_err)?,
@@ -210,7 +210,7 @@ fn row_to_graph(row: &sqlx::postgres::PgRow) -> std::result::Result<kyma_core::c
     })
 }
 ```
-(Confirm the exact `use` path for `GraphRegistration`/`GraphSpec`/`TenantId` matches how other types are referenced in this file — e.g. the file likely `use kyma_core::catalog::{...}` at the top; add `GraphRegistration, GraphSpec` there and use the short names.)
+(Confirm the exact `use` path for `GraphRegistration`/`GraphSpec`/`TenantId` matches how other types are referenced in this file — e.g. the file likely `use pensieve_core::catalog::{...}` at the top; add `GraphRegistration, GraphSpec` there and use the short names.)
 
 - [ ] **Step 3: impl the 4 methods** inside `impl Catalog for PostgresCatalog` (mirror the dashboard impls). Use a stable column list `id, database, name, node_table, edge_table, id_col, label_col, src_col, dst_col, type_col, realm_col, created_at, updated_at`:
 ```rust
@@ -311,13 +311,13 @@ fn row_to_graph(row: &sqlx::postgres::PgRow) -> std::result::Result<kyma_core::c
         Ok(res.rows_affected() > 0)
     }
 ```
-Add `GraphRegistration, GraphSpec` to the `kyma_core::catalog` import at the top of the file (alongside `Dashboard`, etc.).
+Add `GraphRegistration, GraphSpec` to the `pensieve_core::catalog` import at the top of the file (alongside `Dashboard`, etc.).
 
-- [ ] **Step 4:** `cargo build -p kyma-catalog` → clean.
+- [ ] **Step 4:** `cargo build -p pensieve-catalog` → clean.
 
 - [ ] **Step 5: Commit:**
 ```bash
-git add crates/kyma-catalog/migrations/008_graphs.sql crates/kyma-catalog/src/lib.rs
+git add crates/pensieve-catalog/migrations/008_graphs.sql crates/pensieve-catalog/src/lib.rs
 git commit -m "feat(catalog): graph_registrations table + PostgresCatalog graph CRUD"
 ```
 
@@ -325,13 +325,13 @@ git commit -m "feat(catalog): graph_registrations table + PostgresCatalog graph 
 
 ## Task 3: registration roundtrip integration test
 
-**Files:** `crates/kyma-server/src/graph_handler.rs` (extend the `tests` module).
+**Files:** `crates/pensieve-server/src/graph_handler.rs` (extend the `tests` module).
 
 - [ ] **Step 1: write the test** — append to the `tests` module (gated `#[cfg(all(test, feature = "test-support"))]`):
 ```rust
     #[tokio::test]
     async fn graph_registration_crud_roundtrip() {
-        use kyma_core::catalog::GraphSpec;
+        use pensieve_core::catalog::GraphSpec;
         let state = crate::test_support::seeded_state_with_obs_otel_logs().await;
         let cat = &state.catalog;
 
@@ -361,19 +361,19 @@ git commit -m "feat(catalog): graph_registrations table + PostgresCatalog graph 
     }
 ```
 
-- [ ] **Step 2:** `cargo test -p kyma-server --features test-support graph_handler::tests::graph_registration_crud_roundtrip` → PASS (needs Docker).
+- [ ] **Step 2:** `cargo test -p pensieve-server --features test-support graph_handler::tests::graph_registration_crud_roundtrip` → PASS (needs Docker).
 
 - [ ] **Step 3: Commit:**
 ```bash
-git add crates/kyma-server/src/graph_handler.rs
+git add crates/pensieve-server/src/graph_handler.rs
 git commit -m "test(catalog): graph registration CRUD roundtrip"
 ```
 
 ---
 
-## Task 4: kyma-cli `create-graph` / `list-graphs` / `drop-graph`
+## Task 4: pensieve-cli `create-graph` / `list-graphs` / `drop-graph`
 
-**Files:** `crates/kyma-cli/src/main.rs`.
+**Files:** `crates/pensieve-cli/src/main.rs`.
 
 - [ ] **Step 1: add the subcommands** to the `Command` enum:
 ```rust
@@ -405,7 +405,7 @@ git commit -m "test(catalog): graph registration CRUD roundtrip"
                 anyhow::bail!("'schema' is reserved for the synthetic schema-graph; choose another name");
             }
             let cat = connect(&cli.catalog_url).await?;
-            let spec = kyma_core::catalog::GraphSpec {
+            let spec = pensieve_core::catalog::GraphSpec {
                 node_table: nodes,
                 edge_table: edges,
                 id_col,
@@ -438,22 +438,22 @@ git commit -m "test(catalog): graph registration CRUD roundtrip"
             }
         }
 ```
-(Match the surrounding code's exact style — whether arms use `connect(&cli.catalog_url)` or a pre-built catalog; confirm `kyma_core` is a dependency of kyma-cli, it is.)
+(Match the surrounding code's exact style — whether arms use `connect(&cli.catalog_url)` or a pre-built catalog; confirm `pensieve_core` is a dependency of pensieve-cli, it is.)
 
-- [ ] **Step 3:** `cargo build -p kyma-cli` → clean. Sanity: `./target/debug/kyma-cli create-graph --help` shows the flags (no DB needed for --help).
+- [ ] **Step 3:** `cargo build -p pensieve-cli` → clean. Sanity: `./target/debug/pensieve-cli create-graph --help` shows the flags (no DB needed for --help).
 
 - [ ] **Step 4: Commit:**
 ```bash
-git add crates/kyma-cli/src/main.rs
+git add crates/pensieve-cli/src/main.rs
 git commit -m "feat(cli): create-graph / list-graphs / drop-graph"
 ```
 
 ---
 
 ## Task 5: verify
-- [ ] `cargo build -p kyma-core -p kyma-catalog -p kyma-cli -p kyma-server` → clean.
-- [ ] `cargo test -p kyma-server --features test-support graph_handler::tests::graph_registration_crud_roundtrip` → PASS.
-- [ ] `cargo clippy -p kyma-catalog -p kyma-cli 2>&1 | tail -20` → no new warnings from the changed code.
+- [ ] `cargo build -p pensieve-core -p pensieve-catalog -p pensieve-cli -p pensieve-server` → clean.
+- [ ] `cargo test -p pensieve-server --features test-support graph_handler::tests::graph_registration_crud_roundtrip` → PASS.
+- [ ] `cargo clippy -p pensieve-catalog -p pensieve-cli 2>&1 | tail -20` → no new warnings from the changed code.
 
 ---
 

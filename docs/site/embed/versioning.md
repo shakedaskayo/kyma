@@ -1,6 +1,6 @@
 ---
-title: Versioning and release — @kyma-ai/react
-description: Changesets release flow, semver policy, and npm publishing for @kyma-ai/react and @kyma-ai/client.
+title: Versioning and release — @pensieve-ai/react
+description: Changesets release flow, semver policy, and npm publishing for @pensieve-ai/react and @pensieve-ai/client.
 ---
 
 # Versioning and release
@@ -9,11 +9,11 @@ description: Changesets release flow, semver policy, and npm publishing for @kym
 
 | Package | npm | Description |
 |---|---|---|
-| `@kyma-ai/react` | `npm install @kyma-ai/react` | Embeddable React components and hooks |
-| `@kyma-ai/client` | `npm install @kyma-ai/client` | Framework-agnostic TypeScript client (peer dep of react) |
+| `@pensieve-ai/react` | `npm install @pensieve-ai/react` | Embeddable React components and hooks |
+| `@pensieve-ai/client` | `npm install @pensieve-ai/client` | Framework-agnostic TypeScript client (peer dep of react) |
 
 Both packages are MIT-compatible (Apache-2.0) and published with
-`"access": "public"` on the `@kyma-ai` npm org.
+`"access": "public"` on the `@pensieve-ai` npm org.
 
 ## Changesets release flow
 
@@ -33,10 +33,10 @@ your PR. Multiple changesets can accumulate before a release.
 **The release CI pipeline** (`release.yml`) runs on every push to `main`:
 
 1. `pnpm install --frozen-lockfile`
-2. `pnpm build:packages` — builds `@kyma-ai/client` and `@kyma-ai/react`
+2. `pnpm build:packages` — builds `@pensieve-ai/client` and `@pensieve-ai/react`
 3. `pnpm test:packages` — runs both test suites
 4. `changesets/action@v1` — either:
-   - Opens / updates a "Release @kyma-ai packages" version-bump PR if changesets
+   - Opens / updates a "Release @pensieve-ai packages" version-bump PR if changesets
      are present (bumps `package.json` versions, updates `CHANGELOG.md` files),
      **or**
    - Publishes to npm (`pnpm changeset publish`) if that PR is merged.
@@ -48,10 +48,10 @@ publish step automatically on the next push.
 
 | Change type | Bump | Examples |
 |---|---|---|
-| New optional prop (backward-compatible) | **minor** | Adding `onSearchChange` to `KymaDiscover` |
-| New hook | **minor** | Adding `useKymaCapabilities` |
+| New optional prop (backward-compatible) | **minor** | Adding `onSearchChange` to `PensieveDiscover` |
+| New hook | **minor** | Adding `usePensieveCapabilities` |
 | Bug fix, internal refactor | **patch** | Fixing proactive JWT refresh, fixing store isolation |
-| Required prop added, prop removed, prop renamed | **major** | Removing `toolbar` from `KymaGraph` |
+| Required prop added, prop removed, prop renamed | **major** | Removing `toolbar` from `PensieveGraph` |
 | Peer dependency major bump | **major** | Requiring React 19 |
 
 As a general rule: if existing call sites continue to compile and behave
@@ -64,8 +64,8 @@ break or need updates, it is a major.
 # From the repo root
 pnpm build:packages
 # equivalent to:
-pnpm --filter @kyma-ai/client build
-pnpm --filter @kyma-ai/react build
+pnpm --filter @pensieve-ai/client build
+pnpm --filter @pensieve-ai/react build
 ```
 
 ## Running package tests
@@ -73,13 +73,13 @@ pnpm --filter @kyma-ai/react build
 ```bash
 pnpm test:packages
 # equivalent to:
-pnpm --filter @kyma-ai/client test
-pnpm --filter @kyma-ai/react test
+pnpm --filter @pensieve-ai/client test
+pnpm --filter @pensieve-ai/react test
 ```
 
 ## Storybook
 
 ```bash
-pnpm --filter @kyma-ai/react storybook        # dev server at :6006
-pnpm --filter @kyma-ai/react build-storybook  # static output to packages/react/storybook-static
+pnpm --filter @pensieve-ai/react storybook        # dev server at :6006
+pnpm --filter @pensieve-ai/react build-storybook  # static output to packages/react/storybook-static
 ```

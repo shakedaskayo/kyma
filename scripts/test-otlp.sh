@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OTLP ingest E2E: start kyma with OTLP server enabled on :4317,
+# OTLP ingest E2E: start pensieve with OTLP server enabled on :4317,
 # send an ExportLogsServiceRequest via the Rust client, verify rows
 # land in the auto-created otel_logs table.
 
@@ -8,24 +8,24 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-export KYMA_CATALOG_URL="postgres://kyma:kyma_dev@localhost:5433/kyma"
-export KYMA_S3_ENDPOINT="http://localhost:9000"
-export KYMA_S3_BUCKET="kyma"
-export KYMA_S3_ACCESS_KEY_ID="kyma_admin"
-export KYMA_S3_SECRET_ACCESS_KEY="kyma_admin_dev"
-export KYMA_S3_PATH_STYLE="true"
-export KYMA_S3_ALLOW_HTTP="true"
-export KYMA_HTTP_ADDR="127.0.0.1:8080"
-export KYMA_GRPC_ADDR="127.0.0.1:9090"
-export KYMA_OTLP_ADDR="127.0.0.1:4317"
-export KYMA_OTLP_DATABASE="default"
-export KYMA_COMPACTION_POLL_SECS="3600"
-export KYMA_RETENTION_POLL_SECS="3600"
-export KYMA_PHYSICAL_GC_POLL_SECS="3600"
+export PENSIEVE_CATALOG_URL="postgres://pensieve:pensieve_dev@localhost:5433/pensieve"
+export PENSIEVE_S3_ENDPOINT="http://localhost:9000"
+export PENSIEVE_S3_BUCKET="pensieve"
+export PENSIEVE_S3_ACCESS_KEY_ID="pensieve_admin"
+export PENSIEVE_S3_SECRET_ACCESS_KEY="pensieve_admin_dev"
+export PENSIEVE_S3_PATH_STYLE="true"
+export PENSIEVE_S3_ALLOW_HTTP="true"
+export PENSIEVE_HTTP_ADDR="127.0.0.1:8080"
+export PENSIEVE_GRPC_ADDR="127.0.0.1:9090"
+export PENSIEVE_OTLP_ADDR="127.0.0.1:4317"
+export PENSIEVE_OTLP_DATABASE="default"
+export PENSIEVE_COMPACTION_POLL_SECS="3600"
+export PENSIEVE_RETENTION_POLL_SECS="3600"
+export PENSIEVE_PHYSICAL_GC_POLL_SECS="3600"
 export RUST_LOG="${RUST_LOG:-info,sqlx=warn,hyper=warn}"
 
 HTTP_BASE="http://127.0.0.1:8080"
-LOG_FILE="/tmp/kyma-otlp.log"
+LOG_FILE="/tmp/pensieve-otlp.log"
 SERVER_PID=""
 
 if [[ -t 1 ]]; then
@@ -40,15 +40,15 @@ f()       { printf "  ${RED}FAIL${NC} %s\n" "$*"; fail=$((fail+1)); }
 cleanup() { [[ -n "${SERVER_PID:-}" ]] && kill -9 "$SERVER_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
-if ! docker exec kyma-postgres pg_isready -U kyma -d kyma >/dev/null 2>&1; then
+if ! docker exec pensieve-postgres pg_isready -U pensieve -d pensieve >/dev/null 2>&1; then
     printf "${RED}docker-compose stack not up.${NC}\n"; exit 2
 fi
 
-section "Reset + start kyma with OTLP server"
-docker exec kyma-postgres psql -U kyma -d kyma -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
-docker exec kyma-minio mc rm --recursive --force local/kyma >/dev/null 2>&1 || true
-docker exec kyma-minio mc mb --ignore-existing local/kyma >/dev/null
-./target/debug/kyma >"$LOG_FILE" 2>&1 &
+section "Reset + start pensieve with OTLP server"
+docker exec pensieve-postgres psql -U pensieve -d pensieve -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1
+docker exec pensieve-minio mc rm --recursive --force local/pensieve >/dev/null 2>&1 || true
+docker exec pensieve-minio mc mb --ignore-existing local/pensieve >/dev/null
+./target/debug/pensieve >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 for i in 1 2 3 4 5 6 7 8 9 10; do
     if curl -sf "$HTTP_BASE/health" >/dev/null 2>&1; then break; fi; sleep 1
@@ -62,7 +62,7 @@ else
 fi
 
 section "Send ExportLogsServiceRequest via Rust client"
-if cargo test -p kyma-ingest-otlp --test otlp_smoke -- --ignored --test-threads=1 2>&1 \
+if cargo test -p pensieve-ingest-otlp --test otlp_smoke -- --ignored --test-threads=1 2>&1 \
     | tee /tmp/otlp-test.log | grep -qE 'test result: ok\.'; then
     ok "otlp_export_logs client test passed"
 else
@@ -119,8 +119,8 @@ else
 fi
 
 section "Metrics: OTLP record counter"
-if curl -s "$HTTP_BASE/metrics" | grep -q 'kyma_otlp_log_records_total'; then
-    ok "kyma_otlp_log_records_total exported"
+if curl -s "$HTTP_BASE/metrics" | grep -q 'pensieve_otlp_log_records_total'; then
+    ok "pensieve_otlp_log_records_total exported"
 else
     f "no OTLP metric"
 fi

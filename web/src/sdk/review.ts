@@ -1,7 +1,7 @@
 // Memory approval-queue (Review inbox) client. Mirrors sdk/dreaming.ts: raw
 // fetch against the server's /v1/agent/memory/review* endpoints.
 
-import type { MemoryOp } from "@kyma-ai/client";
+import type { MemoryOp } from "@pensieve-ai/client";
 
 export type ReviewMode = "gate" | "post_hoc";
 export type ReviewStatus =

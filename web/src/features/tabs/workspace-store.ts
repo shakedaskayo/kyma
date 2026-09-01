@@ -2,8 +2,8 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { DiscoverTabState } from "../discover/discover-store";
 import { initialDiscoverTabState } from "../discover/discover-store";
-import { serializePills } from "@kyma-ai/react/discover";
-import type { Pill } from "@kyma-ai/react/discover";
+import { serializePills } from "@pensieve-ai/react/discover";
+import type { Pill } from "@pensieve-ai/react/discover";
 
 // Defensive storage: tests run under jsdom but the persist middleware may grab
 // `localStorage` before jsdom finishes wiring it. Wrap with a no-op fallback so
@@ -312,7 +312,7 @@ export const useWorkspace = create<Store>()(
       resetAll: () => set({ tabs: [], activeId: null }),
     }),
     {
-      name: "kyma.workspace",
+      name: "pensieve.workspace",
       version: 4,
       storage: createJSONStorage(() =>
         typeof window !== "undefined" && window.localStorage

@@ -1,6 +1,6 @@
 variable "name" {
   type        = string
-  description = "Project name, e.g. kyma-dev-catalog or kyma-dev-control-plane."
+  description = "Project name, e.g. pensieve-dev-catalog or pensieve-dev-control-plane."
 }
 
 variable "org_id" {

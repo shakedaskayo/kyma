@@ -9,7 +9,7 @@ export type AgentRequestOptions = {
 };
 
 /**
- * Build a `useChat` transport for the Kyma agent endpoint. We don't post the
+ * Build a `useChat` transport for the Pensieve agent endpoint. We don't post the
  * full AI-SDK `messages` array — the backend only needs the latest question
  * plus a few options (and resumes prior context server-side via `session_id`),
  * so `prepareSendMessagesRequest` sends exactly the existing `AskRequest` shape.

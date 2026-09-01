@@ -1,7 +1,7 @@
 provider "aws" {
   region = var.aws_region
   default_tags {
-    tags = { Project = "kyma-cloud", Env = "dev", ManagedBy = "terraform" }
+    tags = { Project = "pensieve-cloud", Env = "dev", ManagedBy = "terraform" }
   }
 }
 
@@ -12,14 +12,14 @@ provider "stripe" {}
 # --- Storage: one extent bucket; pooled tenants are prefixes within it ---
 module "extents" {
   source      = "../../modules/s3-extent-bucket"
-  bucket_name = "kyma-dev-extents"
+  bucket_name = "pensieve-dev-extents"
   env         = "dev"
 }
 
 # --- Supabase A: control-plane DB (orgs/projects/api_keys/usage/billing) ---
 module "control_plane_db" {
   source  = "../../modules/supabase-project"
-  name    = "kyma-dev-control-plane"
+  name    = "pensieve-dev-control-plane"
   org_id  = var.supabase_org_id
   region  = var.supabase_region
   db_pass = var.supabase_db_pass
@@ -28,7 +28,7 @@ module "control_plane_db" {
 # --- Supabase B: engine catalog (manifests/stats/CAS) — separate blast radius ---
 module "catalog" {
   source  = "../../modules/supabase-project"
-  name    = "kyma-dev-catalog"
+  name    = "pensieve-dev-catalog"
   org_id  = var.supabase_org_id
   region  = var.supabase_region
   db_pass = var.supabase_db_pass
@@ -45,21 +45,21 @@ module "tenant_role" {
 # --- Billing: one product per tier. Metered prices + meters land in C4. ---
 module "billing_free" {
   source         = "../../modules/stripe-product"
-  name           = "Kyma Cloud — Free"
+  name           = "Pensieve Cloud — Free"
   unit_label     = "GB"
   metered_prices = []
 }
 
 module "billing_pro" {
   source         = "../../modules/stripe-product"
-  name           = "Kyma Cloud — Pro"
+  name           = "Pensieve Cloud — Pro"
   unit_label     = "GB"
   metered_prices = [] # TODO(C4): ingest/storage/query prices tied to billing meters
 }
 
 module "billing_enterprise" {
   source         = "../../modules/stripe-product"
-  name           = "Kyma Cloud — Enterprise"
+  name           = "Pensieve Cloud — Enterprise"
   unit_label     = "GB"
   metered_prices = [] # TODO(C4): ingest/storage/query prices tied to billing meters
 }
@@ -68,9 +68,9 @@ module "billing_enterprise" {
 # module "engine" {
 #   source     = "../../modules/railway-service"   # TODO(C1)
 #   project_id = var.railway_project_id
-#   name       = "kyma-dev-engine"
+#   name       = "pensieve-dev-engine"
 #   image      = var.engine_image
-#   env_vars   = { KYMA_S3_BUCKET = module.extents.bucket_name, KYMA_S3_REGION = var.aws_region, ... }
+#   env_vars   = { PENSIEVE_S3_BUCKET = module.extents.bucket_name, PENSIEVE_S3_REGION = var.aws_region, ... }
 # }
 # module "gateway"   { source = "../../modules/railway-service" ... }  # TODO(C2)
 # module "api"       { source = "../../modules/railway-service" ... }  # TODO(C2)

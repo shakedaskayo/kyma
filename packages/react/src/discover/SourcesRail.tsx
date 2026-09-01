@@ -22,7 +22,7 @@ function Row({
 }) {
   return (
     <div
-      className={`ky-flex ky-items-center ky-gap-2 ky-px-2 ky-py-1 ky-rounded ky-text-sm ky-cursor-pointer hover:ky-bg-accent ${isSelected ? "ky-bg-accent" : ""}`}
+      className={`pv-flex pv-items-center pv-gap-2 pv-px-2 pv-py-1 pv-rounded pv-text-sm pv-cursor-pointer hover:pv-bg-accent ${isSelected ? "pv-bg-accent" : ""}`}
       onClick={onClick}
     >
       {showCheckbox ? (
@@ -31,19 +31,19 @@ function Row({
           checked={isVisible}
           onChange={(e) => { e.stopPropagation(); onToggleVisible(); }}
           onClick={(e) => e.stopPropagation()}
-          className="ky-size-3.5 ky-cursor-pointer"
+          className="pv-size-3.5 pv-cursor-pointer"
           aria-label={`toggle visibility of ${s.source}`}
         />
       ) : (
-        <Table2 className="ky-size-3.5 ky-text-muted-foreground" />
+        <Table2 className="pv-size-3.5 pv-text-muted-foreground" />
       )}
-      <span className="ky-truncate ky-flex-1 ky-font-mono ky-text-xs" title={s.source}>
+      <span className="pv-truncate pv-flex-1 pv-font-mono pv-text-xs" title={s.source}>
         {s.source}
       </span>
-      {s.progress === "running" && <Loader2 className="ky-size-3 ky-animate-spin ky-text-muted-foreground" />}
-      {s.progress === "done" && <CheckCircle2 className="ky-size-3 ky-text-muted-foreground" />}
-      {s.progress === "error" && <AlertCircle className="ky-size-3 ky-text-destructive" />}
-      <span className="ky-text-xs ky-text-muted-foreground ky-tabular-nums">{s.total.toLocaleString()}</span>
+      {s.progress === "running" && <Loader2 className="pv-size-3 pv-animate-spin pv-text-muted-foreground" />}
+      {s.progress === "done" && <CheckCircle2 className="pv-size-3 pv-text-muted-foreground" />}
+      {s.progress === "error" && <AlertCircle className="pv-size-3 pv-text-destructive" />}
+      <span className="pv-text-xs pv-text-muted-foreground pv-tabular-nums">{s.total.toLocaleString()}</span>
     </div>
   );
 }
@@ -53,14 +53,14 @@ export function SourcesRail({
 }: Props) {
   const all = Array.from(results.sources.values());
   if (all.length === 0 && results.status === "idle") {
-    return <div className="ky-text-xs ky-text-muted-foreground ky-p-2">Run a search.</div>;
+    return <div className="pv-text-xs pv-text-muted-foreground pv-p-2">Run a search.</div>;
   }
   const inTimeline = all.filter((s) => s.timestampColumn != null);
   const noTimeline = all.filter((s) => s.timestampColumn == null);
 
   return (
-    <div className="ky-space-y-0.5">
-      <div className="ky-text-xs ky-font-medium ky-text-muted-foreground ky-px-2 ky-py-1 ky-uppercase ky-tracking-wide">
+    <div className="pv-space-y-0.5">
+      <div className="pv-text-xs pv-font-medium pv-text-muted-foreground pv-px-2 pv-py-1 pv-uppercase pv-tracking-wide">
         Sources
       </div>
       {inTimeline.map((s) => (
@@ -77,7 +77,7 @@ export function SourcesRail({
       {noTimeline.length > 0 && (
         <>
           <div
-            className="ky-text-xs ky-font-medium ky-text-muted-foreground ky-px-2 ky-pt-2 ky-pb-1 ky-uppercase ky-tracking-wide"
+            className="pv-text-xs pv-font-medium pv-text-muted-foreground pv-px-2 pv-pt-2 pv-pb-1 pv-uppercase pv-tracking-wide"
             title="These sources have no timestamp-typed column, so they can't join the timeline. Click one to view it as a table."
           >
             Not in timeline

@@ -9,7 +9,7 @@
 // the same data with one less protocol in the mix. Flight remains the
 // server-to-server and agent-SDK path on :9090.
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import type { Column, ColKind } from "./arrow";
 export type { Column, ColKind };
 export type ResultChunk = { columns: Column[]; rows: Record<string, unknown>[] };
@@ -31,7 +31,7 @@ export function encodeTicket(t: { database: string; query: string; language: str
 
 const CHUNK_ROWS = 500;
 
-export async function* runQuery(transport: KymaTransport, args: QueryArgs): AsyncGenerator<ResultChunk, void, void> {
+export async function* runQuery(transport: PensieveTransport, args: QueryArgs): AsyncGenerator<ResultChunk, void, void> {
   const contentType =
     args.language === "sql"    ? "application/sql" :
     args.language === "cypher" ? "application/x-cypher" :
@@ -42,8 +42,8 @@ export async function* runQuery(transport: KymaTransport, args: QueryArgs): Asyn
   if (args.language === "cypher" && args.graph) {
     extraHeaders["x-graph"] = args.graph;
   }
-  if (args.walMs)    extraHeaders["x-kyma-max-wall-clock-ms"] = String(args.walMs);
-  if (args.memBytes) extraHeaders["x-kyma-max-memory-bytes"]  = String(args.memBytes);
+  if (args.walMs)    extraHeaders["x-pensieve-max-wall-clock-ms"] = String(args.walMs);
+  if (args.memBytes) extraHeaders["x-pensieve-max-memory-bytes"]  = String(args.memBytes);
 
   const res = await transport.request("/v1/query", {
     method: "POST",

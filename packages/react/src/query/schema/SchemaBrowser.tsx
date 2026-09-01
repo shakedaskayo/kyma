@@ -12,7 +12,7 @@ import {
   Sigma,
   FileText,
 } from "lucide-react";
-import type { SchemaDoc, ColumnInfo } from "@kyma-ai/client";
+import type { SchemaDoc, ColumnInfo } from "@pensieve-ai/client";
 
 export type { SchemaDoc };
 
@@ -21,14 +21,14 @@ export type { SchemaDoc };
 function iconForType(t: string): React.ReactNode {
   const lo = t.toLowerCase();
   if (/time|date|timestamp/.test(lo))
-    return <Calendar className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground" />;
+    return <Calendar className="pv-h-3 pv-w-3 pv-shrink-0 pv-text-muted-foreground" />;
   if (/int|long|real|double|float|decimal|numeric/.test(lo))
-    return <Hash className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground" />;
+    return <Hash className="pv-h-3 pv-w-3 pv-shrink-0 pv-text-muted-foreground" />;
   if (/string|varchar|text|utf/.test(lo))
-    return <Type className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground" />;
+    return <Type className="pv-h-3 pv-w-3 pv-shrink-0 pv-text-muted-foreground" />;
   if (/bool/.test(lo))
-    return <ToggleLeft className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground" />;
-  return <Columns3 className="ky-h-3 ky-w-3 ky-shrink-0 ky-text-muted-foreground" />;
+    return <ToggleLeft className="pv-h-3 pv-w-3 pv-shrink-0 pv-text-muted-foreground" />;
+  return <Columns3 className="pv-h-3 pv-w-3 pv-shrink-0 pv-text-muted-foreground" />;
 }
 
 // ── filter helpers ────────────────────────────────────────────────────────────
@@ -72,24 +72,24 @@ export type SchemaBrowserProps = {
 export function SchemaBrowser({ schema, onInsert, onReplaceAndRun }: SchemaBrowserProps) {
   const [filter, setFilter] = useState("");
 
-  if (!schema) return <div className="ky-p-3 ky-text-xs ky-text-muted-foreground">Loading schema…</div>;
+  if (!schema) return <div className="pv-p-3 pv-text-xs pv-text-muted-foreground">Loading schema…</div>;
 
   const visibleDbs = schema.databases.filter((db) => dbVisible(db, filter));
 
   return (
-    <div className="ky-flex ky-h-full ky-flex-col ky-overflow-hidden">
-      <div className="ky-shrink-0 ky-border-b ky-px-2 ky-py-1.5">
+    <div className="pv-flex pv-h-full pv-flex-col pv-overflow-hidden">
+      <div className="pv-shrink-0 pv-border-b pv-px-2 pv-py-1.5">
         <input
           type="search"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter tables + columns…"
-          className="ky-h-7 ky-w-full ky-rounded-md ky-border ky-border-input ky-bg-background ky-px-2 ky-py-1 ky-text-xs ky-text-foreground placeholder:ky-text-muted-foreground focus:ky-outline-none focus:ky-ring-1 focus:ky-ring-ring"
+          className="pv-h-7 pv-w-full pv-rounded-md pv-border pv-border-input pv-bg-background pv-px-2 pv-py-1 pv-text-xs pv-text-foreground placeholder:pv-text-muted-foreground focus:pv-outline-none focus:pv-ring-1 focus:pv-ring-ring"
         />
       </div>
-      <div className="ky-flex-1 ky-overflow-auto ky-p-2 ky-text-xs">
+      <div className="pv-flex-1 pv-overflow-auto pv-p-2 pv-text-xs">
         {visibleDbs.length === 0
-          ? <div className="ky-p-2 ky-text-muted-foreground">No matches.</div>
+          ? <div className="pv-p-2 pv-text-muted-foreground">No matches.</div>
           : visibleDbs.map((db) => (
             <DatabaseNode
               key={db.name}
@@ -117,16 +117,16 @@ function DatabaseNode({
 
   return (
     <div>
-      <button className="ky-flex ky-w-full ky-items-center ky-gap-1 ky-rounded ky-px-1 ky-py-0.5 hover:ky-bg-accent/50" onClick={() => setOpen(!open)}>
-        <ChevronRight className={`ky-h-3 ky-w-3 ky-transition ${open ? "ky-rotate-90" : ""}`} />
-        <Database className="ky-h-3.5 ky-w-3.5 ky-text-muted-foreground" />
-        <span className="ky-font-medium">{db.name}</span>
-        <span className="ky-ml-auto ky-text-[10px] ky-text-muted-foreground">
+      <button className="pv-flex pv-w-full pv-items-center pv-gap-1 pv-rounded pv-px-1 pv-py-0.5 hover:pv-bg-accent/50" onClick={() => setOpen(!open)}>
+        <ChevronRight className={`pv-h-3 pv-w-3 pv-transition ${open ? "pv-rotate-90" : ""}`} />
+        <Database className="pv-h-3.5 pv-w-3.5 pv-text-muted-foreground" />
+        <span className="pv-font-medium">{db.name}</span>
+        <span className="pv-ml-auto pv-text-[10px] pv-text-muted-foreground">
           {db.tables.length} tables
         </span>
       </button>
       {open && (
-        <div className="ky-ml-3 ky-border-l ky-pl-1">
+        <div className="pv-ml-3 pv-border-l pv-pl-1">
           {visibleTables.map((t) => (
             <TableNode
               key={t.name}
@@ -164,51 +164,51 @@ function TableNode({
   };
 
   return (
-    <div className="ky-group/table">
-      <div className="ky-flex ky-items-center ky-gap-1">
+    <div className="pv-group/table">
+      <div className="pv-flex pv-items-center pv-gap-1">
         <button
-          className="ky-flex ky-flex-1 ky-items-center ky-gap-1 ky-rounded ky-px-1 ky-py-0.5 hover:ky-bg-accent/50"
+          className="pv-flex pv-flex-1 pv-items-center pv-gap-1 pv-rounded pv-px-1 pv-py-0.5 hover:pv-bg-accent/50"
           onClick={() => setOpen(!open)}
           onDoubleClick={() => onInsert(table.name)}
           title="Click to expand; double-click to paste name">
-          <ChevronRight className={`ky-h-3 ky-w-3 ky-transition ${shouldOpen ? "ky-rotate-90" : ""}`} />
-          <Table2 className="ky-h-3.5 ky-w-3.5 ky-text-muted-foreground" />
+          <ChevronRight className={`pv-h-3 pv-w-3 pv-transition ${shouldOpen ? "pv-rotate-90" : ""}`} />
+          <Table2 className="pv-h-3.5 pv-w-3.5 pv-text-muted-foreground" />
           <span>{table.name}</span>
-          <span className="ky-ml-auto ky-text-[10px] ky-text-muted-foreground">
+          <span className="pv-ml-auto pv-text-[10px] pv-text-muted-foreground">
             {table.columns.length}c
           </span>
         </button>
         {onReplaceAndRun && (
-          <div className="ky-flex ky-opacity-0 ky-transition group-hover/table:ky-opacity-100">
+          <div className="pv-flex pv-opacity-0 pv-transition group-hover/table:pv-opacity-100">
             <IconBtn
               title={`Preview 50 rows of ${table.name}`}
               onClick={(e) => quickAction(e, `${table.name} | take 50`)}>
-              <Eye className="ky-h-3 ky-w-3" />
+              <Eye className="pv-h-3 pv-w-3" />
             </IconBtn>
             <IconBtn
               title={`Count rows in ${table.name}`}
               onClick={(e) => quickAction(e, `${table.name} | count`)}>
-              <Sigma className="ky-h-3 ky-w-3" />
+              <Sigma className="pv-h-3 pv-w-3" />
             </IconBtn>
             <IconBtn
               title={`Describe ${table.name} schema + sample values`}
               onClick={(e) =>
                 quickAction(e, `${table.name} | take 5 | project *`)
               }>
-              <FileText className="ky-h-3 ky-w-3" />
+              <FileText className="pv-h-3 pv-w-3" />
             </IconBtn>
           </div>
         )}
       </div>
       {shouldOpen && (
-        <div className="ky-ml-3 ky-border-l ky-pl-1 ky-text-[11px]">
+        <div className="pv-ml-3 pv-border-l pv-pl-1 pv-text-[11px]">
           {visibleCols.map((c) => (
             <button key={c.name}
-              className="ky-flex ky-w-full ky-items-center ky-gap-1 ky-rounded ky-px-1 ky-py-0.5 ky-text-left hover:ky-bg-accent/50"
+              className="pv-flex pv-w-full pv-items-center pv-gap-1 pv-rounded pv-px-1 pv-py-0.5 pv-text-left hover:pv-bg-accent/50"
               onClick={() => onInsert(c.name)}>
               {iconForType(c.type)}
               <span>{c.name}</span>
-              <span className="ky-ml-auto ky-text-muted-foreground">{c.type}</span>
+              <span className="pv-ml-auto pv-text-muted-foreground">{c.type}</span>
             </button>
           ))}
         </div>
@@ -231,7 +231,7 @@ function IconBtn({
       type="button"
       title={title}
       onClick={onClick}
-      className="ky-rounded ky-p-1 ky-text-muted-foreground hover:ky-bg-accent hover:ky-text-foreground">
+      className="pv-rounded pv-p-1 pv-text-muted-foreground hover:pv-bg-accent hover:pv-text-foreground">
       {children}
     </button>
   );

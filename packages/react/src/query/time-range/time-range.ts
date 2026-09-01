@@ -1,4 +1,4 @@
-import type { ColumnInfo, SchemaDoc } from "@kyma-ai/client";
+import type { ColumnInfo, SchemaDoc } from "@pensieve-ai/client";
 import type { TimeRange, TimeRangePreset } from "./time-range-types";
 
 export type { TimeRange, TimeRangePreset };
@@ -56,7 +56,7 @@ export type PickedTimeColumn = { name: string; kind: "timestamp" | "string" };
 
 /**
  * Pick the best time column to filter on, mirroring the backend's Discover
- * detection (`crates/kyma-server/src/discover/compile.rs`):
+ * detection (`crates/pensieve-server/src/discover/compile.rs`):
  *   1. A declared timestamp column other than the reserved `at`.
  *   2. A strongly-named ISO-8601 string column (rescues firehose tables whose
  *      only timestamp column is the reserved-and-empty `at`).

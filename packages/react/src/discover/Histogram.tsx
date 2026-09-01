@@ -44,10 +44,10 @@ export function Histogram({ results, onZoom, rangeTo }: Props) {
     drag != null && i >= Math.min(drag.start, drag.end) && i <= Math.max(drag.start, drag.end);
 
   return (
-    <div className="ky-border-b ky-select-none">
+    <div className="pv-border-b pv-select-none">
       <div
         ref={wrap}
-        className="ky-flex ky-items-end ky-h-24 ky-px-2 ky-gap-px ky-cursor-crosshair"
+        className="pv-flex pv-items-end pv-h-24 pv-px-2 pv-gap-px pv-cursor-crosshair"
         onMouseDown={(e) => setDrag({ start: idxAt(e.clientX), end: idxAt(e.clientX) })}
         onMouseMove={(e) => drag && setDrag({ ...drag, end: idxAt(e.clientX) })}
         onMouseUp={finishDrag}
@@ -56,7 +56,7 @@ export function Histogram({ results, onZoom, rangeTo }: Props) {
         {bars.map((b, i) => (
           <div
             key={i}
-            className={`ky-flex-1 ky-flex ky-flex-col-reverse ${inDrag(i) ? "ky-bg-accent" : ""}`}
+            className={`pv-flex-1 pv-flex pv-flex-col-reverse ${inDrag(i) ? "pv-bg-accent" : ""}`}
             title={`${fmt(b.label)} — ${b.total} events`}
           >
             {b.segments.map((seg) => (
@@ -71,19 +71,19 @@ export function Histogram({ results, onZoom, rangeTo }: Props) {
           </div>
         ))}
       </div>
-      <div className="ky-flex ky-justify-between ky-px-2 ky-text-[10px] ky-text-muted-foreground ky-tabular-nums">
+      <div className="pv-flex pv-justify-between pv-px-2 pv-text-[10px] pv-text-muted-foreground pv-tabular-nums">
         <span>{fmt(bars[0].label)}</span>
         {bars.length > 2 && <span>{fmt(bars[Math.floor(bars.length / 2)].label)}</span>}
         <span>{fmt(bars[bars.length - 1].label)}</span>
       </div>
-      <div className="ky-flex ky-gap-3 ky-px-2 ky-py-1 ky-text-[10px] ky-text-muted-foreground ky-flex-wrap">
+      <div className="pv-flex pv-gap-3 pv-px-2 pv-py-1 pv-text-[10px] pv-text-muted-foreground pv-flex-wrap">
         {Array.from(sourceColors.entries()).map(([src, idx]) => (
-          <span key={src} className="ky-inline-flex ky-items-center ky-gap-1">
+          <span key={src} className="pv-inline-flex pv-items-center pv-gap-1">
             <span
-              className="ky-inline-block ky-size-2 ky-rounded-sm"
+              className="pv-inline-block pv-size-2 pv-rounded-sm"
               style={{ backgroundColor: PALETTE[idx % PALETTE.length] }}
             />
-            <span className="ky-font-mono">{src}</span>
+            <span className="pv-font-mono">{src}</span>
           </span>
         ))}
       </div>

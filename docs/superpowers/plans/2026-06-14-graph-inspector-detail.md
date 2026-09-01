@@ -4,16 +4,16 @@
 
 **Goal:** Make the graph node inspector readable — inline-expandable property rows, a wide "View details" modal with markdown content + untruncated properties, and a paged source-file viewer for nodes that reference a stored artifact.
 
-**Architecture:** Five small, focused frontend units in `packages/react/src`. A shared `<Markdown>` is extracted from the existing dashboard renderer; pure `node-detail` helpers decide content/source/formatting; `ArtifactSourceViewer` pages the existing `/v1/artifacts/by-path` API via `useKymaClient()`; `NodeDetailModal` composes them in a Radix dialog; `InspectorPanel` gains expandable rows + a button that opens the modal. No server changes, no graph-store changes.
+**Architecture:** Five small, focused frontend units in `packages/react/src`. A shared `<Markdown>` is extracted from the existing dashboard renderer; pure `node-detail` helpers decide content/source/formatting; `ArtifactSourceViewer` pages the existing `/v1/artifacts/by-path` API via `usePensieveClient()`; `NodeDetailModal` composes them in a Radix dialog; `InspectorPanel` gains expandable rows + a button that opens the modal. No server changes, no graph-store changes.
 
-**Tech Stack:** React + TypeScript, `@kyma-ai/react` package (`ky-` Tailwind prefix), Radix Dialog primitive, `@kyma-ai/client` (`client.artifacts.fetchArtifactByPath`), Vitest + Testing Library.
+**Tech Stack:** React + TypeScript, `@pensieve-ai/react` package (`pv-` Tailwind prefix), Radix Dialog primitive, `@pensieve-ai/client` (`client.artifacts.fetchArtifactByPath`), Vitest + Testing Library.
 
 **Reference spec:** `docs/superpowers/specs/2026-06-14-graph-inspector-detail-design.md`
 
 **Conventions for every task:**
 - Run a single test file from the repo root with:
-  `pnpm --filter @kyma-ai/react exec vitest run <path-relative-to-packages/react>`
-- All class names use the `ky-` prefix (package CSS isolation).
+  `pnpm --filter @pensieve-ai/react exec vitest run <path-relative-to-packages/react>`
+- All class names use the `pv-` prefix (package CSS isolation).
 - Commit after each task. Branch: `worktree-graph-inspector-detail`.
 
 ---
@@ -84,7 +84,7 @@ describe("Markdown", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/internal/ui/markdown.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/internal/ui/markdown.test.tsx`
 Expected: FAIL — `Failed to resolve import "./markdown"`.
 
 - [ ] **Step 3: Create the shared markdown module**
@@ -139,7 +139,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
         remaining = best.match[4];
       } else if (best.type === "code") {
         parts.push(
-          <code key={subKey} className="ky-rounded ky-bg-muted ky-px-1 ky-font-mono ky-text-[0.85em]">
+          <code key={subKey} className="pv-rounded pv-bg-muted pv-px-1 pv-font-mono pv-text-[0.85em]">
             {best.match[2]}
           </code>,
         );
@@ -151,7 +151,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
             href={best.match[3]}
             target="_blank"
             rel="noopener noreferrer"
-            className="ky-text-primary ky-underline"
+            className="pv-text-primary pv-underline"
           >
             {best.match[2]}
           </a>,
@@ -176,7 +176,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
       nodes.push(
         <pre
           key={`fence-${i}`}
-          className="ky-my-2 ky-overflow-x-auto ky-rounded ky-bg-muted ky-p-3 ky-font-mono ky-text-xs"
+          className="pv-my-2 pv-overflow-x-auto pv-rounded pv-bg-muted pv-p-3 pv-font-mono pv-text-xs"
         >
           <code>{fenceLines.join("\n")}</code>
         </pre>,
@@ -186,7 +186,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
 
     if (line.startsWith("### ")) {
       nodes.push(
-        <h3 key={`h3-${i}`} className="ky-mt-3 ky-mb-1 ky-text-sm ky-font-semibold">
+        <h3 key={`h3-${i}`} className="pv-mt-3 pv-mb-1 pv-text-sm pv-font-semibold">
           {renderInline(line.slice(4), `h3-${i}`)}
         </h3>,
       );
@@ -195,7 +195,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
     }
     if (line.startsWith("## ")) {
       nodes.push(
-        <h2 key={`h2-${i}`} className="ky-mt-4 ky-mb-1 ky-text-base ky-font-semibold">
+        <h2 key={`h2-${i}`} className="pv-mt-4 pv-mb-1 pv-text-base pv-font-semibold">
           {renderInline(line.slice(3), `h2-${i}`)}
         </h2>,
       );
@@ -204,7 +204,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
     }
     if (line.startsWith("# ")) {
       nodes.push(
-        <h1 key={`h1-${i}`} className="ky-mt-2 ky-mb-2 ky-text-lg ky-font-bold">
+        <h1 key={`h1-${i}`} className="pv-mt-2 pv-mb-2 pv-text-lg pv-font-bold">
           {renderInline(line.slice(2), `h1-${i}`)}
         </h1>,
       );
@@ -216,14 +216,14 @@ export function renderMarkdown(md: string): React.ReactNode[] {
       const listItems: React.ReactNode[] = [];
       while (i < lines.length && (lines[i].startsWith("- ") || lines[i].startsWith("* "))) {
         listItems.push(
-          <li key={`li-${i}`} className="ky-ml-4 ky-list-disc">
+          <li key={`li-${i}`} className="pv-ml-4 pv-list-disc">
             {renderInline(lines[i].slice(2), `li-${i}`)}
           </li>,
         );
         i++;
       }
       nodes.push(
-        <ul key={`ul-${i}`} className="ky-my-1 ky-space-y-0.5 ky-text-sm">
+        <ul key={`ul-${i}`} className="pv-my-1 pv-space-y-0.5 pv-text-sm">
           {listItems}
         </ul>,
       );
@@ -236,7 +236,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
     }
 
     nodes.push(
-      <p key={`p-${i}`} className="ky-my-1 ky-text-sm ky-leading-relaxed">
+      <p key={`p-${i}`} className="pv-my-1 pv-text-sm pv-leading-relaxed">
         {renderInline(line, `p-${i}`)}
       </p>,
     );
@@ -262,7 +262,7 @@ Replace the entire contents of `packages/react/src/dashboards/panels/MarkdownPan
  * minimal markdown renderer (packages/react/src/internal/ui/markdown.tsx).
  */
 
-import type { DashboardPanel } from "@kyma-ai/client";
+import type { DashboardPanel } from "@pensieve-ai/client";
 import { renderMarkdown } from "../../internal/ui/markdown";
 
 interface Props {
@@ -274,19 +274,19 @@ export function MarkdownPanelViz({ panel }: Props) {
 
   if (!markdown.trim()) {
     return (
-      <div className="ky-flex ky-h-full ky-items-center ky-justify-center ky-text-xs ky-text-muted-foreground">
+      <div className="pv-flex pv-h-full pv-items-center pv-justify-center pv-text-xs pv-text-muted-foreground">
         No content.
       </div>
     );
   }
 
-  return <div className="ky-h-full ky-overflow-y-auto ky-px-3 ky-py-2">{renderMarkdown(markdown)}</div>;
+  return <div className="pv-h-full pv-overflow-y-auto pv-px-3 pv-py-2">{renderMarkdown(markdown)}</div>;
 }
 ```
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/internal/ui/markdown.test.tsx src/dashboards`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/internal/ui/markdown.test.tsx src/dashboards`
 Expected: PASS — new markdown test passes and existing dashboard/markdown-panel tests still pass (unchanged output).
 
 - [ ] **Step 6: Commit**
@@ -312,7 +312,7 @@ Create `packages/react/src/graph/node-detail.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 import { nodeContent, nodeSourcePath, formatValue, orderedProps } from "./node-detail";
 
 function node(properties: Record<string, unknown>, labels: string[] = ["Memory"]): GraphNode {
@@ -380,7 +380,7 @@ describe("orderedProps", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/node-detail.test.ts`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/node-detail.test.ts`
 Expected: FAIL — `Failed to resolve import "./node-detail"`.
 
 - [ ] **Step 3: Write the implementation**
@@ -394,7 +394,7 @@ Create `packages/react/src/graph/node-detail.ts`:
  * fetchable source artifact (`object_path`), and how to format property values
  * for display (pretty JSON, collapsed embeddings).
  */
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 
 /** The node's renderable long-text content (`properties.content`) or null. */
 export function nodeContent(node: GraphNode): string | null {
@@ -474,7 +474,7 @@ export function orderedProps(node: GraphNode): Array<[string, unknown]> {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/node-detail.test.ts`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/node-detail.test.ts`
 Expected: PASS — all helper assertions pass.
 
 - [ ] **Step 5: Commit**
@@ -503,7 +503,7 @@ Create `packages/react/src/graph/ArtifactSourceViewer.test.tsx`:
 ```tsx
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { KymaProvider } from "../provider/KymaProvider";
+import { PensieveProvider } from "../provider/PensieveProvider";
 import { ArtifactSourceViewer } from "./ArtifactSourceViewer";
 
 function windowResponse(offset: number, content: string, eof: boolean, size: number) {
@@ -543,9 +543,9 @@ describe("ArtifactSourceViewer", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
         <ArtifactSourceViewer path="artifacts/t/logs/build.log" />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
 
     await waitFor(() =>
@@ -564,9 +564,9 @@ describe("ArtifactSourceViewer", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nope", { status: 500 })));
 
     render(
-      <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+      <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
         <ArtifactSourceViewer path="artifacts/t/logs/build.log" />
-      </KymaProvider>,
+      </PensieveProvider>,
     );
 
     await waitFor(() => expect(screen.getByRole("button", { name: /retry/i })).toBeTruthy());
@@ -576,7 +576,7 @@ describe("ArtifactSourceViewer", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/ArtifactSourceViewer.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/ArtifactSourceViewer.test.tsx`
 Expected: FAIL — `Failed to resolve import "./ArtifactSourceViewer"`.
 
 - [ ] **Step 3: Write the implementation**
@@ -593,10 +593,10 @@ Create `packages/react/src/graph/ArtifactSourceViewer.tsx`:
 import { useEffect, useState } from "react";
 import { Copy, WrapText } from "lucide-react";
 import { Button } from "../internal/ui/button";
-import { useKymaClient } from "../provider/context";
+import { usePensieveClient } from "../provider/context";
 
 export function ArtifactSourceViewer({ path }: { path: string }) {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   const [text, setText] = useState("");
   const [offset, setOffset] = useState(0);
   const [size, setSize] = useState<number | null>(null);
@@ -633,14 +633,14 @@ export function ArtifactSourceViewer({ path }: { path: string }) {
   }, [path, client]);
 
   return (
-    <div className="ky-space-y-2">
-      <div className="ky-flex ky-items-center ky-justify-between ky-gap-2">
-        <div className="ky-truncate ky-font-mono ky-text-2xs ky-text-muted-foreground" title={path}>
+    <div className="pv-space-y-2">
+      <div className="pv-flex pv-items-center pv-justify-between pv-gap-2">
+        <div className="pv-truncate pv-font-mono pv-text-2xs pv-text-muted-foreground" title={path}>
           {path}
         </div>
-        <div className="ky-flex ky-items-center ky-gap-1">
+        <div className="pv-flex pv-items-center pv-gap-1">
           <Button variant="ghost" size="xs" onClick={() => setWrap((w) => !w)}>
-            <WrapText className="ky-h-3.5 ky-w-3.5" /> {wrap ? "No wrap" : "Wrap"}
+            <WrapText className="pv-h-3.5 pv-w-3.5" /> {wrap ? "No wrap" : "Wrap"}
           </Button>
           <Button
             variant="ghost"
@@ -648,14 +648,14 @@ export function ArtifactSourceViewer({ path }: { path: string }) {
             disabled={!text}
             onClick={() => void navigator.clipboard.writeText(text)}
           >
-            <Copy className="ky-h-3.5 ky-w-3.5" /> Copy
+            <Copy className="pv-h-3.5 pv-w-3.5" /> Copy
           </Button>
         </div>
       </div>
 
       {error ? (
-        <div className="ky-rounded ky-border ky-border-destructive/40 ky-bg-destructive/10 ky-p-2 ky-text-xs ky-text-destructive">
-          <div className="ky-mb-1">{error}</div>
+        <div className="pv-rounded pv-border pv-border-destructive/40 pv-bg-destructive/10 pv-p-2 pv-text-xs pv-text-destructive">
+          <div className="pv-mb-1">{error}</div>
           <Button variant="outline" size="xs" onClick={() => void fetchWindow(offset, true)}>
             Retry
           </Button>
@@ -663,13 +663,13 @@ export function ArtifactSourceViewer({ path }: { path: string }) {
       ) : (
         <>
           <pre
-            className={`ky-max-h-80 ky-overflow-auto ky-rounded ky-bg-muted ky-p-2 ky-font-mono ky-text-2xs ${
-              wrap ? "ky-whitespace-pre-wrap ky-break-words" : "ky-whitespace-pre"
+            className={`pv-max-h-80 pv-overflow-auto pv-rounded pv-bg-muted pv-p-2 pv-font-mono pv-text-2xs ${
+              wrap ? "pv-whitespace-pre-wrap pv-break-words" : "pv-whitespace-pre"
             }`}
           >
             {text || (loading ? "Loading…" : "No content.")}
           </pre>
-          <div className="ky-flex ky-items-center ky-justify-between ky-text-2xs ky-text-muted-foreground">
+          <div className="pv-flex pv-items-center pv-justify-between pv-text-2xs pv-text-muted-foreground">
             <span>{size != null ? `${Math.min(offset, size)} / ${size} bytes` : ""}</span>
             {!eof && !!text && (
               <Button
@@ -691,7 +691,7 @@ export function ArtifactSourceViewer({ path }: { path: string }) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/ArtifactSourceViewer.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/ArtifactSourceViewer.test.tsx`
 Expected: PASS — first window renders, "Load more" appends and disappears at eof, error path shows Retry.
 
 - [ ] **Step 5: Commit**
@@ -716,12 +716,12 @@ Create `packages/react/src/graph/NodeDetailModal.test.tsx`:
 ```tsx
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { GraphNode } from "@kyma-ai/client";
-import { KymaProvider } from "../provider/KymaProvider";
+import type { GraphNode } from "@pensieve-ai/client";
+import { PensieveProvider } from "../provider/PensieveProvider";
 import { NodeDetailModal } from "./NodeDetailModal";
 
 // jsdom can't run Radix portals/animations — replace the dialog primitive with
-// simple pass-through elements (same approach as KymaDashboard.test.tsx).
+// simple pass-through elements (same approach as PensieveDashboard.test.tsx).
 vi.mock("@radix-ui/react-dialog", () => {
   const Root = ({ open, children }: { open?: boolean; children: React.ReactNode }) =>
     open ? <div data-testid="dialog-root">{children}</div> : null;
@@ -765,9 +765,9 @@ function renderModal(node: GraphNode) {
     ),
   );
   return render(
-    <KymaProvider endpoint="https://kyma.test" auth={{ token: "tok" }}>
+    <PensieveProvider endpoint="https://pensieve.test" auth={{ token: "tok" }}>
       <NodeDetailModal node={node} open onClose={() => {}} />
-    </KymaProvider>,
+    </PensieveProvider>,
   );
 }
 
@@ -799,7 +799,7 @@ describe("NodeDetailModal", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/NodeDetailModal.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/NodeDetailModal.test.tsx`
 Expected: FAIL — `Failed to resolve import "./NodeDetailModal"`.
 
 - [ ] **Step 3: Write the implementation**
@@ -815,7 +815,7 @@ Create `packages/react/src/graph/NodeDetailModal.tsx`:
  */
 import { useState } from "react";
 import { Copy } from "lucide-react";
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../internal/ui/dialog";
 import { Button } from "../internal/ui/button";
 import { Markdown } from "../internal/ui/markdown";
@@ -845,55 +845,55 @@ export function NodeDetailModal({
         if (!o) onClose();
       }}
     >
-      <DialogContent className="ky-max-w-3xl ky-max-h-[85vh] ky-overflow-y-auto">
+      <DialogContent className="pv-max-w-3xl pv-max-h-[85vh] pv-overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="ky-truncate ky-pr-8">{name}</DialogTitle>
-          <div className="ky-text-2xs ky-text-muted-foreground">
+          <DialogTitle className="pv-truncate pv-pr-8">{name}</DialogTitle>
+          <div className="pv-text-2xs pv-text-muted-foreground">
             {node.labels.join(" · ")} · {node.namespace}
           </div>
         </DialogHeader>
 
         {content != null && (
-          <section className="ky-space-y-1">
-            <div className="ky-flex ky-items-center ky-justify-between">
-              <div className="ky-text-2xs ky-uppercase ky-text-muted-foreground">Content</div>
+          <section className="pv-space-y-1">
+            <div className="pv-flex pv-items-center pv-justify-between">
+              <div className="pv-text-2xs pv-uppercase pv-text-muted-foreground">Content</div>
               <Button variant="ghost" size="xs" onClick={() => setRaw((r) => !r)}>
                 {raw ? "Rendered" : "Raw"}
               </Button>
             </div>
             {raw ? (
-              <pre className="ky-overflow-x-auto ky-rounded ky-bg-muted ky-p-3 ky-font-mono ky-text-xs ky-whitespace-pre-wrap ky-break-words">
+              <pre className="pv-overflow-x-auto pv-rounded pv-bg-muted pv-p-3 pv-font-mono pv-text-xs pv-whitespace-pre-wrap pv-break-words">
                 {content}
               </pre>
             ) : (
-              <div className="ky-rounded ky-border ky-border-border ky-p-3">
+              <div className="pv-rounded pv-border pv-border-border pv-p-3">
                 <Markdown source={content} />
               </div>
             )}
           </section>
         )}
 
-        <section className="ky-space-y-1">
-          <div className="ky-text-2xs ky-uppercase ky-text-muted-foreground">Properties</div>
-          <dl className="ky-space-y-1.5">
+        <section className="pv-space-y-1">
+          <div className="pv-text-2xs pv-uppercase pv-text-muted-foreground">Properties</div>
+          <dl className="pv-space-y-1.5">
             {orderedProps(node).map(([k, v]) => {
               const f = formatValue(v);
               return (
-                <div key={k} className="ky-group ky-grid ky-grid-cols-[140px_1fr] ky-gap-2 ky-text-xs">
-                  <dt className="ky-truncate ky-text-muted-foreground" title={k}>
+                <div key={k} className="pv-group pv-grid pv-grid-cols-[140px_1fr] pv-gap-2 pv-text-xs">
+                  <dt className="pv-truncate pv-text-muted-foreground" title={k}>
                     {k}
                   </dt>
-                  <dd className="ky-flex ky-min-w-0 ky-items-start ky-gap-1">
-                    <span className="ky-min-w-0 ky-flex-1 ky-whitespace-pre-wrap ky-break-words ky-font-mono ky-text-foreground">
+                  <dd className="pv-flex pv-min-w-0 pv-items-start pv-gap-1">
+                    <span className="pv-min-w-0 pv-flex-1 pv-whitespace-pre-wrap pv-break-words pv-font-mono pv-text-foreground">
                       {f.text}
                     </span>
                     <button
                       type="button"
                       onClick={() => void navigator.clipboard.writeText(f.text)}
-                      className="ky-text-muted-foreground ky-opacity-0 group-hover:ky-opacity-100 hover:ky-text-foreground"
+                      className="pv-text-muted-foreground pv-opacity-0 group-hover:pv-opacity-100 hover:pv-text-foreground"
                       aria-label={`copy ${k}`}
                     >
-                      <Copy className="ky-h-3 ky-w-3" />
+                      <Copy className="pv-h-3 pv-w-3" />
                     </button>
                   </dd>
                 </div>
@@ -903,8 +903,8 @@ export function NodeDetailModal({
         </section>
 
         {sourcePath != null && (
-          <section className="ky-space-y-1">
-            <div className="ky-text-2xs ky-uppercase ky-text-muted-foreground">Source file</div>
+          <section className="pv-space-y-1">
+            <div className="pv-text-2xs pv-uppercase pv-text-muted-foreground">Source file</div>
             <ArtifactSourceViewer path={sourcePath} />
           </section>
         )}
@@ -916,7 +916,7 @@ export function NodeDetailModal({
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/NodeDetailModal.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/NodeDetailModal.test.tsx`
 Expected: PASS — markdown heading renders, properties listed, source section gated on `object_path`.
 
 - [ ] **Step 5: Commit**
@@ -941,7 +941,7 @@ Create `packages/react/src/graph/InspectorPanel.test.tsx`:
 ```tsx
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { GraphNode } from "@kyma-ai/client";
+import type { GraphNode } from "@pensieve-ai/client";
 import { InspectorPanel } from "./InspectorPanel";
 import { GraphStoreContext, createGraphStore } from "./graph-store";
 
@@ -1007,7 +1007,7 @@ describe("InspectorPanel", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/InspectorPanel.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/InspectorPanel.test.tsx`
 Expected: FAIL — no "View details" button / no "expand topic_key" button exists yet.
 
 - [ ] **Step 3: Edit InspectorPanel — imports + hooks**
@@ -1017,7 +1017,7 @@ In `packages/react/src/graph/InspectorPanel.tsx`, update the import block at the
 ```tsx
 import { useMemo } from "react";
 import { ArrowLeft, ArrowRight, Copy, Crosshair, X } from "lucide-react";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
 import { useGraphStore } from "./graph-store";
 import { getRelationshipFamilyColor } from "./graph-style";
 ```
@@ -1027,7 +1027,7 @@ with:
 ```tsx
 import { useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Copy, Crosshair, Maximize2, X } from "lucide-react";
-import type { GraphNode, GraphRelationship } from "@kyma-ai/client";
+import type { GraphNode, GraphRelationship } from "@pensieve-ai/client";
 import { useGraphStore } from "./graph-store";
 import { getRelationshipFamilyColor } from "./graph-style";
 import { NodeDetailModal } from "./NodeDetailModal";
@@ -1045,21 +1045,21 @@ function PropertyRow({ propKey, value }: { propKey: string; value: unknown }) {
   const [open, setOpen] = useState(false);
   const full = formatValue(value).text;
   return (
-    <div className="ky-group ky-flex ky-items-start ky-gap-1 ky-text-xs">
+    <div className="pv-group pv-flex pv-items-start pv-gap-1 pv-text-xs">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="ky-mt-0.5 ky-text-muted-foreground hover:ky-text-foreground"
+        className="pv-mt-0.5 pv-text-muted-foreground hover:pv-text-foreground"
         aria-label={`${open ? "collapse" : "expand"} ${propKey}`}
       >
-        {open ? <ChevronDown className="ky-h-3 ky-w-3" /> : <ChevronRight className="ky-h-3 ky-w-3" />}
+        {open ? <ChevronDown className="pv-h-3 pv-w-3" /> : <ChevronRight className="pv-h-3 pv-w-3" />}
       </button>
-      <dt className="ky-w-24 ky-shrink-0 ky-truncate ky-text-muted-foreground" title={propKey}>
+      <dt className="pv-w-24 pv-shrink-0 pv-truncate pv-text-muted-foreground" title={propKey}>
         {propKey}
       </dt>
       <dd
-        className={`ky-min-w-0 ky-flex-1 ky-font-mono ky-text-foreground ${
-          open ? "ky-whitespace-pre-wrap ky-break-words" : "ky-truncate"
+        className={`pv-min-w-0 pv-flex-1 pv-font-mono pv-text-foreground ${
+          open ? "pv-whitespace-pre-wrap pv-break-words" : "pv-truncate"
         }`}
       >
         {full}
@@ -1067,10 +1067,10 @@ function PropertyRow({ propKey, value }: { propKey: string; value: unknown }) {
       <button
         type="button"
         onClick={() => void navigator.clipboard.writeText(full)}
-        className="ky-text-muted-foreground ky-opacity-0 group-hover:ky-opacity-100 hover:ky-text-foreground"
+        className="pv-text-muted-foreground pv-opacity-0 group-hover:pv-opacity-100 hover:pv-text-foreground"
         aria-label={`copy ${propKey}`}
       >
-        <Copy className="ky-h-3 ky-w-3" />
+        <Copy className="pv-h-3 pv-w-3" />
       </button>
     </div>
   );
@@ -1091,26 +1091,26 @@ add:
   const [detailOpen, setDetailOpen] = useState(false);
 ```
 
-5b. Add a "View details" button to the actions row. Find the actions `<div className="ky-flex ky-gap-2 ky-p-3">` block containing the Focus and Copy-id buttons, and add this button as the **first** child inside that div (before the Focus button):
+5b. Add a "View details" button to the actions row. Find the actions `<div className="pv-flex pv-gap-2 pv-p-3">` block containing the Focus and Copy-id buttons, and add this button as the **first** child inside that div (before the Focus button):
 
 ```tsx
         <button
           type="button"
           onClick={() => setDetailOpen(true)}
-          className="ky-flex ky-items-center ky-gap-1 ky-rounded-md ky-border ky-border-border ky-px-2 ky-py-1 ky-text-xs ky-text-muted-foreground hover:ky-text-foreground"
+          className="pv-flex pv-items-center pv-gap-1 pv-rounded-md pv-border pv-border-border pv-px-2 pv-py-1 pv-text-xs pv-text-muted-foreground hover:pv-text-foreground"
         >
-          <Maximize2 className="ky-h-3 ky-w-3" /> View details
+          <Maximize2 className="pv-h-3 pv-w-3" /> View details
         </button>
 ```
 
 5c. Replace the Properties `<dl>` block. Find:
 
 ```tsx
-          <dl className="ky-space-y-1">
+          <dl className="pv-space-y-1">
             {Object.entries(node.properties).slice(0, 30).map(([k, v]) => (
-              <div key={k} className="ky-flex ky-gap-2 ky-text-xs">
-                <dt className="ky-w-28 ky-shrink-0 ky-truncate ky-text-muted-foreground">{k}</dt>
-                <dd className="ky-min-w-0 ky-truncate ky-font-mono ky-text-foreground">{String(v)}</dd>
+              <div key={k} className="pv-flex pv-gap-2 pv-text-xs">
+                <dt className="pv-w-28 pv-shrink-0 pv-truncate pv-text-muted-foreground">{k}</dt>
+                <dd className="pv-min-w-0 pv-truncate pv-font-mono pv-text-foreground">{String(v)}</dd>
               </div>
             ))}
           </dl>
@@ -1119,14 +1119,14 @@ add:
 and replace it with:
 
 ```tsx
-          <dl className="ky-space-y-1">
+          <dl className="pv-space-y-1">
             {orderedProps(node).map(([k, v]) => (
               <PropertyRow key={k} propKey={k} value={v} />
             ))}
           </dl>
 ```
 
-5d. Mount the modal. Find the panel's outermost closing `</div>` (the one that closes `<div className="ky-h-full ky-w-80 …">`) and add the modal just before it, after the Relationships block's closing `</div>`:
+5d. Mount the modal. Find the panel's outermost closing `</div>` (the one that closes `<div className="pv-h-full pv-w-80 …">`) and add the modal just before it, after the Relationships block's closing `</div>`:
 
 ```tsx
       <NodeDetailModal node={node} open={detailOpen} onClose={() => setDetailOpen(false)} />
@@ -1134,7 +1134,7 @@ and replace it with:
 
 - [ ] **Step 6: Run test to verify it passes**
 
-Run: `pnpm --filter @kyma-ai/react exec vitest run src/graph/InspectorPanel.test.tsx`
+Run: `pnpm --filter @pensieve-ai/react exec vitest run src/graph/InspectorPanel.test.tsx`
 Expected: PASS — "View details" opens the (mocked) dialog; chevron toggles a row from expand→collapse.
 
 - [ ] **Step 7: Commit**
@@ -1152,17 +1152,17 @@ git commit -m "feat(graph): InspectorPanel — expandable property rows + View d
 
 - [ ] **Step 1: Typecheck the package**
 
-Run: `pnpm --filter @kyma-ai/react typecheck`
+Run: `pnpm --filter @pensieve-ai/react typecheck`
 Expected: no errors. (If `formatValue`/`orderedProps`/`Markdown` signatures drift from their call sites, fix here.)
 
 - [ ] **Step 2: Run the full react test suite**
 
-Run: `pnpm --filter @kyma-ai/react test`
+Run: `pnpm --filter @pensieve-ai/react test`
 Expected: all tests pass, including the 5 new test files and the unchanged dashboard/markdown tests.
 
 - [ ] **Step 3: Build the package**
 
-Run: `pnpm --filter @kyma-ai/react build`
+Run: `pnpm --filter @pensieve-ai/react build`
 Expected: build succeeds (no unused-import or TS build errors).
 
 - [ ] **Step 4: Manual smoke (optional but recommended)**

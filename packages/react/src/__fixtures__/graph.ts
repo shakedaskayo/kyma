@@ -1,4 +1,4 @@
-import type { GraphExportPage, GraphPayload } from "@kyma-ai/client";
+import type { GraphExportPage, GraphPayload } from "@pensieve-ai/client";
 
 const META = { created_at: "2025-01-01T00:00:00Z", updated_at: "2025-06-01T00:00:00Z", realm: "default" };
 

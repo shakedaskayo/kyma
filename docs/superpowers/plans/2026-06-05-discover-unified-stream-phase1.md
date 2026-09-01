@@ -19,9 +19,9 @@
 The client needs to know each source's timestamp column to time-sort merged rows. `compile.rs` already computes it (`find_timestamp_column`); expose it through `PlanSource`.
 
 **Files:**
-- Modify: `crates/kyma-server/src/discover/frames.rs` (PlanSource struct + its test)
-- Modify: `crates/kyma-server/src/discover/compile.rs` (expose ts col on CompiledSource if not already public)
-- Modify: `crates/kyma-server/src/discover/fanout.rs` (populate the new field where the Plan frame is built)
+- Modify: `crates/pensieve-server/src/discover/frames.rs` (PlanSource struct + its test)
+- Modify: `crates/pensieve-server/src/discover/compile.rs` (expose ts col on CompiledSource if not already public)
+- Modify: `crates/pensieve-server/src/discover/fanout.rs` (populate the new field where the Plan frame is built)
 - Modify: `web/src/sdk/discover.ts` (Frame type), `web/src/features/discover/types.ts` (SourceState), `web/src/features/discover/discover-store.ts` (applyFrame)
 
 - [ ] **Step 1: Write the failing Rust test** — extend the existing round-trip test in `frames.rs`:
@@ -52,7 +52,7 @@ fn plan_frame_round_trips() {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cargo test -p kyma-server --lib discover::frames`
+Run: `cargo test -p pensieve-server --lib discover::frames`
 Expected: FAIL — `PlanSource` has no field `timestamp_column`.
 
 - [ ] **Step 3: Add the field**
@@ -80,7 +80,7 @@ PlanSource {
 
 - [ ] **Step 4: Run backend tests**
 
-Run: `cargo test -p kyma-server --lib discover`
+Run: `cargo test -p pensieve-server --lib discover`
 Expected: PASS (all discover unit tests).
 
 - [ ] **Step 5: Mirror in the frontend types**
@@ -117,7 +117,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/kyma-server/src/discover/frames.rs crates/kyma-server/src/discover/compile.rs crates/kyma-server/src/discover/fanout.rs web/src/sdk/discover.ts web/src/features/discover/types.ts web/src/features/discover/discover-store.ts
+git add crates/pensieve-server/src/discover/frames.rs crates/pensieve-server/src/discover/compile.rs crates/pensieve-server/src/discover/fanout.rs web/src/sdk/discover.ts web/src/features/discover/types.ts web/src/features/discover/discover-store.ts
 git commit -m "feat(discover): expose timestamp_column in plan frames"
 ```
 
@@ -1388,7 +1388,7 @@ git commit -m "feat(discover): unified time-sorted stream with summary line and 
 
 ### Task 10: Manual verification + spec/plan commit
 
-- [ ] **Step 1:** With `kyma serve` on :8080 and vite on :5173 running, load `http://localhost:5173/discover`. Verify: summary line states sources/window/count; stream is empty-state (this machine only has memory tables) with the "Search internal sources" link; clicking it shows `memory.*` under **Not in timeline** in the rail; clicking a memory source opens the plain table; back returns to stream. Run a `memory.*` scope search, click a row → drawer opens; drawer `=` button inserts `field:value` text into the query bar (visible, editable).
+- [ ] **Step 1:** With `pensieve serve` on :8080 and vite on :5173 running, load `http://localhost:5173/discover`. Verify: summary line states sources/window/count; stream is empty-state (this machine only has memory tables) with the "Search internal sources" link; clicking it shows `memory.*` under **Not in timeline** in the rail; clicking a memory source opens the plain table; back returns to stream. Run a `memory.*` scope search, click a row → drawer opens; drawer `=` button inserts `field:value` text into the query bar (visible, editable).
 - [ ] **Step 2:** Ingest a few timestamped test rows (`curl -X POST http://127.0.0.1:8080/v1/ingest -H "Authorization: Bearer <token>" -H "X-Database: demo" -H "X-Table: events" -d '{"timestamp":"<now>","message":"hello","service":"api"}'` ×5 with varied values) and verify the stream renders them merged + histogram labels + brush zoom sets a custom range.
 - [ ] **Step 3:** Commit the spec + plan docs:
 

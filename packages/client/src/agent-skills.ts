@@ -1,6 +1,6 @@
 //! Typed client for /v1/agent/skills + /v1/agent/skills/enabled.
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import { errorFromResponse } from "./errors";
 
 export type SkillSource = "project" | "user" | "plugin";
@@ -19,12 +19,12 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function listSkills(t: KymaTransport): Promise<SkillRow[]> {
+export async function listSkills(t: PensieveTransport): Promise<SkillRow[]> {
   return handleResponse<SkillRow[]>(await t.request("/v1/agent/skills"));
 }
 
 export async function putEnabledSkills(
-  t: KymaTransport,
+  t: PensieveTransport,
   skills: string[],
 ): Promise<string[]> {
   return handleResponse<string[]>(

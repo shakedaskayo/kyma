@@ -1,8 +1,8 @@
-# Kyma Graph Layer — First-Class Property-Graph + Context Graph UI — Master Design
+# Pensieve Graph Layer — First-Class Property-Graph + Context Graph UI — Master Design
 
 **Status:** draft 2026-05-25. Decomposes into 4 phase plans (G1–G4). Each phase gets its own implementation plan under `docs/superpowers/plans/`.
 
-**Relationship to other specs:** This is an engine + web-UI feature track, sibling to the v1 production-readiness program (`2026-05-19-kyma-v1-production-readiness-design.md`). It respects that program's locked decisions — most importantly **"the extent format freezes after format-v1"** (§4.2 below resolves graph indices as *sidecar index objects* to avoid touching the frozen format). The **self-learning / knowledge-ingestion** spec is sequenced *after* this one and writes into the property-graph construct defined here (§3); the seams are designed in, the population is out of scope (§1).
+**Relationship to other specs:** This is an engine + web-UI feature track, sibling to the v1 production-readiness program (`2026-05-19-pensieve-v1-production-readiness-design.md`). It respects that program's locked decisions — most importantly **"the extent format freezes after format-v1"** (§4.2 below resolves graph indices as *sidecar index objects* to avoid touching the frozen format). The **self-learning / knowledge-ingestion** spec is sequenced *after* this one and writes into the property-graph construct defined here (§3); the seams are designed in, the population is out of scope (§1).
 
 ---
 
@@ -10,11 +10,11 @@
 
 ### Goal
 
-Give Kyma a **first-class property-graph** — registered in the catalog, queryable through the KQL engine, optimized in the execution layer — and a **Context Graph** web UI that renders it, modeled on the proven graph visualization built for the agentcy project (`@xyflow/react` canvas, force/grid/radial layout, cluster nodes, legend, tree panel, node-detail panel).
+Give Pensieve a **first-class property-graph** — registered in the catalog, queryable through the KQL engine, optimized in the execution layer — and a **Context Graph** web UI that renders it, modeled on the proven graph visualization built for the agentcy project (`@xyflow/react` canvas, force/grid/radial layout, cluster nodes, legend, tree panel, node-detail panel).
 
-The deliverable is **end-to-end and runnable**: a developer opens the Kyma web app, navigates to **Graph**, and sees a live, interactive graph of their data — the catalog/schema graph (databases → tables → columns with real inferred edges) on day one, plus any registered stored property-graph.
+The deliverable is **end-to-end and runnable**: a developer opens the Pensieve web app, navigates to **Graph**, and sees a live, interactive graph of their data — the catalog/schema graph (databases → tables → columns with real inferred edges) on day one, plus any registered stored property-graph.
 
-Today graphs in Kyma are only a *query-time convention* (`graph-traverse` / `graph-shortest-path` compile to recursive CTEs; `explore_schema` returns a tabular schema dump; `find_references_to` infers shared-value edges). There is **no first-class graph in the catalog and no graph visualization**. This spec closes both gaps.
+Today graphs in Pensieve are only a *query-time convention* (`graph-traverse` / `graph-shortest-path` compile to recursive CTEs; `explore_schema` returns a tabular schema dump; `find_references_to` infers shared-value edges). There is **no first-class graph in the catalog and no graph visualization**. This spec closes both gaps.
 
 ### Why this shape
 
@@ -42,7 +42,7 @@ Today graphs in Kyma are only a *query-time convention* (`graph-traverse` / `gra
                          └───────────────┬─────────────────────────┘
                                          │  JSON over HTTP (Bearer + X-Database)
                          ┌───────────────▼─────────────────────────┐
-  kyma-server            │  /v1/graph/* handlers                    │
+  pensieve-server            │  /v1/graph/* handlers                    │
                          │   GraphProvider (trait)                  │
                          │    ├─ SchemaGraphProvider (catalog)      │
                          │    └─ StoredGraphProvider (registered)   │
@@ -50,13 +50,13 @@ Today graphs in Kyma are only a *query-time convention* (`graph-traverse` / `gra
                                          │
               ┌──────────────────────────┼───────────────────────────┐
               ▼                          ▼                           ▼
-   kyma-catalog                   kyma-kql                    kyma-exec
+   pensieve-catalog                   pensieve-kql                    pensieve-exec
    graphs registration   make-graph / graph-match   frontier-materialized
    (graph_config)         extended graph-traverse    traversal + sidecar
                                                       graph indices
 ```
 
-New crate **`kyma-graph`** owns the `GraphProvider` trait + the two providers + the wire types; `kyma-server` mounts the HTTP routes; `kyma-catalog` gains graph registration; `kyma-kql` / `kyma-exec` gain the KQL surface + execution.
+New crate **`pensieve-graph`** owns the `GraphProvider` trait + the two providers + the wire types; `pensieve-server` mounts the HTTP routes; `pensieve-catalog` gains graph registration; `pensieve-kql` / `pensieve-exec` gain the KQL surface + execution.
 
 ---
 
@@ -81,7 +81,7 @@ id:string, src:string, dst:string, type:string, props:dynamic, realm:string,
 valid_from:timestamp, valid_to:timestamp   (the two timestamps optional — temporal graphs)
 ```
 
-`props` uses Kyma's `dynamic` JSON column (the plan confirms the exact type token). `labels` is a string array (fallback: comma-delimited string if arrays are awkward in a given path — resolved in the G1 plan). `realm` is an optional partition dimension (mirrors agentcy); it defaults to the database name, and the schema-graph uses `realm = database`.
+`props` uses Pensieve's `dynamic` JSON column (the plan confirms the exact type token). `labels` is a string array (fallback: comma-delimited string if arrays are awkward in a given path — resolved in the G1 plan). `realm` is an optional partition dimension (mirrors agentcy); it defaults to the database name, and the schema-graph uses `realm = database`.
 
 Column roles are *declared*, so a graph can be registered over **existing** tables whose columns are named differently — the conventional schema is the zero-config default, not a hard requirement.
 
@@ -109,9 +109,9 @@ async fn list_graphs(&self, database: &str) -> Result<Vec<GraphRegistration>>;
 async fn drop_graph(&self, database: &str, name: &str) -> Result<()>;
 ```
 
-Stored as its own `graphs` table (clean separation; avoids overloading `tables.config`). Migration under `crates/kyma-catalog/migrations/`.
+Stored as its own `graphs` table (clean separation; avoids overloading `tables.config`). Migration under `crates/pensieve-catalog/migrations/`.
 
-**CLI:** `kyma-cli create-graph --db <db> --name <g> --nodes <tbl> --edges <tbl> [--id-col … --src-col … …]`, plus `list-graphs` / `drop-graph`. Defaults apply when tables follow the conventional schema.
+**CLI:** `pensieve-cli create-graph --db <db> --name <g> --nodes <tbl> --edges <tbl> [--id-col … --src-col … …]`, plus `list-graphs` / `drop-graph`. Defaults apply when tables follow the conventional schema.
 
 ### 3.3 The schema-graph (synthetic, no registration)
 
@@ -133,11 +133,11 @@ This is what renders on first launch — zero ingestion required — and is the 
 - **`graph-match`** — `G | graph-match (a)-[e:TYPE]->(b) where <pred> project a.x, e.y, b.z` → ordinary tabular result. Supports fixed-length patterns at v1; variable-length defers to `graph-traverse`.
 - **Extended `graph-traverse`** — edge-type filter, per-hop property predicates, and a multi-source seed set (today it takes a single literal source).
 
-All parse through the existing parse-to-`QueryState` pipeline (`crates/kyma-kql/src/parser.rs`, `state.rs`). `graph-match` and the extended traverse lower to the frontier plan (§4.2) rather than a monolithic recursive CTE.
+All parse through the existing parse-to-`QueryState` pipeline (`crates/pensieve-kql/src/parser.rs`, `state.rs`). `graph-match` and the extended traverse lower to the frontier plan (§4.2) rather than a monolithic recursive CTE.
 
 ### 4.2 Execution (Phase G3)
 
-- **Frontier-materialized traversal** — a custom `ExecutionPlan` node in `kyma-exec` that materializes each hop's frontier and applies pruning per hop, replacing the recursive-CTE expansion. KQL `graph-traverse` / `graph-shortest-path` / `graph-match` lower to it. Correctness is validated against the existing recursive-CTE implementation as a reference oracle.
+- **Frontier-materialized traversal** — a custom `ExecutionPlan` node in `pensieve-exec` that materializes each hop's frontier and applies pruning per hop, replacing the recursive-CTE expansion. KQL `graph-traverse` / `graph-shortest-path` / `graph-match` lower to it. Correctness is validated against the existing recursive-CTE implementation as a reference oracle.
 - **Block-level graph indices** — per-extent equality indices on `src` / `dst` (edge tables) and `id` (node tables), so each hop skips extents with no matching keys. **Constraint:** these are maintained as **sidecar index objects** in object storage keyed to the extent, *not* a new extent-format field — this honors the v1 program's "extent format frozen after format-v1" decision regardless of format-v1 status. They build on the existing per-extent equality/token-index concepts.
 - **Cycle handling** — a visited-set carried in the frontier node plus the `max-hops` guard guarantees termination; `graph-shortest-path` already dedups by min-depth.
 
@@ -145,7 +145,7 @@ All parse through the existing parse-to-`QueryState` pipeline (`crates/kyma-kql/
 
 ## 5. Server: `GraphProvider` + `/v1/graph/*`
 
-### 5.1 Trait & providers (crate `kyma-graph`)
+### 5.1 Trait & providers (crate `pensieve-graph`)
 
 ```rust
 #[async_trait]
@@ -197,7 +197,7 @@ JSON in/out (payloads are small and shaped — not Arrow). Same auth as `/v1/que
 ### 6.1 Structure
 
 - Route `web/src/routes/_app.graph.tsx` → feature dir `web/src/features/graph/`. Add `@xyflow/react`. Add a **Graph** link to `web/src/app/shell.tsx`.
-- Components (ported/adapted from agentcy onto Kyma's shadcn-style `components/ui/`):
+- Components (ported/adapted from agentcy onto Pensieve's shadcn-style `components/ui/`):
   - **`GraphView`** — orchestrator: graph selector (registered graphs + schema-graph), realm filter, loads `overview`.
   - **`GraphCanvas`** — `@xyflow/react` canvas. Port the pure-JS `graph-layout.ts` (force / grid / radial; deterministic placement, label cohesion, overlap prevention). Custom `GraphNode` + `ClusterNode`. Edge collapsing for multi-edges. Hover/select → highlight neighbors + dim others.
   - **`CanvasToolbar`** — layout picker, fit/zoom, breadcrumbs, relationship-type filter.
@@ -210,7 +210,7 @@ JSON in/out (payloads are small and shaped — not Arrow). Same auth as `/v1/que
 
 ### 6.2 Styling
 
-Port `getLabelColor` / `getRelationshipColor` (deterministic hash + presets) but retune presets to Kyma's domain (`Table`, `Column`, `Service`, `Database`, `Trace`…) and support Kyma web's existing light/dark themes (agentcy's was dark-only).
+Port `getLabelColor` / `getRelationshipColor` (deterministic hash + presets) but retune presets to Pensieve's domain (`Table`, `Column`, `Service`, `Database`, `Trace`…) and support Pensieve web's existing light/dark themes (agentcy's was dark-only).
 
 ### 6.3 Agent-console graph renderers (Phase G4)
 
@@ -220,7 +220,7 @@ In the existing `web/src/features/agent` console, add tool-renderers for `graph_
 
 ## 7. Local run + seed (the "test it" deliverable)
 
-- **One-command local stack:** `kyma-bin` server + Postgres catalog + object store (MinIO or local-fs `object_store`) + web `vite` dev server pointed at it. Reuse `docker-compose.yml` + `scripts/` where possible; add a `make graph-dev` (or script) target.
+- **One-command local stack:** `pensieve-bin` server + Postgres catalog + object store (MinIO or local-fs `object_store`) + web `vite` dev server pointed at it. Reuse `docker-compose.yml` + `scripts/` where possible; add a `make graph-dev` (or script) target.
 - **Seed script:** creates a sample database with FK-shaped tables (so the schema-graph shows real `REFERENCES` edges) and registers a small sample property-graph (e.g. a service-call graph) so the stored-graph provider has data.
 - **Acceptance:** at the end of Phase G1, the stack is brought up for real and the Context Graph is verified rendering live data (nodes visible, click → detail, expand neighbors works).
 
@@ -241,7 +241,7 @@ TDD throughout (repo rigor; gauntlet is the connective tissue).
 
 Full-engine target (the chosen "C" scope), delivered runnable-first. Each phase → its own plan under `docs/superpowers/plans/`.
 
-- **G1 — runnable skeleton.** Catalog graph registration + CLI; `kyma-graph` crate with `GraphProvider`; `SchemaGraphProvider` + basic `StoredGraphProvider` (ops compiled to existing KQL/SQL); `/v1/graph/*` endpoints; web Context Graph view (xyflow + ported layout + panels + SDK + store + nav); local run + seed. **Ends with the stack up and the Context Graph rendering real schema-graph data — this is where we "start the web UI and stack to test it."**
+- **G1 — runnable skeleton.** Catalog graph registration + CLI; `pensieve-graph` crate with `GraphProvider`; `SchemaGraphProvider` + basic `StoredGraphProvider` (ops compiled to existing KQL/SQL); `/v1/graph/*` endpoints; web Context Graph view (xyflow + ported layout + panels + SDK + store + nav); local run + seed. **Ends with the stack up and the Context Graph rendering real schema-graph data — this is where we "start the web UI and stack to test it."**
 - **G2 — KQL graph surface.** `make-graph` + `graph-match`; extended `graph-traverse`; endpoints switch hot paths to them.
 - **G3 — execution optimization.** Frontier-materialized traversal `ExecutionPlan`; sidecar block-level graph indices; cycle detection; gauntlet perf + correctness.
 - **G4 — agent integration + polish.** Agent-console graph tool-renderers; stats panels; saved graph views.
@@ -261,7 +261,7 @@ We write **and execute G1 first**; G2–G4 each get their own plan afterward.
 
 ## 11. G1a acceptance notes & deferred follow-ups
 
-**G1a is complete and accepted** (2026-05-25): the `kyma-graph` crate (`GraphProvider` trait, `SchemaGraphProvider`, wire types) + read-side `/v1/graph/*` endpoints in `kyma-server` over the schema-graph. `kyma-graph`: 13/13 tests; `kyma-server` `graph_handler`: 7/7; scoped build clean. (The full-workspace `cargo build` fails only on `kyma-web-assets` needing `web/dist`, which the web phase G1c/G1d builds — `kyma-server` pulls that crate only behind the optional `web-ui` feature, so it is not a graph regression.)
+**G1a is complete and accepted** (2026-05-25): the `pensieve-graph` crate (`GraphProvider` trait, `SchemaGraphProvider`, wire types) + read-side `/v1/graph/*` endpoints in `pensieve-server` over the schema-graph. `pensieve-graph`: 13/13 tests; `pensieve-server` `graph_handler`: 7/7; scoped build clean. (The full-workspace `cargo build` fails only on `pensieve-web-assets` needing `web/dist`, which the web phase G1c/G1d builds — `pensieve-server` pulls that crate only behind the optional `web-ui` feature, so it is not a graph regression.)
 
 **Contract reality for the G1c TypeScript types (code against THESE, not the §5.3 sketch):**
 - `search` returns `{ hits, total, limit, offset }` — there is no `took_ms`. Drop `took_ms` from the §5.3 sketch.

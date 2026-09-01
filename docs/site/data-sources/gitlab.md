@@ -13,11 +13,11 @@ Ingests GitLab project metadata into `gitlab_nodes` and
 ```bash
 # gitlab.com
 export GITLAB_TOKEN=glpat-...
-kyma create-database gitlab
-kyma datasource add gitlab gitlab-org/gitlab --start
+pensieve create-database gitlab
+pensieve datasource add gitlab gitlab-org/gitlab --start
 
 # Self-hosted GitLab
-kyma datasource add gitlab my-group/my-project \
+pensieve datasource add gitlab my-group/my-project \
   --api-url https://gitlab.mycorp.io/api/v4 \
   --start
 ```

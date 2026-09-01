@@ -82,7 +82,7 @@ export function CreateBrainDialog({
             <Label htmlFor="brain-realms">Realms</Label>
             <Input
               id="brain-realms"
-              placeholder="kyma, global"
+              placeholder="pensieve, global"
               value={realms}
               disabled={allRealms}
               onChange={(e) => setRealms(e.target.value)}

@@ -3,7 +3,7 @@
  *
  * These shapes are the boundary between the host app (which owns the WebSocket
  * that streams consumer activity) and this SDK (which renders it). The host
- * passes a `LiveConsumersData` snapshot into `<KymaGraph liveConsumers={…} />`;
+ * passes a `LiveConsumersData` snapshot into `<PensieveGraph liveConsumers={…} />`;
  * the SDK never opens a socket. Kept in the SDK so the web hook imports one
  * source of truth (no web → SDK type drift).
  */
@@ -14,7 +14,7 @@ export type ConsumerKind =
   | "claude_code"
   | "cursor"
   | "windsurf"
-  | "kyma_agent"
+  | "pensieve_agent"
   | "mcp"
   | "unknown";
 
@@ -82,7 +82,7 @@ export interface ConsumerBeam {
   ttl: number;
 }
 
-/** The full snapshot the host passes into `KymaGraph`. */
+/** The full snapshot the host passes into `PensieveGraph`. */
 export interface LiveConsumersData {
   /** Whether the host's stream is active (mirrors the in-graph toggle). */
   enabled: boolean;

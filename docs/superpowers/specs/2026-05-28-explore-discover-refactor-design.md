@@ -104,7 +104,7 @@ Exactly one of `scope.sources` or `scope.viewId` is honored depending on `scope.
 
 Pagination beyond `per_source_limit` is **out of scope for v1**. When a source returns more rows than the cap, the `source_done` frame sets `capped: true` and the UI shows "showing first 500 of 1,238 — open in Query Editor for more". A `cursor` field is reserved for v2 drilldown and not accepted in v1.
 
-**Headers:** existing `x-kyma-max-wall-clock-ms`, `x-kyma-max-memory-bytes` honored as a *global* budget (not per-source). Existing auth middleware applies.
+**Headers:** existing `x-pensieve-max-wall-clock-ms`, `x-pensieve-max-memory-bytes` honored as a *global* budget (not per-source). Existing auth middleware applies.
 
 **Response:** `Content-Type: application/x-ndjson`. One JSON object per line. Discriminated frame types:
 
@@ -272,8 +272,8 @@ type AskAIResult =
 |----------------------------------------|-------------|--------------|
 | `per_source_limit` (rows per source)   | 500         | request body, capped server-side at 5,000 |
 | `max_sources_per_request`              | 200         | engine config |
-| Global wall-clock                      | 10s         | `x-kyma-max-wall-clock-ms` header |
-| Global memory                          | existing    | `x-kyma-max-memory-bytes` header |
+| Global wall-clock                      | 10s         | `x-pensieve-max-wall-clock-ms` header |
+| Global memory                          | existing    | `x-pensieve-max-memory-bytes` header |
 
 Scopes resolving to more than `max_sources_per_request` are rejected pre-execution with `scope_too_large`; the UI links the user to the Scope picker.
 

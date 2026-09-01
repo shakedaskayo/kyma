@@ -11,7 +11,7 @@ export function Loader({
 }) {
   return (
     <Loader2
-      className={cn("ky-animate-spin ky-text-muted-foreground", className)}
+      className={cn("pv-animate-spin pv-text-muted-foreground", className)}
       size={size}
       aria-label="Loading"
     />

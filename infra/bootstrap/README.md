@@ -17,7 +17,7 @@ Record the outputs — `state_bucket`, `lock_table`, `ci_role_arn`.
 
 ## 2. Migrate this layer's state into the bucket it just created
 
-`backend.tf` is already committed (S3 backend pointing at `kyma-cloud-tfstate`).
+`backend.tf` is already committed (S3 backend pointing at `pensieve-cloud-tfstate`).
 With it present:
 
 ```bash

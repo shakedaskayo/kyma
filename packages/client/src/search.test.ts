@@ -47,7 +47,7 @@ void ((): HybridSearchRequest => ({
 void ((): HybridSearchResponse => ({
   hits: [
     {
-      source: "kyma.logs",
+      source: "pensieve.logs",
       score: 0.9,
       row: { msg: "ok" },
       kind: "memory",
@@ -75,7 +75,7 @@ describe("search()", () => {
       mode: "memory",
     };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(payload));
-    const t = createTransport({ endpoint: "https://kyma.test", auth: { token: "tok" }, fetch: fetchMock });
+    const t = createTransport({ endpoint: "https://pensieve.test", auth: { token: "tok" }, fetch: fetchMock });
 
     const req: HybridSearchRequest = {
       query: "error",
@@ -90,7 +90,7 @@ describe("search()", () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("https://kyma.test/v1/search");
+    expect(url).toBe("https://pensieve.test/v1/search");
     expect(init.method).toBe("POST");
 
     const body = JSON.parse(init.body as string) as HybridSearchRequest;
@@ -106,14 +106,14 @@ describe("search()", () => {
 
   it("sends graph fields in the POST body", async () => {
     const payload: HybridSearchResponse = {
-      hits: [{ source: "kyma.graph", score: 0.7, row: {}, kind: "node", id: "n1", title: "AuthService" }],
+      hits: [{ source: "pensieve.graph", score: 0.7, row: {}, kind: "node", id: "n1", title: "AuthService" }],
       sources_searched: 1,
       elapsed_ms: 12,
       mode: "graph",
       linked: [{ id: "n2" }],
     };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(payload));
-    const t = createTransport({ endpoint: "https://kyma.test", auth: { token: "tok" }, fetch: fetchMock });
+    const t = createTransport({ endpoint: "https://pensieve.test", auth: { token: "tok" }, fetch: fetchMock });
 
     const req: HybridSearchRequest = {
       query: "AuthService",
@@ -144,7 +144,7 @@ describe("search()", () => {
       elapsed_ms: 8,
     };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(payload));
-    const t = createTransport({ endpoint: "https://kyma.test", auth: { token: "tok" }, fetch: fetchMock });
+    const t = createTransport({ endpoint: "https://pensieve.test", auth: { token: "tok" }, fetch: fetchMock });
 
     const req: HybridSearchRequest = {
       query: "ok",

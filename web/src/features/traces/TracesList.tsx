@@ -195,7 +195,7 @@ export function TracesList({
               {errorsOnly ? "No errors in this window" : "No traces in this window"}
             </p>
             <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-              Kyma traces its own API operations as they happen — run a query or recall a memory
+              Pensieve traces its own API operations as they happen — run a query or recall a memory
               and it shows up here. External services can ship OTLP spans to port 4317.
             </p>
           </div>

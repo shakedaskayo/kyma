@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { applyFrame } from "./discover-store";
-import type { DiscoverResultsState } from "@kyma-ai/react/discover";
+import type { DiscoverResultsState } from "@pensieve-ai/react/discover";
 
 const empty = (): DiscoverResultsState => ({
   status: "idle",

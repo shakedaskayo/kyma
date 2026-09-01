@@ -1,10 +1,10 @@
 /**
- * Returns the portal container from the nearest KymaContext.
+ * Returns the portal container from the nearest PensieveContext.
  * Radix portal components (tooltips, dropdowns, dialogs) must render inside
- * this element so they inherit the .kyma-root CSS variables.
+ * this element so they inherit the .pensieve-root CSS variables.
  */
-import { useKymaContext } from "../provider/context";
+import { usePensieveContext } from "../provider/context";
 
 export function usePortalContainer(): HTMLElement | null {
-  return useKymaContext().portalContainer;
+  return usePensieveContext().portalContainer;
 }

@@ -1,7 +1,7 @@
-// Typed client for the kyma data sources layer (`/v1/data-sources/*`). JSON in/out.
+// Typed client for the pensieve data sources layer (`/v1/data-sources/*`). JSON in/out.
 // Adds `handleEmpty` for the 204/202 mutation responses.
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import { errorFromResponse } from "./errors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ interface CatalogEnvelope {
   items: CatalogEntry[];
 }
 
-export async function getDataSourceCatalog(t: KymaTransport): Promise<CatalogEntry[]> {
+export async function getDataSourceCatalog(t: PensieveTransport): Promise<CatalogEntry[]> {
   const body = await handleResponse<CatalogEnvelope>(await t.request("/v1/data-sources/catalog"));
   return body.items ?? [];
 }
@@ -156,20 +156,20 @@ interface ListEnvelope {
   items: DataSourceSummary[];
 }
 
-export async function listDataSources(t: KymaTransport): Promise<DataSourceSummary[]> {
+export async function listDataSources(t: PensieveTransport): Promise<DataSourceSummary[]> {
   const body = await handleResponse<ListEnvelope>(await t.request("/v1/data-sources"));
   return body.items ?? [];
 }
 
 export async function getDataSource(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { id: string },
 ): Promise<DataSourceDetail> {
   return handleResponse<DataSourceDetail>(await t.request(`/v1/data-sources/${args.id}`));
 }
 
 export async function createDataSource(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { body: CreateDataSourceBody },
 ): Promise<{ id: string }> {
   return handleResponse<{ id: string }>(
@@ -182,7 +182,7 @@ export async function createDataSource(
 }
 
 export async function patchDataSource(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { id: string; patch: DataSourceUpdate },
 ): Promise<void> {
   return handleEmpty(
@@ -194,19 +194,19 @@ export async function patchDataSource(
   );
 }
 
-export async function deleteDataSource(t: KymaTransport, args: { id: string }): Promise<void> {
+export async function deleteDataSource(t: PensieveTransport, args: { id: string }): Promise<void> {
   return handleEmpty(await t.request(`/v1/data-sources/${args.id}`, { method: "DELETE" }));
 }
 
-export async function pauseDataSource(t: KymaTransport, args: { id: string }): Promise<void> {
+export async function pauseDataSource(t: PensieveTransport, args: { id: string }): Promise<void> {
   return handleEmpty(await t.request(`/v1/data-sources/${args.id}/pause`, { method: "POST" }));
 }
 
-export async function resumeDataSource(t: KymaTransport, args: { id: string }): Promise<void> {
+export async function resumeDataSource(t: PensieveTransport, args: { id: string }): Promise<void> {
   return handleEmpty(await t.request(`/v1/data-sources/${args.id}/resume`, { method: "POST" }));
 }
 
-export async function triggerDataSource(t: KymaTransport, args: { id: string }): Promise<void> {
+export async function triggerDataSource(t: PensieveTransport, args: { id: string }): Promise<void> {
   return handleEmpty(await t.request(`/v1/data-sources/${args.id}/trigger`, { method: "POST" }));
 }
 
@@ -220,7 +220,7 @@ interface ReposEnvelope {
  * travels in the request body (never a query string, never a cache key).
  */
 export async function listGitHubRepos(
-  t: KymaTransport,
+  t: PensieveTransport,
   args: { pat: string },
 ): Promise<GitHubRepo[]> {
   const body = await handleResponse<ReposEnvelope>(
@@ -278,7 +278,7 @@ export interface DataSourceWatcher {
   stale: boolean;
 }
 
-export async function listDataSourceWatchers(t: KymaTransport): Promise<DataSourceWatcher[]> {
+export async function listDataSourceWatchers(t: PensieveTransport): Promise<DataSourceWatcher[]> {
   const body = await handleResponse<{ items: DataSourceWatcher[] }>(
     await t.request("/v1/data-sources/watchers"),
   );
@@ -291,14 +291,14 @@ export interface WatcherSettings {
   cc_sync_enabled: boolean;
 }
 
-export async function getWatcherSettings(t: KymaTransport): Promise<WatcherSettings> {
+export async function getWatcherSettings(t: PensieveTransport): Promise<WatcherSettings> {
   return handleResponse<WatcherSettings>(
     await t.request("/v1/data-sources/watchers/settings"),
   );
 }
 
 export async function updateWatcherSettings(
-  t: KymaTransport,
+  t: PensieveTransport,
   patch: Partial<WatcherSettings>,
 ): Promise<WatcherSettings> {
   return handleResponse<WatcherSettings>(

@@ -1,6 +1,6 @@
-// Shim: backwards-compatible wrappers around @kyma-ai/client agent-skills functions.
+// Shim: backwards-compatible wrappers around @pensieve-ai/client agent-skills functions.
 
-export type { SkillSource, SkillRow } from "@kyma-ai/client";
+export type { SkillSource, SkillRow } from "@pensieve-ai/client";
 
 import { sessionClient } from "./client";
 

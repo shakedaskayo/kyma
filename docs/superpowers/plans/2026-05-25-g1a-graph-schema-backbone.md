@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a new `kyma-graph` crate (wire types + `GraphProvider` trait + `SchemaGraphProvider`) and mount read-side `/v1/graph/*` HTTP endpoints in `kyma-server`, so a client can fetch the catalog/schema as a property-graph (tables → nodes, inferred FK edges) in the exact JSON shape the web Context Graph UI will consume.
+**Goal:** Add a new `pensieve-graph` crate (wire types + `GraphProvider` trait + `SchemaGraphProvider`) and mount read-side `/v1/graph/*` HTTP endpoints in `pensieve-server`, so a client can fetch the catalog/schema as a property-graph (tables → nodes, inferred FK edges) in the exact JSON shape the web Context Graph UI will consume.
 
-**Architecture:** `kyma-graph` is dependency-light and decoupled from `kyma-core`: it consumes a narrow `SchemaSource` trait (3 methods) rather than the full `Catalog`, so the provider is unit-testable with a hand-written fake. `kyma-server` supplies a `CatalogSchemaSource` adapter over `Arc<dyn Catalog>` and exposes the provider through axum routes merged into the existing query `router()`. Only the synthetic `"schema"` graph exists in G1a — stored/registered graphs are G1b.
+**Architecture:** `pensieve-graph` is dependency-light and decoupled from `pensieve-core`: it consumes a narrow `SchemaSource` trait (3 methods) rather than the full `Catalog`, so the provider is unit-testable with a hand-written fake. `pensieve-server` supplies a `CatalogSchemaSource` adapter over `Arc<dyn Catalog>` and exposes the provider through axum routes merged into the existing query `router()`. Only the synthetic `"schema"` graph exists in G1a — stored/registered graphs are G1b.
 
-**Tech Stack:** Rust, `serde`/`serde_json`, `async-trait`, `thiserror`, `axum` (already used by `kyma-server`), `tower::ServiceExt` for handler tests.
+**Tech Stack:** Rust, `serde`/`serde_json`, `async-trait`, `thiserror`, `axum` (already used by `pensieve-server`), `tower::ServiceExt` for handler tests.
 
 **Reference spec:** `docs/superpowers/specs/2026-05-25-graph-layer-context-graph-design.md` (§3.3 schema-graph, §5 GraphProvider + endpoints, §5.2 wire types).
 
@@ -14,35 +14,35 @@
 
 ## File structure
 
-- Create `crates/kyma-graph/Cargo.toml` — new workspace crate.
-- Create `crates/kyma-graph/src/lib.rs` — re-exports.
-- Create `crates/kyma-graph/src/types.rs` — wire types (`GraphNode`, `GraphRelationship`, `GraphStats`, `GraphPayload`, `EdgeExpansion`, `SearchHits`, `GraphSchema`, `GraphRef`, `Direction`, `Props`).
-- Create `crates/kyma-graph/src/source.rs` — `ColumnDef` + `SchemaSource` trait.
-- Create `crates/kyma-graph/src/provider.rs` — `GraphProvider` trait.
-- Create `crates/kyma-graph/src/schema_graph.rs` — `SchemaGraphProvider` + pure `infer_edges` helper.
-- Modify `Cargo.toml` (workspace root) — add `crates/kyma-graph` to members.
-- Modify `crates/kyma-server/Cargo.toml` — depend on `kyma-graph`.
-- Create `crates/kyma-server/src/graph_handler.rs` — `CatalogSchemaSource` adapter + axum handlers + `graph_router`.
-- Modify `crates/kyma-server/src/lib.rs` — `pub mod graph_handler;` and `.merge(graph_handler::graph_router(state.clone()))` inside `router()`.
+- Create `crates/pensieve-graph/Cargo.toml` — new workspace crate.
+- Create `crates/pensieve-graph/src/lib.rs` — re-exports.
+- Create `crates/pensieve-graph/src/types.rs` — wire types (`GraphNode`, `GraphRelationship`, `GraphStats`, `GraphPayload`, `EdgeExpansion`, `SearchHits`, `GraphSchema`, `GraphRef`, `Direction`, `Props`).
+- Create `crates/pensieve-graph/src/source.rs` — `ColumnDef` + `SchemaSource` trait.
+- Create `crates/pensieve-graph/src/provider.rs` — `GraphProvider` trait.
+- Create `crates/pensieve-graph/src/schema_graph.rs` — `SchemaGraphProvider` + pure `infer_edges` helper.
+- Modify `Cargo.toml` (workspace root) — add `crates/pensieve-graph` to members.
+- Modify `crates/pensieve-server/Cargo.toml` — depend on `pensieve-graph`.
+- Create `crates/pensieve-server/src/graph_handler.rs` — `CatalogSchemaSource` adapter + axum handlers + `graph_router`.
+- Modify `crates/pensieve-server/src/lib.rs` — `pub mod graph_handler;` and `.merge(graph_handler::graph_router(state.clone()))` inside `router()`.
 
 ---
 
-## Task 1: Create the `kyma-graph` crate skeleton
+## Task 1: Create the `pensieve-graph` crate skeleton
 
 **Files:**
-- Create: `crates/kyma-graph/Cargo.toml`
-- Create: `crates/kyma-graph/src/lib.rs`
+- Create: `crates/pensieve-graph/Cargo.toml`
+- Create: `crates/pensieve-graph/src/lib.rs`
 - Modify: `Cargo.toml` (workspace root, `members` array)
 
 - [ ] **Step 1: Add the crate to the workspace members**
 
-In root `Cargo.toml`, add `"crates/kyma-graph",` to the `members` array (place it right after `"crates/kyma-kql",` to group with the engine crates).
+In root `Cargo.toml`, add `"crates/pensieve-graph",` to the `members` array (place it right after `"crates/pensieve-kql",` to group with the engine crates).
 
-- [ ] **Step 2: Write `crates/kyma-graph/Cargo.toml`**
+- [ ] **Step 2: Write `crates/pensieve-graph/Cargo.toml`**
 
 ```toml
 [package]
-name = "kyma-graph"
+name = "pensieve-graph"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -62,13 +62,13 @@ tokio = { workspace = true, features = ["macros", "rt"] }
 
 (Task 3 also references `anyhow`; it's included here from the start so the crate builds at each step.)
 
-- [ ] **Step 3: Write `crates/kyma-graph/src/lib.rs`**
+- [ ] **Step 3: Write `crates/pensieve-graph/src/lib.rs`**
 
 ```rust
-//! First-class property-graph layer for kyma: wire types, the `GraphProvider`
+//! First-class property-graph layer for pensieve: wire types, the `GraphProvider`
 //! trait, and the synthetic schema-graph provider (catalog → property-graph).
 //!
-//! This crate is intentionally decoupled from `kyma-core`: it consumes a
+//! This crate is intentionally decoupled from `pensieve-core`: it consumes a
 //! narrow [`SchemaSource`] trait rather than the full catalog, so providers
 //! are unit-testable without a database.
 
@@ -85,14 +85,14 @@ pub use types::*;
 
 - [ ] **Step 4: Verify the workspace still builds**
 
-Run: `cargo build -p kyma-graph`
+Run: `cargo build -p pensieve-graph`
 Expected: compiles (empty modules will fail — that's fixed in Task 2; if you run before Task 2 it errors on missing modules, which is fine). Skip running until Task 2 lands the modules.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add Cargo.toml crates/kyma-graph/Cargo.toml crates/kyma-graph/src/lib.rs
-git commit -m "feat(graph): scaffold kyma-graph crate"
+git add Cargo.toml crates/pensieve-graph/Cargo.toml crates/pensieve-graph/src/lib.rs
+git commit -m "feat(graph): scaffold pensieve-graph crate"
 ```
 
 ---
@@ -100,12 +100,12 @@ git commit -m "feat(graph): scaffold kyma-graph crate"
 ## Task 2: Wire types (mirror the agentcy contract)
 
 **Files:**
-- Create: `crates/kyma-graph/src/types.rs`
+- Create: `crates/pensieve-graph/src/types.rs`
 - Test: inline `#[cfg(test)]` in `types.rs`
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `crates/kyma-graph/src/types.rs`:
+Append to `crates/pensieve-graph/src/types.rs`:
 
 ```rust
 #[cfg(test)]
@@ -148,7 +148,7 @@ mod tests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p kyma-graph types::tests`
+Run: `cargo test -p pensieve-graph types::tests`
 Expected: FAIL — `GraphNode`/`NodeMetadata`/`Direction` not defined.
 
 - [ ] **Step 3: Write the types (prepend above the test module)**
@@ -250,13 +250,13 @@ pub enum Direction {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cargo test -p kyma-graph types::tests`
+Run: `cargo test -p pensieve-graph types::tests`
 Expected: PASS (2 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-graph/src/types.rs
+git add crates/pensieve-graph/src/types.rs
 git commit -m "feat(graph): wire types mirroring the context-graph contract"
 ```
 
@@ -265,10 +265,10 @@ git commit -m "feat(graph): wire types mirroring the context-graph contract"
 ## Task 3: `SchemaSource` trait + `GraphProvider` trait
 
 **Files:**
-- Create: `crates/kyma-graph/src/source.rs`
-- Create: `crates/kyma-graph/src/provider.rs`
+- Create: `crates/pensieve-graph/src/source.rs`
+- Create: `crates/pensieve-graph/src/provider.rs`
 
-- [ ] **Step 1: Write `crates/kyma-graph/src/source.rs`**
+- [ ] **Step 1: Write `crates/pensieve-graph/src/source.rs`**
 
 ```rust
 //! Narrow read interface the schema-graph needs from a catalog. Keeping this
@@ -276,11 +276,11 @@ git commit -m "feat(graph): wire types mirroring the context-graph contract"
 
 use async_trait::async_trait;
 
-/// A column as the schema-graph sees it (decoupled from `kyma_core::ColumnInfo`).
+/// A column as the schema-graph sees it (decoupled from `pensieve_core::ColumnInfo`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColumnDef {
     pub name: String,
-    /// kyma type token: `string`, `int`, `long`, `real`, `datetime`, `bool`, `dynamic`.
+    /// pensieve type token: `string`, `int`, `long`, `real`, `datetime`, `bool`, `dynamic`.
     pub type_: String,
     pub nullable: bool,
 }
@@ -295,9 +295,9 @@ pub trait SchemaSource: Send + Sync {
 
 - [ ] **Step 2: Confirm `anyhow` is present**
 
-`anyhow = { workspace = true }` was already added to `crates/kyma-graph/Cargo.toml` in Task 1. No change needed — just verify it's there before using `anyhow::Result` below.
+`anyhow = { workspace = true }` was already added to `crates/pensieve-graph/Cargo.toml` in Task 1. No change needed — just verify it's there before using `anyhow::Result` below.
 
-- [ ] **Step 3: Write `crates/kyma-graph/src/provider.rs`**
+- [ ] **Step 3: Write `crates/pensieve-graph/src/provider.rs`**
 
 ```rust
 //! The provider abstraction every graph kind implements. G1a ships only
@@ -342,7 +342,7 @@ pub trait GraphProvider: Send + Sync {
 
 - [ ] **Step 4: Verify the crate builds**
 
-Run: `cargo build -p kyma-graph`
+Run: `cargo build -p pensieve-graph`
 Expected: compiles (modules are referenced from `lib.rs`; `schema_graph` is still empty — add a temporary `pub mod schema_graph {}`? No — Task 4 creates it. To build now, comment out `pub mod schema_graph;` and its re-export in `lib.rs`, or proceed straight to Task 4 and build there.)
 
 Proceed to Task 4 before building.
@@ -350,7 +350,7 @@ Proceed to Task 4 before building.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-graph/Cargo.toml crates/kyma-graph/src/source.rs crates/kyma-graph/src/provider.rs
+git add crates/pensieve-graph/Cargo.toml crates/pensieve-graph/src/source.rs crates/pensieve-graph/src/provider.rs
 git commit -m "feat(graph): SchemaSource + GraphProvider traits"
 ```
 
@@ -359,14 +359,14 @@ git commit -m "feat(graph): SchemaSource + GraphProvider traits"
 ## Task 4: Edge inference (pure helper, name-based FK heuristic)
 
 **Files:**
-- Create: `crates/kyma-graph/src/schema_graph.rs`
+- Create: `crates/pensieve-graph/src/schema_graph.rs`
 - Test: inline `#[cfg(test)]` in `schema_graph.rs`
 
 The schema-graph infers `REFERENCES` edges with a deterministic, value-free heuristic: a column named `<base>_id` in table A points to table B when B's name (lowercased) equals `<base>` or `<base>s`.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `crates/kyma-graph/src/schema_graph.rs` with only the test first:
+Create `crates/pensieve-graph/src/schema_graph.rs` with only the test first:
 
 ```rust
 #[cfg(test)]
@@ -411,7 +411,7 @@ mod edge_tests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p kyma-graph schema_graph::edge_tests`
+Run: `cargo test -p pensieve-graph schema_graph::edge_tests`
 Expected: FAIL — `infer_edges` not defined.
 
 - [ ] **Step 3: Implement `infer_edges` (prepend above the test module)**
@@ -485,13 +485,13 @@ pub(crate) fn infer_edges(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cargo test -p kyma-graph schema_graph::edge_tests`
+Run: `cargo test -p pensieve-graph schema_graph::edge_tests`
 Expected: PASS (3 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-graph/src/schema_graph.rs
+git add crates/pensieve-graph/src/schema_graph.rs
 git commit -m "feat(graph): name-based REFERENCES edge inference"
 ```
 
@@ -500,7 +500,7 @@ git commit -m "feat(graph): name-based REFERENCES edge inference"
 ## Task 5: `SchemaGraphProvider` — build snapshot + node construction
 
 **Files:**
-- Modify: `crates/kyma-graph/src/schema_graph.rs`
+- Modify: `crates/pensieve-graph/src/schema_graph.rs`
 - Test: inline `#[cfg(test)]` in `schema_graph.rs` (a `FakeSource`)
 
 - [ ] **Step 1: Write the failing test**
@@ -594,7 +594,7 @@ mod provider_tests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p kyma-graph schema_graph::provider_tests`
+Run: `cargo test -p pensieve-graph schema_graph::provider_tests`
 Expected: FAIL — `SchemaGraphProvider` not defined.
 
 - [ ] **Step 3: Implement `SchemaGraphProvider` (append to `schema_graph.rs`, before the test modules)**
@@ -813,32 +813,32 @@ impl GraphProvider for SchemaGraphProvider {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cargo test -p kyma-graph`
-Expected: PASS (all `kyma-graph` tests: types + edge + provider).
+Run: `cargo test -p pensieve-graph`
+Expected: PASS (all `pensieve-graph` tests: types + edge + provider).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-graph/src/schema_graph.rs
+git add crates/pensieve-graph/src/schema_graph.rs
 git commit -m "feat(graph): SchemaGraphProvider over SchemaSource"
 ```
 
 ---
 
-## Task 6: `CatalogSchemaSource` adapter in kyma-server
+## Task 6: `CatalogSchemaSource` adapter in pensieve-server
 
 **Files:**
-- Modify: `crates/kyma-server/Cargo.toml` (add `kyma-graph` dep)
-- Create: `crates/kyma-server/src/graph_handler.rs` (adapter only in this task)
+- Modify: `crates/pensieve-server/Cargo.toml` (add `pensieve-graph` dep)
+- Create: `crates/pensieve-server/src/graph_handler.rs` (adapter only in this task)
 
 - [ ] **Step 1: Add the dependency**
 
-In `crates/kyma-server/Cargo.toml` `[dependencies]`, add:
-`kyma-graph = { path = "../kyma-graph" }`
+In `crates/pensieve-server/Cargo.toml` `[dependencies]`, add:
+`pensieve-graph = { path = "../pensieve-graph" }`
 
 - [ ] **Step 2: Write the failing test**
 
-Create `crates/kyma-server/src/graph_handler.rs`:
+Create `crates/pensieve-server/src/graph_handler.rs`:
 
 ```rust
 //! HTTP surface for the graph layer (`/v1/graph/*`). G1a serves only the
@@ -847,8 +847,8 @@ Create `crates/kyma-server/src/graph_handler.rs`:
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use kyma_core::catalog::Catalog;
-use kyma_graph::{ColumnDef, SchemaSource};
+use pensieve_core::catalog::Catalog;
+use pensieve_graph::{ColumnDef, SchemaSource};
 
 /// Adapts the full [`Catalog`] down to the narrow [`SchemaSource`] the
 /// schema-graph needs.
@@ -882,7 +882,7 @@ impl SchemaSource for CatalogSchemaSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kyma_graph::{GraphProvider, SchemaGraphProvider};
+    use pensieve_graph::{GraphProvider, SchemaGraphProvider};
 
     #[tokio::test]
     async fn adapter_feeds_schema_provider_from_seeded_catalog() {
@@ -901,7 +901,7 @@ mod tests {
 
 - [ ] **Step 3: Register the module**
 
-In `crates/kyma-server/src/lib.rs`, add near the other `pub mod` lines (e.g. after `pub mod catalog_handler;`):
+In `crates/pensieve-server/src/lib.rs`, add near the other `pub mod` lines (e.g. after `pub mod catalog_handler;`):
 
 ```rust
 pub mod graph_handler;
@@ -909,14 +909,14 @@ pub mod graph_handler;
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cargo test -p kyma-server graph_handler::tests`
-Expected: PASS (requires Docker for testcontainers Postgres, same as other `kyma-server` handler tests).
+Run: `cargo test -p pensieve-server graph_handler::tests`
+Expected: PASS (requires Docker for testcontainers Postgres, same as other `pensieve-server` handler tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/kyma-server/Cargo.toml crates/kyma-server/src/graph_handler.rs crates/kyma-server/src/lib.rs
-git commit -m "feat(graph): CatalogSchemaSource adapter in kyma-server"
+git add crates/pensieve-server/Cargo.toml crates/pensieve-server/src/graph_handler.rs crates/pensieve-server/src/lib.rs
+git commit -m "feat(graph): CatalogSchemaSource adapter in pensieve-server"
 ```
 
 ---
@@ -924,8 +924,8 @@ git commit -m "feat(graph): CatalogSchemaSource adapter in kyma-server"
 ## Task 7: `/v1/graph/*` axum routes
 
 **Files:**
-- Modify: `crates/kyma-server/src/graph_handler.rs` (add handlers + `graph_router`)
-- Modify: `crates/kyma-server/src/lib.rs` (merge `graph_router` into `router()`)
+- Modify: `crates/pensieve-server/src/graph_handler.rs` (add handlers + `graph_router`)
+- Modify: `crates/pensieve-server/src/lib.rs` (merge `graph_router` into `router()`)
 
 - [ ] **Step 1: Write the failing integration test**
 
@@ -993,7 +993,7 @@ Append to the `tests` module in `graph_handler.rs`:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p kyma-server graph_handler::tests::overview_endpoint_returns_schema_graph_json`
+Run: `cargo test -p pensieve-server graph_handler::tests::overview_endpoint_returns_schema_graph_json`
 Expected: FAIL — `graph_router` not defined.
 
 - [ ] **Step 3: Implement the handlers + router (append to `graph_handler.rs`, above the test module)**
@@ -1006,7 +1006,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use kyma_graph::{Direction, GraphProvider, GraphRef, SchemaGraphProvider};
+use pensieve_graph::{Direction, GraphProvider, GraphRef, SchemaGraphProvider};
 use serde::Deserialize;
 
 use crate::QueryState;
@@ -1219,22 +1219,22 @@ pub fn graph_router(state: QueryState) -> Router {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p kyma-server graph_handler::tests`
+Run: `cargo test -p pensieve-server graph_handler::tests`
 Expected: PASS (adapter test + 3 endpoint tests).
 
 - [ ] **Step 5: Mount the router in `router()`**
 
-In `crates/kyma-server/src/lib.rs`, inside `pub fn router(state: QueryState) -> Router`, add `.merge(graph_handler::graph_router(state.clone()))` to the builder chain (alongside `.merge(dash_read_router)`). The existing code already builds `dash_read_router` from a clone of `state`; mirror that — note `QueryState` is `Clone`, so `state.clone()` is valid. Ensure the final `.with_state(state)` still applies to the base router; the merged graph router carries its own state.
+In `crates/pensieve-server/src/lib.rs`, inside `pub fn router(state: QueryState) -> Router`, add `.merge(graph_handler::graph_router(state.clone()))` to the builder chain (alongside `.merge(dash_read_router)`). The existing code already builds `dash_read_router` from a clone of `state`; mirror that — note `QueryState` is `Clone`, so `state.clone()` is valid. Ensure the final `.with_state(state)` still applies to the base router; the merged graph router carries its own state.
 
 - [ ] **Step 6: Run the full server test suite for the graph + query surface**
 
-Run: `cargo test -p kyma-server graph_handler:: query`
+Run: `cargo test -p pensieve-server graph_handler:: query`
 Expected: PASS; no regression in existing query/router tests.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/kyma-server/src/graph_handler.rs crates/kyma-server/src/lib.rs
+git add crates/pensieve-server/src/graph_handler.rs crates/pensieve-server/src/lib.rs
 git commit -m "feat(graph): /v1/graph/* read endpoints over the schema-graph"
 ```
 
@@ -1247,11 +1247,11 @@ git commit -m "feat(graph): /v1/graph/* read endpoints over the schema-graph"
 - [ ] **Step 1: Build the whole workspace**
 
 Run: `cargo build`
-Expected: clean build including `kyma-graph` + `kyma-server`.
+Expected: clean build including `pensieve-graph` + `pensieve-server`.
 
 - [ ] **Step 2: Run the new tests once more, isolated**
 
-Run: `cargo test -p kyma-graph && cargo test -p kyma-server graph_handler::`
+Run: `cargo test -p pensieve-graph && cargo test -p pensieve-server graph_handler::`
 Expected: all PASS.
 
 - [ ] **Step 3: Record what G1b/G1c consume**
@@ -1269,5 +1269,5 @@ No code change required. If desired, add a line to the spec's §9 marking G1a co
 - **Spec coverage:** This plan implements spec §3.3 (schema-graph), §5.1 `GraphProvider` trait + `SchemaGraphProvider`, §5.2 wire types, and the read-side of §5.3 endpoints (`GET /v1/graph`, `overview`, `stats`, `schema`, `nodes/{id}`, `nodes/{id}/subgraph`, `POST search`, `POST neighbors`). **Out of scope here (later plans):** catalog graph registration + CLI + `StoredGraphProvider` (G1b); web Context Graph UI (G1c); run + seed script (G1d).
 - **Edge inference is name-based** (`<base>_id` → `<base>`/`<base>s`), not value-based, per the G1a simplification. Spec §3.3's `find_references_to` value-based edges are a refinement tracked for a later pass; flagged in spec §10.
 - **Type consistency:** `Direction` is `#[serde(rename_all = "lowercase")]` and used identically in `provider.rs`, `schema_graph.rs`, and `graph_handler.rs`. Node ids use the `"{db}::{table}"` form everywhere (`table_node_id`).
-- **Docker note:** `kyma-server` tests use testcontainers Postgres (via `test_support::seeded_state_*`), so they need Docker running — same precondition as the existing handler tests.
+- **Docker note:** `pensieve-server` tests use testcontainers Postgres (via `test_support::seeded_state_*`), so they need Docker running — same precondition as the existing handler tests.
 - **Auth:** `graph_router` is mounted inside the `Role::Read`-wrapped `router()`, so the endpoints inherit the same Bearer-token/`X-Database` posture as `/v1/query`. No per-handler auth added.

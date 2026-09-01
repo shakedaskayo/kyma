@@ -55,7 +55,7 @@ export function Reasoning({
   return (
     <ReasoningContext.Provider value={{ isStreaming }}>
       <Collapsible
-        className={cn("ky-not-prose", className)}
+        className={cn("pv-not-prose", className)}
         open={openProp ?? open}
         onOpenChange={handleOpenChange}
         {...props}
@@ -75,16 +75,16 @@ export function ReasoningTrigger({
   return (
     <CollapsibleTrigger
       className={cn(
-        "ky-group ky-flex ky-items-center ky-gap-1.5 ky-text-xs ky-text-muted-foreground ky-transition-colors hover:ky-text-foreground",
+        "pv-group pv-flex pv-items-center pv-gap-1.5 pv-text-xs pv-text-muted-foreground pv-transition-colors hover:pv-text-foreground",
         className,
       )}
       {...props}
     >
-      <BrainIcon className="ky-size-3.5" />
+      <BrainIcon className="pv-size-3.5" />
       {children ?? (
         <span>{isStreaming ? "Thinking…" : "Reasoning"}</span>
       )}
-      <ChevronDownIcon className="ky-size-3.5 ky-transition-transform group-data-[state=open]:ky-rotate-180" />
+      <ChevronDownIcon className="pv-size-3.5 pv-transition-transform group-data-[state=open]:pv-rotate-180" />
     </CollapsibleTrigger>
   );
 }
@@ -99,12 +99,12 @@ export function ReasoningContent({
   return (
     <CollapsibleContent
       className={cn(
-        "ky-mt-2 ky-border-l-2 ky-border-muted ky-pl-3 ky-text-sm ky-text-muted-foreground",
+        "pv-mt-2 pv-border-l-2 pv-border-muted pv-pl-3 pv-text-sm pv-text-muted-foreground",
         className,
       )}
       {...props}
     >
-      <Response className="ky-text-[13px]">{children}</Response>
+      <Response className="pv-text-[13px]">{children}</Response>
     </CollapsibleContent>
   );
 }

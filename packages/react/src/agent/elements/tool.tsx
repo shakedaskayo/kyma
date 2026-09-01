@@ -30,7 +30,7 @@ export function Tool({
   return (
     <Collapsible
       defaultOpen={defaultOpen}
-      className={cn("ky-rounded-md ky-border ky-bg-muted/30", className)}
+      className={cn("pv-rounded-md pv-border pv-bg-muted/30", className)}
       {...props}
     />
   );
@@ -39,19 +39,19 @@ export function Tool({
 const STATE_META: Record<ToolState, { label: string; icon: ReactNode }> = {
   "input-streaming": {
     label: "Preparing",
-    icon: <CircleIcon className="ky-size-3 ky-animate-pulse" />,
+    icon: <CircleIcon className="pv-size-3 pv-animate-pulse" />,
   },
   "input-available": {
     label: "Running",
-    icon: <CircleIcon className="ky-size-3 ky-animate-pulse" />,
+    icon: <CircleIcon className="pv-size-3 pv-animate-pulse" />,
   },
   "output-available": {
     label: "Done",
-    icon: <CheckCircle2Icon className="ky-size-3" />,
+    icon: <CheckCircle2Icon className="pv-size-3" />,
   },
   "output-error": {
     label: "Error",
-    icon: <XCircleIcon className="ky-size-3" />,
+    icon: <XCircleIcon className="pv-size-3" />,
   },
 };
 
@@ -68,27 +68,27 @@ export function ToolHeader({
   return (
     <CollapsibleTrigger
       className={cn(
-        "ky-group ky-flex ky-w-full ky-items-center ky-gap-2 ky-px-2.5 ky-py-1.5 ky-text-xs",
+        "pv-group pv-flex pv-w-full pv-items-center pv-gap-2 pv-px-2.5 pv-py-1.5 pv-text-xs",
         className,
       )}
       {...props}
     >
-      <WrenchIcon className="ky-size-3.5 ky-text-muted-foreground" />
-      <span className="ky-font-mono ky-font-medium ky-text-foreground">
+      <WrenchIcon className="pv-size-3.5 pv-text-muted-foreground" />
+      <span className="pv-font-mono pv-font-medium pv-text-foreground">
         {type}
       </span>
       <Badge
         variant="secondary"
         className={cn(
-          "ky-ml-1 ky-gap-1 ky-px-1.5 ky-py-0 ky-text-[10px] ky-font-normal",
+          "pv-ml-1 pv-gap-1 pv-px-1.5 pv-py-0 pv-text-[10px] pv-font-normal",
           state === "output-error" &&
-            "ky-bg-destructive/10 ky-text-destructive",
+            "pv-bg-destructive/10 pv-text-destructive",
         )}
       >
         {meta.icon}
         {meta.label}
       </Badge>
-      <ChevronDownIcon className="ky-ml-auto ky-size-3.5 ky-text-muted-foreground ky-transition-transform group-data-[state=open]:ky-rotate-180" />
+      <ChevronDownIcon className="pv-ml-auto pv-size-3.5 pv-text-muted-foreground pv-transition-transform group-data-[state=open]:pv-rotate-180" />
     </CollapsibleTrigger>
   );
 }
@@ -99,7 +99,7 @@ export function ToolContent({
 }: ComponentProps<typeof CollapsibleContent>) {
   return (
     <CollapsibleContent
-      className={cn("ky-space-y-2 ky-border-t ky-px-3 ky-py-2", className)}
+      className={cn("pv-space-y-2 pv-border-t pv-px-3 pv-py-2", className)}
       {...props}
     />
   );
@@ -108,8 +108,8 @@ export function ToolContent({
 export function ToolInput({ input }: { input: unknown }) {
   if (input == null) return null;
   return (
-    <div className="ky-space-y-1">
-      <p className="ky-text-[10px] ky-font-medium ky-uppercase ky-tracking-wide ky-text-muted-foreground">
+    <div className="pv-space-y-1">
+      <p className="pv-text-[10px] pv-font-medium pv-uppercase pv-tracking-wide pv-text-muted-foreground">
         Input
       </p>
       <JsonBlock value={input} />
@@ -126,11 +126,11 @@ export function ToolOutput({
 }) {
   if (errorText) {
     return (
-      <div className="ky-space-y-1">
-        <p className="ky-text-[10px] ky-font-medium ky-uppercase ky-tracking-wide ky-text-destructive">
+      <div className="pv-space-y-1">
+        <p className="pv-text-[10px] pv-font-medium pv-uppercase pv-tracking-wide pv-text-destructive">
           Error
         </p>
-        <pre className="ky-overflow-x-auto ky-rounded ky-border ky-border-destructive/40 ky-bg-destructive/5 ky-p-2 ky-text-xs ky-text-destructive">
+        <pre className="pv-overflow-x-auto pv-rounded pv-border pv-border-destructive/40 pv-bg-destructive/5 pv-p-2 pv-text-xs pv-text-destructive">
           {errorText}
         </pre>
       </div>
@@ -138,8 +138,8 @@ export function ToolOutput({
   }
   if (output == null) return null;
   return (
-    <div className="ky-space-y-1">
-      <p className="ky-text-[10px] ky-font-medium ky-uppercase ky-tracking-wide ky-text-muted-foreground">
+    <div className="pv-space-y-1">
+      <p className="pv-text-[10px] pv-font-medium pv-uppercase pv-tracking-wide pv-text-muted-foreground">
         Output
       </p>
       <JsonBlock value={output} />
@@ -151,7 +151,7 @@ function JsonBlock({ value }: { value: unknown }) {
   const text =
     typeof value === "string" ? value : safeStringify(value);
   return (
-    <pre className="ky-max-h-64 ky-overflow-auto ky-rounded ky-border ky-bg-background ky-p-2 ky-font-mono ky-text-xs">
+    <pre className="pv-max-h-64 pv-overflow-auto pv-rounded pv-border pv-bg-background pv-p-2 pv-font-mono pv-text-xs">
       {text}
     </pre>
   );

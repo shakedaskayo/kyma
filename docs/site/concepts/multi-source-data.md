@@ -1,19 +1,19 @@
 ---
 title: Multi-source data
-description: How kyma joins your operational databases — Postgres, MySQL, MongoDB — with its own tables. Federation for live reads, sync via CDC for fast historical queries, both for the same source.
+description: How pensieve joins your operational databases — Postgres, MySQL, MongoDB — with its own tables. Federation for live reads, sync via CDC for fast historical queries, both for the same source.
 ---
 
 # Multi-source data
 
-Most production data isn't in kyma. It's in Postgres tables, Mongo
-collections, MySQL databases. kyma federates with those, so a single
-query can join a `kyma.default.otel_logs` table with a
+Most production data isn't in pensieve. It's in Postgres tables, Mongo
+collections, MySQL databases. pensieve federates with those, so a single
+query can join a `pensieve.default.otel_logs` table with a
 `pg_prod.public.users` table — and DataFusion plans the join across
 both.
 
 Two integration modes. Both can run on the same source at the same time.
 
-<KymaMultiSourceFlow caption="The two paths a query can take through the engine. Federation is live; sync stages data into kyma extents." />
+<PensieveMultiSourceFlow caption="The two paths a query can take through the engine. Federation is live; sync stages data into pensieve extents." />
 
 ## Federation
 
@@ -55,7 +55,7 @@ SELECT u.email, COUNT(*) AS errors
 ```
 
 DataFusion plans this as: pushdown a filtered, projected scan to
-Postgres for the small side; scan kyma's pruning cascade for the big
+Postgres for the small side; scan pensieve's pruning cascade for the big
 side; hash-join the two; aggregate; limit.
 
 The `pushdown_summary` returned with every federation response tells
@@ -80,7 +80,7 @@ you exactly what got pushed and what didn't — see
 
 ### Never pushed
 
-- kyma-specific UDFs (`cosine_distance`, `dynamic` accessors).
+- pensieve-specific UDFs (`cosine_distance`, `dynamic` accessors).
 - Cross-source joins. Each side runs at its source; DataFusion joins
   the streams.
 - Anything where source semantics diverge from DataFusion's — most
@@ -90,7 +90,7 @@ you exactly what got pushed and what didn't — see
 ## Sync
 
 The same source registered with `mode: "sync"` (or `"both"`) replays
-the source's change log into kyma extents. After the initial snapshot,
+the source's change log into pensieve extents. After the initial snapshot,
 ongoing inserts/updates/deletes stream in via the source's native
 CDC mechanism:
 
@@ -101,10 +101,10 @@ CDC mechanism:
 | MongoDB    | Change streams (`$changeStream` with `startAtOperationTime`).   |
 
 The exactly-once knot: every batch's commit advances the source's
-cursor (LSN, GTID, resumeToken) atomically with the kyma snapshot CAS.
+cursor (LSN, GTID, resumeToken) atomically with the pensieve snapshot CAS.
 Either both land or neither does.
 
-After sync, the same query runs against kyma extents — sub-second over
+After sync, the same query runs against pensieve extents — sub-second over
 years of history, no live load on the source DB.
 
 ## Both at once
@@ -127,17 +127,17 @@ a transaction). Default to the synced path for everything else.
 
 ## System columns on synced tables
 
-Synced tables get four extra columns kyma adds automatically. They
-don't exist on internal kyma tables:
+Synced tables get four extra columns pensieve adds automatically. They
+don't exist on internal pensieve tables:
 
 | Column            | Type        | Meaning                                |
 | ----------------- | ----------- | -------------------------------------- |
-| `_kyma_pk`        | `string`    | Concatenated source primary key.       |
-| `_kyma_op`        | `string`    | `'insert' \| 'update' \| 'delete'`.    |
-| `_kyma_lsn`       | `string`    | Engine-specific cursor at commit time. |
-| `_kyma_event_at`  | `timestamp` | When the source emitted this event.    |
+| `_pensieve_pk`        | `string`    | Concatenated source primary key.       |
+| `_pensieve_op`        | `string`    | `'insert' \| 'update' \| 'delete'`.    |
+| `_pensieve_lsn`       | `string`    | Engine-specific cursor at commit time. |
+| `_pensieve_event_at`  | `timestamp` | When the source emitted this event.    |
 
-Deletes are tombstone rows with `_kyma_op = 'delete'`. Default reads
+Deletes are tombstone rows with `_pensieve_op = 'delete'`. Default reads
 hide them via the federation/agent layer's predicate; raw scans see
 everything. See [Retention and compaction](/concepts/retention-and-compaction)
 for how tombstones get garbage-collected.
@@ -145,12 +145,12 @@ for how tombstones get garbage-collected.
 ## Schema evolution on synced sources
 
 The data source framework runs the same schema-evolver as native ingest.
-A new column on the source becomes a new typed column on the kyma
+A new column on the source becomes a new typed column on the pensieve
 table after enough events with consistent type. A column whose type
 becomes polymorphic falls back to `dynamic`. Old data is preserved
 either way; reads union typed and dynamic via `coalesce()`.
 
-The hard rule: if the source table has no primary key, kyma refuses
+The hard rule: if the source table has no primary key, pensieve refuses
 to sync it. CDC without a PK can't dedupe replays or build tombstones
 correctly; you'd silently lose data. Use federation instead.
 

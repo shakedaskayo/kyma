@@ -1,8 +1,8 @@
-// Shim: backwards-compatible wrappers around @kyma-ai/client query functions.
+// Shim: backwards-compatible wrappers around @pensieve-ai/client query functions.
 
-export type { Column, ColKind, ResultChunk, QueryArgs } from "@kyma-ai/client";
+export type { Column, ColKind, ResultChunk, QueryArgs } from "@pensieve-ai/client";
 
-import type { QueryArgs, ResultChunk } from "@kyma-ai/client";
+import type { QueryArgs, ResultChunk } from "@pensieve-ai/client";
 import { sessionClient } from "./client";
 
 type Base = { endpoint: string; token: string };

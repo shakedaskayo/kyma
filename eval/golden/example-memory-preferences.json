@@ -6,5 +6,5 @@
     { "key": "mem:project_prod_deploy_track", "grade": 1 },
     { "key": "mem:feedback_docs_developer_friendly", "grade": 0 }
   ],
-  "notes": "EXAMPLE fixture — synthetic keys, exists only to test the golden-runner wiring. Replace with a query mined from Ask-Kyma traces + frozen LLM-judge grades."
+  "notes": "EXAMPLE fixture — synthetic keys, exists only to test the golden-runner wiring. Replace with a query mined from Ask-Pensieve traces + frozen LLM-judge grades."
 }

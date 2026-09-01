@@ -9,7 +9,7 @@ description: Federation for live reads, replication-slot CDC for sync, both at o
 
 The Postgres engine is the first of three operational-database
 data sources. It registers as a DataFusion catalog (federation), replays
-the source's logical replication into kyma extents (sync), or both at
+the source's logical replication into pensieve extents (sync), or both at
 once. The same connection pool, the same schema introspection, the same
 status surface.
 
@@ -47,7 +47,7 @@ JSON
 - **`mode: "federation"`** — register the source as a DataFusion catalog
   only. Live reads against the source; nothing copied.
 - **`mode: "sync"`** — initial snapshot under `REPEATABLE READ`, then
-  logical replication into kyma extents. Queries hit kyma, not the source.
+  logical replication into pensieve extents. Queries hit pensieve, not the source.
 - **`mode: "both"`** — both at once. Bare references resolve to synced
   extents; `live(table)` opts into the federated path. See
   [Multi-source data](/data-sources/multi-source-data).
@@ -81,7 +81,7 @@ limit, sort)`; the shared `PushdownPlanner` reads the Postgres
 
 **Never pushed:**
 
-- kyma-specific UDFs (`cosine_distance`, token-index functions, `dynamic`
+- pensieve-specific UDFs (`cosine_distance`, token-index functions, `dynamic`
   accessors).
 - Cross-source joins. Each side scans at its own source; DataFusion joins
   the streams.
@@ -96,25 +96,25 @@ why. See [Multi-source data](/data-sources/multi-source-data#status-health-and-o
 Two-phase pipeline per source-table:
 
 1. **Initial snapshot.** `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY`,
-   `pg_create_logical_replication_slot('kyma_<data_source_id>', 'pgoutput', true)`,
+   `pg_create_logical_replication_slot('pensieve_<data_source_id>', 'pgoutput', true)`,
    `SET TRANSACTION SNAPSHOT '<exported>'`. Stream rows in batches; on the
    final batch, advance `data_source_cdc_state.phase` to `streaming` and
-   commit the cursor at the slot's LSN — atomically with the kyma
+   commit the cursor at the slot's LSN — atomically with the pensieve
    extent CAS.
-2. **Streaming.** `START_REPLICATION SLOT kyma_<data_source_id> LOGICAL <lsn>`
-   with `proto_version=2`. Group-commit batches to kyma extents.
-   `INSERT`/`UPDATE`/`DELETE` events become rows tagged with `_kyma_op`
+2. **Streaming.** `START_REPLICATION SLOT pensieve_<data_source_id> LOGICAL <lsn>`
+   with `proto_version=2`. Group-commit batches to pensieve extents.
+   `INSERT`/`UPDATE`/`DELETE` events become rows tagged with `_pensieve_op`
    and a tombstone row for deletes.
 
 The exactly-once knot: the cursor advance is a payload in the same
 `tables.current_snapshot_id` CAS that already commits the extent
 manifest. Either both land or neither does. On `kill -9` mid-batch, the
 runner reopens from `data_source_cdc_state.checkpoint`; the source
-replays; kyma's idempotency layer dedupes any partway-through rows.
+replays; pensieve's idempotency layer dedupes any partway-through rows.
 
 ## Type mapping
 
-| Postgres type                              | kyma type                          | Notes                                                                 |
+| Postgres type                              | pensieve type                          | Notes                                                                 |
 | ------------------------------------------ | ---------------------------------- | --------------------------------------------------------------------- |
 | `smallint`, `int`                          | `int`                              | 32-bit signed                                                         |
 | `bigint`, `oid`                            | `long`                             |                                                                       |
@@ -138,14 +138,14 @@ not in this table land in `dynamic` with a warning in `last_error`.
 
 ## System columns on synced tables
 
-Every synced row has four extra columns kyma adds automatically:
+Every synced row has four extra columns pensieve adds automatically:
 
 | Column           | Type        | Meaning                                          |
 | ---------------- | ----------- | ------------------------------------------------ |
-| `_kyma_pk`       | `string`    | Source PK; for composite PKs, `<col1>:<col2>:...` in `information_schema` order. |
-| `_kyma_op`       | `string`    | `'insert' \| 'update' \| 'delete'`.              |
-| `_kyma_lsn`      | `string`    | Postgres LSN at commit time.                     |
-| `_kyma_event_at` | `timestamp` | Wall-clock the source emitted the event.         |
+| `_pensieve_pk`       | `string`    | Source PK; for composite PKs, `<col1>:<col2>:...` in `information_schema` order. |
+| `_pensieve_op`       | `string`    | `'insert' \| 'update' \| 'delete'`.              |
+| `_pensieve_lsn`      | `string`    | Postgres LSN at commit time.                     |
+| `_pensieve_event_at` | `timestamp` | Wall-clock the source emitted the event.         |
 
 A source table with no primary key is rejected at data source start with
 `disabled_reason="table has no primary key — cannot CDC sync"`. CDC

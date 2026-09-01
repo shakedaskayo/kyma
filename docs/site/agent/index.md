@@ -1,6 +1,6 @@
 ---
 title: Agents & the context engine
-description: kyma is a context engine for coding agents — durable graph-aware memory + live data (KQL/SQL) + the graph that links them, over one surface. Connect via a Claude Code plugin, a CLI, or MCP; plus a built-in swappable LLM agent.
+description: pensieve is a context engine for coding agents — durable graph-aware memory + live data (KQL/SQL) + the graph that links them, over one surface. Connect via a Claude Code plugin, a CLI, or MCP; plus a built-in swappable LLM agent.
 ---
 
 # Agents & the context engine
@@ -11,21 +11,21 @@ durable graph-aware **memory**, **live data** (logs, traces, code, data sources)
 and the **graph** that links them. See **[Coding agents overview](./coding-agents)** for a
 comparison of all integration paths.
 
-kyma also ships a built-in **agent** that turns natural-language questions into KQL/SQL over
+pensieve also ships a built-in **agent** that turns natural-language questions into KQL/SQL over
 your live data — in the web app at `/agent`, the HTTP `/v1/agent/ask` endpoint, or the CLI.
 
 ## Quick tour
 
 ```bash
-# 1. Connect this terminal to a running Kyma server.
-kyma connect http://localhost:8080 --token <bearer>
+# 1. Connect this terminal to a running Pensieve server.
+pensieve connect http://localhost:8080 --token <bearer>
 
 # 2. Ask a question — streams to stdout.
-kyma query "what databases do we have, and how big is each one?"
+pensieve query "what databases do we have, and how big is each one?"
 
-# 3. Make Claude Code aware of your Kyma server.
-kyma install-skill --also-link-claude
-# Now in any Claude Code session, "ask Kyma what's slow today" works.
+# 3. Make Claude Code aware of your Pensieve server.
+pensieve install-skill --also-link-claude
+# Now in any Claude Code session, "ask Pensieve what's slow today" works.
 ```
 
 ## Three things to know
@@ -42,8 +42,8 @@ kyma install-skill --also-link-claude
    the system prompt for every agent turn (or, for the Claude CLI
    engine, picked up natively by Claude Code).
 
-3. **The CLI is the integration surface.** `kyma query "…"` streams an
-   answer to stdout. `kyma install-skill` writes a `SKILL.md` that
+3. **The CLI is the integration surface.** `pensieve query "…"` streams an
+   answer to stdout. `pensieve install-skill` writes a `SKILL.md` that
    teaches any coding agent to use this CLI as its window into your
    production data.
 
@@ -62,12 +62,12 @@ kyma install-skill --also-link-claude
 - **[Claude Code engine](./claude-cli)** — how the Claude CLI engine
   inherits Keychain OAuth, MCPs, and skills; when to use it.
 - **[Claude Code plugin](./claude-code-plugin)** — hooks that auto-capture each session
-  and inject recall into every prompt, plus `/kyma-*` slash commands.
-- **[Skills](./skills)** — local discovery (`./.skills/`, `~/.kyma/skills/`,
+  and inject recall into every prompt, plus `/pensieve-*` slash commands.
+- **[Skills](./skills)** — local discovery (`./.skills/`, `~/.pensieve/skills/`,
   `~/.skills/`, plus opt-in Claude paths), the `SKILL.md` format, and
   how enabled skills are injected.
-- **[Connect via CLI](./connect-from-cli)** — install `kyma`, install the
-  Kyma skill, and wire it into Claude Code / Cursor / Aider.
+- **[Connect via CLI](./connect-from-cli)** — install `pensieve`, install the
+  Pensieve skill, and wire it into Claude Code / Cursor / Aider.
 
 ## How does this relate to `/v1/agent/ask`?
 
@@ -75,9 +75,9 @@ kyma install-skill --also-link-claude
 above is built on top of it:
 
 - The web `/agent` page is a React client of `/v1/agent/ask`.
-- `kyma query` is a CLI client of `/v1/agent/ask`.
+- `pensieve query` is a CLI client of `/v1/agent/ask`.
 - The installed skill teaches *other* coding agents to shell out to
-  `kyma query`, which is a client of `/v1/agent/ask`.
+  `pensieve query`, which is a client of `/v1/agent/ask`.
 
 If you want to wire your own client, see
 [Query → Agent endpoint](/query/agent-endpoint) for the SSE schema.

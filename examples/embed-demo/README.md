@@ -1,18 +1,18 @@
-# kyma-embed-demo
+# pensieve-embed-demo
 
-Reference host app for the `@kyma-ai/react` embeddable SDK. Demonstrates all
-five Kyma views (Graph, Query, Discover, Dashboards, Agent) plus the headless
+Reference host app for the `@pensieve-ai/react` embeddable SDK. Demonstrates all
+five Pensieve views (Graph, Query, Discover, Dashboards, Agent) plus the headless
 hooks layer (L3), theme switching, and the multi-tenant mint-server auth pattern.
 
 ## Prerequisites
 
 - Node 20+ / pnpm 9+
-- A running Kyma server (default `http://localhost:8080`)
-- A valid Kyma bearer token
+- A running Pensieve server (default `http://localhost:8080`)
+- A valid Pensieve bearer token
 - Server started with CORS open to the Vite dev port:
 
 ```
-KYMA_CORS_ALLOWED_ORIGINS=http://localhost:5173 kyma serve
+PENSIEVE_CORS_ALLOWED_ORIGINS=http://localhost:5173 pensieve serve
 ```
 
 ## Quick start
@@ -22,11 +22,11 @@ KYMA_CORS_ALLOWED_ORIGINS=http://localhost:5173 kyma serve
 pnpm install
 
 # 2. Build the SDK packages first (workspace dep resolves to dist/)
-pnpm --filter @kyma-ai/client build
-pnpm --filter @kyma-ai/react build
+pnpm --filter @pensieve-ai/client build
+pnpm --filter @pensieve-ai/react build
 
 # 3. Start the demo app
-pnpm --filter kyma-embed-demo dev
+pnpm --filter pensieve-embed-demo dev
 # → http://localhost:5173
 ```
 
@@ -41,51 +41,51 @@ to the browser.
 In a separate terminal:
 
 ```bash
-KYMA_TOKEN=<your-token> pnpm --filter kyma-embed-demo mint-token
-# → http://localhost:8788/api/kyma-token
+PENSIEVE_TOKEN=<your-token> pnpm --filter pensieve-embed-demo mint-token
+# → http://localhost:8788/api/pensieve-token
 ```
 
 Enable "Use mint server" in the UI and connect. The SDK will call
-`GET http://localhost:8788/api/kyma-token` before each request.
+`GET http://localhost:8788/api/pensieve-token` before each request.
 
 ### OIDC environment variables (server-side)
 
 | Variable | Default | Description |
 |---|---|---|
-| `KYMA_OIDC_ISSUERS` | — | Comma-separated list of trusted OIDC issuer URLs |
-| `KYMA_OIDC_AUDIENCE` | `kyma` | Expected `aud` claim value |
-| `KYMA_OIDC_ROLE_CLAIM` | `kyma_role` | JWT claim carrying `admin`/`editor`/`viewer` |
-| `KYMA_OIDC_SUBJECT_CLAIM` | `sub` | JWT claim used as the audit identity |
-| `KYMA_OIDC_DATABASES_CLAIM` | `kyma_databases` | JWT claim containing allowed database list (omit for full access) |
+| `PENSIEVE_OIDC_ISSUERS` | — | Comma-separated list of trusted OIDC issuer URLs |
+| `PENSIEVE_OIDC_AUDIENCE` | `pensieve` | Expected `aud` claim value |
+| `PENSIEVE_OIDC_ROLE_CLAIM` | `pensieve_role` | JWT claim carrying `admin`/`editor`/`viewer` |
+| `PENSIEVE_OIDC_SUBJECT_CLAIM` | `sub` | JWT claim used as the audit identity |
+| `PENSIEVE_OIDC_DATABASES_CLAIM` | `pensieve_databases` | JWT claim containing allowed database list (omit for full access) |
 
 ## Scoped-token caveats
 
-When a token is scoped to specific databases (`kyma_databases` non-empty):
+When a token is scoped to specific databases (`pensieve_databases` non-empty):
 
-- **Agent / Ask Kyma** — returns 403 (fail-closed; agent needs cross-database access).
+- **Agent / Ask Pensieve** — returns 403 (fail-closed; agent needs cross-database access).
 - **MCP endpoint** — same 403.
 - **Arrow Flight** — same 403 (server-to-server only).
 - **Live tail (SSE)** — not yet supported in embeds; planned for a future SDK version.
 
-Use a full-access token (no `kyma_databases` claim) when testing the **Agent** tab.
+Use a full-access token (no `pensieve_databases` claim) when testing the **Agent** tab.
 
 ## Views
 
 | Tab | Component | Key props exercised |
 |---|---|---|
-| Graph | `KymaGraph` | `discover="all-databases"`, `onNodeClick`, `onSelectionChange` |
-| Query | `KymaQueryEditor` | `defaultQuery`, `showSchemaBrowser`, `onResults`, `onQueryChange` |
-| Discover | `KymaDiscover` | `defaultQuery`, `onRowOpen`, `onExportKql`, `onSearchChange` |
-| Dashboards | `KymaDashboard` | `dashboardId`, `onPanelClick`, `onSaveSuccess`, `onSaveError` |
-| Agent | `KymaAgentChat` | `placeholder`, `onMessage` |
-| Headless | hooks only | `useKymaGraph`, `useKymaQuery`, `useKymaClient` |
+| Graph | `PensieveGraph` | `discover="all-databases"`, `onNodeClick`, `onSelectionChange` |
+| Query | `PensieveQueryEditor` | `defaultQuery`, `showSchemaBrowser`, `onResults`, `onQueryChange` |
+| Discover | `PensieveDiscover` | `defaultQuery`, `onRowOpen`, `onExportKql`, `onSearchChange` |
+| Dashboards | `PensieveDashboard` | `dashboardId`, `onPanelClick`, `onSaveSuccess`, `onSaveError` |
+| Agent | `PensieveAgentChat` | `placeholder`, `onMessage` |
+| Headless | hooks only | `usePensieveGraph`, `usePensieveQuery`, `usePensieveClient` |
 
 ## CORS note
 
-The Kyma server must allow the origin the browser app runs on. For local dev:
+The Pensieve server must allow the origin the browser app runs on. For local dev:
 
 ```
-KYMA_CORS_ALLOWED_ORIGINS=http://localhost:5173
+PENSIEVE_CORS_ALLOWED_ORIGINS=http://localhost:5173
 ```
 
 For production, set this to your actual host-app origin(s).

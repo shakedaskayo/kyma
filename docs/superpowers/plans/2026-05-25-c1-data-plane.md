@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stand up a single, shared (one-tenant) Kyma data plane entirely on managed infrastructure — the stock `kyma-bin` container on Railway, the Postgres catalog on Supabase project B, extents on AWS S3 — and **measure the cross-cloud hot-path latency and cost envelope**. This phase exists to de-risk: it produces *numbers* that gate every downstream phase. No multi-tenancy, no gateway, no dashboard yet.
+**Goal:** Stand up a single, shared (one-tenant) Pensieve data plane entirely on managed infrastructure — the stock `pensieve-bin` container on Railway, the Postgres catalog on Supabase project B, extents on AWS S3 — and **measure the cross-cloud hot-path latency and cost envelope**. This phase exists to de-risk: it produces *numbers* that gate every downstream phase. No multi-tenancy, no gateway, no dashboard yet.
 
-**Architecture:** Reuse the existing multi-stage `Dockerfile` (already builds `kyma` + `kyma-cli` + web-ui) unchanged where possible — the engine is already designed to run on Railway (see its bootstrap-script comments). Point it at a real Supabase Postgres (catalog) and a real AWS S3 bucket (extents) instead of the local docker-compose `postgres` + `minio`. Switch the engine's S3 client from MinIO mode (`KYMA_S3_ENDPOINT` set, `PATH_STYLE=true`, `ALLOW_HTTP=true`) to AWS mode (endpoint unset, `PATH_STYLE=false`, `ALLOW_HTTP=false`, creds via static keys for C1, STS in C2). Run the repo's existing `scripts/test-*.sh` and `scripts/perf-baseline.sh` against the deployed endpoint, capturing wall-clock latency and S3 request/byte counts. Everything is provisioned by the `infra/envs/dev` Terraform from C0 plus a Railway service definition.
+**Architecture:** Reuse the existing multi-stage `Dockerfile` (already builds `pensieve` + `pensieve-cli` + web-ui) unchanged where possible — the engine is already designed to run on Railway (see its bootstrap-script comments). Point it at a real Supabase Postgres (catalog) and a real AWS S3 bucket (extents) instead of the local docker-compose `postgres` + `minio`. Switch the engine's S3 client from MinIO mode (`PENSIEVE_S3_ENDPOINT` set, `PATH_STYLE=true`, `ALLOW_HTTP=true`) to AWS mode (endpoint unset, `PATH_STYLE=false`, `ALLOW_HTTP=false`, creds via static keys for C1, STS in C2). Run the repo's existing `scripts/test-*.sh` and `scripts/perf-baseline.sh` against the deployed endpoint, capturing wall-clock latency and S3 request/byte counts. Everything is provisioned by the `infra/envs/dev` Terraform from C0 plus a Railway service definition.
 
 **Tech Stack:** Existing `Dockerfile`. Railway (engine host). Supabase project B (catalog Postgres). AWS S3 (extents). Bash + curl + the existing test scripts for verification. CloudWatch / S3 server access logs (or S3 request metrics) for cost measurement. No application code changes to the engine; if a change is unavoidable it is a config/env change only.
 
@@ -38,7 +38,7 @@ docs/cloud/
 
 Run:
 ```bash
-docker build -t kyma-engine:c1 .
+docker build -t pensieve-engine:c1 .
 ```
 Expected: image builds (multi-stage: web → server → runtime). Note: `Dockerfile` pins `rust:1.84-bookworm` while `README.md` says rust 1.95+. If the build fails on toolchain, bump the `FROM rust:` line to match `rust-toolchain.toml` — that is the *only* permitted Dockerfile edit in C1, and it is a build fix, not a behavior change.
 
@@ -49,30 +49,30 @@ Expected: image builds (multi-stage: web → server → runtime). Note: `Dockerf
 ```bash
 # Engine env for Railway against Supabase (catalog) + AWS S3 (extents).
 # Catalog — Supabase project B pooled connection string (port 6543, pgbouncer).
-KYMA_CATALOG_URL=postgres://postgres.<ref>:***@<region>.pooler.supabase.com:6543/postgres
+PENSIEVE_CATALOG_URL=postgres://postgres.<ref>:***@<region>.pooler.supabase.com:6543/postgres
 
 # Object store — REAL AWS S3 (not MinIO):
 #   - endpoint UNSET  → AWS S3
 #   - PATH_STYLE false → virtual-hosted addressing (AWS default)
 #   - ALLOW_HTTP false → require TLS
-KYMA_S3_BUCKET=kyma-dev-extents
-KYMA_S3_REGION=us-east-1
-KYMA_S3_PATH_STYLE=false
-KYMA_S3_ALLOW_HTTP=false
-KYMA_PATH_PREFIX=kyma
+PENSIEVE_S3_BUCKET=pensieve-dev-extents
+PENSIEVE_S3_REGION=us-east-1
+PENSIEVE_S3_PATH_STYLE=false
+PENSIEVE_S3_ALLOW_HTTP=false
+PENSIEVE_PATH_PREFIX=pensieve
 # C1 uses STATIC keys for a dedicated IAM user scoped to the bucket.
 # C2 replaces these with per-request STS session creds via the gateway.
-KYMA_S3_ACCESS_KEY_ID=${AWS_S3_ACCESS_KEY_ID}
-    KYMA_S3_SECRET_ACCESS_KEY = aws_iam_access_key.c1_engine.secret
+PENSIEVE_S3_ACCESS_KEY_ID=${AWS_S3_ACCESS_KEY_ID}
+    PENSIEVE_S3_SECRET_ACCESS_KEY = aws_iam_access_key.c1_engine.secret
 
 # Listeners
-KYMA_HTTP_ADDR=0.0.0.0:8080
-KYMA_GRPC_ADDR=0.0.0.0:9090
-KYMA_OTLP_ADDR=0.0.0.0:4317
-KYMA_OTLP_DATABASE=default
+PENSIEVE_HTTP_ADDR=0.0.0.0:8080
+PENSIEVE_GRPC_ADDR=0.0.0.0:9090
+PENSIEVE_OTLP_ADDR=0.0.0.0:4317
+PENSIEVE_OTLP_DATABASE=default
 
 # Single shared auth token for C1 (real auth arrives with the gateway in C2).
-KYMA_AUTH_TOKENS=${C1_ENGINE_TOKEN}:admin
+PENSIEVE_AUTH_TOKENS=${C1_ENGINE_TOKEN}:admin
 RUST_LOG=info,sqlx=warn
 ```
 
@@ -97,13 +97,13 @@ git commit -m "infra(c1): engine env template for railway against supabase+s3"
 ```hcl
 module "extents" {
   source      = "../../modules/s3-extent-bucket"
-  bucket_name = "kyma-dev-extents"
+  bucket_name = "pensieve-dev-extents"
   env         = "dev"
 }
 
 module "catalog" {           # Supabase project B — engine catalog
   source  = "../../modules/supabase-project"
-  name    = "kyma-dev-catalog"
+  name    = "pensieve-dev-catalog"
   org_id  = var.supabase_org_id
   region  = "us-east-1"       # confirm Supabase region id maps to us-east-1
   db_pass = var.supabase_db_pass
@@ -114,7 +114,7 @@ module "catalog" {           # Supabase project B — engine catalog
 
 Add to `main.tf` (C1-only; deleted in C2 when STS replaces it):
 ```hcl
-resource "aws_iam_user" "c1_engine" { name = "kyma-dev-c1-engine" }
+resource "aws_iam_user" "c1_engine" { name = "pensieve-dev-c1-engine" }
 
 data "aws_iam_policy_document" "c1_bucket" {
   statement {
@@ -152,15 +152,15 @@ cd infra/envs/dev && terraform output -raw c1_engine_access_key_id
 ```
 Expected: an access key id prints. Bucket + Supabase catalog now exist.
 
-- [ ] **Step 4: Bootstrap the catalog schema** (one-shot, using the image's `kyma-bootstrap.sh` OR engine auto-migrate on first boot)
+- [ ] **Step 4: Bootstrap the catalog schema** (one-shot, using the image's `pensieve-bootstrap.sh` OR engine auto-migrate on first boot)
 
 Run:
 ```bash
 docker run --rm \
-  -e KYMA_CATALOG_URL="$SUPABASE_CATALOG_URL" \
-  --entrypoint /usr/local/bin/kyma-bootstrap.sh kyma-engine:c1
+  -e PENSIEVE_CATALOG_URL="$SUPABASE_CATALOG_URL" \
+  --entrypoint /usr/local/bin/pensieve-bootstrap.sh pensieve-engine:c1
 ```
-Expected: "Kyma database ready" + table list. Confirms the engine can reach Supabase and create its catalog.
+Expected: "Pensieve database ready" + table list. Confirms the engine can reach Supabase and create its catalog.
 
 - [ ] **Step 5: Commit**
 
@@ -184,23 +184,23 @@ git commit -m "infra(c1): catalog (supabase B) + extent bucket + scoped IAM user
 module "engine" {
   source     = "../../modules/railway-service"
   project_id = var.railway_project_id
-  name       = "kyma-engine-dev"
+  name       = "pensieve-engine-dev"
   repo       = var.repo_url          # build from Dockerfile
   region     = "us-east"             # Railway region nearest us-east-1 (confirm)
   replicas   = 1
   env_vars = {
-    KYMA_CATALOG_URL          = module.catalog.database_url
-    KYMA_S3_BUCKET            = module.extents.bucket_name
-    KYMA_S3_REGION            = "us-east-1"
-    KYMA_S3_PATH_STYLE        = "false"
-    KYMA_S3_ALLOW_HTTP        = "false"
-    KYMA_PATH_PREFIX          = "kyma"
-    KYMA_S3_ACCESS_KEY_ID     = aws_iam_access_key.c1_engine.id
-    KYMA_S3_SECRET_ACCESS_KEY = aws_iam_access_key.c1_engine.secret
-    KYMA_HTTP_ADDR            = "0.0.0.0:8080"
-    KYMA_GRPC_ADDR            = "0.0.0.0:9090"
-    KYMA_OTLP_ADDR            = "0.0.0.0:4317"
-    KYMA_AUTH_TOKENS          = "${var.c1_engine_token}:admin"
+    PENSIEVE_CATALOG_URL          = module.catalog.database_url
+    PENSIEVE_S3_BUCKET            = module.extents.bucket_name
+    PENSIEVE_S3_REGION            = "us-east-1"
+    PENSIEVE_S3_PATH_STYLE        = "false"
+    PENSIEVE_S3_ALLOW_HTTP        = "false"
+    PENSIEVE_PATH_PREFIX          = "pensieve"
+    PENSIEVE_S3_ACCESS_KEY_ID     = aws_iam_access_key.c1_engine.id
+    PENSIEVE_S3_SECRET_ACCESS_KEY = aws_iam_access_key.c1_engine.secret
+    PENSIEVE_HTTP_ADDR            = "0.0.0.0:8080"
+    PENSIEVE_GRPC_ADDR            = "0.0.0.0:9090"
+    PENSIEVE_OTLP_ADDR            = "0.0.0.0:4317"
+    PENSIEVE_AUTH_TOKENS          = "${var.c1_engine_token}:admin"
     RUST_LOG                  = "info,sqlx=warn"
   }
 }
@@ -232,7 +232,7 @@ Expected: either a Flight service listing (works) or a documented failure (recor
 
 ```bash
 git add infra/envs/dev/main.tf
-git commit -m "infra(c1): deploy kyma engine to railway"
+git commit -m "infra(c1): deploy pensieve engine to railway"
 ```
 
 ---
@@ -286,8 +286,8 @@ Expected: health OK, ingest accepted, query returns `n=2` for `CARD_DECLINED`. T
 
 Most `scripts/test-*.sh` target `localhost:8080`. Run the ones that accept a base-URL override (or set the env they read) against `$ENGINE_URL`:
 ```bash
-KYMA_BASE_URL="$ENGINE_URL" bash scripts/test-kql.sh
-KYMA_BASE_URL="$ENGINE_URL" bash scripts/test-otlp.sh   # if OTLP enabled
+PENSIEVE_BASE_URL="$ENGINE_URL" bash scripts/test-kql.sh
+PENSIEVE_BASE_URL="$ENGINE_URL" bash scripts/test-otlp.sh   # if OTLP enabled
 ```
 Expected: pass. If a script hardcodes localhost, note it; do not refactor the suite in C1 (out of scope) — just record which tests are deploy-portable.
 
@@ -346,7 +346,7 @@ Expected: numbers captured. Repeat after redeploying the engine (cold block cach
 
 Run:
 ```bash
-KYMA_BASE_URL="$ENGINE_URL" bash scripts/perf-baseline.sh | tee /tmp/c1-perf-baseline.txt || true
+PENSIEVE_BASE_URL="$ENGINE_URL" bash scripts/perf-baseline.sh | tee /tmp/c1-perf-baseline.txt || true
 ```
 Expected: a baseline captured (or documented why the script needs local). Compare to the committed local baseline under `scripts/fixtures/perf-baseline/`.
 
@@ -419,7 +419,7 @@ Run:
 ```bash
 chmod +x scripts/cloud/c1-measure-cost.sh
 ENGINE_URL="https://$(terraform -chdir=infra/envs/dev output -raw engine_url)" \
-  C1_ENGINE_TOKEN="$C1_ENGINE_TOKEN" BUCKET="kyma-dev-extents" \
+  C1_ENGINE_TOKEN="$C1_ENGINE_TOKEN" BUCKET="pensieve-dev-extents" \
   scripts/cloud/c1-measure-cost.sh | tee /tmp/c1-cost.txt
 ```
 Expected: GET/PUT request counts and bytes for the fixed workload. Convert to dollars using current S3 pricing ($/1k GET, $/1k PUT, $/GB egress) in the envelope doc.
@@ -504,7 +504,7 @@ git commit -m "docs(c1): measured cross-cloud latency+cost envelope and go/no-go
 ## Task 8: Phase exit checklist
 
 - [ ] Engine deployed on Railway, healthy, reachable over HTTPS.
-- [ ] Catalog on Supabase B; extents in AWS S3 `kyma-dev-extents`; full ingest->query round trip green (`c1-deploy-check.sh`).
+- [ ] Catalog on Supabase B; extents in AWS S3 `pensieve-dev-extents`; full ingest->query round trip green (`c1-deploy-check.sh`).
 - [ ] Repo test suite portability noted (which `test-*.sh` run against a remote base URL).
 - [ ] Latency measured (warm + cold) and compared to local baseline.
 - [ ] Cost measured (S3 requests/bytes -> $/1M rows, $/1k queries).
@@ -513,11 +513,11 @@ git commit -m "docs(c1): measured cross-cloud latency+cost envelope and go/no-go
 
 - [ ] **Mark C1 complete in the master design**
 
-Add under the C1 appendix stub in `docs/superpowers/specs/2026-05-25-kyma-cloud-platform-design.md`:
+Add under the C1 appendix stub in `docs/superpowers/specs/2026-05-25-pensieve-cloud-platform-design.md`:
 `**Status:** C1 complete — envelope in docs/cloud/c1-envelope.md; decision: <verdict>`
 
 ```bash
-git add docs/superpowers/specs/2026-05-25-kyma-cloud-platform-design.md
+git add docs/superpowers/specs/2026-05-25-pensieve-cloud-platform-design.md
 git commit -m "docs(cloud): mark C1 complete with envelope verdict"
 ```
 
@@ -526,7 +526,7 @@ git commit -m "docs(cloud): mark C1 complete with envelope verdict"
 ## Notes for the implementer
 
 - **C1 measures; it does not optimize.** If a number is bad, record it and surface the decision (accelerate the AWS move, change region pinning). Do not start tuning the engine — that is not this phase.
-- **The S3 mode flip is the most error-prone step.** For real AWS S3: `KYMA_S3_ENDPOINT` UNSET, `KYMA_S3_PATH_STYLE=false`, `KYMA_S3_ALLOW_HTTP=false`. Local docker-compose uses the opposite of all three. Getting one wrong fails silently as connection or signing errors.
+- **The S3 mode flip is the most error-prone step.** For real AWS S3: `PENSIEVE_S3_ENDPOINT` UNSET, `PENSIEVE_S3_PATH_STYLE=false`, `PENSIEVE_S3_ALLOW_HTTP=false`. Local docker-compose uses the opposite of all three. Getting one wrong fails silently as connection or signing errors.
 - **Static IAM keys are a C1-only crutch.** They exist so we measure without building the gateway first. C2 deletes the `aws_iam_user.c1_engine` resources and replaces them with per-request STS. Leave a `# TODO(C2): delete, replaced by STS` on that block.
 - **Supabase connection string:** prefer the **pooled** (pgbouncer, port 6543) string for the engine's many short catalog queries; record whether direct (5432) is meaningfully faster in the envelope.
 - **Region pinning is the headline mitigation** (master design section 3). If Railway's nearest region isn't co-located with `us-east-1`, that shows up directly in the cross-cloud overhead number — call it out.

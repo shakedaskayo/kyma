@@ -1,15 +1,15 @@
 import { useState, type ChangeEvent } from "react";
-import { useKymaGraph, useKymaQuery } from "@kyma-ai/react";
-import { useKymaClient } from "@kyma-ai/react";
+import { usePensieveGraph, usePensieveQuery } from "@pensieve-ai/react";
+import { usePensieveClient } from "@pensieve-ai/react";
 
 /**
  * Headless tab (L3 proof):
- * Builds a completely custom UI using useKymaGraph + useKymaQuery hooks
- * without rendering any Kyma component. Proves the headless layer is usable
+ * Builds a completely custom UI using usePensieveGraph + usePensieveQuery hooks
+ * without rendering any Pensieve component. Proves the headless layer is usable
  * independently of the opinionated component shells.
  *
- * useKymaGraph: shows node/edge counts + label distribution.
- * useKymaQuery: lets the user run arbitrary KQL and shows raw results in a table.
+ * usePensieveGraph: shows node/edge counts + label distribution.
+ * usePensieveQuery: lets the user run arbitrary KQL and shows raw results in a table.
  */
 export function HeadlessView() {
   return (
@@ -17,8 +17,8 @@ export function HeadlessView() {
       <div>
         <h2>Headless API (L3)</h2>
         <p>
-          This tab uses <code>useKymaGraph</code> and <code>useKymaQuery</code> hooks directly —
-          no Kyma components rendered. Proves that host apps can build fully custom UIs against the
+          This tab uses <code>usePensieveGraph</code> and <code>usePensieveQuery</code> hooks directly —
+          no Pensieve components rendered. Proves that host apps can build fully custom UIs against the
           headless layer.
         </p>
       </div>
@@ -32,14 +32,14 @@ export function HeadlessView() {
 // ── Graph stats panel ──────────────────────────────────────────────────────────
 
 function GraphStats() {
-  const { nodes, edges, stats, isLoading, isError, error, refetch } = useKymaGraph({
+  const { nodes, edges, stats, isLoading, isError, error, refetch } = usePensieveGraph({
     discover: "all-databases",
   });
 
   return (
     <div className="demo-headless-card">
       <h3>
-        useKymaGraph — all databases{" "}
+        usePensieveGraph — all databases{" "}
         <button
           className="demo-btn demo-btn-secondary"
           style={{ fontSize: 11, padding: "2px 8px", float: "right" }}
@@ -120,12 +120,12 @@ function GraphStats() {
 // ── Custom query builder ───────────────────────────────────────────────────────
 
 function QueryBuilder() {
-  const client = useKymaClient();
+  const client = usePensieveClient();
   const defaultDb = client.transport.database ?? "default";
 
   const [query, setQuery] = useState("trace\n| limit 10");
   const [database, setDatabase] = useState(defaultDb);
-  const { columns, rows, isRunning, error, execute, cancel } = useKymaQuery();
+  const { columns, rows, isRunning, error, execute, cancel } = usePensieveQuery();
 
   const handleRun = () => {
     void execute({ database, query, language: "kql" });
@@ -133,7 +133,7 @@ function QueryBuilder() {
 
   return (
     <div className="demo-headless-card">
-      <h3>useKymaQuery — custom query UI</h3>
+      <h3>usePensieveQuery — custom query UI</h3>
 
       <div className="demo-query-input">
         <input

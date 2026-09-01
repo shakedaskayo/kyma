@@ -1,7 +1,7 @@
 name: web
 on:
   pull_request:
-    # web now imports the @kyma-ai/* workspace packages, so changes under
+    # web now imports the @pensieve-ai/* workspace packages, so changes under
     # packages/ must re-run the web checks too.
     paths: ["web/**", "packages/**", ".github/workflows/web.yml", "pnpm-workspace.yaml"]
   push:
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: "pnpm" }
       - run: pnpm install --frozen-lockfile
-      # web imports @kyma-ai/client + @kyma-ai/react via their built dist/ —
+      # web imports @pensieve-ai/client + @pensieve-ai/react via their built dist/ —
       # build the packages before typechecking/building the app.
       - run: pnpm build:packages
       - run: pnpm -C web typecheck
@@ -48,19 +48,19 @@ jobs:
         run: pnpm -C web exec playwright install --with-deps chromium
       - name: Start stack
         run: docker compose up -d --build
-      - name: Wait for kyma (bounded; dump engine logs on timeout)
+      - name: Wait for pensieve (bounded; dump engine logs on timeout)
         run: |
           for i in $(seq 1 90); do
-            curl -fsS http://localhost:8080/health >/dev/null && { echo "kyma healthy"; exit 0; }
+            curl -fsS http://localhost:8080/health >/dev/null && { echo "pensieve healthy"; exit 0; }
             sleep 2
           done
-          echo "kyma did not become healthy in ~3m; engine logs:" >&2
-          docker compose logs kyma || true
+          echo "pensieve did not become healthy in ~3m; engine logs:" >&2
+          docker compose logs pensieve || true
           exit 1
-      - env: { KYMA_E2E_TOKEN: "" }
+      - env: { PENSIEVE_E2E_TOKEN: "" }
         run: pnpm -C web e2e
       - if: always()
-        run: docker compose logs kyma > kyma.log
+        run: docker compose logs pensieve > pensieve.log
       - if: failure()
         uses: actions/upload-artifact@v4
         with: { name: e2e-traces, path: web/test-results }

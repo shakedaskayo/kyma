@@ -1,6 +1,6 @@
 ---
 title: The pruning cascade
-description: How kyma skips 99 % of data on 99 % of queries. Three levels of pruning run before any extent bytes are decoded.
+description: How pensieve skips 99 % of data on 99 % of queries. Three levels of pruning run before any extent bytes are decoded.
 ---
 
 # The pruning cascade
@@ -8,12 +8,12 @@ description: How kyma skips 99 % of data on 99 % of queries. Three levels of pru
 Sub-second query latency over a decade of history is not a database
 optimization problem. It is a "don't look at the data" problem.
 
-kyma's planner answers most queries by reading almost no data. A query
+pensieve's planner answers most queries by reading almost no data. A query
 filtered to one tenant, one error class, and the last four hours touches
 maybe 0.01 % of the bytes in the bucket. The cascade is what makes that the
 default, not the exception.
 
-<KymaPruningCascade caption="A representative query through the four stages — same shape as the live readout on the landing page." />
+<PensievePruningCascade caption="A representative query through the four stages — same shape as the live readout on the landing page." />
 
 ## Three levels, in order
 
@@ -75,7 +75,7 @@ scan.
 
 ## 2. Extent pruning
 
-For each candidate extent, kyma issues a range-GET for the extent's footer.
+For each candidate extent, pensieve issues a range-GET for the extent's footer.
 Footers are tiny (kilobytes) and cached aggressively, so this stage is mostly
 network-free on a warm node.
 
@@ -94,7 +94,7 @@ Surviving extents pass a list of candidate blocks to stage 3.
 
 ## 3. Block and index pruning
 
-The smallest unit kyma decodes is a block — typically tens of thousands of
+The smallest unit pensieve decodes is a block — typically tens of thousands of
 rows in one column. A block isn't decoded until two things happen:
 
 - The block's own footer (min/max) confirms the predicate could match.

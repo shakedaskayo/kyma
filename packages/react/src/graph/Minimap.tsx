@@ -93,8 +93,8 @@ export function Minimap({ sigma }: { sigma: Sigma | null }) {
   }, [sigma]);
 
   return (
-    <div className="ky-absolute ky-bottom-4 ky-left-4 ky-z-20 ky-rounded-lg ky-glass ky-border ky-border-border ky-p-1">
-      <canvas ref={canvasRef} style={{ width: W, height: H }} className="ky-cursor-crosshair ky-rounded" />
+    <div className="pv-absolute pv-bottom-4 pv-left-4 pv-z-20 pv-rounded-lg pv-glass pv-border pv-border-border pv-p-1">
+      <canvas ref={canvasRef} style={{ width: W, height: H }} className="pv-cursor-crosshair pv-rounded" />
     </div>
   );
 }

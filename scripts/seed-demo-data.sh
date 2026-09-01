@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # seed-demo-data.sh — Populate the `obs` database with realistic demo data
-# for the kyma Web UI.
+# for the pensieve Web UI.
 #
 # Usage: ./scripts/seed-demo-data.sh [SERVER_URL]
 #   SERVER_URL defaults to http://127.0.0.1:7070
 #
-# Requires: curl, python3, kyma-cli (./target/debug/kyma-cli) for schema bootstrap.
+# Requires: curl, python3, pensieve-cli (./target/debug/pensieve-cli) for schema bootstrap.
 #
 # NOTE: The `dynamic` column type is stored as Arrow Binary, which the Arrow
 # JSON NDJSON reader does not support. All tables therefore use flat string/int/
@@ -35,7 +35,7 @@ ingest_table() {
   local ndjson="$2"
   local http_code body tmpf
 
-  tmpf=$(mktemp /tmp/kyma_curl_out.XXXXXX)
+  tmpf=$(mktemp /tmp/pensieve_curl_out.XXXXXX)
   http_code=$(curl -s -o "$tmpf" -w '%{http_code}' \
     -X POST "${SERVER}/v1/ingest" \
     -H "X-Database: ${DB}" \
@@ -60,7 +60,7 @@ seed_table() {
 
   local line_count=0
   local batch_file
-  batch_file=$(mktemp /tmp/kyma_seed_batch.XXXXXX)
+  batch_file=$(mktemp /tmp/pensieve_seed_batch.XXXXXX)
   trap 'rm -f "$batch_file"' RETURN
 
   while IFS= read -r line; do
@@ -86,9 +86,9 @@ seed_table() {
 
 # ── ensure obs database + tables exist ───────────────────────────────────────
 header "Ensuring obs database and tables exist"
-CLI="${ROOT}/target/debug/kyma-cli"
+CLI="${ROOT}/target/debug/pensieve-cli"
 if [[ ! -x "$CLI" ]]; then
-  info "kyma-cli not found at $CLI — skipping schema bootstrap (tables must pre-exist)"
+  info "pensieve-cli not found at $CLI — skipping schema bootstrap (tables must pre-exist)"
 else
   # Tables are flat-typed (no dynamic/Binary columns) so the Arrow JSON reader
   # can parse NDJSON directly. Errors are suppressed: if the db/table already
@@ -126,7 +126,7 @@ fi
 # ── generate NDJSON files ─────────────────────────────────────────────────────
 header "Generating demo data (this may take a few seconds)"
 
-TMPDIR_SEED=$(mktemp -d /tmp/kyma_seed.XXXXXX)
+TMPDIR_SEED=$(mktemp -d /tmp/pensieve_seed.XXXXXX)
 trap 'rm -rf "$TMPDIR_SEED"' EXIT
 
 GLOBAL_T0=$(date +%s%3N)

@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronRight } from "lucide-react";
-import type { Column, ColKind } from "@kyma-ai/client";
+import type { Column, ColKind } from "@pensieve-ai/client";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,17 +37,17 @@ function truncate(s: string, maxLen = 120): string {
 // ── type badge ────────────────────────────────────────────────────────────────
 
 const KIND_BADGE: Record<ColKind, { cls: string; label: string }> = {
-  time:    { cls: "ky-bg-sky-100 ky-text-sky-700 dark:ky-bg-sky-900/40 dark:ky-text-sky-300",                  label: "time" },
-  numeric: { cls: "ky-bg-emerald-100 ky-text-emerald-700 dark:ky-bg-emerald-900/40 dark:ky-text-emerald-300",  label: "num"  },
-  string:  { cls: "ky-bg-slate-100 ky-text-slate-600 dark:ky-bg-slate-800 dark:ky-text-slate-300",             label: "str"  },
-  bool:    { cls: "ky-bg-violet-100 ky-text-violet-700 dark:ky-bg-violet-900/40 dark:ky-text-violet-300",      label: "bool" },
-  other:   { cls: "ky-bg-slate-50 ky-text-slate-500 dark:ky-bg-slate-800/50 dark:ky-text-slate-400",           label: "·"    },
+  time:    { cls: "pv-bg-sky-100 pv-text-sky-700 dark:pv-bg-sky-900/40 dark:pv-text-sky-300",                  label: "time" },
+  numeric: { cls: "pv-bg-emerald-100 pv-text-emerald-700 dark:pv-bg-emerald-900/40 dark:pv-text-emerald-300",  label: "num"  },
+  string:  { cls: "pv-bg-slate-100 pv-text-slate-600 dark:pv-bg-slate-800 dark:pv-text-slate-300",             label: "str"  },
+  bool:    { cls: "pv-bg-violet-100 pv-text-violet-700 dark:pv-bg-violet-900/40 dark:pv-text-violet-300",      label: "bool" },
+  other:   { cls: "pv-bg-slate-50 pv-text-slate-500 dark:pv-bg-slate-800/50 dark:pv-text-slate-400",           label: "·"    },
 };
 
 function TypeBadge({ kind }: { kind: ColKind }) {
   const { cls, label } = KIND_BADGE[kind];
   return (
-    <span className={`ky-ml-1.5 ky-inline-block ky-rounded-full ky-px-1.5 ky-py-0 ky-text-[9px] ky-font-normal ky-leading-4 ${cls}`}>
+    <span className={`pv-ml-1.5 pv-inline-block pv-rounded-full pv-px-1.5 pv-py-0 pv-text-[9px] pv-font-normal pv-leading-4 ${cls}`}>
       {label}
     </span>
   );
@@ -57,11 +57,11 @@ function TypeBadge({ kind }: { kind: ColKind }) {
 
 function CellValue({ value, kind, isFirst }: { value: unknown; kind: ColKind; isFirst?: boolean }) {
   if (value === null || value === undefined) {
-    return <span className="ky-italic ky-text-muted-foreground/60">null</span>;
+    return <span className="pv-italic pv-text-muted-foreground/60">null</span>;
   }
   if (kind === "time" && typeof value === "string" && ISO_RE.test(value)) {
     return (
-      <span title={value} className="ky-font-mono ky-tabular-nums ky-text-slate-600 dark:ky-text-slate-300">
+      <span title={value} className="pv-font-mono pv-tabular-nums pv-text-slate-600 dark:pv-text-slate-300">
         {fmtIso(value)}
       </span>
     );
@@ -70,12 +70,12 @@ function CellValue({ value, kind, isFirst }: { value: unknown; kind: ColKind; is
   const truncated = str.length > 120 ? truncate(str) : str;
 
   if (isFirst) {
-    return <span className="ky-font-semibold ky-text-foreground">{truncated}</span>;
+    return <span className="pv-font-semibold pv-text-foreground">{truncated}</span>;
   }
   if (kind === "numeric") {
-    return <span className="ky-font-mono ky-tabular-nums">{truncated}</span>;
+    return <span className="pv-font-mono pv-tabular-nums">{truncated}</span>;
   }
-  return <span className={str !== truncated ? "ky-cursor-help" : ""} title={str !== truncated ? str : undefined}>{truncated}</span>;
+  return <span className={str !== truncated ? "pv-cursor-help" : ""} title={str !== truncated ? str : undefined}>{truncated}</span>;
 }
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ export function ResultsGrid({
       columns.map((c, ci) => ({
         accessorKey: c.name,
         header: () => (
-          <span className="ky-inline-flex ky-items-center">
+          <span className="pv-inline-flex pv-items-center">
             {c.name}
             <TypeBadge kind={c.kind} />
           </span>
@@ -182,17 +182,17 @@ export function ResultsGrid({
   };
 
   return (
-    <div ref={scrollRef} onScroll={handleScroll} className="ky-h-full ky-overflow-auto ky-text-xs">
-      <table className="ky-min-w-full ky-border-collapse">
-        <thead className={`ky-sticky ky-top-0 ky-z-10 ky-bg-card ky-transition-shadow ${scrolled ? "ky-shadow-sm" : ""}`}>
+    <div ref={scrollRef} onScroll={handleScroll} className="pv-h-full pv-overflow-auto pv-text-xs">
+      <table className="pv-min-w-full pv-border-collapse">
+        <thead className={`pv-sticky pv-top-0 pv-z-10 pv-bg-card pv-transition-shadow ${scrolled ? "pv-shadow-sm" : ""}`}>
           {table.getHeaderGroups().map((hg) => (
-            <tr key={hg.id} className="ky-border-b ky-border-muted/60">
+            <tr key={hg.id} className="pv-border-b pv-border-muted/60">
               {/* Expand toggle column */}
-              <th style={{ width: EXPAND_COL_WIDTH, minWidth: EXPAND_COL_WIDTH }} className="ky-px-1" />
+              <th style={{ width: EXPAND_COL_WIDTH, minWidth: EXPAND_COL_WIDTH }} className="pv-px-1" />
               {hg.headers.map((h, hi) => (
                 <th
                   key={h.id}
-                  className={`ky-cursor-pointer ky-whitespace-nowrap ky-px-3 ky-py-1 ky-text-left ky-text-[11px] ky-font-semibold ky-text-slate-600 dark:ky-text-slate-300 hover:ky-bg-accent/40 ky-transition-colors ${hi === 0 ? "ky-font-bold" : ""}`}
+                  className={`pv-cursor-pointer pv-whitespace-nowrap pv-px-3 pv-py-1 pv-text-left pv-text-[11px] pv-font-semibold pv-text-slate-600 dark:pv-text-slate-300 hover:pv-bg-accent/40 pv-transition-colors ${hi === 0 ? "pv-font-bold" : ""}`}
                   onClick={h.column.getToggleSortingHandler()}
                 >
                   {flexRender(h.column.columnDef.header, h.getContext())}
@@ -222,8 +222,8 @@ export function ResultsGrid({
                     height: vi.size,
                   }}
                 >
-                  <td colSpan={colCount} className="ky-px-0 ky-py-0">
-                    <pre className="ky-bg-muted/40 ky-p-3 ky-text-xs ky-font-mono ky-whitespace-pre ky-overflow-x-auto ky-border-b ky-border-muted/50 ky-leading-relaxed ky-text-slate-700 dark:ky-text-slate-300">
+                  <td colSpan={colCount} className="pv-px-0 pv-py-0">
+                    <pre className="pv-bg-muted/40 pv-p-3 pv-text-xs pv-font-mono pv-whitespace-pre pv-overflow-x-auto pv-border-b pv-border-muted/50 pv-leading-relaxed pv-text-slate-700 dark:pv-text-slate-300">
                       {JSON.stringify(filteredRows[dataIndex], null, 2)}
                     </pre>
                   </td>
@@ -243,22 +243,22 @@ export function ResultsGrid({
                   transform: `translateY(${vi.start}px)`,
                   height: vi.size,
                 }}
-                className={`ky-border-b ky-border-muted/50 hover:ky-bg-accent/20 ky-transition-colors ky-cursor-pointer ${isExpanded ? "ky-bg-accent/10" : ""}`}
+                className={`pv-border-b pv-border-muted/50 hover:pv-bg-accent/20 pv-transition-colors pv-cursor-pointer ${isExpanded ? "pv-bg-accent/10" : ""}`}
                 onClick={() => toggleRow(dataIndex)}
               >
                 {/* Expand chevron cell */}
                 <td
                   style={{ width: EXPAND_COL_WIDTH, minWidth: EXPAND_COL_WIDTH }}
-                  className="ky-px-1 ky-text-muted-foreground"
+                  className="pv-px-1 pv-text-muted-foreground"
                   onClick={(e) => { e.stopPropagation(); toggleRow(dataIndex); }}
                 >
                   <ChevronRight
-                    className="ky-h-3 ky-w-3 ky-transition-transform"
+                    className="pv-h-3 pv-w-3 pv-transition-transform"
                     style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}
                   />
                 </td>
                 {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="ky-px-3 ky-py-0 ky-leading-[25px] ky-truncate ky-max-w-xs">
+                  <td key={cell.id} className="pv-px-3 pv-py-0 pv-leading-[25px] pv-truncate pv-max-w-xs">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}

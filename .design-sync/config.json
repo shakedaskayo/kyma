@@ -1,10 +1,10 @@
 {
   "projectId": "dd8367e9-c3b7-4597-8a66-97466962bba6",
   "shape": "storybook",
-  "pkg": "@kyma-ai/react",
+  "pkg": "@pensieve-ai/react",
   "storybookConfigDir": "packages/react/.storybook",
   "storybookStatic": ".design-sync/sb-reference",
-  "buildCmd": "pnpm -F \"@kyma-ai/react...\" build",
+  "buildCmd": "pnpm -F \"@pensieve-ai/react...\" build",
   "readmeHeader": ".design-sync/conventions.md",
   "extraEntries": [
     "./dist/graph.js",
@@ -15,11 +15,11 @@
     "./dist/agent.js"
   ],
   "titleMap": {
-    "Playground": "KymaProvider"
+    "Playground": "PensieveProvider"
   },
   "overrides": {
-    "KymaDashboard": { "cardMode": "column" },
-    "KymaQueryEditor": { "cardMode": "single" },
-    "KymaProvider": { "cardMode": "single" }
+    "PensieveDashboard": { "cardMode": "column" },
+    "PensieveQueryEditor": { "cardMode": "single" },
+    "PensieveProvider": { "cardMode": "single" }
   }
 }

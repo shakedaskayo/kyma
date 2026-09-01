@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { KymaAgentChat } from "@kyma-ai/react/agent";
+import { PensieveAgentChat } from "@pensieve-ai/react/agent";
 
 /**
- * Agent tab: KymaAgentChat with onMessage callback logged to an on-screen log.
+ * Agent tab: PensieveAgentChat with onMessage callback logged to an on-screen log.
  * Demonstrates that onMessage fires once per completed assistant turn.
  *
  * Note: agent and MCP endpoints return 403 for database-scoped tokens
@@ -37,11 +37,11 @@ export function AgentView() {
       </div>
 
       <div style={{ flex: 1, overflow: "hidden" }}>
-        <KymaAgentChat
+        <PensieveAgentChat
           placeholder="Ask a question about your data…"
           style={{ height: "100%" }}
           onMessage={(m) => {
-            console.log("[kyma-embed-demo] agent message:", m);
+            console.log("[pensieve-embed-demo] agent message:", m);
             setLog((prev) => [
               ...prev,
               `[${new Date().toLocaleTimeString()}] ${m.role}: ${m.text.slice(0, 120)}${m.text.length > 120 ? "…" : ""}`,

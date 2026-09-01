@@ -1,10 +1,10 @@
 /**
- * @kyma-ai/react/graph — embeddable Kyma graph view.
+ * @pensieve-ai/react/graph — embeddable Pensieve graph view.
  *
  * Subpath entry so consumers who don't render the graph never pull
  * react-force-graph-2d into their bundle.
  */
-export { KymaGraph, type KymaGraphProps } from "./KymaGraph";
+export { PensieveGraph, type PensieveGraphProps } from "./PensieveGraph";
 export { GraphView, type GraphViewProps } from "./GraphView";
 export {
   createGraphStore,
@@ -36,4 +36,4 @@ export type {
   GraphPayload,
   GraphStats,
   SearchHits,
-} from "@kyma-ai/client";
+} from "@pensieve-ai/client";

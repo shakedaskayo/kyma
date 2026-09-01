@@ -1,0 +1,62 @@
+[package]
+name = "pensieve-datasources"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "pensieve data source framework: scheduled pulls from GitHub/GitLab/Bitbucket/Prometheus and other sources."
+
+[lints]
+workspace = true
+
+[dependencies]
+pensieve-core = { workspace = true }
+pensieve-catalog = { workspace = true }
+pensieve-federation = { workspace = true }
+pensieve-storage = { workspace = true }
+pensieve-redact = { workspace = true }
+pensieve-ingest-core = { workspace = true }
+bytes = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+arrow = { workspace = true, features = ["chrono-tz"] }
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+metrics = { workspace = true }
+fastrand = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+sqlx = { workspace = true }
+object_store = { workspace = true }
+base64 = "0.22"
+sha2 = "0.10"
+hostname = "0.4"
+
+# Structural code graph: the tree-sitter parser now lives in the standalone
+# `pensieve-codeparse` crate (so server/memory can use it ungated). The data source's
+# deep code-graph still hides behind the `github` feature because it brings in
+# the heavy C grammar crates + git clone.
+pensieve-codeparse = { workspace = true, optional = true }
+globset = { version = "0.4", optional = true }
+
+[features]
+github = [
+    "dep:pensieve-codeparse",
+    "dep:globset",
+]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+testcontainers = { workspace = true }
+testcontainers-modules = { workspace = true }
+wiremock = "0.6"

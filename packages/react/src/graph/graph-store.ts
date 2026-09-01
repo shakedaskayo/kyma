@@ -1,15 +1,15 @@
 /**
- * Per-instance graph store — created fresh for each mounted KymaGraph.
+ * Per-instance graph store — created fresh for each mounted PensieveGraph.
  *
  * Uses `createStore` from `zustand/vanilla` (NOT the module-level `create`)
- * so two mounted KymaGraph instances never share selection/layout state.
- * The store is provided via GraphStoreContext inside KymaGraph and consumed
+ * so two mounted PensieveGraph instances never share selection/layout state.
+ * The store is provided via GraphStoreContext inside PensieveGraph and consumed
  * via `useGraphStore`.
  */
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { createContext, useContext } from "react";
-import type { LayoutAlgorithm } from "@kyma-ai/client";
+import type { LayoutAlgorithm } from "@pensieve-ai/client";
 import type {
   ConsumerBeam,
   ConsumerStatus,
@@ -161,7 +161,7 @@ export const initialGraphState = {
 export type GraphStore = ReturnType<typeof createGraphStore>;
 
 /**
- * Create a fresh, independent graph store. Each KymaGraph instance calls this
+ * Create a fresh, independent graph store. Each PensieveGraph instance calls this
  * once (via useRef) so they never share state.
  */
 export function createGraphStore(overrides?: Partial<typeof initialGraphState>) {
@@ -241,12 +241,12 @@ export const GraphStoreContext = createContext<GraphStore | null>(null);
 
 /**
  * Hook to read from the nearest GraphStoreContext. Throws if used outside a
- * GraphStoreProvider (i.e. outside a KymaGraph).
+ * GraphStoreProvider (i.e. outside a PensieveGraph).
  */
 export function useGraphStore<T>(selector: (s: GraphStoreState) => T): T {
   const store = useContext(GraphStoreContext);
   if (!store) {
-    throw new Error("useGraphStore must be used inside <KymaGraph>");
+    throw new Error("useGraphStore must be used inside <PensieveGraph>");
   }
   return useStore(store, selector);
 }

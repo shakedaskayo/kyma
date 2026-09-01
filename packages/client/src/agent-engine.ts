@@ -1,6 +1,6 @@
 //! Typed client for `/v1/agent/engines` + `/v1/agent/engine`.
 
-import type { KymaTransport } from "./transport";
+import type { PensieveTransport } from "./transport";
 import { errorFromResponse } from "./errors";
 
 export type EngineKind = "anthropic" | "openai" | "ollama" | "claude_cli";
@@ -30,11 +30,11 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function listEngines(t: KymaTransport): Promise<EngineList> {
+export async function listEngines(t: PensieveTransport): Promise<EngineList> {
   return handleResponse<EngineList>(await t.request("/v1/agent/engines"));
 }
 
-export async function putEngine(t: KymaTransport, cfg: EngineConfig): Promise<EngineConfig> {
+export async function putEngine(t: PensieveTransport, cfg: EngineConfig): Promise<EngineConfig> {
   return handleResponse<EngineConfig>(
     await t.request("/v1/agent/engine", {
       method: "PUT",
@@ -50,7 +50,7 @@ export interface TestEngineResult {
   model: string;
 }
 
-export async function testEngine(t: KymaTransport, cfg: EngineConfig): Promise<TestEngineResult> {
+export async function testEngine(t: PensieveTransport, cfg: EngineConfig): Promise<TestEngineResult> {
   return handleResponse<TestEngineResult>(
     await t.request("/v1/agent/engine/test", {
       method: "POST",

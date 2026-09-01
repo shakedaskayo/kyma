@@ -1,4 +1,4 @@
-// Shim: re-exports pure layout helpers from @kyma-ai/client (no transport needed).
+// Shim: re-exports pure layout helpers from @pensieve-ai/client (no transport needed).
 export {
   forceDirectedLayout,
   gridLayout,
@@ -8,4 +8,4 @@ export {
   getLabelColor,
   getRelationshipColor,
   type LayoutAlgorithm,
-} from "@kyma-ai/client";
+} from "@pensieve-ai/client";

@@ -1,7 +1,7 @@
 // Runtime auth discovery (`GET /v1/auth/config`, unauthenticated).
 //
 // The SPA ships with zero build-time configuration — the server tells it at
-// runtime whether to render kyma's password login or the Supabase flow (and
+// runtime whether to render pensieve's password login or the Supabase flow (and
 // with which project URL / anon key / OAuth providers).
 
 export interface PasswordAuthConfig {

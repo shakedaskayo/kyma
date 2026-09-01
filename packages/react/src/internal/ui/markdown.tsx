@@ -45,7 +45,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
         remaining = best.match[4];
       } else if (best.type === "code") {
         parts.push(
-          <code key={subKey} className="ky-rounded ky-bg-muted ky-px-1 ky-font-mono ky-text-[0.85em]">
+          <code key={subKey} className="pv-rounded pv-bg-muted pv-px-1 pv-font-mono pv-text-[0.85em]">
             {best.match[2]}
           </code>,
         );
@@ -57,7 +57,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
             href={best.match[3]}
             target="_blank"
             rel="noopener noreferrer"
-            className="ky-text-primary ky-underline"
+            className="pv-text-primary pv-underline"
           >
             {best.match[2]}
           </a>,
@@ -82,7 +82,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
       nodes.push(
         <pre
           key={`fence-${i}`}
-          className="ky-my-2 ky-overflow-x-auto ky-rounded ky-bg-muted ky-p-3 ky-font-mono ky-text-xs"
+          className="pv-my-2 pv-overflow-x-auto pv-rounded pv-bg-muted pv-p-3 pv-font-mono pv-text-xs"
         >
           <code>{fenceLines.join("\n")}</code>
         </pre>,
@@ -92,7 +92,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
 
     if (line.startsWith("### ")) {
       nodes.push(
-        <h3 key={`h3-${i}`} className="ky-mt-3 ky-mb-1 ky-text-sm ky-font-semibold">
+        <h3 key={`h3-${i}`} className="pv-mt-3 pv-mb-1 pv-text-sm pv-font-semibold">
           {renderInline(line.slice(4), `h3-${i}`)}
         </h3>,
       );
@@ -101,7 +101,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
     }
     if (line.startsWith("## ")) {
       nodes.push(
-        <h2 key={`h2-${i}`} className="ky-mt-4 ky-mb-1 ky-text-base ky-font-semibold">
+        <h2 key={`h2-${i}`} className="pv-mt-4 pv-mb-1 pv-text-base pv-font-semibold">
           {renderInline(line.slice(3), `h2-${i}`)}
         </h2>,
       );
@@ -110,7 +110,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
     }
     if (line.startsWith("# ")) {
       nodes.push(
-        <h1 key={`h1-${i}`} className="ky-mt-2 ky-mb-2 ky-text-lg ky-font-bold">
+        <h1 key={`h1-${i}`} className="pv-mt-2 pv-mb-2 pv-text-lg pv-font-bold">
           {renderInline(line.slice(2), `h1-${i}`)}
         </h1>,
       );
@@ -122,14 +122,14 @@ export function renderMarkdown(md: string): React.ReactNode[] {
       const listItems: React.ReactNode[] = [];
       while (i < lines.length && (lines[i].startsWith("- ") || lines[i].startsWith("* "))) {
         listItems.push(
-          <li key={`li-${i}`} className="ky-ml-4 ky-list-disc">
+          <li key={`li-${i}`} className="pv-ml-4 pv-list-disc">
             {renderInline(lines[i].slice(2), `li-${i}`)}
           </li>,
         );
         i++;
       }
       nodes.push(
-        <ul key={`ul-${i}`} className="ky-my-1 ky-space-y-0.5 ky-text-sm">
+        <ul key={`ul-${i}`} className="pv-my-1 pv-space-y-0.5 pv-text-sm">
           {listItems}
         </ul>,
       );
@@ -142,7 +142,7 @@ export function renderMarkdown(md: string): React.ReactNode[] {
     }
 
     nodes.push(
-      <p key={`p-${i}`} className="ky-my-1 ky-text-sm ky-leading-relaxed">
+      <p key={`p-${i}`} className="pv-my-1 pv-text-sm pv-leading-relaxed">
         {renderInline(line, `p-${i}`)}
       </p>,
     );

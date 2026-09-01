@@ -2,7 +2,7 @@
 # provider-free stack module. Pulumi users wrap ./stack directly via the
 # terraform-module bridge — keep all resources in there, not here.
 
-module "kyma" {
+module "pensieve" {
   source = "./stack"
 
   project_name = var.project_name

@@ -1,30 +1,30 @@
 ---
 title: Agentic Memory
-description: Kyma is a context engine for coding agents — persistent graph-aware memory (LLM extraction, conflict resolution, bi-temporal validity, near-realtime hybrid recall) over the same engine that serves live data and the graph linking them.
+description: Pensieve is a context engine for coding agents — persistent graph-aware memory (LLM extraction, conflict resolution, bi-temporal validity, near-realtime hybrid recall) over the same engine that serves live data and the graph linking them.
 ---
 
 # Agentic Memory
 
-> **Memory is one half of Kyma's *context engine*.** Through the same MCP server,
+> **Memory is one half of Pensieve's *context engine*.** Through the same MCP server,
 > an agent doesn't only recall stored facts — it queries **live data** (logs,
 > traces, data sources, the catalog) in KQL/SQL and traverses the **graph** that
 > links memories to the real resources they're about. Recall **+** live context
 > **+** relationships, in one place. That's the difference between a memory store
 > and a context engine.
 
-Kyma gives agents a **persistent memory** that survives across sessions and
+Pensieve gives agents a **persistent memory** that survives across sessions and
 machines: durable facts, decisions, preferences, learnings, and procedures —
 linked to the real resources they're about (repos, services, tables, traces)
-and recalled in near-realtime. It's built on Kyma's own columnar engine and
+and recalled in near-realtime. It's built on Pensieve's own columnar engine and
 graph layer, so memory is first-class queryable (KQL/SQL/Discover) and renders
-in the unified graph alongside everything else Kyma ingests.
+in the unified graph alongside everything else Pensieve ingests.
 
 The design synthesizes the strongest open-source patterns: **Mem0**-style LLM
 fact extraction with `ADD / UPDATE / NOOP / INVALIDATE` conflict resolution, and
 **Zep/Graphiti**-style bi-temporal validity (invalidate, don't delete) and
 hybrid + graph retrieval.
 
-> **The use case.** A coding agent (Claude Code, Cursor, …) connected to Kyma
+> **The use case.** A coding agent (Claude Code, Cursor, …) connected to Pensieve
 > remembers your conventions and decisions, knows which service a fact is about,
 > and pulls the right context onto each prompt — without you re-explaining.
 
@@ -115,7 +115,7 @@ back to an exact scan for any extent lacking the stat.
 
 ### For coding agents — the MCP tool
 
-Agents connected to Kyma's MCP server get `memory_search` (and `save_memory`,
+Agents connected to Pensieve's MCP server get `memory_search` (and `save_memory`,
 `recall_memory`, `list_memories`, `link_memory_to_entity`, `ingest_entity`):
 
 ```jsonc
@@ -152,7 +152,7 @@ repo, table, person, file, config, or concept — and wires it to existing graph
 nodes (cross-graph via `target_namespace`, e.g. a data-source-ingested
 `repo:owner/name`) and to memories (`memory:<uuid>`). Entities render in the
 unified graph alongside data source resources and are idempotent per
-`(realm, kind, name)`. The Claude Code [`/kyma-ingest`](/agent/claude-code-plugin)
+`(realm, kind, name)`. The Claude Code [`/pensieve-ingest`](/agent/claude-code-plugin)
 command drives this — and also triggers on-demand **data source** pulls so an agent
 can fill the graph from GitHub/Prometheus/etc. without leaving the editor.
 
@@ -270,17 +270,17 @@ works fully. Embeddings come from the same backend that powers schema RAG
 ## End-to-end: a coding agent that remembers
 
 ```bash
-# 1. Connect a terminal / coding agent to Kyma and install the plugin.
-kyma connect http://localhost:8080 --token <bearer>
-kyma install-plugin
+# 1. Connect a terminal / coding agent to Pensieve and install the plugin.
+pensieve connect http://localhost:8080 --token <bearer>
+pensieve install-plugin
 
 # 2. Work normally in Claude Code. Hooks firehose your turns into
 #    default.claude_code_events; the consolidation pipeline distills them
 #    into durable memories (extraction when an engine is set).
 
 # 3. On the next prompt, the UserPromptSubmit hook recalls relevant context:
-kyma recall "how do we handle DB migrations?"
-# - [procedure] Migrations live in crates/kyma-catalog/migrations, numbered NNN_*.sql ...
+pensieve recall "how do we handle DB migrations?"
+# - [procedure] Migrations live in crates/pensieve-catalog/migrations, numbered NNN_*.sql ...
 # - [decision] We invalidate-don't-delete superseded facts (bi-temporal) ...
 
 # 4. Inspect or tune anything in the web app at /memory.
@@ -294,4 +294,4 @@ resources relate — and finds it in milliseconds.
 - [Claude Code memory plugin](/agent/claude-code-plugin) — the hooks integration.
 - [The agent loop](/concepts/the-agent-loop) — the `/v1/agent/ask` surface and tools.
 - [Dynamic and vectors](/concepts/dynamic-and-vectors) — embeddings and vector search.
-- [Connect a coding agent](/agent/connect-from-cli) — wiring `kyma` into your tools.
+- [Connect a coding agent](/agent/connect-from-cli) — wiring `pensieve` into your tools.

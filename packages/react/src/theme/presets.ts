@@ -7,9 +7,9 @@
  * fontSans / fontMono use system-font stacks so the SDK does NOT force
  * IBM Plex (or any other brand font) onto the host application.
  */
-import type { KymaTheme } from "./tokens";
+import type { PensieveTheme } from "./tokens";
 
-export const kymaLight: KymaTheme = {
+export const pensieveLight: PensieveTheme = {
   // ── Colours — :root in globals.css ────────────────────────────────────
   background: "0 0% 100%",
   foreground: "214 32% 14%",
@@ -40,7 +40,7 @@ export const kymaLight: KymaTheme = {
   fontMono: "ui-monospace, SFMono-Regular, Menlo, monospace",
 };
 
-export const kymaDark: KymaTheme = {
+export const pensieveDark: PensieveTheme = {
   // ── Colours — .dark in globals.css ────────────────────────────────────
   background: "213 26% 7%",
   foreground: "200 24% 96%",

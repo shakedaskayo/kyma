@@ -25,8 +25,8 @@ export function QueryBar({ value, onChange, onRun, onCancel, running }: Props) {
   }, [value]);
 
   return (
-    <div className="ky-flex ky-flex-col ky-gap-1 ky-flex-1 ky-min-w-0">
-      <div className="ky-flex ky-gap-2 ky-items-center">
+    <div className="pv-flex pv-flex-col pv-gap-1 pv-flex-1 pv-min-w-0">
+      <div className="pv-flex pv-gap-2 pv-items-center">
         <Input
           placeholder='Search… e.g. auth service:payments -severity:INFO  (empty = everything)'
           value={value}
@@ -35,21 +35,21 @@ export function QueryBar({ value, onChange, onRun, onCancel, running }: Props) {
             if (e.key === "Enter" && !grammarError) onRun();
           }}
           aria-invalid={grammarError != null}
-          className="ky-font-mono ky-text-sm ky-flex-1 ky-min-w-0"
+          className="pv-font-mono pv-text-sm pv-flex-1 pv-min-w-0"
         />
         {running ? (
           <Button variant="destructive" size="sm" onClick={onCancel}>
-            <X className="ky-size-4 ky-mr-1" /> Cancel
+            <X className="pv-size-4 pv-mr-1" /> Cancel
           </Button>
         ) : (
           <Button size="sm" onClick={onRun} disabled={grammarError != null}>
-            <Play className="ky-size-4 ky-mr-1" /> Run
+            <Play className="pv-size-4 pv-mr-1" /> Run
           </Button>
         )}
-        {running && <Loader2 className="ky-size-4 ky-animate-spin ky-text-muted-foreground" />}
+        {running && <Loader2 className="pv-size-4 pv-animate-spin pv-text-muted-foreground" />}
       </div>
       {grammarError && (
-        <div className="ky-text-xs ky-text-destructive ky-px-1" role="alert">
+        <div className="pv-text-xs pv-text-destructive pv-px-1" role="alert">
           {grammarError}
         </div>
       )}

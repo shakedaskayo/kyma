@@ -1,0 +1,20 @@
+[package]
+name = "pensieve-graph"
+description = "Property-graph layer for pensieve: wire types, the SchemaSource catalog interface, and the GraphProvider abstraction."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+pensieve-graph-topo = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+object_store = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
