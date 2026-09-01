@@ -183,6 +183,7 @@ export default withMermaid(defineConfig({
           { text: 'Environment vars', link: '/reference/env' },
           { text: 'KQL functions',    link: '/reference/kql-functions' },
           { text: 'Schema mappings',  link: '/reference/schema-mappings' },
+          { text: 'Migrating from kyma', link: '/reference/migrating-from-kyma' },
         ],
       }],
       '/architecture/': [{

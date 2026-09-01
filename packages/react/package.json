@@ -1,6 +1,6 @@
 {
   "name": "@pensieve-ai/react",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Embeddable React components for the Pensieve context engine — Graph, Discover, Query, Dashboards, Agent",
   "license": "Apache-2.0",
   "repository": {

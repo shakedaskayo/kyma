@@ -46,7 +46,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.22"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.95"
 license = "MIT"
@@ -159,44 +159,44 @@ fastrand = "2"
 # `version` alongside `path` so the closure is publishable to crates.io: cargo
 # uses the path for workspace builds and the version requirement for published
 # crates. Kept in lockstep with [workspace.package] version.
-pensieve-core              = { path = "crates/pensieve-core",            version = "0.0.22" }
-pensieve-format-tlm        = { path = "crates/pensieve-format-tlm",      version = "0.0.22" }
-pensieve-format-parquet    = { path = "crates/pensieve-format-parquet",  version = "0.0.22" }
-pensieve-format-stub-vec   = { path = "crates/pensieve-format-stub-vec", version = "0.0.22" }
-pensieve-graph-testkit     = { path = "crates/pensieve-graph-testkit",   version = "0.0.22" }
-pensieve-graph-topo        = { path = "crates/pensieve-graph-topo",      version = "0.0.22" }
-pensieve-catalog           = { path = "crates/pensieve-catalog",         version = "0.0.22" }
-pensieve-catalog-sqlite    = { path = "crates/pensieve-catalog-sqlite",  version = "0.0.22" }
-pensieve-local             = { path = "crates/pensieve-local",           version = "0.0.22" }
-pensieve-storage           = { path = "crates/pensieve-storage",         version = "0.0.22" }
-pensieve-ingest-core       = { path = "crates/pensieve-ingest-core",     version = "0.0.22" }
-pensieve-ingest-rest       = { path = "crates/pensieve-ingest-rest",     version = "0.0.22" }
-pensieve-ingest-filedrop   = { path = "crates/pensieve-ingest-filedrop", version = "0.0.22" }
-pensieve-ingest-otlp       = { path = "crates/pensieve-ingest-otlp",     version = "0.0.22" }
-pensieve-ingest-kafka      = { path = "crates/pensieve-ingest-kafka",    version = "0.0.22" }
-pensieve-graph             = { path = "crates/pensieve-graph",           version = "0.0.22" }
-pensieve-kql               = { path = "crates/pensieve-kql",             version = "0.0.22" }
-pensieve-compaction        = { path = "crates/pensieve-compaction",      version = "0.0.22" }
-pensieve-datasources        = { path = "crates/pensieve-datasources",      version = "0.0.22" }
-pensieve-datasource-core    = { path = "crates/pensieve-datasource-core",  version = "0.0.22" }
-pensieve-codeparse         = { path = "crates/pensieve-codeparse",       version = "0.0.22" }
-pensieve-jobs              = { path = "crates/pensieve-jobs",            version = "0.0.22" }
-pensieve-index-vector      = { path = "crates/pensieve-index-vector",    version = "0.0.22" }
-pensieve-index-fts         = { path = "crates/pensieve-index-fts",        version = "0.0.22" }
-pensieve-plan              = { path = "crates/pensieve-plan",            version = "0.0.22" }
-pensieve-exec              = { path = "crates/pensieve-exec",            version = "0.0.22" }
-pensieve-federation        = { path = "crates/pensieve-federation",      version = "0.0.22" }
-pensieve-server            = { path = "crates/pensieve-server",          version = "0.0.22" }
-pensieve-cli               = { path = "crates/pensieve-cli",             version = "0.0.22" }
-pensieve-web-assets        = { path = "crates/pensieve-web-assets",      version = "0.0.22" }
-pensieve-embed             = { path = "crates/pensieve-embed",           version = "0.0.22" }
-pensieve-memory            = { path = "crates/pensieve-memory",          version = "0.0.22" }
-pensieve-artifact-graph    = { path = "crates/pensieve-artifact-graph",  version = "0.0.22" }
-pensieve-mcp               = { path = "crates/pensieve-mcp",             version = "0.0.22" }
-pensieve-queue             = { path = "crates/pensieve-queue",           version = "0.0.22" }
-pensieve-redact            = { path = "crates/pensieve-redact",          version = "0.0.22" }
-pensieve-ccmem             = { path = "crates/pensieve-ccmem",           version = "0.0.22" }
-pensieve-brain             = { path = "crates/pensieve-brain",           version = "0.0.22" }
+pensieve-core              = { path = "crates/pensieve-core",            version = "0.1.0" }
+pensieve-format-tlm        = { path = "crates/pensieve-format-tlm",      version = "0.1.0" }
+pensieve-format-parquet    = { path = "crates/pensieve-format-parquet",  version = "0.1.0" }
+pensieve-format-stub-vec   = { path = "crates/pensieve-format-stub-vec", version = "0.1.0" }
+pensieve-graph-testkit     = { path = "crates/pensieve-graph-testkit",   version = "0.1.0" }
+pensieve-graph-topo        = { path = "crates/pensieve-graph-topo",      version = "0.1.0" }
+pensieve-catalog           = { path = "crates/pensieve-catalog",         version = "0.1.0" }
+pensieve-catalog-sqlite    = { path = "crates/pensieve-catalog-sqlite",  version = "0.1.0" }
+pensieve-local             = { path = "crates/pensieve-local",           version = "0.1.0" }
+pensieve-storage           = { path = "crates/pensieve-storage",         version = "0.1.0" }
+pensieve-ingest-core       = { path = "crates/pensieve-ingest-core",     version = "0.1.0" }
+pensieve-ingest-rest       = { path = "crates/pensieve-ingest-rest",     version = "0.1.0" }
+pensieve-ingest-filedrop   = { path = "crates/pensieve-ingest-filedrop", version = "0.1.0" }
+pensieve-ingest-otlp       = { path = "crates/pensieve-ingest-otlp",     version = "0.1.0" }
+pensieve-ingest-kafka      = { path = "crates/pensieve-ingest-kafka",    version = "0.1.0" }
+pensieve-graph             = { path = "crates/pensieve-graph",           version = "0.1.0" }
+pensieve-kql               = { path = "crates/pensieve-kql",             version = "0.1.0" }
+pensieve-compaction        = { path = "crates/pensieve-compaction",      version = "0.1.0" }
+pensieve-datasources        = { path = "crates/pensieve-datasources",      version = "0.1.0" }
+pensieve-datasource-core    = { path = "crates/pensieve-datasource-core",  version = "0.1.0" }
+pensieve-codeparse         = { path = "crates/pensieve-codeparse",       version = "0.1.0" }
+pensieve-jobs              = { path = "crates/pensieve-jobs",            version = "0.1.0" }
+pensieve-index-vector      = { path = "crates/pensieve-index-vector",    version = "0.1.0" }
+pensieve-index-fts         = { path = "crates/pensieve-index-fts",        version = "0.1.0" }
+pensieve-plan              = { path = "crates/pensieve-plan",            version = "0.1.0" }
+pensieve-exec              = { path = "crates/pensieve-exec",            version = "0.1.0" }
+pensieve-federation        = { path = "crates/pensieve-federation",      version = "0.1.0" }
+pensieve-server            = { path = "crates/pensieve-server",          version = "0.1.0" }
+pensieve-cli               = { path = "crates/pensieve-cli",             version = "0.1.0" }
+pensieve-web-assets        = { path = "crates/pensieve-web-assets",      version = "0.1.0" }
+pensieve-embed             = { path = "crates/pensieve-embed",           version = "0.1.0" }
+pensieve-memory            = { path = "crates/pensieve-memory",          version = "0.1.0" }
+pensieve-artifact-graph    = { path = "crates/pensieve-artifact-graph",  version = "0.1.0" }
+pensieve-mcp               = { path = "crates/pensieve-mcp",             version = "0.1.0" }
+pensieve-queue             = { path = "crates/pensieve-queue",           version = "0.1.0" }
+pensieve-redact            = { path = "crates/pensieve-redact",          version = "0.1.0" }
+pensieve-ccmem             = { path = "crates/pensieve-ccmem",           version = "0.1.0" }
+pensieve-brain             = { path = "crates/pensieve-brain",           version = "0.1.0" }
 
 # Auth
 jsonwebtoken = "9"

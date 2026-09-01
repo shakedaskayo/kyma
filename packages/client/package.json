@@ -1,6 +1,6 @@
 {
   "name": "@pensieve-ai/client",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Framework-agnostic TypeScript client for the Pensieve context engine API",
   "license": "Apache-2.0",
   "repository": {
