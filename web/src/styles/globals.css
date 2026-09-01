@@ -12,7 +12,8 @@
  * ────────────────────────────────────────────────────────────────────────── */
 @layer base {
   :root {
-    /* Light mode — clean, cool, with a teal-cyan brand accent. */
+    /* Light mode — clean, cool, with the brand blue accent. Deeper than the
+     * dark-mode value so it keeps contrast on white. */
     --background: 0 0% 100%;
     --foreground: 214 32% 14%;
     --surface: 210 30% 98%;
@@ -20,27 +21,27 @@
     --card-foreground: 214 32% 14%;
     --popover: 0 0% 100%;
     --popover-foreground: 214 32% 14%;
-    --primary: 183 74% 38%;
+    --primary: 219 75% 48%;
     --primary-foreground: 0 0% 100%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 214 40% 16%;
     --muted: 210 40% 96.1%;
     --muted-foreground: 215 16% 42%;
-    --accent: 185 46% 94%;
+    --accent: 218 60% 95%;
     --accent-foreground: 214 40% 16%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 100%;
     --border: 214 28% 90%;
     --border-strong: 214 24% 82%;
     --input: 214 28% 88%;
-    --ring: 199 74% 46%;
-    --brand-from: 182 72% 42%;
-    --brand-to: 199 82% 48%;
+    --ring: 219 75% 48%;
+    --brand-from: 219 75% 48%;
+    --brand-to: 256 70% 55%;
     --radius: 0.625rem;
   }
   .dark {
-    /* Dark mode (primary) — deep cool slate substrate; saturated teal/cyan
-     * accent that pops on the near-black graph canvas. Surfaces step up in
+    /* Dark mode (primary) — deep cool slate substrate; the brand blue-violet
+     * accent, which pops on the near-black graph canvas. Surfaces step up in
      * lightness (background → surface → card → popover) so elevation reads
      * without heavy borders. */
     --background: 213 26% 7%;
@@ -50,8 +51,8 @@
     --card-foreground: 200 24% 96%;
     --popover: 213 22% 13%;
     --popover-foreground: 200 24% 96%;
-    --primary: 180 72% 45%;
-    --primary-foreground: 200 45% 8%;
+    --primary: 218 100% 65%;
+    --primary-foreground: 220 45% 10%;
     --secondary: 213 20% 16%;
     --secondary-foreground: 200 24% 96%;
     --muted: 213 18% 17%;
@@ -63,9 +64,9 @@
     --border: 213 18% 17%;
     --border-strong: 213 16% 27%;
     --input: 213 18% 17%;
-    --ring: 199 74% 53%;
-    --brand-from: 180 80% 52%;
-    --brand-to: 199 85% 60%;
+    --ring: 218 100% 65%;
+    --brand-from: 218 100% 65%;
+    --brand-to: 256 100% 65%;
   }
   * { @apply border-border; }
   body {
