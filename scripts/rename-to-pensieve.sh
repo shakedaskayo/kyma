@@ -27,6 +27,13 @@ is_excluded() {
   case "$1" in
     # this script itself (it documents the old name on purpose)
     scripts/rename-to-pensieve.sh)                return 0 ;;
+    # The migration guide's whole job is to name the old thing next to the new
+    # one. A second run of this script rewrote 78 of its lines and turned
+    # "`pv-` instead of `ky-`" into "`pv-` instead of `pv-`", quietly gutting
+    # the page. Its sidebar entry in the VitePress config links to it by the
+    # old filename, so that has to be spared too.
+    docs/site/reference/migrating-from-kyma.md)   return 0 ;;
+    docs/site/.vitepress/config.ts)               return 0 ;;
     # sqlx checksums every applied migration — freeze them, add 035 instead
     crates/*/migrations/*.sql)                    return 0 ;;
     # 4-byte on-disk magic, hand-edited in Phase 3
@@ -40,6 +47,17 @@ is_excluded() {
     Cargo.lock|pnpm-lock.yaml|*/package-lock.json) return 0 ;;
     # binaries
     *.png|*.gif|*.ico|*.icns|*.jpg|*.jpeg|*.webp|*.woff|*.woff2|*.ttf) return 0 ;;
+  esac
+  return 1
+}
+
+# Paths that must keep the old name in their FILENAME too, so the path pass
+# leaves them alone. Excluding a file from the content pass is not enough:
+# do_paths would happily rename migrating-from-kyma.md out from under the
+# sidebar link that points at it.
+is_pinned_path() {
+  case "$1" in
+    docs/site/reference/migrating-from-kyma.md) return 0 ;;
   esac
   return 1
 }
@@ -73,6 +91,7 @@ do_paths() {
   # Pass B: files whose basename carries the name.
   local f b d nb
   while IFS= read -r f; do
+    is_pinned_path "$f" && continue
     b=$(basename "$f"); d=$(dirname "$f")
     nb=$(printf '%s' "$b" | xform)
     [ "$b" = "$nb" ] && continue
@@ -108,9 +127,15 @@ do_prefix() {
 import re, subprocess, pathlib
 pat = re.compile(r'(?<![A-Za-z0-9])ky-')
 files = subprocess.run(['git', 'ls-files'], capture_output=True, text=True).stdout.split()
+# Both of these name the old prefix on purpose; rewriting them turns
+# "`pv-` instead of `ky-`" into "`pv-` instead of `pv-`".
+SKIP = {
+    'scripts/rename-to-pensieve.sh',
+    'docs/site/reference/migrating-from-kyma.md',
+}
 changed = total = 0
 for f in files:
-    if f == 'scripts/rename-to-pensieve.sh':   # documents both prefixes on purpose
+    if f in SKIP:
         continue
     p = pathlib.Path(f)
     if not p.is_file():
@@ -139,7 +164,13 @@ do_content() {
     grep -qi kyma "$f" 2>/dev/null || continue
     # Skip anything that isn't text (belt and braces over the extension list).
     file --mime "$f" | grep -q 'charset=binary' && continue
-    xform < "$f" > "$f.pensieve-tmp" && mv "$f.pensieve-tmp" "$f"
+    # Write through the temp but copy it back over the ORIGINAL inode rather
+    # than mv'ing the temp into place: mv would replace the file with the
+    # temp's default 0644 and silently strip +x. That cost 49 files their
+    # executable bit the first time round, including every ./scripts/*.sh
+    # that CI invokes directly and the six Claude Code plugin hooks.
+    xform < "$f" > "$f.pensieve-tmp" && cat "$f.pensieve-tmp" > "$f"
+    rm -f "$f.pensieve-tmp"
     n=$((n + 1))
   done < <(git ls-files)
   echo "content: $n files rewritten"
