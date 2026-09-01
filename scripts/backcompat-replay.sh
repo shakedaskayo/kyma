@@ -79,10 +79,23 @@ except Exception:
     #   b) Sort all lines so metric registration order doesn't matter.
     #   c) Strip blank lines (they appear between metric families and their
     #      count varies with registration order).
+    #   d) Drop error counters entirely. Families like
+    #      pensieve_http_errors_total are labelled per error code and only
+    #      register once something has actually failed, so whether they appear
+    #      — and with which code= label — depends on what happened to error
+    #      during the run, not on the shape of the build. One failing query is
+    #      enough to add two lines and change the hash, which is what made this
+    #      fixture flaky (9 failures in 20 runs) long before anyone noticed.
+    #      The contract we want here is 'which metrics does this build expose',
+    #      so incident-dependent families are excluded.
+    ERROR_FAMILY = re.compile(r'^(?:# (?:HELP|TYPE) )?\w*_errors_total\b')
+
     lines = []
     for line in raw.splitlines():
         stripped = line.strip()
         if stripped == '':
+            continue
+        if ERROR_FAMILY.match(stripped):
             continue
         if stripped.startswith('#'):
             lines.append(stripped)
