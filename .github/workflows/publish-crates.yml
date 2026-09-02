@@ -41,6 +41,12 @@ jobs:
       - name: Build web UI + populate embedded assets
         run: |
           pnpm install --frozen-lockfile
+          # web imports @pensieve-ai/client + @pensieve-ai/react through their
+          # built dist/, so the workspace packages have to exist first. Without
+          # this the web build dies on "Cannot find module '@pensieve-ai/client'"
+          # and takes the whole publish with it. release.yml and web.yml have
+          # always done this; this workflow was the odd one out.
+          pnpm build:packages
           pnpm -C web build
           cargo build -p pensieve-web-assets
 
