@@ -18,6 +18,20 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
+  # This job compiles 41 crates plus every test target. With the workspace's
+  # `[profile.dev] debug = true` that is ~97 GB of target/ locally, against
+  # roughly 14 GB free on a GitHub-hosted runner — so it ran out of disk every
+  # time, failing with
+  #   rustc-LLVM ERROR: IO failure on output stream: No space left on device
+  # after ~30 minutes. line-tables-only keeps file and line numbers in panics
+  # and backtraces, which is what CI actually needs from debuginfo, while
+  # dropping the variable and type records that account for most of the size.
+  # Overridden here rather than in Cargo.toml so local development keeps full
+  # debuginfo for stepping in a debugger.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # Incremental artifacts are pure overhead on a cold CI checkout and add
+  # several GB of their own.
+  CARGO_INCREMENTAL: "0"
   # The pensieve-mcp end-to-end test opens a raw sqlx pool against this URL (it does
   # not migrate it — assertions run against the testcontainers catalog). Any
   # reachable Postgres satisfies it.
@@ -41,6 +55,19 @@ jobs:
           --health-timeout=3s
           --health-retries=10
     steps:
+      # Reclaim the preinstalled toolchains this job never uses. The runner
+      # image ships Android SDK, .NET, GHC, CodeQL and a large Docker image
+      # cache; together they are ~25 GB, which is the difference between this
+      # job finishing and dying on "No space left on device" partway through
+      # linking. Cheap (~30s) next to a 30-minute compile that then fails.
+      - name: Free runner disk
+        run: |
+          echo "before:"; df -h / | tail -1
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/share/boost /opt/hostedtoolcache/CodeQL \
+                      /usr/local/share/powershell /usr/share/swift || true
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          echo "after:"; df -h / | tail -1
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v4
