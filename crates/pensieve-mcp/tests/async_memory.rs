@@ -79,6 +79,7 @@ async fn dispatch_with_queue() -> (ToolDispatch, Arc<MockEmbed>) {
         format.clone(),
         embed.clone(),
         cfg,
+        pensieve_core::types::NodeId::new(),
         async move {
             let _ = stop_rx.await;
         },

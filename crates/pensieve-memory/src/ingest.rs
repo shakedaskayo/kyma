@@ -28,6 +28,7 @@ use std::time::Duration;
 
 use pensieve_core::catalog::Catalog;
 use pensieve_core::segment_format::SegmentFormat;
+use pensieve_core::types::NodeId;
 use pensieve_embed::EmbeddingBackend;
 use pensieve_queue::{BatchHandler, Job, Queue, QueueConfig};
 use serde::{Deserialize, Serialize};
@@ -160,6 +161,13 @@ impl MemoryQueue {
 
 /// Build the memory ingest queue and spawn its worker.
 ///
+/// `node_id` identifies this worker's claims in the durable store; when
+/// `cfg.durable` is set it MUST be a `node_id` already registered in the
+/// catalog (e.g. the id returned by `Catalog::register_node`) — see
+/// `pensieve_queue::spawn` for why. Callers with no node registration of their
+/// own (no durable catalog, or a local/embedded catalog with no cluster
+/// membership concept) can pass a fresh `NodeId::new()`.
+///
 /// The returned [`MemoryQueue`] is the submit/barrier handle; the
 /// `JoinHandle` resolves once `shutdown` fires *and* the worker has drained —
 /// await it before process exit so queued memories land.
@@ -168,6 +176,7 @@ pub fn spawn_memory_queue(
     format: Arc<dyn SegmentFormat>,
     embed: Arc<dyn EmbeddingBackend>,
     cfg: MemoryIngestConfig,
+    node_id: NodeId,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> (MemoryQueue, tokio::task::JoinHandle<()>) {
     // Warm the embedding backend off the hot path: the first barrier after a
@@ -181,7 +190,7 @@ pub fn spawn_memory_queue(
     let writer = MemoryWriter::new(catalog.clone(), format, embed);
     let handler = Arc::new(BatchIngestor { writer });
     let durable = cfg.durable.then_some(catalog);
-    let (q, handle) = pensieve_queue::spawn(cfg.queue, durable, handler, shutdown);
+    let (q, handle) = pensieve_queue::spawn(cfg.queue, durable, handler, node_id, shutdown);
     (MemoryQueue { q }, handle)
 }
 

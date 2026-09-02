@@ -24,10 +24,21 @@ use crate::{BatchHandler, Job, Queue, QueueConfig, Shared, Watermarks};
 /// previous process, then keeps a slow repair poll going for requeued /
 /// overflow jobs. Without one, durable submits silently degrade to
 /// best-effort.
+///
+/// `node_id` identifies this worker's claims in the durable store
+/// (`background_tasks.claimed_by`). When a `durable` catalog is given, the
+/// caller MUST pass a `node_id` that is already registered in the catalog's
+/// `nodes` table (e.g. the id returned by `Catalog::register_node`, as
+/// `pensieve-bin` does at startup) — `claimed_by` carries a foreign key to
+/// `nodes(id)`, so claiming with an unregistered id fails every time (see
+/// `CompactionWorker`, which threads the same registered id through for the
+/// same reason). Without a durable catalog `node_id` is unused; any value
+/// (e.g. `NodeId::new()`) works.
 pub fn spawn(
     cfg: QueueConfig,
     durable: Option<Arc<dyn pensieve_core::catalog::Catalog>>,
     handler: Arc<dyn BatchHandler>,
+    node_id: NodeId,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> (Queue, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel(cfg.channel_cap);
@@ -42,7 +53,7 @@ pub fn spawn(
         shared: shared.clone(),
         tx,
     };
-    let handle = tokio::spawn(run(shared, rx, handler, shutdown));
+    let handle = tokio::spawn(run(shared, rx, handler, node_id, shutdown));
     (queue, handle)
 }
 
@@ -50,9 +61,9 @@ async fn run(
     shared: Arc<Shared>,
     mut rx: mpsc::Receiver<Job>,
     handler: Arc<dyn BatchHandler>,
+    node_id: NodeId,
     shutdown: impl Future<Output = ()> + Send,
 ) {
-    let node_id = NodeId::new();
     info!(
         queue = %shared.cfg.name,
         durable = shared.durable.is_some(),

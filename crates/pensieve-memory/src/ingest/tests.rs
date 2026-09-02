@@ -95,10 +95,16 @@ async fn rig(durable: bool) -> TestRig {
     };
     let (_tx, rx) = tokio::sync::oneshot::channel::<()>();
     std::mem::forget(_tx);
-    let (queue, _handle) =
-        spawn_memory_queue(catalog.clone(), format, embed.clone(), cfg, async move {
+    let (queue, _handle) = spawn_memory_queue(
+        catalog.clone(),
+        format,
+        embed.clone(),
+        cfg,
+        pensieve_core::types::NodeId::new(),
+        async move {
             let _ = rx.await;
-        });
+        },
+    );
     TestRig {
         catalog,
         embed,
@@ -285,9 +291,16 @@ async fn durable_ops_replay_after_simulated_crash() {
     };
     let (_tx, rx) = tokio::sync::oneshot::channel::<()>();
     std::mem::forget(_tx);
-    let (_queue, _handle) = spawn_memory_queue(catalog.clone(), format, embed, cfg, async move {
-        let _ = rx.await;
-    });
+    let (_queue, _handle) = spawn_memory_queue(
+        catalog.clone(),
+        format,
+        embed,
+        cfg,
+        pensieve_core::types::NodeId::new(),
+        async move {
+            let _ = rx.await;
+        },
+    );
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
