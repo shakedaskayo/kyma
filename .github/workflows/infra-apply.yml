@@ -15,20 +15,45 @@ jobs:
       matrix:
         env: [dev]
     steps:
+      # AWS_CI_ROLE_ARN has never been set, so every run of this workflow has
+      # failed inside configure-aws-credentials with the opaque
+      #   Credentials could not be loaded, please check your action inputs:
+      #   Could not load credentials from any providers
+      # A check that fails the same way on every commit stops being a signal.
+      # Say plainly that the workflow is unconfigured and stop, so a genuine
+      # infra failure is distinguishable from a missing secret.
+      - name: check AWS credentials are configured
+        id: preflight
+        run: |
+          if [ -z "${{ secrets.AWS_CI_ROLE_ARN }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=infra-apply skipped::AWS_CI_ROLE_ARN is not set \
+            in this repository, so there is no role to assume. Set it (an IAM role \
+            ARN trusting this repo via OIDC) to enable terraform apply for the \
+            '${{ matrix.env }}' environment."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.preflight.outputs.configured == 'true'
       - uses: hashicorp/setup-terraform@v3
+        if: steps.preflight.outputs.configured == 'true'
         with:
           terraform_version: "1.9.8"
 
       - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.preflight.outputs.configured == 'true'
         with:
           role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: init
+        if: steps.preflight.outputs.configured == 'true'
         run: terraform -chdir=infra/envs/${{ matrix.env }} init
 
       - name: apply
+        if: steps.preflight.outputs.configured == 'true'
         env:
           TF_VAR_supabase_org_id: ${{ secrets.SUPABASE_ORG_ID }}
           TF_VAR_supabase_db_pass: ${{ secrets.SUPABASE_DB_PASS }}

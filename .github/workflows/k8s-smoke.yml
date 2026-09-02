@@ -27,10 +27,23 @@ jobs:
 
       - name: install kind + helm
         run: |
-          curl -fsSL -o /usr/local/bin/kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
-          chmod +x /usr/local/bin/kind
-          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          # /usr/local/bin is root-owned on the runner image. `curl -o` there
+          # succeeds via directory permissions but leaves the file owned by
+          # root, so the following chmod failed with
+          #   chmod: changing permissions of '/usr/local/bin/kind':
+          #   Operation not permitted
+          # and, under `bash -e`, took the whole job with it before helm or the
+          # smoke test ever ran. Download as the runner user, then install with
+          # sudo, which sets ownership and mode in one step.
+          curl -fsSL -o "$RUNNER_TEMP/kind" \
+            https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+          sudo install -m 0755 "$RUNNER_TEMP/kind" /usr/local/bin/kind
+          kind --version
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+            | sudo bash
+          helm version --short
           # kubectl is preinstalled on ubuntu-22.04 runners.
+          kubectl version --client=true 2>/dev/null | head -1 || true
 
       - name: k8s fresh-install smoke (kind + helm)
         env:
