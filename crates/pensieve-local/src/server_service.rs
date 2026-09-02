@@ -176,7 +176,7 @@ fn home() -> String {
 }
 
 fn log_path() -> String {
-    let pensieve_home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| format!("{}/.pensieve", home()));
+    let pensieve_home = pensieve_core::config::home_or(".").display().to_string();
     format!("{pensieve_home}/logs/server.log")
 }
 
@@ -211,7 +211,7 @@ pub fn install(opts: &ServerOptions) -> Result<bool> {
         // Pin the resolved store so the service sees the same data the CLI
         // does, custom PENSIEVE_HOME included.
         opts.pensieve_home =
-            Some(std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| format!("{}/.pensieve", home())));
+            Some(pensieve_core::config::home_or(".").display().to_string());
     }
     if opts.secret_key.is_none() {
         opts.secret_key = opts.pensieve_home.as_deref().and_then(load_or_create_secret_key);

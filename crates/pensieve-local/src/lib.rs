@@ -138,10 +138,7 @@ struct Paths {
 }
 
 fn resolve_paths() -> Paths {
-    let home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| {
-        let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        format!("{base}/.pensieve")
-    });
+    let home = pensieve_core::config::home_or(".").display().to_string();
     let catalog_db =
         std::env::var("PENSIEVE_LOCAL_DB").unwrap_or_else(|_| format!("{home}/catalog.db"));
     let data_root = std::env::var("PENSIEVE_LOCAL_DATA").unwrap_or_else(|_| format!("{home}/data"));
@@ -243,9 +240,7 @@ impl ConsumerPublisher for RemoteConsumerPublisher {
 /// exists with an endpoint + token. `None` ⇒ `pensieve mcp` runs standalone (no
 /// overlay forwarding), exactly as before.
 fn remote_consumer_sink() -> Option<ConsumerSink> {
-    let home = std::env::var("PENSIEVE_HOME")
-        .ok()
-        .or_else(|| std::env::var("HOME").ok().map(|h| format!("{h}/.pensieve")))?;
+    let home = pensieve_core::config::home()?.display().to_string();
     let raw = std::fs::read_to_string(format!("{home}/config.json")).ok()?;
     let cfg: serde_json::Value = serde_json::from_str(&raw).ok()?;
     let endpoint = cfg.get("endpoint")?.as_str()?.trim().to_string();
@@ -423,10 +418,7 @@ pub fn build_local_app(
     // Settings → Agent engine works locally and survives restarts. Engine
     // auth auto-detects env vars / ~/.claude/.credentials.json — the Postgres
     // credential store stays a control-plane feature.
-    let pensieve_home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| {
-        let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        format!("{base}/.pensieve")
-    });
+    let pensieve_home = pensieve_core::config::home_or(".").display().to_string();
     let resolved_cred_store: Arc<dyn CredentialStore> = cred_store
         .clone()
         .unwrap_or_else(|| Arc::new(NullCredentialStore));
@@ -767,10 +759,7 @@ pub async fn run_serve(
     }
 
     // ── Credentials: AES-256-GCM key from env or auto-generated file ──────────
-    let pensieve_home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| {
-        let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        format!("{base}/.pensieve")
-    });
+    let pensieve_home = pensieve_core::config::home_or(".").display().to_string();
     let secret_key_path = format!("{pensieve_home}/secret.key");
     let crypto = Arc::new(
         Crypto::from_env_or_file(&secret_key_path)
@@ -1239,7 +1228,7 @@ fn claude_home() -> std::path::PathBuf {
 /// Assemble the file-phase options from env + CLI options.
 fn cc_pipeline_options(opts: &SyncOptions) -> cc_pipeline::CcPipelineOptions {
     let cc = claude_home();
-    let pensieve_home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| format!("{}/.pensieve", home_dir()));
+    let pensieve_home = pensieve_core::config::home_or(".").display().to_string();
     cc_pipeline::CcPipelineOptions {
         sync: cc_sync::CcSyncOptions {
             projects_dir: cc.join("projects"),

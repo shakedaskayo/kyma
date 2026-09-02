@@ -19,6 +19,7 @@
 #![forbid(unsafe_code)]
 
 pub mod catalog;
+pub mod config;
 pub mod credentials;
 pub mod crypto;
 pub mod errors;

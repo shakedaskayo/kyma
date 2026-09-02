@@ -95,10 +95,7 @@ fn expand_home(path: &str) -> PathBuf {
 
 /// `${PENSIEVE_HOME}/vaults` — where git-hosted Obsidian imports are cloned.
 fn vaults_root() -> PathBuf {
-    let home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| {
-        let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        format!("{base}/.pensieve")
-    });
+    let home = pensieve_core::config::home_or(".").display().to_string();
     PathBuf::from(home).join("vaults")
 }
 

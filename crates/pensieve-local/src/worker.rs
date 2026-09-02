@@ -134,7 +134,7 @@ fn home() -> String {
 }
 
 fn log_path() -> String {
-    let pensieve_home = std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| format!("{}/.pensieve", home()));
+    let pensieve_home = pensieve_core::config::home_or(".").display().to_string();
     format!("{pensieve_home}/logs/worker.log")
 }
 
@@ -167,7 +167,7 @@ pub fn install(opts: &WorkerOptions) -> Result<()> {
         // Pin the resolved store so the service sees the same data the CLI
         // does, custom PENSIEVE_HOME included.
         opts.pensieve_home =
-            Some(std::env::var("PENSIEVE_HOME").unwrap_or_else(|_| format!("{}/.pensieve", home())));
+            Some(pensieve_core::config::home_or(".").display().to_string());
     }
     let opts = &opts;
     let log = log_path();
