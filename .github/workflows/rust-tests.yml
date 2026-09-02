@@ -19,15 +19,15 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
   # This job compiles 41 crates plus every test target. With the workspace's
-  # `[profile.dev] debug = true` that is ~97 GB of target/ locally, against
-  # roughly 14 GB free on a GitHub-hosted runner — so it ran out of disk every
-  # time, failing with
+  # `[profile.dev] debug = true` that build is enormous — it exhausted the
+  # runner's disk on all 29 preceding runs, failing after ~30 minutes with
   #   rustc-LLVM ERROR: IO failure on output stream: No space left on device
-  # after ~30 minutes. line-tables-only keeps file and line numbers in panics
-  # and backtraces, which is what CI actually needs from debuginfo, while
-  # dropping the variable and type records that account for most of the size.
-  # Overridden here rather than in Cargo.toml so local development keeps full
-  # debuginfo for stepping in a debugger.
+  # Worth being precise, because the size is easy to underestimate: a runner
+  # starts with 86 GB free on /, and the build still ran out. line-tables-only
+  # keeps file and line numbers in panics and backtraces — what CI actually
+  # reads from debuginfo — while dropping the variable and type records that
+  # account for most of the bytes. Overridden here rather than in Cargo.toml so
+  # local development keeps full debuginfo for stepping in a debugger.
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
   # Incremental artifacts are pure overhead on a cold CI checkout and add
   # several GB of their own.
@@ -55,11 +55,12 @@ jobs:
           --health-timeout=3s
           --health-retries=10
     steps:
-      # Reclaim the preinstalled toolchains this job never uses. The runner
-      # image ships Android SDK, .NET, GHC, CodeQL and a large Docker image
-      # cache; together they are ~25 GB, which is the difference between this
-      # job finishing and dying on "No space left on device" partway through
-      # linking. Cheap (~30s) next to a 30-minute compile that then fails.
+      # Reclaim the preinstalled toolchains this job never uses — Android SDK,
+      # .NET, GHC, CodeQL, Swift, PowerShell, and the Docker image cache.
+      # Measured on this workflow: 86 GB free before, 108 GB after, so ~22 GB
+      # for about a minute of work. Together with the debuginfo setting above
+      # this is the difference between the job finishing and dying partway
+      # through linking.
       - name: Free runner disk
         run: |
           echo "before:"; df -h / | tail -1
