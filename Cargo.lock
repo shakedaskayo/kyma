@@ -4839,947 +4839,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pensieve-artifact-graph"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "bytes",
- "chrono",
- "datafusion",
- "pensieve-catalog",
- "pensieve-catalog-sqlite",
- "pensieve-core",
- "pensieve-embed",
- "pensieve-exec",
- "pensieve-format-tlm",
- "pensieve-ingest-core",
- "pensieve-storage",
- "object_store",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-bin"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "chrono",
- "clap",
- "futures",
- "hostname",
- "pensieve-brain",
- "pensieve-catalog",
- "pensieve-compaction",
- "pensieve-core",
- "pensieve-datasources",
- "pensieve-exec",
- "pensieve-federation",
- "pensieve-format-parquet",
- "pensieve-format-tlm",
- "pensieve-index-fts",
- "pensieve-index-vector",
- "pensieve-ingest-core",
- "pensieve-ingest-filedrop",
- "pensieve-ingest-kafka",
- "pensieve-ingest-otlp",
- "pensieve-ingest-rest",
- "pensieve-jobs",
- "pensieve-kql",
- "pensieve-mcp",
- "pensieve-memory",
- "pensieve-plan",
- "pensieve-server",
- "pensieve-storage",
- "opentelemetry 0.27.1",
- "opentelemetry-proto 0.27.0",
- "opentelemetry_sdk 0.27.1",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tonic 0.12.3",
- "tonic-web",
- "tracing",
- "tracing-opentelemetry 0.28.0",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-brain"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "blake3",
- "pensieve-ccmem",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "pensieve-catalog"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow-schema",
- "async-trait",
- "bytes",
- "chrono",
- "futures",
- "pensieve-core",
- "metrics",
- "pgvector",
- "serde",
- "serde_json",
- "sqlx",
- "testcontainers",
- "testcontainers-modules",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-catalog-sqlite"
-version = "0.1.0"
-dependencies = [
- "arrow-schema",
- "async-trait",
- "chrono",
- "pensieve-core",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-ccmem"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "serde",
- "serde_yaml",
-]
-
-[[package]]
-name = "pensieve-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow-schema",
- "async-trait",
- "chrono",
- "clap",
- "comfy-table",
- "console 0.15.11",
- "directories",
- "flate2",
- "futures-util",
- "ignore",
- "indicatif",
- "insta",
- "pensieve-catalog",
- "pensieve-core",
- "pensieve-local",
- "notify",
- "openssl",
- "rand 0.8.6",
- "reqwest 0.12.28",
- "rpassword",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "tar",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "wiremock",
-]
-
-[[package]]
-name = "pensieve-codeparse"
-version = "0.1.0"
-dependencies = [
- "tree-sitter",
- "tree-sitter-go",
- "tree-sitter-javascript",
- "tree-sitter-python",
- "tree-sitter-rust",
- "tree-sitter-typescript",
-]
-
-[[package]]
-name = "pensieve-compaction"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "bytes",
- "chrono",
- "futures",
- "pensieve-catalog",
- "pensieve-core",
- "pensieve-index-vector",
- "pensieve-ingest-core",
- "metrics",
- "object_store",
- "serde",
- "serde_json",
- "sqlx",
- "testcontainers",
- "testcontainers-modules",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-core"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "arrow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "futures",
- "object_store",
- "rand 0.8.6",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-datasource-core"
-version = "0.1.0"
-dependencies = [
- "pensieve-core",
- "pensieve-datasources",
-]
-
-[[package]]
-name = "pensieve-datasources"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "fastrand",
- "futures",
- "globset",
- "hostname",
- "pensieve-catalog",
- "pensieve-codeparse",
- "pensieve-core",
- "pensieve-federation",
- "pensieve-ingest-core",
- "pensieve-redact",
- "pensieve-storage",
- "metrics",
- "object_store",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "testcontainers",
- "testcontainers-modules",
- "thiserror 2.0.18",
- "tokio",
- "tower 0.5.3",
- "tracing",
- "uuid",
- "wiremock",
-]
-
-[[package]]
-name = "pensieve-embed"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "fastembed",
- "insta",
- "pensieve-core",
- "ndarray",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "pensieve-exec"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-array",
- "arrow-flight",
- "arrow-schema",
- "async-trait",
- "chrono",
- "datafusion",
- "futures",
- "pensieve-catalog",
- "pensieve-catalog-sqlite",
- "pensieve-core",
- "pensieve-format-tlm",
- "pensieve-graph-testkit",
- "pensieve-index-fts",
- "pensieve-index-vector",
- "pensieve-kql",
- "pensieve-plan",
- "pensieve-storage",
- "metrics",
- "object_store",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tonic 0.12.3",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-federation"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow-array",
- "arrow-json",
- "arrow-schema",
- "async-trait",
- "chrono",
- "datafusion",
- "datafusion-federation",
- "futures",
- "pensieve-core",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tiberius",
- "tokio",
- "tokio-util",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-format-parquet"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "bytes",
- "futures",
- "pensieve-core",
- "pensieve-format-tlm",
- "object_store",
- "parquet",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "pensieve-format-stub-vec"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "bytes",
- "pensieve-core",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "pensieve-format-tlm"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "bytes",
- "chrono",
- "ciborium",
- "fst",
- "futures",
- "pensieve-core",
- "pensieve-storage",
- "lz4_flex",
- "object_store",
- "proptest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
- "zstd",
-]
-
-[[package]]
-name = "pensieve-graph"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "pensieve-graph-topo",
- "object_store",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "pensieve-graph-bench"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "criterion",
- "pensieve-graph-testkit",
-]
-
-[[package]]
-name = "pensieve-graph-testkit"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "fastrand",
- "petgraph",
- "proptest",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "pensieve-graph-topo"
-version = "0.1.0"
-dependencies = [
- "pensieve-graph-testkit",
- "proptest",
-]
-
-[[package]]
-name = "pensieve-index-fts"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "bytes",
- "chrono",
- "futures",
- "pensieve-core",
- "serde",
- "serde_json",
- "tantivy",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "pensieve-index-vector"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "bytes",
- "chrono",
- "futures",
- "pensieve-core",
- "proptest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-ingest-core"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-array",
- "arrow-json",
- "arrow-schema",
- "async-trait",
- "bytes",
- "chrono",
- "fastrand",
- "futures",
- "pensieve-catalog",
- "pensieve-core",
- "pensieve-format-tlm",
- "pensieve-storage",
- "metrics",
- "object_store",
- "serde",
- "serde_json",
- "sqlx",
- "testcontainers",
- "testcontainers-modules",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-ingest-filedrop"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "bytes",
- "chrono",
- "futures",
- "pensieve-catalog-sqlite",
- "pensieve-core",
- "pensieve-format-tlm",
- "pensieve-ingest-core",
- "pensieve-storage",
- "metrics",
- "object_store",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "pensieve-ingest-kafka"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "bytes",
- "chrono",
- "futures",
- "pensieve-catalog",
- "pensieve-core",
- "pensieve-ingest-core",
- "metrics",
- "rdkafka",
- "serde",
- "serde_json",
- "sqlx",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "pensieve-ingest-otlp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "bytes",
- "futures",
- "pensieve-catalog",
- "pensieve-core",
- "pensieve-ingest-core",
- "metrics",
- "opentelemetry 0.27.1",
- "opentelemetry-proto 0.27.0",
- "opentelemetry_sdk 0.27.1",
- "prost 0.13.5",
- "serde",
- "serde_json",
- "sqlx",
- "thiserror 2.0.18",
- "tokio",
- "tonic 0.12.3",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-ingest-rest"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "arrow-array",
- "async-trait",
- "axum",
- "bytes",
- "futures",
- "hyper",
- "pensieve-core",
- "pensieve-ingest-core",
- "metrics",
- "serde",
- "serde_json",
- "simd-json",
- "thiserror 2.0.18",
- "tokio",
- "tower 0.5.3",
- "tower-http 0.6.8",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-jobs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow-array",
- "arrow-schema",
- "async-trait",
- "bytes",
- "chrono",
- "futures",
- "pensieve-catalog",
- "pensieve-catalog-sqlite",
- "pensieve-core",
- "pensieve-datasources",
- "pensieve-embed",
- "pensieve-format-tlm",
- "pensieve-index-vector",
- "object_store",
- "serde",
- "serde_json",
- "sqlx",
- "testcontainers",
- "testcontainers-modules",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-kql"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "chumsky",
- "pensieve-core",
- "pensieve-plan",
- "serde",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "pensieve-local"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow-schema",
- "async-trait",
- "axum",
- "chrono",
- "hostname",
- "pensieve-brain",
- "pensieve-catalog-sqlite",
- "pensieve-ccmem",
- "pensieve-compaction",
- "pensieve-core",
- "pensieve-datasources",
- "pensieve-embed",
- "pensieve-format-parquet",
- "pensieve-format-tlm",
- "pensieve-index-fts",
- "pensieve-index-vector",
- "pensieve-ingest-core",
- "pensieve-ingest-otlp",
- "pensieve-ingest-rest",
- "pensieve-jobs",
- "pensieve-mcp",
- "pensieve-memory",
- "pensieve-server",
- "pensieve-storage",
- "notify",
- "object_store",
- "opentelemetry 0.27.1",
- "opentelemetry_sdk 0.27.1",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "serde_yaml",
- "sqlx",
- "tempfile",
- "tokio",
- "tower 0.5.3",
- "tracing",
- "tracing-opentelemetry 0.28.0",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-mcp"
-version = "0.1.0"
-dependencies = [
- "adk-rust",
- "async-trait",
- "axum",
- "futures",
- "pensieve-catalog-sqlite",
- "pensieve-core",
- "pensieve-embed",
- "pensieve-format-tlm",
- "pensieve-memory",
- "pensieve-queue",
- "pensieve-server",
- "pensieve-storage",
- "metrics",
- "object_store",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sqlx",
- "testcontainers",
- "testcontainers-modules",
- "thiserror 2.0.18",
- "tokio",
- "tower 0.5.3",
- "tower-http 0.6.8",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-memory"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow-schema",
- "async-trait",
- "chrono",
- "pensieve-catalog-sqlite",
- "pensieve-codeparse",
- "pensieve-core",
- "pensieve-embed",
- "pensieve-format-tlm",
- "pensieve-ingest-core",
- "pensieve-queue",
- "pensieve-storage",
- "serde",
- "serde_json",
- "sqlx",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-plan"
-version = "0.1.0"
-dependencies = [
- "arrow-schema",
- "async-trait",
- "chrono",
- "pensieve-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "pensieve-queue"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "fastrand",
- "pensieve-catalog-sqlite",
- "pensieve-core",
- "metrics",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-redact"
-version = "0.1.0"
-dependencies = [
- "aho-corasick",
- "regex",
- "serde_json",
- "tracing",
-]
-
-[[package]]
-name = "pensieve-retrieval-eval"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "proptest",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "pensieve-server"
-version = "0.1.0"
-dependencies = [
- "adk-rust",
- "anyhow",
- "argon2",
- "arrow",
- "arrow-array",
- "arrow-flight",
- "arrow-schema",
- "async-stream",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "claude-code-agent-sdk",
- "datafusion",
- "flate2",
- "futures",
- "hex",
- "http-body-util",
- "jsonwebtoken",
- "pensieve-artifact-graph",
- "pensieve-brain",
- "pensieve-catalog",
- "pensieve-catalog-sqlite",
- "pensieve-ccmem",
- "pensieve-core",
- "pensieve-datasources",
- "pensieve-embed",
- "pensieve-exec",
- "pensieve-federation",
- "pensieve-format-tlm",
- "pensieve-graph",
- "pensieve-graph-topo",
- "pensieve-ingest-core",
- "pensieve-kql",
- "pensieve-memory",
- "pensieve-plan",
- "pensieve-redact",
- "pensieve-storage",
- "pensieve-web-assets",
- "metrics",
- "metrics-exporter-prometheus",
- "object_store",
- "opentelemetry 0.27.1",
- "opentelemetry_sdk 0.27.1",
- "prost 0.13.5",
- "rand 0.8.6",
- "reqwest 0.12.28",
- "rsa",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "tempfile",
- "testcontainers",
- "testcontainers-modules",
- "thiserror 2.0.18",
- "tokio",
- "tokio-stream",
- "tonic 0.12.3",
- "tonic-web",
- "tower 0.5.3",
- "tower-http 0.6.8",
- "tracing",
- "tracing-opentelemetry 0.28.0",
- "tracing-subscriber",
- "uuid",
- "which",
- "wiremock",
-]
-
-[[package]]
-name = "pensieve-storage"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "futures",
- "pensieve-core",
- "object_store",
- "sha2",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "pensieve-web-assets"
-version = "0.1.0"
-dependencies = [
- "include_dir",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7272,6 +6331,947 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88b39c9bfcfc231068454382784bb460aae594343fb030d46e9f50a645418412"
 dependencies = [
  "base64ct",
+]
+
+[[package]]
+name = "pensieve-artifact-graph"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "datafusion",
+ "object_store",
+ "pensieve-catalog",
+ "pensieve-catalog-sqlite",
+ "pensieve-core",
+ "pensieve-embed",
+ "pensieve-exec",
+ "pensieve-format-tlm",
+ "pensieve-ingest-core",
+ "pensieve-storage",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-bin"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "clap",
+ "futures",
+ "hostname",
+ "opentelemetry 0.27.1",
+ "opentelemetry-proto 0.27.0",
+ "opentelemetry_sdk 0.27.1",
+ "pensieve-brain",
+ "pensieve-catalog",
+ "pensieve-compaction",
+ "pensieve-core",
+ "pensieve-datasources",
+ "pensieve-exec",
+ "pensieve-federation",
+ "pensieve-format-parquet",
+ "pensieve-format-tlm",
+ "pensieve-index-fts",
+ "pensieve-index-vector",
+ "pensieve-ingest-core",
+ "pensieve-ingest-filedrop",
+ "pensieve-ingest-kafka",
+ "pensieve-ingest-otlp",
+ "pensieve-ingest-rest",
+ "pensieve-jobs",
+ "pensieve-kql",
+ "pensieve-mcp",
+ "pensieve-memory",
+ "pensieve-plan",
+ "pensieve-server",
+ "pensieve-storage",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic 0.12.3",
+ "tonic-web",
+ "tracing",
+ "tracing-opentelemetry 0.28.0",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-brain"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "pensieve-ccmem",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "pensieve-catalog"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures",
+ "metrics",
+ "pensieve-core",
+ "pgvector",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "testcontainers",
+ "testcontainers-modules",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-catalog-sqlite"
+version = "0.1.0"
+dependencies = [
+ "arrow-schema",
+ "async-trait",
+ "chrono",
+ "pensieve-core",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-ccmem"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_yaml",
+]
+
+[[package]]
+name = "pensieve-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow-schema",
+ "async-trait",
+ "chrono",
+ "clap",
+ "comfy-table",
+ "console 0.15.11",
+ "directories",
+ "flate2",
+ "futures-util",
+ "ignore",
+ "indicatif",
+ "insta",
+ "notify",
+ "openssl",
+ "pensieve-catalog",
+ "pensieve-core",
+ "pensieve-local",
+ "rand 0.8.6",
+ "reqwest 0.12.28",
+ "rpassword",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tar",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
+name = "pensieve-codeparse"
+version = "0.1.0"
+dependencies = [
+ "tree-sitter",
+ "tree-sitter-go",
+ "tree-sitter-javascript",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+]
+
+[[package]]
+name = "pensieve-compaction"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures",
+ "metrics",
+ "object_store",
+ "pensieve-catalog",
+ "pensieve-core",
+ "pensieve-index-vector",
+ "pensieve-ingest-core",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "testcontainers",
+ "testcontainers-modules",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-core"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "futures",
+ "object_store",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-datasource-core"
+version = "0.1.0"
+dependencies = [
+ "pensieve-core",
+ "pensieve-datasources",
+]
+
+[[package]]
+name = "pensieve-datasources"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "fastrand",
+ "futures",
+ "globset",
+ "hostname",
+ "metrics",
+ "object_store",
+ "pensieve-catalog",
+ "pensieve-codeparse",
+ "pensieve-core",
+ "pensieve-federation",
+ "pensieve-ingest-core",
+ "pensieve-redact",
+ "pensieve-storage",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "testcontainers",
+ "testcontainers-modules",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower 0.5.3",
+ "tracing",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
+name = "pensieve-embed"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "fastembed",
+ "insta",
+ "ndarray",
+ "pensieve-core",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "pensieve-exec"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-flight",
+ "arrow-schema",
+ "async-trait",
+ "chrono",
+ "datafusion",
+ "futures",
+ "metrics",
+ "object_store",
+ "pensieve-catalog",
+ "pensieve-catalog-sqlite",
+ "pensieve-core",
+ "pensieve-format-tlm",
+ "pensieve-graph-testkit",
+ "pensieve-index-fts",
+ "pensieve-index-vector",
+ "pensieve-kql",
+ "pensieve-plan",
+ "pensieve-storage",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic 0.12.3",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-federation"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow-array",
+ "arrow-json",
+ "arrow-schema",
+ "async-trait",
+ "chrono",
+ "datafusion",
+ "datafusion-federation",
+ "futures",
+ "pensieve-core",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tiberius",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-format-parquet"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "futures",
+ "object_store",
+ "parquet",
+ "pensieve-core",
+ "pensieve-format-tlm",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "pensieve-format-stub-vec"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "pensieve-core",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "pensieve-format-tlm"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "ciborium",
+ "fst",
+ "futures",
+ "lz4_flex",
+ "object_store",
+ "pensieve-core",
+ "pensieve-storage",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+ "zstd",
+]
+
+[[package]]
+name = "pensieve-graph"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "object_store",
+ "pensieve-graph-topo",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "pensieve-graph-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "criterion",
+ "pensieve-graph-testkit",
+]
+
+[[package]]
+name = "pensieve-graph-testkit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "fastrand",
+ "petgraph",
+ "proptest",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "pensieve-graph-topo"
+version = "0.1.0"
+dependencies = [
+ "pensieve-graph-testkit",
+ "proptest",
+]
+
+[[package]]
+name = "pensieve-index-fts"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures",
+ "pensieve-core",
+ "serde",
+ "serde_json",
+ "tantivy",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "pensieve-index-vector"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures",
+ "pensieve-core",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-ingest-core"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-json",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "fastrand",
+ "futures",
+ "metrics",
+ "object_store",
+ "pensieve-catalog",
+ "pensieve-core",
+ "pensieve-format-tlm",
+ "pensieve-storage",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "testcontainers",
+ "testcontainers-modules",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-ingest-filedrop"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures",
+ "metrics",
+ "object_store",
+ "pensieve-catalog-sqlite",
+ "pensieve-core",
+ "pensieve-format-tlm",
+ "pensieve-ingest-core",
+ "pensieve-storage",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "pensieve-ingest-kafka"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures",
+ "metrics",
+ "pensieve-catalog",
+ "pensieve-core",
+ "pensieve-ingest-core",
+ "rdkafka",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "pensieve-ingest-otlp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "futures",
+ "metrics",
+ "opentelemetry 0.27.1",
+ "opentelemetry-proto 0.27.0",
+ "opentelemetry_sdk 0.27.1",
+ "pensieve-catalog",
+ "pensieve-core",
+ "pensieve-ingest-core",
+ "prost 0.13.5",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic 0.12.3",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-ingest-rest"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "async-trait",
+ "axum",
+ "bytes",
+ "futures",
+ "hyper",
+ "metrics",
+ "pensieve-core",
+ "pensieve-ingest-core",
+ "serde",
+ "serde_json",
+ "simd-json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower 0.5.3",
+ "tower-http 0.6.8",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-jobs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures",
+ "object_store",
+ "pensieve-catalog",
+ "pensieve-catalog-sqlite",
+ "pensieve-core",
+ "pensieve-datasources",
+ "pensieve-embed",
+ "pensieve-format-tlm",
+ "pensieve-index-vector",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "testcontainers",
+ "testcontainers-modules",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-kql"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chumsky",
+ "pensieve-core",
+ "pensieve-plan",
+ "serde",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "pensieve-local"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow-schema",
+ "async-trait",
+ "axum",
+ "chrono",
+ "hostname",
+ "notify",
+ "object_store",
+ "opentelemetry 0.27.1",
+ "opentelemetry_sdk 0.27.1",
+ "pensieve-brain",
+ "pensieve-catalog-sqlite",
+ "pensieve-ccmem",
+ "pensieve-compaction",
+ "pensieve-core",
+ "pensieve-datasources",
+ "pensieve-embed",
+ "pensieve-format-parquet",
+ "pensieve-format-tlm",
+ "pensieve-index-fts",
+ "pensieve-index-vector",
+ "pensieve-ingest-core",
+ "pensieve-ingest-otlp",
+ "pensieve-ingest-rest",
+ "pensieve-jobs",
+ "pensieve-mcp",
+ "pensieve-memory",
+ "pensieve-server",
+ "pensieve-storage",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tower 0.5.3",
+ "tracing",
+ "tracing-opentelemetry 0.28.0",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-mcp"
+version = "0.1.0"
+dependencies = [
+ "adk-rust",
+ "async-trait",
+ "axum",
+ "futures",
+ "metrics",
+ "object_store",
+ "pensieve-catalog-sqlite",
+ "pensieve-core",
+ "pensieve-embed",
+ "pensieve-format-tlm",
+ "pensieve-memory",
+ "pensieve-queue",
+ "pensieve-server",
+ "pensieve-storage",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "testcontainers",
+ "testcontainers-modules",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower 0.5.3",
+ "tower-http 0.6.8",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-memory"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow-schema",
+ "async-trait",
+ "chrono",
+ "pensieve-catalog-sqlite",
+ "pensieve-codeparse",
+ "pensieve-core",
+ "pensieve-embed",
+ "pensieve-format-tlm",
+ "pensieve-ingest-core",
+ "pensieve-queue",
+ "pensieve-storage",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-plan"
+version = "0.1.0"
+dependencies = [
+ "arrow-schema",
+ "async-trait",
+ "chrono",
+ "pensieve-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "pensieve-queue"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "fastrand",
+ "metrics",
+ "pensieve-catalog-sqlite",
+ "pensieve-core",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-redact"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "regex",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "pensieve-retrieval-eval"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "proptest",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "pensieve-server"
+version = "0.1.0"
+dependencies = [
+ "adk-rust",
+ "anyhow",
+ "argon2",
+ "arrow",
+ "arrow-array",
+ "arrow-flight",
+ "arrow-schema",
+ "async-stream",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "claude-code-agent-sdk",
+ "datafusion",
+ "flate2",
+ "futures",
+ "hex",
+ "http-body-util",
+ "jsonwebtoken",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "object_store",
+ "opentelemetry 0.27.1",
+ "opentelemetry_sdk 0.27.1",
+ "pensieve-artifact-graph",
+ "pensieve-brain",
+ "pensieve-catalog",
+ "pensieve-catalog-sqlite",
+ "pensieve-ccmem",
+ "pensieve-core",
+ "pensieve-datasources",
+ "pensieve-embed",
+ "pensieve-exec",
+ "pensieve-federation",
+ "pensieve-format-tlm",
+ "pensieve-graph",
+ "pensieve-graph-topo",
+ "pensieve-ingest-core",
+ "pensieve-kql",
+ "pensieve-memory",
+ "pensieve-plan",
+ "pensieve-redact",
+ "pensieve-storage",
+ "pensieve-web-assets",
+ "prost 0.13.5",
+ "rand 0.8.6",
+ "reqwest 0.12.28",
+ "rsa",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tempfile",
+ "testcontainers",
+ "testcontainers-modules",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "tonic 0.12.3",
+ "tonic-web",
+ "tower 0.5.3",
+ "tower-http 0.6.8",
+ "tracing",
+ "tracing-opentelemetry 0.28.0",
+ "tracing-subscriber",
+ "uuid",
+ "which",
+ "wiremock",
+]
+
+[[package]]
+name = "pensieve-storage"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "object_store",
+ "pensieve-core",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "pensieve-web-assets"
+version = "0.1.0"
+dependencies = [
+ "include_dir",
 ]
 
 [[package]]

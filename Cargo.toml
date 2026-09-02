@@ -163,7 +163,11 @@ pensieve-core              = { path = "crates/pensieve-core",            version
 pensieve-format-tlm        = { path = "crates/pensieve-format-tlm",      version = "0.1.0" }
 pensieve-format-parquet    = { path = "crates/pensieve-format-parquet",  version = "0.1.0" }
 pensieve-format-stub-vec   = { path = "crates/pensieve-format-stub-vec", version = "0.1.0" }
-pensieve-graph-testkit     = { path = "crates/pensieve-graph-testkit",   version = "0.1.0" }
+# publish = false, and used only as a dev-dependency. Declared path-only on
+# purpose: `cargo publish` strips a path-only dev-dependency, but a
+# path + version one it tries to resolve on crates.io — where this crate
+# will never exist — and fails packaging pensieve-graph-topo.
+pensieve-graph-testkit     = { path = "crates/pensieve-graph-testkit" }
 pensieve-graph-topo        = { path = "crates/pensieve-graph-topo",      version = "0.1.0" }
 pensieve-catalog           = { path = "crates/pensieve-catalog",         version = "0.1.0" }
 pensieve-catalog-sqlite    = { path = "crates/pensieve-catalog-sqlite",  version = "0.1.0" }
