@@ -1,7 +1,7 @@
 name: Publish to crates.io
 
-# MANUAL ONLY. Publishes pensieve-cli's dependency closure (19 crates) to crates.io
-# in dependency-layer order.
+# MANUAL ONLY. Publishes pensieve-cli's dependency closure to crates.io in
+# dependency order, derived at run time by scripts/crates-publish-order.py.
 #
 # ⚠️ Caveat: the workspace pins a `[patch.crates-io] arrow-arith` fix for a
 # chrono 0.4.44 / DataFusion 44 conflict. Cargo `[patch]` does NOT propagate to
@@ -77,32 +77,11 @@ jobs:
             sleep 20   # let the crates.io index catch up before dependents
           }
 
-          # Layer 1 — no internal deps
-          publish pensieve-core
-          publish pensieve-graph
-          publish pensieve-web-assets
-          # Layer 2
-          publish pensieve-catalog
-          publish pensieve-catalog-sqlite
-          publish pensieve-embed
-          publish pensieve-plan
-          publish pensieve-storage
-          # Layer 3
-          publish pensieve-format-tlm
-          publish pensieve-kql
-          # Layer 4
-          publish pensieve-exec
-          publish pensieve-ingest-core
-          # Layer 5
-          publish pensieve-datasources
-          publish pensieve-datasource-core
-          publish pensieve-ingest-rest
-          publish pensieve-memory
-          # Layer 6
-          publish pensieve-server
-          # Layer 7
-          publish pensieve-mcp
-          # Layer 8
-          publish pensieve-local
-          # Layer 9 — the CLI (installs as `pensieve`)
-          publish pensieve-cli
+          # The order is DERIVED, not hand-maintained. The previous ladder
+          # listed 19 crates; the real closure is 33, and the 14 missing ones
+          # included pensieve-graph-topo — so a run died mid-publish, after
+          # pensieve-core had already gone to the registry. A partial publish
+          # cannot be undone, so this must not be able to drift again.
+          scripts/crates-publish-order.py | while read -r crate; do
+            publish "$crate"
+          done
